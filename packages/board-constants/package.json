@@ -56,8 +56,7 @@
     "test": "vp test run",
     "typecheck": "tsc --noEmit",
     "lint": "vp lint",
-    "generate": "node --import tsx scripts/generate-board-constants.ts && node --import tsx scripts/generate-ios-board-placement-data.ts",
-    "generate:ios": "node --import tsx scripts/generate-ios-board-placement-data.ts"
+    "generate": "node --import tsx scripts/generate-board-constants.ts"
   },
   "dependencies": {
     "@boardsesh/shared-schema": "*"

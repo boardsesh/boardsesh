@@ -265,7 +265,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // Entitlements for the App Group (shared with the BoardseshWidgets target),
       // shared keychain (so SharedKeychain.swift can read auth + push tokens),
       // and APNs (so ActivityKit can register Live Activity push tokens).
-      // Matches the Capacitor app at repo-root mobile/ios/App/App/App.entitlements.
+      // These carried over from the retired Capacitor app's App.entitlements.
       entitlements: {
         'com.apple.security.application-groups': ['group.com.boardsesh.app'],
         'keychain-access-groups': ['$(AppIdentifierPrefix)group.com.boardsesh.app'],

@@ -1,0 +1,42 @@
+.banner {
+  position: relative;
+  width: auto;
+  /* Match the queue-control-bar card's side margins on mobile so the banner is
+     visually the same width as the FeedbackPromptBanner it sits beside. */
+  margin: 0 var(--spacing-3) var(--spacing-2);
+  /* Extra top padding reserves room for the absolute-positioned close button. */
+  padding: var(--spacing-4) var(--spacing-3) var(--spacing-3);
+  border-radius: var(--border-radius-md);
+  background-color: var(--semantic-surface);
+  border: 1px solid var(--neutral-200);
+}
+
+@media (min-width: 768px) {
+  .banner {
+    max-width: 480px;
+    margin: 0 auto var(--spacing-2);
+  }
+}
+
+.title {
+  margin: 0;
+}
+
+.description {
+  margin: var(--spacing-1) 0 var(--spacing-3);
+  color: var(--bs-text-brand-muted);
+}
+
+.cta {
+  width: 100%;
+}
+
+/* MUI's MuiIconButton-sizeSmall rule has equal specificity but loads later, so
+   match it with the parent selector to keep the close button pinned. */
+.banner .closeButton {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  padding: 4px;
+}

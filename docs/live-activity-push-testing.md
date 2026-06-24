@@ -165,48 +165,12 @@ If both `POSTHOG_PROJECT_KEY` and `NEXT_PUBLIC_POSTHOG_KEY` are unset, Live Acti
 
 ## iOS Build Configuration
 
-> **Two iOS apps, same setup.** The Live Activity stack lives in both the
-> deprecating Capacitor app at repo-root `mobile/` and the React Native /
-> Expo app at `packages/mobile/`. They share the bundle identifier
-> `com.boardsesh.app`, the App Group `group.com.boardsesh.app`, and the
-> keychain access group — so the Apple Developer Portal capabilities apply
-> to both. Pick the section that matches the app you're testing.
-
-### Capacitor app (repo-root `mobile/`)
-
-#### 1. Signing and Capabilities
-
-Open `mobile/ios/App/App.xcworkspace` in Xcode:
-
-1. Select the **App** target > Signing & Capabilities
-2. Set your Team (must match `APNS_TEAM_ID`)
-3. Ensure Bundle Identifier is `com.boardsesh.app`
-4. Click **+ Capability** and add:
-   - **Push Notifications** (if not already present)
-   - **Background Modes** > check **Remote notifications** (already in Info.plist, but Xcode needs to see it)
-5. Ensure **App Groups** includes `group.com.boardsesh.app`
-
-Do the same for the **BoardseshWidgets** target:
-
-1. Set the same Team
-2. Ensure **App Groups** includes `group.com.boardsesh.app`
-
-#### 2. Set the Dev Server URL
-
-```bash
-# Set your Tailscale hostname so the iOS app connects to your local server
-export CAPACITOR_DEV_URL=http://your-machine.tailscale-domain:3000
-```
-
-Then sync the Capacitor config:
-
-```bash
-cd mobile && npx cap sync ios
-```
-
-#### 3. Build and Run
-
-Build to your iPhone from Xcode (Product > Run, or Cmd+R). The app must be a **development build** signed by your team — simulator builds do not support Live Activities or push notifications.
+> **The Live Activity stack lives in the React Native / Expo app at
+> `packages/mobile/`.** It uses the bundle identifier `com.boardsesh.app`,
+> the App Group `group.com.boardsesh.app`, and a keychain access group, so the
+> Apple Developer Portal capabilities apply to it directly. (The retired
+> Capacitor app at repo-root `mobile/` shared the same identifiers; its source
+> has been removed from the repo.)
 
 ### React Native / Expo app (`packages/mobile/`)
 
@@ -230,10 +194,9 @@ unit tests live in `packages/mobile/ios-tests/`. The CI workflow runs Expo prebu
 `scripts/prepare-rn-ios-tests.mjs` creates a generated `BoardseshTests` XCTest target and
 stages the Live Activity Swift sources into that target before invoking `xcodebuild`.
 
-Swift test coverage runs in two workflows:
+Swift test coverage runs in CI:
 
 - `.github/workflows/ios-rn-ci.yml` builds and tests the React Native / Expo app and widget helpers.
-- `.github/workflows/ios-ci.yml` builds and tests the legacy Capacitor app Swift target.
 
 #### 1. Generate the native project
 

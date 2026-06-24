@@ -140,6 +140,13 @@ Ensure the CoreBluetooth connection survives app backgrounding and can recover.
 
 ### Phase 3: Embedded Hold/LED Placement Data in Native Code [IMPLEMENTED FOR iOS BLE]
 
+> **Historical note (Capacitor retired):** the pipeline below originally targeted the
+> Capacitor app via `generate-ios-board-placement-data.ts` →
+> `mobile/ios/App/App/BoardPlacementData.swift`. That app, its Swift file, and the
+> generator have been removed from the repo. The React Native app keeps its own copy at
+> `packages/mobile/modules/live-activity/ios/BoardPlacementData.swift`. The design below is
+> retained for reference.
+
 The native layer needs hold positions and LED mappings to illuminate the board. Rather than sending this over the WebSocket (which would bloat every message), embed the static board data directly in the compiled Swift code -- the same approach already used for TypeScript and the ESP32 controller.
 
 **Generated data pipeline:**

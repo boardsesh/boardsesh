@@ -124,9 +124,9 @@ service-account secret the build still succeeds and the Play upload is skipped
 (the first internal-track upload is a one-time manual step in Play Console; see
 `docs/android-sideload-build.md`).
 
-Don't watch `.github/workflows/android-release.yml` for a Play submission. That
-is the retired Capacitor build (it triggers on `mobile/**`, not
-`packages/mobile/**`) and produces no RN AAB.
+The Play AAB comes from `.github/workflows/android-apk-rn.yml` (push to `main`
+touching `packages/mobile/**`). The old Capacitor `android-release.yml` has been
+removed from the repo.
 
 ### Local build
 
@@ -298,7 +298,7 @@ ANDROID_APP_LINK_CERT_FINGERPRINTS=AA:BB:CC:...(upload key),DD:EE:FF:...(google 
 
 Both fingerprints should be included. The upload key fingerprint is needed during development/sideloading. The Google signing key fingerprint is needed for Play Store installs.
 
-The route also emits a second statement for `com.boardsesh.app.debug`, hard-coded to the SHA-256 of the committed debug keystore. This is what makes Android App Links resolve to the locally-installed debug build alongside the production package — see `CONTRIBUTING.md` ("Testing web changes on Android") and `scripts/android-debug-install.sh`.
+The route also emits a second statement for `com.boardsesh.app.debug`, hard-coded to a SHA-256 fingerprint. It dates to the retired Capacitor debug-APK flow (the build script and committed debug keystore have been removed from the repo); the statement is harmless but no longer has tooling behind it.
 
 ---
 

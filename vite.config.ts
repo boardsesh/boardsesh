@@ -323,16 +323,6 @@ export default defineConfig({
         dependsOn: ['test:large-files'],
         cache: false,
       },
-      'generate:ios-board-placement-data': {
-        command: 'node --import tsx packages/board-constants/scripts/generate-ios-board-placement-data.ts',
-        dependsOn: ['build:constants'],
-        cache: false,
-      },
-      'check:ios-board-placement-data': {
-        command: 'node --import tsx packages/board-constants/scripts/generate-ios-board-placement-data.ts --check',
-        dependsOn: ['build:constants'],
-        cache: false,
-      },
       'docker-context:backend': {
         command: 'node scripts/create-service-docker-context.mjs backend',
         cache: false,

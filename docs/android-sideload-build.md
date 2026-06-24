@@ -41,8 +41,8 @@ serve the right APKs for its supported device set.
 
 ## Signing
 
-The release APK is signed with the **same keystore as the Capacitor app**, via
-the existing repo secrets — no new secrets:
+The release APK is signed with the **shared Android release keystore** (the same
+key the Capacitor app used), via the existing repo secrets — no new secrets:
 
 | Secret                              | Used for                                         |
 | ----------------------------------- | ------------------------------------------------ |
@@ -56,7 +56,8 @@ the existing repo secrets — no new secrets:
 Signing is injected by the `with-android-release-signing` config plugin
 (`packages/mobile/plugins/`), which rewrites the prebuild-generated
 `android/app/build.gradle` so the `release` build type reads the keystore from
-the same `ANDROID_KEYSTORE_*` env-var names the Capacitor `build.gradle` uses. A
+the `ANDROID_KEYSTORE_*` env-var names (the same secret names the legacy
+Capacitor `build.gradle` used). A
 runtime `System.getenv(...) != null` check means a local `expo prebuild` (no
 keystore env) falls back to debug signing. The plugin is **excluded under
 `EAS_BUILD`** so `eas build` (used by `mobile:preview-build`) keeps managing its
@@ -64,10 +65,10 @@ own signing.
 
 ## versionCode and coexistence with the Capacitor app
 
-Both the Capacitor app (`mobile/`, `android-release.yml`) and the RN rewrite
-(`packages/mobile/`) ship the **same package `com.boardsesh.app`** signed with
-the **same key**, so an RN APK upgrades a Capacitor install in place. To keep
-that direction valid, the RN build computes the versionCode as:
+The retired Capacitor app and the RN rewrite (`packages/mobile/`) both ship the
+**same package `com.boardsesh.app`** signed with the **same key**, so an RN APK
+upgrades a still-installed Capacitor app in place. To keep that direction valid,
+the RN build computes the versionCode as:
 
 ```
 versionCode = max(
@@ -79,7 +80,7 @@ versionCode = max(
 The `offset + run_number` term is the **sideload floor** — the deterministic
 line that every GitHub Release APK has shipped on, and the channel users
 actually sideload. The offset keeps it strictly above the Capacitor line (which
-uses a raw `run_number` in the low thousands), so RN always supersedes. The
+used a raw `run_number` in the low thousands), so RN always supersedes. The
 trade-off is deliberate: **the RN rewrite is the successor.** A Capacitor
 release can no longer upgrade a device already on the RN build.
 
@@ -106,10 +107,11 @@ Two invariants to respect:
    If you must, bump `version_code_offset` (the `workflow_dispatch` input) past
    the current production ceiling first, or new builds become un-installable
    over existing ones.
-2. **Capacitor publishing is already disabled.** `android-release.yml` still
-   builds the Capacitor app for CI validation, but its GitHub-Release and
-   Play-Store-upload steps were removed so it can't publish a lower-versionCode
-   build for `com.boardsesh.app`. The RN workflow is the sole Android shipper.
+2. **The Capacitor app is retired.** Its source (`mobile/`) and
+   `android-release.yml` have been removed from the repo, so the RN workflow is
+   the sole Android shipper. Installed Capacitor apps still exist on devices,
+   which is why the versionCode floor above still matters — an RN build must
+   out-number them to upgrade in place.
 
 ## Play Store (AAB → internal testing track)
 

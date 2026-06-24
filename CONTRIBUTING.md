@@ -82,45 +82,20 @@ The notes are only served by the dev server and `.boardsesh/` is ignored by git.
 
 ## Testing web changes on Android
 
-You don't have to rebuild the Android app every time you change the web UI. The **debug APK** shipped with each main build includes a Dev URL switcher that points the in-app WebView at any origin you choose — typically your laptop reached over [Tailscale](https://tailscale.com).
+The web app no longer ships inside a native Android shell — the legacy Capacitor
+wrapper has been retired in favour of the standalone React Native app
+(`packages/mobile/`), which doesn't load the web UI. To check web changes on a
+phone, open your dev server in a mobile browser.
 
-### One-time setup: Tailscale
+`vp run dev` runs through `scripts/dev-with-tailscale.ts`, which binds the server
+to your machine's [Tailscale](https://tailscale.com) MagicDNS name so a phone on
+the same tailnet can reach it (without Tailscale it falls back to `localhost`,
+which a real device can't reach). Look for
+`[dev] Web URL: http://<your-host>.ts.net:3000` in the output and open that URL in
+Chrome on your phone. Vercel preview URLs (`https://<preview>.boardsesh.com`) work too.
 
-`vp run dev` already looks for Tailscale. It runs your local dev server through `scripts/dev-with-tailscale.ts`, which calls `tailscale status --json` to find your machine's MagicDNS name (e.g. `your-laptop.tail-scale.ts.net`) and binds `BASE_URL`, `NEXTAUTH_URL`, and `NEXT_PUBLIC_WS_URL` to it. Without Tailscale it falls back to `localhost`, which Android can't reach from a real device.
-
-1. Install Tailscale on both your laptop and your phone and sign into the same tailnet.
-2. On your laptop, confirm `tailscale status` shows your phone online.
-3. Start the dev server with `vp run dev`. Look for `[dev] Web URL: http://<your-host>.ts.net:3000` in the output — that's the URL to paste into the app.
-
-### Point the app at your dev server
-
-The debug APK installs **alongside** the production Play Store app. It uses applicationId `com.boardsesh.app.debug`, shows up on the launcher as **Boardsesh debug**, and is signed with the committed `mobile/android/app/debug.keystore` so its SHA-256 is registered in `assetlinks.json` and Android App Links resolve to it on dev devices.
-
-1. Grab `app-debug.apk` from the most recent [Android Build release](https://github.com/boardsesh/boardsesh/releases?q=android-build), or build locally with `./scripts/android-debug-install.sh` (see below).
-2. Install the APK (enable "Install unknown apps" for your source if Android prompts you).
-3. Open **Boardsesh debug**, tap the avatar in the top left, and choose **Dev URL** from the drawer.
-4. Paste `http://<your-host>.ts.net:3000` (the URL `vp run dev` printed) and tap **Save & restart**. The app relaunches against your laptop.
-5. If the dev server stops or you lose tailnet connectivity, the app shows a native **Reset to production** prompt (or, if the WebView gets far enough to render an error page, a **Reset dev URL** link) that clears the override and relaunches.
-
-The menu item is only visible in debug builds; release builds don't expose it. Vercel preview URLs (`https://<preview>.boardsesh.com`) work too if you'd rather not run a local server.
-
-### One-command local install (alongside production)
-
-If you have an Android device attached over adb and an Android SDK installed locally, use the helper script. It builds the debug APK, installs it, re-runs App Links verification, and pins `boardsesh.com` deep links to the debug package on user 0 — so QR codes and `/join/<id>` links open the build under test instead of the production install.
-
-```bash
-./scripts/android-debug-install.sh
-```
-
-If multiple devices are attached, set `ANDROID_SERIAL=<serial>` first.
-
-> **Why the pin step matters.** Both `com.boardsesh.app` and `com.boardsesh.app.debug` are App-Links-verified for `boardsesh.com`. With both verified, Android shows a chooser by default — and a wrong tap silently routes future deep links to the production install. The script pins the debug package via `pm set-app-links-user-selection` so this doesn't bite you. To check or undo manually:
->
-> ```bash
-> adb shell pm get-app-links com.boardsesh.app.debug
-> adb shell pm set-app-links-user-selection --user 0 \
->     --package com.boardsesh.app true boardsesh.com www.boardsesh.com  # restore production
-> ```
+For the React Native app's own on-device workflow, see the mobile sections in
+`CLAUDE.md` (`vp run dev:mobile`, `vp run mobile:android-shots`).
 
 ## Testing BLE end-to-end with an ESP32
 

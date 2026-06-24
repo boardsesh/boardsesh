@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Boardsesh</string>
-    <string name="title_activity_main">Boardsesh</string>
-    <string name="package_name">com.boardsesh.app</string>
-    <string name="custom_url_scheme">com.boardsesh.app</string>
-</resources>

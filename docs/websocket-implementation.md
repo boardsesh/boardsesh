@@ -1588,6 +1588,13 @@ Requires user authentication and controller ownership.
 
 ## iOS Live Activity Integration
 
+> **Note (Capacitor retired):** the iOS Live Activity stack described here was first built
+> in the Capacitor app at repo-root `mobile/`. That app has been removed from the repo; the
+> live implementation now ships in the React Native app under
+> `packages/mobile/modules/live-activity/ios/`. The `mobile/ios/App/...` paths below refer
+> to the original Capacitor layout — the Swift logic carried over largely intact, but the
+> webview-owned `graphql-ws` description is specific to the old Capacitor build.
+
 On iOS, the JavaScript webapp runs inside a single Capacitor webview and owns the `graphql-ws` WebSocket connection (same client as the browser path). A separate native `SessionWebSocketManager` holds its own `URLSessionWebSocketTask` purely to feed the Live Activity widget — the JS-side WebSocket is suspended when the phone is locked, so without the native connection the lock-screen widget would freeze the moment the app goes to background. APNs push notifications carry the same queue updates to the Live Activity once both the app and the native WS are suspended (see [Live Activity Push Notifications](#live-activity-push-notifications-apns) below).
 
 The earlier multi-webview + native-WebSocket bridge architecture (Capacitor plugin proxying the JS layer through `URLSessionWebSocketTask`) was removed when main reverted the multi-webview / native tab bar work (#1803). Today there is no `NativeWebSocketPlugin` and no JS-side `NativeWSClient`; iOS uses the same browser-based `graphql-ws` client as web and Android.

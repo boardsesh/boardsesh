@@ -25,7 +25,7 @@ function normalizeGraphQLOperation(source: string): string {
 
 function readNativeIosQueueUpdatesOperation(): string {
   const sessionWebSocketManagerSource = readFileSync(
-    new URL('../../../../mobile/ios/App/App/SessionWebSocketManager.swift', import.meta.url),
+    new URL('../../../../packages/mobile/modules/live-activity/ios/SessionWebSocketManager.swift', import.meta.url),
     'utf-8',
   );
   const queryMatch = sessionWebSocketManagerSource.match(

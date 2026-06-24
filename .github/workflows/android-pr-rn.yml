@@ -16,10 +16,8 @@ name: Android PR Build (React Native)
 # existing com.boardsesh.app before installing it.
 #
 # ci.yml already runs typecheck:mobile + the mobile vitest project +
-# check:mobile-bundle on PRs, so this doesn't duplicate those. Distinct from the
-# legacy Capacitor android-ci.yml / android-release.yml (which watch `mobile/**`)
-# — the path filters below never overlap. pull_request only (no push trigger) so
-# it runs exactly once per PR sync.
+# check:mobile-bundle on PRs, so this doesn't duplicate those. pull_request only
+# (no push trigger) so it runs exactly once per PR sync.
 
 on:
   pull_request:

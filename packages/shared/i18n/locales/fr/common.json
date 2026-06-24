@@ -476,5 +476,11 @@
     "speedNormal": "1×",
     "speedCustom": "{{value}}×",
     "speedCustomLabel": "Vitesse personnalisée"
+  },
+  "capacitorUpdateBanner": {
+    "title": "Il est temps de mettre à jour Boardsesh",
+    "description": "Tu utilises l’ancienne app. Installe la version reconstruite pour une session plus rapide et fluide.",
+    "cta": "Mettre à jour",
+    "dismiss": "Ignorer le rappel de mise à jour"
   }
 }

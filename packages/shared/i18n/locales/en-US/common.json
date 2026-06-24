@@ -476,5 +476,11 @@
     "speedNormal": "1×",
     "speedCustom": "{{value}}×",
     "speedCustomLabel": "Custom speed"
+  },
+  "capacitorUpdateBanner": {
+    "title": "Time to update Boardsesh",
+    "description": "You're on the old app. Grab the rebuilt one for a faster, smoother session.",
+    "cta": "Update now",
+    "dismiss": "Dismiss update reminder"
   }
 }
