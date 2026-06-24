@@ -25,8 +25,8 @@ type SearchHeaderProps = {
   placeholder: string;
   onChangeText: (text: string) => void;
   onSubmit?: (text: string) => void;
-  onFocus: () => void;
-  onBlur: () => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   /** Seeds the field on mount — reflects a restored per-board search. */
   initialValue?: string;
   /** Capsule height (defaults to 44). The top chrome passes its FAB height so the

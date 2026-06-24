@@ -163,7 +163,9 @@ export function LogbookFilterSheet({
   const snapPoints = useMemo(() => ['90%'], []);
   // One stable "today" ceiling so the To-date row's maximumDate prop keeps a
   // constant identity across renders (a fresh Date each render would re-arm
-  // DateRangeRow's openAndroid useCallback every time).
+  // DateRangeRow's openAndroid useCallback every time). Captured at sheet mount,
+  // so a sheet left open across midnight keeps the prior day's ceiling until it's
+  // reopened — an acceptable tradeoff for the stable identity.
   const today = useMemo(() => new Date(), []);
 
   const updateFilters = useCallback((patch: Partial<LogbookFilterState>) => {

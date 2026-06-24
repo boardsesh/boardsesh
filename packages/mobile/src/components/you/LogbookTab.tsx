@@ -191,8 +191,6 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
             ref={searchHeaderRef}
             placeholder={t('mobile.logbook.searchPlaceholder')}
             onChangeText={handleSearchChange}
-            onFocus={noop}
-            onBlur={noop}
             initialValue={name}
             height={40}
           />
@@ -298,8 +296,6 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
 function keyExtractor(item: AscentFeedItem) {
   return item.uuid;
 }
-
-function noop() {}
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
