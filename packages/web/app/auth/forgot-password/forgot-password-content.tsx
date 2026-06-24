@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -17,6 +18,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 
 export default function ForgotPasswordContent() {
+  const { t } = useTranslation('auth');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -24,7 +26,7 @@ export default function ForgotPasswordContent() {
 
   const handleSubmit = async () => {
     if (!email) {
-      setEmailError('Please enter your email');
+      setEmailError(t('forgotPassword.validation.emailRequired'));
       return;
     }
 
@@ -39,14 +41,14 @@ export default function ForgotPasswordContent() {
       const data = await response.json();
 
       if (!response.ok) {
-        showMessage(data.error || 'Failed to request password reset', 'error');
+        showMessage(data.error || t('forgotPassword.toasts.failed'), 'error');
         return;
       }
 
-      showMessage(data.message || 'If an account exists, a reset link has been sent.', 'success');
+      showMessage(data.message || t('forgotPassword.toasts.success'), 'success');
     } catch (error) {
       console.error('Forgot password error:', error);
-      showMessage('Failed to request password reset', 'error');
+      showMessage(t('forgotPassword.toasts.failed'), 'error');
     } finally {
       setLoading(false);
     }
@@ -69,7 +71,7 @@ export default function ForgotPasswordContent() {
         <BackButton />
         <Logo size="sm" showText={false} />
         <Typography variant="h4" sx={{ margin: 0, flex: 1 }}>
-          Reset Password
+          {t('forgotPassword.heading')}
         </Typography>
       </Box>
 
@@ -78,13 +80,13 @@ export default function ForgotPasswordContent() {
           <CardContent>
             <Stack spacing={2}>
               <Typography variant="body1" component="p" color="text.secondary">
-                Enter your account email and we&apos;ll send you a link to reset your password.
+                {t('forgotPassword.description')}
               </Typography>
 
               <TextField
-                label="Email"
+                label={t('forgotPassword.fields.email')}
                 type="email"
-                placeholder="your@email.com"
+                placeholder={t('login.placeholders.email')}
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -110,11 +112,11 @@ export default function ForgotPasswordContent() {
                 disabled={loading}
                 startIcon={loading ? <CircularProgress size={16} /> : undefined}
               >
-                Send Reset Link
+                {loading ? <CircularProgress size={16} /> : t('forgotPassword.submit')}
               </Button>
 
               <Button variant="text" href="/auth/login">
-                Back to Login
+                {t('forgotPassword.back')}
               </Button>
             </Stack>
           </CardContent>

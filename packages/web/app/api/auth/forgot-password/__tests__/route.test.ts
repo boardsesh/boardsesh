@@ -38,8 +38,8 @@ const mockSelect = vi.fn((selection?: Record<string, unknown>) => {
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: (...args: unknown[]) => mockSelect(...args),
-    transaction: (...args: unknown[]) => mockTransaction(...args),
+    select: (selection?: Record<string, unknown>) => mockSelect(selection),
+    transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
   }),
 }));
 

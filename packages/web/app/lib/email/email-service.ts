@@ -93,11 +93,7 @@ export async function sendVerificationEmail(email: string, token: string, baseUr
   });
 }
 
-export async function sendPasswordResetEmail(
-  email: string,
-  token: string,
-  baseUrl: string
-): Promise<void> {
+export async function sendPasswordResetEmail(email: string, token: string, baseUrl: string): Promise<void> {
   const validatedEmail = emailSchema.parse(email);
 
   const resetUrl = `${baseUrl}/auth/reset-password?token=${token}&email=${encodeURIComponent(validatedEmail)}`;

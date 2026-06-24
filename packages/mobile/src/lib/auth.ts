@@ -374,6 +374,75 @@ export async function registerWithCredentials(
   return { success: true };
 }
 
+export type PasswordResetResult = { success: true } | NativeAuthFailure;
+
+/**
+ * Request a password reset email. Calls the web API's forgot-password endpoint.
+ * Always returns success=true on 2xx even though the backend is intentionally
+ * non-committal about whether the email exists (user enumeration prevention).
+ */
+export async function requestPasswordReset(email: string): Promise<PasswordResetResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${WEB_BASE_URL}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+      signal: createTimeoutSignal(15_000),
+    });
+  } catch {
+    return { success: false, status: null, error: 'network' };
+  }
+
+  if (!response.ok) {
+    let serverError = `HTTP ${response.status}`;
+    try {
+      const parsed = (await response.json()) as { error?: unknown };
+      if (typeof parsed.error === 'string' && parsed.error.length > 0) {
+        serverError = parsed.error;
+      }
+    } catch {
+      // Body wasn't JSON; fall back to the HTTP status string.
+    }
+    return { success: false, status: response.status, error: serverError };
+  }
+
+  return { success: true };
+}
+
+/**
+ * Submit a new password using a reset token from the email link.
+ * Calls the web API's reset-password endpoint.
+ */
+export async function resetPassword(email: string, token: string, newPassword: string): Promise<PasswordResetResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${WEB_BASE_URL}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, token, password: newPassword, confirmPassword: newPassword }),
+      signal: createTimeoutSignal(15_000),
+    });
+  } catch {
+    return { success: false, status: null, error: 'network' };
+  }
+
+  if (!response.ok) {
+    let serverError = `HTTP ${response.status}`;
+    try {
+      const parsed = (await response.json()) as { error?: unknown };
+      if (typeof parsed.error === 'string' && parsed.error.length > 0) {
+        serverError = parsed.error;
+      }
+    } catch {
+      // Body wasn't JSON; fall back to the HTTP status string.
+    }
+    return { success: false, status: response.status, error: serverError };
+  }
+
+  return { success: true };
+}
+
 export async function signOut(): Promise<void> {
   const refreshToken = await getRefreshToken();
   if (refreshToken) {

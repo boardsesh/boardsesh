@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -18,6 +19,7 @@ import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 
 export default function ResetPasswordContent() {
+  const { t } = useTranslation('auth');
   const searchParams = useSearchParams();
   const router = useRouter();
   const { showMessage } = useSnackbar();
@@ -35,19 +37,19 @@ export default function ResetPasswordContent() {
 
   const handleSubmit = async () => {
     if (!password) {
-      setPasswordError('Please enter a new password');
+      setPasswordError(t('resetPassword.validation.passwordRequired'));
       return;
     }
     if (password.length < 8) {
-      setPasswordError('Password must be at least 8 characters');
+      setPasswordError(t('resetPassword.validation.passwordTooShort'));
       return;
     }
     if (!confirmPassword) {
-      setConfirmPasswordError('Please confirm your new password');
+      setConfirmPasswordError(t('resetPassword.validation.confirmPasswordRequired'));
       return;
     }
     if (password !== confirmPassword) {
-      setConfirmPasswordError('Passwords do not match');
+      setConfirmPasswordError(t('resetPassword.validation.passwordsMismatch'));
       return;
     }
 
@@ -61,15 +63,15 @@ export default function ResetPasswordContent() {
 
       const data = await response.json();
       if (!response.ok) {
-        showMessage(data.error || 'Failed to reset password', 'error');
+        showMessage(data.error || t('resetPassword.toasts.failed'), 'error');
         return;
       }
 
-      showMessage('Password updated successfully. Please sign in.', 'success');
+      showMessage(t('resetPassword.toasts.success'), 'success');
       router.push('/auth/login');
     } catch (error) {
       console.error('Reset password error:', error);
-      showMessage('Failed to reset password', 'error');
+      showMessage(t('resetPassword.toasts.failed'), 'error');
     } finally {
       setLoading(false);
     }
@@ -92,7 +94,7 @@ export default function ResetPasswordContent() {
         <BackButton />
         <Logo size="sm" showText={false} />
         <Typography variant="h4" sx={{ margin: 0, flex: 1 }}>
-          Create New Password
+          {t('resetPassword.heading')}
         </Typography>
       </Box>
 
@@ -102,16 +104,16 @@ export default function ResetPasswordContent() {
             <Stack spacing={2}>
               {isLinkInvalid ? (
                 <Typography variant="body1" color="error">
-                  This reset link is invalid. Please request a new password reset email.
+                  {t('resetPassword.invalidLink')}
                 </Typography>
               ) : (
                 <>
                   <Typography variant="body1" component="p" color="text.secondary">
-                    Enter a new password for <strong>{email}</strong>.
+                    {t('resetPassword.description', { email })}
                   </Typography>
 
                   <TextField
-                    label="New Password"
+                    label={t('resetPassword.fields.newPassword')}
                     type="password"
                     value={password}
                     onChange={(e) => {
@@ -132,7 +134,7 @@ export default function ResetPasswordContent() {
                   />
 
                   <TextField
-                    label="Confirm New Password"
+                    label={t('resetPassword.fields.confirmPassword')}
                     type="password"
                     value={confirmPassword}
                     onChange={(e) => {
@@ -158,13 +160,13 @@ export default function ResetPasswordContent() {
                     disabled={loading}
                     startIcon={loading ? <CircularProgress size={16} /> : undefined}
                   >
-                    Update Password
+                    {t('resetPassword.submit')}
                   </Button>
                 </>
               )}
 
               <Button variant="text" href="/auth/login">
-                Back to Login
+                {t('resetPassword.back')}
               </Button>
             </Stack>
           </CardContent>

@@ -10,7 +10,10 @@ const resetPasswordSchema = z
   .object({
     email: z.string().email('Invalid email address'),
     token: z.string().uuid('Invalid reset token'),
-    password: z.string().min(8, 'Password must be at least 8 characters').max(128, 'Password must be less than 128 characters'),
+    password: z
+      .string()
+      .min(8, 'Password must be at least 8 characters')
+      .max(128, 'Password must be less than 128 characters'),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -48,7 +51,7 @@ export async function POST(request: NextRequest) {
           headers: {
             'Retry-After': String(rateLimitResult.retryAfterSeconds),
           },
-        }
+        },
       );
     }
 
@@ -81,7 +84,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
-    const user = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, email)).limit(1);
+    const user = await db
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.email, email))
+      .limit(1);
     if (user.length === 0) {
       await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
       await consistentDelay(startTime);

@@ -336,7 +336,7 @@ export default function AuthPageContent() {
                 </Button>
 
                 <Button variant="text" href="/auth/forgot-password">
-                  Forgot password?
+                  {t('login.links.forgotPassword')}
                 </Button>
               </Box>
             </TabPanel>

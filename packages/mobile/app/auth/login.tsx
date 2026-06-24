@@ -209,6 +209,19 @@ export default function LoginScreen() {
               {error}
             </Text>
           ) : null}
+          <Pressable
+            onPress={() => {
+              hapticLight();
+              router.push('/auth/forgot-password');
+            }}
+            hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+            style={styles.forgotPasswordHit}
+            accessibilityRole="link"
+          >
+            <Text style={[styles.forgotPasswordLink, { color: theme.systemColors.secondaryLabel }]}>
+              {t('login.links.forgotPassword')}
+            </Text>
+          </Pressable>
         </View>
 
         {showSocialSignIn && (
@@ -349,6 +362,15 @@ const styles = StyleSheet.create({
   // Apple's native button needs explicit height + width or it renders nothing.
   appleButton: { width: '100%', height: 50 },
   googleButton: { width: '100%', height: 50 },
+  forgotPasswordHit: {
+    alignSelf: 'center',
+    marginTop: 4,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  forgotPasswordLink: {
+    fontSize: 15,
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',

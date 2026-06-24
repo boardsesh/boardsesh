@@ -315,6 +315,15 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },
+        {
+          action: 'VIEW',
+          autoVerify: true,
+          data: [
+            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/auth/reset-password' },
+            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/auth/reset-password' },
+          ],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
       ],
       // Keep the legacy predictive back gesture OFF. Enabling it
       // (android.predictiveBackGestureEnabled: true) currently breaks

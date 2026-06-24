@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
           headers: {
             'Retry-After': String(rateLimitResult.retryAfterSeconds),
           },
-        }
+        },
       );
     }
 
@@ -51,10 +51,7 @@ export async function POST(request: NextRequest) {
 
     if (!validationResult.success) {
       await consistentDelay(startTime);
-      return NextResponse.json(
-        { error: validationResult.error.issues[0].message },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
     const { email } = validationResult.data;

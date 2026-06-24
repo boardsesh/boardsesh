@@ -25,7 +25,7 @@ const mockTxUserUpdateWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxTokenDeleteWhere = vi.fn().mockResolvedValue(undefined);
 const mockTxInsertValues = vi.fn().mockResolvedValue(undefined);
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
-const mockDelete = vi.fn(() => ({ where: mockDeleteWhere }));
+const mockDelete = vi.fn((_table?: unknown) => ({ where: mockDeleteWhere }));
 const mockTransaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
   const tx = {
     select: () => ({ from: () => ({ where: () => ({ limit: mockTxCredentialsLimit }) }) }),
@@ -53,14 +53,18 @@ const mockSelect = vi.fn((selection?: Record<string, unknown>) => {
 
 vi.mock('@/app/lib/db/db', () => ({
   getDb: () => ({
-    select: (...args: unknown[]) => mockSelect(...args),
-    delete: (...args: unknown[]) => mockDelete(...args),
-    transaction: (...args: unknown[]) => mockTransaction(...args),
+    select: (selection?: Record<string, unknown>) => mockSelect(selection),
+    delete: (table?: unknown) => mockDelete(table),
+    transaction: (fn: (tx: unknown) => Promise<void>) => mockTransaction(fn),
   }),
 }));
 
 vi.mock('@/app/lib/db/schema', () => ({
-  verificationTokens: { identifier: 'verificationTokens.identifier', token: 'verificationTokens.token', expires: 'verificationTokens.expires' },
+  verificationTokens: {
+    identifier: 'verificationTokens.identifier',
+    token: 'verificationTokens.token',
+    expires: 'verificationTokens.expires',
+  },
   users: { id: 'users.id', email: 'users.email', emailVerified: 'users.emailVerified' },
   userCredentials: 'userCredentials',
 }));
@@ -93,7 +97,7 @@ describe('POST /api/auth/reset-password', () => {
         token: crypto.randomUUID(),
         password: 'validpassword',
         confirmPassword: 'validpassword',
-      })
+      }),
     );
 
     expect(response.status).toBe(429);
@@ -114,7 +118,7 @@ describe('POST /api/auth/reset-password', () => {
         token: crypto.randomUUID(),
         password: 'validpassword',
         confirmPassword: 'validpassword',
-      })
+      }),
     );
 
     expect(response.status).toBe(400);
@@ -130,7 +134,7 @@ describe('POST /api/auth/reset-password', () => {
         token: crypto.randomUUID(),
         password: 'validpassword',
         confirmPassword: 'validpassword',
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -149,7 +153,7 @@ describe('POST /api/auth/reset-password', () => {
         token: crypto.randomUUID(),
         password: 'validpassword',
         confirmPassword: 'validpassword',
-      })
+      }),
     );
 
     expect(response.status).toBe(400);
@@ -167,7 +171,7 @@ describe('POST /api/auth/reset-password', () => {
         token: crypto.randomUUID(),
         password: 'validpassword',
         confirmPassword: 'validpassword',
-      })
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -185,7 +189,7 @@ describe('POST /api/auth/reset-password', () => {
         token: crypto.randomUUID(),
         password: 'validpassword',
         confirmPassword: 'validpassword',
-      })
+      }),
     );
 
     expect(response.status).toBe(500);
