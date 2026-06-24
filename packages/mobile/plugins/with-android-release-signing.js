@@ -5,9 +5,9 @@ const { createRunOncePlugin, withAppBuildGradle } = require('expo/config-plugins
 const MARKER = 'boardsesh-release-signing';
 
 // A `release` signing config injected into `android { signingConfigs { ... } }`.
-// It reads the keystore from the ANDROID_KEYSTORE_* env-var names (the same
-// secret names the retired Capacitor build used), so the existing
-// ANDROID_KEYSTORE_* GitHub secrets line up 1:1. The runtime
+// It reads the keystore from the SAME env-var names the Capacitor app's
+// build.gradle already uses (see repo-root mobile/android/app/build.gradle), so
+// the existing ANDROID_KEYSTORE_* GitHub secrets line up 1:1. The runtime
 // null-check keeps the block inert when the env is absent — a developer running
 // `expo prebuild` locally has no keystore and the release build type falls back
 // to debug signing (see RELEASE_SIGNING_CONFIG_LINE below).
