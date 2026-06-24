@@ -30,7 +30,8 @@ export type BleSendFailureReason =
   | 'missing_led_placements' // LED placement map empty for this board config
   | 'missing_mirror_data' // mirroring requested but holdsData absent (pre-write)
   | 'missing_mirror_mapping' // a hold had no mirrored id while building the mirror
-  | 'write_timeout' // native write-resume timeout; auto-recovered by a reconnect (#3181)
+  | 'write_timeout' // native write-resume timeout; the native layer is auto-recovering it (#3181)
+  | 'write_recovery_failed' // a write_timeout the native reconnect recovery could not fix — gave up (#3181)
   | 'write_failed' // any other thrown write failure on a live link
   | 'unknown' // defensive fallback: a `false` send left no reason set (unreachable in practice)
   | `dom_${string}`; // a DOMException name we don't otherwise classify
@@ -165,6 +166,25 @@ export function isBleWriteTimeoutError(error: unknown): boolean {
 }
 
 /**
+ * True when a write error is the native iOS BLE manager's *recovery give-up*
+ * (`BoardBleError.writeRecoveryFailed`): a write that stalled, was retried via a
+ * reconnect cycle `maxWriteStallRecoveries` times, and still couldn't be
+ * delivered (#3181). Distinct from a plain `write_failed` so the recovery give-up
+ * rate is directly measurable in PostHog (`write_timeout` = stalls encountered,
+ * `write_recovery_failed` = stalls recovery couldn't fix). It is deliberately NOT
+ * a disconnection (see [[isDisconnectionError]]) so the JS write-failure path
+ * doesn't clear the stored board the lightbulb reconnects to.
+ *
+ * CONTRACT: matched against `BoardBleError.writeRecoveryFailed.errorDescription`
+ * in `packages/mobile/modules/live-activity/ios/BoardBleManager.swift`. If the
+ * native message changes without updating this, the give-up degrades gracefully
+ * to `write_failed` (the metric blurs; nothing breaks).
+ */
+export function isBleWriteRecoveryFailedError(error: unknown): boolean {
+  return /recovery attempts were exhausted/i.test(errorMessage(error));
+}
+
+/**
  * Classify an error thrown from a *send* (BLE write) into a `failureReason` for
  * the `Climb Sent to Board Failure` event. The dominant real cause on these
  * last-connection-wins boards is a mid-session disconnect — surfacing it as
@@ -175,7 +195,11 @@ export function isBleWriteTimeoutError(error: unknown): boolean {
  */
 export function classifyBleFailureReason(error: unknown): BleSendFailureReason {
   if (isDisconnectionError(error)) return 'disconnected';
-  // A write-resume timeout the native layer auto-recovers (#3181) — its own
+  // The recovery give-up is checked before the plain write-timeout: it is a
+  // distinct, terminal outcome (#3181), and its message intentionally does not
+  // match the /write timed out/ pattern, but keep the order explicit.
+  if (isBleWriteRecoveryFailedError(error)) return 'write_recovery_failed';
+  // A write-resume timeout the native layer is auto-recovering (#3181) — its own
   // bucket so recovery rate is visible instead of hiding in `write_failed`.
   if (isBleWriteTimeoutError(error)) return 'write_timeout';
   // `convertToMirroredFramesString` throws this when a hold has no mirrored id.
