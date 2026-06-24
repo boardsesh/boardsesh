@@ -117,7 +117,7 @@ function candidateFiles(argv) {
     return allTrackedFiles();
   }
   try {
-    const changed = git(['diff', '--name-only', '--diff-filter=ACMR', `${base}...HEAD`])
+    const changed = git(['diff', '--name-only', '--diff-filter=ACMRT', `${base}...HEAD`])
       .split('\n')
       .filter(Boolean);
     console.log(`[large-files] Checking files changed since ${base}.`);
