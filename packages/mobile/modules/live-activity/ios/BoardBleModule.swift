@@ -5,7 +5,7 @@ import os.log
 /// Expo Module bridge to `BoardBleManager`. Direct port of the Capacitor
 /// `BoardBlePlugin` API surface (`isAvailable`, `startScan`, `stopScan`,
 /// `connect`, `disconnect`, `write`, `cancelWrites`, `configureBoard`) plus
-/// the two listener events (`scanResult`, `disconnected`).
+/// the listener events (`scanResult`, `disconnected`, `connected`).
 ///
 /// The underlying `BoardBleManager` singleton is unchanged from the Capacitor
 /// app, so the same Swift code that backs Dynamic Island intent writes via

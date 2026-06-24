@@ -30,6 +30,7 @@ export type BleSendFailureReason =
   | 'missing_led_placements' // LED placement map empty for this board config
   | 'missing_mirror_data' // mirroring requested but holdsData absent (pre-write)
   | 'missing_mirror_mapping' // a hold had no mirrored id while building the mirror
+  | 'write_timeout' // native write-resume timeout; auto-recovered by a reconnect (#3181)
   | 'write_failed' // any other thrown write failure on a live link
   | 'unknown' // defensive fallback: a `false` send left no reason set (unreachable in practice)
   | `dom_${string}`; // a DOMException name we don't otherwise classify
@@ -145,6 +146,25 @@ export function isDisconnectionError(error: unknown): boolean {
 }
 
 /**
+ * True when a write error is the native iOS BLE manager's write-resume timeout
+ * ("BLE write timed out waiting for the board to accept data") — a marginal link
+ * that stayed connected but stopped accepting write-without-response data. As of
+ * #3181 the native layer auto-recovers this by cycling the connection, so it's a
+ * transient, self-healing condition rather than a hard failure: callers report it
+ * at `warning` (not `error`) so it doesn't drown real send failures.
+ *
+ * CONTRACT: matched against `BoardBleError.writeTimedOut.errorDescription` in
+ * `packages/mobile/modules/live-activity/ios/BoardBleManager.swift`. The two are
+ * coupled only by this substring (the bridge surfaces the native error as its
+ * message), so keep the literal "write timed out" on both sides. A *recovery
+ * give-up* uses a different message (`writeRecoveryFailed`) that deliberately
+ * does NOT match here, so an exhausted stall reports as a real failure.
+ */
+export function isBleWriteTimeoutError(error: unknown): boolean {
+  return /write timed out/i.test(errorMessage(error));
+}
+
+/**
  * Classify an error thrown from a *send* (BLE write) into a `failureReason` for
  * the `Climb Sent to Board Failure` event. The dominant real cause on these
  * last-connection-wins boards is a mid-session disconnect — surfacing it as
@@ -155,6 +175,9 @@ export function isDisconnectionError(error: unknown): boolean {
  */
 export function classifyBleFailureReason(error: unknown): BleSendFailureReason {
   if (isDisconnectionError(error)) return 'disconnected';
+  // A write-resume timeout the native layer auto-recovers (#3181) — its own
+  // bucket so recovery rate is visible instead of hiding in `write_failed`.
+  if (isBleWriteTimeoutError(error)) return 'write_timeout';
   // `convertToMirroredFramesString` throws this when a hold has no mirrored id.
   if (error instanceof Error && error.message.includes('Mirrored hold ID')) return 'missing_mirror_mapping';
   if (typeof DOMException !== 'undefined' && error instanceof DOMException) {

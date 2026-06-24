@@ -1,3 +1,4 @@
+import { isBleWriteTimeoutError } from '@boardsesh/ble-protocol/connection-error';
 import { captureToSentry, type ErrorReportContext } from './sentry';
 import { isExpectedAuthError, isExpectedBetaValidationError } from './graphql/extract-error-message';
 
@@ -54,6 +55,9 @@ function isNetworkError(error: unknown): boolean {
  *   - expected auth-required GraphQL failures are dropped entirely,
  *   - expected beta-attach validation rejections are dropped entirely,
  *   - offline/network failures are downgraded to `warning` and tagged `network`,
+ *   - BLE write-resume timeouts are downgraded to `warning` and tagged
+ *     `ble_write_timeout` (the native layer auto-recovers them by cycling the
+ *     connection — #3181 — so they're transient, not hard failures),
  *   - everything else reports at the caller's level (default `error`).
  * Use this from React Query caches, GraphQL-WS, and catch blocks; use the raw
  * `reportError` only when the caller already owns the severity decision.
@@ -67,6 +71,14 @@ export function reportHandledError(error: unknown, context?: ErrorReportContext)
       ...context,
       level: 'warning',
       tags: { ...context?.tags, network: true },
+    });
+    return;
+  }
+  if (isBleWriteTimeoutError(error)) {
+    reportError(error, {
+      ...context,
+      level: 'warning',
+      tags: { ...context?.tags, ble_write_timeout: true },
     });
     return;
   }

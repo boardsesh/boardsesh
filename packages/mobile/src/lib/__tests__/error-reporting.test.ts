@@ -111,6 +111,15 @@ describe('reportHandledError', () => {
     });
   });
 
+  it('downgrades a BLE write-resume timeout to a warning and tags it (native auto-recovers it — #3181)', () => {
+    const writeTimeout = new Error('BLE write timed out waiting for the board to accept data');
+    reportHandledError(writeTimeout, { tags: { source: 'ble-auto-send' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(writeTimeout, {
+      level: 'warning',
+      tags: { source: 'ble-auto-send', ble_write_timeout: true },
+    });
+  });
+
   it('reports a real server error (response with an HTTP status) at error level', () => {
     const serverError = Object.assign(new Error('Internal Server Error'), { response: { status: 500 } });
     reportHandledError(serverError, { tags: { source: 'react-query', kind: 'mutation' } });
