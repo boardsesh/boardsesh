@@ -58,6 +58,8 @@ type LogbookFilterSheetProps = {
   currentFilters: LogbookFilterState;
   currentSort: LogbookSortState;
   onApply: (filters: LogbookFilterState, sort: LogbookSortState) => void;
+  /** Clear the toolbar's committed climb-name search (called by Reset). */
+  onClearSearch?: () => void;
 };
 
 type StatusKey = 'sends' | 'attempts' | 'both';
@@ -131,14 +133,19 @@ function formatIsoDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export function LogbookFilterSheet({ onDismiss, currentFilters, currentSort, onApply }: LogbookFilterSheetProps) {
+export function LogbookFilterSheet({
+  onDismiss,
+  currentFilters,
+  currentSort,
+  onApply,
+  onClearSearch,
+}: LogbookFilterSheetProps) {
   const { t } = useTranslation('you');
   const theme = useTheme();
   const { systemColors, brandColors } = theme;
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
-  const hasLocalDraftEditsRef = useRef(false);
 
   const { data: grades } = useGrades(GRADE_SCALE_BOARD);
 
@@ -147,14 +154,8 @@ export function LogbookFilterSheet({ onDismiss, currentFilters, currentSort, onA
   // Bumped on Reset so the Refine/Advanced sections collapse back to default.
   const [sectionResetKey, setSectionResetKey] = useState(0);
 
-  // Sync committed parent state only until the user starts editing; after that,
-  // draft edits stay local until Apply and parent ref churn must not clobber them.
-  useEffect(() => {
-    if (hasLocalDraftEditsRef.current) return;
-    setDraftFilters(currentFilters);
-    setDraftSort(currentSort);
-  }, [currentFilters, currentSort]);
-
+  // The sheet remounts on each open (it is conditionally rendered), so the draft
+  // initializes from the committed props above — no parent-sync effect needed.
   useEffect(() => {
     sheetRef.current?.present();
   }, []);
@@ -162,13 +163,11 @@ export function LogbookFilterSheet({ onDismiss, currentFilters, currentSort, onA
   const snapPoints = useMemo(() => ['90%'], []);
 
   const updateFilters = useCallback((patch: Partial<LogbookFilterState>) => {
-    hasLocalDraftEditsRef.current = true;
     setDraftFilters((previous) => ({ ...previous, ...patch }));
   }, []);
 
   const handlePreset = useCallback((preset: LogbookSortPreset) => {
     hapticSelection();
-    hasLocalDraftEditsRef.current = true;
     setDraftSort({ ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset });
   }, []);
 
@@ -193,23 +192,22 @@ export function LogbookFilterSheet({ onDismiss, currentFilters, currentSort, onA
   );
 
   const handleApply = useCallback(() => {
-    hasLocalDraftEditsRef.current = false;
     onApply(draftFilters, draftSort);
     sheetRef.current?.dismiss();
   }, [draftFilters, draftSort, onApply]);
 
   const handleSheetDismiss = useCallback(() => {
-    hasLocalDraftEditsRef.current = false;
     onDismiss();
   }, [onDismiss]);
 
   const handleReset = useCallback(() => {
     hapticSelection();
-    hasLocalDraftEditsRef.current = false;
     setDraftFilters(DEFAULT_LOGBOOK_FILTERS);
     setDraftSort(DEFAULT_LOGBOOK_SORT);
     setSectionResetKey((key) => key + 1);
-  }, []);
+    // Reset is a clean slate: also clear the toolbar's committed search term.
+    onClearSearch?.();
+  }, [onClearSearch]);
 
   const renderBackdrop = useCallback(
     (backdropProps: BottomSheetBackdropProps) => (
@@ -467,6 +465,9 @@ type DateRangeRowProps = {
 function DateRangeRow({ label, value, onChange, clearLabel, maximumDate }: DateRangeRowProps) {
   const { systemColors } = useTheme();
   const selectedDate = parseIsoDate(value);
+  // iOS: tapping the empty field reveals the inline picker WITHOUT committing a
+  // date, so opening "From" doesn't silently filter to today and empty the list.
+  const [revealed, setRevealed] = useState(false);
 
   const handleChange = useCallback(
     (_event: DateTimePickerEvent, picked?: Date) => {
@@ -491,6 +492,7 @@ function DateRangeRow({ label, value, onChange, clearLabel, maximumDate }: DateR
 
   const handleClear = useCallback(() => {
     hapticSelection();
+    setRevealed(false);
     onChange('');
   }, [onChange]);
 
@@ -501,9 +503,9 @@ function DateRangeRow({ label, value, onChange, clearLabel, maximumDate }: DateR
       </Text>
       <View style={styles.dateRowTrailing}>
         {Platform.OS === 'ios' ? (
-          selectedDate ? (
+          selectedDate || revealed ? (
             <DateTimePicker
-              value={selectedDate}
+              value={selectedDate ?? maximumDate ?? new Date()}
               mode="date"
               display="compact"
               maximumDate={maximumDate}
@@ -512,7 +514,10 @@ function DateRangeRow({ label, value, onChange, clearLabel, maximumDate }: DateR
             />
           ) : (
             <Pressable
-              onPress={() => onChange(formatIsoDate(maximumDate ?? new Date()))}
+              onPress={() => {
+                hapticSelection();
+                setRevealed(true);
+              }}
               accessibilityRole="button"
               accessibilityLabel={label}
               style={({ pressed }) => [
@@ -544,7 +549,7 @@ function DateRangeRow({ label, value, onChange, clearLabel, maximumDate }: DateR
             <Icon name="calendar" size={16} color={systemColors.secondaryLabel} />
           </Pressable>
         )}
-        {value ? (
+        {value || revealed ? (
           <Pressable onPress={handleClear} hitSlop={8} accessibilityRole="button" accessibilityLabel={clearLabel}>
             <Icon name="close" size={14} color={systemColors.secondaryLabel} />
           </Pressable>

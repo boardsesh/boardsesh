@@ -12,7 +12,7 @@ import { Text } from '../Text';
 import { ScreenTitle } from '../ScreenTitle';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
-import { SearchHeader } from '../SearchHeader';
+import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { LogbookRow } from './LogbookRow';
 import { LogbookEditSheet } from './LogbookEditSheet';
 import { LogbookFilterSheet } from './LogbookFilterSheet';
@@ -65,6 +65,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   const activeFilterCount = useMemo(() => countActiveLogbookFilters(filters), [filters]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchHeaderRef = useRef<SearchHeaderHandle>(null);
 
   useEffect(() => () => clearTimeout(debounceTimerRef.current ?? undefined), []);
 
@@ -76,6 +77,14 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
     },
     [setName],
   );
+
+  // Clear the committed term AND the input field (silent: don't re-arm the
+  // debounce). Wired to the sheet's Reset so "Reset" is a true clean slate.
+  const clearSearch = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    setName('');
+    searchHeaderRef.current?.setText('', { silent: true });
+  }, [setName]);
 
   const handleOpenFilters = useCallback(() => {
     hapticSelection();
@@ -177,6 +186,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
         {screenTitle ? <ScreenTitle style={styles.screenTitle}>{screenTitle}</ScreenTitle> : null}
         <View style={styles.toolbarRow}>
           <SearchHeader
+            ref={searchHeaderRef}
             placeholder={t('mobile.logbook.searchPlaceholder')}
             onChangeText={handleSearchChange}
             onFocus={noop}
@@ -276,6 +286,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
           currentFilters={filters}
           currentSort={sort}
           onApply={apply}
+          onClearSearch={clearSearch}
         />
       ) : null}
     </View>
