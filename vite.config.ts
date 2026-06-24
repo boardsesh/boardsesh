@@ -105,6 +105,7 @@ export default defineConfig({
       './packages/shared/board-react/vite.config.ts',
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
+      './packages/shared/logbook/vite.config.ts',
       './packages/shared/queue-runtime/vite.config.ts',
       './packages/shared/board-presence/vite.config.ts',
       './packages/shared/board-presence-react/vite.config.ts',
