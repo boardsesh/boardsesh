@@ -106,9 +106,30 @@
     },
     "logbook": {
       "empty": "Ton carnet est vide — enregistre ta première croix.",
+      "emptyFiltered": "Aucun bloc ne correspond à ces filtres.",
       "errorTitle": "Impossible de charger ton carnet",
       "errorBody": "Vérifie ta connexion et réessaie.",
       "retry": "Réessaie",
+      "searchPlaceholder": "Cherche tes blocs",
+      "filter": "Filtrer",
+      "sort": "Trier",
+      "refine": "Affiner",
+      "advanced": "Avancé",
+      "preset": {
+        "latest": "Récents",
+        "hardest": "Plus durs"
+      },
+      "flashOnly": "Flash seulement",
+      "grade": "Cotation",
+      "angleMin": "Angle min.",
+      "angleMax": "Angle max.",
+      "dateRange": "Plage de dates",
+      "dateFrom": "Du",
+      "dateTo": "Au",
+      "dateAny": "Toutes",
+      "benchmarksOnly": "Références seulement",
+      "apply": "Appliquer",
+      "reset": "Réinitialiser",
       "editTitle": "Modifier la croix",
       "statusLabel": "Statut",
       "gradeLabel": "Cotation",
@@ -130,7 +151,10 @@
       "status": {
         "flash": "Flash",
         "send": "Réussie",
-        "attempt": "Essai"
+        "attempt": "Essai",
+        "sends": "Réussies",
+        "attempts": "Essais",
+        "both": "Tout"
       }
     }
   }

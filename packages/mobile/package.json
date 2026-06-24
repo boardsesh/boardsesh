@@ -23,6 +23,7 @@
     "@boardsesh/graphql-client": "*",
     "@boardsesh/i18n": "*",
     "@boardsesh/key-value-storage": "*",
+    "@boardsesh/logbook": "*",
     "@boardsesh/party-profile": "*",
     "@boardsesh/play-view": "*",
     "@boardsesh/playback-react": "*",

@@ -23,8 +23,7 @@ const sanitizeDifficulty = (value: unknown): number | '' =>
 
 const sanitizeDate = (value: unknown): string => (typeof value === 'string' ? value : '');
 
-const sanitizeBoolean = (value: unknown, fallback: boolean): boolean =>
-  typeof value === 'boolean' ? value : fallback;
+const sanitizeBoolean = (value: unknown, fallback: boolean): boolean => (typeof value === 'boolean' ? value : fallback);
 
 function sanitizeAngleRange(value: unknown): [number, number] {
   if (!Array.isArray(value) || value.length !== 2) {
@@ -73,8 +72,7 @@ export function sanitizeLogbookSort(value: unknown): LogbookSortState {
   const source = value && typeof value === 'object' ? (value as Partial<LogbookSortState>) : {};
   return {
     mode: source.mode === 'custom' ? 'custom' : 'preset',
-    preset:
-      source.preset && VALID_SORT_PRESETS.includes(source.preset) ? source.preset : DEFAULT_LOGBOOK_SORT.preset,
+    preset: source.preset && VALID_SORT_PRESETS.includes(source.preset) ? source.preset : DEFAULT_LOGBOOK_SORT.preset,
     primaryField:
       source.primaryField && VALID_SORT_FIELDS.includes(source.primaryField)
         ? source.primaryField

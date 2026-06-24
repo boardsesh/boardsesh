@@ -34,6 +34,7 @@ vi.mock('react-native', () => ({
   RefreshControl: () => null,
   Pressable: () => null,
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  Platform: { OS: 'ios', select: (specifics: Record<string, unknown>) => specifics.ios ?? specifics.default },
 }));
 
 // Render every data row through renderItem so the mocked LogbookRow mounts and
@@ -62,6 +63,11 @@ vi.mock('../LogbookRow', () => ({
   },
 }));
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
+vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
+vi.mock('../../SearchHeader', () => ({ SearchHeader: () => null }));
+vi.mock('../../ScreenTitle', () => ({ ScreenTitle: () => null }));
+vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { black: '#000' } }));
 vi.mock('../../Text', () => ({ Text: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));

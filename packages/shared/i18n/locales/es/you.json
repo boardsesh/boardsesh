@@ -106,9 +106,30 @@
     },
     "logbook": {
       "empty": "Tu historial está vacío — registra tu primer encadene.",
+      "emptyFiltered": "Ningún bloque coincide con estos filtros.",
       "errorTitle": "No se pudo cargar tu historial",
       "errorBody": "Comprueba tu conexión e inténtalo de nuevo.",
       "retry": "Inténtalo de nuevo",
+      "searchPlaceholder": "Busca tus bloques",
+      "filter": "Filtrar",
+      "sort": "Ordenar",
+      "refine": "Afinar",
+      "advanced": "Avanzado",
+      "preset": {
+        "latest": "Recientes",
+        "hardest": "Más difíciles"
+      },
+      "flashOnly": "Solo flash",
+      "grade": "Grado",
+      "angleMin": "Ángulo mín.",
+      "angleMax": "Ángulo máx.",
+      "dateRange": "Rango de fechas",
+      "dateFrom": "Desde",
+      "dateTo": "Hasta",
+      "dateAny": "Cualquiera",
+      "benchmarksOnly": "Solo referencias",
+      "apply": "Aplicar",
+      "reset": "Restablecer",
       "editTitle": "Editar ascenso",
       "statusLabel": "Estado",
       "gradeLabel": "Grado",
@@ -130,7 +151,10 @@
       "status": {
         "flash": "Flash",
         "send": "Encadenada",
-        "attempt": "Intento"
+        "attempt": "Intento",
+        "sends": "Encadenes",
+        "attempts": "Intentos",
+        "both": "Ambos"
       }
     }
   }

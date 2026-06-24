@@ -4,10 +4,7 @@ import type { LogbookFilterState, LogbookSortState, LogbookStatusMode } from './
 
 /** The `input` object for the userAscentsFeed query, minus pagination. */
 export type AscentFeedInput = NonNullable<GetUserAscentsFeedQueryVariables['input']>;
-type AscentFeedSortInput = Pick<
-  AscentFeedInput,
-  'sortBy' | 'sortOrder' | 'secondarySortBy' | 'secondarySortOrder'
->;
+type AscentFeedSortInput = Pick<AscentFeedInput, 'sortBy' | 'sortOrder' | 'secondarySortBy' | 'secondarySortOrder'>;
 
 export type LogbookFeedInputArgs = {
   filters: LogbookFilterState;

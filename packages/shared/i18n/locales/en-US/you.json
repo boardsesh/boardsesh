@@ -106,9 +106,30 @@
     },
     "logbook": {
       "empty": "Your logbook's empty — log your first send.",
+      "emptyFiltered": "No climbs match these filters.",
       "errorTitle": "Couldn't load your logbook",
       "errorBody": "Check your connection and try again.",
       "retry": "Try again",
+      "searchPlaceholder": "Search your climbs",
+      "filter": "Filter",
+      "sort": "Sort",
+      "refine": "Refine",
+      "advanced": "Advanced",
+      "preset": {
+        "latest": "Latest",
+        "hardest": "Hardest"
+      },
+      "flashOnly": "Flash only",
+      "grade": "Grade",
+      "angleMin": "Min angle",
+      "angleMax": "Max angle",
+      "dateRange": "Date range",
+      "dateFrom": "From",
+      "dateTo": "To",
+      "dateAny": "Any",
+      "benchmarksOnly": "Benchmarks only",
+      "apply": "Apply",
+      "reset": "Reset",
       "editTitle": "Edit ascent",
       "statusLabel": "Status",
       "gradeLabel": "Grade",
@@ -130,7 +151,10 @@
       "status": {
         "flash": "Flash",
         "send": "Send",
-        "attempt": "Attempt"
+        "attempt": "Attempt",
+        "sends": "Sends",
+        "attempts": "Attempts",
+        "both": "Both"
       }
     }
   }

@@ -1,31 +1,40 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, RefreshControl, Pressable, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type BottomSheet from '@gorhom/bottom-sheet';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
+import { toAscentFeedInput } from '@boardsesh/logbook';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { Text } from '../Text';
 import { ScreenTitle } from '../ScreenTitle';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
+import { SearchHeader } from '../SearchHeader';
 import { LogbookRow } from './LogbookRow';
 import { LogbookEditSheet } from './LogbookEditSheet';
+import { LogbookFilterSheet } from './LogbookFilterSheet';
+import { useLogbookSearch, countActiveLogbookFilters } from './use-logbook-search';
 import { useUserAscentsFeed } from '../../lib/graphql/hooks';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../lib/tick-to-climb';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { normalizeSearchName } from '../../lib/search-name';
+import { hapticSelection } from '../../lib/haptics';
+import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
 
+const SEARCH_DEBOUNCE_MS = 300;
+
 type LogbookTabProps = {
   userId: string | undefined;
-  /** Measured chrome height — the list insets its top by this so the first row
-   *  rests below the floating chrome and the rest scroll under it. */
+  /** Measured chrome height — the fixed toolbar insets its top by this so it
+   *  rests below the floating chrome and results scroll beneath the toolbar. */
   topInset?: number;
   /**
    * Whether the signed-in user owns this logbook. Defaults to true (the You
@@ -49,7 +58,38 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   const editSheetRef = useRef<BottomSheet | null>(null);
   const [editAscent, setEditAscent] = useState<AscentFeedItem | null>(null);
 
-  const feed = useUserAscentsFeed(userId);
+  // Logbook search/filter/sort state. The committed name lives here; the visible
+  // input value is debounced before it commits to the query.
+  const logbookSearch = useLogbookSearch();
+  const { filters, sort, name, setName, apply } = logbookSearch;
+  const activeFilterCount = countActiveLogbookFilters(filters);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => clearTimeout(debounceTimerRef.current ?? undefined), []);
+
+  const handleSearchChange = useCallback(
+    (text: string) => {
+      const nextName = normalizeSearchName(text);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => setName(nextName), SEARCH_DEBOUNCE_MS);
+    },
+    [setName],
+  );
+
+  const handleOpenFilters = useCallback(() => {
+    hapticSelection();
+    setFilterSheetOpen(true);
+  }, []);
+
+  const handleCloseFilters = useCallback(() => setFilterSheetOpen(false), []);
+
+  // The query input is rebuilt only when the committed filters/sort/name change,
+  // so the React Query key (and the FlashList data identity downstream) is stable
+  // between unrelated re-renders.
+  const feedInput = useMemo(() => toAscentFeedInput({ filters, sort, name }), [filters, sort, name]);
+
+  const feed = useUserAscentsFeed(userId, feedInput);
   // Stabilise the FlashList `data` identity so it doesn't re-diff every render.
   const items = useMemo(() => feed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [], [feed.data]);
 
@@ -119,16 +159,9 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
     [handleActivate, handleOpenActions, handleEdit, viewerIsOwner],
   );
 
-  // The screen's identity (when supplied), in-body under the floating chrome.
-  // Memoized so FlashList doesn't re-render the header on every LogbookTab render.
-  // ScreenTitle hides itself on Material (the M3 app bar owns the title); the
-  // whole header is omitted on another climber's profile (no title passed).
-  const listHeader = useMemo(
-    () => (screenTitle ? <ScreenTitle style={styles.screenTitle}>{screenTitle}</ScreenTitle> : null),
-    [screenTitle],
-  );
+  const handleRefresh = useCallback(() => void feed.refetch(), [feed]);
 
-  if (!userId || feed.isPending) {
+  if (!userId) {
     return (
       <View style={[styles.centered, { paddingTop: topInset }]}>
         <ActivityIndicator size="large" />
@@ -136,73 +169,114 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
     );
   }
 
-  if (feed.isError) {
-    return (
-      <View style={[styles.errorContainer, { paddingTop: topInset }]}>
-        <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
-        <Text variant="headline" style={styles.errorTitle}>
-          {t('mobile.logbook.errorTitle')}
-        </Text>
-        <Text variant="subheadline" style={styles.errorBody}>
-          {t('mobile.logbook.errorBody')}
-        </Text>
-        <Pressable
-          onPress={handleRetry}
-          disabled={feed.isRefetching}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.logbook.retry')}
-          style={({ pressed }) => [
-            styles.retryButton,
-            { borderColor: brandColors.primary },
-            feed.isRefetching && styles.retryButtonDisabled,
-            pressed && !feed.isRefetching && { backgroundColor: `${brandColors.primary}1A` },
-          ]}
-        >
-          <Text variant="footnote" color={brandColors.primary}>
-            {t('mobile.logbook.retry')}
-          </Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.flex}>
-      <FlashList
-        data={items}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        contentInsetAdjustmentBehavior="never"
-        onEndReached={handleEndReached}
-        onEndReachedThreshold={0.5}
-        contentContainerStyle={{ paddingTop: topInset, paddingBottom }}
-        scrollIndicatorInsets={{ top: topInset }}
-        ListHeaderComponent={listHeader}
-        refreshControl={
-          <RefreshControl
-            refreshing={feed.isRefetching}
-            onRefresh={() => void feed.refetch()}
-            tintColor={brandColors.primary}
+      {/* Fixed top toolbar — all logbook actions concentrated here, below the
+          floating chrome. Sibling of the list, so list virtualization is intact. */}
+      <View style={[styles.toolbar, { paddingTop: topInset }]}>
+        {screenTitle ? <ScreenTitle style={styles.screenTitle}>{screenTitle}</ScreenTitle> : null}
+        <View style={styles.toolbarRow}>
+          <SearchHeader
+            placeholder={t('mobile.logbook.searchPlaceholder')}
+            onChangeText={handleSearchChange}
+            onFocus={noop}
+            onBlur={noop}
+            initialValue={name}
+            height={40}
           />
-        }
-        ListFooterComponent={
-          feed.isFetchingNextPage ? (
-            <View style={styles.footer}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
-            <Text variant="headline" style={styles.emptyTitle}>
-              {t('mobile.logbook.empty')}
+          <Pressable
+            onPress={handleOpenFilters}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.logbook.filter')}
+            style={({ pressed }) => [
+              styles.filterButton,
+              { backgroundColor: brandColors.accent },
+              pressed && styles.filterButtonPressed,
+            ]}
+          >
+            <Icon name="filter" size={18} color={iosSystemColors.black} />
+            {activeFilterCount > 0 ? (
+              <View style={[styles.filterBadge, { backgroundColor: iosSystemColors.black }]}>
+                <Text variant="caption2" color={brandColors.accent} style={styles.filterBadgeText}>
+                  {activeFilterCount}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+        </View>
+      </View>
+
+      {feed.isPending ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" />
+        </View>
+      ) : feed.isError ? (
+        <View style={styles.errorContainer}>
+          <Icon name="error" size={48} color={systemColors.tertiaryLabel} />
+          <Text variant="headline" style={styles.errorTitle}>
+            {t('mobile.logbook.errorTitle')}
+          </Text>
+          <Text variant="subheadline" style={styles.errorBody}>
+            {t('mobile.logbook.errorBody')}
+          </Text>
+          <Pressable
+            onPress={handleRetry}
+            disabled={feed.isRefetching}
+            accessibilityRole="button"
+            accessibilityLabel={t('mobile.logbook.retry')}
+            style={({ pressed }) => [
+              styles.retryButton,
+              { borderColor: brandColors.primary },
+              feed.isRefetching && styles.retryButtonDisabled,
+              pressed && !feed.isRefetching && { backgroundColor: `${brandColors.primary}1A` },
+            ]}
+          >
+            <Text variant="footnote" color={brandColors.primary}>
+              {t('mobile.logbook.retry')}
             </Text>
-          </View>
-        }
-      />
+          </Pressable>
+        </View>
+      ) : (
+        <FlashList
+          data={items}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          contentInsetAdjustmentBehavior="never"
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          contentContainerStyle={{ paddingBottom }}
+          refreshControl={
+            <RefreshControl refreshing={feed.isRefetching} onRefresh={handleRefresh} tintColor={brandColors.primary} />
+          }
+          ListFooterComponent={
+            feed.isFetchingNextPage ? (
+              <View style={styles.footer}>
+                <ActivityIndicator size="small" />
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Icon name="tick.outline" size={48} color={systemColors.tertiaryLabel} />
+              <Text variant="headline" style={styles.emptyTitle}>
+                {activeFilterCount > 0 || name ? t('mobile.logbook.emptyFiltered') : t('mobile.logbook.empty')}
+              </Text>
+            </View>
+          }
+        />
+      )}
+
       {viewerIsOwner ? (
         <LogbookEditSheet sheetRef={editSheetRef} ascent={editAscent} onClose={() => setEditAscent(null)} />
+      ) : null}
+
+      {filterSheetOpen ? (
+        <LogbookFilterSheet
+          onDismiss={handleCloseFilters}
+          currentFilters={filters}
+          currentSort={sort}
+          onApply={apply}
+        />
       ) : null}
     </View>
   );
@@ -212,15 +286,46 @@ function keyExtractor(item: AscentFeedItem) {
   return item.uuid;
 }
 
+function noop() {}
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingVertical: spacing[5], alignItems: 'center' },
-  screenTitle: {
+  toolbar: {
     paddingHorizontal: spacing[4],
+    paddingBottom: spacing[2],
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  screenTitle: {
+    paddingHorizontal: 0,
     paddingTop: 0,
     paddingBottom: spacing[2],
   },
+  filterButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterButtonPressed: { opacity: 0.85 },
+  filterBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBadgeText: { fontWeight: '700' },
   empty: {
     alignItems: 'center',
     justifyContent: 'center',

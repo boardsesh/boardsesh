@@ -23,6 +23,7 @@ vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   RefreshControl: () => null,
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  Platform: { OS: 'ios', select: (specifics: Record<string, unknown>) => specifics.ios ?? specifics.default },
   Pressable: ({ children, onPress, disabled }: { children?: ReactNode; onPress?: () => void; disabled?: boolean }) =>
     createElement('button', { onClick: disabled ? undefined : onPress, disabled }, children),
 }));
@@ -47,6 +48,11 @@ vi.mock('@shopify/flash-list', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../LogbookRow', () => ({ LogbookRow: () => createElement('div') }));
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
+vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
+vi.mock('../../SearchHeader', () => ({ SearchHeader: () => null }));
+vi.mock('../../ScreenTitle', () => ({ ScreenTitle: () => null }));
+vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
+vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { black: '#000' } }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
