@@ -464,6 +464,10 @@ export const tickQueries = {
           return sql`${dbSchema.boardseshTicks.difficulty} ${sql.raw(dir)} nulls last`;
         case 'consensusGrade':
           return sql`${consensusDifficultyExpr} ${sql.raw(dir)} nulls last`;
+        case 'effectiveGrade':
+          // User's logged grade, falling back to the consensus when they didn't
+          // log one, so an ungraded tick ranks as if logged == consensus.
+          return sql`${effectiveDifficultyExpr} ${sql.raw(dir)} nulls last`;
         case 'attemptCount':
         case 'mostAttempts':
           return sql`${dbSchema.boardseshTicks.attemptCount} ${sql.raw(dir)} nulls last`;
@@ -489,7 +493,11 @@ export const tickQueries = {
 
     let resolvedSecondarySort: { field: string; direction: string } | null;
     if (sortBy === 'hardest') {
-      resolvedSecondarySort = { field: 'loggedGrade', direction: 'desc' };
+      // Hardest = consensus grade desc, then the climber's effective grade
+      // (their logged grade, or the consensus when they didn't grade it) desc,
+      // then most-recent ascent (the climbedAt tiebreaker appended below). Shared
+      // by web + mobile so an ungraded tick ranks as if logged == consensus.
+      resolvedSecondarySort = { field: 'effectiveGrade', direction: 'desc' };
     } else if (secondarySortBy) {
       resolvedSecondarySort = { field: secondarySortBy, direction: secondarySortOrder };
     } else {

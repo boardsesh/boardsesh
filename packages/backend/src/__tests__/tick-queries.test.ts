@@ -174,6 +174,41 @@ describe('tickQueries — behavior fixes', () => {
     await cleanup();
   });
 
+  describe('userAscentsFeed — hardest sort', () => {
+    it('orders by consensus desc, then effective grade (logged, else consensus) desc', async () => {
+      // consensus / logged -> effective grade:
+      //   D 12 / -  -> 12
+      //   E 11 / 10 -> 10
+      //   A 10 / 11 -> 11
+      //   B 10 / -  -> 10   (ungraded ranks as if logged == consensus)
+      //   C 10 / 9  -> 9
+      // hardest = consensus first, then effective grade -> D, E, A, B, C
+      const seeded: Array<{ key: string; consensus: number; logged: number | null }> = [
+        { key: 'D', consensus: 12, logged: null },
+        { key: 'E', consensus: 11, logged: 10 },
+        { key: 'A', consensus: 10, logged: 11 },
+        { key: 'B', consensus: 10, logged: null },
+        { key: 'C', consensus: 10, logged: 9 },
+      ];
+      for (const climb of seeded) {
+        const climbUuid = CLIMB_PREFIX + 'hardest-' + climb.key;
+        await insertClimb(climbUuid, climb.key);
+        await insertBoardClimbStats({ climbUuid, displayDifficulty: climb.consensus });
+        await insertTick({
+          uuid: 'tick-hardest-' + climb.key,
+          climbUuid,
+          climbedAt: '2026-02-01 10:00:00',
+          status: 'send',
+          difficulty: climb.logged ?? undefined,
+        });
+      }
+
+      const result = await callUserAscentsFeed(TEST_USER_ID, { sortBy: 'hardest' });
+
+      expect(result.items.map((item) => item.climbName)).toEqual(['D', 'E', 'A', 'B', 'C']);
+    });
+  });
+
   describe('userAscentsFeed — flashOnly filter', () => {
     it('returns only flashes when flashOnly=true regardless of statusMode', async () => {
       const climbUuid = CLIMB_PREFIX + 'flash-only';
