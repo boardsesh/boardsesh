@@ -39,4 +39,9 @@ describe('logbook-prefs-store', () => {
       expect.objectContaining({ sort: expect.objectContaining({ preset: 'hardest' }) }),
     );
   });
+
+  it('returns null when the storage read throws (so hydration never deadlocks)', async () => {
+    store.get.mockRejectedValue(new Error('storage unavailable'));
+    await expect(loadLogbookPrefs()).resolves.toBeNull();
+  });
 });

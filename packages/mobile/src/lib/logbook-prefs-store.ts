@@ -20,11 +20,17 @@ export type StoredLogbookPrefs = { filters: LogbookFilterState; sort: LogbookSor
 
 /** Load persisted logbook filter/sort prefs (sanitized); null when never set. */
 export async function loadLogbookPrefs(): Promise<StoredLogbookPrefs | null> {
-  const stored = await getPreference<{ filters?: unknown; sort?: unknown }>(STORAGE_KEY);
-  if (!stored) return null;
-  // Sanitize every field so a stale/partial payload (older app version, manual
-  // edit) can never feed an invalid filter/sort into the query.
-  return { filters: sanitizeLogbookFilters(stored.filters), sort: sanitizeLogbookSort(stored.sort) };
+  try {
+    const stored = await getPreference<{ filters?: unknown; sort?: unknown }>(STORAGE_KEY);
+    if (!stored) return null;
+    // Sanitize every field so a stale/partial payload (older app version, manual
+    // edit) can never feed an invalid filter/sort into the query.
+    return { filters: sanitizeLogbookFilters(stored.filters), sort: sanitizeLogbookSort(stored.sort) };
+  } catch {
+    // Storage unavailable/errored — treat as "no prefs" so the caller's
+    // hydration still completes and the logbook never gets stuck loading.
+    return null;
+  }
 }
 
 /** Persist the logbook filter/sort prefs so they survive an app restart. */

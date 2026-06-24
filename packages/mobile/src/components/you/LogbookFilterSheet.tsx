@@ -200,10 +200,6 @@ export function LogbookFilterSheet({
     sheetRef.current?.dismiss();
   }, [draftFilters, draftSort, onApply]);
 
-  const handleSheetDismiss = useCallback(() => {
-    onDismiss();
-  }, [onDismiss]);
-
   const handleReset = useCallback(() => {
     hapticSelection();
     setDraftFilters(DEFAULT_LOGBOOK_FILTERS);
@@ -292,7 +288,7 @@ export function LogbookFilterSheet({
       enableDynamicSizing={false}
       containerComponent={modalContainerComponent}
       backdropComponent={renderBackdrop}
-      onDismiss={handleSheetDismiss}
+      onDismiss={onDismiss}
       handleIndicatorStyle={styles.indicator}
       backgroundComponent={GlassSheetBackground}
     >

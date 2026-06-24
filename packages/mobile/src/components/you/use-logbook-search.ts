@@ -71,14 +71,21 @@ export function useLogbookSearch(): UseLogbookSearch {
   // (see LogbookTab) so it fetches once with the restored prefs, not twice.
   useEffect(() => {
     let cancelled = false;
-    void loadLogbookPrefs().then((prefs) => {
-      if (cancelled) return;
-      dispatch({
-        type: 'hydrate',
-        filters: prefs?.filters ?? DEFAULT_LOGBOOK_FILTERS,
-        sort: prefs?.sort ?? DEFAULT_LOGBOOK_SORT,
+    // Always complete hydration — even if loading throws (storage unavailable) —
+    // so the feed, which is gated on `hydrated`, never stays stuck disabled.
+    void loadLogbookPrefs()
+      .then((prefs) => {
+        if (cancelled) return;
+        dispatch({
+          type: 'hydrate',
+          filters: prefs?.filters ?? DEFAULT_LOGBOOK_FILTERS,
+          sort: prefs?.sort ?? DEFAULT_LOGBOOK_SORT,
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        dispatch({ type: 'hydrate', filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT });
       });
-    });
     return () => {
       cancelled = true;
     };

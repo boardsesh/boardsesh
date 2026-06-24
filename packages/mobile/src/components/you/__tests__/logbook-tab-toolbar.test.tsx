@@ -3,6 +3,7 @@ import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT, type LogbookFilterState } from '@boardsesh/logbook';
+import { loadLogbookPrefs } from '../../../lib/logbook-prefs-store';
 
 // Capture the input LogbookTab feeds useUserAscentsFeed on each render, plus the
 // props handed to the (mocked) SearchHeader and LogbookFilterSheet so the test can
@@ -166,6 +167,16 @@ describe('LogbookTab toolbar', () => {
     // (the guard against a default-then-persisted double fetch).
     expect(captured.feedEnabled).toBe(false);
     // Flush the mocked loadLogbookPrefs microtask → hydrate → gate opens.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(captured.feedEnabled).toBe(true);
+  });
+
+  it('still opens the feed when hydration rejects (no deadlock)', async () => {
+    vi.mocked(loadLogbookPrefs).mockRejectedValueOnce(new Error('storage down'));
+    render(createElement(LogbookTab, { userId: 'user-1' }));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();

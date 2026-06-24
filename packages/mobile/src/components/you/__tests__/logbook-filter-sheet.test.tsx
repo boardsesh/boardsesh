@@ -67,7 +67,13 @@ vi.mock('react-native-screens', () => ({
 // imperative dialog is unused by these iOS-focused tests but must export.
 const dateTimePickerSelection = vi.hoisted(() => ({ date: new Date(2026, 0, 15, 0, 0, 0, 0) }));
 vi.mock('@react-native-community/datetimepicker', () => ({
-  default: ({ onChange, accessibilityLabel }: { onChange: (event: unknown, date?: Date) => void; accessibilityLabel?: string }) =>
+  default: ({
+    onChange,
+    accessibilityLabel,
+  }: {
+    onChange: (event: unknown, date?: Date) => void;
+    accessibilityLabel?: string;
+  }) =>
     createElement(
       'button',
       {
