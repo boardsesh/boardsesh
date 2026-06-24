@@ -11,6 +11,11 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./characteristics": {
+      "types": "./src/characteristics.ts",
+      "import": "./src/characteristics.ts",
+      "default": "./src/characteristics.ts"
+    },
     "./types": {
       "types": "./src/types.ts",
       "import": "./src/types.ts",

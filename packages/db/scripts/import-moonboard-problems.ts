@@ -13,7 +13,10 @@ import {
   type MoonBoardMove,
 } from './moonboard-helpers.js';
 import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
-import { moonBoardMethodToCharacteristic } from '@boardsesh/shared-schema';
+// Import the dependency-free `./characteristics` subpath (not the package root,
+// which pulls in graphql) so this resolves in the isolated dev-db image build,
+// where shared-schema is dropped into node_modules without its deps installed.
+import { moonBoardMethodToCharacteristic } from '@boardsesh/shared-schema/characteristics';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

@@ -113,7 +113,10 @@ jobs:
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: ./packages/db
+          # Root context so the build can also copy packages/shared-schema
+          # (the climb-characteristics helper the import scripts use). The root
+          # .dockerignore keeps node_modules/dist/etc. out of the context.
+          context: .
           file: ./packages/db/docker/Dockerfile.dev-db
           # arm64 excluded: QEMU emulation can't bind TCP sockets, which pgloader
           # needs during build. Apple Silicon users can pull the amd64 image

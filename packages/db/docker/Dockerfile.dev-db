@@ -46,30 +46,38 @@ RUN apt-get update && \
 # Custom PGDATA to avoid the VOLUME at /var/lib/postgresql/data
 ENV PGDATA=/var/lib/postgresql/pgdata
 
-# Copy pgloader configs and scripts (from docker/ subdirectory of build context)
-COPY docker/cleanup_sqlite_db_problems.sh \
-     docker/*.load \
-     docker/*.sql \
+# Build context is the repo root (see dev-db-docker.yml) so we can also reach
+# packages/shared-schema below. All paths here are repo-root-relative.
+
+# Copy pgloader configs and scripts (from docker/ subdirectory)
+COPY packages/db/docker/cleanup_sqlite_db_problems.sh \
+     packages/db/docker/*.load \
+     packages/db/docker/*.sql \
      /db/
 RUN chmod +x /db/cleanup_sqlite_db_problems.sh
 
-# Copy drizzle migration files (from drizzle/ subdirectory of build context)
-COPY drizzle/ /drizzle/
+# Copy drizzle migration files
+COPY packages/db/drizzle/ /drizzle/
 
 # Copy Node.js project files for import/seed scripts
-COPY package.json /app/package.json
-COPY scripts/ /app/scripts/
-COPY src/ /app/src/
-COPY tsconfig.json /app/tsconfig.json
+COPY packages/db/package.json /app/package.json
+COPY packages/db/scripts/ /app/scripts/
+COPY packages/db/src/ /app/src/
+COPY packages/db/tsconfig.json /app/tsconfig.json
 
-# Strip @boardsesh/shared-schema dependency (scripts don't import from it;
-# only src/schema/app/sessions.ts uses it, and no scripts touch that file)
+# The import scripts use @boardsesh/shared-schema (the climb-characteristics
+# helper). This isolated image can't do a monorepo workspace install, so: strip
+# the workspace dep from package.json (a standalone `bun install` can't resolve
+# it), install packages/db's own deps, then drop the shared-schema package
+# straight into node_modules. The scripts import only the dependency-free
+# `@boardsesh/shared-schema/characteristics` subpath, so graphql is never loaded.
 RUN cd /app && \
     sed -i '/"@boardsesh\/shared-schema"/d' package.json && \
     curl -fsSL https://bun.sh/install | bash && \
     ln -s /root/.bun/bin/bun /usr/local/bin/bun && \
     ln -s /root/.bun/bin/bunx /usr/local/bin/bunx && \
     bun install --ignore-scripts
+COPY packages/shared-schema/ /app/node_modules/@boardsesh/shared-schema/
 
 # Single RUN: download → extract → fix → start PG → import → migrate → stop PG → clean
 RUN set -e && \
