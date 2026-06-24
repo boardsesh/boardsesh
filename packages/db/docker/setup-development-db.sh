@@ -261,6 +261,10 @@ if [ "$FRESH_SETUP" = true ]; then
     echo "   ✅ MoonBoard problems imported"
   fi
 
+  # MoonBoard 2024 authoritative problems are NOT auto-loaded — the export isn't
+  # committed to the repo. Load them manually against a local copy with:
+  #   vp run db:import-moonboard-2024 /path/to/Problems.Moonboard.2024.40.json
+
   echo "   👤 Creating test user..."
   DATABASE_URL=$DB_URL bunx tsx scripts/create-test-user.ts
   

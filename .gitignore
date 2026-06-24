@@ -130,3 +130,7 @@ fastlane/Preview.html
 fastlane/screenshots/
 fastlane/test_output/
 .vscode/settings.json
+
+# Local-only board-data exports (e.g. the MoonBoard 2024 problems JSON). Large
+# raw data files are imported via the db CLIs, never committed to the repo.
+packages/db/data/

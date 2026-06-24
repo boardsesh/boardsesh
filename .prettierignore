@@ -2,3 +2,6 @@
 # formatted copy (and the `changelog-owned` CI gate rejects changelog edits). See vite.config.ts.
 **/*.generated.json
 **/drizzle/meta/
+# Local-only board-data exports (gitignored, see .gitignore). If an operator drops an
+# export here to run an importer, don't let `vp check` try to reformat the raw data.
+packages/db/data/

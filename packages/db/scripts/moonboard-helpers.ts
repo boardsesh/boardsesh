@@ -48,7 +48,9 @@ export const MOONBOARD_GRADE_TO_DIFFICULTY = {
 // =============================================================================
 
 export type MoonBoardMove = {
-  problemId: number;
+  // Present in the 2023 community dump, absent from the 2024 official export.
+  // Never read by the helpers below, so it's optional.
+  problemId?: number;
   description: string; // e.g., "J3", "E4"
   isStart: boolean;
   isEnd: boolean;

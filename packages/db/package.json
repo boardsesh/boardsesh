@@ -59,6 +59,7 @@
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
+    "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",
     "db:import-aurora-unified": "tsx scripts/import-aurora-board-unified.ts",
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
