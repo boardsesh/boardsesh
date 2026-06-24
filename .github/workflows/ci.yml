@@ -195,6 +195,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
+      - name: Unit-test the guard
+        run: node --test scripts/check-large-files.test.mjs
       - name: Check for oversized new files
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then

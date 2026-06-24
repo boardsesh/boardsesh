@@ -310,8 +310,13 @@ export default defineConfig({
         command: 'tsx scripts/check-release-notes.ts',
         cache: false,
       },
+      'test:large-files': {
+        command: 'node --test scripts/check-large-files.test.mjs',
+        cache: false,
+      },
       'check:large-files': {
         command: 'node scripts/check-large-files.mjs',
+        dependsOn: ['test:large-files'],
         cache: false,
       },
       'generate:ios-board-placement-data': {
