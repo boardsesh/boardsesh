@@ -22,9 +22,9 @@ name: Mobile OTA Preview (Per-PR Channel)
 #     PR-editable. That's how a FORK is previewed safely: a maintainer triggers it
 #     and the publish then waits on the `ota-preview` environment.
 #   * SAME-REPO collaborators are trusted: for `pull_request` GitHub runs the PR's
-#     OWN copy of this workflow with repo secrets, so the `ota-preview` label +
-#     non-fork + the `environment: ota-preview` reviewer gate are an INTENT + REVIEW
-#     checkpoint (no accidental publishes; a human approves each diff) — not a hard
+#     OWN copy of this workflow with repo secrets. Any same-repo PR touching the
+#     relevant paths auto-publishes; the `environment: ota-preview` reviewer gate
+#     (if required reviewers are configured) is the human checkpoint — not a hard
 #     wall against a malicious insider, who already holds the repo's secrets via
 #     other workflows.
 #   * `^pr-[0-9]+$` guards every channel mutation (defense-in-depth, not the control).
@@ -39,7 +39,7 @@ name: Mobile OTA Preview (Per-PR Channel)
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, closed]
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'packages/mobile/**'
       - 'packages/shared/**'
@@ -120,8 +120,10 @@ jobs:
                 action = 'cleanup';
               } else {
                 const isFork = pr.head.repo.full_name !== repoFull;
-                const labeled = (pr.labels || []).some((l) => l.name === 'ota-preview');
-                action = (!isFork && labeled) ? 'publish' : 'skip';
+                // Auto-publish for any same-repo PR touching the relevant paths.
+                // Fork PRs can't receive secrets via pull_request — use the
+                // /ota-preview comment or workflow_dispatch for those.
+                action = !isFork ? 'publish' : 'skip';
               }
             } else if (context.eventName === 'issue_comment') {
               const assoc = context.payload.comment.author_association;

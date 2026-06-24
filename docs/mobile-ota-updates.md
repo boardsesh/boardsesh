@@ -403,10 +403,10 @@ per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
     **default-branch (main)** copy of the workflow, so their maintainer gate is not PR-editable; the
     publish then waits on the `ota-preview` environment.
   - **Same-repo collaborators are trusted.** For `pull_request`, GitHub runs the PR's **own** copy of
-    the workflow with repo secrets, so the **`ota-preview` label** + non-fork + the **`ota-preview`
-    environment** reviewer gate are an intent + review checkpoint (no accidental publishes; a human
-    approves each diff) — not a hard wall against a malicious insider, who already holds the repo's
-    secrets via other workflows. `^pr-[0-9]+$` guards every channel mutation (defense-in-depth).
+    the workflow with repo secrets. Any same-repo PR touching the relevant paths auto-publishes; the
+    **`ota-preview` environment** reviewer gate (if required reviewers are configured) is the human
+    checkpoint — not a hard wall against a malicious insider, who already holds the repo's secrets via
+    other workflows. `^pr-[0-9]+$` guards every channel mutation (defense-in-depth).
   - **Hardening (optional).** For hard same-repo enforcement, make `EXPO_TOKEN` an **`ota-preview`
     environment secret** (not a repo secret) so a same-repo PR can't drop the environment to reach it.
     Then the sweep needs a main-only environment (e.g. `ota-maintenance` with a `main` deployment
@@ -427,8 +427,8 @@ per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
   the lifecycle rule to `<prefix>/pr-`.
 
 One-time infra: `vp run mobile:ota-setup preview` prints the lifecycle rule + the GitHub setup
-(the `ota-preview` / `pr-preview` environments, the `ota-preview` label, and exposing
-`GOOGLE_MAPS_API_KEY` as a repo-level secret for the Android fingerprint).
+(the `ota-preview` / `pr-preview` environments, and exposing `GOOGLE_MAPS_API_KEY` as a
+repo-level secret for the Android fingerprint).
 
 ## Deferred
 

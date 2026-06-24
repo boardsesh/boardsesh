@@ -213,19 +213,6 @@ function setupPreview(): void {
     ['api', '-X', 'PUT', 'repos/{owner}/{repo}/environments/pr-preview', '--silent'],
     'ensured the `pr-preview` environment exists (hosts the readiness Deployment; no protection needed)',
   );
-  ghTry(
-    [
-      'label',
-      'create',
-      'ota-preview',
-      '--description',
-      'Publish a self-hosted OTA preview channel for this PR',
-      '--color',
-      '1D76DB',
-      '--force',
-    ],
-    'ensured the `ota-preview` label exists',
-  );
   log('');
   log('GOOGLE_MAPS_API_KEY must be readable by the (gated) preview job for Android fingerprint parity.');
   const secrets = spawnSync('gh', ['secret', 'list'], { cwd: ROOT_DIR, encoding: 'utf-8' });
@@ -253,7 +240,7 @@ function printRunbook(): void {
   log('  4. vp run mobile:ota-setup github --url https://ota.boardsesh.com/manifest');
   log('       → sets the EXPO_UPDATES_URL repo variable + checks the EXPO_TOKEN secret.');
   log('  5. vp run mobile:ota-setup preview     (optional — per-PR preview channels)');
-  log('       → prints the S3 `pr-` lifecycle rule + ensures the GitHub environments/label/secret.');
+  log('       → prints the S3 `pr-` lifecycle rule + ensures the GitHub environments/secret.');
   log('');
   log('Full runbook: docs/mobile-ota-updates.md');
 }
