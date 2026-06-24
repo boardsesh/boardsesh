@@ -10,6 +10,12 @@ vi.mock('@/app/lib/auth/rate-limiter', () => ({
   getClientIp: (...args: unknown[]) => mockGetClientIp(...args),
 }));
 
+vi.mock('@/app/lib/auth/password-reset', () => ({
+  getPasswordResetIdentifier: (email: string) => `password-reset:${email}`,
+  hashResetToken: (token: string) => `sha256:${token}`,
+  consistentDelay: async () => {},
+}));
+
 const mockHash = vi.fn();
 vi.mock('bcryptjs', () => ({
   default: {

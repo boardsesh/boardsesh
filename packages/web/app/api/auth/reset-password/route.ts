@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
-import { getPasswordResetIdentifier } from '@/app/lib/auth/password-reset';
+import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
 
 const resetPasswordSchema = z
   .object({
@@ -24,22 +24,17 @@ const resetPasswordSchema = z
 
 const MIN_RESPONSE_TIME_MS = 1500;
 
-async function consistentDelay(startTime: number): Promise<void> {
-  const elapsed = Date.now() - startTime;
-  const remaining = MIN_RESPONSE_TIME_MS - elapsed;
-  if (remaining > 0) {
-    await new Promise((resolve) => setTimeout(resolve, remaining));
-  }
-}
-
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   try {
     const clientIp = getClientIp(request);
+    // NOTE: checkRateLimit is in-memory and not shared across serverless instances.
+    // This provides best-effort protection only. Add Redis/Upstash rate limiting
+    // before relying on this as a production security control.
     const rateLimitResult = checkRateLimit(`reset-password:${clientIp}`, 10, 60_000);
 
     if (rateLimitResult.limited) {
-      await consistentDelay(startTime);
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json(
         { error: 'Too many requests. Please try again later.' },
         {
@@ -55,28 +50,29 @@ export async function POST(request: NextRequest) {
     const validationResult = resetPasswordSchema.safeParse(body);
 
     if (!validationResult.success) {
-      await consistentDelay(startTime);
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
     const { email, token, password } = validationResult.data;
     const db = getDb();
     const identifier = getPasswordResetIdentifier(email);
+    const tokenHash = hashResetToken(token);
 
     const resetToken = await db
       .select()
       .from(schema.verificationTokens)
-      .where(and(eq(schema.verificationTokens.identifier, identifier), eq(schema.verificationTokens.token, token)))
+      .where(and(eq(schema.verificationTokens.identifier, identifier), eq(schema.verificationTokens.token, tokenHash)))
       .limit(1);
 
     if (resetToken.length === 0) {
-      await consistentDelay(startTime);
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
     if (new Date() > resetToken[0].expires) {
       await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
-      await consistentDelay(startTime);
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
@@ -87,7 +83,7 @@ export async function POST(request: NextRequest) {
       .limit(1);
     if (user.length === 0) {
       await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
-      await consistentDelay(startTime);
+      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
@@ -120,13 +116,13 @@ export async function POST(request: NextRequest) {
       await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
     });
 
-    await consistentDelay(startTime);
+    await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
     return NextResponse.json({
       message: 'Password reset successful. You can now sign in with your new password.',
     });
   } catch (error) {
     console.error('Reset password error:', error);
-    await consistentDelay(startTime);
+    await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
     return NextResponse.json({ error: 'Failed to reset password' }, { status: 500 });
   }
 }

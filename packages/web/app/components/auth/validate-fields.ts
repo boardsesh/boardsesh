@@ -1,6 +1,8 @@
 import type { TFunction } from 'i18next';
 
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_MAX_LENGTH = 128;
 
 export const initialLoginValues = { email: '', password: '' };
 export const initialRegisterValues = { name: '', email: '', password: '', confirmPassword: '' };

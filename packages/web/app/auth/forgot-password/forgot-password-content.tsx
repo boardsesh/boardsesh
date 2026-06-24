@@ -17,8 +17,7 @@ import BackButton from '@/app/components/back-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { EMAIL_REGEX } from '@/app/components/auth/validate-fields';
 
 export default function ForgotPasswordContent() {
   const { t } = useTranslation('auth');
