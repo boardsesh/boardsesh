@@ -60,7 +60,11 @@ skips with a green no-op. The matching native builds (`ios-testflight-rn` / `and
 on the same push but are **fingerprint-gated** — they only build when the fingerprint is new (see
 [Native-build gating](#native-build-gating-ota-only-when-the-fingerprint-is-unchanged) below). A
 successful publish (and any failure) posts to the Discord deploy channel via the
-`DISCORD_DEPLOY_WEBHOOK` secret, the same channel the native build workflows use.
+`DISCORD_DEPLOY_WEBHOOK` secret, the same channel the native build workflows use. The success
+message lists what the OTA newly added: the workflow snapshots `changelog.generated.json` before
+regenerating it, then `changelog-discord-summary.ts` diffs the two snapshots and renders the new
+entries grouped as New / Improved / Fixed. When nothing new shipped (changelog unchanged) it falls
+back to the triggering commit's subject.
 
 **Manual** (one branch, ad hoc) — once the server is deployed and you're logged in (`bunx eas
 login`, or `EXPO_TOKEN` set):

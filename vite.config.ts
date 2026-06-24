@@ -302,6 +302,10 @@ export default defineConfig({
         command: 'node --import tsx scripts/generate-changelog.ts --check',
         cache: false,
       },
+      'changelog:discord-summary': {
+        command: 'node --import tsx scripts/changelog-discord-summary.ts',
+        cache: false,
+      },
       'cleanup:branches': {
         command: 'node --import tsx scripts/cleanup-merged-branches.ts',
         cache: false,

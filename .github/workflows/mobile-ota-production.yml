@@ -185,7 +185,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # Snapshot the changelog as it stood BEFORE this run so the Discord notify
+          # step can diff prev→next and announce only what this OTA newly adds. Must
+          # be captured before `generate:changelog` overwrites the working copy. A
+          # first-run/missing file degrades to an empty entry list (full new list).
+          git show HEAD:packages/mobile/src/data/changelog.generated.json \
+            > "$RUNNER_TEMP/changelog.prev.json" 2>/dev/null \
+            || echo '{"entries":[]}' > "$RUNNER_TEMP/changelog.prev.json"
           vp run generate:changelog
+          # Render the "What's new" block (newly-added entries, grouped by category)
+          # for Discord. Written to a file the notify step reads; empty when nothing
+          # is new, so that step falls back to the triggering commit subject.
+          vp run changelog:discord-summary -- \
+            --prev "$RUNNER_TEMP/changelog.prev.json" \
+            --next packages/mobile/src/data/changelog.generated.json \
+            --out "$RUNNER_TEMP/discord-changelog.md" || true
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           # Both outputs of the generator: the mobile JSON feed and the root
@@ -309,11 +323,23 @@ jobs:
           platforms=""
           [ "$IOS_OUTCOME" = "success" ] && platforms="iOS"
           [ "$ANDROID_OUTCOME" = "success" ] && platforms="${platforms:+$platforms, }Android"
-          # INPUT_MESSAGE is the dispatch input (job env); fall back to the commit
-          # subject, which is the default update message mobile-publish.ts uses.
-          MESSAGE="${INPUT_MESSAGE:-$(git log -1 --pretty=%s)}"
-          CONTENT=$(printf '🚀 **Production OTA published** on `%s`\n• platforms: %s\n• channel: production\n• message: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$platforms" "$MESSAGE" "$RUN_URL")
+          # Prefer the "What's new" block the generate step rendered from the
+          # changelog diff (the entries this OTA newly added). It's empty when
+          # nothing new shipped (changelog unchanged) — then fall back to the
+          # triggering commit's subject. Read the subject from $COMMIT_SHA, NOT
+          # `git log -1`: by now HEAD is this workflow's own changelog commit, so a
+          # bare `git log -1` would always echo "chore(changelog): refresh…".
+          SUMMARY_FILE="$RUNNER_TEMP/discord-changelog.md"
+          if [ -s "$SUMMARY_FILE" ]; then
+            # Build the header and the block in ONE printf so the newline between
+            # them survives — `$(printf '…\n')$(cat …)` would strip the trailing
+            # newline and glue the header onto the first category label.
+            BODY="$(printf '**What'\''s new**\n%s' "$(cat "$SUMMARY_FILE")")"
+          else
+            BODY="message: ${INPUT_MESSAGE:-$(git log -1 --pretty=%s "$COMMIT_SHA")}"
+          fi
+          CONTENT=$(printf '🚀 **Production OTA published** on `%s`\n• platforms: %s\n• channel: production\n\n%s\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$platforms" "$BODY" "$RUN_URL")
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
