@@ -1,31 +1,34 @@
 import { getAllLayouts } from '@/app/lib/board-constants';
 import { AURORA_BOARDS, type AuroraBoardName } from '@boardsesh/shared-schema';
+import {
+  DEFAULT_LOGBOOK_ANGLE_RANGE,
+  DEFAULT_LOGBOOK_FILTERS,
+  DEFAULT_LOGBOOK_SORT,
+  sanitizeLogbookFilters,
+  sanitizeLogbookSort,
+  type LogbookFilterState,
+  type LogbookSortDirection,
+  type LogbookSortField,
+  type LogbookSortPreset,
+  type LogbookSortState,
+} from '@boardsesh/logbook';
+
+// Re-export the shared filter/sort types and defaults under the web names so
+// existing web importers keep working. The filter/sort/preset logic now lives
+// in @boardsesh/logbook and is shared with mobile; only the board/layout
+// pieces below (which depend on web board metadata) stay web-specific.
+export type { LogbookFilterState, LogbookSortState };
+export type SortPreset = LogbookSortPreset;
+export type SortField = LogbookSortField;
+export type SortDirection = LogbookSortDirection;
+
+export {
+  DEFAULT_LOGBOOK_ANGLE_RANGE as DEFAULT_ANGLE_RANGE,
+  DEFAULT_LOGBOOK_FILTERS as DEFAULT_FILTERS,
+  DEFAULT_LOGBOOK_SORT as DEFAULT_SORT,
+};
 
 export type BoardFilter = 'all' | 'moonboard' | AuroraBoardName;
-export type SortPreset = 'recent' | 'hardest';
-export type SortField = 'climbName' | 'loggedGrade' | 'consensusGrade' | 'date' | 'attemptCount';
-export type SortDirection = 'asc' | 'desc';
-
-export type LogbookFilterState = {
-  includeSends: boolean;
-  includeAttempts: boolean;
-  flashOnly: boolean;
-  minGrade: number | '';
-  maxGrade: number | '';
-  fromDate: string;
-  toDate: string;
-  angleRange: [number, number];
-  benchmarkOnly: boolean;
-};
-
-export type LogbookSortState = {
-  mode: 'preset' | 'custom';
-  preset: SortPreset;
-  primaryField: SortField;
-  primaryDirection: SortDirection;
-  secondaryField: '' | SortField;
-  secondaryDirection: SortDirection;
-};
 
 export type LogbookPreferences = {
   version: 1;
@@ -33,29 +36,6 @@ export type LogbookPreferences = {
   layoutSelections: Record<Exclude<BoardFilter, 'all'>, number[]>;
   filters: LogbookFilterState;
   sort: LogbookSortState;
-};
-
-export const DEFAULT_ANGLE_RANGE: [number, number] = [0, 70];
-
-export const DEFAULT_FILTERS: LogbookFilterState = {
-  includeSends: true,
-  includeAttempts: true,
-  flashOnly: false,
-  minGrade: '',
-  maxGrade: '',
-  fromDate: '',
-  toDate: '',
-  angleRange: DEFAULT_ANGLE_RANGE,
-  benchmarkOnly: false,
-};
-
-export const DEFAULT_SORT: LogbookSortState = {
-  mode: 'preset',
-  preset: 'recent',
-  primaryField: 'date',
-  primaryDirection: 'desc',
-  secondaryField: '',
-  secondaryDirection: 'desc',
 };
 
 export const ALL_LAYOUT_SELECTIONS: Record<Exclude<BoardFilter, 'all'>, number[]> = {
@@ -72,45 +52,11 @@ export const DEFAULT_LOGBOOK_PREFERENCES: LogbookPreferences = {
   version: 1,
   boardFilter: 'all',
   layoutSelections: ALL_LAYOUT_SELECTIONS,
-  filters: DEFAULT_FILTERS,
-  sort: DEFAULT_SORT,
+  filters: DEFAULT_LOGBOOK_FILTERS,
+  sort: DEFAULT_LOGBOOK_SORT,
 };
 
 const VALID_BOARD_FILTERS: BoardFilter[] = ['all', 'moonboard', ...AURORA_BOARDS];
-const VALID_SORT_FIELDS: Array<SortField | ''> = [
-  '',
-  'climbName',
-  'loggedGrade',
-  'consensusGrade',
-  'date',
-  'attemptCount',
-];
-const VALID_SORT_DIRECTIONS: SortDirection[] = ['asc', 'desc'];
-const VALID_SORT_PRESETS: SortPreset[] = ['recent', 'hardest'];
-
-function sanitizeDifficulty(value: unknown): number | '' {
-  return typeof value === 'number' && Number.isFinite(value) ? value : '';
-}
-
-function sanitizeDate(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
-function sanitizeBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
-}
-
-function sanitizeAngleRange(value: unknown): [number, number] {
-  if (!Array.isArray(value) || value.length !== 2) {
-    return DEFAULT_ANGLE_RANGE;
-  }
-
-  const rawMin = typeof value[0] === 'number' ? value[0] : DEFAULT_ANGLE_RANGE[0];
-  const rawMax = typeof value[1] === 'number' ? value[1] : DEFAULT_ANGLE_RANGE[1];
-  const min = Math.max(0, Math.min(70, rawMin));
-  const max = Math.max(min, Math.min(70, rawMax));
-  return [min, max];
-}
 
 function sanitizeLayoutSelections(value: unknown): Record<Exclude<BoardFilter, 'all'>, number[]> {
   const source =
@@ -142,52 +88,6 @@ export function sanitizeLogbookPreferences(value: unknown): LogbookPreferences {
   }
 
   const source = value as Partial<LogbookPreferences>;
-  const filters = source.filters && typeof source.filters === 'object' ? source.filters : {};
-  const sort = source.sort && typeof source.sort === 'object' ? source.sort : {};
-
-  const sanitizedFilters: LogbookFilterState = {
-    includeSends: sanitizeBoolean((filters as Partial<LogbookFilterState>).includeSends, DEFAULT_FILTERS.includeSends),
-    includeAttempts: sanitizeBoolean(
-      (filters as Partial<LogbookFilterState>).includeAttempts,
-      DEFAULT_FILTERS.includeAttempts,
-    ),
-    flashOnly: sanitizeBoolean((filters as Partial<LogbookFilterState>).flashOnly, DEFAULT_FILTERS.flashOnly),
-    minGrade: sanitizeDifficulty((filters as Partial<LogbookFilterState>).minGrade),
-    maxGrade: sanitizeDifficulty((filters as Partial<LogbookFilterState>).maxGrade),
-    fromDate: sanitizeDate((filters as Partial<LogbookFilterState>).fromDate),
-    toDate: sanitizeDate((filters as Partial<LogbookFilterState>).toDate),
-    angleRange: sanitizeAngleRange((filters as Partial<LogbookFilterState>).angleRange),
-    benchmarkOnly: sanitizeBoolean(
-      (filters as Partial<LogbookFilterState>).benchmarkOnly,
-      DEFAULT_FILTERS.benchmarkOnly,
-    ),
-  };
-
-  if (!sanitizedFilters.includeSends && !sanitizedFilters.includeAttempts) {
-    sanitizedFilters.includeSends = true;
-  }
-  if (!sanitizedFilters.includeSends) {
-    sanitizedFilters.flashOnly = false;
-  }
-
-  const sanitizedSort: LogbookSortState = {
-    mode: sort && (sort as Partial<LogbookSortState>).mode === 'custom' ? 'custom' : 'preset',
-    preset: VALID_SORT_PRESETS.includes((sort as Partial<LogbookSortState>).preset ?? 'recent')
-      ? ((sort as Partial<LogbookSortState>).preset as SortPreset)
-      : DEFAULT_SORT.preset,
-    primaryField: VALID_SORT_FIELDS.includes((sort as Partial<LogbookSortState>).primaryField ?? 'date')
-      ? (sort as Partial<LogbookSortState>).primaryField || 'date'
-      : DEFAULT_SORT.primaryField,
-    primaryDirection: VALID_SORT_DIRECTIONS.includes((sort as Partial<LogbookSortState>).primaryDirection ?? 'desc')
-      ? ((sort as Partial<LogbookSortState>).primaryDirection as SortDirection)
-      : DEFAULT_SORT.primaryDirection,
-    secondaryField: VALID_SORT_FIELDS.includes((sort as Partial<LogbookSortState>).secondaryField ?? '')
-      ? ((sort as Partial<LogbookSortState>).secondaryField ?? '')
-      : DEFAULT_SORT.secondaryField,
-    secondaryDirection: VALID_SORT_DIRECTIONS.includes((sort as Partial<LogbookSortState>).secondaryDirection ?? 'desc')
-      ? ((sort as Partial<LogbookSortState>).secondaryDirection as SortDirection)
-      : DEFAULT_SORT.secondaryDirection,
-  };
 
   const boardFilter = VALID_BOARD_FILTERS.includes(source.boardFilter ?? 'all')
     ? (source.boardFilter as BoardFilter)
@@ -197,7 +97,9 @@ export function sanitizeLogbookPreferences(value: unknown): LogbookPreferences {
     version: 1,
     boardFilter,
     layoutSelections: sanitizeLayoutSelections(source.layoutSelections),
-    filters: sanitizedFilters,
-    sort: sanitizedSort,
+    // Filter/sort sanitization is delegated to the shared package so web and
+    // mobile coerce persisted state identically.
+    filters: sanitizeLogbookFilters(source.filters),
+    sort: sanitizeLogbookSort(source.sort),
   };
 }

@@ -18,6 +18,7 @@ import {
   type LogbookFilterState as FilterState,
   type LogbookSortState as SortState,
 } from '@/app/lib/logbook-preferences';
+import { toAscentFeedInput } from '@boardsesh/logbook';
 import { readFiltersFromQuery, readSortFromQuery, filtersToQueryParams } from '@/app/lib/logbook-url-utils';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
@@ -59,7 +60,6 @@ import styles from './library.module.css';
 import feedStyles from '@/app/components/activity-feed/ascents-feed.module.css';
 
 const PAGE_SIZE = 20;
-type StatusMode = 'both' | 'send' | 'attempt';
 
 type UserDataExportStatus = {
   status: 'not_requested' | 'generating' | 'ready' | 'failed' | 'unavailable';
@@ -348,93 +348,35 @@ export default function LogbookFeed({ layoutStats, loadingLayoutStats }: Logbook
     return ids.length > 0 ? ids : undefined;
   }, [selectedBoards]);
 
-  const climbNameParam = debouncedSearch || undefined;
-
-  const sortParams = useMemo(() => {
-    if (sortState.mode === 'preset') {
-      if (sortState.preset === 'hardest') {
-        return { sortBy: 'hardest' as const, sortOrder: 'desc' as const };
-      }
-      return { sortBy: 'recent' as const, sortOrder: 'desc' as const };
-    }
-    return {
-      sortBy: sortState.primaryField,
-      sortOrder: sortState.primaryDirection,
-      ...(sortState.secondaryField
-        ? {
-            secondarySortBy: sortState.secondaryField,
-            secondarySortOrder: sortState.secondaryDirection,
-          }
-        : {}),
-    };
-  }, [sortState]);
-
-  const activeFilters = useMemo(() => {
-    let statusMode: StatusMode;
-    if (filters.includeSends && filters.includeAttempts) {
-      statusMode = 'both';
-    } else if (filters.includeSends) {
-      statusMode = 'send';
-    } else {
-      statusMode = 'attempt';
-    }
-    return {
-      statusMode,
-      flashOnly: filters.includeSends ? filters.flashOnly : false,
-      minDifficulty: filters.minGrade !== '' ? filters.minGrade : undefined,
-      maxDifficulty: filters.maxGrade !== '' ? filters.maxGrade : undefined,
-      fromDate: filters.fromDate || undefined,
-      toDate: filters.toDate || undefined,
-      minAngle: filters.angleRange[0] !== DEFAULT_ANGLE_RANGE[0] ? filters.angleRange[0] : undefined,
-      maxAngle: filters.angleRange[1] !== DEFAULT_ANGLE_RANGE[1] ? filters.angleRange[1] : undefined,
-      benchmarkOnly: filters.benchmarkOnly || undefined,
-    };
-  }, [filters]);
-
-  const feedQueryKey = useMemo(
-    () => [
-      'logbookFeed',
-      userId,
-      selectedBoardTypes?.join(',') ?? 'all',
-      selectedLayoutIds?.join(',') ?? 'all-layouts',
-      climbNameParam ?? '',
-      JSON.stringify(activeFilters),
-      JSON.stringify(sortParams),
-    ],
-    [userId, selectedBoardTypes, selectedLayoutIds, climbNameParam, activeFilters, sortParams],
+  // Build the userAscentsFeed `input` (minus pagination) from filter/sort/board
+  // state. The mapping — status mode, flash-only gating, default-valued
+  // omissions, single-vs-multi board type, sort preset expansion — lives in the
+  // shared @boardsesh/logbook package so web and mobile stay identical.
+  const feedInput = useMemo(
+    () =>
+      toAscentFeedInput({
+        filters,
+        sort: sortState,
+        name: debouncedSearch,
+        boardTypes: selectedBoardTypes,
+        layoutIds: selectedLayoutIds,
+      }),
+    [filters, sortState, debouncedSearch, selectedBoardTypes, selectedLayoutIds],
   );
+
+  const feedQueryKey = useMemo(() => ['logbookFeed', userId, JSON.stringify(feedInput)], [userId, feedInput]);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
     queryKey: feedQueryKey,
     queryFn: async ({ pageParam }) => {
       const client = createGraphQLHttpClient(token ?? null);
 
-      // For single board type, use boardType; for multiple, use boardTypes
-      const buildBoardTypeFilter = () => {
-        if (selectedBoardTypes?.length === 1) return { boardType: selectedBoardTypes[0] };
-        if (selectedBoardTypes && selectedBoardTypes.length > 1) return { boardTypes: selectedBoardTypes };
-        return {};
-      };
-      const boardTypeFilter = buildBoardTypeFilter();
-
       const variables: GetUserAscentsFeedQueryVariables = {
         userId: userId!,
         input: {
           limit: PAGE_SIZE,
           offset: pageParam,
-          ...boardTypeFilter,
-          ...(selectedLayoutIds ? { layoutIds: selectedLayoutIds } : {}),
-          ...(climbNameParam ? { climbName: climbNameParam } : {}),
-          statusMode: activeFilters.statusMode,
-          flashOnly: activeFilters.flashOnly,
-          ...(activeFilters.minDifficulty !== undefined ? { minDifficulty: activeFilters.minDifficulty } : {}),
-          ...(activeFilters.maxDifficulty !== undefined ? { maxDifficulty: activeFilters.maxDifficulty } : {}),
-          ...(activeFilters.fromDate ? { fromDate: activeFilters.fromDate } : {}),
-          ...(activeFilters.toDate ? { toDate: activeFilters.toDate } : {}),
-          ...(activeFilters.minAngle !== undefined ? { minAngle: activeFilters.minAngle } : {}),
-          ...(activeFilters.maxAngle !== undefined ? { maxAngle: activeFilters.maxAngle } : {}),
-          ...(activeFilters.benchmarkOnly ? { benchmarkOnly: activeFilters.benchmarkOnly } : {}),
-          ...sortParams,
+          ...feedInput,
         },
       };
       const response = await client.request<GetUserAscentsFeedQueryResponse>(GET_USER_ASCENTS_FEED, variables);
