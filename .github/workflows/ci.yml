@@ -175,6 +175,34 @@ jobs:
         if: github.event_name != 'pull_request'
         run: vp check
 
+  large-files:
+    # Guards against committed binary churn (screenshots, build outputs, vendored
+    # binaries) re-bloating the pack after the 2026 history cleanup. Runs on every
+    # PR regardless of which file types changed — a binary-only PR is exactly the
+    # case to catch — so it is deliberately not gated on the `changes` filter.
+    # Dependency-free (bare node), so no bun install / build artifacts needed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 50
+      - name: Fetch base ref
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch --depth=50 origin "$BASE_REF":"refs/remotes/origin/$BASE_REF"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Check for oversized new files
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            node scripts/check-large-files.mjs
+          else
+            node scripts/check-large-files.mjs --all
+          fi
+
   typecheck:
     needs: [changes, setup]
     if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'

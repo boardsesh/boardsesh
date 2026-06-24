@@ -310,6 +310,10 @@ export default defineConfig({
         command: 'tsx scripts/check-release-notes.ts',
         cache: false,
       },
+      'check:large-files': {
+        command: 'node scripts/check-large-files.mjs',
+        cache: false,
+      },
       'generate:ios-board-placement-data': {
         command: 'node --import tsx packages/board-constants/scripts/generate-ios-board-placement-data.ts',
         dependsOn: ['build:constants'],
