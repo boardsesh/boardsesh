@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 import { View, Pressable, StyleSheet, Platform, type ViewStyle } from 'react-native';
 import {
   BottomSheetModal,
@@ -74,7 +74,20 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 // Same filled-pill chip language as ClimbFilterSheet, reused locally for the
 // angle min/max selectors (a horizontal chip rail).
-function Chip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+// memo'd + value-based onPress so the ~30 angle chips (each carrying a Reanimated
+// shared value + worklet) don't all re-render when an unrelated filter changes.
+// The rails pass a stable handler, not a per-chip arrow.
+const Chip = memo(function Chip({
+  label,
+  selected,
+  value,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  value: number;
+  onPress: (value: number) => void;
+}) {
   const { systemColors, brandColors } = useTheme();
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -88,7 +101,7 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
     <AnimatedPressable
       onPress={() => {
         hapticSelection();
-        onPress();
+        onPress(value);
       }}
       onPressIn={() => {
         scale.value = withSpring(0.95, springs.snappy);
@@ -106,7 +119,7 @@ function Chip({ label, selected, onPress }: { label: string; selected: boolean; 
       </Text>
     </AnimatedPressable>
   );
-}
+});
 
 function statusKeyFor(filters: LogbookFilterState): StatusKey {
   if (filters.includeSends && !filters.includeAttempts) return 'sends';
@@ -373,8 +386,9 @@ export function LogbookFilterSheet({
                 <Chip
                   key={`min-${angle}`}
                   label={`${angle}°`}
+                  value={angle}
                   selected={draftMinAngle === angle}
-                  onPress={() => handleMinAngle(angle)}
+                  onPress={handleMinAngle}
                 />
               ))}
             </View>
@@ -388,8 +402,9 @@ export function LogbookFilterSheet({
                 <Chip
                   key={`max-${angle}`}
                   label={`${angle}°`}
+                  value={angle}
                   selected={draftMaxAngle === angle}
-                  onPress={() => handleMaxAngle(angle)}
+                  onPress={handleMaxAngle}
                 />
               ))}
             </View>

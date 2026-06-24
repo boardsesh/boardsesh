@@ -35,5 +35,11 @@ export async function loadLogbookPrefs(): Promise<StoredLogbookPrefs | null> {
 
 /** Persist the logbook filter/sort prefs so they survive an app restart. */
 export async function saveLogbookPrefs(prefs: StoredLogbookPrefs): Promise<void> {
-  await setPreference(STORAGE_KEY, prefs);
+  try {
+    await setPreference(STORAGE_KEY, prefs);
+  } catch {
+    // Storage write failed (full disk, first-install permission race). Persisting
+    // a UI preference is best-effort, so swallow rather than leak an unhandled
+    // rejection from the fire-and-forget caller (mirrors loadLogbookPrefs).
+  }
 }

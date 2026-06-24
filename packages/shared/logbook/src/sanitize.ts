@@ -67,6 +67,16 @@ export function sanitizeLogbookFilters(value: unknown): LogbookFilterState {
   if (!sanitized.includeSends) {
     sanitized.flashOnly = false;
   }
+  // Heal an inverted grade range (corrupted or migrated prefs). An un-swapped
+  // min > max reaches the backend as `difficulty >= min AND <= max` and silently
+  // returns nothing. (The angle range is already clamped to max >= min above.)
+  if (
+    typeof sanitized.minGrade === 'number' &&
+    typeof sanitized.maxGrade === 'number' &&
+    sanitized.minGrade > sanitized.maxGrade
+  ) {
+    [sanitized.minGrade, sanitized.maxGrade] = [sanitized.maxGrade, sanitized.minGrade];
+  }
   return sanitized;
 }
 

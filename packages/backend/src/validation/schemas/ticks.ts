@@ -97,6 +97,11 @@ export const InstagramBetaScanInputSchema = z.object({
 /**
  * Ascent feed input validation schema
  */
+// Logbook date filters are calendar days (YYYY-MM-DD). The web/mobile clients
+// sanitize to this shape via @boardsesh/logbook, but the backend owns its own
+// invariant so a direct GraphQL call can't push a malformed date into the query.
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 export const AscentFeedInputSchema = z.object({
   limit: z.number().int().min(1).max(50).optional().default(20),
   offset: z.number().int().min(0).optional().default(0),
@@ -128,8 +133,8 @@ export const AscentFeedInputSchema = z.object({
   minAngle: z.number().int().min(0).max(90).optional(),
   maxAngle: z.number().int().min(0).max(90).optional(),
   benchmarkOnly: z.boolean().optional(),
-  fromDate: z.string().optional(),
-  toDate: z.string().optional(),
+  fromDate: z.string().regex(ISO_DATE_PATTERN).optional(),
+  toDate: z.string().regex(ISO_DATE_PATTERN).optional(),
 });
 
 /**

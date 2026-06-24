@@ -207,6 +207,33 @@ describe('tickQueries — behavior fixes', () => {
 
       expect(result.items.map((item) => item.climbName)).toEqual(['D', 'E', 'A', 'B', 'C']);
     });
+
+    it('breaks ties on ascent date (more recent first) when consensus and effective grade match', async () => {
+      // Same consensus, both ungraded (effective == consensus), so only climbedAt
+      // separates them — exercises the third ORDER BY key (climbedAt desc).
+      const older = CLIMB_PREFIX + 'tiebreak-older';
+      const newer = CLIMB_PREFIX + 'tiebreak-newer';
+      await insertClimb(older, 'Older');
+      await insertClimb(newer, 'Newer');
+      await insertBoardClimbStats({ climbUuid: older, displayDifficulty: 15 });
+      await insertBoardClimbStats({ climbUuid: newer, displayDifficulty: 15 });
+      await insertTick({
+        uuid: 'tick-tiebreak-older',
+        climbUuid: older,
+        climbedAt: '2026-02-01 10:00:00',
+        status: 'send',
+      });
+      await insertTick({
+        uuid: 'tick-tiebreak-newer',
+        climbUuid: newer,
+        climbedAt: '2026-03-15 10:00:00',
+        status: 'send',
+      });
+
+      const result = await callUserAscentsFeed(TEST_USER_ID, { sortBy: 'hardest' });
+
+      expect(result.items.map((item) => item.climbName)).toEqual(['Newer', 'Older']);
+    });
   });
 
   describe('userAscentsFeed — flashOnly filter', () => {

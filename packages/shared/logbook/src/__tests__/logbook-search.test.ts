@@ -126,6 +126,12 @@ describe('sanitizeLogbookFilters', () => {
     expect(sanitizeLogbookFilters({ minGrade: 12 }).minGrade).toBe(12);
   });
 
+  it('heals an inverted grade range by swapping min and max', () => {
+    const healed = sanitizeLogbookFilters({ minGrade: 20, maxGrade: 12 });
+    expect(healed.minGrade).toBe(12);
+    expect(healed.maxGrade).toBe(20);
+  });
+
   it('keeps valid ISO dates but rejects malformed or impossible ones', () => {
     expect(sanitizeLogbookFilters({ fromDate: '2026-01-15' }).fromDate).toBe('2026-01-15');
     expect(sanitizeLogbookFilters({ fromDate: 'not-a-date' }).fromDate).toBe('');

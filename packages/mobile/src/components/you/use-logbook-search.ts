@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import {
   DEFAULT_LOGBOOK_FILTERS,
   DEFAULT_LOGBOOK_SORT,
@@ -24,6 +24,12 @@ export type LogbookSearchState = {
   name: string;
   /** True once persisted prefs have loaded (or been confirmed absent). */
   hydrated: boolean;
+  /**
+   * True once the user has changed filters/sort this session. The Apply button is
+   * live before hydration finishes, so a late `hydrate` must keep the user's
+   * change instead of clobbering it with the just-loaded prefs.
+   */
+  userModified: boolean;
 };
 
 const DEFAULT_STATE: LogbookSearchState = {
@@ -31,6 +37,7 @@ const DEFAULT_STATE: LogbookSearchState = {
   sort: DEFAULT_LOGBOOK_SORT,
   name: '',
   hydrated: false,
+  userModified: false,
 };
 
 type Action =
@@ -43,15 +50,25 @@ type Action =
 function reducer(state: LogbookSearchState, action: Action): LogbookSearchState {
   switch (action.type) {
     case 'setName':
+      // The name is transient and not persisted, so typing one must NOT block a
+      // pending hydrate from applying the user's saved filters/sort.
       return { ...state, name: action.name };
     case 'setPreset':
-      return { ...state, sort: { ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset: action.preset } };
+      return {
+        ...state,
+        sort: { ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset: action.preset },
+        userModified: true,
+      };
     case 'apply':
-      return { ...state, filters: action.filters, sort: action.sort };
+      return { ...state, filters: action.filters, sort: action.sort, userModified: true };
     case 'hydrate':
-      return { ...state, filters: action.filters, sort: action.sort, hydrated: true };
+      // If the user changed filters/sort while prefs were still loading, keep
+      // their values and only open the gate; otherwise apply the loaded prefs.
+      return state.userModified
+        ? { ...state, hydrated: true }
+        : { ...state, filters: action.filters, sort: action.sort, hydrated: true };
     case 'reset':
-      return { ...DEFAULT_STATE, hydrated: true };
+      return { ...DEFAULT_STATE, hydrated: true, userModified: true };
     default:
       return state;
   }
