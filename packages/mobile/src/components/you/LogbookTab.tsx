@@ -62,7 +62,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   // input value is debounced before it commits to the query.
   const logbookSearch = useLogbookSearch();
   const { filters, sort, name, setName, apply } = logbookSearch;
-  const activeFilterCount = countActiveLogbookFilters(filters);
+  const activeFilterCount = useMemo(() => countActiveLogbookFilters(filters), [filters]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -141,11 +141,11 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
 
   const handleEndReached = useCallback(() => {
     if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
-  }, [feed]);
+  }, [feed.hasNextPage, feed.isFetchingNextPage, feed.fetchNextPage]);
 
   const handleRetry = useCallback(() => {
     void feed.refetch();
-  }, [feed]);
+  }, [feed.refetch]);
 
   const renderItem = useCallback(
     ({ item }: { item: AscentFeedItem }) => (
@@ -159,7 +159,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
     [handleActivate, handleOpenActions, handleEdit, viewerIsOwner],
   );
 
-  const handleRefresh = useCallback(() => void feed.refetch(), [feed]);
+  const handleRefresh = useCallback(() => void feed.refetch(), [feed.refetch]);
 
   if (!userId) {
     return (

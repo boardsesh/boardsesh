@@ -71,15 +71,20 @@ export function useLogbookSearch(): UseLogbookSearch {
   return useMemo(() => ({ ...state, ...actions }), [state, actions]);
 }
 
-/** True when any filter differs from the defaults (drives the filter-button badge). */
+/** Number of active (non-default) logbook filters — drives the filter-button badge. */
 export function countActiveLogbookFilters(filters: LogbookFilterState): number {
   let count = 0;
   if (!filters.includeSends || !filters.includeAttempts) count += 1;
   if (filters.flashOnly) count += 1;
   if (filters.minGrade !== '' || filters.maxGrade !== '') count += 1;
   if (filters.fromDate || filters.toDate) count += 1;
-  if (filters.angleRange[0] !== DEFAULT_LOGBOOK_FILTERS.angleRange[0]) count += 1;
-  if (filters.angleRange[1] !== DEFAULT_LOGBOOK_FILTERS.angleRange[1]) count += 1;
+  // The angle range is one filter even when both bounds are narrowed.
+  if (
+    filters.angleRange[0] !== DEFAULT_LOGBOOK_FILTERS.angleRange[0] ||
+    filters.angleRange[1] !== DEFAULT_LOGBOOK_FILTERS.angleRange[1]
+  ) {
+    count += 1;
+  }
   if (filters.benchmarkOnly) count += 1;
   return count;
 }
