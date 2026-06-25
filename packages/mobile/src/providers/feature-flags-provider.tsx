@@ -11,11 +11,31 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
+import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 
 export type FeatureFlags = Record<string, boolean | undefined>;
 
 const DEFAULT_FEATURE_FLAGS: FeatureFlags = {};
-const FEATURE_FLAG_KEYS = ['strava-integration'] as const;
+
+// The catalog of flags the app knows about. It drives the live PostHog read and
+// the tester-only Feature Flags settings screen (which lists every entry here).
+// Add a flag once, here, and it shows up in both. Labels/descriptions are
+// tester-facing English only — this never reaches a non-tester surface.
+export type FeatureFlagDefinition = {
+  key: string;
+  label: string;
+  description: string;
+};
+
+export const FEATURE_FLAG_DEFINITIONS: readonly FeatureFlagDefinition[] = [
+  {
+    key: 'strava-integration',
+    label: 'Strava integration',
+    description: 'Share sends to Strava and the Strava connect option in Integrations.',
+  },
+] as const;
+
+export const FEATURE_FLAG_KEYS = FEATURE_FLAG_DEFINITIONS.map((definition) => definition.key);
 
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
@@ -27,6 +47,7 @@ export function FeatureFlagsProvider({
   children: ReactNode;
 }) {
   const [posthogFlags, setPosthogFlags] = useState<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
+  const { overrides } = useFeatureFlagOverrides();
 
   useEffect(() => {
     let mounted = true;
@@ -45,11 +66,14 @@ export function FeatureFlagsProvider({
   }, []);
 
   const value = useMemo<FeatureFlags>(() => {
-    if (posthogFlags === DEFAULT_FEATURE_FLAGS && flags === DEFAULT_FEATURE_FLAGS) {
+    const hasOverrides = Object.keys(overrides).length > 0;
+    if (posthogFlags === DEFAULT_FEATURE_FLAGS && flags === DEFAULT_FEATURE_FLAGS && !hasOverrides) {
       return DEFAULT_FEATURE_FLAGS;
     }
-    return { ...posthogFlags, ...flags };
-  }, [posthogFlags, flags]);
+    // Local tester overrides win over the static env override, which wins over
+    // the live PostHog value.
+    return { ...posthogFlags, ...flags, ...overrides };
+  }, [posthogFlags, flags, overrides]);
 
   return <FeatureFlagsContext.Provider value={value}>{children}</FeatureFlagsContext.Provider>;
 }

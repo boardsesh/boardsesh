@@ -63,9 +63,15 @@ export default function MoreScreen() {
   // it can actually work; testers on a release build get the OTA channel switcher.
   const showDevServerSwitcher = isDevLauncherAvailable();
 
-  // Don't render an empty "Development" section header when neither tool applies
+  // Feature-flag overrides work in every build (dev forces them in place of the
+  // disabled PostHog read; release builds layer them on top), so show the entry
+  // wherever the dev section is allowed — for testers and in dev.
+  const showFeatureFlags = __DEV__ || Boolean(profile?.isTester);
+
+  // Don't render an empty "Development" section header when no tool applies
   // (e.g. a tester on a release build with updates disabled).
-  const showDevSection = (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showChannelSwitcher);
+  const showDevSection =
+    (__DEV__ || Boolean(profile?.isTester)) && (showDevServerSwitcher || showChannelSwitcher || showFeatureFlags);
 
   // Whether the bundled changelog has an entry the user hasn't opened yet — drives
   // the "New" pill on the What's New row. Re-read every time this screen regains
@@ -316,7 +322,7 @@ export default function MoreScreen() {
                 subtitle={t('mobile.more.metroServersSubtitle')}
                 leading={<Icon name="server" size={22} color={systemColors.secondaryLabel} />}
                 showChevron
-                showSeparator={showChannelSwitcher}
+                showSeparator={showChannelSwitcher || showFeatureFlags}
                 onPress={() => router.push('/(tabs)/profile/dev-servers')}
               />
             ) : null}
@@ -328,8 +334,20 @@ export default function MoreScreen() {
                 subtitle="Switch Expo update channel"
                 leading={<Icon name="transfer" size={22} color={systemColors.secondaryLabel} />}
                 showChevron
-                showSeparator={false}
+                showSeparator={showFeatureFlags}
                 onPress={() => router.push('/(tabs)/profile/channel-switcher')}
+              />
+            ) : null}
+            {showFeatureFlags ? (
+              <ListRow
+                // i18n-ignore-next-line — tester-only dev tooling
+                title="Feature Flags"
+                // i18n-ignore-next-line
+                subtitle="Force feature flags on or off"
+                leading={<Icon name="flag" size={22} color={systemColors.secondaryLabel} />}
+                showChevron
+                showSeparator={false}
+                onPress={() => router.push('/(tabs)/profile/feature-flags')}
               />
             ) : null}
           </View>

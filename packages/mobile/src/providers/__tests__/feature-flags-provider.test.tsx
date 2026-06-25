@@ -1,10 +1,31 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { FeatureFlagsProvider, useFeatureFlag, useFeatureFlags } from '../feature-flags-provider';
+import { setFeatureFlagOverride, clearAllFeatureFlagOverrides } from '../../lib/feature-flag-overrides';
+
+vi.mock('@react-native-async-storage/async-storage', () => {
+  const storage: Record<string, string> = {};
+  return {
+    default: {
+      getItem: vi.fn(async (key: string) => storage[key] ?? null),
+      setItem: vi.fn(async (key: string, value: string) => {
+        storage[key] = value;
+      }),
+      removeItem: vi.fn(async (key: string) => {
+        delete storage[key];
+      }),
+    },
+  };
+});
 
 describe('FeatureFlagsProvider', () => {
+  afterEach(() => {
+    // The override store is a module-level singleton; reset it between tests.
+    clearAllFeatureFlagOverrides();
+  });
+
   it('returns the empty default bag when no `flags` prop is supplied', () => {
     const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
     const { result } = renderHook(() => useFeatureFlags(), { wrapper });
@@ -37,5 +58,23 @@ describe('FeatureFlagsProvider', () => {
     // No wrapper — useContext sees the createContext default value.
     const { result } = renderHook(() => useFeatureFlags());
     expect(result.current).toEqual({});
+  });
+
+  it('a local override wins over the static `flags` prop', () => {
+    // Set before render so the first snapshot already carries the override (no
+    // act() warning from a post-mount store mutation).
+    setFeatureFlagOverride('heroImage', false);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <FeatureFlagsProvider flags={{ heroImage: true }}>{children}</FeatureFlagsProvider>
+    );
+    const { result } = renderHook(() => useFeatureFlag('heroImage'), { wrapper });
+    expect(result.current).toBe(false);
+  });
+
+  it('a local override surfaces a flag absent from PostHog and the `flags` prop', () => {
+    setFeatureFlagOverride('strava-integration', true);
+    const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
+    const { result } = renderHook(() => useFeatureFlag('strava-integration'), { wrapper });
+    expect(result.current).toBe(true);
   });
 });
