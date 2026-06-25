@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { getDb } from '@/app/lib/db/db';
@@ -95,7 +96,13 @@ export async function POST(request: NextRequest) {
     try {
       await sendPasswordResetEmail(email, token, baseUrl);
     } catch (emailError) {
+      // Swallow so the response stays generic (no user enumeration), but surface
+      // the failure to Sentry — a misconfigured SMTP credential would otherwise
+      // fail silently for every user with no signal in observability tooling.
       console.error('Failed to send password reset email:', emailError);
+      Sentry.captureException(emailError, {
+        tags: { area: 'auth', flow: 'forgot-password', phase: 'send-email' },
+      });
     }
 
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);

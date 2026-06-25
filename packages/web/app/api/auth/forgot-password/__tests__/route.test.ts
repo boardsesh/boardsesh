@@ -21,6 +21,11 @@ vi.mock('@/app/lib/email/email-service', () => ({
   sendPasswordResetEmail: (...args: unknown[]) => mockSendPasswordResetEmail(...args),
 }));
 
+const mockCaptureException = vi.fn();
+vi.mock('@sentry/nextjs', () => ({
+  captureException: (...args: unknown[]) => mockCaptureException(...args),
+}));
+
 const mockUserLimit = vi.fn();
 const mockCredentialsLimit = vi.fn();
 const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
@@ -127,6 +132,18 @@ describe('POST /api/auth/forgot-password', () => {
     expect(response.status).toBe(200);
     const data = await response.json();
     expect(data.message).toContain('If an account exists');
+  });
+
+  it('reports the SMTP failure to Sentry while keeping the response generic', async () => {
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+    const smtpError = new Error('smtp failed');
+    mockSendPasswordResetEmail.mockRejectedValue(smtpError);
+
+    const response = await POST(createRequest({ email: 'test@example.com' }));
+
+    expect(response.status).toBe(200);
+    expect(mockCaptureException).toHaveBeenCalledWith(smtpError, expect.objectContaining({ tags: expect.anything() }));
   });
 
   it('returns 500 when database transaction fails', async () => {

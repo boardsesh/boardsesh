@@ -131,6 +131,27 @@ describe('POST /api/auth/reset-password', () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
+  it('returns 400 without mutating anything when the token belongs to a different email', async () => {
+    // The SELECT requires identifier (derived from email) AND tokenHash to match the
+    // same row, so a real token paired with the wrong email yields no rows. Nothing
+    // should be hashed, written, or deleted on this path.
+    mockTokenLimit.mockResolvedValue([]);
+
+    const response = await POST(
+      createRequest({
+        email: 'attacker@example.com',
+        token: crypto.randomUUID(),
+        password: 'validpassword',
+        confirmPassword: 'validpassword',
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockHash).not.toHaveBeenCalled();
+    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
   it('resets password successfully', async () => {
     mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() + 60_000) }]);
     mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
