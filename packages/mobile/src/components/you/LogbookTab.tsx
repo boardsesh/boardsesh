@@ -51,7 +51,7 @@ type LogbookTabProps = {
 export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenTitle }: LogbookTabProps) {
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
-  // The search + filter UI is unfinished; keep it dark until the flag is on.
+  // Temporary kill switch while the search + filter UI is unfinished.
   const logbookFiltersEnabled = useFeatureFlag('logbook-filters') === true;
   const router = useRouter();
   const { openPlayDrawer, openClimbActions } = useDrawerHost();

@@ -16,8 +16,7 @@ const captured = vi.hoisted(() => ({
   sheetMounted: false,
 }));
 
-// Drives the `logbook-filters` feature flag the toolbar is gated on. Defaults on
-// so the toolbar tests below exercise the real wiring; one test flips it off.
+// Drives the `logbook-filters` flag; defaults on so the toolbar tests run.
 const flagState = vi.hoisted(() => ({ logbookFilters: true }));
 
 const feed = vi.hoisted(() => ({
