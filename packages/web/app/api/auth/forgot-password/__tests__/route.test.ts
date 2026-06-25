@@ -62,8 +62,8 @@ vi.mock('@/app/lib/db/schema', () => ({
 
 import { POST } from '../route';
 
-function createRequest(body: Record<string, unknown>): NextRequest {
-  return new NextRequest('http://localhost/api/auth/forgot-password', {
+function createRequest(body: Record<string, unknown>, origin = 'http://localhost'): NextRequest {
+  return new NextRequest(`${origin}/api/auth/forgot-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -114,6 +114,18 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mockTxDelete).toHaveBeenCalled();
     expect(mockTxInsert).toHaveBeenCalled();
     expect(mockTxDelete.mock.invocationCallOrder[0]).toBeLessThan(mockTxInsert.mock.invocationCallOrder[0]);
+  });
+
+  it('derives reset link base URL from the request origin, not a hardcoded fallback', async () => {
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+
+    const prodOrigin = 'https://www.boardsesh.com';
+    await POST(createRequest({ email: 'test@example.com' }, prodOrigin));
+
+    const [, , baseUrl] = mockSendPasswordResetEmail.mock.calls[0] as [string, string, string];
+    expect(baseUrl).toBe(prodOrigin);
+    expect(baseUrl).not.toBe('http://localhost:3000');
   });
 
   it('returns generic response and does not send email for OAuth-only account', async () => {
