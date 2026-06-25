@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
-import { getPreference, setPreference } from './preference-store';
+import { getPreference, setPreference, removePreference } from './preference-store';
 
 // Local, on-device feature-flag overrides — the highest-precedence layer in the
 // FeatureFlagsProvider merge (PostHog < static env < this). A tester flips a
@@ -46,12 +46,19 @@ function isOverridesRecord(value: unknown): value is FeatureFlagOverrides {
 export async function loadFeatureFlagOverrides(): Promise<FeatureFlagOverrides> {
   if (hasLoaded) return current;
   const stored = await getPreference<unknown>(STORAGE_KEY);
-  // A mutator may have raced in while we awaited storage; honour the live state
-  // over the (now stale) persisted value.
-  if (hasLoaded) return current;
-  current = isOverridesRecord(stored) ? stored : EMPTY_OVERRIDES;
+  // A mutator may have set an override while we awaited storage. Merge rather
+  // than replace: the persisted bag is the base, any keys a racing mutator wrote
+  // win on top. Replacing here would drop the persisted overrides if a mutator
+  // fired during boot (before this read resolved). `current` is EMPTY in the
+  // common no-race path, so the merge is just the stored bag.
+  const raced = Object.keys(current).length > 0;
+  current = { ...(isOverridesRecord(stored) ? stored : EMPTY_OVERRIDES), ...current };
   hasLoaded = true;
   notify();
+  // The racing mutator's persist() only wrote its own keys; re-persist the
+  // merged bag so the persisted flags it didn't know about survive the next
+  // cold boot.
+  if (raced) void persist();
   return current;
 }
 
@@ -77,13 +84,14 @@ export function clearFeatureFlagOverride(key: string): void {
 }
 
 export function clearAllFeatureFlagOverrides(): void {
-  // Nothing in memory to clear — return without churning storage with an empty
-  // write. The one-time load (if still pending) settles `loaded` on its own.
+  // Nothing in memory to clear — return without touching storage. The one-time
+  // load (if still pending) settles `loaded` on its own.
   if (Object.keys(current).length === 0) return;
   current = EMPTY_OVERRIDES;
   hasLoaded = true;
   notify();
-  void persist();
+  // Remove the key rather than writing `{}` — cleaner than leaving an empty bag.
+  void removePreference(STORAGE_KEY);
 }
 
 let loadPromise: Promise<FeatureFlagOverrides> | null = null;
@@ -149,6 +157,10 @@ export function useFeatureFlagOverrides(): {
 // FeatureFlagsProvider — resetting modules there would bind the provider and
 // these mutators to different module instances, so it needs an explicit reset.
 export function resetFeatureFlagOverridesForTests(): void {
+  // Guard on the test env so the body is dead code in release builds (Metro
+  // inlines NODE_ENV, so the reset logic gets stripped from the bundle). Vitest
+  // sets NODE_ENV=test, where this runs normally.
+  if (process.env.NODE_ENV !== 'test') return;
   current = EMPTY_OVERRIDES;
   hasLoaded = false;
   loadPromise = null;
