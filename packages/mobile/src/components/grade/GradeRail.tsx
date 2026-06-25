@@ -73,6 +73,12 @@ type GradeRangeRailProps = {
   grades: readonly Grade[];
   bound: GradeBound;
   sendDifficultyIds?: readonly number[];
+  /**
+   * Auto-center the rail on mount when there is no grade selection. True (the
+   * default) surfaces the climber's typical grades; the logbook filter passes
+   * false so an unset rail opens at the easiest grade instead of mid-scrolled.
+   */
+  centerOnEmpty?: boolean;
   onChange: (next: GradeBound) => void;
   /**
    * Asked to dismiss itself (swipe the handle down, completed range, or cleared
@@ -89,6 +95,7 @@ export function GradeRangeRail({
   grades: unsortedGrades,
   bound,
   sendDifficultyIds = [],
+  centerOnEmpty = true,
   onChange,
   onRequestClose,
   dismissible = true,
@@ -111,7 +118,12 @@ export function GradeRangeRail({
 
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
   const gradeIds = useMemo(() => grades.map((grade) => grade.difficultyId), [grades]);
-  const centerId = useMemo(() => gradeRailCenter(bound, grades, sendDifficultyIds), [bound, grades, sendDifficultyIds]);
+  const centerId = useMemo(() => {
+    // With centering-on-empty off (the logbook filter), only auto-center when a
+    // grade is actually selected; otherwise open at the start, not mid-scrolled.
+    if (!centerOnEmpty && bound.minGradeId == null && bound.maxGradeId == null) return undefined;
+    return gradeRailCenter(bound, grades, sendDifficultyIds);
+  }, [centerOnEmpty, bound, grades, sendDifficultyIds]);
 
   const clearDismissTimer = useCallback(() => {
     if (dismissTimerRef.current) {

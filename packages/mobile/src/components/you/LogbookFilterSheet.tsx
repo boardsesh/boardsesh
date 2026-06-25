@@ -280,6 +280,7 @@ export function LogbookFilterSheet({
       index={0}
       snapPoints={snapPoints}
       enableDynamicSizing={false}
+      enablePanDownToClose
       onDismiss={onDismiss}
       handleIndicatorStyle={styles.indicator}
     >
@@ -315,12 +316,7 @@ export function LogbookFilterSheet({
 
         <View style={styles.sectionsContainer}>
           {/* REFINE — status / flash / grade / angle. */}
-          <CollapsibleSection
-            title={t('mobile.logbook.refine')}
-            defaultExpanded
-            summary={refineSummary}
-            resetKey={sectionResetKey}
-          >
+          <CollapsibleSection title={t('mobile.logbook.refine')} summary={refineSummary} resetKey={sectionResetKey}>
             <Text variant="footnote" style={styles.subsectionLabel}>
               {t('mobile.logbook.statusLabel')}
             </Text>
@@ -350,6 +346,7 @@ export function LogbookFilterSheet({
               onChange={handleGradeChange}
               dismissible={false}
               showTitle
+              centerOnEmpty={false}
               style={styles.inlineGradeRail}
             />
 
