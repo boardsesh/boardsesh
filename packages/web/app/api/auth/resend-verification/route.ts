@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const baseUrl = request.nextUrl.origin;
+    const baseUrl = process.env.BASE_URL ?? request.nextUrl.origin;
     await sendVerificationEmail(email, token, baseUrl);
 
     await consistentDelay(startTime);

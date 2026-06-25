@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
 
     // Send verification email if enabled
     if (emailVerificationEnabled && verificationToken) {
-      const baseUrl = request.nextUrl.origin;
+      const baseUrl = process.env.BASE_URL ?? request.nextUrl.origin;
       let emailSent = false;
       try {
         await sendVerificationEmail(email, verificationToken, baseUrl);

@@ -116,16 +116,42 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mockTxDelete.mock.invocationCallOrder[0]).toBeLessThan(mockTxInsert.mock.invocationCallOrder[0]);
   });
 
-  it('derives reset link base URL from the request origin, not a hardcoded fallback', async () => {
+  it('uses BASE_URL env var when set (host header injection prevention)', async () => {
     mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
     mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
 
-    const prodOrigin = 'https://www.boardsesh.com';
-    await POST(createRequest({ email: 'test@example.com' }, prodOrigin));
+    const savedBaseUrl = process.env.BASE_URL;
+    process.env.BASE_URL = 'https://www.boardsesh.com';
+    try {
+      // Even with a spoofed host in the request, the env var wins.
+      await POST(createRequest({ email: 'test@example.com' }, 'https://attacker.com'));
+      const [, , baseUrl] = mockSendPasswordResetEmail.mock.calls[0] as [string, string, string];
+      expect(baseUrl).toBe('https://www.boardsesh.com');
+    } finally {
+      if (savedBaseUrl === undefined) {
+        delete process.env.BASE_URL;
+      } else {
+        process.env.BASE_URL = savedBaseUrl;
+      }
+    }
+  });
 
-    const [, , baseUrl] = mockSendPasswordResetEmail.mock.calls[0] as [string, string, string];
-    expect(baseUrl).toBe(prodOrigin);
-    expect(baseUrl).not.toBe('http://localhost:3000');
+  it('falls back to request origin when BASE_URL is not set', async () => {
+    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+    mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
+
+    const savedBaseUrl = process.env.BASE_URL;
+    delete process.env.BASE_URL;
+    try {
+      await POST(createRequest({ email: 'test@example.com' }, 'https://www.boardsesh.com'));
+      const [, , baseUrl] = mockSendPasswordResetEmail.mock.calls[0] as [string, string, string];
+      expect(baseUrl).toBe('https://www.boardsesh.com');
+      expect(baseUrl).not.toBe('http://localhost:3000');
+    } finally {
+      if (savedBaseUrl !== undefined) {
+        process.env.BASE_URL = savedBaseUrl;
+      }
+    }
   });
 
   it('returns generic response and does not send email for OAuth-only account', async () => {
