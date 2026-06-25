@@ -17,7 +17,10 @@ import { springs } from '../../theme/animations';
 // "can't dismiss easily" bug). It activates on a downward drag (`activeOffsetY`)
 // and bails on a horizontal one (`failOffsetX`) so the carousel keeps L/R
 // swipes. To avoid a jump when a scroll-to-top rolls into a dismiss, it only
-// engages when the gesture BEGAN at the top of the scroll.
+// engages when the gesture BEGAN at the top of the scroll. `failOffsetX` alone
+// isn't enough during fast climb-swapping — the carousel goes inert while a fling
+// settles, so a fresh downward touch reaches this Pan; we also hard-block it
+// whenever the carousel's swipe offset is non-zero or a fling is in progress.
 
 /** Downward travel (px) before the dismiss activates. */
 const DISMISS_ACTIVATE_OFFSET = 14;
@@ -38,6 +41,14 @@ type UseDrawerDismissGestureOptions = {
    *  (without it the native scroll wins by default and the dismiss barely fires).
    *  Typed as RNGH's GestureRef shape so the method call needs no cast. */
   scrollRef?: RefObject<ComponentType | undefined | null>;
+  /** The carousel's horizontal swipe offset. Non-zero while a L/R swipe is dragging
+   *  or mid-fling — we block the vertical dismiss for that whole window so a downward
+   *  drift during fast climb-swapping can't accidentally pull the drawer down. */
+  swipeTranslateX?: SharedValue<number>;
+  /** The carousel's fling-in-progress flag. True while a thrown swipe is still
+   *  settling (the carousel is inert then, so a fresh downward touch would otherwise
+   *  reach this dismiss) — block the dismiss until it clears. */
+  swipeIsAnimating?: SharedValue<boolean>;
 };
 
 type UseDrawerDismissGestureReturn = {
@@ -50,6 +61,8 @@ export function useDrawerDismissGesture({
   onDismiss,
   scrollYSV,
   scrollRef,
+  swipeTranslateX,
+  swipeIsAnimating,
 }: UseDrawerDismissGestureOptions): UseDrawerDismissGestureReturn {
   const translateY = useSharedValue(0);
   const isDismissing = useSharedValue(false);
@@ -81,6 +94,15 @@ export function useDrawerDismissGesture({
       .onUpdate((event) => {
         'worklet';
         if (isDismissing.value) return;
+        // Once the carousel owns the gesture as a horizontal swipe (offset non-zero)
+        // or is still settling a fling, block the vertical dismiss entirely — a
+        // downward drift while quickly swapping climbs must not pull the drawer down.
+        // Guard via `?? 0` so an absent shared value reads as "no swipe", not as a
+        // permanent block (`undefined !== 0` is true).
+        if ((swipeTranslateX?.value ?? 0) !== 0 || swipeIsAnimating?.value === true) {
+          translateY.value = 0;
+          return;
+        }
         // Follow the finger only when the gesture began at the top and is heading
         // down; otherwise it's a scroll (the ScrollView, running simultaneously,
         // handles it) and the drawer stays put.
@@ -88,6 +110,14 @@ export function useDrawerDismissGesture({
       })
       .onEnd((event) => {
         'worklet';
+        // Same guard as onUpdate, and it must run BEFORE the velocity check: a fast
+        // horizontal flick carries vertical velocity, so without this an accidental
+        // down-component could satisfy velocityY > threshold and commit a dismiss
+        // even though translateY was pinned at 0.
+        if ((swipeTranslateX?.value ?? 0) !== 0 || swipeIsAnimating?.value === true) {
+          translateY.value = withSpring(0, springs.interactive);
+          return;
+        }
         const committed =
           startedAtTop.value &&
           (translateY.value > DISMISS_DISTANCE_THRESHOLD || event.velocityY > DISMISS_VELOCITY_THRESHOLD);
@@ -111,7 +141,7 @@ export function useDrawerDismissGesture({
         isDismissing.value = false;
       });
     return scrollRef ? pan.simultaneousWithExternalGesture(scrollRef) : pan;
-  }, [translateY, isDismissing, startedAtTop, scrollYSV, scrollRef]);
+  }, [translateY, isDismissing, startedAtTop, scrollYSV, scrollRef, swipeTranslateX, swipeIsAnimating]);
 
   return { gesture, translateY };
 }

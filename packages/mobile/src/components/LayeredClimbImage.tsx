@@ -21,6 +21,14 @@ type LayeredClimbImageProps = {
    * View-layer only — not baked into the cached PNG, so no cache-key impact.
    */
   dimBackground?: boolean;
+  /**
+   * Drop the holds overlay's 150ms cross-fade for this render. The play-drawer
+   * carousel sets this while committing a swipe: the incoming climb's overlay is
+   * already a memory-cache hit (the peek painted it during the drag), so an instant
+   * swap lands the new holds on the very next frame instead of fading them up —
+   * which on Android was the visible end-of-swipe flash at centre.
+   */
+  suppressOverlayTransition?: boolean;
   recyclingKey?: string;
   /**
    * testID for the holds-overlay layer. Only rendered once the async overlay PNG
@@ -48,6 +56,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   missingBackgroundCount = 0,
   mirrored,
   dimBackground,
+  suppressOverlayTransition,
   recyclingKey,
   overlayTestID,
 }: LayeredClimbImageProps) {
@@ -103,7 +112,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           contentFit="contain"
           recyclingKey={recyclingKey}
           cachePolicy="memory-disk"
-          transition={150}
+          transition={suppressOverlayTransition ? 0 : 150}
           // Overlay PNG is rasterized at the surface size (small for the
           // list/accessory, native for play) so no main-thread downscale
           // is needed — skip expo-image's resample.

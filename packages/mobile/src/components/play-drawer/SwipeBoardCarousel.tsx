@@ -285,6 +285,11 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 boardHeight={boardHeight}
                 mirrored={mirrored}
                 style={boardStyle}
+                // During a swipe commit the current board's frames swap to the
+                // climb the peek was showing; that overlay is already cached, so an
+                // instant (no-fade) swap lands it before the reset uncovers it —
+                // killing the Android end-of-swipe flash. See isCommitting above.
+                suppressOverlayTransition={isCommitting}
               />
             </Animated.View>
           </Animated.View>

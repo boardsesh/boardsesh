@@ -224,14 +224,6 @@ export function PlayDrawer({
   const handleDismiss = useCallback(() => {
     router.dismiss();
   }, []);
-  const { gesture: dismissGesture, translateY: dismissTranslateY } = useDrawerDismissGesture({
-    onDismiss: handleDismiss,
-    scrollYSV,
-    scrollRef: scrollGestureRef,
-  });
-  const dismissAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: dismissTranslateY.value }],
-  }));
 
   // The header (title + grade) rides this exact value as the board so they swipe
   // in lockstep; the carousel's gesture writes into it (externalTranslateX). The
@@ -242,6 +234,21 @@ export function PlayDrawer({
   // covering centre) and snaps it back to 0 only once the new climb has actually
   // rendered — so the swap is invisible instead of flashing the old climb.
   const swipeIsAnimating = useSharedValue(false);
+
+  // The dismiss reads these so it can stand down while a horizontal swipe owns the
+  // gesture (offset non-zero) or a fling is still settling (carousel inert) — that's
+  // when an accidental downward drift would otherwise yank the drawer down.
+  const { gesture: dismissGesture, translateY: dismissTranslateY } = useDrawerDismissGesture({
+    onDismiss: handleDismiss,
+    scrollYSV,
+    scrollRef: scrollGestureRef,
+    swipeTranslateX,
+    swipeIsAnimating,
+  });
+  const dismissAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: dismissTranslateY.value }],
+  }));
+
   const [swipeDirection, setSwipeDirection] = useState<'next' | 'prev'>('next');
   useAnimatedReaction(
     () => (swipeTranslateX.value < 0 ? 'next' : 'prev'),

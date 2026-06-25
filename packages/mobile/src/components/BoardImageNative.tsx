@@ -32,6 +32,13 @@ type BoardImageNativeProps = {
   renderWidth?: number;
   style?: ViewStyle;
   /**
+   * Drop the holds overlay's cross-fade for this render — forwarded to
+   * LayeredClimbImage. The play-drawer carousel sets it on the current board while
+   * committing a swipe so the new climb's (already-cached) holds swap instantly
+   * instead of fading up, which removed the Android end-of-swipe flash.
+   */
+  suppressOverlayTransition?: boolean;
+  /**
    * testID forwarded to the holds-overlay layer, which only mounts once the async
    * overlay render is ready — lets screenshot/e2e flows wait for the lit board to
    * appear. The full-size play-drawer board sets this; thumbnails leave it unset.
@@ -62,6 +69,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
   filledStyle = false,
   renderWidth,
   style,
+  suppressOverlayTransition,
   overlayTestID,
 }: BoardImageNativeProps) {
   const { overlayUri, backgroundPaths, missingBackgroundCount } = useNativeClimbRender({
@@ -87,6 +95,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
         backgroundPaths={backgroundPaths}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
+        suppressOverlayTransition={suppressOverlayTransition}
         overlayTestID={overlayTestID}
       />
     </View>
