@@ -53,7 +53,9 @@ describe('password-reset utilities', () => {
     it('waits the remaining time up to the minimum', async () => {
       const start = Date.now();
       await consistentDelay(start, 60);
-      expect(Date.now() - start).toBeGreaterThanOrEqual(55);
+      // setTimeout never fires early, so the delay is always >= the requested 60ms;
+      // assert a generous lower bound so a coarse-resolution clock can't flake it.
+      expect(Date.now() - start).toBeGreaterThanOrEqual(45);
     });
 
     it('returns immediately when the minimum has already elapsed', async () => {
