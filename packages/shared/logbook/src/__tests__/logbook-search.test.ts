@@ -19,7 +19,7 @@ describe('toAscentFeedInput', () => {
     expect(input.benchmarkOnly).toBeUndefined();
   });
 
-  it('Hardest preset -> sortBy hardest (resolver expands to consensus -> effective -> date)', () => {
+  it('Hardest preset -> sortBy hardest (resolver expands to effective grade -> date)', () => {
     const input = toAscentFeedInput({
       filters: DEFAULT_LOGBOOK_FILTERS,
       sort: { ...DEFAULT_LOGBOOK_SORT, preset: 'hardest' },

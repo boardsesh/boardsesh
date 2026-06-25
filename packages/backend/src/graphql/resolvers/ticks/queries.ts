@@ -482,7 +482,11 @@ export const tickQueries = {
     if (sortBy === 'recent') {
       resolvedPrimarySort = { field: 'date', direction: sortOrder };
     } else if (sortBy === 'hardest') {
-      resolvedPrimarySort = { field: 'consensusGrade', direction: 'desc' };
+      // Hardest = the climber's effective grade (their logged grade, or the
+      // consensus when they didn't grade it) desc. That's the same grade the
+      // logbook row shows, so the list reads in order while scrolling. Date
+      // breaks ties (appended below). Shared by web + mobile.
+      resolvedPrimarySort = { field: 'effectiveGrade', direction: 'desc' };
     } else if (sortBy === 'easiest') {
       resolvedPrimarySort = { field: 'loggedGrade', direction: 'asc' };
     } else if (sortBy === 'mostAttempts') {
@@ -492,13 +496,7 @@ export const tickQueries = {
     }
 
     let resolvedSecondarySort: { field: string; direction: string } | null;
-    if (sortBy === 'hardest') {
-      // Hardest = consensus grade desc, then the climber's effective grade
-      // (their logged grade, or the consensus when they didn't grade it) desc,
-      // then most-recent ascent (the climbedAt tiebreaker appended below). Shared
-      // by web + mobile so an ungraded tick ranks as if logged == consensus.
-      resolvedSecondarySort = { field: 'effectiveGrade', direction: 'desc' };
-    } else if (secondarySortBy) {
+    if (secondarySortBy) {
       resolvedSecondarySort = { field: secondarySortBy, direction: secondarySortOrder };
     } else {
       resolvedSecondarySort = null;

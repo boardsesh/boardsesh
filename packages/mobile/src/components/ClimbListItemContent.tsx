@@ -67,6 +67,17 @@ type ClimbListItemContentProps = {
    * or nothing (solo), having moved the setter into the detail line as "set by X".
    */
   primarySubtitleOverride?: string | null;
+  /**
+   * Community consensus grade (formatted), shown as a small `people`-marked
+   * secondary under the main grade when it differs from the climber's logged
+   * grade. The logbook passes this so a climb you under/over-graded reads clearly.
+   */
+  consensusGrade?: string | null;
+  /**
+   * True when the main grade shown IS the consensus (the climber never logged
+   * their own). Marks it with the `people` glyph so it's clear it's the crowd's.
+   */
+  gradeIsConsensus?: boolean;
 };
 
 /**
@@ -125,9 +136,12 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   subtitleDetailParts,
   showAscentStatus = true,
   primarySubtitleOverride,
+  consensusGrade,
+  gradeIsConsensus = false,
 }: ClimbListItemContentProps) {
   const { t } = useTranslation('climbs');
   const { formatGrade } = useGradeFormat();
+  const { systemColors } = useTheme();
 
   const gradeColor = getGradeColor(climb.difficulty) ?? DEFAULT_GRADE_COLOR;
   const formattedGrade = formatGrade(climb.difficulty);
@@ -207,9 +221,26 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       {/* Right: ascent-status glyph + colorized grade — the two scan keys together */}
       <View style={styles.rightSection}>
         {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
-        <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
-          {formattedGrade ?? climb.difficulty}
-        </Text>
+        <View style={styles.gradeColumn}>
+          <View style={styles.gradeRow}>
+            {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
+            <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
+              {formattedGrade ?? climb.difficulty}
+            </Text>
+          </View>
+          {consensusGrade ? (
+            <View style={styles.consensusRow}>
+              <Icon name="people" size={11} color={systemColors.secondaryLabel} />
+              <Text
+                variant="caption2"
+                numberOfLines={1}
+                style={[styles.consensusText, { color: systemColors.secondaryLabel }]}
+              >
+                {consensusGrade}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </View>
     </>
   );
@@ -254,5 +285,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     minWidth: 40,
     textAlign: 'right',
+  },
+  gradeColumn: {
+    alignItems: 'flex-end',
+    gap: 1,
+  },
+  gradeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  consensusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  consensusText: {
+    fontWeight: '600',
   },
 });

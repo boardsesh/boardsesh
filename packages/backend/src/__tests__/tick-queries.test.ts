@@ -175,14 +175,14 @@ describe('tickQueries — behavior fixes', () => {
   });
 
   describe('userAscentsFeed — hardest sort', () => {
-    it('orders by consensus desc, then effective grade (logged, else consensus) desc', async () => {
-      // consensus / logged -> effective grade:
+    it('orders by effective grade (logged, else consensus) desc, date breaking ties', async () => {
+      // consensus / logged -> effective grade (logged, else consensus):
       //   D 12 / -  -> 12
       //   E 11 / 10 -> 10
       //   A 10 / 11 -> 11
       //   B 10 / -  -> 10   (ungraded ranks as if logged == consensus)
       //   C 10 / 9  -> 9
-      // hardest = consensus first, then effective grade -> D, E, A, B, C
+      // hardest = effective grade desc, date breaks ties -> D, A, E, B, C
       const seeded: Array<{ key: string; consensus: number; logged: number | null }> = [
         { key: 'D', consensus: 12, logged: null },
         { key: 'E', consensus: 11, logged: 10 },
@@ -205,12 +205,12 @@ describe('tickQueries — behavior fixes', () => {
 
       const result = await callUserAscentsFeed(TEST_USER_ID, { sortBy: 'hardest' });
 
-      expect(result.items.map((item) => item.climbName)).toEqual(['D', 'E', 'A', 'B', 'C']);
+      expect(result.items.map((item) => item.climbName)).toEqual(['D', 'A', 'E', 'B', 'C']);
     });
 
-    it('breaks ties on ascent date (more recent first) when consensus and effective grade match', async () => {
+    it('breaks ties on ascent date (more recent first) when the effective grade matches', async () => {
       // Same consensus, both ungraded (effective == consensus), so only climbedAt
-      // separates them — exercises the third ORDER BY key (climbedAt desc).
+      // separates them — exercises the climbedAt tiebreaker after the effective-grade key.
       const older = CLIMB_PREFIX + 'tiebreak-older';
       const newer = CLIMB_PREFIX + 'tiebreak-newer';
       await insertClimb(older, 'Older');
