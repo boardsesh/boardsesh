@@ -86,7 +86,14 @@ export default function ForgotPasswordContent() {
       <Box component="main" sx={{ padding: '24px', display: 'flex', justifyContent: 'center', paddingTop: '48px' }}>
         <Card sx={{ width: '100%', maxWidth: 400 }}>
           <CardContent>
-            <Stack spacing={2}>
+            <Stack
+              spacing={2}
+              component="form"
+              onSubmit={(e) => {
+                e.preventDefault();
+              }}
+              noValidate
+            >
               {submitted ? (
                 <>
                   <Typography variant="body1" component="p">
@@ -126,6 +133,7 @@ export default function ForgotPasswordContent() {
                   />
 
                   <Button
+                    type="submit"
                     variant="contained"
                     onClick={handleSubmit}
                     disabled={loading}

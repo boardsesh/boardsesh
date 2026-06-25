@@ -115,7 +115,7 @@ describe('POST /api/auth/reset-password', () => {
     expect(response.status).toBe(400);
   });
 
-  it('returns 400 when reset token does not exist', async () => {
+  it('returns 400 when reset token does not exist (no cleanup delete to avoid DoS)', async () => {
     mockTokenLimit.mockResolvedValue([]);
 
     const response = await POST(
@@ -128,7 +128,7 @@ describe('POST /api/auth/reset-password', () => {
     );
 
     expect(response.status).toBe(400);
-    expect(mockDelete).toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('resets password successfully', async () => {
@@ -152,6 +152,7 @@ describe('POST /api/auth/reset-password', () => {
 
   it('returns 400 when token is expired (simulated by empty SELECT result from db-side expiry filter)', async () => {
     // The WHERE clause includes gt(expires, now), so an expired token returns no rows.
+    // We do NOT delete here to avoid a DoS where an attacker invalidates a victim's token.
     mockTokenLimit.mockResolvedValue([]);
 
     const response = await POST(
@@ -164,7 +165,7 @@ describe('POST /api/auth/reset-password', () => {
     );
 
     expect(response.status).toBe(400);
-    expect(mockDelete).toHaveBeenCalled();
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('inserts credentials when user does not already have password credentials', async () => {

@@ -77,6 +77,21 @@ describe('ResetPasswordContent', () => {
     expect(screen.getByLabelText(/confirm new password/i)).toBeTruthy();
   });
 
+  it('shows error when password field is empty', async () => {
+    renderWithParams('abc-token', 'user@example.com');
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    expect(await screen.findByText(/please enter a new password/i)).toBeTruthy();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('shows error when password is too short', async () => {
+    renderWithParams('abc-token', 'user@example.com');
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'short' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    expect(await screen.findByText(/at least 8 characters/i)).toBeTruthy();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it('shows mismatch error when passwords do not match', async () => {
     renderWithParams('abc-token', 'user@example.com');
     fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'SecurePass1!' } });

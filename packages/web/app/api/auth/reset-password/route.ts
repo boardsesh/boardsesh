@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     // NOTE: checkRateLimit is in-memory and not shared across serverless instances.
     // This provides best-effort protection only. Add Redis/Upstash rate limiting
     // before relying on this as a production security control.
-    const rateLimitResult = checkRateLimit(`reset-password:${clientIp}`, 10, 60_000);
+    const rateLimitResult = checkRateLimit(`reset-password:${clientIp}`, 5, 60_000);
 
     if (rateLimitResult.limited) {
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
@@ -73,7 +73,9 @@ export async function POST(request: NextRequest) {
       .limit(1);
 
     if (resetToken.length === 0) {
-      await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
+      // Do NOT delete here — a wrong token in this position could let an attacker
+      // invalidate a victim's freshly-issued token (DoS). Tokens expire naturally
+      // (1 hour TTL) and are cleaned up by the delete-before-insert in forgot-password.
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
@@ -84,7 +86,6 @@ export async function POST(request: NextRequest) {
       .where(eq(schema.users.email, email))
       .limit(1);
     if (user.length === 0) {
-      await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
@@ -104,6 +105,9 @@ export async function POST(request: NextRequest) {
           .set({ passwordHash, updatedAt: new Date() })
           .where(eq(schema.userCredentials.userId, user[0].id));
       } else {
+        // Insert credentials for OAuth-only users who want to add a password.
+        // In practice forgot-password skips OAuth-only accounts, but this supports
+        // future flows where an admin or other path may issue a reset token directly.
         await tx.insert(schema.userCredentials).values({
           userId: user[0].id,
           passwordHash,
