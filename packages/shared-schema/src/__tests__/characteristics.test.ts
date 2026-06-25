@@ -94,4 +94,20 @@ describe('moonBoardMethodToCharacteristic', () => {
     // "no kickboard" without footless → the no-kickboard token.
     expect(moonBoardMethodToCharacteristic('Feet follow hands, no kickboard')).toBe('method_no_kickboard');
   });
+
+  // The canonical method labels the MoonBoard app surfaces, which appear verbatim
+  // as `.data[].method` in the community dump (the import call site:
+  // packages/db/scripts/import-moonboard-problems.ts). Locking them here documents
+  // the contract for each. NOTE: a full sweep of every *distinct* `.method` value
+  // across all six layout JSONs in the dump is deferred — the mapper is
+  // substring-based (see characteristics.ts:88-91) so minor label variants still
+  // resolve, but extending it should re-confirm against that authoritative set.
+  it.each([
+    ['Feet follow hands', null],
+    ['Footless', 'method_footless'],
+    ['Footless + kickboard', 'method_footless_kickboard'],
+    ['No kickboard', 'method_no_kickboard'],
+  ])('maps the canonical MoonBoard label %j to %j', (label, expected) => {
+    expect(moonBoardMethodToCharacteristic(label as string)).toBe(expected);
+  });
 });

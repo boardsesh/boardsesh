@@ -83,6 +83,20 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     angle: Int!
   }
 
+  """
+  MoonBoard problem method, stored as a mutually-exclusive climb-characteristic
+  token. Omit for the "feet follow hands" default. Source of truth for the token
+  set: CLIMB_CHARACTERISTICS in @boardsesh/shared-schema.
+  """
+  enum MoonBoardMethod {
+    "No foot holds; the kickboard is not used."
+    method_footless
+    "No foot holds; the kickboard may be used."
+    method_footless_kickboard
+    "Feet follow hands, but the kickboard is off-limits."
+    method_no_kickboard
+  }
+
   input SaveMoonBoardClimbInput {
     boardType: String!
     layoutId: Int!
@@ -93,8 +107,8 @@ export const newClimbFeedTypeDefs = /* GraphQL */ `
     isDraft: Boolean
     userGrade: String
     isBenchmark: Boolean
-    "MoonBoard method as a characteristic token: method_footless / method_footless_kickboard / method_no_kickboard. Omit for the 'feet follow hands' default."
-    method: String
+    "MoonBoard method as a characteristic token. Omit for the 'feet follow hands' default."
+    method: MoonBoardMethod
     setter: String
   }
 

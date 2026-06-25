@@ -398,6 +398,38 @@ describe('climb mutations', () => {
     expect(insertCalls[0].values).toMatchObject({ characteristics: ['method_footless'] });
   });
 
+  it('stores null characteristics when no MoonBoard method is supplied', async () => {
+    mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mockDb.select
+      .mockReturnValueOnce(
+        createMockChain([{ name: 'Alice', displayName: 'Alice Setter', image: null, avatarUrl: null }]),
+      )
+      .mockReturnValueOnce(createMockChain([{ difficulty: 17 }]));
+    mockDb.insert.mockImplementation((table: unknown) =>
+      createMockChain(undefined, (values) => insertCalls.push({ table, values })),
+    );
+
+    await climbMutations.saveMoonBoardClimb(
+      {},
+      {
+        input: {
+          boardType: 'moonboard',
+          layoutId: 3,
+          name: 'Feet Follow Hands Problem',
+          description: '',
+          holds: { start: ['A1'], hand: ['B2'], finish: ['C3'] },
+          angle: 40,
+          isDraft: false,
+          userGrade: '6A+',
+          // No `method` — the "feet follow hands" default carries no characteristic token.
+        },
+      },
+      makeCtx(),
+    );
+
+    expect(insertCalls[0].values).toMatchObject({ characteristics: null });
+  });
+
   it('seeds a stats row for MoonBoard climbs saved without a grade', async () => {
     mockDb.execute.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     mockDb.select.mockReturnValueOnce(

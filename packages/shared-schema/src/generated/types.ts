@@ -2132,6 +2132,19 @@ export type MoonBoardHoldsInput = {
   start: Array<Scalars['String']['input']>;
 };
 
+/**
+ * MoonBoard problem method, stored as a mutually-exclusive climb-characteristic
+ * token. Omit for the "feet follow hands" default. Source of truth for the token
+ * set: CLIMB_CHARACTERISTICS in @boardsesh/shared-schema.
+ */
+export type MoonBoardMethod =
+  /** No foot holds; the kickboard is not used. */
+  | 'method_footless'
+  /** No foot holds; the kickboard may be used. */
+  | 'method_footless_kickboard'
+  /** Feet follow hands, but the kickboard is off-limits. */
+  | 'method_no_kickboard';
+
 /** Root mutation type for all write operations. */
 export type Mutation = {
   __typename?: 'Mutation';
@@ -4602,8 +4615,8 @@ export type SaveMoonBoardClimbInput = {
   isBenchmark?: InputMaybe<Scalars['Boolean']['input']>;
   isDraft?: InputMaybe<Scalars['Boolean']['input']>;
   layoutId: Scalars['Int']['input'];
-  /** MoonBoard method as a characteristic token: method_footless / method_footless_kickboard / method_no_kickboard. Omit for the 'feet follow hands' default. */
-  method?: InputMaybe<Scalars['String']['input']>;
+  /** MoonBoard method as a characteristic token. Omit for the 'feet follow hands' default. */
+  method?: InputMaybe<MoonBoardMethod>;
   name: Scalars['String']['input'];
   setter?: InputMaybe<Scalars['String']['input']>;
   userGrade?: InputMaybe<Scalars['String']['input']>;
@@ -6303,6 +6316,7 @@ export type ResolversTypes = ResolversObject<{
   MoonBoardClimbDuplicateCandidateInput: MoonBoardClimbDuplicateCandidateInput;
   MoonBoardClimbDuplicateMatch: ResolverTypeWrapper<MoonBoardClimbDuplicateMatch>;
   MoonBoardHoldsInput: MoonBoardHoldsInput;
+  MoonBoardMethod: MoonBoardMethod;
   Mutation: ResolverTypeWrapper<{}>;
   MyBoardsInput: MyBoardsInput;
   MyGymsInput: MyGymsInput;
