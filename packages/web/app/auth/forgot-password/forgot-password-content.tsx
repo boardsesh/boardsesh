@@ -24,6 +24,7 @@ export default function ForgotPasswordContent() {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const { showMessage } = useSnackbar();
 
   const handleSubmit = async () => {
@@ -52,7 +53,7 @@ export default function ForgotPasswordContent() {
         return;
       }
 
-      showMessage(data.message || t('forgotPassword.toasts.success'), 'success');
+      setSubmitted(true);
     } catch (error) {
       console.error('Forgot password error:', error);
       showMessage(t('forgotPassword.toasts.failed'), 'error');
@@ -86,45 +87,58 @@ export default function ForgotPasswordContent() {
         <Card sx={{ width: '100%', maxWidth: 400 }}>
           <CardContent>
             <Stack spacing={2}>
-              <Typography variant="body1" component="p" color="text.secondary">
-                {t('forgotPassword.description')}
-              </Typography>
+              {submitted ? (
+                <>
+                  <Typography variant="body1" component="p">
+                    {t('forgotPassword.success')}
+                  </Typography>
+                  <Button component={LocaleLink} variant="text" href="/auth/login">
+                    {t('forgotPassword.back')}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Typography variant="body1" component="p" color="text.secondary">
+                    {t('forgotPassword.description')}
+                  </Typography>
 
-              <TextField
-                label={t('forgotPassword.fields.email')}
-                type="email"
-                placeholder={t('login.placeholders.email')}
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (emailError) setEmailError(null);
-                }}
-                error={!!emailError}
-                helperText={emailError}
-                required
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <MailOutlined />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
+                  <TextField
+                    label={t('forgotPassword.fields.email')}
+                    type="email"
+                    placeholder={t('login.placeholders.email')}
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailError) setEmailError(null);
+                    }}
+                    error={!!emailError}
+                    helperText={emailError}
+                    required
+                    slotProps={{
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <MailOutlined />
+                          </InputAdornment>
+                        ),
+                      },
+                    }}
+                  />
 
-              <Button
-                variant="contained"
-                onClick={handleSubmit}
-                disabled={loading}
-                startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
-              >
-                {t('forgotPassword.submit')}
-              </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handleSubmit}
+                    disabled={loading}
+                    startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
+                  >
+                    {t('forgotPassword.submit')}
+                  </Button>
 
-              <Button component={LocaleLink} variant="text" href="/auth/login">
-                {t('forgotPassword.back')}
-              </Button>
+                  <Button component={LocaleLink} variant="text" href="/auth/login">
+                    {t('forgotPassword.back')}
+                  </Button>
+                </>
+              )}
             </Stack>
           </CardContent>
         </Card>

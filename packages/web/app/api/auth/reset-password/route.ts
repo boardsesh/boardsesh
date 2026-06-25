@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
     const resetToken = await db
-      .select()
+      .select({ expires: schema.verificationTokens.expires })
       .from(schema.verificationTokens)
       .where(
         and(

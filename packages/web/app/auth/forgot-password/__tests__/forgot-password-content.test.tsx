@@ -58,7 +58,7 @@ describe('ForgotPasswordContent', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('submits valid email and shows success toast', async () => {
+  it('submits valid email and shows inline confirmation (hides form)', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ message: 'If an account exists...' }),
@@ -68,7 +68,9 @@ describe('ForgotPasswordContent', () => {
     fireEvent.click(screen.getByRole('button', { name: /send reset link/i }));
     await waitFor(() => expect(mockFetch).toHaveBeenCalledOnce());
     expect(mockFetch).toHaveBeenCalledWith('/api/auth/forgot-password', expect.objectContaining({ method: 'POST' }));
-    await waitFor(() => expect(mockShowMessage).toHaveBeenCalledOnce());
+    // Form hides and confirmation message appears
+    expect(screen.queryByLabelText(/email/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: /send reset link/i })).toBeNull();
   });
 
   it('shows error toast when API returns failure', async () => {

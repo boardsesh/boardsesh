@@ -87,6 +87,9 @@ export async function POST(request: NextRequest) {
     });
 
     const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    // Email is sent outside the transaction intentionally (nodemailer is not transactional).
+    // If this throws, the token remains in the DB but unreachable to the user — the
+    // delete-before-insert at the start of the next attempt cleans it up automatically.
     await sendPasswordResetEmail(email, token, baseUrl);
 
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
