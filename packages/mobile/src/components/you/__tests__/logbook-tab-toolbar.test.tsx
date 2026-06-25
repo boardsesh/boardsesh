@@ -213,4 +213,24 @@ describe('LogbookTab toolbar', () => {
     // The feed still runs, falling back to the default Latest sort.
     expect(captured.feedInput).toMatchObject({ sortBy: 'recent', sortOrder: 'desc' });
   });
+
+  it('ignores persisted filters/sort when the flag is off so the feed is not silently narrowed', async () => {
+    // Simulate prefs saved during a prior flag-on session.
+    vi.mocked(loadLogbookPrefs).mockResolvedValueOnce({
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: false, includeAttempts: true },
+      sort: { ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset: 'hardest' },
+    });
+    flagState.logbookFilters = false;
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    // Let the attempts-only/Hardest prefs hydrate into state.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The feed input stays on the defaults rather than the persisted narrowing.
+    expect(captured.feedInput).toMatchObject({ sortBy: 'recent', sortOrder: 'desc' });
+    expect(captured.feedInput).not.toHaveProperty('statusMode', 'attempt');
+  });
 });

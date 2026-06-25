@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
-import { toAscentFeedInput } from '@boardsesh/logbook';
+import { toAscentFeedInput, DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '@boardsesh/logbook';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { Text } from '../Text';
@@ -98,11 +98,24 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
 
   // The query input is rebuilt only when the committed filters/sort/name change,
   // so the React Query key (and the FlashList data identity downstream) is stable
-  // between unrelated re-renders.
-  const feedInput = useMemo(() => toAscentFeedInput({ filters, sort, name }), [filters, sort, name]);
+  // between unrelated re-renders. When the flag is off the toolbar is hidden, so
+  // ignore any persisted filter/sort/name and feed defaults — otherwise prefs
+  // saved during a prior flag-on session would silently narrow the list.
+  const feedInput = useMemo(
+    () =>
+      toAscentFeedInput(
+        logbookFiltersEnabled
+          ? { filters, sort, name }
+          : { filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT, name: '' },
+      ),
+    [logbookFiltersEnabled, filters, sort, name],
+  );
 
   // Gate on `hydrated` so the feed fetches once with the restored prefs rather
-  // than once with defaults then again after persistence loads.
+  // than once with defaults then again after persistence loads. (With the flag
+  // off `feedInput` already ignores persisted prefs, so this just fetches the
+  // defaults once hydration settles. Keeping the gate while the flag is still
+  // resolving avoids an early default fetch for the flag-on cohort.)
   const feed = useUserAscentsFeed(userId, feedInput, { enabled: hydrated });
   // Stabilise the FlashList `data` identity so it doesn't re-diff every render.
   const items = useMemo(() => feed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [], [feed.data]);
