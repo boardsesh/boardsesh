@@ -222,14 +222,14 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
       <View style={styles.rightSection}>
         {showAscentStatus ? <AscentStatusGlyph climbUuid={climb.uuid} angle={angle} /> : null}
         <View style={styles.gradeColumn}>
-          <View style={styles.gradeRow}>
+          <View style={styles.iconGradeRow}>
             {gradeIsConsensus ? <Icon name="people" size={13} color={systemColors.secondaryLabel} /> : null}
             <Text variant="title3" numberOfLines={1} style={[styles.gradeText, { color: gradeColor }]}>
               {formattedGrade ?? climb.difficulty}
             </Text>
           </View>
           {consensusGrade ? (
-            <View style={styles.consensusRow}>
+            <View style={styles.iconGradeRow}>
               <Icon name="people" size={11} color={systemColors.secondaryLabel} />
               <Text
                 variant="caption2"
@@ -290,12 +290,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 1,
   },
-  gradeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  consensusRow: {
+  iconGradeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,

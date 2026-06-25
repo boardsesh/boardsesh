@@ -488,7 +488,10 @@ export const tickQueries = {
       // breaks ties (appended below). Shared by web + mobile.
       resolvedPrimarySort = { field: 'effectiveGrade', direction: 'desc' };
     } else if (sortBy === 'easiest') {
-      resolvedPrimarySort = { field: 'loggedGrade', direction: 'asc' };
+      // Mirror hardest: effective grade (logged, else consensus) asc, so an
+      // ungraded tick sorts by its consensus instead of floating out on a NULL
+      // logged grade.
+      resolvedPrimarySort = { field: 'effectiveGrade', direction: 'asc' };
     } else if (sortBy === 'mostAttempts') {
       resolvedPrimarySort = { field: 'attemptCount', direction: 'desc' };
     } else {

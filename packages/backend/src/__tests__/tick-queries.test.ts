@@ -236,6 +236,34 @@ describe('tickQueries — behavior fixes', () => {
     });
   });
 
+  describe('userAscentsFeed — easiest sort', () => {
+    it('orders by effective grade asc, so ungraded ticks sort by consensus not last', async () => {
+      // All ungraded, so effective grade == consensus. Before the fix, easiest
+      // sorted by the (NULL) logged grade and these would tie/float; effective
+      // grade orders them by consensus.
+      const seeded: Array<{ key: string; consensus: number }> = [
+        { key: 'Hard', consensus: 15 },
+        { key: 'Easy', consensus: 5 },
+        { key: 'Mid', consensus: 10 },
+      ];
+      for (const climb of seeded) {
+        const climbUuid = CLIMB_PREFIX + 'easiest-' + climb.key;
+        await insertClimb(climbUuid, climb.key);
+        await insertBoardClimbStats({ climbUuid, displayDifficulty: climb.consensus });
+        await insertTick({
+          uuid: 'tick-easiest-' + climb.key,
+          climbUuid,
+          climbedAt: '2026-02-01 10:00:00',
+          status: 'send',
+        });
+      }
+
+      const result = await callUserAscentsFeed(TEST_USER_ID, { sortBy: 'easiest' });
+
+      expect(result.items.map((item) => item.climbName)).toEqual(['Easy', 'Mid', 'Hard']);
+    });
+  });
+
   describe('userAscentsFeed — flashOnly filter', () => {
     it('returns only flashes when flashOnly=true regardless of statusMode', async () => {
       const climbUuid = CLIMB_PREFIX + 'flash-only';
