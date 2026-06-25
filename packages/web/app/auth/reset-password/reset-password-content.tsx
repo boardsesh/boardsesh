@@ -17,7 +17,7 @@ import Logo from '@/app/components/brand/logo';
 import BackButton from '@/app/components/back-button';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
-import { PASSWORD_MIN_LENGTH } from '@/app/components/auth/validate-fields';
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '@/app/components/auth/validate-fields';
 import { themeTokens } from '@/app/theme/theme-config';
 
 export default function ResetPasswordContent() {
@@ -44,6 +44,10 @@ export default function ResetPasswordContent() {
     }
     if (password.length < PASSWORD_MIN_LENGTH) {
       setPasswordError(t('resetPassword.validation.passwordTooShort'));
+      return;
+    }
+    if (password.length > PASSWORD_MAX_LENGTH) {
+      setPasswordError(t('resetPassword.validation.passwordTooLong'));
       return;
     }
     if (!confirmPassword) {

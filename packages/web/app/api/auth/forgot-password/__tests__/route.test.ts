@@ -118,13 +118,15 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mockSendPasswordResetEmail).not.toHaveBeenCalled();
   });
 
-  it('returns 500 when email delivery fails', async () => {
+  it('returns 200 generic message when email delivery fails (no user enumeration)', async () => {
     mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
     mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
     mockSendPasswordResetEmail.mockRejectedValue(new Error('smtp failed'));
 
     const response = await POST(createRequest({ email: 'test@example.com' }));
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.message).toContain('If an account exists');
   });
 
   it('returns 500 when database transaction fails', async () => {

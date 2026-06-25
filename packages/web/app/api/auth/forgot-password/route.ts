@@ -90,7 +90,13 @@ export async function POST(request: NextRequest) {
     // Email is sent outside the transaction intentionally (nodemailer is not transactional).
     // If this throws, the token remains in the DB but unreachable to the user — the
     // delete-before-insert at the start of the next attempt cleans it up automatically.
-    await sendPasswordResetEmail(email, token, baseUrl);
+    // Return the generic message even on SMTP failure to avoid user enumeration
+    // ("account exists but email failed" vs "no account").
+    try {
+      await sendPasswordResetEmail(email, token, baseUrl);
+    } catch (emailError) {
+      console.error('Failed to send password reset email:', emailError);
+    }
 
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
     return NextResponse.json({ message: genericMessage }, { status: 200 });
