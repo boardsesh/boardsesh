@@ -132,6 +132,21 @@ describe('useDrawerDismissGesture', () => {
     expect(result.current.translateY.value).toBe(0);
   });
 
+  it('does not dismiss on a fast flick while a fling is still settling, even past the velocity threshold', () => {
+    // The velocity-sneak path must also be blocked by the animating flag alone:
+    // the fresh re-touch during a settling fling never sets swipeTranslateX.
+    const { result } = renderHook((props: Options) => useDrawerDismissGesture(props), {
+      initialProps: makeOptions({ swipeIsAnimating: sv(true) }),
+    });
+    const handlers = latestHandlers();
+
+    handlers.onBegin();
+    handlers.onEnd({ velocityY: 1200 });
+
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(result.current.translateY.value).toBe(0);
+  });
+
   it('dismisses on a committed downward drag when no horizontal swipe is active', () => {
     renderHook((props: Options) => useDrawerDismissGesture(props), {
       initialProps: makeOptions(),

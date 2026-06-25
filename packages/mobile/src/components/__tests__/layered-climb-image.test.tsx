@@ -11,8 +11,12 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('expo-image', () => ({
-  Image: ({ source, testID }: { source: { uri: string }; testID?: string }) =>
-    createElement('img', { src: source.uri, 'data-testid': testID ?? 'expo-image' }),
+  Image: ({ source, testID, transition }: { source: { uri: string }; testID?: string; transition?: number }) =>
+    createElement('img', {
+      src: source.uri,
+      'data-testid': testID ?? 'expo-image',
+      'data-transition': transition,
+    }),
 }));
 
 import { LayeredClimbImage } from '../LayeredClimbImage';
@@ -48,5 +52,28 @@ describe('LayeredClimbImage', () => {
     );
 
     expect(container.querySelector('[data-testid="layered-climb-image-empty-fallback"]')).toBeNull();
+  });
+
+  it('cross-fades the holds overlay by default', () => {
+    const { container } = render(
+      createElement(LayeredClimbImage, {
+        overlayUri: 'file:///overlay.png',
+        backgroundPaths: ['/bundled/kilter.webp'],
+      }),
+    );
+
+    expect(container.querySelector('img[src="file:///overlay.png"]')?.getAttribute('data-transition')).toBe('150');
+  });
+
+  it('swaps the holds overlay instantly when suppressOverlayTransition is set (no end-of-swipe flash)', () => {
+    const { container } = render(
+      createElement(LayeredClimbImage, {
+        overlayUri: 'file:///overlay.png',
+        backgroundPaths: ['/bundled/kilter.webp'],
+        suppressOverlayTransition: true,
+      }),
+    );
+
+    expect(container.querySelector('img[src="file:///overlay.png"]')?.getAttribute('data-transition')).toBe('0');
   });
 });
