@@ -173,7 +173,14 @@ jobs:
           fi
       - name: Lint full repo (main)
         if: github.event_name != 'pull_request'
-        run: vp check
+        # vp/Vite+ panics with "failed printing to stdout: Resource temporarily
+        # unavailable (os error 11)" when it flushes the full-repo warning list to the
+        # runner's non-blocking stdout. Write to a regular file (never EAGAIN), then
+        # echo it back, preserving vp's real exit code so errors still fail the job.
+        run: |
+          vp check > vp-check.log 2>&1 && status=0 || status=$?
+          cat vp-check.log || true
+          exit $status
 
   large-files:
     # Guards against committed binary churn (screenshots, build outputs, vendored
