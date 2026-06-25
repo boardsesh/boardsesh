@@ -130,6 +130,10 @@ Add these to `packages/web/.env.development.local` (local) or your production en
 NEXTAUTH_SECRET=your-32-character-secret-here
 NEXTAUTH_URL=http://localhost:3000
 
+# Public URL used in password reset and verification email links.
+# Required in production — set to your app's canonical URL (no trailing slash).
+BASE_URL=https://www.boardsesh.com
+
 # Google OAuth
 GOOGLE_CLIENT_ID=123456789.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxx
