@@ -37,6 +37,13 @@ global.fetch = mockFetch as unknown as typeof global.fetch;
 
 import ForgotPasswordContent from '../forgot-password-content';
 
+/** Submit the form via its native submit event (fireEvent.click on type=submit doesn't trigger onSubmit in jsdom). */
+function submitForm(container: HTMLElement) {
+  const form = container.querySelector('form');
+  if (!form) throw new Error('No form found');
+  fireEvent.submit(form);
+}
+
 describe('ForgotPasswordContent', () => {
   beforeEach(() => {
     mockShowMessage.mockClear();
@@ -44,16 +51,16 @@ describe('ForgotPasswordContent', () => {
   });
 
   it('shows email required error when submitting empty form', async () => {
-    render(<ForgotPasswordContent />);
-    fireEvent.click(screen.getByRole('button', { name: /send reset link/i }));
+    const { container } = render(<ForgotPasswordContent />);
+    submitForm(container);
     expect(await screen.findByText(/please enter your email/i)).toBeTruthy();
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it('shows email invalid error for malformed address', async () => {
-    render(<ForgotPasswordContent />);
+    const { container } = render(<ForgotPasswordContent />);
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'notanemail' } });
-    fireEvent.click(screen.getByRole('button', { name: /send reset link/i }));
+    submitForm(container);
     expect(await screen.findByText(/please enter a valid email/i)).toBeTruthy();
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -63,14 +70,15 @@ describe('ForgotPasswordContent', () => {
       ok: true,
       json: async () => ({ message: 'If an account exists...' }),
     });
-    render(<ForgotPasswordContent />);
+    const { container } = render(<ForgotPasswordContent />);
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: /send reset link/i }));
+    submitForm(container);
     await waitFor(() => expect(mockFetch).toHaveBeenCalledOnce());
     expect(mockFetch).toHaveBeenCalledWith('/api/auth/forgot-password', expect.objectContaining({ method: 'POST' }));
     // Form hides and confirmation message appears
     expect(screen.queryByLabelText(/email/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /send reset link/i })).toBeNull();
+    expect(screen.getByText(/if an account exists/i)).toBeTruthy();
   });
 
   it('shows error toast when API returns failure', async () => {
@@ -78,9 +86,9 @@ describe('ForgotPasswordContent', () => {
       ok: false,
       json: async () => ({ error: 'Too many requests' }),
     });
-    render(<ForgotPasswordContent />);
+    const { container } = render(<ForgotPasswordContent />);
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'test@example.com' } });
-    fireEvent.click(screen.getByRole('button', { name: /send reset link/i }));
+    submitForm(container);
     await waitFor(() => expect(mockShowMessage).toHaveBeenCalledWith('Too many requests', 'error'));
   });
 });

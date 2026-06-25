@@ -4,6 +4,7 @@ import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
 
 const mockRouterPush = vi.fn();
+const mockRouterReplace = vi.fn();
 const mockSearchParams = new URLSearchParams();
 
 vi.mock('react-i18next', () => ({
@@ -14,7 +15,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockRouterPush }),
+  useRouter: () => ({ push: mockRouterPush, replace: mockRouterReplace }),
   useSearchParams: () => mockSearchParams,
 }));
 
@@ -58,6 +59,7 @@ describe('ResetPasswordContent', () => {
     mockShowMessage.mockClear();
     mockFetch.mockClear();
     mockRouterPush.mockClear();
+    mockRouterReplace.mockClear();
   });
 
   it('shows invalid link message when token or email is missing', () => {
@@ -111,7 +113,7 @@ describe('ResetPasswordContent', () => {
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'SecurePass1!' } });
     fireEvent.click(screen.getByRole('button', { name: /update password/i }));
     await waitFor(() => expect(mockFetch).toHaveBeenCalledOnce());
-    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/auth/login'));
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/auth/login'));
   });
 
   it('shows error toast when API returns failure', async () => {
@@ -124,6 +126,6 @@ describe('ResetPasswordContent', () => {
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'SecurePass1!' } });
     fireEvent.click(screen.getByRole('button', { name: /update password/i }));
     await waitFor(() => expect(mockShowMessage).toHaveBeenCalledWith('Invalid or expired reset link', 'error'));
-    expect(mockRouterPush).not.toHaveBeenCalled();
+    expect(mockRouterReplace).not.toHaveBeenCalled();
   });
 });

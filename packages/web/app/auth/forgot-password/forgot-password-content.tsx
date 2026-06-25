@@ -91,6 +91,7 @@ export default function ForgotPasswordContent() {
               component="form"
               onSubmit={(e) => {
                 e.preventDefault();
+                void handleSubmit();
               }}
               noValidate
             >
@@ -135,7 +136,6 @@ export default function ForgotPasswordContent() {
                   <Button
                     type="submit"
                     variant="contained"
-                    onClick={handleSubmit}
                     disabled={loading}
                     startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
                   >
