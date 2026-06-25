@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/app/lib/db/db';
@@ -59,18 +59,20 @@ export async function POST(request: NextRequest) {
     const identifier = getPasswordResetIdentifier(email);
     const tokenHash = hashResetToken(token);
 
+    const now = new Date();
     const resetToken = await db
       .select()
       .from(schema.verificationTokens)
-      .where(and(eq(schema.verificationTokens.identifier, identifier), eq(schema.verificationTokens.token, tokenHash)))
+      .where(
+        and(
+          eq(schema.verificationTokens.identifier, identifier),
+          eq(schema.verificationTokens.token, tokenHash),
+          gt(schema.verificationTokens.expires, now),
+        ),
+      )
       .limit(1);
 
     if (resetToken.length === 0) {
-      await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
-      return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
-    }
-
-    if (new Date() > resetToken[0].expires) {
       await db.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });

@@ -40,9 +40,8 @@ vi.mock('@/app/theme/theme-config', () => ({
 
 const mockShowMessage = vi.fn();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockFetch = vi.fn() as any;
-global.fetch = mockFetch;
+const mockFetch = vi.fn();
+global.fetch = mockFetch as unknown as typeof global.fetch;
 
 import ResetPasswordContent from '../reset-password-content';
 
@@ -98,5 +97,18 @@ describe('ResetPasswordContent', () => {
     fireEvent.click(screen.getByRole('button', { name: /update password/i }));
     await waitFor(() => expect(mockFetch).toHaveBeenCalledOnce());
     await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/auth/login'));
+  });
+
+  it('shows error toast when API returns failure', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: 'Invalid or expired reset link' }),
+    });
+    renderWithParams('abc-token', 'user@example.com');
+    fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'SecurePass1!' } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'SecurePass1!' } });
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    await waitFor(() => expect(mockShowMessage).toHaveBeenCalledWith('Invalid or expired reset link', 'error'));
+    expect(mockRouterPush).not.toHaveBeenCalled();
   });
 });

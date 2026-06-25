@@ -32,9 +32,8 @@ vi.mock('@/app/theme/theme-config', () => ({
 
 const mockShowMessage = vi.fn();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockFetch = vi.fn() as any;
-global.fetch = mockFetch;
+const mockFetch = vi.fn();
+global.fetch = mockFetch as unknown as typeof global.fetch;
 
 import ForgotPasswordContent from '../forgot-password-content';
 

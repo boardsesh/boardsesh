@@ -128,6 +128,7 @@ describe('POST /api/auth/reset-password', () => {
     );
 
     expect(response.status).toBe(400);
+    expect(mockDelete).toHaveBeenCalled();
   });
 
   it('resets password successfully', async () => {
@@ -149,9 +150,9 @@ describe('POST /api/auth/reset-password', () => {
     expect(mockTxUpdateWhere).toHaveBeenCalled();
   });
 
-  it('returns 400 when token is expired', async () => {
-    mockTokenLimit.mockResolvedValue([{ expires: new Date(Date.now() - 60_000) }]);
-    mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
+  it('returns 400 when token is expired (simulated by empty SELECT result from db-side expiry filter)', async () => {
+    // The WHERE clause includes gt(expires, now), so an expired token returns no rows.
+    mockTokenLimit.mockResolvedValue([]);
 
     const response = await POST(
       createRequest({
