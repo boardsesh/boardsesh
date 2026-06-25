@@ -30,7 +30,7 @@ export default function ForgotPasswordScreen() {
     if (!canSubmit) return;
 
     if (!EMAIL_REGEX.test(trimmedEmail)) {
-      setEmailError(t('login.validation.emailInvalid'));
+      setEmailError(t('forgotPassword.validation.emailInvalid'));
       return;
     }
 
