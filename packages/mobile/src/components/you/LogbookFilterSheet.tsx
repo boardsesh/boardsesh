@@ -1,12 +1,6 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { View, Pressable, StyleSheet, Platform, type ViewStyle } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  type BottomSheetBackdropProps,
-  type BottomSheetScrollViewMethods,
-} from '@gorhom/bottom-sheet';
-import { FullWindowOverlay } from 'react-native-screens';
+import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
@@ -23,8 +17,7 @@ import {
   type LogbookSortPreset,
   type LogbookSortState,
 } from '@boardsesh/logbook';
-import { SheetBackdrop } from '../SheetBackdrop';
-import { GlassSheetBackground } from '../GlassSheetBackground';
+import { androidSafeSnapPoints } from '../sheet-snap-points';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { CollapsibleSection } from '../CollapsibleSection';
@@ -63,12 +56,6 @@ type LogbookFilterSheetProps = {
 };
 
 type StatusKey = 'sends' | 'attempts' | 'both';
-
-// Portal the sheet above the tab bar / persistent queue bar on iOS.
-function FilterSheetContainer({ children }: PropsWithChildren) {
-  return <FullWindowOverlay>{children}</FullWindowOverlay>;
-}
-const modalContainerComponent = Platform.OS === 'ios' ? FilterSheetContainer : undefined;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -158,7 +145,7 @@ export function LogbookFilterSheet({
   const { systemColors, brandColors } = theme;
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
-  const scrollRef = useRef<BottomSheetScrollViewMethods>(null);
+  const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
 
   const { data: grades } = useGrades(GRADE_SCALE_BOARD);
 
@@ -173,7 +160,7 @@ export function LogbookFilterSheet({
     sheetRef.current?.present();
   }, []);
 
-  const snapPoints = useMemo(() => ['90%'], []);
+  const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
   // One stable "today" ceiling so the To-date row's maximumDate prop keeps a
   // constant identity across renders (a fresh Date each render would re-arm
   // DateRangeRow's openAndroid useCallback every time). Captured at sheet mount,
@@ -223,13 +210,6 @@ export function LogbookFilterSheet({
     // Reset is a clean slate: also clear the toolbar's committed search term.
     onClearSearch?.();
   }, [onClearSearch]);
-
-  const renderBackdrop = useCallback(
-    (backdropProps: BottomSheetBackdropProps) => (
-      <SheetBackdrop {...backdropProps} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
-    ),
-    [],
-  );
 
   const presetOptions = useMemo(
     () => [
@@ -297,15 +277,11 @@ export function LogbookFilterSheet({
   return (
     <BottomSheetModal
       ref={sheetRef}
-      name="logbook-filter"
       index={0}
       snapPoints={snapPoints}
       enableDynamicSizing={false}
-      containerComponent={modalContainerComponent}
-      backdropComponent={renderBackdrop}
       onDismiss={onDismiss}
       handleIndicatorStyle={styles.indicator}
-      backgroundComponent={GlassSheetBackground}
     >
       <View style={styles.header}>
         <Text variant="title3">{t('mobile.logbook.filter')}</Text>

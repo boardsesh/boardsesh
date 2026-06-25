@@ -72,12 +72,17 @@ describe('mobile-ios-run cache paths', () => {
   it('uses the explicit shared cache env override', () => {
     const sharedCachePath = resolve('/tmp/boardsesh-ios-cache');
 
-    expect(resolveSharedBuildPath({ BOARDSESH_IOS_BUILD_CACHE_DIR: sharedCachePath })).toBe(sharedCachePath);
+    expect(resolveSharedBuildPath({ NODE_ENV: 'test', BOARDSESH_IOS_BUILD_CACHE_DIR: sharedCachePath })).toBe(
+      sharedCachePath,
+    );
   });
 
   it('builds worktree-local and shared cache paths from the mobile dir', () => {
     const mobileDir = '/repo/packages/mobile';
-    const paths = createMobileIosCachePaths({ BOARDSESH_IOS_BUILD_CACHE_DIR: '/cache/build' }, mobileDir);
+    const paths = createMobileIosCachePaths(
+      { NODE_ENV: 'test', BOARDSESH_IOS_BUILD_CACHE_DIR: '/cache/build' },
+      mobileDir,
+    );
 
     expect(paths.mobileDir).toBe(mobileDir);
     expect(paths.iosDir).toBe('/repo/packages/mobile/ios');

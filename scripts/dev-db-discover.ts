@@ -112,7 +112,9 @@ async function isTcpPortOpen(host: string, port: number, timeoutMs: number): Pro
 }
 
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
-  let timeoutHandle: NodeJS.Timeout | null = null;
+  // ReturnType<typeof setTimeout> adapts to whichever lib the type-checker
+  // resolves (Node's Timeout handle or the DOM number).
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const timeout = new Promise<never>((_, reject) => {
     timeoutHandle = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs);
   });

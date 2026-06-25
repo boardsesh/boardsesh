@@ -402,13 +402,16 @@ function blockUntilExit(metro: ChildProcess): Promise<void> {
       stopMetro(metro);
       if (metro.pid !== undefined) {
         const pid = metro.pid;
-        setTimeout(() => {
+        // Node's setTimeout returns a Timeout handle with unref(); the type-check
+        // env resolves the DOM overload (number), so reach unref() through a cast.
+        const killTimer = setTimeout(() => {
           try {
             process.kill(-pid, 'SIGKILL');
           } catch {
             // already gone
           }
-        }, 5000).unref();
+        }, 5000) as unknown as { unref?: () => void };
+        killTimer.unref?.();
       }
     };
     process.once('SIGINT', onSignal);

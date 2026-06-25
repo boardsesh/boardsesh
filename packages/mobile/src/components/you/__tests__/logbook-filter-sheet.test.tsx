@@ -17,9 +17,9 @@ type PressableProps = {
   disabled?: boolean;
 };
 
-// react-native: minimal host shims. Platform.OS is read at module load by
-// LogbookFilterSheet (modalContainerComponent) AND per-render by DateRangeRow,
-// so a hoisted mutable object lets each test set it before render.
+// react-native: minimal host shims. Platform.OS is read per-render by DateRangeRow
+// (and once by androidSafeSnapPoints via useMemo), so a hoisted mutable object lets
+// each test set it before render.
 const nativePlatform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
 
 vi.mock('react-native', () => ({
@@ -43,7 +43,7 @@ vi.mock('react-native', () => ({
 
 // BottomSheetModal auto-presents via an effect and is dismissed on Apply; the
 // imperative ref just needs present/dismiss to exist. Children render inline.
-vi.mock('@gorhom/bottom-sheet', () => ({
+vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetModal: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   BottomSheetScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -57,10 +57,6 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
-}));
-
-vi.mock('react-native-screens', () => ({
-  FullWindowOverlay: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
 // datetimepicker: the inline iOS picker fires onChange when clicked; the Android
@@ -131,8 +127,6 @@ vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../../SheetBackdrop', () => ({ SheetBackdrop: () => null }));
-vi.mock('../../GlassSheetBackground', () => ({ GlassSheetBackground: () => null }));
 
 vi.mock('../../../lib/graphql/hooks', () => ({ useGrades: () => ({ data: [] }) }));
 vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
