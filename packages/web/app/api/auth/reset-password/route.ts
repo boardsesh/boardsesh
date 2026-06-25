@@ -114,6 +114,9 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // Completing a reset proves the user controls the inbox the link was sent to,
+      // so mark previously-unverified emails as verified here. Scoped to NULL
+      // emailVerified rows so we never overwrite an existing verification timestamp.
       await tx
         .update(schema.users)
         .set({ emailVerified: new Date(), updatedAt: new Date() })
