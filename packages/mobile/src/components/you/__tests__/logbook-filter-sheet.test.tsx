@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createElement, type ReactNode } from 'react';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_LOGBOOK_FILTERS,
@@ -41,10 +41,15 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
-// BottomSheetModal auto-presents via an effect and is dismissed on Apply; the
-// imperative ref just needs present/dismiss to exist. Children render inline.
+// The sheet commits the draft on close (there's no Apply button), so capture the
+// onDismiss handler it hands BottomSheetModal — a test fires it to simulate the
+// swipe/scrim close. Children render inline.
+const sheetMock = vi.hoisted(() => ({ onDismiss: undefined as (() => void) | undefined }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetModal: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  BottomSheetModal: ({ children, onDismiss }: { children?: ReactNode; onDismiss?: () => void }) => {
+    sheetMock.onDismiss = onDismiss;
+    return createElement('div', null, children);
+  },
   BottomSheetScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
@@ -168,6 +173,11 @@ function lastApply(onApply: ReturnType<typeof vi.fn>): {
   return { filters, sort };
 }
 
+// Close the sheet (swipe/scrim) — this is what commits the draft via onApply.
+function closeSheet() {
+  act(() => sheetMock.onDismiss?.());
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   nativePlatform.OS = 'ios';
@@ -179,10 +189,10 @@ describe('LogbookFilterSheet', () => {
   // sort with mode 'preset' / preset 'hardest'.
   it('applies the hardest preset sort', () => {
     const onApply = vi.fn();
-    const { getByTestId, getByLabelText } = renderSheet({ onApply });
+    const { getByTestId } = renderSheet({ onApply });
 
     fireEvent.click(getByTestId('segment-mobile.logbook.sort-hardest'));
-    fireEvent.click(getByLabelText('mobile.logbook.apply'));
+    closeSheet();
 
     const { sort } = lastApply(onApply);
     expect(sort.mode).toBe('preset');
@@ -193,13 +203,13 @@ describe('LogbookFilterSheet', () => {
   // drops includeSends AND auto-clears the now-hidden flashOnly flag.
   it('auto-clears flashOnly when sends are deselected', () => {
     const onApply = vi.fn();
-    const { getByTestId, getByLabelText } = renderSheet({
+    const { getByTestId } = renderSheet({
       onApply,
       currentFilters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: true, flashOnly: true },
     });
 
     fireEvent.click(getByTestId('segment-mobile.logbook.statusLabel-attempts'));
-    fireEvent.click(getByLabelText('mobile.logbook.apply'));
+    closeSheet();
 
     const { filters } = lastApply(onApply);
     expect(filters.includeSends).toBe(false);
@@ -213,7 +223,7 @@ describe('LogbookFilterSheet', () => {
   it('resets to defaults and clears the search', () => {
     const onApply = vi.fn();
     const onClearSearch = vi.fn();
-    const { getByText, getByLabelText, getByTestId } = renderSheet({
+    const { getByText, getByTestId } = renderSheet({
       onApply,
       onClearSearch,
       // Start dirty so a no-op Reset would be observable as a failure.
@@ -227,7 +237,7 @@ describe('LogbookFilterSheet', () => {
     fireEvent.click(getByText('mobile.logbook.reset'));
     expect(onClearSearch).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(getByLabelText('mobile.logbook.apply'));
+    closeSheet();
 
     const { filters, sort } = lastApply(onApply);
     expect(filters).toEqual(DEFAULT_LOGBOOK_FILTERS);
@@ -247,7 +257,7 @@ describe('LogbookFilterSheet', () => {
     // by the field label, not an inline date picker.
     expect(getByLabelText('mobile.logbook.dateFrom')).toBeTruthy();
 
-    fireEvent.click(getByLabelText('mobile.logbook.apply'));
+    closeSheet();
 
     const { filters } = lastApply(onApply);
     expect(filters.fromDate).toBe('');
@@ -257,7 +267,7 @@ describe('LogbookFilterSheet', () => {
   // commits nothing until a date is actually picked — Apply leaves fromDate ''.
   it('reveals the From picker without committing a date until one is picked', () => {
     const onApply = vi.fn();
-    const { getByLabelText, getAllByLabelText, getByTestId, queryByTestId } = renderSheet({
+    const { getByLabelText, getByTestId, queryByTestId } = renderSheet({
       onApply,
       currentFilters: { ...DEFAULT_LOGBOOK_FILTERS, fromDate: '' },
     });
@@ -273,10 +283,8 @@ describe('LogbookFilterSheet', () => {
     // After reveal the inline picker exists, but onChange has NOT fired.
     expect(getByTestId('date-picker')).toBeTruthy();
 
-    // Apply without picking a date: fromDate stays ''. Re-resolve the Apply
-    // button (the tree re-rendered after reveal).
-    const applyButtons = getAllByLabelText('mobile.logbook.apply');
-    fireEvent.click(applyButtons[applyButtons.length - 1]);
+    // Close without picking a date: fromDate stays ''.
+    closeSheet();
 
     const { filters } = lastApply(onApply);
     expect(filters.fromDate).toBe('');

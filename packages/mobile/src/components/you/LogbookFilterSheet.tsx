@@ -142,7 +142,7 @@ export function LogbookFilterSheet({
 }: LogbookFilterSheetProps) {
   const { t } = useTranslation('you');
   const theme = useTheme();
-  const { systemColors, brandColors } = theme;
+  const { systemColors } = theme;
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
@@ -197,10 +197,18 @@ export function LogbookFilterSheet({
     [updateFilters],
   );
 
-  const handleApply = useCallback(() => {
-    onApply(draftFilters, draftSort);
-    sheetRef.current?.dismiss();
-  }, [draftFilters, draftSort, onApply]);
+  // Commit-on-close: there's no Apply button — the draft applies when the sheet
+  // is dismissed (swipe down or tap the scrim). The ref holds the latest draft so
+  // the stable dismiss handler commits the newest values, never a stale closure.
+  const draftRef = useRef({ filters: draftFilters, sort: draftSort });
+  useEffect(() => {
+    draftRef.current = { filters: draftFilters, sort: draftSort };
+  }, [draftFilters, draftSort]);
+
+  const handleDismiss = useCallback(() => {
+    onApply(draftRef.current.filters, draftRef.current.sort);
+    onDismiss();
+  }, [onApply, onDismiss]);
 
   const handleReset = useCallback(() => {
     hapticSelection();
@@ -281,7 +289,7 @@ export function LogbookFilterSheet({
       snapPoints={snapPoints}
       enableDynamicSizing={false}
       enablePanDownToClose
-      onDismiss={onDismiss}
+      onDismiss={handleDismiss}
       handleIndicatorStyle={styles.indicator}
     >
       <View style={styles.header}>
@@ -297,7 +305,7 @@ export function LogbookFilterSheet({
         ref={scrollRef}
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing[4] }]}
       >
         {/* PRESET — the headline one-tap sort. Above Refine/Advanced. */}
         <View style={styles.primary}>
@@ -414,26 +422,6 @@ export function LogbookFilterSheet({
           </CollapsibleSection>
         </View>
       </BottomSheetScrollView>
-
-      <View
-        style={[styles.footer, { paddingBottom: insets.bottom + spacing[3], borderTopColor: systemColors.separator }]}
-      >
-        {/* Amber Apply — the logbook-mode accent (fill + dark text, ~8.95:1). */}
-        <Pressable
-          onPress={handleApply}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.logbook.apply')}
-          style={({ pressed }) => [
-            styles.applyButton,
-            { backgroundColor: brandColors.accent },
-            pressed && styles.applyButtonPressed,
-          ]}
-        >
-          <Text variant="headline" color={iosSystemColors.black}>
-            {t('mobile.logbook.apply')}
-          </Text>
-        </Pressable>
-      </View>
     </BottomSheetModal>
   );
 }
@@ -631,22 +619,5 @@ const styles = StyleSheet.create({
   },
   dateButtonPressed: {
     opacity: 0.6,
-  },
-  footer: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[3],
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: iosSystemColors.separator,
-  },
-  applyButton: {
-    width: '100%',
-    minHeight: 50,
-    borderRadius: borderRadius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  applyButtonPressed: {
-    opacity: 0.85,
   },
 });
