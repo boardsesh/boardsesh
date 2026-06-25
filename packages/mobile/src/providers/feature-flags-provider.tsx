@@ -16,7 +16,6 @@ import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 export type FeatureFlags = Record<string, boolean | undefined>;
 
 const DEFAULT_FEATURE_FLAGS: FeatureFlags = {};
-
 // The catalog of flags the app knows about. It drives the live PostHog read and
 // the tester-only Feature Flags settings screen (which lists every entry here).
 // Add a flag once, here, and it shows up in both. Labels/descriptions are
@@ -32,6 +31,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'strava-integration',
     label: 'Strava integration',
     description: 'Share sends to Strava and the Strava connect option in Integrations.',
+  },
+  {
+    key: 'logbook-filters',
+    label: 'Logbook filters',
+    description: 'Search box and filter sheet on the logbook (unfinished UI).',
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 

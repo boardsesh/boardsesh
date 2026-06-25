@@ -23,6 +23,7 @@ import { tickToClimb } from '../../lib/tick-to-climb';
 import { getBoardConfigForPlaylist } from '../../lib/playlists/board-details-for-playlist';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
+import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { normalizeSearchName } from '../../lib/search-name';
 import { hapticSelection } from '../../lib/haptics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -50,6 +51,8 @@ type LogbookTabProps = {
 export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenTitle }: LogbookTabProps) {
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
+  // The search + filter UI is unfinished; keep it dark until the flag is on.
+  const logbookFiltersEnabled = useFeatureFlag('logbook-filters') === true;
   const router = useRouter();
   const { openPlayDrawer, openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
@@ -186,34 +189,36 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
           floating chrome. Sibling of the list, so list virtualization is intact. */}
       <View style={[styles.toolbar, { paddingTop: topInset }]}>
         {screenTitle ? <ScreenTitle style={styles.screenTitle}>{screenTitle}</ScreenTitle> : null}
-        <View style={styles.toolbarRow}>
-          <SearchHeader
-            ref={searchHeaderRef}
-            placeholder={t('mobile.logbook.searchPlaceholder')}
-            onChangeText={handleSearchChange}
-            initialValue={name}
-            height={40}
-          />
-          <Pressable
-            onPress={handleOpenFilters}
-            accessibilityRole="button"
-            accessibilityLabel={t('mobile.logbook.filter')}
-            style={({ pressed }) => [
-              styles.filterButton,
-              { backgroundColor: brandColors.accent },
-              pressed && styles.filterButtonPressed,
-            ]}
-          >
-            <Icon name="filter" size={18} color={iosSystemColors.black} />
-            {activeFilterCount > 0 ? (
-              <View style={[styles.filterBadge, { backgroundColor: iosSystemColors.black }]}>
-                <Text variant="caption2" color={brandColors.accent} style={styles.filterBadgeText}>
-                  {activeFilterCount}
-                </Text>
-              </View>
-            ) : null}
-          </Pressable>
-        </View>
+        {logbookFiltersEnabled ? (
+          <View style={styles.toolbarRow}>
+            <SearchHeader
+              ref={searchHeaderRef}
+              placeholder={t('mobile.logbook.searchPlaceholder')}
+              onChangeText={handleSearchChange}
+              initialValue={name}
+              height={40}
+            />
+            <Pressable
+              onPress={handleOpenFilters}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.logbook.filter')}
+              style={({ pressed }) => [
+                styles.filterButton,
+                { backgroundColor: brandColors.accent },
+                pressed && styles.filterButtonPressed,
+              ]}
+            >
+              <Icon name="filter" size={18} color={iosSystemColors.black} />
+              {activeFilterCount > 0 ? (
+                <View style={[styles.filterBadge, { backgroundColor: iosSystemColors.black }]}>
+                  <Text variant="caption2" color={brandColors.accent} style={styles.filterBadgeText}>
+                    {activeFilterCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {feed.isPending ? (
@@ -280,7 +285,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
         <LogbookEditSheet sheetRef={editSheetRef} ascent={editAscent} onClose={() => setEditAscent(null)} />
       ) : null}
 
-      {filterSheetOpen ? (
+      {logbookFiltersEnabled && filterSheetOpen ? (
         <LogbookFilterSheet
           onDismiss={handleCloseFilters}
           currentFilters={filters}

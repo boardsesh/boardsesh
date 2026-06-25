@@ -16,6 +16,10 @@ const captured = vi.hoisted(() => ({
   sheetMounted: false,
 }));
 
+// Drives the `logbook-filters` feature flag the toolbar is gated on. Defaults on
+// so the toolbar tests below exercise the real wiring; one test flips it off.
+const flagState = vi.hoisted(() => ({ logbookFilters: true }));
+
 const feed = vi.hoisted(() => ({
   data: { pages: [{ userAscentsFeed: { items: [] } }] },
   isPending: false,
@@ -111,6 +115,9 @@ vi.mock('../../../lib/haptics', () => ({ hapticSelection: vi.fn() }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({ openPlayDrawer: vi.fn(), openClimbActions: vi.fn() }),
 }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => (key === 'logbook-filters' ? flagState.logbookFilters : undefined),
+}));
 
 // use-logbook-search and @boardsesh/logbook are intentionally NOT mocked, so the
 // reducer + toAscentFeedInput run for real and the test asserts the real wiring.
@@ -123,6 +130,7 @@ beforeEach(() => {
   captured.onSearchChange = null;
   captured.onApply = null;
   captured.sheetMounted = false;
+  flagState.logbookFilters = true;
 });
 
 afterEach(() => {
@@ -194,5 +202,16 @@ describe('LogbookTab toolbar', () => {
     act(() => captured.onApply?.(filters, { ...DEFAULT_LOGBOOK_SORT, mode: 'preset', preset: 'hardest' }));
 
     expect(captured.feedInput).toMatchObject({ statusMode: 'attempt', sortBy: 'hardest' });
+  });
+
+  it('hides the search + filter toolbar and never mounts the sheet when the flag is off', () => {
+    flagState.logbookFilters = false;
+    const { queryByTestId, queryByLabelText } = render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    expect(queryByTestId('search-header')).toBeNull();
+    expect(queryByLabelText('mobile.logbook.filter')).toBeNull();
+    expect(captured.sheetMounted).toBe(false);
+    // The feed still runs, falling back to the default Latest sort.
+    expect(captured.feedInput).toMatchObject({ sortBy: 'recent', sortOrder: 'desc' });
   });
 });

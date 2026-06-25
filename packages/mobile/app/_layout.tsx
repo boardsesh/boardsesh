@@ -85,6 +85,10 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
     flags['strava-integration'] = true;
   }
 
+  if (process.env.EXPO_PUBLIC_LOGBOOK_FILTERS === 'true') {
+    flags['logbook-filters'] = true;
+  }
+
   return Object.keys(flags).length > 0 ? flags : undefined;
 }
 
