@@ -34,6 +34,10 @@ function notify(): void {
   for (const listener of listeners) listener();
 }
 
+// Whole-object validation: if ANY value is non-boolean the entire persisted bag
+// is rejected and load falls back to no overrides. A corrupt write is treated as
+// all-or-nothing rather than salvaging the valid keys — simpler and safer than
+// partially trusting a malformed blob (the tester can just re-set their flags).
 function isOverridesRecord(value: unknown): value is FeatureFlagOverrides {
   if (typeof value !== 'object' || value === null) return false;
   return Object.values(value).every((entry) => typeof entry === 'boolean');

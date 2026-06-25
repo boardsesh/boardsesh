@@ -27,15 +27,22 @@ export type FeatureFlagDefinition = {
   description: string;
 };
 
-export const FEATURE_FLAG_DEFINITIONS: readonly FeatureFlagDefinition[] = [
+export const FEATURE_FLAG_DEFINITIONS = [
   {
     key: 'strava-integration',
     label: 'Strava integration',
     description: 'Share sends to Strava and the Strava connect option in Integrations.',
   },
-] as const;
+] as const satisfies readonly FeatureFlagDefinition[];
 
-export const FEATURE_FLAG_KEYS = FEATURE_FLAG_DEFINITIONS.map((definition) => definition.key);
+// The literal key union (e.g. `'strava-integration'`), preserved via the
+// `as const` above so a typo in a catalog key is a compile error instead of
+// silently widening to `string`.
+export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]['key'];
+
+export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = FEATURE_FLAG_DEFINITIONS.map(
+  (definition) => definition.key,
+);
 
 const FeatureFlagsContext = createContext<FeatureFlags>(DEFAULT_FEATURE_FLAGS);
 
