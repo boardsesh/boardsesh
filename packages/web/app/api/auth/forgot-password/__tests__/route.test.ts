@@ -116,7 +116,7 @@ describe('POST /api/auth/forgot-password', () => {
     expect(mockTxDelete.mock.invocationCallOrder[0]).toBeLessThan(mockTxInsert.mock.invocationCallOrder[0]);
   });
 
-  it('uses BASE_URL env var when set (host header injection prevention)', async () => {
+  it('uses BASE_URL env var instead of request origin when set', async () => {
     mockUserLimit.mockResolvedValue([{ id: 'user-1' }]);
     mockCredentialsLimit.mockResolvedValue([{ userId: 'user-1' }]);
 
