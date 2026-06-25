@@ -31,7 +31,7 @@ const CHOICE_OPTIONS: { key: OverrideChoice; label: string }[] = [
 
 export function FeatureFlagsScreen() {
   const { systemColors, borderRadius } = useTheme();
-  const { overrides, setOverride, clearOverride, clearAll } = useFeatureFlagOverrides();
+  const { overrides, loaded: overridesLoaded, setOverride, clearOverride, clearAll } = useFeatureFlagOverrides();
   const { data: profile, isLoading: profileLoading } = useProfile();
 
   // Resolved base values (PostHog) so the footnote can show what a flag falls
@@ -66,6 +66,17 @@ export function FeatureFlagsScreen() {
     if (!profile?.isTester) {
       return <Redirect href="/(tabs)/profile/more" />;
     }
+  }
+
+  // Persisted overrides load async from storage. Wait for them before rendering
+  // the controls so a cold open doesn't flash every flag at "Default" and then
+  // snap to the tester's saved choices.
+  if (!overridesLoaded) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator />
+      </View>
+    );
   }
 
   return (

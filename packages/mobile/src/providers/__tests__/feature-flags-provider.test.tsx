@@ -2,15 +2,16 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FeatureFlagsProvider, useFeatureFlag, useFeatureFlags } from '../feature-flags-provider';
 import {
   setFeatureFlagOverride,
-  clearAllFeatureFlagOverrides,
+  resetFeatureFlagOverridesForTests,
   useFeatureFlagOverrides,
 } from '../../lib/feature-flag-overrides';
 
 vi.mock('@react-native-async-storage/async-storage', () => {
-  const storage: Record<string, string> = {};
+  let storage: Record<string, string> = {};
   return {
     default: {
       getItem: vi.fn(async (key: string) => storage[key] ?? null),
@@ -20,14 +21,20 @@ vi.mock('@react-native-async-storage/async-storage', () => {
       removeItem: vi.fn(async (key: string) => {
         delete storage[key];
       }),
+      __reset: () => {
+        storage = {};
+      },
     },
   };
 });
 
 describe('FeatureFlagsProvider', () => {
   afterEach(() => {
-    // The override store is a module-level singleton; reset it between tests.
-    clearAllFeatureFlagOverrides();
+    // The override store is a module-level singleton; fully reset it (state +
+    // cached load promise) AND the persisted mock storage so a value written by
+    // one test can't async-load into the next.
+    resetFeatureFlagOverridesForTests();
+    (AsyncStorage as unknown as { __reset: () => void }).__reset();
   });
 
   it('returns the empty default bag when no `flags` prop is supplied', () => {

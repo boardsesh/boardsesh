@@ -73,11 +73,9 @@ export function clearFeatureFlagOverride(key: string): void {
 }
 
 export function clearAllFeatureFlagOverrides(): void {
-  if (Object.keys(current).length === 0) {
-    // Still mark loaded so a consumer mounted before the first load sees a
-    // settled empty state instead of waiting on storage.
-    if (hasLoaded) return;
-  }
+  // Nothing in memory to clear — return without churning storage with an empty
+  // write. The one-time load (if still pending) settles `loaded` on its own.
+  if (Object.keys(current).length === 0) return;
   current = EMPTY_OVERRIDES;
   hasLoaded = true;
   notify();
@@ -139,4 +137,16 @@ export function useFeatureFlagOverrides(): {
   }, []);
 
   return { overrides, loaded, setOverride, clearOverride, clearAll };
+}
+
+// Test-only: reset the module singleton (state + the one-time load promise) so
+// each test starts clean. The standalone override test gets this isolation from
+// `vi.resetModules()`, but the provider test statically imports
+// FeatureFlagsProvider — resetting modules there would bind the provider and
+// these mutators to different module instances, so it needs an explicit reset.
+export function resetFeatureFlagOverridesForTests(): void {
+  current = EMPTY_OVERRIDES;
+  hasLoaded = false;
+  loadPromise = null;
+  notify();
 }
