@@ -221,7 +221,6 @@ export function ClimbReactionMenu({
                   {climb.name}
                 </Text>
                 <ClimbAttributeIcons
-                  isNoMatch={climb.is_no_match}
                   benchmarkDifficulty={climb.benchmark_difficulty}
                   characteristics={climb.characteristics}
                 />

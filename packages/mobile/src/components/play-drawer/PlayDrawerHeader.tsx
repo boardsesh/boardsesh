@@ -19,9 +19,8 @@ type PlayDrawerHeaderProps = {
   ascensionistCount: number;
   setterUsername: string;
   /** Intrinsic attributes shown as grey glyphs after the name. */
-  isNoMatch?: boolean | null;
   benchmarkDifficulty?: string | null;
-  /** Climb characteristics; a MoonBoard method_* token renders a small label. */
+  /** Climb characteristics; no-match and MoonBoard method_* tokens render as glyphs/labels. */
   characteristics?: string[] | null;
   /** Left-aligned element on the name's row (e.g. the on-wall status). The header
    *  balances both flanks so the name stays centered. */
@@ -35,7 +34,6 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
   qualityAverage,
   ascensionistCount,
   setterUsername,
-  isNoMatch,
   benchmarkDifficulty,
   characteristics,
   leading,
@@ -62,7 +60,6 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               {name}
             </Text>
             <ClimbAttributeIcons
-              isNoMatch={isNoMatch}
               benchmarkDifficulty={benchmarkDifficulty}
               characteristics={characteristics}
             />

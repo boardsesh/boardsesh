@@ -37,8 +37,8 @@ describe('ClimbAttributeIcons', () => {
     expect(container.querySelector('[data-icon]')).toBeNull();
   });
 
-  it('renders the no-match glyph when isNoMatch is true', () => {
-    const { container } = render(<ClimbAttributeIcons isNoMatch />);
+  it('renders the no-match glyph when characteristics includes no_match', () => {
+    const { container } = render(<ClimbAttributeIcons characteristics={['no_match']} />);
     expect(icons(container)).toEqual(['no.match']);
   });
 
@@ -64,19 +64,36 @@ describe('ClimbAttributeIcons', () => {
   });
 
   it('renders benchmark before no-match when both apply (web order)', () => {
-    const { container } = render(<ClimbAttributeIcons isNoMatch benchmarkDifficulty="3" />);
+    const { container } = render(<ClimbAttributeIcons characteristics={['no_match']} benchmarkDifficulty="3" />);
     expect(icons(container)).toEqual(['benchmark', 'no.match']);
   });
 
   it('labels each glyph for screen readers', () => {
-    const { container } = render(<ClimbAttributeIcons isNoMatch benchmarkDifficulty="3" />);
+    const { container } = render(<ClimbAttributeIcons characteristics={['no_match']} benchmarkDifficulty="3" />);
     const labels = Array.from(container.querySelectorAll('[data-a11y]')).map((node) => node.getAttribute('data-a11y'));
     expect(labels).toContain('mobile.climbRow.benchmark');
     expect(labels).toContain('mobile.climbRow.noMatch');
   });
 
   it('passes the size through to the glyphs', () => {
-    const { container } = render(<ClimbAttributeIcons isNoMatch size={20} />);
+    const { container } = render(<ClimbAttributeIcons characteristics={['no_match']} size={20} />);
     expect(container.querySelector('[data-icon]')?.getAttribute('data-size')).toBe('20');
+  });
+
+  it('does not render no-match when characteristics is empty or null', () => {
+    expect(icons(render(<ClimbAttributeIcons characteristics={[]} />).container)).toEqual([]);
+    expect(icons(render(<ClimbAttributeIcons characteristics={null} />).container)).toEqual([]);
+    expect(icons(render(<ClimbAttributeIcons />).container)).toEqual([]);
+  });
+
+  it('falls back to isNoMatch bool when characteristics is absent (tick-sourced rows)', () => {
+    const { container } = render(<ClimbAttributeIcons isNoMatch />);
+    expect(icons(container)).toEqual(['no.match']);
+  });
+
+  it('prefers characteristics over isNoMatch bool (characteristics wins)', () => {
+    // characteristics=[] (no no_match token) takes precedence over isNoMatch=true
+    const { container } = render(<ClimbAttributeIcons characteristics={[]} isNoMatch />);
+    expect(icons(container)).toEqual([]);
   });
 });

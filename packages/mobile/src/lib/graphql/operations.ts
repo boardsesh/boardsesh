@@ -113,6 +113,8 @@ const CLIMB_DETAIL_FIELDS = `
   difficulty_error
   mirrored
   benchmark_difficulty
+  is_no_match
+  characteristics
   userAscents
   userAttempts
   is_draft

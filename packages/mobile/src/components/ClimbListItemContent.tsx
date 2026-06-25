@@ -187,9 +187,9 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {climb.name}
           </Text>
           <ClimbAttributeIcons
-            isNoMatch={climb.is_no_match}
             benchmarkDifficulty={climb.benchmark_difficulty}
             characteristics={climb.characteristics}
+            isNoMatch={climb.is_no_match}
           />
         </View>
         {subtitleText ? (

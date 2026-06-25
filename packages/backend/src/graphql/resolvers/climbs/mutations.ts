@@ -9,6 +9,7 @@ import {
   CLIMB_CHARACTERISTICS,
   isNoMatchClimb,
   withCharacteristic,
+  withNoMatch,
 } from '@boardsesh/shared-schema';
 import type { BoardName } from '@boardsesh/board-constants';
 import { db } from '../../../db/client';
@@ -569,17 +570,20 @@ export const climbMutations = {
       };
       if (validated.name !== undefined) updateSet.name = validated.name;
       if (validated.description !== undefined) {
-        updateSet.description = validated.description;
-        // Keep the no_match characteristic in sync with the Aurora description
-        // convention, preserving any other tokens (e.g. a MoonBoard method).
-        // no_match is an Aurora-family concept — never derive it for MoonBoard,
-        // where a description starting with "no match" is just user prose and
-        // would otherwise clobber the climb's method token.
+        // Derive no_match from the raw incoming description (may still carry the
+        // Aurora "No match\n" prefix), then strip the prefix from the stored value
+        // so characteristics is the sole source of truth going forward.
+        const isNoMatchFromDesc = isNoMatchClimb(validated.description);
+        updateSet.description = withNoMatch(validated.description, false);
+        // Keep the no_match characteristic in sync, preserving any other tokens
+        // (e.g. a MoonBoard method). no_match is an Aurora-family concept — never
+        // derive it for MoonBoard, where a description starting with "no match" is
+        // just user prose and would otherwise clobber the climb's method token.
         if (validated.boardType !== 'moonboard') {
           const nextCharacteristics = withCharacteristic(
             existing.characteristics,
             CLIMB_CHARACTERISTICS.NO_MATCH,
-            isNoMatchClimb(validated.description),
+            isNoMatchFromDesc,
           );
           updateSet.characteristics = nextCharacteristics.length > 0 ? nextCharacteristics : null;
         }

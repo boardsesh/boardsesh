@@ -39,6 +39,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
         is_draft: tables.climbs.isDraft,
         created_at: tables.climbs.createdAt,
         published_at: tables.climbs.publishedAt,
+        characteristics: tables.climbs.characteristics,
       })
       .from(tables.climbs)
       .leftJoin(
@@ -84,6 +85,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       published_at: row.published_at ?? null,
       framesCount: row.frames_count ?? null,
       framesPace: row.frames_pace ?? null,
+      characteristics: row.characteristics ?? null,
     };
 
     return climb;

@@ -2,17 +2,23 @@ import { memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { CLIMB_CHARACTERISTICS, getMoonBoardMethod } from '@boardsesh/shared-schema';
+import { CLIMB_CHARACTERISTICS, getMoonBoardMethod, isNoMatch } from '@boardsesh/shared-schema';
 import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 
 type ClimbAttributeIconsProps = {
-  /** True when the climb disallows matching both hands on a hold. */
-  isNoMatch?: boolean | null;
   /** Raw benchmark difficulty; > 0 marks a benchmark/classic climb. */
   benchmarkDifficulty?: string | number | null;
-  /** Climb characteristics; a MoonBoard method_* token renders a small label. */
+  /**
+   * Climb characteristics; preferred source for no-match + MoonBoard method_* tokens.
+   * When present, the no-match status is derived from it and `isNoMatch` is ignored.
+   */
   characteristics?: string[] | null;
+  /**
+   * Fallback no-match flag for surfaces that carry the bool but not characteristics
+   * (e.g. session-tick rows). Ignored when `characteristics` is provided.
+   */
+  isNoMatch?: boolean | null;
   /** Glyph size; defaults to 14 to sit beside body-sized climb names. */
   size?: number;
 };
@@ -40,9 +46,9 @@ function methodLabel(characteristics: string[] | null | undefined, t: TFunction<
  * Returns null when neither attribute applies (the common case).
  */
 export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
-  isNoMatch,
   benchmarkDifficulty,
   characteristics,
+  isNoMatch: isNoMatchFallback,
   size = 14,
 }: ClimbAttributeIconsProps) {
   const { t } = useTranslation('climbs');
@@ -50,9 +56,12 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
 
   const benchmarkValue = benchmarkDifficulty != null ? Number(benchmarkDifficulty) : null;
   const isBenchmark = benchmarkValue !== null && benchmarkValue > 0 && !Number.isNaN(benchmarkValue);
+  // Prefer the structured characteristics array; fall back to the legacy bool for
+  // tick-sourced rows that carry the flag but not the full characteristics array.
+  const isNoMatchClimb = characteristics != null ? isNoMatch(characteristics) : (isNoMatchFallback ?? false);
   const method = methodLabel(characteristics, t);
 
-  if (!isBenchmark && !isNoMatch && !method) return null;
+  if (!isBenchmark && !isNoMatchClimb && !method) return null;
 
   return (
     <>
@@ -61,7 +70,7 @@ export const ClimbAttributeIcons = memo(function ClimbAttributeIcons({
           <Icon name="benchmark" size={size} color={theme.systemColors.secondaryLabel} />
         </View>
       ) : null}
-      {isNoMatch ? (
+      {isNoMatchClimb ? (
         <View accessibilityRole="image" accessibilityLabel={t('mobile.climbRow.noMatch')} style={styles.icon}>
           <Icon name="no.match" size={size} color={theme.systemColors.secondaryLabel} />
         </View>

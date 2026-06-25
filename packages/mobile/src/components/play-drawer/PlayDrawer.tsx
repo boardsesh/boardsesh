@@ -710,7 +710,6 @@ export function PlayDrawer({
                         qualityAverage={displayedClimb.quality_average}
                         ascensionistCount={displayedClimb.ascensionist_count}
                         setterUsername={displayedClimb.setter_username}
-                        isNoMatch={displayedClimb.is_no_match}
                         benchmarkDifficulty={displayedClimb.benchmark_difficulty}
                         characteristics={displayedClimb.characteristics}
                         // The accessory-bar wall climb is physically lit right now, so its
@@ -728,8 +727,8 @@ export function PlayDrawer({
                           qualityAverage={headerPeekClimb.quality_average}
                           ascensionistCount={headerPeekClimb.ascensionist_count}
                           setterUsername={headerPeekClimb.setter_username}
-                          isNoMatch={headerPeekClimb.is_no_match}
                           benchmarkDifficulty={headerPeekClimb.benchmark_difficulty}
+                          characteristics={headerPeekClimb.characteristics}
                         />
                       ) : null
                     }
