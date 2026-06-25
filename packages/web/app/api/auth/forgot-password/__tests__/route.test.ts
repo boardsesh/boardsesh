@@ -109,6 +109,11 @@ describe('POST /api/auth/forgot-password', () => {
     expect(response.status).toBe(200);
     expect(mockTransaction).toHaveBeenCalled();
     expect(mockSendPasswordResetEmail).toHaveBeenCalled();
+    // The old token must be deleted before the new one is inserted, otherwise the
+    // unique identifier collides and rotation fails.
+    expect(mockTxDelete).toHaveBeenCalled();
+    expect(mockTxInsert).toHaveBeenCalled();
+    expect(mockTxDelete.mock.invocationCallOrder[0]).toBeLessThan(mockTxInsert.mock.invocationCallOrder[0]);
   });
 
   it('returns generic response and does not send email for OAuth-only account', async () => {

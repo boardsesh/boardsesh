@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { requestPasswordReset } from '../../src/lib/auth';
@@ -15,6 +15,7 @@ import { track } from '../../src/lib/analytics';
 export default function ForgotPasswordScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
+  const router = useRouter();
 
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -74,6 +75,12 @@ export default function ForgotPasswordScreen() {
               <Text style={[styles.successText, { color: theme.systemColors.label }]}>
                 {t('forgotPassword.toasts.success')}
               </Text>
+              <Button
+                title={t('forgotPassword.back')}
+                onPress={() => router.replace('/auth/login')}
+                variant="text"
+                size="large"
+              />
             </View>
           ) : (
             <>

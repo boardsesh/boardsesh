@@ -39,12 +39,14 @@ describe('sendPasswordResetEmail', () => {
   });
 
   it('escapes the URL in the HTML body but leaves the plain-text link raw', async () => {
-    await sendPasswordResetEmail('user@example.com', 'a&b"c', 'https://boardsesh.com');
+    // A single quote survives encodeURIComponent but must be HTML-escaped to &#39;
+    // in the markup — proves the URL is both URL-safe and HTML-safe.
+    await sendPasswordResetEmail('user@example.com', "a'b", 'https://boardsesh.com');
 
     const mail = lastMail();
-    expect(mail.html).toContain('token=a&amp;b&quot;c');
-    expect(mail.html).not.toContain('token=a&b"c');
-    expect(mail.text).toContain('token=a&b"c');
+    expect(mail.html).toContain('token=a&#39;b');
+    expect(mail.html).not.toContain("token=a'b");
+    expect(mail.text).toContain("token=a'b");
   });
 
   it('rejects an invalid email before sending', async () => {

@@ -80,6 +80,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid or expired reset link' }, { status: 400 });
     }
 
+    // The token row only carries the email-derived identifier, not the user id —
+    // look the user up to get the id the transaction below needs. This also guards
+    // the rare case where the account was deleted within the token's 1-hour window.
     const user = await db
       .select({ id: schema.users.id })
       .from(schema.users)

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { PASSWORD_MIN_LENGTH } from '../../src/lib/auth-validation';
+import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../src/lib/auth-validation';
 import { resetPassword } from '../../src/lib/auth';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { useTheme } from '../../src/providers/theme-provider';
@@ -44,6 +44,9 @@ export default function ResetPasswordScreen() {
     let hasError = false;
     if (password.length < PASSWORD_MIN_LENGTH) {
       setPasswordError(t('resetPassword.validation.passwordTooShort'));
+      hasError = true;
+    } else if (password.length > PASSWORD_MAX_LENGTH) {
+      setPasswordError(t('resetPassword.validation.passwordTooLong'));
       hasError = true;
     }
     if (password !== confirmPassword) {
@@ -97,6 +100,12 @@ export default function ResetPasswordScreen() {
               <Text style={[styles.invalidLinkText, { color: theme.systemColors.label }]}>
                 {t('resetPassword.invalidLink')}
               </Text>
+              <Button
+                title={t('resetPassword.back')}
+                onPress={() => router.replace('/auth/login')}
+                variant="text"
+                size="large"
+              />
             </View>
           ) : (
             <>
@@ -164,6 +173,14 @@ export default function ResetPasswordScreen() {
                   loading={submitting}
                   disabled={!canSubmit}
                   style={styles.submitButton}
+                />
+
+                <Button
+                  title={t('resetPassword.back')}
+                  onPress={() => router.replace('/auth/login')}
+                  variant="text"
+                  size="large"
+                  disabled={submitting}
                 />
               </View>
             </>
