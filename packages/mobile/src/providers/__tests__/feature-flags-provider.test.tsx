@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { FeatureFlagsProvider, useFeatureFlag, useFeatureFlags } from '../feature-flags-provider';
-import { setFeatureFlagOverride, clearAllFeatureFlagOverrides } from '../../lib/feature-flag-overrides';
+import {
+  setFeatureFlagOverride,
+  clearAllFeatureFlagOverrides,
+  useFeatureFlagOverrides,
+} from '../../lib/feature-flag-overrides';
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   const storage: Record<string, string> = {};
@@ -76,5 +80,22 @@ describe('FeatureFlagsProvider', () => {
     const wrapper = ({ children }: { children: ReactNode }) => <FeatureFlagsProvider>{children}</FeatureFlagsProvider>;
     const { result } = renderHook(() => useFeatureFlag('strava-integration'), { wrapper });
     expect(result.current).toBe(true);
+  });
+
+  it('useFeatureFlagOverrides re-renders consumers when an override changes post-mount', () => {
+    const { result } = renderHook(() => useFeatureFlagOverrides());
+    expect(result.current.overrides).toEqual({});
+
+    // Mutating the module store outside React must push through the
+    // useSyncExternalStore subscription and re-render the hook.
+    act(() => {
+      result.current.setOverride('strava-integration', false);
+    });
+    expect(result.current.overrides).toEqual({ 'strava-integration': false });
+
+    act(() => {
+      result.current.clearOverride('strava-integration');
+    });
+    expect(result.current.overrides).toEqual({});
   });
 });
