@@ -59,10 +59,7 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
             <Text variant="body" style={styles.nameText} numberOfLines={1}>
               {name}
             </Text>
-            <ClimbAttributeIcons
-              benchmarkDifficulty={benchmarkDifficulty}
-              characteristics={characteristics}
-            />
+            <ClimbAttributeIcons benchmarkDifficulty={benchmarkDifficulty} characteristics={characteristics} />
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
