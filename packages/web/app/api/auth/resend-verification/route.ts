@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const baseUrl = request.nextUrl.origin;
     await sendVerificationEmail(email, token, baseUrl);
 
     await consistentDelay(startTime);
