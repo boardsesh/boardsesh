@@ -458,7 +458,8 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
     mockQueueActions = null;
     mockCurrentClimbData = null;
     mockDraftsDrawerProps = null;
-    mockRequest.mockResolvedValue({ checkMoonBoardClimbDuplicates: [] });
+    // myRoles: [] = no admin role by default (benchmark toggle hidden for regular users)
+    mockRequest.mockResolvedValue({ checkMoonBoardClimbDuplicates: [], myRoles: [] });
   });
 
   it('renders MoonBoardRenderer inside the board section', () => {
@@ -589,13 +590,30 @@ describe('CreateClimbForm — MoonBoard rendering', () => {
     expect(screen.getByRole('button', { name: /settings/i })).toBeTruthy();
   });
 
-  it('Settings button opens settings panel with Angle, Grade, Benchmark fields', () => {
+  it('Settings button opens settings panel with Angle, Grade, Benchmark fields for admins', async () => {
+    // Benchmark toggle is gated behind admin/community_leader role; mock an admin.
+    mockRequest.mockResolvedValue({
+      checkMoonBoardClimbDuplicates: [],
+      myRoles: [{ id: '1', userId: 'user-1', role: 'admin', boardType: null, createdAt: '' }],
+    });
     renderMoonboard();
     fireEvent.click(screen.getByRole('button', { name: /settings/i }));
     expect(screen.getByText('createClimbForm.fields.angle')).toBeTruthy();
     expect(screen.getByText('createClimbForm.fields.grade')).toBeTruthy();
-    expect(screen.getByText('createClimbForm.fields.benchmark')).toBeTruthy();
     expect(screen.getByText('createClimbForm.fields.description')).toBeTruthy();
+    // Benchmark appears after the roles query resolves.
+    await waitFor(() => {
+      expect(screen.getByText('createClimbForm.fields.benchmark')).toBeTruthy();
+    });
+  });
+
+  it('Settings button does not show Benchmark field for non-admins', () => {
+    // beforeEach sets myRoles: [] so canSetBenchmark is false.
+    renderMoonboard();
+    fireEvent.click(screen.getByRole('button', { name: /settings/i }));
+    expect(screen.getByText('createClimbForm.fields.angle')).toBeTruthy();
+    expect(screen.getByText('createClimbForm.fields.grade')).toBeTruthy();
+    expect(screen.queryByText('createClimbForm.fields.benchmark')).toBeNull();
   });
 
   it('has Draft toggle checked by default', () => {

@@ -367,8 +367,14 @@ async function syncBoardLayoutGroup(
               // branch (the dedup path normally skips existing UUIDs). Overwrite
               // (not COALESCE) so a "No match" prefix removed upstream actually
               // clears the token — matching aurora-sync's excluded.characteristics.
-              // For Kilter the array only ever holds no_match (method is
-              // MoonBoard-only), so this can't drop an unrelated token.
+              //
+              // ASSUMPTION: Kilter/Tension characteristics currently only carry
+              // `no_match`; method tags are MoonBoard-only. A blind overwrite is
+              // therefore safe — the incoming value is either ['no_match'] or null,
+              // and we want null to clear a stale token. If Kilter ever gains its
+              // own characteristic tokens (e.g. board-specific flags), switch this
+              // to a merge expression (e.g. array_cat + dedup) so that tokens not
+              // managed by this sync path aren't silently dropped.
               characteristics: sql`excluded.characteristics`,
             },
           });

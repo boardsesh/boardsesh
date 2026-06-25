@@ -85,6 +85,8 @@ import {
   type SaveMoonBoardClimbMutationResponse,
 } from '@boardsesh/graphql/operations/new-climb-feed';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
+import { GET_MY_ROLES } from '@boardsesh/graphql/operations/proposals';
+import type { CommunityRoleAssignment } from '@boardsesh/shared-schema';
 
 // The three mutually-exclusive MoonBoard method tokens (the create form's
 // selectable methods). The "feet follow hands" default is the empty selection.
@@ -159,6 +161,28 @@ export default function CreateClimbForm({
   // Determine which auth check to use based on board type
   const isLoggedIn = boardType === 'aurora' ? isAuthenticated : !!session?.user?.id;
   const hasMoonBoardSessionUser = !!session?.user;
+
+  // Check if the current user can set benchmarks on MoonBoard. Only admins and
+  // community leaders may flag a climb as a benchmark at creation time — the
+  // backend enforces this, so hide the toggle upfront to avoid a confusing
+  // server error for regular users.
+  const { data: myRoles } = useQuery({
+    queryKey: ['myRoles', session?.user?.id],
+    enabled: boardType === 'moonboard' && !!session?.user?.id,
+    queryFn: async (): Promise<CommunityRoleAssignment[]> => {
+      const client = createGraphQLHttpClient();
+      const result = await client.request<{ myRoles: CommunityRoleAssignment[] }>(GET_MY_ROLES);
+      return result.myRoles;
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const canSetBenchmark =
+    boardType === 'moonboard' &&
+    !!myRoles?.some(
+      (r) =>
+        (r.role === 'admin' || r.role === 'community_leader') && (r.boardType === null || r.boardType === 'moonboard'),
+    );
 
   // Convert fork frames to initial holds map if provided (Aurora only)
   const initialHoldsMap = useMemo(() => {
@@ -1970,14 +1994,16 @@ export default function CreateClimbForm({
                   </MenuItem>
                 </MuiSelect>
               </div>
-              <div className={styles.settingsField}>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                  <MuiSwitch size="small" checked={isBenchmark} onChange={(_, checked) => setIsBenchmark(checked)} />
-                  <Typography variant="body2" component="span">
-                    {t('createClimbForm.fields.benchmark')}
-                  </Typography>
-                </Box>
-              </div>
+              {canSetBenchmark && (
+                <div className={styles.settingsField}>
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <MuiSwitch size="small" checked={isBenchmark} onChange={(_, checked) => setIsBenchmark(checked)} />
+                    <Typography variant="body2" component="span">
+                      {t('createClimbForm.fields.benchmark')}
+                    </Typography>
+                  </Box>
+                </div>
+              )}
             </>
           )}
           {/* Common: Description */}
