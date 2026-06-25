@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveLogbookGradeDisplay } from '../logbook-grade-display';
+import { deriveLogbookGradeDisplay } from '../grade-display';
 
 describe('deriveLogbookGradeDisplay', () => {
   it('shows no consensus secondary when the logged grade matches the consensus', () => {

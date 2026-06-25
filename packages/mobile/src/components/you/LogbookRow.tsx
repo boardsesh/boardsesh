@@ -20,7 +20,7 @@ import { type IconName } from '../icon-map';
 import { ClimbListItemContent, type ClimbListItemClimb } from '../ClimbListItemContent';
 import { useSwipeArm } from '../use-swipe-arm';
 import { gradeBadgeColor } from './profile-chart-colors';
-import { deriveLogbookGradeDisplay } from './logbook-grade-display';
+import { deriveLogbookGradeDisplay } from '@boardsesh/logbook';
 import { brandColors, withAlpha } from '../../theme/colors';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';

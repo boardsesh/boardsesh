@@ -262,6 +262,35 @@ describe('tickQueries — behavior fixes', () => {
 
       expect(result.items.map((item) => item.climbName)).toEqual(['Easy', 'Mid', 'Hard']);
     });
+
+    it('interleaves a graded and an ungraded tick by effective grade', async () => {
+      // The graded tick logs hard (12); the ungraded one's consensus is easy (5).
+      // effective-grade asc puts the ungraded (5) first — the old loggedGrade asc
+      // would have floated the NULL-logged ungraded tick to the end instead.
+      const graded = CLIMB_PREFIX + 'easiest-mixed-graded';
+      const ungraded = CLIMB_PREFIX + 'easiest-mixed-ungraded';
+      await insertClimb(graded, 'Graded');
+      await insertClimb(ungraded, 'Ungraded');
+      await insertBoardClimbStats({ climbUuid: graded, displayDifficulty: 8 });
+      await insertBoardClimbStats({ climbUuid: ungraded, displayDifficulty: 5 });
+      await insertTick({
+        uuid: 'tick-easiest-mixed-graded',
+        climbUuid: graded,
+        climbedAt: '2026-02-01 10:00:00',
+        status: 'send',
+        difficulty: 12,
+      });
+      await insertTick({
+        uuid: 'tick-easiest-mixed-ungraded',
+        climbUuid: ungraded,
+        climbedAt: '2026-02-01 10:00:00',
+        status: 'send',
+      });
+
+      const result = await callUserAscentsFeed(TEST_USER_ID, { sortBy: 'easiest' });
+
+      expect(result.items.map((item) => item.climbName)).toEqual(['Ungraded', 'Graded']);
+    });
   });
 
   describe('userAscentsFeed — flashOnly filter', () => {
