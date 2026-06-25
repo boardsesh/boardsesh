@@ -54,6 +54,14 @@ function renderWithParams(token?: string, email?: string) {
   return render(<ResetPasswordContent />);
 }
 
+// jsdom does not dispatch a form's submit event from a submit-button click, so
+// exercise submission directly on the form (covers both Enter and button press).
+function submitForm() {
+  const form = document.querySelector('form');
+  if (!form) throw new Error('No form found');
+  fireEvent.submit(form);
+}
+
 describe('ResetPasswordContent', () => {
   beforeEach(() => {
     mockShowMessage.mockClear();
@@ -81,7 +89,7 @@ describe('ResetPasswordContent', () => {
 
   it('shows error when password field is empty', async () => {
     renderWithParams('abc-token', 'user@example.com');
-    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    submitForm();
     expect(await screen.findByText(/please enter a new password/i)).toBeTruthy();
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -89,7 +97,7 @@ describe('ResetPasswordContent', () => {
   it('shows error when password is too short', async () => {
     renderWithParams('abc-token', 'user@example.com');
     fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'short' } });
-    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    submitForm();
     expect(await screen.findByText(/at least 8 characters/i)).toBeTruthy();
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -98,7 +106,7 @@ describe('ResetPasswordContent', () => {
     renderWithParams('abc-token', 'user@example.com');
     fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'SecurePass1!' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'DifferentPass!' } });
-    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    submitForm();
     expect(await screen.findByText(/passwords do not match/i)).toBeTruthy();
     expect(mockFetch).not.toHaveBeenCalled();
   });
@@ -111,7 +119,7 @@ describe('ResetPasswordContent', () => {
     renderWithParams('abc-token', 'user@example.com');
     fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'SecurePass1!' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'SecurePass1!' } });
-    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    submitForm();
     await waitFor(() => expect(mockFetch).toHaveBeenCalledOnce());
     await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/auth/login'));
   });
@@ -124,7 +132,7 @@ describe('ResetPasswordContent', () => {
     renderWithParams('abc-token', 'user@example.com');
     fireEvent.change(screen.getByLabelText(/^new password$/i), { target: { value: 'SecurePass1!' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'SecurePass1!' } });
-    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
+    submitForm();
     await waitFor(() => expect(mockShowMessage).toHaveBeenCalledWith('Invalid or expired reset link', 'error'));
     expect(mockRouterReplace).not.toHaveBeenCalled();
   });

@@ -22,7 +22,7 @@ Only other `FullWindowOverlay`s stack above the player (that's why `ClimbReactio
 
 Make the player a real top-of-stack modal VC. Anything presented **from within its React tree** (sub-drawers, queue, share) presents off the player's VC and stacks above naturally; it still covers the tab bar.
 
-**By construction this fixes 5 of the 6 reported breakages** — the sub-drawers (LogAscent, AngleSelector, ClimbActions, AddBetaVideo) and the native share are already rendered _inside_ `PlayDrawer`, so as route content they stack above. **Only `QueueSheet` needs extra handling** (see Wrinkle).
+**By construction this fixes 5 of the 6 reported breakages** — the sub-drawers (LogAscent, AngleSelector, ClimbActions, AddBetaVideo) and the native share are already rendered *inside* `PlayDrawer`, so as route content they stack above. **Only `QueueSheet` needs extra handling** (see Wrinkle).
 
 ### Implementation steps
 
@@ -42,25 +42,21 @@ Make the player a real top-of-stack modal VC. Anything presented **from within i
 
 `openQueueSheet` is called from the player (`onOpenQueue`) AND from the "added to queue" snackbar (`QueueAddedSnackbar` → context `openQueueSheet`), i.e. with the player closed. It's currently one `QueueSheet` rendered in drawer-host (main window) — fine when the player is closed, but BELOW the player route when open.
 Options (pick during impl):
-
 - (a) Make `QueueSheet` ALSO a route (e.g. `app/queue.tsx`, `presentation: 'formSheet'`/`modal`) so it stacks on top of whatever's current (the player route, or the tabs). Cleanest "everything stacks naturally." Most work.
 - (b) Render a second `QueueSheet` instance INSIDE the player route (used when opened from the player); keep the drawer-host one for the snackbar/closed-player case. Simpler, slightly redundant.
-  Recommend trying (a) — it's the logical end-state (the play-drawer ecosystem becomes stacked modal routes) and removes the dual-instance hazard.
+Recommend trying (a) — it's the logical end-state (the play-drawer ecosystem becomes stacked modal routes) and removes the dual-instance hazard.
 
 ## Validation
-
 - `vp run typecheck:mobile`, `vp run test:mobile`, `vp check` (changed files only — `vp check --fix <paths>`; bare `vp check --fix` reformats the whole repo).
 - Update any test mock for PlayDrawer if added (no test renders the full PlayDrawer today).
 - **Device/sim QA matrix** (the whole point): open the player → open EACH of beta, queue, share, angle, climb-actions (long-press), tick → confirm each stacks ABOVE the player and dismisses cleanly (no freeze). Then change-between-climbs while open; Reduce-Transparency; Android Material.
 
 ## Environment notes (this arm64 Mac)
-
 - **iOS device deploy** (iPhone 17 Pro `3573AA37-0E25-5AFE-B58F-80CE29FE88E9`, paired): JS-only changes ride Metro — just restart `CI=1 REACT_NATIVE_PACKAGER_HOSTNAME=192.168.0.83 vp run dev:mobile` and reload. Native changes need a rebuild: `xcodebuild build -workspace packages/mobile/ios/Boardsesh.xcworkspace -scheme Boardsesh -configuration Debug -destination 'platform=iOS,id=<udid>' -derivedDataPath packages/mobile/ios/build-device -allowProvisioningUpdates DEVELOPMENT_TEAM=9L3HKPZBH3`, then `xcrun devicectl device install app --device <udid> <app>` + `process launch`. (build-device/ was deleted to free disk — it rebuilds.)
 - **Android emulator** (this arm64 Mac): `vp run mobile:android-shots` is BROKEN here (downloads x86_64 image + linux JDK). Use the manual path that worked: arm64 AVD `boardsesh-android16` (or `Boardsesh_API_35`); build with `JAVA_HOME=/opt/homebrew/opt/openjdk@21 node_modules/.bin/expo prebuild -p android --no-install` then `cd android && ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon`; `adb install -r` (uninstall the higher-version `com.boardsesh.app` first); `adb reverse tcp:8081 tcp:8081`; Metro `CI=1 EXPO_PUBLIC_SCREENSHOT_MODE=1 EXPO_PUBLIC_SCREENSHOT_USER_EMAIL=test@boardsesh.com EXPO_PUBLIC_SCREENSHOT_USER_PASSWORD=test vp run dev:mobile`; launch via `am start -a android.intent.action.VIEW -d "com.boardsesh.app://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"` (uninstall `com.boardsesh.app.dev` first or you get a scheme chooser). Screenshot deep links: `com.boardsesh.app://climbs?screenshotOpenFirst=1` (player), `?screenshotOpenBoardSheet=1` (BoardSheet).
 - **Disk** ran out mid-Android-build once; iOS DerivedData trees are ~4GB each.
 
 ## Key files
-
 - `packages/mobile/src/components/play-drawer/PlayDrawer.tsx` — the player (props→context, overlay→route content, open/close→router).
 - `packages/mobile/src/components/play-drawer/PlayDrawerOverlay.tsx` — likely delete (keep GlassSurface recipe).
 - `packages/mobile/src/components/play-drawer/use-deferred-sheet-open.ts` / `sheet-open-serializer.ts` — race guard (presentation-agnostic; rewire dismiss signal to route unmount).
