@@ -114,13 +114,14 @@ Add these to `packages/web/.env.development.local` (local) or your production en
 
 ### Email (Required for email verification)
 
-| Variable        | Description          | Default             |
-| --------------- | -------------------- | ------------------- |
-| `SMTP_HOST`     | SMTP server hostname | `smtp.fastmail.com` |
-| `SMTP_PORT`     | SMTP port            | `465`               |
-| `SMTP_USER`     | SMTP username/email  | -                   |
-| `SMTP_PASSWORD` | SMTP app password    | -                   |
-| `EMAIL_FROM`    | Sender email address | Same as `SMTP_USER` |
+| Variable        | Description                                                                                       | Default             |
+| --------------- | ------------------------------------------------------------------------------------------------- | ------------------- |
+| `BASE_URL`      | Public URL used in email links (password reset, verification). **Must be set in production.**     | Request origin      |
+| `SMTP_HOST`     | SMTP server hostname                                                                              | `smtp.fastmail.com` |
+| `SMTP_PORT`     | SMTP port                                                                                         | `465`               |
+| `SMTP_USER`     | SMTP username/email                                                                               | -                   |
+| `SMTP_PASSWORD` | SMTP app password                                                                                 | -                   |
+| `EMAIL_FROM`    | Sender email address                                                                              | Same as `SMTP_USER` |
 
 ### Example Configuration
 
