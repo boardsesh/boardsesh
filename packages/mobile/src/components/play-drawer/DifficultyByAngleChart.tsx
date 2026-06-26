@@ -23,6 +23,10 @@ const ROTATED_AXIS_LABEL_SIZE = 10;
 const BAR_RADIUS = borderRadius.sm;
 const PEAK_BAR_RADIUS = borderRadius.md;
 const TOP_LABEL_HEIGHT = 16;
+// Measurement box for the grade label above each bar — wide enough that even a
+// long combined grade ("V13 / 8B") never clips to "…", while a short grade stays
+// centred over the bar.
+const GRADE_LABEL_WIDTH = 60;
 const MIN_BAR_WIDTH = 10;
 // Width reserved for the y-axis ascent-count labels (e.g. "120", "1.2k").
 const Y_AXIS_LABEL_WIDTH = 32;
@@ -72,15 +76,22 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
         barBorderBottomLeftRadius: 0,
         barBorderBottomRightRadius: 0,
         topLabelComponentHeight: TOP_LABEL_HEIGHT,
+        // gifted sizes the top-label box to ~1.5× the bar, so on a narrow bar
+        // the grade clips to "V…". Wrap it in a fixed, wider centred box and pin
+        // the font (no Dynamic Type growth) so the grade always reads in full —
+        // the short label still sits centred over the bar without overlapping.
         topLabelComponent: (): ReactNode => (
-          <Text
-            variant="caption2"
-            color={fill}
-            style={isHardest ? styles.topLabelPeak : styles.topLabel}
-            numberOfLines={1}
-          >
-            {bar.gradeName}
-          </Text>
+          <View style={styles.topLabelWrap} pointerEvents="none">
+            <Text
+              variant="caption2"
+              color={fill}
+              style={isHardest ? styles.topLabelPeak : styles.topLabel}
+              numberOfLines={1}
+              allowFontScaling={false}
+            >
+              {bar.gradeName}
+            </Text>
+          </View>
         ),
       };
     });
@@ -181,6 +192,10 @@ const styles = StyleSheet.create({
   },
   topLabelContainer: {
     marginBottom: spacing[1],
+  },
+  topLabelWrap: {
+    width: GRADE_LABEL_WIDTH,
+    alignItems: 'center',
   },
   topLabel: {
     fontWeight: '600',
