@@ -46,7 +46,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
     key: 'accessory-now-playing',
     label: 'Now-playing accessory bar',
     description:
-      'Hide the queue-only active-climb bar on social tabs (home / profile / discover); it stays when a board is live.',
+      'Now-playing redesign: a status eyebrow on the bar (live / on the wall / up next), a peer’s climb is read-only (tick hidden), and the queue-only bar is hidden on social tabs (home / profile / discover). Off = the bar exactly as before.',
   },
 ] as const satisfies readonly FeatureFlagDefinition[];
 

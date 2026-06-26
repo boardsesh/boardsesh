@@ -187,7 +187,9 @@ export function ClimbCapsule({
         <View
           style={[styles.tapArea, { height, borderRadius: capsuleRadius }]}
           accessibilityRole="button"
-          accessibilityLabel={currentClimb.name}
+          // Announce the status caption (live / on the wall / up next) too, so a
+          // screen reader gets the same context the eyebrow gives sighted users.
+          accessibilityLabel={eyebrowText ? `${eyebrowText}, ${currentClimb.name}` : currentClimb.name}
         >
           <View style={[styles.labelSlot, { left: labelLeft, right: labelRight }]}>
             <ClimbLabel

@@ -126,8 +126,14 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
     <View style={[styles.row, { width, height: rowHeight }]}>
       <GestureDetector gesture={openGesture}>
         {/* tapClip reserves the leading slot via paddingLeft (not a real child),
-            so the climb thumbnail tucks in close to the lightbulb. */}
-        <View style={styles.tapClip} accessibilityRole="button" accessibilityLabel={climb.name}>
+            so the climb thumbnail tucks in close to the lightbulb. Announce the
+            status caption too (even in `inline`, where it isn't drawn) so a screen
+            reader gets the live / on-the-wall / up-next context. */}
+        <View
+          style={styles.tapClip}
+          accessibilityRole="button"
+          accessibilityLabel={eyebrowText ? `${eyebrowText}, ${climb.name}` : climb.name}
+        >
           <View style={styles.labelSlot}>
             <ClimbLabel
               climb={climb}

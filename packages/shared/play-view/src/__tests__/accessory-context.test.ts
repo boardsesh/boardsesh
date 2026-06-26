@@ -42,7 +42,9 @@ describe('deriveAccessoryContext', () => {
     }
   });
 
-  it('enabled defaults to true (the redesign is on unless explicitly disabled)', () => {
+  // The pure function defaults `enabled` to true for callers that omit it; the
+  // mobile app always passes the live flag, which is off by default in production.
+  it('defaults the pure function to enabled when the param is omitted', () => {
     const context = deriveAccessoryContext({ boardConnection: 'connectedByMe', holderDisplayName: null });
     expect(context.eyebrow).toEqual({ kind: 'live', name: null });
   });
