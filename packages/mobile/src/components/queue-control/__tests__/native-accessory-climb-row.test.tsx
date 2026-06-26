@@ -279,6 +279,7 @@ vi.mock('../use-wall-or-queue-climb', () => ({
 // (expo) chain into the jsdom test. `showTick: true` keeps the tick assertions.
 vi.mock('../use-accessory-presentation', () => ({
   useAccessoryEyebrow: () => ({ ...eyebrow }),
+  accessoryEyebrowColor: (tone: string, live: string, idle: string) => (tone === 'live' ? live : idle),
 }));
 
 import { NativeAccessoryClimbRow } from '../NativeAccessoryClimbRow';

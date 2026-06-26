@@ -21,7 +21,7 @@ import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './Access
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
-import { useAccessoryEyebrowText } from './use-accessory-presentation';
+import { useAccessoryEyebrowFromContext, accessoryEyebrowColor } from './use-accessory-presentation';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -123,7 +123,7 @@ export function ClimbCapsule({
     () => deriveAccessoryContext({ boardConnection, holderDisplayName }),
     [boardConnection, holderDisplayName],
   );
-  const { text: eyebrowText, tone: eyebrowTone } = useAccessoryEyebrowText(accessoryContext);
+  const { text: eyebrowText, tone: eyebrowTone } = useAccessoryEyebrowFromContext(accessoryContext);
 
   // Source-of-truth flip: show the wall's lit climb when a board feed is live
   // (flag-gated), else the local queue head.
@@ -163,9 +163,7 @@ export function ClimbCapsule({
   // stripe recolors to the brand violet so it reads as a control-on edge marker.
   const showGradeAccent = surfaceTreatment === 'docked';
   const gradeAccentColor = connected ? brandColors.primary : grades.currentColor;
-  // "live" runs hot in the brand accent; peer / up-next stay quiet so they read
-  // as ambient status rather than a call to action.
-  const eyebrowColor = eyebrowTone === 'live' ? brandColors.primary : systemColors.secondaryLabel;
+  const eyebrowColor = accessoryEyebrowColor(eyebrowTone, brandColors.primary, systemColors.secondaryLabel);
 
   return (
     <AccessoryBarSurface

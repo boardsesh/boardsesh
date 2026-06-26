@@ -14,6 +14,12 @@ const queue = vi.hoisted(() => ({
   previousClimb: vi.fn(),
 }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
+// Per-test board-connection state so the eyebrow (live / peer / up-next) can be exercised.
+const board = vi.hoisted(() => ({
+  boardConnection: 'disconnected' as 'disconnected' | 'connectedByMe' | 'heldByPeer',
+  bluetooth: null as unknown,
+  holderDisplayName: null as string | null,
+}));
 
 // --- RN surface: View → div ---------------------------------------------------
 // Forward testID and the resolved backgroundColor so a test can assert the leading
@@ -114,7 +120,7 @@ vi.mock('../../GlassSurface', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: '#111111', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
+    systemColors: { label: '#111111', secondaryLabel: '#666666', separator: '#cccccc', elevatedSurface: '#f0f0f0' },
     brandColors: { primary: '#6D28D9', warning: '#FBBF24' },
   }),
 }));
@@ -125,7 +131,7 @@ vi.mock('../BoardControlIndicator', () => ({ BoardControlIndicator: () => null }
 
 // No board bound by default → no control rendered, disconnected glow state.
 vi.mock('../../ble/use-board-connection-state', () => ({
-  useBoardConnectionState: () => ({ boardConnection: 'disconnected', bluetooth: null }),
+  useBoardConnectionState: () => ({ ...board }),
 }));
 
 vi.mock('../../../providers/queue-provider', () => ({
@@ -198,6 +204,9 @@ describe('ClimbCapsule', () => {
     drawer.openPlayDrawer.mockClear();
     queue.nextClimb.mockClear();
     queue.previousClimb.mockClear();
+    board.boardConnection = 'disconnected';
+    board.bluetooth = null;
+    board.holderDisplayName = null;
   });
 
   it('renders nothing when there is no current climb', () => {
@@ -205,6 +214,51 @@ describe('ClimbCapsule', () => {
     expect(container.querySelector('[data-text]')).toBeNull();
     // No glass surface either — the whole capsule short-circuits.
     expect(container.querySelector('[data-glass]')).toBeNull();
+  });
+
+  // The mocked t() returns the key, so the eyebrow text IS the i18n key here.
+  it('shows the up-next eyebrow in a quiet colour when disconnected', () => {
+    const item = makeItem(makeClimb());
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+
+    const { container } = render(<ClimbCapsule />);
+
+    const texts = Array.from(container.querySelectorAll('[data-text]'));
+    const eyebrowNode = texts.find((node) => (node.textContent ?? '').includes('queueBar.nowPlaying.upNext'));
+    expect(eyebrowNode).toBeTruthy();
+    // up-next is the quiet secondary-label colour, not the brand accent.
+    expect(eyebrowNode?.getAttribute('data-color')).toBe('#666666');
+  });
+
+  it('shows the live eyebrow in the brand accent when this device is driving the wall', () => {
+    board.boardConnection = 'connectedByMe';
+    const item = makeItem(makeClimb());
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+
+    const { container } = render(<ClimbCapsule />);
+
+    const texts = Array.from(container.querySelectorAll('[data-text]'));
+    const eyebrowNode = texts.find((node) => (node.textContent ?? '').includes('queueBar.nowPlaying.live'));
+    expect(eyebrowNode).toBeTruthy();
+    expect(eyebrowNode?.getAttribute('data-color')).toBe('#6D28D9');
+  });
+
+  it('names the peer in the eyebrow when a teammate is driving the wall', () => {
+    board.boardConnection = 'heldByPeer';
+    board.holderDisplayName = 'Tara';
+    const item = makeItem(makeClimb());
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+
+    const { container } = render(<ClimbCapsule />);
+
+    // t() returns the key; the peer branch resolves the named key (not peerAnon).
+    const texts = Array.from(container.querySelectorAll('[data-text]'));
+    const eyebrowNode = texts.find((node) => (node.textContent ?? '').includes('queueBar.nowPlaying.peer'));
+    expect(eyebrowNode).toBeTruthy();
+    expect(eyebrowNode?.textContent).not.toContain('peerAnon');
   });
 
   it('renders the climb name when a climb is active', () => {

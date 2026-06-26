@@ -10,7 +10,7 @@ import { CHROME_LABEL_MAX_FONT_SCALE, ACCESSORY_EYEBROW_TEXT_STYLE } from '../..
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
-import { useAccessoryEyebrow } from './use-accessory-presentation';
+import { useAccessoryEyebrow, accessoryEyebrowColor } from './use-accessory-presentation';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -120,7 +120,7 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
   const currentFormattedGrade = formatGrade(climb.difficulty);
   // Only the roomier `regular` placement has space for the second line.
   const eyebrow = placement === 'regular' ? eyebrowText : null;
-  const eyebrowColor = tone === 'live' ? brandColors.primary : systemColors.secondaryLabel;
+  const eyebrowColor = accessoryEyebrowColor(tone, brandColors.primary, systemColors.secondaryLabel);
 
   return (
     <View style={[styles.row, { width, height: rowHeight }]}>
