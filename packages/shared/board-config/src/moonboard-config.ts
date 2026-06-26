@@ -250,7 +250,7 @@ export function getMoonBoardDetails({ layout_id, set_ids }: { layout_id: number;
   // Compute all 198 hold positions from grid for WASM/canvas rendering pipeline
   const cellWidth = MOONBOARD_SIZE.width / MOONBOARD_GRID.numColumns;
   const cellHeight = MOONBOARD_SIZE.height / MOONBOARD_GRID.numRows;
-  const holdRadius = Math.min(cellWidth, cellHeight) * 0.35;
+  const holdRadius = Math.min(cellWidth, cellHeight) * 0.525;
 
   const holdsData = Array.from({ length: MOONBOARD_GRID.numColumns * MOONBOARD_GRID.numRows }, (_, i) => {
     const holdId = i + 1;
