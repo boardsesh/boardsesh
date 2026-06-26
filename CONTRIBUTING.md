@@ -42,7 +42,7 @@ Every pull request that touches the mobile app gets its own over-the-air update 
 
 The repo is driven by [Vite+](https://viteplus.dev), invoked as `vp`. It runs lint, format, tests, typecheck, and every custom dev task from one config (`vite.config.ts`), so everyone gets the same behavior locally and in CI.
 
-Use `vp` for all validation. `bun run`, `bunx`, and `npx` bypass the unified config and can mutate `bun.lock`, so a pre-commit hook (`.claude/hooks/block-bun-npm-run.sh`) blocks them. The only sanctioned exceptions are `bunx drizzle-kit generate` for migrations and `bun run backend:start` for the production backend.
+Use `vp` for all validation (lint, format, typecheck, tests). `bun run`, `bunx`, and `npx` bypass the unified config and can mutate `bun.lock`. The only sanctioned non-`vp` invocations are `bunx drizzle-kit generate` for migrations and `bun run backend:start` for the production backend. Claude Code agents working in the repo have this enforced by a hook (`.claude/hooks/block-bun-npm-run.sh`); humans just follow the convention.
 
 The setup script installs `vp`. To install it on its own:
 
@@ -126,7 +126,7 @@ Build a dev client:
 
 - iOS on a real device: `vp run mobile:dev-client-build` triggers an EAS build of the `development-device` client. Install it on the iPhone you test with.
 - iOS locally on a Mac: `vp run mobile:ios` builds and runs through the shared Xcode cache.
-- Android locally: from `packages/mobile`, run `bunx expo run:android` to build and install a local dev client.
+- Android: there is no first-class `vp` wrapper for a local Android dev build yet. The emulator tooling installs a cached dev-client APK and runs it against Metro on an x86_64 emulator: run `vp run mobile:android-doctor` once, then `vp run mobile:android-shots`. See [docs/android-emulator-screenshots.md](./docs/android-emulator-screenshots.md).
 
 Then run the bundler with `vp run dev:mobile` and connect the dev client to it. In a dev build, open More, then Development, then Metro Servers (`src/components/DevServerSwitcherScreen.tsx`). It lists Metro bundlers it discovered on local ports and across your Tailscale peers (`src/lib/metro-discovery.ts`), each labeled with its branch, worktree, and commit. Pick one, or add a target by URL (`http://host:port`), and the app reloads its JavaScript from that bundler. The branch and QA notes for the selected bundler show in the dev metadata panel at the top of the More tab (`src/components/DevMetadataPanel.tsx`).
 
@@ -161,7 +161,7 @@ Local Docker wins when it is already running. To force a specific peer, set `BOA
 
 ## Working across git worktrees
 
-The repo is checked out as a bare repo at `.bare/` with one worktree per branch (run `git worktree list` to see them). Each worktree is an independent checkout with its own branch, so you can run several Claude Code agent sessions in parallel, one branch each, without them stepping on each other.
+Worktrees let you keep several branches checked out at once, each in its own directory, so you can run parallel work (including several Claude Code agent sessions) one branch each without them stepping on each other. You can add worktrees to a normal clone with the commands below. Some of us go further and run a bare-repo layout (a `.bare/` clone with one worktree per branch as sibling directories); that is a convention you set up yourself, not what a fresh `git clone` gives you.
 
 ```bash
 git worktree add ../my-feature -b feat/my-feature origin/main   # new branch off main
