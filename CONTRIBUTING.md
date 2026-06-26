@@ -34,6 +34,10 @@ Log in with the seeded test account: `test@boardsesh.com` / `test`.
 
 External contributors: fork the repo, clone your fork, branch, make the change, and open a pull request against `main`. Regular contributors who work on several branches at once usually run git worktrees instead, covered below.
 
+### Testing a pull request without building anything
+
+Every pull request that touches the mobile app gets its own over-the-air update channel named `pr-<number>`, published automatically when the pull request opens. If you have the `tester` role, you can point a normal App Store or TestFlight build at that channel from inside the app and try the change without compiling anything. Whether the channel will work for a given pull request is shown by the OTA compatibility comment on the pull request: a JavaScript-only change rides the channel, and a native change needs a real build instead. Full steps are in [Path A](#path-a-small-changes-through-the-ota-channel-switcher) below.
+
 ## The vp toolchain
 
 The repo is driven by [Vite+](https://viteplus.dev), invoked as `vp`. It runs lint, format, tests, typecheck, and every custom dev task from one config (`vite.config.ts`), so everyone gets the same behavior locally and in CI.
@@ -112,7 +116,7 @@ To use it:
 3. Open More, then Development, then OTA Channel Switcher.
 4. Enter `pr-<number>` for the pull request you want. The app pulls that pull request's JavaScript and reloads into it.
 
-This works for JavaScript-only pull requests whose native fingerprint matches the store binary. A pull request that changes native code (a new Expo plugin, a native module, an SDK bump) gets a new fingerprint that the store binary can't load, so it is skipped. Each pull request posts an "OTA compatibility" comment that tells you which case applies. For native changes, use Path B. The switcher lives at `src/components/ChannelSwitcherScreen.tsx`, with the channel logic in `src/lib/channel-switch.ts`; it shows only when `isTester && !__DEV__ && Updates.isEnabled`. Background: [docs/mobile-ota-updates.md](./docs/mobile-ota-updates.md).
+To know whether the `pr-<number>` channel will actually work for a pull request, read the OTA compatibility comment it posts. The channel only delivers to a store build when the pull request is JavaScript-only and its native fingerprint matches the store binary. A pull request that changes native code (a new Expo plugin, a native module, an SDK bump) gets a new fingerprint that the store binary can't load, so its channel is skipped and the comment says so. For those, use Path B. The switcher lives at `src/components/ChannelSwitcherScreen.tsx`, with the channel logic in `src/lib/channel-switch.ts`; it shows only when `isTester && !__DEV__ && Updates.isEnabled`. Background: [docs/mobile-ota-updates.md](./docs/mobile-ota-updates.md).
 
 ### Path B: larger work through a dev build and the Metro switcher
 
