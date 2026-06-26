@@ -84,9 +84,10 @@ describe('location sync config helpers', () => {
 
   it('creates every MoonBoard layout and angle config', () => {
     const configs = getMoonBoardLocationConfigs();
-    expect(configs).toHaveLength(12);
+    expect(configs).toHaveLength(14);
     expect(configs.map((config) => `${config.layoutId}:${config.angle}`)).toContain('2:25');
     expect(configs.map((config) => `${config.layoutId}:${config.angle}`)).toContain('2:40');
+    expect(configs.map((config) => `${config.layoutId}:${config.angle}`)).toContain('7:40');
     expect(configs.every((config) => config.sizeId === 1)).toBe(true);
   });
 });

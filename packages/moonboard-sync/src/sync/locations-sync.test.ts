@@ -16,9 +16,10 @@ describe('buildMoonBoardLocationRecords', () => {
       },
     ]);
 
-    expect(records).toHaveLength(12);
+    expect(records).toHaveLength(14);
     expect(records.map((record) => `${record.layoutId}:${record.angle}`)).toContain('2:25');
     expect(records.map((record) => `${record.layoutId}:${record.angle}`)).toContain('2:40');
+    expect(records.map((record) => `${record.layoutId}:${record.angle}`)).toContain('7:40');
     expect(records.find((record) => record.layoutId === 2 && record.angle === 40)?.sourceKey).toBe(
       'moonboard:Board House:-33.86:151.2',
     );
