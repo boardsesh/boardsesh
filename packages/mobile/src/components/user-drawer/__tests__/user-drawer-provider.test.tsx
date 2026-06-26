@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
+const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
+// withTiming completion callbacks are captured (not fired inline) so a test can
+// assert an action is deferred while the drawer is still up, then flush the close
+// animation to prove it runs only after the Modal unmounts.
+const reanimated = vi.hoisted(() => ({ closeCallbacks: [] as Array<(finished: boolean) => void> }));
 
 vi.mock('react-native', () => ({
   Modal: ({ children, visible }: { children?: ReactNode; visible: boolean }) =>
@@ -32,13 +37,13 @@ vi.mock('react-native-reanimated', () => ({
   useAnimatedStyle: (factory: () => unknown) => factory(),
   useSharedValue: (initialValue: number) => ({ value: initialValue }),
   withTiming: (value: number, _config: unknown, callback?: (finished: boolean) => void) => {
-    callback?.(true);
+    if (callback) reanimated.closeCallbacks.push(callback);
     return value;
   },
 }));
 
 vi.mock('expo-router', () => ({
-  router: { push: vi.fn() },
+  router: routerMock,
   useSegments: () => [],
 }));
 
@@ -66,7 +71,7 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useProfile: () => ({ data: { displayName: 'Alex', email: 'alex@example.com', avatarUrl: null } }),
+  useProfile: () => ({ data: { id: 'user-1', displayName: 'Alex', email: 'alex@example.com', avatarUrl: null } }),
 }));
 vi.mock('../../../providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, signOut: vi.fn().mockResolvedValue(undefined) }),
@@ -119,17 +124,44 @@ function DrawerTrigger() {
 
 beforeEach(() => {
   browser.openBrowserAsync.mockClear();
+  routerMock.push.mockClear();
+  reanimated.closeCallbacks.length = 0;
+  // The deferred action runs via requestAnimationFrame one frame after the Modal
+  // unmounts — run it inline so the flush below is synchronous.
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  });
+  vi.stubGlobal('cancelAnimationFrame', () => {});
 });
+
+// Fire the captured drawer-close completion callback(s), which flip drawerMounted
+// to false and let the deferred action run. Mirrors the real close animation
+// finishing.
+function flushDrawerClose() {
+  act(() => {
+    const callbacks = reanimated.closeCallbacks.splice(0);
+    callbacks.forEach((callback) => callback(true));
+  });
+}
+
+function openDrawer() {
+  fireEvent.click(screen.getByText('Open drawer'));
+}
+
+function renderDrawer() {
+  return render(
+    <UserDrawerProvider>
+      <DrawerTrigger />
+    </UserDrawerProvider>,
+  );
+}
 
 describe('UserDrawerProvider Discord CTA', () => {
   it('renders Join Discord directly below Report a bug and opens the invite', () => {
-    const { container } = render(
-      <UserDrawerProvider>
-        <DrawerTrigger />
-      </UserDrawerProvider>,
-    );
+    const { container } = renderDrawer();
 
-    fireEvent.click(screen.getByText('Open drawer'));
+    openDrawer();
 
     const rowTitles = Array.from(container.querySelectorAll('[data-row-title]')).map((row) =>
       row.getAttribute('data-row-title'),
@@ -141,6 +173,41 @@ describe('UserDrawerProvider Discord CTA', () => {
 
     fireEvent.click(screen.getByText('Join Discord'));
 
+    // Deferred until the drawer Modal has closed.
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+    flushDrawerClose();
     expect(browser.openBrowserAsync).toHaveBeenCalledWith(DISCORD_INVITE_URL);
+  });
+});
+
+// Regression: tapping a drawer row must not navigate/present while the drawer's
+// RN Modal is still on screen — after a native @expo/ui sheet has been opened,
+// that concurrent presentation deadlocks UIKit and freezes the whole app. Every
+// row defers its action until the Modal has unmounted.
+describe('UserDrawerProvider defers navigation until the drawer closes', () => {
+  it.each([
+    ['Settings', '/(tabs)/profile/more'],
+    ['My playlists', '/(tabs)/discover/all'],
+    ['About', '/about'],
+  ])('%s waits for the drawer to close, then pushes %s', (rowTitle, route) => {
+    renderDrawer();
+    openDrawer();
+
+    fireEvent.click(screen.getByText(rowTitle));
+
+    expect(routerMock.push).not.toHaveBeenCalled();
+    flushDrawerClose();
+    expect(routerMock.push).toHaveBeenCalledWith(route);
+  });
+
+  it('edit profile (header) waits for the drawer to close, then pushes the edit route', () => {
+    renderDrawer();
+    openDrawer();
+
+    fireEvent.click(screen.getByLabelText('profile.editAction'));
+
+    expect(routerMock.push).not.toHaveBeenCalled();
+    flushDrawerClose();
+    expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/profile/edit');
   });
 });

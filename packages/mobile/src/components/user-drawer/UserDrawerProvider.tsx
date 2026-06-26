@@ -51,14 +51,15 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   const drawerWidth = Math.min(DRAWER_MAX_WIDTH, windowDimensions.width * DRAWER_SCREEN_FRACTION);
   const drawerProgress = useSharedValue(0);
   const [drawerMounted, setDrawerMounted] = useState(false);
-  // A navigation to run only AFTER the drawer's RN Modal has fully unmounted.
-  // Presenting a `presentation: 'modal'` route (e.g. /boards) while the drawer
-  // Modal is still on screen makes iOS try to present two modals at once — the
-  // push is dropped and the UI freezes. Closing the drawer first avoids it.
-  const pendingNavRef = useRef<(() => void) | null>(null);
+  // An action (route push, sheet present, or browser open) to run only AFTER the
+  // drawer's RN Modal has fully unmounted. Doing it while the Modal is still on
+  // screen makes iOS present two view controllers at once — and once a native
+  // @expo/ui sheet has been opened/closed, that concurrent presentation deadlocks
+  // UIKit, the close animation never completes, and the whole UI freezes. Closing
+  // the drawer first (see runAfterDrawerClosed) avoids it.
+  const pendingActionRef = useRef<(() => void) | null>(null);
   const feedbackSheetRef = useRef<BottomSheetModal>(null);
   const [feedbackMode, setFeedbackMode] = useState<FeedbackSheetMode>('rating');
-  const [feedbackOpenNonce, setFeedbackOpenNonce] = useState(0);
 
   const profileDisplayName = profile?.displayName ?? profile?.email ?? t('header.you');
   const profileEmail = profile?.email ?? null;
@@ -88,22 +89,28 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     });
   }, [drawerMounted, drawerProgress]);
 
-  useEffect(() => {
-    if (feedbackOpenNonce === 0) return;
-    feedbackSheetRef.current?.present();
-  }, [feedbackOpenNonce]);
-
-  // Run a queued navigation once the drawer Modal has unmounted (one frame after
-  // drawerMounted flips false), so a modal route never presents over the still-up
-  // drawer Modal.
+  // Run the queued action once the drawer Modal has unmounted (one frame after
+  // drawerMounted flips false), so nothing ever presents over the still-up drawer
+  // Modal.
   useEffect(() => {
     if (drawerMounted) return;
-    const nav = pendingNavRef.current;
-    if (!nav) return;
-    pendingNavRef.current = null;
-    const raf = requestAnimationFrame(nav);
+    const action = pendingActionRef.current;
+    if (!action) return;
+    pendingActionRef.current = null;
+    const raf = requestAnimationFrame(action);
     return () => cancelAnimationFrame(raf);
   }, [drawerMounted]);
+
+  // Queue an action to run after the drawer's RN Modal has fully unmounted, then
+  // start closing the drawer. Every row that navigates or presents goes through
+  // here so the Modal is always gone before a second view controller appears.
+  const runAfterDrawerClosed = useCallback(
+    (action: () => void) => {
+      pendingActionRef.current = action;
+      closeUserDrawer();
+    },
+    [closeUserDrawer],
+  );
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: drawerProgress.value,
@@ -113,60 +120,50 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     transform: [{ translateX: -drawerWidth + drawerWidth * drawerProgress.value }],
   }));
 
-  // /boards is a `presentation: 'modal'` route — defer the push until the drawer
-  // Modal has closed (see pendingNavRef) so two modals never present at once.
+  // /boards is a `presentation: 'modal'` route — deferring keeps it from
+  // presenting over the still-up drawer Modal.
   const openBoards = useCallback(() => {
     const returnTo = currentBoardReturnTo(segments);
-    pendingNavRef.current = () => router.push({ pathname: '/boards', params: { returnTo } });
-    closeUserDrawer();
-  }, [closeUserDrawer, segments]);
+    runAfterDrawerClosed(() => router.push({ pathname: '/boards', params: { returnTo } }));
+  }, [runAfterDrawerClosed, segments]);
 
   // "My Boards" is now a management screen (edit / delete owned, unfollow
-  // followed), distinct from the board picker that "Change Board" opens. Also a
-  // modal route, so it defers the same way.
+  // followed), distinct from the board picker that "Change Board" opens.
   const openManageBoards = useCallback(() => {
-    pendingNavRef.current = () => router.push('/boards/manage');
-    closeUserDrawer();
-  }, [closeUserDrawer]);
+    runAfterDrawerClosed(() => router.push('/boards/manage'));
+  }, [runAfterDrawerClosed]);
 
   const openProfileSettings = useCallback(() => {
-    closeUserDrawer();
-    router.push('/(tabs)/profile/more');
-  }, [closeUserDrawer]);
+    runAfterDrawerClosed(() => router.push('/(tabs)/profile/more'));
+  }, [runAfterDrawerClosed]);
 
   const openEditProfile = useCallback(() => {
-    closeUserDrawer();
-    router.push('/(tabs)/profile/edit');
-  }, [closeUserDrawer]);
+    runAfterDrawerClosed(() => router.push('/(tabs)/profile/edit'));
+  }, [runAfterDrawerClosed]);
 
   const openPlaylists = useCallback(() => {
-    closeUserDrawer();
-    router.push('/(tabs)/discover/all');
-  }, [closeUserDrawer]);
+    runAfterDrawerClosed(() => router.push('/(tabs)/discover/all'));
+  }, [runAfterDrawerClosed]);
 
   const openAbout = useCallback(() => {
-    closeUserDrawer();
-    router.push('/about');
-  }, [closeUserDrawer]);
+    runAfterDrawerClosed(() => router.push('/about'));
+  }, [runAfterDrawerClosed]);
 
   const openFeedback = useCallback(
     (mode: FeedbackSheetMode) => {
-      closeUserDrawer();
       setFeedbackMode(mode);
-      setFeedbackOpenNonce((previousNonce) => previousNonce + 1);
+      runAfterDrawerClosed(() => feedbackSheetRef.current?.present());
     },
-    [closeUserDrawer],
+    [runAfterDrawerClosed],
   );
 
   const openDiscord = useCallback(() => {
-    closeUserDrawer();
-    void openDiscordInvite('user-drawer');
-  }, [closeUserDrawer]);
+    runAfterDrawerClosed(() => void openDiscordInvite('user-drawer'));
+  }, [runAfterDrawerClosed]);
 
   const handleSignOut = useCallback(() => {
-    closeUserDrawer();
-    void signOut('manual').catch(reportError);
-  }, [closeUserDrawer, signOut]);
+    runAfterDrawerClosed(() => void signOut('manual').catch(reportError));
+  }, [runAfterDrawerClosed, signOut]);
 
   const contextValue = useMemo(() => ({ openUserDrawer, closeUserDrawer }), [openUserDrawer, closeUserDrawer]);
 
