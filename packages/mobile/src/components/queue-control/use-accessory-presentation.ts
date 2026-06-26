@@ -52,10 +52,16 @@ export function useAccessoryEyebrowFromContext({ eyebrow, showTick }: AccessoryC
         return eyebrow.name ? t('queueBar.nowPlaying.peer', { name: eyebrow.name }) : t('queueBar.nowPlaying.peerAnon');
       case 'upNext':
         return t('queueBar.nowPlaying.upNext');
+      default:
+        // A new AccessoryEyebrowKind without a case here is a compile error.
+        eyebrow.kind satisfies never;
+        return null;
     }
   }, [t, eyebrow]);
 
-  return { text, tone: eyebrow?.kind ?? null, showTick };
+  const tone = eyebrow?.kind ?? null;
+  // Stable identity so a future React.memo / context consumer doesn't churn.
+  return useMemo(() => ({ text, tone, showTick }), [text, tone, showTick]);
 }
 
 /** Convenience for components that don't already read the connection state. */
