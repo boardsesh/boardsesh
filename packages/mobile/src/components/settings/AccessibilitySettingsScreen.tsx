@@ -43,7 +43,6 @@ import {
   getDefaultHoldRoleColor,
   getEffectiveHoldRoleColor,
   getEffectiveHoldRoleShape,
-  hasHoldMarkerOverrides,
   normalizeBrushThickness,
   normalizeHoldShapeSize,
   useHoldColorOverrides,
@@ -133,7 +132,6 @@ export function AccessibilitySettingsScreen() {
   const boardName = boardNameFromActiveBoard(activeBoard?.boardType);
   const {
     overrides,
-    markerOverrides,
     shapes,
     brushThickness,
     shapeSize,
@@ -147,7 +145,9 @@ export function AccessibilitySettingsScreen() {
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
   const [cvdMode, setCvdMode] = useState<CvdMode>('none');
-  const hasOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE && hasHoldMarkerOverrides(markerOverrides);
+  // renderSignature is buildHoldRenderOverrideSignature(markerOverrides), so this
+  // alone is equivalent to hasHoldMarkerOverrides(markerOverrides).
+  const hasOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
 
   const cvdOptions = useMemo<{ key: CvdMode; label: string }[]>(
     () => [

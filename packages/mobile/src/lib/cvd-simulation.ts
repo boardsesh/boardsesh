@@ -4,10 +4,12 @@
 // the three dichromacies, so they can confirm the four hold roles stay
 // distinguishable. This is a visualisation aid, not a clinical tool.
 //
-// Uses the Machado, Oliveira & Fernandes (2009) severity-1.0 matrices. These are
-// applied directly to gamma-encoded sRGB (no linearisation) — the form Machado's
-// own implementation and the common ports use, so the simulated colours match
-// the reference look other CVD tools produce. Pure TS, no React Native imports.
+// Uses the Machado, Oliveira & Fernandes (2009) severity-1.0 matrices. The paper
+// derives them in linear light, but here they're applied directly to
+// gamma-encoded sRGB (no linearisation) — this matches the behaviour of common
+// web CVD tools/simulators and keeps the preview visually consistent with them.
+// It's a perceptual aid, not a colorimetrically exact simulation. Pure TS, no
+// React Native imports.
 
 export type CvdType = 'deuteranopia' | 'protanopia' | 'tritanopia';
 

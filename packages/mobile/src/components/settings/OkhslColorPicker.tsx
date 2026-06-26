@@ -12,15 +12,21 @@ import { useTranslation } from 'react-i18next';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
+import { iosSystemColors } from '../../theme/ios-colors';
 import { hexToOkhsl, okhslToHex, type Okhsl } from '../../lib/okhsl';
 import { normalizeHexColor } from '../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../theme/tokens';
+
+// Destructive red for the invalid-hex state (matches AuthTextInput's error
+// border) — the accent token reads as a focused/selected field, not an error.
+const ERROR_COLOR = iosSystemColors.systemRed;
 
 const HUE_STOPS = 13;
 const SL_STOPS = 12;
 const DEFAULT_OKHSL: Okhsl = { h: 0, s: 0, l: 0.5 };
 
 function sampleGradient(count: number, at: (t: number) => string): { offset: number; color: string }[] {
+  if (count <= 1) return [{ offset: 0, color: at(0) }];
   const stops: { offset: number; color: string }[] = [];
   for (let i = 0; i < count; i += 1) {
     const t = i / (count - 1);
@@ -240,7 +246,7 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
     {
       backgroundColor: systemColors.fill,
       color: systemColors.label,
-      borderColor: hexValid ? systemColors.separator : systemColors.accent,
+      borderColor: hexValid ? systemColors.separator : ERROR_COLOR,
     },
   ];
 
@@ -290,7 +296,7 @@ export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
         />
       </View>
       {hexValid ? null : (
-        <Text variant="footnote" color={systemColors.accent}>
+        <Text variant="footnote" color={ERROR_COLOR}>
           {t('mobile.more.accessibility.invalidHex')}
         </Text>
       )}
