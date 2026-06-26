@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
-import { buildAngleGradeBars, buildAscentScale, niceStep } from '../community-utils';
+import { buildAngleGradeBars, buildAscentChartScale, buildAscentScale, niceStep } from '../community-utils';
 
 function makeEntry(overrides: Partial<ClimbStatsHistoryEntry> = {}): ClimbStatsHistoryEntry {
   return {
@@ -112,5 +112,53 @@ describe('buildAscentScale', () => {
   it('stays sane for an empty / single-ascent chart', () => {
     expect(buildAscentScale(0)).toEqual({ maxValue: 2, noOfSections: 2, step: 1 });
     expect(buildAscentScale(1)).toEqual({ maxValue: 2, noOfSections: 2, step: 1 });
+  });
+});
+
+describe('buildAscentChartScale', () => {
+  it('keeps a linear axis for tight spreads', () => {
+    const scale = buildAscentChartScale([10, 8, 6]);
+    expect(scale.isLog).toBe(false);
+    expect(scale.plot(8)).toBe(8);
+    expect(scale).toMatchObject({ maxValue: 15, noOfSections: 3, yAxisLabelTexts: ['0', '5', '10', '15'] });
+  });
+
+  it('keeps a linear axis when one angle leads but the peak is still small', () => {
+    // peak 10 (< the log peak threshold) → linear even though 10× the floor.
+    expect(buildAscentChartScale([10, 1]).isLog).toBe(false);
+  });
+
+  it('keeps a linear axis for a big-but-even chart', () => {
+    // peak 100 clears the threshold, but a 1.1× spread would only flatten on log.
+    expect(buildAscentChartScale([100, 90]).isLog).toBe(false);
+  });
+
+  it('switches to a log axis when one angle dominates', () => {
+    const scale = buildAscentChartScale([2000, 50, 2]);
+    expect(scale.isLog).toBe(true);
+    expect(scale).toMatchObject({
+      maxValue: 5,
+      noOfSections: 5,
+      yAxisLabelTexts: ['0', '1', '10', '100', '1k', '10k'],
+    });
+    // log10(v) + 1: a single ascent still clears a whole section off the baseline.
+    expect(scale.plot(1)).toBeCloseTo(1);
+    expect(scale.plot(10)).toBeCloseTo(2);
+    expect(scale.plot(2000)).toBeCloseTo(Math.log10(2000) + 1);
+    expect(scale.plot(0)).toBe(0);
+  });
+
+  it('keeps the top tick above the tallest bar on the log axis', () => {
+    // peak 100 sits exactly on a decade, so it must gain a section for headroom.
+    const scale = buildAscentChartScale([100, 1]);
+    expect(scale.isLog).toBe(true);
+    expect(scale.noOfSections).toBe(4);
+    expect(scale.maxValue).toBeGreaterThan(scale.plot(100));
+  });
+
+  it('stays sane for an all-zero chart', () => {
+    const scale = buildAscentChartScale([0, 0]);
+    expect(scale.isLog).toBe(false);
+    expect(scale).toMatchObject({ maxValue: 2, noOfSections: 2, yAxisLabelTexts: ['0', '1', '2'] });
   });
 });

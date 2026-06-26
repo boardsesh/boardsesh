@@ -2,6 +2,7 @@ import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
 import { formatGrade, type GradeDisplayFormat } from '@boardsesh/play-view';
 import { BOULDER_GRADES, type BoulderGrade } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
+import { formatCount } from '../../lib/format-climb-stats';
 
 export type AngleGradeBar = {
   angle: number;
@@ -32,6 +33,59 @@ export function buildAscentScale(maxSends: number): { maxValue: number; noOfSect
   let noOfSections = Math.ceil(peak / step);
   if (step * noOfSections <= peak) noOfSections += 1;
   return { maxValue: step * noOfSections, noOfSections, step };
+}
+
+export type AscentChartScale = {
+  /** Top of the y-axis in plotted units. */
+  maxValue: number;
+  noOfSections: number;
+  /** Tick labels bottom→top, one per section boundary (noOfSections + 1 entries). */
+  yAxisLabelTexts: string[];
+  /** Maps a raw ascent count to the value plotted on the chart — identity on a
+   *  linear axis, a log10 position on a log axis. */
+  plot: (sends: number) => number;
+  /** True when the y-axis is logarithmic. */
+  isLog: boolean;
+};
+
+// A log axis only earns its keep once one angle dwarfs the rest: a climb sent
+// 2,000× at 40° but twice at 15° draws the 15° bar one pixel tall on a linear
+// axis. Past this peak and spread we switch to log10 so the rarely-climbed
+// angles stay legible; tighter spreads keep the linear axis, since log would
+// squash near-equal bars into one indistinguishable band.
+const LOG_MIN_PEAK = 50;
+const LOG_SPREAD_RATIO = 30;
+
+// Y-scale for the ascents-by-angle chart. Picks a linear or log axis from the
+// spread of counts and returns everything the chart needs to plot + label it.
+export function buildAscentChartScale(sends: number[]): AscentChartScale {
+  const counts = sends.filter((count) => count > 0);
+  const peak = counts.length ? Math.max(...counts) : 0;
+  const floor = counts.length ? Math.min(...counts) : 0;
+  const useLog = peak >= LOG_MIN_PEAK && floor > 0 && peak / floor >= LOG_SPREAD_RATIO;
+
+  if (useLog) {
+    // One section per power of ten. Section 1 is a count of 1 (10⁰), so a single
+    // ascent still draws a visible bar; the zero baseline sits below it.
+    const top = Math.log10(peak) + 1;
+    let noOfSections = Math.ceil(top);
+    // Keep the top tick strictly above the tallest bar for top-label headroom.
+    if (noOfSections <= top) noOfSections += 1;
+    const yAxisLabelTexts = Array.from({ length: noOfSections + 1 }, (_, index) =>
+      index === 0 ? '0' : formatCount(10 ** (index - 1)),
+    );
+    return {
+      maxValue: noOfSections,
+      noOfSections,
+      yAxisLabelTexts,
+      plot: (count: number) => (count > 0 ? Math.log10(count) + 1 : 0),
+      isLog: true,
+    };
+  }
+
+  const { maxValue, noOfSections, step } = buildAscentScale(peak);
+  const yAxisLabelTexts = Array.from({ length: noOfSections + 1 }, (_, index) => formatCount(index * step));
+  return { maxValue, noOfSections, yAxisLabelTexts, plot: (count: number) => count, isLog: false };
 }
 
 const GRADE_BY_ID = new Map<number, BoulderGrade>(BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade]));
