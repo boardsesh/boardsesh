@@ -47,10 +47,11 @@ export type AccessoryContextInput = {
   holderDisplayName: string | null;
   /**
    * When `false`, returns the pre-redesign bar: no eyebrow caption and the tick
-   * always available (today's behaviour). Defaults to `true`. The whole
+   * always available (today's behaviour). Required (no default) so a caller can
+   * never silently get the redesign — it must pass the live flag. The whole
    * now-playing redesign rides one flag, so off = byte-identical to today.
    */
-  enabled?: boolean;
+  enabled: boolean;
 };
 
 /**
@@ -64,7 +65,7 @@ export type AccessoryContextInput = {
 export function deriveAccessoryContext({
   boardConnection,
   holderDisplayName,
-  enabled = true,
+  enabled,
 }: AccessoryContextInput): AccessoryContext {
   if (!enabled) {
     // Flag off — the bar exactly as it was before the redesign.

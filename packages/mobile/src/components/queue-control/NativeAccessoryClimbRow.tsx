@@ -147,11 +147,13 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
           </View>
         </View>
       </GestureDetector>
-      {showTick ? (
-        <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
-          <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
-        </View>
-      ) : null}
+      {/* Always reserve the tick slot's width, even when the tick is hidden (a
+          peer driving the wall). Removing it would let the label area expand and
+          relayout the live UIKit platter mid-session when control passes — a
+          visible pop. The button inside is what comes and goes, not the slot. */}
+      <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
+        {showTick ? <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} /> : null}
+      </View>
       {/* Leading board control as a content-layer element (the platter is
           UIKit-owned, so the glow lives here, not on the glass). Static state
           swap; no long-press recognizer — it would fight UIKit's own gestures.
