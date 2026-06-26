@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, type PressableStateCallbackType } from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -112,7 +112,7 @@ export function BleLightbulbButton({
       )}
       accessibilityState={{ selected: accessibilitySelected ?? isConnected }}
       hitSlop={8}
-      style={({ pressed }) => [
+      style={({ pressed }: PressableStateCallbackType) => [
         styles.container,
         { width: containerSize, height: containerSize, borderRadius: containerSize / 2 },
         animatedStyle,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type RefObject } from 'react';
+import type { ViewStyle } from 'react-native';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import {
   useSharedValue,
@@ -48,7 +49,7 @@ type UseZoomPanGestureReturn = {
   containerWidthSV: SharedValue<number>;
   containerHeightSV: SharedValue<number>;
   resetZoom: () => void;
-  animatedZoomStyle: AnimatedStyle;
+  animatedZoomStyle: AnimatedStyle<ViewStyle>;
 };
 
 // Worklet-callable copy of clampTranslation from @boardsesh/play-view. The
