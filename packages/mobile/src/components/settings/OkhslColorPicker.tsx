@@ -26,7 +26,8 @@ const SL_STOPS = 12;
 const DEFAULT_OKHSL: Okhsl = { h: 0, s: 0, l: 0.5 };
 
 function sampleGradient(count: number, at: (t: number) => string): { offset: number; color: string }[] {
-  if (count <= 1) return [{ offset: 0, color: at(0) }];
+  if (count <= 0) return [];
+  if (count === 1) return [{ offset: 0, color: at(0) }];
   const stops: { offset: number; color: string }[] = [];
   for (let i = 0; i < count; i += 1) {
     const t = i / (count - 1);
