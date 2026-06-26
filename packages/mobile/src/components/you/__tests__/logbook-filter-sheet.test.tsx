@@ -41,16 +41,40 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
-// The sheet commits the draft on close (there's no Apply button), so capture the
-// onDismiss handler it hands BottomSheetModal — a test fires it to simulate the
+// The sheet commits the draft on close (there's no Apply button). The component
+// drives close through the coordinator's onChange(-1) (see the useManagedSheet
+// mock below, which forwards -1 to onClose → handleDismiss → onApply), so capture
+// the onChange it hands BottomSheetModal — a test fires -1 to simulate the
 // swipe/scrim close. Children render inline.
-const sheetMock = vi.hoisted(() => ({ onDismiss: undefined as (() => void) | undefined }));
+const sheetMock = vi.hoisted(() => ({ onChange: undefined as ((index: number) => void) | undefined }));
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  BottomSheetModal: ({ children, onDismiss }: { children?: ReactNode; onDismiss?: () => void }) => {
-    sheetMock.onDismiss = onDismiss;
+  BottomSheetModal: ({ children, onChange }: { children?: ReactNode; onChange?: (index: number) => void }) => {
+    sheetMock.onChange = onChange;
     return createElement('div', null, children);
   },
   BottomSheetScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+}));
+
+// Isolate the sheet from the presentation coordinator (its serialization is
+// covered by sheet-presentation-provider.test.tsx). These tests drive Apply /
+// Reset through the component's own controls, so a no-op managed handle is enough.
+vi.mock('../../../providers/sheet-presentation-provider', () => ({
+  useManagedSheet: ({ onClose }: { onClose?: () => void }) => ({
+    onChange: (index: number) => {
+      if (index === -1) onClose?.();
+    },
+    onFullyDismissed: () => {},
+    handle: {
+      present: () => {},
+      dismiss: () => {},
+      close: () => {},
+      forceClose: () => {},
+      snapToIndex: () => {},
+      snapToPosition: () => {},
+      expand: () => {},
+      collapse: () => {},
+    },
+  }),
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -173,9 +197,10 @@ function lastApply(onApply: ReturnType<typeof vi.fn>): {
   return { filters, sort };
 }
 
-// Close the sheet (swipe/scrim) — this is what commits the draft via onApply.
+// Close the sheet (swipe/scrim) — a coordinator onChange(-1) → onClose →
+// handleDismiss, which commits the draft via onApply.
 function closeSheet() {
-  act(() => sheetMock.onDismiss?.());
+  act(() => sheetMock.onChange?.(-1));
 }
 
 beforeEach(() => {

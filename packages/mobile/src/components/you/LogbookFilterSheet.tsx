@@ -25,6 +25,7 @@ import { SegmentedControl } from '../SegmentedControl';
 import { SwitchRow } from '../SwitchRow';
 import { GradeRangeRail } from '../grade';
 import { useTheme } from '../../providers/theme-provider';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { useGrades } from '../../lib/graphql/hooks';
 import { hapticSelection } from '../../lib/haptics';
 import { springs } from '../../theme/animations';
@@ -154,11 +155,23 @@ export function LogbookFilterSheet({
   // Bumped on Reset so the Refine/Advanced sections collapse back to default.
   const [sectionResetKey, setSectionResetKey] = useState(0);
 
-  // The sheet remounts on each open (it is conditionally rendered), so the draft
-  // initializes from the committed props above — no parent-sync effect needed.
+  // Commit-on-close: there's no Apply button — the draft applies when the sheet
+  // is dismissed (swipe down / scrim). The ref holds the latest draft so the
+  // stable dismiss handler commits the newest values, never a stale closure.
+  const draftRef = useRef({ filters: draftFilters, sort: draftSort });
   useEffect(() => {
-    sheetRef.current?.present();
-  }, []);
+    draftRef.current = { filters: draftFilters, sort: draftSort };
+  }, [draftFilters, draftSort]);
+
+  const handleDismiss = useCallback(() => {
+    onApply(draftRef.current.filters, draftRef.current.sort);
+    onDismiss();
+  }, [onApply, onDismiss]);
+
+  // The parent only mounts the sheet while it should be open, so present/dismiss
+  // route through the coordinator (serialized, no overlapping native transitions).
+  // A user pan-down / scrim tap fires onClose → handleDismiss (commit the draft).
+  const managed = useManagedSheet({ open: true, sheetRef, onClose: handleDismiss });
 
   const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
   // One stable "today" ceiling so the To-date row's maximumDate prop keeps a
@@ -196,19 +209,6 @@ export function LogbookFilterSheet({
     },
     [updateFilters],
   );
-
-  // Commit-on-close: there's no Apply button — the draft applies when the sheet
-  // is dismissed (swipe down or tap the scrim). The ref holds the latest draft so
-  // the stable dismiss handler commits the newest values, never a stale closure.
-  const draftRef = useRef({ filters: draftFilters, sort: draftSort });
-  useEffect(() => {
-    draftRef.current = { filters: draftFilters, sort: draftSort };
-  }, [draftFilters, draftSort]);
-
-  const handleDismiss = useCallback(() => {
-    onApply(draftRef.current.filters, draftRef.current.sort);
-    onDismiss();
-  }, [onApply, onDismiss]);
 
   const handleReset = useCallback(() => {
     hapticSelection();
@@ -289,7 +289,7 @@ export function LogbookFilterSheet({
       snapPoints={snapPoints}
       enableDynamicSizing={false}
       enablePanDownToClose
-      onDismiss={handleDismiss}
+      onChange={managed.onChange}
       handleIndicatorStyle={styles.indicator}
     >
       <View style={styles.header}>

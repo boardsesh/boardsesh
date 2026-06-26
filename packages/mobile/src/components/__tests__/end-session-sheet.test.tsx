@@ -29,10 +29,11 @@ type SheetMockProps = {
   children?: ReactNode;
   enableDynamicSizing?: boolean;
   snapPoints?: (string | number)[];
+  index?: number;
 };
 type SheetViewMockProps = { children?: ReactNode; style?: unknown };
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
-  default: forwardRef(({ children, enableDynamicSizing, snapPoints }: SheetMockProps, ref: Ref<unknown>) => {
+  default: forwardRef(({ children, enableDynamicSizing, snapPoints, index }: SheetMockProps, ref: Ref<unknown>) => {
     useImperativeHandle(ref, () => ({ expand: sheet.expand }));
     return createElement(
       'div',
@@ -40,12 +41,36 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
         'data-sheet': 'true',
         'data-dynamic': enableDynamicSizing ? 'true' : 'false',
         'data-snappoints': snapPoints ? JSON.stringify(snapPoints) : '',
+        'data-index': index === undefined ? '' : String(index),
       },
       children,
     );
   }),
   BottomSheetView: ({ children, style }: SheetViewMockProps) =>
     createElement('div', { 'data-sheet-view': 'true', 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
+}));
+
+// Isolate the sheet from the presentation coordinator (its serialization is
+// covered by sheet-presentation-provider.test.tsx). The sheet is always mounted
+// and opened/closed by the coordinator; these tests drive close via the Done
+// button's onDismiss prop, so a no-op managed handle is enough.
+vi.mock('../../providers/sheet-presentation-provider', () => ({
+  useManagedSheet: ({ onClose }: { onClose?: () => void }) => ({
+    onChange: (index: number) => {
+      if (index === -1) onClose?.();
+    },
+    onFullyDismissed: () => {},
+    handle: {
+      present: () => {},
+      dismiss: () => {},
+      close: () => {},
+      forceClose: () => {},
+      snapToIndex: () => {},
+      snapToPosition: () => {},
+      expand: () => {},
+      collapse: () => {},
+    },
+  }),
 }));
 
 // Gesture-nav phone: a non-zero bottom inset is the case the dynamic-sizing fix
@@ -110,9 +135,13 @@ describe('EndSessionSheet', () => {
     sheet.expand.mockClear();
   });
 
-  it('renders nothing until it has been made visible', () => {
+  it('stays mounted but closed (index -1) until the coordinator opens it', () => {
+    // The sheet is always mounted now — present/dismiss route through the
+    // coordinator — so it renders at the closed index rather than returning null.
     const { container } = render(<EndSessionSheet {...makeProps({ visible: false })} />);
-    expect(container.querySelector('[data-sheet]')).toBeNull();
+    const sheetEl = container.querySelector('[data-sheet]') as HTMLElement;
+    expect(sheetEl).not.toBeNull();
+    expect(sheetEl.getAttribute('data-index')).toBe('-1');
   });
 
   it('shows the confirmation copy, climb count, and both actions when visible', () => {

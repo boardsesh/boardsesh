@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import type { DiscoveredDevice } from '../../lib/ble/types';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
 import type { BleBoardConfig } from '../../lib/ble/board-config-match';
@@ -39,9 +40,11 @@ export function DevicePickerSheet({
 
   const snapPoints = useMemo(() => androidSafeSnapPoints(['72%']), []);
 
-  useEffect(() => {
-    sheetRef.current?.present();
-  }, []);
+  // The host mounts this sheet only while a picker session is active, so it is
+  // always meant to be open. Present/dismiss route through the coordinator
+  // (serialized, no overlapping native transitions); `onDismiss` clears the
+  // host's picker state on a user pan-down / backdrop.
+  const managed = useManagedSheet({ open: true, sheetRef, onClose: onDismiss });
 
   const sortedDevices = useMemo(() => [...devices].sort((deviceA, deviceB) => deviceB.rssi - deviceA.rssi), [devices]);
 
@@ -86,7 +89,7 @@ export function DevicePickerSheet({
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onDismiss={onDismiss}
+      onChange={managed.onChange}
       handleIndicatorStyle={styles.indicator}
     >
       <BottomSheetView style={styles.header}>

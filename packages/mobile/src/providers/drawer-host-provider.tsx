@@ -127,6 +127,36 @@ type DrawerHostValue = {
 
 const DrawerHostContext = createContext<DrawerHostValue | null>(null);
 
+/**
+ * Data-backed sheet state that survives the dismiss animation. `open(value)`
+ * shows it; `close()` requests the animated close (flips `visible` false) but
+ * keeps the data mounted; `clearIfClosed()` (wired to the sheet's onFullyDismissed)
+ * drops the data only once the animation has settled and the sheet wasn't
+ * re-opened — so the native Host never unmounts mid-animation (an iOS freeze
+ * vector) and the content doesn't blank out while sliding away.
+ */
+function useDeferredSheetData<T>(): {
+  data: T | null;
+  visible: boolean;
+  open: (value: T) => void;
+  close: () => void;
+  clearIfClosed: () => void;
+} {
+  const [data, setData] = useState<T | null>(null);
+  const [visible, setVisible] = useState(false);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const open = useCallback((value: T) => {
+    setData(value);
+    setVisible(true);
+  }, []);
+  const close = useCallback(() => setVisible(false), []);
+  const clearIfClosed = useCallback(() => {
+    if (!visibleRef.current) setData(null);
+  }, []);
+  return { data, visible, open, close, clearIfClosed };
+}
+
 export function useDrawerHost(): DrawerHostValue {
   const context = useContext(DrawerHostContext);
   if (!context) throw new Error('useDrawerHost must be used within DrawerHostProvider');
@@ -189,14 +219,36 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth();
   const { data: myBoardsConn } = useMyBoards(undefined, { enabled: isAuthenticated });
   const [boardConfigOverride, setBoardConfigOverride] = useState<BoardConfig | null>(null);
-  const [logAscentInput, setLogAscentInput] = useState<LogAscentInput | null>(null);
+  // These sheets stay mounted through their dismiss animation (see
+  // useDeferredSheetData) so the native Host never tears down mid-animation. The
+  // open/close/clear callbacks are stable; only data/visible change, and those
+  // are read in render (not in the context value), so consumers don't churn.
+  const {
+    data: logAscentData,
+    visible: logAscentVisible,
+    open: openLogAscentSheet,
+    close: closeLogAscentSheet,
+    clearIfClosed: clearLogAscentSheet,
+  } = useDeferredSheetData<LogAscentInput>();
+  const {
+    data: playlistData,
+    visible: playlistVisible,
+    open: openPlaylistSheet,
+    close: closePlaylistSheet,
+    clearIfClosed: clearPlaylistSheet,
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
+  const {
+    data: betaVideoData,
+    visible: betaVideoVisible,
+    open: openBetaVideoSheet,
+    close: closeBetaVideoSheet,
+    clearIfClosed: clearBetaVideoSheet,
+  } = useDeferredSheetData<{ climb: Climb; boardConfig: BoardConfig }>();
   const [climbActions, setClimbActions] = useState<{
     climb: Climb;
     boardConfig: BoardConfig;
     onEditEntry?: () => void;
   } | null>(null);
-  const [playlistClimb, setPlaylistClimb] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
-  const [betaVideoClimb, setBetaVideoClimb] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
   const setActiveBoard = useSetActiveBoard();
@@ -354,11 +406,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     [activeBoard, boardConfigOverride, sessionId, setActiveBoard, setSessionBoardPath],
   );
 
-  const openLogAscent = useCallback((input: LogAscentInput) => {
-    setLogAscentInput(input);
-  }, []);
-
-  const dismissLogAscent = useCallback(() => setLogAscentInput(null), []);
+  const openLogAscent = openLogAscentSheet;
 
   // Snapshot the board config at open time so the sheet's per-row handlers
   // (queue / favorite / tick) keep operating on the same angle even if the
@@ -376,29 +424,31 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     setClimbActions(null);
   }, []);
 
-  const openAddToPlaylist = useCallback((climb: Climb, boardConfigOverride?: BoardConfig) => {
-    const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
-    if (!boardConfig) return;
-    setPlaylistClimb({ climb, boardConfig });
-  }, []);
+  const openAddToPlaylist = useCallback(
+    (climb: Climb, boardConfigOverride?: BoardConfig) => {
+      const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
+      if (!boardConfig) return;
+      openPlaylistSheet({ climb, boardConfig });
+    },
+    [openPlaylistSheet],
+  );
 
-  const closeAddToPlaylist = useCallback(() => {
-    setPlaylistClimb(null);
-  }, []);
+  const closeAddToPlaylist = closePlaylistSheet;
 
   // Single parameterized beta-video opener (mirrors openAddToPlaylist), used both by
   // the reaction menu's shared action list (useClimbActions) and by PlayDrawer.
   // Falls back to the stored active board, not the override-inclusive one, so a
   // temporary drawer board override can't leak into the beta-video surface.
-  const openAddBetaVideo = useCallback((climb: Climb, boardConfigOverride?: BoardConfig) => {
-    const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
-    if (!boardConfig) return;
-    setBetaVideoClimb({ climb, boardConfig });
-  }, []);
+  const openAddBetaVideo = useCallback(
+    (climb: Climb, boardConfigOverride?: BoardConfig) => {
+      const boardConfig = boardConfigOverride ?? storedActiveBoardConfigRef.current;
+      if (!boardConfig) return;
+      openBetaVideoSheet({ climb, boardConfig });
+    },
+    [openBetaVideoSheet],
+  );
 
-  const closeAddBetaVideo = useCallback(() => {
-    setBetaVideoClimb(null);
-  }, []);
+  const closeAddBetaVideo = closeBetaVideoSheet;
 
   // Present the always-mounted queue sheet imperatively. Calling `present()`
   // synchronously from the handler (rather than from a `visible`-prop effect)
@@ -615,42 +665,45 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     <DrawerHostContext.Provider value={value}>
       <PlayDrawerRouteContext.Provider value={routeValue}>
         {children}
-        {logAscentInput ? (
+        {logAscentData ? (
           <LogAscentSheet
-            visible
-            onDismiss={dismissLogAscent}
-            climbUuid={logAscentInput.climbUuid}
-            boardName={logAscentInput.boardName}
-            angle={logAscentInput.angle}
-            isMirror={logAscentInput.isMirror}
-            isBenchmark={logAscentInput.isBenchmark}
-            layoutId={logAscentInput.layoutId}
-            sizeId={logAscentInput.sizeId}
-            setIds={logAscentInput.setIds}
-            sessionId={logAscentInput.sessionId}
-            consensusGradeName={logAscentInput.consensusGradeName}
+            visible={logAscentVisible}
+            onClose={closeLogAscentSheet}
+            onFullyDismissed={clearLogAscentSheet}
+            climbUuid={logAscentData.climbUuid}
+            boardName={logAscentData.boardName}
+            angle={logAscentData.angle}
+            isMirror={logAscentData.isMirror}
+            isBenchmark={logAscentData.isBenchmark}
+            layoutId={logAscentData.layoutId}
+            sizeId={logAscentData.sizeId}
+            setIds={logAscentData.setIds}
+            sessionId={logAscentData.sessionId}
+            consensusGradeName={logAscentData.consensusGradeName}
           />
         ) : null}
-        {betaVideoClimb ? (
+        {betaVideoData ? (
           <AddBetaVideoSheet
-            visible
-            climb={betaVideoClimb.climb}
-            boardName={betaVideoClimb.boardConfig.boardName as BoardName}
-            layoutId={betaVideoClimb.boardConfig.layoutId}
-            angle={betaVideoClimb.boardConfig.angle}
+            visible={betaVideoVisible}
+            climb={betaVideoData.climb}
+            boardName={betaVideoData.boardConfig.boardName as BoardName}
+            layoutId={betaVideoData.boardConfig.layoutId}
+            angle={betaVideoData.boardConfig.angle}
             onClose={closeAddBetaVideo}
+            onFullyDismissed={clearBetaVideoSheet}
           />
         ) : null}
-        {playlistClimb ? (
+        {playlistData ? (
           <AddToPlaylistSheet
-            visible
-            climb={playlistClimb.climb}
-            boardName={playlistClimb.boardConfig.boardName as BoardName}
-            layoutId={playlistClimb.boardConfig.layoutId}
-            sizeId={playlistClimb.boardConfig.sizeId}
-            setIds={playlistClimb.boardConfig.setIds}
-            angle={playlistClimb.boardConfig.angle}
+            visible={playlistVisible}
+            climb={playlistData.climb}
+            boardName={playlistData.boardConfig.boardName as BoardName}
+            layoutId={playlistData.boardConfig.layoutId}
+            sizeId={playlistData.boardConfig.sizeId}
+            setIds={playlistData.boardConfig.setIds}
+            angle={playlistData.boardConfig.angle}
             onClose={closeAddToPlaylist}
+            onFullyDismissed={clearPlaylistSheet}
           />
         ) : null}
         {queueBoard ? (

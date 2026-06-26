@@ -1,22 +1,37 @@
-import { forwardRef, useCallback, useMemo, type ReactNode } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 // Migrated off @gorhom/bottom-sheet to Expo's native bottom sheet (#3167).
 // The native sheet draws its own scrim, drag handle and (on iOS 26) glass
 // background, so the old SheetBackdrop / GlassSheetBackground / FullWindowOverlay
 // wiring is gone. Scroll/keyboard coordination is handled natively.
+//
+// Present/dismiss route through the SheetPresentationProvider coordinator so two
+// native sheet transitions never overlap (the iOS UIKit deadlock / app freeze —
+// see sheet-presentation-provider.tsx).
 import BottomSheet, { BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { useTheme } from '../providers/theme-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
+import { useManagedSheet, type PresenterGroup } from '../providers/sheet-presentation-provider';
 
 type SheetProps = {
   children: ReactNode;
+  /** Controlled open state. Leave undefined for purely imperative consumers that
+   * drive the sheet through the forwarded ref. */
+  visible?: boolean;
   snapPoints?: (string | number)[];
   enableDynamicSizing?: boolean;
   onChange?: (index: number) => void;
+  /** Fired when the user closes the sheet themselves (pan-down / backdrop), so a
+   * controlled parent can clear the state driving `visible`. */
   onClose?: () => void;
+  /** Fired AFTER the dismiss animation has really settled (the accurate hook). */
+  onFullyDismissed?: () => void;
+  /** Serialization domain. Sheets presented off the same view controller share a
+   * group; defaults to the root window VC. */
+  presenterGroup?: PresenterGroup;
   enablePanDownToClose?: boolean;
   // Render the content inside a scrollable container instead of a plain View.
   // Use this for content taller than the sheet.
@@ -40,10 +55,13 @@ type SheetProps = {
 export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   {
     children,
+    visible,
     snapPoints: customSnapPoints,
     enableDynamicSizing = false,
     onChange,
     onClose,
+    onFullyDismissed,
+    presenterGroup,
     enablePanDownToClose = true,
     scrollable = false,
     contentContainerStyle,
@@ -55,12 +73,26 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => customSnapPoints ?? ['50%', '90%'], [customSnapPoints]);
 
+  const sheetRef = useRef<BottomSheetMethods>(null);
+  const managed = useManagedSheet({
+    open: visible,
+    group: presenterGroup,
+    sheetRef,
+    onClose,
+    onFullyDismissed,
+  });
+  useImperativeHandle(ref, () => managed.handle as BottomSheetMethods, [managed.handle]);
+
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   const handleChange = useCallback(
     (index: number) => {
       if (index >= 0) hapticMedium();
-      onChange?.(index);
+      managed.onChange(index);
+      onChangeRef.current?.(index);
     },
-    [onChange],
+    [managed],
   );
 
   const body = scrollable ? (
@@ -94,13 +126,12 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
 
   return (
     <BottomSheet
-      ref={ref}
+      ref={sheetRef}
       index={-1}
       snapPoints={enableDynamicSizing ? undefined : androidSafeSnapPoints(snapPoints)}
       enableDynamicSizing={enableDynamicSizing}
       enablePanDownToClose={enablePanDownToClose}
       onChange={handleChange}
-      onClose={onClose}
       handleIndicatorStyle={sheetChrome.handleStyle}
       style={styles.sheet}
     >

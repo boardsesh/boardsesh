@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, View, StyleSheet } from 'react-native';
-import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { ModalSheet } from './ModalSheet';
@@ -24,7 +23,11 @@ type AddToPlaylistSheetProps = {
   sizeId: number;
   setIds: string;
   angle: number;
+  /** Request an animated close (pan-down, after add/create). */
   onClose: () => void;
+  /** Fired once the dismiss animation has settled — safe to unmount/clear.
+   * Optional: always-mounted hosts don't unmount, so they may omit it. */
+  onFullyDismissed?: () => void;
 };
 
 // Mirrors web's isValidHexColor gate before rendering a playlist's accent: a
@@ -43,6 +46,7 @@ function AddToPlaylistSheet({
   setIds,
   angle,
   onClose,
+  onFullyDismissed,
 }: AddToPlaylistSheetProps) {
   const { t } = useTranslation('climbs');
   const { brandColors, systemColors } = useTheme();
@@ -50,22 +54,12 @@ function AddToPlaylistSheet({
   const { playlists, addToPlaylist, createPlaylist, isLoading, isAuthenticated } = usePlaylistsContext();
   const [createVisible, setCreateVisible] = useState(false);
   const [creating, setCreating] = useState(false);
-  const sheetRef = useRef<BottomSheetModal>(null);
-  // Track presented state so we never dismiss() a not-presented modal (which
-  // then no-ops the next present()). Mirrors LogAscentSheet.
-  const isPresentedRef = useRef(false);
+  // Mirror the latest open intent so an in-flight create can tell whether the
+  // sheet is still open (replaces the old isPresentedRef gate).
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   const createRequestIdRef = useRef(0);
   const sortedPlaylists = useMemo(() => sortPlaylistsByName(playlists), [playlists]);
-
-  useEffect(() => {
-    if (visible && climb && !isPresentedRef.current) {
-      sheetRef.current?.present();
-      isPresentedRef.current = true;
-    } else if ((!visible || !climb) && isPresentedRef.current) {
-      sheetRef.current?.dismiss();
-      isPresentedRef.current = false;
-    }
-  }, [visible, climb]);
 
   const handleAddToPlaylist = useCallback(
     async (playlist: Playlist) => {
@@ -102,7 +96,7 @@ function AddToPlaylistSheet({
       if (!climb) return;
       const createRequestId = createRequestIdRef.current + 1;
       createRequestIdRef.current = createRequestId;
-      const isCurrentCreateRequest = () => createRequestIdRef.current === createRequestId && isPresentedRef.current;
+      const isCurrentCreateRequest = () => createRequestIdRef.current === createRequestId && visibleRef.current;
       setCreating(true);
       try {
         const created = await createPlaylist(values.name, values.description, values.color, values.icon, {
@@ -146,13 +140,14 @@ function AddToPlaylistSheet({
     [climb, createPlaylist, boardName, layoutId, addToPlaylist, angle, showToast, t, onClose],
   );
 
-  const handleDismiss = useCallback(() => {
-    isPresentedRef.current = false;
+  // The dismiss animation has settled: cancel any in-flight create, reset the
+  // nested form, then let the parent clear the climb / unmount.
+  const handleFullyDismissed = useCallback(() => {
     createRequestIdRef.current += 1;
     setCreateVisible(false);
     setCreating(false);
-    onClose();
-  }, [onClose]);
+    onFullyDismissed?.();
+  }, [onFullyDismissed]);
 
   const handleShowCreate = useCallback(() => {
     setCreateVisible(true);
@@ -168,7 +163,14 @@ function AddToPlaylistSheet({
 
   return (
     <>
-      <ModalSheet ref={sheetRef} snapPoints={snapPoints} onDismiss={handleDismiss} enablePanDownToClose scrollable>
+      <ModalSheet
+        visible={visible && !!climb}
+        snapPoints={snapPoints}
+        onClose={onClose}
+        onFullyDismissed={handleFullyDismissed}
+        enablePanDownToClose
+        scrollable
+      >
         {climb && (
           <ClimbPreviewCard
             climb={climb}

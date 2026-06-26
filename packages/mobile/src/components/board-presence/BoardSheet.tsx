@@ -16,6 +16,7 @@ import { Platform, Pressable, RefreshControl, StyleSheet, View, type ColorValue 
 // SPIKE(spike/expo-bottom-sheet): swap gorhom -> Expo's native drop-in. The native
 // sheet draws its own scrim, so SheetBackdrop + stackBehavior are dropped.
 import { BottomSheetModal, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
@@ -442,31 +443,42 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     onClose();
   }, [invalidatePendingActions, onClose]);
 
-  const handleDismissed = useCallback(() => {
+  // Fired once the dismiss animation has actually SETTLED (coordinator), not on
+  // the synchronous early callback — so we never tear anything down mid-animation.
+  const handleFullyDismissed = useCallback(() => {
     invalidatePendingActions();
     onDismissed?.();
   }, [invalidatePendingActions, onDismissed]);
+
+  // Present/dismiss route through the coordinator so the board sheet never
+  // overlaps another sheet's transition (the iOS UIKit deadlock). The sheet stays
+  // mounted (like QueueSheet) and is re-presented on the next open.
+  const managed = useManagedSheet({ sheetRef, onFullyDismissed: handleFullyDismissed });
 
   const handleSwitchBoard = useCallback(() => {
     invalidatePendingActions();
     onSwitchBoard();
   }, [invalidatePendingActions, onSwitchBoard]);
 
-  useImperativeHandle(ref, () => ({
-    present: () => {
-      if (historyCountRef.current > 0) {
-        track(SHARED_EVENTS.BoardHistoryViewed, {
-          boardId: boardPresenceBoardIdRef.current ?? undefined,
-          itemCount: historyCountRef.current,
-        });
-      }
-      sheetRef.current?.present();
-    },
-    dismiss: () => {
-      invalidatePendingActions();
-      sheetRef.current?.dismiss();
-    },
-  }));
+  useImperativeHandle(
+    ref,
+    () => ({
+      present: () => {
+        if (historyCountRef.current > 0) {
+          track(SHARED_EVENTS.BoardHistoryViewed, {
+            boardId: boardPresenceBoardIdRef.current ?? undefined,
+            itemCount: historyCountRef.current,
+          });
+        }
+        managed.handle.present();
+      },
+      dismiss: () => {
+        invalidatePendingActions();
+        managed.handle.dismiss();
+      },
+    }),
+    [managed.handle, invalidatePendingActions],
+  );
 
   const renderHistoryItem = useCallback(
     ({ item }: { item: BoardPresenceClimb }) => {
@@ -652,7 +664,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       // bounded content height to measure).
       enableDynamicSizing={false}
       enablePanDownToClose
-      onDismiss={handleDismissed}
+      onChange={managed.onChange}
       handleIndicatorStyle={sheet.handleStyle}
       style={styles.sheet}
     >

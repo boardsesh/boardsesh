@@ -25,7 +25,7 @@ const bottomSheetModalProps = vi.hoisted(() => ({
     enablePanDownToClose?: boolean;
     enableContentPanningGesture?: boolean;
     enableHandlePanningGesture?: boolean;
-    onDismiss?: () => void;
+    onChange?: (index: number) => void;
   },
 }));
 
@@ -95,6 +95,29 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   ) {
     useImperativeHandle(ref, () => ({}), []);
     return createElement('div', null, children);
+  }),
+}));
+
+// Isolate the sheet from the presentation coordinator (its serialization is
+// covered by sheet-presentation-provider.test.tsx). The mock mirrors only the
+// user-close path: onChange(-1) → onClose, which the dismiss-without-Apply tests
+// exercise via the captured native onChange prop.
+vi.mock('../../providers/sheet-presentation-provider', () => ({
+  useManagedSheet: ({ onClose }: { onClose?: () => void }) => ({
+    onChange: (index: number) => {
+      if (index === -1) onClose?.();
+    },
+    onFullyDismissed: () => {},
+    handle: {
+      present: () => {},
+      dismiss: () => {},
+      close: () => {},
+      forceClose: () => {},
+      snapToIndex: () => {},
+      snapToPosition: () => {},
+      expand: () => {},
+      collapse: () => {},
+    },
   }),
 }));
 
@@ -391,7 +414,7 @@ describe('ClimbFilterSheet child filters', () => {
     fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
     fireEvent.click(rendered.getByText('setters-change'));
 
-    bottomSheetModalProps.latest?.onDismiss?.();
+    bottomSheetModalProps.latest?.onChange?.(-1);
     rendered.rerender(
       <ClimbFilterSheet
         {...rendered.props}
@@ -415,7 +438,7 @@ describe('ClimbFilterSheet child filters', () => {
     fireEvent.click(rendered.getByText('setters-change'));
     fireEvent.click(rendered.getByText('mobile.filter.reset'));
 
-    bottomSheetModalProps.latest?.onDismiss?.();
+    bottomSheetModalProps.latest?.onChange?.(-1);
     rendered.rerender(
       <ClimbFilterSheet
         {...rendered.props}

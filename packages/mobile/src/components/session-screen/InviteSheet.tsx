@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Share, StyleSheet, View } from 'react-native';
 // SPIKE(spike/expo-bottom-sheet): swap gorhom -> Expo's native drop-in. The native
 // sheet renders its own scrim, so the custom SheetBackdrop wiring is dropped.
-import BottomSheet, { BottomSheetView } from '@expo/ui/community/bottom-sheet';
+import BottomSheet, { BottomSheetView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
@@ -11,6 +11,7 @@ import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { hapticSelection } from '../../lib/haptics';
 import { spacing, borderRadius, sheetStyles } from '../../theme/tokens';
 import { buildSessionShareUrl } from '../../lib/session-share';
@@ -32,29 +33,17 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
   const { systemColors } = useTheme();
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
-  const sheetRef = useRef<BottomSheet>(null);
-  const [mounted, setMounted] = useState(false);
+  const sheetRef = useRef<BottomSheetMethods>(null);
 
   const shareUrl = useMemo(() => buildSessionShareUrl(sessionId), [sessionId]);
 
-  useEffect(() => {
-    if (visible) {
-      setMounted(true);
-    }
-  }, [visible]);
-
-  useEffect(() => {
-    if (mounted) {
-      sheetRef.current?.expand();
-    }
-  }, [mounted]);
+  // Present/dismiss route through the coordinator (serialized, no overlapping
+  // native transitions). Always mounted by SessionScreen and toggled via
+  // `visible`, so no onFullyDismissed; `onDismiss` clears the parent's open state
+  // on a user pan-down / backdrop.
+  const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss });
 
   const snapPoints = useMemo(() => ['60%'], []);
-
-  const handleClose = useCallback(() => {
-    setMounted(false);
-    onDismiss();
-  }, [onDismiss]);
 
   const handleCopyLink = useCallback(() => {
     hapticSelection();
@@ -68,14 +57,13 @@ export function InviteSheet({ visible, onDismiss, sessionId }: InviteSheetProps)
     void Share.share({ message: shareUrl, url: shareUrl });
   }, [shareUrl]);
 
-  if (!mounted) return null;
-
   return (
     <BottomSheet
       ref={sheetRef}
+      index={-1}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onClose={handleClose}
+      onChange={managed.onChange}
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >

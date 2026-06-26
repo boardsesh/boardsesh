@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor, act } from '@testing-library/react';
-import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
+import { createElement, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { Playlist } from '@boardsesh/graphql/operations/playlists';
 
@@ -69,18 +69,35 @@ vi.mock('../../theme/tokens', () => ({
 }));
 
 vi.mock('../ModalSheet', () => ({
-  ModalSheet: forwardRef(function ModalSheet(
-    { children, onDismiss }: { children?: ReactNode; onDismiss?: () => void },
-    ref,
-  ) {
-    useImperativeHandle(ref, () => ({ present: vi.fn(), dismiss: vi.fn() }));
+  ModalSheet: function ModalSheet({
+    children,
+    onClose,
+    onFullyDismissed,
+  }: {
+    children?: ReactNode;
+    visible?: boolean;
+    onClose?: () => void;
+    onFullyDismissed?: () => void;
+  }) {
     return createElement(
       'div',
       { 'data-modal-sheet': 'true' },
       children,
-      createElement('button', { 'aria-label': 'dismiss-add-to-playlist-sheet', onClick: onDismiss }, 'dismiss'),
+      // The user-initiated close (pan-down/backdrop) → onClose; the parent then
+      // clears state on the settled onFullyDismissed.
+      createElement(
+        'button',
+        {
+          'aria-label': 'dismiss-add-to-playlist-sheet',
+          onClick: () => {
+            onClose?.();
+            onFullyDismissed?.();
+          },
+        },
+        'dismiss',
+      ),
     );
-  }),
+  },
 }));
 
 vi.mock('../ClimbPreviewCard', () => ({

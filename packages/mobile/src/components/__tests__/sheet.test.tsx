@@ -45,6 +45,13 @@ vi.mock('react-native-safe-area-context', () => ({
 const hapticMedium = vi.fn();
 vi.mock('../../lib/haptics', () => ({ hapticMedium: () => hapticMedium() }));
 
+// Isolate the wrapper from the coordinator: useManagedSheet's serialization is
+// covered by sheet-presentation-provider.test.tsx. Here we only assert the
+// wrapper's own chrome (footer/scroll/snap points/haptics + consumer onChange).
+vi.mock('../../providers/sheet-presentation-provider', () => ({
+  useManagedSheet: () => ({ onChange: () => {}, onFullyDismissed: () => {}, handle: {} }),
+}));
+
 vi.mock('../../theme/tokens', () => ({
   spacing: { 2: 8, 3: 12, 4: 16, 6: 24 },
 }));

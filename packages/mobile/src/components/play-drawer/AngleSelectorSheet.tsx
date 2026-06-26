@@ -16,6 +16,7 @@ import { iosSystemColors } from '../../theme/ios-colors';
 import { brandColors } from '../../theme/colors';
 import { spacing, sheetStyles } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 
 type AngleSelectorSheetProps = {
   visible: boolean;
@@ -42,7 +43,6 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const insets = useSafeAreaInsets();
   const { gradeFormat } = useGradeFormat();
   const sheetRef = useRef<BottomSheetModal>(null);
-  const isPresentedRef = useRef(false);
 
   // Single large snap point so the sheet always opens at full "big" size with
   // room for the diagram, stats, slider and Done button above the home indicator.
@@ -71,24 +71,16 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
   const currentAngleRef = useRef(currentAngle);
   currentAngleRef.current = currentAngle;
 
+  // Reset the preview to the board's actual angle each time the sheet opens.
   useEffect(() => {
-    if (visible && !isPresentedRef.current) {
-      // Reset the preview to the board's actual angle each time the sheet opens.
-      setSelectedAngle(currentAngleRef.current);
-      sheetRef.current?.present();
-      isPresentedRef.current = true;
-    } else if (!visible && isPresentedRef.current) {
-      sheetRef.current?.dismiss();
-      isPresentedRef.current = false;
-    }
+    if (visible) setSelectedAngle(currentAngleRef.current);
   }, [visible]);
 
-  // Dismissed by gesture / backdrop / programmatically — does NOT apply the
-  // previewed angle (that only happens via "Done").
-  const handleDismiss = useCallback(() => {
-    isPresentedRef.current = false;
-    onClose();
-  }, [onClose]);
+  // Present/dismiss route through the coordinator (serialized, no overlapping
+  // native transitions). The sheet stays mounted as a PlayDrawer sibling, so no
+  // onFullyDismissed is needed; `onClose` fires on a user pan-down / backdrop —
+  // which does NOT apply the previewed angle (that only happens via "Done").
+  const managed = useManagedSheet({ open: visible, sheetRef, onClose });
 
   const handleDone = useCallback(() => {
     onAngleChange(selectedAngle);
@@ -101,7 +93,7 @@ export const AngleSelectorSheet = memo(function AngleSelectorSheet({
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onDismiss={handleDismiss}
+      onChange={managed.onChange}
       handleIndicatorStyle={sheetStyles.indicator}
     >
       <BottomSheetView style={[styles.container, { paddingBottom: insets.bottom + spacing[4] }]}>

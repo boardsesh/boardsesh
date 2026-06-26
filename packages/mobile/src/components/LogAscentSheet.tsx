@@ -5,10 +5,11 @@
 //
 // Uses `BottomSheetModal` (not the regular `BottomSheet`) so it presents as
 // a native modal above the play drawer's own modal.
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
+import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { useTheme } from '../providers/theme-provider';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing } from '../theme/tokens';
@@ -17,7 +18,14 @@ import { QuickTickBar } from './play-drawer/QuickTickBar';
 
 type LogAscentSheetProps = {
   visible: boolean;
-  onDismiss: () => void;
+  /** Request an animated close (close button, pan-down, tick complete). The
+   * parent flips `visible` false; the sheet stays mounted until the animation
+   * settles (onFullyDismissed). */
+  onClose: () => void;
+  /** Fired once the dismiss animation has settled — safe for the parent to clear
+   * the climb data / unmount without tearing the native Host down mid-animation.
+   * Optional: always-mounted hosts (PlayDrawer) don't unmount, so they omit it. */
+  onFullyDismissed?: () => void;
   climbUuid: string;
   boardName: string;
   angle: number;
@@ -32,7 +40,8 @@ type LogAscentSheetProps = {
 
 export function LogAscentSheet({
   visible,
-  onDismiss,
+  onClose,
+  onFullyDismissed,
   climbUuid,
   boardName,
   angle,
@@ -45,28 +54,13 @@ export function LogAscentSheet({
   consensusGradeName,
 }: LogAscentSheetProps) {
   const sheetRef = useRef<BottomSheetModal>(null);
-  // Tracks whether the modal is currently *presented*, independent of the
-  // external `visible` prop, so we never call `dismiss()` on an already-closed
-  // sheet (or `present()` on an already-open one) when a pan-down dismiss and
-  // our `visible` effect race.
-  const isPresentedRef = useRef(false);
   const { systemColors } = useTheme();
   const { t } = useTranslation('session');
 
-  useEffect(() => {
-    if (visible && !isPresentedRef.current) {
-      sheetRef.current?.present();
-      isPresentedRef.current = true;
-    } else if (!visible && isPresentedRef.current) {
-      sheetRef.current?.dismiss();
-      isPresentedRef.current = false;
-    }
-  }, [visible]);
-
-  const handleSheetDismiss = useCallback(() => {
-    isPresentedRef.current = false;
-    onDismiss();
-  }, [onDismiss]);
+  // Present/dismiss go through the coordinator (serialized, no overlapping
+  // transitions); `onClose` fires on a user pan-down, `onFullyDismissed` after
+  // the animation settles.
+  const managed = useManagedSheet({ open: visible, sheetRef, onClose, onFullyDismissed });
 
   // Default to 60% so the climb image stays visible above the sheet (the
   // UX review flagged full-cover + carousel-disabled as the wrong
@@ -80,7 +74,7 @@ export function LogAscentSheet({
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose
-      onDismiss={handleSheetDismiss}
+      onChange={managed.onChange}
       handleIndicatorStyle={styles.indicator}
       keyboardBehavior="extend"
       keyboardBlurBehavior="restore"
@@ -88,7 +82,7 @@ export function LogAscentSheet({
       <View style={styles.content}>
         <View style={styles.closeButtonRow}>
           <Pressable
-            onPress={onDismiss}
+            onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel={t('playView.tickBar.closeAria')}
             hitSlop={8}
@@ -112,7 +106,7 @@ export function LogAscentSheet({
           setIds={setIds}
           sessionId={sessionId}
           consensusGradeName={consensusGradeName}
-          onDismiss={onDismiss}
+          onDismiss={onClose}
         />
       </View>
     </BottomSheetModal>

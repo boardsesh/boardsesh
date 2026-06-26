@@ -100,6 +100,26 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     ),
 }));
 
+// Isolate from the real coordinator (covered by sheet-presentation-provider.test):
+// route the handle straight to the mocked native ref and simulate an immediate
+// settle on dismiss so onFullyDismissed-driven behaviour still fires.
+vi.mock('../../../providers/sheet-presentation-provider', () => ({
+  useManagedSheet: (opts: {
+    sheetRef: { current: { present?: () => void; dismiss?: () => void } | null };
+    onFullyDismissed?: () => void;
+  }) => ({
+    onChange: () => {},
+    onFullyDismissed: () => opts.onFullyDismissed?.(),
+    handle: {
+      present: () => opts.sheetRef.current?.present?.(),
+      dismiss: () => {
+        opts.sheetRef.current?.dismiss?.();
+        opts.onFullyDismissed?.();
+      },
+    },
+  }),
+}));
+
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));

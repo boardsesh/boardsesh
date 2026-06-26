@@ -7,9 +7,9 @@
 //
 // Driven by a `visible` prop (mirrors ClimbActionsSheet / LogAscentSheet) so it
 // can present above the play drawer's own modal via stackBehavior="push".
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
-import { BottomSheetTextInput, type BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -36,31 +36,28 @@ type AddBetaVideoSheetProps = {
   boardName: BoardName;
   layoutId: number;
   angle: number;
+  /** Request an animated close (pan-down, after submit). */
   onClose: () => void;
+  /** Fired once the dismiss animation has settled — safe to unmount/clear.
+   * Optional: always-mounted hosts (PlayDrawer) don't unmount, so they omit it. */
+  onFullyDismissed?: () => void;
 };
 
-export function AddBetaVideoSheet({ visible, climb, boardName, layoutId, angle, onClose }: AddBetaVideoSheetProps) {
+export function AddBetaVideoSheet({
+  visible,
+  climb,
+  boardName,
+  layoutId,
+  angle,
+  onClose,
+  onFullyDismissed,
+}: AddBetaVideoSheetProps) {
   const { t } = useTranslation('session');
   const { showToast } = useToast();
   const { systemColors, brandColors } = useTheme();
-  const sheetRef = useRef<BottomSheetModal>(null);
-  // Tracks presented state independently of `visible` so a pan-down dismiss can't
-  // race a programmatic dismiss() into the "present() is a no-op" state — same
-  // guard as ClimbActionsSheet / LogAscentSheet.
-  const isPresentedRef = useRef(false);
   const [url, setUrl] = useState('');
 
   const attach = useAttachBetaLink();
-
-  useEffect(() => {
-    if (visible && climb && !isPresentedRef.current) {
-      sheetRef.current?.present();
-      isPresentedRef.current = true;
-    } else if ((!visible || !climb) && isPresentedRef.current) {
-      sheetRef.current?.dismiss();
-      isPresentedRef.current = false;
-    }
-  }, [visible, climb]);
 
   const caption = useMemo(() => {
     if (!climb) return '';
@@ -74,11 +71,10 @@ export function AddBetaVideoSheet({ visible, climb, boardName, layoutId, angle, 
     });
   }, [climb, angle, boardName, layoutId]);
 
-  const handleDismiss = useCallback(() => {
-    isPresentedRef.current = false;
+  const handleFullyDismissed = useCallback(() => {
     setUrl('');
-    onClose();
-  }, [onClose]);
+    onFullyDismissed?.();
+  }, [onFullyDismissed]);
 
   const handleCopyCaption = useCallback(async () => {
     if (!caption || !climb) return;
@@ -120,7 +116,7 @@ export function AddBetaVideoSheet({ visible, climb, boardName, layoutId, angle, 
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           showToast(t('mobile.betaVideos.attachSuccess'), 'success');
           setUrl('');
-          sheetRef.current?.dismiss();
+          onClose();
         },
         onError: (error: unknown) => {
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -128,13 +124,19 @@ export function AddBetaVideoSheet({ visible, climb, boardName, layoutId, angle, 
         },
       },
     );
-  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t]);
+  }, [climb, isValid, attach, boardName, trimmed, angle, showToast, t, onClose]);
 
   const snapPoints = useMemo(() => ['85%'], []);
   const submitDisabled = !isValid || attach.isPending;
 
   return (
-    <ModalSheet ref={sheetRef} snapPoints={snapPoints} onDismiss={handleDismiss} scrollable>
+    <ModalSheet
+      visible={visible && !!climb}
+      snapPoints={snapPoints}
+      onClose={onClose}
+      onFullyDismissed={handleFullyDismissed}
+      scrollable
+    >
       <View style={styles.container}>
         <Text variant="title3" style={styles.title}>
           {t('mobile.betaVideos.shareTitle')}

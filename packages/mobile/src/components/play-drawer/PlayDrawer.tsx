@@ -923,7 +923,7 @@ export function PlayDrawer({
       {displayedClimb && (
         <LogAscentSheet
           visible={isTickBarActive}
-          onDismiss={handleTickBarDismiss}
+          onClose={handleTickBarDismiss}
           climbUuid={displayedClimb.uuid}
           boardName={boardName}
           angle={angle}

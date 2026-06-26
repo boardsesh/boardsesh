@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
-import BottomSheet, { BottomSheetView } from '@expo/ui/community/bottom-sheet';
+import BottomSheet, { BottomSheetView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { Text } from './Text';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
+import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { spacing, sheetStyles } from '../theme/tokens';
 
 type EndSessionSheetProps = {
@@ -21,37 +22,24 @@ export function EndSessionSheet({ visible, onDismiss, onConfirm, isEnding, climb
   const { t } = useTranslation('session');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
-  const sheetRef = useRef<BottomSheet>(null);
-  const [mounted, setMounted] = useState(false);
+  const sheetRef = useRef<BottomSheetMethods>(null);
 
-  useEffect(() => {
-    if (visible) {
-      setMounted(true);
-    }
-  }, [visible]);
-
-  useEffect(() => {
-    if (mounted) {
-      sheetRef.current?.expand();
-    }
-  }, [mounted]);
-
-  const handleClose = useCallback(() => {
-    setMounted(false);
-    onDismiss();
-  }, [onDismiss]);
-
-  if (!mounted) return null;
+  // Present/dismiss route through the coordinator (serialized, no overlapping
+  // native transitions). Always mounted by InSessionView and toggled via
+  // `visible`, so no onFullyDismissed; `onDismiss` clears the parent's open state
+  // on a user pan-down / backdrop.
+  const managed = useManagedSheet({ open: visible, sheetRef, onClose: onDismiss });
 
   return (
     <BottomSheet
       ref={sheetRef}
+      index={-1}
       // Size to content rather than a fixed snap point — with safe-area bottom
       // padding added (up to ~34pt on gesture-nav phones), a fixed '35%' could
       // crowd or clip the buttons on shorter devices.
       enableDynamicSizing
       enablePanDownToClose
-      onClose={handleClose}
+      onChange={managed.onChange}
       backgroundStyle={{ backgroundColor: systemColors.secondaryBackground }}
       handleIndicatorStyle={sheetStyles.indicator}
     >
@@ -74,7 +62,7 @@ export function EndSessionSheet({ visible, onDismiss, onConfirm, isEnding, climb
         </View>
 
         <View style={styles.buttonRow}>
-          <Button title={t('summary.done')} variant="outlined" onPress={handleClose} style={styles.button} />
+          <Button title={t('summary.done')} variant="outlined" onPress={onDismiss} style={styles.button} />
           <Button title={t('mobile.queue.endSession')} onPress={onConfirm} loading={isEnding} style={styles.button} />
         </View>
       </BottomSheetView>

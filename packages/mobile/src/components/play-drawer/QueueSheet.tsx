@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Pressable, Platform, StyleSheet } from 'react-native';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
@@ -66,34 +67,38 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
 
   const currentItemUuid = currentClimbQueueItem?.uuid ?? null;
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      present: () => {
-        setIsPresented(true);
-        sheetRef.current?.present();
-      },
-      dismiss: () => {
-        sheetRef.current?.dismiss();
-      },
-    }),
-    [],
-  );
-
   const resetState = useCallback(() => {
     setIsEditMode(false);
     setSelectedItems(new Set());
     setShowFullHistory(false);
   }, []);
 
-  // The modal's dismiss animation has finished (header request, backdrop, or
-  // pan-down). Reset local UI state; the sheet stays mounted (imperative model)
-  // and is re-presented on the next open.
-  const handleDismissed = useCallback(() => {
+  // The modal's dismiss animation has actually SETTLED (coordinator: header
+  // request, backdrop, or pan-down). Reset local UI state; the sheet stays
+  // mounted (imperative model) and is re-presented on the next open.
+  const handleFullyDismissed = useCallback(() => {
     setIsPresented(false);
     resetState();
     onDismissed?.();
   }, [resetState, onDismissed]);
+
+  // Present/dismiss route through the coordinator so they never overlap another
+  // sheet's transition (the iOS UIKit deadlock).
+  const managed = useManagedSheet({ sheetRef, onFullyDismissed: handleFullyDismissed });
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      present: () => {
+        setIsPresented(true);
+        managed.handle.present();
+      },
+      dismiss: () => {
+        managed.handle.dismiss();
+      },
+    }),
+    [managed.handle],
+  );
 
   const handleToggleEditMode = useCallback(() => {
     setIsEditMode((prev) => {
@@ -159,7 +164,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
       // never fights the reorder gesture.
       enableContentPanningGesture={!isDragging}
       enableHandlePanningGesture={!isDragging}
-      onDismiss={handleDismissed}
+      onChange={managed.onChange}
       handleIndicatorStyle={sheet.handleStyle}
       style={styles.sheet}
     >

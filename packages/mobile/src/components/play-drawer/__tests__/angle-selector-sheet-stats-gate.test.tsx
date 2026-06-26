@@ -36,6 +36,28 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
+// Isolate the sheet from the presentation coordinator (its serialization is
+// covered by sheet-presentation-provider.test.tsx). This test only pins the
+// stats-history fetch gating, so a no-op managed handle is enough.
+vi.mock('../../../providers/sheet-presentation-provider', () => ({
+  useManagedSheet: ({ onClose }: { onClose?: () => void }) => ({
+    onChange: (index: number) => {
+      if (index === -1) onClose?.();
+    },
+    onFullyDismissed: () => {},
+    handle: {
+      present: () => {},
+      dismiss: () => {},
+      close: () => {},
+      forceClose: () => {},
+      snapToIndex: () => {},
+      snapToPosition: () => {},
+      expand: () => {},
+      collapse: () => {},
+    },
+  }),
+}));
+
 vi.mock('react-native-screens', () => ({
   FullWindowOverlay: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));

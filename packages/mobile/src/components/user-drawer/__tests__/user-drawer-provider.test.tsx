@@ -1,19 +1,21 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
-const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
+const routerMock = vi.hoisted(() => ({ push: vi.fn(), back: vi.fn() }));
+const signOutMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+// Mutable so a test can set the focused tab before openUserDrawer captures the
+// board returnTo (the capture happens at open time, while the tab is still focused).
+const segmentsMock = vi.hoisted(() => ({ current: [] as string[] }));
 // withTiming completion callbacks are captured (not fired inline) so a test can
-// assert an action is deferred while the drawer is still up, then flush the close
-// animation to prove it runs only after the Modal unmounts.
+// flush the drawer's close animation on demand and assert router.back() fires
+// only once it settles.
 const reanimated = vi.hoisted(() => ({ closeCallbacks: [] as Array<(finished: boolean) => void> }));
 const feedbackPresent = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
-  Modal: ({ children, visible }: { children?: ReactNode; visible: boolean }) =>
-    visible ? createElement('div', { 'data-modal': 'true' }, children) : null,
   Pressable: ({
     accessibilityLabel,
     children,
@@ -45,7 +47,7 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('expo-router', () => ({
   router: routerMock,
-  useSegments: () => [],
+  useSegments: () => segmentsMock.current,
 }));
 
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
@@ -75,7 +77,7 @@ vi.mock('../../../lib/graphql/hooks', () => ({
   useProfile: () => ({ data: { id: 'user-1', displayName: 'Alex', email: 'alex@example.com', avatarUrl: null } }),
 }));
 vi.mock('../../../providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true, signOut: vi.fn().mockResolvedValue(undefined) }),
+  useAuth: () => ({ isAuthenticated: true, signOut: signOutMock }),
 }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
@@ -86,6 +88,7 @@ vi.mock('../../../providers/theme-provider', () => ({
       secondaryBackground: '#f7f7f7',
       secondaryLabel: '#666',
       separator: '#ddd',
+      tertiaryLabel: '#999',
     },
   }),
 }));
@@ -118,6 +121,7 @@ vi.mock('../FeedbackSheet', () => ({
 
 import { DISCORD_INVITE_URL } from '../../../lib/discord';
 import { UserDrawerProvider, useUserDrawer } from '../UserDrawerProvider';
+import UserDrawerScreen from '../../../../app/user-drawer';
 
 function DrawerTrigger() {
   const { openUserDrawer } = useUserDrawer();
@@ -128,23 +132,41 @@ function DrawerTrigger() {
   );
 }
 
+// The provider stays mounted (so the root-mounted FeedbackSheet persists);
+// toggling `showScreen` mounts/unmounts the route screen the way router.push /
+// router.back would. Unmounting the screen is what fires its deferred action.
+function Harness({ showScreen }: { showScreen: boolean }) {
+  return (
+    <UserDrawerProvider>
+      <DrawerTrigger />
+      {showScreen ? <UserDrawerScreen /> : null}
+    </UserDrawerProvider>
+  );
+}
+
 beforeEach(() => {
   browser.openBrowserAsync.mockClear();
   routerMock.push.mockClear();
+  routerMock.back.mockClear();
+  signOutMock.mockClear();
   feedbackPresent.mockClear();
   reanimated.closeCallbacks.length = 0;
-  // The deferred action runs via requestAnimationFrame one frame after the Modal
-  // unmounts — run it inline so the flush below is synchronous.
+  segmentsMock.current = [];
+  // The route defers its post-close action one frame past unmount (so the route
+  // VC dismissal flushes before a sheet presents). Run rAF synchronously so the
+  // deferral resolves within the unmounting rerender the tests drive.
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     callback(0);
-    return 1;
+    return 0;
   });
-  vi.stubGlobal('cancelAnimationFrame', () => {});
 });
 
-// Fire the captured drawer-close completion callback(s), which flip drawerMounted
-// to false and let the deferred action run. Mirrors the real close animation
-// finishing.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+// Fire the captured close-animation completion callback(s), which mirror the
+// real slide-out finishing and pop the route via router.back().
 function flushDrawerClose() {
   act(() => {
     const callbacks = reanimated.closeCallbacks.splice(0);
@@ -152,23 +174,19 @@ function flushDrawerClose() {
   });
 }
 
-function openDrawer() {
-  fireEvent.click(screen.getByText('Open drawer'));
-}
+describe('UserDrawerProvider opens the drawer route', () => {
+  it('openUserDrawer pushes the user-drawer route', () => {
+    render(<Harness showScreen={false} />);
 
-function renderDrawer() {
-  return render(
-    <UserDrawerProvider>
-      <DrawerTrigger />
-    </UserDrawerProvider>,
-  );
-}
+    fireEvent.click(screen.getByText('Open drawer'));
 
-describe('UserDrawerProvider Discord CTA', () => {
-  it('renders Join Discord directly below Report a bug and opens the invite', () => {
-    const { container } = renderDrawer();
+    expect(routerMock.push).toHaveBeenCalledWith('/user-drawer');
+  });
+});
 
-    openDrawer();
+describe('user-drawer route Discord CTA', () => {
+  it('renders Join Discord directly below Report a bug and opens the invite after the route unmounts', () => {
+    const { container, rerender } = render(<Harness showScreen />);
 
     const rowTitles = Array.from(container.querySelectorAll('[data-row-title]')).map((row) =>
       row.getAttribute('data-row-title'),
@@ -180,64 +198,112 @@ describe('UserDrawerProvider Discord CTA', () => {
 
     fireEvent.click(screen.getByText('Join Discord'));
 
-    // Deferred until the drawer Modal has closed.
+    // Deferred: nothing opens while the drawer route is still mounted.
     expect(browser.openBrowserAsync).not.toHaveBeenCalled();
     flushDrawerClose();
+    expect(routerMock.back).toHaveBeenCalled();
+    expect(browser.openBrowserAsync).not.toHaveBeenCalled();
+
+    // The route's view controller is gone — now the invite opens.
+    rerender(<Harness showScreen={false} />);
     expect(browser.openBrowserAsync).toHaveBeenCalledWith(DISCORD_INVITE_URL);
   });
 });
 
-// Regression: tapping a drawer row must not navigate/present while the drawer's
-// RN Modal is still on screen — after a native @expo/ui sheet has been opened,
-// that concurrent presentation deadlocks UIKit and freezes the whole app. Every
-// row defers its action until the Modal has unmounted.
-describe('UserDrawerProvider defers navigation until the drawer closes', () => {
+// Every row animates the drawer closed, pops the route on settle, then runs its
+// action only once the route has unmounted — a single native presentation system
+// at every moment (no RN <Modal> stacked under a native @expo/ui sheet, the
+// dual-presentation freeze, issue #3211).
+describe('user-drawer route defers each action until the route unmounts', () => {
   it.each([
     ['Settings', '/(tabs)/profile/more'],
     ['My playlists', '/(tabs)/discover/all'],
     ['About', '/about'],
     ['My boards', '/boards/manage'],
-  ])('%s waits for the drawer to close, then pushes %s', (rowTitle, route) => {
-    renderDrawer();
-    openDrawer();
+  ])('%s closes the drawer, then pushes %s', (rowTitle, route) => {
+    const { rerender } = render(<Harness showScreen />);
 
     fireEvent.click(screen.getByText(rowTitle));
 
     expect(routerMock.push).not.toHaveBeenCalled();
     flushDrawerClose();
+    expect(routerMock.back).toHaveBeenCalled();
+    expect(routerMock.push).not.toHaveBeenCalled();
+
+    rerender(<Harness showScreen={false} />);
     expect(routerMock.push).toHaveBeenCalledWith(route);
   });
 
-  it('Change board waits for the drawer to close, then pushes the /boards modal route', () => {
-    renderDrawer();
-    openDrawer();
+  it('Change board closes the drawer, then pushes the /boards modal route with the returnTo', () => {
+    const { rerender } = render(<Harness showScreen />);
 
     fireEvent.click(screen.getByText('Change board'));
 
     expect(routerMock.push).not.toHaveBeenCalled();
     flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
     expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards', params: { returnTo: '/(tabs)/climbs' } });
   });
 
-  it('edit profile (header) waits for the drawer to close, then pushes the edit route', () => {
-    renderDrawer();
-    openDrawer();
+  it('captures the focused tab as the board returnTo at open time (from discover)', () => {
+    // Focused tab is discover when the drawer is opened — the returnTo must be
+    // captured THEN (before /user-drawer is pushed and useSegments would resolve
+    // to ['user-drawer']), so a later Change board returns to discover.
+    segmentsMock.current = ['(tabs)', 'discover'];
+    const { rerender } = render(<Harness showScreen={false} />);
+
+    fireEvent.click(screen.getByText('Open drawer'));
+    expect(routerMock.push).toHaveBeenCalledWith('/user-drawer');
+    routerMock.push.mockClear();
+
+    rerender(<Harness showScreen />);
+    fireEvent.click(screen.getByText('Change board'));
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards', params: { returnTo: '/(tabs)/discover' } });
+  });
+
+  it('edit profile (header) closes the drawer, then pushes the edit route', () => {
+    const { rerender } = render(<Harness showScreen />);
 
     fireEvent.click(screen.getByLabelText('profile.editAction'));
 
     expect(routerMock.push).not.toHaveBeenCalled();
     flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
     expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/profile/edit');
   });
 
-  it('feedback (Rate Boardsesh) waits for the drawer to close, then presents the sheet', () => {
-    renderDrawer();
-    openDrawer();
+  it('Rate Boardsesh closes the drawer, then presents the feedback sheet', () => {
+    const { rerender } = render(<Harness showScreen />);
 
     fireEvent.click(screen.getByText('Rate Boardsesh'));
 
     expect(feedbackPresent).not.toHaveBeenCalled();
     flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
     expect(feedbackPresent).toHaveBeenCalled();
+  });
+
+  it('Report a bug closes the drawer, then presents the feedback sheet', () => {
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Report a bug'));
+
+    expect(feedbackPresent).not.toHaveBeenCalled();
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(feedbackPresent).toHaveBeenCalled();
+  });
+
+  it('Log out closes the drawer, then signs out', () => {
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Log out'));
+
+    expect(signOutMock).not.toHaveBeenCalled();
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+    expect(signOutMock).toHaveBeenCalledWith('manual');
   });
 });

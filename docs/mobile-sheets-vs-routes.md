@@ -33,6 +33,21 @@ Examples: `QueueSheet`, `BoardSheet`, `LogAscentSheet`, `AngleSelectorSheet`,
 `HoldRoleSheet` floats above the create drawer and how `ClimbReactionMenu` (the long-press
 context menu) floats above whatever's underneath.
 
+**Every native sheet must go through the presentation coordinator.** `@expo/ui`
+sheets all present off the **same** root-window view controller, and the library
+does no serialization — overlapping a present with another sheet's dismiss
+deadlocks UIKit and freezes the whole app (renders, but ignores every tap). The
+`ModalSheet`/`Sheet` wrappers route through `SheetPresentationProvider`
+(`src/providers/sheet-presentation-provider.tsx`) automatically. A surface with
+custom chrome that renders the raw `BottomSheetModal`/`BottomSheet` directly must
+drive present/dismiss with `useManagedSheet` (see `QueueSheet`, `BoardSheet`,
+`LogAscentSheet`). The coordinator serializes transitions per **presenter group**
+(default `'root'`) and auto-sequences a sheet-over-sheet open as
+dismiss(A) → settle → present(B). Two exceptions, both documented in-file:
+`CreateDrawer` (a route-primary drawer that opens once and whose only sub-sheet is
+a `fullWindowOverlay`, so it never overlaps a coordinated transition) and the
+`fullWindowOverlay` menus, which live in a higher window.
+
 ### Routes (`expo-router` `Stack.Screen`)
 
 | `presentation`         | Looks like                                           | Use when                                                                                                                                 | Examples                                                                                                       |
