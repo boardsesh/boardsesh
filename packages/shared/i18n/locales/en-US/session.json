@@ -306,7 +306,8 @@
       "ascensionists_one": "{{count}} ascensionist",
       "ascensionists_other": "{{count}} ascensionists",
       "avgQuality": "Average quality",
-      "ascentsByAngle": "Ascents by angle"
+      "ascentsByAngle": "Ascents by angle",
+      "logScale": "Log scale"
     },
     "betaVideos": {
       "title": "Beta Videos",

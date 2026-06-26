@@ -60,8 +60,9 @@ const LOG_SPREAD_RATIO = 30;
 // spread of counts and returns everything the chart needs to plot + label it.
 export function buildAscentChartScale(sends: number[]): AscentChartScale {
   const counts = sends.filter((count) => count > 0);
-  const peak = counts.length ? Math.max(...counts) : 0;
-  const floor = counts.length ? Math.min(...counts) : 0;
+  // reduce, not Math.max(...counts), so a long angle list can't blow the stack.
+  const peak = counts.reduce((max, count) => Math.max(max, count), 0);
+  const floor = counts.reduce((min, count) => Math.min(min, count), counts[0] ?? 0);
   const useLog = peak >= LOG_MIN_PEAK && floor > 0 && peak / floor >= LOG_SPREAD_RATIO;
 
   if (useLog) {

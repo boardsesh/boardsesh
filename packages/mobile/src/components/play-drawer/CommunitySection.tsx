@@ -81,7 +81,11 @@ export const CommunitySection = memo(function CommunitySection({
           <Text variant="footnote" color={iosSystemColors.systemGray}>
             {t('mobile.community.ascentsByAngle')}
           </Text>
-          <DifficultyByAngleChart data={angleBars} accessibilityLabel={t('mobile.community.ascentsByAngle')} />
+          <DifficultyByAngleChart
+            data={angleBars}
+            accessibilityLabel={t('mobile.community.ascentsByAngle')}
+            logScaleLabel={t('mobile.community.logScale')}
+          />
         </View>
       )}
     </View>

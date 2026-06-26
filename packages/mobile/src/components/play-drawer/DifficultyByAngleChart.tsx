@@ -10,6 +10,9 @@ import { borderRadius, spacing } from '../../theme/tokens';
 type DifficultyByAngleChartProps = {
   data: AngleGradeBar[];
   accessibilityLabel?: string;
+  /** Localised "Log scale" caption, shown (and folded into the a11y label) only
+   *  when the y-axis switches to log. */
+  logScaleLabel?: string;
 };
 
 const CHART_HEIGHT = 150;
@@ -43,6 +46,7 @@ const ROTATED_LABEL_EXTRA_HEIGHT = 28;
 export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
   data,
   accessibilityLabel,
+  logScaleLabel,
 }: DifficultyByAngleChartProps) {
   const { chartColors, colorScheme } = useTheme();
   const [width, setWidth] = useState(0);
@@ -85,6 +89,7 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
       maxValue: scale.maxValue,
       noOfSections: scale.noOfSections,
       yAxisLabelTexts: scale.yAxisLabelTexts,
+      isLog: scale.isLog,
     };
   }, [data, colorScheme]);
 
@@ -104,15 +109,25 @@ export const DifficultyByAngleChart = memo(function DifficultyByAngleChart({
   // Once the bars get too narrow for a horizontal angle label, rotate the labels
   // and give each its own wider box so the angle reads in full instead of "…".
   const rotateLabels = plotWidth > 0 && barWidth + barSpacing < MIN_HORIZONTAL_LABEL_WIDTH;
+  // Flag the log axis in the caption + a11y label so a bar twice as tall isn't
+  // misread as twice the ascents (it's 10× per section on a log scale).
+  const showLogScale = model.isLog && !!logScaleLabel;
+  const chartAccessibilityLabel =
+    showLogScale && accessibilityLabel ? `${accessibilityLabel}, ${logScaleLabel}` : accessibilityLabel;
 
   return (
     <View
       style={[styles.container, rotateLabels && styles.containerRotated]}
       onLayout={onLayout}
-      accessible={accessibilityLabel ? true : undefined}
-      accessibilityRole={accessibilityLabel ? 'image' : undefined}
-      accessibilityLabel={accessibilityLabel}
+      accessible={chartAccessibilityLabel ? true : undefined}
+      accessibilityRole={chartAccessibilityLabel ? 'image' : undefined}
+      accessibilityLabel={chartAccessibilityLabel}
     >
+      {showLogScale ? (
+        <Text variant="caption2" color={chartColors.secondaryLabel} style={styles.logScaleLabel}>
+          {logScaleLabel}
+        </Text>
+      ) : null}
       {width > 0 ? (
         <BarChart
           data={model.barData}
@@ -159,6 +174,10 @@ const styles = StyleSheet.create({
   },
   containerRotated: {
     minHeight: CHART_HEIGHT + spacing[6] + ROTATED_LABEL_EXTRA_HEIGHT,
+  },
+  logScaleLabel: {
+    alignSelf: 'flex-end',
+    marginBottom: spacing[1],
   },
   topLabelContainer: {
     marginBottom: spacing[1],
