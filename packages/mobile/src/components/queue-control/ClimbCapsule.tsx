@@ -52,15 +52,17 @@ function ClimbLabel({
     <View style={styles.labelInner}>
       {showThumbnail ? <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} /> : null}
       <View style={styles.labelTextColumn}>
-        <Text
-          variant="caption1"
-          color={eyebrowColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.eyebrow}
-        >
-          {eyebrow}
-        </Text>
+        {eyebrow ? (
+          <Text
+            variant="caption1"
+            color={eyebrowColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.eyebrow}
+          >
+            {eyebrow}
+          </Text>
+        ) : null}
         <View style={styles.nameRow}>
           <Text
             variant="subheadline"

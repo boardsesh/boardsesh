@@ -227,7 +227,7 @@
       "live": "En el muro · en directo",
       "peer": "{{name}} en el muro",
       "peerAnon": "Alguien en el muro",
-      "upNext": "Siguiente"
+      "upNext": "A continuación"
     },
     "cancelReconnectConfirm": "Cancelar te sacará de la sesión. ¿Es lo que quieres?",
     "shellMessage": "Sin bloque seleccionado",

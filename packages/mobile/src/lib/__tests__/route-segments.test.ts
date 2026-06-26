@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTabsRoute, isClimbsTabRoute, isAuthRoute } from '../route-segments';
+import { isTabsRoute, isClimbsTabRoute, isAuthRoute, isSocialSurface } from '../route-segments';
 
 describe('isTabsRoute', () => {
   it('is true anywhere inside the tab navigator', () => {
@@ -26,6 +26,23 @@ describe('isClimbsTabRoute', () => {
     expect(isClimbsTabRoute(['(tabs)'])).toBe(false);
     expect(isClimbsTabRoute(['auth'])).toBe(false);
     expect(isClimbsTabRoute([])).toBe(false);
+  });
+});
+
+describe('isSocialSurface', () => {
+  it('is true on the social/browsing tabs and their sub-routes', () => {
+    expect(isSocialSurface(['(tabs)', 'home'])).toBe(true);
+    expect(isSocialSurface(['(tabs)', 'profile'])).toBe(true);
+    expect(isSocialSurface(['(tabs)', 'discover'])).toBe(true);
+    expect(isSocialSurface(['(tabs)', 'discover', '[playlist_uuid]'])).toBe(true);
+  });
+
+  it('is false on the board-control tabs and outside the tabs group', () => {
+    expect(isSocialSurface(['(tabs)', 'climbs'])).toBe(false);
+    expect(isSocialSurface(['(tabs)', 'record'])).toBe(false);
+    expect(isSocialSurface(['(tabs)'])).toBe(false);
+    expect(isSocialSurface(['auth'])).toBe(false);
+    expect(isSocialSurface([])).toBe(false);
   });
 });
 
