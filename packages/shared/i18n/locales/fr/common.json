@@ -58,7 +58,8 @@
           "none": "Normal",
           "deuteranopiaShort": "Deután",
           "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan"
+          "tritanopiaShort": "Tritan",
+          "compareHint": "Une simulation des marqueurs ci-dessus — tes vraies couleurs restent telles que tu les as définies."
         },
         "compare": {
           "accessibility": "Aperçu des couleurs des rôles de prise"

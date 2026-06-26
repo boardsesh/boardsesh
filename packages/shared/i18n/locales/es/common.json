@@ -256,7 +256,8 @@
           "none": "Normal",
           "deuteranopiaShort": "Deután",
           "protanopiaShort": "Protán",
-          "tritanopiaShort": "Tritán"
+          "tritanopiaShort": "Tritán",
+          "compareHint": "Una simulación de los marcadores de arriba; tus colores reales se mantienen como los configuraste."
         },
         "compare": {
           "accessibility": "Vista previa de colores de roles de presa"

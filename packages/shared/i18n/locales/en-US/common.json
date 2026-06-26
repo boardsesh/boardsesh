@@ -58,7 +58,8 @@
           "none": "Normal",
           "deuteranopiaShort": "Deutan",
           "protanopiaShort": "Protan",
-          "tritanopiaShort": "Tritan"
+          "tritanopiaShort": "Tritan",
+          "compareHint": "A simulation of the marker swatches above — your real colours stay as you set them."
         },
         "compare": {
           "accessibility": "Hold role colours preview"

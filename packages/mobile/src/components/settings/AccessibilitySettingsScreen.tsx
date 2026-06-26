@@ -12,8 +12,7 @@ import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toBoardName } from '@boardsesh/board-config';
-import { STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
-import type { BoardName } from '@boardsesh/shared-schema';
+import type { BoardName, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
@@ -24,7 +23,9 @@ import { Text } from '../Text';
 import { BoardImageNative } from '../BoardImageNative';
 import { HoldMarkerShapeSvg } from '../board-renderer/HoldMarkerShape';
 import { useTheme } from '../../providers/theme-provider';
+import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { useInfiniteSearchClimbs } from '../../lib/graphql/hooks/use-infinite-search-climbs';
 import { getBoardRenderData } from '../../lib/board-details';
 import { simulateCvd, type CvdType } from '../../lib/cvd-simulation';
 import { OkhslColorPicker } from './OkhslColorPicker';
@@ -92,41 +93,6 @@ function applyCvd(color: string, mode: CvdMode): string {
   return mode === 'none' ? color : simulateCvd(color, mode);
 }
 
-/**
- * Synthesise a representative climb that lights one hold of every override role
- * (start/mid/finish/foot) so the live board preview always shows all four marker
- * styles. Picks holds spread top→bottom by cy (smaller cy = higher on the board:
- * finish up top, feet down low). Returns an Aurora frames string `p<id>r<code>`.
- */
-function buildSampleClimbFrames(boardName: BoardName, holdsData: { id: number; cy: number }[]): string {
-  const codes = STATE_TO_PRIMARY_CODE[boardName];
-  if (!codes || holdsData.length < 4) return '';
-
-  const sorted = [...holdsData].sort((a, b) => a.cy - b.cy);
-  const pick = (fraction: number) => sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))];
-
-  // role → a vertical position that reads naturally on a wall.
-  const placements: { code: number | undefined; hold: { id: number } }[] = [
-    { code: codes.FINISH, hold: pick(0.05) },
-    { code: codes.HAND, hold: pick(0.35) },
-    { code: codes.HAND, hold: pick(0.55) },
-    { code: codes.STARTING, hold: pick(0.78) },
-    { code: codes.FOOT, hold: pick(0.92) },
-    { code: codes.FOOT, hold: pick(0.98) },
-  ];
-
-  const seen = new Set<number>();
-  return placements
-    .filter((placement): placement is { code: number; hold: { id: number } } => placement.code !== undefined)
-    .filter((placement) => {
-      if (seen.has(placement.hold.id)) return false;
-      seen.add(placement.hold.id);
-      return true;
-    })
-    .map((placement) => `p${placement.hold.id}r${placement.code}`)
-    .join('');
-}
-
 function MarkerSwatch({
   color,
   shape,
@@ -162,6 +128,7 @@ function MarkerSwatch({
 export function AccessibilitySettingsScreen() {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
+  const { scrollBottomPadding } = useBottomChromeMetrics();
   const { data: activeBoard } = useActiveBoard();
   const boardName = boardNameFromActiveBoard(activeBoard?.boardType);
   const {
@@ -192,13 +159,32 @@ export function AccessibilitySettingsScreen() {
     [t],
   );
 
-  // Live board preview: render the active board with a synthesised climb that
-  // lights all four roles. The overlay colours/shapes come from the global
-  // override store automatically (BoardImageNative → useNativeClimbRender), so
-  // it reflects edits live. The board photo can't be CVD-simulated, so the
-  // simulation toggle drives the swatch strip below instead.
+  // Live board preview: render the active board with a real, well-known climb —
+  // the most-climbed boulder for this exact layout/size/set/angle (so hold IDs
+  // line up), which naturally lights all four roles. The overlay colours/shapes
+  // come from the global override store (BoardImageNative → useNativeClimbRender)
+  // so the preview reflects edits live. The board photo can't be CVD-simulated,
+  // so the simulation toggle drives the compare strip below instead.
+  const climbSearchInput = useMemo<ClimbSearchInput>(
+    () => ({
+      boardName,
+      layoutId: activeBoard?.layoutId ?? 0,
+      sizeId: activeBoard?.sizeId ?? 0,
+      setIds: activeBoard?.setIds ?? '',
+      angle: activeBoard?.angle ?? 40,
+      sortBy: 'ascents',
+      sortOrder: 'desc',
+      pageSize: 1,
+    }),
+    [activeBoard, boardName],
+  );
+  const { data: exampleClimbData } = useInfiniteSearchClimbs(climbSearchInput, !!activeBoard, {
+    staleTime: 60 * 60 * 1000,
+  });
+  const exampleClimbFrames = exampleClimbData?.pages?.[0]?.climbs?.[0]?.frames ?? null;
+
   const boardPreview = useMemo(() => {
-    if (!activeBoard) return null;
+    if (!activeBoard || !exampleClimbFrames) return null;
     const renderData = getBoardRenderData({
       boardName,
       layoutId: activeBoard.layoutId,
@@ -206,17 +192,15 @@ export function AccessibilitySettingsScreen() {
       setIds: activeBoard.setIds.split(',').map(Number).filter(Boolean),
     });
     if (!renderData) return null;
-    const frames = buildSampleClimbFrames(boardName, renderData.holdsData);
-    if (!frames) return null;
     return {
-      frames,
+      frames: exampleClimbFrames,
       layoutId: activeBoard.layoutId,
       sizeId: activeBoard.sizeId,
       setIds: activeBoard.setIds,
       boardWidth: renderData.boardWidth,
       boardHeight: renderData.boardHeight,
     };
-  }, [activeBoard, boardName]);
+  }, [activeBoard, boardName, exampleClimbFrames]);
 
   const handleSaveRole = useCallback(
     (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
@@ -227,7 +211,10 @@ export function AccessibilitySettingsScreen() {
   );
 
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.scrollContent}>
+    <ScrollView
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPadding + spacing[4] }]}
+    >
       <View style={styles.intro}>
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
           {t('mobile.more.accessibility.description')}
@@ -284,6 +271,9 @@ export function AccessibilitySettingsScreen() {
                 );
               })}
             </View>
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.description}>
+              {t('mobile.more.accessibility.cvd.compareHint')}
+            </Text>
           </View>
         </View>
       </View>
@@ -471,7 +461,7 @@ function HoldColorPickerSheet({
   return (
     <ModalSheet
       ref={sheetRef}
-      snapPoints={['85%', '95%']}
+      snapPoints={['95%']}
       onDismiss={handleDismiss}
       footer={footer}
       stackBehavior="push"
@@ -813,7 +803,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingTop: spacing[4],
-    paddingBottom: spacing[10],
     gap: spacing[6],
   },
   intro: {
