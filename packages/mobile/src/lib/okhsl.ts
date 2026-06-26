@@ -23,11 +23,11 @@ export type Okhsl = {
 type Rgb = { red: number; green: number; blue: number };
 type Triplet = [number, number, number];
 
-export function srgbTransferFunction(a: number): number {
+function srgbTransferFunction(a: number): number {
   return a >= 0.0031308 ? 1.055 * Math.pow(a, 1 / 2.4) - 0.055 : 12.92 * a;
 }
 
-export function srgbTransferFunctionInverse(a: number): number {
+function srgbTransferFunctionInverse(a: number): number {
   return a > 0.04045 ? Math.pow((a + 0.055) / 1.055, 2.4) : a / 12.92;
 }
 

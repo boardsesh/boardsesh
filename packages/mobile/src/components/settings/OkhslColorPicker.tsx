@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   StyleSheet,
@@ -169,11 +169,13 @@ function ChannelSlider({
 }
 
 type OkhslColorPickerProps = {
-  /** Current colour as #rrggbb. */
+  /**
+   * Initial colour as #rrggbb. Read only on mount — OKHSL is the source of
+   * truth thereafter, so the caller re-seeds by remounting via a React `key`
+   * (e.g. key per opened role) rather than pushing new values in.
+   */
   value: string;
   onChange: (hex: string) => void;
-  /** Bump to re-seed the sliders from `value` (e.g. when the sheet reopens). */
-  seedKey?: string | number;
 };
 
 /**
@@ -184,7 +186,7 @@ type OkhslColorPickerProps = {
  * field below allows precise manual entry. OKHSL is the source of truth so
  * dragging never drifts from hex round-tripping.
  */
-export function OkhslColorPicker({ value, onChange, seedKey }: OkhslColorPickerProps) {
+export function OkhslColorPicker({ value, onChange }: OkhslColorPickerProps) {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const [okhsl, setOkhsl] = useState<Okhsl>(() => hexToOkhsl(value) ?? DEFAULT_OKHSL);
@@ -192,18 +194,6 @@ export function OkhslColorPicker({ value, onChange, seedKey }: OkhslColorPickerP
   const [hexDraft, setHexDraft] = useState<string>(
     () => normalizeHexColor(value) ?? okhslToHex(hexToOkhsl(value) ?? DEFAULT_OKHSL),
   );
-  const seededRef = useRef<string | number | undefined>(seedKey);
-
-  // Re-seed from `value` only when the caller bumps seedKey (e.g. the sheet
-  // reopens for a different role). `value` is in deps to satisfy the linter, but
-  // the ref guard means live edits from this component never fight the parent.
-  useEffect(() => {
-    if (seededRef.current === seedKey) return;
-    seededRef.current = seedKey;
-    const seeded = hexToOkhsl(value) ?? DEFAULT_OKHSL;
-    setOkhsl(seeded);
-    setHexDraft(normalizeHexColor(value) ?? okhslToHex(seeded));
-  }, [seedKey, value]);
 
   const commit = useCallback(
     (next: Okhsl) => {

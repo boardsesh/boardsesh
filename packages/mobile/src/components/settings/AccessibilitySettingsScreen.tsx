@@ -487,7 +487,7 @@ function HoldColorPickerSheet({
         />
 
         {mode === 'user' ? (
-          <OkhslColorPicker value={userColor} onChange={setUserColor} seedKey={seedCounter} />
+          <OkhslColorPicker key={seedCounter} value={userColor} onChange={setUserColor} />
         ) : (
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.defaultCopy}>
             {t('mobile.more.accessibility.defaultCopy')}
