@@ -14,11 +14,13 @@ const queue = vi.hoisted(() => ({
   previousClimb: vi.fn(),
 }));
 const drawer = vi.hoisted(() => ({ openPlayDrawer: vi.fn() }));
-// Per-test board-connection state so the eyebrow (live / peer / up-next) can be exercised.
+// Per-test board-connection state so the eyebrow (live / peer / up-next) can be
+// exercised. `nowPlaying` is the redesign flag — default on so the eyebrow shows.
 const board = vi.hoisted(() => ({
   boardConnection: 'disconnected' as 'disconnected' | 'connectedByMe' | 'heldByPeer',
   bluetooth: null as unknown,
   holderDisplayName: null as string | null,
+  nowPlaying: true,
 }));
 
 // --- RN surface: View → div ---------------------------------------------------
@@ -133,6 +135,10 @@ vi.mock('../BoardControlIndicator', () => ({ BoardControlIndicator: () => null }
 vi.mock('../../ble/use-board-connection-state', () => ({
   useBoardConnectionState: () => ({ ...board }),
 }));
+// The now-playing redesign flag (default on so the eyebrow renders).
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => board.nowPlaying,
+}));
 
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: queue.state, nextClimb: queue.nextClimb, previousClimb: queue.previousClimb }),
@@ -207,6 +213,23 @@ describe('ClimbCapsule', () => {
     board.boardConnection = 'disconnected';
     board.bluetooth = null;
     board.holderDisplayName = null;
+    board.nowPlaying = true;
+  });
+
+  it('shows no eyebrow when the now-playing redesign flag is off', () => {
+    // Flag off = pre-redesign bar: even while driving the wall, no eyebrow caption.
+    board.nowPlaying = false;
+    board.boardConnection = 'connectedByMe';
+    const item = makeItem(makeClimb({ name: 'The Crimp Ladder' }));
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+
+    const { container } = render(<ClimbCapsule />);
+
+    const texts = Array.from(container.querySelectorAll('[data-text]'));
+    expect(texts.some((node) => (node.textContent ?? '').includes('queueBar.nowPlaying'))).toBe(false);
+    // The bar itself is unchanged — the climb name still renders.
+    expect(container.textContent).toContain('The Crimp Ladder');
   });
 
   it('renders nothing when there is no current climb', () => {

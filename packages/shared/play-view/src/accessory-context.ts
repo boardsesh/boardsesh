@@ -25,11 +25,15 @@ export type AccessoryEyebrowKind = 'live' | 'peer' | 'upNext';
 
 export type AccessoryContext = {
   tier: AccessoryTier;
+  /**
+   * The status caption to show, or `null` when the redesign is disabled (the
+   * pre-redesign bar shows no eyebrow at all).
+   */
   eyebrow: {
     kind: AccessoryEyebrowKind;
     /** Peer display name for the `peer` kind, else `null`. */
     name: string | null;
-  };
+  } | null;
   /**
    * Whether the trailing tick (log ascent) should show. Hidden for a peer's
    * climb — you can't log someone else's send from the status bar.
@@ -41,11 +45,18 @@ export type AccessoryContextInput = {
   boardConnection: AccessoryBoardConnection;
   /** Display name of the peer driving the wall, when `heldByPeer` (else `null`). */
   holderDisplayName: string | null;
+  /**
+   * When `false`, returns the pre-redesign bar: no eyebrow caption and the tick
+   * always available (today's behaviour). Defaults to `true`. The whole
+   * now-playing redesign rides one flag, so off = byte-identical to today.
+   */
+  enabled?: boolean;
 };
 
 /**
  * Maps the board-connection state to the accessory's now-playing context.
  *
+ * - `enabled === false` → no eyebrow, tick always shown (pre-redesign bar).
  * - `heldByPeer`    → now-playing, eyebrow names the peer, no tick (read-only).
  * - `connectedByMe` → now-playing, "live" eyebrow, tick enabled.
  * - `disconnected`  → resume tier, "up next" eyebrow (just your queue head).
@@ -53,7 +64,12 @@ export type AccessoryContextInput = {
 export function deriveAccessoryContext({
   boardConnection,
   holderDisplayName,
+  enabled = true,
 }: AccessoryContextInput): AccessoryContext {
+  if (!enabled) {
+    // Flag off — the bar exactly as it was before the redesign.
+    return { tier: 'resume', eyebrow: null, showTick: true };
+  }
   if (boardConnection === 'heldByPeer') {
     return {
       tier: 'nowPlaying',

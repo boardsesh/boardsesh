@@ -22,6 +22,7 @@ import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 import { useAccessoryEyebrowFromContext, accessoryEyebrowColor } from './use-accessory-presentation';
+import { useAccessoryNowPlayingEnabled } from './use-accessory-now-playing-flag';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -119,9 +120,11 @@ export function ClimbCapsule({
   // and feed the same read into the eyebrow so it isn't subscribed to twice.
   const { boardConnection, bluetooth, holderDisplayName } = useBoardConnectionState();
   // Status caption that labels what the bar is showing (live / peer / up next).
+  // Flag off → null eyebrow (the pre-redesign bar).
+  const nowPlayingEnabled = useAccessoryNowPlayingEnabled();
   const accessoryContext = useMemo(
-    () => deriveAccessoryContext({ boardConnection, holderDisplayName }),
-    [boardConnection, holderDisplayName],
+    () => deriveAccessoryContext({ boardConnection, holderDisplayName, enabled: nowPlayingEnabled }),
+    [boardConnection, holderDisplayName, nowPlayingEnabled],
   );
   const { text: eyebrowText, tone: eyebrowTone } = useAccessoryEyebrowFromContext(accessoryContext);
 

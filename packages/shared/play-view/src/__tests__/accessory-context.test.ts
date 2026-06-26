@@ -34,6 +34,19 @@ describe('deriveAccessoryContext', () => {
     expect(context.eyebrow).toEqual({ kind: 'live', name: null });
   });
 
+  it('disabled → no eyebrow and the tick always shows, regardless of board state', () => {
+    for (const boardConnection of ['disconnected', 'connectedByMe', 'heldByPeer'] as const) {
+      const context = deriveAccessoryContext({ boardConnection, holderDisplayName: 'Tara', enabled: false });
+      expect(context.eyebrow).toBeNull();
+      expect(context.showTick).toBe(true);
+    }
+  });
+
+  it('enabled defaults to true (the redesign is on unless explicitly disabled)', () => {
+    const context = deriveAccessoryContext({ boardConnection: 'connectedByMe', holderDisplayName: null });
+    expect(context.eyebrow).toEqual({ kind: 'live', name: null });
+  });
+
   it('only the peer state suppresses the tick', () => {
     const states = ['disconnected', 'connectedByMe', 'heldByPeer'] as const;
     const tickByState = Object.fromEntries(

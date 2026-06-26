@@ -23,7 +23,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { isAuthRoute, isGymDiscoveryRoute, isPlayerRoute } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
@@ -31,6 +30,7 @@ import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 import { useAccessoryPresentation } from './use-accessory-presentation';
 import { shouldHideQueueBarOnSocial } from './use-queue-bar-hidden';
+import { useAccessoryNowPlayingEnabled } from './use-accessory-now-playing-flag';
 
 // Re-export so layout consumers that already import toolbar metrics from this
 // module don't need to know which file owns them. Source of truth: theme/layout.
@@ -48,7 +48,7 @@ export function PersistentQueueBar() {
   // predicate as useBottomChromeMetrics (which drops the reserved space), so a
   // hidden bar never strands a gap — see shouldHideQueueBarOnSocial.
   const { showTick, tier } = useAccessoryPresentation();
-  const nowPlayingFlag = useFeatureFlag('accessory-now-playing') === true;
+  const nowPlayingFlag = useAccessoryNowPlayingEnabled();
   const hiddenOnSocial = shouldHideQueueBarOnSocial(nowPlayingFlag, tier, segments);
 
   if (!currentClimb) return null;

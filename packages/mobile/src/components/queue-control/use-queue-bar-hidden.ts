@@ -4,8 +4,8 @@
 import { useSegments } from 'expo-router';
 import type { AccessoryTier } from '@boardsesh/play-view';
 import { isSocialSurface, type Segments } from '../../lib/route-segments';
-import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { useAccessoryPresentation } from './use-accessory-presentation';
+import { useAccessoryNowPlayingEnabled } from './use-accessory-now-playing-flag';
 
 /**
  * Pure predicate (single source of truth): the queue-only ("up next") bar is
@@ -25,6 +25,6 @@ export function shouldHideQueueBarOnSocial(flagEnabled: boolean, tier: Accessory
 export function useQueueBarHiddenOnSocial(): boolean {
   const segments = useSegments();
   const { tier } = useAccessoryPresentation();
-  const flagEnabled = useFeatureFlag('accessory-now-playing') === true;
+  const flagEnabled = useAccessoryNowPlayingEnabled();
   return shouldHideQueueBarOnSocial(flagEnabled, tier, segments);
 }
