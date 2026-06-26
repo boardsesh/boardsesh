@@ -203,6 +203,9 @@ export function useCarouselGesture({
         // Bias toward horizontal: lock vertical only when the motion is clearly
         // vertical (absY ≥ absX × VERTICAL_LOCK_RATIO). Keeps near-vertical
         // scroll/dismiss working while protecting slightly-diagonal climb swipes.
+        // This mirrors decideSwipeDirection(dx, dy, threshold, VERTICAL_LOCK_RATIO)
+        // in @boardsesh/play-view (the canonical spec + web's path) — inlined here
+        // because the worklet can't call it; keep the two in sync if either changes.
         if (absY >= absX * VERTICAL_LOCK_RATIO) {
           directionLock.value = -1;
           state.fail();
