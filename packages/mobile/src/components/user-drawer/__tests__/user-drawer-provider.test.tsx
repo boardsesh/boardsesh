@@ -9,6 +9,7 @@ const routerMock = vi.hoisted(() => ({ push: vi.fn() }));
 // assert an action is deferred while the drawer is still up, then flush the close
 // animation to prove it runs only after the Modal unmounts.
 const reanimated = vi.hoisted(() => ({ closeCallbacks: [] as Array<(finished: boolean) => void> }));
+const feedbackPresent = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
   Modal: ({ children, visible }: { children?: ReactNode; visible: boolean }) =>
@@ -108,7 +109,12 @@ vi.mock('../../ListRow', () => ({
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
-vi.mock('../FeedbackSheet', () => ({ FeedbackSheet: () => null }));
+vi.mock('../FeedbackSheet', () => ({
+  FeedbackSheet: ({ sheetRef }: { sheetRef?: { current: { present: () => void } | null } }) => {
+    if (sheetRef) sheetRef.current = { present: feedbackPresent };
+    return null;
+  },
+}));
 
 import { DISCORD_INVITE_URL } from '../../../lib/discord';
 import { UserDrawerProvider, useUserDrawer } from '../UserDrawerProvider';
@@ -125,6 +131,7 @@ function DrawerTrigger() {
 beforeEach(() => {
   browser.openBrowserAsync.mockClear();
   routerMock.push.mockClear();
+  feedbackPresent.mockClear();
   reanimated.closeCallbacks.length = 0;
   // The deferred action runs via requestAnimationFrame one frame after the Modal
   // unmounts — run it inline so the flush below is synchronous.
@@ -189,6 +196,7 @@ describe('UserDrawerProvider defers navigation until the drawer closes', () => {
     ['Settings', '/(tabs)/profile/more'],
     ['My playlists', '/(tabs)/discover/all'],
     ['About', '/about'],
+    ['My boards', '/boards/manage'],
   ])('%s waits for the drawer to close, then pushes %s', (rowTitle, route) => {
     renderDrawer();
     openDrawer();
@@ -200,6 +208,17 @@ describe('UserDrawerProvider defers navigation until the drawer closes', () => {
     expect(routerMock.push).toHaveBeenCalledWith(route);
   });
 
+  it('Change board waits for the drawer to close, then pushes the /boards modal route', () => {
+    renderDrawer();
+    openDrawer();
+
+    fireEvent.click(screen.getByText('Change board'));
+
+    expect(routerMock.push).not.toHaveBeenCalled();
+    flushDrawerClose();
+    expect(routerMock.push).toHaveBeenCalledWith({ pathname: '/boards', params: { returnTo: '/(tabs)/climbs' } });
+  });
+
   it('edit profile (header) waits for the drawer to close, then pushes the edit route', () => {
     renderDrawer();
     openDrawer();
@@ -209,5 +228,16 @@ describe('UserDrawerProvider defers navigation until the drawer closes', () => {
     expect(routerMock.push).not.toHaveBeenCalled();
     flushDrawerClose();
     expect(routerMock.push).toHaveBeenCalledWith('/(tabs)/profile/edit');
+  });
+
+  it('feedback (Rate Boardsesh) waits for the drawer to close, then presents the sheet', () => {
+    renderDrawer();
+    openDrawer();
+
+    fireEvent.click(screen.getByText('Rate Boardsesh'));
+
+    expect(feedbackPresent).not.toHaveBeenCalled();
+    flushDrawerClose();
+    expect(feedbackPresent).toHaveBeenCalled();
   });
 });

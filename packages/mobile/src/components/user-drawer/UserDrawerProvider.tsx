@@ -151,6 +151,8 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
 
   const openFeedback = useCallback(
     (mode: FeedbackSheetMode) => {
+      // Set the mode now (not inside the deferred callback) so the sheet has
+      // re-rendered with it well before the deferred present() fires.
       setFeedbackMode(mode);
       runAfterDrawerClosed(() => feedbackSheetRef.current?.present());
     },
