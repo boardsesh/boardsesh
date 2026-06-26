@@ -96,11 +96,11 @@
     "react-native-pager-view": "^8.0.2",
     "react-native-paper": "^5.15.3",
     "react-native-qrcode-svg": "^6.3.15",
-    "react-native-reanimated": "4.5.0",
+    "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
     "react-native-svg": "15.15.4",
-    "react-native-worklets": "0.10.0"
+    "react-native-worklets": "0.8.3"
   },
   "devDependencies": {
     "@bacons/apple-targets": "^4.0.7",

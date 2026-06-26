@@ -49,7 +49,22 @@ vi.mock('../../lib/haptics', () => ({ hapticMedium: () => hapticMedium() }));
 // covered by sheet-presentation-provider.test.tsx. Here we only assert the
 // wrapper's own chrome (footer/scroll/snap points/haptics + consumer onChange).
 vi.mock('../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: () => ({ onChange: () => {}, onFullyDismissed: () => {}, handle: {} }),
+  useManagedSheet: () => ({
+    onChange: () => {},
+    onFullyDismissed: () => {},
+    // Stub the full handle (not {}) so a future test calling ref.current.present()
+    // gets a spy, not a silent undefined-is-not-a-function throw.
+    handle: {
+      present: vi.fn(),
+      dismiss: vi.fn(),
+      close: vi.fn(),
+      forceClose: vi.fn(),
+      snapToIndex: vi.fn(),
+      snapToPosition: vi.fn(),
+      expand: vi.fn(),
+      collapse: vi.fn(),
+    },
+  }),
 }));
 
 vi.mock('../../theme/tokens', () => ({

@@ -306,4 +306,18 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     rerender(<Harness showScreen={false} />);
     expect(signOutMock).toHaveBeenCalledWith('manual');
   });
+
+  it('does not pop the route if the slide-out settles after the screen has unmounted (mountedRef guard)', () => {
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('About')); // close() captures the slide-out completion callback
+    // The screen unmounts first (e.g. the route popped by something else) — then
+    // the stale completion callback fires. popRoute must no-op, or it would
+    // router.back() the wrong, now-top route.
+    rerender(<Harness showScreen={false} />);
+    routerMock.back.mockClear();
+
+    flushDrawerClose();
+    expect(routerMock.back).not.toHaveBeenCalled();
+  });
 });
