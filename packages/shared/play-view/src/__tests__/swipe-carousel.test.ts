@@ -9,6 +9,7 @@ import {
   SWIPE_OFFSCREEN_PAD,
   SWIPE_THRESHOLD,
   DIRECTION_THRESHOLD,
+  VERTICAL_LOCK_RATIO,
 } from '../swipe-carousel';
 
 describe('computePeekOffset', () => {
@@ -61,6 +62,24 @@ describe('decideSwipeDirection', () => {
   it('honours a custom threshold', () => {
     expect(decideSwipeDirection(25, 5, 30)).toBeNull();
     expect(decideSwipeDirection(40, 5, 30)).toBe('horizontal');
+  });
+
+  it('defaults to the symmetric rule (ties lock vertical) so web is unchanged', () => {
+    expect(decideSwipeDirection(12, 12)).toBe('vertical');
+    expect(decideSwipeDirection(12, 13)).toBe('vertical');
+  });
+
+  it('biases toward horizontal under a >1 ratio so a slightly-diagonal swipe locks horizontal', () => {
+    // dx=10, dy=12 reads vertical with the symmetric default…
+    expect(decideSwipeDirection(10, 12)).toBe('vertical');
+    // …but horizontal once the vertical-lock bias applies (12 < 10 × 1.5).
+    expect(decideSwipeDirection(10, 12, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO)).toBe('horizontal');
+  });
+
+  it('still locks a clearly-vertical drag even under the horizontal bias', () => {
+    // Genuine scroll/dismiss: near-vertical, so it clears absX × ratio easily.
+    expect(decideSwipeDirection(5, 20, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO)).toBe('vertical');
+    expect(decideSwipeDirection(-4, -30, DIRECTION_THRESHOLD, VERTICAL_LOCK_RATIO)).toBe('vertical');
   });
 });
 

@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, type ComponentType, type RefObject } from 'react';
 import { Gesture, type GestureType } from 'react-native-gesture-handler';
 import { useSharedValue, withTiming, withSpring, runOnJS, type SharedValue } from 'react-native-reanimated';
-import { SWIPE_THRESHOLD, DIRECTION_THRESHOLD, EXIT_DURATION, SWIPE_OFFSCREEN_PAD } from '@boardsesh/play-view';
+import {
+  SWIPE_THRESHOLD,
+  DIRECTION_THRESHOLD,
+  VERTICAL_LOCK_RATIO,
+  EXIT_DURATION,
+  SWIPE_OFFSCREEN_PAD,
+} from '@boardsesh/play-view';
 import { springs } from '../../theme/animations';
 import { hapticMedium } from '../../lib/haptics';
 
@@ -149,12 +155,14 @@ export function useCarouselGesture({
     }
   };
 
-  // Lock direction on first significant move — matches the web pattern in
-  // useCardSwipeNavigation. Once locked horizontal, the gesture stays
-  // committed even if the user drifts vertically. failOffsetY would
-  // otherwise kill a horizontal swipe the moment Y drift crossed 10px,
-  // making carousel swipes finicky. Vertical-locked gestures fail so the
-  // touch falls through to BottomSheetScrollView.
+  // Lock direction on first significant move. Once locked horizontal, the gesture
+  // stays committed even if the user drifts vertically. failOffsetY would
+  // otherwise kill a horizontal swipe the moment Y drift crossed 10px, making
+  // carousel swipes finicky. Vertical-locked gestures fail so the touch falls
+  // through to the scroll. The decision is biased toward horizontal
+  // (VERTICAL_LOCK_RATIO) so a horizontal-intended swipe that drifts slightly down
+  // still locks horizontal — otherwise it read as vertical and the drawer's
+  // pull-to-dismiss grabbed it. Web stays symmetric; only the play drawer biases.
   const directionLock = useSharedValue<0 | 1 | -1>(0); // 0=undecided, 1=horizontal, -1=vertical
   const startTouchX = useSharedValue(0);
   const startTouchY = useSharedValue(0);
@@ -192,12 +200,15 @@ export function useCarouselGesture({
         const absX = Math.abs(dx);
         const absY = Math.abs(dy);
         if (absX <= DIRECTION_THRESHOLD && absY <= DIRECTION_THRESHOLD) return;
-        if (absX > absY) {
-          directionLock.value = 1;
-          state.activate();
-        } else {
+        // Bias toward horizontal: lock vertical only when the motion is clearly
+        // vertical (absY ≥ absX × VERTICAL_LOCK_RATIO). Keeps near-vertical
+        // scroll/dismiss working while protecting slightly-diagonal climb swipes.
+        if (absY >= absX * VERTICAL_LOCK_RATIO) {
           directionLock.value = -1;
           state.fail();
+        } else {
+          directionLock.value = 1;
+          state.activate();
         }
       })
       .onStart(() => {

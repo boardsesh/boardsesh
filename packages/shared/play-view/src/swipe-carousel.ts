@@ -3,6 +3,13 @@
 
 export const SWIPE_THRESHOLD = 80;
 export const DIRECTION_THRESHOLD = 10;
+// Direction-lock horizontal bias (mobile play drawer). The lock picks vertical
+// only when the motion is clearly vertical — absY at least this multiple of absX.
+// >1 favours horizontal so a horizontal-intended climb swipe that drifts slightly
+// down still locks horizontal, and the drawer's pull-to-dismiss can't grab it.
+// Genuine scroll/dismiss gestures are near-vertical (absX ≈ 0), so they clear this
+// easily and still lock vertical. Web keeps the symmetric default (1).
+export const VERTICAL_LOCK_RATIO = 1.5;
 export const EXIT_DURATION = 300;
 export const SNAP_BACK_DURATION = 200;
 // New climb swaps in this many ms after the slide-off begins.
@@ -82,11 +89,15 @@ export function decideSwipeDirection(
   deltaX: number,
   deltaY: number,
   threshold: number = DIRECTION_THRESHOLD,
+  verticalBiasRatio = 1,
 ): 'horizontal' | 'vertical' | null {
   const absX = Math.abs(deltaX);
   const absY = Math.abs(deltaY);
   if (absX <= threshold && absY <= threshold) return null;
-  return absX > absY ? 'horizontal' : 'vertical';
+  // Lock vertical only when absY is at least `verticalBiasRatio`× the horizontal
+  // travel. Ratio 1 is the original symmetric rule (ties → vertical); a higher
+  // ratio biases toward horizontal (see VERTICAL_LOCK_RATIO).
+  return absY >= absX * verticalBiasRatio ? 'vertical' : 'horizontal';
 }
 
 export function evaluateSwipeOutcome({

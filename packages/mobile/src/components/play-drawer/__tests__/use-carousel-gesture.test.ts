@@ -146,4 +146,46 @@ describe('useCarouselGesture', () => {
     expect(onSwipePrevious).not.toHaveBeenCalled();
     expect(result.current.translateX.value).toBe(0);
   });
+
+  // Direction lock — biased toward horizontal (VERTICAL_LOCK_RATIO) so a
+  // horizontal-intended swipe that drifts down still drives the carousel
+  // instead of falling through to the drawer's pull-to-dismiss.
+  function makeState() {
+    return { activate: vi.fn(), fail: vi.fn() };
+  }
+  function lockFrom(handlers: RecordedHandlers, dx: number, dy: number, state: ReturnType<typeof makeState>) {
+    handlers.onTouchesDown({ allTouches: [{ absoluteX: 100, absoluteY: 100 }] });
+    handlers.onTouchesMove({ allTouches: [{ absoluteX: 100 + dx, absoluteY: 100 + dy }] }, state);
+  }
+
+  it('locks horizontal for a slightly-diagonal swipe that the symmetric rule would call vertical', () => {
+    renderHook((props: Options) => useCarouselGesture(props), { initialProps: makeOptions() });
+    const state = makeState();
+    lockFrom(latestHandlers(), 10, 12, state); // |dy|(12) < |dx|(10) × 1.5
+
+    expect(state.activate).toHaveBeenCalledTimes(1);
+    expect(state.fail).not.toHaveBeenCalled();
+  });
+
+  it('still locks vertical (and fails) for a clearly-vertical drag', () => {
+    renderHook((props: Options) => useCarouselGesture(props), { initialProps: makeOptions() });
+    const state = makeState();
+    lockFrom(latestHandlers(), 4, 30, state); // |dy|(30) ≥ |dx|(4) × 1.5
+
+    expect(state.fail).toHaveBeenCalledTimes(1);
+    expect(state.activate).not.toHaveBeenCalled();
+  });
+
+  it('stays committed to horizontal once locked, even if the finger then drifts vertically', () => {
+    renderHook((props: Options) => useCarouselGesture(props), { initialProps: makeOptions() });
+    const handlers = latestHandlers();
+    const state = makeState();
+    lockFrom(handlers, 30, 4, state); // lock horizontal
+    state.activate.mockClear();
+
+    handlers.onTouchesMove({ allTouches: [{ absoluteX: 130, absoluteY: 220 }] }, state); // big Y drift
+
+    expect(state.activate).toHaveBeenCalledTimes(1);
+    expect(state.fail).not.toHaveBeenCalled();
+  });
 });
