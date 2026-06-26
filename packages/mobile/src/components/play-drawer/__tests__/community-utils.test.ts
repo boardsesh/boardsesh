@@ -156,6 +156,11 @@ describe('buildAscentChartScale', () => {
     expect(scale.maxValue).toBeGreaterThan(scale.plot(100));
   });
 
+  it('stays linear for a single angle (no spread to measure)', () => {
+    // One bar means floor === peak, so the ratio is 1 and the linear axis wins.
+    expect(buildAscentChartScale([500]).isLog).toBe(false);
+  });
+
   it('stays sane for an all-zero chart', () => {
     const scale = buildAscentChartScale([0, 0]);
     expect(scale.isLog).toBe(false);
