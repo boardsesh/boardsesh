@@ -132,6 +132,43 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertNil(SharedQueueState.currentItem(from: defaults))
     }
 
+    func testMoonboardPacketEncodesRolesAndSerialPositions() {
+        // Parity with packages/shared/ble-protocol/src/__tests__/moonboard.test.ts:
+        // p1r42 -> S at serial position 0, p2r43 -> P at serial position 35.
+        let result = BoardBleEncoding.makeMoonboardPacket(frames: "p1r42p2r43")
+
+        XCTAssertEqual(String(decoding: result.packet, as: UTF8.self), "l#S0,P35#")
+        XCTAssertEqual(result.skippedRoleCount, 0)
+        XCTAssertEqual(result.skippedPositionCount, 0)
+        XCTAssertEqual(result.totalPlacements, 2)
+    }
+
+    func testMoonboardPacketSkipsUnknownRolesAndOutOfRangeHolds() {
+        // Role 45 (foot) is not a MoonBoard LED role; hold id 199 is past the
+        // 198-hold grid. Both are dropped, the valid start hold still lights.
+        let result = BoardBleEncoding.makeMoonboardPacket(frames: "p1r42p5r45p199r43")
+
+        XCTAssertEqual(String(decoding: result.packet, as: UTF8.self), "l#S0#")
+        XCTAssertEqual(result.skippedRoleCount, 1)
+        XCTAssertEqual(result.skippedPositionCount, 1)
+        XCTAssertEqual(result.totalPlacements, 3)
+    }
+
+    func testMoonboardPacketIsEmptyWhenNothingEncodes() {
+        // No clear-all: an empty or all-skipped frame must produce no packet so
+        // the BLE manager refuses to write and leaves the wall lit as-is.
+        XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "").packet.isEmpty)
+        XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "p1r45").packet.isEmpty)
+    }
+
+    func testMoonboardSerialPositionMirrorsGridMath() {
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 1), 0)
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 2), 35)
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 198), 197)
+        XCTAssertNil(BoardBleEncoding.moonboardSerialPosition(holdId: 0))
+        XCTAssertNil(BoardBleEncoding.moonboardSerialPosition(holdId: 199))
+    }
+
     func testBoardRenderUrlUsesSharedBoardContext() {
         defaults.set("https://www.boardsesh.com", forKey: SharedConstants.serverUrlKey)
         defaults.set("kilter", forKey: SharedConstants.boardNameKey)

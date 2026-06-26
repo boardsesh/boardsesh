@@ -244,6 +244,75 @@ enum BoardBleEncoding {
         )
     }
 
+    // MARK: - MoonBoard
+
+    // MoonBoard speaks a different protocol from the Aurora boards: an ASCII
+    // frame `l#{holds}#` where each hold is a role letter plus a serial LED
+    // position derived straight from its grid coordinate — no per-board LED
+    // placement map and no binary packet wrapper. Ported from
+    // packages/shared/ble-protocol/src/moonboard.ts; keep the two in lockstep
+    // (parity asserted in LiveActivityWidgetTests).
+    private static let moonboardGridColumns = 11
+    private static let moonboardGridRows = 18
+    private static let moonboardRoleMap: [Int: String] = [42: "S", 43: "P", 44: "E"]
+    private static let moonboardFramePrefix = "l#"
+    private static let moonboardFrameSuffix = "#"
+
+    static func moonboardSerialPosition(holdId: Int) -> Int? {
+        let maxHoldId = moonboardGridColumns * moonboardGridRows
+        guard holdId >= 1, holdId <= maxHoldId else { return nil }
+
+        let zeroBasedHoldId = holdId - 1
+        let colIndex = zeroBasedHoldId % moonboardGridColumns
+        let rowIndex = zeroBasedHoldId / moonboardGridColumns
+
+        // Odd columns are wired bottom-to-top, so their row order is reversed.
+        if colIndex % 2 == 0 {
+            return colIndex * moonboardGridRows + rowIndex
+        }
+        return colIndex * moonboardGridRows + (moonboardGridRows - 1 - rowIndex)
+    }
+
+    static func makeMoonboardPacket(frames: String) -> BoardBlePacketResult {
+        var encodedHolds: [String] = []
+        var skippedRoleCount = 0
+        var skippedPositionCount = 0
+
+        let parsedFrames = parseFrames(frames)
+        for frame in parsedFrames {
+            guard let roleLetter = moonboardRoleMap[frame.roleCode] else {
+                skippedRoleCount += 1
+                continue
+            }
+            guard let position = moonboardSerialPosition(holdId: frame.placementId) else {
+                skippedPositionCount += 1
+                continue
+            }
+            encodedHolds.append("\(roleLetter)\(position)")
+        }
+
+        // No clear-all for MoonBoard: an empty `l##` frame is a no-op on the
+        // controller, so when nothing encodes (unrecognised roles, out-of-range
+        // ids, or no holds) return an empty packet and let the caller refuse to
+        // write — matching dispatchMoonboardPacket on the JS side.
+        guard !encodedHolds.isEmpty else {
+            return BoardBlePacketResult(
+                packet: Data(),
+                skippedPositionCount: skippedPositionCount,
+                skippedRoleCount: skippedRoleCount,
+                totalPlacements: parsedFrames.count
+            )
+        }
+
+        let payload = moonboardFramePrefix + encodedHolds.joined(separator: ",") + moonboardFrameSuffix
+        return BoardBlePacketResult(
+            packet: Data(payload.utf8),
+            skippedPositionCount: skippedPositionCount,
+            skippedRoleCount: skippedRoleCount,
+            totalPlacements: parsedFrames.count
+        )
+    }
+
     static func mirroredFrames(frames: String, boardName: String, layoutId: Int) -> String? {
         var mirroredFrames = ""
         for frame in parseFrames(frames) {

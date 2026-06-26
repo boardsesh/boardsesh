@@ -591,6 +591,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard let configuration else { return }
         guard connectedPeripheral != nil, writeCharacteristic != nil else { return }
 
+        // MoonBoard has no clear-all command (an empty `l##` frame is a no-op on
+        // the controller and the JS layer refuses to send it), so leave the wall
+        // lit as-is rather than writing an Aurora clear packet to it.
+        if configuration.boardName == "moonboard" { return }
+
         let result = BoardBleEncoding.makeAuroraPacket(
             frames: "",
             placementPositions: [:],
@@ -610,6 +615,30 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func displayItemOnBleQueue(_ item: SharedQueueItem) {
         guard let configuration else { return }
         guard connectedPeripheral != nil, writeCharacteristic != nil else { return }
+
+        // MoonBoard encodes straight from grid coordinates into the ASCII `l#…#`
+        // frame format — it has no LED placement map and the Aurora binary
+        // encoder can't drive it (no `moonboard` role map). Without this branch a
+        // native re-light (widget intent or write-stall recovery reconnect) would
+        // silently write nothing and the wall would stay dark. Mirroring isn't
+        // supported on MoonBoard (boardSupportsMirroring is false), so frames go
+        // out as-is.
+        if configuration.boardName == "moonboard" {
+            let result = BoardBleEncoding.makeMoonboardPacket(frames: item.frames)
+            guard !result.packet.isEmpty else {
+                // Every hold was unrecognised/out-of-range, or the climb has no
+                // holds. Refuse to write rather than dark the wall — there is no
+                // MoonBoard clear-all.
+                logger.warning("Skipping MoonBoard BLE write: no encodable holds for climb \(item.climbUuid, privacy: .public)")
+                return
+            }
+            writeOnBleQueue(data: result.packet) { [weak self] error in
+                if let error {
+                    self?.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+            return
+        }
 
         let ledPlacements = BoardPlacementData.getLedPlacements(
             boardName: configuration.boardName,

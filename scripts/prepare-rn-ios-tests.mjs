@@ -21,6 +21,14 @@ const TEST_SOURCE_FILES = [
     projectPath: 'BoardseshTests/LiveActivitySources/ClimbSessionAttributes.swift',
   },
   {
+    sourcePath: '../modules/live-activity/ios/BoardBleEncoding.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/BoardBleEncoding.swift',
+  },
+  {
+    sourcePath: '../modules/live-activity/ios/BoardPlacementData.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/BoardPlacementData.swift',
+  },
+  {
     sourcePath: '../modules/live-activity/ios/SharedConstants.swift',
     projectPath: 'BoardseshTests/LiveActivitySources/SharedConstants.swift',
   },
