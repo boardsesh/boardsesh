@@ -191,14 +191,29 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         groupState(reg.group);
         return () => {
           const state = groupState(reg.group);
+          // Was this sheet presented or mid-transition when it unmounted? If so its
+          // native teardown is still animating out, even though no coordinator
+          // dismiss was issued (e.g. a present-on-mount sheet the parent unmounts
+          // on select). We must keep the group "busy" across that teardown.
+          const involved = state.presentedId === reg.id || state.inFlight?.id === reg.id;
           if (state.inFlight?.id === reg.id) {
             clearTimeout(state.inFlight.timer);
             state.inFlight = null;
           }
-          if (state.presentedId === reg.id) state.presentedId = null;
           desired.current.delete(reg.id);
           registrations.current.delete(reg.id);
-          pump(reg.group);
+          if (involved) {
+            // Open a settle window so the next same-group present can't start while
+            // the unmounted sheet's native dismiss is still in flight — that overlap
+            // is the UIKit deadlock this provider exists to prevent. onSettle nulls
+            // presentedId and pumps; the registration is already gone so its
+            // onFullyDismissed is a no-op (the component unmounted).
+            state.presentedId = null;
+            const timer = setTimeout(() => onSettle(reg.group, true), SETTLE_MS);
+            state.inFlight = { op: 'dismiss', id: reg.id, timer };
+          } else {
+            pump(reg.group);
+          }
         };
       },
 

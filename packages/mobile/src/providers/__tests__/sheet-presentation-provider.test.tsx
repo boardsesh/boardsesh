@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/react';
-import { createElement } from 'react';
+import { render, act } from '@testing-library/react';
+import { createElement, useRef, type RefObject } from 'react';
+import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 
 // SETTLE_MS resolves from Platform.OS — pin it to iOS (550ms) for deterministic timers.
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 
-import { SheetPresentationProvider, useSheetPresentation, type SheetCoordinator } from '../sheet-presentation-provider';
+import {
+  SheetPresentationProvider,
+  useSheetPresentation,
+  useManagedSheet,
+  type SheetCoordinator,
+} from '../sheet-presentation-provider';
 
 const SETTLE_MS = 550;
 
@@ -155,15 +161,107 @@ describe('SheetPresentationProvider coordinator', () => {
     expect(b.present).toHaveBeenCalledTimes(1);
   });
 
-  it('unregister clears a presented sheet and frees the group', () => {
+  it('opens a settle window when a presented sheet unmounts (no coordinator dismiss), then frees the group', () => {
     const a = makeSheet();
     const unregister = coordinator.register({ id: 'a', group: 'root', ...a });
     coordinator.setDesiredOpen('a', true);
     vi.advanceTimersByTime(SETTLE_MS);
     expect(coordinator.isPresented('a')).toBe(true);
 
+    // Parent unmounts the sheet while it's presented (e.g. a present-on-mount
+    // sheet dismissed by removing it). Its native teardown is still animating, so
+    // the group must stay busy — not be reported idle immediately (H1).
     unregister();
     expect(coordinator.isPresented('a')).toBe(false);
+    expect(coordinator.isBusy('root')).toBe(true);
+
+    vi.advanceTimersByTime(SETTLE_MS);
     expect(coordinator.isBusy('root')).toBe(false);
+  });
+
+  it('holds a same-group present until an unmounted-while-presented sheet has settled (H1)', () => {
+    const a = makeSheet();
+    const b = makeSheet();
+    const unregister = coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.register({ id: 'b', group: 'root', ...b });
+    coordinator.setDesiredOpen('a', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+
+    unregister(); // A unmounts while presented → settle window opens
+    coordinator.setDesiredOpen('b', true);
+    expect(b.present).not.toHaveBeenCalled(); // must wait out A's native teardown
+
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(b.present).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The bridge consumers actually use. The selfDismissRef gate here is what tells a
+// user pan-down apart from a coordinator-driven dismiss — a misclassification is
+// exactly what would double-dismiss / present-over-dismiss and freeze the app.
+type SheetApiMock = Record<
+  'present' | 'dismiss' | 'snapToIndex' | 'snapToPosition' | 'expand' | 'collapse' | 'close' | 'forceClose',
+  ReturnType<typeof vi.fn>
+>;
+
+function makeSheetApi(): SheetApiMock {
+  return {
+    present: vi.fn(),
+    dismiss: vi.fn(),
+    snapToIndex: vi.fn(),
+    snapToPosition: vi.fn(),
+    expand: vi.fn(),
+    collapse: vi.fn(),
+    close: vi.fn(),
+    forceClose: vi.fn(),
+  };
+}
+
+let managed: ReturnType<typeof useManagedSheet> | null = null;
+let sheetApi: SheetApiMock;
+
+function ManagedHarness({ open, onClose }: { open?: boolean; onClose?: () => void }) {
+  const sheetRef = useRef(sheetApi as unknown as BottomSheetMethods);
+  managed = useManagedSheet({ open, sheetRef: sheetRef as RefObject<BottomSheetMethods | null>, onClose });
+  return null;
+}
+
+describe('useManagedSheet bridge', () => {
+  beforeEach(() => {
+    managed = null;
+    sheetApi = makeSheetApi();
+  });
+
+  it('presents on open (snapToIndex 0) and dismisses via the coordinator handle', () => {
+    render(createElement(SheetPresentationProvider, null, createElement(ManagedHarness, { open: true })));
+    expect(sheetApi.snapToIndex).toHaveBeenCalledWith(0);
+    vi.advanceTimersByTime(SETTLE_MS);
+    act(() => {
+      managed?.handle.dismiss();
+    });
+    expect(sheetApi.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('a user pan-down (onChange(-1)) fires onClose', () => {
+    const onClose = vi.fn();
+    render(createElement(SheetPresentationProvider, null, createElement(ManagedHarness, { open: true, onClose })));
+    vi.advanceTimersByTime(SETTLE_MS);
+    act(() => {
+      managed?.onChange(-1);
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('a coordinator-driven dismiss does NOT fire onClose (selfDismissRef gate)', () => {
+    const onClose = vi.fn();
+    render(createElement(SheetPresentationProvider, null, createElement(ManagedHarness, { open: true, onClose })));
+    vi.advanceTimersByTime(SETTLE_MS);
+    act(() => {
+      managed?.handle.dismiss(); // sets selfDismissRef + drives the native dismiss
+    });
+    act(() => {
+      managed?.onChange(-1); // the synchronous native callback that dismiss() triggers
+    });
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

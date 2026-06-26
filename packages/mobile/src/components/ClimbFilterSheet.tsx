@@ -359,6 +359,10 @@ export function ClimbFilterSheet({
   const handleApply = useCallback(() => {
     hasLocalDraftEditsRef.current = false;
     onApply(localFilters, localBoardFilters);
+    // Dismiss the raw native ref directly (not via the coordinator handle). This
+    // is intentional and safe: the resulting native onChange(-1) routes back
+    // through managed.onChange → coordinator.notifyClosed, which opens the settle
+    // window. Keep it that way — don't assume the coordinator drove this close.
     sheetRef.current?.dismiss();
   }, [localFilters, localBoardFilters, onApply]);
 
