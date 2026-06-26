@@ -168,6 +168,46 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.jsQueueToolbarVisible).toBe(false);
   });
 
+  it('drops the JS toolbar reserve when suppressed on a social surface', () => {
+    // Flag-gated social hide: the bar returns null, so its reserve must vanish too
+    // — otherwise home/discover/profile strand a toolbar-sized gap + lifted FABs.
+    const base = {
+      uiVariant: 'liquidGlass' as const,
+      usesNativeTabBar: false,
+      insetsBottom: 0,
+      insideTabs: true,
+      hasCurrentClimb: true,
+      nativeAccessoryMounted: false,
+    };
+    const shown = computeBottomChromeMetrics({ ...base, jsQueueToolbarSuppressed: false });
+    const hidden = computeBottomChromeMetrics({ ...base, jsQueueToolbarSuppressed: true });
+
+    expect(shown.jsQueueToolbarVisible).toBe(true);
+    expect(shown.jsQueueReserve).toBe(TOOLBAR_RESERVE);
+
+    expect(hidden.jsQueueToolbarVisible).toBe(false);
+    expect(hidden.jsQueueReserve).toBe(0);
+    // No reserved gap, and the FAB sits right above the tab bar.
+    expect(hidden.scrollBottomPadding).toBe(MATERIAL_TAB_BAR_HEIGHT);
+    expect(hidden.floatingControlBottom).toBe(MATERIAL_TAB_BAR_HEIGHT);
+  });
+
+  it('does not affect the native accessory reserve (the hide is JS-path only)', () => {
+    const metrics = computeBottomChromeMetrics({
+      uiVariant: 'liquidGlass',
+      usesNativeTabBar: true,
+      insetsBottom: 0,
+      insideTabs: true,
+      hasCurrentClimb: true,
+      nativeAccessoryMounted: true,
+      jsQueueToolbarSuppressed: true,
+    });
+    // Native platter keeps its reserve — the social hide only governs the JS bar.
+    expect(metrics.nativeAccessoryVisible).toBe(true);
+    expect(metrics.nativeAccessoryReserve).toBe(NATIVE_ACCESSORY_RESERVE);
+    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE);
+  });
+
   it('never reports both the JS toolbar and the native accessory as visible at once', () => {
     for (const hasCurrentClimb of [true, false]) {
       for (const nativeAccessoryMounted of [true, false]) {

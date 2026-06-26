@@ -5,6 +5,7 @@ import { useTheme } from '../providers/theme-provider';
 import { isTabsChromeRoute } from '../lib/route-segments';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { useNativeAccessoryActive, useNativeTabBar } from './use-bottom-accessory';
+import { useQueueBarHiddenOnSocial } from '../components/queue-control/use-queue-bar-hidden';
 import { computeBottomChromeMetrics } from './bottom-chrome-metrics';
 
 /**
@@ -32,6 +33,9 @@ export function useBottomChromeMetrics() {
   const nativeAccessoryMounted = insideTabs && nativeAccessoryActive;
   const nativeTabBar = useNativeTabBar();
   const usesNativeTabBar = insideTabs && nativeTabBar;
+  // The flag-gated social hide also drops the JS toolbar's reserved space, so a
+  // hidden bar doesn't leave a toolbar-sized gap / over-lift the FABs.
+  const jsQueueToolbarSuppressed = useQueueBarHiddenOnSocial();
 
   return useMemo(
     () =>
@@ -42,7 +46,16 @@ export function useBottomChromeMetrics() {
         insideTabs,
         hasCurrentClimb,
         nativeAccessoryMounted,
+        jsQueueToolbarSuppressed,
       }),
-    [variant, usesNativeTabBar, insets.bottom, insideTabs, hasCurrentClimb, nativeAccessoryMounted],
+    [
+      variant,
+      usesNativeTabBar,
+      insets.bottom,
+      insideTabs,
+      hasCurrentClimb,
+      nativeAccessoryMounted,
+      jsQueueToolbarSuppressed,
+    ],
   );
 }

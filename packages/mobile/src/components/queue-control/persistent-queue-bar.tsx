@@ -21,15 +21,15 @@ import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, gl
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
-import { isAuthRoute, isGymDiscoveryRoute, isPlayerRoute, isSocialSurface } from '../../lib/route-segments';
+import { isAuthRoute, isGymDiscoveryRoute, isPlayerRoute } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
-import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 import { useAccessoryPresentation } from './use-accessory-presentation';
+import { useQueueBarHiddenOnSocial } from './use-queue-bar-hidden';
 
 // Re-export so layout consumers that already import toolbar metrics from this
 // module don't need to know which file owns them. Source of truth: theme/layout.
@@ -42,12 +42,11 @@ export function PersistentQueueBar() {
   const bottomChrome = useBottomChromeMetrics();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
-  // Now-playing context: `tier` gates social-surface visibility; `showTick`
-  // hides the tick for a peer's climb.
-  const { tier, showTick } = useAccessoryPresentation();
-  // Hiding the queue-only bar on social surfaces is the one behavioural change
-  // we A/B — gate it so we can compare accessory-open rates before rolling out.
-  const nowPlayingGateEnabled = useFeatureFlag('accessory-now-playing') === true;
+  // `showTick` hides the tick for a peer's climb. The social-surface hide (the
+  // one behavioural change we A/B) is shared with the bottom-chrome metrics so a
+  // hidden bar also stops reserving its space — see useQueueBarHiddenOnSocial.
+  const { showTick } = useAccessoryPresentation();
+  const hiddenOnSocial = useQueueBarHiddenOnSocial();
 
   if (!currentClimb) return null;
   // The sign-in / sign-up flow is pre-auth — a leftover queued or "on the wall"
@@ -62,7 +61,7 @@ export function PersistentQueueBar() {
   if (isPlayerRoute(segments)) return null;
   // On social/browsing tabs a queue-only bar (nothing lit) reads as a directive,
   // so hide it there. When a board is live the now-playing bar persists as status.
-  if (nowPlayingGateEnabled && tier === 'resume' && isSocialSurface(segments)) return null;
+  if (hiddenOnSocial) return null;
   if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) return null;
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });

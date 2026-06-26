@@ -40,6 +40,14 @@ export type BottomChromeInputs = {
   hasCurrentClimb: boolean;
   /** Whether the iOS 26 native bottom accessory is mounted (it replaces the JS toolbar). */
   nativeAccessoryMounted: boolean;
+  /**
+   * Whether the JS queue toolbar is suppressed on this surface despite a current
+   * climb — the flag-gated social-tab hide. Drops the reserve so a hidden bar
+   * doesn't strand a toolbar-sized gap. JS-path only (the native accessory keeps
+   * its own reserve), matching where the hide actually applies. Defaults to
+   * `false` (today's behaviour) when omitted.
+   */
+  jsQueueToolbarSuppressed?: boolean;
 };
 
 export type BottomChromeMetrics = {
@@ -102,9 +110,10 @@ export function computeBottomChromeMetrics({
   insideTabs,
   hasCurrentClimb,
   nativeAccessoryMounted,
+  jsQueueToolbarSuppressed = false,
 }: BottomChromeInputs): BottomChromeMetrics {
   const nativeAccessoryVisible = nativeAccessoryMounted && hasCurrentClimb;
-  const jsQueueToolbarVisible = hasCurrentClimb && !nativeAccessoryMounted;
+  const jsQueueToolbarVisible = hasCurrentClimb && !nativeAccessoryMounted && !jsQueueToolbarSuppressed;
   // The native iOS tab bar is 49pt; the JS M3 `MaterialTabBar` is taller. Key this
   // on the *rendered* bar, not the variant — Liquid Glass on iOS < 26 / Android
   // falls back to the JS bar. Floating overlays (FAB, snackbar) and scroll padding
