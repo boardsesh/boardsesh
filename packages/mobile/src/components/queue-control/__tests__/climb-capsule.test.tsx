@@ -261,6 +261,20 @@ describe('ClimbCapsule', () => {
     expect(eyebrowNode?.textContent).not.toContain('peerAnon');
   });
 
+  it('falls back to the anonymous peer eyebrow when the holder has no name', () => {
+    board.boardConnection = 'heldByPeer';
+    board.holderDisplayName = null;
+    const item = makeItem(makeClimb());
+    queue.state.currentClimbQueueItem = item;
+    queue.state.queue = [item];
+
+    const { container } = render(<ClimbCapsule />);
+
+    const texts = Array.from(container.querySelectorAll('[data-text]'));
+    const eyebrowNode = texts.find((node) => (node.textContent ?? '').includes('queueBar.nowPlaying.peerAnon'));
+    expect(eyebrowNode).toBeTruthy();
+  });
+
   it('renders the climb name when a climb is active', () => {
     const item = makeItem(makeClimb({ name: 'The Crimp Ladder' }));
     queue.state.currentClimbQueueItem = item;

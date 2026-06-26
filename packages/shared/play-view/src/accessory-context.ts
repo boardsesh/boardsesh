@@ -68,6 +68,9 @@ export function deriveAccessoryContext({
       showTick: true,
     };
   }
+  // Exhaustiveness: after the cases above, only 'disconnected' remains. Adding a
+  // new BoardConnection variant without a case here becomes a compile error.
+  boardConnection satisfies 'disconnected';
   // Disconnected — a local queue with nothing lit. Keep the tick so an offline
   // send can still be logged; the eyebrow + (on social surfaces) hiding the bar
   // is what stops it reading as a directive.

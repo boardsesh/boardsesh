@@ -356,6 +356,17 @@ describe('NativeAccessoryClimbRow', () => {
     expect(container.textContent).toContain("Alvin's Nuts");
   });
 
+  it('shows the up-next eyebrow (queue only, no board) in the regular placement', () => {
+    eyebrow.tone = 'upNext';
+    eyebrow.text = 'Up next';
+
+    const { container } = renderRow('regular');
+
+    expect(container.textContent).toContain('Up next');
+    // Tick still shows for your own queue head when disconnected.
+    expect(container.querySelector('[data-tick]')).not.toBeNull();
+  });
+
   it('hides the tick when a peer is driving the wall (read-only)', () => {
     eyebrow.tone = 'peer';
     eyebrow.text = 'Tara on the wall';
