@@ -17,6 +17,12 @@ const cfg = vi.hoisted(() => ({
   measuredTabBarHeight: null as number | null,
   nativeAccessoryActive: false,
   nativeTabBar: false,
+  // Now-playing presentation + the social-surface gate (default: board live,
+  // tick shown, flag off — i.e. today's behaviour).
+  tier: 'nowPlaying' as 'nowPlaying' | 'resume',
+  showTick: true,
+  onSocialSurface: false,
+  nowPlayingFlag: false,
 }));
 
 // useAccessoryClimbTap builds a preview queue item via climbToQueueItem, which
@@ -56,6 +62,20 @@ vi.mock('../../../lib/route-segments', () => ({
   isGymDiscoveryRoute: () => cfg.onGymDiscovery,
   isAuthRoute: () => cfg.onAuthRoute,
   isPlayerRoute: () => cfg.onPlayerRoute,
+  isSocialSurface: () => cfg.onSocialSurface,
+}));
+// Now-playing context + the feature flag that gates social-surface hiding.
+// Mocked so the real ones don't pull the board-connection / analytics (expo)
+// chains into the jsdom test.
+vi.mock('../use-accessory-presentation', () => ({
+  useAccessoryPresentation: () => ({
+    tier: cfg.tier,
+    showTick: cfg.showTick,
+    eyebrow: { kind: 'live', name: null },
+  }),
+}));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => cfg.nowPlayingFlag,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
@@ -149,6 +169,10 @@ describe('PersistentQueueBar', () => {
     cfg.measuredTabBarHeight = null;
     cfg.nativeAccessoryActive = false;
     cfg.nativeTabBar = false;
+    cfg.tier = 'nowPlaying';
+    cfg.showTick = true;
+    cfg.onSocialSurface = false;
+    cfg.nowPlayingFlag = false;
   });
 
   it('renders nothing when no climb is current', () => {
@@ -199,6 +223,64 @@ describe('PersistentQueueBar', () => {
     const { container } = render(<PersistentQueueBar />);
 
     expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('hides a queue-only bar on a social surface when the now-playing flag is on', () => {
+    // Browsing the feed/profile/discover with only a queue (nothing lit) — the bar
+    // would read as a directive, so it's suppressed once the flag is enabled.
+    cfg.nowPlayingFlag = true;
+    cfg.tier = 'resume';
+    cfg.onSocialSurface = true;
+    cfg.onClimbsTab = false;
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('keeps the bar on a social surface when a board is live (now-playing tier)', () => {
+    // Status, not a directive: while a board is lit the now-playing bar persists
+    // across every tab, exactly like a media mini-player.
+    cfg.nowPlayingFlag = true;
+    cfg.tier = 'nowPlaying';
+    cfg.onSocialSurface = true;
+    cfg.onClimbsTab = false;
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+  });
+
+  it('keeps a queue-only social bar when the flag is off (today’s behaviour)', () => {
+    cfg.nowPlayingFlag = false;
+    cfg.tier = 'resume';
+    cfg.onSocialSurface = true;
+    cfg.onClimbsTab = false;
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+  });
+
+  it('keeps a queue-only bar on a board-control surface even with the flag on', () => {
+    // The heavily-used /climbs and /record shortcut is preserved when disconnected.
+    cfg.nowPlayingFlag = true;
+    cfg.tier = 'resume';
+    cfg.onSocialSurface = false;
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
+  });
+
+  it('hides the tick when showTick is false (a peer is driving the wall)', () => {
+    cfg.showTick = false;
+
+    const { container } = render(<PersistentQueueBar />);
+
+    expect(container.querySelector('[data-capsule]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 

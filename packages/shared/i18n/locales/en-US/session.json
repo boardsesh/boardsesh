@@ -223,6 +223,12 @@
     "goal": "Goal: {{goal}}"
   },
   "queueBar": {
+    "nowPlaying": {
+      "live": "On the wall · live",
+      "peer": "{{name}} on the wall",
+      "peerAnon": "Someone on the wall",
+      "upNext": "Up next"
+    },
     "cancelReconnectConfirm": "Cancelling will leave the session. Is that what you want?",
     "shellMessage": "No climb selected",
     "startSesh": "Start sesh",

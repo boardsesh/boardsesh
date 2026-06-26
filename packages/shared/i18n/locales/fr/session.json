@@ -223,6 +223,12 @@
     "goal": "Objectif : {{goal}}"
   },
   "queueBar": {
+    "nowPlaying": {
+      "live": "Sur le mur · en direct",
+      "peer": "{{name}} sur le mur",
+      "peerAnon": "Quelqu'un sur le mur",
+      "upNext": "À suivre"
+    },
     "cancelReconnectConfirm": "Annuler quittera la session. C'est ce que tu veux ?",
     "shellMessage": "Aucun bloc sélectionné",
     "startSesh": "Lancer la sesh",

@@ -20,6 +20,7 @@ import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './Access
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
+import { useAccessoryEyebrow } from './use-accessory-presentation';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -30,32 +31,59 @@ type ClimbLabelProps = {
   gradeColor: string;
   showThumbnail: boolean;
   boardConfig: BoardConfig | null;
+  // The status caption above the name ("On the wall · live" / "Tara on the wall"
+  // / "Up next"). This is the whole disambiguator: it turns a bare climb name
+  // from a directive into a labelled status.
+  eyebrow: string;
+  eyebrowColor: ColorValue;
 };
 
-function ClimbLabel({ climb, labelColor, formattedGrade, gradeColor, showThumbnail, boardConfig }: ClimbLabelProps) {
+function ClimbLabel({
+  climb,
+  labelColor,
+  formattedGrade,
+  gradeColor,
+  showThumbnail,
+  boardConfig,
+  eyebrow,
+  eyebrowColor,
+}: ClimbLabelProps) {
   return (
     <View style={styles.labelInner}>
       {showThumbnail ? <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} /> : null}
-      <Text
-        variant="subheadline"
-        color={labelColor}
-        numberOfLines={1}
-        ellipsizeMode="tail"
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.name}
-      >
-        {climb.name}
-      </Text>
-      {formattedGrade ? (
+      <View style={styles.labelTextColumn}>
         <Text
-          variant="headline"
+          variant="caption1"
+          color={eyebrowColor}
           numberOfLines={1}
           maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={[styles.gradeText, { color: gradeColor }]}
+          style={styles.eyebrow}
         >
-          {formattedGrade}
+          {eyebrow}
         </Text>
-      ) : null}
+        <View style={styles.nameRow}>
+          <Text
+            variant="subheadline"
+            color={labelColor}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.name}
+          >
+            {climb.name}
+          </Text>
+          {formattedGrade ? (
+            <Text
+              variant="headline"
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              style={[styles.gradeText, { color: gradeColor }]}
+            >
+              {formattedGrade}
+            </Text>
+          ) : null}
+        </View>
+      </View>
     </View>
   );
 }
@@ -85,6 +113,8 @@ export function ClimbCapsule({
   // Connection state drives the leading control + the "you have control" glow.
   // Read from the single source so the bar can't disagree with the drawer bulb.
   const { boardConnection, bluetooth } = useBoardConnectionState();
+  // Status caption that labels what the bar is showing (live / peer / up next).
+  const { text: eyebrowText, tone: eyebrowTone } = useAccessoryEyebrow();
 
   // Source-of-truth flip: show the wall's lit climb when a board feed is live
   // (flag-gated), else the local queue head.
@@ -124,6 +154,9 @@ export function ClimbCapsule({
   // stripe recolors to the brand violet so it reads as a control-on edge marker.
   const showGradeAccent = surfaceTreatment === 'docked';
   const gradeAccentColor = connected ? brandColors.primary : grades.currentColor;
+  // "live" runs hot in the brand accent; peer / up-next stay quiet so they read
+  // as ambient status rather than a call to action.
+  const eyebrowColor = eyebrowTone === 'live' ? brandColors.primary : systemColors.secondaryLabel;
 
   return (
     <AccessoryBarSurface
@@ -154,6 +187,8 @@ export function ClimbCapsule({
               gradeColor={grades.currentColor}
               showThumbnail={showThumbnail}
               boardConfig={boardConfig}
+              eyebrow={eyebrowText}
+              eyebrowColor={eyebrowColor}
             />
           </View>
         </View>
@@ -218,6 +253,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
+  },
+  // Two-line text block beside the thumbnail: eyebrow caption over the name+grade
+  // row. Centered so it stays vertically balanced against the 40px thumbnail.
+  labelTextColumn: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  // Small uppercase status caption; the disambiguator between queue / live / peer.
+  eyebrow: {
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   gradeText: {
     // Colorized like the list rows; right-aligned with a reserved min width

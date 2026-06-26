@@ -10,6 +10,7 @@ import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
+import { useAccessoryEyebrow } from './use-accessory-presentation';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -36,33 +37,60 @@ type ClimbLabelProps = {
   formattedGrade: string | null;
   showThumbnail: boolean;
   boardConfig: BoardConfig | null;
+  // Status caption shown above the name in the `regular` placement only (null in
+  // `inline`, where the minimized platter has no vertical room for a second line).
+  eyebrow: string | null;
+  eyebrowColor: ColorValue;
 };
 
-function ClimbLabel({ climb, labelColor, formattedGrade, showThumbnail, boardConfig }: ClimbLabelProps) {
+function ClimbLabel({
+  climb,
+  labelColor,
+  formattedGrade,
+  showThumbnail,
+  boardConfig,
+  eyebrow,
+  eyebrowColor,
+}: ClimbLabelProps) {
   return (
     <View style={styles.labelInner}>
       {showThumbnail ? <AccessoryClimbThumbnail climb={climb} boardConfig={boardConfig} /> : null}
-      <Text
-        variant="subheadline"
-        color={labelColor}
-        numberOfLines={1}
-        ellipsizeMode="tail"
-        maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-        style={styles.name}
-      >
-        {climb.name}
-      </Text>
-      {formattedGrade ? (
-        <Text
-          variant="subheadline"
-          color={labelColor}
-          numberOfLines={1}
-          maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-          style={styles.gradeText}
-        >
-          {formattedGrade}
-        </Text>
-      ) : null}
+      <View style={styles.labelTextColumn}>
+        {eyebrow ? (
+          <Text
+            variant="caption1"
+            color={eyebrowColor}
+            numberOfLines={1}
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.eyebrow}
+          >
+            {eyebrow}
+          </Text>
+        ) : null}
+        <View style={styles.nameRow}>
+          <Text
+            variant="subheadline"
+            color={labelColor}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+            style={styles.name}
+          >
+            {climb.name}
+          </Text>
+          {formattedGrade ? (
+            <Text
+              variant="subheadline"
+              color={labelColor}
+              numberOfLines={1}
+              maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
+              style={styles.gradeText}
+            >
+              {formattedGrade}
+            </Text>
+          ) : null}
+        </View>
+      </View>
     </View>
   );
 }
@@ -79,13 +107,20 @@ function ClimbLabel({ climb, labelColor, formattedGrade, showThumbnail, boardCon
  */
 export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAccessoryClimbRowProps) {
   const { boardConfig } = useDrawerHost();
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const { formatGrade } = useGradeFormat();
   const { openGesture } = useAccessoryClimbTap();
+  // Eyebrow labels what the platter is showing; the tick is hidden for a peer's
+  // climb (you can't log someone else's send). This adds/removes content WITHIN
+  // the live row — it never re-gates the whole row, so the platter never blanks.
+  const { text: eyebrowText, tone, showTick } = useAccessoryEyebrow();
 
   const showThumbnail = placement === 'regular' && boardConfig !== null;
   const rowHeight = placement === 'inline' ? glassSize.inline : glassSize.standard;
   const currentFormattedGrade = formatGrade(climb.difficulty);
+  // Only the roomier `regular` placement has space for the second line.
+  const eyebrow = placement === 'regular' ? eyebrowText : null;
+  const eyebrowColor = tone === 'live' ? brandColors.primary : systemColors.secondaryLabel;
 
   return (
     <View style={[styles.row, { width, height: rowHeight }]}>
@@ -100,13 +135,17 @@ export function NativeAccessoryClimbRow({ climb, placement, width }: NativeAcces
               formattedGrade={currentFormattedGrade}
               showThumbnail={showThumbnail}
               boardConfig={boardConfig}
+              eyebrow={eyebrow}
+              eyebrowColor={eyebrowColor}
             />
           </View>
         </View>
       </GestureDetector>
-      <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
-        <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
-      </View>
+      {showTick ? (
+        <View style={[styles.tickSlot, { width: glassSize.inline, height: rowHeight }]}>
+          <LogAscentToolbarButton climb={climb} size={glassSize.inline} iconSize={24} />
+        </View>
+      ) : null}
       {/* Leading board control as a content-layer element (the platter is
           UIKit-owned, so the glow lives here, not on the glass). Static state
           swap; no long-press recognizer — it would fight UIKit's own gestures.
@@ -160,6 +199,22 @@ const styles = StyleSheet.create({
     gap: spacing[2],
     paddingLeft: spacing[2],
     paddingRight: spacing[1],
+  },
+  labelTextColumn: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minWidth: 0,
+    gap: spacing[2],
+  },
+  eyebrow: {
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   name: {
     flex: 1,

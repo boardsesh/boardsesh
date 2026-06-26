@@ -164,7 +164,8 @@ vi.mock('../../Text', () => ({
 
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    systemColors: { label: '#111111' },
+    systemColors: { label: '#111111', secondaryLabel: '#666666' },
+    brandColors: { primary: '#6D28D9' },
   }),
 }));
 
@@ -263,6 +264,11 @@ vi.mock('../LogAscentToolbarButton', () => ({
 // the row renders the local queue head exactly as today.
 vi.mock('../use-wall-or-queue-climb', () => ({
   useWallOrQueueCurrentClimb: (localClimb: unknown) => localClimb,
+}));
+// Eyebrow/tick context — mocked so the real hook doesn't pull the board-connection
+// (expo) chain into the jsdom test. `showTick: true` keeps the tick assertions.
+vi.mock('../use-accessory-presentation', () => ({
+  useAccessoryEyebrow: () => ({ text: 'On the wall · live', tone: 'live', showTick: true, tier: 'nowPlaying' }),
 }));
 
 import { NativeAccessoryClimbRow } from '../NativeAccessoryClimbRow';

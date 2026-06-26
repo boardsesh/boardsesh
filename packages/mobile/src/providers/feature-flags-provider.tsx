@@ -42,6 +42,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',
   },
+  {
+    key: 'accessory-now-playing',
+    label: 'Now-playing accessory bar',
+    description:
+      'Hide the queue-only active-climb bar on social tabs (home / profile / discover); it stays when a board is live.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the
