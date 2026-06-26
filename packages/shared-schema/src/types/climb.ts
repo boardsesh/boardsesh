@@ -112,6 +112,8 @@ export type ZoneBoxInput = {
 
 export type ZoneMatchMode = 'allHolds' | 'anyHold';
 
+export type AscentCountSource = 'all' | 'boardApp' | 'boardsesh';
+
 export type ClimbSearchInput = {
   boardName: string;
   layoutId: number;
@@ -128,9 +130,9 @@ export type ClimbSearchInput = {
   minAscents?: number;
   minRating?: number;
   sortBy?: string;
-  // Ascent-count source to rank by for ascents/popular sorts ('all' | 'boardApp'
-  // | 'boardsesh'). Default 'all' keeps the covering-index fast path.
-  ascentSource?: string;
+  // Ascent-count source to rank by for ascents/popular sorts. Default 'all'
+  // keeps the covering-index fast path.
+  ascentSource?: AscentCountSource;
   sortOrder?: string;
   name?: string;
   setter?: string[];

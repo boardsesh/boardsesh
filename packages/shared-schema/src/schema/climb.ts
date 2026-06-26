@@ -131,6 +131,18 @@ export const climbTypeDefs = /* GraphQL */ `
   }
 
   """
+  Which ascents to count when ranking by ascents/popular.
+  all: combined total (covering-index fast path).
+  boardApp: the board's own app, GREATEST(kilter, aurora).
+  boardsesh: ascents logged in Boardsesh.
+  """
+  enum AscentCountSource {
+    all
+    boardApp
+    boardsesh
+  }
+
+  """
   Input parameters for searching climbs.
   Supports filtering, sorting, and pagination.
   """
@@ -161,8 +173,8 @@ export const climbTypeDefs = /* GraphQL */ `
     minRating: Float
     "Field to sort by ('ascents', 'difficulty', 'name', 'quality', 'popular')"
     sortBy: String
-    "Ascent-count source to rank by when sorting by ascents/popular ('all' | 'boardApp' | 'boardsesh'). Default 'all' keeps the covering-index fast path."
-    ascentSource: String
+    "Ascent-count source to rank by when sorting by ascents/popular. Default 'all' keeps the covering-index fast path."
+    ascentSource: AscentCountSource
     "Sort direction ('asc' or 'desc')"
     sortOrder: String
     "Filter by climb name (partial match)"
