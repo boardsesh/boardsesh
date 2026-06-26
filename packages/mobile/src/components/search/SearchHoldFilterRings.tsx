@@ -180,6 +180,7 @@ const HoldFilterMarker = React.memo(function HoldFilterMarker({
             diameter={outerDiameter}
             strokeWidth={0}
             fillOpacity={0.55}
+            equalArea={false}
             style={[
               styles.absolute,
               {
@@ -233,6 +234,7 @@ const HoldFilterMarker = React.memo(function HoldFilterMarker({
             color={color}
             diameter={ringDiameter}
             strokeWidth={borderWidth}
+            equalArea={false}
             style={[
               styles.absolute,
               {

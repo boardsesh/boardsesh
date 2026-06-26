@@ -132,6 +132,7 @@ export function HoldFilterPicker({
                   diameter={markerDiameter}
                   strokeWidth={excluded ? 0 : markerStrokeWidth}
                   fillOpacity={excluded ? 0.55 : selected ? 0.32 : 0}
+                  equalArea={false}
                 />
                 {excluded ? (
                   <View style={styles.excludeIcon}>
