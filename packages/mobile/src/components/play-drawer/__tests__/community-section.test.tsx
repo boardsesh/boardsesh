@@ -69,24 +69,36 @@ vi.mock('../../../lib/ascent-count-source-preference', () => ({
   useAscentCountSource: () => useSyncExternalStore(preferenceStore.subscribe, preferenceStore.get, preferenceStore.get),
 }));
 
-// One angle with both a board-app split (kilter/aurora) and Boardsesh sends, so
-// the source toggle renders (needs >1 non-zero source) and nothing is disabled.
-const angleStats = [
-  {
-    angle: 40,
-    ascensionistCount: 10,
-    kilterAscensionistCount: 6,
-    auroraAscensionistCount: 4,
-    boardseshAscensionistCount: 3,
-    qualityAverage: 2.5,
-    difficultyAverage: 20,
-    displayDifficulty: 20,
-    difficulty: '20',
-    faUsername: null,
-    faAt: null,
-  },
-];
-vi.mock('../../../lib/graphql/hooks', () => ({ useClimbStatsForAngles: () => ({ data: angleStats }) }));
+// Mutable angle-stats holder so a test can swap the dataset (e.g. a single-source
+// climb) before rendering. Defaults to one angle with BOTH a board-app split
+// (kilter/aurora) and Boardsesh sends, so the source toggle renders (needs >1
+// non-zero source) and nothing is disabled.
+const statsStore = vi.hoisted(() => {
+  const twoSource = [
+    {
+      angle: 40,
+      ascensionistCount: 10,
+      kilterAscensionistCount: 6,
+      auroraAscensionistCount: 4,
+      boardseshAscensionistCount: 3,
+      qualityAverage: 2.5,
+      difficultyAverage: 20,
+      displayDifficulty: 20,
+      difficulty: '20',
+      faUsername: null,
+      faAt: null,
+    },
+  ];
+  let data: unknown = twoSource;
+  return {
+    twoSource,
+    get: (): unknown => data,
+    set: (next: unknown): void => {
+      data = next;
+    },
+  };
+});
+vi.mock('../../../lib/graphql/hooks', () => ({ useClimbStatsForAngles: () => ({ data: statsStore.get() }) }));
 
 import { CommunitySection } from '../CommunitySection';
 
@@ -109,6 +121,7 @@ function selectedSource(): string | null {
 describe('CommunitySection chart source seeding', () => {
   beforeEach(() => {
     preferenceStore.set({ source: 'all', loaded: false });
+    statsStore.set(statsStore.twoSource);
     segmented.onSelect = null;
   });
 
@@ -134,5 +147,41 @@ describe('CommunitySection chart source seeding', () => {
     act(() => preferenceStore.set({ source: 'boardApp', loaded: true }));
 
     expect(selectedSource()).toBe('boardsesh');
+  });
+
+  it('suppresses the source toggle when only one source has data', () => {
+    // Board-app-only climb: kilter/aurora sends but zero Boardsesh ticks, so just
+    // one source is non-zero — the toggle would be redundant with the headline.
+    statsStore.set([
+      {
+        angle: 40,
+        ascensionistCount: 6,
+        kilterAscensionistCount: 6,
+        auroraAscensionistCount: 4,
+        boardseshAscensionistCount: 0,
+        qualityAverage: 2.5,
+        difficultyAverage: 20,
+        displayDifficulty: 20,
+        difficulty: '20',
+        faUsername: null,
+        faAt: null,
+      },
+    ]);
+    act(() => preferenceStore.set({ source: 'all', loaded: true }));
+    render(
+      <CommunitySection
+        climbUuid="climb-2"
+        boardName="kilter"
+        qualityAverage="2.5"
+        ascensionistCount={6}
+        kilterAscensionistCount={6}
+        auroraAscensionistCount={4}
+        boardseshAscensionistCount={0}
+      />,
+    );
+
+    // No toggle, but the chart for that single source still renders.
+    expect(screen.queryByTestId('segmented')).toBeNull();
+    expect(screen.getByTestId('chart')).not.toBeNull();
   });
 });
