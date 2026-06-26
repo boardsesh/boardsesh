@@ -17,7 +17,11 @@ import {
   type MoonBoardLayoutKey,
 } from '@boardsesh/board-config';
 
-const HIDDEN_CUSTOM_MOONBOARD_LAYOUT_IDS = new Set<number>([MOONBOARD_LAYOUTS['mini-moonboard-2020'].id]);
+// Mini boards are hidden from the custom-board picker until their board art exists.
+const HIDDEN_CUSTOM_MOONBOARD_LAYOUT_IDS = new Set<number>([
+  MOONBOARD_LAYOUTS['mini-moonboard-2020'].id,
+  MOONBOARD_LAYOUTS['mini-moonboard-2025'].id,
+]);
 
 const MOONBOARD_PRODUCT_SIZE: ProductSizeData = {
   id: MOONBOARD_SIZE.id,

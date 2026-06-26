@@ -50,6 +50,7 @@ export const MOONBOARD_LAYOUTS = {
     folder: 'moonboardmasters2019',
   },
   'mini-moonboard-2020': { id: 6, name: 'Mini MoonBoard 2020', folder: 'minimoonboard2020' },
+  'mini-moonboard-2025': { id: 7, name: 'Mini MoonBoard 2025', folder: 'minimoonboard2025' },
 } as const;
 
 export type MoonBoardLayoutKey = keyof typeof MOONBOARD_LAYOUTS;
@@ -93,6 +94,10 @@ export const MOONBOARD_SETS: Record<MoonBoardLayoutKey, { id: number; name: stri
     { id: 26, name: 'Wooden Holds B', imageFile: 'woodenholdsb.png' },
     { id: 27, name: 'Wooden Holds C', imageFile: 'woodenholdsc.png' },
   ],
+  // Mini 2025 (holdsetup 22). Board-art images aren't in the repo yet (the Mini
+  // 2020 art is also still missing) — climbs import and holds render; the board
+  // photo overlay is a follow-up.
+  'mini-moonboard-2025': [{ id: 28, name: 'Wooden Holds', imageFile: 'woodenholds.png' }],
 };
 
 // MoonBoard grid configuration (same for all standard layouts)

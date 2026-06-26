@@ -21,6 +21,10 @@ import { moonBoardMethodToCharacteristic } from '@boardsesh/shared-schema/charac
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // =============================================================================
+// DEPRECATED for prod: superseded by import-moonboard-catalog.ts (app-API scrape,
+// all 7 boards, both angles, merge-in-place). Still used by the dev-db Docker
+// bootstrap, which bakes in the 2023 community dump — leave it wired there.
+// =============================================================================
 // Data Source
 // =============================================================================
 // MoonBoard problem data comes from a community-provided dump:

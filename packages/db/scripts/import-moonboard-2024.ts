@@ -16,6 +16,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // =============================================================================
 // MoonBoard 2024 authoritative import
 // =============================================================================
+// DEPRECATED: superseded by import-moonboard-catalog.ts, which imports all 7
+// boards (both angles) from the app-API scrape with real quality + ascensionist
+// data and merges in place. Kept for reference / the older single-file format.
+// =============================================================================
 // Imports the full MoonBoard 2024 catalog (~35k problems) at angle 40 from the
 // boardsesh/moonboard-scraper "Problems Moonboard 2024 40.json" file. The format
 // has no apiId/repeats/userRating and usually no date fields, so we derive a

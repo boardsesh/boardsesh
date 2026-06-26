@@ -60,6 +60,7 @@
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",
+    "db:import-moonboard-catalog": "NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/import-moonboard-catalog.ts",
     "db:import-aurora-unified": "tsx scripts/import-aurora-board-unified.ts",
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
