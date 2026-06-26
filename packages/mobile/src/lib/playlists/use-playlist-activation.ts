@@ -111,7 +111,6 @@ function buildPlaylistQueue(
 ): { queue: ClimbQueueItem[]; currentItem: ClimbQueueItem } {
   const queue: ClimbQueueItem[] = [];
   let currentItem: ClimbQueueItem | null = null;
-  let includesActivatedClimb = false;
   const reusableCurrentItem = activatedQueueItem?.climb.uuid === activatedClimb.uuid ? activatedQueueItem : null;
   const seen = new Set<string>();
 
@@ -123,23 +122,16 @@ function buildPlaylistQueue(
         ? reusableCurrentItem
         : climbToQueueItem(toSchemaClimb(climb));
     queue.push(item);
-    if (climb.uuid === activatedClimb.uuid) {
-      includesActivatedClimb = true;
-      currentItem = item;
-    }
+    if (climb.uuid === activatedClimb.uuid) currentItem = item;
   }
 
-  if (!includesActivatedClimb) {
-    currentItem = reusableCurrentItem ?? climbToQueueItem(toSchemaClimb(activatedClimb));
-    queue.push(currentItem);
-  }
+  if (currentItem) return { queue, currentItem };
 
-  if (!currentItem) {
-    currentItem = queue[0] ?? climbToQueueItem(toSchemaClimb(activatedClimb));
-    if (queue.length === 0) queue.push(currentItem);
-  }
-
-  return { queue, currentItem };
+  // The activated climb wasn't in the loaded list (or the list was empty) —
+  // append it so the queue always contains and centres on the tapped climb.
+  const appended = reusableCurrentItem ?? climbToQueueItem(toSchemaClimb(activatedClimb));
+  queue.push(appended);
+  return { queue, currentItem: appended };
 }
 
 /** Returns playlist activation controls to wire onto a climb row tap. */

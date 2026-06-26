@@ -434,6 +434,44 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
     });
 
+    it('bumps the count and requires a second confirm when the queue grows while the sheet is open', async () => {
+      const current = makeQueueItem('q-current', 'current');
+      const future = makeQueueItem('q-future', 'future');
+      mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
+      const tapped = makeClimb('b');
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped, makeClimb('c')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+      expect(result.current.queueReplaceSheet.visible).toBe(true);
+      expect(result.current.queueReplaceSheet.futureQueueCount).toBe(1);
+
+      // Another future item lands before the user confirms.
+      const extraFuture = makeQueueItem('q-future-2', 'future-2');
+      mocks.queueState = { queue: [current, future, extraFuture], currentClimbQueueItem: current };
+
+      await act(async () => {
+        result.current.queueReplaceSheet.onConfirm();
+      });
+
+      // First confirm only bumps the warning to the new count — it does NOT clear
+      // the queue, so the user re-acknowledges what they're about to lose.
+      expect(result.current.queueReplaceSheet.visible).toBe(true);
+      expect(result.current.queueReplaceSheet.futureQueueCount).toBe(2);
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+
+      // Second confirm (count now stable) goes through.
+      await act(async () => {
+        result.current.queueReplaceSheet.onConfirm();
+      });
+      await waitFor(() => {
+        expect(mocks.setQueue).toHaveBeenCalled();
+      });
+      expect(fetchPage).toHaveBeenCalled();
+    });
+
     it('cancelling the warning leaves the queue untouched', async () => {
       const current = makeQueueItem('q-current', 'current');
       const future = makeQueueItem('q-future', 'future');
