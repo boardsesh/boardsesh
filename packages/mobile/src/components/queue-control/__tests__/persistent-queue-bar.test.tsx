@@ -74,10 +74,9 @@ vi.mock('../use-accessory-presentation', () => ({
     eyebrow: { kind: 'live', name: null },
   }),
 }));
-// Shared by the bar AND the (real) bottom-chrome metrics — mirror the predicate.
-vi.mock('../use-queue-bar-hidden', () => ({
-  useQueueBarHiddenOnSocial: () => cfg.nowPlayingFlag && cfg.tier === 'resume' && cfg.onSocialSurface,
-}));
+// NB: '../use-queue-bar-hidden' is NOT mocked — the real pure predicate runs,
+// driven by the useFeatureFlag / isSocialSurface / useAccessoryPresentation mocks
+// above, so the test never re-implements the hide condition.
 vi.mock('../../../providers/feature-flags-provider', () => ({
   useFeatureFlag: () => cfg.nowPlayingFlag,
 }));

@@ -7,7 +7,7 @@
 // safely — and centralise the "which surface am I on" checks so callers never
 // index raw segment positions.
 
-type Segments = readonly string[];
+export type Segments = readonly string[];
 
 const TABS_GROUP = '(tabs)';
 const CLIMBS_TAB = 'climbs';

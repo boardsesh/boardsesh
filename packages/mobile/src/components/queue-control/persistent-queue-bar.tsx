@@ -23,13 +23,14 @@ import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
 import { isAuthRoute, isGymDiscoveryRoute, isPlayerRoute } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
+import { useFeatureFlag } from '../../providers/feature-flags-provider';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
 import { LogAscentFab } from './LogAscentFab';
 import { LogAscentToolbarButton } from './LogAscentToolbarButton';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
 import { useAccessoryPresentation } from './use-accessory-presentation';
-import { useQueueBarHiddenOnSocial } from './use-queue-bar-hidden';
+import { shouldHideQueueBarOnSocial } from './use-queue-bar-hidden';
 
 // Re-export so layout consumers that already import toolbar metrics from this
 // module don't need to know which file owns them. Source of truth: theme/layout.
@@ -42,11 +43,13 @@ export function PersistentQueueBar() {
   const bottomChrome = useBottomChromeMetrics();
 
   const currentClimb = useWallOrQueueCurrentClimb(state.currentClimbQueueItem?.climb ?? null);
-  // `showTick` hides the tick for a peer's climb. The social-surface hide (the
-  // one behavioural change we A/B) is shared with the bottom-chrome metrics so a
-  // hidden bar also stops reserving its space — see useQueueBarHiddenOnSocial.
-  const { showTick } = useAccessoryPresentation();
-  const hiddenOnSocial = useQueueBarHiddenOnSocial();
+  // One connection-state read here: `showTick` hides the tick for a peer's climb,
+  // and `tier` feeds the social-surface hide. The hide uses the same pure
+  // predicate as useBottomChromeMetrics (which drops the reserved space), so a
+  // hidden bar never strands a gap — see shouldHideQueueBarOnSocial.
+  const { showTick, tier } = useAccessoryPresentation();
+  const nowPlayingFlag = useFeatureFlag('accessory-now-playing') === true;
+  const hiddenOnSocial = shouldHideQueueBarOnSocial(nowPlayingFlag, tier, segments);
 
   if (!currentClimb) return null;
   // The sign-in / sign-up flow is pre-auth — a leftover queued or "on the wall"
