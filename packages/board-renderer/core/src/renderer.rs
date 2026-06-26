@@ -42,6 +42,25 @@ fn marker_shape_path(shape: HoldMarkerShape, cx: f32, cy: f32, r: f32) -> Option
             builder.close();
             builder.finish()
         }
+        // Regular octagon, flat top/bottom (stop-sign orientation): vertices at
+        // angle = π/8 + i·π/4. Shared geometry with the JS SVG renderer.
+        HoldMarkerShape::Octagon => {
+            let mut builder = PathBuilder::new();
+            for i in 0..8 {
+                let angle = std::f32::consts::PI / 8.0 + (i as f32) * std::f32::consts::PI / 4.0;
+                let x = cx + r * angle.cos();
+                let y = cy + r * angle.sin();
+                if i == 0 {
+                    builder.move_to(x, y);
+                } else {
+                    builder.line_to(x, y);
+                }
+            }
+            builder.close();
+            builder.finish()
+        }
+        // Unknown future shape from a newer JS bundle: fall back to a circle.
+        HoldMarkerShape::Unknown => PathBuilder::from_circle(cx, cy, r),
     }
 }
 
@@ -306,6 +325,7 @@ mod tests {
             HoldMarkerShape::TriangleDown,
             HoldMarkerShape::Square,
             HoldMarkerShape::Diamond,
+            HoldMarkerShape::Octagon,
         ] {
             let data = render_single_shape(shape);
             assert!(
@@ -349,6 +369,23 @@ mod tests {
         let (large_data, _, _) = render_overlay(&large_config).unwrap();
 
         assert_ne!(small_data, large_data);
+    }
+
+    #[test]
+    fn test_octagon_shape_deserialises() {
+        let info: HoldStateInfo = serde_json::from_str(r##"{"color":"#00FF00","shape":"octagon"}"##).unwrap();
+        assert_eq!(info.shape, HoldMarkerShape::Octagon);
+    }
+
+    #[test]
+    fn test_unknown_shape_falls_back_instead_of_failing_parse() {
+        // A newer JS bundle could send a shape this binary doesn't know; it must
+        // deserialise to Unknown (rendered as a circle), not error the whole config.
+        let info: HoldStateInfo =
+            serde_json::from_str(r##"{"color":"#00FF00","shape":"hexagram-from-the-future"}"##).unwrap();
+        assert_eq!(info.shape, HoldMarkerShape::Unknown);
+        let data = render_single_shape(HoldMarkerShape::Unknown);
+        assert!(data.chunks(4).any(|pixel| pixel[3] > 0));
     }
 
     fn render_single_shape(shape: HoldMarkerShape) -> Vec<u8> {

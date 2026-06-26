@@ -19,25 +19,49 @@
       "accessibility": {
         "title": "Accessibility",
         "description": "Pick hold colours and marker shapes that are easier to tell apart. Shape, size, and brush changes only affect the app overlay, not the board lights.",
+        "rowSubtitleShort": "Hold colours and shapes for colour vision",
+        "markersTitle": "Hold markers",
         "resetAll": "Reset hold markers",
         "save": "Save marker",
         "rowAccessibility": "{{role}}, {{mode}}",
         "rowSubtitle": "{{colorMode}}, {{shape}}",
-        "pickerSubtitle": "Use any RGB colour and marker shape.",
+        "pickerSubtitle": "Set the lightness first, then saturation and hue.",
         "shapeLabel": "Shape",
         "modeLabel": "Hold colour mode",
         "defaultCopy": "Boardsesh will use the default colour for this hold type and skip it in Bluetooth overrides.",
-        "invalidRgb": "Use numbers from 0 to 255.",
+        "hexLabel": "Hex",
+        "invalidHex": "Use a hex colour like #33ccff.",
         "mode": {
           "default": "Default",
           "user": "User colour"
+        },
+        "sliders": {
+          "lightness": "Lightness",
+          "saturation": "Saturation",
+          "hue": "Hue"
         },
         "shapes": {
           "circle": "Circle",
           "triangleUp": "Triangle up",
           "triangleDown": "Triangle down",
           "square": "Square",
-          "diamond": "Diamond"
+          "diamond": "Diamond",
+          "octagon": "Octagon"
+        },
+        "preview": {
+          "title": "Preview",
+          "caption": "Your markers on your board. Colours show as-is here — use the check below to see how they read."
+        },
+        "cvd": {
+          "title": "Colour-blind check",
+          "subtitle": "See how your markers look with different types of colour blindness, so the four roles stay easy to tell apart.",
+          "none": "Normal",
+          "deuteranopiaShort": "Deutan",
+          "protanopiaShort": "Protan",
+          "tritanopiaShort": "Tritan"
+        },
+        "compare": {
+          "accessibility": "Hold role colours preview"
         },
         "brush": {
           "title": "Brush thickness",
@@ -52,11 +76,6 @@
           "value": "{{value}}x",
           "save": "Save size",
           "rowAccessibility": "Marker size, {{value}}x"
-        },
-        "channels": {
-          "red": "Red",
-          "green": "Green",
-          "blue": "Blue"
         },
         "roles": {
           "starting": "Start",

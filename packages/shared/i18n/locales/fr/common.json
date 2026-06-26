@@ -19,25 +19,49 @@
       "accessibility": {
         "title": "Accessibilité",
         "description": "Choisis des couleurs de prises plus faciles à distinguer. Par défaut utilise les couleurs normales de chaque board et n'envoie aucune surcharge Bluetooth.",
-        "resetAll": "Réinitialiser les couleurs des prises",
-        "save": "Enregistrer la couleur",
+        "rowSubtitleShort": "Couleurs et formes des prises pour la vision des couleurs",
+        "markersTitle": "Marqueurs de prise",
+        "resetAll": "Réinitialiser les marqueurs de prise",
+        "save": "Enregistrer le marqueur",
         "rowAccessibility": "{{role}}, {{mode}}",
-        "pickerSubtitle": "Utilise n'importe quelle couleur RGB.",
+        "rowSubtitle": "{{colorMode}}, {{shape}}",
+        "pickerSubtitle": "Règle d'abord la luminosité, puis la saturation et la teinte.",
+        "shapeLabel": "Forme",
         "modeLabel": "Mode de couleur des prises",
         "defaultCopy": "Boardsesh utilisera la couleur par défaut pour ce type de prise et l'omettra des surcharges Bluetooth.",
-        "invalidRgb": "Utilise des nombres de 0 à 255.",
+        "hexLabel": "Hex",
+        "invalidHex": "Utilise une couleur hex comme #33ccff.",
         "mode": {
           "default": "Par défaut",
           "user": "Couleur personnalisée"
         },
-        "rowSubtitle": "{{colorMode}}, {{shape}}",
-        "shapeLabel": "Forme",
+        "sliders": {
+          "lightness": "Luminosité",
+          "saturation": "Saturation",
+          "hue": "Teinte"
+        },
         "shapes": {
           "circle": "Cercle",
           "triangleUp": "Triangle vers le haut",
           "triangleDown": "Triangle vers le bas",
           "square": "Carré",
-          "diamond": "Losange"
+          "diamond": "Losange",
+          "octagon": "Octogone"
+        },
+        "preview": {
+          "title": "Aperçu",
+          "caption": "Tes marqueurs sur ton board. Les couleurs sont affichées telles quelles ici — utilise la vérification ci-dessous pour voir comment elles se distinguent."
+        },
+        "cvd": {
+          "title": "Vérification daltonisme",
+          "subtitle": "Regarde comment tes marqueurs apparaissent avec différents types de daltonisme, pour que les quatre rôles restent faciles à distinguer.",
+          "none": "Normal",
+          "deuteranopiaShort": "Deután",
+          "protanopiaShort": "Protan",
+          "tritanopiaShort": "Tritan"
+        },
+        "compare": {
+          "accessibility": "Aperçu des couleurs des rôles de prise"
         },
         "brush": {
           "title": "Épaisseur du trait",
@@ -52,11 +76,6 @@
           "value": "{{value}}x",
           "save": "Enregistrer la taille",
           "rowAccessibility": "Taille du marqueur, {{value}}x"
-        },
-        "channels": {
-          "red": "Rouge",
-          "green": "Vert",
-          "blue": "Bleu"
         },
         "roles": {
           "starting": "Départ",

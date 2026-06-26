@@ -217,25 +217,49 @@
       "accessibility": {
         "title": "Accesibilidad",
         "description": "Elige colores de presas que sean más fáciles de distinguir. Predeterminado usa los colores normales de cada plafón y no envía cambios por Bluetooth.",
-        "resetAll": "Restablecer colores de presas",
-        "save": "Guardar color",
+        "rowSubtitleShort": "Colores y formas de presas para la visión del color",
+        "markersTitle": "Marcadores de presa",
+        "resetAll": "Restablecer marcadores de presa",
+        "save": "Guardar marcador",
         "rowAccessibility": "{{role}}, {{mode}}",
-        "pickerSubtitle": "Usa cualquier color RGB.",
+        "rowSubtitle": "{{colorMode}}, {{shape}}",
+        "pickerSubtitle": "Ajusta primero la luminosidad, luego la saturación y el tono.",
+        "shapeLabel": "Forma",
         "modeLabel": "Modo de color de presa",
         "defaultCopy": "Boardsesh usará el color predeterminado de este tipo de presa y lo omitirá en los cambios de Bluetooth.",
-        "invalidRgb": "Usa números del 0 al 255.",
+        "hexLabel": "Hex",
+        "invalidHex": "Usa un color hex como #33ccff.",
         "mode": {
           "default": "Predeterminado",
           "user": "Color personalizado"
         },
-        "rowSubtitle": "{{colorMode}}, {{shape}}",
-        "shapeLabel": "Forma",
+        "sliders": {
+          "lightness": "Luminosidad",
+          "saturation": "Saturación",
+          "hue": "Tono"
+        },
         "shapes": {
           "circle": "Círculo",
           "triangleUp": "Triángulo arriba",
           "triangleDown": "Triángulo abajo",
           "square": "Cuadrado",
-          "diamond": "Rombo"
+          "diamond": "Rombo",
+          "octagon": "Octágono"
+        },
+        "preview": {
+          "title": "Vista previa",
+          "caption": "Tus marcadores en tu plafón. Aquí los colores se ven tal cual; usa la comprobación de abajo para ver cómo se distinguen."
+        },
+        "cvd": {
+          "title": "Comprobación de daltonismo",
+          "subtitle": "Mira cómo se ven tus marcadores con distintos tipos de daltonismo, para que los cuatro roles sigan siendo fáciles de distinguir.",
+          "none": "Normal",
+          "deuteranopiaShort": "Deután",
+          "protanopiaShort": "Protán",
+          "tritanopiaShort": "Tritán"
+        },
+        "compare": {
+          "accessibility": "Vista previa de colores de roles de presa"
         },
         "brush": {
           "title": "Grosor del trazo",
@@ -250,11 +274,6 @@
           "value": "{{value}}x",
           "save": "Guardar tamaño",
           "rowAccessibility": "Tamaño del marcador, {{value}}x"
-        },
-        "channels": {
-          "red": "Rojo",
-          "green": "Verde",
-          "blue": "Azul"
         },
         "roles": {
           "starting": "Inicio",

@@ -2,19 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
   type ColorValue,
   type GestureResponderEvent,
-  type StyleProp,
-  type TextStyle,
 } from 'react-native';
-import { BottomSheetModal, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { toBoardName } from '@boardsesh/board-config';
+import { STATE_TO_PRIMARY_CODE } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
-import Svg, { Circle, Polygon, Rect } from 'react-native-svg';
 import { Button } from '../Button';
 import { Icon } from '../Icon';
 import { ListRow } from '../ListRow';
@@ -22,8 +21,13 @@ import { ModalSheet } from '../ModalSheet';
 import { SectionHeader } from '../SectionHeader';
 import { SegmentedControl } from '../SegmentedControl';
 import { Text } from '../Text';
+import { BoardImageNative } from '../BoardImageNative';
+import { HoldMarkerShapeSvg } from '../board-renderer/HoldMarkerShape';
 import { useTheme } from '../../providers/theme-provider';
 import { useActiveBoard } from '../../lib/graphql/use-active-board';
+import { getBoardRenderData } from '../../lib/board-details';
+import { simulateCvd, type CvdType } from '../../lib/cvd-simulation';
+import { OkhslColorPicker } from './OkhslColorPicker';
 import {
   DEFAULT_HOLD_COLOR_SIGNATURE,
   DEFAULT_HOLD_BRUSH_THICKNESS,
@@ -39,20 +43,16 @@ import {
   getEffectiveHoldRoleColor,
   getEffectiveHoldRoleShape,
   hasHoldMarkerOverrides,
-  hexToRgb,
-  normalizeHexColor,
   normalizeBrushThickness,
   normalizeHoldShapeSize,
-  parseRgbChannel,
-  rgbToHex,
   useHoldColorOverrides,
   type HoldColorOverrideRole,
   type HoldMarkerShape,
-  type RgbColor,
 } from '../../lib/hold-color-overrides';
 import { borderRadius, spacing } from '../../theme/tokens';
 
 type ColorMode = 'default' | 'user';
+type CvdMode = 'none' | CvdType;
 
 function labelForRole(t: TFunction<'common'>, role: HoldColorOverrideRole): string {
   switch (role) {
@@ -79,37 +79,87 @@ function labelForShape(t: TFunction<'common'>, shape: HoldMarkerShape): string {
       return t('mobile.more.accessibility.shapes.square');
     case 'diamond':
       return t('mobile.more.accessibility.shapes.diamond');
+    case 'octagon':
+      return t('mobile.more.accessibility.shapes.octagon');
   }
-}
-
-function rgbTextFromHex(color: string): RgbColorText {
-  const rgb = hexToRgb(color) ?? { red: 0, green: 0, blue: 0 };
-  return {
-    red: String(rgb.red),
-    green: String(rgb.green),
-    blue: String(rgb.blue),
-  };
-}
-
-type RgbColorText = {
-  red: string;
-  green: string;
-  blue: string;
-};
-
-function rgbFromText(rgbText: RgbColorText): RgbColor | null {
-  const red = parseRgbChannel(rgbText.red);
-  const green = parseRgbChannel(rgbText.green);
-  const blue = parseRgbChannel(rgbText.blue);
-  if (red === null || green === null || blue === null) return null;
-  return { red, green, blue };
 }
 
 function boardNameFromActiveBoard(boardType: string | undefined): BoardName {
   return toBoardName(boardType) ?? 'kilter';
 }
 
-export function HoldColorAccessibilitySection() {
+function applyCvd(color: string, mode: CvdMode): string {
+  return mode === 'none' ? color : simulateCvd(color, mode);
+}
+
+/**
+ * Synthesise a representative climb that lights one hold of every override role
+ * (start/mid/finish/foot) so the live board preview always shows all four marker
+ * styles. Picks holds spread top→bottom by cy (smaller cy = higher on the board:
+ * finish up top, feet down low). Returns an Aurora frames string `p<id>r<code>`.
+ */
+function buildSampleClimbFrames(boardName: BoardName, holdsData: { id: number; cy: number }[]): string {
+  const codes = STATE_TO_PRIMARY_CODE[boardName];
+  if (!codes || holdsData.length < 4) return '';
+
+  const sorted = [...holdsData].sort((a, b) => a.cy - b.cy);
+  const pick = (fraction: number) => sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))];
+
+  // role → a vertical position that reads naturally on a wall.
+  const placements: { code: number | undefined; hold: { id: number } }[] = [
+    { code: codes.FINISH, hold: pick(0.05) },
+    { code: codes.HAND, hold: pick(0.35) },
+    { code: codes.HAND, hold: pick(0.55) },
+    { code: codes.STARTING, hold: pick(0.78) },
+    { code: codes.FOOT, hold: pick(0.92) },
+    { code: codes.FOOT, hold: pick(0.98) },
+  ];
+
+  const seen = new Set<number>();
+  return placements
+    .filter((placement): placement is { code: number; hold: { id: number } } => placement.code !== undefined)
+    .filter((placement) => {
+      if (seen.has(placement.hold.id)) return false;
+      seen.add(placement.hold.id);
+      return true;
+    })
+    .map((placement) => `p${placement.hold.id}r${placement.code}`)
+    .join('');
+}
+
+function MarkerSwatch({
+  color,
+  shape,
+  thickness = DEFAULT_HOLD_BRUSH_THICKNESS,
+  size = DEFAULT_HOLD_SHAPE_SIZE,
+}: {
+  color: ColorValue;
+  shape: HoldMarkerShape;
+  thickness?: number;
+  size?: number;
+}) {
+  const { systemColors } = useTheme();
+  const strokeWidth = Math.max(1.5, 2.25 * thickness);
+  const shapeSize = normalizeHoldShapeSize(size);
+  const diameter = 20 * shapeSize;
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.swatch, { borderColor: systemColors.separator }]}
+    >
+      <HoldMarkerShapeSvg
+        shape={shape}
+        color={typeof color === 'string' ? color : '#000000'}
+        diameter={diameter}
+        strokeWidth={strokeWidth}
+        fillOpacity={0.25}
+      />
+    </View>
+  );
+}
+
+export function AccessibilitySettingsScreen() {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
   const { data: activeBoard } = useActiveBoard();
@@ -129,7 +179,44 @@ export function HoldColorAccessibilitySection() {
   const [selectedRole, setSelectedRole] = useState<HoldColorOverrideRole | null>(null);
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
+  const [cvdMode, setCvdMode] = useState<CvdMode>('none');
   const hasOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE && hasHoldMarkerOverrides(markerOverrides);
+
+  const cvdOptions = useMemo<{ key: CvdMode; label: string }[]>(
+    () => [
+      { key: 'none', label: t('mobile.more.accessibility.cvd.none') },
+      { key: 'deuteranopia', label: t('mobile.more.accessibility.cvd.deuteranopiaShort') },
+      { key: 'protanopia', label: t('mobile.more.accessibility.cvd.protanopiaShort') },
+      { key: 'tritanopia', label: t('mobile.more.accessibility.cvd.tritanopiaShort') },
+    ],
+    [t],
+  );
+
+  // Live board preview: render the active board with a synthesised climb that
+  // lights all four roles. The overlay colours/shapes come from the global
+  // override store automatically (BoardImageNative → useNativeClimbRender), so
+  // it reflects edits live. The board photo can't be CVD-simulated, so the
+  // simulation toggle drives the swatch strip below instead.
+  const boardPreview = useMemo(() => {
+    if (!activeBoard) return null;
+    const renderData = getBoardRenderData({
+      boardName,
+      layoutId: activeBoard.layoutId,
+      sizeId: activeBoard.sizeId,
+      setIds: activeBoard.setIds.split(',').map(Number).filter(Boolean),
+    });
+    if (!renderData) return null;
+    const frames = buildSampleClimbFrames(boardName, renderData.holdsData);
+    if (!frames) return null;
+    return {
+      frames,
+      layoutId: activeBoard.layoutId,
+      sizeId: activeBoard.sizeId,
+      setIds: activeBoard.setIds,
+      boardWidth: renderData.boardWidth,
+      boardHeight: renderData.boardHeight,
+    };
+  }, [activeBoard, boardName]);
 
   const handleSaveRole = useCallback(
     (role: HoldColorOverrideRole, color: string | null, shape: HoldMarkerShape) => {
@@ -140,84 +227,144 @@ export function HoldColorAccessibilitySection() {
   );
 
   return (
-    <View style={styles.section}>
-      <SectionHeader title={t('mobile.more.accessibility.title')} />
-      <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-        <View style={styles.header}>
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
-            {t('mobile.more.accessibility.description')}
-          </Text>
-          {hasOverrides ? (
-            <Pressable accessibilityRole="button" onPress={resetOverrides} style={styles.resetButton}>
-              <Text variant="footnote" color={systemColors.accent}>
-                {t('mobile.more.accessibility.resetAll')}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-        {HOLD_COLOR_OVERRIDE_ROLES.map((role, index) => {
-          const roleOverride = overrides[role];
-          const roleShape = getEffectiveHoldRoleShape(role, shapes);
-          const roleLabel = labelForRole(t, role);
-          const modeLabel = roleOverride
-            ? t('mobile.more.accessibility.mode.user')
-            : t('mobile.more.accessibility.mode.default');
-          const shapeLabel = labelForShape(t, roleShape);
-          const subtitle = t('mobile.more.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel });
-          const swatchColor = getEffectiveHoldRoleColor(boardName, role, overrides);
-          const hasRoleOverride = !!roleOverride || roleShape !== DEFAULT_HOLD_MARKER_SHAPE;
-          return (
-            <ListRow
-              key={role}
-              title={roleLabel}
-              subtitle={subtitle}
-              accessibilityLabel={t('mobile.more.accessibility.rowAccessibility', {
-                role: roleLabel,
-                mode: subtitle,
-              })}
-              leading={<MarkerSwatch color={swatchColor} shape={roleShape} size={shapeSize} />}
-              trailing={hasRoleOverride ? <Icon name="check.small" size={20} color={systemColors.accent} /> : undefined}
-              showChevron
-              showSeparator={index < HOLD_COLOR_OVERRIDE_ROLES.length}
-              onPress={() => setSelectedRole(role)}
-            />
-          );
-        })}
-        <ListRow
-          title={t('mobile.more.accessibility.brush.title')}
-          subtitle={t('mobile.more.accessibility.brush.value', { value: brushThickness.toFixed(1) })}
-          accessibilityLabel={t('mobile.more.accessibility.brush.rowAccessibility', {
-            value: brushThickness.toFixed(1),
-          })}
-          leading={
-            <MarkerSwatch color={systemColors.accent} shape="circle" thickness={brushThickness} size={shapeSize} />
-          }
-          trailing={
-            brushThickness !== DEFAULT_HOLD_BRUSH_THICKNESS ? (
-              <Icon name="check.small" size={20} color={systemColors.accent} />
-            ) : undefined
-          }
-          showChevron
-          showSeparator
-          onPress={() => setThicknessSheetOpen(true)}
-        />
-        <ListRow
-          title={t('mobile.more.accessibility.size.title')}
-          subtitle={t('mobile.more.accessibility.size.value', { value: shapeSize.toFixed(1) })}
-          accessibilityLabel={t('mobile.more.accessibility.size.rowAccessibility', {
-            value: shapeSize.toFixed(1),
-          })}
-          leading={<MarkerSwatch color={systemColors.accent} shape="diamond" size={shapeSize} />}
-          trailing={
-            shapeSize !== DEFAULT_HOLD_SHAPE_SIZE ? (
-              <Icon name="check.small" size={20} color={systemColors.accent} />
-            ) : undefined
-          }
-          showChevron
-          showSeparator={false}
-          onPress={() => setSizeSheetOpen(true)}
-        />
+    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.scrollContent}>
+      <View style={styles.intro}>
+        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
+          {t('mobile.more.accessibility.description')}
+        </Text>
       </View>
+
+      {boardPreview ? (
+        <View style={styles.previewSection}>
+          <SectionHeader title={t('mobile.more.accessibility.preview.title')} />
+          <View style={[styles.previewCard, { backgroundColor: systemColors.secondaryBackground }]}>
+            <BoardImageNative
+              frames={boardPreview.frames}
+              boardName={boardName}
+              layoutId={boardPreview.layoutId}
+              sizeId={boardPreview.sizeId}
+              setIds={boardPreview.setIds}
+              boardWidth={boardPreview.boardWidth}
+              boardHeight={boardPreview.boardHeight}
+              renderWidth={600}
+              style={styles.previewBoard}
+            />
+            <Text variant="caption1" color={systemColors.secondaryLabel} style={styles.previewCaption}>
+              {t('mobile.more.accessibility.preview.caption')}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.more.accessibility.cvd.title')} />
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+          <View style={styles.cardPadded}>
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
+              {t('mobile.more.accessibility.cvd.subtitle')}
+            </Text>
+            <SegmentedControl
+              options={cvdOptions}
+              selectedKey={cvdMode}
+              onSelect={setCvdMode}
+              trackColor={systemColors.fill}
+              accessibilityLabel={t('mobile.more.accessibility.cvd.title')}
+            />
+            <View style={styles.roleStrip} accessibilityLabel={t('mobile.more.accessibility.compare.accessibility')}>
+              {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
+                const swatchColor = applyCvd(getEffectiveHoldRoleColor(boardName, role, overrides), cvdMode);
+                const roleShape = getEffectiveHoldRoleShape(role, shapes);
+                return (
+                  <View key={role} style={styles.roleStripItem}>
+                    <MarkerSwatch color={swatchColor} shape={roleShape} size={shapeSize} thickness={brushThickness} />
+                    <Text variant="caption2" color={systemColors.secondaryLabel} numberOfLines={1}>
+                      {labelForRole(t, role)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.more.accessibility.markersTitle')} />
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+          {HOLD_COLOR_OVERRIDE_ROLES.map((role) => {
+            const roleOverride = overrides[role];
+            const roleShape = getEffectiveHoldRoleShape(role, shapes);
+            const roleLabel = labelForRole(t, role);
+            const modeLabel = roleOverride
+              ? t('mobile.more.accessibility.mode.user')
+              : t('mobile.more.accessibility.mode.default');
+            const shapeLabel = labelForShape(t, roleShape);
+            const subtitle = t('mobile.more.accessibility.rowSubtitle', { colorMode: modeLabel, shape: shapeLabel });
+            const swatchColor = applyCvd(getEffectiveHoldRoleColor(boardName, role, overrides), cvdMode);
+            const hasRoleOverride = !!roleOverride || roleShape !== DEFAULT_HOLD_MARKER_SHAPE;
+            return (
+              <ListRow
+                key={role}
+                title={roleLabel}
+                subtitle={subtitle}
+                accessibilityLabel={t('mobile.more.accessibility.rowAccessibility', {
+                  role: roleLabel,
+                  mode: subtitle,
+                })}
+                leading={<MarkerSwatch color={swatchColor} shape={roleShape} size={shapeSize} />}
+                trailing={
+                  hasRoleOverride ? <Icon name="check.small" size={20} color={systemColors.accent} /> : undefined
+                }
+                showChevron
+                showSeparator
+                onPress={() => setSelectedRole(role)}
+              />
+            );
+          })}
+          <ListRow
+            title={t('mobile.more.accessibility.brush.title')}
+            subtitle={t('mobile.more.accessibility.brush.value', { value: brushThickness.toFixed(1) })}
+            accessibilityLabel={t('mobile.more.accessibility.brush.rowAccessibility', {
+              value: brushThickness.toFixed(1),
+            })}
+            leading={
+              <MarkerSwatch color={systemColors.accent} shape="circle" thickness={brushThickness} size={shapeSize} />
+            }
+            trailing={
+              brushThickness !== DEFAULT_HOLD_BRUSH_THICKNESS ? (
+                <Icon name="check.small" size={20} color={systemColors.accent} />
+              ) : undefined
+            }
+            showChevron
+            showSeparator
+            onPress={() => setThicknessSheetOpen(true)}
+          />
+          <ListRow
+            title={t('mobile.more.accessibility.size.title')}
+            subtitle={t('mobile.more.accessibility.size.value', { value: shapeSize.toFixed(1) })}
+            accessibilityLabel={t('mobile.more.accessibility.size.rowAccessibility', {
+              value: shapeSize.toFixed(1),
+            })}
+            leading={<MarkerSwatch color={systemColors.accent} shape="diamond" size={shapeSize} />}
+            trailing={
+              shapeSize !== DEFAULT_HOLD_SHAPE_SIZE ? (
+                <Icon name="check.small" size={20} color={systemColors.accent} />
+              ) : undefined
+            }
+            showChevron
+            showSeparator={false}
+            onPress={() => setSizeSheetOpen(true)}
+          />
+        </View>
+        {hasOverrides ? (
+          <Pressable accessibilityRole="button" onPress={resetOverrides} style={styles.resetButton}>
+            <Text variant="footnote" color={systemColors.accent}>
+              {t('mobile.more.accessibility.resetAll')}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+
       <HoldColorPickerSheet
         role={selectedRole}
         boardName={boardName}
@@ -241,98 +388,7 @@ export function HoldColorAccessibilitySection() {
         onSave={setShapeSize}
         onClose={() => setSizeSheetOpen(false)}
       />
-    </View>
-  );
-}
-
-function MarkerSwatch({
-  color,
-  shape,
-  thickness = DEFAULT_HOLD_BRUSH_THICKNESS,
-  size = DEFAULT_HOLD_SHAPE_SIZE,
-}: {
-  color: ColorValue;
-  shape: HoldMarkerShape;
-  thickness?: number;
-  size?: number;
-}) {
-  const { systemColors } = useTheme();
-  const strokeWidth = Math.max(1.5, 2.25 * thickness);
-  const shapeSize = normalizeHoldShapeSize(size);
-  const center = 21;
-  const radius = 9 * shapeSize;
-  const triangleUpPoints = `${center},${center - radius} ${center + radius * 0.866},${center + radius * 0.5} ${
-    center - radius * 0.866
-  },${center + radius * 0.5}`;
-  const triangleDownPoints = `${center - radius * 0.866},${center - radius * 0.5} ${center + radius * 0.866},${
-    center - radius * 0.5
-  } ${center},${center + radius}`;
-  const squareHalfSide = radius * 0.82;
-  return (
-    <View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={[styles.swatch, { borderColor: systemColors.separator }]}
-    >
-      <Svg width="30" height="30" viewBox="0 0 42 42">
-        {shape === 'circle' ? (
-          <Circle
-            cx={center}
-            cy={center}
-            r={radius}
-            fill={color}
-            fillOpacity={0.25}
-            stroke={color}
-            strokeWidth={strokeWidth}
-          />
-        ) : null}
-        {shape === 'triangle-up' ? (
-          <Polygon
-            points={triangleUpPoints}
-            fill={color}
-            fillOpacity={0.25}
-            stroke={color}
-            strokeLinejoin="round"
-            strokeWidth={strokeWidth}
-          />
-        ) : null}
-        {shape === 'triangle-down' ? (
-          <Polygon
-            points={triangleDownPoints}
-            fill={color}
-            fillOpacity={0.25}
-            stroke={color}
-            strokeLinejoin="round"
-            strokeWidth={strokeWidth}
-          />
-        ) : null}
-        {shape === 'square' ? (
-          <Rect
-            x={center - squareHalfSide}
-            y={center - squareHalfSide}
-            width={squareHalfSide * 2}
-            height={squareHalfSide * 2}
-            fill={color}
-            fillOpacity={0.25}
-            stroke={color}
-            strokeLinejoin="round"
-            strokeWidth={strokeWidth}
-          />
-        ) : null}
-        {shape === 'diamond' ? (
-          <Polygon
-            points={`${center},${center - radius} ${center + radius},${center} ${center},${center + radius} ${
-              center - radius
-            },${center}`}
-            fill={color}
-            fillOpacity={0.25}
-            stroke={color}
-            strokeLinejoin="round"
-            strokeWidth={strokeWidth}
-          />
-        ) : null}
-      </Svg>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -359,8 +415,9 @@ function HoldColorPickerSheet({
   const { systemColors } = useTheme();
   const sheetRef = useRef<BottomSheetModal>(null);
   const [mode, setMode] = useState<ColorMode>('default');
-  const [rgbText, setRgbText] = useState<RgbColorText>({ red: '0', green: '0', blue: '0' });
+  const [userColor, setUserColor] = useState<string>('#00ff00');
   const [shape, setShape] = useState<HoldMarkerShape>(DEFAULT_HOLD_MARKER_SHAPE);
+  const [seedCounter, setSeedCounter] = useState(0);
   const isPresentedRef = useRef(false);
 
   const modeOptions = useMemo<{ key: ColorMode; label: string }[]>(
@@ -375,8 +432,9 @@ function HoldColorPickerSheet({
     if (role && !isPresentedRef.current) {
       const seedColor = currentColor ?? getDefaultHoldRoleColor(boardName, role, 'led');
       setMode(currentColor ? 'user' : 'default');
-      setRgbText(rgbTextFromHex(seedColor));
+      setUserColor(seedColor);
       setShape(currentShape);
+      setSeedCounter((value) => value + 1);
       sheetRef.current?.present();
       isPresentedRef.current = true;
     } else if (!role && isPresentedRef.current) {
@@ -385,11 +443,7 @@ function HoldColorPickerSheet({
     }
   }, [boardName, currentColor, currentShape, role]);
 
-  const resolvedRgb = mode === 'user' ? rgbFromText(rgbText) : null;
-  const resolvedHex = resolvedRgb ? rgbToHex(resolvedRgb) : null;
-  const previewColor =
-    mode === 'user' && resolvedHex && role ? resolvedHex : role ? getDefaultHoldRoleColor(boardName, role) : '#000000';
-  const showValidationError = mode === 'user' && resolvedHex === null;
+  const previewColor = mode === 'user' ? userColor : role ? getDefaultHoldRoleColor(boardName, role) : '#000000';
 
   const handleDismiss = useCallback(() => {
     isPresentedRef.current = false;
@@ -400,9 +454,8 @@ function HoldColorPickerSheet({
     (nextMode: ColorMode) => {
       setMode(nextMode);
       if (nextMode === 'user' && role) {
-        const seedColor = currentColor ?? getDefaultHoldRoleColor(boardName, role, 'led');
-        const normalizedSeed = normalizeHexColor(seedColor);
-        if (normalizedSeed) setRgbText(rgbTextFromHex(normalizedSeed));
+        setUserColor(currentColor ?? getDefaultHoldRoleColor(boardName, role, 'led'));
+        setSeedCounter((value) => value + 1);
       }
     },
     [boardName, currentColor, role],
@@ -410,36 +463,15 @@ function HoldColorPickerSheet({
 
   const handleSave = useCallback(() => {
     if (!role) return;
-    if (mode === 'default') {
-      onSave(role, null, shape);
-      return;
-    }
-    if (!resolvedHex) return;
-    onSave(role, resolvedHex, shape);
-  }, [mode, onSave, resolvedHex, role, shape]);
+    onSave(role, mode === 'default' ? null : userColor, shape);
+  }, [mode, onSave, role, shape, userColor]);
 
-  const footer = (
-    <Button
-      title={t('mobile.more.accessibility.save')}
-      onPress={handleSave}
-      disabled={mode === 'user' && resolvedHex === null}
-      size="large"
-    />
-  );
-
-  const inputStyle = [
-    styles.channelInput,
-    {
-      backgroundColor: systemColors.fill,
-      color: systemColors.label,
-      borderColor: showValidationError ? systemColors.accent : systemColors.separator,
-    },
-  ];
+  const footer = <Button title={t('mobile.more.accessibility.save')} onPress={handleSave} size="large" />;
 
   return (
     <ModalSheet
       ref={sheetRef}
-      snapPoints={['82%', '94%']}
+      snapPoints={['85%', '95%']}
       onDismiss={handleDismiss}
       footer={footer}
       stackBehavior="push"
@@ -465,40 +497,12 @@ function HoldColorPickerSheet({
         />
 
         {mode === 'user' ? (
-          <View style={styles.rgbGrid}>
-            <RgbChannelInput
-              label={t('mobile.more.accessibility.channels.red')}
-              value={rgbText.red}
-              onChangeText={(red) => setRgbText((previous) => ({ ...previous, red }))}
-              inputStyle={inputStyle}
-              invalid={showValidationError}
-            />
-            <RgbChannelInput
-              label={t('mobile.more.accessibility.channels.green')}
-              value={rgbText.green}
-              onChangeText={(green) => setRgbText((previous) => ({ ...previous, green }))}
-              inputStyle={inputStyle}
-              invalid={showValidationError}
-            />
-            <RgbChannelInput
-              label={t('mobile.more.accessibility.channels.blue')}
-              value={rgbText.blue}
-              onChangeText={(blue) => setRgbText((previous) => ({ ...previous, blue }))}
-              inputStyle={inputStyle}
-              invalid={showValidationError}
-            />
-          </View>
+          <OkhslColorPicker value={userColor} onChange={setUserColor} seedKey={seedCounter} />
         ) : (
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.defaultCopy}>
             {t('mobile.more.accessibility.defaultCopy')}
           </Text>
         )}
-
-        {showValidationError ? (
-          <Text variant="footnote" color={systemColors.accent}>
-            {t('mobile.more.accessibility.invalidRgb')}
-          </Text>
-        ) : null}
 
         <View style={styles.shapeSection}>
           <Text variant="subheadline" color={systemColors.label}>
@@ -805,61 +809,63 @@ function MarkerMultiplierSlider({
   );
 }
 
-function RgbChannelInput({
-  label,
-  value,
-  onChangeText,
-  inputStyle,
-  invalid,
-}: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  inputStyle: StyleProp<TextStyle>;
-  invalid: boolean;
-}) {
-  const { t } = useTranslation('common');
-  const { systemColors } = useTheme();
-  return (
-    <View style={styles.channelColumn}>
-      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.channelLabel}>
-        {label}
-      </Text>
-      <BottomSheetTextInput
-        value={value}
-        onChangeText={onChangeText}
-        keyboardType="number-pad"
-        maxLength={3}
-        selectTextOnFocus
-        returnKeyType="done"
-        accessibilityLabel={label}
-        accessibilityHint={invalid ? t('mobile.more.accessibility.invalidRgb') : undefined}
-        style={inputStyle}
-      />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
+  scrollContent: {
+    flexGrow: 1,
+    paddingTop: spacing[4],
+    paddingBottom: spacing[10],
+    gap: spacing[6],
+  },
+  intro: {
+    paddingHorizontal: spacing[4],
+  },
+  description: {
+    lineHeight: 18,
+  },
+  previewSection: {
+    gap: spacing[2],
+  },
+  previewCard: {
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    marginHorizontal: spacing[4],
+    padding: spacing[3],
+    gap: spacing[2],
+  },
+  previewBoard: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+  },
+  previewCaption: {
+    lineHeight: 16,
+  },
   section: {
     gap: spacing[2],
   },
   card: {
     borderRadius: borderRadius.lg,
     overflow: 'hidden',
+    marginHorizontal: spacing[4],
   },
-  header: {
-    paddingHorizontal: spacing[4],
-    paddingTop: spacing[3],
-    paddingBottom: spacing[2],
+  cardPadded: {
+    padding: spacing[3],
+    gap: spacing[3],
+  },
+  roleStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'flex-start',
     gap: spacing[2],
   },
-  description: {
-    lineHeight: 18,
+  roleStripItem: {
+    alignItems: 'center',
+    gap: spacing[1],
+    flex: 1,
   },
   resetButton: {
     alignSelf: 'flex-start',
     paddingVertical: spacing[1],
+    paddingHorizontal: spacing[4],
   },
   swatch: {
     width: 32,
@@ -882,26 +888,6 @@ const styles = StyleSheet.create({
   pickerTitleColumn: {
     flex: 1,
     gap: spacing[1],
-  },
-  rgbGrid: {
-    flexDirection: 'row',
-    gap: spacing[3],
-  },
-  channelColumn: {
-    flex: 1,
-    gap: spacing[1],
-  },
-  channelLabel: {
-    textAlign: 'center',
-  },
-  channelInput: {
-    minHeight: 46,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing[3],
-    textAlign: 'center',
-    fontSize: 17,
-    fontWeight: '600',
   },
   defaultCopy: {
     lineHeight: 18,

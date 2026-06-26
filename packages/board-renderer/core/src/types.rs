@@ -18,6 +18,12 @@ pub enum HoldMarkerShape {
     TriangleDown,
     Square,
     Diamond,
+    Octagon,
+    // Forward-compat: a shape this binary doesn't know about (e.g. a newer JS
+    // bundle running against an older native renderer) deserialises here instead
+    // of failing the whole render config parse. Rendered as the default circle.
+    #[serde(other)]
+    Unknown,
 }
 
 fn default_stroke_width_multiplier() -> f32 {

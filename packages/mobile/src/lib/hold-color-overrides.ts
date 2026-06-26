@@ -5,7 +5,7 @@ import { getPreference, removePreference, setPreference } from './preference-sto
 
 export type HoldColorOverrideRole = Extract<HoldState, 'STARTING' | 'HAND' | 'FINISH' | 'FOOT'>;
 export type HoldColorOverrides = Partial<Record<HoldColorOverrideRole, string>>;
-export type HoldMarkerShape = 'circle' | 'triangle-up' | 'triangle-down' | 'square' | 'diamond';
+export type HoldMarkerShape = 'circle' | 'triangle-up' | 'triangle-down' | 'square' | 'diamond' | 'octagon';
 export type HoldShapeOverrides = Partial<Record<HoldColorOverrideRole, HoldMarkerShape>>;
 
 export type HoldMarkerOverrides = {
@@ -22,7 +22,7 @@ export type RgbColor = {
 };
 
 export const HOLD_COLOR_OVERRIDE_ROLES = ['STARTING', 'HAND', 'FINISH', 'FOOT'] as const;
-export const HOLD_MARKER_SHAPES = ['circle', 'triangle-up', 'triangle-down', 'square', 'diamond'] as const;
+export const HOLD_MARKER_SHAPES = ['circle', 'triangle-up', 'triangle-down', 'square', 'diamond', 'octagon'] as const;
 export const DEFAULT_HOLD_COLOR_SIGNATURE = 'default';
 export const DEFAULT_HOLD_MARKER_SHAPE: HoldMarkerShape = 'circle';
 export const DEFAULT_HOLD_BRUSH_THICKNESS = 1;

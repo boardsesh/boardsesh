@@ -2,6 +2,17 @@ import React from 'react';
 import Svg, { Circle, Polygon, Rect, type SvgProps } from 'react-native-svg';
 import type { HoldMarkerShape } from '../../lib/hold-color-overrides';
 
+// Regular octagon, flat top/bottom (stop-sign orientation): vertices at
+// angle = π/8 + i·π/4. Shared geometry with the native Rust renderer.
+export function octagonPoints(cx: number, cy: number, radius: number): string {
+  const points: string[] = [];
+  for (let i = 0; i < 8; i += 1) {
+    const angle = Math.PI / 8 + (i * Math.PI) / 4;
+    points.push(`${cx + radius * Math.cos(angle)},${cy + radius * Math.sin(angle)}`);
+  }
+  return points.join(' ');
+}
+
 type HoldMarkerShapeElementProps = {
   shape: HoldMarkerShape;
   cx: number;
@@ -78,6 +89,20 @@ export function HoldMarkerShapeElement({
         y={cy - halfSide}
         width={halfSide * 2}
         height={halfSide * 2}
+        fill={color}
+        fillOpacity={fillOpacity}
+        stroke={color}
+        strokeLinejoin="round"
+        strokeOpacity={strokeOpacity}
+        strokeWidth={strokeWidth}
+      />
+    );
+  }
+
+  if (shape === 'octagon') {
+    return (
+      <Polygon
+        points={octagonPoints(cx, cy, radius)}
         fill={color}
         fillOpacity={fillOpacity}
         stroke={color}

@@ -20,7 +20,6 @@ import { Text } from '../../../src/components/Text';
 import { ListRow } from '../../../src/components/ListRow';
 import { SectionHeader } from '../../../src/components/SectionHeader';
 import { SegmentedControl } from '../../../src/components/SegmentedControl';
-import { HoldColorAccessibilitySection } from '../../../src/components/settings/HoldColorAccessibilitySection';
 import { SessionRecordingSwitchRow } from '../../../src/components/settings/SessionRecordingSwitchRow';
 import { isPreviewBuild } from '../../../src/lib/eas-api';
 import { isDevLauncherAvailable } from '../../../src/lib/dev-launcher';
@@ -231,7 +230,19 @@ export default function MoreScreen() {
         </View>
       </View>
 
-      <HoldColorAccessibilitySection />
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.more.accessibility.title')} />
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+          <ListRow
+            title={t('mobile.more.accessibility.title')}
+            subtitle={t('mobile.more.accessibility.rowSubtitleShort')}
+            leading={<Icon name="visibility" size={22} color={systemColors.secondaryLabel} />}
+            showChevron
+            showSeparator={false}
+            onPress={() => router.push('/(tabs)/profile/accessibility')}
+          />
+        </View>
+      </View>
 
       <View style={styles.section}>
         <SectionHeader title={t('mobile.more.language.title')} />
