@@ -27,10 +27,13 @@ export type AccessoryEyebrow = {
   tier: AccessoryContext['tier'];
 };
 
-/** The presentation plus its localized eyebrow caption, ready to render. */
-export function useAccessoryEyebrow(): AccessoryEyebrow {
+/**
+ * Localizes an already-derived context into the eyebrow caption. Takes the
+ * context as input so a component that already reads the connection state (e.g.
+ * ClimbCapsule) can derive it once and not subscribe to that state twice.
+ */
+export function useAccessoryEyebrowText({ tier, eyebrow, showTick }: AccessoryContext): AccessoryEyebrow {
   const { t } = useTranslation('session');
-  const { tier, eyebrow, showTick } = useAccessoryPresentation();
 
   const text = useMemo(() => {
     switch (eyebrow.kind) {
@@ -44,4 +47,9 @@ export function useAccessoryEyebrow(): AccessoryEyebrow {
   }, [t, eyebrow.kind, eyebrow.name]);
 
   return { text, tone: eyebrow.kind, showTick, tier };
+}
+
+/** Convenience for components that don't already read the connection state. */
+export function useAccessoryEyebrow(): AccessoryEyebrow {
+  return useAccessoryEyebrowText(useAccessoryPresentation());
 }

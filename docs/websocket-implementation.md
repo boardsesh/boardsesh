@@ -313,6 +313,8 @@ This ensures `BoardSessionBridge` only calls `activateSession()` when the actual
 
 Board presence powers the mobile "now on the wall" feed, board sheet history, and board sheet stats. It is independent of party-session join: the mobile app resolves a board id for the wall feed before subscribing to `boardNowPlaying` or fetching board-presence history/stats.
 
+It also drives the accessory bar's "now playing" eyebrow (`deriveAccessoryContext`): when a session peer holds the wall (`boardConnection === 'heldByPeer'`), the bar reads `{name} on the wall` and hides the tick — a peer's lit climb is read-only to you (you can't log someone else's send).
+
 Mobile resolves the feed board id in this order:
 
 1. `resolveBoardForUuid(boardUuid)` for the selected named board. This is the default board-sheet path and binds to the actual `user_boards` row, so stats/history are available before Bluetooth connects and stay aligned with board-scoped ticks.

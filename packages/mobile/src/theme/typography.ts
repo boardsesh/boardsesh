@@ -160,3 +160,12 @@ export type TextVariant = keyof typeof textStyles;
  * platter. Surfaces that can grow with their content keep the 1.5× default.
  */
 export const CHROME_LABEL_MAX_FONT_SCALE = 1.2;
+
+// Status eyebrow above the climb name in the accessory bar — a small uppercase
+// caption. Shared by the floating capsule and the iOS 26 native platter row so
+// the two can't drift apart.
+export const ACCESSORY_EYEBROW_TEXT_STYLE: TextStyle = {
+  fontWeight: '700',
+  letterSpacing: 0.4,
+  textTransform: 'uppercase',
+};

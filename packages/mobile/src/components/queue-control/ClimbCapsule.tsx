@@ -9,9 +9,10 @@ import { View, StyleSheet, type ColorValue } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import type { Climb } from '@boardsesh/queue';
+import { deriveAccessoryContext } from '@boardsesh/play-view';
 import { TOOLBAR_CAPSULE_HEIGHT, TOOLBAR_CAPSULE_MAX_WIDTH, glassSize } from '../../theme/layout';
 import { spacing } from '../../theme/tokens';
-import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { CHROME_LABEL_MAX_FONT_SCALE, ACCESSORY_EYEBROW_TEXT_STYLE } from '../../theme/typography';
 import { useGradeFormat } from '../../hooks/use-grade-format';
 import { Text } from '../Text';
 import { useTheme } from '../../providers/theme-provider';
@@ -20,7 +21,7 @@ import { AccessoryBarSurface, type AccessoryBarSurfaceTreatment } from './Access
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
 import { useWallOrQueueCurrentClimb } from './use-wall-or-queue-climb';
-import { useAccessoryEyebrow } from './use-accessory-presentation';
+import { useAccessoryEyebrowText } from './use-accessory-presentation';
 import { useBoardConnectionState } from '../ble/use-board-connection-state';
 import { BoardControlIndicator } from './BoardControlIndicator';
 
@@ -33,8 +34,9 @@ type ClimbLabelProps = {
   boardConfig: BoardConfig | null;
   // The status caption above the name ("On the wall · live" / "Tara on the wall"
   // / "Up next"). This is the whole disambiguator: it turns a bare climb name
-  // from a directive into a labelled status.
-  eyebrow: string;
+  // from a directive into a labelled status. Nullable to match the native row,
+  // which drops it in the minimized `inline` placement.
+  eyebrow: string | null;
   eyebrowColor: ColorValue;
 };
 
@@ -58,7 +60,7 @@ function ClimbLabel({
             color={eyebrowColor}
             numberOfLines={1}
             maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={styles.eyebrow}
+            style={ACCESSORY_EYEBROW_TEXT_STYLE}
           >
             {eyebrow}
           </Text>
@@ -113,10 +115,15 @@ export function ClimbCapsule({
   const { formatGrade } = useGradeFormat();
   const { openGesture, currentItem } = useAccessoryClimbTap();
   // Connection state drives the leading control + the "you have control" glow.
-  // Read from the single source so the bar can't disagree with the drawer bulb.
-  const { boardConnection, bluetooth } = useBoardConnectionState();
+  // Read from the single source so the bar can't disagree with the drawer bulb,
+  // and feed the same read into the eyebrow so it isn't subscribed to twice.
+  const { boardConnection, bluetooth, holderDisplayName } = useBoardConnectionState();
   // Status caption that labels what the bar is showing (live / peer / up next).
-  const { text: eyebrowText, tone: eyebrowTone } = useAccessoryEyebrow();
+  const accessoryContext = useMemo(
+    () => deriveAccessoryContext({ boardConnection, holderDisplayName }),
+    [boardConnection, holderDisplayName],
+  );
+  const { text: eyebrowText, tone: eyebrowTone } = useAccessoryEyebrowText(accessoryContext);
 
   // Source-of-truth flip: show the wall's lit climb when a board feed is live
   // (flag-gated), else the local queue head.
@@ -267,12 +274,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-  },
-  // Small uppercase status caption; the disambiguator between queue / live / peer.
-  eyebrow: {
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
   },
   gradeText: {
     // Colorized like the list rows; right-aligned with a reserved min width

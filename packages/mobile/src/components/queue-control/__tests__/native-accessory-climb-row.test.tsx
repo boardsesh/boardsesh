@@ -24,6 +24,16 @@ const boardRender = vi.hoisted(() => ({
   boardHeight: 1920,
 }));
 
+// Per-test-configurable eyebrow context. Defaults to "you're driving, lit" so the
+// existing tick/thumbnail assertions hold; flipped to a peer (showTick: false) in
+// the read-only test.
+const eyebrow = vi.hoisted(() => ({
+  text: 'On the wall · live',
+  tone: 'live' as 'live' | 'peer' | 'upNext',
+  showTick: true,
+  tier: 'nowPlaying' as 'nowPlaying' | 'resume',
+}));
+
 function styleDataValue(styleValue: unknown): string {
   if (styleValue == null) return '';
   if (typeof styleValue === 'string' || typeof styleValue === 'number' || typeof styleValue === 'boolean') {
@@ -268,7 +278,7 @@ vi.mock('../use-wall-or-queue-climb', () => ({
 // Eyebrow/tick context — mocked so the real hook doesn't pull the board-connection
 // (expo) chain into the jsdom test. `showTick: true` keeps the tick assertions.
 vi.mock('../use-accessory-presentation', () => ({
-  useAccessoryEyebrow: () => ({ text: 'On the wall · live', tone: 'live', showTick: true, tier: 'nowPlaying' }),
+  useAccessoryEyebrow: () => ({ ...eyebrow }),
 }));
 
 import { NativeAccessoryClimbRow } from '../NativeAccessoryClimbRow';
@@ -326,6 +336,34 @@ describe('NativeAccessoryClimbRow', () => {
     queue.nextClimb.mockClear();
     queue.previousClimb.mockClear();
     drawer.openPlayDrawer.mockClear();
+    eyebrow.text = 'On the wall · live';
+    eyebrow.tone = 'live';
+    eyebrow.showTick = true;
+    eyebrow.tier = 'nowPlaying';
+  });
+
+  it('shows the eyebrow caption in the regular placement', () => {
+    const { container } = renderRow('regular');
+    expect(container.textContent).toContain('On the wall · live');
+  });
+
+  it('drops the eyebrow caption in the minimized inline placement', () => {
+    // The inline platter has no vertical room for a second line.
+    const { container } = renderRow('inline');
+    expect(container.textContent).not.toContain('On the wall · live');
+    // The climb name still renders inline.
+    expect(container.textContent).toContain("Alvin's Nuts");
+  });
+
+  it('hides the tick when a peer is driving the wall (read-only)', () => {
+    eyebrow.tone = 'peer';
+    eyebrow.text = 'Tara on the wall';
+    eyebrow.showTick = false;
+
+    const { container } = renderRow('regular');
+
+    expect(container.textContent).toContain('Tara on the wall');
+    expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
   it('renders a regular now-climbing row with thumbnail, grade, and integrated tick', () => {

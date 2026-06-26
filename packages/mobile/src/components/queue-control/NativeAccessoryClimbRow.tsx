@@ -6,7 +6,7 @@ import { useTheme } from '../../providers/theme-provider';
 import { useDrawerHost, type BoardConfig } from '../../providers/drawer-host-provider';
 import { spacing } from '../../theme/tokens';
 import { glassSize } from '../../theme/layout';
-import { CHROME_LABEL_MAX_FONT_SCALE } from '../../theme/typography';
+import { CHROME_LABEL_MAX_FONT_SCALE, ACCESSORY_EYEBROW_TEXT_STYLE } from '../../theme/typography';
 import { Text } from '../Text';
 import { AccessoryClimbThumbnail } from './AccessoryClimbThumbnail';
 import { useAccessoryClimbTap } from './use-accessory-climb-tap';
@@ -62,7 +62,7 @@ function ClimbLabel({
             color={eyebrowColor}
             numberOfLines={1}
             maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
-            style={styles.eyebrow}
+            style={ACCESSORY_EYEBROW_TEXT_STYLE}
           >
             {eyebrow}
           </Text>
@@ -210,11 +210,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 0,
     gap: spacing[2],
-  },
-  eyebrow: {
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
   },
   name: {
     flex: 1,
