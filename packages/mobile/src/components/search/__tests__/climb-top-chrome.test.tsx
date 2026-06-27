@@ -485,19 +485,13 @@ describe('ClimbTopChrome', () => {
     expect(container.querySelector('[data-pressable^="mobile.search.filters"]')).toBeNull();
   });
 
-  it('shows a disconnected lightbulb when not connected', () => {
-    ctrl.bluetooth = {
-      isConnected: false,
-      connect: vi.fn().mockResolvedValue(true),
-      disconnect: vi.fn(),
-      armUndoWallChangeToast: vi.fn(),
-    };
-    const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(lightbulb(container)).not.toBeNull();
-    expect(container.querySelector('[data-icon="lightbulb"]')).not.toBeNull();
-  });
-
-  it('shows a connected lightbulb when connected', () => {
+  // The climbs tab suppresses the top-chrome BLE lightbulb in BOTH variants:
+  // board-LED control lives on the queue bar / current-climb pill
+  // (BoardControlIndicator), and a second bulb next to the filter chips read like
+  // a list/filter affordance. The bulb's own connect/disconnect behaviour is
+  // covered where it still renders — collapsing-top-chrome (Discover et al.) and
+  // use-lightbulb-control.
+  it('suppresses the toolbar lightbulb on the climbs tab even when a board is connected (glass)', () => {
     ctrl.bluetooth = {
       isConnected: true,
       connect: vi.fn(),
@@ -505,33 +499,20 @@ describe('ClimbTopChrome', () => {
       armUndoWallChangeToast: vi.fn(),
     };
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(lightbulb(container)).not.toBeNull();
-    expect(container.querySelector('[data-icon="lightbulb.fill"]')).not.toBeNull();
+    expect(lightbulb(container)).toBeNull();
+    expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
   });
 
-  it('connects on lightbulb press when disconnected', () => {
-    const connect = vi.fn().mockResolvedValue(true);
-    const disconnect = vi.fn().mockResolvedValue(undefined);
-    const armUndoWallChangeToast = vi.fn();
-    ctrl.bluetooth = { isConnected: false, connect, disconnect, armUndoWallChangeToast };
+  it('suppresses the toolbar lightbulb on the climbs tab in the Material variant too', () => {
+    ctrl.variant = 'material';
+    ctrl.bluetooth = {
+      isConnected: false,
+      connect: vi.fn().mockResolvedValue(true),
+      disconnect: vi.fn(),
+      armUndoWallChangeToast: vi.fn(),
+    };
     const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    fireEvent.click(lightbulb(container)!);
-    expect(armUndoWallChangeToast).toHaveBeenCalledTimes(1);
-    expect(connect).toHaveBeenCalledTimes(1);
-    expect(disconnect).not.toHaveBeenCalled();
-    expect(haptics.light).toHaveBeenCalledTimes(1);
-  });
-
-  it('disconnects on lightbulb press when connected', () => {
-    const connect = vi.fn().mockResolvedValue(true);
-    const disconnect = vi.fn().mockResolvedValue(undefined);
-    const armUndoWallChangeToast = vi.fn();
-    ctrl.bluetooth = { isConnected: true, connect, disconnect, armUndoWallChangeToast };
-    const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    fireEvent.click(lightbulb(container)!);
-    expect(disconnect).toHaveBeenCalledTimes(1);
-    expect(connect).not.toHaveBeenCalled();
-    expect(armUndoWallChangeToast).not.toHaveBeenCalled();
+    expect(lightbulb(container)).toBeNull();
   });
 
   it('reports its measured height through onHeightChange via onLayout', () => {
