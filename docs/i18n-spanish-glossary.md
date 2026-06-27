@@ -54,6 +54,8 @@ These are already used consistently in the catalogs — keep using them so we do
 
 Kept in English by convention (technical board-config terms): **layout**, **set / sets**, **logbook**, **setter**, **beta**.
 
+**`playlist` / `playlists`** also stay in English — used throughout `es/playlists.json` (_Compartir playlist_, _¿Iniciar playlist?_, _Playlist eliminada_). Feminine: _la playlist_, _esta playlist_, _las playlists_. Never _lista de reproducción_.
+
 ## Process
 
 - Add every new key to **all** locales (`en-US`, `es`, `fr`) — `catalog-completeness.test.ts` fails on missing keys.

@@ -434,6 +434,49 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
     });
 
+    it('bumps the warning count and requires a second confirm when the queue grows before confirming', async () => {
+      const current = makeQueueItem('q-current', 'current');
+      const future = makeQueueItem('q-future', 'future');
+      mocks.queueState = { queue: [current, future], currentClimbQueueItem: current };
+      const tapped = makeClimb('b');
+      const fetchPage = vi.fn().mockResolvedValue({ climbs: [tapped, makeClimb('c')], hasMore: false });
+      const { result } = renderActivation(fetchPage, { replaceQueueOnActivate: true });
+
+      await act(async () => {
+        await result.current.activate(tapped);
+      });
+      expect(result.current.queueReplaceSheet.visible).toBe(true);
+      expect(result.current.queueReplaceSheet.futureQueueCount).toBe(1);
+
+      // A second future item lands between opening the sheet and confirming.
+      mocks.queueState = {
+        queue: [current, future, makeQueueItem('q-future-2', 'future-2')],
+        currentClimbQueueItem: current,
+      };
+
+      await act(async () => {
+        result.current.queueReplaceSheet.onConfirm();
+      });
+
+      // The first confirm only bumps the count to the new total and short-circuits
+      // — nothing is cleared and no fetch fires, so the user re-confirms against the
+      // count they can actually see.
+      expect(result.current.queueReplaceSheet.visible).toBe(true);
+      expect(result.current.queueReplaceSheet.futureQueueCount).toBe(2);
+      expect(mocks.setQueue).not.toHaveBeenCalled();
+      expect(fetchPage).not.toHaveBeenCalled();
+
+      // The second confirm (count unchanged this time) goes through and replaces the queue.
+      await act(async () => {
+        result.current.queueReplaceSheet.onConfirm();
+      });
+      await waitFor(() => {
+        expect(mocks.setQueue).toHaveBeenCalled();
+      });
+      const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
+      expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b', 'c']);
+    });
+
     it('cancelling the warning leaves the queue untouched', async () => {
       const current = makeQueueItem('q-current', 'current');
       const future = makeQueueItem('q-future', 'future');

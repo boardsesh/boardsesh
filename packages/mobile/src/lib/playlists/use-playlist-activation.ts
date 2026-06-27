@@ -111,7 +111,6 @@ function buildPlaylistQueue(
 ): { queue: ClimbQueueItem[]; currentItem: ClimbQueueItem } {
   const queue: ClimbQueueItem[] = [];
   let currentItem: ClimbQueueItem | null = null;
-  let includesActivatedClimb = false;
   const reusableCurrentItem = activatedQueueItem?.climb.uuid === activatedClimb.uuid ? activatedQueueItem : null;
   const seen = new Set<string>();
 
@@ -124,19 +123,15 @@ function buildPlaylistQueue(
         : climbToQueueItem(toSchemaClimb(climb));
     queue.push(item);
     if (climb.uuid === activatedClimb.uuid) {
-      includesActivatedClimb = true;
       currentItem = item;
     }
   }
 
-  if (!includesActivatedClimb) {
+  // The activated climb wasn't in the list (or the list was empty): append it so
+  // the queue always contains — and is anchored on — the current climb.
+  if (!currentItem) {
     currentItem = reusableCurrentItem ?? climbToQueueItem(toSchemaClimb(activatedClimb));
     queue.push(currentItem);
-  }
-
-  if (!currentItem) {
-    currentItem = queue[0] ?? climbToQueueItem(toSchemaClimb(activatedClimb));
-    if (queue.length === 0) queue.push(currentItem);
   }
 
   return { queue, currentItem };
