@@ -186,7 +186,13 @@ function FilterChipRowComponent({
           >
             <Picker
               selection={popularityTag(minAscents)}
-              onSelectionChange={(value) => onChangePopularity(popularityFromTag(value as string))}
+              onSelectionChange={(value) => {
+                // @expo/ui types the selection as the untyped Picker tag; our tags
+                // are always strings, so guard rather than blind-cast (a non-string
+                // would otherwise become NaN silently).
+                if (typeof value !== 'string') return;
+                onChangePopularity(popularityFromTag(value));
+              }}
             >
               {POPULARITY_BUCKETS.map((bucket) => (
                 <Text key={popularityTag(bucket)} modifiers={[tag(popularityTag(bucket))]}>
@@ -203,7 +209,11 @@ function FilterChipRowComponent({
           >
             <Picker
               selection={ratingTag(minRating)}
-              onSelectionChange={(value) => onChangeRating(ratingFromTag(value as string))}
+              onSelectionChange={(value) => {
+                // See the popularity Picker: guard the untyped tag before mapping it.
+                if (typeof value !== 'string') return;
+                onChangeRating(ratingFromTag(value));
+              }}
             >
               {RATING_BUCKETS.map((bucket) => (
                 <Text key={ratingTag(bucket)} modifiers={[tag(ratingTag(bucket))]}>

@@ -1,11 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import {
-  SORT_OPTIONS,
-  STATUS_FILTER_VALUES,
-  normalizeRetiredStatus,
-  type SortOption,
-  type StatusFilter,
-} from '@boardsesh/climb-filters';
+import { SORT_OPTIONS, STATUS_FILTER_VALUES, normalizeRetiredStatus } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { getFilterKey } from './filter-key';
 
@@ -74,6 +68,11 @@ function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {
  * `isAuthenticated = false` to also strip auth-gated filters from each
  * entry — used by the climbs tab so signed-out users don't tap pills that
  * silently no-op on the backend.
+ *
+ * Capped at MAX_ITEMS (newest first). `addRecentFilter` already trims on write,
+ * but a legacy/oversized blob would otherwise stream every entry into the
+ * always-visible `Recent ▾` chip menu and the on-focus panel — both render one
+ * native element per entry, so an unbounded read makes the menu unusable.
  */
 export async function getRecentFilters(options?: { isAuthenticated?: boolean }): Promise<RecentFilter[]> {
   try {
@@ -81,7 +80,7 @@ export async function getRecentFilters(options?: { isAuthenticated?: boolean }):
     if (!value) return [];
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    const valid = parsed.filter(isValidEntry).map(normalizeEntry);
+    const valid = parsed.filter(isValidEntry).map(normalizeEntry).slice(0, MAX_ITEMS);
     if (options?.isAuthenticated === false) {
       return valid.map((entry) => ({ ...entry, filters: stripAuthGatedFields(entry.filters) }));
     }

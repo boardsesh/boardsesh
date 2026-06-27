@@ -163,4 +163,24 @@ describe('getRecentFilters sanitizer', () => {
     const result = await getRecentFilters({ isAuthenticated: true });
     expect(result[0]?.filters.hideAttempted).toBe(true);
   });
+
+  it('caps a legacy/oversized blob at 10 entries, keeping the newest (array-order) first', async () => {
+    const { getRecentFilters } = await import('../recent-filter-store');
+    // addRecentFilter trims on write, but a blob from an older build (or a future
+    // store change) could carry more — every entry becomes a native menu element,
+    // so the load must bound it. Newest is first in storage order.
+    await seed(
+      Array.from({ length: 15 }, (_unused, index) => ({
+        id: `entry-${index}`,
+        label: `Filter ${index}`,
+        filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any' },
+        searchText: '',
+        timestamp: index,
+      })),
+    );
+    const result = await getRecentFilters();
+    expect(result).toHaveLength(10);
+    expect(result[0]?.id).toBe('entry-0');
+    expect(result[9]?.id).toBe('entry-9');
+  });
 });

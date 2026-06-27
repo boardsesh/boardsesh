@@ -12,6 +12,15 @@ import { getPreference, setPreference } from './preference-store';
 // state holds only EXPLICITLY-set keys (`LockOverrides`), so a load that races a
 // setter merges the persisted base under the racing key rather than clobbering it
 // — a fixed `{tall,wide}` couldn't tell "unset" from "set false" during that race.
+//
+// `hasReadStorage` tracks "the AsyncStorage read finished", NOT "we have in-memory
+// state". Only loadDimensionLocks() sets it; a setter records its override without
+// setting it. That split closes a footgun for the public `setDimensionLock` export
+// (the hook's useEffect normally reads storage first, but a direct caller need not):
+// (1) a setter that runs before the one-time read can't make the read
+// short-circuit and silently drop every persisted lock; (2) a setter defers
+// persisting until the read has merged the persisted base, so it never overwrites
+// storage with a partial in-memory bag.
 const STORAGE_KEY = 'dimensionFilterLocks';
 
 export type DimensionKey = 'tall' | 'wide';
@@ -23,7 +32,7 @@ const EMPTY_OVERRIDES: LockOverrides = {};
 const EMPTY_LOCKS: DimensionLocks = { tall: false, wide: false };
 
 let current: LockOverrides = EMPTY_OVERRIDES;
-let hasLoaded = false;
+let hasReadStorage = false;
 let snapshot: DimensionLocks = EMPTY_LOCKS;
 const listeners = new Set<() => void>();
 
@@ -48,18 +57,18 @@ function readOverrides(value: unknown): LockOverrides {
 }
 
 export async function loadDimensionLocks(): Promise<DimensionLocks> {
-  if (hasLoaded) return snapshot;
+  if (hasReadStorage) return snapshot;
   const stored = readOverrides(await getPreference<unknown>(STORAGE_KEY));
-  // A setter may have raced this read. Persisted is the base; any key the racing
-  // setter wrote wins on top (`...current` last), so a setter that locked Tall
-  // can't drop a persisted Wide.
-  const raced = Object.keys(current).length > 0;
+  // A setter may have written before/during this read. Persisted is the base; any
+  // key a pending setter wrote wins on top (`...current` last), so a setter that
+  // locked Tall can't drop a persisted Wide.
+  const hadPendingWrites = Object.keys(current).length > 0;
   current = { ...stored, ...current };
-  hasLoaded = true;
+  hasReadStorage = true;
   notify();
-  // Re-persist the merged bag so the key the racing setter didn't know about
-  // survives the next cold boot.
-  if (raced) void persist();
+  // Flush the merged bag: a setter that ran before the read deferred its persist
+  // to here, so the persisted key it didn't know about survives the next cold boot.
+  if (hadPendingWrites) void persist();
   return snapshot;
 }
 
@@ -91,15 +100,18 @@ export function useDimensionRepin(chipVisible: boolean, locked: boolean, filterA
 }
 
 export function setDimensionLock(key: DimensionKey, locked: boolean): void {
-  // Always record the explicit choice (never short-circuit on the current value):
-  // during the pre-load window the snapshot shows the default `false`, so an
-  // explicit unlock must still be recorded to win over the about-to-load persisted
-  // lock. In practice the lock menu always flips state, so there are no redundant
-  // sets to optimise away anyway.
+  // Record the explicit choice and reflect it immediately. Never short-circuit on
+  // the current value: during the pre-read window the snapshot shows the default
+  // `false`, so an explicit unlock must still be recorded to win over the
+  // about-to-load persisted lock.
   current = { ...current, [key]: locked };
-  hasLoaded = true;
   notify();
-  void persist();
+  // Persist only once storage has been read — otherwise `current` is a partial bag
+  // (just this override) and writing it would clobber other persisted locks. Before
+  // the read, kick it off instead: loadDimensionLocks() merges the persisted base
+  // under this override and flushes the result (its hadPendingWrites branch).
+  if (hasReadStorage) void persist();
+  else void ensureLoaded().catch(() => {});
 }
 
 let loadPromise: Promise<DimensionLocks> | null = null;
@@ -146,7 +158,7 @@ export function useDimensionLocks(): {
 export function resetDimensionLocksForTests(): void {
   if (process.env.NODE_ENV !== 'test') return;
   current = EMPTY_OVERRIDES;
-  hasLoaded = false;
+  hasReadStorage = false;
   loadPromise = null;
   snapshot = EMPTY_LOCKS;
   notify();

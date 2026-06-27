@@ -93,6 +93,21 @@ describe('dimension-lock-store', () => {
     await expect(loadDimensionLocks()).resolves.toEqual({ tall: false, wide: false });
   });
 
+  it('reads persisted locks when a setter ran before the first load, without clobbering storage', async () => {
+    (await asyncStorageMock()).__setRaw(STORAGE_KEY, JSON.stringify({ wide: true }));
+    const { setDimensionLock, loadDimensionLocks } = await import('../dimension-lock-store');
+    // A direct caller (the export is public) locks Tall before anything triggers
+    // the one-time storage read. The setter must NOT short-circuit the read nor
+    // persist its partial {tall:true} bag over the persisted {wide:true}.
+    setDimensionLock('tall', true);
+    // The read still happens and merges: the persisted Wide survives next to Tall.
+    await expect(loadDimensionLocks()).resolves.toEqual({ tall: true, wide: true });
+    // ...and storage holds the merged set, not the partial bag the setter knew.
+    await expect((await asyncStorageMock()).getItem(STORAGE_KEY)).resolves.toBe(
+      JSON.stringify({ wide: true, tall: true }),
+    );
+  });
+
   it('retries the read after a failed load (does not cache the failure)', async () => {
     const storageMock = await asyncStorageMock();
     storageMock.getItem.mockRejectedValueOnce(new Error('storage unavailable'));
