@@ -90,6 +90,10 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
     flags['logbook-filters'] = true;
   }
 
+  if (process.env.EXPO_PUBLIC_PERSISTENT_FILTER_CHIPS === 'true') {
+    flags['persistent-filter-chips'] = true;
+  }
+
   return Object.keys(flags).length > 0 ? flags : undefined;
 }
 
