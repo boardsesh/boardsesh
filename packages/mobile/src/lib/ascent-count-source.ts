@@ -2,9 +2,15 @@
 // climb's per-source counts onto the active source. Kept React-free so it can be
 // unit-tested and reused by list rows, the community headline, and the chart.
 
-export const ASCENT_COUNT_SOURCES = ['all', 'boardApp', 'boardsesh'] as const;
+import type { AscentCountSource } from '@boardsesh/shared-schema';
 
-export type AscentCountSource = (typeof ASCENT_COUNT_SOURCES)[number];
+// Re-exported so existing imports of `AscentCountSource` from this module keep
+// working, but the canonical definition is the GraphQL `AscentCountSource` enum
+// (shared-schema) — the runtime list below is `satisfies`-checked against it so
+// it can't drift to a value the schema/backend would reject.
+export type { AscentCountSource };
+
+export const ASCENT_COUNT_SOURCES = ['all', 'boardApp', 'boardsesh'] as const satisfies readonly AscentCountSource[];
 
 export const DEFAULT_ASCENT_COUNT_SOURCE: AscentCountSource = 'all';
 
