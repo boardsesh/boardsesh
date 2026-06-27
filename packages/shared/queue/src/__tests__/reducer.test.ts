@@ -482,4 +482,44 @@ describe('REGRADE_CLIMBS', () => {
 
     expect(result).toBe(state);
   });
+
+  it('patches the per-source ascensionist counts so source subtitles follow the new angle', () => {
+    const queued = makeClimbQueueItem({
+      uuid: 'q1',
+      climb: {
+        uuid: 'climb-a',
+        angle: 40,
+        difficulty: '6a/V3',
+        ascensionist_count: 5,
+        kilterAscensionistCount: 4,
+        auroraAscensionistCount: 2,
+        boardseshAscensionistCount: 1,
+      },
+    });
+    const state = makeState({ queue: [queued] });
+
+    const result = queueReducer(state, {
+      type: 'REGRADE_CLIMBS',
+      payload: {
+        grades: {
+          'climb-a': {
+            angle: 50,
+            difficulty: '6c/V5',
+            quality_average: '3.5',
+            ascensionist_count: 30,
+            benchmark_difficulty: null,
+            kilterAscensionistCount: 20,
+            auroraAscensionistCount: 25,
+            boardseshAscensionistCount: 9,
+          },
+        },
+      },
+    });
+
+    const patched = result.queue[0].climb;
+    expect(patched.ascensionist_count).toBe(30);
+    expect(patched.kilterAscensionistCount).toBe(20);
+    expect(patched.auroraAscensionistCount).toBe(25);
+    expect(patched.boardseshAscensionistCount).toBe(9);
+  });
 });
