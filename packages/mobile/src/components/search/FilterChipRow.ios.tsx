@@ -27,7 +27,15 @@ import { memo, useCallback } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Host, HStack, ScrollView, Menu, Picker, Toggle, Button, Text, Divider } from '@expo/ui/swift-ui';
-import { buttonStyle, controlSize, tint, tag, padding, menuActionDismissBehavior } from '@expo/ui/swift-ui/modifiers';
+import {
+  buttonStyle,
+  controlSize,
+  tint,
+  tag,
+  padding,
+  menuActionDismissBehavior,
+  onLongPressGesture,
+} from '@expo/ui/swift-ui/modifiers';
 import { formatMinAscentsFilterCount } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import {
@@ -157,13 +165,15 @@ function FilterChipRowComponent({
 
           {/* Tall / Wide — board-shape toggles, present only on the Kilter homewall
               sizes where they apply (Wide on 10x10, Tall on 8x12, both on 10x12).
-              A tinted Button toggles each on tap. */}
+              Tap toggles; long-press locks — a lock glyph + the filter pinned
+              active through clears. A locked chip ignores tap until unlocked. */}
           {dimensionChips.map((dimension) => (
             <Button
               key={dimension.key}
-              label={dimension.key === 'tall' ? t('mobile.filter.tallClimbs') : t('mobile.filter.wideClimbs')}
+              label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+              systemImage={dimension.locked ? 'lock.fill' : undefined}
               onPress={dimension.onToggle}
-              modifiers={chipModifiers(dimension.active)}
+              modifiers={[...chipModifiers(dimension.active), onLongPressGesture(dimension.onToggleLock)]}
             />
           ))}
 

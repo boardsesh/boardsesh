@@ -10,9 +10,17 @@ import type { ClimbFilters } from '../ClimbFilterSheet';
 /**
  * Board-shape toggle chips, present only on the Kilter homewall sizes where they
  * apply: Wide on 10x10, Tall on 8x12, both on 10x12 (the caller derives this from
- * the size via @boardsesh/board-constants). Each toggles a boolean filter on tap.
+ * the size via @boardsesh/board-constants). Tap toggles the filter; long-press
+ * toggles a persisted lock that pins the filter active through clears (shown with
+ * a lock glyph). A locked chip ignores tap (only a long-press unlock frees it).
  */
-export type DimensionChip = { key: 'tall' | 'wide'; active: boolean; onToggle: () => void };
+export type DimensionChip = {
+  key: 'tall' | 'wide';
+  active: boolean;
+  locked: boolean;
+  onToggle: () => void;
+  onToggleLock: () => void;
+};
 
 export type FilterChipRowProps = {
   /** Total active filters → the Filters · N badge; tapping opens the sheet. */

@@ -672,7 +672,9 @@
       "clearRecentSearches": "Clear recent searches",
       "chips": {
         "show": "Show",
-        "filtersWithCount": "Filters · {{count}}"
+        "filtersWithCount": "Filters · {{count}}",
+        "tall": "Tall",
+        "wide": "Wide"
       },
       "removeFilterAria": "Remove {{filter}}"
     },

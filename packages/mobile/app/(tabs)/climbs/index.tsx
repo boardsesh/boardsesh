@@ -35,6 +35,8 @@ import type { DimensionChip } from '../../../src/components/search/FilterChipRow
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
+import { useDimensionLocks } from '../../../src/lib/dimension-lock-store';
+import { hapticMedium } from '../../../src/lib/haptics';
 import { useFeatureFlag } from '../../../src/providers/feature-flags-provider';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
@@ -845,28 +847,74 @@ function ClimbListInner() {
   );
   // Tall/Wide chips: only on the Kilter homewall sizes where they apply, mirroring
   // web (isKilterHomewall{Tall,Wide}SizeId) — Wide on 10x10, Tall on 8x12, both on
-  // 10x12. Each toggles its boolean filter on tap.
+  // 10x12. Tap toggles the filter; long-press locks it (persisted) so it survives
+  // clears — the re-pin effects below re-apply a locked filter whenever it's cleared.
+  const { locks: dimensionLocks, setLock: setDimensionLock } = useDimensionLocks();
   const isKilterHomewall = boardName === 'kilter' && layoutId === KILTER_HOMEWALL_LAYOUT_ID;
   const showTallChip = isKilterHomewall && isKilterHomewallTallSizeId(sizeId);
   const showWideChip = isKilterHomewall && isKilterHomewallWideSizeId(sizeId);
   const dimensionChips = useMemo<DimensionChip[]>(() => {
     const chips: DimensionChip[] = [];
     if (showTallChip) {
+      const locked = dimensionLocks.tall;
       chips.push({
         key: 'tall',
-        active: !!filters.onlyTallClimbs,
-        onToggle: () => patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true }),
+        active: locked || !!filters.onlyTallClimbs,
+        locked,
+        // A locked chip ignores tap — only a long-press unlock frees it.
+        onToggle: () => {
+          if (locked) return;
+          patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true });
+        },
+        onToggleLock: () => {
+          hapticMedium();
+          const next = !locked;
+          setDimensionLock('tall', next);
+          if (next) patchFilters({ onlyTallClimbs: true });
+        },
       });
     }
     if (showWideChip) {
+      const locked = dimensionLocks.wide;
       chips.push({
         key: 'wide',
-        active: !!filters.onlyWideClimbs,
-        onToggle: () => patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true }),
+        active: locked || !!filters.onlyWideClimbs,
+        locked,
+        onToggle: () => {
+          if (locked) return;
+          patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true });
+        },
+        onToggleLock: () => {
+          hapticMedium();
+          const next = !locked;
+          setDimensionLock('wide', next);
+          if (next) patchFilters({ onlyWideClimbs: true });
+        },
       });
     }
     return chips;
-  }, [showTallChip, showWideChip, filters.onlyTallClimbs, filters.onlyWideClimbs, patchFilters]);
+  }, [
+    showTallChip,
+    showWideChip,
+    dimensionLocks.tall,
+    dimensionLocks.wide,
+    filters.onlyTallClimbs,
+    filters.onlyWideClimbs,
+    patchFilters,
+    setDimensionLock,
+  ]);
+  // A locked dimension stays active through any clear (sheet Reset, FAB clear,
+  // recent re-apply): re-pin its filter whenever it's been cleared while locked.
+  useEffect(() => {
+    if (showTallChip && dimensionLocks.tall && !filters.onlyTallClimbs) {
+      patchFilters({ onlyTallClimbs: true });
+    }
+  }, [showTallChip, dimensionLocks.tall, filters.onlyTallClimbs, patchFilters]);
+  useEffect(() => {
+    if (showWideChip && dimensionLocks.wide && !filters.onlyWideClimbs) {
+      patchFilters({ onlyWideClimbs: true });
+    }
+  }, [showWideChip, dimensionLocks.wide, filters.onlyWideClimbs, patchFilters]);
   // Token row = the receipt for the long tail only; the chip-backed facets show
   // and clear themselves, so they're excluded to avoid wording a filter twice.
   // Tall/Wide are chip-backed only on the homewall sizes where their chip shows;

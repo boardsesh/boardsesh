@@ -148,6 +148,13 @@ vi.mock('../../../../src/components/search/ClimbFilterFab', () => ({ ClimbFilter
 vi.mock('../../../../src/components/search/ClimbTopChrome', () => ({ ClimbTopChrome: () => null }));
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
 vi.mock('../../../../src/components/search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));
+vi.mock('../../../../src/lib/haptics', () => ({
+  hapticSelection: () => {},
+  hapticLight: () => {},
+  hapticMedium: () => {},
+  hapticHeavy: () => {},
+  hapticSuccess: () => {},
+}));
 vi.mock('../../../../src/components/grade', () => ({ GradeRangeRail: () => null }));
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
