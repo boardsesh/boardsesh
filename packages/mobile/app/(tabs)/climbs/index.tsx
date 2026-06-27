@@ -16,6 +16,11 @@ import {
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type ClimbBoardFilterState,
 } from '@boardsesh/climb-filters';
+import {
+  KILTER_HOMEWALL_LAYOUT_ID,
+  isKilterHomewallTallSizeId,
+  isKilterHomewallWideSizeId,
+} from '@boardsesh/board-constants';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
 import { ActivityIndicator } from '../../../src/components/ActivityIndicator';
@@ -26,6 +31,7 @@ import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../
 import { ClimbFilterFab } from '../../../src/components/search/ClimbFilterFab';
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
 import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
+import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
@@ -837,11 +843,43 @@ function ClimbListInner() {
     (next: boolean) => patchBoardFilters({ onlyBenchmarks: next || undefined }),
     [patchBoardFilters],
   );
+  // Tall/Wide chips: only on the Kilter homewall sizes where they apply, mirroring
+  // web (isKilterHomewall{Tall,Wide}SizeId) — Wide on 10x10, Tall on 8x12, both on
+  // 10x12. Each toggles its boolean filter on tap.
+  const isKilterHomewall = boardName === 'kilter' && layoutId === KILTER_HOMEWALL_LAYOUT_ID;
+  const showTallChip = isKilterHomewall && isKilterHomewallTallSizeId(sizeId);
+  const showWideChip = isKilterHomewall && isKilterHomewallWideSizeId(sizeId);
+  const dimensionChips = useMemo<DimensionChip[]>(() => {
+    const chips: DimensionChip[] = [];
+    if (showTallChip) {
+      chips.push({
+        key: 'tall',
+        active: !!filters.onlyTallClimbs,
+        onToggle: () => patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true }),
+      });
+    }
+    if (showWideChip) {
+      chips.push({
+        key: 'wide',
+        active: !!filters.onlyWideClimbs,
+        onToggle: () => patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true }),
+      });
+    }
+    return chips;
+  }, [showTallChip, showWideChip, filters.onlyTallClimbs, filters.onlyWideClimbs, patchFilters]);
   // Token row = the receipt for the long tail only; the chip-backed facets show
   // and clear themselves, so they're excluded to avoid wording a filter twice.
+  // Tall/Wide are chip-backed only on the homewall sizes where their chip shows;
+  // elsewhere they stay a removable token.
   const sheetOnlyFilterTokens = useMemo(
-    () => filterTokens.filter((token) => !CHIP_BACKED_TOKEN_KEYS.has(token.key)),
-    [filterTokens],
+    () =>
+      filterTokens.filter((token) => {
+        if (CHIP_BACKED_TOKEN_KEYS.has(token.key)) return false;
+        if (token.key === 'tall' && showTallChip) return false;
+        if (token.key === 'wide' && showWideChip) return false;
+        return true;
+      }),
+    [filterTokens, showTallChip, showWideChip],
   );
   const filterChrome = useMemo(() => {
     if (!showGlassFilterChips) return null;
@@ -858,6 +896,7 @@ function ClimbListInner() {
           gradeLabel={gradeChip.label}
           gradeActive={gradeChip.active}
           onOpenGrade={handleOpenGrade}
+          dimensionChips={dimensionChips}
           minAscents={filters.minAscents}
           onChangePopularity={handleChangePopularity}
           minRating={filters.minRating}
@@ -882,6 +921,7 @@ function ClimbListInner() {
     handleClearRecentFilters,
     gradeChip,
     handleOpenGrade,
+    dimensionChips,
     handleChangePopularity,
     handleChangeRating,
     handleToggleHideCompleted,

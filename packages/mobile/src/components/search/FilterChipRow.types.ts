@@ -7,6 +7,13 @@
 import type { RecentFilter } from '../../lib/recent-filter-store';
 import type { ClimbFilters } from '../ClimbFilterSheet';
 
+/**
+ * Board-shape toggle chips, present only on the Kilter homewall sizes where they
+ * apply: Wide on 10x10, Tall on 8x12, both on 10x12 (the caller derives this from
+ * the size via @boardsesh/board-constants). Each toggles a boolean filter on tap.
+ */
+export type DimensionChip = { key: 'tall' | 'wide'; active: boolean; onToggle: () => void };
+
 export type FilterChipRowProps = {
   /** Total active filters → the Filters · N badge; tapping opens the sheet. */
   activeFilterCount: number;
@@ -23,6 +30,9 @@ export type FilterChipRowProps = {
   gradeLabel: string;
   gradeActive: boolean;
   onOpenGrade: () => void;
+
+  /** Tall/Wide chips for the current Kilter homewall size (empty otherwise). */
+  dimensionChips: DimensionChip[];
 
   minAscents: number | undefined;
   onChangePopularity: (bucket: number | undefined) => void;

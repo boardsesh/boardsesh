@@ -53,6 +53,7 @@ function FilterChipRowComponent({
   gradeLabel,
   gradeActive,
   onOpenGrade,
+  dimensionChips,
   minAscents,
   onChangePopularity,
   minRating,
@@ -140,6 +141,18 @@ function FilterChipRowComponent({
 
           {/* Grade → the range rail overlay. A button, not a menu. [PRIMARY #1] */}
           <Button label={gradeLabel} onPress={onOpenGrade} modifiers={chipModifiers(gradeActive)} />
+
+          {/* Tall / Wide — board-shape toggles, present only on the Kilter
+              homewall sizes where they apply (Wide on 10x10, Tall on 8x12, both
+              on 10x12). A tinted Button toggles each on tap. */}
+          {dimensionChips.map((dimension) => (
+            <Button
+              key={dimension.key}
+              label={dimension.key === 'tall' ? t('mobile.filter.tallClimbs') : t('mobile.filter.wideClimbs')}
+              onPress={dimension.onToggle}
+              modifiers={chipModifiers(dimension.active)}
+            />
+          ))}
 
           {/* Show ▾ — hide-sent + benchmarks; menuActionDismissBehavior keeps it
               open. [PRIMARY #2 + #3] */}
