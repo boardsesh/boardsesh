@@ -211,11 +211,18 @@ jobs:
         working-directory: packages/mobile
         run: bunx expo prebuild --platform ios --clean --no-install
 
+      # Key on the native inputs that decide the Pods, NOT ios/Podfile.lock: there
+      # is no committed ios/ (CNG — `expo prebuild` generates it), and this step
+      # runs BEFORE `pod install`, so hashFiles('packages/mobile/ios/Podfile.lock')
+      # matched nothing and the key collapsed to a constant that froze the cache at
+      # its first save. The native deps + plugins + patches are what move the Pods,
+      # so hash those (mirrors the gradle key in android-apk-rn.yml and the .app key
+      # in mobile-screenshots-ios.yml).
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
           path: packages/mobile/ios/Pods
-          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/ios/Podfile.lock') }}
+          key: ${{ runner.os }}-pods-rn-${{ hashFiles('packages/mobile/package.json', 'bun.lock', 'packages/mobile/app.config.ts', 'packages/mobile/plugins/**', 'packages/mobile/modules/**', 'patches/**') }}
           restore-keys: |
             ${{ runner.os }}-pods-rn-
 

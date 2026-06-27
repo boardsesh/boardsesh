@@ -1,6 +1,3 @@
-diff --git a/node_modules/react-native-screens/.bun-tag-4d17c8a3a14d1b96 b/.bun-tag-4d17c8a3a14d1b96
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/ios/helpers/scroll-view/RNSScrollViewFinder.h b/ios/helpers/scroll-view/RNSScrollViewFinder.h
 index 04d40b38bad73bedd79c6aa8b85125dc79093db7..ea25d1b0b36fcc6afeed44b5d603b8cbd15be6c0 100644
 --- a/ios/helpers/scroll-view/RNSScrollViewFinder.h

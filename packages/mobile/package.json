@@ -1,6 +1,5 @@
 {
   "name": "@boardsesh/mobile",
-  "version": "2.0.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
