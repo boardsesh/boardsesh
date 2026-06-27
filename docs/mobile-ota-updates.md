@@ -209,6 +209,80 @@ still logs `[analytics] OTA Update Status …` to Metro so you can confirm the t
 In PostHog (project 412845), count distinct installs with `isEmbeddedLaunch = false` per `updateId` to
 measure how many pulled a given OTA.
 
+## Health monitoring & rollback
+
+A production OTA reaches **every** matching install on the next launch — there's no rollout
+percentage to cap the blast radius — and it publishes to our **self-hosted** server, so
+`eas update:insights` (which only sees EAS-hosted updates) is blind to it. The health signal
+therefore comes from the app's own launch telemetry above: an `OTA Update Status` event with
+`isEmergencyLaunch === true` is expo-updates' automatic safety net firing — the downloaded JS
+failed to boot, so the binary fell back to its **embedded** bundle. A spike in that rate across the
+production fleet right after a publish is the tell-tale of a broken bundle.
+
+### The health check (`scripts/mobile-ota-health-check.ts`)
+
+`vp run mobile:ota-health-check` queries PostHog (HogQL) for `OTA Update Status` events on the
+`production` channel over a window and reports launch count, distinct installs, and the
+emergency-launch rate:
+
+```bash
+vp run mobile:ota-health-check                                  # latest production update, last 24h
+vp run mobile:ota-health-check -- --hours 6                     # narrower window
+vp run mobile:ota-health-check -- --update-id <id>             # adoption context for a specific update
+vp run mobile:ota-health-check -- --min-samples 50 --threshold 0.1
+```
+
+It **exits non-zero only when the emergency-launch rate exceeds `--threshold` (default 10%) AND the
+window has at least `--min-samples` launches (default 30)** — so the low-volume minutes right after a
+publish, or a one-off device failure, never trip it. Every other outcome (healthy, inconclusive,
+missing key, API/network error) exits 0, so it's safe as a non-blocking gate.
+
+Two notes on what it measures:
+
+- An emergency launch runs the **embedded** bundle, so its `updateId` is the embedded one — you
+  can't attribute the failure to the bad update's id. The gate therefore measures the **fleet-wide**
+  production emergency rate over the window, not a per-`updateId` rate. The target update's adoption
+  (installs successfully running it) is reported separately, for context only.
+- The fleet relaunches over **hours**, so the value is a re-run later (manually, or wire it to a
+  schedule), not the seconds after a publish.
+
+**Required secret to activate the gate:** add `POSTHOG_PERSONAL_API_KEY` (a PostHog personal API key
+with read access) to the **Production** environment — the same secret
+`scripts/refresh-recommendations.ts` already uses. `POSTHOG_PROJECT_ID` (default `412845`) and
+`POSTHOG_HOST` (default `https://us.posthog.com`) are optional overrides. Without the key the check
+**skips and exits 0** — it never blocks a publish.
+
+### Post-publish CI step (non-blocking)
+
+`mobile-ota-production.yml` runs the health check after a successful publish (a short `sleep` lets
+early relaunches report), with `continue-on-error: true`, and posts the verdict to the same Discord
+deploy channel as the publish announcement. It's wired so it can **never** block or fail the
+publish: `continue-on-error` swallows a tripped gate, and the script no-ops (exit 0) until the
+`POSTHOG_PERSONAL_API_KEY` secret exists. The step's `outcome` going to `failure` is what flips the
+Discord header to the 🚨 emergency-spike variant.
+
+### Rollback (`scripts/mobile-ota-rollback.ts`)
+
+Because there's no rollout percentage, "rollback" means re-pointing the production branch on the
+self-hosted server. The canonical, durable fix is to **revert the offending JS commit on `main`** —
+this workflow then republishes a good bundle automatically. When you need installs reverted in
+**minutes**, before a revert PR can merge, use the helper (wraps the `eoas` CLI):
+
+```bash
+vp run mobile:ota-rollback                       # rollback to the embedded bundle, all platforms
+vp run mobile:ota-rollback -- --platform ios     # one platform only
+vp run mobile:ota-rollback -- --mode republish   # re-point to a previous update (interactive, run LOCALLY)
+```
+
+- **`--mode embedded` (default)** runs `eoas rollback`: publishes a rollback **directive** so every
+  install currently on the bad OTA reverts to the binary's embedded (shipped, known-good) bundle on
+  its next launch. Non-interactive — safe to run from CI.
+- **`--mode republish`** runs `eoas republish`: re-points the branch to a previous published update
+  you pick from a list. It's **interactive**, so run it locally, not in CI.
+
+Both need `EXPO_UPDATES_URL` + `EXPO_TOKEN` (same as the publish). After rolling back, land the real
+fix (a revert or a corrected commit) on `main` so the next publish moves the fleet forward again.
+
 ## PR-time OTA-compatibility signal
 
 The native gate above answers "should `main` rebuild?". `mobile-ota-check.yml` answers the same

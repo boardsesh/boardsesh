@@ -359,3 +359,60 @@ jobs:
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
+
+      # Post-publish OTA health gate — NON-BLOCKING. Production OTAs publish to our
+      # self-hosted server (not EAS), so `eas update:insights` can't see them.
+      # Instead we read the app's own launch telemetry from PostHog
+      # (OtaUpdateTracker → "OTA Update Status") and flag a spike in emergency
+      # launches — downloaded JS that failed to boot and fell back to the embedded
+      # bundle. continue-on-error keeps a tripped gate from ever failing the
+      # publish; the script itself exits 0 unless the emergency-launch rate clears
+      # the threshold AND the sample size is sufficient, so the low-volume minutes
+      # right after a publish can't false-trip it. This is a best-effort EARLY
+      # signal (the fleet relaunches over hours); the authoritative read is a
+      # manual/scheduled re-run later: `vp run mobile:ota-health-check`. Activates
+      # only once the POSTHOG_PERSONAL_API_KEY secret exists — the script skips
+      # (exit 0) without it, since secrets can't be referenced in a step `if:`.
+      # POSTHOG_PROJECT_ID / POSTHOG_HOST are left to the script defaults
+      # (project 412845, us.posthog.com), matching scripts/refresh-recommendations.ts.
+      # See docs/mobile-ota-updates.md ("Health monitoring & rollback").
+      - name: OTA health check (non-blocking)
+        id: health
+        if: github.ref == 'refs/heads/main' && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        continue-on-error: true
+        env:
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+        run: |
+          # Let early relaunches report the new bundle before we read. The window
+          # (--hours 6) picks the freshest production OTA for the adoption line; the
+          # gate uses the fleet-wide emergency-launch rate over that window.
+          sleep 120
+          vp run mobile:ota-health-check -- --hours 6 --out "$RUNNER_TEMP/ota-health.md"
+
+      # Surface the health verdict on the same Discord deploy channel as the
+      # publish announcement. Posts only when the check produced a summary (it
+      # writes nothing when skipped for a missing PostHog key). steps.health.outcome
+      # is 'failure' only when the gate tripped (continue-on-error turned the
+      # non-zero exit into a step failure without failing the job).
+      - name: Notify OTA health to Discord
+        if: github.ref == 'refs/heads/main' && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEALTH_OUTCOME: ${{ steps.health.outcome }}
+        run: |
+          SUMMARY_FILE="$RUNNER_TEMP/ota-health.md"
+          if [ ! -s "$SUMMARY_FILE" ]; then
+            echo "No OTA health summary (check skipped or produced no output) — nothing to post."
+            exit 0
+          fi
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          HEADER='🩺 **Production OTA health**'
+          [ "$HEALTH_OUTCOME" = "failure" ] && HEADER='🚨 **Production OTA health — emergency-launch spike**'
+          CONTENT=$(printf '%s\n%s\n<%s>' "$HEADER" "$(cat "$SUMMARY_FILE")" "$RUN_URL")
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"

@@ -598,6 +598,14 @@ export default defineConfig({
         command: 'tsx scripts/mobile-ota-setup.ts',
         cache: false,
       },
+      'mobile:ota-health-check': {
+        command: 'tsx scripts/mobile-ota-health-check.ts',
+        cache: false,
+      },
+      'mobile:ota-rollback': {
+        command: 'tsx scripts/mobile-ota-rollback.ts',
+        cache: false,
+      },
       'mobile:preview-build': {
         command: 'tsx scripts/mobile-preview-build.ts',
         cache: false,
