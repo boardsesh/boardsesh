@@ -1,13 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildHealthQuery,
   buildLatestUpdateQuery,
   evaluateOtaHealth,
   OTA_UPDATE_STATUS_EVENT,
   parseHealthCheckArgs,
+  runHealthCheck,
   safeSanitizeUpdateId,
   sanitizeUpdateId,
   summarizeVerdict,
+  type HealthCheckArgs,
   type HealthMetrics,
 } from '../mobile-ota-health-check';
 import { OTA_UPDATE_STATUS_EVENT as MOBILE_OTA_UPDATE_STATUS_EVENT } from '../../packages/mobile/src/lib/ota-telemetry';
@@ -194,5 +199,71 @@ describe('summarizeVerdict', () => {
     const text = summarizeVerdict(metrics, verdict, args).join('\n');
     expect(text).toContain('inconclusive');
     expect(text).not.toContain('running it');
+  });
+});
+
+describe('runHealthCheck (networked path)', () => {
+  const tmpDirs: string[] = [];
+  const baseArgs = (overrides: Partial<HealthCheckArgs> = {}): HealthCheckArgs => ({
+    updateId: 'abc-123', // pin the id so only the single health query runs (no latest-update lookup)
+    hours: 6,
+    minSamples: 30,
+    threshold: 0.1,
+    outFile: null,
+    json: false,
+    ...overrides,
+  });
+  const outPath = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), 'ota-health-'));
+    tmpDirs.push(dir);
+    return join(dir, 'health.md');
+  };
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    while (tmpDirs.length > 0) rmSync(tmpDirs.pop() as string, { recursive: true, force: true });
+  });
+
+  it('skips (exit 0) and writes nothing when the API key is absent', async () => {
+    vi.stubEnv('POSTHOG_PERSONAL_API_KEY', '');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const out = outPath();
+
+    await expect(runHealthCheck(baseArgs({ outFile: out }))).resolves.toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(() => readFileSync(out)).toThrow(); // no summary written
+  });
+
+  it('exits 1 and writes an UNHEALTHY summary when the emergency rate clears the gate', async () => {
+    vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
+    // [launches, emergency_launches, installs, emergency_installs, target_update_installs]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[100, 20, 80, 18, 60]] }) })),
+    );
+    const out = outPath();
+
+    await expect(runHealthCheck(baseArgs({ outFile: out }))).resolves.toBe(1);
+    expect(readFileSync(out, 'utf8')).toContain('UNHEALTHY');
+  });
+
+  it('exits 0 when the fleet is healthy', async () => {
+    vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ results: [[500, 5, 400, 5, 300]] }) })),
+    );
+    await expect(runHealthCheck(baseArgs())).resolves.toBe(0);
+  });
+
+  it('exits 0 (operational error never reads as unhealthy) when PostHog returns an error', async () => {
+    vi.stubEnv('POSTHOG_PERSONAL_API_KEY', 'phx_test');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 500, text: async () => 'boom' })),
+    );
+    await expect(runHealthCheck(baseArgs())).resolves.toBe(0);
   });
 });
