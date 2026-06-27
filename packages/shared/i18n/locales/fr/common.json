@@ -107,6 +107,13 @@
         "font": "Français",
         "both": "Les deux"
       },
+      "ascentCounts": {
+        "title": "Comptage des ascensions",
+        "description": "Choisis quels enchaînements compter. App du panneau, c'est le total de l'app du panneau ; Boardsesh compte les enchaînements enregistrés ici.",
+        "all": "Tous",
+        "boardApp": "App du panneau",
+        "boardsesh": "Boardsesh"
+      },
       "language": {
         "title": "Langue",
         "system": "Système",

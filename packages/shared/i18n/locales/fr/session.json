@@ -307,7 +307,18 @@
       "ascensionists_other": "{{count}} grimpeurs",
       "avgQuality": "Qualite moyenne",
       "ascentsByAngle": "Ascensions par angle",
-      "logScale": "Échelle logarithmique"
+      "logScale": "Échelle logarithmique",
+      "ascentsByAngleSource": "Ascensions par angle · {{source}}",
+      "sendsAxis": "enchaînements",
+      "noAscentsForSource": "Pas encore d'ascensions de cette source",
+      "ascentSource": "Source des ascensions",
+      "source": {
+        "all": "Tous",
+        "boardApp": "App du panneau",
+        "boardsesh": "Boardsesh"
+      },
+      "breakdownEntry": "{{source}} {{value}}",
+      "breakdownAccessibility": "Comptage des ascensions par source : {{breakdown}}"
     },
     "betaVideos": {
       "title": "Videos Beta",

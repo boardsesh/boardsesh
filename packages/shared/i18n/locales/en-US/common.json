@@ -107,6 +107,13 @@
         "font": "French",
         "both": "Both"
       },
+      "ascentCounts": {
+        "title": "Ascent counts",
+        "description": "Pick which sends to count. Board app is the tally from the board's own app; Boardsesh counts the sends logged here.",
+        "all": "All",
+        "boardApp": "Board app",
+        "boardsesh": "Boardsesh"
+      },
       "language": {
         "title": "Language",
         "system": "System",

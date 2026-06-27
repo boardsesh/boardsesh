@@ -307,7 +307,18 @@
       "ascensionists_other": "{{count}} ascensionistas",
       "avgQuality": "Calidad promedio",
       "ascentsByAngle": "Ascensos por ángulo",
-      "logScale": "Escala logarítmica"
+      "logScale": "Escala logarítmica",
+      "ascentsByAngleSource": "Ascensos por ángulo · {{source}}",
+      "sendsAxis": "encadenes",
+      "noAscentsForSource": "Aún no hay ascensos de esta fuente",
+      "ascentSource": "Fuente de ascensos",
+      "source": {
+        "all": "Todos",
+        "boardApp": "App del plafón",
+        "boardsesh": "Boardsesh"
+      },
+      "breakdownEntry": "{{source}} {{value}}",
+      "breakdownAccessibility": "Conteo de ascensos por fuente: {{breakdown}}"
     },
     "betaVideos": {
       "title": "Videos Beta",

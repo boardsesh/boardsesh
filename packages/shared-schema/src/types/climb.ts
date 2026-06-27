@@ -26,6 +26,12 @@ export type Climb = {
   frames: string;
   angle: number;
   ascensionist_count: number;
+  // Raw per-source ascensionist counts (GraphQL nullable Int). The total
+  // `ascensionist_count` is GREATEST(kilter, aurora) + boardsesh; the client
+  // derives the "Board app" view as GREATEST(kilter, aurora).
+  kilterAscensionistCount?: number | null;
+  auroraAscensionistCount?: number | null;
+  boardseshAscensionistCount?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;
@@ -106,6 +112,8 @@ export type ZoneBoxInput = {
 
 export type ZoneMatchMode = 'allHolds' | 'anyHold';
 
+export type AscentCountSource = 'all' | 'boardApp' | 'boardsesh';
+
 export type ClimbSearchInput = {
   boardName: string;
   layoutId: number;
@@ -122,6 +130,9 @@ export type ClimbSearchInput = {
   minAscents?: number;
   minRating?: number;
   sortBy?: string;
+  // Ascent-count source to rank by for ascents/popular sorts. Default 'all'
+  // keeps the covering-index fast path.
+  ascentSource?: AscentCountSource;
   sortOrder?: string;
   name?: string;
   setter?: string[];

@@ -307,7 +307,18 @@
       "ascensionists_other": "{{count}} ascensionists",
       "avgQuality": "Average quality",
       "ascentsByAngle": "Ascents by angle",
-      "logScale": "Log scale"
+      "logScale": "Log scale",
+      "ascentsByAngleSource": "Ascents by angle · {{source}}",
+      "sendsAxis": "sends",
+      "noAscentsForSource": "No ascents from this source yet",
+      "ascentSource": "Ascent source",
+      "source": {
+        "all": "All",
+        "boardApp": "Board app",
+        "boardsesh": "Boardsesh"
+      },
+      "breakdownEntry": "{{source}} {{value}}",
+      "breakdownAccessibility": "Ascent count by source: {{breakdown}}"
     },
     "betaVideos": {
       "title": "Beta Videos",

@@ -848,8 +848,12 @@ export function PlayDrawer({
                   </View>
                 </View>
 
-                {/* Below-fold deferred sections */}
+                {/* Below-fold deferred sections. Keyed on the climb uuid so the
+                    subtree remounts when the drawer navigates to a new climb —
+                    this resets CommunitySection's per-view chart-source override
+                    (and its userPicked guard) instead of leaking it across climbs. */}
                 <DeferredSections
+                  key={displayedClimb.uuid}
                   climb={displayedClimb}
                   boardName={boardName}
                   layoutId={layoutId}

@@ -24,6 +24,8 @@ import { SessionRecordingSwitchRow } from '../../../src/components/settings/Sess
 import { isPreviewBuild } from '../../../src/lib/eas-api';
 import { isDevLauncherAvailable } from '../../../src/lib/dev-launcher';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
+import { useAscentCountSource } from '../../../src/lib/ascent-count-source-preference';
+import type { AscentCountSource } from '../../../src/lib/ascent-count-source';
 import { useGlassCapability } from '../../../src/hooks/use-glass-capability';
 import { useToast } from '../../../src/providers/toast-provider';
 import { useFeatureFlag } from '../../../src/providers/feature-flags-provider';
@@ -46,6 +48,7 @@ export default function MoreScreen() {
   const { signOut } = useAuth();
   const { data: profile } = useProfile();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
+  const { source: ascentCountSource, setSource: setAscentCountSource } = useAscentCountSource();
   const glassCapable = useGlassCapability();
   const { localePreference, setLocalePreference } = useLocalePreference();
   const { showToast } = useToast();
@@ -130,6 +133,12 @@ export default function MoreScreen() {
     { key: 'v-grade', label: t('mobile.more.gradeFormat.vGrade') },
     { key: 'font', label: t('mobile.more.gradeFormat.font') },
     { key: 'both', label: t('mobile.more.gradeFormat.both') },
+  ];
+
+  const ascentCountOptions: { key: AscentCountSource; label: string }[] = [
+    { key: 'all', label: t('mobile.more.ascentCounts.all') },
+    { key: 'boardApp', label: t('mobile.more.ascentCounts.boardApp') },
+    { key: 'boardsesh', label: t('mobile.more.ascentCounts.boardsesh') },
   ];
 
   const handleReplayWalkthrough = () => {
@@ -226,6 +235,22 @@ export default function MoreScreen() {
           />
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.settingHint}>
             {t('mobile.more.gradeFormat.description')}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.more.ascentCounts.title')} />
+        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
+          <SegmentedControl
+            options={ascentCountOptions}
+            selectedKey={ascentCountSource}
+            onSelect={setAscentCountSource}
+            trackColor={systemColors.fill}
+            accessibilityLabel={t('mobile.more.ascentCounts.title')}
+          />
+          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.settingHint}>
+            {t('mobile.more.ascentCounts.description')}
           </Text>
         </View>
       </View>

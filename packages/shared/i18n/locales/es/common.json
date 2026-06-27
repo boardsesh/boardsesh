@@ -305,6 +305,13 @@
         "font": "Francés",
         "both": "Ambos"
       },
+      "ascentCounts": {
+        "title": "Conteo de ascensos",
+        "description": "Elige qué encadenes contar. App del plafón es el conteo de la app propia del plafón; Boardsesh cuenta los encadenes registrados aquí.",
+        "all": "Todos",
+        "boardApp": "App del plafón",
+        "boardsesh": "Boardsesh"
+      },
       "language": {
         "title": "Idioma",
         "system": "Sistema",

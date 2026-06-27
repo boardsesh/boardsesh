@@ -69,6 +69,10 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       setter_username: climb.setter_username,
       angle: climb.angle,
       ascensionist_count: climb.ascensionist_count,
+      // Per-source counts so the queued row honours the "Ascent counts" setting.
+      kilterAscensionistCount: climb.kilterAscensionistCount,
+      auroraAscensionistCount: climb.auroraAscensionistCount,
+      boardseshAscensionistCount: climb.boardseshAscensionistCount,
       difficulty: climb.difficulty,
       quality_average: climb.quality_average,
       stars: climb.stars,

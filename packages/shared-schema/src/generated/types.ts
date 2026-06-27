@@ -163,6 +163,14 @@ export type Angle = {
   angle: Scalars['Int']['output'];
 };
 
+/**
+ * Which ascents to count when ranking by ascents/popular.
+ * all: combined total (covering-index fast path).
+ * boardApp: the board's own app, GREATEST(kilter, aurora).
+ * boardsesh: ascents logged in Boardsesh.
+ */
+export type AscentCountSource = 'all' | 'boardApp' | 'boardsesh';
+
 /** Pagination input for ascent feeds. */
 export type AscentFeedInput = {
   /** When true, only include benchmark climbs */
@@ -629,10 +637,14 @@ export type Climb = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb */
   ascensionist_count: Scalars['Int']['output'];
+  /** Ascensionist count contributed by Aurora syncs (raw per-source count). Null when not tracked. */
+  auroraAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Official benchmark difficulty if this is a benchmark climb */
   benchmark_difficulty?: Maybe<Scalars['String']['output']>;
   /** Board type this climb belongs to (e.g. 'kilter', 'tension'). Populated in multi-board contexts. */
   boardType?: Maybe<Scalars['String']['output']>;
+  /** Ascensionist count contributed by Boardsesh logs (raw per-source count). Null when not tracked. */
+  boardseshAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Structured climb characteristics (e.g. 'no_match', 'method_footless'). Decode with @boardsesh/shared-schema helpers (isNoMatch / getMoonBoardMethod). */
   characteristics?: Maybe<Array<Scalars['String']['output']>>;
   /** ISO timestamp of when this climb row was created */
@@ -653,6 +665,8 @@ export type Climb = {
   is_draft?: Maybe<Scalars['Boolean']['output']>;
   /** Whether this climb disallows matching (both hands on the same hold) */
   is_no_match?: Maybe<Scalars['Boolean']['output']>;
+  /** Ascensionist count contributed by Kilter syncs (raw per-source count). Null when not tracked. */
+  kilterAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Layout ID the climb belongs to (used to identify cross-layout climbs) */
   layoutId?: Maybe<Scalars['Int']['output']>;
   /** Whether the climb should be displayed mirrored */
@@ -801,6 +815,8 @@ export type ClimbQueueItemInput = {
 export type ClimbSearchInput = {
   /** Board angle in degrees */
   angle: Scalars['Int']['input'];
+  /** Ascent-count source to rank by when sorting by ascents/popular. Default 'all' keeps the covering-index fast path. */
+  ascentSource?: InputMaybe<AscentCountSource>;
   /** Board type (e.g., 'kilter', 'tension') */
   boardName: Scalars['String']['input'];
   /** Include single-frame climbs (boulders). Default true. Set to false (paired with routes=true) to filter to routes only. */
@@ -886,6 +902,10 @@ export type ClimbStatsForAngle = {
   angle: Scalars['Int']['output'];
   /** Number of people who have completed this climb at this angle */
   ascensionistCount?: Maybe<Scalars['Int']['output']>;
+  /** Ascensionist count contributed by Aurora syncs at this angle (raw per-source count). Null when not tracked. */
+  auroraAscensionistCount?: Maybe<Scalars['Int']['output']>;
+  /** Ascensionist count contributed by Boardsesh logs at this angle (raw per-source count). Null when not tracked. */
+  boardseshAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Human-readable grade label derived from displayDifficulty (e.g., 'V5', '6B+') */
   difficulty?: Maybe<Scalars['String']['output']>;
   /** Average difficulty rating */
@@ -896,6 +916,8 @@ export type ClimbStatsForAngle = {
   faAt?: Maybe<Scalars['String']['output']>;
   /** Username of the first ascensionist */
   faUsername?: Maybe<Scalars['String']['output']>;
+  /** Ascensionist count contributed by Kilter syncs at this angle (raw per-source count). Null when not tracked. */
+  kilterAscensionistCount?: Maybe<Scalars['Int']['output']>;
   /** Average quality rating */
   qualityAverage?: Maybe<Scalars['Float']['output']>;
 };
@@ -6178,6 +6200,7 @@ export type ResolversTypes = ResolversObject<{
   AddGymMemberInput: AddGymMemberInput;
   AllUserPlaylistsResult: ResolverTypeWrapper<AllUserPlaylistsResult>;
   Angle: ResolverTypeWrapper<Angle>;
+  AscentCountSource: AscentCountSource;
   AscentFeedInput: AscentFeedInput;
   AscentFeedItem: ResolverTypeWrapper<AscentFeedItem>;
   AscentFeedResult: ResolverTypeWrapper<AscentFeedResult>;
@@ -7062,8 +7085,10 @@ export type ClimbResolvers<
 > = ResolversObject<{
   angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   ascensionist_count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  auroraAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   benchmark_difficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   boardType?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  boardseshAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   characteristics?: Resolver<Maybe<Array<ResolversTypes['String']>>, ParentType, ContextType>;
   created_at?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   description?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -7074,6 +7099,7 @@ export type ClimbResolvers<
   framesPace?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   is_draft?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   is_no_match?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  kilterAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   layoutId?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   mirrored?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
   name?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
@@ -7176,11 +7202,14 @@ export type ClimbStatsForAngleResolvers<
 > = ResolversObject<{
   angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   ascensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  auroraAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  boardseshAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   difficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   difficultyAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   displayDifficulty?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   faAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   faUsername?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  kilterAscensionistCount?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
   qualityAverage?: Resolver<Maybe<ResolversTypes['Float']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;

@@ -368,6 +368,11 @@ export const climbQueries = {
       .select({
         angle: dbSchema.boardClimbStats.angle,
         ascensionistCount: dbSchema.boardClimbStats.ascensionistCount,
+        // Raw per-source counts so the client can derive the "Board app" =
+        // GREATEST(kilter, aurora) view alongside the Boardsesh contribution.
+        kilterAscensionistCount: dbSchema.boardClimbStats.kilterAscensionistCount,
+        auroraAscensionistCount: dbSchema.boardClimbStats.auroraAscensionistCount,
+        boardseshAscensionistCount: dbSchema.boardClimbStats.boardseshAscensionistCount,
         qualityAverage: dbSchema.boardClimbStats.qualityAverage,
         difficultyAverage: dbSchema.boardClimbStats.difficultyAverage,
         displayDifficulty: dbSchema.boardClimbStats.displayDifficulty,

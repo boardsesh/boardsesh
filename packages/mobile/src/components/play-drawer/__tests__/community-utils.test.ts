@@ -1,64 +1,87 @@
 import { describe, it, expect } from 'vitest';
-import type { ClimbStatsHistoryEntry } from '@boardsesh/graphql/operations';
-import { buildAngleGradeBars, buildAscentChartScale, buildAscentScale, niceStep } from '../community-utils';
+import type { ClimbStatsForAnglesEntry } from '@boardsesh/graphql/operations';
+import {
+  buildAngleGradeBars,
+  buildAscentChartScale,
+  buildAscentScale,
+  niceStep,
+  totalSendsForSource,
+} from '../community-utils';
 
-function makeEntry(overrides: Partial<ClimbStatsHistoryEntry> = {}): ClimbStatsHistoryEntry {
+function makeEntry(overrides: Partial<ClimbStatsForAnglesEntry> = {}): ClimbStatsForAnglesEntry {
   return {
     angle: 40,
     ascensionistCount: 10,
+    kilterAscensionistCount: 6,
+    auroraAscensionistCount: 4,
+    boardseshAscensionistCount: 3,
     qualityAverage: 2.5,
     difficultyAverage: 20,
     displayDifficulty: 20,
-    createdAt: '2026-01-01',
+    difficulty: '20',
+    faUsername: null,
+    faAt: null,
     ...overrides,
   };
 }
 
 describe('buildAngleGradeBars', () => {
-  it('returns an empty array for undefined history', () => {
-    expect(buildAngleGradeBars(undefined, 'v-grade')).toEqual([]);
+  it('returns an empty array for undefined entries', () => {
+    expect(buildAngleGradeBars(undefined, 'v-grade', 'all')).toEqual([]);
   });
 
   it('maps difficulty id to a V-grade label and sorts by angle', () => {
     const bars = buildAngleGradeBars(
       [makeEntry({ angle: 50, displayDifficulty: 22 }), makeEntry({ angle: 40, displayDifficulty: 20 })],
       'v-grade',
+      'all',
     );
     expect(bars.map((bar) => bar.angle)).toEqual([40, 50]);
     expect(bars.map((bar) => bar.gradeName)).toEqual(['V5', 'V6']);
   });
 
   it('uses font labels when requested', () => {
-    const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 20 })], 'font');
+    const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 20 })], 'font', 'all');
     expect(bars[0].gradeName).toBe('6C');
   });
 
   it('uses combined labels when requested', () => {
-    const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 21 })], 'both');
+    const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 21 })], 'both', 'all');
     expect(bars[0].gradeName).toBe('V5+ / 6C+');
   });
 
-  it('keeps only the latest snapshot per angle, including its ascent count', () => {
-    const bars = buildAngleGradeBars(
-      [
-        makeEntry({ angle: 40, displayDifficulty: 18, ascensionistCount: 5, createdAt: '2026-01-01' }),
-        makeEntry({ angle: 40, displayDifficulty: 22, ascensionistCount: 37, createdAt: '2026-03-01' }),
-      ],
-      'v-grade',
-    );
-    expect(bars).toHaveLength(1);
-    expect(bars[0].difficulty).toBe(22);
-    expect(bars[0].gradeName).toBe('V6');
-    expect(bars[0].sends).toBe(37);
-  });
-
-  it('carries the ascensionist count into sends', () => {
-    const bars = buildAngleGradeBars([makeEntry({ ascensionistCount: 42 })], 'v-grade');
+  it('uses the combined total for the "all" source', () => {
+    const bars = buildAngleGradeBars([makeEntry({ ascensionistCount: 42 })], 'v-grade', 'all');
     expect(bars[0].sends).toBe(42);
   });
 
-  it('defaults sends to 0 when ascensionistCount is null', () => {
-    const bars = buildAngleGradeBars([makeEntry({ ascensionistCount: null })], 'v-grade');
+  it('uses max(kilter, aurora) for the "boardApp" source', () => {
+    const bars = buildAngleGradeBars(
+      [makeEntry({ kilterAscensionistCount: 6, auroraAscensionistCount: 9 })],
+      'v-grade',
+      'boardApp',
+    );
+    expect(bars[0].sends).toBe(9);
+  });
+
+  it('uses the Boardsesh count for the "boardsesh" source', () => {
+    const bars = buildAngleGradeBars([makeEntry({ boardseshAscensionistCount: 3 })], 'v-grade', 'boardsesh');
+    expect(bars[0].sends).toBe(3);
+  });
+
+  it('keeps the grade label/colour derived from difficulty regardless of source', () => {
+    const all = buildAngleGradeBars([makeEntry({ displayDifficulty: 20 })], 'v-grade', 'all');
+    const boardsesh = buildAngleGradeBars([makeEntry({ displayDifficulty: 20 })], 'v-grade', 'boardsesh');
+    expect(all[0].gradeName).toBe('V5');
+    expect(boardsesh[0].gradeName).toBe('V5');
+  });
+
+  it('defaults sends to 0 when the source has no count and no total', () => {
+    const bars = buildAngleGradeBars(
+      [makeEntry({ ascensionistCount: null, kilterAscensionistCount: null, auroraAscensionistCount: null })],
+      'v-grade',
+      'boardApp',
+    );
     expect(bars[0].sends).toBe(0);
   });
 
@@ -69,14 +92,52 @@ describe('buildAngleGradeBars', () => {
         makeEntry({ angle: 45, displayDifficulty: null, difficultyAverage: null }),
       ],
       'v-grade',
+      'all',
     );
     expect(bars.map((bar) => bar.angle)).toEqual([40]);
     expect(bars[0].difficulty).toBe(20);
   });
 
   it('labels out-of-range difficulties with the rounded numeric value', () => {
-    const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 99.4 })], 'v-grade');
+    const bars = buildAngleGradeBars([makeEntry({ displayDifficulty: 99.4 })], 'v-grade', 'all');
     expect(bars[0].gradeName).toBe('99');
+  });
+});
+
+describe('totalSendsForSource', () => {
+  it('sums the per-source count across all angles', () => {
+    const entries = [
+      makeEntry({
+        angle: 40,
+        ascensionistCount: 10,
+        kilterAscensionistCount: 6,
+        auroraAscensionistCount: 4,
+        boardseshAscensionistCount: 3,
+      }),
+      makeEntry({
+        angle: 50,
+        ascensionistCount: 20,
+        kilterAscensionistCount: 5,
+        auroraAscensionistCount: 12,
+        boardseshAscensionistCount: 7,
+      }),
+    ];
+    expect(totalSendsForSource(entries, 'all')).toBe(30);
+    // boardApp sums the per-angle GREATEST(kilter, aurora): max(6,4) + max(5,12).
+    expect(totalSendsForSource(entries, 'boardApp')).toBe(18);
+    expect(totalSendsForSource(entries, 'boardsesh')).toBe(10);
+  });
+
+  it('is 0 for undefined entries', () => {
+    expect(totalSendsForSource(undefined, 'all')).toBe(0);
+  });
+
+  it('reports 0 for a source with no data across angles', () => {
+    const entries = [
+      makeEntry({ boardseshAscensionistCount: 0 }),
+      makeEntry({ angle: 50, boardseshAscensionistCount: 0 }),
+    ];
+    expect(totalSendsForSource(entries, 'boardsesh')).toBe(0);
   });
 });
 

@@ -29,6 +29,12 @@ export type Climb = {
   frames: string;
   angle: number;
   ascensionist_count: number;
+  // Per-source ascensionist counts (all nullable). Carried through queue
+  // conversion so a queued climb's row can honour the "Ascent counts" setting.
+  // The total `ascensionist_count` is GREATEST(kilter, aurora) + boardsesh.
+  kilterAscensionistCount?: number | null;
+  auroraAscensionistCount?: number | null;
+  boardseshAscensionistCount?: number | null;
   difficulty: string;
   quality_average: string;
   stars: number;
@@ -89,6 +95,12 @@ export type ClimbRegradePatch = {
   difficulty: string;
   quality_average: string;
   ascensionist_count: number;
+  // Per-source counts are angle-specific too — patch them alongside the total so
+  // a queued climb's Board app / Boardsesh subtitle and the drawer headline
+  // follow the new angle instead of keeping the angle it was fetched at.
+  kilterAscensionistCount?: number | null;
+  auroraAscensionistCount?: number | null;
+  boardseshAscensionistCount?: number | null;
   benchmark_difficulty: string | null;
   difficulty_error?: string;
 };

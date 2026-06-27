@@ -1262,6 +1262,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
               difficulty: climb.difficulty,
               quality_average: climb.quality_average,
               ascensionist_count: climb.ascensionist_count,
+              kilterAscensionistCount: climb.kilterAscensionistCount ?? null,
+              auroraAscensionistCount: climb.auroraAscensionistCount ?? null,
+              boardseshAscensionistCount: climb.boardseshAscensionistCount ?? null,
               benchmark_difficulty: climb.benchmark_difficulty ?? null,
               difficulty_error: climb.difficulty_error,
             };
