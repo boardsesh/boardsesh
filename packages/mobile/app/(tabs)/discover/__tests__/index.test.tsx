@@ -255,10 +255,12 @@ vi.mock('../../../../src/components/playlist', () => ({
     visible,
     submitError,
     onSubmit,
+    onClose,
   }: {
     visible: boolean;
     submitError?: string | null;
     onSubmit: (values: typeof FORM_VALUES) => void;
+    onClose: () => void;
   }) =>
     visible
       ? createElement(
@@ -266,6 +268,7 @@ vi.mock('../../../../src/components/playlist', () => ({
           null,
           submitError ? createElement('span', { 'data-create-error': 'true' }, submitError) : null,
           createElement('button', { 'aria-label': 'submit-create', onClick: () => onSubmit(FORM_VALUES) }, 'submit'),
+          createElement('button', { 'aria-label': 'close-create', onClick: onClose }, 'close'),
         )
       : null,
 }));
@@ -619,8 +622,29 @@ describe('DiscoverLibrary create flow', () => {
     expect(container.querySelector('[data-create-error="true"]')?.textContent).toBe(
       'bottomTabBar.createPlaylistFailed',
     );
-    expect(toast.showToast).not.toHaveBeenCalledWith('bottomTabBar.createPlaylistFailed', 'error');
+    // No toast at all on create failure — a root toast would be hidden behind the
+    // native sheet.
+    expect(toast.showToast).not.toHaveBeenCalled();
     // The sheet stays open so the user can correct and retry.
     expect(getByLabelText('submit-create')).toBeTruthy();
+  });
+
+  it('clears the create error after the sheet is closed and reopened', async () => {
+    createPlaylist.mockRejectedValue(new Error('create failed'));
+
+    const { getByLabelText, queryByLabelText, container } = renderHub();
+
+    fireEvent.click(getByLabelText('open-create'));
+    await act(async () => {
+      fireEvent.click(getByLabelText('submit-create'));
+    });
+    expect(container.querySelector('[data-create-error="true"]')).not.toBeNull();
+
+    fireEvent.click(getByLabelText('close-create'));
+    expect(queryByLabelText('submit-create')).toBeNull();
+
+    fireEvent.click(getByLabelText('open-create'));
+    // Reopened with a clean slate — no stale error from the previous attempt.
+    expect(container.querySelector('[data-create-error="true"]')).toBeNull();
   });
 });

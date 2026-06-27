@@ -393,8 +393,8 @@ describe('AddToPlaylistSheet', () => {
         'actions.playlist.toast.createFailed',
       );
     });
-    // A root toast would render behind the native sheet and be invisible.
-    expect(toast.showToast).not.toHaveBeenCalledWith('actions.playlist.toast.createFailed', 'error');
+    // No toast at all — a root toast would render behind the native sheet.
+    expect(toast.showToast).not.toHaveBeenCalled();
     expect(getByLabelText('submit-created-playlist')).not.toBeNull();
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
