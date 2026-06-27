@@ -93,6 +93,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private let auroraServiceUuid = CBUUID(string: "4488B571-7806-4DF6-BCFF-A2897E4953FF")
     private let uartServiceUuid = CBUUID(string: "6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
     private let uartWriteCharacteristicUuid = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
+    // Original MoonBoard (RedBearLab) LED box: a second controller generation
+    // whose write characteristic (713d0003, `.write`-only) lives on its own
+    // service. Probed as a fallback after the Nordic UART one for the moonboard
+    // family. See docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
+    private let redBearLabServiceUuid = CBUUID(string: "713D0000-503E-4C75-BA94-3148F18D941E")
+    private let redBearLabWriteCharacteristicUuid = CBUUID(string: "713D0003-503E-4C75-BA94-3148F18D941E")
     private let chunkSize = 20
     private let chunkDelay: TimeInterval = 0.005
     private let connectTimeout: TimeInterval = 8
@@ -504,10 +510,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         reconnectScanTimeoutWorkItem = timeout
         bleQueue.asyncAfter(deadline: .now() + connectTimeout, execute: timeout)
 
-        // Filter on both the Aurora advertised service and the UART service so a
-        // MoonBoard (which advertises UART) is matchable too, mirroring the JS
-        // adapter's scan filter.
-        startScanOnBleQueue(serviceUuids: [auroraServiceUuid.uuidString, uartServiceUuid.uuidString]) { [weak self] result in
+        // Filter on the Aurora advertised service, the Nordic UART service, and
+        // the original RedBearLab service so any board generation — Aurora,
+        // newer MoonBoard (UART), or original MoonBoard (RedBearLab) — is
+        // matchable, mirroring the JS adapter's scan filter.
+        startScanOnBleQueue(serviceUuids: [
+            auroraServiceUuid.uuidString,
+            uartServiceUuid.uuidString,
+            redBearLabServiceUuid.uuidString,
+        ]) { [weak self] result in
             if case .failure(let error) = result {
                 self?.failReconnectScan(error)
             }
@@ -763,7 +774,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             peripheralGenerations[peripheral.identifier] = connectionGeneration
             connectedPeripheral = peripheral
             logger.info("Restored BLE peripheral \(deviceId, privacy: .public)")
-            peripheral.discoverServices([uartServiceUuid])
+            peripheral.discoverServices(writeServiceUuids())
         case .connecting:
             // The restored connect request is still pending; didConnect will
             // run service discovery when the link comes up (the generation set
@@ -825,7 +836,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
         peripheral.delegate = self
-        peripheral.discoverServices([uartServiceUuid])
+        peripheral.discoverServices(writeServiceUuids())
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -900,6 +911,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     // MARK: - CBPeripheralDelegate
 
+    /// Services to probe after connect. MoonBoard spans two controller
+    /// generations, so probe the Nordic UART service first and the original
+    /// RedBearLab service as a fallback; Aurora boards are always Nordic UART.
+    private func writeServiceUuids() -> [CBUUID] {
+        configuration?.boardName == "moonboard" ? [uartServiceUuid, redBearLabServiceUuid] : [uartServiceUuid]
+    }
+
+    /// The write characteristic UUID paired with a discovered service UUID.
+    private func writeCharacteristicUuid(for serviceUuid: CBUUID) -> CBUUID {
+        serviceUuid == redBearLabServiceUuid ? redBearLabWriteCharacteristicUuid : uartWriteCharacteristicUuid
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         // Identity AND generation, mirroring didConnect: a stale discovery
         // callback from a superseded connect attempt to the same device must
@@ -912,12 +935,17 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
-        guard let service = peripheral.services?.first(where: { $0.uuid == uartServiceUuid }) else {
+        // Prefer the Nordic UART service; fall back to RedBearLab for the
+        // original MoonBoard LED box. writeServiceUuids() is ordered, so the
+        // compactMap keeps that preference.
+        guard let service = writeServiceUuids().compactMap({ uuid in
+            peripheral.services?.first(where: { $0.uuid == uuid })
+        }).first else {
             failConnectionSetup(peripheral, error: BoardBleError.uartServiceMissing)
             return
         }
 
-        peripheral.discoverCharacteristics([uartWriteCharacteristicUuid], for: service)
+        peripheral.discoverCharacteristics([writeCharacteristicUuid(for: service.uuid)], for: service)
     }
 
     /// A connection that reached service discovery but can't become
@@ -946,7 +974,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
-        guard let characteristic = service.characteristics?.first(where: { $0.uuid == uartWriteCharacteristicUuid }) else {
+        let writeCharUuid = writeCharacteristicUuid(for: service.uuid)
+        guard let characteristic = service.characteristics?.first(where: { $0.uuid == writeCharUuid }) else {
             failConnectionSetup(peripheral, error: BoardBleError.writeCharacteristicMissing)
             return
         }

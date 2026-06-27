@@ -302,25 +302,18 @@ Used when `getAPILevel() < 3` (or API level not specified in device name, defaul
 Byte 1 (POS_LO): Position[7:0]
                   Lower 8 bits of LED position
 
-Byte 2 (COLOR):  Position[9:8] | Green[1:0] | Red[1:0] | Blue[1:0]
+Byte 2 (COLOR):  Red[1:0] | Green[1:0] | Blue[1:0] | Position[9:8]
 
-  Bit layout of Byte 2:
-  +----+----+----+----+----+----+----+----+
-  | R1 | R0 | G1 | G0 | -- | -- | B1 | B0 |
-  +----+----+----+----+----+----+----+----+
-    7    6    5    4    3    2    1    0
-
-  Actually (from code):
-  color_byte = (scaled_red << 6) | (scaled_green << 4) | position_hi | (scaled_blue << 2)
+  color_byte = (scaled_red << 6) | (scaled_green << 4) | (scaled_blue << 2) | position_hi
 
   Where:
-  - position_hi = (position >> 8) & 0x03   (bits 1:0)
   - scaled_red << 6                        (bits 7:6)
   - scaled_green << 4                      (bits 5:4)
   - scaled_blue << 2                       (bits 3:2)
+  - position_hi = (position >> 8) & 0x03   (bits 1:0)
 ```
 
-**Bit layout of Byte 2 (corrected):**
+**Bit layout of Byte 2:**
 
 ```
   Bit 7   Bit 6   Bit 5   Bit 4   Bit 3   Bit 2   Bit 1   Bit 0
@@ -915,14 +908,14 @@ payload = [0x50, 0x0A, 0x30, 0x00, 0x0D, 0xF4, 0xC1]
 **Step 3: Checksum**
 
 ```
-sum = (0x50 + 0x0A + 0x30 + 0x00 + 0x0D + 0xF4 + 0xC1) & 0xFF = 0x56
-checksum = ~0x56 & 0xFF = 0xA9
+sum = (0x50 + 0x0A + 0x30 + 0x00 + 0x0D + 0xF4 + 0xC1) & 0xFF = 0x4C
+checksum = ~0x4C & 0xFF = 0xB3
 ```
 
 **Step 4: Frame**
 
 ```
-[0x01, 0x07, 0xA9, 0x02, 0x50, 0x0A, 0x30, 0x00, 0x0D, 0xF4, 0xC1, 0x03]
+[0x01, 0x07, 0xB3, 0x02, 0x50, 0x0A, 0x30, 0x00, 0x0D, 0xF4, 0xC1, 0x03]
  SOH   LEN   CHK   STX   P     ---------- LED data ----------        ETX
 ```
 

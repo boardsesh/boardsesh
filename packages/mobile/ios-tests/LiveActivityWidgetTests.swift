@@ -217,4 +217,110 @@ final class LiveActivityWidgetTests: XCTestCase {
         // the wall stays dark) — we just don't pick the unacknowledged path for it.
         XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: [.read], boardName: "moonboard"), .withResponse)
     }
+
+    // MARK: - Aurora packet encoding (parity with @boardsesh/ble-protocol)
+
+    private func hex(_ data: Data) -> String {
+        data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Color byte of a single-LED v3 packet:
+    /// [SOH, LEN, CHK, STX, T, posLo, posHi, color, ETX].
+    private func singleLedColorByte(_ result: BoardBlePacketResult) -> UInt8? {
+        let bytes = [UInt8](result.packet)
+        guard bytes.count == 9 else { return nil }
+        return bytes[7]
+    }
+
+    func testAuroraPacketByteExactMatchesValidatedKilter12x12() {
+        // 3rd-party validated payload for Kilter Original 12x12 (Layout 1) — the
+        // same ground-truth fixture as the web bluetooth-packet.test.ts. Locks
+        // Swift ↔ TS ↔ hardware parity for the v3 encoder.
+        let result = BoardBleEncoding.makeAuroraPacket(
+            frames: "p1379r44p1395r44p1447r45p1464r45",
+            placementPositions: [1379: 68, 1395: 476, 1447: 0, 1464: 33],
+            boardName: "kilter"
+        )
+        XCTAssertEqual(hex(result.packet), "010dbb02544400e3dc01e30000f42100f403")
+    }
+
+    func testAuroraPacketByteExactMatchesValidatedKilter8x12Original() {
+        let result = BoardBleEncoding.makeAuroraPacket(
+            frames: "p1382r44p1392r44p1450r45p1461r45",
+            placementPositions: [1382: 56, 1392: 311, 1450: 0, 1461: 21],
+            boardName: "kilter"
+        )
+        XCTAssertEqual(hex(result.packet), "010d7802543800e33701e30000f41500f403")
+    }
+
+    func testAuroraHoldStateColorsMatchCanonicalMap() {
+        // Indirect holdStateMap parity: each role's canonical LED color must
+        // encode to the same v3 color byte as @boardsesh/board-constants. A drift
+        // in the hand-copied Swift map would flip one of these bytes.
+        func color(_ frames: String, _ board: String) -> UInt8? {
+            singleLedColorByte(
+                BoardBleEncoding.makeAuroraPacket(frames: frames, placementPositions: [1: 10], boardName: board)
+            )
+        }
+        // kilter: 42 STARTING #00FF00, 43 HAND #00FFFF, 44 FINISH #FF00FF, 45 FOOT #FFAA00
+        XCTAssertEqual(color("p1r42", "kilter"), 0x1C)
+        XCTAssertEqual(color("p1r43", "kilter"), 0x1F)
+        XCTAssertEqual(color("p1r44", "kilter"), 0xE3)
+        XCTAssertEqual(color("p1r45", "kilter"), 0xF4)
+        // tension: 1 STARTING #00FF00, 3 FINISH #FF0000
+        XCTAssertEqual(color("p1r1", "tension"), 0x1C)
+        XCTAssertEqual(color("p1r3", "tension"), 0xE0)
+        // decoy (common Aurora role map): 3 FINISH #FF0000
+        XCTAssertEqual(color("p1r3", "decoy"), 0xE0)
+    }
+
+    func testAuroraColorOverrideSanitization() {
+        let positions = [1: 10]
+        // A valid 6-digit hex override is honoured (red).
+        XCTAssertEqual(
+            singleLedColorByte(
+                BoardBleEncoding.makeAuroraPacket(
+                    frames: "p1r42",
+                    placementPositions: positions,
+                    boardName: "kilter",
+                    colorOverrides: ["STARTING": "#FF0000"]
+                )
+            ),
+            0xE0
+        )
+        // Malformed overrides fall back to the canonical color (green 0x1C), NOT
+        // black — parity with the TS SIX_DIGIT_HEX_PATTERN guard.
+        for bad in ["#fff", "red", "#FF00FF00", "12345g"] {
+            XCTAssertEqual(
+                singleLedColorByte(
+                    BoardBleEncoding.makeAuroraPacket(
+                        frames: "p1r42",
+                        placementPositions: positions,
+                        boardName: "kilter",
+                        colorOverrides: ["STARTING": bad]
+                    )
+                ),
+                0x1C,
+                "override \"\(bad)\" should fall back to the canonical green"
+            )
+        }
+    }
+
+    func testParseApiLevelMatchesFirstAtSign() {
+        XCTAssertEqual(BoardBleEncoding.parseApiLevel(deviceName: "Kilter Board#abc123@3"), 3)
+        XCTAssertEqual(BoardBleEncoding.parseApiLevel(deviceName: "Kilter Board"), 2)
+        XCTAssertEqual(BoardBleEncoding.parseApiLevel(deviceName: nil), 2)
+        XCTAssertEqual(BoardBleEncoding.parseApiLevel(deviceName: "Board@4"), 4)
+        // The FIRST '@' with digits wins (mirrors TS /@(\d+)/), not the last —
+        // the old `.backwards` implementation would have returned 9 here.
+        XCTAssertEqual(BoardBleEncoding.parseApiLevel(deviceName: "Board@2@9"), 2)
+        // First '@' has no digits after it; fall through to the next.
+        XCTAssertEqual(BoardBleEncoding.parseApiLevel(deviceName: "Board@x@5"), 5)
+    }
+
+    func testRedBearLabWriteCharacteristicUsesWriteWithResponse() {
+        // The original MoonBoard (RedBearLab) write characteristic (713d0003)
+        // advertises `.write` only, so iOS must pace it with write-with-response.
+        XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: .write, boardName: "moonboard"), .withResponse)
+    }
 }

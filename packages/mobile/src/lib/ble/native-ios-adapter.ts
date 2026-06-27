@@ -1,4 +1,9 @@
-import { AURORA_ADVERTISED_SERVICE_UUID, UART_SERVICE_UUID, parseSerialNumber } from '@boardsesh/ble-protocol';
+import {
+  AURORA_ADVERTISED_SERVICE_UUID,
+  UART_SERVICE_UUID,
+  REDBEARLAB_SERVICE_UUID,
+  parseSerialNumber,
+} from '@boardsesh/ble-protocol';
 import {
   boardBleNative,
   type NativeBleConfigureBoardOptions,
@@ -142,7 +147,10 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
           ? [AURORA_ADVERTISED_SERVICE_UUID]
           : supportsUnfilteredScan
             ? []
-            : [UART_SERVICE_UUID];
+            : // MoonBoard spans two controller generations: newer boards
+              // advertise Nordic UART, the original RedBearLab box its own
+              // service. Filter on both when an unfiltered scan isn't available.
+              [UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID];
       await native.startScan(scanServiceUuids);
 
       // Grace window: if the stored serial hasn't matched shortly, open the

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { DevicePickerFn } from '../types';
+import type { DevicePickerFn, BoardScanFamily } from '../types';
 
 // ── Hoisted mocks (available inside vi.mock factories) ──────────────────
 
@@ -35,6 +35,8 @@ vi.mock('@boardsesh/ble-protocol', () => ({
   AURORA_ADVERTISED_SERVICE_UUID: 'aurora-uuid',
   UART_SERVICE_UUID: 'uart-uuid',
   UART_WRITE_CHARACTERISTIC_UUID: 'uart-write-uuid',
+  REDBEARLAB_SERVICE_UUID: 'redbearlab-uuid',
+  REDBEARLAB_WRITE_CHARACTERISTIC_UUID: 'redbearlab-write-uuid',
   splitMessages: vi.fn((passedData: Uint8Array) => [passedData]),
   INTER_CHUNK_DELAY_MS: 0,
   parseSerialNumber: vi.fn(),
@@ -51,6 +53,43 @@ import { State } from 'react-native-ble-plx';
 
 function createMockDevicePicker(): DevicePickerFn {
   return vi.fn();
+}
+
+// Wires up the scan → auto-pick → connect → discover flow for a single board so
+// a test only has to supply the per-service characteristic lookup. The adapter
+// is returned NOT yet connected so callers can either await
+// requestAndConnect() (success) or assert on its rejection (no write char).
+function setupConnectableAdapter(
+  family: BoardScanFamily,
+  deviceId: string,
+  characteristicsForService: ReturnType<typeof vi.fn>,
+): RNBleAdapter {
+  mockBleManager.cancelDeviceConnection.mockResolvedValue(undefined);
+  mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+
+  // MoonBoards advertise no service UUID (unfiltered scan); Aurora boards carry
+  // the advertised service so they survive the UUID-filtered scan.
+  const scanName = family === 'aurora' ? 'Kilter Board#TEST@3' : 'MoonBoard A1';
+  const serviceUUIDs = family === 'aurora' ? ['aurora-uuid'] : undefined;
+  mockBleManager.startDeviceScan.mockImplementation(
+    (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+      callback(null, { id: deviceId, localName: scanName, name: scanName, rssi: -40, serviceUUIDs });
+    },
+  );
+
+  const mockDeviceWithServices = {
+    id: deviceId,
+    characteristicsForService,
+    requestMTU: vi.fn().mockResolvedValue(undefined),
+    discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+  };
+  mockBleManager.connectToDevice.mockResolvedValue({
+    id: deviceId,
+    requestMTU: vi.fn().mockResolvedValue(undefined),
+    discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+  });
+
+  return new RNBleAdapter(() => Promise.resolve(deviceId), family);
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -910,6 +949,145 @@ describe('RNBleAdapter', () => {
       const unsubscribe2 = adapter.onDisconnect(secondCallback);
 
       expect(typeof unsubscribe2).toBe('function');
+    });
+  });
+
+  describe('requestAndConnect — original MoonBoard (RedBearLab) fallback', () => {
+    it('falls back to the RedBearLab service for moonboard when the UART service exposes no write characteristic', async () => {
+      const redbearCharacteristic = {
+        uuid: 'redbearlab-write-uuid',
+        isWritableWithoutResponse: false,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      // UART service is present but carries no matching write characteristic.
+      const characteristicsForService = vi.fn().mockImplementation((serviceUuid: string) => {
+        if (serviceUuid === 'uart-uuid') return Promise.resolve([]);
+        if (serviceUuid === 'redbearlab-uuid') return Promise.resolve([redbearCharacteristic]);
+        return Promise.resolve([]);
+      });
+
+      const adapter = setupConnectableAdapter('moonboard', 'redbear-empty-device', characteristicsForService);
+      await adapter.requestAndConnect();
+
+      // UART queried first, RedBearLab queried as the fallback.
+      expect(characteristicsForService).toHaveBeenCalledWith('uart-uuid');
+      expect(characteristicsForService).toHaveBeenCalledWith('redbearlab-uuid');
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      // Subsequent writes target the RedBearLab characteristic.
+      expect(redbearCharacteristic.writeWithResponse).toHaveBeenCalledOnce();
+    });
+
+    it('falls back to the RedBearLab service for moonboard when the UART service lookup throws', async () => {
+      const redbearCharacteristic = {
+        uuid: 'redbearlab-write-uuid',
+        isWritableWithoutResponse: false,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      // react-native-ble-plx throws when the UART service isn't present at all.
+      const characteristicsForService = vi.fn().mockImplementation((serviceUuid: string) => {
+        if (serviceUuid === 'uart-uuid') return Promise.reject(new Error('Service not found'));
+        if (serviceUuid === 'redbearlab-uuid') return Promise.resolve([redbearCharacteristic]);
+        return Promise.resolve([]);
+      });
+
+      const adapter = setupConnectableAdapter('moonboard', 'redbear-throw-device', characteristicsForService);
+      await adapter.requestAndConnect();
+
+      expect(characteristicsForService).toHaveBeenCalledWith('uart-uuid');
+      expect(characteristicsForService).toHaveBeenCalledWith('redbearlab-uuid');
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(redbearCharacteristic.writeWithResponse).toHaveBeenCalledOnce();
+    });
+
+    it('does not fall back to RedBearLab on aurora and throws when the UART write characteristic is absent', async () => {
+      const redbearCharacteristic = {
+        uuid: 'redbearlab-write-uuid',
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      // The RedBearLab service WOULD match if queried — proving aurora never asks.
+      const characteristicsForService = vi.fn().mockImplementation((serviceUuid: string) => {
+        if (serviceUuid === 'uart-uuid') return Promise.resolve([]);
+        return Promise.resolve([redbearCharacteristic]);
+      });
+
+      const adapter = setupConnectableAdapter('aurora', 'aurora-no-fallback-device', characteristicsForService);
+
+      await expect(adapter.requestAndConnect()).rejects.toThrow('UART write characteristic not found');
+      expect(characteristicsForService).toHaveBeenCalledWith('uart-uuid');
+      expect(characteristicsForService).not.toHaveBeenCalledWith('redbearlab-uuid');
+      // The dead connection is torn down before the error surfaces.
+      expect(mockBleManager.cancelDeviceConnection).toHaveBeenCalledWith('aurora-no-fallback-device');
+    });
+  });
+
+  describe('write — write-type gating', () => {
+    it('uses writeWithResponse for a moonboard characteristic that is not writable without response', async () => {
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        isWritableWithoutResponse: false,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const characteristicsForService = vi.fn().mockResolvedValue([characteristic]);
+      const adapter = setupConnectableAdapter('moonboard', 'moon-with-response', characteristicsForService);
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(characteristic.writeWithResponse).toHaveBeenCalledOnce();
+      expect(characteristic.writeWithoutResponse).not.toHaveBeenCalled();
+    });
+
+    it('uses writeWithoutResponse for a moonboard characteristic that is writable without response', async () => {
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        isWritableWithoutResponse: true,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const characteristicsForService = vi.fn().mockResolvedValue([characteristic]);
+      const adapter = setupConnectableAdapter('moonboard', 'moon-without-response', characteristicsForService);
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(characteristic.writeWithoutResponse).toHaveBeenCalledOnce();
+      expect(characteristic.writeWithResponse).not.toHaveBeenCalled();
+    });
+
+    it('always uses writeWithoutResponse for aurora even when the characteristic is not writable without response', async () => {
+      const characteristic = {
+        uuid: 'uart-write-uuid',
+        isWritableWithoutResponse: false,
+        writeWithoutResponse: vi.fn().mockResolvedValue(undefined),
+        writeWithResponse: vi.fn().mockResolvedValue(undefined),
+      };
+      const characteristicsForService = vi.fn().mockResolvedValue([characteristic]);
+      const adapter = setupConnectableAdapter('aurora', 'aurora-no-response-prop', characteristicsForService);
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      // Family gate wins over the characteristic's reported property.
+      expect(characteristic.writeWithoutResponse).toHaveBeenCalledOnce();
+      expect(characteristic.writeWithResponse).not.toHaveBeenCalled();
     });
   });
 });

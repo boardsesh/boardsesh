@@ -3,6 +3,8 @@ import {
   AURORA_ADVERTISED_SERVICE_UUID,
   UART_SERVICE_UUID,
   UART_WRITE_CHARACTERISTIC_UUID,
+  REDBEARLAB_SERVICE_UUID,
+  REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
   splitMessages,
   INTER_CHUNK_DELAY_MS,
   parseSerialNumber,
@@ -17,6 +19,26 @@ import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-proto
 const CONNECTION_TIMEOUT_MS = 12_000;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Find a write characteristic by service + characteristic UUID, returning
+ * undefined when the service isn't present (react-native-ble-plx throws for an
+ * absent service) so callers can fall back to another controller generation.
+ */
+async function findWriteCharacteristic(
+  device: Device,
+  serviceUuid: string,
+  characteristicUuid: string,
+): Promise<Characteristic | undefined> {
+  try {
+    const characteristics = await device.characteristicsForService(serviceUuid);
+    return characteristics.find(
+      (characteristic) => characteristic.uuid.toLowerCase() === characteristicUuid.toLowerCase(),
+    );
+  } catch {
+    return undefined;
+  }
+}
 
 export class RNBleAdapter implements BluetoothAdapter {
   private connectedDevice: Device | null = null;
@@ -188,18 +210,29 @@ export class RNBleAdapter implements BluetoothAdapter {
 
     const deviceWithServices = await connected.discoverAllServicesAndCharacteristics();
 
-    const characteristics = await deviceWithServices.characteristicsForService(UART_SERVICE_UUID);
-    const uartWrite = characteristics.find(
-      (characteristic) => characteristic.uuid.toLowerCase() === UART_WRITE_CHARACTERISTIC_UUID.toLowerCase(),
+    // Newer controllers expose the write characteristic on the Nordic UART
+    // service. The original MoonBoard (RedBearLab) LED box uses a different
+    // service, so fall back to it for the moonboard family.
+    let writeCharacteristic = await findWriteCharacteristic(
+      deviceWithServices,
+      UART_SERVICE_UUID,
+      UART_WRITE_CHARACTERISTIC_UUID,
     );
+    if (!writeCharacteristic && this.scanFamily === 'moonboard') {
+      writeCharacteristic = await findWriteCharacteristic(
+        deviceWithServices,
+        REDBEARLAB_SERVICE_UUID,
+        REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
+      );
+    }
 
-    if (!uartWrite) {
+    if (!writeCharacteristic) {
       await bleManager.cancelDeviceConnection(selectedDeviceId);
       throw new Error('UART write characteristic not found');
     }
 
     this.connectedDevice = deviceWithServices;
-    this.writeCharacteristic = uartWrite;
+    this.writeCharacteristic = writeCharacteristic;
 
     this.disconnectSubscription = bleManager.onDeviceDisconnected(selectedDeviceId, (_error, _device) => {
       this.connectedDevice = null;
@@ -262,8 +295,21 @@ export class RNBleAdapter implements BluetoothAdapter {
       const chunk = chunks[chunkIndex];
       const base64Chunk = uint8ArrayToBase64(chunk);
 
+      // Aurora boards always use write-without-response (proven path; on some
+      // iOS versions the characteristic under-reports the property but still
+      // needs no-response). Only the original MoonBoard (RedBearLab) write
+      // characteristic — which advertises `.write` only — falls back to
+      // write-with-response, mirroring the native preferredWriteType gating.
+      // Android sends no-response writes regardless, so this only matters on
+      // Expo Go iOS.
+      const useWithoutResponse = this.scanFamily !== 'moonboard' || (characteristic.isWritableWithoutResponse ?? true);
+
       try {
-        await characteristic.writeWithoutResponse(base64Chunk);
+        if (useWithoutResponse) {
+          await characteristic.writeWithoutResponse(base64Chunk);
+        } else {
+          await characteristic.writeWithResponse(base64Chunk);
+        }
       } catch (error) {
         // react-native-ble-plx surfaces a mid-write drop as a BleError whose
         // message (e.g. CharacteristicWriteFailed — "Characteristic … write

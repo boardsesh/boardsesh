@@ -4,6 +4,7 @@ import { MOONBOARD_REQUEST_DEVICE_OPTIONS } from '@/app/components/board-bluetoo
 import type {
   requestBluetoothDevice as _requestBluetoothDevice,
   getUartCharacteristic as _getUartCharacteristic,
+  getMoonboardWriteCharacteristic as _getMoonboardWriteCharacteristic,
   writeCharacteristicSeries as _writeCharacteristicSeries,
 } from '@/app/components/board-bluetooth-control/bluetooth-shared';
 import { WebBluetoothAdapter } from '../web-adapter';
@@ -11,6 +12,7 @@ import { WebBluetoothAdapter } from '../web-adapter';
 // Mock the shared Bluetooth transport helpers
 const mockRequestDevice = vi.fn();
 const mockGetCharacteristic = vi.fn();
+const mockGetMoonboardCharacteristic = vi.fn();
 const mockSplitMessages = vi.fn((data: Uint8Array) => [data]);
 const mockWriteCharacteristicSeries = vi.fn();
 
@@ -20,6 +22,8 @@ vi.mock('@/app/components/board-bluetooth-control/bluetooth-shared', async (impo
     ...actual,
     requestBluetoothDevice: (...args: Parameters<typeof _requestBluetoothDevice>) => mockRequestDevice(...args),
     getUartCharacteristic: (...args: Parameters<typeof _getUartCharacteristic>) => mockGetCharacteristic(...args),
+    getMoonboardWriteCharacteristic: (...args: Parameters<typeof _getMoonboardWriteCharacteristic>) =>
+      mockGetMoonboardCharacteristic(...args),
     splitMessages: (data: Uint8Array) => mockSplitMessages(data),
     writeCharacteristicSeries: (...args: Parameters<typeof _writeCharacteristicSeries>) =>
       mockWriteCharacteristicSeries(...args),
@@ -101,15 +105,19 @@ describe('WebBluetoothAdapter', () => {
       expect(mockGetCharacteristic).toHaveBeenCalledWith(mockDevice);
     });
 
-    it('uses Moonboard request options for Moonboard controllers', async () => {
+    it('uses Moonboard request options and the Moonboard write-characteristic probe', async () => {
       const moonboardAdapter = new WebBluetoothAdapter('moonboard');
       const mockDevice = createMockDevice();
       mockRequestDevice.mockResolvedValue(mockDevice);
-      mockGetCharacteristic.mockResolvedValue(createMockCharacteristic());
+      mockGetMoonboardCharacteristic.mockResolvedValue(createMockCharacteristic());
 
       await moonboardAdapter.requestAndConnect();
 
       expect(mockRequestDevice).toHaveBeenCalledWith(MOONBOARD_REQUEST_DEVICE_OPTIONS);
+      // MoonBoard spans two controller generations, so it probes both via the
+      // dedicated helper rather than the UART-only getUartCharacteristic.
+      expect(mockGetMoonboardCharacteristic).toHaveBeenCalledWith(mockDevice);
+      expect(mockGetCharacteristic).not.toHaveBeenCalled();
     });
 
     it('registers gattserverdisconnected listener', async () => {

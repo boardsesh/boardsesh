@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { splitMessages, MAX_BLUETOOTH_MESSAGE_SIZE } from '../transport';
+import {
+  splitMessages,
+  MAX_BLUETOOTH_MESSAGE_SIZE,
+  AURORA_ADVERTISED_SERVICE_UUID,
+  UART_SERVICE_UUID,
+  UART_WRITE_CHARACTERISTIC_UUID,
+  REDBEARLAB_SERVICE_UUID,
+  REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
+} from '../transport';
+
+describe('BLE service/characteristic UUID constants', () => {
+  // These are the spec UUIDs (lowercased); changing one silently breaks
+  // scanning/discovery on every platform, so pin them exactly.
+  it('matches the documented Aurora + Nordic UART UUIDs', () => {
+    expect(AURORA_ADVERTISED_SERVICE_UUID).toBe('4488b571-7806-4df6-bcff-a2897e4953ff');
+    expect(UART_SERVICE_UUID).toBe('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+    expect(UART_WRITE_CHARACTERISTIC_UUID).toBe('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
+  });
+
+  it('matches the documented original-MoonBoard (RedBearLab) UUIDs', () => {
+    // docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
+    expect(REDBEARLAB_SERVICE_UUID).toBe('713d0000-503e-4c75-ba94-3148f18d941e');
+    expect(REDBEARLAB_WRITE_CHARACTERISTIC_UUID).toBe('713d0003-503e-4c75-ba94-3148f18d941e');
+  });
+});
 
 describe('splitMessages', () => {
   it('splits a buffer larger than 20 bytes into chunks', () => {

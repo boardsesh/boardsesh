@@ -117,15 +117,19 @@ enum BoardBleEncoding {
     ]
 
     static func parseApiLevel(deviceName: String?) -> Int {
-        guard let deviceName,
-              let atRange = deviceName.range(of: "@", options: .backwards)
-        else {
-            return 2
+        guard let deviceName else { return 2 }
+        // Mirror the TS regex /@(\d+)/: the FIRST '@' immediately followed by one
+        // or more ASCII digits. (Using `.backwards`/last-'@' diverges from TS on
+        // pathological multi-'@' names.) Defaults to 2 when absent.
+        var searchStart = deviceName.startIndex
+        while let atRange = deviceName.range(of: "@", range: searchStart..<deviceName.endIndex) {
+            let digits = deviceName[atRange.upperBound...].prefix { ("0"..."9").contains($0) }
+            if let value = Int(digits) {
+                return value
+            }
+            searchStart = atRange.upperBound
         }
-
-        let suffix = deviceName[atRange.upperBound...]
-        let digits = suffix.prefix { $0.isNumber }
-        return Int(digits) ?? 2
+        return 2
     }
 
     static func checksum(_ payload: [UInt8]) -> UInt8 {
@@ -207,7 +211,7 @@ enum BoardBleEncoding {
                 continue
             }
 
-            let color = colorOverrides[roleInfo.state] ?? roleInfo.color
+            let color = sanitizedOverride(colorOverrides[roleInfo.state]) ?? roleInfo.color
             ledEntries.append(LedEntry(position: ledPosition, color: color))
         }
 
@@ -389,6 +393,18 @@ enum BoardBleEncoding {
 
     private static func ledsPerHold(boardName: String) -> Int {
         boardName == "kilter" ? 2 : 1
+    }
+
+    /// Mirrors the TS `SIX_DIGIT_HEX_PATTERN` guard: only honour a colour
+    /// override that is exactly six hex digits (after an optional leading '#').
+    /// Anything else (shorthand "#fff", a named colour, an 8-digit RGBA) falls
+    /// back to the canonical role colour instead of rendering black or a
+    /// silently truncated colour to the wall.
+    private static func sanitizedOverride(_ override: String?) -> String? {
+        guard let override else { return nil }
+        let stripped = override.hasPrefix("#") ? String(override.dropFirst()) : override
+        guard stripped.count == 6, stripped.allSatisfy(\.isHexDigit) else { return nil }
+        return override
     }
 
     private static func normalizeColor(_ color: String) -> String {

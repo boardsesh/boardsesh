@@ -10,12 +10,12 @@
 
 ## What this document is
 
-Boardsesh already ships a working MoonBoard BLE client (`packages/shared/ble-protocol/src/moonboard.ts`). That implementation was reconstructed from **open-source MoonBoard LED projects** — community Arduino/ESP controllers and third-party apps — and it only knows the Nordic-UART hardware path.
+Boardsesh already ships a working MoonBoard BLE client (`packages/shared/ble-protocol/src/moonboard.ts`). That implementation was reconstructed from **open-source MoonBoard LED projects** — community Arduino/ESP controllers and third-party apps — and originally knew only the Nordic-UART hardware path. (Acting on this document, the client now also discovers and writes the original RedBearLab service as a fallback — see §8.)
 
 This spec is a **separate, independent read** of the protocol taken from the **official Moon Climbing app**, written to:
 
 1. **Cross-validate** the format Boardsesh already emits, and
-2. **Capture what the open-source-derived implementation is missing** — most importantly, a second controller hardware generation (the original RedBearLab-based boards) that the current client does not recognise at all.
+2. **Capture what the open-source-derived implementation was missing** — most importantly, a second controller hardware generation (the original RedBearLab-based boards) the client did not recognise. That path is now wired as a fallback (see §8).
 
 It is a companion to the working code, not a replacement for it. Where the official app and the open-source format agree, that is noted; where they diverge, the divergence is the point.
 
@@ -79,7 +79,7 @@ For completeness on the stack (not part of the LED path): the app is Flutter (Da
 | RedBearLab service   | `713d0000-503e-4c75-ba94-3148f18d941e` | Data service on the original boards | ✅  |
 | Write characteristic | `713d0003-503e-4c75-ba94-3148f18d941e` | App **writes** LED commands here    | ✅  |
 
-This is the well-known **RedBearLab BLE Shield** UUID family, and `713d0003` is that module's central→peripheral write characteristic. The original MoonBoard LED kit is widely documented as having shipped on a RedBearLab BLE module, so this is the original-hardware path (the "original vs. newer" split is an inference from the two UUID families + that public history, not something the static inspection proves on its own). Either way, **Boardsesh's current open-source-derived client does not know this service at all** — it is the single biggest gap this document fills.
+This is the well-known **RedBearLab BLE Shield** UUID family, and `713d0003` is that module's central→peripheral write characteristic. The original MoonBoard LED kit is widely documented as having shipped on a RedBearLab BLE module, so this is the original-hardware path (the "original vs. newer" split is an inference from the two UUID families + that public history, not something the static inspection proves on its own). This was the single biggest gap this document identified; Boardsesh now discovers and writes this service as a fallback after the Nordic UART one (`REDBEARLAB_SERVICE_UUID` / `REDBEARLAB_WRITE_CHARACTERISTIC_UUID` in [`transport.ts`](../packages/shared/ble-protocol/src/transport.ts)), though the path is not yet verified on an original board (see §8).
 
 ### 2.2 Newer hardware — Nordic UART service
 
@@ -208,7 +208,9 @@ The position index is a property of the **physical LED string**, so it is identi
 
 ### 5.4 BLE chunking
 
-🔁 The ASCII string is split into BLE writes. The classic transport size is **20 bytes per write** (`MAX_BLUETOOTH_MESSAGE_SIZE` in `transport.ts`); chunking is a transport detail and does not change the message. Writes use **Write Without Response**.
+🔁 The ASCII string is split into BLE writes. The classic transport size is **20 bytes per write** (`MAX_BLUETOOTH_MESSAGE_SIZE` in `transport.ts`); chunking is a transport detail and does not change the message.
+
+**Write type depends on the controller generation.** The newer Nordic-UART RX characteristic (`6e400002`) supports **Write Without Response**. The original RedBearLab write characteristic (`713d0003`), however, advertises only the plain `.write` property — on iOS, CoreBluetooth **silently drops** a write-without-response to a characteristic that lacks the no-response property, leaving the wall dark. So an interoperable iOS client must use **write-with-response** for the RedBearLab box (pacing on the GATT write ack), and may use write-without-response for the Nordic-UART boards. Android's GATT stack issues no-response writes regardless of the advertised property, so the same write call works on both there. Boardsesh implements exactly this gating (`BoardBleEncoding.preferredWriteType` in `packages/mobile/modules/live-activity/ios/`): MoonBoard falls back to write-with-response whenever the chosen write characteristic doesn't advertise `.writeWithoutResponse`.
 
 ---
 
@@ -230,17 +232,19 @@ This is the hook an interoperable client should adopt: **record which service a 
 
 ## 8. Differences from the open-source-derived client — summary
 
-| Aspect                                | Boardsesh today (`moonboard.ts`) | Official Moon Climbing app                                    |
-| ------------------------------------- | -------------------------------- | ------------------------------------------------------------- |
-| Controller generations                | Nordic UART only                 | **Two**: RedBearLab `713d0000` **and** Nordic UART `6e400001` |
-| Original-hardware boards              | Not supported (service unknown)  | Writes to `713d0003` on the RedBearLab service                |
-| Per-board hardware version            | None                             | `led_version` persisted per board                             |
-| Notify channel                        | —                                | None — write-only on both generations                         |
-| Bonding                               | —                                | Explicitly **unbonded** ("DO NOT pair")                       |
-| Payload (`l#…#`, markers, serpentine) | As documented here               | **Same** 🔁                                                   |
-| Extra UUIDs                           | —                                | Two present, non-BLE (uuid-package / SDK realm) ❓            |
+| Aspect                                | Boardsesh today (`moonboard.ts` + adapters)                                             | Official Moon Climbing app                                    |
+| ------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Controller generations                | **Two**: RedBearLab `713d0000` **and** Nordic UART `6e400001` (discovery wired)¹        | **Two**: RedBearLab `713d0000` **and** Nordic UART `6e400001` |
+| Original-hardware boards              | Discovers + writes `713d0003` (write-with-response on iOS); **unverified on hardware**¹ | Writes to `713d0003` on the RedBearLab service                |
+| Per-board hardware version            | None (probes UART → RedBearLab on each connect)                                         | `led_version` persisted per board                             |
+| Notify channel                        | None — write-only                                                                       | None — write-only on both generations                         |
+| Bonding                               | Plain GATT connect, no bond                                                             | Explicitly **unbonded** ("DO NOT pair")                       |
+| Payload (`l#…#`, markers, serpentine) | As documented here                                                                      | **Same** 🔁                                                   |
+| Extra UUIDs                           | Ignored                                                                                 | Two present, non-BLE (uuid-package / SDK realm) ❓            |
 
-**Bottom line for interop:** the `l#<marker><pos>,…#` payload Boardsesh emits is correct for the Nordic UART boards. The actionable gap is **hardware coverage**: to match the official app, the client should (1) also discover and write the **RedBearLab `713d0000` / `713d0003`** service, (2) **connect without bonding**, and (3) **remember which service a board exposed** (mirroring the app's `led_version`) so original-hardware boards work, not just the newer ones.
+¹ The RedBearLab discovery/write path (scan filter, characteristic-discovery fallback, write-with-response gating) is implemented across web, React Native, and native iOS and unit-tested, but has **not** been verified against an original MoonBoard LED box. See the constants `REDBEARLAB_SERVICE_UUID` / `REDBEARLAB_WRITE_CHARACTERISTIC_UUID` in `packages/shared/ble-protocol/src/transport.ts`.
+
+**Bottom line for interop:** the `l#<marker><pos>,…#` payload Boardsesh emits is correct for the Nordic UART boards, and the client now also discovers and writes the **RedBearLab `713d0000` / `713d0003`** service (with the iOS write-with-response gating that path requires) and **connects without bonding**. Remaining work: **verify the RedBearLab path on an original board** and optionally persist which service a board exposed (mirroring the app's `led_version`) to skip the probe on reconnect.
 
 ---
 
