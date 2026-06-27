@@ -34,7 +34,7 @@ import type { DimensionChip } from '../../../src/components/search/FilterChipRow
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
-import { useDimensionLocks } from '../../../src/lib/dimension-lock-store';
+import { useDimensionLocks, useDimensionRepin } from '../../../src/lib/dimension-lock-store';
 import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
@@ -888,16 +888,10 @@ function ClimbListInner() {
   ]);
   // A locked dimension stays active through any clear (sheet Reset, FAB clear,
   // recent re-apply): re-pin its filter whenever it's been cleared while locked.
-  useEffect(() => {
-    if (showTallChip && dimensionLocks.tall && !filters.onlyTallClimbs) {
-      patchFilters({ onlyTallClimbs: true });
-    }
-  }, [showTallChip, dimensionLocks.tall, filters.onlyTallClimbs, patchFilters]);
-  useEffect(() => {
-    if (showWideChip && dimensionLocks.wide && !filters.onlyWideClimbs) {
-      patchFilters({ onlyWideClimbs: true });
-    }
-  }, [showWideChip, dimensionLocks.wide, filters.onlyWideClimbs, patchFilters]);
+  const pinTall = useCallback(() => patchFilters({ onlyTallClimbs: true }), [patchFilters]);
+  const pinWide = useCallback(() => patchFilters({ onlyWideClimbs: true }), [patchFilters]);
+  useDimensionRepin(showTallChip, dimensionLocks.tall, !!filters.onlyTallClimbs, pinTall);
+  useDimensionRepin(showWideChip, dimensionLocks.wide, !!filters.onlyWideClimbs, pinWide);
   // Token row = the receipt for the long tail only; the chip-backed facets show
   // and clear themselves, so they're excluded to avoid wording a filter twice.
   // Tall/Wide are chip-backed only on the homewall sizes where their chip shows;

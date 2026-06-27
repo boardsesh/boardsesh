@@ -25,11 +25,11 @@ export function popularityFromTag(tag: string): number | undefined {
 }
 
 /**
- * Min-rating star buckets for the rating chip. `undefined` is the "Any" bucket.
- * 2–5 mirror the directive's chip scope; the sheet's StarRating still allows 1★,
- * which renders the chip active but shows no menu checkmark until re-selected.
+ * Min-rating star buckets for the rating chip. `undefined` is the "Any" bucket;
+ * 1–5 cover the full range the sheet's StarRating can set, so a sheet-set value
+ * always has a matching chip-menu entry (no active-chip-with-empty-menu state).
  */
-export const RATING_BUCKETS: readonly (number | undefined)[] = [undefined, 2, 3, 4, 5];
+export const RATING_BUCKETS: readonly (number | undefined)[] = [undefined, 1, 2, 3, 4, 5];
 
 /** Stable Picker tag for a rating bucket ("any" | "2" | … | "5"). */
 export function ratingTag(value: number | undefined): string {

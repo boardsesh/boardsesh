@@ -50,7 +50,7 @@ describe('rating tag round-trip', () => {
     expect(ratingFromTag('any')).toBeUndefined();
   });
 
-  it('offers the 2–5 star buckets', () => {
-    expect(RATING_BUCKETS).toEqual([undefined, 2, 3, 4, 5]);
+  it('covers the full 1–5 star range the sheet can set', () => {
+    expect(RATING_BUCKETS).toEqual([undefined, 1, 2, 3, 4, 5]);
   });
 });
