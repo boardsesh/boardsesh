@@ -81,7 +81,8 @@ export function buildEoasArgs(options: RollbackOptions): string[] {
   return ['eoas@2', subcommand, '--branch', options.branch, '--platform', options.platform];
 }
 
-function validate(options: RollbackOptions): string | null {
+/** Returns an error message for an invalid mode/platform, or null when the options are usable. */
+export function validateRollbackOptions(options: RollbackOptions): string | null {
   if (!VALID_MODES.includes(options.mode)) {
     return `Invalid --mode "${options.mode}". Must be one of: ${VALID_MODES.join(', ')}`;
   }
@@ -94,7 +95,7 @@ function validate(options: RollbackOptions): string | null {
 function main(): number {
   const options = parseRollbackArgs(process.argv.slice(2));
 
-  const invalid = validate(options);
+  const invalid = validateRollbackOptions(options);
   if (invalid) {
     console.error(`[ota-rollback] ${invalid}`);
     return 1;

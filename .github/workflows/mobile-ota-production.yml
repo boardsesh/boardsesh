@@ -383,10 +383,13 @@ jobs:
         env:
           POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
         run: |
-          # Let early relaunches report the new bundle before we read. The window
-          # (--hours 6) picks the freshest production OTA for the adoption line; the
-          # gate uses the fleet-wide emergency-launch rate over that window.
-          sleep 120
+          # Short settle so a few early relaunches land for the adoption line. The
+          # GATE doesn't depend on it: it reads the fleet-wide emergency-launch rate
+          # over the whole --hours 6 window, which already carries plenty of samples
+          # from launches before this publish — a still-crashing prior OTA trips it
+          # immediately, while the just-published bundle's own telemetry trickles in
+          # over hours (re-run `vp run mobile:ota-health-check` later for that).
+          sleep 30
           vp run mobile:ota-health-check -- --hours 6 --out "$RUNNER_TEMP/ota-health.md"
 
       # Surface the health verdict on the same Discord deploy channel as the

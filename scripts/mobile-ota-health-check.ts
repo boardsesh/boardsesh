@@ -43,9 +43,11 @@ import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 // Source of truth for the literal is packages/mobile/src/lib/ota-telemetry.ts
-// (OTA_UPDATE_STATUS_EVENT), guarded by that package's unit tests. Mirrored here
-// rather than imported so this root script never pulls a mobile module graph.
-const OTA_UPDATE_STATUS_EVENT = 'OTA Update Status';
+// (OTA_UPDATE_STATUS_EVENT), mirrored here rather than imported so this root
+// script never pulls a mobile module graph. Exported so a unit test can assert it
+// stays equal to the mobile constant — a drift would silently query the wrong
+// event and report a healthy fleet.
+export const OTA_UPDATE_STATUS_EVENT = 'OTA Update Status';
 const PRODUCTION_CHANNEL = 'production';
 
 const DEFAULT_HOURS = 24;
@@ -139,6 +141,16 @@ export function sanitizeUpdateId(raw: string): string {
     throw new Error(`Invalid --update-id "${raw}" (allowed: A–Z a–z 0–9 . _ : -, max 128 chars).`);
   }
   return raw;
+}
+
+/** Sanitize an update id from an untrusted source (the PostHog response); null if it doesn't fit the shape. */
+export function safeSanitizeUpdateId(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  try {
+    return sanitizeUpdateId(raw);
+  } catch {
+    return null;
+  }
 }
 
 /** Most-recently-seen production updateId actually running on installs (OTA, not embedded). */
@@ -257,8 +269,9 @@ export async function runHealthCheck(args: HealthCheckArgs): Promise<number> {
     let updateId = args.updateId ? sanitizeUpdateId(args.updateId) : null;
     if (!updateId) {
       const latest = await queryPostHog(host, projectId, apiKey, buildLatestUpdateQuery(args.hours));
-      const row = latest[0];
-      updateId = row && typeof row[0] === 'string' ? row[0] : null;
+      // Sanitize at the point of receipt — don't rely on buildHealthQuery's
+      // later sanitize being kept in a refactor.
+      updateId = safeSanitizeUpdateId(latest[0]?.[0]);
     }
 
     const rows = await queryPostHog(host, projectId, apiKey, buildHealthQuery({ hours: args.hours, updateId }));

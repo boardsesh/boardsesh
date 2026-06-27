@@ -3,11 +3,32 @@ import {
   buildHealthQuery,
   buildLatestUpdateQuery,
   evaluateOtaHealth,
+  OTA_UPDATE_STATUS_EVENT,
   parseHealthCheckArgs,
+  safeSanitizeUpdateId,
   sanitizeUpdateId,
   summarizeVerdict,
   type HealthMetrics,
 } from '../mobile-ota-health-check';
+import { OTA_UPDATE_STATUS_EVENT as MOBILE_OTA_UPDATE_STATUS_EVENT } from '../../packages/mobile/src/lib/ota-telemetry';
+
+describe('event-name parity with the mobile telemetry source of truth', () => {
+  it('queries the exact event the app fires', () => {
+    expect(OTA_UPDATE_STATUS_EVENT).toBe(MOBILE_OTA_UPDATE_STATUS_EVENT);
+  });
+});
+
+describe('safeSanitizeUpdateId', () => {
+  it('passes a valid id through', () => {
+    expect(safeSanitizeUpdateId('abc-123')).toBe('abc-123');
+  });
+
+  it('returns null for a non-string or malformed value (untrusted PostHog response)', () => {
+    expect(safeSanitizeUpdateId(null)).toBeNull();
+    expect(safeSanitizeUpdateId(42)).toBeNull();
+    expect(safeSanitizeUpdateId("x'; DROP TABLE events; --")).toBeNull();
+  });
+});
 
 describe('parseHealthCheckArgs', () => {
   it('uses sane defaults with no flags', () => {

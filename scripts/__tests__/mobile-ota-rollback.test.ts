@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildEoasArgs, parseRollbackArgs } from '../mobile-ota-rollback';
+import { buildEoasArgs, parseRollbackArgs, validateRollbackOptions } from '../mobile-ota-rollback';
 
 describe('parseRollbackArgs', () => {
   it('defaults to rolling the production branch back to embedded, all platforms', () => {
@@ -44,5 +44,23 @@ describe('buildEoasArgs', () => {
       '--platform',
       'ios',
     ]);
+  });
+});
+
+describe('validateRollbackOptions', () => {
+  it('accepts valid mode + platform', () => {
+    expect(validateRollbackOptions({ branch: 'production', platform: 'all', mode: 'embedded' })).toBeNull();
+  });
+
+  it('rejects an invalid mode', () => {
+    expect(validateRollbackOptions({ branch: 'production', platform: 'all', mode: 'bogus' as never })).toContain(
+      '--mode',
+    );
+  });
+
+  it('rejects an invalid platform', () => {
+    expect(validateRollbackOptions({ branch: 'production', platform: 'web', mode: 'embedded' })).toContain(
+      '--platform',
+    );
   });
 });
