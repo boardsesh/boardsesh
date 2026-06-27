@@ -47,12 +47,13 @@ function formatBoard(payload: FeedbackDiscordPayload): string | null {
 // fenced code block (preserves the line-oriented layout) and truncate the text
 // so the fences always fit.
 const DISCORD_FIELD_MAX = 1024;
-const BLE_FENCE_OVERHEAD = '```\n\n```'.length;
+const BLE_FENCE_OPEN = '```\n';
+const BLE_FENCE_CLOSE = '\n```';
 
 function formatBleDiagnostics(report: string): string {
-  const budget = DISCORD_FIELD_MAX - BLE_FENCE_OVERHEAD;
+  const budget = DISCORD_FIELD_MAX - BLE_FENCE_OPEN.length - BLE_FENCE_CLOSE.length;
   const body = report.length > budget ? `${report.slice(0, budget - 1)}…` : report;
-  return `\`\`\`\n${body}\n\`\`\``;
+  return `${BLE_FENCE_OPEN}${body}${BLE_FENCE_CLOSE}`;
 }
 
 /** @internal exported for testing only; do not call from resolver code. */
