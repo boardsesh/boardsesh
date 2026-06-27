@@ -34,6 +34,13 @@ type PlaylistFormSheetProps = {
   submitting?: boolean;
   /** Seed values for edit mode. */
   playlist?: Playlist | null;
+  /**
+   * Inline submit failure from the parent's mutation (e.g. create/update
+   * rejected). Surfaced in this sheet's error slot — never via the root toast,
+   * which renders behind the native sheet and would be invisible. The parent
+   * keeps the sheet open on failure so the user can correct and retry.
+   */
+  submitError?: string | null;
   onSubmit: (values: PlaylistFormValues) => void;
   onClose: () => void;
 };
@@ -45,7 +52,15 @@ type PlaylistFormSheetProps = {
  * an icon picker + a public/private toggle. Validation + reset-on-open mirror
  * web; the parent owns the mutation, toasts, and cache refresh.
  */
-export function PlaylistFormSheet({ mode, visible, submitting, playlist, onSubmit, onClose }: PlaylistFormSheetProps) {
+export function PlaylistFormSheet({
+  mode,
+  visible,
+  submitting,
+  playlist,
+  submitError,
+  onSubmit,
+  onClose,
+}: PlaylistFormSheetProps) {
   const { t } = useTranslation('playlists');
   const { systemColors, brandColors } = useTheme();
   const sheetRef = useRef<BottomSheetModal>(null);
@@ -107,6 +122,11 @@ export function PlaylistFormSheet({ mode, visible, submitting, playlist, onSubmi
     setError(null);
     onSubmit(result.values);
   }, [mode, name, description, color, icon, isPublic, onSubmit, t]);
+
+  // Local validation takes precedence over a parent submit failure: a fresh
+  // validation message (e.g. empty name) is the more actionable feedback, and
+  // the parent clears `submitError` at the start of each retry anyway.
+  const visibleError = error ?? submitError ?? null;
 
   const title = isEdit ? t('edit.title') : t('create.drawerTitle');
   const submitLabel = isEdit
@@ -278,9 +298,9 @@ export function PlaylistFormSheet({ mode, visible, submitting, playlist, onSubmi
           </View>
         ) : null}
 
-        {error ? (
+        {visibleError ? (
           <Text variant="footnote" color={iosSystemColors.systemRed} style={styles.error}>
-            {error}
+            {visibleError}
           </Text>
         ) : null}
       </View>

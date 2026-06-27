@@ -175,6 +175,10 @@ export default function PlaylistDetail() {
   const [editVisible, setEditVisible] = useState(false);
   const [actionsVisible, setActionsVisible] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
+  // Update failures surface INLINE in the edit sheet, not via a root toast — a
+  // toast fired while the native sheet is open renders behind it and is invisible.
+  // The sheet stays open on failure so the user can fix and retry.
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Climbs edit mode (reorder + remove). `editClimbs` is a frozen snapshot of the
   // loaded list seeded on entry; the list renders from it while editing so
@@ -370,6 +374,7 @@ export default function PlaylistDetail() {
     async (values: PlaylistFormValues) => {
       if (!playlist) return;
       setSavingEdit(true);
+      setEditError(null);
       try {
         const updated = await updatePlaylist({
           playlistId: playlist.uuid,
@@ -392,7 +397,9 @@ export default function PlaylistDetail() {
       } catch (err) {
         console.error('Failed to update playlist:', err);
         reportHandledError(err, { tags: { source: 'playlist', op: 'update' } });
-        showToast(t('edit.messages.updateFailed'), 'error');
+        // Inline, not a toast: the sheet is still open, so a root toast would be
+        // hidden behind it.
+        setEditError(t('edit.messages.updateFailed'));
       } finally {
         setSavingEdit(false);
       }
@@ -425,7 +432,10 @@ export default function PlaylistDetail() {
 
   // Cog (shown in edit mode) → open the edit-details sheet directly. No menu is
   // involved, so no sheet-handoff dance is needed.
-  const openEditDetails = useCallback(() => setEditVisible(true), []);
+  const openEditDetails = useCallback(() => {
+    setEditError(null);
+    setEditVisible(true);
+  }, []);
 
   // Collapsed overflow menu (owner): Pin toggles in place; Delete confirms; Edit
   // enters the climbs edit mode once the menu sheet has dismissed (deferred via
@@ -641,8 +651,12 @@ export default function PlaylistDetail() {
         visible={editVisible}
         submitting={savingEdit}
         playlist={playlist ?? null}
+        submitError={editError}
         onSubmit={handleEditSubmit}
-        onClose={() => setEditVisible(false)}
+        onClose={() => {
+          setEditVisible(false);
+          setEditError(null);
+        }}
       />
 
       <PlaylistQueueReplaceSheet {...playlistActivation.queueReplaceSheet} />

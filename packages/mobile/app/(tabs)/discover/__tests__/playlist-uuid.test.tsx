@@ -43,6 +43,7 @@ vi.mock('../../../../src/lib/graphql/client', () => ({
 // query.refetch (for the retry) and allClimbs here.
 const climbsRefetch = vi.hoisted(() => vi.fn());
 const updatePlaylistMock = vi.hoisted(() => vi.fn());
+const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 vi.mock('@boardsesh/playlists-react', () => ({
   usePlaylistClimbs: () => ({
     query: {
@@ -97,7 +98,7 @@ vi.mock('../../../../src/providers/theme-provider', () => ({
   useTheme: () => ({ systemColors: { label: '#000', fill: '#eee' }, brandColors: { primary: '#6D28D9' } }),
 }));
 vi.mock('../../../../src/providers/auth-provider', () => ({ useAuth: () => ({ isAuthenticated: true }) }));
-vi.mock('../../../../src/providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../../src/providers/toast-provider', () => ({ useToast: () => toast }));
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: (options: CapturedActivationOptions) => {
     playlistMocks.activationOptions = options;
@@ -140,15 +141,26 @@ vi.mock('../../../../src/components/playlist', () => ({
   SKELETON_PLACEHOLDERS: ['a', 'b'],
   // Surface the edit submit so the cache-patch test can drive handleEditSubmit
   // without the real gorhom sheet.
-  PlaylistFormSheet: ({ onSubmit }: { onSubmit?: (values: unknown) => void }) =>
+  PlaylistFormSheet: ({
+    submitError,
+    onSubmit,
+  }: {
+    submitError?: string | null;
+    onSubmit?: (values: unknown) => void;
+  }) =>
     createElement(
-      'button',
-      {
-        'data-form-submit': 'true',
-        onClick: () =>
-          onSubmit?.({ name: 'Bad climbs', description: '', color: '#1F2937', icon: '💀', isPublic: false }),
-      },
-      'form-submit',
+      'div',
+      null,
+      submitError ? createElement('span', { 'data-edit-error': 'true' }, submitError) : null,
+      createElement(
+        'button',
+        {
+          'data-form-submit': 'true',
+          onClick: () =>
+            onSubmit?.({ name: 'Bad climbs', description: '', color: '#1F2937', icon: '💀', isPublic: false }),
+        },
+        'form-submit',
+      ),
     ),
   PlaylistActionsMenu: () => null,
   PlaylistFollowButton: () => null,
@@ -175,6 +187,7 @@ beforeEach(() => {
   requestMock.mockReset();
   climbsRefetch.mockClear();
   updatePlaylistMock.mockReset();
+  toast.showToast.mockClear();
   playlistMocks.allClimbs = [];
   playlistMocks.activationOptions = null;
   playlistMocks.renderBoardResult = { renderBoard: null, banner: null };
@@ -319,5 +332,20 @@ describe('PlaylistDetail edit cache propagation', () => {
     });
     // The detail hero cache is updated to the full server response.
     expect(queryClient.getQueryData(['playlist', 'p-1'])).toEqual(updated);
+  });
+
+  it('shows an update failure inline in the edit sheet (not a toast)', async () => {
+    requestMock.mockResolvedValue({ playlist: basePlaylist });
+    updatePlaylistMock.mockRejectedValue(new Error('update failed'));
+
+    const { findByText, container } = renderDetail();
+
+    fireEvent.click(await findByText('form-submit'));
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-edit-error="true"]')?.textContent).toBe('edit.messages.updateFailed');
+    });
+    // A root toast would render behind the native sheet and be invisible.
+    expect(toast.showToast).not.toHaveBeenCalledWith('edit.messages.updateFailed', 'error');
   });
 });

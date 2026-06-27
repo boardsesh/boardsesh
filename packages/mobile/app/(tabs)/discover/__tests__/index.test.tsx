@@ -69,6 +69,7 @@ const pinnedHook = vi.hoisted(() => ({
 const createPlaylist = vi.hoisted(() => vi.fn());
 const pinPlaylist = vi.hoisted(() => vi.fn());
 const unpinPlaylist = vi.hoisted(() => vi.fn());
+const toast = vi.hoisted(() => ({ showToast: vi.fn() }));
 const discoverOptions = vi.hoisted(() => [] as DiscoverOptions[]);
 const asyncStorage = vi.hoisted(() => ({
   storage: new Map<string, string>(),
@@ -144,7 +145,7 @@ vi.mock('../../../../src/providers/auth-provider', () => ({
   useAuth: () => ({ isAuthenticated: true, isLoading: false }),
 }));
 vi.mock('../../../../src/providers/toast-provider', () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => toast,
 }));
 vi.mock('../../../../src/lib/graphql/use-auth-token', () => ({ useAuthToken: () => ({ data: 'token' }) }));
 vi.mock('../../../../src/lib/graphql/hooks', () => ({ useProfile: () => ({ data: { id: 'me' } }) }));
@@ -250,8 +251,23 @@ vi.mock('../../../../src/components/playlist', () => ({
       createElement('span', null, metaLabel ? `${name} ${metaLabel}` : name),
       onTogglePin ? createElement('button', { 'aria-label': `pin-${name}`, onClick: onTogglePin }, 'pin') : null,
     ),
-  PlaylistFormSheet: ({ onSubmit }: { onSubmit: (values: typeof FORM_VALUES) => void }) =>
-    createElement('button', { 'aria-label': 'submit-create', onClick: () => onSubmit(FORM_VALUES) }, 'submit'),
+  PlaylistFormSheet: ({
+    visible,
+    submitError,
+    onSubmit,
+  }: {
+    visible: boolean;
+    submitError?: string | null;
+    onSubmit: (values: typeof FORM_VALUES) => void;
+  }) =>
+    visible
+      ? createElement(
+          'div',
+          null,
+          submitError ? createElement('span', { 'data-create-error': 'true' }, submitError) : null,
+          createElement('button', { 'aria-label': 'submit-create', onClick: () => onSubmit(FORM_VALUES) }, 'submit'),
+        )
+      : null,
 }));
 vi.mock('../../../../src/components/HorizontalScrollSection', () => ({
   HorizontalScrollSection: ({ children, title }: { children?: ReactNode; title: string }) =>
@@ -313,6 +329,7 @@ beforeEach(() => {
   createPlaylist.mockReset();
   pinPlaylist.mockReset();
   unpinPlaylist.mockReset();
+  toast.showToast.mockClear();
   discoverOptions.length = 0;
 });
 
@@ -585,5 +602,25 @@ describe('DiscoverLibrary create flow', () => {
 
     const cached = queryClient.getQueryData<Array<{ uuid: string }>>(['userPlaylists']);
     expect(cached?.map((playlist) => playlist.uuid)).toEqual(['p-new', 'p-old']);
+  });
+
+  it('shows the create failure inline in the sheet (not a toast) and keeps the sheet open', async () => {
+    createPlaylist.mockRejectedValue(new Error('create failed'));
+
+    const { getByLabelText, container } = renderHub();
+
+    fireEvent.click(getByLabelText('open-create'));
+    await act(async () => {
+      fireEvent.click(getByLabelText('submit-create'));
+    });
+
+    // The error renders in the sheet's inline slot, not via the root toast (which
+    // would be hidden behind the native sheet).
+    expect(container.querySelector('[data-create-error="true"]')?.textContent).toBe(
+      'bottomTabBar.createPlaylistFailed',
+    );
+    expect(toast.showToast).not.toHaveBeenCalledWith('bottomTabBar.createPlaylistFailed', 'error');
+    // The sheet stays open so the user can correct and retry.
+    expect(getByLabelText('submit-create')).toBeTruthy();
   });
 });

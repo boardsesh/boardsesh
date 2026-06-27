@@ -302,6 +302,10 @@ export default function DiscoverLibrary() {
 
   const [createVisible, setCreateVisible] = useState(false);
   const [creating, setCreating] = useState(false);
+  // Create failures surface INLINE in the sheet (its error slot), not via a root
+  // toast — a toast fired while the native sheet is open renders behind it and is
+  // invisible. The sheet stays open on failure so the user can fix and retry.
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const handleCreatePress = useCallback(() => {
     if (!createBoard) {
@@ -309,6 +313,7 @@ export default function DiscoverLibrary() {
       router.push('/boards');
       return;
     }
+    setCreateError(null);
     setCreateVisible(true);
   }, [createBoard, showToast, t]);
 
@@ -316,6 +321,7 @@ export default function DiscoverLibrary() {
     async (values: PlaylistFormValues) => {
       if (!createBoard) return;
       setCreating(true);
+      setCreateError(null);
       try {
         const created = await createPlaylist({
           boardType: createBoard.boardType,
@@ -339,7 +345,9 @@ export default function DiscoverLibrary() {
       } catch (err) {
         console.error('Failed to create playlist:', err);
         reportHandledError(err, { tags: { source: 'playlist', op: 'create' } });
-        showToast(t('bottomTabBar.createPlaylistFailed'), 'error');
+        // Inline, not a toast: the sheet is still open, so a root toast would be
+        // hidden behind it.
+        setCreateError(t('bottomTabBar.createPlaylistFailed'));
       } finally {
         setCreating(false);
       }
@@ -651,8 +659,12 @@ export default function DiscoverLibrary() {
         mode="create"
         visible={createVisible}
         submitting={creating}
+        submitError={createError}
         onSubmit={handleCreateSubmit}
-        onClose={() => setCreateVisible(false)}
+        onClose={() => {
+          setCreateVisible(false);
+          setCreateError(null);
+        }}
       />
     </View>
   );

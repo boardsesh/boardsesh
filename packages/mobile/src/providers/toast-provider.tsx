@@ -51,6 +51,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={value}>
       {children}
+      {/* This overlay is a root-level JS View, so it renders BEHIND any native
+          surface above it — an @expo/ui sheet (ModalSheet / BottomSheetModal) or
+          a `presentation: 'modal'` route. Pattern: feedback for an action taken
+          INSIDE such a sheet must stay inline (e.g. the sheet's own error slot);
+          only call showToast once the sheet is fully dismissed, or it'll be
+          invisible behind it. */}
       <View style={styles.overlay} pointerEvents="none">
         {toasts.map((toast) => (
           <Toast key={toast.id} toast={toast} onDismiss={dismissToast} />

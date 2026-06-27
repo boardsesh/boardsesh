@@ -121,11 +121,13 @@ vi.mock('../playlist', () => ({
   PlaylistFormSheet: ({
     visible,
     submitting,
+    submitError,
     onSubmit,
     onClose,
   }: {
     visible: boolean;
     submitting?: boolean;
+    submitError?: string | null;
     onSubmit: (values: { name: string; description?: string; color?: string; icon?: string }) => void;
     onClose: () => void;
   }) =>
@@ -133,6 +135,7 @@ vi.mock('../playlist', () => ({
       ? createElement(
           'div',
           null,
+          submitError ? createElement('span', { 'data-create-error': 'true' }, submitError) : null,
           createElement(
             'button',
             {
@@ -378,16 +381,20 @@ describe('AddToPlaylistSheet', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('keeps the create sheet open when playlist creation fails', async () => {
+  it('shows the create failure inline (not a toast) and keeps the sheet open', async () => {
     playlistContext.createPlaylist.mockRejectedValueOnce(new Error('create failed'));
-    const { getByLabelText, onClose } = renderSheet();
+    const { getByLabelText, container, onClose } = renderSheet();
 
     fireEvent.click(getByLabelText('actions.playlist.popover.createNew'));
     fireEvent.click(getByLabelText('submit-created-playlist'));
 
     await waitFor(() => {
-      expect(toast.showToast).toHaveBeenCalledWith('actions.playlist.toast.createFailed', 'error');
+      expect(container.querySelector('[data-create-error="true"]')?.textContent).toBe(
+        'actions.playlist.toast.createFailed',
+      );
     });
+    // A root toast would render behind the native sheet and be invisible.
+    expect(toast.showToast).not.toHaveBeenCalledWith('actions.playlist.toast.createFailed', 'error');
     expect(getByLabelText('submit-created-playlist')).not.toBeNull();
     expect(playlistContext.addToPlaylist).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();

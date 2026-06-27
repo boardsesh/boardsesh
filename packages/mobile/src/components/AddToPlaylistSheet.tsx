@@ -54,6 +54,10 @@ function AddToPlaylistSheet({
   const { playlists, addToPlaylist, createPlaylist, isLoading, isAuthenticated } = usePlaylistsContext();
   const [createVisible, setCreateVisible] = useState(false);
   const [creating, setCreating] = useState(false);
+  // Create failures surface INLINE in the nested create sheet, not via a root
+  // toast — a toast fired while the native sheet is open renders behind it and is
+  // invisible. The sheet stays open on failure so the user can fix and retry.
+  const [createError, setCreateError] = useState<string | null>(null);
   // Mirror the latest open intent so an in-flight create can tell whether the
   // sheet is still open (replaces the old isPresentedRef gate).
   const visibleRef = useRef(visible);
@@ -98,6 +102,7 @@ function AddToPlaylistSheet({
       createRequestIdRef.current = createRequestId;
       const isCurrentCreateRequest = () => createRequestIdRef.current === createRequestId && visibleRef.current;
       setCreating(true);
+      setCreateError(null);
       try {
         const created = await createPlaylist(values.name, values.description, values.color, values.icon, {
           boardType: boardName,
@@ -132,7 +137,9 @@ function AddToPlaylistSheet({
             error,
           });
         }
-        showToast(t('actions.playlist.toast.createFailed'), 'error');
+        // Inline, not a toast: the create sheet is still open, so a root toast
+        // would be hidden behind it.
+        setCreateError(t('actions.playlist.toast.createFailed'));
       } finally {
         if (createRequestIdRef.current === createRequestId) setCreating(false);
       }
@@ -146,10 +153,12 @@ function AddToPlaylistSheet({
     createRequestIdRef.current += 1;
     setCreateVisible(false);
     setCreating(false);
+    setCreateError(null);
     onFullyDismissed?.();
   }, [onFullyDismissed]);
 
   const handleShowCreate = useCallback(() => {
+    setCreateError(null);
     setCreateVisible(true);
   }, []);
 
@@ -157,6 +166,7 @@ function AddToPlaylistSheet({
     createRequestIdRef.current += 1;
     setCreateVisible(false);
     setCreating(false);
+    setCreateError(null);
   }, []);
 
   const snapPoints = useMemo(() => ['50%', '90%'], []);
@@ -238,6 +248,7 @@ function AddToPlaylistSheet({
         mode="create"
         visible={createVisible}
         submitting={creating}
+        submitError={createError}
         onSubmit={handleCreatePlaylist}
         onClose={handleCloseCreate}
       />
