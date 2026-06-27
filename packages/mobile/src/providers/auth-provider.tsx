@@ -129,11 +129,25 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         // "Save Password?" dialog. Inert in normal builds (dead-strips when
         // EXPO_PUBLIC_SCREENSHOT_MODE is unset — the comparison stays inlined here so the
         // release minifier folds it in place rather than across a module boundary).
-        if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' && SCREENSHOT_USER_EMAIL && SCREENSHOT_USER_PASSWORD) {
-          const screenshotSignIn = await authSignInWithCredentials(SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD);
-          if (screenshotSignIn.success) {
-            setIsAuthenticated(true);
-            return;
+        if (process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1') {
+          // Diagnostics land in Metro's stdout (which the capture orchestrator tees to
+          // a log it polls), so a silent sign-in failure is no longer invisible in CI.
+          if (SCREENSHOT_USER_EMAIL && SCREENSHOT_USER_PASSWORD) {
+            const screenshotSignIn = await authSignInWithCredentials(SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD);
+            if (screenshotSignIn.success) {
+              console.info('[screenshot] auto sign-in succeeded; rendering straight into home');
+              setIsAuthenticated(true);
+              return;
+            }
+            console.warn(
+              `[screenshot] auto sign-in FAILED — status=${screenshotSignIn.status ?? 'null'} error=${screenshotSignIn.error}` +
+                ` (emailLen=${SCREENSHOT_USER_EMAIL.length} passwordLen=${SCREENSHOT_USER_PASSWORD.length})`,
+            );
+          } else {
+            console.warn(
+              `[screenshot] auto sign-in SKIPPED — credentials not inlined into the bundle` +
+                ` (emailSet=${Boolean(SCREENSHOT_USER_EMAIL)} passwordSet=${Boolean(SCREENSHOT_USER_PASSWORD)})`,
+            );
           }
         }
         await handleSignedOutTransition();
