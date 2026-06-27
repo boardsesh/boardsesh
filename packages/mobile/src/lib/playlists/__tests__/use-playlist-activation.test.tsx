@@ -475,6 +475,8 @@ describe('usePlaylistActivation (mobile wrapper)', () => {
       });
       const lastSetQueue = mocks.setQueue.mock.calls.at(-1);
       expect(lastSetQueue?.[0].map((item: ClimbQueueItem) => item.climb.uuid)).toEqual(['b', 'c']);
+      // The second confirm runs the full replace, so the ordered playlist is fetched.
+      expect(fetchPage).toHaveBeenCalledOnce();
     });
 
     it('cancelling the warning leaves the queue untouched', async () => {
