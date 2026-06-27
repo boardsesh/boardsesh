@@ -26,15 +26,19 @@ export const writeCharacteristicSeries = async (
   characteristic: BluetoothRemoteGATTCharacteristic,
   messages: Uint8Array[],
   signal?: AbortSignal,
+  options?: { allowWithResponseFallback?: boolean },
 ) => {
-  // The Nordic-UART RX characteristic supports write-without-response; the
-  // original MoonBoard (RedBearLab) write characteristic advertises only
-  // `.write`, and Web Bluetooth throws NotSupportedError if you call
-  // writeValueWithoutResponse on a characteristic that lacks the property. So
-  // pick the write method from the advertised property — mirrors the native
-  // `preferredWriteType` gating. Default to without-response when properties
-  // are unavailable to preserve the proven Aurora path.
-  const supportsWithoutResponse = characteristic.properties?.writeWithoutResponse ?? true;
+  // Aurora (Kilter/Tension) MUST always use write-without-response: it is the
+  // proven path, and routing it to write-with-response stalls boards whose ATT
+  // ack never arrives (the iOS-26 regression that #3228 fixed). Only the
+  // MoonBoard family may fall back to write-with-response, and only for the
+  // original RedBearLab box whose characteristic advertises `.write` only (Web
+  // Bluetooth throws NotSupportedError if you call writeValueWithoutResponse on
+  // it). This mirrors the RN adapter's scanFamily gate and the native
+  // preferredWriteType. Default (no fallback allowed) preserves the proven
+  // Aurora path exactly.
+  const useWithResponse =
+    (options?.allowWithResponseFallback ?? false) && characteristic.properties?.writeWithoutResponse === false;
   for (let i = 0; i < messages.length; i++) {
     if (signal?.aborted) {
       throw new DOMException('Write aborted', 'AbortError');
@@ -43,10 +47,10 @@ export const writeCharacteristicSeries = async (
       await delay(INTER_CHUNK_DELAY_MS);
     }
     const chunk = new Uint8Array(messages[i]);
-    if (supportsWithoutResponse) {
-      await characteristic.writeValueWithoutResponse(chunk);
-    } else {
+    if (useWithResponse) {
       await characteristic.writeValueWithResponse(chunk);
+    } else {
+      await characteristic.writeValueWithoutResponse(chunk);
     }
   }
 };

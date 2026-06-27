@@ -19,8 +19,10 @@ export type LedPlacements = Record<number, number>;
 export type LedColorOverrides = Partial<Record<HoldState, string>>;
 
 // The colour encoders parseInt fixed 2-char slices, so only exactly six hex
-// digits (after an optional leading '#') produce valid bytes.
-const SIX_DIGIT_HEX_PATTERN = /^[0-9a-fA-F]{6}$/;
+// digits with an optional LEADING '#' produce valid bytes. Anchored so an
+// interior '#' ("ab#cdef") is rejected — this keeps byte-for-byte parity with
+// the Swift `sanitizedOverride`, which only strips a leading '#'.
+const SIX_DIGIT_HEX_PATTERN = /^#?[0-9a-fA-F]{6}$/;
 
 // --- API v3 command bytes (3 bytes per LED, 16-bit positions) ---
 const V3_PACKET_MIDDLE = 81; // 'Q'
@@ -245,7 +247,7 @@ export const getAuroraBluetoothPacket = (
     // encoders and stream garbage to the wall. Fall back to the canonical
     // state colour instead of honouring a malformed override.
     const sanitizedOverride =
-      overrideForState && SIX_DIGIT_HEX_PATTERN.test(overrideForState.replace('#', '')) ? overrideForState : undefined;
+      overrideForState && SIX_DIGIT_HEX_PATTERN.test(overrideForState) ? overrideForState : undefined;
     const colorSource = sanitizedOverride ?? state.color;
     const color = colorSource.replace('#', '');
     ledEntries.push({ position: ledPosition, color });

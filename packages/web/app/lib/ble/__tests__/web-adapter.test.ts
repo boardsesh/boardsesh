@@ -211,7 +211,26 @@ describe('WebBluetoothAdapter', () => {
       await adapter.write(data);
 
       expect(mockSplitMessages).toHaveBeenCalledWith(data);
-      expect(mockWriteCharacteristicSeries).toHaveBeenCalledWith(mockCharacteristic, [chunk1, chunk2], undefined);
+      // Aurora (default board) never allows the write-with-response fallback.
+      expect(mockWriteCharacteristicSeries).toHaveBeenCalledWith(mockCharacteristic, [chunk1, chunk2], undefined, {
+        allowWithResponseFallback: false,
+      });
+    });
+
+    it('allows the write-with-response fallback only for Moonboard', async () => {
+      const moonboardAdapter = new WebBluetoothAdapter('moonboard');
+      mockRequestDevice.mockResolvedValue(createMockDevice());
+      const mockCharacteristic = createMockCharacteristic();
+      mockGetMoonboardCharacteristic.mockResolvedValue(mockCharacteristic);
+      await moonboardAdapter.requestAndConnect();
+
+      const data = new Uint8Array([1, 2, 3]);
+      mockSplitMessages.mockReturnValueOnce([data]);
+      await moonboardAdapter.write(data);
+
+      expect(mockWriteCharacteristicSeries).toHaveBeenCalledWith(mockCharacteristic, [data], undefined, {
+        allowWithResponseFallback: true,
+      });
     });
   });
 

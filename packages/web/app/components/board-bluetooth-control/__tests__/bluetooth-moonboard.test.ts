@@ -1,7 +1,37 @@
 import { describe, expect, it, vi } from 'vite-plus/test';
 import { coordinateToHoldId } from '@/app/lib/moonboard-config';
-import { getMoonboardBluetoothPacket, getMoonboardSerialPosition } from '../bluetooth-moonboard';
-import { splitMessages } from '../bluetooth-shared';
+import {
+  getMoonboardBluetoothPacket,
+  getMoonboardSerialPosition,
+  MOONBOARD_REQUEST_DEVICE_OPTIONS,
+} from '../bluetooth-moonboard';
+import { splitMessages, REDBEARLAB_SERVICE_UUID, UART_SERVICE_UUID } from '../bluetooth-shared';
+
+describe('MOONBOARD_REQUEST_DEVICE_OPTIONS', () => {
+  // RequestDeviceOptions is a union without `filters` on the accept-all variant;
+  // narrow to the filter shape this constant actually uses.
+  const options = MOONBOARD_REQUEST_DEVICE_OPTIONS as {
+    filters?: Array<{ services?: string[]; namePrefix?: string }>;
+    optionalServices?: string[];
+  };
+
+  it('filters on each controller service SEPARATELY (OR), not both at once', () => {
+    // The filters are load-bearing: a single { services: [UART, RedBearLab] }
+    // entry would require a board to advertise BOTH (no real board does), so a
+    // per-service entry is required for any MoonBoard to appear in the chooser.
+    const serviceFilters = (options.filters ?? [])
+      .map((filter) => filter.services)
+      .filter((services): services is string[] => Array.isArray(services));
+    expect(serviceFilters).toContainEqual([UART_SERVICE_UUID]);
+    expect(serviceFilters).toContainEqual([REDBEARLAB_SERVICE_UUID]);
+    // No single filter lists both services together.
+    expect(serviceFilters).not.toContainEqual([UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID]);
+  });
+
+  it('lists both controller services in optionalServices so getPrimaryService can reach either', () => {
+    expect(options.optionalServices).toEqual(expect.arrayContaining([UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID]));
+  });
+});
 
 describe('getMoonboardSerialPosition', () => {
   it('maps representative holds to the controller strip order', () => {

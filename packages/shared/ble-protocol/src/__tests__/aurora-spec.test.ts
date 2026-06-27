@@ -203,8 +203,20 @@ describe('§7.2 API v3 Encoding', () => {
       expect(encodePositionAndColorV3(42, '00FF00')).toEqual([0x2a, 0x00, 0x1c]);
     });
 
-    it('max LEDs per v3 frame = 84 (254 / 3)', () => {
-      expect(Math.floor(254 / 3)).toBe(84);
+    it('splits at 84 LEDs per v3 frame (the encoder, not arithmetic)', () => {
+      // 85 v3 LEDs (3 bytes each) overflow one 255-byte frame: 84 fit
+      // (1 cmd + 84*3 = 253), the 85th starts a second frame.
+      const positions: Record<number, number> = {};
+      let frames = '';
+      for (let i = 0; i < 85; i++) {
+        positions[i] = i;
+        frames += `p${i}r42`;
+      }
+      const packet = getAuroraBluetoothPacket(frames, positions, 'kilter', 3).packet;
+      const parsed = parseFrames(packet);
+      expect(parsed).toHaveLength(2);
+      expect(parsed[0].payloadLength).toBe(1 + 84 * 3);
+      expect(decodeAllV3Leds(packet)).toHaveLength(85);
     });
   });
 });
@@ -271,8 +283,20 @@ describe('§7.1 API v2 Encoding', () => {
       expect((half[1] >> 6) & 0x03).toBe(1); // R=1
     });
 
-    it('max LEDs per v2 frame = 127 (254 / 2)', () => {
-      expect(Math.floor(254 / 2)).toBe(127);
+    it('splits at 127 LEDs per v2 frame (the encoder, not arithmetic)', () => {
+      // 128 v2 LEDs (2 bytes each): 127 fit (1 cmd + 127*2 = 255), the 128th
+      // starts a second frame.
+      const positions: Record<number, number> = {};
+      let frames = '';
+      for (let i = 0; i < 128; i++) {
+        positions[i] = i;
+        frames += `p${i}r42`;
+      }
+      const packet = getAuroraBluetoothPacket(frames, positions, 'kilter', 2).packet;
+      const parsed = parseFrames(packet);
+      expect(parsed).toHaveLength(2);
+      expect(parsed[0].payloadLength).toBe(1 + 127 * 2);
+      expect(decodeAllV2Leds(packet)).toHaveLength(128);
     });
   });
 });
@@ -512,7 +536,9 @@ describe('getAuroraBluetoothPacket — color overrides', () => {
   it('ignores a malformed override and falls back to the canonical color', () => {
     const positions = { 100: 5 };
     const canonical = getAuroraBluetoothPacket('p100r12', positions, 'kilter', 3);
-    for (const bad of ['#fff', 'red', '#FF00FF00', '12345g']) {
+    // 'ab#cdef' (interior '#') must be rejected too — anchored pattern, parity
+    // with the Swift encoder which only strips a leading '#'.
+    for (const bad of ['#fff', 'red', '#FF00FF00', '12345g', 'ab#cdef']) {
       expect(getAuroraBluetoothPacket('p100r12', positions, 'kilter', 3, { STARTING: bad }).packet).toEqual(
         canonical.packet,
       );

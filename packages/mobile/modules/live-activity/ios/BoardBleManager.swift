@@ -911,11 +911,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     // MARK: - CBPeripheralDelegate
 
-    /// Services to probe after connect. MoonBoard spans two controller
-    /// generations, so probe the Nordic UART service first and the original
-    /// RedBearLab service as a fallback; Aurora boards are always Nordic UART.
+    /// Services to probe after connect, Nordic UART first then the original
+    /// RedBearLab service. Probed UNCONDITIONALLY — not gated on
+    /// `configuration?.boardName` — because `configuration` is set by
+    /// configureBoard() only AFTER requestAndConnect resolves, so it is nil (fresh
+    /// install) or stale during discovery. Gating here meant an original
+    /// RedBearLab MoonBoard (which exposes no UART service) failed discovery on
+    /// first connect and never reached configureBoard — a catch-22. Discovering
+    /// an absent service is harmless on CoreBluetooth: Aurora and newer MoonBoards
+    /// simply won't expose RedBearLab, the ordered list keeps the UART preference,
+    /// and writeCharacteristicUuid(for:) keys on the discovered service.
     private func writeServiceUuids() -> [CBUUID] {
-        configuration?.boardName == "moonboard" ? [uartServiceUuid, redBearLabServiceUuid] : [uartServiceUuid]
+        [uartServiceUuid, redBearLabServiceUuid]
     }
 
     /// The write characteristic UUID paired with a discovered service UUID.
@@ -976,6 +983,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         let writeCharUuid = writeCharacteristicUuid(for: service.uuid)
         guard let characteristic = service.characteristics?.first(where: { $0.uuid == writeCharUuid }) else {
+            // Known minor divergence from the web/RN adapters, which retry the
+            // other controller service when the chosen one exposes no write
+            // characteristic. Not retried here because real boards are a single
+            // controller generation (a UART service WITHOUT its write char while
+            // ALSO exposing RedBearLab is not a real device), so this can't bite
+            // hardware. Revisit if a hybrid controller ever ships.
             failConnectionSetup(peripheral, error: BoardBleError.writeCharacteristicMissing)
             return
         }

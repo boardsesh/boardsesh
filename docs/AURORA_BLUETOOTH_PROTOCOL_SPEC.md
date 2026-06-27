@@ -873,7 +873,7 @@ pos_hi = (10 >> 8) & 0x03 = 0x00
 R = floor(0x00 * 1.0) / 64 = 0
 G = floor(0xFF * 1.0) / 64 = 3
 B = floor(0x00 * 1.0) / 64 = 0
-color_byte = (0 << 6) | (3 << 4) | 0x00 | (0 << 2) = 0x30
+color_byte = (0 << 6) | (3 << 4) | (0 << 2) | 0x00 = 0x30
 bytes: [0x0A, 0x30]
 ```
 
@@ -883,7 +883,7 @@ LED 2 (pos=256, color="0000FF"):
 pos_lo = 256 & 0xFF = 0x00
 pos_hi = (256 >> 8) & 0x03 = 0x01
 R = 0, G = 0, B = floor(0xFF * 1.0) / 64 = 3
-color_byte = (0 << 6) | (0 << 4) | 0x01 | (3 << 2) = 0x0D
+color_byte = (0 << 6) | (0 << 4) | (3 << 2) | 0x01 = 0x0D
 bytes: [0x00, 0x0D]
 ```
 
@@ -894,7 +894,7 @@ pos_lo = 500 & 0xFF = 0xF4
 pos_hi = (500 >> 8) & 0x03 = 0x01
 R = floor(0xFF * 1.0) / 64 = 3
 G = 0, B = 0
-color_byte = (3 << 6) | (0 << 4) | 0x01 | (0 << 2) = 0xC1
+color_byte = (3 << 6) | (0 << 4) | (0 << 2) | 0x01 = 0xC1
 bytes: [0xF4, 0xC1]
 ```
 

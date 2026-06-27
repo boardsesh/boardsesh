@@ -88,24 +88,36 @@ function makeWritableCharacteristic(writeWithoutResponse?: boolean) {
   };
 }
 
-describe('writeCharacteristicSeries (write-type gating)', () => {
-  it('uses write-without-response when the characteristic advertises it (Nordic UART path)', async () => {
-    const characteristic = makeWritableCharacteristic(true);
+describe('writeCharacteristicSeries (family-gated write-type)', () => {
+  const moonboard = { allowWithResponseFallback: true };
+
+  it('forces write-without-response for Aurora EVEN when the property reads false (invariant)', async () => {
+    // The critical Aurora invariant: never route Aurora to write-with-response,
+    // even if iOS under-reports the characteristic property (it stalls boards).
+    // No options / fallback disallowed → always without-response.
+    const characteristic = makeWritableCharacteristic(false);
     await writeCharacteristicSeries(characteristic, [new Uint8Array([1, 2, 3])]);
     expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
     expect(characteristic.writeValueWithResponse).not.toHaveBeenCalled();
   });
 
-  it('uses write-with-response when the characteristic lacks the no-response property (RedBearLab path)', async () => {
+  it('uses write-without-response for a Moonboard Nordic-UART characteristic', async () => {
+    const characteristic = makeWritableCharacteristic(true);
+    await writeCharacteristicSeries(characteristic, [new Uint8Array([1, 2, 3])], undefined, moonboard);
+    expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    expect(characteristic.writeValueWithResponse).not.toHaveBeenCalled();
+  });
+
+  it('uses write-with-response for a Moonboard RedBearLab characteristic (no-response unsupported)', async () => {
     const characteristic = makeWritableCharacteristic(false);
-    await writeCharacteristicSeries(characteristic, [new Uint8Array([1, 2, 3])]);
+    await writeCharacteristicSeries(characteristic, [new Uint8Array([1, 2, 3])], undefined, moonboard);
     expect(characteristic.writeValueWithResponse).toHaveBeenCalledTimes(1);
     expect(characteristic.writeValueWithoutResponse).not.toHaveBeenCalled();
   });
 
-  it('defaults to write-without-response when properties are unavailable', async () => {
+  it('defaults a Moonboard write to without-response when properties are unavailable', async () => {
     const characteristic = makeWritableCharacteristic(undefined);
-    await writeCharacteristicSeries(characteristic, [new Uint8Array([1])]);
+    await writeCharacteristicSeries(characteristic, [new Uint8Array([1])], undefined, moonboard);
     expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
   });
 

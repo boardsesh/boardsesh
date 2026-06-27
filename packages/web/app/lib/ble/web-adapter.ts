@@ -67,7 +67,11 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
       throw new Error('Not connected');
     }
     const messages = splitMessages(data);
-    await writeCharacteristicSeries(this.characteristic, messages, signal);
+    // Only MoonBoard may fall back to write-with-response (original RedBearLab
+    // box); Aurora is always write-without-response.
+    await writeCharacteristicSeries(this.characteristic, messages, signal, {
+      allowWithResponseFallback: this.boardName === 'moonboard',
+    });
   }
 
   onDisconnect(callback: () => void): () => void {

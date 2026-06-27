@@ -290,7 +290,7 @@ final class LiveActivityWidgetTests: XCTestCase {
         )
         // Malformed overrides fall back to the canonical color (green 0x1C), NOT
         // black — parity with the TS SIX_DIGIT_HEX_PATTERN guard.
-        for bad in ["#fff", "red", "#FF00FF00", "12345g"] {
+        for bad in ["#fff", "red", "#FF00FF00", "12345g", "ab#cdef"] {
             XCTAssertEqual(
                 singleLedColorByte(
                     BoardBleEncoding.makeAuroraPacket(

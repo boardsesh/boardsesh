@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('@boardsesh/ble-protocol', () => ({
   AURORA_ADVERTISED_SERVICE_UUID: 'AURORA-UUID',
   UART_SERVICE_UUID: 'UART-UUID',
+  REDBEARLAB_SERVICE_UUID: 'REDBEARLAB-UUID',
   parseSerialNumber: (name?: string) => name?.match(/#([^@]+)/)?.[1] ?? undefined,
 }));
 
@@ -456,5 +457,30 @@ describe('NativeIosBleAdapter on newer binaries (adoption surface present)', () 
     await vi.runAllTimersAsync();
     await connectPromise;
     expect(nativeMock.connect).toHaveBeenCalledWith('aurora-1');
+  });
+});
+
+describe('NativeIosBleAdapter on older binaries (no adoption surface)', () => {
+  beforeEach(() => {
+    // Older native binary: getConnectedDevice absent → no unfiltered scan, so
+    // MoonBoard must filter on BOTH controller generations.
+    delete (nativeMock as Record<string, unknown>).getConnectedDevice;
+  });
+
+  it('filters a MoonBoard scan on both the UART and RedBearLab services', async () => {
+    const adapter = new NativeIosBleAdapter(
+      (subscribe) =>
+        new Promise<string>(() => {
+          subscribe(() => {});
+        }),
+      'moonboard',
+    );
+    void adapter.requestAndConnect();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Original RedBearLab MoonBoards advertise their own service, newer ones the
+    // Nordic UART service — without an unfiltered scan we must list both.
+    expect(nativeMock.startScan).toHaveBeenCalledWith(['UART-UUID', 'REDBEARLAB-UUID']);
   });
 });
