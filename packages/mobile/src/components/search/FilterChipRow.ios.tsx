@@ -84,15 +84,16 @@ function FilterChipRowComponent({
     [t],
   );
 
-  // `tint` is the only state signal the native chips need: an active facet reads
-  // brand-tinted, an inactive one stays neutral. buttonStyle('bordered') renders
-  // a native rounded chip on every iOS; the device prototype decides whether to
-  // upgrade to buttonStyle('glass') on iOS 26.
+  // Real iOS 26 Liquid Glass: an inactive chip is a neutral glass capsule
+  // (`buttonStyle('glass')`); an active facet is a brand-tinted prominent glass
+  // capsule (`buttonStyle('glassProminent')` + tint). @expo/ui guards both with
+  // `if #available(iOS 26)`, so they degrade gracefully on older iOS. (The earlier
+  // `bordered` style fell back to a flat thin material on iOS 26 — too see-through.)
   const chipModifiers = useCallback(
     (active: boolean) =>
       active
-        ? [buttonStyle('bordered'), controlSize('small'), tint(brandColors.primary)]
-        : [buttonStyle('bordered'), controlSize('small')],
+        ? [buttonStyle('glassProminent'), controlSize('small'), tint(brandColors.primary)]
+        : [buttonStyle('glass'), controlSize('small')],
     [brandColors.primary],
   );
 
@@ -142,20 +143,8 @@ function FilterChipRowComponent({
           {/* Grade → the range rail overlay. A button, not a menu. [PRIMARY #1] */}
           <Button label={gradeLabel} onPress={onOpenGrade} modifiers={chipModifiers(gradeActive)} />
 
-          {/* Tall / Wide — board-shape toggles, present only on the Kilter
-              homewall sizes where they apply (Wide on 10x10, Tall on 8x12, both
-              on 10x12). A tinted Button toggles each on tap. */}
-          {dimensionChips.map((dimension) => (
-            <Button
-              key={dimension.key}
-              label={dimension.key === 'tall' ? t('mobile.filter.tallClimbs') : t('mobile.filter.wideClimbs')}
-              onPress={dimension.onToggle}
-              modifiers={chipModifiers(dimension.active)}
-            />
-          ))}
-
           {/* Show ▾ — hide-sent + benchmarks; menuActionDismissBehavior keeps it
-              open. [PRIMARY #2 + #3] */}
+              open. [PRIMARY #2 + #3] — kept directly after Grade. */}
           <Menu
             label={t('mobile.search.chips.show')}
             modifiers={[...chipModifiers(hideCompleted || onlyBenchmarks), menuActionDismissBehavior('disabled')]}
@@ -165,6 +154,18 @@ function FilterChipRowComponent({
             ) : null}
             <Toggle label={t('mobile.filter.benchmark')} isOn={onlyBenchmarks} onIsOnChange={onToggleBenchmarks} />
           </Menu>
+
+          {/* Tall / Wide — board-shape toggles, present only on the Kilter homewall
+              sizes where they apply (Wide on 10x10, Tall on 8x12, both on 10x12).
+              A tinted Button toggles each on tap. */}
+          {dimensionChips.map((dimension) => (
+            <Button
+              key={dimension.key}
+              label={dimension.key === 'tall' ? t('mobile.filter.tallClimbs') : t('mobile.filter.wideClimbs')}
+              onPress={dimension.onToggle}
+              modifiers={chipModifiers(dimension.active)}
+            />
+          ))}
 
           {/* Popularity ▾ — min-ascents buckets; conflict-clear handled upstream.
               [PRIMARY #4] */}
