@@ -15,7 +15,6 @@ import {
   DEFAULT_CLIMB_FILTER_STATE,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type ClimbBoardFilterState,
-  type SortOption,
 } from '@boardsesh/climb-filters';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
 import { ClimbListRowSkeleton } from '../../../src/components/ClimbListRowSkeleton';
@@ -91,7 +90,7 @@ const PREWARM_BOARD_HOLDS_DELAY_MS = 1200;
 // excluded from the removable token row so an active filter is never worded
 // twice — the chip shows/changes it, the token row is the receipt for the
 // long-tail (sheet-only) filters that have no chip.
-const CHIP_BACKED_TOKEN_KEYS = new Set<string>(['grade', 'sort', 'minAscents', 'hideCompleted', 'benchmark']);
+const CHIP_BACKED_TOKEN_KEYS = new Set<string>(['grade', 'minAscents', 'minRating', 'hideCompleted', 'benchmark']);
 
 type NativeSearchBarRef = {
   focus: () => void;
@@ -820,7 +819,12 @@ function ClimbListInner() {
   // Each facet chip commits live through the search-provider patch actions. The
   // Popularity chip routes through applyPopularityBucket so it clears a
   // conflicting projects/drafts status, exactly like the filter sheet.
-  const handleChangeSort = useCallback((nextSort: SortOption) => patchFilters({ sortBy: nextSort }), [patchFilters]);
+  // Bare patch, mirroring the sheet's StarRating (which also doesn't conflict-clear
+  // status for minRating); keeps the chip, token, and sheet divergence-free.
+  const handleChangeRating = useCallback(
+    (value: number | undefined) => patchFilters({ minRating: value }),
+    [patchFilters],
+  );
   const handleChangePopularity = useCallback(
     (bucket: number | undefined) => patchFilters(applyPopularityBucket(filters, bucket)),
     [patchFilters, filters],
@@ -854,10 +858,10 @@ function ClimbListInner() {
           gradeLabel={gradeChip.label}
           gradeActive={gradeChip.active}
           onOpenGrade={handleOpenGrade}
-          sortBy={filters.sortBy}
-          onChangeSort={handleChangeSort}
           minAscents={filters.minAscents}
           onChangePopularity={handleChangePopularity}
+          minRating={filters.minRating}
+          onChangeRating={handleChangeRating}
           hideCompleted={!!filters.hideCompleted}
           onToggleHideCompleted={handleToggleHideCompleted}
           onlyBenchmarks={!!boardFilters.onlyBenchmarks}
@@ -878,8 +882,8 @@ function ClimbListInner() {
     handleClearRecentFilters,
     gradeChip,
     handleOpenGrade,
-    handleChangeSort,
     handleChangePopularity,
+    handleChangeRating,
     handleToggleHideCompleted,
     handleToggleBenchmarks,
     boardFilters.onlyBenchmarks,

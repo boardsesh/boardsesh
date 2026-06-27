@@ -671,7 +671,6 @@
       "allClimbs": "All climbs",
       "clearRecentSearches": "Clear recent searches",
       "chips": {
-        "sort": "Sort: {{value}}",
         "show": "Show",
         "filtersWithCount": "Filters · {{count}}"
       },

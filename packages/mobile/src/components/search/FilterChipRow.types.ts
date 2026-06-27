@@ -4,7 +4,6 @@
 // the jetpack-compose follow-up). The split keeps @expo/ui/swift-ui — whose
 // components resolve native views at module load — off the Android bundle path.
 
-import type { SortOption } from '@boardsesh/climb-filters';
 import type { RecentFilter } from '../../lib/recent-filter-store';
 import type { ClimbFilters } from '../ClimbFilterSheet';
 
@@ -25,11 +24,11 @@ export type FilterChipRowProps = {
   gradeActive: boolean;
   onOpenGrade: () => void;
 
-  sortBy: SortOption;
-  onChangeSort: (sortBy: SortOption) => void;
-
   minAscents: number | undefined;
   onChangePopularity: (bucket: number | undefined) => void;
+
+  minRating: number | undefined;
+  onChangeRating: (minRating: number | undefined) => void;
 
   hideCompleted: boolean;
   onToggleHideCompleted: (next: boolean) => void;

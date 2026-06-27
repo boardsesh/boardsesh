@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   POPULARITY_BUCKETS,
-  SORT_CHIP_OPTIONS,
+  RATING_BUCKETS,
   applyPopularityBucket,
   popularityFromTag,
   popularityTag,
+  ratingFromTag,
+  ratingTag,
 } from '../filter-chip-menus';
 
 describe('popularity tag round-trip', () => {
@@ -36,8 +38,19 @@ describe('applyPopularityBucket conflict-clear', () => {
   });
 });
 
-describe('sort options', () => {
-  it('exposes the full sort set', () => {
-    expect(SORT_CHIP_OPTIONS).toEqual(['ascents', 'quality', 'difficulty', 'name', 'popular', 'creation']);
+describe('rating tag round-trip', () => {
+  it('maps every bucket to a tag and back', () => {
+    for (const bucket of RATING_BUCKETS) {
+      expect(ratingFromTag(ratingTag(bucket))).toBe(bucket);
+    }
+  });
+
+  it('uses "any" for the undefined bucket', () => {
+    expect(ratingTag(undefined)).toBe('any');
+    expect(ratingFromTag('any')).toBeUndefined();
+  });
+
+  it('offers the 2–5 star buckets', () => {
+    expect(RATING_BUCKETS).toEqual([undefined, 2, 3, 4, 5]);
   });
 });

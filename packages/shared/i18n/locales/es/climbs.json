@@ -671,7 +671,6 @@
       "allClimbs": "Todas las vías",
       "clearRecentSearches": "Borrar búsquedas recientes",
       "chips": {
-        "sort": "Orden: {{value}}",
         "show": "Mostrar",
         "filtersWithCount": "Filtros · {{count}}"
       },
