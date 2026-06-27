@@ -674,7 +674,9 @@
         "show": "Mostrar",
         "filtersWithCount": "Filtros · {{count}}",
         "tall": "Altas",
-        "wide": "Anchas"
+        "wide": "Anchas",
+        "lock": "Bloquear",
+        "unlock": "Desbloquear"
       },
       "removeFilterAria": "Quitar {{filter}}"
     },

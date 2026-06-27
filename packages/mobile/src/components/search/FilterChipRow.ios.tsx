@@ -27,15 +27,7 @@ import { memo, useCallback } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Host, HStack, ScrollView, Menu, Picker, Toggle, Button, Text, Divider } from '@expo/ui/swift-ui';
-import {
-  buttonStyle,
-  controlSize,
-  tint,
-  tag,
-  padding,
-  menuActionDismissBehavior,
-  onLongPressGesture,
-} from '@expo/ui/swift-ui/modifiers';
+import { buttonStyle, controlSize, tint, tag, padding, menuActionDismissBehavior } from '@expo/ui/swift-ui/modifiers';
 import { formatMinAscentsFilterCount } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import {
@@ -163,18 +155,27 @@ function FilterChipRowComponent({
             <Toggle label={t('mobile.filter.benchmark')} isOn={onlyBenchmarks} onIsOnChange={onToggleBenchmarks} />
           </Menu>
 
-          {/* Tall / Wide — board-shape toggles, present only on the Kilter homewall
+          {/* Tall / Wide — board-shape chips, present only on the Kilter homewall
               sizes where they apply (Wide on 10x10, Tall on 8x12, both on 10x12).
-              Tap toggles; long-press locks — a lock glyph + the filter pinned
-              active through clears. A locked chip ignores tap until unlocked. */}
+              A Menu with onPrimaryAction: TAP toggles the filter, LONG-PRESS opens
+              a Lock/Unlock menu. (A Button + onLongPressGesture doesn't work — the
+              button's own tap gesture swallows the long-press, especially inside
+              the scroll row.) Locked = a lock glyph + the filter pinned active
+              through clears; a locked chip ignores tap until unlocked. */}
           {dimensionChips.map((dimension) => (
-            <Button
+            <Menu
               key={dimension.key}
               label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
               systemImage={dimension.locked ? 'lock.fill' : undefined}
-              onPress={dimension.onToggle}
-              modifiers={[...chipModifiers(dimension.active), onLongPressGesture(dimension.onToggleLock)]}
-            />
+              onPrimaryAction={dimension.onToggle}
+              modifiers={chipModifiers(dimension.active)}
+            >
+              <Button
+                label={dimension.locked ? t('mobile.search.chips.unlock') : t('mobile.search.chips.lock')}
+                systemImage={dimension.locked ? 'lock.open' : 'lock'}
+                onPress={dimension.onToggleLock}
+              />
+            </Menu>
           ))}
 
           {/* Popularity ▾ — min-ascents buckets; conflict-clear handled upstream.
