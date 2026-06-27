@@ -35,15 +35,15 @@
     "@boardsesh/shared-schema": "*",
     "@expo/ui": "~56.0.18",
     "@expo/vector-icons": "15.1.1",
-    "@react-native-async-storage/async-storage": "^3.1.0",
-    "@react-native-community/blur": "^4.4.1",
+    "@react-native-async-storage/async-storage": "3.1.1",
+    "@react-native-community/blur": "4.4.1",
     "@react-native-community/datetimepicker": "9.1.0",
     "@react-native-community/netinfo": "12.0.1",
-    "@react-native-google-signin/google-signin": "^16.0.0",
+    "@react-native-google-signin/google-signin": "16.1.2",
     "@react-native-masked-view/masked-view": "0.3.2",
     "@sentry/cli": "2.53.0",
-    "@sentry/react-native": "^6.14.0",
-    "@shopify/flash-list": "^2.3.1",
+    "@sentry/react-native": "6.22.0",
+    "@shopify/flash-list": "2.3.1",
     "@tanstack/react-query": "^5.0.0",
     "expo": "56.0.12",
     "expo-apple-authentication": "56.0.4",
@@ -88,12 +88,12 @@
     "react": "19.2.3",
     "react-i18next": "^15.0.0",
     "react-native": "0.85.3",
-    "react-native-ble-plx": "^3.5.1",
-    "react-native-context-menu-view": "^1.21.0",
+    "react-native-ble-plx": "3.5.1",
+    "react-native-context-menu-view": "1.21.0",
     "react-native-edge-to-edge": "1.8.1",
     "react-native-gesture-handler": "~2.31.1",
     "react-native-gifted-charts": "^1.4.77",
-    "react-native-pager-view": "^8.0.2",
+    "react-native-pager-view": "8.0.2",
     "react-native-paper": "^5.15.3",
     "react-native-qrcode-svg": "^6.3.15",
     "react-native-reanimated": "4.3.1",
@@ -114,6 +114,10 @@
   "expo": {
     "install": {
       "exclude": [
+        "@react-native-async-storage/async-storage",
+        "@sentry/react-native",
+        "@shopify/flash-list",
+        "react-native-pager-view",
         "typescript"
       ]
     }

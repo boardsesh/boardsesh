@@ -531,6 +531,10 @@ export default defineConfig({
         command: 'tsx scripts/mobile-native-deps-check.ts',
         cache: false,
       },
+      'check:mobile-deps': {
+        command: 'bash scripts/mobile-deps-check.sh',
+        cache: false,
+      },
       'check:mobile-ota-compat': {
         command: 'tsx scripts/mobile-ota-compat-check.ts',
         cache: false,
