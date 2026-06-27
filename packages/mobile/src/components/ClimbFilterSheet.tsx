@@ -9,6 +9,7 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
   hasActiveClimbFilters,
@@ -45,7 +46,8 @@ import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { buildFilterLabels, formatSettersLabel } from '../lib/filter-labels';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-holds';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
-import { subscribeToZoneFilterSelection } from '../lib/zone-filter-handoff';
+import { subscribeToZoneFilterSelection, type ZoneFilterSelection } from '../lib/zone-filter-handoff';
+import { subscribeToSetterFilterSelection } from '../lib/setter-filter-handoff';
 import { useAuth } from '../providers/auth-provider';
 import { hapticSelection } from '../lib/haptics';
 import { springs } from '../theme/animations';
@@ -56,9 +58,6 @@ import { brandColors as staticBrandColors } from '../theme/colors';
 import { iosSystemColors } from '../theme/ios-colors';
 import { spacing, borderRadius } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
-import { SettersFilterSheet } from './search/SettersFilterSheet';
-import { HoldFilterEditorSheet } from './search/HoldFilterEditorSheet';
-import { ZoneFilterEditorSheet, type ZoneFilterEditorSelection } from './search/ZoneFilterEditorSheet';
 import type { ClimbFilters } from '../lib/climb-filter-types';
 import { DEFAULT_FILTERS } from '../lib/climb-filter-types';
 
@@ -75,8 +74,6 @@ type ClimbFilterSheetProps = {
   onApply: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
 };
 
-type ActiveChildFilterSheet = 'setters' | 'holds' | 'zone' | null;
-
 // Status options exposed in the sheet. "established" is retired as a user-facing
 // status — it's the same lever as "min ascents ≥ 2", now folded into the
 // Popularity control — but the enum value is kept for recent-filter replay.
@@ -86,12 +83,6 @@ const STATUS_OPTIONS_UI = ['any', 'drafts', 'projects'] as const;
 // status into one control. undefined = Any; 2 = Established (≥2 ascents).
 const POPULARITY_BUCKETS: ReadonlyArray<number | undefined> = [undefined, 2, 10, 100, 1000];
 const PREWARM_BOARD_HOLDS_AFTER_REFINE_EXPAND_MS = 150;
-
-// This sheet's child editors (setters / holds / zone) stack ON TOP of it and
-// present off the default `root` group. Keep this sheet in its own presenter
-// group so the coordinator doesn't treat a stacked child as an exclusive
-// hand-off and dismiss the filter sheet out from under it.
-const CLIMB_FILTER_PRESENTER_GROUP = 'climb-filter';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -161,8 +152,14 @@ export function ClimbFilterSheet({
   // Bumped on Reset so the Refine/Advanced sections collapse back to default.
   const [sectionResetKey, setSectionResetKey] = useState(0);
   const [refineExpanded, setRefineExpanded] = useState(false);
-  const [activeChildSheet, setActiveChildSheet] = useState<ActiveChildFilterSheet>(null);
-  const [mountedChildSheet, setMountedChildSheet] = useState<ActiveChildFilterSheet>(null);
+  // The sub-pickers (setters / holds / zone) are pushed routes, not stacked
+  // sheets (native sheets can't stack above this one). While a sub-route is open
+  // we suspend — dismiss the native sheet without unmounting, so the draft below
+  // survives — and re-present on focus when the route pops. pendingResumeRef
+  // distinguishes "returned from a sub-route" from the initial focus-on-mount.
+  const router = useRouter();
+  const [suspended, setSuspended] = useState(false);
+  const pendingResumeRef = useRef(false);
 
   // Sync committed parent filters only until the user starts editing. After that,
   // local edits are draft-only until Apply and must not be overwritten by parent
@@ -183,7 +180,6 @@ export function ClimbFilterSheet({
 
   const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
   const isKilter = boardName === 'kilter';
-  const childSheetOpen = activeChildSheet != null;
 
   // Live "Show N" preview for the in-progress edits (matches what Apply yields).
   // Debounced so rapid chip/toggle taps don't each fire a count request.
@@ -373,14 +369,14 @@ export function ClimbFilterSheet({
 
   // The parent mounts this sheet only while it should be open, so present/dismiss
   // route through the coordinator (serialized, no overlapping native
-  // transitions). `onClose` (handleSheetDismiss) clears the parent's open state
-  // on a user pan-down / backdrop. See CLIMB_FILTER_PRESENTER_GROUP for why this
-  // sheet keeps its own group instead of the default `root`.
+  // transitions). `open: !suspended` lets a sub-picker route dismiss the native
+  // sheet without unmounting (a coordinator self-dismiss never fires `onClose`),
+  // then re-present on return. `onClose` (handleSheetDismiss) clears the parent's
+  // open state on a genuine user pan-down / backdrop.
   const managed = useManagedSheet({
-    open: true,
+    open: !suspended,
     sheetRef,
     onClose: handleSheetDismiss,
-    group: CLIMB_FILTER_PRESENTER_GROUP,
   });
 
   const handleReset = useCallback(() => {
@@ -393,10 +389,21 @@ export function ClimbFilterSheet({
   }, [updateLocalBoardFilters, updateLocalFilters]);
 
   const openSetters = useCallback(() => {
-    if (!boardConfig) return;
-    setMountedChildSheet('setters');
-    setActiveChildSheet('setters');
-  }, [boardConfig]);
+    if (!boardConfig || pendingResumeRef.current) return;
+    pendingResumeRef.current = true;
+    setSuspended(true);
+    router.push({
+      pathname: '/(tabs)/climbs/setters',
+      params: {
+        boardName: boardConfig.boardName,
+        layoutId: String(boardConfig.layoutId),
+        sizeId: String(boardConfig.sizeId),
+        setIds: boardConfig.setIds,
+        angle: String(boardConfig.angle),
+        setters: JSON.stringify(localFilters.setter ?? []),
+      },
+    });
+  }, [boardConfig, localFilters.setter, router]);
 
   const scheduleBoardHoldsPrewarm = useCallback(() => {
     if (!boardConfig) return;
@@ -421,25 +428,51 @@ export function ClimbFilterSheet({
   );
 
   const openHoldFilter = useCallback(() => {
-    if (!boardConfig) return;
-    setMountedChildSheet('holds');
-    setActiveChildSheet('holds');
-  }, [boardConfig]);
+    if (!boardConfig || pendingResumeRef.current) return;
+    pendingResumeRef.current = true;
+    setSuspended(true);
+    router.push({
+      pathname: '/(tabs)/climbs/holds',
+      params: {
+        boardName: boardConfig.boardName,
+        layoutId: String(boardConfig.layoutId),
+        sizeId: String(boardConfig.sizeId),
+        setIds: boardConfig.setIds,
+        holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
+      },
+    });
+  }, [boardConfig, localBoardFilters.holdsFilter, router]);
 
   const openZoneFilter = useCallback(() => {
-    if (!boardConfig) return;
-    setMountedChildSheet('zone');
-    setActiveChildSheet('zone');
-  }, [boardConfig]);
+    if (!boardConfig || pendingResumeRef.current) return;
+    pendingResumeRef.current = true;
+    setSuspended(true);
+    router.push({
+      pathname: '/(tabs)/climbs/zone',
+      params: {
+        boardName: boardConfig.boardName,
+        layoutId: String(boardConfig.layoutId),
+        sizeId: String(boardConfig.sizeId),
+        setIds: boardConfig.setIds,
+        angle: String(boardConfig.angle),
+        zoneBox: JSON.stringify(localBoardFilters.zoneBox ?? null),
+        zoneMode: localBoardFilters.zoneMode ?? 'allHolds',
+        holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
+      },
+    });
+  }, [boardConfig, localBoardFilters.holdsFilter, localBoardFilters.zoneBox, localBoardFilters.zoneMode, router]);
 
-  const closeChildSheet = useCallback(() => {
-    setActiveChildSheet(null);
-  }, []);
-
-  const handleChildSheetDismiss = useCallback(() => {
-    setActiveChildSheet(null);
-    setMountedChildSheet(null);
-  }, []);
+  // Re-present after a sub-picker route pops (Done button OR swipe-back both
+  // re-focus this screen). On initial mount the screen is already focused with no
+  // pending resume, so this is a no-op until a sub-route has actually been pushed.
+  useFocusEffect(
+    useCallback(() => {
+      if (pendingResumeRef.current) {
+        pendingResumeRef.current = false;
+        setSuspended(false);
+      }
+    }, []),
+  );
 
   const handleSelectedSettersChange = useCallback(
     (selectedSetters: string[]) => {
@@ -462,7 +495,7 @@ export function ClimbFilterSheet({
   );
 
   const handleZoneFilterChange = useCallback(
-    (selection: ZoneFilterEditorSelection) => {
+    (selection: ZoneFilterSelection) => {
       updateLocalBoardFilters((previous) => {
         const nextBoardFilters: ClimbBoardFilterState = {
           ...previous,
@@ -479,16 +512,20 @@ export function ClimbFilterSheet({
     [updateLocalBoardFilters],
   );
 
-  // Primary editing happens in stacked child sheets, but the standalone hold and
-  // zone routes are retained as fallbacks; keep their focus-cleanup handoff live.
+  // The setter / hold / zone sub-pickers are pushed routes; each hands its result
+  // back through these handoffs when it pops (focus-cleanup), merging into the
+  // draft below. Kept subscribed for the lifetime of the (suspended-but-mounted)
+  // sheet so the result lands even while the route is on top.
   useEffect(() => {
+    const unsubscribeSetters = subscribeToSetterFilterSelection(handleSelectedSettersChange);
     const unsubscribeHolds = subscribeToHoldsFilterSelection(handleHoldsFilterChange);
     const unsubscribeZone = subscribeToZoneFilterSelection(handleZoneFilterChange);
     return () => {
+      unsubscribeSetters();
       unsubscribeHolds();
       unsubscribeZone();
     };
-  }, [handleHoldsFilterChange, handleZoneFilterChange]);
+  }, [handleSelectedSettersChange, handleHoldsFilterChange, handleZoneFilterChange]);
 
   const holdFilterCount = countFilteredHolds(localBoardFilters.holdsFilter);
   const zoneActive = localBoardFilters.zoneBox != null;
@@ -544,335 +581,294 @@ export function ClimbFilterSheet({
   const anyActive = hasActiveClimbFilters(localFilters) || hasActiveBoardFilters(localBoardFilters);
 
   return (
-    <>
-      <BottomSheetModal
-        ref={sheetRef}
-        index={0}
-        snapPoints={snapPoints}
-        enableDynamicSizing={false}
-        enablePanDownToClose={!childSheetOpen}
-        enableContentPanningGesture={!childSheetOpen}
-        enableHandlePanningGesture={!childSheetOpen}
-        onChange={managed.onChange}
-        handleIndicatorStyle={styles.indicator}
+    <BottomSheetModal
+      ref={sheetRef}
+      index={0}
+      snapPoints={snapPoints}
+      enableDynamicSizing={false}
+      enablePanDownToClose
+      onChange={managed.onChange}
+      handleIndicatorStyle={styles.indicator}
+    >
+      <View style={styles.header}>
+        <Text variant="title3">{t('mobile.filter.title')}</Text>
+        <Pressable onPress={handleReset} hitSlop={8} accessibilityRole="button" disabled={!anyActive}>
+          <Text variant="subheadline" color={anyActive ? theme.brandColors.primary : systemColors.secondaryLabel}>
+            {t('mobile.filter.reset')}
+          </Text>
+        </Pressable>
+      </View>
+
+      <BottomSheetScrollView
+        ref={scrollRef}
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.header}>
-          <Text variant="title3">{t('mobile.filter.title')}</Text>
-          <Pressable onPress={handleReset} hitSlop={8} accessibilityRole="button" disabled={!anyActive}>
-            <Text variant="subheadline" color={anyActive ? theme.brandColors.primary : systemColors.secondaryLabel}>
-              {t('mobile.filter.reset')}
-            </Text>
-          </Pressable>
+        {/* PRIMARY — the levers the analytics say carry the product. Always open. */}
+        <View style={styles.primary}>
+          {/* Grade — inline and sheet-local, so dismissing the filter sheet does
+              not commit grade edits until Apply. */}
+          <GradeRangeRail
+            grades={grades ?? []}
+            bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
+            onChange={handleGradeChange}
+            dismissible={false}
+            showTitle
+            style={styles.inlineGradeRail}
+          />
+
+          {/* Quality toggles, grouped as one iOS inset card. */}
+          <View style={styles.subsectionGap} />
+          <View style={styles.groupedCard}>
+            {isAuthenticated ? (
+              <>
+                <SwitchRow
+                  label={t('mobile.filter.hideSent')}
+                  description={t('mobile.filter.hideSentDescription')}
+                  value={!!localFilters.hideCompleted}
+                  onValueChange={(value) => setFiltersPatch({ hideCompleted: value || undefined })}
+                />
+                <View style={[styles.groupDivider, { backgroundColor: systemColors.separator }]} />
+              </>
+            ) : null}
+            <SwitchRow
+              label={t('mobile.filter.benchmark')}
+              description={t('mobile.filter.benchmarkDescription')}
+              value={!!localBoardFilters.onlyBenchmarks}
+              onValueChange={(value) =>
+                updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
+              }
+            />
+          </View>
+
+          <View style={styles.subsectionGap} />
+          <Text variant="footnote" style={styles.subsectionLabel}>
+            {t('mobile.filter.popularity')}
+          </Text>
+          <View style={styles.chipRow}>
+            {POPULARITY_BUCKETS.map((bucket) => (
+              <Chip
+                key={bucket ?? 'any'}
+                label={popularityLabel(bucket)}
+                selected={localFilters.minAscents === bucket}
+                onPress={() => handlePopularity(bucket)}
+              />
+            ))}
+          </View>
+
+          <View style={styles.subsectionGap} />
+          <Text variant="footnote" style={styles.subsectionLabel}>
+            {t('mobile.filter.minRating')}
+          </Text>
+          <View style={styles.ratingRow}>
+            <Chip
+              label={t('mobile.filter.anyRating')}
+              selected={localFilters.minRating == null}
+              onPress={() => setFiltersPatch({ minRating: undefined })}
+            />
+            <StarRating
+              value={localFilters.minRating}
+              onChange={(value) => setFiltersPatch({ minRating: value })}
+              clearValue={undefined}
+            />
+          </View>
         </View>
 
-        <BottomSheetScrollView
-          ref={scrollRef}
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {/* PRIMARY — the levers the analytics say carry the product. Always open. */}
-          <View style={styles.primary}>
-            {/* Grade — inline and sheet-local, so dismissing the filter sheet does
-              not commit grade edits until Apply. */}
-            <GradeRangeRail
-              grades={grades ?? []}
-              bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
-              onChange={handleGradeChange}
-              dismissible={false}
-              showTitle
-              style={styles.inlineGradeRail}
+        <View style={styles.sectionsContainer}>
+          {/* REFINE — mid-band controls, opt-in. */}
+          {/* `defaultExpanded` is read when `sectionResetKey` remounts this
+                section; Reset clears `refineExpanded` before bumping the key. */}
+          <CollapsibleSection
+            title={t('mobile.filter.section.refine')}
+            defaultExpanded={refineExpanded}
+            summary={refineSummary ?? t('mobile.filter.refineHint')}
+            resetKey={sectionResetKey}
+            onExpandedChange={handleRefineExpandedChange}
+          >
+            <Text variant="footnote" style={styles.subsectionLabel}>
+              {t('mobile.filter.climbType')}
+            </Text>
+            <SegmentedControl
+              options={climbTypeOptions}
+              selectedKey={climbTypeKey}
+              onSelect={handleClimbTypeChange}
+              textVariant="footnote"
+              trackColor={trackColor}
             />
 
-            {/* Quality toggles, grouped as one iOS inset card. */}
             <View style={styles.subsectionGap} />
-            <View style={styles.groupedCard}>
-              {isAuthenticated ? (
-                <>
-                  <SwitchRow
-                    label={t('mobile.filter.hideSent')}
-                    description={t('mobile.filter.hideSentDescription')}
-                    value={!!localFilters.hideCompleted}
-                    onValueChange={(value) => setFiltersPatch({ hideCompleted: value || undefined })}
-                  />
-                  <View style={[styles.groupDivider, { backgroundColor: systemColors.separator }]} />
-                </>
-              ) : null}
-              <SwitchRow
-                label={t('mobile.filter.benchmark')}
-                description={t('mobile.filter.benchmarkDescription')}
-                value={!!localBoardFilters.onlyBenchmarks}
-                onValueChange={(value) =>
-                  updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
-                }
-              />
-            </View>
+            <Pressable
+              onPress={openSetters}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.filter.setters')}
+              style={({ pressed }) => [
+                styles.tappableRow,
+                { backgroundColor: systemColors.tertiaryBackground },
+                pressed && styles.tappableRowPressed,
+              ]}
+            >
+              <Text variant="body">{t('mobile.filter.setters')}</Text>
+              <View style={styles.tappableRowTrailing}>
+                <Text variant="footnote" style={styles.tappableRowValue}>
+                  {localFilters.setter && localFilters.setter.length > 0
+                    ? formatSetterSelection(localFilters.setter)
+                    : t('mobile.filter.none')}
+                </Text>
+                <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
+              </View>
+            </Pressable>
+
+            <View style={styles.subsectionGap} />
+            <Pressable
+              onPress={openHoldFilter}
+              disabled={!boardConfig}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.holdFilter.title')}
+              style={({ pressed }) => [
+                styles.tappableRow,
+                { backgroundColor: systemColors.tertiaryBackground },
+                pressed && styles.tappableRowPressed,
+                !boardConfig && styles.tappableRowDisabled,
+              ]}
+            >
+              <Text variant="body">{t('mobile.holdFilter.title')}</Text>
+              <View style={styles.tappableRowTrailing}>
+                <Text variant="footnote" style={styles.tappableRowValue}>
+                  {holdFilterCount > 0
+                    ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
+                    : t('mobile.filter.none')}
+                </Text>
+                <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
+              </View>
+            </Pressable>
+
+            <View style={styles.subsectionGap} />
+            <Pressable
+              onPress={openZoneFilter}
+              disabled={!boardConfig}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.zoneFilter.title')}
+              style={({ pressed }) => [
+                styles.tappableRow,
+                { backgroundColor: systemColors.tertiaryBackground },
+                pressed && styles.tappableRowPressed,
+                !boardConfig && styles.tappableRowDisabled,
+              ]}
+            >
+              <Text variant="body">{t('mobile.zoneFilter.title')}</Text>
+              <View style={styles.tappableRowTrailing}>
+                <Text variant="footnote" style={styles.tappableRowValue}>
+                  {zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
+                </Text>
+                <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
+              </View>
+            </Pressable>
 
             <View style={styles.subsectionGap} />
             <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.filter.popularity')}
+              {t('mobile.filter.accuracy.label')}
             </Text>
-            <View style={styles.chipRow}>
-              {POPULARITY_BUCKETS.map((bucket) => (
+            <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} />
+
+            {isKilter ? (
+              <>
+                <View style={styles.subsectionGap} />
+                <SwitchRow
+                  label={t('mobile.filter.tall')}
+                  description={t('mobile.filter.tallDescription')}
+                  value={!!localFilters.onlyTallClimbs}
+                  onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
+                />
+                <SwitchRow
+                  label={t('mobile.filter.wide')}
+                  description={t('mobile.filter.wideDescription')}
+                  value={!!localFilters.onlyWideClimbs}
+                  onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
+                />
+              </>
+            ) : null}
+          </CollapsibleSection>
+
+          {/* ADVANCED — the sub-2% long tail. Kept, off the primary surface. */}
+          <CollapsibleSection
+            title={t('mobile.filter.section.advanced')}
+            summary={advancedSummary ?? t('mobile.filter.advancedHint')}
+            resetKey={sectionResetKey}
+          >
+            <Text variant="footnote" style={styles.subsectionLabel}>
+              {t('mobile.filter.section.status')}
+            </Text>
+            <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} />
+
+            {isAuthenticated ? (
+              <>
+                <View style={styles.subsectionGap} />
+                <SwitchRow
+                  label={t('mobile.filter.progress.hideAttempted')}
+                  value={!!localFilters.hideAttempted}
+                  onValueChange={(value) => setFiltersPatch({ hideAttempted: value || undefined })}
+                />
+                <SwitchRow
+                  label={t('mobile.filter.progress.onlyAttempted')}
+                  value={!!localFilters.showOnlyAttempted}
+                  onValueChange={(value) => setFiltersPatch({ showOnlyAttempted: value || undefined })}
+                />
+                <SwitchRow
+                  label={t('mobile.filter.progress.onlyCompleted')}
+                  value={!!localFilters.showOnlyCompleted}
+                  onValueChange={(value) => setFiltersPatch({ showOnlyCompleted: value || undefined })}
+                />
+              </>
+            ) : null}
+
+            <View style={styles.subsectionGap} />
+            <SwitchRow
+              label={t('mobile.filter.betaVideos')}
+              description={t('mobile.filter.betaVideosDescription')}
+              value={!!localFilters.onlyWithBetaVideos}
+              onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
+            />
+
+            <View style={styles.subsectionGap} />
+            <Text variant="footnote" style={styles.subsectionLabel}>
+              {t('mobile.filter.sortBy')}
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalChipRow}
+            >
+              {SORT_OPTIONS.map((option) => (
                 <Chip
-                  key={bucket ?? 'any'}
-                  label={popularityLabel(bucket)}
-                  selected={localFilters.minAscents === bucket}
-                  onPress={() => handlePopularity(bucket)}
+                  key={option}
+                  label={sortLabels[option]}
+                  selected={localFilters.sortBy === option}
+                  onPress={() => handleSortByChange(option)}
                 />
               ))}
-            </View>
-
+            </ScrollView>
             <View style={styles.subsectionGap} />
             <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.filter.minRating')}
+              {t('mobile.filter.sortOrderLabel')}
             </Text>
-            <View style={styles.ratingRow}>
-              <Chip
-                label={t('mobile.filter.anyRating')}
-                selected={localFilters.minRating == null}
-                onPress={() => setFiltersPatch({ minRating: undefined })}
-              />
-              <StarRating
-                value={localFilters.minRating}
-                onChange={(value) => setFiltersPatch({ minRating: value })}
-                clearValue={undefined}
-              />
-            </View>
-          </View>
-
-          <View style={styles.sectionsContainer}>
-            {/* REFINE — mid-band controls, opt-in. */}
-            {/* `defaultExpanded` is read when `sectionResetKey` remounts this
-                section; Reset clears `refineExpanded` before bumping the key. */}
-            <CollapsibleSection
-              title={t('mobile.filter.section.refine')}
-              defaultExpanded={refineExpanded}
-              summary={refineSummary ?? t('mobile.filter.refineHint')}
-              resetKey={sectionResetKey}
-              onExpandedChange={handleRefineExpandedChange}
-            >
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.climbType')}
-              </Text>
-              <SegmentedControl
-                options={climbTypeOptions}
-                selectedKey={climbTypeKey}
-                onSelect={handleClimbTypeChange}
-                textVariant="footnote"
-                trackColor={trackColor}
-              />
-
-              <View style={styles.subsectionGap} />
-              <Pressable
-                onPress={openSetters}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.filter.setters')}
-                style={({ pressed }) => [
-                  styles.tappableRow,
-                  { backgroundColor: systemColors.tertiaryBackground },
-                  pressed && styles.tappableRowPressed,
-                ]}
-              >
-                <Text variant="body">{t('mobile.filter.setters')}</Text>
-                <View style={styles.tappableRowTrailing}>
-                  <Text variant="footnote" style={styles.tappableRowValue}>
-                    {localFilters.setter && localFilters.setter.length > 0
-                      ? formatSetterSelection(localFilters.setter)
-                      : t('mobile.filter.none')}
-                  </Text>
-                  <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
-                </View>
-              </Pressable>
-
-              <View style={styles.subsectionGap} />
-              <Pressable
-                onPress={openHoldFilter}
-                disabled={!boardConfig}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.holdFilter.title')}
-                style={({ pressed }) => [
-                  styles.tappableRow,
-                  { backgroundColor: systemColors.tertiaryBackground },
-                  pressed && styles.tappableRowPressed,
-                  !boardConfig && styles.tappableRowDisabled,
-                ]}
-              >
-                <Text variant="body">{t('mobile.holdFilter.title')}</Text>
-                <View style={styles.tappableRowTrailing}>
-                  <Text variant="footnote" style={styles.tappableRowValue}>
-                    {holdFilterCount > 0
-                      ? t('mobile.holdFilter.summaryCount', { count: holdFilterCount })
-                      : t('mobile.filter.none')}
-                  </Text>
-                  <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
-                </View>
-              </Pressable>
-
-              <View style={styles.subsectionGap} />
-              <Pressable
-                onPress={openZoneFilter}
-                disabled={!boardConfig}
-                accessibilityRole="button"
-                accessibilityLabel={t('mobile.zoneFilter.title')}
-                style={({ pressed }) => [
-                  styles.tappableRow,
-                  { backgroundColor: systemColors.tertiaryBackground },
-                  pressed && styles.tappableRowPressed,
-                  !boardConfig && styles.tappableRowDisabled,
-                ]}
-              >
-                <Text variant="body">{t('mobile.zoneFilter.title')}</Text>
-                <View style={styles.tappableRowTrailing}>
-                  <Text variant="footnote" style={styles.tappableRowValue}>
-                    {zoneActive ? t('mobile.zoneFilter.summaryActive') : t('mobile.filter.none')}
-                  </Text>
-                  <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
-                </View>
-              </Pressable>
-
-              <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.accuracy.label')}
-              </Text>
-              <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} />
-
-              {isKilter ? (
-                <>
-                  <View style={styles.subsectionGap} />
-                  <SwitchRow
-                    label={t('mobile.filter.tall')}
-                    description={t('mobile.filter.tallDescription')}
-                    value={!!localFilters.onlyTallClimbs}
-                    onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
-                  />
-                  <SwitchRow
-                    label={t('mobile.filter.wide')}
-                    description={t('mobile.filter.wideDescription')}
-                    value={!!localFilters.onlyWideClimbs}
-                    onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
-                  />
-                </>
-              ) : null}
-            </CollapsibleSection>
-
-            {/* ADVANCED — the sub-2% long tail. Kept, off the primary surface. */}
-            <CollapsibleSection
-              title={t('mobile.filter.section.advanced')}
-              summary={advancedSummary ?? t('mobile.filter.advancedHint')}
-              resetKey={sectionResetKey}
-            >
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.section.status')}
-              </Text>
-              <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} />
-
-              {isAuthenticated ? (
-                <>
-                  <View style={styles.subsectionGap} />
-                  <SwitchRow
-                    label={t('mobile.filter.progress.hideAttempted')}
-                    value={!!localFilters.hideAttempted}
-                    onValueChange={(value) => setFiltersPatch({ hideAttempted: value || undefined })}
-                  />
-                  <SwitchRow
-                    label={t('mobile.filter.progress.onlyAttempted')}
-                    value={!!localFilters.showOnlyAttempted}
-                    onValueChange={(value) => setFiltersPatch({ showOnlyAttempted: value || undefined })}
-                  />
-                  <SwitchRow
-                    label={t('mobile.filter.progress.onlyCompleted')}
-                    value={!!localFilters.showOnlyCompleted}
-                    onValueChange={(value) => setFiltersPatch({ showOnlyCompleted: value || undefined })}
-                  />
-                </>
-              ) : null}
-
-              <View style={styles.subsectionGap} />
-              <SwitchRow
-                label={t('mobile.filter.betaVideos')}
-                description={t('mobile.filter.betaVideosDescription')}
-                value={!!localFilters.onlyWithBetaVideos}
-                onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
-              />
-
-              <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.sortBy')}
-              </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalChipRow}
-              >
-                {SORT_OPTIONS.map((option) => (
-                  <Chip
-                    key={option}
-                    label={sortLabels[option]}
-                    selected={localFilters.sortBy === option}
-                    onPress={() => handleSortByChange(option)}
-                  />
-                ))}
-              </ScrollView>
-              <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.sortOrderLabel')}
-              </Text>
-              <SegmentedControl
-                options={sortOrderOptions}
-                selectedKey={localFilters.sortOrder}
-                onSelect={handleSortOrderChange}
-                textVariant="footnote"
-                trackColor={trackColor}
-              />
-            </CollapsibleSection>
-          </View>
-        </BottomSheetScrollView>
-
-        <View
-          style={[styles.footer, { paddingBottom: insets.bottom + spacing[3], borderTopColor: systemColors.separator }]}
-        >
-          <Button title={applyLabel} onPress={handleApply} variant="filled" size="large" style={styles.applyButton} />
+            <SegmentedControl
+              options={sortOrderOptions}
+              selectedKey={localFilters.sortOrder}
+              onSelect={handleSortOrderChange}
+              textVariant="footnote"
+              trackColor={trackColor}
+            />
+          </CollapsibleSection>
         </View>
-      </BottomSheetModal>
+      </BottomSheetScrollView>
 
-      {boardConfig ? (
-        <>
-          {mountedChildSheet === 'setters' ? (
-            <SettersFilterSheet
-              visible={activeChildSheet === 'setters'}
-              boardConfig={boardConfig}
-              selectedSetters={localFilters.setter ?? []}
-              onSelectedSettersChange={handleSelectedSettersChange}
-              onClose={closeChildSheet}
-              onDismiss={handleChildSheetDismiss}
-            />
-          ) : null}
-          {mountedChildSheet === 'holds' ? (
-            <HoldFilterEditorSheet
-              visible={activeChildSheet === 'holds'}
-              boardConfig={boardConfig}
-              holdsFilter={localBoardFilters.holdsFilter ?? {}}
-              onHoldsFilterChange={handleHoldsFilterChange}
-              onClose={closeChildSheet}
-              onDismiss={handleChildSheetDismiss}
-            />
-          ) : null}
-          {mountedChildSheet === 'zone' ? (
-            <ZoneFilterEditorSheet
-              visible={activeChildSheet === 'zone'}
-              boardConfig={boardConfig}
-              zoneBox={localBoardFilters.zoneBox ?? null}
-              zoneMode={localBoardFilters.zoneMode ?? 'allHolds'}
-              holdsFilter={localBoardFilters.holdsFilter ?? {}}
-              onZoneFilterChange={handleZoneFilterChange}
-              onClose={closeChildSheet}
-              onDismiss={handleChildSheetDismiss}
-            />
-          ) : null}
-        </>
-      ) : null}
-    </>
+      <View
+        style={[styles.footer, { paddingBottom: insets.bottom + spacing[3], borderTopColor: systemColors.separator }]}
+      >
+        <Button title={applyLabel} onPress={handleApply} variant="filled" size="large" style={styles.applyButton} />
+      </View>
+    </BottomSheetModal>
   );
 }
 

@@ -52,7 +52,7 @@ a `fullWindowOverlay`, so it never overlaps a coordinated transition) and the
 
 | `presentation`         | Looks like                                           | Use when                                                                                                                                 | Examples                                                                                                       |
 | ---------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| _(none — pushed)_      | Full-screen, slides in from the side, back-navigable | A deep destination, **or** a full-screen interactive board (pan/pinch) where a modal's pan would fight the gestures                      | session detail; `holds` / `zone` filters                                                                       |
+| _(none — pushed)_      | Full-screen, slides in from the side, back-navigable | A deep destination, **or** a full-screen interactive board (pan/pinch) where a modal's pan would fight the gestures                      | session detail; `holds` / `zone` / `setters` filters                                                           |
 | **`modal`**            | pageSheet card with a top gap, dimmed parent behind  | A self-contained flow launched from a tab; a card is fine                                                                                | `boards`, `share-beta`, `join`                                                                                 |
 | **`transparentModal`** | Transparent — the live screen behind stays visible   | A drawer-as-route that should show the screen behind it, **or** a full-screen cover that must NOT disturb the screen behind (see rule 2) | `create-climb` (shows the climbs list, dimmed); the **player** (with an opaque backing to read as full-screen) |
 | **`fullScreenModal`**  | Opaque full-screen cover                             | An immersive full-screen flow that is **not** presented over the iOS 26 native tab bar                                                   | `onboarding`                                                                                                   |
@@ -84,7 +84,13 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    surface needs several sub-sheets to stack _above_ it (the player opens beta / queue / share
    / angle / tick / climb-actions), it **must** be a route — a real modal view controller, off
    which those sub-sheets present and stack naturally. This is the single reason the player is
-   a route and not a sheet.
+   a route and not a sheet. **If a sheet only needs to hand off to ONE sub-surface at a time**
+   (not stack several), it can stay a sheet and instead **suspend → push a route → re-present**:
+   set its controlled `open` to `false` (a coordinator self-dismiss, so it doesn't unmount and
+   the draft survives), `router.push` the sub-route, and flip `open` back to `true` on a
+   `useFocusEffect` when the screen re-focuses (covers Done _and_ swipe-back). The sub-route
+   hands its result back through a tiny pub/sub handoff. This is how `ClimbFilterSheet` opens the
+   `setters` / `holds` / `zone` filters.
 
 2. **Never `fullScreenModal` over the iOS 26 `NativeTabs`.** A `fullScreenModal` snapshots the
    presenting tab view controller for its transition; the native bottom-accessory glass platter
@@ -123,7 +129,9 @@ waits out the whole transition and is disabled in screenshot mode.
 - **Player (now-playing)** — immersive full-screen, hosts 5–6 sub-sheets that must stack above
   it → `transparentModal` + opaque backing route. The exception that proves rule 1.
 - **Boards picker / share-beta / join** — self-contained flows from a tab → `modal` card.
-- **Hold / zone filters** — full-screen interactive board → pushed route (rule 3).
+- **Setters / hold / zone filters** — opened from the climb filter sheet, which suspends and
+  pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
+  boards → pushed routes (rule 3); setters is a searchable list route.
 - **Onboarding** — immersive cover, not over the live tab bar → `fullScreenModal`.
 
 ## See also

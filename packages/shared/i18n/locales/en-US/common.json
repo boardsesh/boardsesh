@@ -202,7 +202,8 @@
       "climbs": "Climbs",
       "profile": "Profile",
       "holdFilter": "Hold types",
-      "zoneFilter": "Board region"
+      "zoneFilter": "Board region",
+      "setters": "Setters"
     },
     "changelog": {
       "title": "What's New",

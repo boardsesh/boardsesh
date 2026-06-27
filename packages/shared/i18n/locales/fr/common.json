@@ -202,7 +202,8 @@
       "climbs": "Blocs",
       "profile": "Profil",
       "holdFilter": "Types de prise",
-      "zoneFilter": "Zone du mur"
+      "zoneFilter": "Zone du mur",
+      "setters": "Ouvreurs"
     },
     "changelog": {
       "title": "Nouveautés",

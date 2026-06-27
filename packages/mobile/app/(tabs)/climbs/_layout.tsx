@@ -57,6 +57,16 @@ export default function ClimbsLayout() {
           headerShown: false,
         }}
       />
+      <Stack.Screen
+        name="setters"
+        options={{
+          // Setter search/multi-select for the climb filter. A pushed route (not a
+          // stacked sheet) because native sheets can't stack above the filter
+          // sheet; owns its own header (Done / Clear all).
+          title: t('mobile.nav.setters'),
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }

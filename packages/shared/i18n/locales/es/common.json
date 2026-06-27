@@ -400,7 +400,8 @@
       "climbs": "Bloques",
       "profile": "Perfil",
       "holdFilter": "Tipos de presa",
-      "zoneFilter": "Zona del muro"
+      "zoneFilter": "Zona del muro",
+      "setters": "Aperturistas"
     },
     "changelog": {
       "title": "Novedades",

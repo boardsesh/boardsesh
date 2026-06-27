@@ -81,11 +81,14 @@ function parseZoneMode(raw: string | undefined): ZoneMatchMode {
 }
 
 /**
- * Full-screen route variant for the board-region (zone) search filter.
- * Route-based flows can serialize the current zone, let the user drag a
- * rectangle over the board, and receive the edited zone (plus a possibly-pruned
- * hold filter) via `emitZoneFilterSelection` when the screen pops. The climb
- * filter sheet uses a stacked modal editor instead.
+ * Full-screen route variant for the board-region (zone) search filter. The climb
+ * filter sheet suspends (dismisses without unmounting) and pushes this route,
+ * which serializes the current zone, lets the user drag a rectangle over the
+ * board, and hands the edited zone (plus a possibly-pruned hold filter) back via
+ * `emitZoneFilterSelection` when the screen pops (Done or swipe-back). A pushed
+ * route — not a stacked sheet — because native sheets can't stack above the
+ * filter sheet, and the board's drag/pinch shouldn't fight a modal's pan. See
+ * docs/mobile-sheets-vs-routes.md.
  */
 export default function ZoneFilterScreen() {
   const params = useLocalSearchParams<Params>();

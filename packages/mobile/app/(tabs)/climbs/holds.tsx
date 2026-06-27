@@ -34,10 +34,13 @@ type Params = {
 const CHROME_BUDGET = 320;
 
 /**
- * Full-screen route variant for the hold-type search filter. Route-based flows
- * can serialize `holdsFilter`, let the user tap holds to include/exclude hold
- * types, and receive the edited filter via `emitHoldsFilterSelection` when the
- * screen pops. The climb filter sheet uses a stacked modal editor instead.
+ * Full-screen route variant for the hold-type search filter. The climb filter
+ * sheet suspends (dismisses without unmounting) and pushes this route, which
+ * serializes `holdsFilter`, lets the user tap holds to include/exclude hold
+ * types, and hands the edited filter back via `emitHoldsFilterSelection` when the
+ * screen pops (Done or swipe-back). A pushed route — not a stacked sheet —
+ * because native sheets can't stack above the filter sheet, and the board's
+ * pan/pinch shouldn't fight a modal's pan. See docs/mobile-sheets-vs-routes.md.
  */
 export default function HoldFilterScreen() {
   const params = useLocalSearchParams<Params>();

@@ -3,9 +3,11 @@ import { createElement, forwardRef, useImperativeHandle, useState, type ReactNod
 import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
-import type { HoldsFilter, ZoneBoxInput, ZoneMatchMode } from '@boardsesh/shared-schema';
 import type { ClimbFilters } from '../../lib/climb-filter-types';
 import { ClimbFilterSheet } from '../ClimbFilterSheet';
+import { emitSetterFilterSelection } from '../../lib/setter-filter-handoff';
+import { emitHoldsFilterSelection } from '../../lib/hold-filter-handoff';
+import { emitZoneFilterSelection } from '../../lib/zone-filter-handoff';
 
 type PressableProps = {
   children?: ReactNode | ((state: { pressed: boolean }) => ReactNode);
@@ -23,11 +25,21 @@ type BottomSheetModalHandle = {
 const bottomSheetModalProps = vi.hoisted(() => ({
   latest: null as null | {
     enablePanDownToClose?: boolean;
-    enableContentPanningGesture?: boolean;
-    enableHandlePanningGesture?: boolean;
     onChange?: (index: number) => void;
   },
 }));
+
+// Captures the controlled `open` the sheet hands the coordinator, so tests can
+// assert the sheet suspends (open:false) on push and re-presents (open:true) on
+// focus restore.
+const managedSheetProps = vi.hoisted(() => ({
+  latest: null as null | { open?: boolean },
+}));
+
+// expo-router stand-ins: a push spy and a holder for the focus callback so a test
+// can simulate the climbs screen regaining focus after a sub-route pops.
+const routerPush = vi.hoisted(() => vi.fn());
+const focusEffectHolder = vi.hoisted(() => ({ cb: null as null | (() => void) }));
 
 const createBoardHoldsMocks = vi.hoisted(() => ({
   parseSetIdsParam: vi.fn((setIds: string) => setIds.split(',').map(Number).filter(Number.isFinite)),
@@ -80,6 +92,13 @@ vi.mock('react-native-gesture-handler', () => ({
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ push: routerPush }),
+  useFocusEffect: (cb: () => void) => {
+    focusEffectHolder.cb = cb;
+  },
+}));
+
 vi.mock('@expo/ui/community/bottom-sheet', () => ({
   BottomSheetModal: forwardRef<BottomSheetModalHandle, { children?: ReactNode }>(function BottomSheetModal(
     { children, ...props },
@@ -100,25 +119,27 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 
 // Isolate the sheet from the presentation coordinator (its serialization is
 // covered by sheet-presentation-provider.test.tsx). The mock mirrors only the
-// user-close path: onChange(-1) → onClose, which the dismiss-without-Apply tests
-// exercise via the captured native onChange prop.
+// user-close path (onChange(-1) → onClose) and captures the controlled `open`.
 vi.mock('../../providers/sheet-presentation-provider', () => ({
-  useManagedSheet: ({ onClose }: { onClose?: () => void }) => ({
-    onChange: (index: number) => {
-      if (index === -1) onClose?.();
-    },
-    onFullyDismissed: () => {},
-    handle: {
-      present: () => {},
-      dismiss: () => {},
-      close: () => {},
-      forceClose: () => {},
-      snapToIndex: () => {},
-      snapToPosition: () => {},
-      expand: () => {},
-      collapse: () => {},
-    },
-  }),
+  useManagedSheet: (opts: { open?: boolean; onClose?: () => void }) => {
+    managedSheetProps.latest = opts;
+    return {
+      onChange: (index: number) => {
+        if (index === -1) opts.onClose?.();
+      },
+      onFullyDismissed: () => {},
+      handle: {
+        present: () => {},
+        dismiss: () => {},
+        close: () => {},
+        forceClose: () => {},
+        snapToIndex: () => {},
+        snapToPosition: () => {},
+        expand: () => {},
+        collapse: () => {},
+      },
+    };
+  },
 }));
 
 vi.mock('react-native-reanimated', () => ({
@@ -130,10 +151,6 @@ vi.mock('react-native-reanimated', () => ({
 
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
-}));
-
-vi.mock('react-native-screens', () => ({
-  FullWindowOverlay: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -247,81 +264,6 @@ vi.mock('../RadioGroup', () => ({ RadioGroup: () => null }));
 vi.mock('../SwitchRow', () => ({ SwitchRow: () => null }));
 vi.mock('../Icon', () => ({ Icon: () => null }));
 vi.mock('../grade', () => ({ GradeRangeRail: () => null }));
-vi.mock('../search/SettersFilterSheet', () => ({
-  SettersFilterSheet: ({
-    visible,
-    onSelectedSettersChange,
-    onClose,
-    onDismiss,
-  }: {
-    visible: boolean;
-    onSelectedSettersChange: (selectedSetters: string[]) => void;
-    onClose: () => void;
-    onDismiss: () => void;
-  }) =>
-    createElement(
-      'div',
-      { 'data-testid': 'setters-filter-sheet', 'data-visible': String(visible) },
-      createElement('button', { onClick: () => onSelectedSettersChange(['stacked-setter']) }, 'setters-change'),
-      createElement('button', { onClick: onClose }, 'setters-close'),
-      createElement('button', { onClick: onDismiss }, 'setters-dismiss'),
-    ),
-}));
-vi.mock('../search/HoldFilterEditorSheet', () => ({
-  HoldFilterEditorSheet: ({
-    visible,
-    onHoldsFilterChange,
-    onClose,
-    onDismiss,
-  }: {
-    visible: boolean;
-    onHoldsFilterChange: (holdsFilter: HoldsFilter) => void;
-    onClose: () => void;
-    onDismiss: () => void;
-  }) =>
-    createElement(
-      'div',
-      { 'data-testid': 'hold-filter-editor-sheet', 'data-visible': String(visible) },
-      createElement('button', { onClick: () => onHoldsFilterChange({ '99': { HAND: 'include' } }) }, 'holds-change'),
-      createElement('button', { onClick: onClose }, 'holds-close'),
-      createElement('button', { onClick: onDismiss }, 'holds-dismiss'),
-    ),
-}));
-vi.mock('../search/ZoneFilterEditorSheet', () => ({
-  ZoneFilterEditorSheet: ({
-    visible,
-    onZoneFilterChange,
-    onClose,
-    onDismiss,
-  }: {
-    visible: boolean;
-    onZoneFilterChange: (selection: {
-      zoneBox: ZoneBoxInput | null;
-      zoneMode: ZoneMatchMode;
-      holdsFilter?: HoldsFilter;
-    }) => void;
-    onClose: () => void;
-    onDismiss: () => void;
-  }) =>
-    createElement(
-      'div',
-      { 'data-testid': 'zone-filter-editor-sheet', 'data-visible': String(visible) },
-      createElement(
-        'button',
-        {
-          onClick: () =>
-            onZoneFilterChange({
-              zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
-              zoneMode: 'allHolds',
-              holdsFilter: { '77': { FOOT: 'include' } },
-            }),
-        },
-        'zone-change',
-      ),
-      createElement('button', { onClick: onClose }, 'zone-close'),
-      createElement('button', { onClick: onDismiss }, 'zone-dismiss'),
-    ),
-}));
 
 function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet>[0]> = {}) {
   const props: Parameters<typeof ClimbFilterSheet>[0] = {
@@ -337,12 +279,21 @@ function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet
   return { ...render(<ClimbFilterSheet {...props} />), props };
 }
 
+// Simulate the climbs screen regaining focus after a sub-picker route pops.
+function simulateScreenRefocus() {
+  act(() => {
+    focusEffectHolder.cb?.();
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   bottomSheetModalProps.latest = null;
+  managedSheetProps.latest = null;
+  focusEffectHolder.cb = null;
 });
 
-describe('ClimbFilterSheet child filters', () => {
+describe('ClimbFilterSheet sub-pickers', () => {
   it('prewarms board holds when Refine expands', () => {
     vi.useFakeTimers();
     try {
@@ -371,29 +322,49 @@ describe('ClimbFilterSheet child filters', () => {
     }
   });
 
-  it('opens the setters sheet above the filter sheet and keeps draft edits local until Apply', () => {
-    const onApply = vi.fn();
-    const { getByLabelText, getByTestId, getByText } = renderFilterSheet({ onApply });
+  it('pushes the setters route with the current selection and suspends the sheet', () => {
+    const { getByLabelText } = renderFilterSheet();
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
 
-    expect(getByTestId('setters-filter-sheet').getAttribute('data-visible')).toBe('true');
-    expect(bottomSheetModalProps.latest?.enablePanDownToClose).toBe(false);
-    expect(bottomSheetModalProps.latest?.enableContentPanningGesture).toBe(false);
-    expect(bottomSheetModalProps.latest?.enableHandlePanningGesture).toBe(false);
-
-    fireEvent.click(getByText('setters-change'));
-    fireEvent.click(getByText('mobile.filter.showCount12'));
-
-    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['stacked-setter'] }, currentBoardFilters);
+    expect(routerPush).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/setters',
+      params: {
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        angle: '40',
+        setters: JSON.stringify(['draft-setter']),
+      },
+    });
+    expect(managedSheetProps.latest?.open).toBe(false);
   });
 
-  it('keeps local draft edits when parent filter props change while open', () => {
+  it('merges the setters handed back from the route, re-presents on focus, and applies them', () => {
+    const onApply = vi.fn();
+    const { getByLabelText, getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    act(() => {
+      emitSetterFilterSelection(['route-setter']);
+    });
+    simulateScreenRefocus();
+
+    expect(managedSheetProps.latest?.open).toBe(true);
+
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['route-setter'] }, currentBoardFilters);
+  });
+
+  it('keeps local draft edits when parent filter props change while a sub-route is open', () => {
     const onApply = vi.fn();
     const rendered = renderFilterSheet({ onApply });
 
     fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
-    fireEvent.click(rendered.getByText('setters-change'));
+    act(() => {
+      emitSetterFilterSelection(['route-setter']);
+    });
 
     rendered.rerender(
       <ClimbFilterSheet
@@ -402,9 +373,10 @@ describe('ClimbFilterSheet child filters', () => {
         currentBoardFilters={{ ...currentBoardFilters, onlyBenchmarks: true }}
       />,
     );
+    simulateScreenRefocus();
     fireEvent.click(rendered.getByText('mobile.filter.showCount12'));
 
-    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['stacked-setter'] }, currentBoardFilters);
+    expect(onApply).toHaveBeenCalledWith({ ...currentFilters, setter: ['route-setter'] }, currentBoardFilters);
   });
 
   it('syncs parent filters again after dismissing without Apply', () => {
@@ -412,9 +384,14 @@ describe('ClimbFilterSheet child filters', () => {
     const rendered = renderFilterSheet({ onApply });
 
     fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
-    fireEvent.click(rendered.getByText('setters-change'));
+    act(() => {
+      emitSetterFilterSelection(['route-setter']);
+    });
 
-    bottomSheetModalProps.latest?.onChange?.(-1);
+    // Genuine user close (pan-down) clears the draft-edits guard.
+    act(() => {
+      bottomSheetModalProps.latest?.onChange?.(-1);
+    });
     rendered.rerender(
       <ClimbFilterSheet
         {...rendered.props}
@@ -435,10 +412,14 @@ describe('ClimbFilterSheet child filters', () => {
     const rendered = renderFilterSheet({ onApply });
 
     fireEvent.click(rendered.getByLabelText('mobile.filter.setters'));
-    fireEvent.click(rendered.getByText('setters-change'));
+    act(() => {
+      emitSetterFilterSelection(['route-setter']);
+    });
     fireEvent.click(rendered.getByText('mobile.filter.reset'));
 
-    bottomSheetModalProps.latest?.onChange?.(-1);
+    act(() => {
+      bottomSheetModalProps.latest?.onChange?.(-1);
+    });
     rendered.rerender(
       <ClimbFilterSheet
         {...rendered.props}
@@ -454,21 +435,28 @@ describe('ClimbFilterSheet child filters', () => {
     );
   });
 
-  it('opens the hold editor sheet above the filter sheet', () => {
-    const { getByLabelText, getByTestId } = renderFilterSheet();
-
-    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
-
-    expect(getByTestId('hold-filter-editor-sheet').getAttribute('data-visible')).toBe('true');
-    expect(bottomSheetModalProps.latest?.enablePanDownToClose).toBe(false);
-  });
-
-  it('applies hold filter changes from the hold editor child sheet', () => {
+  it('pushes the hold filter route and applies the handed-back hold filter', () => {
     const onApply = vi.fn();
     const { getByLabelText, getByText } = renderFilterSheet({ onApply });
 
     fireEvent.click(getByLabelText('mobile.holdFilter.title'));
-    fireEvent.click(getByText('holds-change'));
+
+    expect(routerPush).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/holds',
+      params: {
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        holdsFilter: JSON.stringify(currentBoardFilters.holdsFilter),
+      },
+    });
+    expect(managedSheetProps.latest?.open).toBe(false);
+
+    act(() => {
+      emitHoldsFilterSelection({ '99': { HAND: 'include' } });
+    });
+    simulateScreenRefocus();
     fireEvent.click(getByText('mobile.filter.showCount12'));
 
     expect(onApply).toHaveBeenCalledWith(currentFilters, {
@@ -477,21 +465,34 @@ describe('ClimbFilterSheet child filters', () => {
     });
   });
 
-  it('opens the zone editor sheet above the filter sheet', () => {
-    const { getByLabelText, getByTestId } = renderFilterSheet();
-
-    fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
-
-    expect(getByTestId('zone-filter-editor-sheet').getAttribute('data-visible')).toBe('true');
-    expect(bottomSheetModalProps.latest?.enablePanDownToClose).toBe(false);
-  });
-
-  it('applies zone and pruned hold filter changes from the zone editor child sheet', () => {
+  it('pushes the zone route and applies the handed-back zone + pruned holds', () => {
     const onApply = vi.fn();
     const { getByLabelText, getByText } = renderFilterSheet({ onApply });
 
     fireEvent.click(getByLabelText('mobile.zoneFilter.title'));
-    fireEvent.click(getByText('zone-change'));
+
+    expect(routerPush).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/zone',
+      params: {
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        angle: '40',
+        zoneBox: JSON.stringify(currentBoardFilters.zoneBox),
+        zoneMode: 'allHolds',
+        holdsFilter: JSON.stringify(currentBoardFilters.holdsFilter),
+      },
+    });
+
+    act(() => {
+      emitZoneFilterSelection({
+        zoneBox: { edgeLeft: 1, edgeRight: 9, edgeBottom: 2, edgeTop: 8 },
+        zoneMode: 'allHolds',
+        holdsFilter: { '77': { FOOT: 'include' } },
+      });
+    });
+    simulateScreenRefocus();
     fireEvent.click(getByText('mobile.filter.showCount12'));
 
     expect(onApply).toHaveBeenCalledWith(currentFilters, {
@@ -501,49 +502,34 @@ describe('ClimbFilterSheet child filters', () => {
     });
   });
 
-  it('re-enables parent sheet gestures when a child sheet closes', () => {
-    const { getByLabelText, getByTestId, getByText } = renderFilterSheet();
+  it('ignores a second sub-picker tap until the sheet resumes', () => {
+    const { getByLabelText } = renderFilterSheet();
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
+    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
 
-    expect(getByTestId('setters-filter-sheet').getAttribute('data-visible')).toBe('true');
-    expect(bottomSheetModalProps.latest?.enablePanDownToClose).toBe(false);
-    expect(bottomSheetModalProps.latest?.enableContentPanningGesture).toBe(false);
-    expect(bottomSheetModalProps.latest?.enableHandlePanningGesture).toBe(false);
+    expect(routerPush).toHaveBeenCalledTimes(1);
+    expect(routerPush).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/(tabs)/climbs/setters' }));
 
-    fireEvent.click(getByText('setters-close'));
-
-    expect(getByTestId('setters-filter-sheet').getAttribute('data-visible')).toBe('false');
-    expect(bottomSheetModalProps.latest?.enablePanDownToClose).toBe(true);
-    expect(bottomSheetModalProps.latest?.enableContentPanningGesture).toBe(true);
-    expect(bottomSheetModalProps.latest?.enableHandlePanningGesture).toBe(true);
+    // After the sheet resumes, another picker can be opened.
+    simulateScreenRefocus();
+    fireEvent.click(getByLabelText('mobile.holdFilter.title'));
+    expect(routerPush).toHaveBeenCalledTimes(2);
+    expect(routerPush).toHaveBeenLastCalledWith(expect.objectContaining({ pathname: '/(tabs)/climbs/holds' }));
   });
 
-  it('keeps Refine expanded after a child sheet closes', () => {
+  it('keeps Refine expanded across a sub-route round trip', () => {
     const { getByLabelText, getByTestId, getByText } = renderFilterSheet();
 
     fireEvent.click(getByText('expand-mobile.filter.section.refine'));
     expect(getByTestId('section-mobile.filter.section.refine').getAttribute('data-expanded')).toBe('true');
 
     fireEvent.click(getByLabelText('mobile.filter.setters'));
-    fireEvent.click(getByText('setters-close'));
+    act(() => {
+      emitSetterFilterSelection(['route-setter']);
+    });
+    simulateScreenRefocus();
 
     expect(getByTestId('section-mobile.filter.section.refine').getAttribute('data-expanded')).toBe('true');
-  });
-
-  it('re-enables parent sheet gestures when a child sheet dismisses', () => {
-    const { getByLabelText, queryByTestId, getByText } = renderFilterSheet();
-
-    fireEvent.click(getByLabelText('mobile.filter.setters'));
-
-    expect(queryByTestId('setters-filter-sheet')?.getAttribute('data-visible')).toBe('true');
-    expect(bottomSheetModalProps.latest?.enablePanDownToClose).toBe(false);
-
-    fireEvent.click(getByText('setters-dismiss'));
-
-    expect(queryByTestId('setters-filter-sheet')).toBeNull();
-    expect(bottomSheetModalProps.latest?.enablePanDownToClose).toBe(true);
-    expect(bottomSheetModalProps.latest?.enableContentPanningGesture).toBe(true);
-    expect(bottomSheetModalProps.latest?.enableHandlePanningGesture).toBe(true);
   });
 });
