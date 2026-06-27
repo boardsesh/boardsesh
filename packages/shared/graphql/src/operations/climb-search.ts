@@ -8,6 +8,9 @@ import type { Climb, HoldsFilter, ZoneMatchMode } from '@boardsesh/shared-schema
 // into the create form in a single round-trip.
 // published_at/created_at are used by the create form to enforce the 24h
 // post-publish edit window.
+// Per-source ascensionist counts (kilter/aurora/boardsesh) are intentionally
+// omitted here: no web UI consumes them, and the mobile climb list selects them
+// via its own fragment (`packages/mobile/src/lib/graphql/operations.ts`).
 const CLIMB_SEARCH_FIELDS = `
   uuid
   setter_username
@@ -15,9 +18,6 @@ const CLIMB_SEARCH_FIELDS = `
   frames
   angle
   ascensionist_count
-  kilterAscensionistCount
-  auroraAscensionistCount
-  boardseshAscensionistCount
   difficulty
   quality_average
   stars
@@ -47,9 +47,6 @@ const CLIMB_DETAIL_FIELDS = `
   frames
   angle
   ascensionist_count
-  kilterAscensionistCount
-  auroraAscensionistCount
-  boardseshAscensionistCount
   difficulty
   quality_average
   stars
