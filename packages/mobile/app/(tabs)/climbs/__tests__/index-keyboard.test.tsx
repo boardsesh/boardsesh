@@ -144,7 +144,6 @@ vi.mock('../../../../src/components/ClimbFilterSheet', () => ({
   hasActiveFilters: () => false,
 }));
 
-vi.mock('../../../../src/components/search/ClimbFilterFab', () => ({ ClimbFilterFab: () => null }));
 vi.mock('../../../../src/components/search/ClimbTopChrome', () => ({ ClimbTopChrome: () => null }));
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
 vi.mock('../../../../src/components/search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));

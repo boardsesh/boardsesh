@@ -28,7 +28,6 @@ import { Text } from '../../../src/components/Text';
 import { Icon } from '../../../src/components/Icon';
 import { Button } from '../../../src/components/Button';
 import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../src/components/ClimbFilterSheet';
-import { ClimbFilterFab } from '../../../src/components/search/ClimbFilterFab';
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
 import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
@@ -37,7 +36,6 @@ import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
 import { useDimensionLocks } from '../../../src/lib/dimension-lock-store';
 import { hapticMedium } from '../../../src/lib/haptics';
-import { useFeatureFlag } from '../../../src/providers/feature-flags-provider';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { selectByVariant } from '../../../src/theme/variants';
@@ -76,7 +74,6 @@ import { normalizeSearchName, visibleSearchTextNeedsSync } from '../../../src/li
 import { track } from '../../../src/lib/analytics';
 import { iosSystemColors } from '../../../src/theme/ios-colors';
 import { spacing } from '../../../src/theme/tokens';
-import { glassSize } from '../../../src/theme/layout';
 import { timing } from '../../../src/theme/animations';
 
 const PAGE_SIZE = 30;
@@ -200,26 +197,12 @@ function ClimbListInner() {
     listBottomSpacerHeight.value = withTiming(listPaddingBottom, { duration: timing.normal });
   }, [listBottomSpacerHeight, listPaddingBottom]);
   const listBottomSpacerStyle = useAnimatedStyle(() => ({ height: listBottomSpacerHeight.value }));
-  const filterFabNativeAccessoryDrop = bottomChrome.nativeAccessoryVisible ? glassSize.standard * 2 : 0;
-  const filterFabMinimumBottom = bottomChrome.nativeAccessoryVisible
-    ? insets.bottom + spacing[2]
-    : bottomChrome.tabBarBottom + spacing[2];
-  const filterFabBottom = Math.max(
-    filterFabMinimumBottom,
-    bottomChrome.floatingControlBottom + spacing[2] - filterFabNativeAccessoryDrop,
-  );
-
-  // On the Material variant the filter lives in the top-right toolbar (next to
-  // the light/bluetooth button) inside ClimbTopChrome, so the bottom filter FAB
-  // is not rendered here.
+  // Material keeps its filter button in the top-right toolbar
+  // (features.filtersInTopChrome). Liquid Glass shows the persistent native
+  // filter-chip row instead — the chips own filtering there, so the centre
+  // filter-summary is suppressed. (The Material chip row is a follow-up.)
   const filterInTopChrome = features.filtersInTopChrome;
-
-  // Persistent native filter chips (GitHub-PR-view idiom). v1 ships them on
-  // Liquid Glass only — Material keeps today's filter UI until the
-  // jetpack-compose chip row lands. When on, the chips own filtering, so the
-  // bottom filter FAB and the centre filter-summary are both suppressed.
-  const usePersistentChips = useFeatureFlag('persistent-filter-chips') === true;
-  const showGlassFilterChips = usePersistentChips && !filterInTopChrome;
+  const showFilterChips = !filterInTopChrome;
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -823,7 +806,7 @@ function ClimbListInner() {
     return { label: t('mobile.filter.gradeRange'), active: false };
   }, [gradeFilterToken, t]);
 
-  // --- Persistent filter chips (persistent-filter-chips flag) ---
+  // --- Persistent filter chips (Liquid Glass) ---
   // Each facet chip commits live through the search-provider patch actions. The
   // Popularity chip routes through applyPopularityBucket so it clears a
   // conflicting projects/drafts status, exactly like the filter sheet.
@@ -930,7 +913,7 @@ function ClimbListInner() {
     [filterTokens, showTallChip, showWideChip],
   );
   const filterChrome = useMemo(() => {
-    if (!showGlassFilterChips) return null;
+    if (!showFilterChips) return null;
     return (
       <>
         <FilterChipRow
@@ -959,7 +942,7 @@ function ClimbListInner() {
       </>
     );
   }, [
-    showGlassFilterChips,
+    showFilterChips,
     activeFilterCount,
     handleOpenFilters,
     recentFilters,
@@ -1183,7 +1166,7 @@ function ClimbListInner() {
         searchMode={useNativeSearch ? 'native' : 'custom'}
         // With the chip row on, the active filters live in the token row, so the
         // centre title drops the filter summary and reads as a plain header.
-        title={showGlassFilterChips ? t('mobile.search.allClimbs') : searchTitle}
+        title={showFilterChips ? t('mobile.search.allClimbs') : searchTitle}
         canCreate={isAuthenticated && hasBoardConfig}
         onCreate={handleCreateClimb}
         onOpenBoardDetail={handleOpenBoardDetail}
@@ -1212,25 +1195,10 @@ function ClimbListInner() {
         filterChrome={filterChrome}
       />
 
-      {filterInTopChrome || usePersistentChips ? null : (
-        <ClimbFilterFab
-          activeFilterCount={activeFilterCount}
-          bottom={filterFabBottom}
-          bound={gradeBound}
-          grades={grades}
-          gradeRailVisible={showGrade}
-          onOpenFilters={handleOpenFilters}
-          onOpenGrade={handleOpenGrade}
-          onCloseGrade={handleDismissGrade}
-          onGradeChange={handleGradeChange}
-        />
-      )}
-
-      {/* The filter FAB normally owns the grade rail on glass, but it's
-          suppressed when the chip row is on. Render a top-anchored rail +
-          dismiss layer here so the Grade chip opens the same range control,
-          just below the measured chrome. */}
-      {showGlassFilterChips && showGrade ? (
+      {/* On Liquid Glass the Grade chip opens a top-anchored range rail +
+          dismiss layer, just below the measured chrome. (Material renders its
+          own grade rail inside ClimbTopChrome.) */}
+      {showFilterChips && showGrade ? (
         <>
           <Pressable
             style={styles.chipGradeDismiss}

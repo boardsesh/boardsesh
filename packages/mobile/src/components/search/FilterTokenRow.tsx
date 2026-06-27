@@ -1,11 +1,11 @@
 // The "receipt" for the persistent filter-chip row: one removable pill per active
 // filter, built from the existing getActiveFilterTokens output ({key,label,clear}).
 // Tapping a pill clears just that one field. Rendered only when ≥1 filter is
-// active; when the persistent-filter-chips flag is on this replaces the single
-// condensed filter-summary in the chrome, so the active filters show exactly once.
+// active; on Liquid Glass this replaces the single condensed filter-summary in
+// the chrome, so the active filters show exactly once.
 
 import { memo } from 'react';
-import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';

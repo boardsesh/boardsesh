@@ -71,10 +71,10 @@ type ClimbTopChromeProps = {
   gradeChip?: { label: string; active: boolean; onClear?: () => void };
   onOpenGrade?: () => void;
   onGradeChange?: (grade: GradeBound) => void;
-  /** Persistent native filter-chip row + token row (the `persistent-filter-chips`
-   *  flag). Rendered under the title on Liquid Glass, independent of search focus;
-   *  null when the flag is off. The caller composes it so every filter handler and
-   *  the search-provider state stay in the screen, not drilled through here. */
+  /** Persistent native filter-chip row + token row, rendered under the title on
+   *  Liquid Glass, independent of search focus; null on the Material path. The
+   *  caller composes it so every filter handler and the search-provider state
+   *  stay in the screen, not drilled through here. */
   filterChrome?: ReactNode;
 };
 

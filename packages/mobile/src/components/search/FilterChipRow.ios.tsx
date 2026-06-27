@@ -2,8 +2,8 @@
 // idiom), built from native @expo/ui SwiftUI controls so the menus are real iOS
 // menus rather than RN re-creations. iOS (Liquid Glass) only — the Material
 // variant lives in ClimbTopChrome's Appbar path, and the Android counterpart is
-// FilterChipRow.android.tsx. Gated behind the `persistent-filter-chips` flag by
-// the caller; never mounted on focus.
+// FilterChipRow.android.tsx. Mounted on Liquid Glass by the caller; never on
+// search focus.
 //
 // The always-visible facet chips follow the filter sheet's data-driven PRIMARY
 // importance order (the sheet's own comment: "the levers the analytics say carry
