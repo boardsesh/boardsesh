@@ -12,6 +12,7 @@ const FeedbackContextInputSchema = z
     sessionName: z.string().max(200).optional().nullable(),
     url: z.string().max(1000).optional().nullable(),
     userAgent: z.string().max(512).optional().nullable(),
+    bleDiagnostics: z.string().max(2000).optional().nullable(),
   })
   .strict();
 

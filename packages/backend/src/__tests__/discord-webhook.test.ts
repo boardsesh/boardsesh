@@ -137,6 +137,57 @@ describe('Discord webhook payload privacy', () => {
     expect(fields.find((f) => f.name === 'URL')?.value).toBe('/kilter/1/5/1,2/40');
     expect(fields.find((f) => f.name === 'User agent')?.value).toBe('Mozilla/5.0');
   });
+
+  it('renders a fenced Bluetooth diagnostics field when present', () => {
+    const body = buildWebhookBody({
+      feedbackId: 1,
+      rating: null,
+      comment: 'BLE flaky',
+      platform: 'ios',
+      appVersion: null,
+      source: 'drawer-bug',
+      context: { bleDiagnostics: 'Devices found (1):\n- Kilter A1B2 | id=xyz | rssi -52' },
+    });
+    const embed = (body.embeds as Array<Record<string, unknown>>)[0];
+    const fields = embed.fields as Array<{ name: string; value: string }>;
+    const ble = fields.find((f) => f.name === 'Bluetooth diagnostics');
+    expect(ble?.value).toContain('Kilter A1B2');
+    expect(ble?.value.startsWith('```')).toBe(true);
+    expect(ble?.value.endsWith('```')).toBe(true);
+  });
+
+  it('omits the Bluetooth diagnostics field when absent', () => {
+    const body = buildWebhookBody({
+      feedbackId: 1,
+      rating: null,
+      comment: 'broken',
+      platform: 'ios',
+      appVersion: null,
+      source: 'drawer-bug',
+      context: { climbName: 'My Project' },
+    });
+    const embed = (body.embeds as Array<Record<string, unknown>>)[0];
+    const fields = embed.fields as Array<{ name: string }>;
+    expect(fields.find((f) => f.name === 'Bluetooth diagnostics')).toBeUndefined();
+  });
+
+  it('keeps the Bluetooth diagnostics field within Discord 1024-char limit', () => {
+    const body = buildWebhookBody({
+      feedbackId: 1,
+      rating: null,
+      comment: 'long',
+      platform: 'ios',
+      appVersion: null,
+      source: 'drawer-bug',
+      context: { bleDiagnostics: 'x'.repeat(5000) },
+    });
+    const embed = (body.embeds as Array<Record<string, unknown>>)[0];
+    const fields = embed.fields as Array<{ name: string; value: string }>;
+    const ble = fields.find((f) => f.name === 'Bluetooth diagnostics');
+    expect(ble).toBeTruthy();
+    expect(ble?.value.length ?? 0).toBeLessThanOrEqual(1024);
+    expect(ble?.value).toContain('…');
+  });
 });
 
 describe('postFeedbackToDiscord', () => {

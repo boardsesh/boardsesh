@@ -14,6 +14,8 @@ export type BuildMobileFeedbackEnrichmentArgs = {
   currentClimbQueueItem: ClimbQueueItem | null;
   sessionId: string | null;
   pathname: string | null | undefined;
+  /** Opt-in BLE diagnostics dump; only set when the reporter ticks the toggle. */
+  bleDiagnostics?: string | null;
 };
 
 export function clipFeedbackString(value: string | null | undefined, maxLength: number): string | undefined {
@@ -58,6 +60,7 @@ export function buildMobileFeedbackEnrichment(args: BuildMobileFeedbackEnrichmen
       difficulty: currentClimb?.difficulty,
       sessionId: args.sessionId,
       url: clipFeedbackString(args.pathname, URL_MAX),
+      bleDiagnostics: args.bleDiagnostics ?? undefined,
     }),
   };
 }

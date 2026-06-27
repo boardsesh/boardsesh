@@ -8,6 +8,7 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
 import { SessionRecordingSwitchRow } from '../settings/SessionRecordingSwitchRow';
+import { SwitchRow } from '../SwitchRow';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
@@ -38,6 +39,7 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
   const { mutateAsync, isPending, reset } = useSubmitMobileAppFeedback();
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [comment, setComment] = useState('');
+  const [includeBleDiagnostics, setIncludeBleDiagnostics] = useState(false);
 
   const isBugReport = mode === 'bug';
   const trimmedComment = comment.trim();
@@ -50,6 +52,7 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
   useEffect(() => {
     setSelectedRating(null);
     setComment('');
+    setIncludeBleDiagnostics(false);
     reset();
   }, [mode, reset]);
 
@@ -67,11 +70,13 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
         source: isBugReport ? 'drawer-bug' : 'drawer-feedback',
         rating: isBugReport ? null : selectedRating,
         comment: trimmedComment.length > 0 ? trimmedComment : null,
+        includeBleDiagnostics: isBugReport && includeBleDiagnostics,
       });
       sheetRef.current?.dismiss();
       showToast(isBugReport ? t('feedbackDialog.successBug') : t('feedbackDialog.successRating'), 'success');
       setSelectedRating(null);
       setComment('');
+      setIncludeBleDiagnostics(false);
     } catch {
       showToast(t('feedbackDialog.errorRating'), 'error');
     }
@@ -146,6 +151,17 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
           <SessionRecordingSwitchRow
             label={t('feedbackForm.sessionRecordingLabel')}
             description={t('feedbackForm.sessionRecordingDescription')}
+          />
+        </View>
+      ) : null}
+
+      {isBugReport ? (
+        <View style={[styles.recordingCard, { backgroundColor: systemColors.secondaryBackground }]}>
+          <SwitchRow
+            label={t('feedbackForm.bleDiagnosticsLabel')}
+            description={t('feedbackForm.bleDiagnosticsDescription')}
+            value={includeBleDiagnostics}
+            onValueChange={setIncludeBleDiagnostics}
           />
         </View>
       ) : null}

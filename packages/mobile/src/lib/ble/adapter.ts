@@ -11,6 +11,7 @@ import { bleManager } from './ble-manager';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { upsertDiscoveredDevice } from './scan-device-cache';
+import { recordBleEvent } from './ble-diagnostics-log';
 import type { BluetoothAdapter, BleConnection, BoardScanFamily, DevicePickerFn, DiscoveredDevice } from './types';
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 
@@ -112,6 +113,10 @@ export class RNBleAdapter implements BluetoothAdapter {
         };
         if (upsertDiscoveredDevice(devices, device)) {
           pushDevices();
+          // Record only newly-surfaced devices (upsert returns true on a fresh
+          // entry) so the bug-report buffer holds one line per board, not one
+          // per advertisement packet.
+          recordBleEvent({ type: 'device_found', deviceId: device.deviceId, name: device.name, rssi: device.rssi });
         }
 
         // Auto-select the stored board only until the picker takes over.

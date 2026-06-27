@@ -34,6 +34,7 @@ import type { HoldPlacement } from '../../components/board-renderer/types';
 import { track } from '../analytics';
 import { reportHandledError } from '../error-reporting';
 import { clearBleDiagnosticsTags, setBleDiagnosticsTags } from '../sentry';
+import { recordBleEvent } from './ble-diagnostics-log';
 import { buildHoldColorOverrideSignature, type HoldColorOverrides } from '../hold-color-overrides';
 
 // Exported for testing. Decides how a connect-failure category reaches error
@@ -547,6 +548,12 @@ export function useBoardBluetooth({
             ...boardAnalyticsProperties,
             failureReason: bleFailureReason,
           });
+          recordBleEvent({
+            type: 'send_failure',
+            boardName,
+            failureReason: bleFailureReason,
+            message: error instanceof Error ? error.message : String(error),
+          });
           // A dropped link is routine on these last-connection-wins boards
           // (another climber grabbed it, or it disconnected mid-session), so keep
           // it a filterable warning rather than a full error that drowns real
@@ -567,6 +574,7 @@ export function useBoardBluetooth({
             // failed on a dead link. On a shared board this is usually another
             // device having grabbed it. Recorded so the two-climber case is visible.
             track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
+            recordBleEvent({ type: 'disconnect', boardName, kind: 'stolen' });
             handleDisconnection();
           }
           return false;
@@ -665,7 +673,14 @@ export function useBoardBluetooth({
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
 
-        unsubDisconnectRef.current = adapter.onDisconnect(handleDisconnection);
+        unsubDisconnectRef.current = adapter.onDisconnect(() => {
+          // The adapter's own disconnect event: the board dropped the link (powered
+          // off / out of range), distinct from the mid-write 'stolen' drop recorded
+          // in sendFramesToBoard — that path calls handleDisconnection directly, so
+          // this wrapper can't double-count it.
+          recordBleEvent({ type: 'disconnect', boardName, kind: 'dropped' });
+          handleDisconnection();
+        });
         adapterRef.current = adapter;
 
         // Push board configuration into the native BoardBleManager so the
@@ -745,6 +760,15 @@ export function useBoardBluetooth({
         // be explicit so analytics parity can't regress).
         const connectionDiagnostics = await getNativeBleConnectedDevice().catch(() => null);
         setBleDiagnosticsTags(connectionDiagnostics);
+        recordBleEvent({
+          type: 'connect_success',
+          boardName,
+          layoutId,
+          sizeId,
+          apiLevel: apiLevelRef.current,
+          deviceNamePresent: !!connection.deviceName,
+          diagnostics: connectionDiagnostics,
+        });
         // apiLevel is the level parseApiLevel actually picked; deviceNamePresent
         // records whether an advertised name was even available. parseApiLevel
         // silently defaults to v2 when the name is missing/unparseable, and v2
@@ -784,6 +808,14 @@ export function useBoardBluetooth({
           reportHandledError(error, {
             level: reportLevel,
             tags: { source: 'ble-connect', failure_category: failureCategory },
+          });
+          // Recorded for an opt-in bug report. A user-cancel (reportLevel null)
+          // isn't a connection issue, so it's deliberately left out.
+          recordBleEvent({
+            type: 'connect_failure',
+            boardName,
+            failureCategory,
+            message: error instanceof Error ? error.message : String(error),
           });
         }
         setIsConnected(false);
@@ -952,7 +984,14 @@ export function useBoardBluetooth({
       adapter.adoptConnection(deviceId);
       apiLevelRef.current = parseApiLevel(deviceName);
       configuredDeviceNameRef.current = deviceName;
-      unsubDisconnectRef.current = adapter.onDisconnect(handleDisconnection);
+      unsubDisconnectRef.current = adapter.onDisconnect(() => {
+        // The adapter's own disconnect event: the board dropped the link (powered
+        // off / out of range), distinct from the mid-write 'stolen' drop recorded
+        // in sendFramesToBoard — that path calls handleDisconnection directly, so
+        // this wrapper can't double-count it.
+        recordBleEvent({ type: 'disconnect', boardName, kind: 'dropped' });
+        handleDisconnection();
+      });
       adapterRef.current = adapter;
       void adapter
         .configureBoard({

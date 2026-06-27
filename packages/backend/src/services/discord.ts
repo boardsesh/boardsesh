@@ -43,6 +43,18 @@ function formatBoard(payload: FeedbackDiscordPayload): string | null {
   return payload.angle != null ? `${base} @ ${payload.angle}°` : base;
 }
 
+// Discord caps an embed field value at 1024 chars. Wrap the BLE report in a
+// fenced code block (preserves the line-oriented layout) and truncate the text
+// so the fences always fit.
+const DISCORD_FIELD_MAX = 1024;
+const BLE_FENCE_OVERHEAD = '```\n\n```'.length;
+
+function formatBleDiagnostics(report: string): string {
+  const budget = DISCORD_FIELD_MAX - BLE_FENCE_OVERHEAD;
+  const body = report.length > budget ? `${report.slice(0, budget - 1)}…` : report;
+  return `\`\`\`\n${body}\n\`\`\``;
+}
+
 /** @internal exported for testing only; do not call from resolver code. */
 export function buildWebhookBody(payload: FeedbackDiscordPayload): Record<string, unknown> {
   const isBug = BUG_SOURCES.has(payload.source);
@@ -86,6 +98,9 @@ export function buildWebhookBody(payload: FeedbackDiscordPayload): Record<string
   }
   if (ctx?.url) fields.push({ name: 'URL', value: ctx.url, inline: false });
   if (ctx?.userAgent) fields.push({ name: 'User agent', value: ctx.userAgent, inline: false });
+  if (ctx?.bleDiagnostics) {
+    fields.push({ name: 'Bluetooth diagnostics', value: formatBleDiagnostics(ctx.bleDiagnostics), inline: false });
+  }
 
   return {
     username: 'Boardsesh Feedback',

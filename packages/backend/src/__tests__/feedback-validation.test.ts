@@ -175,5 +175,25 @@ describe('SubmitAppFeedbackInputSchema', () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it('accepts a bleDiagnostics context string on a bug report', () => {
+      const result = SubmitAppFeedbackInputSchema.safeParse({
+        ...BASE,
+        comment: 'bluetooth keeps dropping',
+        source: 'drawer-bug',
+        context: { bleDiagnostics: 'Devices found (1):\n- Kilter A1B2 | id=xyz | rssi -52' },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects bleDiagnostics longer than 2000 chars', () => {
+      const result = SubmitAppFeedbackInputSchema.safeParse({
+        ...BASE,
+        comment: 'bluetooth keeps dropping',
+        source: 'drawer-bug',
+        context: { bleDiagnostics: 'x'.repeat(2001) },
+      });
+      expect(result.success).toBe(false);
+    });
   });
 });

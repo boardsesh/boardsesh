@@ -68,6 +68,27 @@ describe('buildMobileFeedbackEnrichment', () => {
     });
   });
 
+  it('attaches bleDiagnostics to context when provided', () => {
+    const result = buildMobileFeedbackEnrichment({
+      activeBoard,
+      currentClimbQueueItem,
+      sessionId: 'session-1',
+      pathname: '/(tabs)/climbs',
+      bleDiagnostics: 'Devices found (1):\n- Kilter A1B2 | id=xyz | rssi -52',
+    });
+    expect(result.context?.bleDiagnostics).toBe('Devices found (1):\n- Kilter A1B2 | id=xyz | rssi -52');
+  });
+
+  it('omits bleDiagnostics from context when not provided', () => {
+    const result = buildMobileFeedbackEnrichment({
+      activeBoard,
+      currentClimbQueueItem,
+      sessionId: 'session-1',
+      pathname: '/(tabs)/climbs',
+    });
+    expect(result.context?.bleDiagnostics).toBeUndefined();
+  });
+
   it('returns null board and context fields when no useful context exists', () => {
     expect(
       buildMobileFeedbackEnrichment({

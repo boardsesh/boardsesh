@@ -335,6 +335,8 @@
     "starRating_other": "{{count}} estrellas",
     "sessionRecordingLabel": "Activar grabación de sesión",
     "sessionRecordingDescription": "Ayúdanos a corregir tu error más rápido activando la grabación de sesión y reproduciendo el problema. Puedes desactivarla después.",
+    "bleDiagnosticsLabel": "Adjuntar diagnóstico de Bluetooth",
+    "bleDiagnosticsDescription": "Incluye los plafones cercanos que encontramos y los errores de conexión recientes para depurar el Bluetooth más rápido.",
     "nextAria": "Siguiente"
   },
   "feedbackBanner": {

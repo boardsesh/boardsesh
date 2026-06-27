@@ -11,12 +11,19 @@ import type { SubmitAppFeedbackInput } from '@boardsesh/shared-schema';
 import { getHttpClient } from '../graphql/client';
 import { useActiveBoard } from '../graphql/use-active-board';
 import { useQueue, useQueueSessionId } from '../../providers/queue-provider';
+import { buildBleDiagnosticsReport } from '../ble/ble-diagnostics-log';
 import { buildMobileFeedbackEnrichment } from './feedback-enrichment';
 
 export type MobileSubmitAppFeedbackPayload = Omit<
   SubmitAppFeedbackInput,
   'platform' | 'appVersion' | 'boardName' | 'layoutId' | 'sizeId' | 'setIds' | 'angle' | 'context'
->;
+> & {
+  /**
+   * UI-only flag (stripped before the GraphQL request). When true, the
+   * session's BLE diagnostics are attached to the report's debug context.
+   */
+  includeBleDiagnostics?: boolean;
+};
 
 function getMobilePlatform(): SubmitAppFeedbackInput['platform'] {
   return Platform.OS === 'android' ? 'android' : Platform.OS === 'ios' ? 'ios' : 'web';
@@ -43,14 +50,17 @@ export function useSubmitMobileAppFeedback() {
 
   return useMutation({
     mutationFn: (payload: MobileSubmitAppFeedbackPayload): Promise<boolean> => {
+      // `includeBleDiagnostics` is a UI flag — keep it out of the GraphQL input.
+      const { includeBleDiagnostics, ...feedbackInput } = payload;
       const enrichment = buildMobileFeedbackEnrichment({
         activeBoard: activeBoardQuery.data,
         currentClimbQueueItem: queueContext.state.currentClimbQueueItem,
         sessionId,
         pathname,
+        bleDiagnostics: includeBleDiagnostics ? buildBleDiagnosticsReport() : null,
       });
       return submitMobileAppFeedback({
-        ...payload,
+        ...feedbackInput,
         ...enrichment,
         platform: getMobilePlatform(),
         appVersion: getNativeAppVersion(),

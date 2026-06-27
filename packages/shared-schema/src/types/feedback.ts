@@ -20,6 +20,12 @@ export type FeedbackContextInput = {
   sessionName?: string | null;
   url?: string | null;
   userAgent?: string | null;
+  /**
+   * Opt-in Bluetooth diagnostics for bug reports: a compact text dump of boards
+   * found and recent connection issues this session. Present only when the
+   * reporter ticks the toggle.
+   */
+  bleDiagnostics?: string | null;
 };
 
 export type SubmitAppFeedbackInput = {

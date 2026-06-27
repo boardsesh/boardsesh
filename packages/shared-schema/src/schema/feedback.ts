@@ -12,6 +12,13 @@ export const feedbackTypeDefs = /* GraphQL */ `
     sessionName: String
     url: String
     userAgent: String
+
+    """
+    Opt-in Bluetooth diagnostics for bug reports: a compact text dump of the
+    boards found and recent connection issues this session (write type, MTU,
+    failure category/reason). Present only when the reporter ticks the toggle.
+    """
+    bleDiagnostics: String
   }
 
   """

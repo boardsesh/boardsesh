@@ -333,6 +333,8 @@
     "remainingChars": "{{count}} more characters to go",
     "sessionRecordingLabel": "Turn on session recording",
     "sessionRecordingDescription": "Help us fix your bug faster by turning on session recording and reproducing the bug. You can turn it off after.",
+    "bleDiagnosticsLabel": "Attach Bluetooth diagnostics",
+    "bleDiagnosticsDescription": "Includes nearby boards we found and recent connection errors so we can debug Bluetooth faster.",
     "starRating_one": "{{count}} star",
     "starRating_other": "{{count}} stars",
     "nextAria": "Next"

@@ -335,6 +335,8 @@
     "starRating_other": "{{count}} étoiles",
     "sessionRecordingLabel": "Activer l'enregistrement de session",
     "sessionRecordingDescription": "Aidez-nous à corriger votre bug plus vite en activant l'enregistrement de session et en reproduisant le problème. Vous pourrez le désactiver ensuite.",
+    "bleDiagnosticsLabel": "Joindre le diagnostic Bluetooth",
+    "bleDiagnosticsDescription": "Inclut les boards détectés à proximité et les erreurs de connexion récentes pour déboguer le Bluetooth plus vite.",
     "nextAria": "Suivant"
   },
   "feedbackBanner": {

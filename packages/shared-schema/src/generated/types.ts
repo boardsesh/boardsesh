@@ -1386,6 +1386,12 @@ export type FavoritesCount = {
  * may carry only `url` / `userAgent`.
  */
 export type FeedbackContextInput = {
+  /**
+   * Opt-in Bluetooth diagnostics for bug reports: a compact text dump of the
+   * boards found and recent connection issues this session (write type, MTU,
+   * failure category/reason). Present only when the reporter ticks the toggle.
+   */
+  bleDiagnostics?: InputMaybe<Scalars['String']['input']>;
   climbName?: InputMaybe<Scalars['String']['input']>;
   climbUuid?: InputMaybe<Scalars['String']['input']>;
   difficulty?: InputMaybe<Scalars['String']['input']>;

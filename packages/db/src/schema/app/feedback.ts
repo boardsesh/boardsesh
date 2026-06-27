@@ -9,6 +9,8 @@ export type FeedbackContext = {
   sessionName?: string;
   url?: string;
   userAgent?: string;
+  /** Opt-in BLE diagnostics text attached to bug reports. */
+  bleDiagnostics?: string;
 };
 
 export const appFeedback = pgTable(
