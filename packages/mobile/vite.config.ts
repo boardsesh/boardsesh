@@ -86,6 +86,11 @@ export default defineConfig({
         replacement: fileURLToPath(new URL('./test/expo-file-system-stub.ts', import.meta.url)),
       },
       { find: 'expo-image', replacement: fileURLToPath(new URL('./test/expo-image-stub.tsx', import.meta.url)) },
+      // expo-haptics' `main` is src/Haptics.ts (TS source), throwing the same
+      // node-env SyntaxError as expo-image/expo-file-system. A no-op stub keeps
+      // any suite that transitively imports src/lib/haptics (e.g. via the climbs
+      // screen → FilterTokenRow / RecentFilterPills) from crashing.
+      { find: 'expo-haptics', replacement: fileURLToPath(new URL('./test/expo-haptics-stub.ts', import.meta.url)) },
       // src/theme/animations.ts has `export type SpringPreset = keyof typeof springs`
       // and `export type TimingPreset = keyof typeof timing`. In CI's Rolldown worker
       // (Node.js 24), Rolldown's static analysis traverses into this file even when
@@ -108,6 +113,15 @@ export default defineConfig({
       {
         find: /^.*\.(png|jpe?g|gif|webp|svg)$/,
         replacement: fileURLToPath(new URL('./test/asset-stub.ts', import.meta.url)),
+      },
+      // FilterChipRow is platform-split (FilterChipRow.ios.tsx renders native
+      // @expo/ui SwiftUI menus; FilterChipRow.android.tsx is a placeholder).
+      // Vitest doesn't resolve `.ios`/`.android` extensions and can't mount the
+      // SwiftUI host, so redirect the extensionless import to a null stub. Suites
+      // that assert chip behaviour register their own vi.mock (takes precedence).
+      {
+        find: /^(.*\/)?search\/FilterChipRow$/,
+        replacement: fileURLToPath(new URL('./test/filter-chip-row-stub.tsx', import.meta.url)),
       },
     ],
     // .tsx test files can opt into a jsdom environment per file via the

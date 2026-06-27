@@ -42,6 +42,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',
   },
+  {
+    key: 'persistent-filter-chips',
+    label: 'Persistent filter chips',
+    description:
+      'GitHub-style always-visible native filter chips (Filters, Recent, Grade, Sort, Popularity, Show) under the climbs title; recents promoted out of search focus.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the

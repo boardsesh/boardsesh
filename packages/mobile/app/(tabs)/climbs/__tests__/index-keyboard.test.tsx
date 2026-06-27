@@ -105,6 +105,8 @@ vi.mock('@boardsesh/climb-filters', () => ({
   mergeBoardFilters: (input: unknown) => input,
   countActiveFilters: () => 0,
   hasActiveBoardFilters: () => false,
+  // Consumed by filter-chip-menus (imported via index.tsx for the chip row).
+  SORT_OPTIONS: ['ascents', 'quality', 'difficulty', 'name', 'popular', 'creation'],
 }));
 
 vi.mock('@boardsesh/board-react', () => ({
@@ -145,6 +147,8 @@ vi.mock('../../../../src/components/ClimbFilterSheet', () => ({
 vi.mock('../../../../src/components/search/ClimbFilterFab', () => ({ ClimbFilterFab: () => null }));
 vi.mock('../../../../src/components/search/ClimbTopChrome', () => ({ ClimbTopChrome: () => null }));
 vi.mock('../../../../src/components/RecentFilterPills', () => ({ RecentFilterPills: () => null }));
+vi.mock('../../../../src/components/search/FilterTokenRow', () => ({ FilterTokenRow: () => null }));
+vi.mock('../../../../src/components/grade', () => ({ GradeRangeRail: () => null }));
 
 vi.mock('../../../../src/providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({

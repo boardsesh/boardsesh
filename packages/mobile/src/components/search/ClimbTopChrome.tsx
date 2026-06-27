@@ -7,7 +7,7 @@
 // persistently in the centre. The Material variant keeps a dedicated
 // Appbar.Header with the board as its subtitle plus grade / filter quick chips.
 
-import { type RefObject, useCallback } from 'react';
+import { type ReactNode, type RefObject, useCallback } from 'react';
 import { Keyboard, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -71,6 +71,11 @@ type ClimbTopChromeProps = {
   gradeChip?: { label: string; active: boolean; onClear?: () => void };
   onOpenGrade?: () => void;
   onGradeChange?: (grade: GradeBound) => void;
+  /** Persistent native filter-chip row + token row (the `persistent-filter-chips`
+   *  flag). Rendered under the title on Liquid Glass, independent of search focus;
+   *  null when the flag is off. The caller composes it so every filter handler and
+   *  the search-provider state stay in the screen, not drilled through here. */
+  filterChrome?: ReactNode;
 };
 
 export function ClimbTopChrome({
@@ -97,6 +102,7 @@ export function ClimbTopChrome({
   gradeChip,
   onOpenGrade,
   onGradeChange,
+  filterChrome,
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, variant } = useTheme();
@@ -271,6 +277,10 @@ export function ClimbTopChrome({
           </View>
         </View>
       ) : null}
+      {/* Persistent filter chips sit under the title on every glass path —
+          including the iOS 26 native-search path (no custom search row) — so
+          filtering is always glanceable, never gated behind keyboard focus. */}
+      {filterChrome}
     </CollapsingTopChrome>
   );
 }
