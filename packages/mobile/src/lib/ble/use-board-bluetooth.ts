@@ -301,6 +301,15 @@ export function useBoardBluetooth({
   // would otherwise race the in-flight native disconnect and re-establish the
   // connection the user just closed.
   const adoptionSuppressedRef = useRef(false);
+  // One disconnect diagnostics record per connection generation. Both involuntary
+  // drop paths — the adapter's own disconnect event and the write-failure
+  // detection in sendFramesToBoard — funnel through clearConnectionAfterDrop,
+  // and on some BLE stacks a stolen-link write failure ALSO fires the adapter
+  // event, so without this guard a single physical drop logs twice. Reset to
+  // false when a new connection is established; the send path raises the kind to
+  // 'stolen' before tearing down so the more-specific label wins when it's known.
+  const disconnectRecordedRef = useRef(false);
+  const pendingDisconnectKindRef = useRef<'stolen' | 'dropped'>('dropped');
   // The configKey the live connection was established for. Lets the
   // config-switch effect tell a genuine board/layout/size change (tear down)
   // from an unrelated re-render (no-op), and is the key cleared on every drop.
@@ -375,6 +384,12 @@ export function useBoardBluetooth({
   }, []);
 
   const clearConnectionAfterDrop = useCallback(() => {
+    // Only involuntary drops reach here (a deliberate user disconnect goes
+    // through teardownConnection), so log exactly one disconnect per generation.
+    if (!disconnectRecordedRef.current) {
+      disconnectRecordedRef.current = true;
+      recordBleEvent({ type: 'disconnect', boardName, kind: pendingDisconnectKindRef.current });
+    }
     unsubDisconnectRef.current?.();
     unsubDisconnectRef.current = null;
     const adapter = adapterRef.current;
@@ -395,7 +410,7 @@ export function useBoardBluetooth({
     // RNBleAdapter's onDeviceDisconnected subscription and a possibly half-alive
     // native link would otherwise leak — dispose explicitly.
     void adapter?.disconnect().catch(() => {});
-  }, [onConnectionChange]);
+  }, [boardName, onConnectionChange]);
 
   const handleDisconnection = useCallback(() => {
     clearConnectionAfterDrop();
@@ -574,7 +589,10 @@ export function useBoardBluetooth({
             // failed on a dead link. On a shared board this is usually another
             // device having grabbed it. Recorded so the two-climber case is visible.
             track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
-            recordBleEvent({ type: 'disconnect', boardName, kind: 'stolen' });
+            // Mark this drop as 'stolen' (write failed on a dead link) so the
+            // disconnect record clearConnectionAfterDrop writes carries the more
+            // specific label rather than the generic 'dropped'.
+            pendingDisconnectKindRef.current = 'stolen';
             handleDisconnection();
           }
           return false;
@@ -673,14 +691,11 @@ export function useBoardBluetooth({
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
 
-        unsubDisconnectRef.current = adapter.onDisconnect(() => {
-          // The adapter's own disconnect event: the board dropped the link (powered
-          // off / out of range), distinct from the mid-write 'stolen' drop recorded
-          // in sendFramesToBoard — that path calls handleDisconnection directly, so
-          // this wrapper can't double-count it.
-          recordBleEvent({ type: 'disconnect', boardName, kind: 'dropped' });
-          handleDisconnection();
-        });
+        // New connection generation: re-arm the one-shot disconnect record and
+        // default its label to 'dropped' (the send path raises it to 'stolen').
+        disconnectRecordedRef.current = false;
+        pendingDisconnectKindRef.current = 'dropped';
+        unsubDisconnectRef.current = adapter.onDisconnect(handleDisconnection);
         adapterRef.current = adapter;
 
         // Push board configuration into the native BoardBleManager so the
@@ -984,14 +999,11 @@ export function useBoardBluetooth({
       adapter.adoptConnection(deviceId);
       apiLevelRef.current = parseApiLevel(deviceName);
       configuredDeviceNameRef.current = deviceName;
-      unsubDisconnectRef.current = adapter.onDisconnect(() => {
-        // The adapter's own disconnect event: the board dropped the link (powered
-        // off / out of range), distinct from the mid-write 'stolen' drop recorded
-        // in sendFramesToBoard — that path calls handleDisconnection directly, so
-        // this wrapper can't double-count it.
-        recordBleEvent({ type: 'disconnect', boardName, kind: 'dropped' });
-        handleDisconnection();
-      });
+      // New connection generation: re-arm the one-shot disconnect record and
+      // default its label to 'dropped' (the send path raises it to 'stolen').
+      disconnectRecordedRef.current = false;
+      pendingDisconnectKindRef.current = 'dropped';
+      unsubDisconnectRef.current = adapter.onDisconnect(handleDisconnection);
       adapterRef.current = adapter;
       void adapter
         .configureBoard({

@@ -118,6 +118,7 @@ import {
   dispatchMoonboardPacket,
   useBoardBluetooth,
 } from '../use-board-bluetooth';
+import { clearBleDiagnosticsLog, getBleDiagnosticsEvents } from '../ble-diagnostics-log';
 
 // ── Factory helpers ────────────────────────────────────────────────────────
 
@@ -145,6 +146,7 @@ describe('useBoardBluetooth', () => {
     vi.clearAllMocks();
     resetReactNativePermissionHarness();
     mockBleManager.state.mockResolvedValue('PoweredOn');
+    clearBleDiagnosticsLog();
   });
 
   it('shows permission copy and stops before adapter availability when Android BLE permission is denied', async () => {
@@ -242,6 +244,9 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(Alert.alert).not.toHaveBeenCalled();
+    // A user-cancel is not a connection issue — it must NOT pollute the
+    // opt-in bug-report diagnostics with a phantom connect_failure.
+    expect(getBleDiagnosticsEvents().some((event) => event.type === 'connect_failure')).toBe(false);
   });
 
   it('maps a connect timeout to the connect-failed copy', async () => {
@@ -259,6 +264,9 @@ describe('useBoardBluetooth', () => {
     });
 
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+    // A real (non-cancel) connect failure IS recorded for the bug report.
+    const connectFailure = getBleDiagnosticsEvents().find((event) => event.type === 'connect_failure');
+    expect(connectFailure).toMatchObject({ type: 'connect_failure', failureCategory: 'connect_failed' });
   });
 
   it('serialises overlapping sendFramesToBoard calls so chunks never interleave', async () => {
@@ -478,6 +486,21 @@ describe('useBoardBluetooth', () => {
 
     expect(fakeAdapter.disconnect).toHaveBeenCalled();
     expect(result.current.isConnected).toBe(false);
+
+    // Exactly one disconnect is logged for the stolen write, labelled 'stolen'.
+    const disconnectsAfterWrite = getBleDiagnosticsEvents().filter((event) => event.type === 'disconnect');
+    expect(disconnectsAfterWrite).toHaveLength(1);
+    expect(disconnectsAfterWrite[0]).toMatchObject({ type: 'disconnect', kind: 'stolen' });
+
+    // Some BLE stacks ALSO fire the adapter's own disconnect event for the same
+    // physical drop. The per-generation guard must keep that from double-logging.
+    const adapterDisconnectHandler = (fakeAdapter.onDisconnect.mock.calls[0] as unknown[] | undefined)?.[0] as
+      | (() => void)
+      | undefined;
+    await act(async () => {
+      adapterDisconnectHandler?.();
+    });
+    expect(getBleDiagnosticsEvents().filter((event) => event.type === 'disconnect')).toHaveLength(1);
   });
 
   it('tracks incompatible_climb with skip counts and the provided send context', async () => {
