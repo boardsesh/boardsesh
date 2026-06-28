@@ -21,6 +21,7 @@ import { ListRow } from '../../../src/components/ListRow';
 import { SectionHeader } from '../../../src/components/SectionHeader';
 import { SegmentedControl } from '../../../src/components/SegmentedControl';
 import { SessionRecordingSwitchRow } from '../../../src/components/settings/SessionRecordingSwitchRow';
+import { PlaylistTagsSwitchRow } from '../../../src/components/settings/PlaylistTagsSwitchRow';
 import { isPreviewBuild } from '../../../src/lib/preview-build';
 import { isDevLauncherAvailable } from '../../../src/lib/dev-launcher';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
@@ -227,6 +228,16 @@ export default function MoreScreen() {
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.settingHint}>
             {t('mobile.more.gradeFormat.description')}
           </Text>
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.more.displayOptions.title')} />
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+          <PlaylistTagsSwitchRow
+            label={t('mobile.more.displayOptions.playlistTags')}
+            description={t('mobile.more.displayOptions.playlistTagsDescription')}
+          />
         </View>
       </View>
 

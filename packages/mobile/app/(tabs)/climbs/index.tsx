@@ -50,6 +50,7 @@ import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-met
 import { useGrades } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
+import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { getHttpClient } from '../../../src/lib/graphql/client';
@@ -586,6 +587,12 @@ function ClimbListInner() {
     return () => handle.cancel();
   }, [visibleClimbs, getLogbook]);
 
+  // Feed the playlist-membership store for the visible climbs so the optional
+  // third-row playlist tags can render (gated inside the hook on the user
+  // setting + auth). Memoize the uuid list so the fetch effect's dep is stable.
+  const visibleClimbUuids = useMemo(() => visibleClimbs.map((climb) => climb.uuid), [visibleClimbs]);
+  useClimbListPlaylistMemberships({ boardName, layoutId, climbUuids: visibleClimbUuids });
+
   const handleRefresh = useCallback(() => {
     isLoadingMoreRef.current = false;
     void refetch();
@@ -1066,6 +1073,7 @@ function ClimbListInner() {
         onOpenActions={openClimbActions}
         onOpenPlaylist={openAddToPlaylist}
         onAddToQueue={handleAddToQueue}
+        showPlaylistChips
       />
     ),
     [

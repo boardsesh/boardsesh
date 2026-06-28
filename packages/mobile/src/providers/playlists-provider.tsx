@@ -20,6 +20,10 @@ export type PlaylistCreateBoard = {
 
 type PlaylistsContextValue = {
   playlists: Playlist[];
+  // Memoized `uuid → Playlist` lookup so per-row consumers (e.g. the climb-list
+  // playlist chips) resolve a climb's memberships in O(membership) rather than
+  // scanning the whole `playlists` array per row.
+  playlistsById: Map<string, Playlist>;
   getPlaylistsForClimb: (climbUuid: string) => Set<string>;
   addToPlaylist: (playlistId: string, climbUuid: string, angle: number) => Promise<void>;
   removeFromPlaylist: (playlistId: string, climbUuid: string) => Promise<void>;
@@ -93,6 +97,18 @@ export function PlaylistsProvider({
     [playlistMemberships],
   );
 
+  // Keyed by both uuid and id so a membership set sourced from either identifier
+  // resolves — the backend keys playlists by `uuid`, but some call sites carry
+  // `id`. Rebuilt only when the playlists array changes (5-min staleTime).
+  const playlistsById = useMemo(() => {
+    const byId = new Map<string, Playlist>();
+    for (const playlist of playlists) {
+      byId.set(playlist.uuid, playlist);
+      byId.set(playlist.id, playlist);
+    }
+    return byId;
+  }, [playlists]);
+
   const trackedCreatePlaylist = useCallback(
     async (
       name: string,
@@ -138,6 +154,7 @@ export function PlaylistsProvider({
   const value = useMemo<PlaylistsContextValue>(
     () => ({
       playlists,
+      playlistsById,
       getPlaylistsForClimb,
       addToPlaylist: trackedAddToPlaylist,
       removeFromPlaylist: trackedRemoveFromPlaylist,
@@ -148,6 +165,7 @@ export function PlaylistsProvider({
     }),
     [
       playlists,
+      playlistsById,
       getPlaylistsForClimb,
       trackedAddToPlaylist,
       trackedRemoveFromPlaylist,
@@ -165,4 +183,12 @@ export function usePlaylistsContext(): PlaylistsContextValue {
   const ctx = useContext(PlaylistsContext);
   if (!ctx) throw new Error('usePlaylistsContext must be used within a PlaylistsProvider');
   return ctx;
+}
+
+// Non-throwing variant for components that may render OUTSIDE the provider — e.g.
+// the shared `ClimbListItemContent` (reused by queue/session/logbook rows) and
+// its optional playlist chips. Returns `undefined` when no provider is mounted so
+// those consumers can degrade to "no chips" instead of crashing.
+export function usePlaylistsContextOptional(): PlaylistsContextValue | undefined {
+  return useContext(PlaylistsContext);
 }

@@ -107,6 +107,11 @@
         "font": "Français",
         "both": "Les deux"
       },
+      "displayOptions": {
+        "title": "Affichage",
+        "playlistTags": "Afficher les étiquettes de playlist",
+        "playlistTagsDescription": "Voyez dans quelles playlists se trouve chaque bloc, directement dans la liste."
+      },
       "language": {
         "title": "Langue",
         "system": "Système",

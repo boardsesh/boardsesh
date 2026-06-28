@@ -11,6 +11,7 @@ import { useAscentStatus } from '../hooks/use-ascent-status';
 import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
+import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import type { IconName } from './icon-map';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
 
@@ -78,6 +79,14 @@ type ClimbListItemContentProps = {
    * their own). Marks it with the `people` glyph so it's clear it's the crowd's.
    */
   gradeIsConsensus?: boolean;
+  /**
+   * Render the third row of playlist-membership tags under the subtitle. Opt-in
+   * per surface (default off) so only the main filtered climb list shows them —
+   * the queue, session, and logbook rows that also reuse this visual stay clean.
+   * The chips additionally gate on the user's "Show playlist tags" setting and on
+   * fetched membership data, so passing `true` alone doesn't force them on.
+   */
+  showPlaylistChips?: boolean;
 };
 
 /**
@@ -138,6 +147,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   primarySubtitleOverride,
   consensusGrade,
   gradeIsConsensus = false,
+  showPlaylistChips = false,
 }: ClimbListItemContentProps) {
   const { t } = useTranslation('climbs');
   const { formatGrade } = useGradeFormat();
@@ -216,6 +226,7 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
             {subtitleDetailText}
           </Text>
         ) : null}
+        {showPlaylistChips ? <ClimbPlaylistChips climbUuid={climb.uuid} /> : null}
       </View>
 
       {/* Right: ascent-status glyph + colorized grade — the two scan keys together */}

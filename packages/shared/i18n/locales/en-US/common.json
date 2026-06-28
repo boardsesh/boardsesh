@@ -107,6 +107,11 @@
         "font": "French",
         "both": "Both"
       },
+      "displayOptions": {
+        "title": "Display",
+        "playlistTags": "Show playlist tags",
+        "playlistTagsDescription": "See which playlists each climb is in, right on the list."
+      },
       "language": {
         "title": "Language",
         "system": "System",

@@ -3,4 +3,9 @@
 // deduplicating). No React, no DOM, no React Native.
 
 export { FavoritesStore, favoritesStore } from './favorites-store';
+export {
+  PlaylistMembershipStore,
+  playlistMembershipStore,
+  type ClimbPlaylistMembershipEntry,
+} from './playlist-membership-store';
 export { buildInstagramCaption, getBoardDisplayName, type InstagramCaptionInput } from './instagram-caption';

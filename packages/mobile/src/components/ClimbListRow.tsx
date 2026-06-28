@@ -175,6 +175,12 @@ type ClimbListRowProps = {
   contentRowStyle?: StyleProp<ViewStyle>;
   separatorStyle?: StyleProp<ViewStyle>;
   showSeparator?: boolean;
+  /**
+   * Show the playlist-membership tag row in the default content layout. Only the
+   * main filtered climb list opts in; the chips still gate on the user setting +
+   * fetched data. Ignored when `renderContent` supplies a custom layout.
+   */
+  showPlaylistChips?: boolean;
 };
 
 const ClimbListRow = React.memo(function ClimbListRow({
@@ -195,6 +201,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
   contentRowStyle,
   separatorStyle,
   showSeparator = true,
+  showPlaylistChips = false,
 }: ClimbListRowProps) {
   const { systemColors, brandColors: brand } = useTheme();
   // Active-row highlight colours, derived from the scheme-aware brand so the wash
@@ -367,6 +374,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
       sizeId={sizeId}
       setIds={setIds}
       angle={angle}
+      showPlaylistChips={showPlaylistChips}
     />
   );
 

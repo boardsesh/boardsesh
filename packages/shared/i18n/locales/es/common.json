@@ -305,6 +305,11 @@
         "font": "Francés",
         "both": "Ambos"
       },
+      "displayOptions": {
+        "title": "Visualización",
+        "playlistTags": "Mostrar etiquetas de playlist",
+        "playlistTagsDescription": "Mira en qué playlists está cada bloque, directamente en la lista."
+      },
       "language": {
         "title": "Idioma",
         "system": "Sistema",
