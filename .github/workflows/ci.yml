@@ -535,6 +535,12 @@ jobs:
       # push-to-main. Runs before the heavier Metro bundle so it fails fast.
       - name: Check native build-phase deps resolve
         run: vp run check:mobile-native-deps
+      # Read-only `expo install --check`: fails the moment a native module drifts
+      # from the Expo SDK pin (the caret-drift class behind the 2.0.0 launch
+      # crash). Intentional deviations live in expo.install.exclude. Cheap, so it
+      # runs before the heavier Metro bundle.
+      - name: Mobile dep-health check
+        run: vp run check:mobile-deps
       # A Bun patch is keyed by an exact version, so an Expo/RN bump can silently
       # drop it: install only warns, and typecheck + the Metro bundle stay green
       # while a native-only behavior (e.g. the iOS 26 tab-bar minimize tracking
