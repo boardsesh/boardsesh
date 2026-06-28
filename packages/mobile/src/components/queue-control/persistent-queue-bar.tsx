@@ -21,7 +21,7 @@ import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, gl
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
-import { isAuthRoute, isGymDiscoveryRoute, isPlayerRoute } from '../../lib/route-segments';
+import { isAuthRoute, isBoardsRoute, isGymDiscoveryRoute, isPlayerRoute } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
@@ -48,6 +48,9 @@ export function PersistentQueueBar() {
   // The gym-discovery screen is a full-bleed map with its own bottom sheet — the
   // climb accessory would overlap it, so suppress it there.
   if (isGymDiscoveryRoute(segments)) return null;
+  // The boards stack is a modal board picker / builder; the climb bar would float
+  // over its pinned create button and has nothing to act on there.
+  if (isBoardsRoute(segments)) return null;
   // The full-screen player owns the whole surface (with its own queue UI). On iOS
   // the line below already hides this via the mounted native accessory, but on
   // Android (no native accessory) the bar would otherwise show over the player.

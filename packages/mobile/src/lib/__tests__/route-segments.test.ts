@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isTabsRoute, isClimbsTabRoute, isAuthRoute } from '../route-segments';
+import { isTabsRoute, isClimbsTabRoute, isAuthRoute, isBoardsRoute } from '../route-segments';
 
 describe('isTabsRoute', () => {
   it('is true anywhere inside the tab navigator', () => {
@@ -40,5 +40,19 @@ describe('isAuthRoute', () => {
     expect(isAuthRoute(['(tabs)', 'climbs'])).toBe(false);
     expect(isAuthRoute(['gyms'])).toBe(false);
     expect(isAuthRoute([])).toBe(false);
+  });
+});
+
+describe('isBoardsRoute', () => {
+  it('is true anywhere inside the boards stack', () => {
+    expect(isBoardsRoute(['boards'])).toBe(true);
+    expect(isBoardsRoute(['boards', 'create'])).toBe(true);
+    expect(isBoardsRoute(['boards', 'manage'])).toBe(true);
+  });
+
+  it('is false outside the boards stack', () => {
+    expect(isBoardsRoute(['(tabs)', 'climbs'])).toBe(false);
+    expect(isBoardsRoute(['gyms'])).toBe(false);
+    expect(isBoardsRoute([])).toBe(false);
   });
 });

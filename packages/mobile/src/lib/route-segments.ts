@@ -14,6 +14,7 @@ const CLIMBS_TAB = 'climbs';
 const GYMS_ROUTE = 'gyms';
 const AUTH_GROUP = 'auth';
 const PLAYER_ROUTE = 'play';
+const BOARDS_ROUTE = 'boards';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
 export function isTabsRoute(segments: Segments): boolean {
@@ -77,4 +78,16 @@ export function isGymDiscoveryRoute(segments: Segments): boolean {
  */
 export function isPlayerRoute(segments: Segments): boolean {
   return segments[0] === PLAYER_ROUTE;
+}
+
+/**
+ * True anywhere inside the boards stack (`/boards/*` — the picker `index`, the
+ * `create` / `edit` builder, and `manage`). This stack is presented as a modal
+ * over the tabs, so the root-mounted persistent climb bar would float on top of
+ * it — directly over the builder's pinned create button. The climb toolbar has
+ * nothing to act on while you're choosing or building a board, so it's
+ * suppressed across the whole stack.
+ */
+export function isBoardsRoute(segments: Segments): boolean {
+  return segments[0] === BOARDS_ROUTE;
 }

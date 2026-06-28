@@ -11,6 +11,7 @@ const cfg = vi.hoisted(() => ({
   onGymDiscovery: false,
   onAuthRoute: false,
   onPlayerRoute: false,
+  onBoardsRoute: false,
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
   wallClimb: null as null | { uuid: string; angle: number },
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
@@ -56,6 +57,7 @@ vi.mock('../../../lib/route-segments', () => ({
   isGymDiscoveryRoute: () => cfg.onGymDiscovery,
   isAuthRoute: () => cfg.onAuthRoute,
   isPlayerRoute: () => cfg.onPlayerRoute,
+  isBoardsRoute: () => cfg.onBoardsRoute,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
@@ -143,6 +145,7 @@ describe('PersistentQueueBar', () => {
     cfg.onGymDiscovery = false;
     cfg.onAuthRoute = false;
     cfg.onPlayerRoute = false;
+    cfg.onBoardsRoute = false;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
     cfg.wallClimb = null;
     cfg.variant = 'liquidGlass';
@@ -186,6 +189,16 @@ describe('PersistentQueueBar', () => {
     // native accessory hides this, but on Android (no native accessory) the bar
     // would otherwise float over the player, so it's suppressed by route.
     cfg.onPlayerRoute = true;
+    const { container } = render(<PersistentQueueBar />);
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
+  it('renders nothing on the boards picker / builder route', () => {
+    // The /boards stack is a modal board picker/builder. The bar would float over
+    // its pinned create button and has nothing to act on while choosing a board,
+    // so it's suppressed by route even with a current climb.
+    cfg.onBoardsRoute = true;
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
