@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, RefreshControl, Pressable, StyleSheet } from 'react-native';
+import { View, RefreshControl, Pressable, StyleSheet, Platform } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import type { BottomSheet } from '@expo/ui/community/bottom-sheet';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
-import { toAscentFeedInput, DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT } from '@boardsesh/logbook';
+import {
+  toAscentFeedInput,
+  DEFAULT_LOGBOOK_FILTERS,
+  DEFAULT_LOGBOOK_SORT,
+  type LogbookSortPreset,
+} from '@boardsesh/logbook';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { track } from '../../lib/analytics';
 import { Text } from '../Text';
@@ -16,6 +21,7 @@ import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { LogbookRow } from './LogbookRow';
 import { LogbookEditSheet } from './LogbookEditSheet';
 import { LogbookFilterSheet } from './LogbookFilterSheet';
+import { LogbookSortChipRow } from './LogbookSortChipRow';
 import { useLogbookSearch, countActiveLogbookFilters } from './use-logbook-search';
 import { useUserAscentsFeed } from '../../lib/graphql/hooks';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
@@ -50,9 +56,16 @@ type LogbookTabProps = {
 
 export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenTitle }: LogbookTabProps) {
   const { t } = useTranslation('you');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, variant } = useTheme();
   // Temporary kill switch while the search + filter UI is unfinished.
   const logbookFiltersEnabled = useFeatureFlag('logbook-filters') === true;
+  // Promote the Latest/Hardest sort to top-level Liquid Glass chips so it can be
+  // switched without opening the sheet. iOS 26 Liquid Glass only — the same
+  // capability the climbs screen gates its filter-chip row on (variant ===
+  // 'liquidGlass'); Android keeps the sheet's sort control. Already behind the
+  // logbook-filters flag (the whole toolbar is), so no new flag. When shown, the
+  // sheet's in-body Sort block is suppressed so sort isn't worded twice.
+  const showSortChips = logbookFiltersEnabled && Platform.OS === 'ios' && variant === 'liquidGlass';
   const router = useRouter();
   const { openPlayDrawer, openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
@@ -64,7 +77,9 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   // Logbook search/filter/sort state. The committed name lives here; the visible
   // input value is debounced before it commits to the query.
   const logbookSearch = useLogbookSearch();
-  const { filters, sort, name, setName, apply, hydrated } = logbookSearch;
+  const { filters, sort, name, setName, setPreset, apply, hydrated } = logbookSearch;
+  // The committed preset feeds the top-level sort chips (Latest = 'recent').
+  const sortPreset: LogbookSortPreset = sort.mode === 'preset' ? sort.preset : 'recent';
   const activeFilterCount = useMemo(() => countActiveLogbookFilters(filters), [filters]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -232,6 +247,10 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
             </Pressable>
           </View>
         ) : null}
+        {/* Top-level Liquid Glass sort chips (Latest/Hardest) — switch sort
+            without opening the sheet. iOS Liquid Glass only; the sheet's own Sort
+            block is hidden (showSort={false}) so it isn't shown twice. */}
+        {showSortChips ? <LogbookSortChipRow preset={sortPreset} onSelectPreset={setPreset} /> : null}
       </View>
 
       {feed.isPending ? (
@@ -305,6 +324,9 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
           currentSort={sort}
           onApply={apply}
           onClearSearch={clearSearch}
+          // When the top-level sort chips are shown, drop the sheet's Sort block
+          // so sort isn't worded twice.
+          showSort={!showSortChips}
         />
       ) : null}
     </View>

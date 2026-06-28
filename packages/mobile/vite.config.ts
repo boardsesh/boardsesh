@@ -180,6 +180,16 @@ export default defineConfig({
         find: /^(.*\/)?MoreForm$/,
         replacement: fileURLToPath(new URL('./test/more-form-stub.tsx', import.meta.url)),
       },
+      // LogbookSortChipRow is platform-split the same way as FilterChipRow
+      // (LogbookSortChipRow.ios.tsx renders native @expo/ui SwiftUI glass chips;
+      // LogbookSortChipRow.android.tsx is a placeholder). Vitest doesn't resolve
+      // `.ios`/`.android` extensions and can't mount the SwiftUI host, so redirect
+      // the extensionless import to a null stub. Suites that assert chip behaviour
+      // register their own vi.mock (takes precedence).
+      {
+        find: /^(.*\/)?LogbookSortChipRow$/,
+        replacement: fileURLToPath(new URL('./test/logbook-sort-chip-row-stub.tsx', import.meta.url)),
+      },
     ],
     // .tsx test files can opt into a jsdom environment per file via the
     // `// @vitest-environment jsdom` pragma — needed to render React

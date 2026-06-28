@@ -33,6 +33,10 @@ const feed = vi.hoisted(() => ({
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 
 vi.mock('react-native', () => ({
+  // The sort-chip gate reads Platform.OS; these toolbar tests don't assert chip
+  // behaviour (LogbookSortChipRow is stubbed via the vite alias), so a fixed OS
+  // is enough — the theme mock reports no `variant`, so the gate stays off.
+  Platform: { OS: 'ios' },
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   RefreshControl: () => null,
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },

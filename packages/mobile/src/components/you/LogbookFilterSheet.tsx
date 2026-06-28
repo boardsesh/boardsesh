@@ -54,6 +54,10 @@ type LogbookFilterSheetProps = {
   onApply: (filters: LogbookFilterState, sort: LogbookSortState) => void;
   /** Clear the toolbar's committed climb-name search (called by Reset). */
   onClearSearch?: () => void;
+  /** Show the in-sheet Sort (Latest/Hardest) block. Defaults true; the caller
+   *  passes false when the top-level sort chips own the sort, so it isn't shown
+   *  twice (Liquid Glass). The draft still tracks/commits sort either way. */
+  showSort?: boolean;
 };
 
 type StatusKey = 'sends' | 'attempts' | 'both';
@@ -140,6 +144,7 @@ export function LogbookFilterSheet({
   currentSort,
   onApply,
   onClearSearch,
+  showSort = true,
 }: LogbookFilterSheetProps) {
   const { t } = useTranslation('you');
   const theme = useTheme();
@@ -307,20 +312,24 @@ export function LogbookFilterSheet({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing[4] }]}
       >
-        {/* PRESET — the headline one-tap sort. Above Refine/Advanced. */}
-        <View style={styles.primary}>
-          <Text variant="footnote" style={styles.subsectionLabel}>
-            {t('mobile.logbook.sort')}
-          </Text>
-          <SegmentedControl
-            options={presetOptions}
-            selectedKey={presetKey}
-            onSelect={(key) => handlePreset(key)}
-            textVariant="footnote"
-            trackColor={trackColor}
-            accessibilityLabel={t('mobile.logbook.sort')}
-          />
-        </View>
+        {/* PRESET — the headline one-tap sort. Above Refine/Advanced. Suppressed
+            when the toolbar's top-level sort chips own it (Liquid Glass), so sort
+            isn't worded twice; the draft still tracks/commits it from chips. */}
+        {showSort ? (
+          <View style={styles.primary}>
+            <Text variant="footnote" style={styles.subsectionLabel}>
+              {t('mobile.logbook.sort')}
+            </Text>
+            <SegmentedControl
+              options={presetOptions}
+              selectedKey={presetKey}
+              onSelect={(key) => handlePreset(key)}
+              textVariant="footnote"
+              trackColor={trackColor}
+              accessibilityLabel={t('mobile.logbook.sort')}
+            />
+          </View>
+        ) : null}
 
         <View style={styles.sectionsContainer}>
           {/* REFINE — status / flash / grade / angle. */}
