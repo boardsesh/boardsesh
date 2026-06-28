@@ -35,11 +35,13 @@ export function SegmentedControl<K extends string = string>({
   const handleSelect = makeSelectHandler(onSelect, disabledKeys);
 
   return (
-    // minHeight floors the row in RN's layout: the native iOS Host (matchContents
-    // vertical) under-reports the segmented Picker's height to React Native, so
-    // without a floor the control collapses and the content below it (e.g. the
-    // sort buttons under "Order") rides up over it.
-    <Host matchContents={{ vertical: true }} style={[styles.host, styles.minRow]}>
+    // Explicit height, NOT matchContents: the native iOS Host under-reported the
+    // segmented Picker's height to RN (~26pt for a ~35pt control) AND the style
+    // minHeight floor wasn't applied, so the control was squished and a parent
+    // with `overflow: 'hidden'` (the profile chrome's rounded glass track) clipped
+    // the bottom of the selected pill. A fixed frame sizes the control
+    // deterministically across every container.
+    <Host style={styles.host}>
       <Picker
         selection={selectedKey}
         onSelectionChange={(value) => {
@@ -71,9 +73,8 @@ export function SegmentedControl<K extends string = string>({
 const styles = StyleSheet.create({
   host: {
     width: '100%',
-  },
-  // iOS segmented control sits ~32pt; 44 gives a comfortable, non-collapsing row.
-  minRow: {
-    minHeight: 44,
+    // The native segmented control sits ~35pt; 40 contains it with minimal slack.
+    // (matchContents under-reported it to ~26pt, clipping the pill.)
+    height: 40,
   },
 });
