@@ -158,6 +158,17 @@ export default defineConfig({
         find: /^(.*\/)?AngleSlider$/,
         replacement: fileURLToPath(new URL('./test/angle-slider-stub.tsx', import.meta.url)),
       },
+      // FeatureFlagsForm is platform-split (FeatureFlagsForm.ios.tsx renders a
+      // native @expo/ui SwiftUI `Form`; FeatureFlagsForm.android.tsx a native
+      // Compose `LazyColumn` of cards). Vitest doesn't resolve `.ios`/`.android`
+      // extensions and can't mount either native tree, so redirect the
+      // extensionless import to a faithful passthrough stub that keeps the public
+      // API + radio/radiogroup + button accessibility roles. Suites that assert
+      // FeatureFlagsForm internals register their own vi.mock (takes precedence).
+      {
+        find: /^(.*\/)?FeatureFlagsForm$/,
+        replacement: fileURLToPath(new URL('./test/feature-flags-form-stub.tsx', import.meta.url)),
+      },
     ],
     // .tsx test files can opt into a jsdom environment per file via the
     // `// @vitest-environment jsdom` pragma — needed to render React
