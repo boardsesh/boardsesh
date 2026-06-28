@@ -49,6 +49,7 @@ import { useNativeAccessoryActive } from '../../../src/hooks/use-bottom-accessor
 import { useBottomChromeMetrics } from '../../../src/hooks/use-bottom-chrome-metrics';
 import { useGrades } from '../../../src/lib/graphql/hooks';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
+import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
 import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { getHttpClient } from '../../../src/lib/graphql/client';
@@ -178,6 +179,7 @@ function ClimbListInner() {
     patchFilters,
     patchBoardFilters,
   } = useClimbSearch();
+  const { lastUsedGrade, rememberGrade } = useLastUsedGrade();
   const { getLogbook } = useBoardActions();
   const searchHeaderRef = useRef<SearchHeaderHandle>(null);
   const nativeSearchRef = useRef<NativeSearchBarRef>(null);
@@ -738,6 +740,15 @@ function ClimbListInner() {
     [setGrade],
   );
 
+  // Remember the grade the climber filters by (from any path — the chip rail,
+  // the filter sheet's Apply, tokens, recent pills, per-board restore) so the
+  // rail can open centred on it later. Skips clears (undefined) so clearing
+  // keeps the last real grade in memory rather than forgetting it.
+  useEffect(() => {
+    const focusGrade = filters.minGrade ?? filters.maxGrade;
+    if (focusGrade != null) rememberGrade(focusGrade);
+  }, [filters.minGrade, filters.maxGrade, rememberGrade]);
+
   const handleCreateClimb = useCallback(() => {
     router.push({
       pathname: '/(tabs)/climbs/create',
@@ -1183,6 +1194,7 @@ function ClimbListInner() {
         }
         gradeBound={gradeBound}
         grades={grades}
+        lastUsedGradeId={lastUsedGrade}
         gradeRailVisible={showGrade}
         gradeChip={gradeChip}
         onOpenGrade={handleOpenGrade}
@@ -1205,6 +1217,7 @@ function ClimbListInner() {
             <GradeRangeRail
               grades={grades}
               bound={gradeBound}
+              lastUsedGradeId={lastUsedGrade}
               onChange={handleGradeChange}
               onRequestClose={handleDismissGrade}
               dismissible={false}
@@ -1220,6 +1233,7 @@ function ClimbListInner() {
           currentFilters={filters}
           currentBoardFilters={boardFilters}
           searchName={name}
+          lastUsedGradeId={lastUsedGrade}
           onApply={handleApplyFilters}
         />
       ) : null}

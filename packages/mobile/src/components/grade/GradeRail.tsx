@@ -28,6 +28,9 @@ import { spacing } from '../../theme/tokens';
 import { GradeChip } from './GradeChip';
 
 const CLEAR_DISMISS_MS = 300;
+// How many frames to re-assert the centring scroll. One scrollTo can be dropped
+// while the host sheet is still presenting; a few frames of re-assert lands it.
+const CENTER_ASSERT_FRAMES = 4;
 
 type ChipLayout = { x: number; width: number };
 
@@ -74,6 +77,12 @@ type GradeRangeRailProps = {
   bound: GradeBound;
   sendDifficultyIds?: readonly number[];
   /**
+   * The climber's last-used grade. When nothing is selected (and centerOnEmpty
+   * is on), the rail opens centred on this instead of the generic band default,
+   * so reopening the filter lands on the grade they actually climb.
+   */
+  lastUsedGradeId?: number;
+  /**
    * Auto-center the rail on mount when there is no grade selection. True (the
    * default) surfaces the climber's typical grades; the logbook filter passes
    * false so an unset rail opens at the easiest grade instead of mid-scrolled.
@@ -95,6 +104,7 @@ export function GradeRangeRail({
   grades: unsortedGrades,
   bound,
   sendDifficultyIds = [],
+  lastUsedGradeId,
   centerOnEmpty = true,
   onChange,
   onRequestClose,
@@ -115,6 +125,13 @@ export function GradeRangeRail({
   const onRequestCloseRef = useRef(onRequestClose);
   const [railWidth, setRailWidth] = useState(0);
   const didCenterRef = useRef(false);
+  const centeringRef = useRef(false);
+  const centerAssertsRef = useRef(0);
+  const centerRafRef = useRef<number | null>(null);
+  // Set once the climber taps/drags the rail. After that we never re-centre, so
+  // the row can't yank out from under their finger; before that we re-centre as
+  // the focus settles (e.g. lastUsedGrade resolving from storage after mount).
+  const userInteractedRef = useRef(false);
 
   const grades = useMemo(() => sortedGrades(unsortedGrades), [unsortedGrades]);
   const gradeIds = useMemo(() => grades.map((grade) => grade.difficultyId), [grades]);
@@ -122,8 +139,8 @@ export function GradeRangeRail({
     // With centering-on-empty off (the logbook filter), only auto-center when a
     // grade is actually selected; otherwise open at the start, not mid-scrolled.
     if (!centerOnEmpty && bound.minGradeId == null && bound.maxGradeId == null) return undefined;
-    return gradeRailCenter(bound, grades, sendDifficultyIds);
-  }, [centerOnEmpty, bound, grades, sendDifficultyIds]);
+    return gradeRailCenter(bound, grades, sendDifficultyIds, lastUsedGradeId);
+  }, [centerOnEmpty, bound, grades, sendDifficultyIds, lastUsedGradeId]);
 
   const clearDismissTimer = useCallback(() => {
     if (dismissTimerRef.current) {
@@ -165,19 +182,73 @@ export function GradeRangeRail({
     [handleRequestClose],
   );
 
-  const maybeCenter = useCallback(() => {
-    if (didCenterRef.current || railWidth === 0 || centerId == null) return;
-    const chipLayout = chipLayoutsRef.current[centerId];
-    if (!chipLayout) return;
-    didCenterRef.current = true;
-    const offset = Math.max(0, chipLayout.x + chipLayout.width / 2 - railWidth / 2);
-    scrollRef.current?.scrollTo({ x: offset, animated: false });
+  const clearCenterRaf = useCallback(() => {
+    if (centerRafRef.current != null) {
+      cancelAnimationFrame(centerRafRef.current);
+      centerRafRef.current = null;
+    }
+  }, []);
+
+  // Scroll the focus grade into the centre once both the rail width and the
+  // focus chip's position are known. A single scrollTo issued while the host
+  // sheet is still presenting can be swallowed (the rail stays pinned at the
+  // start), so re-assert the offset across a few frames before latching.
+  const startCentering = useCallback(() => {
+    if (didCenterRef.current || centeringRef.current) return;
+    if (railWidth === 0 || centerId == null) return;
+    if (chipLayoutsRef.current[centerId] == null) return;
+    centeringRef.current = true;
+    centerAssertsRef.current = 0;
+    const assertCenter = () => {
+      const chipLayout = chipLayoutsRef.current[centerId];
+      if (chipLayout) {
+        const offset = Math.max(0, chipLayout.x + chipLayout.width / 2 - railWidth / 2);
+        scrollRef.current?.scrollTo({ x: offset, animated: false });
+      }
+      centerAssertsRef.current += 1;
+      if (centerAssertsRef.current >= CENTER_ASSERT_FRAMES) {
+        didCenterRef.current = true;
+        centeringRef.current = false;
+        centerRafRef.current = null;
+        return;
+      }
+      centerRafRef.current = requestAnimationFrame(assertCenter);
+    };
+    assertCenter();
   }, [centerId, railWidth]);
+
+  // Re-centre whenever the focus or measured width settles — covers the case
+  // where lastUsedGrade resolves from storage a tick after mount (no layout
+  // event of its own) and would otherwise leave the rail latched on the default
+  // band centre. Skipped once the climber has interacted, so a tap never yanks
+  // the row. `startCentering` changes identity only when centerId/railWidth do.
+  useEffect(() => {
+    if (userInteractedRef.current) return;
+    clearCenterRaf();
+    didCenterRef.current = false;
+    centeringRef.current = false;
+    startCentering();
+  }, [startCentering, clearCenterRaf]);
+
+  // Cancel any in-flight re-assert loop on unmount.
+  useEffect(() => clearCenterRaf, [clearCenterRaf]);
+
+  // The user dragging the rail latches centring for good so it never fights
+  // their finger, and stops the dismiss timer.
+  const handleScrollBeginDrag = useCallback(() => {
+    clearDismissTimer();
+    clearCenterRaf();
+    userInteractedRef.current = true;
+    centeringRef.current = false;
+    didCenterRef.current = true;
+  }, [clearDismissTimer, clearCenterRaf]);
 
   const handleTapGrade = useCallback(
     (difficultyId: number) => {
       hapticSelection();
       clearDismissTimer();
+      userInteractedRef.current = true;
+      didCenterRef.current = true;
       const withinWindow =
         lastSingleAtRef.current !== undefined && Date.now() - lastSingleAtRef.current < RANGE_EXTEND_WINDOW_MS;
       const result = computeGradeTap(bound, gradeIds, difficultyId, withinWindow);
@@ -201,6 +272,8 @@ export function GradeRangeRail({
   const handleClear = useCallback(() => {
     hapticSelection();
     clearDismissTimer();
+    userInteractedRef.current = true;
+    didCenterRef.current = true;
     lastSingleAtRef.current = undefined;
     onChange(clearGradeBound());
     if (dismissible) scheduleDismiss(CLEAR_DISMISS_MS);
@@ -239,10 +312,11 @@ export function GradeRangeRail({
         keyboardShouldPersistTaps="handled"
         style={styles.railScroll}
         contentContainerStyle={styles.railContent}
-        onScrollBeginDrag={clearDismissTimer}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onContentSizeChange={startCentering}
         onLayout={(event) => {
           setRailWidth(event.nativeEvent.layout.width);
-          maybeCenter();
+          startCentering();
         }}
       >
         <GradeChip
@@ -277,7 +351,7 @@ export function GradeRangeRail({
               accessibilityState={{ selected: endpoint }}
               onLayout={({ nativeEvent }) => {
                 chipLayoutsRef.current[grade.difficultyId] = nativeEvent.layout;
-                maybeCenter();
+                startCentering();
               }}
             />
           );

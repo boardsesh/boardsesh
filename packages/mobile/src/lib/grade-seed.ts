@@ -40,15 +40,23 @@ export function defaultGradeCenter(grades: readonly Grade[]): number | undefined
 
 /**
  * The difficulty id the grade rail should scroll to / highlight: the current
- * selection if any, else the climber's modal send grade, else the default band
- * center.
+ * selection if any, else the climber's last-used grade, else their modal send
+ * grade, else the default band center.
+ *
+ * `lastUsedGradeId` is only honoured when it actually exists on the current
+ * board — difficulty scales differ across board families, so a value remembered
+ * on one board falls through to the send/default heuristics on another.
  */
 export function gradeRailCenter(
   selected: GradeSelection,
   grades: readonly Grade[],
   sendDifficultyIds: readonly number[] = [],
+  lastUsedGradeId?: number,
 ): number | undefined {
   if (selected.minGradeId != null) return selected.minGradeId;
   if (selected.maxGradeId != null) return selected.maxGradeId;
+  if (lastUsedGradeId != null && grades.some((grade) => grade.difficultyId === lastUsedGradeId)) {
+    return lastUsedGradeId;
+  }
   return selectModalSendGrade(sendDifficultyIds) ?? defaultGradeCenter(grades);
 }

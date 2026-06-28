@@ -65,6 +65,8 @@ type ClimbTopChromeProps = {
   filterSummary?: { text: string; onClear: () => void };
   gradeBound?: GradeBound;
   grades?: readonly Grade[];
+  /** Last-used grade id; centres an unselected rail on a familiar grade. */
+  lastUsedGradeId?: number;
   gradeRailVisible?: boolean;
   gradeChip?: { label: string; active: boolean; onClear?: () => void };
   onOpenGrade?: () => void;
@@ -96,6 +98,7 @@ export function ClimbTopChrome({
   filterSummary,
   gradeBound,
   grades = [],
+  lastUsedGradeId,
   gradeRailVisible = false,
   gradeChip,
   onOpenGrade,
@@ -259,6 +262,7 @@ export function ClimbTopChrome({
               <GradeRangeRail
                 grades={grades}
                 bound={gradeBound}
+                lastUsedGradeId={lastUsedGradeId}
                 onChange={onGradeChange}
                 onRequestClose={onCloseGrade}
                 dismissible={false}

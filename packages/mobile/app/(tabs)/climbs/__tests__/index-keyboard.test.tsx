@@ -204,6 +204,12 @@ vi.mock('../../../../src/hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGradeByDifficultyId: (difficultyId: number) => String(difficultyId) }),
 }));
 
+// Stub the SecureStore-backed last-used-grade hook so the screen test doesn't
+// pull in expo-secure-store / expo-modules-core (matches the last-search mock).
+vi.mock('../../../../src/hooks/use-last-used-grade', () => ({
+  useLastUsedGrade: () => ({ lastUsedGrade: undefined, rememberGrade: vi.fn() }),
+}));
+
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
   useInfiniteSearchClimbs: () => ({
     data: { pages: [{ climbs: [mocks.climb], hasMore: false }] },

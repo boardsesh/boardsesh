@@ -71,6 +71,8 @@ type ClimbFilterSheetProps = {
   currentBoardFilters: ClimbBoardFilterState;
   /** Current committed name term, so the live "Show N" count matches Apply. */
   searchName?: string;
+  /** Last-used grade id; centres the grade rail on a familiar grade when unset. */
+  lastUsedGradeId?: number;
   onApply: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
 };
 
@@ -133,6 +135,7 @@ export function ClimbFilterSheet({
   currentFilters,
   currentBoardFilters,
   searchName,
+  lastUsedGradeId,
   onApply,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
@@ -617,6 +620,7 @@ export function ClimbFilterSheet({
             <GradeRangeRail
               grades={grades ?? []}
               bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
+              lastUsedGradeId={lastUsedGradeId}
               onChange={handleGradeChange}
               dismissible={false}
               showTitle

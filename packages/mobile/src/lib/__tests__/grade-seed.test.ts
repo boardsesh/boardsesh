@@ -49,4 +49,22 @@ describe('gradeRailCenter', () => {
   it('falls back to the default band center with no selection and no sends', () => {
     expect(gradeRailCenter({ minGradeId: undefined, maxGradeId: undefined }, GRADES, [])).toBe(16);
   });
+
+  it('uses the last-used grade when nothing is selected', () => {
+    expect(gradeRailCenter({ minGradeId: undefined, maxGradeId: undefined }, GRADES, [], 13)).toBe(13);
+  });
+
+  it('prefers the last-used grade over the modal send grade', () => {
+    expect(gradeRailCenter({ minGradeId: undefined, maxGradeId: undefined }, GRADES, [14, 14, 17], 13)).toBe(13);
+  });
+
+  it('keeps the current selection ahead of the last-used grade', () => {
+    expect(gradeRailCenter({ minGradeId: 18, maxGradeId: 20 }, GRADES, [], 13)).toBe(18);
+  });
+
+  it('ignores a last-used grade that is not on the current board', () => {
+    // id 99 is from another board family; fall through to the send/default tiers.
+    expect(gradeRailCenter({ minGradeId: undefined, maxGradeId: undefined }, GRADES, [14, 14], 99)).toBe(14);
+    expect(gradeRailCenter({ minGradeId: undefined, maxGradeId: undefined }, GRADES, [], 99)).toBe(16);
+  });
 });
