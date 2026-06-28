@@ -18,21 +18,13 @@ import { Appbar } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/theme-provider';
 import { createVariantComponent } from '../../theme/variants';
-import { useNativeGlass } from '../../hooks/use-native-glass';
-import { spacing, shadows } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import { Icon } from '../Icon';
 import { iconMap } from '../icon-map';
-import { GlassSurface } from '../GlassSurface';
 import { SegmentedControl } from '../SegmentedControl';
 import { MaterialTabs } from '../navigation/MaterialTabs';
 import { CollapsingLargeTitleHeader, GlassActionToolbar, GlassToolbarAction } from '../chrome';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
-
-// The segmented control floats over the chrome's faded scrim with scrolling
-// content behind it, so it needs its own glass track to stay legible and to give
-// the opaque selected thumb something to pop against (matching the Climbs search
-// capsule's treatment). 10 leaves a hair of glass around the thumb's radius-7 tile.
-const SEGMENT_TRACK_RADIUS = 10;
 
 export type ProfileTabKey = 'progress' | 'sessions' | 'logbook' | 'social';
 
@@ -141,7 +133,6 @@ function ProfileTopChromeGlass({
 }: ProfileTopChromeProps) {
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
-  const nativeGlass = useNativeGlass();
 
   const dashboardTitle = t('metadata.dashboard.title');
   const segmentOptions = useSegmentOptions();
@@ -165,30 +156,18 @@ function ProfileTopChromeGlass({
 
   return (
     <CollapsingLargeTitleHeader onHeightChange={onHeightChange} leftActions={leftActions} rightActions={rightActions}>
+      {/* The native iOS segmented control brings its own track/background, so it
+          renders directly — wrapping it in the old GlassSurface track doubled the
+          border. The padded segmentStack positions it under the large title. */}
       <View pointerEvents="box-none" style={styles.segmentStack}>
-        <View
-          style={[
-            styles.segmentTrack,
-            !nativeGlass && shadows.sm,
-            !nativeGlass && { borderWidth: StyleSheet.hairlineWidth, borderColor: systemColors.separator },
-          ]}
-        >
-          <GlassSurface
-            glassEffectStyle="regular"
-            fallbackColor={systemColors.fill}
-            borderRadius={SEGMENT_TRACK_RADIUS}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <SegmentedControl
-            options={segmentOptions}
-            selectedKey={activeTab}
-            onSelect={onSelectTab}
-            trackColor="transparent"
-            textVariant="footnote"
-            accessibilityLabel={dashboardTitle}
-          />
-        </View>
+        <SegmentedControl
+          options={segmentOptions}
+          selectedKey={activeTab}
+          onSelect={onSelectTab}
+          trackColor="transparent"
+          textVariant="footnote"
+          accessibilityLabel={dashboardTitle}
+        />
       </View>
     </CollapsingLargeTitleHeader>
   );
@@ -198,11 +177,6 @@ const styles = StyleSheet.create({
   segmentStack: {
     paddingHorizontal: spacing[4],
     paddingVertical: spacing[2],
-  },
-  segmentTrack: {
-    borderRadius: SEGMENT_TRACK_RADIUS,
-    // Clip the absolutely-filled GlassSurface to the rounded corners on Android.
-    overflow: 'hidden',
   },
   materialContainer: {
     position: 'absolute',

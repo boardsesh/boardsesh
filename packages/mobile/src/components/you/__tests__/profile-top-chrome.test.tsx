@@ -217,10 +217,11 @@ describe('ProfileTopChrome', () => {
       expect(onSelectTab).toHaveBeenCalledWith('logbook');
     });
 
-    it('wraps the segmented control in a glass track', () => {
+    it('renders the native segmented control without a glass-track wrapper', () => {
       const { container } = render(<ProfileTopChrome {...makeProps()} />);
-      // The glass branch mounts a GlassSurface track and a transparent track colour.
-      expect(container.querySelector('[data-slot="children"] [data-glass="true"]')).not.toBeNull();
+      // The native segmented control brings its own track, so it renders directly —
+      // wrapping it in a GlassSurface doubled the border, so the wrapper was dropped.
+      expect(container.querySelector('[data-glass="true"]')).toBeNull();
       expect(segments.entries.at(-1)!.trackColor).toBe('transparent');
     });
 
