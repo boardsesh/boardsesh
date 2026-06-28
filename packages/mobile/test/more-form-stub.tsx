@@ -12,7 +12,7 @@
 // register their own vi.mock, which takes precedence over this alias.
 
 import { Pressable, Switch, Text, View } from 'react-native';
-import { selectedOptionLabel } from '../src/components/MoreForm.logic';
+import { assertNeverRow, selectedOptionLabel } from '../src/components/MoreForm.logic';
 // The shared props type has no native imports, so it's safe in the node-env stub —
 // keeps the stub's contract from drifting from the real component.
 import type { MoreFormProps, MoreRow } from '../src/components/MoreForm.types';
@@ -59,6 +59,10 @@ function StubRow({ row }: { row: MoreRow }) {
           <Text>{row.label}</Text>
         </Pressable>
       );
+    // Match the real platform files: a future MoreRow kind that isn't handled is a
+    // compile error here, not a row that silently renders nothing.
+    default:
+      return assertNeverRow(row);
   }
 }
 

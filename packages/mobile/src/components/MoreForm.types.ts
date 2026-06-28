@@ -11,9 +11,30 @@
 // renders strings + invokes the row handlers only — all derived copy and haptics
 // live in the screen.
 //
-// `sfSymbol` is a plain string here (the `sf-symbols-typescript` SFSymbol union
-// isn't resolvable from this shared module); the iOS tree narrows it to the
-// Image `systemName` type at the call site.
+// Leading icons are SEMANTIC (`MoreIconName`), not a platform glyph string. Each
+// platform maps the name to its own native icon: iOS → an SF Symbol
+// (MoreForm.ios.tsx), Android → a Material XML vector drawable under
+// assets/material-icons/ (MoreForm.android.tsx). Keeping the model platform-neutral
+// lets both sides render real native icons from one source of truth.
+
+/**
+ * Semantic leading-icon name for a nav row, one per place the More screen links
+ * to. The platform files own the name → glyph mapping (SF Symbol on iOS, Material
+ * vector drawable on Android), so this union is the single contract between the
+ * screen and both renderers.
+ */
+export type MoreIconName =
+  | 'playlists'
+  | 'integrations'
+  | 'accessibility'
+  | 'translate'
+  | 'replay'
+  | 'changelog'
+  | 'devServers'
+  | 'otaChannel'
+  | 'featureFlags'
+  | 'branchSwitcher'
+  | 'editProfile';
 
 /** A choice in a segmented control or select menu. */
 export type MoreOption = {
@@ -23,15 +44,16 @@ export type MoreOption = {
 
 /**
  * A tappable row that navigates somewhere. Renders a trailing chevron; an
- * optional leading SF Symbol (iOS) and an optional trailing badge ("New" pill).
+ * optional leading semantic icon (an SF Symbol on iOS, a Material vector drawable
+ * on Android) and an optional trailing badge ("New" pill).
  */
 export type MoreNavRow = {
   kind: 'nav';
   key: string;
   label: string;
   subtitle?: string;
-  /** Leading SF Symbol name on iOS (e.g. `person.crop.circle` for Edit Profile). */
-  sfSymbol?: string;
+  /** Semantic leading icon; each platform maps it to its own native glyph. */
+  icon?: MoreIconName;
   /** Trailing badge text, e.g. the "New" pill on the changelog row. */
   badge?: string;
   onPress: () => void;
@@ -74,6 +96,14 @@ export type MoreButtonRow = {
   key: string;
   label: string;
   role?: 'destructive';
+  /**
+   * Visual weight. `'primary'` (default) is the full-strength affordance — a
+   * filled red block on Android, a body-size destructive row on iOS. `'subtle'`
+   * is a quieter, secondary destructive affordance (a text-only button on
+   * Android, a footnote-size row on iOS) so two destructive actions stacked
+   * together (Sign Out + Delete Account) don't read as equal heavy red blocks.
+   */
+  emphasis?: 'primary' | 'subtle';
   onPress: () => void;
 };
 

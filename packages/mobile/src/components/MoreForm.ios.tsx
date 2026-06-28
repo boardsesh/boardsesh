@@ -33,7 +33,7 @@ import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { assertNeverRow } from './MoreForm.logic';
-import type { MoreFormProps, MoreNavRow, MoreRow } from './MoreForm.types';
+import type { MoreFormProps, MoreIconName, MoreNavRow, MoreRow } from './MoreForm.types';
 
 // Hierarchical foreground styles for the system label colours SwiftUI uses in a
 // Settings list. Reused across rows so the palette can't drift.
@@ -42,10 +42,27 @@ const SECONDARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'secondar
 const TERTIARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'tertiary' });
 const FOOTNOTE = font({ textStyle: 'footnote' });
 
-// The SFSymbol union the Image `systemName` prop accepts. The model carries
-// `sfSymbol` as a plain string (the union isn't resolvable from the shared types
-// module), so narrow it here at the single call site.
+// The SFSymbol union the Image `systemName` prop accepts. The model carries a
+// semantic `MoreIconName`; map it to the SF Symbol here (the symbol union isn't
+// resolvable from the shared types module), then narrow at the single call site.
 type SystemImageName = NonNullable<ComponentProps<typeof Image>['systemName']>;
+
+// Semantic icon → SF Symbol. Kept as plain strings + cast at the call site (the
+// prior `sfSymbol` field was a string too) so an SF Symbol name that isn't in the
+// `sf-symbols-typescript` union doesn't fail the type-check.
+const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
+  playlists: 'music.note.list',
+  integrations: 'heart',
+  accessibility: 'accessibility',
+  translate: 'character.bubble',
+  replay: 'play.circle',
+  changelog: 'sparkles',
+  devServers: 'server.rack',
+  otaChannel: 'arrow.triangle.2.circlepath',
+  featureFlags: 'flag',
+  branchSwitcher: 'arrow.triangle.branch',
+  editProfile: 'person.crop.circle',
+};
 
 function NavRow({ row }: { row: MoreNavRow }) {
   return (
@@ -55,7 +72,9 @@ function NavRow({ row }: { row: MoreNavRow }) {
     // pill); the manual chevron is the disclosure indicator.
     <Button onPress={row.onPress} modifiers={row.badge ? [badgeModifier(row.badge)] : []}>
       <HStack spacing={spacing[3]}>
-        {row.sfSymbol ? <Image systemName={row.sfSymbol as SystemImageName} modifiers={[SECONDARY_LABEL]} /> : null}
+        {row.icon ? (
+          <Image systemName={IOS_SF_SYMBOL[row.icon] as SystemImageName} modifiers={[SECONDARY_LABEL]} />
+        ) : null}
         <VStack alignment="leading" spacing={spacing[1]}>
           <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
           {row.subtitle ? <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text> : null}
@@ -125,13 +144,17 @@ function renderRow(row: MoreRow, accent: string) {
         </Picker>
       );
     case 'button':
-      // `destructive` colours the label red; the action lives in the screen.
+      // `destructive` colours the label red; the action lives in the screen. A
+      // `subtle` button keeps the red but drops to footnote size so a secondary
+      // destructive action (Delete Account) reads quieter than the primary one
+      // (Sign Out) stacked above it, instead of two equal-weight red rows.
       return (
         <Button
           key={row.key}
           role={row.role === 'destructive' ? 'destructive' : undefined}
           label={row.label}
           onPress={row.onPress}
+          modifiers={row.emphasis === 'subtle' ? [FOOTNOTE] : []}
         />
       );
     default:
@@ -140,11 +163,14 @@ function renderRow(row: MoreRow, accent: string) {
 }
 
 export function MoreForm({ model }: MoreFormProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, colorScheme } = useTheme();
   const accent = brandAccentColor(brandColors);
 
   return (
-    <Host style={styles.host} useViewportSizeMeasurement>
+    // `colorScheme` forces the native appearance to follow our in-app Light/Dark
+    // toggle (`themeOverride`) instead of the OS scheme — harmless on iOS but the
+    // way the SwiftUI tree honours a non-system choice.
+    <Host style={styles.host} useViewportSizeMeasurement colorScheme={colorScheme}>
       <Form>
         {model.sections.map((section) => (
           <Section

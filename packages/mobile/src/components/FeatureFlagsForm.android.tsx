@@ -34,11 +34,14 @@ import { FEATURE_FLAG_CHOICES } from './FeatureFlagsForm.logic';
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, colorScheme } = useTheme();
   const segmentColors = segmentedBrandColors(brandColors);
 
   return (
-    <Host style={styles.host}>
+    // `colorScheme` forces the Compose MaterialTheme to follow the in-app
+    // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
+    // cards stay dark when the user picks "Light" in-app.
+    <Host style={styles.host} colorScheme={colorScheme}>
       <LazyColumn
         contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}
         verticalArrangement={{ spacedBy: spacing[3] }}

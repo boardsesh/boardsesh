@@ -26,7 +26,9 @@ import {
   Text,
   Switch,
   Button,
+  TextButton,
   Badge,
+  Icon,
   Spacer,
   SingleChoiceSegmentedButtonRow,
   SegmentedButton,
@@ -34,12 +36,30 @@ import {
   DropdownMenuItem,
 } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, padding, alpha, weight, clickable } from '@expo/ui/jetpack-compose/modifiers';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, type ColorValue, type ImageSourcePropType } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { segmentedBrandColors, switchBrandColors, type BrandControlColors } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
 import { assertNeverRow, selectedOptionLabel } from './MoreForm.logic';
-import type { MoreFormProps, MoreRow, MoreSelectRow } from './MoreForm.types';
+import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './MoreForm.types';
+
+// Semantic icon → Material XML vector drawable. The `.xml` files are bundled as
+// ASSETS (metro.config.js adds `xml` to resolver.assetExts), so `require()` gives
+// the Compose `Icon` a vector-drawable source it tints itself. White-filled
+// (#FFFFFFFF) so the `tint` recolours them; a missing `icon` renders no leading slot.
+const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
+  playlists: require('../../assets/material-icons/playlists.xml'),
+  integrations: require('../../assets/material-icons/integrations.xml'),
+  accessibility: require('../../assets/material-icons/accessibility.xml'),
+  translate: require('../../assets/material-icons/translate.xml'),
+  replay: require('../../assets/material-icons/replay.xml'),
+  changelog: require('../../assets/material-icons/changelog.xml'),
+  devServers: require('../../assets/material-icons/devServers.xml'),
+  otaChannel: require('../../assets/material-icons/otaChannel.xml'),
+  featureFlags: require('../../assets/material-icons/featureFlags.xml'),
+  branchSwitcher: require('../../assets/material-icons/branchSwitcher.xml'),
+  editProfile: require('../../assets/material-icons/editProfile.xml'),
+};
 
 // Trailing disclosure chevron. The Compose `Icon` needs a vector-drawable source,
 // so a muted `›` glyph stands in for the disclosure indicator on these nav rows.
@@ -50,6 +70,8 @@ type RowColors = {
   brandColors: BrandControlColors & { error: string };
   switchColors: ReturnType<typeof switchBrandColors>;
   segmentColors: ReturnType<typeof segmentedBrandColors>;
+  /** Tint for a nav row's leading Material icon — the secondary-label colour. */
+  iconTint: ColorValue;
 };
 
 function SelectRow({ row }: { row: MoreSelectRow }) {
@@ -94,6 +116,18 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
     case 'nav':
       return (
         <Row key={row.key} modifiers={[fillMaxWidth(), clickable(row.onPress), ROW_PADDING]} verticalAlignment="center">
+          {/* Leading Material icon (a bundled XML vector drawable), tinted to the
+              secondary-label colour with a trailing gap before the label column —
+              the normal Material list-row layout. Omitted when the row has no icon. */}
+          {row.icon ? (
+            <Icon
+              source={MORE_ICON_SOURCE[row.icon]}
+              size={22}
+              tint={colors.iconTint}
+              contentDescription={undefined}
+              modifiers={[padding(0, 0, spacing[3], 0)]}
+            />
+          ) : null}
           <Column modifiers={[weight(1)]} verticalArrangement={{ spacedBy: spacing[1] }}>
             <Text style={{ typography: 'bodyLarge' }}>{row.label}</Text>
             {row.subtitle ? (
@@ -149,6 +183,22 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
     case 'select':
       return <SelectRow key={row.key} row={row} />;
     case 'button':
+      // A `subtle` destructive action (Delete Account) renders as a TEXT button
+      // whose label is the error colour — a quieter, secondary affordance — so it
+      // doesn't read as a second heavy filled-red block next to the primary
+      // destructive action (Sign Out). Both stay red; only the weight differs.
+      if (row.role === 'destructive' && row.emphasis === 'subtle') {
+        return (
+          <TextButton
+            key={row.key}
+            onClick={row.onPress}
+            modifiers={[fillMaxWidth()]}
+            colors={{ contentColor: colors.brandColors.error }}
+          >
+            <Text>{row.label}</Text>
+          </TextButton>
+        );
+      }
       return (
         <Button
           key={row.key}
@@ -169,11 +219,12 @@ function renderRow(row: MoreRow, colors: RowColors): ReactNode {
 }
 
 export function MoreForm({ model }: MoreFormProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, systemColors, colorScheme } = useTheme();
   const colors: RowColors = {
     brandColors,
     switchColors: switchBrandColors(brandColors),
     segmentColors: segmentedBrandColors(brandColors),
+    iconTint: systemColors.secondaryLabel,
   };
 
   // Flatten sections into LazyColumn items: title Text, the rows (carded unless
@@ -208,7 +259,10 @@ export function MoreForm({ model }: MoreFormProps) {
   }
 
   return (
-    <Host style={styles.host}>
+    // `colorScheme` forces the Compose MaterialTheme to follow our in-app
+    // Light/Dark toggle (`themeOverride`) instead of the OS scheme — without it the
+    // cards stay dark when the user picks "Light" in-app.
+    <Host style={styles.host} colorScheme={colorScheme}>
       <LazyColumn
         contentPadding={{ start: spacing[4], top: spacing[4], end: spacing[4], bottom: spacing[10] }}
         verticalArrangement={{ spacedBy: spacing[3] }}

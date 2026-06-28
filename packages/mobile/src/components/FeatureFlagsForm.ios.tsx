@@ -38,11 +38,13 @@ import { FEATURE_FLAG_CHOICES, isFeatureFlagChoice } from './FeatureFlagsForm.lo
 import type { FeatureFlagsFormProps } from './FeatureFlagsForm.types';
 
 export function FeatureFlagsForm({ rows, onSelect, onReset, canReset, noticeText, title }: FeatureFlagsFormProps) {
-  const { brandColors } = useTheme();
+  const { brandColors, colorScheme } = useTheme();
   const accent = brandAccentColor(brandColors);
 
   return (
-    <Host style={styles.host} useViewportSizeMeasurement>
+    // `colorScheme` forces the native appearance to follow the in-app Light/Dark
+    // toggle (`themeOverride`) instead of the OS scheme.
+    <Host style={styles.host} useViewportSizeMeasurement colorScheme={colorScheme}>
       <Form>
         {/* `title` is the section header; `footer` carries the notice. A footer is a
             view slot, so it's a `<Text>` child, not a raw string. */}

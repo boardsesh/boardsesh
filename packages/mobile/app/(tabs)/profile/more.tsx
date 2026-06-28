@@ -140,15 +140,17 @@ export default function MoreScreen() {
     action();
   };
 
-  // Account action buttons (Sign Out / Delete Account) — destructive, no haptic,
-  // matching the old borderless red links. Shared between the signed-in and
-  // signed-out section layouts.
+  // Account action buttons — destructive, no haptic. Sign Out is the primary
+  // action (full-strength red); Delete Account is the quieter, secondary
+  // affordance (`emphasis: 'subtle'`) so the two don't read as equal heavy red
+  // blocks. Shared between the signed-in and signed-out section layouts.
   const accountActionRows: MoreButtonRow[] = [
     {
       kind: 'button',
       key: 'signOut',
       label: tProfile('mobile.signOut'),
       role: 'destructive',
+      emphasis: 'primary',
       onPress: () => {
         void signOut();
       },
@@ -158,6 +160,7 @@ export default function MoreScreen() {
       key: 'deleteAccount',
       label: tSettings('deleteAccount.button'),
       role: 'destructive',
+      emphasis: 'subtle',
       onPress: () => router.push('/(tabs)/profile/delete-account'),
     },
   ];
@@ -174,7 +177,7 @@ export default function MoreScreen() {
           kind: 'nav',
           key: 'allPlaylists',
           label: tPlaylists('library.allPlaylists.title'),
-          sfSymbol: 'music.note.list',
+          icon: 'playlists',
           onPress: navAction(() => router.push('/(tabs)/discover/all')),
         },
       ],
@@ -193,7 +196,7 @@ export default function MoreScreen() {
         subtitle: t(
           stravaEnabled ? 'mobile.more.integrations.subtitleWithStrava' : 'mobile.more.integrations.subtitle',
         ),
-        sfSymbol: 'heart',
+        icon: 'integrations',
         onPress: navAction(() => router.push('/(tabs)/profile/integrations')),
       },
     ],
@@ -273,7 +276,7 @@ export default function MoreScreen() {
         key: 'accessibility',
         label: t('mobile.more.accessibility.title'),
         subtitle: t('mobile.more.accessibility.rowSubtitleShort'),
-        sfSymbol: 'accessibility',
+        icon: 'accessibility',
         onPress: navAction(() => router.push('/(tabs)/profile/accessibility')),
       },
     ],
@@ -311,7 +314,7 @@ export default function MoreScreen() {
         key: 'helpTranslate',
         label: t('mobile.more.language.contributeTitle'),
         subtitle: t('mobile.more.language.contributeSubtitle', { language: LOCALE_LABELS[activeLocale] }),
-        sfSymbol: 'character.bubble',
+        icon: 'translate',
         onPress: navAction(handleHelpTranslate),
       },
     ],
@@ -347,7 +350,7 @@ export default function MoreScreen() {
         key: 'replay',
         label: t('mobile.onboarding.replayTitle'),
         subtitle: t('mobile.onboarding.replaySubtitle'),
-        sfSymbol: 'play.circle',
+        icon: 'replay',
         onPress: navAction(handleReplayWalkthrough),
       },
     ],
@@ -363,7 +366,7 @@ export default function MoreScreen() {
         key: 'changelog',
         label: t('mobile.more.changelogTitle'),
         subtitle: t('mobile.more.changelogSubtitle'),
-        sfSymbol: 'sparkles',
+        icon: 'changelog',
         badge: changelogUnseen ? t('mobile.more.newPill') : undefined,
         onPress: navAction(() => router.push('/changelog')),
       },
@@ -379,7 +382,7 @@ export default function MoreScreen() {
         key: 'metroServers',
         label: t('mobile.more.metroServersTitle'),
         subtitle: t('mobile.more.metroServersSubtitle'),
-        sfSymbol: 'server.rack',
+        icon: 'devServers',
         onPress: navAction(() => router.push('/(tabs)/profile/dev-servers')),
       });
     }
@@ -391,7 +394,7 @@ export default function MoreScreen() {
         label: 'Feature Flags',
         // i18n-ignore-next-line
         subtitle: 'Force feature flags on or off',
-        sfSymbol: 'flag',
+        icon: 'featureFlags',
         onPress: navAction(() => router.push('/(tabs)/profile/feature-flags')),
       });
     }
@@ -412,7 +415,7 @@ export default function MoreScreen() {
           label: 'Branch Switcher',
           // i18n-ignore-next-line
           subtitle: 'Switch EAS Update branch',
-          sfSymbol: 'arrow.triangle.branch',
+          icon: 'branchSwitcher',
           onPress: navAction(() => router.push('/(tabs)/profile/branch-switcher')),
         },
       ],
@@ -432,7 +435,7 @@ export default function MoreScreen() {
           kind: 'nav',
           key: 'editProfile',
           label: tSettings('profile.editAction'),
-          sfSymbol: 'person.crop.circle',
+          icon: 'editProfile',
           onPress: navAction(() => router.push('/(tabs)/profile/edit')),
         },
       ],

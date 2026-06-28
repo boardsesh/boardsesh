@@ -47,6 +47,14 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, 'node_modules'),
 ];
 
+// Bundle Android XML vector drawables (assets/material-icons/*.xml) as ASSETS so
+// @expo/ui's Compose `Icon` can load them via require() — the Material leading
+// icons on the MoreForm nav rows. The board renderer uses react-native-svg's
+// INLINE <Path> components (no .svg/.xml file imports, no svg/xml transformer, no
+// custom sourceExts), so nothing parses .xml through a transformer — moving `xml`
+// into assetExts is safe and doesn't affect react-native-svg.
+config.resolver.assetExts = [...(config.resolver.assetExts ?? []), 'xml'];
+
 // Force a single instance of the React-context singletons. bun's isolated
 // linker can materialise more than one physical copy of these (e.g. a shared
 // package like @boardsesh/board-react resolves its own peer-dep copy of
