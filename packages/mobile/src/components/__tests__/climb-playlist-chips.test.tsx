@@ -17,13 +17,6 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 
-vi.mock('react-native-reanimated', () => ({
-  default: {
-    View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-strip': 'true' }, children),
-  },
-  FadeIn: { duration: () => ({}) },
-}));
-
 vi.mock('../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
@@ -101,14 +94,14 @@ describe('ClimbPlaylistChips', () => {
 
   it('renders nothing when the climb is in no playlists', () => {
     const { container } = render(<ClimbPlaylistChips climbUuid="c1" />);
-    expect(container.querySelector('[data-strip]')).toBeNull();
+    expect(container.textContent).toBe('');
   });
 
   it('renders nothing when no playlists provider is mounted', () => {
     ctrl.membership = new Set(['p1']);
     ctrl.playlistsById = undefined;
     const { container } = render(<ClimbPlaylistChips climbUuid="c1" />);
-    expect(container.querySelector('[data-strip]')).toBeNull();
+    expect(container.textContent).toBe('');
   });
 
   it('renders a chip per membership when there are two or fewer', () => {

@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { Text } from './Text';
 import { useTheme } from '../providers/theme-provider';
 import { usePlaylistsContextOptional } from '../providers/playlists-provider';
@@ -83,9 +82,12 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climb
   });
   const chipRadius = selectByVariant(variant, { liquidGlass: borderRadius.full, material: borderRadius.md });
 
+  // No mount animation: FlashList recycles cells, so a recycled row scrolling
+  // back into view would replay a fade for already-known membership (a visible
+  // flash). The row height is pinned by the thumbnail, so chips appearing causes
+  // no reflow — matches `AscentStatusGlyph`, which also just appears.
   return (
-    <Animated.View
-      entering={FadeIn.duration(150)}
+    <View
       style={styles.row}
       pointerEvents="none"
       accessibilityElementsHidden
@@ -118,7 +120,7 @@ export const ClimbPlaylistChips = React.memo(function ClimbPlaylistChips({ climb
           </Text>
         </View>
       ) : null}
-    </Animated.View>
+    </View>
   );
 });
 
