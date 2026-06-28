@@ -11,8 +11,6 @@ type Segments = readonly string[];
 
 const TABS_GROUP = '(tabs)';
 const CLIMBS_TAB = 'climbs';
-const GYMS_ROUTE = 'gyms';
-const AUTH_GROUP = 'auth';
 const PLAYER_ROUTE = 'play';
 
 /** True when the focused route lives inside the bottom-tab navigator. */
@@ -21,33 +19,20 @@ export function isTabsRoute(segments: Segments): boolean {
 }
 
 /**
- * True when the native bottom tab chrome (tab bar + `NativeTabs.BottomAccessory` +
- * the search field) should stay mounted and STABLE — inside the tabs, OR under the
- * player route (`/play`).
+ * True when the native bottom tab CHROME (the tab bar) is present and STABLE — on any
+ * route inside the tabs (including pushed sub-routes, which keep the tab bar), OR under
+ * the player route (`/play`).
  *
  * The player is a `transparentModal` (app/_layout.tsx): the tabs screen stays LIVE
  * behind it, so UIKit never snapshots the presenting view controller. That lets the
- * accessory + tab-bar metrics stay put across the player's open/close instead of
- * churning — keeping the host mounted under a transparent modal is snapshot-free
- * (no doubled climb name) AND avoids the native tab-bar height change that would
- * otherwise shove the docked Climbs search field.
+ * tab-bar metrics stay put across the player's open/close instead of churning.
  *
- * Used by `useInsideTabs` (the accessory host mount gate) and `useBottomChromeMetrics`
- * (the underlying-screen layout). Other root surfaces (boards / share-beta /
- * onboarding) are NOT included — they're opaque pushes/modals that should still
- * unmount the accessory.
+ * Drives the tab-bar height/padding in `useBottomChromeMetrics`. NOTE: this is the
+ * *tab bar* gate, not the accessory gate — the bottom accessory mounts only on a
+ * top-level tab page (see `isAccessorySurfaceRoute`), which is a stricter surface.
  */
 export function isTabsChromeRoute(segments: Segments): boolean {
   return segments[0] === TABS_GROUP || segments[0] === PLAYER_ROUTE;
-}
-
-/**
- * True when the focused route is the sign-in / sign-up flow (`/auth/*`). The user
- * isn't signed in there, so the persistent climb accessory has nothing to act on
- * and shouldn't float over the login screen.
- */
-export function isAuthRoute(segments: Segments): boolean {
-  return segments[0] === AUTH_GROUP;
 }
 
 /** True when the focused route is the Climbs tab (or one of its sub-routes). */
@@ -56,25 +41,39 @@ export function isClimbsTabRoute(segments: Segments): boolean {
 }
 
 /**
- * True when the focused route is the gym-discovery map screen (`/gyms`). The
- * map owns the whole screen there, so the persistent climb accessory is hidden
- * to keep it from overlapping the map + bottom sheet.
+ * True only on a tab's own top-level page — its index (`/(tabs)/home`,
+ * `/(tabs)/climbs`, …), never a pushed sub-route inside that tab (session detail,
+ * settings, climb filters, the climb redirector). A tab index is the only route
+ * that's ≤ 2 segments deep under `(tabs)` (`['(tabs)']` or `['(tabs)', '<tab>']`);
+ * every sub-route is `['(tabs)', '<tab>', …]` (≥ 3). The current-climb accessory
+ * bar shows only on these top-level tab surfaces.
  */
-export function isGymDiscoveryRoute(segments: Segments): boolean {
-  return segments[0] === GYMS_ROUTE;
+export function isTopLevelTabRoute(segments: Segments): boolean {
+  return segments[0] === TABS_GROUP && segments.length <= 2;
 }
 
 /**
- * True when the full-screen now-playing player route (`/play`) is focused. The
- * player is a self-contained surface with its own queue UI, so the persistent
- * climb accessory / queue bar must not float over it.
+ * True when the full-screen now-playing player route (`/play`) is focused.
  *
- * On iOS the native bottom accessory is deliberately kept mounted under the
- * transparent player (see `isTabsChromeRoute`) and stays occluded behind it, so
- * the JS bar is already suppressed there via `nativeAccessoryMounted`. Android
- * has no native accessory, so the JS bar needs this explicit gate or it shows
- * over the player.
+ * The player is a self-contained surface with its own queue UI. On iOS the native
+ * bottom accessory is deliberately kept mounted under the transparent player (see
+ * `isAccessorySurfaceRoute`) and stays occluded behind it, so nothing doubles and the
+ * tab-bar height doesn't churn.
  */
 export function isPlayerRoute(segments: Segments): boolean {
   return segments[0] === PLAYER_ROUTE;
+}
+
+/**
+ * True on the surfaces where the current-climb bottom accessory should be MOUNTED:
+ * a top-level tab page, OR under the player (`/play`).
+ *
+ * The player is a `transparentModal` over the live tabs, so the accessory stays
+ * mounted-but-occluded under it; unmounting there would churn the native tab-bar
+ * height and shove the docked Climbs search field (see `isTabsChromeRoute`). Pushed
+ * tab sub-routes and other root pushes/modals are NOT accessory surfaces — the bar
+ * is hidden there.
+ */
+export function isAccessorySurfaceRoute(segments: Segments): boolean {
+  return isTopLevelTabRoute(segments) || isPlayerRoute(segments);
 }

@@ -8,10 +8,10 @@ const cfg = vi.hoisted(() => ({
   sessionId: null as string | null,
   nativeAccessoryActive: true,
   hasCurrentClimb: false,
-  // Whether the focused route is inside the (tabs) group. The native bottom
-  // accessory only mounts on-tabs; a root-level push (session detail) or modal
-  // takes the tab bar off screen, so the host unmounts there.
-  insideTabs: true,
+  // Whether the focused route is an accessory surface (a top-level tab page, or the
+  // player). The native bottom accessory only mounts there; a pushed sub-route
+  // (session detail) or a root modal takes it off the surface, so the host unmounts.
+  onAccessorySurface: true,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   // Whether the device can render real iOS 26 glass chrome. The native tab bar
   // mounts only for the Liquid Glass variant on a capable device; everything else
@@ -49,11 +49,11 @@ vi.mock('../../../src/hooks/use-sticky-accessory-presence', () => ({
   useStickyAccessoryPresence: () => cfg.hasCurrentClimb,
 }));
 
-// Route gate on the accessory mount: false once a root push/modal slides the tab
-// bar (and its accessory) off screen. Driven by useSegments() + isTabsRoute in the
-// real hook; the route-segment split is unit-tested in route-segments.test.
-vi.mock('../../../src/hooks/use-inside-tabs', () => ({
-  useInsideTabs: () => cfg.insideTabs,
+// Route gate on the accessory mount: false on a pushed sub-route or root modal that
+// takes the bar off a top-level tab. Driven by useSegments() + isAccessorySurfaceRoute
+// in the real hook; the route-segment split is unit-tested in route-segments.test.
+vi.mock('../../../src/hooks/use-on-accessory-surface', () => ({
+  useOnAccessorySurface: () => cfg.onAccessorySurface,
 }));
 
 vi.mock('../../../src/components/queue-control/QueueBottomAccessory', () => ({
@@ -159,7 +159,7 @@ describe('TabLayout', () => {
     cfg.sessionId = null;
     cfg.nativeAccessoryActive = true;
     cfg.hasCurrentClimb = false;
-    cfg.insideTabs = true;
+    cfg.onAccessorySurface = true;
     cfg.variant = 'liquidGlass';
     cfg.glassCapable = true;
     cfg.platformOS = 'ios';
@@ -263,13 +263,13 @@ describe('TabLayout', () => {
     expect(container.querySelector('[data-bottom-accessory="true"]')).toBeNull();
   });
 
-  it('skips the native bottom accessory when outside the tabs group', () => {
-    // A root push (session detail) or modal slides the tab bar off screen. Unmount
-    // the accessory host there so UIKit doesn't keep a stale glass-platter snapshot
-    // that re-presents doubled on return.
+  it('skips the native bottom accessory off a top-level tab (pushed sub-route or modal)', () => {
+    // Pushing a sub-route (session detail) or a root modal takes the bar off a
+    // top-level tab. Unmount the accessory host there so UIKit doesn't keep a stale
+    // glass-platter snapshot that re-presents doubled on return.
     cfg.nativeAccessoryActive = true;
     cfg.hasCurrentClimb = true;
-    cfg.insideTabs = false;
+    cfg.onAccessorySurface = false;
 
     const { container } = render(<TabLayout />);
 

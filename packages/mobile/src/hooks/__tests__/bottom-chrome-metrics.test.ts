@@ -20,6 +20,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: false,
       insetsBottom: 34,
       insideTabs: false,
+      onAccessorySurface: false,
       hasCurrentClimb: false,
       nativeAccessoryMounted: false,
     });
@@ -38,6 +39,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: true,
       insetsBottom: 0,
       insideTabs: true,
+      onAccessorySurface: true,
       hasCurrentClimb: true,
       nativeAccessoryMounted: false,
     });
@@ -57,6 +59,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: false,
       insetsBottom: 0,
       insideTabs: true,
+      onAccessorySurface: true,
       hasCurrentClimb: true,
       nativeAccessoryMounted: false,
     });
@@ -75,6 +78,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: false,
       insetsBottom: 0,
       insideTabs: true,
+      onAccessorySurface: true,
       hasCurrentClimb: true,
       nativeAccessoryMounted: false,
     });
@@ -92,6 +96,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: true,
       insetsBottom: 0,
       insideTabs: true,
+      onAccessorySurface: true,
       hasCurrentClimb: true,
       nativeAccessoryMounted: true,
     });
@@ -106,19 +111,62 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE);
   });
 
-  it('reserves queue chrome for fixed footers outside the tabs group', () => {
+  it('hides the bar but keeps tab-bar clearance on a pushed sub-route (Material)', () => {
+    // A tab sub-route (session detail, filters): still inside the tabs (tab bar
+    // present) but NOT an accessory surface, so no JS toolbar and no toolbar reserve —
+    // only the tab bar is cleared.
+    const metrics = computeBottomChromeMetrics({
+      uiVariant: 'material',
+      usesNativeTabBar: false,
+      insetsBottom: 24,
+      insideTabs: true,
+      onAccessorySurface: false,
+      hasCurrentClimb: true,
+      nativeAccessoryMounted: false,
+    });
+    expect(metrics.jsQueueToolbarVisible).toBe(false);
+    expect(metrics.jsQueueReserve).toBe(0);
+    expect(metrics.tabBarHeight).toBe(MATERIAL_TAB_BAR_HEIGHT);
+    expect(metrics.scrollBottomPadding).toBe(24 + MATERIAL_TAB_BAR_HEIGHT);
+  });
+
+  it('hides both bars on a pushed sub-route even with a climb (glass)', () => {
+    // On glass the accessory host unmounts off the top-level tab, so nothing shows;
+    // the tab bar still overlays content underneath.
+    const metrics = computeBottomChromeMetrics({
+      uiVariant: 'liquidGlass',
+      usesNativeTabBar: true,
+      insetsBottom: 0,
+      insideTabs: true,
+      onAccessorySurface: false,
+      hasCurrentClimb: true,
+      nativeAccessoryMounted: false,
+    });
+    expect(metrics.nativeAccessoryVisible).toBe(false);
+    expect(metrics.jsQueueToolbarVisible).toBe(false);
+    expect(metrics.jsQueueReserve).toBe(0);
+    expect(metrics.tabBarHeight).toBe(TAB_BAR_HEIGHT);
+    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT);
+  });
+
+  it('reserves no queue chrome for fixed footers outside the tabs group', () => {
+    // The climb bar only shows on top-level tab pages now, so a root-level surface
+    // (outside the tabs group) reserves nothing for it.
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       usesNativeTabBar: false,
       insetsBottom: 34,
       insideTabs: false,
+      onAccessorySurface: false,
       hasCurrentClimb: true,
       nativeAccessoryMounted: false,
     });
 
     expect(metrics.tabBarHeight).toBe(0);
-    expect(metrics.scrollBottomPadding).toBe(34 + TOOLBAR_RESERVE);
-    expect(metrics.fixedFooterBottom).toBe(34 + TOOLBAR_RESERVE);
+    expect(metrics.jsQueueToolbarVisible).toBe(false);
+    expect(metrics.jsQueueReserve).toBe(0);
+    expect(metrics.scrollBottomPadding).toBe(34);
+    expect(metrics.fixedFooterBottom).toBe(34);
   });
 
   it('keeps the tab bar but no toolbar reserve when no climb is set, even if the accessory is mounted', () => {
@@ -127,6 +175,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: true,
       insetsBottom: 34,
       insideTabs: true,
+      onAccessorySurface: true,
       hasCurrentClimb: false,
       nativeAccessoryMounted: true,
     });
@@ -143,6 +192,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: false,
       insetsBottom: 24,
       insideTabs: true,
+      onAccessorySurface: true,
       hasCurrentClimb: false,
       nativeAccessoryMounted: false,
     });
@@ -161,6 +211,7 @@ describe('computeBottomChromeMetrics', () => {
       usesNativeTabBar: true,
       insetsBottom: 0,
       insideTabs: true,
+      onAccessorySurface: true,
       hasCurrentClimb: true,
       nativeAccessoryMounted: true,
     });
@@ -169,17 +220,20 @@ describe('computeBottomChromeMetrics', () => {
   });
 
   it('never reports both the JS toolbar and the native accessory as visible at once', () => {
-    for (const hasCurrentClimb of [true, false]) {
-      for (const nativeAccessoryMounted of [true, false]) {
-        const metrics = computeBottomChromeMetrics({
-          uiVariant: 'liquidGlass',
-          usesNativeTabBar: true,
-          insetsBottom: 0,
-          insideTabs: true,
-          hasCurrentClimb,
-          nativeAccessoryMounted,
-        });
-        expect(metrics.jsQueueToolbarVisible && metrics.nativeAccessoryVisible).toBe(false);
+    for (const onAccessorySurface of [true, false]) {
+      for (const hasCurrentClimb of [true, false]) {
+        for (const nativeAccessoryMounted of [true, false]) {
+          const metrics = computeBottomChromeMetrics({
+            uiVariant: 'liquidGlass',
+            usesNativeTabBar: true,
+            insetsBottom: 0,
+            insideTabs: true,
+            onAccessorySurface,
+            hasCurrentClimb,
+            nativeAccessoryMounted,
+          });
+          expect(metrics.jsQueueToolbarVisible && metrics.nativeAccessoryVisible).toBe(false);
+        }
       }
     }
   });
@@ -191,6 +245,7 @@ describe('computeBottomChromeMetrics', () => {
         usesNativeTabBar: false,
         insetsBottom: 24,
         insideTabs: true,
+        onAccessorySurface: true,
         hasCurrentClimb: true,
         nativeAccessoryMounted: false,
       });
@@ -206,6 +261,7 @@ describe('computeBottomChromeMetrics', () => {
         usesNativeTabBar: true,
         insetsBottom: 139,
         insideTabs: true,
+        onAccessorySurface: true,
         hasCurrentClimb: true,
         nativeAccessoryMounted: true,
       });
@@ -222,6 +278,7 @@ describe('computeBottomChromeMetrics', () => {
         usesNativeTabBar: false,
         insetsBottom: 34,
         insideTabs: true,
+        onAccessorySurface: true,
         hasCurrentClimb: true,
         nativeAccessoryMounted: false,
       });

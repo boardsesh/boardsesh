@@ -8,9 +8,10 @@ import type { ClimbQueueItem } from '@boardsesh/queue';
 const cfg = vi.hoisted(() => ({
   onClimbsTab: true,
   insideTabs: true,
-  onGymDiscovery: false,
-  onAuthRoute: false,
-  onPlayerRoute: false,
+  // The bar shows only on a top-level tab page; `onAccessorySurface` (top-level OR
+  // player) additionally drives the bottom-chrome arbitration the bar reads.
+  onTopLevelTab: true,
+  onAccessorySurface: true,
   currentClimbQueueItem: { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem | null,
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   measuredTabBarHeight: null as number | null,
@@ -52,9 +53,9 @@ vi.mock('../../../lib/route-segments', () => ({
   // The player route counts as chrome-mounted; these tests don't exercise /play,
   // so it tracks the same `insideTabs` config as the tab-chrome predicate.
   isTabsChromeRoute: () => cfg.insideTabs,
-  isGymDiscoveryRoute: () => cfg.onGymDiscovery,
-  isAuthRoute: () => cfg.onAuthRoute,
-  isPlayerRoute: () => cfg.onPlayerRoute,
+  // The bar's own route gate (top-level tab only) and the bottom-chrome surface gate.
+  isTopLevelTabRoute: () => cfg.onTopLevelTab,
+  isAccessorySurfaceRoute: () => cfg.onAccessorySurface,
 }));
 vi.mock('../../../providers/queue-provider', () => ({
   useQueue: () => ({ state: { currentClimbQueueItem: cfg.currentClimbQueueItem } }),
@@ -132,9 +133,8 @@ describe('PersistentQueueBar', () => {
   beforeEach(() => {
     cfg.onClimbsTab = true;
     cfg.insideTabs = true;
-    cfg.onGymDiscovery = false;
-    cfg.onAuthRoute = false;
-    cfg.onPlayerRoute = false;
+    cfg.onTopLevelTab = true;
+    cfg.onAccessorySurface = true;
     cfg.currentClimbQueueItem = { climb: { uuid: 'c1', angle: 40 } } as unknown as ClimbQueueItem;
     cfg.variant = 'liquidGlass';
     cfg.measuredTabBarHeight = null;
@@ -148,35 +148,48 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-capsule]')).toBeNull();
   });
 
-  it('shows the capsule and standalone tick when a climb is current', () => {
+  it('shows the capsule and standalone tick on a top-level tab page', () => {
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).not.toBeNull();
     expect(container.querySelector('[data-tick]')).not.toBeNull();
   });
 
+  it('renders nothing on a pushed sub-route inside a tab', () => {
+    // Session detail, climb filters, settings — a tab sub-route is not a top-level
+    // tab page, so the climb bar is hidden there even with a current climb.
+    cfg.onTopLevelTab = false;
+    cfg.onAccessorySurface = false;
+    const { container } = render(<PersistentQueueBar />);
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
+  });
+
   it('renders nothing on the gym-discovery map route', () => {
-    // The /gyms screen is a full-bleed map with its own bottom sheet, so the
-    // climb accessory is suppressed there even with a current climb.
-    cfg.onGymDiscovery = true;
+    // The /gyms screen is a full-bleed map — not a top-level tab, so the climb bar
+    // is suppressed there even with a current climb.
+    cfg.onTopLevelTab = false;
+    cfg.onAccessorySurface = false;
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
   it('renders nothing on the auth (login) route', () => {
-    // Pre-auth screens have no user to tick for — a leftover queued or "on the
-    // wall" climb must not float a tick bar over the login screen.
-    cfg.onAuthRoute = true;
+    // Pre-auth screens aren't tabs — a leftover queued or "on the wall" climb must
+    // not float a tick bar over the login screen.
+    cfg.onTopLevelTab = false;
+    cfg.onAccessorySurface = false;
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
   it('renders nothing on the full-screen player route', () => {
-    // The /play player owns the whole surface (with its own queue UI). On iOS the
-    // native accessory hides this, but on Android (no native accessory) the bar
-    // would otherwise float over the player, so it's suppressed by route.
-    cfg.onPlayerRoute = true;
+    // The /play player owns the whole surface. The native accessory host stays
+    // mounted (occluded) under the transparent player, so `onAccessorySurface` is
+    // true — but it's not a top-level tab, so the JS bar is gated off by route.
+    cfg.onTopLevelTab = false;
+    cfg.onAccessorySurface = true;
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).toBeNull();
     expect(container.querySelector('[data-tick]')).toBeNull();
@@ -193,20 +206,24 @@ describe('PersistentQueueBar', () => {
     expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('keeps the JS toolbar fallback outside tabs when the native accessory path is active', () => {
+  it('renders nothing outside the top-level tabs even when the native accessory path is active', () => {
+    // The bar is restricted to top-level tab pages, so a glass-capable device on a
+    // non-tab / root surface shows nothing (it used to keep a JS fallback here).
     cfg.nativeAccessoryActive = true;
     cfg.nativeTabBar = true;
     cfg.insideTabs = false;
+    cfg.onTopLevelTab = false;
+    cfg.onAccessorySurface = false;
 
     const { container } = render(<PersistentQueueBar />);
 
-    expect(container.querySelector('[data-capsule]')).not.toBeNull();
-    expect(container.querySelector('[data-tick]')).not.toBeNull();
+    expect(container.querySelector('[data-capsule]')).toBeNull();
+    expect(container.querySelector('[data-tick]')).toBeNull();
   });
 
-  it('shows the tick on every tab — parity with the always-on native accessory', () => {
-    // Even off the Climbs tab the fallback keeps the tick so an ascent can be
-    // logged from anywhere, matching the iOS 26 bottom accessory.
+  it('shows the tick on every top-level tab — parity with the always-on native accessory', () => {
+    // Even off the Climbs tab (e.g. the Profile tab index) the fallback keeps the
+    // tick so an ascent can be logged, matching the iOS 26 bottom accessory.
     cfg.onClimbsTab = false;
     const { container } = render(<PersistentQueueBar />);
     expect(container.querySelector('[data-capsule]')).not.toBeNull();

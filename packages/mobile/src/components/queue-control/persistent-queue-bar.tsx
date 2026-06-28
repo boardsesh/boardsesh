@@ -21,7 +21,7 @@ import { MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT, TOOLBAR_RESERVE, TAB_BAR_HEIGHT, gl
 import { useQueue } from '../../providers/queue-provider';
 import { useTheme } from '../../providers/theme-provider';
 import { selectByVariant } from '../../theme/variants';
-import { isAuthRoute, isGymDiscoveryRoute, isPlayerRoute } from '../../lib/route-segments';
+import { isTopLevelTabRoute } from '../../lib/route-segments';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { ActiveContextBar } from './ActiveContextBar';
 import { ClimbCapsule } from './ClimbCapsule';
@@ -42,16 +42,12 @@ export function PersistentQueueBar() {
   const currentClimb = state.currentClimbQueueItem?.climb ?? null;
 
   if (!currentClimb) return null;
-  // The sign-in / sign-up flow is pre-auth — a leftover queued or "on the wall"
-  // climb must not float a tick bar over the login screen.
-  if (isAuthRoute(segments)) return null;
-  // The gym-discovery screen is a full-bleed map with its own bottom sheet — the
-  // climb accessory would overlap it, so suppress it there.
-  if (isGymDiscoveryRoute(segments)) return null;
-  // The full-screen player owns the whole surface (with its own queue UI). On iOS
-  // the line below already hides this via the mounted native accessory, but on
-  // Android (no native accessory) the bar would otherwise show over the player.
-  if (isPlayerRoute(segments)) return null;
+  // Show the climb bar only on a top-level tab page (a tab's own index), never on a
+  // pushed sub-route or any root push/modal. This single gate subsumes the old
+  // per-surface bail-outs — auth, gym-discovery, and the player are all non-tab
+  // routes, and every in-tab sub-route is ≥ 3 segments deep, so all of them read as
+  // not-top-level here.
+  if (!isTopLevelTabRoute(segments)) return null;
   if (!bottomChrome.jsQueueToolbarVisible && bottomChrome.nativeAccessoryMounted) return null;
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useSegments } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../providers/theme-provider';
-import { isTabsChromeRoute } from '../lib/route-segments';
+import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
 import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { useNativeAccessoryActive, useNativeTabBar } from './use-bottom-accessory';
 import { computeBottomChromeMetrics } from './bottom-chrome-metrics';
@@ -24,12 +24,16 @@ export function useBottomChromeMetrics() {
   // accessory host actually shows (incl. its brief presence-blip hold).
   const hasCurrentClimb = useStickyAccessoryPresence();
   const { variant } = useTheme();
-  // Treat the player route as chrome-mounted (it's a modal over the tabs) so the
-  // accessory + tab-bar metrics don't churn across its open/close — see
-  // isTabsChromeRoute. Other root surfaces still read as outside-tabs.
+  // The TAB BAR is present on every tab route, including pushed sub-routes (session
+  // detail keeps it). The player route counts too (it's a modal over the live tabs)
+  // so the tab-bar metrics don't churn across its open/close — see isTabsChromeRoute.
   const insideTabs = isTabsChromeRoute(segments);
+  // The ACCESSORY only shows on a top-level tab page (plus occluded under the player).
+  // Keep it separate from `insideTabs` so a pushed sub-route still reserves tab-bar
+  // height but no longer reserves accessory/toolbar space for a bar that's gone.
+  const onAccessorySurface = isAccessorySurfaceRoute(segments);
   const nativeAccessoryActive = useNativeAccessoryActive();
-  const nativeAccessoryMounted = insideTabs && nativeAccessoryActive;
+  const nativeAccessoryMounted = onAccessorySurface && nativeAccessoryActive;
   const nativeTabBar = useNativeTabBar();
   const usesNativeTabBar = insideTabs && nativeTabBar;
 
@@ -40,9 +44,10 @@ export function useBottomChromeMetrics() {
         usesNativeTabBar,
         insetsBottom: insets.bottom,
         insideTabs,
+        onAccessorySurface,
         hasCurrentClimb,
         nativeAccessoryMounted,
       }),
-    [variant, usesNativeTabBar, insets.bottom, insideTabs, hasCurrentClimb, nativeAccessoryMounted],
+    [variant, usesNativeTabBar, insets.bottom, insideTabs, onAccessorySurface, hasCurrentClimb, nativeAccessoryMounted],
   );
 }

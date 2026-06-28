@@ -34,8 +34,14 @@ export type BottomChromeInputs = {
   usesNativeTabBar: boolean;
   /** Bottom safe-area inset. */
   insetsBottom: number;
-  /** Whether the current route is inside the (tabs) group (tab bar present). */
+  /** Whether the current route is inside the (tabs) group (tab bar present, incl. sub-routes). */
   insideTabs: boolean;
+  /**
+   * Whether the current route is a surface where the climb accessory/toolbar shows —
+   * a top-level tab page (or occluded under the player). Pushed sub-routes are inside
+   * the tabs (tab bar present) but NOT accessory surfaces, so the bar is hidden there.
+   */
+  onAccessorySurface: boolean;
   /** Whether a climb is currently set (drives the toolbar / accessory). */
   hasCurrentClimb: boolean;
   /** Whether the iOS 26 native bottom accessory is mounted (it replaces the JS toolbar). */
@@ -100,11 +106,15 @@ export function computeBottomChromeMetrics({
   usesNativeTabBar,
   insetsBottom,
   insideTabs,
+  onAccessorySurface,
   hasCurrentClimb,
   nativeAccessoryMounted,
 }: BottomChromeInputs): BottomChromeMetrics {
   const nativeAccessoryVisible = nativeAccessoryMounted && hasCurrentClimb;
-  const jsQueueToolbarVisible = hasCurrentClimb && !nativeAccessoryMounted;
+  // The JS toolbar only mounts on an accessory surface (a top-level tab) when the
+  // native accessory isn't owning the climb. On a pushed sub-route `onAccessorySurface`
+  // is false, so no JS bar — and no `jsQueueReserve` for a bar that isn't there.
+  const jsQueueToolbarVisible = onAccessorySurface && hasCurrentClimb && !nativeAccessoryMounted;
   // The native iOS tab bar is 49pt; the JS M3 `MaterialTabBar` is taller. Key this
   // on the *rendered* bar, not the variant — Liquid Glass on iOS < 26 / Android
   // falls back to the JS bar. Floating overlays (FAB, snackbar) and scroll padding

@@ -52,10 +52,12 @@ export function AccessoryOnboardingTip() {
     void markTipSeen(ONBOARDING_TIP_ACCESSORY_KEY);
   }, []);
 
-  // Tie the tip to the bar it points at: if the current climb clears (the
-  // accessory bar disappears) before the user dismisses, hide the tip too. It
-  // stays armed (tipVisible) and re-shows when the bar returns, until dismissed.
-  if (!tipVisible || !hasCurrentClimb) return null;
+  // Tie the tip to the bar it points at: it floats only while a bar is actually on
+  // screen. The bar shows only on a top-level tab page, so on a pushed sub-route
+  // (where there's no bar) `barVisible` is false and the tip hides — it stays armed
+  // (tipVisible) and re-shows when the user returns to a tab, until dismissed.
+  const barVisible = bottomChrome.nativeAccessoryVisible || bottomChrome.jsQueueToolbarVisible;
+  if (!tipVisible || !hasCurrentClimb || !barVisible) return null;
 
   return (
     <View
