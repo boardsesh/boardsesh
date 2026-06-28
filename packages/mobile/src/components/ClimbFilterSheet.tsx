@@ -1,11 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
 import { View, Pressable, StyleSheet, type ViewStyle } from 'react-native';
-// react-native-gesture-handler's ScrollView (not the bare RN one) for the
-// horizontal sort-by chip rail: nested inside the sheet's vertical
-// BottomSheetScrollView, a plain RN ScrollView won't scroll on Android because
-// the parent scroll/pan gestures capture the touch. The gesture-handler
-// scrollable coordinates nested scrolling correctly.
-import { ScrollView } from 'react-native-gesture-handler';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -843,11 +837,11 @@ export function ClimbFilterSheet({
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.sortBy')}
               </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalChipRow}
-              >
+              {/* Flex-wrap (matching the popularity/rating chip rows above), not a
+                  horizontal ScrollView: a gesture-handler ScrollView nested in the
+                  native bottom sheet collapsed the chip row's height on iOS and
+                  clipped the labels. SORT_OPTIONS is short, so wrapping is fine. */}
+              <View style={styles.chipRow}>
                 {SORT_OPTIONS.map((option) => (
                   <Chip
                     key={option}
@@ -856,7 +850,7 @@ export function ClimbFilterSheet({
                     onPress={() => handleSortByChange(option)}
                   />
                 ))}
-              </ScrollView>
+              </View>
               <View style={styles.subsectionGap} />
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.sortOrderLabel')}
@@ -926,10 +920,6 @@ const styles = StyleSheet.create({
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing[2],
-  },
-  horizontalChipRow: {
-    flexDirection: 'row',
     gap: spacing[2],
   },
   chipText: {
