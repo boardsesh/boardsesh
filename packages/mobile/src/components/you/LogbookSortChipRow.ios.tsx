@@ -1,19 +1,6 @@
-// Top-level sort chips for the logbook toolbar (the GitHub-PR-view idiom),
-// promoting the Latest/Hardest sort out of LogbookFilterSheet so the user can
-// switch sort without opening the sheet. Built from native @expo/ui SwiftUI
-// controls so the chips are real iOS 26 Liquid Glass capsules. iOS (Liquid
-// Glass) only — the Android counterpart is LogbookSortChipRow.android.tsx and
-// keeps the sheet's sort control. Mounted on Liquid Glass by the caller; when
-// shown, the sheet's own Sort block is suppressed so sort is never worded twice.
-//
-// Mirrors FilterChipRow.ios.tsx's <Host> / ScrollView / HStack / chipModifiers
-// structure, pared down to two mutually-exclusive chips:
-//   Latest  → preset 'recent'   (the resting default)
-//   Hardest → preset 'hardest'
-//
-// Each tap commits live through onSelectPreset (the tab's setPreset, which
-// persists). Labels reuse the filter sheet's i18n preset keys so a sort is
-// never worded two ways.
+// Latest/Hardest sort as native @expo/ui SwiftUI glass chips, mirroring the
+// climb list's FilterChipRow.ios.tsx. iOS-26 Liquid Glass only; the caller
+// suppresses the sheet's Sort block while these show.
 
 import { memo, useCallback } from 'react';
 import { StyleSheet } from 'react-native';
@@ -28,11 +15,8 @@ function LogbookSortChipRowComponent({ preset, onSelectPreset }: LogbookSortChip
   const { t } = useTranslation('you');
   const { brandColors } = useTheme();
 
-  // Real iOS 26 Liquid Glass: the inactive chip is a neutral glass capsule
-  // (`buttonStyle('glass')`); the active sort is a brand-tinted prominent glass
-  // capsule (`buttonStyle('glassProminent')` + tint). @expo/ui guards both with
-  // `if #available(iOS 26)`, so they degrade gracefully on older iOS. (Matches
-  // FilterChipRow.ios.tsx's chipModifiers.)
+  // Active = brand-tinted prominent glass, inactive = neutral glass; @expo/ui
+  // guards both with `if #available(iOS 26)`. Matches FilterChipRow's chipModifiers.
   const chipModifiers = useCallback(
     (active: boolean) =>
       active
@@ -44,7 +28,7 @@ function LogbookSortChipRowComponent({ preset, onSelectPreset }: LogbookSortChip
   return (
     <Host matchContents={{ vertical: true }} style={styles.host}>
       <ScrollView axes="horizontal" showsIndicators={false}>
-        {/* Vertical slack lets a pressed chip's Liquid Glass lens expand without the host's fixed height clipping it. */}
+        {/* Vertical padding gives a pressed chip's glass lens room to expand. */}
         <HStack spacing={spacing[2]} modifiers={[padding({ horizontal: spacing[4], vertical: spacing[2] })]}>
           <Button
             label={t('mobile.logbook.preset.latest')}

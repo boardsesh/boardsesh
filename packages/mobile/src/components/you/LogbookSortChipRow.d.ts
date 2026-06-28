@@ -1,8 +1,5 @@
-// Ambient type for the platform-split LogbookSortChipRow so `tsc` resolves the
-// extensionless `./LogbookSortChipRow` import to this declaration, while Metro
-// picks the matching LogbookSortChipRow.ios.tsx / LogbookSortChipRow.android.tsx
-// at bundle time. Both implementations are still compiled and type-checked on
-// their own.
+// Ambient type so `tsc` resolves the extensionless `./LogbookSortChipRow` import
+// while Metro picks the .ios/.android implementation at bundle time.
 
 import type { FC } from 'react';
 import type { LogbookSortChipRowProps } from './LogbookSortChipRow.types';

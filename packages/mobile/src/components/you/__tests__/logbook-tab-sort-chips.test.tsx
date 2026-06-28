@@ -2,7 +2,7 @@
 import { render, fireEvent, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LogbookSortPreset } from '@boardsesh/logbook';
+import { DEFAULT_LOGBOOK_FILTERS, DEFAULT_LOGBOOK_SORT, type LogbookSortPreset } from '@boardsesh/logbook';
 
 // Captures what LogbookTab hands the (mocked) sort chip row + filter sheet, so the
 // test can assert the Liquid-Glass gating and the showSort hand-off without native
@@ -123,6 +123,7 @@ vi.mock('../../../providers/feature-flags-provider', () => ({
 // use-logbook-search and @boardsesh/logbook run for real so setPreset commits the
 // preset into the feed through the real reducer.
 import { LogbookTab } from '../LogbookTab';
+import { loadLogbookPrefs } from '../../../lib/logbook-prefs-store';
 
 beforeEach(() => {
   captured.chipMounted = false;
@@ -183,5 +184,20 @@ describe('LogbookTab sort chips', () => {
     // Selecting Hardest commits via the real reducer; the chip re-renders with it.
     act(() => captured.onSelectPreset?.('hardest'));
     expect(captured.chipPreset).toBe('hardest');
+  });
+
+  it('lights no chip when a non-preset (custom) sort is active', async () => {
+    vi.mocked(loadLogbookPrefs).mockResolvedValueOnce({
+      filters: DEFAULT_LOGBOOK_FILTERS,
+      sort: { ...DEFAULT_LOGBOOK_SORT, mode: 'custom' },
+    });
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+    // Flush the persisted-prefs hydration so the custom sort lands in state.
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(captured.chipMounted).toBe(true);
+    expect(captured.chipPreset).toBeNull();
   });
 });

@@ -35,6 +35,7 @@ import { hapticSelection } from '../../lib/haptics';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
+import { selectByVariant } from '../../theme/variants';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -59,13 +60,11 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   const { systemColors, brandColors, variant } = useTheme();
   // Temporary kill switch while the search + filter UI is unfinished.
   const logbookFiltersEnabled = useFeatureFlag('logbook-filters') === true;
-  // Promote the Latest/Hardest sort to top-level Liquid Glass chips so it can be
-  // switched without opening the sheet. iOS 26 Liquid Glass only — the same
-  // capability the climbs screen gates its filter-chip row on (variant ===
-  // 'liquidGlass'); Android keeps the sheet's sort control. Already behind the
-  // logbook-filters flag (the whole toolbar is), so no new flag. When shown, the
-  // sheet's in-body Sort block is suppressed so sort isn't worded twice.
-  const showSortChips = logbookFiltersEnabled && Platform.OS === 'ios' && variant === 'liquidGlass';
+  // Latest/Hardest become top-level Liquid Glass chips (iOS 26 only) so sort is
+  // switchable without opening the sheet; the variant goes through selectByVariant
+  // per the mobile variant guard. When shown, the sheet's Sort block is suppressed.
+  const showSortChips =
+    logbookFiltersEnabled && Platform.OS === 'ios' && selectByVariant(variant, { liquidGlass: true, material: false });
   const router = useRouter();
   const { openPlayDrawer, openClimbActions } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
@@ -78,8 +77,9 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true, screenT
   // input value is debounced before it commits to the query.
   const logbookSearch = useLogbookSearch();
   const { filters, sort, name, setName, setPreset, apply, hydrated } = logbookSearch;
-  // The committed preset feeds the top-level sort chips (Latest = 'recent').
-  const sortPreset: LogbookSortPreset = sort.mode === 'preset' ? sort.preset : 'recent';
+  // Which preset the chips highlight; null (no chip lit) when a non-preset
+  // (custom) sort is in effect, rather than falsely lighting up Latest.
+  const sortPreset: LogbookSortPreset | null = sort.mode === 'preset' ? sort.preset : null;
   const activeFilterCount = useMemo(() => countActiveLogbookFilters(filters), [filters]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
