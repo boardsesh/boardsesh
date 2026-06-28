@@ -19,18 +19,32 @@ import { reportHandledError } from '../lib/error-reporting';
 // (the canonical Expo offline-support pattern). A single root QueryProvider
 // lives for the whole app, so there's nothing to tear down.
 //
-// NetInfo is a native module, so this JS reaches devices only via the next
-// native build — the fingerprint runtimeVersion policy gates the OTA so old
-// binaries never receive code importing a missing native module.
-onlineManager.setEventListener((setOnline) =>
-  NetInfo.addEventListener((state) => {
+// NetInfo is a native module; the fingerprint runtimeVersion policy gates the
+// OTA so a binary running this JS has the matching native module compiled in.
+onlineManager.setEventListener((setOnline) => {
+  // Seed the current state up front: onlineManager defaults to online and would
+  // otherwise stay there until the first NetInfo change event arrives. Combined
+  // with `networkMode: 'offlineFirst'` below, a wrong/late offline signal can
+  // no longer strand the initial fetch.
+  void NetInfo.fetch()
+    .then((state) => setOnline(state.isConnected ?? true))
+    .catch(() => {
+      // A failed seed leaves the default (online); the live listener below
+      // still delivers real state, so there's nothing actionable to report.
+    });
+  return NetInfo.addEventListener((state) => {
     setOnline(state.isConnected ?? true);
-  }),
-);
+  });
+});
 
 if (Platform.OS !== 'web') {
-  AppState.addEventListener('change', (status) => {
-    focusManager.setFocused(status === 'active');
+  // Mirror onlineManager's setEventListener wiring so focusManager owns the
+  // AppState subscription and tears it down on re-wire.
+  focusManager.setEventListener((handleFocus) => {
+    const subscription = AppState.addEventListener('change', (status) => {
+      handleFocus(status === 'active');
+    });
+    return () => subscription.remove();
   });
 }
 
@@ -77,9 +91,17 @@ export function createQueryClient(): QueryClient {
     }),
     defaultOptions: {
       queries: {
+        // `offlineFirst` runs the fetch once regardless of onlineManager status
+        // (only retries pause while offline), so a wrong/late NetInfo offline
+        // signal can't leave data screens stuck in `fetchStatus: 'paused'`.
+        // refetchOnReconnect still fires when connectivity returns.
+        networkMode: 'offlineFirst',
         staleTime: 5 * 60 * 1000,
         gcTime: 30 * 60 * 1000,
         retry: 2,
+      },
+      mutations: {
+        networkMode: 'offlineFirst',
       },
     },
   });

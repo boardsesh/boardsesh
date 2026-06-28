@@ -18,6 +18,10 @@ vi.mock('@react-native-community/netinfo', () => ({
       captured.netInfoListener = listener;
       return () => {};
     },
+    // The provider seeds the initial state via fetch() before registering the
+    // live listener; resolve to connected so the seed leaves onlineManager
+    // online (the default the tests below then drive away from).
+    fetch: () => Promise.resolve({ isConnected: true }),
   },
 }));
 
