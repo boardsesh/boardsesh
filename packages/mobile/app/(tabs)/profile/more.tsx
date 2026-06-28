@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { GradeDisplayFormat } from '@boardsesh/play-view';
 import type { ThemeOverride } from '@boardsesh/key-value-storage';
@@ -11,19 +11,16 @@ import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/loca
 import { openExternalUrl } from '../../../src/lib/open-url';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useProfile } from '../../../src/lib/graphql/hooks';
-import { borderRadius, spacing } from '../../../src/theme/tokens';
+import { hapticLight, hapticSelection } from '../../../src/lib/haptics';
 import { DevMetadataPanel } from '../../../src/components/DevMetadataPanel';
-import { Icon } from '../../../src/components/Icon';
-import { Avatar } from '../../../src/components/Avatar';
-import { Text } from '../../../src/components/Text';
-import { ListRow } from '../../../src/components/ListRow';
-import { SectionHeader } from '../../../src/components/SectionHeader';
-import { SegmentedControl } from '../../../src/components/SegmentedControl';
-import { SessionRecordingSwitchRow } from '../../../src/components/settings/SessionRecordingSwitchRow';
-import { PlaylistTagsSwitchRow } from '../../../src/components/settings/PlaylistTagsSwitchRow';
+import { MoreForm } from '../../../src/components/MoreForm';
+import type { MoreButtonRow, MoreFormModel, MoreRow, MoreSection } from '../../../src/components/MoreForm.types';
 import { isPreviewBuild } from '../../../src/lib/preview-build';
 import { isDevLauncherAvailable } from '../../../src/lib/dev-launcher';
 import { useGradeFormat } from '../../../src/hooks/use-grade-format';
+import { useSessionRecordingPreference } from '../../../src/lib/session-recording-preference';
+import { setSessionRecordingEnabled } from '../../../src/lib/analytics';
+import { useShowPlaylistTagsPreference } from '../../../src/lib/show-playlist-tags-preference';
 import { useToast } from '../../../src/providers/toast-provider';
 import { useFeatureFlag } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
@@ -36,8 +33,13 @@ import { getLastSeenChangelogDate, hasUnseenChangelog } from '../../../src/lib/c
 // exact files to edit.
 const GITHUB_LOCALES_TREE_URL = 'https://github.com/boardsesh/boardsesh/tree/main/packages/shared/i18n/locales';
 
+// The shared route screen for the "More" tab. It owns every hook, route guard, and
+// conditional (auth / tester / dev / preview-build), resolves all copy through the
+// i18n catalogs and all haptics, then builds a plain view-model and hands rendering
+// to the platform-split <MoreForm /> — a native SwiftUI Form on iOS, a Compose
+// LazyColumn on Android. The native tree renders strings + invokes handlers only.
 export default function MoreScreen() {
-  const { systemColors, brandColors, themeOverride, setThemeOverride } = useTheme();
+  const { themeOverride, setThemeOverride } = useTheme();
   const { t } = useTranslation('common');
   const { t: tProfile } = useTranslation('profile');
   const { t: tPlaylists } = useTranslation('playlists');
@@ -46,13 +48,16 @@ export default function MoreScreen() {
   const { data: profile } = useProfile();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
   const { localePreference, setLocalePreference } = useLocalePreference();
+  const { enabled: sessionRecordingEnabled, setEnabled: setSessionRecordingPreference } =
+    useSessionRecordingPreference();
+  const { enabled: showPlaylistTags, setEnabled: setShowPlaylistTags } = useShowPlaylistTagsPreference();
   const { showToast } = useToast();
   const stravaEnabled = useFeatureFlag('strava-integration') === true;
 
   // Live Metro dev-server switching needs expo-dev-client's native launcher, which
   // is only linked into dev-client / Debug builds — never the App Store / TestFlight
   // binary (where it would throw "Dev launcher unavailable"). Show the row only where
-  // it can actually work; testers on a release build get the OTA channel switcher.
+  // it can actually work.
   const showDevServerSwitcher = isDevLauncherAvailable();
 
   // Feature-flag overrides work in every build (dev forces them in place of the
@@ -129,320 +134,327 @@ export default function MoreScreen() {
     });
   };
 
+  // Wrap a navigation action with the light haptic the old ListRow fired on press.
+  const navAction = (action: () => void) => () => {
+    hapticLight();
+    action();
+  };
+
+  // Account action buttons (Sign Out / Delete Account) — destructive, no haptic,
+  // matching the old borderless red links. Shared between the signed-in and
+  // signed-out section layouts.
+  const accountActionRows: MoreButtonRow[] = [
+    {
+      kind: 'button',
+      key: 'signOut',
+      label: tProfile('mobile.signOut'),
+      role: 'destructive',
+      onPress: () => {
+        void signOut();
+      },
+    },
+    {
+      kind: 'button',
+      key: 'deleteAccount',
+      label: tSettings('deleteAccount.button'),
+      role: 'destructive',
+      onPress: () => router.push('/(tabs)/profile/delete-account'),
+    },
+  ];
+
+  const sections: MoreSection[] = [];
+
+  // Library — only when signed in (all-playlists is a profile feature).
+  if (profile?.id) {
+    sections.push({
+      key: 'library',
+      title: t('mobile.more.library'),
+      rows: [
+        {
+          kind: 'nav',
+          key: 'allPlaylists',
+          label: tPlaylists('library.allPlaylists.title'),
+          sfSymbol: 'music.note.list',
+          onPress: navAction(() => router.push('/(tabs)/discover/all')),
+        },
+      ],
+    });
+  }
+
+  // Integrations.
+  sections.push({
+    key: 'integrations',
+    title: t('mobile.more.integrations.title'),
+    rows: [
+      {
+        kind: 'nav',
+        key: 'integrations',
+        label: t('mobile.more.integrations.title'),
+        subtitle: t(
+          stravaEnabled ? 'mobile.more.integrations.subtitleWithStrava' : 'mobile.more.integrations.subtitle',
+        ),
+        sfSymbol: 'heart',
+        onPress: navAction(() => router.push('/(tabs)/profile/integrations')),
+      },
+    ],
+  });
+
+  // Appearance (segmented).
+  sections.push({
+    key: 'appearance',
+    title: t('mobile.more.appearance.title'),
+    rows: [
+      {
+        kind: 'segmented',
+        key: 'appearance',
+        label: t('mobile.more.appearance.title'),
+        options: appearanceOptions,
+        selectedKey: themeOverride,
+        onSelect: (key) => {
+          const next = appearanceOptions.find((option) => option.key === key);
+          if (next) {
+            hapticSelection();
+            void setThemeOverride(next.key);
+          }
+        },
+      },
+    ],
+  });
+
+  // Grade Format (segmented) — description as the section footer.
+  sections.push({
+    key: 'gradeFormat',
+    title: t('mobile.more.gradeFormat.title'),
+    footer: t('mobile.more.gradeFormat.description'),
+    rows: [
+      {
+        kind: 'segmented',
+        key: 'gradeFormat',
+        label: t('mobile.more.gradeFormat.title'),
+        options: gradeFormatOptions,
+        selectedKey: gradeFormat,
+        onSelect: (key) => {
+          const next = gradeFormatOptions.find((option) => option.key === key);
+          if (next) {
+            hapticSelection();
+            setGradeFormat(next.key);
+          }
+        },
+      },
+    ],
+  });
+
+  // Display options — show playlist tags toggle.
+  sections.push({
+    key: 'displayOptions',
+    title: t('mobile.more.displayOptions.title'),
+    rows: [
+      {
+        kind: 'toggle',
+        key: 'playlistTags',
+        label: t('mobile.more.displayOptions.playlistTags'),
+        subtitle: t('mobile.more.displayOptions.playlistTagsDescription'),
+        value: showPlaylistTags,
+        onValueChange: (next) => {
+          hapticSelection();
+          setShowPlaylistTags(next);
+        },
+      },
+    ],
+  });
+
+  // Accessibility (nav).
+  sections.push({
+    key: 'accessibility',
+    title: t('mobile.more.accessibility.title'),
+    rows: [
+      {
+        kind: 'nav',
+        key: 'accessibility',
+        label: t('mobile.more.accessibility.title'),
+        subtitle: t('mobile.more.accessibility.rowSubtitleShort'),
+        sfSymbol: 'accessibility',
+        onPress: navAction(() => router.push('/(tabs)/profile/accessibility')),
+      },
+    ],
+  });
+
+  // Language — a menu-style select; description as the section footer. The
+  // picker's own label carries the word "Language", so no section title.
+  sections.push({
+    key: 'language',
+    footer: t('mobile.more.language.description'),
+    rows: [
+      {
+        kind: 'select',
+        key: 'language',
+        label: t('mobile.more.language.title'),
+        options: languageOptions,
+        selectedKey: localePreference,
+        onSelect: (key) => {
+          const next = languageOptions.find((option) => option.key === key);
+          if (next) {
+            hapticSelection();
+            setLocalePreference(next.key);
+          }
+        },
+      },
+    ],
+  });
+
+  // Help translate — its own card under the language footnote.
+  sections.push({
+    key: 'languageContribute',
+    rows: [
+      {
+        kind: 'nav',
+        key: 'helpTranslate',
+        label: t('mobile.more.language.contributeTitle'),
+        subtitle: t('mobile.more.language.contributeSubtitle', { language: LOCALE_LABELS[activeLocale] }),
+        sfSymbol: 'character.bubble',
+        onPress: navAction(handleHelpTranslate),
+      },
+    ],
+  });
+
+  // Diagnostics — Session Recording toggle. Persist + apply live.
+  sections.push({
+    key: 'diagnostics',
+    title: t('mobile.more.diagnostics.title'),
+    rows: [
+      {
+        kind: 'toggle',
+        key: 'sessionRecording',
+        label: t('mobile.more.diagnostics.recording'),
+        subtitle: t('mobile.more.diagnostics.recordingDescription'),
+        value: sessionRecordingEnabled,
+        onValueChange: (next) => {
+          hapticSelection();
+          setSessionRecordingPreference(next);
+          setSessionRecordingEnabled(next);
+        },
+      },
+    ],
+  });
+
+  // Replay walkthrough (nav).
+  sections.push({
+    key: 'replay',
+    title: t('mobile.onboarding.replaySection'),
+    rows: [
+      {
+        kind: 'nav',
+        key: 'replay',
+        label: t('mobile.onboarding.replayTitle'),
+        subtitle: t('mobile.onboarding.replaySubtitle'),
+        sfSymbol: 'play.circle',
+        onPress: navAction(handleReplayWalkthrough),
+      },
+    ],
+  });
+
+  // About / What's New — the "New" pill shows while there's an unseen entry.
+  sections.push({
+    key: 'about',
+    title: t('mobile.more.aboutSection'),
+    rows: [
+      {
+        kind: 'nav',
+        key: 'changelog',
+        label: t('mobile.more.changelogTitle'),
+        subtitle: t('mobile.more.changelogSubtitle'),
+        sfSymbol: 'sparkles',
+        badge: changelogUnseen ? t('mobile.more.newPill') : undefined,
+        onPress: navAction(() => router.push('/changelog')),
+      },
+    ],
+  });
+
+  // Development — tester/dev-only tooling. Each row is independently gated.
+  if (showDevSection) {
+    const devRows: MoreRow[] = [];
+    if (showDevServerSwitcher) {
+      devRows.push({
+        kind: 'nav',
+        key: 'metroServers',
+        label: t('mobile.more.metroServersTitle'),
+        subtitle: t('mobile.more.metroServersSubtitle'),
+        sfSymbol: 'server.rack',
+        onPress: navAction(() => router.push('/(tabs)/profile/dev-servers')),
+      });
+    }
+    if (showFeatureFlags) {
+      devRows.push({
+        kind: 'nav',
+        key: 'featureFlags',
+        // i18n-ignore-next-line — tester-only dev tooling
+        label: 'Feature Flags',
+        // i18n-ignore-next-line
+        subtitle: 'Force feature flags on or off',
+        sfSymbol: 'flag',
+        onPress: navAction(() => router.push('/(tabs)/profile/feature-flags')),
+      });
+    }
+    sections.push({ key: 'development', title: t('mobile.more.development'), rows: devRows });
+  }
+
+  // Preview Build — branch switcher, only in EAS preview dev-client builds.
+  if (isPreviewBuild()) {
+    sections.push({
+      key: 'previewBuild',
+      // i18n-ignore-next-line — preview-only section
+      title: 'Preview Build',
+      rows: [
+        {
+          kind: 'nav',
+          key: 'branchSwitcher',
+          // i18n-ignore-next-line
+          label: 'Branch Switcher',
+          // i18n-ignore-next-line
+          subtitle: 'Switch EAS Update branch',
+          sfSymbol: 'arrow.triangle.branch',
+          onPress: navAction(() => router.push('/(tabs)/profile/branch-switcher')),
+        },
+      ],
+    });
+  }
+
+  // Account — Edit Profile (with the email as the section footer) plus the
+  // destructive Sign Out / Delete Account actions. When signed out, the actions
+  // carry the "Account" header themselves so it's never an empty section.
+  if (profile?.id) {
+    sections.push({
+      key: 'account',
+      title: tProfile('mobile.account'),
+      footer: profile.email ?? undefined,
+      rows: [
+        {
+          kind: 'nav',
+          key: 'editProfile',
+          label: tSettings('profile.editAction'),
+          sfSymbol: 'person.crop.circle',
+          onPress: navAction(() => router.push('/(tabs)/profile/edit')),
+        },
+      ],
+    });
+    sections.push({ key: 'accountActions', rows: accountActionRows });
+  } else {
+    sections.push({ key: 'accountActions', title: tProfile('mobile.account'), rows: accountActionRows });
+  }
+
+  const model: MoreFormModel = { sections };
+
   return (
-    <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.container}>
+    <View style={styles.root}>
+      {/* Dev-only QA panel (null in production); the Form fills the rest. */}
       <DevMetadataPanel />
-
-      {profile?.id ? (
-        <View style={styles.section}>
-          <SectionHeader title={t('mobile.more.library')} />
-          <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-            <ListRow
-              title={tPlaylists('library.allPlaylists.title')}
-              leading={<Icon name="playlist" size={22} color={systemColors.secondaryLabel} />}
-              showChevron
-              showSeparator={false}
-              onPress={() => router.push('/(tabs)/discover/all')}
-            />
-          </View>
-        </View>
-      ) : null}
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.integrations.title')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          <ListRow
-            title={t('mobile.more.integrations.title')}
-            subtitle={t(
-              stravaEnabled ? 'mobile.more.integrations.subtitleWithStrava' : 'mobile.more.integrations.subtitle',
-            )}
-            leading={<Icon name="favorite" size={22} color={systemColors.secondaryLabel} />}
-            showChevron
-            showSeparator={false}
-            onPress={() => router.push('/(tabs)/profile/integrations')}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.appearance.title')} />
-        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
-          <SegmentedControl
-            options={appearanceOptions}
-            selectedKey={themeOverride}
-            onSelect={(key) => void setThemeOverride(key)}
-            trackColor={systemColors.fill}
-            accessibilityLabel={t('mobile.more.appearance.title')}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.gradeFormat.title')} />
-        <View style={[styles.card, styles.cardPadded, { backgroundColor: systemColors.secondaryBackground }]}>
-          <SegmentedControl
-            options={gradeFormatOptions}
-            selectedKey={gradeFormat}
-            onSelect={setGradeFormat}
-            trackColor={systemColors.fill}
-            accessibilityLabel={t('mobile.more.gradeFormat.title')}
-          />
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.settingHint}>
-            {t('mobile.more.gradeFormat.description')}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.displayOptions.title')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          <PlaylistTagsSwitchRow
-            label={t('mobile.more.displayOptions.playlistTags')}
-            description={t('mobile.more.displayOptions.playlistTagsDescription')}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.accessibility.title')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          <ListRow
-            title={t('mobile.more.accessibility.title')}
-            subtitle={t('mobile.more.accessibility.rowSubtitleShort')}
-            leading={<Icon name="visibility" size={22} color={systemColors.secondaryLabel} />}
-            showChevron
-            showSeparator={false}
-            onPress={() => router.push('/(tabs)/profile/accessibility')}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.language.title')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          {languageOptions.map((option, index) => (
-            <ListRow
-              key={option.key}
-              title={option.label}
-              trailing={
-                localePreference === option.key ? (
-                  <Icon name="check.small" size={20} color={systemColors.accent} />
-                ) : undefined
-              }
-              showSeparator={index < languageOptions.length - 1}
-              onPress={() => setLocalePreference(option.key)}
-            />
-          ))}
-        </View>
-        <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.languageHint}>
-          {t('mobile.more.language.description')}
-        </Text>
-        <View style={[styles.card, styles.contributeCard, { backgroundColor: systemColors.secondaryBackground }]}>
-          <ListRow
-            title={t('mobile.more.language.contributeTitle')}
-            subtitle={t('mobile.more.language.contributeSubtitle', { language: LOCALE_LABELS[activeLocale] })}
-            leading={<Icon name="github" size={22} color={systemColors.secondaryLabel} />}
-            showChevron
-            showSeparator={false}
-            onPress={handleHelpTranslate}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.diagnostics.title')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          <SessionRecordingSwitchRow
-            label={t('mobile.more.diagnostics.recording')}
-            description={t('mobile.more.diagnostics.recordingDescription')}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.onboarding.replaySection')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          <ListRow
-            title={t('mobile.onboarding.replayTitle')}
-            subtitle={t('mobile.onboarding.replaySubtitle')}
-            leading={<Icon name="play.circle" size={22} color={systemColors.secondaryLabel} />}
-            showChevron
-            showSeparator={false}
-            onPress={handleReplayWalkthrough}
-          />
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <SectionHeader title={t('mobile.more.aboutSection')} />
-        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-          <ListRow
-            title={t('mobile.more.changelogTitle')}
-            subtitle={t('mobile.more.changelogSubtitle')}
-            leading={<Icon name="flash" size={22} color={systemColors.secondaryLabel} />}
-            trailing={
-              changelogUnseen ? (
-                <View style={[styles.newPill, { backgroundColor: brandColors.primaryFill }]}>
-                  <Text variant="caption2" color={brandColors.onPrimary} style={styles.newPillLabel}>
-                    {t('mobile.more.newPill')}
-                  </Text>
-                </View>
-              ) : undefined
-            }
-            showChevron
-            showSeparator={false}
-            onPress={() => router.push('/changelog')}
-          />
-        </View>
-      </View>
-
-      {showDevSection ? (
-        <View style={styles.section}>
-          <SectionHeader title={t('mobile.more.development')} />
-          <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-            {showDevServerSwitcher ? (
-              <ListRow
-                title={t('mobile.more.metroServersTitle')}
-                subtitle={t('mobile.more.metroServersSubtitle')}
-                leading={<Icon name="server" size={22} color={systemColors.secondaryLabel} />}
-                showChevron
-                showSeparator={showFeatureFlags}
-                onPress={() => router.push('/(tabs)/profile/dev-servers')}
-              />
-            ) : null}
-            {showFeatureFlags ? (
-              <ListRow
-                // i18n-ignore-next-line — tester-only dev tooling
-                title="Feature Flags"
-                // i18n-ignore-next-line
-                subtitle="Force feature flags on or off"
-                leading={<Icon name="flag" size={22} color={systemColors.secondaryLabel} />}
-                showChevron
-                showSeparator={false}
-                onPress={() => router.push('/(tabs)/profile/feature-flags')}
-              />
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-
-      {isPreviewBuild() ? (
-        <>
-          {/* i18n-ignore-next-line — preview-only section */}
-          <SectionHeader title="Preview Build" />
-          <ListRow
-            // i18n-ignore-next-line
-            title="Branch Switcher"
-            // i18n-ignore-next-line
-            subtitle="Switch EAS Update branch"
-            leading={<Icon name="branch" size={22} color={systemColors.label} />}
-            showChevron
-            showSeparator={false}
-            onPress={() => router.push('/(tabs)/profile/branch-switcher')}
-          />
-        </>
-      ) : null}
-
-      <View style={styles.section}>
-        <SectionHeader title={tProfile('mobile.account')} />
-        {profile?.id ? (
-          <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
-            <ListRow
-              title={tSettings('profile.editAction')}
-              leading={<Avatar uri={profile.avatarUrl} name={profile.displayName ?? profile.email ?? null} size={28} />}
-              showChevron
-              showSeparator={false}
-              onPress={() => router.push('/(tabs)/profile/edit')}
-            />
-          </View>
-        ) : null}
-        {profile?.email ? (
-          <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.accountEmail}>
-            {profile.email}
-          </Text>
-        ) : null}
-        <Pressable
-          style={[styles.signOut, { borderColor: systemColors.separator }]}
-          onPress={() => {
-            void signOut();
-          }}
-          accessibilityRole="button"
-        >
-          <Text variant="body" color={brandColors.error}>
-            {tProfile('mobile.signOut')}
-          </Text>
-        </Pressable>
-        <Pressable
-          style={styles.deleteAccount}
-          onPress={() => router.push('/(tabs)/profile/delete-account')}
-          accessibilityRole="button"
-        >
-          <Text variant="body" color={brandColors.error}>
-            {tSettings('deleteAccount.button')}
-          </Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+      <MoreForm model={model} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    paddingTop: spacing[4],
-    paddingBottom: spacing[8],
-  },
-  section: {
-    width: '100%',
-    marginBottom: spacing[6],
-  },
-  card: {
-    overflow: 'hidden',
-    borderRadius: borderRadius.lg,
-    marginHorizontal: spacing[4],
-  },
-  cardPadded: {
-    padding: spacing[3],
-  },
-  settingHint: {
-    marginTop: spacing[2],
-  },
-  languageHint: {
-    marginTop: spacing[2],
-    paddingHorizontal: spacing[4],
-  },
-  contributeCard: {
-    marginTop: spacing[3],
-  },
-  newPill: {
-    paddingHorizontal: spacing[2],
-    paddingVertical: 2,
-    borderRadius: borderRadius.full,
-  },
-  newPillLabel: {
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  accountEmail: {
-    paddingHorizontal: spacing[4],
-    marginTop: spacing[3],
-    marginBottom: spacing[3],
-  },
-  signOut: {
-    alignItems: 'center',
-    paddingVertical: spacing[3],
-    marginHorizontal: spacing[4],
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  // Deliberately subordinate to Sign Out: a borderless red text link, not the
-  // bordered button above. Sign Out is the routine action; account deletion is
-  // rare and irreversible, so it reads as a quieter, secondary affordance rather
-  // than competing for equal visual weight.
-  deleteAccount: {
-    alignItems: 'center',
-    paddingVertical: spacing[3],
-    marginHorizontal: spacing[4],
-    marginTop: spacing[2],
+  root: {
+    flex: 1,
   },
 });

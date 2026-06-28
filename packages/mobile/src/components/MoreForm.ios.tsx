@@ -1,0 +1,169 @@
+// MoreForm — iOS implementation, a real SwiftUI `Form` via @expo/ui/swift-ui.
+//
+// The entire "More" settings screen is ONE `Host` containing a single SwiftUI
+// `Form` (the grouped, inset-rounded iOS Settings look — section insets,
+// separators, and scrolling all for free). This mirrors the FeatureFlagsForm
+// pilot: instead of one `Host` per control, the whole form lives under one `Host`.
+//
+// HOST SIZING: a `Form` is a scrolling container that fills its space, so the Host
+// uses `style={{ flex: 1 }}` + `useViewportSizeMeasurement` (gives SwiftUI the
+// viewport as its proposed size). Per-row controls elsewhere use `matchContents`;
+// a Form is the opposite case — it takes all the height it's given.
+//
+// The screen (more.tsx) precomputes every string + handler (incl. haptics), so
+// this tree only renders props. Each row kind maps to the idiomatic SwiftUI
+// control: nav → a Button row with a leading symbol, title/subtitle, optional
+// badge, and a trailing chevron; toggle → Toggle; segmented → segmented Picker;
+// select → menu-style Picker; button → Button (destructive colours it red).
+
+import type { ComponentProps } from 'react';
+import { Host } from '@expo/ui';
+import { Form, Section, Picker, Toggle, Text, Button, Image, HStack, VStack, Spacer } from '@expo/ui/swift-ui';
+import {
+  pickerStyle,
+  tint,
+  tag,
+  font,
+  foregroundStyle,
+  badge as badgeModifier,
+  accessibilityLabel as accessibilityLabelModifier,
+} from '@expo/ui/swift-ui/modifiers';
+import { StyleSheet } from 'react-native';
+import { useTheme } from '../providers/theme-provider';
+import { brandAccentColor } from '../theme/expo-ui-modifiers';
+import { spacing } from '../theme/tokens';
+import { assertNeverRow } from './MoreForm.logic';
+import type { MoreFormProps, MoreNavRow, MoreRow } from './MoreForm.types';
+
+// Hierarchical foreground styles for the system label colours SwiftUI uses in a
+// Settings list. Reused across rows so the palette can't drift.
+const PRIMARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'primary' });
+const SECONDARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
+const TERTIARY_LABEL = foregroundStyle({ type: 'hierarchical', style: 'tertiary' });
+const FOOTNOTE = font({ textStyle: 'footnote' });
+
+// The SFSymbol union the Image `systemName` prop accepts. The model carries
+// `sfSymbol` as a plain string (the union isn't resolvable from the shared types
+// module), so narrow it here at the single call site.
+type SystemImageName = NonNullable<ComponentProps<typeof Image>['systemName']>;
+
+function NavRow({ row }: { row: MoreNavRow }) {
+  return (
+    // A row Button. Every child sets an explicit foregroundStyle so the row reads
+    // as a Settings row (label/secondary/tertiary), not the default accent-tinted
+    // button content. `badge(...)` adds the standard trailing badge (the "New"
+    // pill); the manual chevron is the disclosure indicator.
+    <Button onPress={row.onPress} modifiers={row.badge ? [badgeModifier(row.badge)] : []}>
+      <HStack spacing={spacing[3]}>
+        {row.sfSymbol ? <Image systemName={row.sfSymbol as SystemImageName} modifiers={[SECONDARY_LABEL]} /> : null}
+        <VStack alignment="leading" spacing={spacing[1]}>
+          <Text modifiers={[PRIMARY_LABEL]}>{row.label}</Text>
+          {row.subtitle ? <Text modifiers={[FOOTNOTE, SECONDARY_LABEL]}>{row.subtitle}</Text> : null}
+        </VStack>
+        <Spacer />
+        <Image systemName="chevron.right" modifiers={[FOOTNOTE, TERTIARY_LABEL]} />
+      </HStack>
+    </Button>
+  );
+}
+
+function renderRow(row: MoreRow, accent: string) {
+  switch (row.kind) {
+    case 'nav':
+      return <NavRow key={row.key} row={row} />;
+    case 'toggle':
+      // Two Text children → title + subtitle (SwiftUI styles the second secondary
+      // and folds both into the VoiceOver label). Brand on-track tint.
+      return (
+        <Toggle key={row.key} isOn={row.value} onIsOnChange={row.onValueChange} modifiers={[tint(accent)]}>
+          <Text>{row.label}</Text>
+          {row.subtitle ? <Text>{row.subtitle}</Text> : null}
+        </Toggle>
+      );
+    case 'segmented':
+      // Native iOS segmented control; each option's `tag` maps selection to its
+      // key. The section header is the visible label, so this only carries an
+      // accessibility label for VoiceOver.
+      return (
+        <Picker
+          key={row.key}
+          selection={row.selectedKey}
+          onSelectionChange={(value) => {
+            if (typeof value === 'string') row.onSelect(value);
+          }}
+          modifiers={[
+            pickerStyle('segmented'),
+            tint(accent),
+            ...(row.label ? [accessibilityLabelModifier(row.label)] : []),
+          ]}
+        >
+          {row.options.map((option) => (
+            <Text key={option.key} modifiers={[tag(option.key)]}>
+              {option.label}
+            </Text>
+          ))}
+        </Picker>
+      );
+    case 'select':
+      // Menu-style Picker: a labelled row showing the current value + chevron that
+      // pops a menu on tap — the idiomatic iOS Settings language picker.
+      return (
+        <Picker
+          key={row.key}
+          label={row.label}
+          selection={row.selectedKey}
+          onSelectionChange={(value) => {
+            if (typeof value === 'string') row.onSelect(value);
+          }}
+          modifiers={[pickerStyle('menu'), tint(accent)]}
+        >
+          {row.options.map((option) => (
+            <Text key={option.key} modifiers={[tag(option.key)]}>
+              {option.label}
+            </Text>
+          ))}
+        </Picker>
+      );
+    case 'button':
+      // `destructive` colours the label red; the action lives in the screen.
+      return (
+        <Button
+          key={row.key}
+          role={row.role === 'destructive' ? 'destructive' : undefined}
+          label={row.label}
+          onPress={row.onPress}
+        />
+      );
+    default:
+      return assertNeverRow(row);
+  }
+}
+
+export function MoreForm({ model }: MoreFormProps) {
+  const { brandColors } = useTheme();
+  const accent = brandAccentColor(brandColors);
+
+  return (
+    <Host style={styles.host} useViewportSizeMeasurement>
+      <Form>
+        {model.sections.map((section) => (
+          <Section
+            key={section.key}
+            title={section.title}
+            footer={section.footer ? <Text>{section.footer}</Text> : undefined}
+          >
+            {section.rows.map((row) => renderRow(row, accent))}
+          </Section>
+        ))}
+      </Form>
+    </Host>
+  );
+}
+
+const styles = StyleSheet.create({
+  // A Form fills the screen; flex + useViewportSizeMeasurement give SwiftUI the
+  // viewport as its proposed size so the Form scrolls within it.
+  host: {
+    flex: 1,
+  },
+});
