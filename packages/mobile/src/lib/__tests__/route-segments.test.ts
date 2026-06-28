@@ -48,6 +48,7 @@ describe('isBoardsRoute', () => {
     expect(isBoardsRoute(['boards'])).toBe(true);
     expect(isBoardsRoute(['boards', 'create'])).toBe(true);
     expect(isBoardsRoute(['boards', 'manage'])).toBe(true);
+    expect(isBoardsRoute(['boards', 'edit'])).toBe(true);
   });
 
   it('is false outside the boards stack', () => {
