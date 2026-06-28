@@ -11,9 +11,13 @@ export function useLastUsedGrade() {
   const [lastUsedGrade, setLastUsedGradeState] = useState<number | undefined>(undefined);
 
   useEffect(() => {
+    let active = true;
     void getLastUsedGradeId().then((value) => {
-      if (value !== undefined) setLastUsedGradeState(value);
+      if (active && value !== undefined) setLastUsedGradeState(value);
     });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const rememberGrade = useCallback((difficultyId: number | undefined) => {
