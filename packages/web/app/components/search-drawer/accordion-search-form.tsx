@@ -80,8 +80,10 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
   const maxGradeForPicker = uiSearchParams.maxGrade > 0 ? uiSearchParams.maxGrade : undefined;
 
   // Ascending difficulty ids — feeds the shared describeGradeFilter so web and
-  // mobile classify the `Grade Filter Changed` event identically.
-  const gradeIds = grades.map((g) => g.difficulty_id);
+  // mobile classify the `Grade Filter Changed` event identically. Sorted
+  // defensively (like mobile) so range_size stays correct even if the source
+  // list ever arrives out of order.
+  const gradeIds = grades.map((g) => g.difficulty_id).sort((first, second) => first - second);
 
   // The filter shape uses `0` as the "no grade" sentinel. `updateFilters` strips
   // `undefined` from updates, so we coerce both bounds to concrete numbers
