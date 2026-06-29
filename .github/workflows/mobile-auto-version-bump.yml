@@ -1,17 +1,20 @@
 name: Mobile Auto Version Bump
 
-# Polls App Store Connect hourly. When the current marketing version in
-# packages/mobile/app.config.ts has been accepted by Apple (PENDING_DEVELOPER_RELEASE,
+# Checks App Store Connect for the current marketing version in
+# packages/mobile/app.config.ts. When it has been accepted by Apple (PENDING_DEVELOPER_RELEASE,
 # PENDING_APPLE_RELEASE, PROCESSING_FOR_APP_STORE, or READY_FOR_SALE), this workflow
 # bumps the patch version and pushes directly to main via the OTA push-back app token,
 # bypassing the PR requirement. The commit carries [skip ci] to prevent a spurious OTA
 # publish (the version change busts the fingerprint; no binary can pull such an OTA).
 #
 # Minor version bumps are intentionally excluded — those are a manual decision.
+#
+# The hourly schedule is intentionally disabled: an automatic bump on main rewrites the
+# native version, which busts the fingerprint and breaks fingerprint parity between the
+# native build and the OTA publish. Run this manually (workflow_dispatch) only when a
+# version bump is actually needed.
 
 on:
-  schedule:
-    - cron: '0 * * * *' # hourly; App Review approval is not time-critical
   workflow_dispatch:
     inputs:
       dry_run:
