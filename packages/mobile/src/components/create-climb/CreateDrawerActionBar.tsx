@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
+import { ButtonSurfaceProvider } from '../Button.surface';
 import { ActionButton, drawerActionBarStyles } from '../drawer-action-bar/DrawerActionBar';
 import { useTheme } from '../../providers/theme-provider';
 import { hapticSelection } from '../../lib/haptics';
@@ -163,19 +164,21 @@ function SaveButton({ saveState, onSave }: { saveState: SaveButtonState; onSave:
   const view = deriveSaveButtonView(saveState, t);
 
   return (
-    <Button
-      title={view.title}
-      icon={view.icon ?? undefined}
-      variant="filled"
-      size="small"
-      // Success keeps the static green fill (white-legible in both schemes; the
-      // lifted dark success tint would fail white-on-fill). For the default tint
-      // we pass nothing so the filled Button uses its own scheme-aware
-      // `primaryFill` (lifts to #7C3AED in dark), matching every other CTA.
-      tintColor={view.tint === 'success' ? brandColors.success : undefined}
-      disabled={view.disabled}
-      onPress={onSave}
-    />
+    <ButtonSurfaceProvider surface="content">
+      <Button
+        title={view.title}
+        icon={view.icon ?? undefined}
+        variant="filled"
+        size="small"
+        // Success keeps the static green fill (white-legible in both schemes; the
+        // lifted dark success tint would fail white-on-fill). For the default tint
+        // we pass nothing so the filled Button uses its own scheme-aware
+        // `primaryFill` (lifts to #7C3AED in dark), matching every other CTA.
+        tintColor={view.tint === 'success' ? brandColors.success : undefined}
+        disabled={view.disabled}
+        onPress={onSave}
+      />
+    </ButtonSurfaceProvider>
   );
 }
 

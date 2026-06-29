@@ -524,6 +524,7 @@ export function DevServerSwitcherScreen() {
                 title="Cancel"
                 variant="text"
                 size="small"
+                role="cancel"
                 onPress={handleAddPromptCancel}
               />
               <Button

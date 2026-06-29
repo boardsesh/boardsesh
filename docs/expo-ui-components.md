@@ -137,6 +137,53 @@ test/switch-row-stub.tsx              # passthrough stub (RN Pressable + Switch)
 `FilterChipRow` is the second example — a SwiftUI-only control (its Android side is
 a placeholder), showing the same split with a richer iOS tree (menus, pickers).
 
+## Buttons
+
+**A button _inside_ an existing native @expo/ui tree should be a native button,
+not an RN island.** When you add a button to a SwiftUI `Form`/`Host` or a Compose
+tree we already own, use the platform's native button:
+
+- **iOS** (`@expo/ui/swift-ui`): a native `Button`. Inside a `Form`/`Section` the
+  default style reads as a Settings row (`MoreForm.ios.tsx`,
+  `FeatureFlagsForm.ios.tsx`); a standalone capsule uses
+  `buttonStyle('glass' | 'glassProminent')` (Liquid Glass, iOS 26+ —
+  `FilterChipRow.ios.tsx`).
+- **Android** (`@expo/ui/jetpack-compose`): the Material button family —
+  `Button` / `FilledTonalButton` / `OutlinedButton` / `TextButton`
+  (`MoreForm.android.tsx`, `FeatureFlagsForm.android.tsx`).
+
+The **standalone** `Button` (`src/components/Button.*`) is itself a platform-split
+native control — import the extensionless `./Button` like any RN component; Metro
+resolves a SwiftUI `Button` on iOS and a Compose Material button on Android. Its
+design (solid where legibility demands it, glass where it helps):
+
+- **filled** — the brand CTA. A SOLID violet capsule on every surface and every
+  iOS version (`buttonStyle('borderedProminent')` + brand `tint`). It never goes
+  translucent, so it can't wash out over board art or in near-black dark mode.
+- **outlined / tonal** — "glass as guest": a neutral Liquid Glass capsule on an
+  opaque surface on iOS 26 (`buttonStyle('glass')`), an EXPLICIT `bordered`
+  fallback below iOS 26 (branch on `useGlassCapability()`, never trusting
+  @expo/ui's implicit glass→`.automatic` degradation), and a solid dark-scrim
+  capsule when the region declares `over="content"` (board art). `tonal` aliases
+  `outlined` on iOS; on Android it is a real MD3 `FilledTonalButton`.
+- **text** — `borderless`, accent-tinted label.
+- `role="destructive" | "cancel"` maps to the native button role (system red +
+  destructive VoiceOver trait on iOS; error tokens on Android). `loading` swaps the
+  leading icon for a native spinner (`ProgressView` / `CircularProgressIndicator`)
+  and disables the button. A region drawing buttons over board art wraps them in
+  `<ButtonSurfaceProvider surface="content">` (`Button.surface.tsx`) — the filled
+  CTA is solid regardless; this only protects the middle/text tiers. Android icon
+  drawables live in `assets/material-icons/*.xml` (mapped in `Button.android.tsx`).
+
+**Keep these RN — do NOT migrate:**
+
+- **`GlassIconButton`** (`src/components/GlassIconButton.tsx`) — already real glass
+  via `GlassSurface`, plus a count badge, an icon cross-fade morph, a
+  long-press-with-press-suppression gesture, and custom `accessibilityActions`,
+  none of which the native `IconButton` / glass `Button` provides. Migrating it is
+  a net loss.
+- FlashList/FlatList rows, SVG board art, gifted-charts, gesture boards.
+
 ## Performance: memoize when a native control goes in a list
 
 `SwitchRow` is used one-per-card, so rebuilding its handler and modifier arrays each

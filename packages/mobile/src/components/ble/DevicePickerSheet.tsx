@@ -131,7 +131,7 @@ export function DevicePickerSheet({
       )}
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
-        <Button title={t('ble.cancel')} onPress={onDismiss} variant="text" size="medium" />
+        <Button title={t('ble.cancel')} onPress={onDismiss} variant="text" size="medium" role="cancel" />
       </View>
     </BottomSheetModal>
   );

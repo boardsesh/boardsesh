@@ -149,6 +149,7 @@ export function StravaCard() {
           title={t('integrations.strava.disconnect')}
           variant="text"
           tintColor={brandColors.error}
+          role="destructive"
           icon="delete"
           onPress={handleDisconnect}
         />

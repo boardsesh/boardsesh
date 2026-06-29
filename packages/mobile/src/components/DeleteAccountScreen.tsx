@@ -168,6 +168,7 @@ export function DeleteAccountScreen() {
           title={t('deleteAccount.dialog.confirm')}
           variant="filled"
           tintColor={brandColors.error}
+          role="destructive"
           onPress={() => {
             void handleDelete();
           }}
@@ -177,6 +178,7 @@ export function DeleteAccountScreen() {
         <Button
           title={t('deleteAccount.dialog.cancel')}
           variant="text"
+          role="cancel"
           onPress={() => router.back()}
           disabled={isDeleting}
         />

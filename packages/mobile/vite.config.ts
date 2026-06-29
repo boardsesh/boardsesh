@@ -201,6 +201,17 @@ export default defineConfig({
         find: /^(.*\/)?AppMenu$/,
         replacement: fileURLToPath(new URL('./test/app-menu-stub.tsx', import.meta.url)),
       },
+      // Button is platform-split (Button.ios.tsx renders a native @expo/ui SwiftUI
+      // `Button`; Button.android.tsx the native Compose Material button family).
+      // Vitest doesn't resolve `.ios`/`.android` extensions and can't mount either
+      // native tree, so redirect the extensionless import to a faithful passthrough
+      // stub that keeps the public API + the `button` accessibility role. Button is
+      // the most-rendered primitive, so many screen/sheet suites hit this. Suites
+      // that assert Button internals register their own vi.mock (takes precedence).
+      {
+        find: /^(.*\/)?Button$/,
+        replacement: fileURLToPath(new URL('./test/button-stub.tsx', import.meta.url)),
+      },
     ],
     // .tsx test files can opt into a jsdom environment per file via the
     // `// @vitest-environment jsdom` pragma — needed to render React

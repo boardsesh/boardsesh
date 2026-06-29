@@ -458,7 +458,12 @@ export function BoardAccountsSection() {
               {linkBoard === 'kilter' ? t('aurora.kilterLinkDialog.passwordHelp') : t('aurora.mobile.passwordHelp')}
             </Text>
             <View style={styles.modalActions}>
-              <Button title={tCommon('actions.cancel')} variant="text" onPress={() => setLinkBoard(null)} />
+              <Button
+                title={tCommon('actions.cancel')}
+                variant="text"
+                role="cancel"
+                onPress={() => setLinkBoard(null)}
+              />
               <Button
                 title={t('aurora.linkDialog.submit')}
                 onPress={handleSubmitLink}
@@ -653,6 +658,7 @@ function BoardAccountCard({
               variant="text"
               size="small"
               tintColor={brandColors.error}
+              role="destructive"
               loading={isRemoving}
               disabled={isRemoving}
               onPress={onUnlink}
@@ -764,7 +770,7 @@ function ImportDialog({
                 {t('aurora.import.dialog.previewNote')}
               </Text>
               <View style={styles.modalActions}>
-                <Button title={tCommon('actions.cancel')} variant="text" onPress={onCancel} />
+                <Button title={tCommon('actions.cancel')} variant="text" role="cancel" onPress={onCancel} />
                 <Button title={t('aurora.import.dialog.confirm')} icon="upload" onPress={onConfirm} />
               </View>
             </>

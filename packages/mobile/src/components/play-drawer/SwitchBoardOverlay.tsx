@@ -1,6 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../Button';
+import { ButtonSurfaceProvider } from '../Button.surface';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { withAlpha } from '../../theme/colors';
@@ -36,7 +37,15 @@ export function SwitchBoardOverlay({ boardLabel, onSwitchBoard }: SwitchBoardOve
         <Text variant="subheadline" color={withAlpha(overlays.onScrim, 0.82)} style={styles.subtitle}>
           {t('boardMismatch.subtitle', { board: boardLabel })}
         </Text>
-        <Button title={t('boardMismatch.cta')} icon="transfer" variant="filled" size="medium" onPress={onSwitchBoard} />
+        <ButtonSurfaceProvider surface="content">
+          <Button
+            title={t('boardMismatch.cta')}
+            icon="transfer"
+            variant="filled"
+            size="medium"
+            onPress={onSwitchBoard}
+          />
+        </ButtonSurfaceProvider>
       </View>
     </View>
   );

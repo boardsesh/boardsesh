@@ -49,6 +49,7 @@ export function PlaylistQueueReplaceSheet({
           <Button
             title={t('detail.queueReplace.cancel')}
             variant="outlined"
+            role="cancel"
             onPress={onCancel}
             disabled={isReplacing}
             style={styles.button}
