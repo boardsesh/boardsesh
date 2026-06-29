@@ -1012,6 +1012,8 @@ function ClimbListInner() {
           gradeLabel={gradeChip.label}
           gradeActive={gradeChip.active}
           onOpenGrade={handleOpenGrade}
+          gradeRailOpen={showGrade}
+          onCloseGrade={handleDismissGrade}
           dimensionChips={dimensionChips}
           minAscents={filters.minAscents}
           onChangePopularity={handleChangePopularity}
@@ -1037,6 +1039,8 @@ function ClimbListInner() {
     handleClearRecentFilters,
     gradeChip,
     handleOpenGrade,
+    showGrade,
+    handleDismissGrade,
     dimensionChips,
     handleChangePopularity,
     handleChangeRating,

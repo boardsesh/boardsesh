@@ -52,6 +52,8 @@ function FilterChipRowComponent({
   gradeLabel,
   gradeActive,
   onOpenGrade,
+  gradeRailOpen,
+  onCloseGrade,
   dimensionChips,
   minAscents,
   onChangePopularity,
@@ -126,8 +128,13 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
-          {/* Grade → the range rail overlay. A button, not a menu. [PRIMARY #1] */}
-          <Button label={gradeLabel} onPress={onOpenGrade} modifiers={chipModifiers(gradeActive)} />
+          {/* Grade → the range rail overlay. A button, not a menu; tap toggles the
+              rail (close path beyond the tap-outside dismiss layer). [PRIMARY #1] */}
+          <Button
+            label={gradeLabel}
+            onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+            modifiers={chipModifiers(gradeActive)}
+          />
 
           {/* Show ▾ — hide-sent + benchmarks; menuActionDismissBehavior keeps it
               open. [PRIMARY #2 + #3] — kept directly after Grade. */}

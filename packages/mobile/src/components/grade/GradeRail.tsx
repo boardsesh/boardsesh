@@ -93,11 +93,17 @@ type GradeRangeRailProps = {
   // call site can feed it into the `Grade Filter Changed` analytics event.
   onChange: (next: GradeBound, meta?: GradeTapMeta) => void;
   /**
-   * Asked to dismiss itself (swipe the handle down, completed range, or cleared
-   * selection). Only ever called when `dismissible` is true, so an inline,
-   * always-open rail (e.g. inside the filter sheet) can omit it.
+   * Asked to dismiss itself (swipe the handle, tap the handle, completed range, or
+   * cleared selection). Providing it also renders the grab handle + swipe-to-close
+   * gesture; an inline, always-open rail (e.g. inside the filter sheet) omits it.
    */
   onRequestClose?: () => void;
+  /**
+   * Auto-dismiss on completing a range / clearing the selection. Independent of the
+   * grab handle: the handle + swipe-to-close show whenever `onRequestClose` is set, so
+   * the chip-row rails (dismissible={false}) keep a manual close affordance without the
+   * rail vanishing mid-range-build.
+   */
   dismissible?: boolean;
   showTitle?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -286,7 +292,7 @@ export function GradeRangeRail({
 
   return (
     <RailFrame style={style}>
-      {dismissible ? (
+      {onRequestClose ? (
         <GestureDetector gesture={handleGestureClose}>
           <PressableSurface
             onPress={handleRequestClose}

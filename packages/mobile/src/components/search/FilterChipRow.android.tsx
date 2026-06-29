@@ -13,11 +13,17 @@
 //     menu on a toggle item's click — Compose has no menuActionDismissBehavior and
 //     doesn't auto-dismiss on click, so this is the natural equivalent.
 //   • Dimension chips reconstruct iOS's Menu+onPrimaryAction (tap toggles, long-press
-//     opens lock/unlock) from `combinedClickable`. The chip carries no `onClick`, so
-//     the modifier owns both gestures — avoiding the FilterChip-onClick-vs-
-//     combinedClickable conflict. A locked chip keeps firing onToggle on tap, but the
-//     shared `useDimensionRepin` in the climbs screen re-pins it, so the filter stays
-//     active (the same "locked ignores tap" outcome as iOS).
+//     opens lock/unlock). The FilterChip keeps its own `onClick` (tap → onToggle): the
+//     Compose FilterChip ALWAYS wires an internal onClick, so a `combinedClickable`
+//     placed on the chip's OWN modifier is dead (the chip's inner clickable consumes
+//     the gesture). The long-press lives instead on a wrapping `Row` carrying
+//     `combinedClickable({ onLongClick })` (no onClick → its native click event
+//     JS-no-ops, so no double-toggle) — the same plain-container pattern SelectRow uses
+//     in MoreForm.android.tsx. Long-press is best-effort on Compose; if a device doesn't
+//     propagate it to the parent the chip still toggles on tap (lock just unreachable).
+//     A locked chip keeps firing onToggle on tap, but `onToggle` early-returns when
+//     locked and the shared `useDimensionRepin` re-pins it, so the filter stays active
+//     (the same "locked ignores tap" outcome as iOS).
 //   • Single-choice (Popularity/Rating) skips the iOS string-tag Picker round-trip:
 //     each item's onClick closure carries the real `number | undefined` bucket.
 // Labels reuse FilterChipRow.logic so a filter is never worded two ways across
@@ -153,9 +159,12 @@ function MenuItem({
   );
 }
 
-// Tall / Wide board-shape chip: tap toggles the filter, long-press opens a
-// lock/unlock menu. `combinedClickable` owns both gestures (no FilterChip.onClick),
-// avoiding the documented onClick-vs-combinedClickable conflict.
+// Tall / Wide board-shape chip: tap toggles the filter (FilterChip.onClick),
+// long-press opens a lock/unlock menu. The long-press lives on the wrapping `Row`'s
+// `combinedClickable` rather than the chip — the chip's own internal onClick always
+// consumes the gesture, so a combinedClickable on the chip itself is dead (see the
+// file header). `indication: false` keeps the row from painting a second ripple over
+// the chip's own.
 function DimensionChipView({
   dimension,
   label,
@@ -173,20 +182,18 @@ function DimensionChipView({
   return (
     <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
-        <FilterChip
-          selected={dimension.active}
-          colors={colors}
-          modifiers={[combinedClickable({ onClick: dimension.onToggle, onLongClick: () => setExpanded(true) })]}
-        >
-          {dimension.locked ? (
-            <FilterChip.LeadingIcon>
-              <Icon source={ICON.lock} size={ICON_SIZE} />
-            </FilterChip.LeadingIcon>
-          ) : null}
-          <FilterChip.Label>
-            <Text>{label}</Text>
-          </FilterChip.Label>
-        </FilterChip>
+        <Row modifiers={[combinedClickable({ onLongClick: () => setExpanded(true) }, { indication: false })]}>
+          <FilterChip selected={dimension.active} colors={colors} onClick={dimension.onToggle}>
+            {dimension.locked ? (
+              <FilterChip.LeadingIcon>
+                <Icon source={ICON.lock} size={ICON_SIZE} />
+              </FilterChip.LeadingIcon>
+            ) : null}
+            <FilterChip.Label>
+              <Text>{label}</Text>
+            </FilterChip.Label>
+          </FilterChip>
+        </Row>
       </DropdownMenu.Trigger>
       <DropdownMenu.Items>
         <DropdownMenuItem
@@ -218,6 +225,8 @@ function FilterChipRowComponent({
   gradeLabel,
   gradeActive,
   onOpenGrade,
+  gradeRailOpen,
+  onCloseGrade,
   dimensionChips,
   minAscents,
   onChangePopularity,
@@ -297,8 +306,13 @@ function FilterChipRowComponent({
           />
         ) : null}
 
-        {/* Grade → the range rail overlay. Action chip, no menu. */}
-        <ActionChip label={gradeLabel} selected={gradeActive} colors={chipColors} onPress={onOpenGrade} />
+        {/* Grade → the range rail overlay. Action chip, no menu; tap toggles the rail. */}
+        <ActionChip
+          label={gradeLabel}
+          selected={gradeActive}
+          colors={chipColors}
+          onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+        />
 
         {/* Show ▾ — hide-sent (auth-gated) + benchmarks. The controlled menu stays
             OPEN while toggling (these items don't call close()). */}

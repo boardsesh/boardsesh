@@ -334,6 +334,38 @@ describe('GradeRangeRail', () => {
     expect(getByText('mobile.search.gradeClear')).toBeTruthy();
     expect(container.querySelector('[data-scroll="true"]')?.getAttribute('data-nested-scroll')).toBe('true');
   });
+
+  // The chip-row rails pass dismissible={false} (no auto-dismiss while building a
+  // range) but still need a manual close affordance — so the grab handle + swipe
+  // gesture are gated on onRequestClose, not dismissible.
+  it('renders the close handle when onRequestClose is set even with dismissible={false}', () => {
+    const onRequestClose = vi.fn();
+    const { container } = render(
+      <GradeRangeRail
+        grades={grades}
+        bound={{ minGradeId: undefined, maxGradeId: undefined }}
+        onChange={vi.fn()}
+        onRequestClose={onRequestClose}
+        dismissible={false}
+      />,
+    );
+    const handle = container.querySelector('[data-label="mobile.gradeRail.closeAria"]');
+    expect(handle).toBeTruthy();
+    fireEvent.click(handle as Element);
+    expect(onRequestClose).toHaveBeenCalled();
+  });
+
+  it('omits the close handle for an inline rail with no onRequestClose', () => {
+    const { container } = render(
+      <GradeRangeRail
+        grades={grades}
+        bound={{ minGradeId: undefined, maxGradeId: undefined }}
+        onChange={vi.fn()}
+        dismissible={false}
+      />,
+    );
+    expect(container.querySelector('[data-label="mobile.gradeRail.closeAria"]')).toBeNull();
+  });
 });
 
 describe('GradeSingleSelectRail', () => {

@@ -39,6 +39,9 @@ export type FilterChipRowProps = {
   gradeLabel: string;
   gradeActive: boolean;
   onOpenGrade: () => void;
+  /** Whether the grade range rail is currently shown — the chip toggles it. */
+  gradeRailOpen: boolean;
+  onCloseGrade: () => void;
 
   /** Tall/Wide chips for the current Kilter homewall size (empty otherwise). */
   dimensionChips: DimensionChip[];
