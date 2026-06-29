@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { Host } from '@expo/ui';
 import { DropdownMenu, DropdownMenuItem, Row, Text } from '@expo/ui/jetpack-compose';
-import { clickable, padding, alpha } from '@expo/ui/jetpack-compose/modifiers';
+import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
 import { spacing } from '../theme/tokens';
@@ -30,14 +30,30 @@ export function AppMenu({
   accessibilityHint,
   style,
 }: AppMenuProps) {
-  const { brandColors, m3 } = useTheme();
+  const { brandColors, m3, systemColors, colorScheme } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const resolved = resolveMenuActions(actions);
+
+  // Every `Text` carries an explicit, scheme-aware colour. The trigger and the menu
+  // popup are separate Compose compositions, and a custom `Text` in a slot does NOT
+  // inherit the DropdownMenuItem's content colour — so without this the labels fall
+  // back to a default that's dark-on-dark when the in-app theme differs from the OS
+  // scheme (the bug this fixes). Sourced from `useTheme()`, which is scheme-aware.
+  const labelColor = systemColors.label as string;
+  const caretColor = systemColors.secondaryLabel as string;
 
   return (
     // `matchContents` (content width AND height): the title-menu hugs its label so it
     // sits leading in the app bar (the find-climbers action is held trailing by a flex
-    // spacer). `maxWidth` keeps a long gym name from crowding that action.
+    // spacer). `maxWidth` caps the RN Host (the anchor) only — the `DropdownMenu.Items`
+    // popup is a separate Compose overlay that measures independently, so a very long
+    // gym name isn't clipped in the open list (symmetric with the iOS Menu, which caps
+    // the anchor, not the popup).
+    //
+    // `colorScheme` forces the Compose MaterialTheme (the menu surface + default
+    // content colours) to follow our in-app Light/Dark toggle (`themeOverride`)
+    // instead of the OS scheme — same fix MoreForm uses; without it the menu surface
+    // and text track the device scheme and clash with the app.
     //
     // Accessibility rides the RN Host boundary: @expo/ui/jetpack-compose has no
     // content-description modifier, and the Host forwards these props to its native
@@ -45,6 +61,7 @@ export function AppMenu({
     // `Menu` a11y modifiers and the old Paper Pressable anchor.
     <Host
       matchContents
+      colorScheme={colorScheme}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
@@ -56,38 +73,41 @@ export function AppMenu({
             modifiers={[clickable(() => setExpanded(true)), padding(spacing[2], spacing[1], spacing[2], spacing[1])]}
             verticalAlignment="center"
           >
-            <Text style={{ typography: 'titleMedium' }} maxLines={1} overflow="ellipsis">
+            <Text style={{ typography: 'titleMedium' }} color={labelColor} maxLines={1} overflow="ellipsis">
               {label}
             </Text>
             {showCaret ? (
-              <Text style={{ typography: 'titleMedium' }} modifiers={[alpha(0.6)]}>
+              <Text style={{ typography: 'titleMedium' }} color={caretColor}>
                 {` ${CARET}`}
               </Text>
             ) : null}
           </Row>
         </DropdownMenu.Trigger>
         <DropdownMenu.Items>
-          {resolved.map((action, index) => (
-            <DropdownMenuItem
-              // Composite key: scope entries can share a display name (two gyms named
-              // the same), so the label alone isn't unique — pair it with the position.
-              key={`${index}-${action.label}`}
-              elementColors={action.isDestructive ? { textColor: m3.error } : undefined}
-              onClick={() => {
-                setExpanded(false);
-                onSelectIndex(index);
-              }}
-            >
-              {action.showCheck ? (
-                <DropdownMenuItem.LeadingIcon>
-                  <Text color={brandAccentColor(brandColors)}>✓</Text>
-                </DropdownMenuItem.LeadingIcon>
-              ) : null}
-              <DropdownMenuItem.Text>
-                <Text>{action.label}</Text>
-              </DropdownMenuItem.Text>
-            </DropdownMenuItem>
-          ))}
+          {resolved.map((action, index) => {
+            const itemColor = action.isDestructive ? (m3.error as string) : labelColor;
+            return (
+              <DropdownMenuItem
+                // Composite key: scope entries can share a display name (two gyms named
+                // the same), so the label alone isn't unique — pair it with the position.
+                key={`${index}-${action.label}`}
+                elementColors={{ textColor: itemColor }}
+                onClick={() => {
+                  setExpanded(false);
+                  onSelectIndex(index);
+                }}
+              >
+                {action.showCheck ? (
+                  <DropdownMenuItem.LeadingIcon>
+                    <Text color={brandAccentColor(brandColors)}>✓</Text>
+                  </DropdownMenuItem.LeadingIcon>
+                ) : null}
+                <DropdownMenuItem.Text>
+                  <Text color={itemColor}>{action.label}</Text>
+                </DropdownMenuItem.Text>
+              </DropdownMenuItem>
+            );
+          })}
         </DropdownMenu.Items>
       </DropdownMenu>
     </Host>

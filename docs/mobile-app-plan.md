@@ -224,10 +224,10 @@ Climb list items, queue items, and playlist items support swipe actions:
 
 Climb cards, queue items, and playlist items show a native iOS context menu on long press:
 
-- Uses `react-native-context-menu-view` which wraps `UIContextMenuInteraction`
+- Uses `ClimbReactionMenu` — a custom Reanimated + `BlurView` / `FullWindowOverlay` overlay (the native iOS context menu can't host the enlarged board-art preview on the New Architecture)
 - Shows a blurred preview of the climb card with a menu below
 - Menu items with SF Symbol icons: "Add to Queue", "Add to Playlist", "Favorite", "Share", "View Setter"
-- Destructive items (Remove, Delete) shown in red with `destructive: true`
+- Destructive items (Remove, Delete) shown in red
 
 ### Pull to refresh
 
@@ -488,30 +488,30 @@ The explicit goal: a user picking up the iOS app says "this feels like it was ma
 
 ## Key libraries
 
-| Capability      | Library / Approach                               | Notes                                                                                                  |
-| --------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Navigation      | `expo-router` + `@react-navigation/native-stack` | Native `UINavigationController` on iOS, large titles, swipe-back                                       |
-| Tab bar         | `@react-navigation/bottom-tabs` + custom tab bar | iOS-style blur tab bar, SF Symbol icons                                                                |
-| Modal sheets    | `react-native-bottom-sheet` (Gorhom)             | Snap points, gesture-driven, matches iOS sheet behavior                                                |
-| BLE             | `react-native-ble-plx`                           | Mature, direct CoreBluetooth/Android BLE                                                               |
-| Board rendering | Expo native module (SwiftUI / Compose)           | SwiftUI `Canvas` on iOS, Compose `Canvas` on Android. Fallback: Skia                                   |
-| Lists           | `@shopify/flash-list`                            | Drop-in FlatList replacement, 60fps+ scrolling                                                         |
-| Storage (KV)    | `react-native-mmkv`                              | Fastest KV store on mobile, JSI-based                                                                  |
-| Storage (SQL)   | `expo-sqlite`                                    | Offline climb database + user data, full SQL with JOINs. See [offline sync plan](offline-sync-plan.md) |
-| Auth            | `expo-auth-session`                              | Standard OAuth flows                                                                                   |
-| Secure storage  | `expo-secure-store`                              | iOS Keychain, Android Keystore                                                                         |
-| Live Activity   | Expo native module (SwiftUI ActivityKit)         | iOS lock screen widgets, no Android equivalent                                                         |
-| HealthKit       | Expo native module (SwiftUI HealthKit)           | iOS; Android uses Health Connect via same module                                                       |
-| Push            | `expo-notifications`                             | APNs + FCM                                                                                             |
-| Icons           | `expo-symbols` (SF Symbols)                      | Native Apple iconography on iOS, Material fallback on Android                                          |
-| Haptics         | `expo-haptics`                                   | Taptic Engine feedback on all interactive elements                                                     |
-| Animations      | `react-native-reanimated` v3                     | Spring-based animations matching iOS system dynamics                                                   |
-| Gestures        | `react-native-gesture-handler`                   | Native gesture recognizers, swipe actions, drag-to-reorder                                             |
-| Context menus   | `react-native-context-menu-view`                 | Native `UIContextMenuInteraction` with blur preview                                                    |
-| Blur effects    | `@react-native-community/blur`                   | Tab bar vibrancy, navigation bar blur, overlay blur                                                    |
-| GraphQL         | `@tanstack/react-query` + `graphql-request`      | Same pattern as web                                                                                    |
-| Error tracking  | `@sentry/react-native`                           | Crash reporting + performance                                                                          |
-| Native modules  | `expo-modules-core`                              | SwiftUI (iOS) + Kotlin/Compose (Android) bridge                                                        |
+| Capability      | Library / Approach                                   | Notes                                                                                                                     |
+| --------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Navigation      | `expo-router` + `@react-navigation/native-stack`     | Native `UINavigationController` on iOS, large titles, swipe-back                                                          |
+| Tab bar         | `@react-navigation/bottom-tabs` + custom tab bar     | iOS-style blur tab bar, SF Symbol icons                                                                                   |
+| Modal sheets    | `react-native-bottom-sheet` (Gorhom)                 | Snap points, gesture-driven, matches iOS sheet behavior                                                                   |
+| BLE             | `react-native-ble-plx`                               | Mature, direct CoreBluetooth/Android BLE                                                                                  |
+| Board rendering | Expo native module (SwiftUI / Compose)               | SwiftUI `Canvas` on iOS, Compose `Canvas` on Android. Fallback: Skia                                                      |
+| Lists           | `@shopify/flash-list`                                | Drop-in FlatList replacement, 60fps+ scrolling                                                                            |
+| Storage (KV)    | `react-native-mmkv`                                  | Fastest KV store on mobile, JSI-based                                                                                     |
+| Storage (SQL)   | `expo-sqlite`                                        | Offline climb database + user data, full SQL with JOINs. See [offline sync plan](offline-sync-plan.md)                    |
+| Auth            | `expo-auth-session`                                  | Standard OAuth flows                                                                                                      |
+| Secure storage  | `expo-secure-store`                                  | iOS Keychain, Android Keystore                                                                                            |
+| Live Activity   | Expo native module (SwiftUI ActivityKit)             | iOS lock screen widgets, no Android equivalent                                                                            |
+| HealthKit       | Expo native module (SwiftUI HealthKit)               | iOS; Android uses Health Connect via same module                                                                          |
+| Push            | `expo-notifications`                                 | APNs + FCM                                                                                                                |
+| Icons           | `expo-symbols` (SF Symbols)                          | Native Apple iconography on iOS, Material fallback on Android                                                             |
+| Haptics         | `expo-haptics`                                       | Taptic Engine feedback on all interactive elements                                                                        |
+| Animations      | `react-native-reanimated` v3                         | Spring-based animations matching iOS system dynamics                                                                      |
+| Gestures        | `react-native-gesture-handler`                       | Native gesture recognizers, swipe actions, drag-to-reorder                                                                |
+| Menus           | `@expo/ui` (SwiftUI `Menu` / Compose `DropdownMenu`) | Native dropdown menus (e.g. the Home scope switcher); long-press preview menus use the custom `ClimbReactionMenu` overlay |
+| Blur effects    | `@react-native-community/blur`                       | Tab bar vibrancy, navigation bar blur, overlay blur                                                                       |
+| GraphQL         | `@tanstack/react-query` + `graphql-request`          | Same pattern as web                                                                                                       |
+| Error tracking  | `@sentry/react-native`                               | Crash reporting + performance                                                                                             |
+| Native modules  | `expo-modules-core`                                  | SwiftUI (iOS) + Kotlin/Compose (Android) bridge                                                                           |
 
 ## Auth design
 
@@ -617,7 +617,7 @@ This is much less likely with a genuinely native app using SwiftUI modules, but 
 | Custom design system takes longer than a library           | Medium     | Medium | Start with 8-10 base components the app actually needs. Don't build a component library — build what each screen requires. Iterate after Phase 1.                                                              |
 | SF Symbols availability in React Native                    | Medium     | Low    | `expo-symbols` is the official Expo module. Fallback: `react-native-sfsymbols`. Worst case: SF Symbol PNGs exported from SF Symbols.app.                                                                       |
 | 120fps target on ProMotion hard to achieve                 | Medium     | Medium | SwiftUI `Canvas` handles this natively. FlashList + Reanimated run on the UI thread. If JS thread drops frames, move animations to native driver. Validate in Phase 2 week 1.                                  |
-| Context menu library maintenance                           | Low        | Low    | `react-native-context-menu-view` wraps a stable UIKit API. If abandoned, simple enough to wrap in a custom Expo native module.                                                                                 |
+| Native menu maintenance                                    | Low        | Low    | Menus use `@expo/ui` (first-party Expo), so they track the SDK. `react-native-context-menu-view` has been retired; long-press preview menus are the in-repo `ClimbReactionMenu` overlay.                       |
 | Platform-adaptive components double component count        | Medium     | Medium | Accept this cost. The alternative (one compromised design) is worse. Use `Platform.select()` at the component level, not the screen level. Most screens are ~90% shared code.                                  |
 | Spring animation tuning is subjective                      | Medium     | Low    | Define 4 presets (snappy, interactive, gentle, bouncy) in Phase 1 and lock them. Consistency matters more than per-case perfection.                                                                            |
 | SwiftUI Settings module adds native maintenance burden     | Low        | Medium | Settings screen is structurally simple (Form + sections). SwiftUI code is ~200 lines. If burdensome, fall back to React Native with grouped list styling.                                                      |

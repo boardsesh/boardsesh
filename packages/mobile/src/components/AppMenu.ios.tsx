@@ -25,6 +25,7 @@ import {
 import type { ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
+import { spacing } from '../theme/tokens';
 import { resolveMenuActions } from './AppMenu.logic';
 import type { AppMenuProps } from './AppMenu.types';
 
@@ -62,7 +63,7 @@ export function AppMenu({
       <Menu
         modifiers={menuModifiers}
         label={
-          <HStack spacing={4} alignment="center">
+          <HStack spacing={spacing[1]} alignment="center">
             {/* Headline weight + label colour by default — reads like the old pill's
                 bold title; truncates a long scope name within the capped frame. */}
             <Text modifiers={[font({ textStyle: 'headline' }), lineLimit(1), truncationMode('tail')]}>{label}</Text>
