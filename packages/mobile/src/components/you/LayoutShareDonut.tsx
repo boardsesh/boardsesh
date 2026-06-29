@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { PieChart } from 'react-native-gifted-charts';
 import type { RawLayoutPercentage } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
+import { CountUpNumber } from './CountUpNumber';
 import { layoutChartColor } from './profile-chart-colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useTheme } from '../../providers/theme-provider';
@@ -50,15 +51,8 @@ export function LayoutShareDonut({ layoutPercentages, totalAscents }: LayoutShar
   const centerLabel = useCallback(
     (): ReactNode => (
       <View style={styles.center} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
-        <Text
-          variant="headline"
-          color={systemColors.label}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          maxFontSizeMultiplier={1.3}
-        >
-          {totalAscents}
-        </Text>
+        <CountUpNumber value={totalAscents} variant="headline" color={systemColors.label} />
+
         <Text
           variant="caption2"
           color={systemColors.secondaryLabel}

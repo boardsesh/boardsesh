@@ -103,7 +103,78 @@
     "streakA11y": "{{count}}-week streak, best {{best}} weeks",
     "biggestFightA11y": "Biggest fight: {{count}}-try send at {{grade}}",
     "benchmarksA11y": "{{count}} benchmarks sent, hardest {{grade}}",
-    "activeDaysA11y": "{{count}} active days this month, {{delta}}"
+    "activeDaysA11y": "{{count}} active days this month, {{delta}}",
+    "streakBestWeeks_one": "best {{count}} wk",
+    "streakBestWeeks_other": "best {{count}} wks"
+  },
+  "sections": {
+    "biggestFights": "Biggest fights",
+    "gradePyramid": "Grade pyramid",
+    "yourAngle": "By wall angle",
+    "wallRhythm": "Wall rhythm",
+    "ceilingOverTime": "Ceiling over time",
+    "gradeMilestones": "Grade milestones"
+  },
+  "charts": {
+    "nextProject": "One more {{grade}} fills the gap",
+    "homeAngle": "home angle",
+    "bestEver": "best ever",
+    "angleUnit": "{{angle}}°",
+    "triesPill_one": "{{count}} try",
+    "triesPill_other": "{{count}} tries",
+    "wallRhythmCaption": "Most active {{weekday}} {{timeOfDay}}s",
+    "milestoneDate": "{{month}} '{{year}}",
+    "projectingA11y": "Tries per send",
+    "biggestProjectA11y": "Biggest project: {{grade}}, {{count}} tries",
+    "angleA11y": "Hardest grade by wall angle",
+    "wallRhythmA11y": "Climbing by weekday and time of day",
+    "ceilingA11y": "Hardest grade each week, now {{grade}}",
+    "milestonesA11y": "First send at each grade",
+    "milestoneA11y": "First {{grade}} in {{date}}",
+    "weekday": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
+    "weekdayFull": {
+      "mon": "Monday",
+      "tue": "Tuesday",
+      "wed": "Wednesday",
+      "thu": "Thursday",
+      "fri": "Friday",
+      "sat": "Saturday",
+      "sun": "Sunday"
+    },
+    "block": {
+      "morning": "Morning",
+      "midday": "Midday",
+      "evening": "Eve",
+      "night": "Night"
+    },
+    "timeOfDay": {
+      "morning": "morning",
+      "midday": "midday",
+      "evening": "evening",
+      "night": "night"
+    },
+    "month": {
+      "jan": "Jan",
+      "feb": "Feb",
+      "mar": "Mar",
+      "apr": "Apr",
+      "may": "May",
+      "jun": "Jun",
+      "jul": "Jul",
+      "aug": "Aug",
+      "sep": "Sep",
+      "oct": "Oct",
+      "nov": "Nov",
+      "dec": "Dec"
+    }
   },
   "empty": {
     "userNotFound": "User not found",

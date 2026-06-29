@@ -103,7 +103,78 @@
     "streakA11y": "racha de {{count}} semanas, mejor {{best}} semanas",
     "biggestFightA11y": "Mayor pelea: encadene de {{count}} intentos en {{grade}}",
     "benchmarksA11y": "{{count}} benchmarks encadenados, el más difícil {{grade}}",
-    "activeDaysA11y": "{{count}} días activos este mes, {{delta}}"
+    "activeDaysA11y": "{{count}} días activos este mes, {{delta}}",
+    "streakBestWeeks_one": "mejor {{count}} sem",
+    "streakBestWeeks_other": "mejor {{count}} sem"
+  },
+  "sections": {
+    "biggestFights": "Mayores peleas",
+    "gradePyramid": "Pirámide de grados",
+    "yourAngle": "Por ángulo de pared",
+    "wallRhythm": "Ritmo en el muro",
+    "ceilingOverTime": "Techo a lo largo del tiempo",
+    "gradeMilestones": "Hitos por grado"
+  },
+  "charts": {
+    "nextProject": "Un {{grade}} más cierra el hueco",
+    "homeAngle": "ángulo habitual",
+    "bestEver": "mejor histórico",
+    "angleUnit": "{{angle}}°",
+    "triesPill_one": "{{count}} intento",
+    "triesPill_other": "{{count}} intentos",
+    "wallRhythmCaption": "Más activo los {{weekday}} por la {{timeOfDay}}",
+    "milestoneDate": "{{month}} '{{year}}",
+    "projectingA11y": "Intentos por encadene",
+    "biggestProjectA11y": "Mayor proyecto: {{grade}}, {{count}} intentos",
+    "angleA11y": "Grado más difícil por ángulo de pared",
+    "wallRhythmA11y": "Escalada por día de la semana y momento del día",
+    "ceilingA11y": "Grado más difícil cada semana, ahora {{grade}}",
+    "milestonesA11y": "Primer encadene en cada grado",
+    "milestoneA11y": "Primer {{grade}} en {{date}}",
+    "weekday": {
+      "mon": "lun",
+      "tue": "mar",
+      "wed": "mié",
+      "thu": "jue",
+      "fri": "vie",
+      "sat": "sáb",
+      "sun": "dom"
+    },
+    "weekdayFull": {
+      "mon": "lunes",
+      "tue": "martes",
+      "wed": "miércoles",
+      "thu": "jueves",
+      "fri": "viernes",
+      "sat": "sábado",
+      "sun": "domingo"
+    },
+    "block": {
+      "morning": "Mañana",
+      "midday": "Mediodía",
+      "evening": "Tarde",
+      "night": "Noche"
+    },
+    "timeOfDay": {
+      "morning": "mañana",
+      "midday": "mediodía",
+      "evening": "tarde",
+      "night": "noche"
+    },
+    "month": {
+      "jan": "ene",
+      "feb": "feb",
+      "mar": "mar",
+      "apr": "abr",
+      "may": "may",
+      "jun": "jun",
+      "jul": "jul",
+      "aug": "ago",
+      "sep": "sep",
+      "oct": "oct",
+      "nov": "nov",
+      "dec": "dic"
+    }
   },
   "empty": {
     "userNotFound": "Usuario no encontrado",

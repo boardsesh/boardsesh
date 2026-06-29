@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { Pressable, View, StyleSheet, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
-import type { RawGroupedBar, RawVPointsTimeline } from '@boardsesh/profile-stats';
+import type { RawGroupedBar, RawRunningMaxCeiling, RawVPointsTimeline } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { ActivityIndicator } from '../ActivityIndicator';
@@ -21,7 +21,7 @@ import {
 
 const MAX_X_LABELS = 12;
 const AXIS_LABEL_SIZE = 11;
-const STACK_BAR_RADIUS = 3;
+const STACK_BAR_RADIUS = 4;
 const MIN_ZOOM_SCALE = 1;
 const MAX_ZOOM_SCALE = 2.75;
 // Floor for grouped flash|redpoint bars so a dense V0-V17 axis keeps each bar
@@ -719,6 +719,154 @@ export const TotalAreaChart = memo(function TotalAreaChart({
                   </Text>
                 </View>
               ),
+            }}
+            isAnimated={false}
+            disableScroll={!scrollEnabled}
+          />
+        );
+      }}
+    </ChartFrame>
+  );
+});
+
+type RunningMaxProps = {
+  ceiling: RawRunningMaxCeiling | null;
+  color: string;
+  height?: number;
+  loading?: boolean;
+  emptyLabel?: string;
+  interactive?: boolean;
+  zoomable?: boolean;
+  /** Max x-axis labels before downsampling blanks the rest (wide week labels). */
+  maxXLabels?: number;
+};
+
+/**
+ * "Your ceiling over time" — the trailing running-max grade per week as a single
+ * filled line, with a dashed "best ever" reference line and an end-dot pill
+ * marking the current ceiling (its grade label). The y-values are raw difficulty
+ * ids (non-decreasing), so the axis text is hidden — the curve's rise + the
+ * reference line carry the story. Reuses `TotalAreaChart`'s frame/end-pill grammar.
+ */
+export const RunningMaxLineChart = memo(function RunningMaxLineChart({
+  ceiling,
+  color,
+  height = 170,
+  loading,
+  emptyLabel,
+  interactive = true,
+  zoomable = true,
+  maxXLabels = 6,
+}: RunningMaxProps) {
+  const { chartColors, colorScheme } = useTheme();
+  const { t } = useTranslation('profile');
+  const isEmpty = !ceiling || ceiling.runningMax.length === 0;
+
+  const model = useMemo(() => {
+    if (!ceiling) return null;
+    const { weekLabels, runningMax, bestEverDifficulty, currentLabel } = ceiling;
+    // Headroom above "best ever" so the dashed reference line + the end pill clear
+    // the top edge instead of clipping.
+    const headroom = Math.max(1, Math.round(bestEverDifficulty * 0.08));
+    const maxValue = bestEverDifficulty + headroom;
+    const data = runningMax.map((value, index) => {
+      const isLast = index === runningMax.length - 1;
+      return {
+        value,
+        label: downsampleLabel(index, weekLabels.length, weekLabels[index], maxXLabels),
+        hideDataPoint: !isLast,
+        ...(isLast
+          ? {
+              dataPointColor: color,
+              dataPointRadius: 4,
+              dataPointLabelShiftY: -14,
+              dataPointLabelShiftX: -12,
+              dataPointLabelComponent: () => (
+                <View
+                  style={[
+                    styles.endValuePill,
+                    { backgroundColor: chartColors.elevatedSurface, borderColor: chartColors.separator },
+                  ]}
+                >
+                  <Text variant="caption2" color={chartColors.label} style={styles.endValueText}>
+                    {currentLabel}
+                  </Text>
+                </View>
+              ),
+            }
+          : {}),
+      };
+    });
+    return { data, maxValue, bestEverDifficulty, pointCount: weekLabels.length };
+  }, [ceiling, color, maxXLabels, chartColors.elevatedSurface, chartColors.separator, chartColors.label]);
+
+  return (
+    <ChartFrame
+      height={height}
+      loading={loading}
+      isEmpty={isEmpty}
+      emptyLabel={emptyLabel}
+      zoomable={interactive && zoomable}
+    >
+      {(width, zoomScale, scrollEnabled) => {
+        if (!model) return null;
+        const baseSpacing = Math.max(1, Math.floor((width - 16) / Math.max(1, model.pointCount - 1)));
+        const lineSpacing = Math.max(1, Math.round(baseSpacing * zoomScale));
+        const labelStep = model.pointCount > maxXLabels ? Math.ceil(model.pointCount / maxXLabels) : 1;
+        const labelBudget = labelStep * lineSpacing;
+        const sizedData = model.data.map((point) =>
+          point.label
+            ? {
+                ...point,
+                labelComponent: () => (
+                  <Text
+                    variant="caption2"
+                    color={chartColors.tertiaryLabel}
+                    style={[styles.lineAxisLabel, { width: labelBudget }]}
+                    numberOfLines={1}
+                  >
+                    {point.label}
+                  </Text>
+                ),
+              }
+            : point,
+        );
+        return (
+          <LineChart
+            areaChart
+            data={sizedData}
+            width={width - 16}
+            height={height - 28}
+            spacing={lineSpacing}
+            initialSpacing={4}
+            endSpacing={spacing[4]}
+            color={color}
+            startFillColor={color}
+            endFillColor={color}
+            startOpacity={colorScheme === 'dark' ? 0.4 : 0.28}
+            endOpacity={colorScheme === 'dark' ? 0.08 : 0.03}
+            gradientDirection="vertical"
+            thickness={2}
+            curved
+            curvature={0.2}
+            maxValue={model.maxValue}
+            noOfSections={4}
+            hideYAxisText
+            yAxisThickness={0}
+            xAxisThickness={StyleSheet.hairlineWidth}
+            xAxisColor={chartColors.separator}
+            hideRules
+            yAxisTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+            xAxisLabelTextStyle={{ color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE }}
+            showReferenceLine1
+            referenceLine1Position={model.bestEverDifficulty}
+            referenceLine1Config={{
+              color: chartColors.separator,
+              dashWidth: 4,
+              dashGap: 4,
+              thickness: 1,
+              labelText: t('charts.bestEver'),
+              labelTextStyle: { color: chartColors.tertiaryLabel, fontSize: AXIS_LABEL_SIZE },
             }}
             isAnimated={false}
             disableScroll={!scrollEnabled}

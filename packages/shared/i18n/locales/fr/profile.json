@@ -103,7 +103,78 @@
     "streakA11y": "série de {{count}} semaines, record {{best}} semaines",
     "biggestFightA11y": "Plus gros combat : enchaînement en {{count}} essais à {{grade}}",
     "benchmarksA11y": "{{count}} références enchaînées, la plus dure {{grade}}",
-    "activeDaysA11y": "{{count}} jours actifs ce mois-ci, {{delta}}"
+    "activeDaysA11y": "{{count}} jours actifs ce mois-ci, {{delta}}",
+    "streakBestWeeks_one": "record {{count}} sem",
+    "streakBestWeeks_other": "record {{count}} sem"
+  },
+  "sections": {
+    "biggestFights": "Plus gros combats",
+    "gradePyramid": "Pyramide de cotations",
+    "yourAngle": "Par inclinaison de mur",
+    "wallRhythm": "Rythme au mur",
+    "ceilingOverTime": "Plafond dans le temps",
+    "gradeMilestones": "Jalons par cotation"
+  },
+  "charts": {
+    "nextProject": "Un {{grade}} de plus comble le trou",
+    "homeAngle": "inclinaison habituelle",
+    "bestEver": "record absolu",
+    "angleUnit": "{{angle}}°",
+    "triesPill_one": "{{count}} essai",
+    "triesPill_other": "{{count}} essais",
+    "wallRhythmCaption": "Plus actif le {{weekday}} en {{timeOfDay}}",
+    "milestoneDate": "{{month}} '{{year}}",
+    "projectingA11y": "Essais par enchaînement",
+    "biggestProjectA11y": "Plus gros projet : {{grade}}, {{count}} essais",
+    "angleA11y": "Cotation la plus dure par inclinaison de mur",
+    "wallRhythmA11y": "Grimpe par jour de la semaine et moment de la journée",
+    "ceilingA11y": "Cotation la plus dure chaque semaine, maintenant {{grade}}",
+    "milestonesA11y": "Premier enchaînement à chaque cotation",
+    "milestoneA11y": "Premier {{grade}} en {{date}}",
+    "weekday": {
+      "mon": "lun",
+      "tue": "mar",
+      "wed": "mer",
+      "thu": "jeu",
+      "fri": "ven",
+      "sat": "sam",
+      "sun": "dim"
+    },
+    "weekdayFull": {
+      "mon": "lundi",
+      "tue": "mardi",
+      "wed": "mercredi",
+      "thu": "jeudi",
+      "fri": "vendredi",
+      "sat": "samedi",
+      "sun": "dimanche"
+    },
+    "block": {
+      "morning": "Matin",
+      "midday": "Midi",
+      "evening": "Soir",
+      "night": "Nuit"
+    },
+    "timeOfDay": {
+      "morning": "matin",
+      "midday": "midi",
+      "evening": "soir",
+      "night": "nuit"
+    },
+    "month": {
+      "jan": "janv",
+      "feb": "févr",
+      "mar": "mars",
+      "apr": "avr",
+      "may": "mai",
+      "jun": "juin",
+      "jul": "juil",
+      "aug": "août",
+      "sep": "sept",
+      "oct": "oct",
+      "nov": "nov",
+      "dec": "déc"
+    }
   },
   "empty": {
     "userNotFound": "Utilisateur introuvable",

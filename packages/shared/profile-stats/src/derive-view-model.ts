@@ -12,6 +12,11 @@ import {
   buildActiveDaysMoM,
   buildLastSendGap,
   buildBenchmarkSummary,
+  buildAngleBreakdown,
+  buildWallRhythm,
+  findNextProjectGrade,
+  buildRunningMaxCeiling,
+  buildGradeMilestones,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
 import type {
@@ -30,6 +35,11 @@ import type {
   RawActiveDaysDelta,
   RawLastSendGap,
   RawBenchmarkSummary,
+  RawAngleBreakdown,
+  RawWallRhythm,
+  RawNextProject,
+  RawRunningMaxCeiling,
+  RawGradeMilestone,
 } from './types';
 
 export type DeriveProfileViewModelInput = {
@@ -64,6 +74,14 @@ export type ProfileViewModel = {
   activeDaysDelta: RawActiveDaysDelta;
   lastSendGap: RawLastSendGap;
   benchmarkSummary: RawBenchmarkSummary;
+  // ── Deep-chart sections (PR2). Angle/rhythm/next-project follow the timeframe
+  // filter (detailed charts); ceiling + milestones are lifetime progression
+  // (board-scoped, all-time) like the hero's hardestSend.
+  angleBreakdown: RawAngleBreakdown | null;
+  wallRhythm: RawWallRhythm | null;
+  nextProjectGrade: RawNextProject;
+  runningMaxCeiling: RawRunningMaxCeiling | null;
+  gradeMilestones: RawGradeMilestone[];
 };
 
 /**
@@ -124,6 +142,13 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
   const lastSendGap = buildLastSendGap(boardScopedTicks);
   const benchmarkSummary = buildBenchmarkSummary(boardScopedTicks, gradeFormat);
 
+  // Deep-chart sections.
+  const angleBreakdown = buildAngleBreakdown(filteredLogbook, gradeFormat);
+  const wallRhythm = buildWallRhythm(filteredLogbook);
+  const nextProjectGrade = findNextProjectGrade(filteredLogbook, gradeFormat);
+  const runningMaxCeiling = buildRunningMaxCeiling(boardScopedTicks, gradeFormat);
+  const gradeMilestones = buildGradeMilestones(boardScopedTicks, gradeFormat);
+
   return {
     filteredLogbook,
     weeklyBars,
@@ -139,6 +164,11 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     activeDaysDelta,
     lastSendGap,
     benchmarkSummary,
+    angleBreakdown,
+    wallRhythm,
+    nextProjectGrade,
+    runningMaxCeiling,
+    gradeMilestones,
   };
 }
 

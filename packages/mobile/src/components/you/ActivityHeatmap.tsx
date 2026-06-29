@@ -2,23 +2,22 @@ import { Fragment, useCallback, useMemo, useState } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import Svg, { Rect } from 'react-native-svg';
-import type { RawActivityDay, RawActivityHeatmap } from '@boardsesh/profile-stats';
+import type { RawActivityDay, RawActivityHeatmap, RawStreaks } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
+import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
-import { blendOpaque } from '../../theme/colors';
 import { borderRadius, spacing } from '../../theme/tokens';
+import { buildIntensityFills, colorForCount, INTENSITY_STEPS } from './heatmap-intensity';
 
 const ROWS = 7;
 const CELL_GAP = 3;
 // Column budget (cell + gap) used to decide how many weeks fit the screen.
 const TARGET_COLUMN = 16;
-const INTENSITY_STEPS = [0.4, 0.6, 0.8, 1] as const;
-// Opaque-composite alphas for the empty floor (kept faint, scheme-tuned).
-const EMPTY_FLOOR_ALPHA_DARK = 0.14;
-const EMPTY_FLOOR_ALPHA_LIGHT = 0.08;
 
 type ActivityHeatmapProps = {
   heatmap: RawActivityHeatmap;
+  /** Weekly streak — when set, the card gains a flame "{n}-week streak" header. */
+  streak?: RawStreaks;
 };
 
 /**
@@ -28,7 +27,7 @@ type ActivityHeatmapProps = {
  * edge-to-edge — the recent calendar is the part people read. Single instance on
  * a scroll screen, so the SVG grid isn't subject to the list-virtualization rule.
  */
-export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
+export function ActivityHeatmap({ heatmap, streak }: ActivityHeatmapProps) {
   const { colorScheme, chartColors, brandColors } = useTheme();
   const { t } = useTranslation('profile');
   const [width, setWidth] = useState(0);
@@ -53,16 +52,12 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
 
   // Per-variant brand accent (opaque hex on every variant/scheme) composited onto
   // the opaque card surface so the ramp + empty floor stay legible regardless of
-  // what sits behind the SVG. Computed once per scheme/variant change.
+  // what sits behind the SVG. Computed once per scheme/variant change via the
+  // shared ramp helper (also drives the wall-rhythm grid, so they stay siblings).
   const primary = chartColors.accent;
   const surface = chartColors.secondaryBackground;
-  const { emptyFill, stepFills } = useMemo(() => {
-    const floorAlpha = colorScheme === 'dark' ? EMPTY_FLOOR_ALPHA_DARK : EMPTY_FLOOR_ALPHA_LIGHT;
-    return {
-      emptyFill: blendOpaque(primary, surface, floorAlpha),
-      stepFills: INTENSITY_STEPS.map((step) => blendOpaque(primary, surface, step)),
-    };
-  }, [primary, surface, colorScheme]);
+  const fills = useMemo(() => buildIntensityFills(primary, surface, colorScheme), [primary, surface, colorScheme]);
+  const { emptyFill, stepFills } = fills;
 
   // "Today" via a LOCAL date string (NOT toISOString, which is UTC) so the
   // current-day ring lands on the right cell across time zones.
@@ -73,14 +68,9 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
     return `${now.getFullYear()}-${month}-${dayOfMonth}`;
   }, []);
 
-  const colorForCount = useCallback(
-    (count: number): string => {
-      if (count <= 0) return emptyFill;
-      const ratio = count / heatmap.maxCount;
-      const stepIndex = Math.min(stepFills.length - 1, Math.max(0, Math.ceil(ratio * stepFills.length) - 1));
-      return stepFills[stepIndex];
-    },
-    [emptyFill, stepFills, heatmap.maxCount],
+  const fillForCount = useCallback(
+    (count: number): string => colorForCount(count, heatmap.maxCount, fills),
+    [fills, heatmap.maxCount],
   );
 
   const fitWeeks =
@@ -96,12 +86,32 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
 
   const onLayout = (event: LayoutChangeEvent) => setWidth(event.nativeEvent.layout.width);
 
+  // Live streak header: flame + "{n}-week streak" left, "best {n} wks" right.
+  // Only when a streak is actually running — a "0-week streak" header is noise.
+  const showStreakHeader = streak != null && streak.currentWeeks > 0;
+
   return (
     <View
       onLayout={onLayout}
       accessibilityRole="image"
       accessibilityLabel={t('stats.calendarAria', { days: totals.activeDays, count: totals.totalClimbs })}
     >
+      {showStreakHeader ? (
+        <View style={styles.streakHeader} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <View style={styles.streakLeft}>
+            <Icon name="flame" size={16} color={brandColors.accent} />
+            <Text variant="headline" color={chartColors.label}>
+              {t('dashboard.streakChip', { count: streak.currentWeeks })}
+            </Text>
+          </View>
+          {streak.longestWeeks > 0 ? (
+            <Text variant="footnote" color={chartColors.secondaryLabel}>
+              {t('dashboard.streakBestWeeks', { count: streak.longestWeeks })}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
       {width > 0 && cell > 0 ? (
         <Svg width={width} height={gridHeight}>
           {shown.map((column, columnIndex) =>
@@ -119,7 +129,7 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
                     height={cell}
                     rx={cornerRadius}
                     ry={cornerRadius}
-                    fill={colorForCount(day.count)}
+                    fill={fillForCount(day.count)}
                     stroke={chartColors.separator}
                     strokeWidth={StyleSheet.hairlineWidth}
                   />
@@ -168,6 +178,17 @@ export function ActivityHeatmap({ heatmap }: ActivityHeatmapProps) {
 }
 
 const styles = StyleSheet.create({
+  streakHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing[3],
+  },
+  streakLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
   legend: {
     flexDirection: 'row',
     alignItems: 'center',

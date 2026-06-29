@@ -26,6 +26,12 @@ import type {
   RawActiveDaysDelta,
   RawLastSendGap,
   RawBenchmarkSummary,
+  RawAngleBreakdown,
+  RawAngleRow,
+  RawWallRhythm,
+  RawNextProject,
+  RawRunningMaxCeiling,
+  RawGradeMilestone,
 } from './types';
 
 dayjs.extend(isoWeek);
@@ -735,4 +741,231 @@ export function buildBenchmarkSummary(
     hardestDifficulty,
     hardestLabel: hardestDifficulty != null ? (mapping[hardestDifficulty] ?? `${hardestDifficulty}`) : null,
   };
+}
+
+// ── Deep-chart sections (PR2) ───────────────────────────────────────
+
+function isSend(entry: LogbookEntry): boolean {
+  return entry.status === 'send' || entry.status === 'flash';
+}
+
+const MIN_ANGLE_SENDS = 5;
+
+/**
+ * Max grade sent at each angle + the send volume there, steep→slab. Angles with
+ * fewer than 5 sends are hidden (too thin to read). `homeAngle` is the
+ * highest-volume angle ("you live at 40°"). Sent climbs only.
+ */
+export function buildAngleBreakdown(
+  filteredLogbook: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): RawAngleBreakdown | null {
+  const mapping = getDifficultyMapping(gradeFormat);
+  const byAngle = new Map<number, { maxDifficulty: number; sendCount: number }>();
+
+  for (const entry of filteredLogbook) {
+    if (!isSend(entry) || entry.angle == null) continue;
+    const gradeId = gradeIdForEntry(entry);
+    if (gradeId == null) continue;
+    const current = byAngle.get(entry.angle) ?? { maxDifficulty: -1, sendCount: 0 };
+    current.sendCount += 1;
+    if (gradeId > current.maxDifficulty) current.maxDifficulty = gradeId;
+    byAngle.set(entry.angle, current);
+  }
+
+  const rows: RawAngleRow[] = [];
+  for (const [angle, stats] of byAngle) {
+    if (stats.sendCount < MIN_ANGLE_SENDS || stats.maxDifficulty < 0) continue;
+    rows.push({
+      angle,
+      maxDifficulty: stats.maxDifficulty,
+      maxLabel: mapping[stats.maxDifficulty] ?? `${stats.maxDifficulty}`,
+      sendCount: stats.sendCount,
+    });
+  }
+  if (rows.length === 0) return null;
+
+  rows.sort((a, b) => b.angle - a.angle); // steep → slab
+  const maxSendCount = rows.reduce((max, row) => Math.max(max, row.sendCount), 0);
+  const maxDifficulty = rows.reduce((max, row) => Math.max(max, row.maxDifficulty), 0);
+  // Home angle = highest volume (ties → steeper, since rows are steep-first).
+  const homeAngle =
+    rows.reduce<RawAngleRow | null>((best, row) => (best == null || row.sendCount > best.sendCount ? row : best), null)
+      ?.angle ?? null;
+
+  return { rows, maxSendCount, maxDifficulty, homeAngle };
+}
+
+const RHYTHM_WEEKDAYS = 7;
+const RHYTHM_BLOCKS = 4;
+
+/** Local-time block for an hour: 0 morning, 1 midday, 2 evening, 3 night. */
+function timeBlock(hour: number): number {
+  if (hour >= 5 && hour < 11) return 0;
+  if (hour >= 11 && hour < 17) return 1;
+  if (hour >= 17 && hour < 22) return 2;
+  return 3;
+}
+
+/**
+ * Weekday × time-of-day rhythm. Every logged entry counts (showing up), bucketed
+ * by local weekday (Mon=0..Sun=6) and time block. `hottest` is the busiest cell
+ * ("you climb most Tuesday evenings").
+ */
+export function buildWallRhythm(filteredLogbook: LogbookEntry[]): RawWallRhythm | null {
+  const matrix: number[][] = Array.from({ length: RHYTHM_WEEKDAYS }, () =>
+    Array.from({ length: RHYTHM_BLOCKS }, () => 0),
+  );
+  let total = 0;
+  let max = 0;
+  let hottest: { weekday: number; block: number } | null = null;
+
+  for (const entry of filteredLogbook) {
+    const time = parseTickTime(entry.climbed_at);
+    const weekday = time.isoWeekday() - 1; // 1..7 (Mon..Sun) → 0..6
+    const block = timeBlock(time.hour());
+    matrix[weekday][block] += 1;
+    total += 1;
+    if (matrix[weekday][block] > max) {
+      max = matrix[weekday][block];
+      hottest = { weekday, block };
+    }
+  }
+
+  if (total === 0) return null;
+  return { matrix, max, total, hottest };
+}
+
+/**
+ * The thin grade just above the climber's modal sent grade — "one more {grade}
+ * fills the gap". Among sent grades harder than the most-common grade, picks the
+ * one with the fewest sends. Null when there's nothing above the wheelhouse.
+ */
+export function findNextProjectGrade(
+  filteredLogbook: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): RawNextProject {
+  const mapping = getDifficultyMapping(gradeFormat);
+  const countByDifficulty = new Map<number, number>();
+  for (const entry of filteredLogbook) {
+    if (!isSend(entry)) continue;
+    const gradeId = gradeIdForEntry(entry);
+    if (gradeId == null || !mapping[gradeId]) continue;
+    countByDifficulty.set(gradeId, (countByDifficulty.get(gradeId) ?? 0) + 1);
+  }
+  if (countByDifficulty.size === 0) return null;
+
+  let modalDifficulty = -1;
+  let modalCount = -1;
+  for (const [difficulty, count] of countByDifficulty) {
+    if (count > modalCount || (count === modalCount && difficulty > modalDifficulty)) {
+      modalCount = count;
+      modalDifficulty = difficulty;
+    }
+  }
+
+  let pick: { difficulty: number; count: number } | null = null;
+  for (const [difficulty, count] of countByDifficulty) {
+    if (difficulty <= modalDifficulty) continue;
+    if (pick == null || count < pick.count || (count === pick.count && difficulty < pick.difficulty)) {
+      pick = { difficulty, count };
+    }
+  }
+  if (pick == null) return null;
+  return { difficulty: pick.difficulty, label: mapping[pick.difficulty] ?? `${pick.difficulty}` };
+}
+
+const CEILING_MAX_WEEKS = 104;
+
+/**
+ * Running-max grade per ISO week — "are you getting stronger?". The line never
+ * decreases (it's a cumulative max of effective difficulty over sent climbs).
+ * Lifetime/board-scoped (pass the board-scoped ticks, not the timeframe-filtered
+ * set). Null when the climber has no sends.
+ */
+export function buildRunningMaxCeiling(
+  boardScopedTicks: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): RawRunningMaxCeiling | null {
+  const mapping = getDifficultyMapping(gradeFormat);
+  const sends = boardScopedTicks
+    .filter((entry) => isSend(entry) && gradeIdForEntry(entry) != null)
+    .sort((a, b) => tickTimeMs(a.climbed_at) - tickTimeMs(b.climbed_at));
+  if (sends.length === 0) return null;
+
+  // Max difficulty per ISO week.
+  const weekMax = new Map<string, number>();
+  for (const entry of sends) {
+    const gradeId = gradeIdForEntry(entry)!;
+    const time = parseTickTime(entry.climbed_at);
+    const key = `${time.isoWeekYear()}-W${time.isoWeek()}`;
+    weekMax.set(key, Math.max(weekMax.get(key) ?? -1, gradeId));
+  }
+
+  const first = parseTickTime(sends[0].climbed_at).startOf('isoWeek');
+  const last = parseTickTime(sends[sends.length - 1].climbed_at).endOf('isoWeek');
+  const allWeekKeys: string[] = [];
+  let cursor = first;
+  while (cursor.isBefore(last) || cursor.isSame(last, 'day')) {
+    allWeekKeys.push(`${cursor.isoWeekYear()}-W${cursor.isoWeek()}`);
+    cursor = cursor.add(1, 'week');
+  }
+
+  // Carry the running max forward across (possibly skipped) weeks.
+  let cumulativeMax = -1;
+  const fullRunning = allWeekKeys.map((key) => {
+    const value = weekMax.get(key);
+    if (value != null && value > cumulativeMax) cumulativeMax = value;
+    return cumulativeMax;
+  });
+
+  // Cap to the most recent weeks; the carried max means the window opens at the
+  // running-max as of its first week (no artificial drop).
+  const keptKeys = allWeekKeys.length > CEILING_MAX_WEEKS ? allWeekKeys.slice(-CEILING_MAX_WEEKS) : allWeekKeys;
+  const runningMax = fullRunning.slice(-keptKeys.length);
+
+  const spansYears = keptKeys.length > 1 && keptKeys[0].split('-')[0] !== keptKeys[keptKeys.length - 1].split('-')[0];
+  const weekLabels = keptKeys.map((key) => {
+    const [year, weekPart] = key.split('-');
+    return spansYears ? `${weekPart} '${year.slice(2)}` : weekPart;
+  });
+
+  const bestEverDifficulty = cumulativeMax;
+  return {
+    weekLabels,
+    runningMax,
+    bestEverDifficulty,
+    bestEverLabel: mapping[bestEverDifficulty] ?? `${bestEverDifficulty}`,
+    currentLabel: mapping[runningMax[runningMax.length - 1]] ?? `${runningMax[runningMax.length - 1]}`,
+  };
+}
+
+/**
+ * First-send date per grade band — the progression timeline ("first V5 · Mar
+ * '24"). Lifetime/board-scoped. Dedups to one entry per grade LABEL (multiple
+ * difficulty ids collapse to the same V-grade), keeping the earliest send.
+ */
+export function buildGradeMilestones(
+  boardScopedTicks: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): RawGradeMilestone[] {
+  const mapping = getDifficultyMapping(gradeFormat);
+  const byLabel = new Map<string, { difficulty: number; ms: number; date: string }>();
+
+  for (const entry of boardScopedTicks) {
+    if (!isSend(entry)) continue;
+    const gradeId = gradeIdForEntry(entry);
+    if (gradeId == null) continue;
+    const label = mapping[gradeId];
+    if (!label) continue;
+    const ms = tickTimeMs(entry.climbed_at);
+    const existing = byLabel.get(label);
+    if (!existing || ms < existing.ms) {
+      byLabel.set(label, { difficulty: gradeId, ms, date: parseTickTime(entry.climbed_at).format('YYYY-MM-DD') });
+    }
+  }
+
+  return Array.from(byLabel.entries())
+    .map(([label, info]) => ({ difficulty: info.difficulty, label, date: info.date }))
+    .sort((a, b) => a.difficulty - b.difficulty);
 }

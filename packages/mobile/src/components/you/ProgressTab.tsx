@@ -7,13 +7,24 @@ import { ScreenTitle } from '../ScreenTitle';
 import { Icon } from '../Icon';
 import { Card } from '../Card';
 import { SectionHeader } from '../SectionHeader';
+import { CollapsibleSection } from '../CollapsibleSection';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ProfileBetaShelf } from './ProfileBetaShelf';
 import { HeroCeilingCard } from './HeroCeilingCard';
 import { ProgressControlBar } from './ProgressControlBar';
 import { ProgressGlanceGrid } from './ProgressGlanceGrid';
-import { StackedBarChart, GroupedBarChart, TotalAreaChart, type ChartLegendItem } from './YouCharts';
+import {
+  StackedBarChart,
+  GroupedBarChart,
+  TotalAreaChart,
+  RunningMaxLineChart,
+  type ChartLegendItem,
+} from './YouCharts';
 import { ActivityHeatmap } from './ActivityHeatmap';
+import { ProjectingCard } from './ProjectingCard';
+import { AngleBreakdownChart } from './AngleBreakdownChart';
+import { WallRhythmGrid } from './WallRhythmGrid';
+import { GradeMilestonesTimeline } from './GradeMilestonesTimeline';
 import { LayoutShareDonut } from './LayoutShareDonut';
 import { layoutChartColor, flashRedpointColor } from './profile-chart-colors';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -188,23 +199,59 @@ export const ProgressTab = memo(function ProgressTab({
               so it sits right under the glance grid. Hidden when none shared. */}
           {userId ? <ProfileBetaShelf userId={userId} /> : null}
 
-          {data.activityHeatmap && (
+          {/* Your biggest fights — the tries-to-send histogram + biggest project.
+              Hidden until a hard-won send (≥4 tries) is worth featuring. */}
+          {data.projectingStats.unlocked && (
             <>
-              <SectionHeader title={t('stats.calendar')} />
+              <SectionHeader title={t('sections.biggestFights')} />
               <Card style={styles.chartCard}>
-                <ActivityHeatmap heatmap={data.activityHeatmap} />
+                <ProjectingCard projectingStats={data.projectingStats} />
               </Card>
             </>
           )}
 
-          {data.statisticsSummary.layoutPercentages.length > 1 && (
+          {/* Grade pyramid — the existing grade × layout distribution, with a
+              "next project" nudge toward the thin grade above the modal grade. */}
+          <SectionHeader title={t('sections.gradePyramid')} />
+          <Card style={styles.chartCard}>
+            {data.nextProjectGrade ? (
+              <Text variant="footnote" color={brandColors.primary} style={styles.nextProject}>
+                {t('charts.nextProject', { grade: data.nextProjectGrade.label })}
+              </Text>
+            ) : null}
+            <StackedBarChart
+              bars={data.aggregatedStackedBars?.bars ?? null}
+              colorBy="layout"
+              emptyLabel={noAscentData}
+              legend={gradeDistLegend}
+              showYAxisScale
+              accessibilityLabel={t('stats.gradeDistributionAria')}
+            />
+          </Card>
+
+          {data.angleBreakdown && (
             <>
-              <SectionHeader title={t('stats.boards')} />
+              <SectionHeader title={t('sections.yourAngle')} />
               <Card style={styles.chartCard}>
-                <LayoutShareDonut
-                  layoutPercentages={data.statisticsSummary.layoutPercentages}
-                  totalAscents={data.statisticsSummary.totalAscents}
-                />
+                <AngleBreakdownChart breakdown={data.angleBreakdown} />
+              </Card>
+            </>
+          )}
+
+          {data.wallRhythm && (
+            <>
+              <SectionHeader title={t('sections.wallRhythm')} />
+              <Card style={styles.chartCard}>
+                <WallRhythmGrid rhythm={data.wallRhythm} />
+              </Card>
+            </>
+          )}
+
+          {data.activityHeatmap && (
+            <>
+              <SectionHeader title={t('stats.calendar')} />
+              <Card style={styles.chartCard}>
+                <ActivityHeatmap heatmap={data.activityHeatmap} streak={data.streaks} />
               </Card>
             </>
           )}
@@ -223,41 +270,66 @@ export const ProgressTab = memo(function ProgressTab({
             />
           </Card>
 
-          <SectionHeader title={t('stats.gradeDistribution')} />
-          <Card style={styles.chartCard}>
-            <StackedBarChart
-              bars={data.aggregatedStackedBars?.bars ?? null}
-              colorBy="layout"
-              emptyLabel={noAscentData}
-              legend={gradeDistLegend}
-              showYAxisScale
-              accessibilityLabel={t('stats.gradeDistributionAria')}
-            />
-          </Card>
-
-          {data.aggregatedFlashRedpointBars && (
+          {data.runningMaxCeiling && (
             <>
-              <SectionHeader title={t('stats.flashVsRedpoint')} />
-              <Card style={styles.chartCard} accessibilityLabel={t('stats.flashRedpointAria')}>
-                <GroupedBarChart
-                  bars={data.aggregatedFlashRedpointBars}
+              <SectionHeader title={t('sections.ceilingOverTime')} />
+              <Card
+                style={styles.chartCard}
+                accessibilityLabel={t('charts.ceilingA11y', { grade: data.runningMaxCeiling.currentLabel })}
+              >
+                <RunningMaxLineChart
+                  ceiling={data.runningMaxCeiling}
+                  color={brandColors.primary}
                   emptyLabel={noAscentData}
-                  legend={flashRedpointLegend}
                 />
               </Card>
             </>
           )}
 
-          {data.vPointsTimeline && (
+          {data.gradeMilestones.length > 0 && (
             <>
-              <SectionHeader title={t('stats.vPoints')} />
+              <SectionHeader title={t('sections.gradeMilestones')} />
               <Card style={styles.chartCard}>
+                <GradeMilestonesTimeline milestones={data.gradeMilestones} />
+              </Card>
+            </>
+          )}
+
+          {data.statisticsSummary.layoutPercentages.length > 1 && (
+            <>
+              <SectionHeader title={t('stats.boards')} />
+              <Card style={styles.chartCard}>
+                <LayoutShareDonut
+                  layoutPercentages={data.statisticsSummary.layoutPercentages}
+                  totalAscents={data.statisticsSummary.totalAscents}
+                />
+              </Card>
+            </>
+          )}
+
+          {/* Supporting curves — demoted into collapsed sections near the bottom;
+              the progression story is carried by the ceiling chart above. */}
+          {data.vPointsTimeline && (
+            <View style={styles.collapsible}>
+              <CollapsibleSection title={t('stats.vPoints')} defaultExpanded={false}>
                 <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.vpTotal}>
                   {t('stats.vPointsTotal', { value: data.vPointsTimeline.totalPoints.toLocaleString() })}
                 </Text>
                 <TotalAreaChart timeline={data.vPointsTimeline} color={brandColors.primary} emptyLabel={noAscentData} />
-              </Card>
-            </>
+              </CollapsibleSection>
+            </View>
+          )}
+
+          {data.aggregatedFlashRedpointBars && (
+            <View style={styles.collapsible}>
+              <CollapsibleSection title={t('stats.flashVsRedpoint')} defaultExpanded={false}>
+                <GroupedBarChart
+                  bars={data.aggregatedFlashRedpointBars}
+                  emptyLabel={noAscentData}
+                  legend={flashRedpointLegend}
+                />
+              </CollapsibleSection>
+            </View>
           )}
         </>
       )}
@@ -276,6 +348,8 @@ const styles = StyleSheet.create({
   chartCard: { marginHorizontal: spacing[4] },
   controlBar: { marginTop: spacing[4] },
   glanceGrid: { marginTop: spacing[4] },
+  collapsible: { marginHorizontal: spacing[4], marginTop: spacing[6] },
+  nextProject: { marginBottom: spacing[3], fontWeight: '600' },
   tipInset: { marginHorizontal: spacing[4], marginBottom: spacing[3] },
   vpTotal: { marginBottom: spacing[2] },
   empty: {

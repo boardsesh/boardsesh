@@ -214,3 +214,59 @@ export type RawBenchmarkSummary = {
   hardestDifficulty: number | null;
   hardestLabel: string | null;
 };
+
+// ── Deep-chart sections (PR2) ───────────────────────────────────────
+
+/** One angle's max grade + send volume, for the "Your angle" chart. */
+export type RawAngleRow = {
+  angle: number;
+  maxDifficulty: number;
+  maxLabel: string;
+  sendCount: number;
+};
+
+/** Max-grade-by-angle, steep→slab. `homeAngle` is the highest-volume angle. */
+export type RawAngleBreakdown = {
+  rows: RawAngleRow[];
+  /** Highest sendCount across rows — for scaling the volume track. */
+  maxSendCount: number;
+  /** Highest maxDifficulty across rows — for scaling the grade bars. */
+  maxDifficulty: number;
+  homeAngle: number | null;
+};
+
+/**
+ * Weekday × time-of-day climbing rhythm. `matrix[weekday][block]` where weekday
+ * is 0=Mon..6=Sun and block is 0=morning,1=midday,2=evening,3=night.
+ */
+export type RawWallRhythm = {
+  matrix: number[][];
+  max: number;
+  total: number;
+  /** Busiest cell, or null when there's no activity. */
+  hottest: { weekday: number; block: number } | null;
+};
+
+/** The thin grade just above the climber's modal grade — the "next project". */
+export type RawNextProject = {
+  difficulty: number;
+  label: string;
+} | null;
+
+/** Trailing running-max grade per week — "your ceiling over time". */
+export type RawRunningMaxCeiling = {
+  weekLabels: string[];
+  /** Running-max effective difficulty per week (non-decreasing). */
+  runningMax: number[];
+  bestEverDifficulty: number;
+  bestEverLabel: string;
+  currentLabel: string;
+};
+
+/** First-send date for one grade band — a progression milestone. */
+export type RawGradeMilestone = {
+  difficulty: number;
+  label: string;
+  /** Local calendar date of the first send at this grade, `YYYY-MM-DD`. */
+  date: string;
+};

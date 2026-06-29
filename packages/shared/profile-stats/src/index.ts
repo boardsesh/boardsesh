@@ -18,6 +18,11 @@ export {
   buildActiveDaysMoM,
   buildLastSendGap,
   buildBenchmarkSummary,
+  buildAngleBreakdown,
+  buildWallRhythm,
+  findNextProjectGrade,
+  buildRunningMaxCeiling,
+  buildGradeMilestones,
 } from './chart-builders';
 export { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
 export {
