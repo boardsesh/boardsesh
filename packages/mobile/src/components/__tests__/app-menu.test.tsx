@@ -1,11 +1,14 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/react';
+import { createElement, type ReactNode } from 'react';
 import { resolveMenuAction, resolveMenuActions } from '../AppMenu.logic';
 import type { AppMenuAction } from '../AppMenu.types';
 
 // AppMenu's per-platform rendering is native (@expo/ui SwiftUI `Menu` / Compose
-// `DropdownMenu`) and can't mount under vitest's node env, so the testable contract
-// is the pure resolver every impl shares: how an action maps to its iOS SF Symbol /
-// Android check / destructive flag, and that order (= the tapped index) is preserved.
+// `DropdownMenu`) and can't mount under vitest. Two complementary suites:
+//   1. the pure resolver every impl shares (icon / check / destructive / index order);
+//   2. the interaction contract, exercised through the faithful test stub.
 
 describe('AppMenu.logic — resolveMenuAction', () => {
   it('marks the selected row with a checkmark (the active marker replaces its scope glyph) and a check on Android', () => {
@@ -41,5 +44,64 @@ describe('AppMenu.logic — resolveMenuActions', () => {
     expect(resolved.map((action) => action.label)).toEqual(['My crew', 'Everyone', 'Find a gym']);
     expect(resolved.map((action) => action.showCheck)).toEqual([true, false, false]);
     expect(resolved[2].iosSystemImage).toBe('mappin.and.ellipse');
+  });
+});
+
+// Map the stub's RN primitives onto DOM nodes so it renders under jsdom.
+vi.mock('react-native', () => ({
+  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityRole,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityRole?: string;
+    accessibilityLabel?: string;
+  }) =>
+    createElement(
+      'button',
+      { onClick: onPress, 'data-role': accessibilityRole, 'aria-label': accessibilityLabel },
+      children,
+    ),
+}));
+
+// Resolves to test/app-menu-stub.tsx via the vite alias — the same double every indirect
+// screen test renders, so this guards its anchor + per-action wiring (label, button role,
+// index → onSelectIndex) without a native env.
+import { AppMenu } from '../AppMenu';
+
+const ACTIONS: AppMenuAction[] = [
+  { label: 'My crew', selected: true, systemIcon: 'person.2.fill' },
+  { label: 'Everyone' },
+  { label: 'Find a gym', systemIcon: 'mappin.and.ellipse' },
+];
+
+describe('AppMenu stub — interaction contract', () => {
+  it('renders a labelled anchor button plus one button per action', () => {
+    const { container, getByLabelText } = render(
+      createElement(AppMenu, {
+        label: 'My crew',
+        actions: ACTIONS,
+        onSelectIndex: () => {},
+        accessibilityLabel: 'Scope: My crew',
+      }),
+    );
+    // The anchor carries the explicit accessibility label.
+    expect(getByLabelText('Scope: My crew')).toBeTruthy();
+    // Anchor + one button per action.
+    expect(container.querySelectorAll('button[data-role="button"]').length).toBe(ACTIONS.length + 1);
+  });
+
+  it('fires onSelectIndex with the tapped action index', () => {
+    const onSelectIndex = vi.fn();
+    const { getByText } = render(createElement(AppMenu, { label: 'My crew', actions: ACTIONS, onSelectIndex }));
+    fireEvent.click(getByText('Everyone'));
+    expect(onSelectIndex).toHaveBeenCalledWith(1);
+    fireEvent.click(getByText('Find a gym'));
+    expect(onSelectIndex).toHaveBeenCalledWith(2);
   });
 });

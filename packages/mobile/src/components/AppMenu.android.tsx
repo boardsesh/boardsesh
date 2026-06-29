@@ -20,7 +20,16 @@ import type { AppMenuProps } from './AppMenu.types';
 // bundles none for a chevron, so a muted glyph stands in (mirrors MoreForm's `›`).
 const CARET = '▾';
 
-export function AppMenu({ label, actions, onSelectIndex, showCaret = true, maxWidth, style }: AppMenuProps) {
+export function AppMenu({
+  label,
+  actions,
+  onSelectIndex,
+  showCaret = true,
+  maxWidth,
+  accessibilityLabel,
+  accessibilityHint,
+  style,
+}: AppMenuProps) {
   const { brandColors, m3 } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const resolved = resolveMenuActions(actions);
@@ -29,7 +38,18 @@ export function AppMenu({ label, actions, onSelectIndex, showCaret = true, maxWi
     // `matchContents` (content width AND height): the title-menu hugs its label so it
     // sits leading in the app bar (the find-climbers action is held trailing by a flex
     // spacer). `maxWidth` keeps a long gym name from crowding that action.
-    <Host matchContents style={[maxWidth != null ? { maxWidth } : null, style]}>
+    //
+    // Accessibility rides the RN Host boundary: @expo/ui/jetpack-compose has no
+    // content-description modifier, and the Host forwards these props to its native
+    // view — so the trigger reads as a labelled button to TalkBack, matching the iOS
+    // `Menu` a11y modifiers and the old Paper Pressable anchor.
+    <Host
+      matchContents
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      style={[maxWidth != null ? { maxWidth } : null, style]}
+    >
       <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
         <DropdownMenu.Trigger>
           <Row
