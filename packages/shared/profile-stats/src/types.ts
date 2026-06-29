@@ -270,3 +270,13 @@ export type RawGradeMilestone = {
   /** Local calendar date of the first send at this grade, `YYYY-MM-DD`. */
   date: string;
 };
+
+// ── Community cluster (PR3) ─────────────────────────────────────────
+
+/** Top setter + how many setters the climber has sent — "your setter". */
+export type RawSetterSummary = {
+  /** The setter whose problems the climber has sent most, or null. */
+  topSetter: { username: string; count: number } | null;
+  /** Distinct setters the climber has sent at least one problem from. */
+  distinctSetters: number;
+};

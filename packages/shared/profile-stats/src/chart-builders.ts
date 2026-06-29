@@ -32,6 +32,7 @@ import type {
   RawNextProject,
   RawRunningMaxCeiling,
   RawGradeMilestone,
+  RawSetterSummary,
 } from './types';
 
 dayjs.extend(isoWeek);
@@ -968,4 +969,81 @@ export function buildGradeMilestones(
   return Array.from(byLabel.entries())
     .map(([label, info]) => ({ difficulty: info.difficulty, label, date: info.date }))
     .sort((a, b) => a.difficulty - b.difficulty);
+}
+
+// ── Community cluster (PR3) ─────────────────────────────────────────
+
+/**
+ * Top setter + setter diversity from sent climbs (needs `setterUsername` on the
+ * tick — the GraphQL `userTicks` field). Counts distinct climbs per setter
+ * (dedup by climbUuid). Lifetime/board-scoped — an identity stat.
+ */
+export function buildSetterSummary(boardScopedTicks: LogbookEntry[]): RawSetterSummary {
+  const climbsBySetter = new Map<string, Set<string>>();
+  const looseCountBySetter = new Map<string, number>();
+
+  for (const entry of boardScopedTicks) {
+    if (!isSend(entry)) continue;
+    const setter = entry.setterUsername?.trim();
+    if (!setter) continue;
+    if (entry.climbUuid) {
+      let set = climbsBySetter.get(setter);
+      if (!set) {
+        set = new Set<string>();
+        climbsBySetter.set(setter, set);
+      }
+      set.add(entry.climbUuid);
+    } else {
+      looseCountBySetter.set(setter, (looseCountBySetter.get(setter) ?? 0) + 1);
+    }
+  }
+
+  const setters = new Set<string>([...climbsBySetter.keys(), ...looseCountBySetter.keys()]);
+  let topSetter: { username: string; count: number } | null = null;
+  for (const setter of setters) {
+    const count = (climbsBySetter.get(setter)?.size ?? 0) + (looseCountBySetter.get(setter) ?? 0);
+    if (topSetter == null || count > topSetter.count) topSetter = { username: setter, count };
+  }
+
+  return { topSetter, distinctSetters: setters.size };
+}
+
+/**
+ * Benchmark-only grade distribution as single-series grade bars (for the
+ * benchmarks pyramid). Distinct benchmark climbs sent, counted per grade. Uses
+ * the climb-level `isBenchmark` flag. Returns null when there are none.
+ */
+export function buildBenchmarkGradeBars(
+  filteredLogbook: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): RawBar[] | null {
+  const mapping = getDifficultyMapping(gradeFormat);
+  const climbsByGrade = new Map<string, Set<string>>();
+  const looseByGrade = new Map<string, number>();
+
+  for (const entry of filteredLogbook) {
+    if (!entry.isBenchmark || !isSend(entry)) continue;
+    const gradeId = gradeIdForEntry(entry);
+    if (gradeId == null) continue;
+    const grade = mapping[gradeId];
+    if (!grade) continue;
+    if (entry.climbUuid) {
+      let set = climbsByGrade.get(grade);
+      if (!set) {
+        set = new Set<string>();
+        climbsByGrade.set(grade, set);
+      }
+      set.add(entry.climbUuid);
+    } else {
+      looseByGrade.set(grade, (looseByGrade.get(grade) ?? 0) + 1);
+    }
+  }
+
+  const grades = new Set<string>([...climbsByGrade.keys(), ...looseByGrade.keys()]);
+  if (grades.size === 0) return null;
+
+  return sortGrades(Array.from(grades), gradeFormat).map((grade) => {
+    const value = (climbsByGrade.get(grade)?.size ?? 0) + (looseByGrade.get(grade) ?? 0);
+    return { key: grade, label: grade, segments: [{ value, key: grade, label: grade }] };
+  });
 }

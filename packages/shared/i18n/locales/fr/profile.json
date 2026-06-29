@@ -113,7 +113,9 @@
     "yourAngle": "Par inclinaison de mur",
     "wallRhythm": "Rythme au mur",
     "ceilingOverTime": "Plafond dans le temps",
-    "gradeMilestones": "Jalons par cotation"
+    "gradeMilestones": "Jalons par cotation",
+    "topSetter": "Meilleur ouvreur",
+    "benchmarks": "Références"
   },
   "charts": {
     "nextProject": "Un {{grade}} de plus comble le trou",
@@ -131,6 +133,15 @@
     "ceilingA11y": "Cotation la plus dure chaque semaine, maintenant {{grade}}",
     "milestonesA11y": "Premier enchaînement à chaque cotation",
     "milestoneA11y": "Premier {{grade}} en {{date}}",
+    "setterProblems_one": "{{count}} bloc",
+    "setterProblems_other": "{{count}} blocs",
+    "settersExplored_one": "{{count}} ouvreur exploré",
+    "settersExplored_other": "{{count}} ouvreurs explorés",
+    "setterA11y": "Meilleur ouvreur {{setter}}, {{count}} blocs enchaînés, {{total}} ouvreurs explorés",
+    "benchmarksSummary": "{{count}} enchaînés · plus dur {{grade}}",
+    "benchmarksCount_one": "{{count}} référence enchaînée",
+    "benchmarksCount_other": "{{count}} références enchaînées",
+    "benchmarksCardA11y": "Cotations de référence, {{count}} enchaînées",
     "weekday": {
       "mon": "lun",
       "tue": "mar",
