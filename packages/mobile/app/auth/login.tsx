@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
@@ -12,8 +12,7 @@ import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
-import { AuthTextInput } from '../../src/components/AuthTextInput';
-import type { AuthTextInputHandle } from '../../src/components/AuthTextInput.types';
+import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { Icon } from '../../src/components/Icon';
 import { track } from '../../src/lib/analytics';
@@ -26,7 +25,6 @@ export default function LoginScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
-  const passwordRef = useRef<AuthTextInputHandle>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -149,40 +147,42 @@ export default function LoginScreen() {
         </View>
 
         <View style={styles.form}>
-          <AuthTextInput
-            testID="auth-email-input"
-            label={t('login.fields.email')}
-            value={email}
-            onChangeText={setEmail}
-            placeholder={t('login.placeholders.email')}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="emailAddress"
-            autoComplete="email"
-            returnKeyType="next"
-            onSubmitEditing={() => passwordRef.current?.focus()}
-            editable={!submitting}
-          />
-          <AuthTextInput
-            ref={passwordRef}
-            testID="auth-password-input"
-            label={t('login.fields.password')}
-            value={password}
-            onChangeText={setPassword}
-            placeholder={t('login.placeholders.password')}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="password"
-            autoComplete="password"
-            returnKeyType="done"
-            onSubmitEditing={() => {
+          <AuthFieldset
+            onSubmit={() => {
               void onSubmit();
             }}
-            editable={!submitting}
-            showLabel={t('login.a11y.showPassword')}
-            hideLabel={t('login.a11y.hidePassword')}
+            fields={[
+              {
+                key: 'email',
+                testID: 'auth-email-input',
+                label: t('login.fields.email'),
+                value: email,
+                onChangeText: setEmail,
+                placeholder: t('login.placeholders.email'),
+                keyboardType: 'email-address',
+                autoCapitalize: 'none',
+                autoCorrect: false,
+                textContentType: 'emailAddress',
+                autoComplete: 'email',
+                editable: !submitting,
+              },
+              {
+                key: 'password',
+                testID: 'auth-password-input',
+                label: t('login.fields.password'),
+                value: password,
+                onChangeText: setPassword,
+                placeholder: t('login.placeholders.password'),
+                secureTextEntry: true,
+                autoCapitalize: 'none',
+                autoCorrect: false,
+                textContentType: 'password',
+                autoComplete: 'password',
+                editable: !submitting,
+                showLabel: t('login.a11y.showPassword'),
+                hideLabel: t('login.a11y.hidePassword'),
+              },
+            ]}
           />
           <Button
             testID="auth-submit-button"

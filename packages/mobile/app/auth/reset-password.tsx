@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -6,8 +6,7 @@ import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../src/lib/auth-val
 import { resetPassword } from '../../src/lib/auth';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { useTheme } from '../../src/providers/theme-provider';
-import { AuthTextInput } from '../../src/components/AuthTextInput';
-import type { AuthTextInputHandle } from '../../src/components/AuthTextInput.types';
+import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { hapticLight } from '../../src/lib/haptics';
 import { reportError } from '../../src/lib/error-reporting';
@@ -17,7 +16,6 @@ export default function ResetPasswordScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
-  const confirmRef = useRef<AuthTextInputHandle>(null);
 
   const { token, email } = useLocalSearchParams<{ token?: string; email?: string }>();
 
@@ -107,47 +105,48 @@ export default function ResetPasswordScreen() {
               </Text>
 
               <View style={styles.form}>
-                <AuthTextInput
-                  label={t('resetPassword.fields.newPassword')}
-                  value={password}
-                  onChangeText={(text) => {
-                    setPassword(text);
-                    if (passwordError) setPasswordError(null);
-                  }}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textContentType="newPassword"
-                  autoComplete="new-password"
-                  returnKeyType="next"
-                  onSubmitEditing={() => confirmRef.current?.focus()}
-                  editable={!submitting}
-                  error={passwordError ?? undefined}
-                  showLabel={t('login.a11y.showPassword')}
-                  hideLabel={t('login.a11y.hidePassword')}
-                />
-
-                <AuthTextInput
-                  ref={confirmRef}
-                  label={t('resetPassword.fields.confirmPassword')}
-                  value={confirmPassword}
-                  onChangeText={(text) => {
-                    setConfirmPassword(text);
-                    if (confirmPasswordError) setConfirmPasswordError(null);
-                  }}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  textContentType="newPassword"
-                  autoComplete="new-password"
-                  returnKeyType="done"
-                  onSubmitEditing={() => {
+                <AuthFieldset
+                  onSubmit={() => {
                     void onSubmit();
                   }}
-                  editable={!submitting}
-                  error={confirmPasswordError ?? undefined}
-                  showLabel={t('login.a11y.showPassword')}
-                  hideLabel={t('login.a11y.hidePassword')}
+                  fields={[
+                    {
+                      key: 'newPassword',
+                      label: t('resetPassword.fields.newPassword'),
+                      value: password,
+                      onChangeText: (text) => {
+                        setPassword(text);
+                        if (passwordError) setPasswordError(null);
+                      },
+                      secureTextEntry: true,
+                      autoCapitalize: 'none',
+                      autoCorrect: false,
+                      textContentType: 'newPassword',
+                      autoComplete: 'new-password',
+                      editable: !submitting,
+                      error: passwordError ?? undefined,
+                      showLabel: t('login.a11y.showPassword'),
+                      hideLabel: t('login.a11y.hidePassword'),
+                    },
+                    {
+                      key: 'confirmPassword',
+                      label: t('resetPassword.fields.confirmPassword'),
+                      value: confirmPassword,
+                      onChangeText: (text) => {
+                        setConfirmPassword(text);
+                        if (confirmPasswordError) setConfirmPasswordError(null);
+                      },
+                      secureTextEntry: true,
+                      autoCapitalize: 'none',
+                      autoCorrect: false,
+                      textContentType: 'newPassword',
+                      autoComplete: 'new-password',
+                      editable: !submitting,
+                      error: confirmPasswordError ?? undefined,
+                      showLabel: t('login.a11y.showPassword'),
+                      hideLabel: t('login.a11y.hidePassword'),
+                    },
+                  ]}
                 />
 
                 {formError ? (

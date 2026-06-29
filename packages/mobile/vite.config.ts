@@ -145,6 +145,16 @@ export default defineConfig({
         find: /^(.*\/)?AuthTextInput$/,
         replacement: fileURLToPath(new URL('./test/auth-text-input-stub.tsx', import.meta.url)),
       },
+      // AuthFieldset groups credential fields in one iOS Host (so AutoFill pairs
+      // email + password). Platform-split (ios.tsx = native SwiftUI VStack form;
+      // android.tsx = per-field AuthTextInput). Vitest can't mount the native tree
+      // and doesn't resolve `.ios`/`.android`, so redirect to a passthrough stub
+      // that keeps the public API + per-field testID/a11y + focus chain. Suites
+      // asserting AuthFieldset internals register their own vi.mock (precedence).
+      {
+        find: /^(.*\/)?AuthFieldset$/,
+        replacement: fileURLToPath(new URL('./test/auth-fieldset-stub.tsx', import.meta.url)),
+      },
       // SegmentedControl is platform-split (SegmentedControl.ios.tsx renders a
       // native @expo/ui SwiftUI segmented Picker; SegmentedControl.android.tsx a
       // native Compose SingleChoiceSegmentedButtonRow). Vitest doesn't resolve

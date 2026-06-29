@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -11,8 +11,7 @@ import { validateRegisterFields, isValid, type RegisterFieldErrors } from '../..
 import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
-import { AuthTextInput } from '../../src/components/AuthTextInput';
-import type { AuthTextInputHandle } from '../../src/components/AuthTextInput.types';
+import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { Text } from '../../src/components/Text';
 import { track } from '../../src/lib/analytics';
@@ -26,9 +25,6 @@ export default function RegisterScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
-  const passwordRef = useRef<AuthTextInputHandle>(null);
-  const confirmRef = useRef<AuthTextInputHandle>(null);
-  const nameRef = useRef<AuthTextInputHandle>(null);
 
   const [values, setValues] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({});
@@ -211,77 +207,74 @@ export default function RegisterScreen() {
           )}
 
           <View style={styles.form}>
-            <AuthTextInput
-              label={t('login.fields.email')}
-              value={values.email}
-              onChangeText={setField('email')}
-              placeholder={t('login.placeholders.email')}
-              error={fieldErrors.email}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              // `username` (not emailAddress) lets iOS offer Strong Password + save
-              // the new credential to Keychain on a create-account screen.
-              textContentType="username"
-              autoComplete="email"
-              returnKeyType="next"
-              onSubmitEditing={() => passwordRef.current?.focus()}
-              editable={!submitting}
-            />
-            <AuthTextInput
-              ref={passwordRef}
-              label={t('login.fields.password')}
-              value={values.password}
-              onChangeText={setField('password')}
-              placeholder={t('login.placeholders.password')}
-              error={fieldErrors.password}
-              hint={t('login.signUp.passwordHint')}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              textContentType="newPassword"
-              autoComplete="new-password"
-              passwordRules="minlength: 8; maxlength: 128;"
-              returnKeyType="next"
-              onSubmitEditing={() => confirmRef.current?.focus()}
-              editable={!submitting}
-              showLabel={t('login.a11y.showPassword')}
-              hideLabel={t('login.a11y.hidePassword')}
-            />
-            <AuthTextInput
-              ref={confirmRef}
-              label={t('login.fields.confirmPassword')}
-              value={values.confirmPassword}
-              onChangeText={setField('confirmPassword')}
-              placeholder={t('login.placeholders.confirmPassword')}
-              error={fieldErrors.confirmPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              textContentType="newPassword"
-              autoComplete="new-password"
-              returnKeyType="next"
-              onSubmitEditing={() => nameRef.current?.focus()}
-              editable={!submitting}
-              showLabel={t('login.a11y.showPassword')}
-              hideLabel={t('login.a11y.hidePassword')}
-            />
-            <AuthTextInput
-              ref={nameRef}
-              label={t('login.fields.name')}
-              value={values.name}
-              onChangeText={setField('name')}
-              placeholder={t('login.placeholders.name')}
-              error={fieldErrors.name}
-              autoCapitalize="words"
-              autoCorrect={false}
-              textContentType="name"
-              autoComplete="name"
-              returnKeyType="done"
-              onSubmitEditing={() => {
+            <AuthFieldset
+              onSubmit={() => {
                 void onSubmit();
               }}
-              editable={!submitting}
+              fields={[
+                {
+                  key: 'email',
+                  label: t('login.fields.email'),
+                  value: values.email,
+                  onChangeText: setField('email'),
+                  placeholder: t('login.placeholders.email'),
+                  error: fieldErrors.email,
+                  keyboardType: 'email-address',
+                  autoCapitalize: 'none',
+                  autoCorrect: false,
+                  // `username` (not emailAddress) lets iOS offer Strong Password + save
+                  // the new credential to Keychain on a create-account screen.
+                  textContentType: 'username',
+                  autoComplete: 'email',
+                  editable: !submitting,
+                },
+                {
+                  key: 'password',
+                  label: t('login.fields.password'),
+                  value: values.password,
+                  onChangeText: setField('password'),
+                  placeholder: t('login.placeholders.password'),
+                  error: fieldErrors.password,
+                  hint: t('login.signUp.passwordHint'),
+                  secureTextEntry: true,
+                  autoCapitalize: 'none',
+                  autoCorrect: false,
+                  textContentType: 'newPassword',
+                  autoComplete: 'new-password',
+                  editable: !submitting,
+                  showLabel: t('login.a11y.showPassword'),
+                  hideLabel: t('login.a11y.hidePassword'),
+                },
+                {
+                  key: 'confirmPassword',
+                  label: t('login.fields.confirmPassword'),
+                  value: values.confirmPassword,
+                  onChangeText: setField('confirmPassword'),
+                  placeholder: t('login.placeholders.confirmPassword'),
+                  error: fieldErrors.confirmPassword,
+                  secureTextEntry: true,
+                  autoCapitalize: 'none',
+                  autoCorrect: false,
+                  textContentType: 'newPassword',
+                  autoComplete: 'new-password',
+                  editable: !submitting,
+                  showLabel: t('login.a11y.showPassword'),
+                  hideLabel: t('login.a11y.hidePassword'),
+                },
+                {
+                  key: 'name',
+                  label: t('login.fields.name'),
+                  value: values.name,
+                  onChangeText: setField('name'),
+                  placeholder: t('login.placeholders.name'),
+                  error: fieldErrors.name,
+                  autoCapitalize: 'words',
+                  autoCorrect: false,
+                  textContentType: 'name',
+                  autoComplete: 'name',
+                  editable: !submitting,
+                },
+              ]}
             />
             <Button
               title={t('login.submit.signUp')}
