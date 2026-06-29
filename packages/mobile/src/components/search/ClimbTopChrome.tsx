@@ -357,7 +357,10 @@ const styles = StyleSheet.create({
   },
   materialWallStatusRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    // Leading-aligned so the chip's left edge lines up with the search field and
+    // filter pills below it as one Material chip stack (a centred free-float is an
+    // iOS top-island convention).
+    justifyContent: 'flex-start',
     alignItems: 'center',
     paddingHorizontal: spacing[4],
     paddingBottom: spacing[2],
