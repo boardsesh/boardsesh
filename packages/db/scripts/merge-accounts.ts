@@ -159,6 +159,27 @@ const DEDUPE_REPOINTS: Array<{ table: string; column: string; otherCols: string[
   { table: 'board_climb_ratings', column: 'user_id', otherCols: ['board_type', 'climb_uuid', 'angle'] },
 ];
 
+// Columns repointed by the hand-coded specials in mergeLoserIntoWinner / mergeSet
+// (not in the two arrays above). Listed here so the FK-completeness guard knows
+// they're handled.
+const SPECIAL_REPOINT_COLUMNS: Array<{ table: string; column: string }> = [
+  { table: 'boardsesh_ticks', column: 'user_id' },
+  { table: 'user_boards', column: 'owner_id' },
+  { table: 'votes', column: 'user_id' },
+  { table: 'user_follows', column: 'follower_id' },
+  { table: 'user_follows', column: 'following_id' },
+  { table: 'user_credentials', column: 'user_id' },
+  { table: 'user_profiles', column: 'user_id' },
+];
+
+// FKs to users(id) we deliberately do NOT repoint: derived/ephemeral rows the
+// loser owns that should just be cleaned up by the cascade on user delete.
+const CASCADE_ONLY_COLUMNS: Array<{ table: string; column: string }> = [
+  // Nightly-recomputed percentile snapshot keyed PK(user_id) — the loser's stale
+  // row cascades away and the winner's is recomputed from the repointed ticks.
+  { table: 'user_climb_percentiles', column: 'user_id' },
+];
+
 function parsePositiveInteger(rawValue: string | undefined, flagName: string): number {
   const parsedValue = Number(rawValue);
   if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
@@ -646,6 +667,60 @@ export async function applyMerge(
   return { merged: true };
 }
 
+type ForeignKeyRow = { childTable: string; childColumn: string };
+
+/**
+ * Fail loudly before touching any data if a foreign key to users(id) exists that
+ * the script doesn't know how to handle. The repoint lists are hand-maintained;
+ * if a later migration adds a new user_id FK, a silent skip would either block
+ * the loser DELETE (RESTRICT) or cascade-delete / null data the operator
+ * expected to be moved. This diffs the actual FK set in pg_catalog against the
+ * union of the repoint lists, the specials, and the deliberate cascade-only
+ * allow-list — and aborts with the offending columns if anything is unaccounted.
+ */
+export async function assertAllUserFksHandled(commandDb: ExecuteDb): Promise<void> {
+  const handled = new Set<string>(
+    [...PLAIN_REPOINTS, ...DEDUPE_REPOINTS, ...SPECIAL_REPOINT_COLUMNS, ...CASCADE_ONLY_COLUMNS].map(
+      // strip NextAuth's quoted "userId" so it matches pg_catalog's attname
+      ({ table, column }) => `${table}.${column.replace(/"/g, '')}`,
+    ),
+  );
+
+  const actualForeignKeys = await executeRows<ForeignKeyRow>(
+    commandDb,
+    sql`
+      SELECT child.relname AS "childTable", child_attr.attname AS "childColumn"
+        FROM pg_constraint constraint_row
+        JOIN pg_class child ON child.oid = constraint_row.conrelid
+        JOIN pg_class parent ON parent.oid = constraint_row.confrelid
+        JOIN pg_attribute child_attr
+          ON child_attr.attrelid = constraint_row.conrelid
+         AND child_attr.attnum = constraint_row.conkey[1]
+        JOIN pg_attribute parent_attr
+          ON parent_attr.attrelid = constraint_row.confrelid
+         AND parent_attr.attnum = constraint_row.confkey[1]
+       WHERE constraint_row.contype = 'f'
+         AND parent.relname = 'users'
+         AND parent.relnamespace = 'public'::regnamespace
+         AND parent_attr.attname = 'id'
+         AND array_length(constraint_row.conkey, 1) = 1
+    `,
+  );
+
+  const unhandled = actualForeignKeys
+    .map((foreignKey) => `${foreignKey.childTable}.${foreignKey.childColumn}`)
+    .filter((key) => !handled.has(key))
+    .sort();
+
+  if (unhandled.length > 0) {
+    throw new Error(
+      `merge-accounts is out of date: ${unhandled.length} foreign key(s) to users(id) are not handled by the ` +
+        `repoint lists — ${unhandled.join(', ')}. Add each to PLAIN_REPOINTS, DEDUPE_REPOINTS, the specials, or ` +
+        `CASCADE_ONLY_COLUMNS before running a merge.`,
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const scriptArgs = parseArgs(process.argv.slice(2));
   if (scriptArgs.help) {
@@ -656,6 +731,9 @@ async function main(): Promise<void> {
   const { db, close } = createScriptDb();
 
   try {
+    // Abort before any writes if the schema has grown a user FK we don't handle.
+    await assertAllUserFksHandled(db);
+
     const members = await fetchAllDuplicateMembers(db, scriptArgs.onlyEmail);
     const allSets = buildDuplicateSets(members);
     const selectedSets = scriptArgs.limit ? allSets.slice(0, scriptArgs.limit) : allSets;
