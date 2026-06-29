@@ -25,6 +25,8 @@ import { ProjectingCard } from './ProjectingCard';
 import { AngleBreakdownChart } from './AngleBreakdownChart';
 import { WallRhythmGrid } from './WallRhythmGrid';
 import { GradeMilestonesTimeline } from './GradeMilestonesTimeline';
+import { TopSetterCard } from './TopSetterCard';
+import { BenchmarksCard } from './BenchmarksCard';
 import { LayoutShareDonut } from './LayoutShareDonut';
 import { layoutChartColor, flashRedpointColor } from './profile-chart-colors';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
@@ -292,6 +294,21 @@ export const ProgressTab = memo(function ProgressTab({
               <Card style={styles.chartCard}>
                 <GradeMilestonesTimeline milestones={data.gradeMilestones} />
               </Card>
+            </>
+          )}
+
+          {/* Community cluster — who you've sent and the test-pieces you've ticked. */}
+          {data.setterSummary.topSetter && (
+            <>
+              <SectionHeader title={t('sections.topSetter')} />
+              <TopSetterCard summary={data.setterSummary} />
+            </>
+          )}
+
+          {data.benchmarkSummary.count > 0 && (
+            <>
+              <SectionHeader title={t('sections.benchmarks')} />
+              <BenchmarksCard summary={data.benchmarkSummary} gradeBars={data.benchmarkGradeBars} />
             </>
           )}
 

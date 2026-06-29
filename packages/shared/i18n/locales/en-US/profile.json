@@ -113,7 +113,9 @@
     "yourAngle": "By wall angle",
     "wallRhythm": "Wall rhythm",
     "ceilingOverTime": "Ceiling over time",
-    "gradeMilestones": "Grade milestones"
+    "gradeMilestones": "Grade milestones",
+    "topSetter": "Top setter",
+    "benchmarks": "Benchmarks"
   },
   "charts": {
     "nextProject": "One more {{grade}} fills the gap",
@@ -131,6 +133,15 @@
     "ceilingA11y": "Hardest grade each week, now {{grade}}",
     "milestonesA11y": "First send at each grade",
     "milestoneA11y": "First {{grade}} in {{date}}",
+    "setterProblems_one": "{{count}} problem",
+    "setterProblems_other": "{{count}} problems",
+    "settersExplored_one": "{{count}} setter explored",
+    "settersExplored_other": "{{count}} setters explored",
+    "setterA11y": "Top setter {{setter}}, {{count}} problems sent, {{total}} setters explored",
+    "benchmarksSummary": "{{count}} sent · hardest {{grade}}",
+    "benchmarksCount_one": "{{count}} benchmark sent",
+    "benchmarksCount_other": "{{count}} benchmarks sent",
+    "benchmarksCardA11y": "Benchmark grades, {{count}} sent",
     "weekday": {
       "mon": "Mon",
       "tue": "Tue",

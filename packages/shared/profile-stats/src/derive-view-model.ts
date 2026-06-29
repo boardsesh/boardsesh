@@ -17,6 +17,8 @@ import {
   findNextProjectGrade,
   buildRunningMaxCeiling,
   buildGradeMilestones,
+  buildSetterSummary,
+  buildBenchmarkGradeBars,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
 import type {
@@ -40,6 +42,7 @@ import type {
   RawNextProject,
   RawRunningMaxCeiling,
   RawGradeMilestone,
+  RawSetterSummary,
 } from './types';
 
 export type DeriveProfileViewModelInput = {
@@ -82,6 +85,9 @@ export type ProfileViewModel = {
   nextProjectGrade: RawNextProject;
   runningMaxCeiling: RawRunningMaxCeiling | null;
   gradeMilestones: RawGradeMilestone[];
+  // ── Community cluster (PR3). Lifetime identity stats (board-scoped).
+  setterSummary: RawSetterSummary;
+  benchmarkGradeBars: RawBar[] | null;
 };
 
 /**
@@ -149,6 +155,10 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
   const runningMaxCeiling = buildRunningMaxCeiling(boardScopedTicks, gradeFormat);
   const gradeMilestones = buildGradeMilestones(boardScopedTicks, gradeFormat);
 
+  // Community cluster — lifetime identity stats.
+  const setterSummary = buildSetterSummary(boardScopedTicks);
+  const benchmarkGradeBars = buildBenchmarkGradeBars(boardScopedTicks, gradeFormat);
+
   return {
     filteredLogbook,
     weeklyBars,
@@ -169,6 +179,8 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     nextProjectGrade,
     runningMaxCeiling,
     gradeMilestones,
+    setterSummary,
+    benchmarkGradeBars,
   };
 }
 

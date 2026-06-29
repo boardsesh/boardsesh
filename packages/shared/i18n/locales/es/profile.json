@@ -113,7 +113,9 @@
     "yourAngle": "Por ángulo de pared",
     "wallRhythm": "Ritmo en el muro",
     "ceilingOverTime": "Techo a lo largo del tiempo",
-    "gradeMilestones": "Hitos por grado"
+    "gradeMilestones": "Hitos por grado",
+    "topSetter": "Mejor aperturista",
+    "benchmarks": "Benchmarks"
   },
   "charts": {
     "nextProject": "Un {{grade}} más cierra el hueco",
@@ -131,6 +133,15 @@
     "ceilingA11y": "Grado más difícil cada semana, ahora {{grade}}",
     "milestonesA11y": "Primer encadene en cada grado",
     "milestoneA11y": "Primer {{grade}} en {{date}}",
+    "setterProblems_one": "{{count}} bloque",
+    "setterProblems_other": "{{count}} bloques",
+    "settersExplored_one": "{{count}} aperturista explorado",
+    "settersExplored_other": "{{count}} aperturistas explorados",
+    "setterA11y": "Mejor aperturista {{setter}}, {{count}} bloques encadenados, {{total}} aperturistas explorados",
+    "benchmarksSummary": "{{count}} encadenados · más difícil {{grade}}",
+    "benchmarksCount_one": "{{count}} benchmark encadenado",
+    "benchmarksCount_other": "{{count}} benchmarks encadenados",
+    "benchmarksCardA11y": "Grados de benchmark, {{count}} encadenados",
     "weekday": {
       "mon": "lun",
       "tue": "mar",

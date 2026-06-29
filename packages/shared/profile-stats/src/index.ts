@@ -23,6 +23,8 @@ export {
   findNextProjectGrade,
   buildRunningMaxCeiling,
   buildGradeMilestones,
+  buildSetterSummary,
+  buildBenchmarkGradeBars,
 } from './chart-builders';
 export { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
 export {
