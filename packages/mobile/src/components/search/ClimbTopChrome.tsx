@@ -356,14 +356,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
   },
   materialWallStatusRow: {
-    flexDirection: 'row',
-    // Leading-aligned so the chip's left edge lines up with the search field and
-    // filter pills below it as one Material chip stack (a centred free-float is an
-    // iOS top-island convention).
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    paddingHorizontal: spacing[4],
-    paddingBottom: spacing[2],
+    // Full-bleed "On the wall" status band — it owns its own padding, accent rail
+    // and bottom divider, so the wrapper adds no inset.
+    width: '100%',
   },
   materialSearchStack: {
     paddingHorizontal: spacing[4],

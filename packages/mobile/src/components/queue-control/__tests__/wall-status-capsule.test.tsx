@@ -75,9 +75,14 @@ vi.mock('../../../providers/theme-provider', () => ({
     colorScheme: spies.colorScheme,
     systemColors: { label: '#111', secondaryBackground: '#222' },
     brandColors: { warning: '#FBBF24' },
-    m3: { tertiary: '#FF8A3D', onTertiary: '#3A1D00', onSurface: '#F5F2FB', onSurfaceVariant: '#A9A2B6' },
+    m3: {
+      tertiary: '#FF8A3D',
+      onTertiary: '#3A1D00',
+      onSurface: '#F5F2FB',
+      onSurfaceVariant: '#A9A2B6',
+      outlineVariant: '#4A4458',
+    },
     m3SurfaceContainers: { high: '#2A2142', highest: '#322748' },
-    materialElevation: { level1: { elevation: 1 } },
   }),
 }));
 vi.mock('../../../hooks/use-grade-format', () => ({
@@ -231,12 +236,12 @@ describe('WallStatusCapsule', () => {
     }
   });
 
-  it('renders the Liquid Glass Pressable pill (not the Material surface) on iOS', () => {
-    const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+  it('renders the Liquid Glass Pressable pill (not the Material band) on iOS', () => {
+    const { container, queryByText } = render(<WallStatusCapsule climb={makeClimb()} />);
     expect(container.querySelector('[data-pressable]')).not.toBeNull();
     expect(container.querySelector('[data-pressable-surface]')).toBeNull();
-    // No lightbulb badge in the glass skin — the warm "lit" cue is the amber pill.
-    expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
+    // The glass pill carries the "lit" cue as the amber tint — no visible overline.
+    expect(queryByText('mobile.boardPresence.stripOverline')).toBeNull();
   });
 
   describe('Material variant (Android)', () => {
@@ -244,22 +249,24 @@ describe('WallStatusCapsule', () => {
       spies.variant = 'material';
     });
 
-    it('renders a Material assist chip via PressableSurface (native ripple), not the glass Pressable', () => {
+    it('renders a Material status band via PressableSurface (native ripple), not the glass Pressable', () => {
       const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(container.querySelector('[data-pressable-surface]')).not.toBeNull();
       expect(getByText('Wax On')).not.toBeNull();
       expect(getByText('V5 6C')).not.toBeNull();
     });
 
-    it('lights the sender avatar with a filled-lightbulb badge (tertiary "lit" cue)', () => {
-      const { container } = render(<WallStatusCapsule climb={makeClimb()} />);
+    it('states the lit semantic in words via the "On the wall" overline (no lightbulb)', () => {
+      const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
-      expect(container.querySelector('[data-icon="lightbulb.fill"]')).not.toBeNull();
-      // The amber person glyph belongs to the anonymous fallback, not a known sender.
+      // The overline carries the "lit" meaning; the bottom queue bar owns the bulb.
+      expect(getByText('mobile.boardPresence.stripOverline')).not.toBeNull();
+      expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
+      // The person glyph belongs to the anonymous fallback, not a known sender.
       expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
     });
 
-    it('falls back to a tertiary-filled person glyph (no lightbulb) for an anonymous sender', () => {
+    it('falls back to a neutral person glyph (no lightbulb) for an anonymous sender', () => {
       const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: null });
       const { container } = render(<WallStatusCapsule climb={climb} />);
       expect(container.querySelector('[data-driver-avatar]')).toBeNull();
