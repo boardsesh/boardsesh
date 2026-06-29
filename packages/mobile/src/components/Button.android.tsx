@@ -57,12 +57,7 @@ const BUTTON_ICON_SOURCE: Partial<Record<IconName, ImageSourcePropType>> = {
 export function Button({
   title,
   onPress,
-  // `accessibilityLabel` is intentionally not destructured: a Compose Button takes
-  // its accessible name from its Text content (the title), and @expo/ui 56.0.18
-  // exposes no contentDescription modifier (`semantics` only carries an autofill
-  // `contentType`). So a distinct accessibilityLabel can't be applied on Android —
-  // the visible title is the label. Only two follow-toggle buttons pass a distinct
-  // one; their title already reads sensibly. iOS applies it via the modifier.
+  accessibilityLabel,
   variant = 'filled',
   size: buttonSize = 'medium',
   icon,
@@ -76,6 +71,20 @@ export function Button({
 }: ButtonProps) {
   const { brandColors, colorScheme } = useTheme();
   const handlePress = makeButtonPressHandler({ onPress, disabled, loading, haptic });
+
+  // A Compose Button takes its accessible name from its Text content (the title),
+  // and @expo/ui 56.0.18 exposes no contentDescription modifier (`semantics` only
+  // carries an autofill `contentType`), so a distinct `accessibilityLabel` can't be
+  // applied on Android — TalkBack reads the title. iOS applies it via the modifier.
+  // Warn in dev so a divergent label doesn't silently regress (today only the two
+  // follow-toggle buttons pass one, and their title already reads sensibly).
+  if (__DEV__ && accessibilityLabel != null && accessibilityLabel !== title) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[Button] accessibilityLabel "${accessibilityLabel}" is not applied on Android ` +
+        `(Compose labels from the title "${title}"); TalkBack will read the title.`,
+    );
+  }
 
   const config = sizeConfig[buttonSize];
   const isDestructive = role === 'destructive';
