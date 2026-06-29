@@ -256,19 +256,21 @@ describe('WallStatusCapsule', () => {
       expect(getByText('V5 6C')).not.toBeNull();
     });
 
-    it('states the lit semantic in words via the "On the wall" overline (no lightbulb)', () => {
+    it('names the sender in the "On the wall" overline (no lightbulb)', () => {
       const { container, getByText } = render(<WallStatusCapsule climb={makeClimb()} />);
       expect(container.querySelector('[data-driver-avatar]')).not.toBeNull();
-      // The overline carries the "lit" meaning; the bottom queue bar owns the bulb.
-      expect(getByText('mobile.boardPresence.stripOverline')).not.toBeNull();
+      // The overline carries "lit + who" in words; the bottom queue bar owns the bulb.
+      expect(getByText('mobile.boardPresence.stripOverlineWithSender:Casey')).not.toBeNull();
       expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();
       // The person glyph belongs to the anonymous fallback, not a known sender.
       expect(container.querySelector('[data-icon="profile.fill"]')).toBeNull();
     });
 
-    it('falls back to a neutral person glyph (no lightbulb) for an anonymous sender', () => {
+    it('falls back to the bare overline + a neutral person glyph for an anonymous sender', () => {
       const climb = makeClimb({ sentByDisplayName: null, sentByAvatarUrl: null, sentByUserId: null });
-      const { container } = render(<WallStatusCapsule climb={climb} />);
+      const { container, getByText } = render(<WallStatusCapsule climb={climb} />);
+      // No sender to name — the overline drops the "· {sender}" suffix gracefully.
+      expect(getByText('mobile.boardPresence.stripOverline')).not.toBeNull();
       expect(container.querySelector('[data-driver-avatar]')).toBeNull();
       expect(container.querySelector('[data-icon="profile.fill"]')).not.toBeNull();
       expect(container.querySelector('[data-icon="lightbulb.fill"]')).toBeNull();

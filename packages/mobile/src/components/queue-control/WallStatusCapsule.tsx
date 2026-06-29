@@ -160,10 +160,14 @@ function WallStatusCapsuleImpl({ climb }: WallStatusCapsuleProps) {
             <Text
               variant="caption1"
               numberOfLines={1}
+              // Truncate the trailing sender, never the protected "On the wall" prefix.
+              ellipsizeMode="tail"
               maxFontSizeMultiplier={CHROME_LABEL_MAX_FONT_SCALE}
               style={[styles.bandOverline, { color: m3.tertiary }]}
             >
-              {t('mobile.boardPresence.stripOverline')}
+              {senderName
+                ? t('mobile.boardPresence.stripOverlineWithSender', { sender: senderName })
+                : t('mobile.boardPresence.stripOverline')}
             </Text>
             <View style={styles.bandMainRow}>
               {/* Inert + a11y-hidden so the band reads as one node (the profile tap

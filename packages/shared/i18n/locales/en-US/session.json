@@ -391,6 +391,7 @@
       "stripA11yLabelWithSender": "On the wall: {{name}}, {{grade}}, lit by {{sender}}",
       "stripA11yHint": "Opens the wall climb",
       "stripOverline": "On the wall",
+      "stripOverlineWithSender": "On the wall · {{sender}}",
       "stripAnnounce": "Now on the wall: {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Now on the wall: {{name}}, {{grade}}, lit by {{sender}}",
       "switchBoard": "Switch board",

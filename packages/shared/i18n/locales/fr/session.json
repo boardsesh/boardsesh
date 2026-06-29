@@ -391,6 +391,7 @@
       "stripA11yLabelWithSender": "Sur le mur : {{name}}, {{grade}}, allumé par {{sender}}",
       "stripA11yHint": "Ouvre le bloc du mur",
       "stripOverline": "Sur le mur",
+      "stripOverlineWithSender": "Sur le mur · {{sender}}",
       "stripAnnounce": "Sur le mur maintenant : {{name}}, {{grade}}",
       "stripAnnounceWithSender": "Sur le mur maintenant : {{name}}, {{grade}}, allumé par {{sender}}",
       "switchBoard": "Changer de mur",
