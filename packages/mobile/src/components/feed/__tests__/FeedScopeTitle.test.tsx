@@ -1,57 +1,38 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
-import type { AppMenuAction } from '../../AppMenu';
+import { createElement } from 'react';
+import type { AppMenuAction, AppMenuProps } from '../../AppMenu';
 
-// Capture the props FeedScopeTitle hands to AppMenu — the per-variant menu and the
-// selected-row marker are AppMenu's job (covered by app-menu.test.tsx); here we
-// only verify FeedScopeTitle forwards its actions + labels the menu.
+// Capture the props FeedScopeTitle hands to AppMenu — the native menu popup and the
+// selected-row marker are AppMenu's job (its resolver is covered by app-menu.test.tsx);
+// here we only verify FeedScopeTitle forwards actions + label and picks the per-variant
+// width cap.
 const capture = vi.hoisted(() => ({
+  label: undefined as string | undefined,
   actions: undefined as AppMenuAction[] | undefined,
   onSelectIndex: undefined as ((index: number) => void) | undefined,
   accessibilityLabel: undefined as string | undefined,
+  maxWidth: undefined as number | undefined,
 }));
 const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material' }));
 
-vi.mock('react-native', () => ({
-  View: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-view': 'true' }, children),
-  StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
-}));
-
 vi.mock('../../AppMenu', () => ({
-  AppMenu: ({
-    actions,
-    onSelectIndex,
-    accessibilityLabel,
-    children,
-  }: {
-    actions: AppMenuAction[];
-    onSelectIndex: (index: number) => void;
-    accessibilityLabel?: string;
-    children?: ReactNode;
-  }) => {
+  AppMenu: ({ label, actions, onSelectIndex, accessibilityLabel, maxWidth }: AppMenuProps) => {
+    capture.label = label;
     capture.actions = actions;
     capture.onSelectIndex = onSelectIndex;
     capture.accessibilityLabel = accessibilityLabel;
-    return createElement('div', { 'data-app-menu': 'true' }, children);
+    capture.maxWidth = maxWidth;
+    return createElement('div', { 'data-app-menu': 'true' }, label);
   },
 }));
 
-vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+// FeedScopeTitle's only branch is the width cap, chosen by `useVariantValue`; mock it
+// to honour the test's variant instead of standing up the whole theme provider.
+vi.mock('../../../theme/variants', () => ({
+  useVariantValue: (byVariant: Record<'liquidGlass' | 'material', unknown>) => byVariant[ctrl.variant],
 }));
-vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
-vi.mock('../../GlassSurface', () => ({ GlassSurface: () => createElement('div', { 'data-glass': 'true' }) }));
-vi.mock('../../../hooks/use-native-glass', () => ({ useNativeGlass: () => false }));
-vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({
-    variant: ctrl.variant,
-    systemColors: { label: '#000', secondaryLabel: '#999', separator: '#ccc', elevatedSurface: '#fff' },
-  }),
-}));
-vi.mock('../../../theme/tokens', () => ({ spacing: { 1: 4, 2: 8, 4: 16 }, shadows: { sm: {} } }));
-vi.mock('../../../theme/layout', () => ({ glassSize: { capsule: 44 } }));
 
 import { FeedScopeTitle } from '../FeedScopeTitle';
 
@@ -61,44 +42,38 @@ const ACTIONS: AppMenuAction[] = [
 ];
 
 beforeEach(() => {
+  capture.label = undefined;
   capture.actions = undefined;
   capture.onSelectIndex = undefined;
   capture.accessibilityLabel = undefined;
+  capture.maxWidth = undefined;
   ctrl.variant = 'liquidGlass';
 });
 
 describe('FeedScopeTitle', () => {
-  it('forwards its actions to AppMenu unchanged (incl. the Glass-only systemIcon)', () => {
+  it('forwards its actions to AppMenu unchanged (incl. the iOS-only systemIcon)', () => {
     render(createElement(FeedScopeTitle, { title: 'My crew', actions: ACTIONS, onSelectIndex: () => {} }));
     expect(capture.actions).toBe(ACTIONS);
     expect(capture.actions?.[0].systemIcon).toBe('person.2.fill');
   });
 
-  it('labels the menu with the active scope and forwards onSelectIndex', () => {
+  it('labels the native menu with the active scope and forwards onSelectIndex', () => {
     const onSelectIndex = vi.fn();
     render(createElement(FeedScopeTitle, { title: 'My crew', actions: ACTIONS, onSelectIndex }));
+    expect(capture.label).toBe('My crew');
     expect(capture.accessibilityLabel).toBe('My crew');
     capture.onSelectIndex?.(1);
     expect(onSelectIndex).toHaveBeenCalledWith(1);
   });
 
-  it('renders the floating glass pill on Liquid Glass', () => {
-    const { container } = render(
-      createElement(FeedScopeTitle, { title: 'My crew', actions: ACTIONS, onSelectIndex: () => {} }),
-    );
-    expect(container.querySelector('[data-glass]')).not.toBeNull();
+  it('caps the anchor wider on Liquid Glass (the floating pill has room to grow)', () => {
+    render(createElement(FeedScopeTitle, { title: 'My crew', actions: ACTIONS, onSelectIndex: () => {} }));
+    expect(capture.maxWidth).toBe(240);
   });
 
-  it('renders the flat M3 title-menu (no glass pill) on Material, still forwarding its actions', () => {
+  it('caps the anchor tighter on Material (it shares the app-bar row with the avatar + action)', () => {
     ctrl.variant = 'material';
-    const { container } = render(
-      createElement(FeedScopeTitle, { title: 'My crew', actions: ACTIONS, onSelectIndex: () => {} }),
-    );
-    // The Material app-bar title is flat — no floating GlassSurface pill.
-    expect(container.querySelector('[data-glass]')).toBeNull();
-    // Still a menu anchored to the title, still forwarding its actions + label.
-    expect(container.querySelector('[data-app-menu]')).not.toBeNull();
-    expect(capture.actions).toBe(ACTIONS);
-    expect(capture.accessibilityLabel).toBe('My crew');
+    render(createElement(FeedScopeTitle, { title: 'My crew', actions: ACTIONS, onSelectIndex: () => {} }));
+    expect(capture.maxWidth).toBe(220);
   });
 });

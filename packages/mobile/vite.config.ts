@@ -190,6 +190,17 @@ export default defineConfig({
         find: /^(.*\/)?LogbookSortChipRow$/,
         replacement: fileURLToPath(new URL('./test/logbook-sort-chip-row-stub.tsx', import.meta.url)),
       },
+      // AppMenu is platform-split (AppMenu.ios.tsx renders a native @expo/ui SwiftUI
+      // `Menu`; AppMenu.android.tsx a native Compose `DropdownMenu`). Vitest doesn't
+      // resolve `.ios`/`.android` extensions and can't mount either native tree, so
+      // redirect the extensionless import to a faithful passthrough stub that keeps
+      // the public API + button accessibility roles (anchor + one button per action).
+      // Suites that assert AppMenu internals register their own vi.mock (takes
+      // precedence).
+      {
+        find: /^(.*\/)?AppMenu$/,
+        replacement: fileURLToPath(new URL('./test/app-menu-stub.tsx', import.meta.url)),
+      },
     ],
     // .tsx test files can opt into a jsdom environment per file via the
     // `// @vitest-environment jsdom` pragma — needed to render React
