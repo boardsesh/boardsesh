@@ -116,6 +116,12 @@ providers.push(
       // mixed-case, and a duplicate-by-case set can briefly return more than one
       // row until the account merge collapses it — so verify the password
       // against each candidate and return whichever one matches.
+      //
+      // Candidate count is bounded by real duplicate-by-case signups for one
+      // address: the prod audit found at most 3, and after the merge runs it is
+      // always 1, so the per-candidate bcrypt compares below stay cheap. It is
+      // not attacker-inflatable (a row requires a completed signup), so no
+      // explicit cap is needed.
       const candidates = await db
         .select()
         .from(schema.users)
