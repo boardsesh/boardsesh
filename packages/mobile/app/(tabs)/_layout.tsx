@@ -73,12 +73,9 @@ export default function TabLayout() {
   const onAccessorySurface = useOnAccessorySurface();
   const showRecordBadge = isBluetoothConnected || sessionId !== null;
   const eagerMountRecord = Platform.OS === 'android';
-  // Android detaches (destroys) a blurred tab's native (Fabric) view tree by
-  // default, so re-focusing a tab rebuilds every node (`createNode`/`completeRoot`
-  // burst — worst on Profile's SVG charts). Keep inactive tabs resident there so a
-  // switch is a cheap re-attach; `freezeOnBlur` below stops the resident-but-blurred
-  // trees from burning CPU. Scoped to Android (the profiled platform); `undefined`
-  // keeps the RN default elsewhere.
+  // Android destroys a blurred tab's native view tree by default, rebuilding every
+  // node on re-focus (worst on Profile's charts). Keep inactive tabs resident so a
+  // switch re-attaches instead; `freezeOnBlur` below idles the resident trees.
   const keepInactiveTabsResident = Platform.OS === 'android';
 
   if (!nativeTabBar) {
