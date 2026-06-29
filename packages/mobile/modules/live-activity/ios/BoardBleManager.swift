@@ -174,7 +174,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private lazy var drainWaiters = WaiterPool(queue: bleQueue)
 
     private var onScanResult: ((BoardBleScanResult) -> Void)?
-    private var onDisconnect: ((String) -> Void)?
+    // Second arg carries the disconnect reason (CoreBluetooth NSError code/domain/
+    // description, or a write-stall `context` marker) so JS can tell a takeover
+    // apart from a range/idle timeout. nil when no reason is available.
+    private var onDisconnect: ((String, [String: Any]?) -> Void)?
     /// Fired whenever a connection becomes fully usable (write characteristic
     /// discovered) — JS-initiated connects, widget-intent reconnects and
     /// CoreBluetooth state restoration alike. The JS layer uses it to adopt
@@ -218,7 +221,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func setEventHandlers(
         onScanResult: ((BoardBleScanResult) -> Void)?,
-        onDisconnect: ((String) -> Void)?,
+        onDisconnect: ((String, [String: Any]?) -> Void)?,
         onConnected: ((String, String?) -> Void)? = nil
     ) {
         runOnBleQueue { [weak self] in
@@ -853,6 +856,21 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         completePendingConnect(.failure(error ?? BoardBleError.notConnected))
     }
 
+    /// Builds the JS-bound reason dict from a CoreBluetooth disconnect error.
+    /// Returns nil for a clean disconnect (no error) so the JS side reads a
+    /// missing reason as "iOS reported none" rather than a fabricated one. The
+    /// NSError `code` is the CBError.Code (e.g. 6 connectionTimeout, 7
+    /// peripheralDisconnected) that distinguishes a range/idle drop from a
+    /// peer-terminated link (another central taking the last-connection-wins board).
+    private static func disconnectReasonBody(from error: Error?) -> [String: Any]? {
+        guard let error = error as NSError? else { return nil }
+        return [
+            "errorCode": error.code,
+            "errorDomain": error.domain,
+            "errorDescription": error.localizedDescription,
+        ]
+    }
+
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         let deviceId = peripheral.identifier.uuidString
         let wasCurrentPeripheral = connectedPeripheral?.identifier == peripheral.identifier
@@ -885,7 +903,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                         self.logger.error("BLE write-stall reconnect failed: \(error.localizedDescription, privacy: .public)")
                         self.writeStallRecoveringPeripheralId = nil
                         self.writeStallRecoveries = 0
-                        self.onDisconnect?(deviceId)
+                        self.onDisconnect?(deviceId, [
+                            "context": "write_stall_recovery_failed",
+                            "errorDescription": error.localizedDescription,
+                        ])
                     }
                 }
             }
@@ -900,7 +921,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectedPeripheral = nil
         writeCharacteristic = nil
         failQueuedWrites(error ?? BoardBleError.notConnected)
-        onDisconnect?(deviceId)
+        onDisconnect?(deviceId, Self.disconnectReasonBody(from: error))
 
         // No auto-reconnect. These boards are last-connection-wins, so silently
         // re-grabbing the link would steal the wall back from whoever took it — a
@@ -1352,7 +1373,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             writeStallRecoveries = 0
             writeStallRecoveringPeripheralId = nil
             cancelConnectionIntentionallyOnBleQueue(peripheral)
-            onDisconnect?(deviceId)
+            onDisconnect?(deviceId, ["context": "write_stall_budget_exhausted"])
             return
         }
 
@@ -1383,7 +1404,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             self.writeStallRecoveries = 0
             self.writeCharacteristic = nil
             self.connectedPeripheral = nil
-            self.onDisconnect?(recoveringId.uuidString)
+            self.onDisconnect?(recoveringId.uuidString, ["context": "write_stall_recovery_timeout"])
         }
         writeStallRecoveryWatchdog?.cancel()
         writeStallRecoveryWatchdog = recoveryWatchdog

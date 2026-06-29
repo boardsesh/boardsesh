@@ -43,8 +43,12 @@ public class BoardBleModule: Module {
                         "serviceUuids": result.serviceUuids
                     ])
                 },
-                onDisconnect: { [weak self] deviceId in
-                    self?.emitOrBuffer(name: "disconnected", body: ["deviceId": deviceId])
+                onDisconnect: { [weak self] deviceId, reason in
+                    var body: [String: Any] = ["deviceId": deviceId]
+                    if let reason {
+                        body.merge(reason) { _, new in new }
+                    }
+                    self?.emitOrBuffer(name: "disconnected", body: body)
                 },
                 onConnected: { [weak self] deviceId, deviceName in
                     self?.emitOrBuffer(name: "connected", body: [
