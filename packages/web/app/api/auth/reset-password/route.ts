@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/app/lib/db/db';
@@ -54,7 +55,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email, token, password } = validationResult.data;
+    const { token, password } = validationResult.data;
+    const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
     const identifier = getPasswordResetIdentifier(email);
     const tokenHash = hashResetToken(token);
@@ -86,7 +88,7 @@ export async function POST(request: NextRequest) {
     const user = await db
       .select({ id: schema.users.id })
       .from(schema.users)
-      .where(eq(schema.users.email, email))
+      .where(sql`lower(${schema.users.email}) = ${email}`)
       .limit(1);
     if (user.length === 0) {
       await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);
