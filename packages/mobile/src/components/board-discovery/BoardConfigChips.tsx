@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { brandColors } from '../../theme/colors';
@@ -23,15 +23,21 @@ type BoardConfigChipsProps<T> = {
 };
 
 /**
- * A horizontal row of selectable chips for one board-config dimension (board
+ * A wrapping row of selectable chips for one board-config dimension (board
  * type / layout / size / angle / sets). Carries selection to assistive tech via
  * `accessibilityState.selected` (not colour alone), and `hitSlop` keeps the
  * touch target ≥44pt even though the chip is visually compact.
+ *
+ * Flex-wrap, not a horizontal ScrollView: a horizontal ScrollView nested in the
+ * form's vertical ScrollView collapses its cross-axis height on iOS and clips
+ * the chip labels (top or bottom, worse as Dynamic Type grows). Wrapping lets
+ * each chip size to its content and the row grow with the outer scroll — same
+ * fix the climb filter sheet's chip rows use.
  */
 function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = false }: BoardConfigChipsProps<T>) {
   const { systemColors, brandColors: themeBrandColors } = useTheme();
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+    <View style={styles.row}>
       {options.map((option) => (
         <Pressable
           key={option.key}
@@ -57,7 +63,7 @@ function BoardConfigChipsInner<T>({ groupLabel, options, onSelect, disabled = fa
           </Text>
         </Pressable>
       ))}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -68,6 +74,8 @@ export const BoardConfigChips = memo(BoardConfigChipsInner) as typeof BoardConfi
 
 const styles = StyleSheet.create({
   row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing[2],
     paddingVertical: spacing[1],
   },
@@ -76,6 +84,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     borderRadius: borderRadius.full,
     borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   chipDisabled: {
     opacity: 0.4,
