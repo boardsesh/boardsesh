@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, count, isNull, sql, ilike, or, desc, inArray } from 'drizzle-orm';
+import { eq, and, count, isNull, sql, ilike, or, desc, inArray, type SQL } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
@@ -324,41 +324,83 @@ export const socialGymQueries = {
 
   searchGyms: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     const validatedInput = validateInput(SearchGymsInputSchema, input, 'input');
-    const { query, boardTypes, latitude, longitude, radiusKm } = validatedInput;
+    const { query, boardTypes, layoutIds, sizeIds, multiBoardTypeOnly, latitude, longitude, radiusKm } = validatedInput;
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
     const useProximity = latitude !== undefined && longitude !== undefined;
 
-    // Filter to gyms that HAVE a board of one of the selected types (OR). A raw
-    // fragment so it composes into both the PostGIS proximity SQL and the
-    // text-only Drizzle path; empty when no board-type filter is active.
-    const boardTypeClause =
-      boardTypes && boardTypes.length > 0
-        ? sql` AND EXISTS (SELECT 1 FROM user_boards ub WHERE ub.gym_id = gyms.id AND ub.deleted_at IS NULL AND ub.board_type IN (${sql.join(
+    // A board-level match: the gym must own ONE board satisfying every active
+    // board filter (type AND layout AND size), so they're ANDed inside a single
+    // EXISTS — never separate ones, or a gym could pass by owning a Kilter and a
+    // separate 16x10 board. Parameterised by the gym-id expression so the same
+    // logic composes into the raw PostGIS SQL (`gyms.id`) and the text-only
+    // Drizzle path (`dbSchema.gyms.id`). Returns null when no board filter is set.
+    const boardMatchExists = (gymId: SQL): SQL | null => {
+      const parts: SQL[] = [];
+      if (boardTypes && boardTypes.length > 0) {
+        parts.push(
+          sql`ub.board_type IN (${sql.join(
             boardTypes.map((boardType) => sql`${boardType}`),
             sql`, `,
-          )}))`
-        : sql.empty();
+          )})`,
+        );
+      }
+      if (layoutIds && layoutIds.length > 0) {
+        parts.push(
+          sql`ub.layout_id IN (${sql.join(
+            layoutIds.map((layoutId) => sql`${layoutId}`),
+            sql`, `,
+          )})`,
+        );
+      }
+      if (sizeIds && sizeIds.length > 0) {
+        parts.push(
+          sql`ub.size_id IN (${sql.join(
+            sizeIds.map((sizeId) => sql`${sizeId}`),
+            sql`, `,
+          )})`,
+        );
+      }
+      if (parts.length === 0) return null;
+      return sql`EXISTS (SELECT 1 FROM user_boards ub WHERE ub.gym_id = ${gymId} AND ub.deleted_at IS NULL AND ${sql.join(
+        parts,
+        sql` AND `,
+      )})`;
+    };
+
+    // A gym-level match: at least two distinct board types present.
+    const multiBoardTypeExists = (gymId: SQL): SQL | null =>
+      multiBoardTypeOnly
+        ? sql`(SELECT count(DISTINCT ub2.board_type) FROM user_boards ub2 WHERE ub2.gym_id = ${gymId} AND ub2.deleted_at IS NULL) > 1`
+        : null;
 
     if (useProximity) {
       const radiusMeters = (radiusKm ?? 50) * 1000;
       const lon = Number(longitude);
       const lat = Number(latitude);
 
+      // Board/gym filters appended to the raw PostGIS WHERE. `gyms.id` is the
+      // bare column in this raw query's FROM.
+      const proximityFilters = [boardMatchExists(sql`gyms.id`), multiBoardTypeExists(sql`gyms.id`)].filter(
+        (clause): clause is SQL => clause !== null,
+      );
+      const proximityFilterClause =
+        proximityFilters.length > 0 ? sql` AND ${sql.join(proximityFilters, sql` AND `)}` : sql.empty();
+
       const escapedQuery = query ? query.replace(/[%_\\]/g, '\\$&') : null;
       const likePattern = escapedQuery ? `%${escapedQuery}%` : null;
 
       const countRows = await db.execute(
         likePattern
-          ? sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${boardTypeClause}`
-          : sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${boardTypeClause}`,
+          ? sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause}`
+          : sql`SELECT count(*)::int as count FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause}`,
       );
       const totalCount = Number(rowsFromResult<Record<string, unknown>>(countRows)[0]?.count || 0);
 
       const gymRows = await db.execute(
         likePattern
-          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${boardTypeClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`
-          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${boardTypeClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`,
+          ? sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters}) AND (name ILIKE ${likePattern} OR address ILIKE ${likePattern})${proximityFilterClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`
+          : sql`SELECT *, ST_Distance(location, ST_MakePoint(${lon}, ${lat})::geography) as distance_meters FROM gyms WHERE is_public = true AND deleted_at IS NULL AND location IS NOT NULL AND ST_DWithin(location, ST_MakePoint(${lon}, ${lat})::geography, ${radiusMeters})${proximityFilterClause} ORDER BY distance_meters ASC LIMIT ${limit} OFFSET ${offset}`,
       );
       const rows = rowsFromResult<Record<string, unknown>>(gymRows);
 
@@ -385,14 +427,10 @@ export const socialGymQueries = {
       );
     }
 
-    if (boardTypes && boardTypes.length > 0) {
-      conditions.push(
-        sql`EXISTS (SELECT 1 FROM user_boards ub WHERE ub.gym_id = ${dbSchema.gyms.id} AND ub.deleted_at IS NULL AND ub.board_type IN (${sql.join(
-          boardTypes.map((boardType) => sql`${boardType}`),
-          sql`, `,
-        )}))`,
-      );
-    }
+    const textBoardMatch = boardMatchExists(sql`${dbSchema.gyms.id}`);
+    if (textBoardMatch) conditions.push(textBoardMatch);
+    const textMultiBoardType = multiBoardTypeExists(sql`${dbSchema.gyms.id}`);
+    if (textMultiBoardType) conditions.push(textMultiBoardType);
 
     const whereClause = and(...conditions);
 

@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_WALL_FINDER_FILTER, hasActiveWallFinderFilter } from '../wall-finder-filter';
+import {
+  DEFAULT_WALL_FINDER_FILTER,
+  hasActiveWallFinderFilter,
+  toggleBoardTypeFilter,
+  toggleLayoutFilter,
+  toggleSizeFilter,
+  toggleMultiBoardTypeFilter,
+  clearWallFinderChipFilters,
+  buildLayoutOptions,
+  buildSizeOptions,
+} from '../wall-finder-filter';
 
 describe('hasActiveWallFinderFilter', () => {
   it('is inactive by default and for a bare place relocation', () => {
@@ -8,11 +18,135 @@ describe('hasActiveWallFinderFilter', () => {
     expect(hasActiveWallFinderFilter({ place: 'Tokyo' })).toBe(false);
   });
 
-  it('is active with a name filter or one or more board types', () => {
+  it('is active with a name, board types, layouts, sizes, or the multi-board toggle', () => {
     expect(hasActiveWallFinderFilter({ name: 'movement' })).toBe(true);
     expect(hasActiveWallFinderFilter({ boardTypes: ['kilter'] })).toBe(true);
-    // An empty name / empty board-type array is not "active".
+    expect(hasActiveWallFinderFilter({ layoutIds: [1] })).toBe(true);
+    expect(hasActiveWallFinderFilter({ sizeIds: [11] })).toBe(true);
+    expect(hasActiveWallFinderFilter({ multiBoardTypeOnly: true })).toBe(true);
+    // Empty values are not "active".
     expect(hasActiveWallFinderFilter({ name: '' })).toBe(false);
     expect(hasActiveWallFinderFilter({ boardTypes: [] })).toBe(false);
+    expect(hasActiveWallFinderFilter({ layoutIds: [], sizeIds: [] })).toBe(false);
+  });
+});
+
+describe('toggleBoardTypeFilter', () => {
+  it('adds and removes a board type (OR)', () => {
+    expect(toggleBoardTypeFilter({}, 'kilter')).toEqual({ boardTypes: ['kilter'] });
+    expect(toggleBoardTypeFilter({ boardTypes: ['kilter'] }, 'kilter')).toEqual({ boardTypes: undefined });
+  });
+
+  it('clears layout + size tiers when no longer exactly one board type', () => {
+    // Adding a second type drops the deeper, type-scoped tiers.
+    expect(toggleBoardTypeFilter({ boardTypes: ['kilter'], layoutIds: [1], sizeIds: [11] }, 'tension')).toEqual({
+      boardTypes: ['kilter', 'tension'],
+      layoutIds: undefined,
+      sizeIds: undefined,
+    });
+    // Removing the only type drops them too.
+    expect(toggleBoardTypeFilter({ boardTypes: ['kilter'], layoutIds: [1], sizeIds: [11] }, 'kilter')).toEqual({
+      boardTypes: undefined,
+      layoutIds: undefined,
+      sizeIds: undefined,
+    });
+  });
+});
+
+describe('toggleLayoutFilter', () => {
+  it('adds and removes a layout (OR)', () => {
+    expect(toggleLayoutFilter({ boardTypes: ['kilter'] }, 1)).toEqual({ boardTypes: ['kilter'], layoutIds: [1] });
+    expect(toggleLayoutFilter({ boardTypes: ['kilter'], layoutIds: [1] }, 1)).toEqual({
+      boardTypes: ['kilter'],
+      layoutIds: undefined,
+    });
+  });
+
+  it('clears the size tier when no longer exactly one layout', () => {
+    expect(toggleLayoutFilter({ layoutIds: [1], sizeIds: [11] }, 2)).toEqual({
+      layoutIds: [1, 2],
+      sizeIds: undefined,
+    });
+    expect(toggleLayoutFilter({ layoutIds: [1], sizeIds: [11] }, 1)).toEqual({
+      layoutIds: undefined,
+      sizeIds: undefined,
+    });
+  });
+});
+
+describe('toggleSizeFilter', () => {
+  it('adds a whole id group, then removes it on a second toggle', () => {
+    const added = toggleSizeFilter({}, [21, 22]);
+    expect(added).toEqual({ sizeIds: [21, 22] });
+    expect(toggleSizeFilter(added, [21, 22])).toEqual({ sizeIds: undefined });
+  });
+
+  it('fills in a partially-selected group rather than removing it', () => {
+    expect(toggleSizeFilter({ sizeIds: [21] }, [21, 22])).toEqual({ sizeIds: [21, 22] });
+  });
+});
+
+describe('toggleMultiBoardTypeFilter', () => {
+  it('flips the multi-board-type restriction on and off', () => {
+    expect(toggleMultiBoardTypeFilter({})).toEqual({ multiBoardTypeOnly: true });
+    expect(toggleMultiBoardTypeFilter({ multiBoardTypeOnly: true })).toEqual({ multiBoardTypeOnly: undefined });
+  });
+});
+
+describe('clearWallFinderChipFilters', () => {
+  it('clears every chip filter but keeps the name/place search', () => {
+    expect(
+      clearWallFinderChipFilters({
+        name: 'movement',
+        place: 'Tokyo',
+        boardTypes: ['kilter'],
+        layoutIds: [1],
+        sizeIds: [11],
+        multiBoardTypeOnly: true,
+      }),
+    ).toEqual({
+      name: 'movement',
+      place: 'Tokyo',
+      boardTypes: undefined,
+      layoutIds: undefined,
+      sizeIds: undefined,
+      multiBoardTypeOnly: undefined,
+    });
+  });
+});
+
+describe('buildLayoutOptions', () => {
+  it('is empty unless exactly one board type is selected', () => {
+    expect(buildLayoutOptions({})).toEqual([]);
+    expect(buildLayoutOptions({ boardTypes: ['kilter', 'tension'] })).toEqual([]);
+  });
+
+  it('lists every layout for the single selected board type', () => {
+    const options = buildLayoutOptions({ boardTypes: ['kilter'] });
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options) {
+      expect(typeof option.id).toBe('number');
+      expect(typeof option.label).toBe('string');
+      expect(option.label.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('buildSizeOptions', () => {
+  it('is empty unless exactly one board type AND one layout are selected', () => {
+    expect(buildSizeOptions({ boardTypes: ['kilter'] })).toEqual([]);
+    expect(buildSizeOptions({ boardTypes: ['kilter'], layoutIds: [1, 2] })).toEqual([]);
+  });
+
+  it('groups a real board type + layout into size chips carrying their ids', () => {
+    // Derive a valid layout id from the same data source the screen uses.
+    const [layout] = buildLayoutOptions({ boardTypes: ['kilter'] });
+    expect(layout).toBeDefined();
+    const options = buildSizeOptions({ boardTypes: ['kilter'], layoutIds: [layout.id] });
+    expect(options.length).toBeGreaterThan(0);
+    for (const option of options) {
+      expect(typeof option.label).toBe('string');
+      expect(option.sizeIds.length).toBeGreaterThan(0);
+    }
   });
 });

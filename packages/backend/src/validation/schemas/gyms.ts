@@ -78,6 +78,9 @@ export const MyGymsInputSchema = z.object({
 export const SearchGymsInputSchema = z.object({
   query: z.string().max(200).optional(),
   boardTypes: z.array(BoardNameSchema).max(10).optional(),
+  layoutIds: z.array(z.number().int().nonnegative()).max(50).optional(),
+  sizeIds: z.array(z.number().int().nonnegative()).max(50).optional(),
+  multiBoardTypeOnly: z.boolean().optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   radiusKm: z.number().min(0.1).max(500).optional().default(50),

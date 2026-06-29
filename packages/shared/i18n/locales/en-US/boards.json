@@ -141,7 +141,8 @@
       "showingPlace": "Showing {{place}}",
       "clearSearch": "Clear search",
       "closeMap": "Close",
-      "otherBoardsTitle": "Boards nearby"
+      "otherBoardsTitle": "Boards nearby",
+      "multiBoardChip": "2+ board types"
     }
   },
   "boardEntity": {

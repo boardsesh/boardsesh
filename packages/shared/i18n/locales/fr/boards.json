@@ -141,7 +141,8 @@
       "showingPlace": "Résultats pour {{place}}",
       "clearSearch": "Effacer la recherche",
       "closeMap": "Fermer",
-      "otherBoardsTitle": "Murs à proximité"
+      "otherBoardsTitle": "Murs à proximité",
+      "multiBoardChip": "2+ types de mur"
     }
   },
   "boardEntity": {

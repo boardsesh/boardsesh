@@ -358,9 +358,13 @@ export const schemaSQL = `
     "slug" text,
     "owner_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
     "address" text,
+    "contact_email" text,
+    "contact_phone" text,
     "latitude" double precision,
     "longitude" double precision,
     "is_public" boolean DEFAULT true NOT NULL,
+    "description" text,
+    "image_url" text,
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "deleted_at" timestamp
@@ -411,6 +415,37 @@ export const schemaSQL = `
   CREATE UNIQUE INDEX IF NOT EXISTS "user_boards_unique_slug"
     ON "user_boards" ("slug")
     WHERE "deleted_at" IS NULL;
+
+  -- Follow/member tables that searchGyms/searchBoards enrichment reads (counts +
+  -- follow/member status). The role column is plain text here (prod uses an
+  -- enum); the resolvers only read the string value.
+  DROP TABLE IF EXISTS "gym_members" CASCADE;
+  CREATE TABLE IF NOT EXISTS "gym_members" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "role" text NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "gym_members_unique_gym_user" ON "gym_members" ("gym_id", "user_id");
+
+  DROP TABLE IF EXISTS "gym_follows" CASCADE;
+  CREATE TABLE IF NOT EXISTS "gym_follows" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "gym_follows_unique_gym_user" ON "gym_follows" ("gym_id", "user_id");
+
+  DROP TABLE IF EXISTS "board_follows" CASCADE;
+  CREATE TABLE IF NOT EXISTS "board_follows" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "board_uuid" text NOT NULL REFERENCES "user_boards"("uuid") ON DELETE CASCADE,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS "board_follows_unique_user_board" ON "board_follows" ("user_id", "board_uuid");
 
   -- Auto-recorded serial→config rows + the user's remembered board choice for a
   -- serial (board_uuid). Resolver reads this to skip the disambiguation prompt.

@@ -204,6 +204,12 @@ export const gymsTypeDefs = /* GraphQL */ `
     query: String
     "Filter to gyms that have a board of one of these types (OR)"
     boardTypes: [String!]
+    "Filter to gyms that have a board with one of these layout ids (OR). Combined with boardTypes/sizeIds, all must match the same board."
+    layoutIds: [Int!]
+    "Filter to gyms that have a board with one of these size ids (OR). Combined with boardTypes/layoutIds, all must match the same board."
+    sizeIds: [Int!]
+    "Only gyms with two or more distinct board types"
+    multiBoardTypeOnly: Boolean
     "Latitude for proximity search"
     latitude: Float
     "Longitude for proximity search"

@@ -18,9 +18,19 @@ import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../src/components/gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-directory/GymListPanel';
-import { BoardTypeChips } from '../../src/components/gym-directory/BoardTypeChips';
+import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
 import { buildGymListRows } from '../../src/components/gym-directory/gym-list-rows';
-import { DEFAULT_WALL_FINDER_FILTER, type WallFinderFilter } from '../../src/lib/wall-finder-filter';
+import {
+  DEFAULT_WALL_FINDER_FILTER,
+  buildLayoutOptions,
+  buildSizeOptions,
+  clearWallFinderChipFilters,
+  toggleBoardTypeFilter,
+  toggleLayoutFilter,
+  toggleMultiBoardTypeFilter,
+  toggleSizeFilter,
+  type WallFinderFilter,
+} from '../../src/lib/wall-finder-filter';
 import { spacing, borderRadius, shadows } from '../../src/theme/tokens';
 
 // How long the camera must be still after a pan before we re-query the new
@@ -116,8 +126,19 @@ export default function GymDiscovery() {
     50,
     appliedFilter.name,
     appliedFilter.boardTypes,
+    appliedFilter.layoutIds,
+    appliedFilter.sizeIds,
+    appliedFilter.multiBoardTypeOnly,
   );
-  const { data: boardConnection } = useNearbyBoards(center, 50, appliedFilter.name, 50, appliedFilter.boardTypes);
+  const { data: boardConnection } = useNearbyBoards(
+    center,
+    50,
+    appliedFilter.name,
+    50,
+    appliedFilter.boardTypes,
+    appliedFilter.layoutIds,
+    appliedFilter.sizeIds,
+  );
 
   const gyms = useMemo(
     () => (gymConnection?.gyms ?? []).filter((gym) => gym.latitude != null && gym.longitude != null),
@@ -127,9 +148,14 @@ export default function GymDiscovery() {
 
   // Boards not attached to a gym still deserve discovery — surface them as their
   // own pins + list section so consolidating onto the gym map loses nothing.
+  // The "2+ board types" filter is about gyms, and a standalone board can't have
+  // two types, so hide the section entirely while it's on.
   const standaloneBoards = useMemo(
-    () => boards.filter((board) => board.gymUuid == null && board.latitude != null && board.longitude != null),
-    [boards],
+    () =>
+      appliedFilter.multiBoardTypeOnly
+        ? []
+        : boards.filter((board) => board.gymUuid == null && board.latitude != null && board.longitude != null),
+    [boards, appliedFilter.multiBoardTypeOnly],
   );
 
   // Pre-index a gym's boards ONCE per data change (O(1) per row, never a per-row
@@ -181,6 +207,13 @@ export default function GymDiscovery() {
       }),
     [gyms, boardsByGym, standaloneBoards, expandedGymUuid, selectedId, gymsLoading, t],
   );
+
+  // Nested filter chips, derived from board-constants so they're deterministic
+  // and don't vanish as the user narrows. Layouts appear once a single board type
+  // is chosen; sizes once a single layout is chosen (both gated inside the
+  // builders, which return [] otherwise).
+  const layoutOptions = useMemo(() => buildLayoutOptions(appliedFilter), [appliedFilter]);
+  const sizeOptions = useMemo(() => buildSizeOptions(appliedFilter), [appliedFilter]);
 
   // Move the camera to a point we chose (search result / reset) and remember the
   // target so its settle is ignored by the pan handler.
@@ -295,19 +328,30 @@ export default function GymDiscovery() {
     if (deviceCoords) moveCameraTo(deviceCoords);
   }, [moveCameraTo]);
 
-  // Toggle a board type in the filter (multi-select OR). It ANDs with the name
-  // filter + viewport and re-queries via the hooks' query keys; orthogonal to a
-  // place search (a place relocates, it isn't a filter term).
+  // Chip toggles apply immediately (they re-query via the hooks' query keys) and
+  // are orthogonal to a place search (a place relocates, it isn't a filter term).
+  // The nested-tier clearing (layouts are board-type-scoped, sizes are
+  // layout-scoped) lives in the pure helpers so it stays unit-testable.
   const onToggleBoardType = useCallback((boardType: BoardName) => {
-    setAppliedFilter((prev) => {
-      const current = prev.boardTypes ?? [];
-      const next = current.includes(boardType) ? current.filter((type) => type !== boardType) : [...current, boardType];
-      return { ...prev, boardTypes: next.length > 0 ? next : undefined };
-    });
+    setAppliedFilter((prev) => toggleBoardTypeFilter(prev, boardType));
   }, []);
 
-  const onClearBoardTypes = useCallback(() => {
-    setAppliedFilter((prev) => ({ ...prev, boardTypes: undefined }));
+  const onToggleLayout = useCallback((layoutId: number) => {
+    setAppliedFilter((prev) => toggleLayoutFilter(prev, layoutId));
+  }, []);
+
+  const onToggleSize = useCallback((sizeIds: number[]) => {
+    setAppliedFilter((prev) => toggleSizeFilter(prev, sizeIds));
+  }, []);
+
+  const onToggleMultiBoardType = useCallback(() => {
+    setAppliedFilter((prev) => toggleMultiBoardTypeFilter(prev));
+  }, []);
+
+  // The chip-row "Clear" wipes every chip filter but leaves the name/place search
+  // and viewport alone (the search field has its own clear).
+  const onClearFilters = useCallback(() => {
+    setAppliedFilter((prev) => clearWallFinderChipFilters(prev));
   }, []);
 
   const closeScreen = useCallback(() => {
@@ -315,13 +359,22 @@ export default function GymDiscovery() {
     else router.dismissTo(boardReturnTo);
   }, [router, boardReturnTo]);
 
-  // Board-type chips live in the panel header. Only meaningful once we have a
-  // place to query, so hide them in the pre-location prompt state.
+  // Filter chips live in the panel header. Only meaningful once we have a place
+  // to query, so hide them in the pre-location prompt state.
   const filterSlot = center ? (
-    <BoardTypeChips
+    <WallFinderFilterChips
       selected={appliedFilter.boardTypes ?? []}
       onToggle={onToggleBoardType}
-      onClear={onClearBoardTypes}
+      multiBoardTypeOnly={appliedFilter.multiBoardTypeOnly ?? false}
+      onToggleMultiBoardType={onToggleMultiBoardType}
+      multiBoardLabel={t('mobile.gyms.multiBoardChip')}
+      layoutOptions={layoutOptions}
+      selectedLayoutIds={appliedFilter.layoutIds ?? []}
+      onToggleLayout={onToggleLayout}
+      sizeOptions={sizeOptions}
+      selectedSizeIds={appliedFilter.sizeIds ?? []}
+      onToggleSize={onToggleSize}
+      onClear={onClearFilters}
     />
   ) : undefined;
 

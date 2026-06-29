@@ -141,7 +141,8 @@
       "showingPlace": "Mostrando {{place}}",
       "clearSearch": "Borrar búsqueda",
       "closeMap": "Cerrar",
-      "otherBoardsTitle": "Plafones cercanos"
+      "otherBoardsTitle": "Plafones cercanos",
+      "multiBoardChip": "2+ tipos de plafón"
     }
   },
   "boardEntity": {

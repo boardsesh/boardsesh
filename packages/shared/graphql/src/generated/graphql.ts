@@ -4694,6 +4694,8 @@ export type SearchBoardsInput = {
   boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */
   latitude?: InputMaybe<Scalars['Float']['input']>;
+  /** Filter by layout id (OR) */
+  layoutIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Max results to return */
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Longitude for proximity search */
@@ -4704,6 +4706,8 @@ export type SearchBoardsInput = {
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
   radiusKm?: InputMaybe<Scalars['Float']['input']>;
+  /** Filter by size id (OR) */
+  sizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
 };
 
 /** Input for searching gyms. */
@@ -4712,16 +4716,22 @@ export type SearchGymsInput = {
   boardTypes?: InputMaybe<Array<Scalars['String']['input']>>;
   /** Latitude for proximity search */
   latitude?: InputMaybe<Scalars['Float']['input']>;
+  /** Filter to gyms that have a board with one of these layout ids (OR). Combined with boardTypes/sizeIds, all must match the same board. */
+  layoutIds?: InputMaybe<Array<Scalars['Int']['input']>>;
   /** Max results to return */
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Longitude for proximity search */
   longitude?: InputMaybe<Scalars['Float']['input']>;
+  /** Only gyms with two or more distinct board types */
+  multiBoardTypeOnly?: InputMaybe<Scalars['Boolean']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
   /** Search query */
   query?: InputMaybe<Scalars['String']['input']>;
   /** Radius in km for proximity search (default 50) */
   radiusKm?: InputMaybe<Scalars['Float']['input']>;
+  /** Filter to gyms that have a board with one of these size ids (OR). Combined with boardTypes/layoutIds, all must match the same board. */
+  sizeIds?: InputMaybe<Array<Scalars['Int']['input']>>;
 };
 
 /** Input for searching playlists globally. */

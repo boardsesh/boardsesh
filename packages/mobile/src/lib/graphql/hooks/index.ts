@@ -249,13 +249,27 @@ export function useNearbyBoards(
   limit = 20,
   // Filter to these board types (OR). Empty/undefined means no board-type filter.
   boardTypes?: BoardName[],
+  // Filter to these layout / size ids (OR). Board-type-scoped on the UI side.
+  layoutIds?: number[],
+  sizeIds?: number[],
 ) {
   // Empty string means "no name filter" to the resolver; normalise to undefined
   // so the cache key and the request payload stay clean.
   const nameFilter = query && query.trim().length > 0 ? query.trim() : undefined;
   const typeFilter = boardTypes && boardTypes.length > 0 ? boardTypes : undefined;
+  const layoutFilter = layoutIds && layoutIds.length > 0 ? layoutIds : undefined;
+  const sizeFilter = sizeIds && sizeIds.length > 0 ? sizeIds : undefined;
   return useQuery({
-    queryKey: ['nearbyBoards', coords, radiusKm, nameFilter, limit, typeFilter ?? null],
+    queryKey: [
+      'nearbyBoards',
+      coords,
+      radiusKm,
+      nameFilter,
+      limit,
+      typeFilter ?? null,
+      layoutFilter ?? null,
+      sizeFilter ?? null,
+    ],
     queryFn: () =>
       getHttpClient().request<SearchBoardsQueryResponse>(SEARCH_BOARDS, {
         input: {
@@ -265,6 +279,8 @@ export function useNearbyBoards(
           limit,
           query: nameFilter,
           boardTypes: typeFilter,
+          layoutIds: layoutFilter,
+          sizeIds: sizeFilter,
         },
       }),
     select: (data) => data.searchBoards,
@@ -283,11 +299,30 @@ export function useNearbyGyms(
   query?: string,
   // Filter to gyms that have a board of one of these types (OR).
   boardTypes?: BoardName[],
+  // Filter to gyms with a board matching these layout / size ids (OR). Combined
+  // with boardTypes, all must match the SAME board (backend ANDs them in one
+  // EXISTS). Board-type-scoped on the UI side.
+  layoutIds?: number[],
+  sizeIds?: number[],
+  // Restrict to gyms with two or more distinct board types.
+  multiBoardTypeOnly?: boolean,
 ) {
   const nameFilter = query && query.trim().length > 0 ? query.trim() : undefined;
   const typeFilter = boardTypes && boardTypes.length > 0 ? boardTypes : undefined;
+  const layoutFilter = layoutIds && layoutIds.length > 0 ? layoutIds : undefined;
+  const sizeFilter = sizeIds && sizeIds.length > 0 ? sizeIds : undefined;
+  const multiBoardTypeFilter = multiBoardTypeOnly ? true : undefined;
   return useQuery({
-    queryKey: ['nearbyGyms', coords, radiusKm, nameFilter, typeFilter ?? null],
+    queryKey: [
+      'nearbyGyms',
+      coords,
+      radiusKm,
+      nameFilter,
+      typeFilter ?? null,
+      layoutFilter ?? null,
+      sizeFilter ?? null,
+      multiBoardTypeFilter ?? null,
+    ],
     queryFn: () =>
       getHttpClient().request<SearchGymsQueryResponse>(SEARCH_GYMS, {
         input: {
@@ -297,6 +332,9 @@ export function useNearbyGyms(
           limit: 50,
           query: nameFilter,
           boardTypes: typeFilter,
+          layoutIds: layoutFilter,
+          sizeIds: sizeFilter,
+          multiBoardTypeOnly: multiBoardTypeFilter,
         },
       }),
     select: (data) => data.searchGyms,

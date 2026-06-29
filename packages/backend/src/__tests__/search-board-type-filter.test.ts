@@ -38,3 +38,49 @@ describe('SearchBoardsInput board-type filter', () => {
     expect(SearchBoardsInputSchema.safeParse({ boardTypes: ['nope'] }).success).toBe(false);
   });
 });
+
+// The layout/size filters compose into the same gym→board EXISTS join (gyms) and
+// inArray conditions (boards). These cover the input contract: numeric-id arrays
+// that stay optional, plus the gym-only multiBoardTypeOnly flag.
+
+describe('SearchGymsInput layout/size/multi-board filters', () => {
+  it('accepts layoutIds and sizeIds as numeric-id arrays', () => {
+    const parsed = SearchGymsInputSchema.parse({ boardTypes: ['kilter'], layoutIds: [1, 8], sizeIds: [11, 12] });
+    expect(parsed.layoutIds).toEqual([1, 8]);
+    expect(parsed.sizeIds).toEqual([11, 12]);
+  });
+
+  it('accepts multiBoardTypeOnly as a boolean', () => {
+    expect(SearchGymsInputSchema.parse({ multiBoardTypeOnly: true }).multiBoardTypeOnly).toBe(true);
+  });
+
+  it('stays optional — an unfiltered search leaves the new fields undefined', () => {
+    const parsed = SearchGymsInputSchema.parse({});
+    expect(parsed.layoutIds).toBeUndefined();
+    expect(parsed.sizeIds).toBeUndefined();
+    expect(parsed.multiBoardTypeOnly).toBeUndefined();
+  });
+
+  it('rejects non-integer or negative ids', () => {
+    expect(SearchGymsInputSchema.safeParse({ layoutIds: [1.5] }).success).toBe(false);
+    expect(SearchGymsInputSchema.safeParse({ sizeIds: [-1] }).success).toBe(false);
+  });
+});
+
+describe('SearchBoardsInput layout/size filters', () => {
+  it('accepts layoutIds and sizeIds as numeric-id arrays', () => {
+    const parsed = SearchBoardsInputSchema.parse({ boardTypes: ['kilter'], layoutIds: [1], sizeIds: [11] });
+    expect(parsed.layoutIds).toEqual([1]);
+    expect(parsed.sizeIds).toEqual([11]);
+  });
+
+  it('stays optional — an unfiltered search leaves them undefined', () => {
+    const parsed = SearchBoardsInputSchema.parse({});
+    expect(parsed.layoutIds).toBeUndefined();
+    expect(parsed.sizeIds).toBeUndefined();
+  });
+
+  it('rejects non-integer ids', () => {
+    expect(SearchBoardsInputSchema.safeParse({ sizeIds: [2.2] }).success).toBe(false);
+  });
+});
