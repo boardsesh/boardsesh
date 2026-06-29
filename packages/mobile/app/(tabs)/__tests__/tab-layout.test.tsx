@@ -82,7 +82,25 @@ vi.mock('../../../src/hooks/use-bottom-accessory', () => ({
 // Stub the Material-variant path so it doesn't pull in native modules.
 vi.mock('expo-router', () => {
   const Tabs = Object.assign(
-    ({ children }: { children?: ReactNode }) => createElement('nav', { 'data-tabs-material': 'true' }, children),
+    ({
+      children,
+      screenOptions,
+      detachInactiveScreens,
+    }: {
+      children?: ReactNode;
+      screenOptions?: { freezeOnBlur?: boolean };
+      detachInactiveScreens?: boolean;
+    }) =>
+      createElement(
+        'nav',
+        {
+          'data-tabs-material': 'true',
+          'data-freeze-on-blur': String(screenOptions?.freezeOnBlur),
+          // false (Android, keep resident) vs undefined (default elsewhere).
+          'data-detach-inactive': String(detachInactiveScreens),
+        },
+        children,
+      ),
     {
       Screen: ({ name, options }: { name: string; options?: { lazy?: boolean } }) => {
         const screen = { name, options };
@@ -291,6 +309,36 @@ describe('TabLayout', () => {
     render(<TabLayout />);
 
     expect(cfg.materialScreens.find((screen) => screen.name === 'record')?.options).toMatchObject({ lazy: false });
+  });
+
+  it('freezes blurred JS tabs so resident-but-inactive trees stop processing', () => {
+    cfg.variant = 'material';
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs-material="true"]')?.getAttribute('data-freeze-on-blur')).toBe('true');
+  });
+
+  it('keeps inactive tab native trees resident on Android (re-attach, not rebuild)', () => {
+    // Android detaches a blurred tab's native subtree by default, so a switch
+    // rebuilds every node. detachInactiveScreens=false makes it a cheap re-attach.
+    cfg.variant = 'material';
+    cfg.platformOS = 'android';
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs-material="true"]')?.getAttribute('data-detach-inactive')).toBe('false');
+  });
+
+  it('leaves detachInactiveScreens at the RN default off Android', () => {
+    cfg.variant = 'material';
+    cfg.platformOS = 'ios';
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-tabs-material="true"]')?.getAttribute('data-detach-inactive')).toBe(
+      'undefined',
+    );
   });
 
   it('renders the Record badge when a session is active', () => {
