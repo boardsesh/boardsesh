@@ -53,7 +53,7 @@ import { iosSystemColors } from '../theme/ios-colors';
 import { spacing, borderRadius } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
 import type { ClimbFilters } from '../lib/climb-filter-types';
-import { DEFAULT_FILTERS } from '../lib/climb-filter-types';
+import { DEFAULT_FILTERS, statusForAuth } from '../lib/climb-filter-types';
 
 export type { ClimbFilters };
 export { DEFAULT_FILTERS };
@@ -74,6 +74,11 @@ type ClimbFilterSheetProps = {
 // status — it's the same lever as "min ascents ≥ 2", now folded into the
 // Popularity control — but the enum value is kept for recent-filter replay.
 const STATUS_OPTIONS_UI = ['any', 'drafts', 'projects'] as const;
+
+// `statusForAuth` (in ../lib/climb-filter-types) coerces a persisted signed-out
+// `drafts` status to `any` at the SOURCE — the moment filters enter local state —
+// so the native picker never renders even one frame with a selection that has no
+// matching option. Applied in the useState initializer + the parent-sync effect.
 
 // Popularity buckets consolidate the old min-ascents chips + the "established"
 // status into one control. undefined = Any; 2 = Established (≥2 ascents).
@@ -144,7 +149,9 @@ export function ClimbFilterSheet({
   const boardName = boardConfig?.boardName ?? '';
   const { data: grades } = useGrades(boardName);
 
-  const [localFilters, setLocalFilters] = useState<ClimbFilters>(() => normalizeRetiredStatus(currentFilters));
+  const [localFilters, setLocalFilters] = useState<ClimbFilters>(() =>
+    statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
+  );
   const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
   // Bumped on Reset so the Refine/Advanced sections collapse back to default.
   const [sectionResetKey, setSectionResetKey] = useState(0);
@@ -165,9 +172,23 @@ export function ClimbFilterSheet({
     if (hasLocalDraftEditsRef.current) return;
     // These direct setters intentionally bypass the draft-guard wrappers:
     // parent prop sync should not mark committed state as an in-flight edit.
-    setLocalFilters(normalizeRetiredStatus(currentFilters));
+    setLocalFilters(statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated));
     setLocalBoardFilters(currentBoardFilters);
-  }, [currentFilters, currentBoardFilters]);
+  }, [currentFilters, currentBoardFilters, isAuthenticated]);
+
+  // Safety net for an auth flip while the user is mid-edit. The parent-sync effect
+  // also reacts to isAuthenticated, but it early-returns once there are local draft
+  // edits — so it won't coerce then. This effect has no edit guard, so it still drops
+  // a now-invalid drafts status if the user signs out with unsaved filter edits open.
+  // (When not editing, both effects fire and set the same value — idempotent.) Direct
+  // setter (not a user edit); statusForAuth returns the same reference when there's
+  // nothing to change, so it can't loop or churn.
+  useEffect(() => {
+    if (isAuthenticated) return;
+    // Past the guard isAuthenticated is always false; pass the literal to make the
+    // "drop drafts" intent explicit at the call site.
+    setLocalFilters((previous) => statusForAuth(previous, false));
+  }, [isAuthenticated]);
 
   useEffect(() => {
     return () => {
@@ -237,15 +258,16 @@ export function ClimbFilterSheet({
     [t],
   );
 
+  // The native inline Picker can't disable an option or show a per-option hint, so
+  // gate "drafts" at the call site instead: drop it for signed-out users and render
+  // the "sign in for drafts" hint as a footnote below the picker (see render).
   const statusOptions = useMemo<ReadonlyArray<RadioOption<StatusFilter>>>(
     () =>
-      STATUS_OPTIONS_UI.map((value) => ({
+      STATUS_OPTIONS_UI.filter((value) => value !== 'drafts' || isAuthenticated).map((value) => ({
         value,
         label: statusLabels[value],
-        disabled: value === 'drafts' && !isAuthenticated,
-        description: value === 'drafts' && !isAuthenticated ? t('mobile.filter.signInForDrafts') : undefined,
       })),
-    [statusLabels, isAuthenticated, t],
+    [statusLabels, isAuthenticated],
   );
 
   const accuracyOptions = useMemo<ReadonlyArray<RadioOption<GradeAccuracyValue | 'off'>>>(
@@ -803,6 +825,11 @@ export function ClimbFilterSheet({
                 {t('mobile.filter.section.status')}
               </Text>
               <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} />
+              {!isAuthenticated ? (
+                <Text variant="footnote" style={styles.statusHint}>
+                  {t('mobile.filter.signInForDrafts')}
+                </Text>
+              ) : null}
 
               {isAuthenticated ? (
                 <>
@@ -913,6 +940,12 @@ const styles = StyleSheet.create({
     opacity: 0.55,
     marginTop: spacing[1],
     marginBottom: spacing[2],
+  },
+  statusHint: {
+    // Same muted footnote treatment as subsectionLabel above (the section's labels
+    // and hints share one opacity); marginTop sits it just below the picker.
+    opacity: 0.55,
+    marginTop: spacing[2],
   },
   subsectionGap: {
     height: spacing[4],

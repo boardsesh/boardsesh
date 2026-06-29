@@ -137,6 +137,14 @@ test/switch-row-stub.tsx              # passthrough stub (RN Pressable + Switch)
 `FilterChipRow` is the second example — a SwiftUI-only control (its Android side is
 a placeholder), showing the same split with a richer iOS tree (menus, pickers).
 
+`RadioGroup` (`src/components/RadioGroup.*`) is a third, two-platform example —
+single-choice selection. iOS is a SwiftUI `Picker` with `pickerStyle('inline')` (each
+option a `Text` carrying a `tag` modifier; string-guard `onSelectionChange`); Android is a
+`Column`/`Row` of `RadioButton`s where the row owns the tap via
+`selectable(..., 'radioButton')`. It's generic (`<T extends string>`), so its `.d.ts`
+declares a function (like `SegmentedControl`), not a `const`. Selection logic is shared via
+`makeRadioSelectHandler`.
+
 ## Buttons
 
 **A button _inside_ an existing native @expo/ui tree should be a native button,

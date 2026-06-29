@@ -180,6 +180,17 @@ export default defineConfig({
         find: /^(.*\/)?AngleSlider$/,
         replacement: fileURLToPath(new URL('./test/angle-slider-stub.tsx', import.meta.url)),
       },
+      // RadioGroup is platform-split (RadioGroup.ios.tsx renders a native @expo/ui
+      // SwiftUI inline Picker; RadioGroup.android.tsx a native Compose RadioButton
+      // group). Vitest doesn't resolve `.ios`/`.android` extensions and can't mount
+      // either native tree, so redirect the extensionless import to a faithful
+      // passthrough stub that keeps the public API + radio/radiogroup accessibility
+      // roles. Suites that assert RadioGroup internals register their own vi.mock
+      // (takes precedence).
+      {
+        find: /^(.*\/)?RadioGroup$/,
+        replacement: fileURLToPath(new URL('./test/radio-group-stub.tsx', import.meta.url)),
+      },
       // FeatureFlagsForm is platform-split (FeatureFlagsForm.ios.tsx renders a
       // native @expo/ui SwiftUI `Form`; FeatureFlagsForm.android.tsx a native
       // Compose `LazyColumn` of cards). Vitest doesn't resolve `.ios`/`.android`
