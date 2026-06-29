@@ -14,6 +14,7 @@ import {
   isRangeGrade,
   isSingleGrade,
   type GradeBound,
+  type GradeTapMeta,
 } from '@boardsesh/climb-filters';
 import { getGradeColor, DEFAULT_GRADE_COLOR } from '@boardsesh/board-constants/grade-colors';
 import { Text } from '../Text';
@@ -88,7 +89,9 @@ type GradeRangeRailProps = {
    * false so an unset rail opens at the easiest grade instead of mid-scrolled.
    */
   centerOnEmpty?: boolean;
-  onChange: (next: GradeBound) => void;
+  // `meta` carries the rule-3 tap context (extendedRangeWithinWindow) so the
+  // call site can feed it into the `Grade Filter Changed` analytics event.
+  onChange: (next: GradeBound, meta?: GradeTapMeta) => void;
   /**
    * Asked to dismiss itself (swipe the handle down, completed range, or cleared
    * selection). Only ever called when `dismissible` is true, so an inline,
@@ -252,7 +255,7 @@ export function GradeRangeRail({
       const withinWindow =
         lastSingleAtRef.current !== undefined && Date.now() - lastSingleAtRef.current < RANGE_EXTEND_WINDOW_MS;
       const result = computeGradeTap(bound, gradeIds, difficultyId, withinWindow);
-      onChange(result.next);
+      onChange(result.next, result.meta);
       lastSingleAtRef.current = isSingleGrade(result.next) ? Date.now() : undefined;
       // The rail auto-closes only when a tap *completes a range* — extending a
       // single grade into a two-ended range. Every other tap keeps it open:

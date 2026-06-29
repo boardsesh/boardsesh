@@ -8,6 +8,7 @@ import {
   isGradeInRange,
   isGradeEndpoint,
   computeGradeTap,
+  describeGradeFilter,
   type GradeBound,
 } from '../grade-range';
 
@@ -216,5 +217,37 @@ describe('computeGradeTap — rule 6: range outside collapse', () => {
     expect(computeGradeTap(range, gradeIds, 20, true)).toEqual({
       next: { minGradeId: 20, maxGradeId: 20 },
     });
+  });
+});
+
+describe('describeGradeFilter', () => {
+  it('classifies a cleared bound as "any" with null size', () => {
+    expect(describeGradeFilter(any, gradeIds)).toEqual({ kind: 'any', size: null });
+  });
+
+  it('classifies an equal bound as a single grade of size 1', () => {
+    expect(describeGradeFilter({ minGradeId: 14, maxGradeId: 14 }, gradeIds)).toEqual({ kind: 'single', size: 1 });
+  });
+
+  it('classifies a true range and counts the grades it spans inclusively', () => {
+    // 12..18 spans indices 1..4 → 4 grades.
+    expect(describeGradeFilter({ minGradeId: 12, maxGradeId: 18 }, gradeIds)).toEqual({ kind: 'range', size: 4 });
+    // Full span 10..20 → all 6 grades.
+    expect(describeGradeFilter({ minGradeId: 10, maxGradeId: 20 }, gradeIds)).toEqual({ kind: 'range', size: 6 });
+  });
+
+  it('treats a one-sided bound (legacy slider bookmark) as a range with null size', () => {
+    expect(describeGradeFilter({ minGradeId: 12, maxGradeId: undefined }, gradeIds)).toEqual({
+      kind: 'range',
+      size: null,
+    });
+    expect(describeGradeFilter({ minGradeId: undefined, maxGradeId: 18 }, gradeIds)).toEqual({
+      kind: 'range',
+      size: null,
+    });
+  });
+
+  it('returns a null size when a bound id is absent from the grade list', () => {
+    expect(describeGradeFilter({ minGradeId: 11, maxGradeId: 18 }, gradeIds)).toEqual({ kind: 'range', size: null });
   });
 });

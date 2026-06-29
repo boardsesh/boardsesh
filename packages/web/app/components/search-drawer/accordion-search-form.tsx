@@ -26,6 +26,8 @@ import ClimbSearchForm from './climb-search-form';
 import type { BoardDetails } from '@/app/lib/types';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { describeGradeFilter } from '@boardsesh/climb-filters';
 import {
   getQualityPanelSummary,
   getStatusPanelSummary,
@@ -77,25 +79,9 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
   const minGradeForPicker = uiSearchParams.minGrade > 0 ? uiSearchParams.minGrade : undefined;
   const maxGradeForPicker = uiSearchParams.maxGrade > 0 ? uiSearchParams.maxGrade : undefined;
 
-  // Describe a (min, max) pair as a filter shape — used to populate both
-  // the current and previous state on the analytics event without duplicating
-  // the branching logic. The chip picker only ever emits both bounds defined
-  // together or both undefined, so only three kinds are produced. Legacy
-  // one-sided URL bookmarks (from the old slider) fall through to `range`
-  // with null size — rare and acceptable for analytics.
-  const describeFilter = (min: number | undefined, max: number | undefined) => {
-    if (min === undefined && max === undefined) {
-      return { kind: 'any' as const, size: null };
-    }
-    if (min !== undefined && max !== undefined) {
-      if (min === max) return { kind: 'single' as const, size: 1 };
-      const minIdx = grades.findIndex((g) => g.difficulty_id === min);
-      const maxIdx = grades.findIndex((g) => g.difficulty_id === max);
-      const size = minIdx >= 0 && maxIdx >= 0 ? maxIdx - minIdx + 1 : null;
-      return { kind: 'range' as const, size };
-    }
-    return { kind: 'range' as const, size: null };
-  };
+  // Ascending difficulty ids — feeds the shared describeGradeFilter so web and
+  // mobile classify the `Grade Filter Changed` event identically.
+  const gradeIds = grades.map((g) => g.difficulty_id);
 
   // The filter shape uses `0` as the "no grade" sentinel. `updateFilters` strips
   // `undefined` from updates, so we coerce both bounds to concrete numbers
@@ -108,12 +94,12 @@ const AccordionSearchForm: React.FC<AccordionSearchFormProps> = ({ boardDetails,
     // state here — updateFilters() below kicks off the re-render that will
     // refresh them. Capture them now so the analytics event carries the
     // before/after for funnel/rage-pattern analysis later.
-    const previous = describeFilter(minGradeForPicker, maxGradeForPicker);
-    const next = describeFilter(minGradeId, maxGradeId);
+    const previous = describeGradeFilter({ minGradeId: minGradeForPicker, maxGradeId: maxGradeForPicker }, gradeIds);
+    const next = describeGradeFilter({ minGradeId, maxGradeId }, gradeIds);
 
     updateFilters({ minGrade: minGradeId ?? 0, maxGrade: maxGradeId ?? 0 });
 
-    track('Grade Filter Changed', {
+    track(SHARED_EVENTS.GradeFilterChanged, {
       filter_kind: next.kind,
       min_grade_id: minGradeId ?? null,
       max_grade_id: maxGradeId ?? null,

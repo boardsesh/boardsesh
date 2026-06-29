@@ -199,14 +199,17 @@ describe('GradeRangeRail', () => {
     const onChange = vi.fn();
     const { getByText } = renderRail({ minGradeId: 12, maxGradeId: 12 }, onChange);
     fireEvent.click(getByText('V6'));
-    expect(onChange).toHaveBeenCalledWith({ minGradeId: 14, maxGradeId: 14 });
+    // Outside the extend window → switch single grade, with meta flagging that
+    // it was a switch (not an accidental range) so analytics can tell them apart.
+    expect(onChange).toHaveBeenCalledWith({ minGradeId: 14, maxGradeId: 14 }, { extendedRangeWithinWindow: false });
   });
 
   it('builds a range from a fresh single grade tap followed by a second tap', () => {
     const onChange = vi.fn();
     const { getByText, rerender } = renderRail({ minGradeId: undefined, maxGradeId: undefined }, onChange);
     fireEvent.click(getByText('V4'));
-    expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 10, maxGradeId: 10 });
+    // First pick from "Any" is a plain single grade — rule 1 carries no meta.
+    expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 10, maxGradeId: 10 }, undefined);
     rerender(
       <GradeRangeRail
         grades={grades}
@@ -216,7 +219,9 @@ describe('GradeRangeRail', () => {
       />,
     );
     fireEvent.click(getByText('V6'));
-    expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 10, maxGradeId: 14 });
+    // Second tap inside the extend window builds a range — meta flags it so the
+    // `Grade Filter Changed` event can report `extended_range_within_window`.
+    expect(onChange).toHaveBeenLastCalledWith({ minGradeId: 10, maxGradeId: 14 }, { extendedRangeWithinWindow: true });
   });
 
   it('keeps the rail open after a first (single) grade tap', async () => {

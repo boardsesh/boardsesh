@@ -35,6 +35,31 @@ export type GradeTapMeta = {
 
 export type GradeTapResult = { next: GradeBound; meta?: GradeTapMeta };
 
+/** The shape of a grade bound, for analytics. */
+export type GradeFilterShape = { kind: 'any' | 'single' | 'range'; size: number | null };
+
+/**
+ * Classify a grade bound for analytics: "any" (cleared), "single" (one grade,
+ * size 1), or "range" (size = count of grades spanned, inclusive). `gradeIds`
+ * MUST be ascending difficulty_ids; ids absent from it (legacy one-sided
+ * bookmarks) fall through to a range with null size. Shared so web and mobile
+ * classify the `Grade Filter Changed` event identically.
+ */
+export function describeGradeFilter(bound: GradeBound, gradeIds: readonly number[]): GradeFilterShape {
+  const { minGradeId, maxGradeId } = bound;
+  if (minGradeId === undefined && maxGradeId === undefined) {
+    return { kind: 'any', size: null };
+  }
+  if (minGradeId !== undefined && maxGradeId !== undefined) {
+    if (minGradeId === maxGradeId) return { kind: 'single', size: 1 };
+    const minIdx = gradeIds.indexOf(minGradeId);
+    const maxIdx = gradeIds.indexOf(maxGradeId);
+    const size = minIdx >= 0 && maxIdx >= 0 ? maxIdx - minIdx + 1 : null;
+    return { kind: 'range', size };
+  }
+  return { kind: 'range', size: null };
+}
+
 /** Both bounds undefined = "Any" (filter cleared). */
 export function isAnyGrade(bound: GradeBound): boolean {
   return bound.minGradeId === undefined && bound.maxGradeId === undefined;

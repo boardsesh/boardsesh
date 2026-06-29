@@ -83,6 +83,10 @@ export const SHARED_EVENTS = {
   BleBoardConfigMismatchResolved: 'BLE Board Config Mismatch Resolved',
   // Search
   ClimbSearchPerformed: 'Climb Search Performed',
+  // Grade-range control changed (web's GradeRangePicker / mobile's GradeRangeRail).
+  // Shared so the native event lands in the same PostHog funnel as web's — the
+  // gap #3290 closed: web fired this 10,933× on the legacy webview, native 0×.
+  GradeFilterChanged: 'Grade Filter Changed',
   SearchHoldFilterChanged: 'Search Hold Filter Changed',
   SearchHoldFilterCleared: 'Search Hold Filter Cleared',
   SearchZoneEnabled: 'Search Zone Enabled',

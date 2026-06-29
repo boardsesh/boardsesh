@@ -12,9 +12,11 @@ import {
   mergeBoardFilters,
   countActiveFilters,
   hasActiveBoardFilters,
+  describeGradeFilter,
   DEFAULT_CLIMB_FILTER_STATE,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type ClimbBoardFilterState,
+  type GradeTapMeta,
 } from '@boardsesh/climb-filters';
 import {
   KILTER_HOMEWALL_LAYOUT_ID,
@@ -360,6 +362,12 @@ function ClimbListInner() {
   const gradesRef = useRef(gradesData);
   gradesRef.current = gradesData;
   const grades = useMemo(() => gradesData ?? [], [gradesData]);
+  // Ascending difficulty ids — feeds describeGradeFilter so the `Grade Filter
+  // Changed` event reports a range's size the same way web does.
+  const gradeIds = useMemo(
+    () => grades.map((grade) => grade.difficultyId).sort((first, second) => first - second),
+    [grades],
+  );
   const { formatGradeByDifficultyId } = useGradeFormat();
 
   const boardConfig = useMemo(
@@ -564,6 +572,19 @@ function ClimbListInner() {
       // active filter, so the analytics count and the UI never disagree (and a
       // grade-only search reports 1, not 0).
       activeFilterCount: countActiveFilters(filters, boardFilters),
+      // Individual filter dimensions (issue #3290): web sends these so the two
+      // platforms are comparable — "what share set a grade range / changed the
+      // sort?". `0` = unset to match web's sentinel (DEFAULT_SEARCH_PARAMS all
+      // default to 0; difficulty ids start at 10, so 0 is never a real grade),
+      // so a single PostHog query (`minGrade > 0`) works on both platforms.
+      // `setterCount` is the size of the setter filter (0 = none, like web).
+      minGrade: filters.minGrade ?? 0,
+      maxGrade: filters.maxGrade ?? 0,
+      sortBy: filters.sortBy,
+      sortOrder: filters.sortOrder,
+      setterCount: filters.setter?.length ?? 0,
+      minAscents: filters.minAscents ?? 0,
+      minRating: filters.minRating ?? 0,
     });
   }, [firstSearchPage, name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle]);
 
@@ -686,8 +707,41 @@ function ClimbListInner() {
     [addToQueue],
   );
 
+  // Mirror web's `Grade Filter Changed` payload (snake_case so both platforms
+  // land in one PostHog funnel — issue #3290) and add a mobile-only `source` so
+  // we can split the discoverable chrome rail from the buried filter sheet
+  // (the #3281 discoverability question).
+  const trackGradeFilterChanged = useCallback(
+    (previous: GradeBound, next: GradeBound, source: 'chrome_rail' | 'filter_sheet', meta?: GradeTapMeta) => {
+      const previousShape = describeGradeFilter(previous, gradeIds);
+      const nextShape = describeGradeFilter(next, gradeIds);
+      track(SHARED_EVENTS.GradeFilterChanged, {
+        filter_kind: nextShape.kind,
+        min_grade_id: next.minGradeId ?? null,
+        max_grade_id: next.maxGradeId ?? null,
+        range_size: nextShape.size,
+        previous_filter_kind: previousShape.kind,
+        previous_min_grade_id: previous.minGradeId ?? null,
+        previous_max_grade_id: previous.maxGradeId ?? null,
+        extended_range_within_window: meta?.extendedRangeWithinWindow ?? null,
+        board_name: boardName,
+        source,
+      });
+    },
+    [gradeIds, boardName],
+  );
+
   const handleApplyFilters = useCallback(
     (newFilters: ClimbFilters, newBoardFilters: ClimbBoardFilterState) => {
+      // Fire one grade event if the sheet's Apply actually changed the bound
+      // (the sheet is a draft batch-apply, so no per-tap meta to carry).
+      if (newFilters.minGrade !== filters.minGrade || newFilters.maxGrade !== filters.maxGrade) {
+        trackGradeFilterChanged(
+          { minGradeId: filters.minGrade, maxGradeId: filters.maxGrade },
+          { minGradeId: newFilters.minGrade, maxGradeId: newFilters.maxGrade },
+          'filter_sheet',
+        );
+      }
       setFilters(newFilters);
       setBoardFilters(newBoardFilters);
       setShowFilters(false);
@@ -703,7 +757,16 @@ function ClimbListInner() {
           .catch(() => {});
       }
     },
-    [t, isAuthenticated, name, setFilters, setBoardFilters],
+    [
+      t,
+      isAuthenticated,
+      name,
+      setFilters,
+      setBoardFilters,
+      trackGradeFilterChanged,
+      filters.minGrade,
+      filters.maxGrade,
+    ],
   );
 
   const handleApplyRecentFilter = useCallback(
@@ -741,10 +804,13 @@ function ClimbListInner() {
   }, [replaceSearch, name, filters.minGrade, filters.maxGrade]);
 
   const handleGradeChange = useCallback(
-    (next: GradeBound) => {
+    (next: GradeBound, meta?: GradeTapMeta) => {
+      // Capture the committed bound before setGrade() kicks off the re-render.
+      const previous: GradeBound = { minGradeId: filters.minGrade, maxGradeId: filters.maxGrade };
       setGrade(next);
+      trackGradeFilterChanged(previous, next, 'chrome_rail', meta);
     },
-    [setGrade],
+    [setGrade, trackGradeFilterChanged, filters.minGrade, filters.maxGrade],
   );
 
   // Remember the grade the climber filters by (from any path — the chip rail,
