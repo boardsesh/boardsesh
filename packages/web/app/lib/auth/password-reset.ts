@@ -1,9 +1,13 @@
 import { createHash } from 'node:crypto';
+import { normalizeEmail } from '@boardsesh/db/utils';
 
 export const PASSWORD_RESET_IDENTIFIER_PREFIX = 'password-reset:';
 
+// Build the identifier from the canonicalised email so the value written in
+// forgot-password and the value read in reset-password always agree, regardless
+// of how the address was cased in the request or the reset link.
 export function getPasswordResetIdentifier(email: string): string {
-  return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${email}`;
+  return `${PASSWORD_RESET_IDENTIFIER_PREFIX}${normalizeEmail(email)}`;
 }
 
 /** sha256(token) stored in DB; raw token travels only in the email link. */

@@ -10,6 +10,7 @@ vi.mock('drizzle-orm', () => ({
   and: vi.fn((...args: unknown[]) => ({ _type: 'and', args })),
   eq: vi.fn((col: unknown, val: unknown) => ({ _type: 'eq', col, val })),
   isNull: vi.fn((col: unknown) => ({ _type: 'isNull', col })),
+  sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ _type: 'sql', strings, values })),
 }));
 
 // Mock DrizzleAdapter — we only care about the signIn callback, not adapter internals
@@ -551,13 +552,28 @@ function getNativeOAuthProvider(): CredentialProviderLike {
 }
 
 describe('CredentialsProvider.authorize — email/password', () => {
+  // The email lookup is now case-insensitive and returns ALL matching rows (a
+  // legacy duplicate-by-case set can briefly have more than one) — so the users
+  // query is `select().from().where(sql)` awaited directly (no .limit), and the
+  // per-candidate credential lookup is `select().from().where(eq).limit(1)`.
+  // A single `where` return that is both thenable (→ candidates) and has
+  // `.limit` (→ credentials) serves both query shapes.
+  function setAuthorizeRows(candidates: unknown[], credentialsByUserId: Record<string, unknown[]>): void {
+    mockDbWhere.mockImplementation((condition: { _type?: string; col?: unknown; val?: unknown }) => ({
+      then: (resolve: (rows: unknown[]) => unknown) => resolve(candidates),
+      limit: () => {
+        // credential lookup: eq(userCredentials.userId, user.id)
+        const userId = condition?._type === 'eq' ? String(condition.val) : '';
+        return Promise.resolve(credentialsByUserId[userId] ?? []);
+      },
+    }));
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
-
     mockDbSelect.mockReturnValue({ from: mockDbFrom });
     mockDbFrom.mockReturnValue({ where: mockDbWhere });
-    mockDbWhere.mockReturnValue({ limit: mockDbLimit });
-    mockDbLimit.mockResolvedValue([]);
+    setAuthorizeRows([], {});
   });
 
   it('returns null when credentials are missing', async () => {
@@ -579,8 +595,7 @@ describe('CredentialsProvider.authorize — email/password', () => {
   });
 
   it('returns null when user is not found', async () => {
-    // First select (users lookup) → empty
-    mockDbLimit.mockResolvedValue([]);
+    setAuthorizeRows([], {});
 
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({ email: 'notfound@example.com', password: 'pass' });
@@ -588,10 +603,7 @@ describe('CredentialsProvider.authorize — email/password', () => {
   });
 
   it('returns null when user has no password (OAuth-only account)', async () => {
-    // First select (users) → user found; second select (userCredentials) → empty
-    mockDbLimit
-      .mockResolvedValueOnce([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }])
-      .mockResolvedValueOnce([]);
+    setAuthorizeRows([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }], {});
 
     const provider = getEmailCredentialsProvider();
     const result = await provider.authorize?.({
@@ -602,9 +614,9 @@ describe('CredentialsProvider.authorize — email/password', () => {
   });
 
   it('returns null when password is incorrect', async () => {
-    mockDbLimit
-      .mockResolvedValueOnce([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }])
-      .mockResolvedValueOnce([{ userId: 'user-1', passwordHash: '$2a$12$hashed' }]);
+    setAuthorizeRows([{ id: 'user-1', email: 'user@example.com', name: 'Test', image: null }], {
+      'user-1': [{ userId: 'user-1', passwordHash: '$2a$12$hashed' }],
+    });
     mockBcryptCompare.mockResolvedValue(false);
 
     const provider = getEmailCredentialsProvider();
@@ -614,9 +626,7 @@ describe('CredentialsProvider.authorize — email/password', () => {
 
   it('returns user object when credentials are valid', async () => {
     const user = { id: 'user-1', email: 'user@example.com', name: 'Test User', image: null };
-    mockDbLimit
-      .mockResolvedValueOnce([user])
-      .mockResolvedValueOnce([{ userId: 'user-1', passwordHash: '$2a$12$hashed' }]);
+    setAuthorizeRows([user], { 'user-1': [{ userId: 'user-1', passwordHash: '$2a$12$hashed' }] });
     mockBcryptCompare.mockResolvedValue(true);
 
     const provider = getEmailCredentialsProvider();
@@ -632,6 +642,21 @@ describe('CredentialsProvider.authorize — email/password', () => {
       image: null,
     });
     expect(mockBcryptCompare).toHaveBeenCalledWith('correctpass', '$2a$12$hashed');
+  });
+
+  it('verifies the password against each candidate when a duplicate-by-case set still exists', async () => {
+    // Two rows share the email; only the second has the matching password.
+    const oauthOnly = { id: 'user-oauth', email: 'User@example.com', name: 'OAuth', image: null };
+    const passwordUser = { id: 'user-pw', email: 'user@example.com', name: 'Password', image: null };
+    setAuthorizeRows([oauthOnly, passwordUser], {
+      'user-pw': [{ userId: 'user-pw', passwordHash: '$2a$12$hashed' }],
+    });
+    mockBcryptCompare.mockResolvedValue(true);
+
+    const provider = getEmailCredentialsProvider();
+    const result = await provider.authorize?.({ email: 'user@example.com', password: 'correctpass' });
+
+    expect(result).toEqual({ id: 'user-pw', email: 'user@example.com', name: 'Password', image: null });
   });
 });
 

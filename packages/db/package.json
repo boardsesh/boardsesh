@@ -60,6 +60,11 @@
       "types": "./src/test-utils/sql-text.ts",
       "import": "./src/test-utils/sql-text.ts",
       "default": "./src/test-utils/sql-text.ts"
+    },
+    "./utils": {
+      "types": "./src/utils/index.ts",
+      "import": "./src/utils/index.ts",
+      "default": "./src/utils/index.ts"
     }
   },
   "scripts": {
@@ -84,6 +89,7 @@
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
+    "db:merge-accounts": "tsx scripts/merge-accounts.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
     "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts"
