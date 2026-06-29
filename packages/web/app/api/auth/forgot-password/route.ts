@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
+import { normalizeEmail } from '@boardsesh/db/utils';
 import { z } from 'zod';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
@@ -46,13 +47,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validationResult.error.issues[0].message }, { status: 400 });
     }
 
-    const { email } = validationResult.data;
+    const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
 
     const user = await db
       .select({ id: schema.users.id })
       .from(schema.users)
-      .where(eq(schema.users.email, email))
+      .where(sql`lower(${schema.users.email}) = ${email}`)
       .limit(1);
 
     if (user.length === 0) {
