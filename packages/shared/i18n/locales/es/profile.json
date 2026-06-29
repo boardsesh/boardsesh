@@ -76,6 +76,7 @@
   "dashboard": {
     "hardestSend": "encadene más difícil",
     "noSendPrompt": "Registra tu primer encadene",
+    "noSends": "Aún sin encadenes",
     "streakChip": "racha de {{count}} semanas",
     "streakBest": "mejor {{count}}",
     "noStreak": "Empieza tu racha",

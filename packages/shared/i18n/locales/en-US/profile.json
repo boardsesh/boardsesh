@@ -76,6 +76,7 @@
   "dashboard": {
     "hardestSend": "hardest send",
     "noSendPrompt": "Log your first send",
+    "noSends": "No sends yet",
     "streakChip": "{{count}}-week streak",
     "streakBest": "best {{count}}",
     "noStreak": "Start your streak",

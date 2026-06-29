@@ -24,6 +24,8 @@ type HeroCeilingCardProps = {
   lastSendGap: RawLastSendGap;
   totalAscents: number;
   layoutPercentages: RawLayoutPercentage[];
+  /** Own profile → second-person copy; a stranger's profile → neutral wording. */
+  isSelf: boolean;
 };
 
 /**
@@ -39,6 +41,7 @@ export function HeroCeilingCard({
   lastSendGap,
   totalAscents,
   layoutPercentages,
+  isSelf,
 }: HeroCeilingCardProps) {
   const { t } = useTranslation('profile');
   const { brandColors, m3 } = useTheme();
@@ -64,10 +67,13 @@ export function HeroCeilingCard({
 
   const footerParts = [t('dashboard.sends', { count: totalAscents })];
   if (boardNames) footerParts.push(boardNames);
-  if (lastSendGap.isComeback && lastSendGap.comebackGapDays != null) {
-    footerParts.push(t('dashboard.comeback', { count: lastSendGap.comebackGapDays }));
-  } else if (lastSendGap.daysSinceLastSend != null && lastSendGap.daysSinceLastSend > 0) {
-    footerParts.push(t('dashboard.daysSince', { count: lastSendGap.daysSinceLastSend }));
+  // "your last send" / "welcome back" only make sense on your own profile.
+  if (isSelf) {
+    if (lastSendGap.isComeback && lastSendGap.comebackGapDays != null) {
+      footerParts.push(t('dashboard.comeback', { count: lastSendGap.comebackGapDays }));
+    } else if (lastSendGap.daysSinceLastSend != null && lastSendGap.daysSinceLastSend > 0) {
+      footerParts.push(t('dashboard.daysSince', { count: lastSendGap.daysSinceLastSend }));
+    }
   }
 
   const gradeBlock: ReactNode = hardestSend ? (
@@ -84,7 +90,7 @@ export function HeroCeilingCard({
     </>
   ) : (
     <Text variant="title2" color={onGradient}>
-      {t('dashboard.noSendPrompt')}
+      {isSelf ? t('dashboard.noSendPrompt') : t('dashboard.noSends')}
     </Text>
   );
 
@@ -118,7 +124,7 @@ export function HeroCeilingCard({
       <View style={styles.body}>
         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
-        <StreakChip streaks={streaks} isMaterial={isMaterial} onGradient={onGradient} />
+        <StreakChip streaks={streaks} isMaterial={isMaterial} onGradient={onGradient} isSelf={isSelf} />
 
         {footerParts.length > 0 ? (
           <Text variant="footnote" color={bodyColor} style={styles.footer} numberOfLines={2}>
@@ -134,15 +140,20 @@ function StreakChip({
   streaks,
   isMaterial,
   onGradient,
+  isSelf,
 }: {
   streaks: RawStreaks;
   isMaterial: boolean;
   onGradient: string;
+  isSelf: boolean;
 }) {
   const { t } = useTranslation('profile');
   const { m3, brandColors } = useTheme();
 
   const hasStreak = streaks.currentWeeks > 0;
+  // No live streak on a stranger's profile → drop the chip rather than nudge the
+  // viewer to "start your streak" about someone else.
+  if (!hasStreak && !isSelf) return null;
   const text = hasStreak
     ? `${t('dashboard.streakChip', { count: streaks.currentWeeks })}${streaks.longestWeeks > 0 ? DOT + t('dashboard.streakBest', { count: streaks.longestWeeks }) : ''}`
     : t('dashboard.noStreak');
@@ -174,16 +185,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   glassCard: {
+    // `card` clips with overflow:'hidden' to round the absolute-fill gradient,
+    // which would also clip an iOS drop shadow — so the gradient itself carries
+    // the hero's presence here (no shadow to render). Android elevation still
+    // casts outside the bounds.
     borderRadius: borderRadius.xl,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 6,
-      },
-      android: { elevation: 3 },
-    }),
+    ...Platform.select({ android: { elevation: 3 } }),
   },
   band: {
     paddingHorizontal: spacing[5],

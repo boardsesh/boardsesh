@@ -540,13 +540,14 @@ export function buildWeeklyStreak(filteredLogbook: LogbookEntry[], today: dayjs.
     .map((d) => dayjs(d))
     .sort((a, b) => a.valueOf() - b.valueOf());
 
+  // `run` tracks the current consecutive-week run; because weekStarts is sorted
+  // ascending, its value after the loop IS the run ending at the most recent
+  // active week. `longestWeeks` is the max run seen.
   let longestWeeks = 1;
   let run = 1;
-  let trailingRun = 1; // run length ending at the most recent active week
   for (let i = 1; i < weekStarts.length; i++) {
     const consecutive = weekStarts[i].isSame(weekStarts[i - 1].add(1, 'week'), 'day');
     run = consecutive ? run + 1 : 1;
-    trailingRun = consecutive ? trailingRun + 1 : 1;
     if (run > longestWeeks) longestWeeks = run;
   }
 
@@ -558,7 +559,7 @@ export function buildWeeklyStreak(filteredLogbook: LogbookEntry[], today: dayjs.
   const withinGrace = isCurrentWeekActive || lastActive.isSame(currentWeekStart.subtract(1, 'week'), 'day');
 
   return {
-    currentWeeks: withinGrace ? trailingRun : 0,
+    currentWeeks: withinGrace ? run : 0,
     longestWeeks,
     isCurrentWeekActive,
   };

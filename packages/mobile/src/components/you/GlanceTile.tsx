@@ -67,6 +67,7 @@ export function GlanceTile({
   return (
     <View
       style={[styles.tile, { backgroundColor: tileColor, borderColor: tileBorder }]}
+      accessible
       accessibilityRole="text"
       accessibilityLabel={accessibilityLabel}
     >
@@ -81,7 +82,9 @@ export function GlanceTile({
         ) : null}
       </View>
 
-      <CountUpNumber value={value} variant="title1" color={headlineColor} accessibilityLabel={accessibilityLabel} />
+      {/* The tile is one a11y element (accessible above), so the numeral's own
+          label would be ignored — leave it off rather than duplicate the value. */}
+      <CountUpNumber value={value} variant="title1" color={headlineColor} />
 
       <Text variant="caption1" color={labelColor} numberOfLines={1}>
         {label}

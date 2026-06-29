@@ -36,9 +36,19 @@ type ProgressTabProps = {
   /** Climber whose beta-video shelf to show above the stats. Omit to hide it
    *  (e.g. before the viewer's own id resolves). */
   userId?: string;
+  /** Whether the viewer is looking at their OWN profile. Drives second-person
+   *  hero copy ("your last send", "welcome back"); a stranger's profile gets the
+   *  neutral wording. Defaults to true (the own-profile tab). */
+  isSelf?: boolean;
 };
 
-export const ProgressTab = memo(function ProgressTab({ data, topInset, screenTitle, userId }: ProgressTabProps) {
+export const ProgressTab = memo(function ProgressTab({
+  data,
+  topInset,
+  screenTitle,
+  userId,
+  isSelf = true,
+}: ProgressTabProps) {
   const { t } = useTranslation('profile');
   const { t: tYou } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
@@ -147,6 +157,7 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, screenTit
             lastSendGap={data.lastSendGap}
             totalAscents={totalAscents}
             layoutPercentages={data.statisticsSummary.layoutPercentages}
+            isSelf={isSelf}
           />
 
           {/* Inline timeframe (+ board) filter — scopes every section below. */}

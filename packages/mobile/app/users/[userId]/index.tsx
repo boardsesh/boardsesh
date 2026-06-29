@@ -21,7 +21,7 @@ type ProfileSection = 'progress' | 'sessions' | 'logbook' | 'climbs';
 export default function PublicProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const { t } = useTranslation('you');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors } = useTheme();
   const navigation = useNavigation();
 
   const { data: currentProfile } = useProfile();
@@ -122,7 +122,9 @@ export default function PublicProfileScreen() {
       </View>
 
       <View style={styles.flex}>
-        {activeSection === 'progress' ? <ProgressTab data={youData} topInset={0} userId={userId} /> : null}
+        {activeSection === 'progress' ? (
+          <ProgressTab data={youData} topInset={0} userId={userId} isSelf={isSelf} />
+        ) : null}
         {activeSection === 'sessions' ? <SessionsTab userId={userId} topInset={0} /> : null}
         {activeSection === 'logbook' ? <LogbookTab userId={userId} topInset={0} viewerIsOwner={isSelf} /> : null}
         {activeSection === 'climbs' ? <ProfileClimbsTab userId={userId} topInset={0} /> : null}

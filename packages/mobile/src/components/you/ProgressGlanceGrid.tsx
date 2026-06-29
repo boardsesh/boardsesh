@@ -64,7 +64,7 @@ export function ProgressGlanceGrid({
             value={fight.tries}
             valueColor={gradeBadgeColor(fight.grade)}
             label={t('dashboard.triesUnitLabel', { count: fight.tries })}
-            sublabel={t('dashboard.biggestFightGrade', { grade: fight.grade })}
+            sublabel={fight.grade ? t('dashboard.biggestFightGrade', { grade: fight.grade }) : undefined}
             accessibilityLabel={t('dashboard.biggestFightA11y', { count: fight.tries, grade: fight.grade })}
           />
         ) : (

@@ -76,6 +76,7 @@
   "dashboard": {
     "hardestSend": "enchaînement le plus dur",
     "noSendPrompt": "Logge ton premier enchaînement",
+    "noSends": "Pas encore d'enchaînement",
     "streakChip": "série de {{count}} semaines",
     "streakBest": "record {{count}}",
     "noStreak": "Lance ta série",
