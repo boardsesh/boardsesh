@@ -37,6 +37,9 @@ function toLogbookEntry(tick: GetUserTicksQueryResponse['userTicks'][number], bo
     layoutId: tick.layoutId,
     boardType,
     climbUuid: tick.climbUuid,
+    setterUsername: tick.setterUsername ?? null,
+    // Climb-level benchmark (resolvedIsBenchmark), NOT the near-empty tick flag.
+    isBenchmark: tick.resolvedIsBenchmark ?? null,
   };
 }
 

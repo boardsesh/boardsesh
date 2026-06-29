@@ -30,6 +30,13 @@ export type Tick = {
   auroraId: string | null;
   auroraSyncedAt: string | null;
   layoutId: number | null;
+  // Setter handle for the climb (board_climbs.setter_username). Populated only
+  // by read queries that join the climb (e.g. userTicks / userAscentsFeed).
+  setterUsername?: string | null;
+  // Climb-level benchmark resolution (consensus benchmark_difficulty OR the tick
+  // flag), the same value userAscentsFeed exposes. Distinct from the near-empty
+  // tick-level `isBenchmark`. Populated only by read queries that join climb stats.
+  resolvedIsBenchmark?: boolean | null;
   boardId?: number | null;
   // Social aggregates are populated only by read queries (the `ticks`
   // resolver joins `vote_counts` and counts `comments`). Mutation resolvers

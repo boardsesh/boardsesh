@@ -33,6 +33,8 @@ export const GET_USER_TICKS = gql`
       effectiveDifficulty
       climbedAt
       layoutId
+      setterUsername
+      resolvedIsBenchmark
     }
   }
 `;
@@ -74,7 +76,16 @@ type TickFromGetTicks = Pick<
 >;
 type TickFromGetUserTicks = Pick<
   Tick,
-  'climbUuid' | 'angle' | 'status' | 'attemptCount' | 'difficulty' | 'effectiveDifficulty' | 'climbedAt' | 'layoutId'
+  | 'climbUuid'
+  | 'angle'
+  | 'status'
+  | 'attemptCount'
+  | 'difficulty'
+  | 'effectiveDifficulty'
+  | 'climbedAt'
+  | 'layoutId'
+  | 'setterUsername'
+  | 'resolvedIsBenchmark'
 >;
 type TickFromSaveTick = Pick<
   Tick,

@@ -5624,8 +5624,12 @@ export type Tick = {
   layoutId?: Maybe<Scalars['Int']['output']>;
   /** User's quality rating (1-5) */
   quality?: Maybe<Scalars['Int']['output']>;
+  /** Climb-level benchmark resolution (consensus benchmark_difficulty OR the tick flag), matching userAscentsFeed. Distinct from the near-empty tick-level `isBenchmark`. Null unless populated by a read query that joins climb stats. */
+  resolvedIsBenchmark?: Maybe<Scalars['Boolean']['output']>;
   /** Session ID if climbed during a session */
   sessionId?: Maybe<Scalars['String']['output']>;
+  /** Setter handle for the climb (from board_climbs.setter_username). Null unless populated by a read query that joins the climb. */
+  setterUsername?: Maybe<Scalars['String']['output']>;
   /** Result of the attempt */
   status: TickStatus;
   /** When this record was last updated (ISO 8601) */
@@ -8152,6 +8156,8 @@ export type GetUserTicksQuery = {
     effectiveDifficulty?: number | null;
     climbedAt: string;
     layoutId?: number | null;
+    setterUsername?: string | null;
+    resolvedIsBenchmark?: boolean | null;
   }>;
 };
 
@@ -13804,6 +13810,8 @@ export const GetUserTicksDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'effectiveDifficulty' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'resolvedIsBenchmark' } },
               ],
             },
           },

@@ -7,6 +7,11 @@ import {
   buildStatisticsSummary,
   buildVPointsTimeline,
   buildActivityHeatmap,
+  buildWeeklyStreak,
+  buildProjectingStats,
+  buildActiveDaysMoM,
+  buildLastSendGap,
+  buildBenchmarkSummary,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
 import type {
@@ -20,6 +25,11 @@ import type {
   RawStatisticsSummary,
   RawGradeHighlight,
   RawActivityHeatmap,
+  RawStreaks,
+  RawProjectingStats,
+  RawActiveDaysDelta,
+  RawLastSendGap,
+  RawBenchmarkSummary,
 } from './types';
 
 export type DeriveProfileViewModelInput = {
@@ -47,6 +57,13 @@ export type ProfileViewModel = {
   activityHeatmap: RawActivityHeatmap | null;
   hardestSend: RawGradeHighlight | null;
   hardestFlash: RawGradeHighlight | null;
+  // ── Dashboard metrics (redesigned Progress tab). Scoped to the active
+  // board + timeframe via `filteredLogbook`, same as the heatmap/weekly bars.
+  streaks: RawStreaks;
+  projectingStats: RawProjectingStats;
+  activeDaysDelta: RawActiveDaysDelta;
+  lastSendGap: RawLastSendGap;
+  benchmarkSummary: RawBenchmarkSummary;
 };
 
 /**
@@ -95,6 +112,13 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
 
   const { hardestSend, hardestFlash } = computeHardest(filteredBoardsTicks, gradeFormat);
 
+  // Dashboard metrics over the (board + timeframe) scoped logbook.
+  const streaks = buildWeeklyStreak(filteredLogbook);
+  const projectingStats = buildProjectingStats(filteredLogbook, gradeFormat);
+  const activeDaysDelta = buildActiveDaysMoM(filteredLogbook);
+  const lastSendGap = buildLastSendGap(filteredLogbook);
+  const benchmarkSummary = buildBenchmarkSummary(filteredLogbook, gradeFormat);
+
   return {
     filteredLogbook,
     weeklyBars,
@@ -105,6 +129,11 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     activityHeatmap,
     hardestSend,
     hardestFlash,
+    streaks,
+    projectingStats,
+    activeDaysDelta,
+    lastSendGap,
+    benchmarkSummary,
   };
 }
 
