@@ -38,6 +38,7 @@ import { useDimensionLocks, useDimensionRepin } from '../../../src/lib/dimension
 import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
+import { useFeatureFlag } from '../../../src/providers/feature-flags-provider';
 import { selectByVariant } from '../../../src/theme/variants';
 import { useActiveClimbUuid, useQueueActions } from '../../../src/providers/queue-provider';
 import { ClimbSearchProvider, useClimbSearch, type GradeBound } from '../../../src/providers/climb-search-provider';
@@ -200,12 +201,18 @@ function ClimbListInner() {
     listBottomSpacerHeight.value = withTiming(listPaddingBottom, { duration: timing.normal });
   }, [listBottomSpacerHeight, listPaddingBottom]);
   const listBottomSpacerStyle = useAnimatedStyle(() => ({ height: listBottomSpacerHeight.value }));
-  // Material keeps its filter button in the top-right toolbar
-  // (features.filtersInTopChrome). Liquid Glass shows the persistent native
-  // filter-chip row instead — the chips own filtering there, so the centre
-  // filter-summary is suppressed. (The Material chip row is a follow-up.)
+  // Liquid Glass shows the persistent native filter-chip row; Material historically
+  // kept its filters in the top toolbar (features.filtersInTopChrome). The native
+  // Material chip row now ships as the Android DEFAULT — `android-filter-chips` is a
+  // kill-switch (default ON): present-and-false reverts Material to the toolbar
+  // filters. We gate on the variant feature (not Platform.OS) and do NOT flip
+  // filtersInTopChrome, so Material's FAB-vs-toolbar + summary coupling stays put.
   const filterInTopChrome = features.filtersInTopChrome;
-  const showFilterChips = !filterInTopChrome;
+  const chipRowKilled = useFeatureFlag('android-filter-chips') === false;
+  // Material adopts the chip row by default; the kill-switch reverts it.
+  const materialChips = filterInTopChrome && !chipRowKilled;
+  // The chip row owns filtering on Liquid Glass (always) and on Material (by default).
+  const showFilterChips = !filterInTopChrome || materialChips;
 
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -1208,12 +1215,14 @@ function ClimbListInner() {
         onOpenGrade={handleOpenGrade}
         onGradeChange={handleGradeChange}
         filterChrome={filterChrome}
+        showPersistentChips={materialChips}
       />
 
       {/* On Liquid Glass the Grade chip opens a top-anchored range rail +
-          dismiss layer, just below the measured chrome. (Material renders its
-          own grade rail inside ClimbTopChrome.) */}
-      {showFilterChips && showGrade ? (
+          dismiss layer, just below the measured chrome. (Material — incl. the
+          Material chip-row default — renders its own grade rail inside
+          ClimbTopChrome, so this glass-only overlay is gated on !materialChips.) */}
+      {showFilterChips && !materialChips && showGrade ? (
         <>
           <Pressable
             style={styles.chipGradeDismiss}

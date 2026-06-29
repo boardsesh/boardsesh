@@ -72,10 +72,18 @@ type ClimbTopChromeProps = {
   onOpenGrade?: () => void;
   onGradeChange?: (grade: GradeBound) => void;
   /** Persistent native filter-chip row + token row, rendered under the title on
-   *  Liquid Glass, independent of search focus; null on the Material path. The
-   *  caller composes it so every filter handler and the search-provider state
-   *  stay in the screen, not drilled through here. */
+   *  Liquid Glass, independent of search focus. On Material it renders in the search
+   *  stack instead when `showPersistentChips` is set. The caller composes it so every
+   *  filter handler and the search-provider state stay in the screen, not drilled
+   *  through here. */
   filterChrome?: ReactNode;
+  /** Android Material only: the native chip row (`filterChrome`) is the default
+   *  filtering surface. When set, the Material top-chrome filter affordances (grade
+   *  control, filter button, condensed summary) are suppressed and `filterChrome` is
+   *  rendered in the search stack instead; the app-bar search field, angle chip, and
+   *  the in-chrome grade rail stay. Always false on Liquid Glass (its own path renders
+   *  `filterChrome`). */
+  showPersistentChips?: boolean;
 };
 
 export function ClimbTopChrome({
@@ -104,6 +112,7 @@ export function ClimbTopChrome({
   onOpenGrade,
   onGradeChange,
   filterChrome,
+  showPersistentChips = false,
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, variant } = useTheme();
@@ -147,10 +156,15 @@ export function ClimbTopChrome({
 
   const isMaterial = selectByVariant(variant, { material: true, liquidGlass: false });
   if (isMaterial) {
+    // When the persistent chip row is the default filtering surface, the Material
+    // top-chrome filter affordances (grade control, filter button, condensed summary)
+    // are suppressed — the chips own filtering. The app-bar search field, the angle
+    // chip, and the in-chrome grade rail (opened by the chip row's Grade chip) stay.
+    const showTopChromeFilters = !showPersistentChips;
     const hasGradeFilter = gradeChip?.active === true;
     const nonGradeFilterCount = Math.max(0, activeFilterCount - (hasGradeFilter ? 1 : 0));
     const hasNonGradeFilters = nonGradeFilterCount > 0;
-    const shouldShowFilterSummary = filterSummary != null && hasNonGradeFilters;
+    const shouldShowFilterSummary = showTopChromeFilters && filterSummary != null && hasNonGradeFilters;
     const visibleFilterSummary = shouldShowFilterSummary ? filterSummary : null;
     const visibleGradeLabel = gradeChip?.label ?? t('mobile.filter.grade');
 
@@ -216,26 +230,34 @@ export function ClimbTopChrome({
                   height={MATERIAL_SEARCH_HEIGHT}
                 />
               </View>
-              <GradeFilterControl
-                label={visibleGradeLabel}
-                active={hasGradeFilter}
-                expanded={gradeRailVisible}
-                height={MATERIAL_SEARCH_HEIGHT}
-                onPress={() => {
-                  if (gradeRailVisible) {
-                    onCloseGrade();
-                    return;
-                  }
-                  onOpenGrade?.();
-                }}
-                onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
-                toggleAccessibilityLabel={t('mobile.search.gradeAction')}
-                clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
-                openHint={t('mobile.search.gradeOpenHint')}
-                closeHint={t('mobile.search.gradeCloseHint')}
-              />
-              {onOpenFilters ? <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} /> : null}
+              {showTopChromeFilters ? (
+                <GradeFilterControl
+                  label={visibleGradeLabel}
+                  active={hasGradeFilter}
+                  expanded={gradeRailVisible}
+                  height={MATERIAL_SEARCH_HEIGHT}
+                  onPress={() => {
+                    if (gradeRailVisible) {
+                      onCloseGrade();
+                      return;
+                    }
+                    onOpenGrade?.();
+                  }}
+                  onClear={hasGradeFilter ? gradeChip?.onClear : undefined}
+                  toggleAccessibilityLabel={t('mobile.search.gradeAction')}
+                  clearAccessibilityLabel={t('mobile.gradeRail.clearFilterAria')}
+                  openHint={t('mobile.search.gradeOpenHint')}
+                  closeHint={t('mobile.search.gradeCloseHint')}
+                />
+              ) : null}
+              {showTopChromeFilters && onOpenFilters ? (
+                <FilterButton activeFilterCount={nonGradeFilterCount} onPress={onOpenFilters} />
+              ) : null}
             </View>
+
+            {/* The persistent native chip row owns filtering when the Material
+                default; it sits directly under the search field, like Liquid Glass. */}
+            {showPersistentChips ? filterChrome : null}
 
             {angleAdjustable || visibleFilterSummary ? (
               <View pointerEvents="box-none" style={styles.materialQuickRow}>

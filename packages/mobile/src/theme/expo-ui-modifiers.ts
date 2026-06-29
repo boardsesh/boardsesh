@@ -116,3 +116,27 @@ export function textFieldBrandColors(brandColors: BrandControlColors): {
     cursorColor: brandAccentColor(brandColors),
   };
 }
+
+/**
+ * Plain Compose `FilterChipColors` bridging the brand fill for a native Android
+ * Material 3 `FilterChip` — only the SELECTED (active facet) state is branded: the
+ * container takes the brand fill and the label + leading icon take the on-fill
+ * colour. Every unselected state reads the Compose Material theme. This is the
+ * Compose equivalent of the iOS chip's `glassProminent` + `tint(brandColors.primary)`
+ * active style. Returned as a minimal object — every `FilterChipColors` field is
+ * optional — so this shared file needs no `@expo/ui/jetpack-compose` import; the
+ * `.android.tsx` file passes it straight to each chip's `colors` prop. All branded
+ * fields read `brandAccentColor` / `onPrimary` so they can't drift from the other
+ * primitives.
+ */
+export function filterChipBrandColors(brandColors: BrandControlColors): {
+  selectedContainerColor: string;
+  selectedLabelColor: string;
+  selectedLeadingIconColor: string;
+} {
+  return {
+    selectedContainerColor: brandAccentColor(brandColors),
+    selectedLabelColor: brandColors.onPrimary,
+    selectedLeadingIconColor: brandColors.onPrimary,
+  };
+}

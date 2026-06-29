@@ -1,9 +1,8 @@
 // Persistent, glanceable filter chips under the climbs title (the GitHub-PR-view
 // idiom), built from native @expo/ui SwiftUI controls so the menus are real iOS
-// menus rather than RN re-creations. iOS (Liquid Glass) only — the Material
-// variant lives in ClimbTopChrome's Appbar path, and the Android counterpart is
-// FilterChipRow.android.tsx. Mounted on Liquid Glass by the caller; never on
-// search focus.
+// menus rather than RN re-creations. This is the iOS (Liquid Glass) tree; the
+// Android counterpart is FilterChipRow.android.tsx (native Jetpack Compose, the
+// Material default — see its header). Mounted by the caller; never on search focus.
 //
 // The always-visible facet chips follow the filter sheet's data-driven PRIMARY
 // importance order (the sheet's own comment: "the levers the analytics say carry
@@ -28,7 +27,6 @@ import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Host, HStack, ScrollView, Menu, Picker, Toggle, Button, Text, Divider } from '@expo/ui/swift-ui';
 import { buttonStyle, controlSize, tint, tag, padding, menuActionDismissBehavior } from '@expo/ui/swift-ui/modifiers';
-import { formatMinAscentsFilterCount } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import {
   POPULARITY_BUCKETS,
@@ -40,6 +38,7 @@ import {
 } from '../../lib/filter-chip-menus';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
+import { popularityChipLabel, ratingChipLabel } from './FilterChipRow.logic';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 function FilterChipRowComponent({
@@ -67,22 +66,8 @@ function FilterChipRowComponent({
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
 
-  const popularityLabel = useCallback(
-    (bucket: number | undefined): string => {
-      if (bucket == null) return t('mobile.filter.anyAscents');
-      if (bucket === 2) return t('mobile.filter.established2plus');
-      return `${formatMinAscentsFilterCount(bucket)}+`;
-    },
-    [t],
-  );
-
-  // Picker option labels for the rating chip: "Any" / "N+ ⭐" (the exact wording
-  // the rating token uses, so chip, token, and sheet never diverge).
-  const ratingOptionLabel = useCallback(
-    (bucket: number | undefined): string =>
-      bucket == null ? t('mobile.filter.anyRating') : t('mobile.search.rating', { count: bucket }),
-    [t],
-  );
+  // Popularity / rating chip wording lives in FilterChipRow.logic (shared with the
+  // Android tree) so a filter is never worded two ways across platforms.
 
   // Real iOS 26 Liquid Glass: an inactive chip is a neutral glass capsule
   // (`buttonStyle('glass')`); an active facet is a brand-tinted prominent glass
@@ -182,7 +167,7 @@ function FilterChipRowComponent({
           {/* Popularity ▾ — min-ascents buckets; conflict-clear handled upstream.
               [PRIMARY #4] */}
           <Menu
-            label={hasActivePopularity ? popularityLabel(minAscents) : t('mobile.filter.popularity')}
+            label={hasActivePopularity ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity')}
             modifiers={chipModifiers(hasActivePopularity)}
           >
             <Picker
@@ -197,7 +182,7 @@ function FilterChipRowComponent({
             >
               {POPULARITY_BUCKETS.map((bucket) => (
                 <Text key={popularityTag(bucket)} modifiers={[tag(popularityTag(bucket))]}>
-                  {popularityLabel(bucket)}
+                  {popularityChipLabel(bucket, t)}
                 </Text>
               ))}
             </Picker>
@@ -218,7 +203,7 @@ function FilterChipRowComponent({
             >
               {RATING_BUCKETS.map((bucket) => (
                 <Text key={ratingTag(bucket)} modifiers={[tag(ratingTag(bucket))]}>
-                  {ratingOptionLabel(bucket)}
+                  {ratingChipLabel(bucket, t)}
                 </Text>
               ))}
             </Picker>

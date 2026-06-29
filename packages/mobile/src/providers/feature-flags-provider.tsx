@@ -42,6 +42,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',
   },
+  {
+    key: 'android-filter-chips',
+    label: 'Android filter chips',
+    description:
+      'Kill-switch (ON by default) for the persistent Material filter-chip row on the climbs screen. Turn OFF to revert to the top-toolbar filters (grade control + filter button + summary).',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the

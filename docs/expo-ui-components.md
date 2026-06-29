@@ -134,8 +134,11 @@ test/switch-row-stub.tsx              # passthrough stub (RN Pressable + Switch)
 - Both call `makeToggleHandler(onValueChange, disabled)` so the haptic + disabled
   behaviour can't drift between platforms.
 
-`FilterChipRow` is the second example — a SwiftUI-only control (its Android side is
-a placeholder), showing the same split with a richer iOS tree (menus, pickers).
+`FilterChipRow` is the second example — both sides are now built (SwiftUI menus on
+iOS, Jetpack Compose `FilterChip`s + `DropdownMenu`s on Android), showing the same
+split with a richer tree (menus, pickers / dropdowns) and the shared
+`FilterChipRow.logic` label helpers. On Android the chip row is the default climbs
+filtering surface (kill-switch flag `android-filter-chips`).
 
 ## Performance: memoize when a native control goes in a list
 

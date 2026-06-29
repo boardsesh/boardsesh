@@ -1,8 +1,9 @@
 // Shared props for the persistent filter-chip row. The implementation is
 // platform-split: FilterChipRow.ios.tsx renders native @expo/ui SwiftUI menus,
-// FilterChipRow.android.tsx is a placeholder (the Material chip row lands with
-// the jetpack-compose follow-up). The split keeps @expo/ui/swift-ui — whose
-// components resolve native views at module load — off the Android bundle path.
+// FilterChipRow.android.tsx renders native @expo/ui Jetpack Compose FilterChips +
+// DropdownMenus. The split keeps each platform's @expo/ui import (swift-ui /
+// jetpack-compose) — whose components resolve native views at module load — off the
+// other platform's bundle path.
 
 import type { RecentFilter } from '../../lib/recent-filter-store';
 import type { ClimbFilters } from '../ClimbFilterSheet';
