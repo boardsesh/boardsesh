@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
-import { applyMerge, buildDuplicateSets, fetchMembersForEmail } from './merge-accounts.js';
+import { applyMerge, assertAllUserFksHandled, buildDuplicateSets, fetchMembersForEmail } from './merge-accounts.js';
 import { executeRows } from '../src/client/index.js';
 
 type ExecuteDb = {
@@ -47,6 +47,30 @@ async function countRows(commandDb: ExecuteDb, query: SQLWrapper): Promise<numbe
   const [row] = await executeRows<CountRow>(commandDb, query);
   return Number(row?.count ?? 0);
 }
+
+void describe('merge-accounts FK coverage', () => {
+  void it('handles every foreign key to users(id) in the live schema', async (testContext) => {
+    const databaseUrl = mergeTestDatabaseUrl();
+    if (!databaseUrl) {
+      testContext.skip('set MERGE_ACCOUNTS_DB_URL to a migrated writable DB, or run a local DATABASE_URL, to execute');
+      return;
+    }
+
+    const { db, close } = createScriptDb(databaseUrl);
+    try {
+      const unavailable = await skipReason(db);
+      if (unavailable) {
+        testContext.skip(unavailable);
+        return;
+      }
+      // Throws (listing the offending columns) if a migration added a user FK
+      // the repoint lists don't cover — keeps the script honest as the schema grows.
+      await assertAllUserFksHandled(db);
+    } finally {
+      await close();
+    }
+  });
+});
 
 void describe('merge-accounts apply path', () => {
   void it('repoints all owned rows onto the winner, dedupes uniques, and deletes losers', async (testContext) => {
