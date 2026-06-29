@@ -22,7 +22,7 @@ import {
   accessibilityLabel as a11yLabel,
   accessibilityHint as a11yHint,
 } from '@expo/ui/swift-ui/modifiers';
-import type { ComponentProps } from 'react';
+import { useMemo, type ComponentProps } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
@@ -46,17 +46,22 @@ export function AppMenu({
   style,
 }: AppMenuProps) {
   const { systemColors } = useTheme();
-  const resolved = resolveMenuActions(actions);
+  const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
 
-  const menuModifiers = [
-    // Neutral translucent glass capsule (no brand tint) — matches the old `clear`
-    // GlassSurface pill. iOS 26 Liquid Glass, degrades gracefully on older iOS.
-    buttonStyle('glass'),
-    controlSize('large'),
-    ...(maxWidth != null ? [frame({ maxWidth })] : []),
-    ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
-    ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
-  ];
+  // Memoised so a re-render with stable inputs doesn't hand the native Menu a fresh
+  // modifier array (avoids redundant SwiftUI diffs).
+  const menuModifiers = useMemo(
+    () => [
+      // Neutral translucent glass capsule (no brand tint) — matches the old `clear`
+      // GlassSurface pill. iOS 26 Liquid Glass, degrades gracefully on older iOS.
+      buttonStyle('glass'),
+      controlSize('large'),
+      ...(maxWidth != null ? [frame({ maxWidth })] : []),
+      ...(accessibilityLabel ? [a11yLabel(accessibilityLabel)] : []),
+      ...(accessibilityHint ? [a11yHint(accessibilityHint)] : []),
+    ],
+    [maxWidth, accessibilityLabel, accessibilityHint],
+  );
 
   return (
     <Host matchContents style={[styles.host, style]}>

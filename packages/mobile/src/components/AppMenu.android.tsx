@@ -6,7 +6,7 @@
 // destructive rows take the `m3.error` text colour. Controlled `expanded` state,
 // closed on each select.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Host } from '@expo/ui';
 import { DropdownMenu, DropdownMenuItem, Row, Text } from '@expo/ui/jetpack-compose';
 import { clickable, padding } from '@expo/ui/jetpack-compose/modifiers';
@@ -32,7 +32,7 @@ export function AppMenu({
 }: AppMenuProps) {
   const { brandColors, m3, systemColors, colorScheme } = useTheme();
   const [expanded, setExpanded] = useState(false);
-  const resolved = resolveMenuActions(actions);
+  const resolved = useMemo(() => resolveMenuActions(actions), [actions]);
 
   // Every `Text` carries an explicit, scheme-aware colour. The trigger and the menu
   // popup are separate Compose compositions, and a custom `Text` in a slot does NOT

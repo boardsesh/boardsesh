@@ -27,6 +27,12 @@ describe('AppMenu.logic — resolveMenuAction', () => {
     expect(resolveMenuAction({ label: 'Find a gym' }).iosSystemImage).toBeUndefined();
   });
 
+  it('treats an explicit selected: false the same as unselected (no check, keeps its icon)', () => {
+    const resolved = resolveMenuAction({ label: 'Everyone', selected: false, systemIcon: 'globe' });
+    expect(resolved.showCheck).toBe(false);
+    expect(resolved.iosSystemImage).toBe('globe');
+  });
+
   it('flags destructive rows and leaves normal rows unmarked', () => {
     expect(resolveMenuAction({ label: 'Delete', destructive: true }).isDestructive).toBe(true);
     expect(resolveMenuAction({ label: 'Keep' }).isDestructive).toBe(false);
