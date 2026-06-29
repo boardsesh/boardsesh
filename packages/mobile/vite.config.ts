@@ -133,6 +133,18 @@ export default defineConfig({
         find: /^(.*\/)?SwitchRow$/,
         replacement: fileURLToPath(new URL('./test/switch-row-stub.tsx', import.meta.url)),
       },
+      // AuthTextInput is platform-split (AuthTextInput.ios.tsx renders a native
+      // @expo/ui SwiftUI TextField/SecureField; AuthTextInput.android.tsx a native
+      // Compose OutlinedTextField). Vitest doesn't resolve `.ios`/`.android`
+      // extensions and can't mount either native tree, so redirect the
+      // extensionless import to a faithful passthrough stub that keeps the public
+      // API + ref.focus() + testIDs + reveal-toggle / error a11y. Suites that
+      // assert AuthTextInput internals register their own vi.mock (takes
+      // precedence — e.g. EditProfileScreen.test.tsx).
+      {
+        find: /^(.*\/)?AuthTextInput$/,
+        replacement: fileURLToPath(new URL('./test/auth-text-input-stub.tsx', import.meta.url)),
+      },
       // SegmentedControl is platform-split (SegmentedControl.ios.tsx renders a
       // native @expo/ui SwiftUI segmented Picker; SegmentedControl.android.tsx a
       // native Compose SingleChoiceSegmentedButtonRow). Vitest doesn't resolve

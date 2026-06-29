@@ -97,3 +97,22 @@ export function sliderBrandColors(brandColors: BrandControlColors): {
     activeTrackColor: brandAccentColor(brandColors),
   };
 }
+
+/**
+ * Plain Compose `TextFieldColors` bridging the brand accent onto a native Android
+ * `OutlinedTextField` — the focused outline and the cursor. Every other state
+ * (unfocused outline, error red, label, supporting text) reads the Compose
+ * Material theme. Returned as a minimal object — every `TextFieldColors` field is
+ * optional — so this shared file needs no `@expo/ui/jetpack-compose` import; the
+ * `.android.tsx` file passes it straight to the field's `colors` prop. Both fields
+ * read `brandAccentColor` so they can't drift from the other primitives.
+ */
+export function textFieldBrandColors(brandColors: BrandControlColors): {
+  focusedIndicatorColor: string;
+  cursorColor: string;
+} {
+  return {
+    focusedIndicatorColor: brandAccentColor(brandColors),
+    cursorColor: brandAccentColor(brandColors),
+  };
+}

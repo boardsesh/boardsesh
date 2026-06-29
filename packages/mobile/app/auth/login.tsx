@@ -1,14 +1,5 @@
 import { useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  type TextInput as RNTextInput,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
@@ -22,6 +13,7 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthTextInput } from '../../src/components/AuthTextInput';
+import type { AuthTextInputHandle } from '../../src/components/AuthTextInput.types';
 import { Button } from '../../src/components/Button';
 import { Icon } from '../../src/components/Icon';
 import { track } from '../../src/lib/analytics';
@@ -34,7 +26,7 @@ export default function LoginScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
-  const passwordRef = useRef<RNTextInput>(null);
+  const passwordRef = useRef<AuthTextInputHandle>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

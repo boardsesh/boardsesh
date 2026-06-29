@@ -1,13 +1,5 @@
 import { useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-  type TextInput as RNTextInput,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
@@ -20,6 +12,7 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthTextInput } from '../../src/components/AuthTextInput';
+import type { AuthTextInputHandle } from '../../src/components/AuthTextInput.types';
 import { Button } from '../../src/components/Button';
 import { Text } from '../../src/components/Text';
 import { track } from '../../src/lib/analytics';
@@ -33,9 +26,9 @@ export default function RegisterScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
-  const passwordRef = useRef<RNTextInput>(null);
-  const confirmRef = useRef<RNTextInput>(null);
-  const nameRef = useRef<RNTextInput>(null);
+  const passwordRef = useRef<AuthTextInputHandle>(null);
+  const confirmRef = useRef<AuthTextInputHandle>(null);
+  const nameRef = useRef<AuthTextInputHandle>(null);
 
   const [values, setValues] = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({});

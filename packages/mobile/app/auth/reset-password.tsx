@@ -1,13 +1,5 @@
 import { useRef, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  type TextInput as RNTextInput,
-} from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from '../../src/lib/auth-validation';
@@ -15,6 +7,7 @@ import { resetPassword } from '../../src/lib/auth';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { useTheme } from '../../src/providers/theme-provider';
 import { AuthTextInput } from '../../src/components/AuthTextInput';
+import type { AuthTextInputHandle } from '../../src/components/AuthTextInput.types';
 import { Button } from '../../src/components/Button';
 import { hapticLight } from '../../src/lib/haptics';
 import { reportError } from '../../src/lib/error-reporting';
@@ -24,7 +17,7 @@ export default function ResetPasswordScreen() {
   const { t } = useTranslation('auth');
   const theme = useTheme();
   const router = useRouter();
-  const confirmRef = useRef<RNTextInput>(null);
+  const confirmRef = useRef<AuthTextInputHandle>(null);
 
   const { token, email } = useLocalSearchParams<{ token?: string; email?: string }>();
 
