@@ -134,6 +134,18 @@ export function gradeBadgeColor(gradeLabel: string | null | undefined): string {
   return getGradeColor(gradeLabel) ?? DEFAULT_GRADE_COLOR;
 }
 
+/**
+ * The "Your angle" bar colour: an angle is tinted by the grade hue of its
+ * hardest send (a V8-at-40° bar gets the V8 colour). Plain vivid hex via
+ * `gradeBadgeColor` so the SVG `Defs/LinearGradient` stops never receive a
+ * PlatformColor (which would crash react-native-svg). `scheme` is accepted for
+ * symmetry with the other chart-colour helpers; the badge palette is scheme-
+ * independent so it goes unused.
+ */
+export function angleChartColor(maxGradeLabel: string | null | undefined, _scheme: ColorSchemeName = 'light'): string {
+  return gradeBadgeColor(maxGradeLabel);
+}
+
 export type SessionGradeBarsOptions =
   | {
       /**
