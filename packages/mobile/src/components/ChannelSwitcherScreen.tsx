@@ -363,7 +363,7 @@ export function ChannelSwitcherScreen() {
                       key={channel}
                       title={channel}
                       trailing={trailing}
-                      onPress={row.isActive || row.isDisabled ? undefined : () => void switchToChannel(channel)}
+                      onPress={row.isPressable ? () => void switchToChannel(channel) : undefined}
                       showSeparator={index < presetChannels.length - 1}
                       style={row.isDisabled ? styles.disabledRow : undefined}
                     />
