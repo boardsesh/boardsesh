@@ -200,6 +200,8 @@ describe('applyOtaTagsToScope', () => {
     expect(scope.setTag).toHaveBeenCalledWith('ota_channel', undefined);
     expect(scope.setTag).toHaveBeenCalledWith('ota_update_id', undefined);
     expect(scope.setTag).toHaveBeenCalledWith('ota_runtime_version', 'fp-9f');
+    // isEmbeddedLaunch was omitted here too, so its tag clears alongside the others.
+    expect(scope.setTag).toHaveBeenCalledWith('ota_is_embedded', undefined);
   });
 
   it('distinguishes an omitted embedded flag (cleared) from an explicit false', () => {
