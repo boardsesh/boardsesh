@@ -64,9 +64,13 @@ export function ChannelSwitcherScreen() {
     overrideRef.current = override;
   }, [override]);
 
-  const buildChannel = resolveBuildChannel(Updates.channel);
   const runtimeVersion = Updates.runtimeVersion ?? 'unknown';
   const updatesUsable = Updates.isEnabled && !__DEV__;
+  // Real builds always bake a channel (production for store/TestFlight), but
+  // expo-updates can report it as null on device — notably Android — so resolve
+  // to production there. In dev there's genuinely no channel, so stay honest with
+  // "unknown" rather than mislabel the debug InfoRow as production.
+  const buildChannel = updatesUsable ? resolveBuildChannel(Updates.channel) : (Updates.channel ?? 'unknown');
   const isSwitching = switchingChannel !== null;
 
   // A channel is "active" when it's the live override, or — with no override —
