@@ -296,7 +296,8 @@
       "importDialog": {
         "title": "MoonBoard import is on the way",
         "body": "We're still building the MoonBoard importer. Export your data from the MoonBoard app and send it to Marco on Discord — he'll use it to build the import.",
-        "discordCta": "Open Discord"
+        "discordCta": "Open Discord",
+        "openFailed": "Couldn't open Discord. Try again."
       }
     },
     "mobile": {

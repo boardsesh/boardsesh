@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   deleteAurora: vi.fn(),
   streamImport: vi.fn(),
   showToast: vi.fn(),
+  openURL: vi.fn((_url: string) => Promise.resolve()),
   confirm: vi.fn(() => Promise.resolve(true)),
   invalidate: vi.fn(() => Promise.resolve()),
   refetch: vi.fn(() => Promise.resolve()),
@@ -81,7 +82,7 @@ vi.mock('react-native', () => ({
     }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
   Platform: { OS: 'ios' },
-  Linking: { openURL: () => Promise.resolve() },
+  Linking: { openURL: mocks.openURL },
 }));
 
 vi.mock('expo-file-system', () => ({ File: class File {} }));
@@ -204,5 +205,40 @@ describe('BoardAccountsSection — Kilter password card', () => {
       expect(mocks.saveKilterViaPassword).toHaveBeenCalledWith({ username: 'climber', password: 'secret' });
     });
     expect(mocks.saveAurora).not.toHaveBeenCalled();
+  });
+});
+
+describe('BoardAccountsSection — MoonBoard card', () => {
+  beforeEach(() => {
+    mocks.showToast.mockReset();
+    mocks.openURL.mockReset().mockResolvedValue(undefined);
+    mocks.flags = {};
+    mocks.credentials = [];
+  });
+
+  it('renders the MoonBoard card with import and request-data actions', () => {
+    const { container } = render(<BoardAccountsSection />);
+    expect(button(container, 'aurora.moonboard.import')).not.toBeNull();
+    expect(button(container, 'aurora.moonboard.requestData')).not.toBeNull();
+  });
+
+  it('opens a MoonBoard support email when "Request your data" is pressed', () => {
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.moonboard.requestData')!);
+    expect(mocks.openURL).toHaveBeenCalledTimes(1);
+    expect(mocks.openURL.mock.calls[0]?.[0]).toContain('mailto:moonboardsupport@moonclimbing.com');
+  });
+
+  it('opens the Discord hand-off dialog from "Import data" and links to Discord', () => {
+    const { container } = render(<BoardAccountsSection />);
+    // Dialog starts closed, so the Discord CTA is not rendered yet.
+    expect(button(container, 'aurora.moonboard.importDialog.discordCta')).toBeNull();
+
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+    const discordButton = button(container, 'aurora.moonboard.importDialog.discordCta');
+    expect(discordButton).not.toBeNull();
+
+    fireEvent.click(discordButton!);
+    expect(mocks.openURL).toHaveBeenCalledWith('https://discord.gg/YXA8GsXfQK');
   });
 });

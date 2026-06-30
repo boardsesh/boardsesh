@@ -307,7 +307,7 @@
     },
     "moonboard": {
       "title": "MoonBoard",
-      "copy": "¿Registraste vías en la app de MoonBoard? Escribe a MoonBoard para pedir tus datos y luego envíanoslos para incorporarlos a Boardsesh.",
+      "copy": "¿Registraste bloques en la app de MoonBoard? Escribe a MoonBoard para pedir tus datos y luego envíanoslos para incorporarlos a Boardsesh.",
       "import": "Importar datos",
       "requestData": "Pedir tus datos",
       "email": {
@@ -319,7 +319,8 @@
       "importDialog": {
         "title": "La importación de MoonBoard está en camino",
         "body": "Todavía estamos creando el importador de MoonBoard. Exporta tus datos desde la app de MoonBoard y envíaselos a Marco por Discord — los usará para crear la importación.",
-        "discordCta": "Abrir Discord"
+        "discordCta": "Abrir Discord",
+        "openFailed": "No se pudo abrir Discord. Inténtalo de nuevo."
       }
     }
   },

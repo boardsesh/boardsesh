@@ -512,6 +512,9 @@ function MoonBoardAccountCard() {
   const { showToast } = useToast();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
 
+  const openImportDialog = useCallback(() => setImportDialogOpen(true), []);
+  const closeImportDialog = useCallback(() => setImportDialogOpen(false), []);
+
   const handleRequestData = useCallback(() => {
     void Linking.openURL(buildMoonBoardDataRequestMailto(t)).catch(() => {
       showToast(t('aurora.mobile.requestDataFailed'), 'error');
@@ -520,7 +523,7 @@ function MoonBoardAccountCard() {
 
   const handleOpenDiscord = useCallback(() => {
     void Linking.openURL(MOONBOARD_DISCORD_URL).catch(() => {
-      showToast(t('aurora.mobile.requestDataFailed'), 'error');
+      showToast(t('aurora.moonboard.importDialog.openFailed'), 'error');
     });
   }, [showToast, t]);
 
@@ -547,7 +550,7 @@ function MoonBoardAccountCard() {
           icon="upload"
           variant="outlined"
           size="small"
-          onPress={() => setImportDialogOpen(true)}
+          onPress={openImportDialog}
         />
         <Button
           title={t('aurora.moonboard.requestData')}
@@ -558,12 +561,7 @@ function MoonBoardAccountCard() {
         />
       </View>
 
-      <Modal
-        visible={importDialogOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setImportDialogOpen(false)}
-      >
+      <Modal visible={importDialogOpen} transparent animationType="fade" onRequestClose={closeImportDialog}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, { backgroundColor: systemColors.secondaryBackground }]}>
             <Text variant="headline" style={styles.modalTitle}>
@@ -573,12 +571,7 @@ function MoonBoardAccountCard() {
               {t('aurora.moonboard.importDialog.body')}
             </Text>
             <View style={styles.modalActions}>
-              <Button
-                title={tCommon('actions.close')}
-                variant="text"
-                role="cancel"
-                onPress={() => setImportDialogOpen(false)}
-              />
+              <Button title={tCommon('actions.close')} variant="text" role="cancel" onPress={closeImportDialog} />
               <Button
                 title={t('aurora.moonboard.importDialog.discordCta')}
                 icon="open.external"

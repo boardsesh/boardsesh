@@ -319,7 +319,8 @@
       "importDialog": {
         "title": "L'import MoonBoard arrive bientôt",
         "body": "Nous construisons encore l'importateur MoonBoard. Exportez vos données depuis l'app MoonBoard et envoyez-les à Marco sur Discord — il s'en servira pour créer l'import.",
-        "discordCta": "Ouvrir Discord"
+        "discordCta": "Ouvrir Discord",
+        "openFailed": "Impossible d'ouvrir Discord. Réessayez."
       }
     }
   },
