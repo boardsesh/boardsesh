@@ -84,12 +84,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+// The i18n keys must stay literal in each builder (the linter hard-fails on
+// `t(variable)`), so only the mailto string assembly is shared here.
+function dataRequestMailto(recipient: string, subject: string, body: string): string {
+  return `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 function buildKilterDataRequestMailto(t: TFunction<'settings'>): string {
   const name = t('aurora.kilterEmail.namePlaceholder');
   const email = t('aurora.kilterEmail.emailPlaceholder');
   const subject = t('aurora.kilterEmail.subject');
   const body = t('aurora.kilterEmail.body', { name, email });
-  return `mailto:peter@auroraclimbing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return dataRequestMailto('peter@auroraclimbing.com', subject, body);
 }
 
 function buildMoonBoardDataRequestMailto(t: TFunction<'settings'>): string {
@@ -97,7 +103,7 @@ function buildMoonBoardDataRequestMailto(t: TFunction<'settings'>): string {
   const email = t('aurora.moonboard.email.emailPlaceholder');
   const subject = t('aurora.moonboard.email.subject');
   const body = t('aurora.moonboard.email.body', { name, email });
-  return `mailto:${MOONBOARD_SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return dataRequestMailto(MOONBOARD_SUPPORT_EMAIL, subject, body);
 }
 
 function totalImported(result: ImportResult): number {
