@@ -163,6 +163,13 @@ credential to `pending` so the daemon picks it up again).
 
 - Route: `packages/mobile/app/(tabs)/profile/integrations.tsx`.
 - Board account cards render above platform/device integration cards.
+- A **MoonBoard** card renders first, above the Aurora-board cards (mobile only).
+  MoonBoard isn't in `AURORA_BOARDS`, so the card is self-contained — no
+  credential, status chip, or sync flow. It offers two actions: "Request your
+  data" opens a pre-filled mailto to `moonboardsupport@moonclimbing.com` (body
+  reads "MoonBoard app user"), and "Import data" opens an explanatory dialog
+  asking the user to send their MoonBoard export to Marco on Discord, since the
+  importer isn't built yet.
 - Uses backend REST endpoints instead of Next internal routes.
 - Kilter links via the username/password (ROPC) "Sign in to Kilter" card when the
   `kilter-oauth-linking` PostHog flag is on; otherwise only the "Kilter (Aurora)"
