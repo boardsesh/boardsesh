@@ -25,6 +25,12 @@ import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
 
+// Gating model: these handlers have NO server-side feature gate. Rollout of the
+// Kilter importer is controlled client-side by the `kilter-oauth-linking` PostHog
+// flag, which only decides whether the web/mobile UI surfaces the link flow. The
+// backend's only access controls here are JWT auth and per-user rate limiting — an
+// authenticated user hitting these endpoints directly can link regardless of the
+// flag. Add a server-side flag check before treating this as a real access boundary.
 const KILTER_OAUTH_CLIENT_ID = process.env.KILTER_OAUTH_CLIENT_ID;
 const KILTER_OAUTH_CLIENT_SECRET = process.env.KILTER_OAUTH_CLIENT_SECRET;
 const KILTER_OAUTH_REDIRECT_URI = process.env.KILTER_OAUTH_REDIRECT_URI;
