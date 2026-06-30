@@ -1,5 +1,12 @@
 # Spec — Collaborative Sessions: Per-User Picks + Active Climber
 
+> **Historical (May 2026).** This proposal predates the "always-live" decision (PR #2875,
+> June 15), which retired the driver/turn-holder direction this doc builds on (the "active
+> climber" role). For the current direction on the same problem — accidental sends /
+> destructive browsing in shared sessions — see
+> [`mobile-session-interaction-spec.md`](./mobile-session-interaction-spec.md), which stays
+> roles-free. Kept here for context.
+
 ## Context
 
 Today's group session (3 climbers, mixed abilities) showed the Spotify-Jam–style

@@ -249,8 +249,11 @@ is confirmed.
   same `openPlayDrawer({ previewQueueItem, playlistSuggestionSource })` call the wrong-board
   branch already uses (lines ~391–414), against the active board. `climbs/index.tsx` (the
   search/list screen, `handleClimbPress` ~line 664) opts in by passing `previewInSession`.
-  Also update `mobile/src/components/play-drawer/use-queue-sheet-handlers.ts` and the
-  board-sheet tap so queue/board-sheet taps aren't left destructive.
+  Also update `mobile/src/components/play-drawer/use-queue-sheet-handlers.ts` (its
+  `handleClimbPress` is the chokepoint for the in-drawer queue list **and** the play
+  screen — `mobile/app/play.tsx:87` pulls it and wires it to `onClimbPress` at line 132,
+  so updating the handler covers both) and the board-sheet tap, so queue / play-screen /
+  board-sheet taps aren't left destructive.
 
 **"Send to the wall" (Phase 2).**
 - `mobile/src/components/play-drawer/PlayDrawer.tsx`: evolve `handleSetActive` (line 536,
@@ -326,6 +329,22 @@ Headline queries run while writing this (re-run after Phase 1 to validate the ne
   3+ remote joiners (up to 7).
 - Weekly `Session Started` / `Session Joined` and `Set Active Climb` users by `$lib` to show
   the mobile-overtakes-web crossover after native 2.0 (June 8).
+
+## Relationship to other specs
+
+There's an earlier proposal in `docs/collaborative-picks-spec.md` (written May 7–14) that
+tackles the same root problem — accidental sends / destructive browsing in shared
+sessions. It proposes a different model: **per-user picks + an "active climber"** whose
+pick is on the LEDs, with `claimTurn` / `yieldTurn` handoffs (a web-focused change with new
+DB tables and GraphQL types). That doc **predates the always-live decision** (PR #2875,
+June 15) — its "active climber" is the kind of role/turn-taking the team deliberately
+removed, and it's referenced only by `docs/queue-control-bar-pivot.md`, which is itself
+marked superseded.
+
+This spec is the current direction: it stays inside the always-live, no-roles model and
+solves the same pain by making **browsing safe** (preview) and **changing the wall
+deliberate** (Send) — without per-user picks or a turn-holder role. Treat
+`collaborative-picks-spec.md` as historical context, not a competing plan.
 
 ## Appendix C — History (why no "driver")
 
