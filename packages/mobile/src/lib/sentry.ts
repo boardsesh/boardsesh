@@ -189,6 +189,53 @@ export function clearBleDiagnosticsTags(): void {
   applyBleDiagnosticsToScope(bleTagScope, null);
 }
 
+export type OtaTagFields = {
+  // Updates.channel is string | null (null on embedded / dev-server launches).
+  channel?: string | null;
+  updateId?: string | null;
+  runtimeVersion?: string | null;
+  isEmbeddedLaunch?: boolean;
+};
+
+/**
+ * Pure mapping of OTA bundle fields onto a scope's tags. A null/undefined field
+ * is cleared (setTag(key, undefined)) rather than written as the string "null",
+ * matching applyBleDiagnosticsToScope: only real values become filterable tags,
+ * so an embedded / dev-server launch (channel === null) leaves no noise. The
+ * boolean is stringified so a Sentry filter reads `true`/`false`. Extracted (no
+ * enablement gate, no SDK) so the coercion is directly unit-testable.
+ */
+export function applyOtaTagsToScope(scope: BleTagScope, fields: OtaTagFields): void {
+  scope.setTag('ota_channel', fields.channel ?? undefined);
+  scope.setTag('ota_update_id', fields.updateId ?? undefined);
+  scope.setTag('ota_runtime_version', fields.runtimeVersion ?? undefined);
+  scope.setTag('ota_is_embedded', fields.isEmbeddedLaunch === undefined ? undefined : String(fields.isEmbeddedLaunch));
+}
+
+/**
+ * Stamp the running OTA bundle's channel + identifiers as GLOBAL scope tags so
+ * they ride every later event, including native crashes. Called once per launch
+ * from OtaUpdateTracker. No-op when Sentry is disabled. Takes the fields IN so
+ * this module never imports expo-updates (which is unstubbed under vitest and
+ * would break the sentry suite).
+ */
+export function setOtaSentryTags(fields: OtaTagFields): void {
+  if (!isSentryEnabled) return;
+  applyOtaTagsToScope(bleTagScope, fields);
+}
+
+/**
+ * Overwrite only the `ota_channel` tag with a tester's active channel override.
+ * A dedicated single-key setter (not setOtaSentryTags) because the override path
+ * only knows the channel — passing the other fields as undefined would clear the
+ * ota_update_id / ota_runtime_version / ota_is_embedded tags the launch stamp
+ * just set. No-op when Sentry is disabled.
+ */
+export function setOtaChannelTag(channel: string): void {
+  if (!isSentryEnabled) return;
+  Sentry.setTag('ota_channel', channel);
+}
+
 /** Best-effort flush so a report survives a later hard crash. */
 export function flushSentry(): Promise<boolean> {
   return isSentryEnabled ? Sentry.flush() : Promise.resolve(true);
