@@ -241,4 +241,32 @@ describe('BoardAccountsSection — MoonBoard card', () => {
     fireEvent.click(discordButton!);
     expect(mocks.openURL).toHaveBeenCalledWith('https://discord.gg/YXA8GsXfQK');
   });
+
+  it('shows an error toast when the support email fails to open', async () => {
+    mocks.openURL.mockReset().mockRejectedValueOnce(new Error('no mail handler'));
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.moonboard.requestData')!);
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.mobile.requestDataFailed', 'error');
+    });
+  });
+
+  it('shows a Discord-specific error toast when the Discord link fails to open', async () => {
+    mocks.openURL.mockReset().mockRejectedValueOnce(new Error('no discord handler'));
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+    fireEvent.click(button(container, 'aurora.moonboard.importDialog.discordCta')!);
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith('aurora.moonboard.importDialog.openFailed', 'error');
+    });
+  });
+
+  it('closes the import dialog via the Close button', () => {
+    const { container } = render(<BoardAccountsSection />);
+    fireEvent.click(button(container, 'aurora.moonboard.import')!);
+    expect(button(container, 'aurora.moonboard.importDialog.discordCta')).not.toBeNull();
+
+    fireEvent.click(button(container, 'actions.close')!);
+    expect(button(container, 'aurora.moonboard.importDialog.discordCta')).toBeNull();
+  });
 });

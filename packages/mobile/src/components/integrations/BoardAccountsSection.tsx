@@ -64,9 +64,7 @@ const IMPORT_RESULT_LIMIT = 8;
 const AURORA_CREDENTIALS_QUERY_KEY = ['auroraCredentials'] as const;
 const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 
-// MoonBoard isn't an Aurora board, so it has no credential/sync flow — the card
-// just routes data requests to MoonBoard support and the (not-yet-built) importer
-// to Marco on Discord.
+// MoonBoard isn't an Aurora board, so it has no credential/sync flow.
 const MOONBOARD_SUPPORT_EMAIL = 'moonboardsupport@moonclimbing.com';
 const MOONBOARD_DISCORD_URL = 'https://discord.gg/YXA8GsXfQK';
 
