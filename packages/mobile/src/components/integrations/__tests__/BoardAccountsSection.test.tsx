@@ -164,6 +164,27 @@ describe('BoardAccountsSection — Kilter password card', () => {
     expect(button(container, 'aurora.card.requestData')).not.toBeNull();
   });
 
+  it('keeps the Kilter (new) card when the flag is off but an account is already linked', () => {
+    // The core UX promise: a linked Kilter account stays manageable even after
+    // the flag is switched off (showKilterNew = flag || hasKilterCredential).
+    mocks.flags = { 'kilter-oauth-linking': false };
+    mocks.credentials = [
+      {
+        boardType: 'kilter',
+        auroraUsername: 'kilteruser',
+        auroraUserId: null,
+        lastSyncAt: null,
+        syncStatus: 'synced',
+        syncError: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ];
+    const { container } = render(<BoardAccountsSection />);
+    // The connected card (Unlink) shows; the sign-in button does not.
+    expect(button(container, 'aurora.card.unlink')).not.toBeNull();
+    expect(button(container, 'aurora.card.kilterSignIn')).toBeNull();
+  });
+
   it('links Kilter via the password grant when the sign-in form is submitted', async () => {
     mocks.flags = { 'kilter-oauth-linking': true };
     const { container } = render(<BoardAccountsSection />);
