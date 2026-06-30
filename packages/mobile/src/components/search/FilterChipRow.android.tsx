@@ -12,18 +12,17 @@
 //   • The "Show" menu stays open while toggling simply by NOT closing the controlled
 //     menu on a toggle item's click — Compose has no menuActionDismissBehavior and
 //     doesn't auto-dismiss on click, so this is the natural equivalent.
-//   • Dimension chips reconstruct iOS's Menu+onPrimaryAction (tap toggles, long-press
-//     opens lock/unlock). The FilterChip keeps its own `onClick` (tap → onToggle): the
-//     Compose FilterChip ALWAYS wires an internal onClick, so a `combinedClickable`
-//     placed on the chip's OWN modifier is dead (the chip's inner clickable consumes
-//     the gesture). The long-press lives instead on a wrapping `Row` carrying
-//     `combinedClickable({ onLongClick })` (no onClick → its native click event
-//     JS-no-ops, so no double-toggle) — the same plain-container pattern SelectRow uses
-//     in MoreForm.android.tsx. Long-press is best-effort on Compose; if a device doesn't
-//     propagate it to the parent the chip still toggles on tap (lock just unreachable).
-//     A locked chip keeps firing onToggle on tap, but `onToggle` early-returns when
-//     locked and the shared `useDimensionRepin` re-pins it, so the filter stays active
-//     (the same "locked ignores tap" outcome as iOS).
+//   • Dimension chips DIVERGE from iOS here (tap-toggle + long-press-lock). iOS uses a
+//     Menu+onPrimaryAction so a tap toggles and a long-press opens lock/unlock. On
+//     Compose that's unreachable: the FilterChip always wires its own internal onClick,
+//     which consumes the gesture — both a `combinedClickable` on the chip's modifier AND
+//     one on a wrapping container fail (the chip eats the tap/long-press; verified
+//     on-device, a long-press just registers as a tap). So the Android dimension chip is
+//     a MENU chip like Show/Popularity/Rating: tap opens a DropdownMenu with a checkable
+//     toggle item (the filter on/off) + a lock/unlock item. The toggle item is disabled
+//     while locked (`onToggle` early-returns when locked anyway), so the menu reads
+//     "locked on — Unlock to change"; the shared `useDimensionRepin` keeps a locked
+//     filter pinned through clears (the same lock outcome as iOS).
 //   • Single-choice (Popularity/Rating) skips the iOS string-tag Picker round-trip:
 //     each item's onClick closure carries the real `number | undefined` bucket.
 // Labels reuse FilterChipRow.logic so a filter is never worded two ways across
@@ -42,7 +41,7 @@ import {
   DropdownMenuItem,
   HorizontalDivider,
 } from '@expo/ui/jetpack-compose';
-import { combinedClickable, fillMaxWidth, horizontalScroll, padding } from '@expo/ui/jetpack-compose/modifiers';
+import { fillMaxWidth, horizontalScroll, padding } from '@expo/ui/jetpack-compose/modifiers';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus';
 import { useTheme } from '../../providers/theme-provider';
@@ -139,14 +138,16 @@ function MenuItem({
   checked,
   onClick,
   textColor,
+  enabled,
 }: {
   label: string;
   checked: boolean;
   onClick: () => void;
   textColor?: string;
+  enabled?: boolean;
 }) {
   return (
-    <DropdownMenuItem onClick={onClick} elementColors={textColor ? { textColor } : undefined}>
+    <DropdownMenuItem onClick={onClick} enabled={enabled} elementColors={textColor ? { textColor } : undefined}>
       {checked ? (
         <DropdownMenuItem.LeadingIcon>
           <Icon source={ICON.check} size={ICON_SIZE} />
@@ -159,21 +160,22 @@ function MenuItem({
   );
 }
 
-// Tall / Wide board-shape chip: tap toggles the filter (FilterChip.onClick),
-// long-press opens a lock/unlock menu. The long-press lives on the wrapping `Row`'s
-// `combinedClickable` rather than the chip — the chip's own internal onClick always
-// consumes the gesture, so a combinedClickable on the chip itself is dead (see the
-// file header). `indication: false` keeps the row from painting a second ripple over
-// the chip's own.
+// Tall / Wide board-shape chip. A MENU chip (tap opens a DropdownMenu): Compose can't
+// give a FilterChip a long-press, so the lock can't ride a long-press the way iOS does
+// (see the file header). The menu carries a checkable filter toggle + a lock/unlock
+// item. The toggle is disabled while locked — `onToggle` ignores a locked chip, so the
+// menu reads "locked on, Unlock to change" rather than offering a dead tap.
 function DimensionChipView({
   dimension,
   label,
+  toggleLabel,
   colors,
   lockLabel,
   unlockLabel,
 }: {
   dimension: DimensionChip;
   label: string;
+  toggleLabel: string;
   colors: ChipColors;
   lockLabel: string;
   unlockLabel: string;
@@ -182,20 +184,28 @@ function DimensionChipView({
   return (
     <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
       <DropdownMenu.Trigger>
-        <Row modifiers={[combinedClickable({ onLongClick: () => setExpanded(true) }, { indication: false })]}>
-          <FilterChip selected={dimension.active} colors={colors} onClick={dimension.onToggle}>
-            {dimension.locked ? (
-              <FilterChip.LeadingIcon>
-                <Icon source={ICON.lock} size={ICON_SIZE} />
-              </FilterChip.LeadingIcon>
-            ) : null}
-            <FilterChip.Label>
-              <Text>{label}</Text>
-            </FilterChip.Label>
-          </FilterChip>
-        </Row>
+        <FilterChip selected={dimension.active} colors={colors} onClick={() => setExpanded(true)}>
+          {dimension.locked ? (
+            <FilterChip.LeadingIcon>
+              <Icon source={ICON.lock} size={ICON_SIZE} />
+            </FilterChip.LeadingIcon>
+          ) : null}
+          <FilterChip.Label>
+            <Text>{label}</Text>
+          </FilterChip.Label>
+        </FilterChip>
       </DropdownMenu.Trigger>
       <DropdownMenu.Items>
+        <MenuItem
+          label={toggleLabel}
+          checked={dimension.active}
+          enabled={!dimension.locked}
+          onClick={() => {
+            dimension.onToggle();
+            setExpanded(false);
+          }}
+        />
+        <HorizontalDivider />
         <DropdownMenuItem
           onClick={() => {
             dimension.onToggleLock();
@@ -339,12 +349,13 @@ function FilterChipRowComponent({
         />
 
         {/* Tall / Wide — board-shape chips for the current Kilter homewall size
-            (empty otherwise). Tap toggles; long-press opens lock/unlock. */}
+            (empty otherwise). Tap opens a menu: filter toggle + lock/unlock. */}
         {dimensionChips.map((dimension) => (
           <DimensionChipView
             key={dimension.key}
             dimension={dimension}
             label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+            toggleLabel={dimension.key === 'tall' ? t('mobile.filter.tall') : t('mobile.filter.wide')}
             colors={chipColors}
             lockLabel={t('mobile.search.chips.lock')}
             unlockLabel={t('mobile.search.chips.unlock')}
