@@ -243,6 +243,8 @@
       "runtimeVersionLabel": "Runtime version",
       "unavailableNotice": "Previews need a TestFlight or App Store build, so switching is off here.",
       "listSection": "Available previews",
+      "productionTitle": "Production",
+      "productionSubtitle": "The stable release everyone runs",
       "loading": "Loading previews…",
       "empty": "No previews up for testing right now. Check back soon.",
       "error": "Couldn't load previews. Try again in a bit.",

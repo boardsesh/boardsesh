@@ -18,6 +18,7 @@ import { applyChannelOverride } from '../lib/apply-channel-override';
 import {
   OTA_CHANNEL_OVERRIDE_KEY,
   buildChannelList,
+  resolveBuildChannel,
   performChannelSwitch,
   performChannelReset,
   type ChannelSwitchDeps,
@@ -63,7 +64,7 @@ export function ChannelSwitcherScreen() {
     overrideRef.current = override;
   }, [override]);
 
-  const buildChannel = Updates.channel ?? 'unknown';
+  const buildChannel = resolveBuildChannel(Updates.channel);
   const runtimeVersion = Updates.runtimeVersion ?? 'unknown';
   const updatesUsable = Updates.isEnabled && !__DEV__;
   const isSwitching = switchingChannel !== null;
@@ -259,6 +260,34 @@ export function ChannelSwitcherScreen() {
         {t('mobile.previewChannels.intro')}
       </Text>
       <View style={cardStyle}>
+        {/* Production is the stable release. It's never in the backend preview
+            list (that's only open PRs), so it's surfaced here as a fixed first
+            row that everyone — tester or not — can tap to get back. Tapping runs
+            the reset flow, which clears the override and returns to the baked-in
+            production channel. */}
+        {(() => {
+          const isActive = activeChannel === buildChannel;
+          const isThisSwitching = switchingChannel === buildChannel;
+          const isDisabled = isSwitching && !isThisSwitching;
+          const trailing = isThisSwitching ? (
+            <ActivityIndicator size="small" />
+          ) : isActive ? (
+            <Icon name="check.small" size={20} color={systemColors.label} />
+          ) : updatesUsable ? (
+            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+          ) : null;
+          const pressable = updatesUsable && !isActive && !isDisabled;
+          return (
+            <ListRow
+              title={t('mobile.previewChannels.productionTitle')}
+              subtitle={t('mobile.previewChannels.productionSubtitle')}
+              trailing={trailing}
+              onPress={pressable ? () => void resetToBuildChannel() : undefined}
+              showSeparator
+              style={isDisabled ? styles.disabledRow : undefined}
+            />
+          );
+        })()}
         {previewQuery.isLoading ? (
           <View style={styles.statusRow}>
             <ActivityIndicator size="small" />

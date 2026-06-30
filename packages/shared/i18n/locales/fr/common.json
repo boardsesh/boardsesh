@@ -243,6 +243,8 @@
       "runtimeVersionLabel": "Version d’exécution",
       "unavailableNotice": "Les préversions nécessitent un build TestFlight ou App Store ; le changement est donc désactivé ici.",
       "listSection": "Préversions disponibles",
+      "productionTitle": "Production",
+      "productionSubtitle": "La version stable que tout le monde utilise",
       "loading": "Chargement des préversions…",
       "empty": "Aucune préversion à tester pour le moment. Revenez bientôt.",
       "error": "Impossible de charger les préversions. Réessayez dans un instant.",

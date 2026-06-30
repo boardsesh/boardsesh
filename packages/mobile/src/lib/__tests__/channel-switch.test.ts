@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   PRESET_CHANNELS,
   buildChannelList,
+  resolveBuildChannel,
   performChannelSwitch,
   performChannelReset,
   type ChannelSwitchDeps,
@@ -31,6 +32,18 @@ describe('buildChannelList', () => {
 
   it('appends a custom override that is not a preset', () => {
     expect(buildChannelList('my-feature')).toEqual([...PRESET_CHANNELS, 'my-feature']);
+  });
+});
+
+describe('resolveBuildChannel', () => {
+  it('falls back to production when expo-updates reports no channel', () => {
+    expect(resolveBuildChannel(null)).toBe('production');
+    expect(resolveBuildChannel(undefined)).toBe('production');
+  });
+
+  it('passes a real build channel through unchanged', () => {
+    expect(resolveBuildChannel('production')).toBe('production');
+    expect(resolveBuildChannel('preview-2')).toBe('preview-2');
   });
 });
 

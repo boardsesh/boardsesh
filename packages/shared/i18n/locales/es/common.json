@@ -443,6 +443,8 @@
       "runtimeVersionLabel": "Versión de ejecución",
       "unavailableNotice": "Las versiones de prueba requieren una compilación de TestFlight o de la App Store, así que aquí el cambio está desactivado.",
       "listSection": "Versiones de prueba disponibles",
+      "productionTitle": "Producción",
+      "productionSubtitle": "La versión estable que usa todo el mundo",
       "loading": "Cargando versiones de prueba…",
       "empty": "No hay versiones de prueba ahora mismo. Vuelve pronto.",
       "error": "No se pudieron cargar las versiones de prueba. Inténtalo de nuevo en un rato.",

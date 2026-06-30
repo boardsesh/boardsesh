@@ -17,6 +17,14 @@ export function buildChannelList(override: string | null): string[] {
   return Array.from(new Set<string>([...PRESET_CHANNELS, ...(override ? [override] : [])]));
 }
 
+// Production binaries bake EXPO_UPDATES_CHANNEL=production, but expo-updates can
+// report Updates.channel as null on device (notably Android). Fall back to the
+// production channel so the build-channel label and active-channel detection stay
+// correct — otherwise users see "unknown" and can't tell the way back to production.
+export function resolveBuildChannel(channel: string | null | undefined): string {
+  return channel ?? 'production';
+}
+
 export type ChannelSwitchDeps = {
   // Override the build's `expo-channel-name` request header (null clears it).
   applyOverride: (channel: string | null) => void;
