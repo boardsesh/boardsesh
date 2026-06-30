@@ -64,6 +64,12 @@ const IMPORT_RESULT_LIMIT = 8;
 const AURORA_CREDENTIALS_QUERY_KEY = ['auroraCredentials'] as const;
 const AURORA_UNSYNCED_QUERY_KEY = ['auroraCredentials', 'unsynced'] as const;
 
+// MoonBoard isn't an Aurora board, so it has no credential/sync flow — the card
+// just routes data requests to MoonBoard support and the (not-yet-built) importer
+// to Marco on Discord.
+const MOONBOARD_SUPPORT_EMAIL = 'moonboardsupport@moonclimbing.com';
+const MOONBOARD_DISCORD_URL = 'https://discord.gg/YXA8GsXfQK';
+
 function boardDisplayName(boardType: AuroraBoardName): string {
   return boardType.charAt(0).toUpperCase() + boardType.slice(1);
 }
@@ -86,6 +92,14 @@ function buildKilterDataRequestMailto(t: TFunction<'settings'>): string {
   const subject = t('aurora.kilterEmail.subject');
   const body = t('aurora.kilterEmail.body', { name, email });
   return `mailto:peter@auroraclimbing.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+function buildMoonBoardDataRequestMailto(t: TFunction<'settings'>): string {
+  const name = t('aurora.moonboard.email.namePlaceholder');
+  const email = t('aurora.moonboard.email.emailPlaceholder');
+  const subject = t('aurora.moonboard.email.subject');
+  const body = t('aurora.moonboard.email.body', { name, email });
+  return `mailto:${MOONBOARD_SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 function totalImported(result: ImportResult): number {
@@ -375,6 +389,7 @@ export function BoardAccountsSection() {
   return (
     <View style={styles.section}>
       <SectionHeader title={t('aurora.title')} />
+      <MoonBoardAccountCard />
       {isLoading ? (
         AURORA_BOARDS.map((boardType, boardIndex) => (
           <BoardAccountSkeletonCard
@@ -486,6 +501,93 @@ export function BoardAccountsSection() {
         onCancel={resetImport}
         onConfirm={handleImportConfirm}
       />
+    </View>
+  );
+}
+
+function MoonBoardAccountCard() {
+  const { t } = useTranslation('settings');
+  const { t: tCommon } = useTranslation('common');
+  const { systemColors } = useTheme();
+  const { showToast } = useToast();
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+
+  const handleRequestData = useCallback(() => {
+    void Linking.openURL(buildMoonBoardDataRequestMailto(t)).catch(() => {
+      showToast(t('aurora.mobile.requestDataFailed'), 'error');
+    });
+  }, [showToast, t]);
+
+  const handleOpenDiscord = useCallback(() => {
+    void Linking.openURL(MOONBOARD_DISCORD_URL).catch(() => {
+      showToast(t('aurora.mobile.requestDataFailed'), 'error');
+    });
+  }, [showToast, t]);
+
+  return (
+    <View
+      style={[
+        styles.card,
+        styles.accountCard,
+        styles.accountCardSpacing,
+        { backgroundColor: systemColors.secondaryBackground },
+      ]}
+    >
+      <View style={styles.accountHeader}>
+        <View>
+          <Text variant="headline">{t('aurora.moonboard.title')}</Text>
+        </View>
+      </View>
+      <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.accountCopy}>
+        {t('aurora.moonboard.copy')}
+      </Text>
+      <View style={styles.actionRow}>
+        <Button
+          title={t('aurora.moonboard.import')}
+          icon="upload"
+          variant="outlined"
+          size="small"
+          onPress={() => setImportDialogOpen(true)}
+        />
+        <Button
+          title={t('aurora.moonboard.requestData')}
+          icon="open.external"
+          variant="text"
+          size="small"
+          onPress={handleRequestData}
+        />
+      </View>
+
+      <Modal
+        visible={importDialogOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setImportDialogOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: systemColors.secondaryBackground }]}>
+            <Text variant="headline" style={styles.modalTitle}>
+              {t('aurora.moonboard.importDialog.title')}
+            </Text>
+            <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.modalCopy}>
+              {t('aurora.moonboard.importDialog.body')}
+            </Text>
+            <View style={styles.modalActions}>
+              <Button
+                title={tCommon('actions.close')}
+                variant="text"
+                role="cancel"
+                onPress={() => setImportDialogOpen(false)}
+              />
+              <Button
+                title={t('aurora.moonboard.importDialog.discordCta')}
+                icon="open.external"
+                onPress={handleOpenDiscord}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

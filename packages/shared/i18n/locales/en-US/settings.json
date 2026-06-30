@@ -282,6 +282,23 @@
       "emailPlaceholder": "[YOUR EMAIL]",
       "body": "Hey there!\n\nEx-app user here. I was wondering if I could get a copy of my data so I can save my logbooks and other data for personal tracking records.\n\nMy username is {{name}}, and this should be under this email ({{email}}).\n\nThanks!\n\n{{name}}"
     },
+    "moonboard": {
+      "title": "MoonBoard",
+      "copy": "Logged climbs in the MoonBoard app? Email MoonBoard to request your data, then send it over so we can pull it into Boardsesh.",
+      "import": "Import data",
+      "requestData": "Request your data",
+      "email": {
+        "subject": "MoonBoard data",
+        "namePlaceholder": "[YOUR NAME]",
+        "emailPlaceholder": "[YOUR EMAIL]",
+        "body": "Hey there!\n\nMoonBoard app user here. I was wondering if I could get a copy of my data so I can save my logbooks and other data for personal tracking records.\n\nMy username is {{name}}, and this should be under this email ({{email}}).\n\nThanks!\n\n{{name}}"
+      },
+      "importDialog": {
+        "title": "MoonBoard import is on the way",
+        "body": "We're still building the MoonBoard importer. Export your data from the MoonBoard app and send it to Marco on Discord — he'll use it to build the import.",
+        "discordCta": "Open Discord"
+      }
+    },
     "mobile": {
       "connectedAs": "Connected as {{name}}",
       "connected": "Connected",

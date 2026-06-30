@@ -304,6 +304,23 @@
       "namePlaceholder": "[TU NOMBRE]",
       "emailPlaceholder": "[TU CORREO]",
       "body": "¡Hola!\n\nSoy un ex usuario de la app. Me preguntaba si podríais enviarme una copia de mis datos para guardar mis logbooks y otra información para mi seguimiento personal.\n\nMi usuario es {{name}} y debería estar bajo este correo ({{email}}).\n\n¡Gracias!\n\n{{name}}"
+    },
+    "moonboard": {
+      "title": "MoonBoard",
+      "copy": "¿Registraste vías en la app de MoonBoard? Escribe a MoonBoard para pedir tus datos y luego envíanoslos para incorporarlos a Boardsesh.",
+      "import": "Importar datos",
+      "requestData": "Pedir tus datos",
+      "email": {
+        "subject": "Datos de MoonBoard",
+        "namePlaceholder": "[TU NOMBRE]",
+        "emailPlaceholder": "[TU CORREO]",
+        "body": "¡Hola!\n\nSoy usuario de la app de MoonBoard. Me preguntaba si podríais enviarme una copia de mis datos para guardar mis logbooks y otra información para mi seguimiento personal.\n\nMi usuario es {{name}} y debería estar bajo este correo ({{email}}).\n\n¡Gracias!\n\n{{name}}"
+      },
+      "importDialog": {
+        "title": "La importación de MoonBoard está en camino",
+        "body": "Todavía estamos creando el importador de MoonBoard. Exporta tus datos desde la app de MoonBoard y envíaselos a Marco por Discord — los usará para crear la importación.",
+        "discordCta": "Abrir Discord"
+      }
     }
   },
   "healthkit": {
