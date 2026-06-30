@@ -293,7 +293,9 @@ export function ChannelSwitcherScreen() {
             ) : null
           }
           onPress={productionRow.isPressable ? () => void resetToBuildChannel() : undefined}
-          showSeparator
+          // Only divide into the previews when there are rows below; an empty /
+          // error notice shouldn't sit under a separator that implies more rows.
+          showSeparator={previewQuery.isLoading || previewChannels.length > 0}
           style={productionRow.isDisabled ? styles.disabledRow : undefined}
         />
         {previewQuery.isLoading ? (

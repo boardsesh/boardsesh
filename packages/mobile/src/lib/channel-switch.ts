@@ -31,7 +31,8 @@ export function buildChannelList(override: string | null): string[] {
 // AND it hits the Android null-channel bug, this would mislabel it as production —
 // revisit this default if that ever becomes possible.
 export function resolveBuildChannel(channel: string | null | undefined): string {
-  return channel ?? 'production';
+  // `||` (not `??`) so an empty-string channel also falls back to production.
+  return channel || 'production';
 }
 
 // Per-row UI state for a channel in the switcher list, shared by the fixed

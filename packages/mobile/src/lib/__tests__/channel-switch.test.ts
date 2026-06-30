@@ -42,6 +42,10 @@ describe('resolveBuildChannel', () => {
     expect(resolveBuildChannel(undefined)).toBe('production');
   });
 
+  it('treats an empty-string channel as no channel', () => {
+    expect(resolveBuildChannel('')).toBe('production');
+  });
+
   it('passes a real build channel through unchanged', () => {
     expect(resolveBuildChannel('production')).toBe('production');
     expect(resolveBuildChannel('preview-2')).toBe('preview-2');
@@ -86,6 +90,13 @@ describe('deriveChannelRowState', () => {
   it('nothing is pressable when updates are unavailable (dev / Expo Go)', () => {
     expect(deriveChannelRowState({ ...base, updatesUsable: false })).toMatchObject({
       isActive: false,
+      isPressable: false,
+    });
+  });
+
+  it('the active channel is still marked active on an unusable build, just not pressable', () => {
+    expect(deriveChannelRowState({ ...base, channel: 'production', updatesUsable: false })).toMatchObject({
+      isActive: true,
       isPressable: false,
     });
   });
