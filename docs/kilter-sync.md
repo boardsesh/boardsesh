@@ -299,9 +299,16 @@ Account linking is gated client-side by the `kilter-oauth-linking` PostHog featu
 
 ## Daemon
 
-Same loop shape as aurora-sync's daemon: one user per cycle, oldest `last_sync_at` first (`NULLS FIRST`), random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout) leave `syncStatus` untouched for retry, while Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`.
+Same loop shape as aurora-sync's daemon: one user per cycle, random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout) leave `syncStatus` untouched for retry, while Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`.
 
-`last_sync_at` is stamped on **every** cycle outcome — success _and_ failure (transient or permanent) — not just success. Because the scheduler picks the oldest `last_sync_at` (`NULLS FIRST`) and the error classifier fails open (a non-`KilterApiError`, e.g. a DB error or a bug, is treated transient), a credential that fails deterministically would otherwise keep its `NULL`/old `last_sync_at` and be re-selected first every cycle, monopolising the single-user-per-cycle queue and starving everyone else. Stamping on failure rotates it to the back; it still retries on its next turn. So `last_sync_at` here means "last attempt", not "last success" — `syncStatus` + `syncError` carry the success/failure signal.
+**Two timestamps, two jobs:**
+
+- `last_sync_at` — last **successful** sync. Stamped on success only. This is what users see as the credential card's "Last synced" time, so a failed cycle must never advance it (otherwise the card shows "connected, just synced" for a cycle that failed before applying data).
+- `last_sync_attempt_at` — last **attempt**, success or failure. This is the scheduler's fairness clock: `getNextCredentialToSync` orders by `last_sync_attempt_at ASC NULLS FIRST` (served by `aurora_credentials_sync_attempt_priority_idx`).
+
+The split exists because the error classifier fails open — a non-`KilterApiError` (a DB error, a bug) is treated transient. If the scheduler ordered by `last_sync_at` and we never advanced anything on failure, a credential that fails deterministically would keep its `NULL`/old timestamp and be re-selected first every cycle, monopolising the single-user-per-cycle queue and starving everyone else. Advancing `last_sync_attempt_at` on every outcome rotates a failing credential to the back while keeping `last_sync_at` honest; it still retries on its next turn. No data is lost: `last_sync_attempt_at` is a scheduling key, never a data cursor — each cycle re-pulls the full snapshot idempotently, so a failed cycle's rows land on the next successful turn.
+
+(aurora-sync still orders by `last_sync_at` and has the same latent starvation gap — adopting this attempt clock there is a follow-up.)
 
 The daemon loop primitives (`resolveDaemonOptions`, `runDaemonLoop`, quiet-hours math) live in the neutral `@boardsesh/sync-runtime` package; both aurora-sync and kilter-sync consume them. Only the per-cycle work differs.
 

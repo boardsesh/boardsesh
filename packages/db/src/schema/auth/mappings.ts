@@ -42,7 +42,17 @@ export const auroraCredentials = pgTable(
     encryptedRefreshToken: text('encrypted_refresh_token'),
     auroraUserId: integer('aurora_user_id'),
     auroraToken: text('aurora_token'),
+    // last_sync_at = last SUCCESSFUL sync (surfaced to users as the card's
+    // "Last synced" time). Stamped on success only — never on a failed
+    // cycle, or the UI would show "connected, just synced" for a cycle that
+    // failed before applying data.
     lastSyncAt: timestamp('last_sync_at'),
+    // last_sync_attempt_at = last time the daemon ATTEMPTED this credential,
+    // success OR failure. This is the scheduler's fairness clock
+    // (getNextCredentialToSync orders by it), kept separate from last_sync_at
+    // so a deterministically-failing credential rotates to the back of the
+    // queue without masquerading as a fresh successful sync. Not user-facing.
+    lastSyncAttemptAt: timestamp('last_sync_attempt_at'),
     syncStatus: text('sync_status').default('pending').notNull(), // 'pending' | 'active' | 'error' | 'expired'
     syncError: text('sync_error'),
     credentialFailureCount: integer('credential_failure_count').default(0).notNull(),
@@ -59,6 +69,12 @@ export const auroraCredentials = pgTable(
     // in kilter-sync's runner so the optimizer can use the index directly.
     syncPriorityIdx: index('aurora_credentials_sync_priority_idx')
       .on(table.boardType, table.syncStatus, table.lastSyncAt)
+      .where(sql`${table.syncStatus} IN ('pending', 'active', 'error')`),
+    // Sibling of syncPriorityIdx for runners that schedule on the attempt
+    // clock (kilter-sync orders by last_sync_attempt_at). Same predicate so
+    // the optimizer can serve the getNextCredentialToSync ORDER BY directly.
+    syncAttemptPriorityIdx: index('aurora_credentials_sync_attempt_priority_idx')
+      .on(table.boardType, table.syncStatus, table.lastSyncAttemptAt)
       .where(sql`${table.syncStatus} IN ('pending', 'active', 'error')`),
   }),
 );
