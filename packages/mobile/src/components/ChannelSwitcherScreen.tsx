@@ -219,6 +219,15 @@ export function ChannelSwitcherScreen() {
 
   const presetChannels = buildChannelList(override);
 
+  // Production is the stable release. It's never in the backend preview list
+  // (that's only open PRs), so it's surfaced as a fixed first row everyone —
+  // tester or not — can tap to get back. Tapping runs the reset flow, which
+  // clears the override and returns to the baked-in production channel.
+  const productionIsActive = activeChannel === buildChannel;
+  const productionIsSwitching = switchingChannel === buildChannel;
+  const productionIsDisabled = isSwitching && !productionIsSwitching;
+  const productionIsPressable = updatesUsable && !productionIsActive && !productionIsDisabled;
+
   const cardStyle = [
     styles.card,
     {
@@ -260,34 +269,23 @@ export function ChannelSwitcherScreen() {
         {t('mobile.previewChannels.intro')}
       </Text>
       <View style={cardStyle}>
-        {/* Production is the stable release. It's never in the backend preview
-            list (that's only open PRs), so it's surfaced here as a fixed first
-            row that everyone — tester or not — can tap to get back. Tapping runs
-            the reset flow, which clears the override and returns to the baked-in
-            production channel. */}
-        {(() => {
-          const isActive = activeChannel === buildChannel;
-          const isThisSwitching = switchingChannel === buildChannel;
-          const isDisabled = isSwitching && !isThisSwitching;
-          const trailing = isThisSwitching ? (
-            <ActivityIndicator size="small" />
-          ) : isActive ? (
-            <Icon name="check.small" size={20} color={systemColors.label} />
-          ) : updatesUsable ? (
-            <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
-          ) : null;
-          const pressable = updatesUsable && !isActive && !isDisabled;
-          return (
-            <ListRow
-              title={t('mobile.previewChannels.productionTitle')}
-              subtitle={t('mobile.previewChannels.productionSubtitle')}
-              trailing={trailing}
-              onPress={pressable ? () => void resetToBuildChannel() : undefined}
-              showSeparator
-              style={isDisabled ? styles.disabledRow : undefined}
-            />
-          );
-        })()}
+        {/* Fixed production row (see the productionIs* derivations above). */}
+        <ListRow
+          title={t('mobile.previewChannels.productionTitle')}
+          subtitle={t('mobile.previewChannels.productionSubtitle')}
+          trailing={
+            productionIsSwitching ? (
+              <ActivityIndicator size="small" />
+            ) : productionIsActive ? (
+              <Icon name="check.small" size={20} color={systemColors.label} />
+            ) : updatesUsable ? (
+              <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
+            ) : null
+          }
+          onPress={productionIsPressable ? () => void resetToBuildChannel() : undefined}
+          showSeparator
+          style={productionIsDisabled ? styles.disabledRow : undefined}
+        />
         {previewQuery.isLoading ? (
           <View style={styles.statusRow}>
             <ActivityIndicator size="small" />

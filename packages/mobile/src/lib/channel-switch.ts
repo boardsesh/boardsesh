@@ -21,6 +21,9 @@ export function buildChannelList(override: string | null): string[] {
 // report Updates.channel as null on device (notably Android). Fall back to the
 // production channel so the build-channel label and active-channel detection stay
 // correct — otherwise users see "unknown" and can't tell the way back to production.
+// This is a display/label default only: the switcher gates every actual switch on
+// `updatesUsable` (Updates.isEnabled && !__DEV__), so only real store/TestFlight
+// binaries — which always bake the channel — ever act on it.
 export function resolveBuildChannel(channel: string | null | undefined): string {
   return channel ?? 'production';
 }
