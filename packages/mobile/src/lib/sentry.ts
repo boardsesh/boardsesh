@@ -200,17 +200,19 @@ export type OtaTagFields = {
 };
 
 /**
- * Pure mapping of OTA bundle fields onto a scope's tags. A null/undefined field
- * is cleared (setTag(key, undefined)) rather than written as the string "null",
- * matching applyBleDiagnosticsToScope: only real values become filterable tags,
- * so an embedded / dev-server launch (channel === null) leaves no noise. The
- * boolean is stringified so a Sentry filter reads `true`/`false`. Extracted (no
- * enablement gate, no SDK) so the coercion is directly unit-testable.
+ * Pure mapping of OTA bundle fields onto a scope's tags. A null/undefined/empty
+ * field is cleared (setTag(key, undefined)) rather than written as the string
+ * "null" or a blank value, matching applyBleDiagnosticsToScope: only real values
+ * become filterable tags, so an embedded / dev-server launch (channel === null)
+ * leaves no noise. The string fields use `|| undefined` so an empty string is
+ * treated as absent too. The boolean is stringified so a Sentry filter reads
+ * `true`/`false`. Extracted (no enablement gate, no SDK) so the coercion is
+ * directly unit-testable.
  */
 export function applyOtaTagsToScope(scope: TagScope, fields: OtaTagFields): void {
-  scope.setTag('ota_channel', fields.channel ?? undefined);
-  scope.setTag('ota_update_id', fields.updateId ?? undefined);
-  scope.setTag('ota_runtime_version', fields.runtimeVersion ?? undefined);
+  scope.setTag('ota_channel', fields.channel || undefined);
+  scope.setTag('ota_update_id', fields.updateId || undefined);
+  scope.setTag('ota_runtime_version', fields.runtimeVersion || undefined);
   scope.setTag('ota_is_embedded', fields.isEmbeddedLaunch === undefined ? undefined : String(fields.isEmbeddedLaunch));
 }
 

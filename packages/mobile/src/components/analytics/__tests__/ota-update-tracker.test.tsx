@@ -48,10 +48,17 @@ vi.mock('expo-updates', () => ({
 }));
 
 // Imported after the mocks (vi.mock is hoisted above imports).
-import { OtaUpdateTracker, resetOtaStatusReportedForTests } from '../OtaUpdateTracker';
+import { OtaUpdateTracker, resetOtaStatusReportedForTests, stampOtaLaunchSentryTags } from '../OtaUpdateTracker';
 
 function trackCallsFor(eventName: string) {
   return analytics.track.mock.calls.filter(([name]) => name === eventName);
+}
+
+// A macrotask boundary drains ALL pending microtasks — so the override effect's
+// getPreference().then().catch() chain has fully settled before a negative
+// assertion, avoiding the false-green of flushing only one microtask deep.
+function flushPendingPromises() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 beforeEach(() => {
@@ -161,8 +168,7 @@ describe('OtaUpdateTracker channel-override Sentry tag', () => {
     render(createElement(OtaUpdateTracker));
 
     await waitFor(() => expect(prefs.getPreference).toHaveBeenCalled());
-    // Let the resolved promise's .then microtask flush before asserting the negative.
-    await Promise.resolve();
+    await flushPendingPromises();
     expect(sentry.setOtaChannelTag).not.toHaveBeenCalled();
   });
 
@@ -171,7 +177,20 @@ describe('OtaUpdateTracker channel-override Sentry tag', () => {
     render(createElement(OtaUpdateTracker));
 
     await waitFor(() => expect(prefs.getPreference).toHaveBeenCalled());
-    await Promise.resolve();
+    await flushPendingPromises();
     expect(sentry.setOtaChannelTag).not.toHaveBeenCalled();
+  });
+});
+
+describe('stampOtaLaunchSentryTags', () => {
+  it('stamps the launch OTA cohort onto Sentry from the Updates.* constants', () => {
+    sentry.setOtaSentryTags.mockClear();
+    stampOtaLaunchSentryTags();
+    expect(sentry.setOtaSentryTags).toHaveBeenCalledWith({
+      channel: 'production',
+      updateId: 'a1b2c3d4-0000-0000-0000-000000000000',
+      runtimeVersion: 'abcdef123456',
+      isEmbeddedLaunch: false,
+    });
   });
 });

@@ -204,6 +204,14 @@ describe('applyOtaTagsToScope', () => {
     expect(scope.setTag).toHaveBeenCalledWith('ota_is_embedded', undefined);
   });
 
+  it('treats an empty-string channel as absent (clears rather than writing a blank tag)', () => {
+    const scope = makeScope();
+    applyOtaTagsToScope(scope, { channel: '', updateId: '', runtimeVersion: 'fp-9f' });
+    expect(scope.setTag).toHaveBeenCalledWith('ota_channel', undefined);
+    expect(scope.setTag).toHaveBeenCalledWith('ota_update_id', undefined);
+    expect(scope.setTag).toHaveBeenCalledWith('ota_runtime_version', 'fp-9f');
+  });
+
   it('distinguishes an omitted embedded flag (cleared) from an explicit false', () => {
     const omitted = makeScope();
     applyOtaTagsToScope(omitted, {});
