@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -503,7 +503,9 @@ export function BoardAccountsSection() {
   );
 }
 
-function MoonBoardAccountCard() {
+// Standalone (no props), so memo skips re-renders when the query/import-state
+// heavy BoardAccountsSection parent re-renders.
+const MoonBoardAccountCard = memo(function MoonBoardAccountCard() {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
   const { systemColors } = useTheme();
@@ -581,7 +583,7 @@ function MoonBoardAccountCard() {
       </Modal>
     </View>
   );
-}
+});
 
 type BoardAccountSkeletonCardProps = {
   isLast: boolean;
