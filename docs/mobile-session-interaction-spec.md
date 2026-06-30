@@ -247,8 +247,9 @@ is confirmed.
   `isHolder` from the Bluetooth context's `isConnected`, and the setting from the new
   preference. Insert a preview branch **before** the existing activate path that reuses the
   same `openPlayDrawer({ previewQueueItem, playlistSuggestionSource })` call the wrong-board
-  branch already uses (lines ~391–414), against the active board. `climbs/index.tsx` (the
-  search/list screen, `handleClimbPress` ~line 664) opts in by passing `previewInSession`.
+  branch already uses (lines ~391–414), against the active board.
+  `mobile/app/(tabs)/climbs/index.tsx` (the search/list screen, `handleClimbPress` ~line
+  664) opts in by passing `previewInSession`.
   Also update `mobile/src/components/play-drawer/use-queue-sheet-handlers.ts` (its
   `handleClimbPress` is the chokepoint for the in-drawer queue list **and** the play
   screen — `mobile/app/play.tsx:87` pulls it and wires it to `onClimbPress` at line 132,
