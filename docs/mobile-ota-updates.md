@@ -204,6 +204,12 @@ mounted once near the root beside `AnalyticsScreenTracker`:
   (`{ updateId, createdAtIso }`). It applies on the **next** launch, which the following
   `OTA Update Status` records — together they form the published → downloaded → applied funnel.
 
+The same launch reads also become **Sentry global tags** (`ota_channel`, `ota_update_id`,
+`ota_runtime_version`, `ota_is_embedded`) via `setOtaSentryTags`, so every crash / error event is
+attributable to a channel and bundle and lines up with the PostHog cohort above. A tester who switched
+channels in-app overrides `ota_channel` with their active channel (read from the AsyncStorage override
+mirror), matching the build-vs-override channel the switcher shows.
+
 Both no-op in dev / Expo Go (analytics disabled, `Updates.isEnabled` false); the `__DEV__` debug hook
 still logs `[analytics] OTA Update Status …` to Metro so you can confirm the tracker fires locally.
 In PostHog (project 412845), count distinct installs with `isEmbeddedLaunch = false` per `updateId` to

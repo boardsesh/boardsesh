@@ -76,9 +76,13 @@ export function OtaUpdateTracker(): null {
   // on — matching ChannelSwitcherScreen's `override ?? buildChannel`.
   useEffect(() => {
     let active = true;
-    void getPreference<string>(OTA_CHANNEL_OVERRIDE_KEY).then((override) => {
-      if (active && override) setOtaChannelTag(override);
-    });
+    // Best-effort: a storage read failure just leaves the build channel tag from
+    // the launch stamp in place, so swallow rather than leak an unhandled rejection.
+    void getPreference<string>(OTA_CHANNEL_OVERRIDE_KEY)
+      .then((override) => {
+        if (active && override) setOtaChannelTag(override);
+      })
+      .catch(() => {});
     return () => {
       active = false;
     };
