@@ -460,6 +460,14 @@ export async function applyLogs(
   const puts: PowerSyncOp[] = [];
   for (const op of ops) {
     if (op.op === 'REMOVE') {
+      // PowerSync REMOVE ops carry no `data`, only `object_id`. For the
+      // `logs` object_type that object_id IS the row's primary key,
+      // `log_uuid` — the same value PUT ops carry as `op.data.log_uuid` and
+      // that we write into `kilter_id`. So matching the soft-detach below on
+      // `kilter_id IN (object_ids)` is correct. This equivalence
+      // (object_id === data.log_uuid) is the one PowerSync-protocol
+      // assumption the dedup + insert paths also rely on; if it ever broke,
+      // REMOVE matching and the dedup key would silently drift.
       removeIds.push(op.object_id);
     } else if (op.op === 'PUT' && op.data) {
       puts.push(op);
@@ -540,6 +548,12 @@ export async function applyLogs(
   //     drop or reassign them onto the other user. We skip-and-log in the
   //     categorise step below so the situation is visible, not a crash.
   const incomingKilterIds = normalised.map((n) => n.raw.log_uuid);
+  // Explicit empty-guard: drizzle's inArray([]) emits invalid `IN ()` SQL
+  // that throws at the DB. incomingKilterIds is non-empty here (puts.length
+  // === 0 returned above, and normalised mirrors dedupedPuts 1:1), so this is
+  // belt-and-suspenders that keeps the invariant local and robust to a future
+  // refactor that could thin `normalised` between here and the early return.
+  if (incomingKilterIds.length === 0) return;
   const byKilterIdRows = await tx
     .select({ uuid: boardseshTicks.uuid, kilterId: boardseshTicks.kilterId, ownerUserId: boardseshTicks.userId })
     .from(boardseshTicks)
@@ -663,6 +677,15 @@ export async function applyLogs(
   for (const n of normalised) {
     const existingUuid = kilterIdMap.get(n.raw.log_uuid);
     if (existingUuid) {
+      // Re-sync by kilter_id: this row IS the same Kilter log (matched on
+      // its surrogate key), so Kilter is authoritative and its edits flow
+      // through verbatim — INCLUDING a status change (e.g. the user un-topped
+      // a climb on Kilter, send → attempt). The status-downgrade guard at
+      // the natural-key match above is deliberately NOT applied here: that
+      // guard protects a *heuristic* (climb+angle+time) match from merging a
+      // distinct physical attempt onto a completion; it must not block a
+      // genuine edit to an already-linked row. Don't "fix" this by adding the
+      // guard here — see the re-sync test asserting an attempt updates a send.
       updatesByKilterId.push({ uuid: existingUuid, fields: n.fields });
       continue;
     }

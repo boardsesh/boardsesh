@@ -218,6 +218,34 @@ describe('applyLogs — natural-key adoption', () => {
     expect(insertValues).toHaveLength(0);
   });
 
+  it('re-sync by kilter_id applies an incoming attempt that downgrades a send (Kilter is source of truth — no status guard here)', async () => {
+    // Locks the intentional asymmetry: the natural-key path refuses an
+    // attempt→completion downgrade (it protects a heuristic match), but the
+    // kilter_id re-sync path MUST let it through — the row is the SAME Kilter
+    // log and Kilter is authoritative, so a genuine un-top edit flows in.
+    // Only the kilter_id SELECT runs; the incoming attempt updates in place
+    // (no insert, no natural-key SELECT). If someone adds the status guard to
+    // the re-sync path, this flips to an insert and the test fails.
+    const { tx, calls, insertValues } = createTx({
+      selectResults: [[{ uuid: 'tick-uuid-1', kilterId: 'log-A', ownerUserId: 'user-1' }]],
+    });
+
+    const op = makeLogPutOp({
+      log_uuid: 'log-A',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+      topped: 0, // attempt — blocked on the natural-key path, allowed on re-sync
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
+    expect(insertValues).toHaveLength(0);
+  });
+
   it('adopts an existing tick when matched by natural key with NULL kilter_id', async () => {
     // First SELECT returns nothing → fall through to natural-key match.
     // Second SELECT returns a Boardsesh-originated tick (kilter_id NULL)
