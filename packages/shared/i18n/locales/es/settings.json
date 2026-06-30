@@ -292,6 +292,8 @@
         "unresolvedAttemptsTitle_other": "{{count}} intentos sin vía asociada",
         "unresolvedCircuitsTitle_one": "{{count}} vía del circuito no se pudo emparejar",
         "unresolvedCircuitsTitle_other": "{{count}} vías del circuito no se pudieron emparejar",
+        "unresolvedTitle_one": "{{count}} vía no se pudo emparejar",
+        "unresolvedTitle_other": "{{count}} vías no se pudieron emparejar",
         "unresolvedMore": "...y {{count}} más",
         "partialTitle": "La importación se interrumpió",
         "partialBody": "Es posible que algunos datos no se hayan importado. Volver a importar el mismo archivo es seguro y completará lo que falte."

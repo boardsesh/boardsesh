@@ -269,6 +269,8 @@
         "unresolvedAttemptsTitle_other": "{{count}} attempts had no matching climb",
         "unresolvedCircuitsTitle_one": "{{count}} circuit climb couldn't be matched",
         "unresolvedCircuitsTitle_other": "{{count}} circuit climbs couldn't be matched",
+        "unresolvedTitle_one": "{{count}} climb couldn't be matched",
+        "unresolvedTitle_other": "{{count}} climbs couldn't be matched",
         "unresolvedMore": "...and {{count}} more",
         "partialTitle": "Import was interrupted",
         "partialBody": "Some data may not have been imported. Re-importing the same file is safe and will fill in the gaps."

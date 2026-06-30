@@ -292,6 +292,8 @@
         "unresolvedAttemptsTitle_other": "{{count}} essais sans bloc associé",
         "unresolvedCircuitsTitle_one": "{{count}} bloc du circuit n'a pas pu être associé",
         "unresolvedCircuitsTitle_other": "{{count}} blocs du circuit n'ont pas pu être associés",
+        "unresolvedTitle_one": "{{count}} bloc n'a pas pu être associé",
+        "unresolvedTitle_other": "{{count}} blocs n'ont pas pu être associés",
         "unresolvedMore": "...et {{count}} de plus",
         "partialTitle": "Importation interrompue",
         "partialBody": "Certaines données n'ont peut-être pas été importées. Réimporter le même fichier est sûr et complétera ce qui manque."
