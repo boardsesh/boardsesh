@@ -30,6 +30,20 @@ export function resetOtaStatusReportedForTests(): void {
   hasReportedStatus = false;
 }
 
+// Stamp the OTA cohort onto Sentry as global tags at module-eval time, NOT in an
+// effect: the root layout imports this tracker (and Sentry.init, which it imports
+// first) before the provider tree renders, so this runs before the auth gate
+// mounts. A native crash / app hang / startup reportError during splash or auth
+// then still carries ota_channel + the bundle identifiers — the window an
+// effect-based stamp would miss. expo-updates' constants are available
+// synchronously at import; setOtaSentryTags no-ops when Sentry is disabled.
+setOtaSentryTags({
+  channel: Updates.channel,
+  updateId: Updates.updateId,
+  runtimeVersion: Updates.runtimeVersion,
+  isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+});
+
 export function OtaUpdateTracker(): null {
   const { isUpdatePending, downloadedUpdate } = Updates.useUpdates();
   const reportedDownloadIdRef = useRef<string | null>(null);
@@ -57,15 +71,6 @@ export function OtaUpdateTracker(): null {
       ota_update_id: properties.updateId,
       ota_is_embedded: properties.isEmbeddedLaunch,
       ota_runtime_version: properties.runtimeVersion,
-    });
-    // Stamp the same OTA cohort onto Sentry as global tags so every later event
-    // (and native crash) is attributable to a channel / bundle, lining up with
-    // the PostHog super properties above.
-    setOtaSentryTags({
-      channel: Updates.channel,
-      updateId: Updates.updateId,
-      runtimeVersion: Updates.runtimeVersion,
-      isEmbeddedLaunch: Updates.isEmbeddedLaunch,
     });
   }, []);
 
