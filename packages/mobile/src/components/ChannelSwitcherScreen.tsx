@@ -19,6 +19,7 @@ import {
   OTA_CHANNEL_OVERRIDE_KEY,
   buildChannelList,
   resolveBuildChannel,
+  deriveChannelRowState,
   performChannelSwitch,
   performChannelReset,
   type ChannelSwitchDeps,
@@ -34,8 +35,8 @@ export function ChannelSwitcherScreen() {
   // so isError is rare; we still handle it for completeness.
   const previewQuery = useOtaPreviewChannels();
   const previewChannels = previewQuery.data ?? [];
-  // The full developer tools (raw preset/custom channel entry, Sentry crash
-  // tests) stay tester-only; everyone else gets the friendly preview list.
+  // Channel switching (preview list, preset list, manual entry) is available to
+  // everyone; only the Sentry crash-test tools stay tester-only.
   const isTester = Boolean(profile?.isTester);
 
   const [override, setOverride] = useState<string | null>(null);
@@ -221,16 +222,21 @@ export function ChannelSwitcherScreen() {
     nativeSentryCrash();
   }, [confirm]);
 
-  const presetChannels = buildChannelList(override);
+  // The tester preset list excludes the build channel (production on real
+  // builds) — it already has the dedicated production row below, so listing it
+  // again here would duplicate it.
+  const presetChannels = buildChannelList(override).filter((channel) => channel !== buildChannel);
 
   // Production is the stable release. It's never in the backend preview list
   // (that's only open PRs), so it's surfaced as a fixed first row everyone —
   // tester or not — can tap to get back. Tapping runs the reset flow, which
   // clears the override and returns to the baked-in production channel.
-  const productionIsActive = activeChannel === buildChannel;
-  const productionIsSwitching = switchingChannel === buildChannel;
-  const productionIsDisabled = isSwitching && !productionIsSwitching;
-  const productionIsPressable = updatesUsable && !productionIsActive && !productionIsDisabled;
+  const productionRow = deriveChannelRowState({
+    channel: buildChannel,
+    activeChannel,
+    switchingChannel,
+    updatesUsable,
+  });
 
   const cardStyle = [
     styles.card,
@@ -273,22 +279,22 @@ export function ChannelSwitcherScreen() {
         {t('mobile.previewChannels.intro')}
       </Text>
       <View style={cardStyle}>
-        {/* Fixed production row (see the productionIs* derivations above). */}
+        {/* Fixed production row (see the productionRow derivation above). */}
         <ListRow
           title={t('mobile.previewChannels.productionTitle')}
           subtitle={t('mobile.previewChannels.productionSubtitle')}
           trailing={
-            productionIsSwitching ? (
+            productionRow.isSwitching ? (
               <ActivityIndicator size="small" />
-            ) : productionIsActive ? (
+            ) : productionRow.isActive ? (
               <Icon name="check.small" size={20} color={systemColors.label} />
             ) : updatesUsable ? (
               <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
             ) : null
           }
-          onPress={productionIsPressable ? () => void resetToBuildChannel() : undefined}
+          onPress={productionRow.isPressable ? () => void resetToBuildChannel() : undefined}
           showSeparator
-          style={productionIsDisabled ? styles.disabledRow : undefined}
+          style={productionRow.isDisabled ? styles.disabledRow : undefined}
         />
         {previewQuery.isLoading ? (
           <View style={styles.statusRow}>
@@ -307,26 +313,28 @@ export function ChannelSwitcherScreen() {
           </Text>
         ) : (
           previewChannels.map((preview, index) => {
-            const isActive = preview.channel === activeChannel;
-            const isThisSwitching = switchingChannel === preview.channel;
-            const isDisabled = isSwitching && !isThisSwitching;
-            const trailing = isThisSwitching ? (
+            const row = deriveChannelRowState({
+              channel: preview.channel,
+              activeChannel,
+              switchingChannel,
+              updatesUsable,
+            });
+            const trailing = row.isSwitching ? (
               <ActivityIndicator size="small" />
-            ) : isActive ? (
+            ) : row.isActive ? (
               <Icon name="check.small" size={20} color={systemColors.label} />
             ) : updatesUsable ? (
               <Icon name="chevron.right" size={16} color={systemColors.tertiaryLabel} />
             ) : null;
-            const pressable = updatesUsable && !isActive && !isDisabled;
             return (
               <ListRow
                 key={preview.channel}
                 title={preview.title}
                 subtitle={preview.channel}
                 trailing={trailing}
-                onPress={pressable ? () => void switchToChannel(preview.channel, preview.title) : undefined}
+                onPress={row.isPressable ? () => void switchToChannel(preview.channel, preview.title) : undefined}
                 showSeparator={index < previewChannels.length - 1}
-                style={isDisabled ? styles.disabledRow : undefined}
+                style={row.isDisabled ? styles.disabledRow : undefined}
               />
             );
           })
@@ -335,18 +343,18 @@ export function ChannelSwitcherScreen() {
 
       {updatesUsable ? (
         <>
-          {isTester ? (
+          {/* Preset channel list (preview-1…4) — available to everyone, not just
+              testers. The build channel is filtered out above since the fixed
+              Production row already covers it. */}
+          {presetChannels.length > 0 ? (
             <>
-              {/* i18n-ignore-next-line — tester-only dev tooling */}
-              <SectionHeader title="Switch Channel (tester)" />
+              <SectionHeader title={t('mobile.previewChannels.presetSection')} />
               <View style={cardStyle}>
                 {presetChannels.map((channel, index) => {
-                  const isActive = channel === activeChannel;
-                  const isThisSwitching = switchingChannel === channel;
-                  const isDisabled = isSwitching && !isThisSwitching;
-                  const trailing = isThisSwitching ? (
+                  const row = deriveChannelRowState({ channel, activeChannel, switchingChannel, updatesUsable });
+                  const trailing = row.isSwitching ? (
                     <ActivityIndicator size="small" />
-                  ) : isActive ? (
+                  ) : row.isActive ? (
                     <Icon name="check.small" size={20} color={systemColors.label} />
                   ) : null;
 
@@ -355,9 +363,9 @@ export function ChannelSwitcherScreen() {
                       key={channel}
                       title={channel}
                       trailing={trailing}
-                      onPress={isActive || isDisabled ? undefined : () => void switchToChannel(channel)}
+                      onPress={row.isActive || row.isDisabled ? undefined : () => void switchToChannel(channel)}
                       showSeparator={index < presetChannels.length - 1}
-                      style={isDisabled ? styles.disabledRow : undefined}
+                      style={row.isDisabled ? styles.disabledRow : undefined}
                     />
                   );
                 })}
@@ -365,66 +373,62 @@ export function ChannelSwitcherScreen() {
             </>
           ) : null}
 
-          {/* Manual channel entry: always for testers, and as a fallback for
-              everyone when the preview list fails to load — so a user is never
-              stranded without a way to switch. */}
-          {isTester || previewQuery.isError ? (
-            <>
-              <SectionHeader title={t('mobile.previewChannels.manualSection')} />
-              {previewQuery.isError ? (
-                <Text
-                  variant="footnote"
-                  color={systemColors.secondaryLabel}
-                  style={[styles.intro, { marginHorizontal: spacing[4] }]}
-                >
-                  {t('mobile.previewChannels.manualHint')}
-                </Text>
-              ) : null}
-              <View style={[styles.customRow, { marginHorizontal: spacing[4] }]}>
-                <TextInput
-                  value={customChannel}
-                  onChangeText={setCustomChannel}
-                  placeholder={t('mobile.previewChannels.manualPlaceholder')}
-                  placeholderTextColor={systemColors.secondaryLabel}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!isSwitching}
-                  accessibilityLabel={t('mobile.previewChannels.manualInputA11y')}
-                  style={[
-                    styles.input,
-                    {
-                      color: systemColors.label,
-                      backgroundColor: systemColors.secondaryBackground,
-                      borderRadius: borderRadius.md,
-                    },
-                  ]}
-                />
-                <Pressable
-                  onPress={() => {
-                    const trimmed = customChannel.trim();
-                    if (trimmed) void switchToChannel(trimmed);
-                  }}
-                  disabled={isSwitching || customChannel.trim().length === 0}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('mobile.previewChannels.manualSwitchA11y')}
-                  accessibilityState={{ disabled: isSwitching || customChannel.trim().length === 0 }}
-                  style={[
-                    styles.goButton,
-                    {
-                      backgroundColor: systemColors.tertiaryBackground,
-                      borderRadius: borderRadius.md,
-                      opacity: isSwitching || customChannel.trim().length === 0 ? 0.5 : 1,
-                    },
-                  ]}
-                >
-                  <Icon name="transfer" size={16} color={systemColors.label} />
-                  <Text variant="footnote" color={systemColors.label}>
-                    {t('mobile.previewChannels.confirmSwitchConfirm')}
-                  </Text>
-                </Pressable>
-              </View>
-            </>
+          {/* Free-text channel entry — available to everyone, so any user can
+              switch to any channel (not just the previews/presets above). The
+              hint only appears when the preview list failed to load. */}
+          <SectionHeader title={t('mobile.previewChannels.manualSection')} />
+          {previewQuery.isError ? (
+            <Text
+              variant="footnote"
+              color={systemColors.secondaryLabel}
+              style={[styles.intro, { marginHorizontal: spacing[4] }]}
+            >
+              {t('mobile.previewChannels.manualHint')}
+            </Text>
           ) : null}
+          <View style={[styles.customRow, { marginHorizontal: spacing[4] }]}>
+            <TextInput
+              value={customChannel}
+              onChangeText={setCustomChannel}
+              placeholder={t('mobile.previewChannels.manualPlaceholder')}
+              placeholderTextColor={systemColors.secondaryLabel}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isSwitching}
+              accessibilityLabel={t('mobile.previewChannels.manualInputA11y')}
+              style={[
+                styles.input,
+                {
+                  color: systemColors.label,
+                  backgroundColor: systemColors.secondaryBackground,
+                  borderRadius: borderRadius.md,
+                },
+              ]}
+            />
+            <Pressable
+              onPress={() => {
+                const trimmed = customChannel.trim();
+                if (trimmed) void switchToChannel(trimmed);
+              }}
+              disabled={isSwitching || customChannel.trim().length === 0}
+              accessibilityRole="button"
+              accessibilityLabel={t('mobile.previewChannels.manualSwitchA11y')}
+              accessibilityState={{ disabled: isSwitching || customChannel.trim().length === 0 }}
+              style={[
+                styles.goButton,
+                {
+                  backgroundColor: systemColors.tertiaryBackground,
+                  borderRadius: borderRadius.md,
+                  opacity: isSwitching || customChannel.trim().length === 0 ? 0.5 : 1,
+                },
+              ]}
+            >
+              <Icon name="transfer" size={16} color={systemColors.label} />
+              <Text variant="footnote" color={systemColors.label}>
+                {t('mobile.previewChannels.confirmSwitchConfirm')}
+              </Text>
+            </Pressable>
+          </View>
 
           {/* Reset — available to everyone, kept last as the escape hatch back to
               the shipped version. Not gated on `override` so a native override

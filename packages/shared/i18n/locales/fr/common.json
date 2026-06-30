@@ -264,6 +264,7 @@
       "resetFailedTitle": "Échec de la réinitialisation",
       "resetFailedReason": "Impossible de réinitialiser.",
       "resetFailedMessage": "{{reason}} Resté sur « {{channel}} ».",
+      "presetSection": "Plus de canaux",
       "manualSection": "Saisir un canal manuellement",
       "manualHint": "Impossible de charger la liste des préversions. Saisissez un nom de canal (comme pr-1234) pour changer manuellement.",
       "manualPlaceholder": "nom du canal",

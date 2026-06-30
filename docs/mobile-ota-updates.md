@@ -438,9 +438,10 @@ prebuild --platform ios --clean --no-install`, then confirm `ios/Boardsesh/Suppo
 specific PR's OTA, without a per-tester build. The entry is a visible **"Try a preview"** button on the
 **What's New** screen (`app/changelog.tsx`), next to _Check for updates_ — shown only when
 `!__DEV__ && Updates.isEnabled`. It opens the switcher screen (`src/components/ChannelSwitcherScreen.tsx`),
-which lists the **live per-PR previews by pull-request title** (not raw `pr-<n>` strings) and a
-reset-to-production action. _(It used to be a tester-only "OTA Channel Switcher" row under
-More → Development; that row was removed.)_
+which lists a fixed **Production** row (return to the stable release — shown to everyone), the
+**live per-PR previews by pull-request title** (not raw `pr-<n>` strings), and a reset-to-production
+action. _(It used to be a tester-only "OTA Channel Switcher" row under More → Development; that row
+was removed.)_
 
 - **Live preview list:** the screen calls the **public** `otaPreviewChannels` GraphQL query
   (`packages/backend/src/lib/ota-preview-channels.ts`), which derives the live channels from the GitHub
@@ -459,10 +460,13 @@ More → Development; that row was removed.)_
   the switcher breaks (the override throws). Keep it baked in.
 - **Constraint:** the target channel must have an OTA published at the **same fingerprint
   runtimeVersion** as the running binary, or `checkForUpdateAsync` reports nothing available.
-- **Tester-only extras:** the raw preset/custom-channel entry (`production`, `preview-1…4`, free-text)
-  and the Sentry crash-test tools on the same screen still require the **`tester`** role
-  (`UserProfile.isTester`; admin panel → Roles, admins implicitly count). Switch logic lives in
-  `src/lib/channel-switch.ts` (unit-tested). The `tester` role grants nothing beyond these extras.
+- **Channel switching is universal.** Every user on a production/TestFlight build can switch to any
+  channel: the fixed **Production** row, the live per-PR previews, the preset list (`preview-1…4`,
+  excluding the build channel so it doesn't duplicate the Production row), and free-text manual entry
+  are all shown to everyone. Switch logic lives in `src/lib/channel-switch.ts` (unit-tested:
+  `resolveBuildChannel`, `deriveChannelRowState`, and the switch/reset state machine).
+- **Tester-only extras:** only the Sentry crash-test tools on the same screen still require the
+  **`tester`** role (`UserProfile.isTester`; admin panel → Roles, admins implicitly count).
 
 ## Per-PR preview channels (self-hosted)
 

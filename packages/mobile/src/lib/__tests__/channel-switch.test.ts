@@ -3,6 +3,7 @@ import {
   PRESET_CHANNELS,
   buildChannelList,
   resolveBuildChannel,
+  deriveChannelRowState,
   performChannelSwitch,
   performChannelReset,
   type ChannelSwitchDeps,
@@ -44,6 +45,49 @@ describe('resolveBuildChannel', () => {
   it('passes a real build channel through unchanged', () => {
     expect(resolveBuildChannel('production')).toBe('production');
     expect(resolveBuildChannel('preview-2')).toBe('preview-2');
+  });
+});
+
+describe('deriveChannelRowState', () => {
+  const base = { channel: 'preview-1', activeChannel: 'production', switchingChannel: null, updatesUsable: true };
+
+  it('an idle, inactive row on a usable build is pressable', () => {
+    expect(deriveChannelRowState(base)).toEqual({
+      isActive: false,
+      isSwitching: false,
+      isDisabled: false,
+      isPressable: true,
+    });
+  });
+
+  it('the active channel shows a checkmark and is not pressable', () => {
+    expect(deriveChannelRowState({ ...base, channel: 'production' })).toMatchObject({
+      isActive: true,
+      isPressable: false,
+    });
+  });
+
+  it('the row being switched to is marked switching, not disabled', () => {
+    expect(deriveChannelRowState({ ...base, switchingChannel: 'preview-1' })).toMatchObject({
+      isSwitching: true,
+      isDisabled: false,
+      isPressable: false,
+    });
+  });
+
+  it('other rows are disabled while a different switch is in flight', () => {
+    expect(deriveChannelRowState({ ...base, switchingChannel: 'preview-2' })).toMatchObject({
+      isSwitching: false,
+      isDisabled: true,
+      isPressable: false,
+    });
+  });
+
+  it('nothing is pressable when updates are unavailable (dev / Expo Go)', () => {
+    expect(deriveChannelRowState({ ...base, updatesUsable: false })).toMatchObject({
+      isActive: false,
+      isPressable: false,
+    });
   });
 });
 

@@ -464,6 +464,7 @@
       "resetFailedTitle": "No se pudo restablecer",
       "resetFailedReason": "No se pudo restablecer.",
       "resetFailedMessage": "{{reason}} Se quedó en «{{channel}}».",
+      "presetSection": "Más canales",
       "manualSection": "Introduce un canal manualmente",
       "manualHint": "No se pudo cargar la lista de versiones de prueba. Introduce un nombre de canal (como pr-1234) para cambiar manualmente.",
       "manualPlaceholder": "nombre del canal",

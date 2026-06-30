@@ -264,6 +264,7 @@
       "resetFailedTitle": "Couldn't reset",
       "resetFailedReason": "Could not reset.",
       "resetFailedMessage": "{{reason}} Stayed on “{{channel}}”.",
+      "presetSection": "More channels",
       "manualSection": "Enter a channel manually",
       "manualHint": "Couldn't load the preview list. Enter a channel name (like pr-1234) to switch manually.",
       "manualPlaceholder": "channel name",

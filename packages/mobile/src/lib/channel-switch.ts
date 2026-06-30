@@ -24,8 +24,46 @@ export function buildChannelList(override: string | null): string[] {
 // This is a display/label default only: the switcher gates every actual switch on
 // `updatesUsable` (Updates.isEnabled && !__DEV__), so only real store/TestFlight
 // binaries — which always bake the channel — ever act on it.
+//
+// Assumption: a real build that reports a null channel was built for production.
+// Today that always holds (only production store/TestFlight binaries ship). If we
+// ever ship a binary that bakes a non-production channel (e.g. a `staging` build)
+// AND it hits the Android null-channel bug, this would mislabel it as production —
+// revisit this default if that ever becomes possible.
 export function resolveBuildChannel(channel: string | null | undefined): string {
   return channel ?? 'production';
+}
+
+// Per-row UI state for a channel in the switcher list, shared by the fixed
+// production row and the preview / tester-preset rows so the active-checkmark,
+// in-flight-spinner, and pressability rules stay identical and unit-testable.
+export type ChannelRowState = {
+  // This channel is the one the build is currently on (live override, or the
+  // build channel when there's no override) — show a checkmark, don't switch.
+  isActive: boolean;
+  // A switch onto THIS channel is in flight — show a spinner.
+  isSwitching: boolean;
+  // A switch onto a DIFFERENT channel is in flight — dim and block this row.
+  isDisabled: boolean;
+  // The row should respond to taps (switching is available and the row is
+  // neither already active nor blocked by another in-flight switch).
+  isPressable: boolean;
+};
+
+export function deriveChannelRowState(params: {
+  channel: string;
+  activeChannel: string;
+  switchingChannel: string | null;
+  updatesUsable: boolean;
+}): ChannelRowState {
+  const { channel, activeChannel, switchingChannel, updatesUsable } = params;
+  const isActive = channel === activeChannel;
+  const isSwitching = switchingChannel === channel;
+  const isDisabled = switchingChannel !== null && !isSwitching;
+  // Not pressable while already active, blocked by another switch, or mid-switch
+  // onto this same channel (it's showing a spinner).
+  const isPressable = updatesUsable && !isActive && !isDisabled && !isSwitching;
+  return { isActive, isSwitching, isDisabled, isPressable };
 }
 
 export type ChannelSwitchDeps = {
