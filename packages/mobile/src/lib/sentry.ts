@@ -129,8 +129,9 @@ export type BleConnectionDiagnostics = {
 
 // A scope whose tags accept `undefined` (the clear value) — wider than
 // SentryScopeLike, which only models the set path. Structural so the mapping is
-// unit-testable with a plain fake, like applyErrorContextToScope.
-type BleTagScope = { setTag: (key: string, value: string | number | boolean | undefined) => void };
+// unit-testable with a plain fake, like applyErrorContextToScope. Shared by the
+// BLE-diagnostics and OTA tag mappers below.
+type TagScope = { setTag: (key: string, value: string | number | boolean | undefined) => void };
 
 /**
  * Pure mapping of BLE diagnostics onto a scope's tags. `null` diagnostics =
@@ -139,7 +140,7 @@ type BleTagScope = { setTag: (key: string, value: string | number | boolean | un
  * the supported clear). Extracted (no enablement gate, no SDK) so the set/clear
  * + boolean-stringify behaviour is directly unit-testable.
  */
-export function applyBleDiagnosticsToScope(scope: BleTagScope, diagnostics: BleConnectionDiagnostics | null): void {
+export function applyBleDiagnosticsToScope(scope: TagScope, diagnostics: BleConnectionDiagnostics | null): void {
   if (!diagnostics) {
     for (const key of BLE_DIAGNOSTIC_TAG_KEYS) scope.setTag(key, undefined);
     return;
@@ -161,9 +162,10 @@ export function applyBleDiagnosticsToScope(scope: BleTagScope, diagnostics: BleC
   }
 }
 
-// Adapts the top-level functional API to a BleTagScope. `Sentry.setTag` accepts
-// `undefined` (Primitive), so it carries the clear path too.
-const bleTagScope: BleTagScope = { setTag: (key, value) => Sentry.setTag(key, value) };
+// Adapts the top-level functional API to a TagScope. `Sentry.setTag` accepts
+// `undefined` (Primitive), so it carries the clear path too. Shared by the BLE
+// and OTA global-tag setters.
+const tagScope: TagScope = { setTag: (key, value) => Sentry.setTag(key, value) };
 
 /**
  * BLE write diagnostics captured at connect, kept as GLOBAL scope tags (not the
@@ -177,7 +179,7 @@ const bleTagScope: BleTagScope = { setTag: (key, value) => Sentry.setTag(key, va
  */
 export function setBleDiagnosticsTags(diagnostics: BleConnectionDiagnostics | null | undefined): void {
   if (!isSentryEnabled) return;
-  applyBleDiagnosticsToScope(bleTagScope, diagnostics ?? null);
+  applyBleDiagnosticsToScope(tagScope, diagnostics ?? null);
 }
 
 /**
@@ -186,7 +188,7 @@ export function setBleDiagnosticsTags(diagnostics: BleConnectionDiagnostics | nu
  */
 export function clearBleDiagnosticsTags(): void {
   if (!isSentryEnabled) return;
-  applyBleDiagnosticsToScope(bleTagScope, null);
+  applyBleDiagnosticsToScope(tagScope, null);
 }
 
 export type OtaTagFields = {
@@ -205,7 +207,7 @@ export type OtaTagFields = {
  * boolean is stringified so a Sentry filter reads `true`/`false`. Extracted (no
  * enablement gate, no SDK) so the coercion is directly unit-testable.
  */
-export function applyOtaTagsToScope(scope: BleTagScope, fields: OtaTagFields): void {
+export function applyOtaTagsToScope(scope: TagScope, fields: OtaTagFields): void {
   scope.setTag('ota_channel', fields.channel ?? undefined);
   scope.setTag('ota_update_id', fields.updateId ?? undefined);
   scope.setTag('ota_runtime_version', fields.runtimeVersion ?? undefined);
@@ -221,7 +223,7 @@ export function applyOtaTagsToScope(scope: BleTagScope, fields: OtaTagFields): v
  */
 export function setOtaSentryTags(fields: OtaTagFields): void {
   if (!isSentryEnabled) return;
-  applyOtaTagsToScope(bleTagScope, fields);
+  applyOtaTagsToScope(tagScope, fields);
 }
 
 /**

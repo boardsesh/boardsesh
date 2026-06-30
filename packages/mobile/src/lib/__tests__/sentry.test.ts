@@ -12,6 +12,7 @@ vi.mock('@sentry/react-native', () => ({
   captureException: vi.fn(),
   flush: vi.fn(() => Promise.resolve(true)),
   wrap: vi.fn((component: unknown) => component),
+  setTag: vi.fn(),
 }));
 
 import * as Sentry from '@sentry/react-native';
@@ -21,6 +22,8 @@ import {
   applyOtaTagsToScope,
   captureToSentry,
   flushSentry,
+  setOtaChannelTag,
+  setOtaSentryTags,
   wrapWithSentry,
   isSentryEnabled,
   toSentryTag,
@@ -52,6 +55,18 @@ describe('flushSentry (disabled build)', () => {
   it('resolves true without flushing the SDK', async () => {
     await expect(flushSentry()).resolves.toBe(true);
     expect(Sentry.flush).not.toHaveBeenCalled();
+  });
+});
+
+describe('OTA tag setters (disabled build)', () => {
+  it('setOtaSentryTags is a no-op — never reaches Sentry.setTag', () => {
+    setOtaSentryTags({ channel: 'preview-2', updateId: 'abc', runtimeVersion: 'fp', isEmbeddedLaunch: false });
+    expect(Sentry.setTag).not.toHaveBeenCalled();
+  });
+
+  it('setOtaChannelTag is a no-op — never reaches Sentry.setTag', () => {
+    setOtaChannelTag('pr-123');
+    expect(Sentry.setTag).not.toHaveBeenCalled();
   });
 });
 
