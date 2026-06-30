@@ -368,9 +368,9 @@ Complete — sync moved off the Vercel/backend cron to the `aurora-sync daemon` 
 The legacy `/api/internal/user-sync-cron` Vercel route and the `POST /sync-cron`
 backend handler have been removed; the daemon on a VM is the sole sync path.
 
-### Kilter sync allowlist (interim)
+### Kilter sync rollout gate
 
-While Kilter sync is in early access, the connect endpoint is gated by `KILTER_SYNC_ALLOWED_USER_IDS`. Set it to a comma-separated list of NextAuth user IDs (e.g. `KILTER_SYNC_ALLOWED_USER_IDS=user_abc,user_def`); any user not on the list gets a 403 when they try to connect their Kilter account. The value is read once at module load, so rotating the list (adding a beta tester, removing someone) requires a redeploy of any service that imports the gate — there is no hot reload. The gate goes away when we ship general availability; tracking work to remove it lives in PR 15 of the kilter-sync rollout series.
+While Kilter sync is in early access, the connect UI is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The web and mobile settings screens only show the Kilter sign-in card when the flag is on (or a Kilter account is already linked). Rolling the importer in or out is a PostHog toggle — no redeploy. The backend connect endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
 
 ## See also
 

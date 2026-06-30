@@ -9,7 +9,6 @@ import {
   deleteAuroraCredential,
   getAuroraCredentialStatuses,
   getAuroraUnsyncedCounts,
-  isKilterSyncAllowed,
   saveAuroraCredential,
 } from '../services/aurora-credentials';
 import { logger } from '../utils/logger';
@@ -108,10 +107,7 @@ export async function handleAuroraCredentials(req: IncomingMessage, res: ServerR
 
   if (req.method === 'GET') {
     const credentials = await getAuroraCredentialStatuses(userId);
-    sendJson(res, 200, {
-      credentials,
-      kilterSyncAllowed: isKilterSyncAllowed(userId),
-    });
+    sendJson(res, 200, { credentials });
     return;
   }
 

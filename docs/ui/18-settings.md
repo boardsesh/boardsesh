@@ -110,9 +110,8 @@ The mobile More tab contains appearance and UI-style controls that have no direc
 Card for each board type (iterates `AURORA_BOARDS`). Kilter renders **two** cards:
 "Kilter (Aurora)" for the legacy Aurora-built app (JSON import + data request) and
 "Kilter (new)" for the new Kilter Grips account, which links via username/password.
-The "Kilter (new)" card shows when the `kilter-oauth-linking` PostHog flag **and**
-the backend `kilterSyncAllowed` gate are on, or whenever a Kilter account is already
-linked.
+The "Kilter (new)" card shows when the `kilter-oauth-linking` PostHog flag is on,
+or whenever a Kilter account is already linked.
 
 **Not Connected state:**
 
@@ -165,13 +164,12 @@ credential to `pending` so the daemon picks it up again).
 - Route: `packages/mobile/app/(tabs)/profile/integrations.tsx`.
 - Board account cards render above platform/device integration cards.
 - Uses backend REST endpoints instead of Next internal routes.
-- Kilter links via the username/password (ROPC) "Sign in to Kilter" card when
-  `KILTER_SYNC_ALLOWED_USER_IDS` allows the current user (set it to `*` to open
-  it to everyone) and the `kilter-oauth-linking` flag is on; otherwise only the
-  "Kilter (Aurora)" JSON-import / data-request card shows. The username/password
-  path also serves users for whom the dormant OAuth flow can't run (no
-  Kilter-registered redirect URI). Two-factor or social-login-only Kilter
-  accounts can't use ROPC and must fall back to JSON import.
+- Kilter links via the username/password (ROPC) "Sign in to Kilter" card when the
+  `kilter-oauth-linking` PostHog flag is on; otherwise only the "Kilter (Aurora)"
+  JSON-import / data-request card shows. The username/password path also serves
+  users for whom the dormant OAuth flow can't run (no Kilter-registered redirect
+  URI). Two-factor or social-login-only Kilter accounts can't use ROPC and must
+  fall back to JSON import.
 - Non-Kilter boards use the same username/password link dialog semantics as
   web.
 - JSON import reads a local file with `expo-document-picker`, previews the

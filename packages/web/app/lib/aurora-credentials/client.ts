@@ -13,7 +13,6 @@ export type AuroraCredentialStatus = {
 
 export type AuroraCredentialsResponse = {
   credentials: AuroraCredentialStatus[];
-  kilterSyncAllowed: boolean;
 };
 
 export type UnsyncedCounts = Record<

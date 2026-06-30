@@ -13,7 +13,6 @@ import {
 import { db } from '../db/client';
 import { logger } from '../utils/logger';
 
-const KILTER_SYNC_ALLOWED_USER_IDS = process.env.KILTER_SYNC_ALLOWED_USER_IDS;
 const KILTER_OAUTH_CLIENT_ID = process.env.KILTER_OAUTH_CLIENT_ID;
 const KILTER_OAUTH_CLIENT_SECRET = process.env.KILTER_OAUTH_CLIENT_SECRET;
 
@@ -41,20 +40,6 @@ export type DeleteAuroraCredentialResult =
 
 export function isAuroraBoardType(value: string | null | undefined): value is AuroraBoardName {
   return !!value && (AURORA_BOARDS as readonly string[]).includes(value);
-}
-
-export function isKilterSyncAllowed(userId: string): boolean {
-  if (!KILTER_SYNC_ALLOWED_USER_IDS) return false;
-
-  // `*` opens Kilter linking to every signed-in user. The env var stays the
-  // kill switch: unset/empty disables everyone, an explicit comma-separated
-  // list restricts to those user IDs.
-  if (KILTER_SYNC_ALLOWED_USER_IDS.trim() === '*') return true;
-
-  return KILTER_SYNC_ALLOWED_USER_IDS.split(',')
-    .map((allowedUserId) => allowedUserId.trim())
-    .filter(Boolean)
-    .includes(userId);
 }
 
 function decryptUsername(boardType: string, encryptedUsername: string | null, mappingUsername?: string | null): string {

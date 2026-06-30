@@ -5,7 +5,6 @@ import { encrypt } from '@boardsesh/crypto';
 const exchangeAuthorizationCodeMock = vi.fn();
 const verifyKeycloakTokenMock = vi.fn();
 const validateTokenMock = vi.fn();
-const isKilterSyncAllowedMock = vi.fn();
 const saveKilterCredentialMock = vi.fn();
 const saveKilterCredentialViaPasswordMock = vi.fn();
 
@@ -34,7 +33,6 @@ vi.mock('../middleware/auth', () => ({
 }));
 
 vi.mock('../services/aurora-credentials', () => ({
-  isKilterSyncAllowed: isKilterSyncAllowedMock,
   saveKilterCredential: saveKilterCredentialMock,
   saveKilterCredentialViaPassword: saveKilterCredentialViaPasswordMock,
 }));
@@ -98,7 +96,6 @@ describe('Kilter credential OAuth handlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    isKilterSyncAllowedMock.mockReturnValue(true);
   });
 
   it('callback redirects with a completion token instead of saving directly', async () => {
@@ -222,22 +219,6 @@ describe('Kilter credential OAuth handlers', () => {
     await oauthHandlers.handleKilterCredentialsPassword(request as never, response as never);
 
     expect(response.statusCode).toBe(401);
-    expect(saveKilterCredentialViaPasswordMock).not.toHaveBeenCalled();
-  });
-
-  it('password rejects accounts without Kilter sync access', async () => {
-    validateTokenMock.mockResolvedValue({ userId: 'pw-blocked-user' });
-    isKilterSyncAllowedMock.mockReturnValue(false);
-    const request = makeRequest({
-      method: 'POST',
-      headers: { authorization: 'Bearer token' },
-      body: JSON.stringify({ username: 'climber', password: 'secret' }),
-    });
-    const response = makeResponse();
-
-    await oauthHandlers.handleKilterCredentialsPassword(request as never, response as never);
-
-    expect(response.statusCode).toBe(403);
     expect(saveKilterCredentialViaPasswordMock).not.toHaveBeenCalled();
   });
 

@@ -352,11 +352,10 @@ export function BoardAccountsSection() {
   const inputStyle = [styles.input, { backgroundColor: inputBackground, borderColor: inputBorder, color: '#000000' }];
 
   const credentials = credentialsQuery.data?.credentials;
-  const kilterSyncAllowed = credentialsQuery.data?.kilterSyncAllowed === true;
   const hasKilterCredential = getCredential(credentials ?? [], 'kilter') !== null;
-  // Show the new Kilter card when the flag + backend gate are on, or whenever a
+  // Show the new Kilter card when the `kilter-oauth-linking` flag is on, or whenever a
   // Kilter account is already linked (so it stays manageable if the flag flips off).
-  const showKilterNew = (kilterOauthLinkingEnabled && kilterSyncAllowed) || hasKilterCredential;
+  const showKilterNew = kilterOauthLinkingEnabled || hasKilterCredential;
   const isLoading = credentialsQuery.isPending && !credentials;
   const hasLoadError = credentialsQuery.isError && !credentials;
 

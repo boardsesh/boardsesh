@@ -169,12 +169,12 @@ Next internal routes:
 - `POST /api/board-credentials/kilter/finalize` verifies that completion token
   against the signed-in user and saves the Kilter account link.
 
-Both Kilter link paths are gated by `isKilterSyncAllowed` (the
-`KILTER_SYNC_ALLOWED_USER_IDS` env var: unset/empty disables everyone, `*` opens
-it to all signed-in users, or a comma-separated list restricts to those ids) and
-the `kilter-oauth-linking` PostHog flag on the client. The gate is enforced only
-at link time on the backend — the kilter-sync daemon syncs whatever lands in
-`aurora_credentials`, so the kill switch lives on the write path.
+Both Kilter link paths are gated client-side by the `kilter-oauth-linking`
+PostHog flag: the web and mobile settings UIs only surface the Kilter sign-in
+card when the flag is on (or an account is already linked). Toggling the flag in
+PostHog rolls the importer in or out without a redeploy. The backend link
+endpoints stay authenticated and rate-limited but no longer enforce a user
+allowlist.
 
 - `POST /api/aurora-import` streams newline-delimited progress events while
   importing Aurora JSON export chunks through the shared importer.

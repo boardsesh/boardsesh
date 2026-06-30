@@ -51,7 +51,7 @@ beforeEach(() => {
 function mockCredentialsResponse(credentials: unknown[] = []) {
   return {
     ok: true,
-    json: () => Promise.resolve({ credentials, kilterSyncAllowed: false }),
+    json: () => Promise.resolve({ credentials }),
   };
 }
 

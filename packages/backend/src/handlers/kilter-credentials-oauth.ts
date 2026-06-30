@@ -20,11 +20,7 @@ import {
   verifyBoardCredentialHandoff,
   verifyBoardCredentialState,
 } from '../services/board-credential-state';
-import {
-  isKilterSyncAllowed,
-  saveKilterCredential,
-  saveKilterCredentialViaPassword,
-} from '../services/aurora-credentials';
+import { saveKilterCredential, saveKilterCredentialViaPassword } from '../services/aurora-credentials';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
@@ -336,11 +332,6 @@ export async function handleKilterCredentialsHandoff(req: IncomingMessage, res: 
   const userId = await authenticate(req, res);
   if (!userId) return;
 
-  if (!isKilterSyncAllowed(userId)) {
-    sendJson(res, 403, { error: 'Kilter sync is not enabled for this account' });
-    return;
-  }
-
   let body: unknown;
   try {
     body = await readJsonBody(req);
@@ -386,11 +377,6 @@ export async function handleKilterCredentialsStart(req: IncomingMessage, res: Se
 
   if (!(await consumeHandoffNonce(verifiedHandoff.nonce))) {
     sendText(res, 401, 'Handoff code already used');
-    return;
-  }
-
-  if (!isKilterSyncAllowed(verifiedHandoff.userId)) {
-    sendText(res, 403, 'Kilter sync is not enabled for this account');
     return;
   }
 
@@ -458,11 +444,6 @@ export async function handleKilterCredentialsCallback(
   const verifiedState = verifiedStateFromUrl;
   if (!verifiedState || verifiedState.provider !== KILTER_BOARD_TYPE) {
     redirectError(res, verifiedState?.returnUrl, 'state_invalid', clearCookies);
-    return;
-  }
-
-  if (!isKilterSyncAllowed(verifiedState.userId)) {
-    redirectError(res, verifiedState.returnUrl, 'not_allowed', clearCookies);
     return;
   }
 
@@ -578,11 +559,6 @@ export async function handleKilterCredentialsFinalize(req: IncomingMessage, res:
     return;
   }
 
-  if (!isKilterSyncAllowed(userId)) {
-    sendJson(res, 403, { error: 'Kilter sync is not enabled for this account' });
-    return;
-  }
-
   if (!(await consumeCompletionNonce(verifiedCompletion.nonce))) {
     sendJson(res, 401, { error: 'Completion token already used or unavailable' });
     return;
@@ -646,8 +622,8 @@ function kilterPasswordErrorMessage(error: unknown): string {
  * Link a Kilter account from a username + password (Keycloak ROPC). Used because
  * Kilter hasn't registered an OAuth client/redirect URI for us; the public
  * `kilter` client allows the password grant, so this path needs no Kilter-side
- * setup. Auth-gated, allowlist-gated, and per-user rate-limited so it can't be
- * abused as a credential-testing oracle against Kilter's Keycloak.
+ * setup. Auth-gated and per-user rate-limited so it can't be abused as a
+ * credential-testing oracle against Kilter's Keycloak.
  */
 export async function handleKilterCredentialsPassword(req: IncomingMessage, res: ServerResponse): Promise<void> {
   if (!applyCorsHeaders(req, res)) return;
@@ -659,11 +635,6 @@ export async function handleKilterCredentialsPassword(req: IncomingMessage, res:
 
   const userId = await authenticate(req, res);
   if (!userId) return;
-
-  if (!isKilterSyncAllowed(userId)) {
-    sendJson(res, 403, { error: 'Kilter sync is not enabled for this account' });
-    return;
-  }
 
   try {
     await checkRateLimitRedis(userId, 'kilter-password', PASSWORD_RATE_LIMIT_MAX, PASSWORD_RATE_LIMIT_WINDOW_MS);

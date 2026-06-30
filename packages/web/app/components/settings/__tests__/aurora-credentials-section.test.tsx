@@ -69,7 +69,7 @@ describe('AuroraCredentialsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFeatureFlags = {};
-    mockGetAuroraCredentials.mockResolvedValue({ credentials: [], kilterSyncAllowed: true });
+    mockGetAuroraCredentials.mockResolvedValue({ credentials: [] });
     mockGetAuroraUnsyncedCounts.mockResolvedValue({});
     mockSaveKilterViaPassword.mockResolvedValue({ success: true });
     mockSaveAuroraCredential.mockResolvedValue({ success: true });
@@ -107,6 +107,18 @@ describe('AuroraCredentialsSection', () => {
         });
         expect(mockSaveAuroraCredential).not.toHaveBeenCalled();
       });
+    });
+
+    it('hides the Kilter (new) sign-in card when the flag is off and nothing is linked', async () => {
+      render(<AuroraCredentialsSection />);
+
+      // Wait for the non-kilter board cards to render so the absence check runs
+      // after load, not before.
+      await waitFor(() => {
+        expect(screen.getAllByRole('button', { name: 'Link' }).length).toBeGreaterThan(0);
+      });
+
+      expect(screen.queryByText('Sign in to Kilter')).toBeNull();
     });
 
     it('calls saveAuroraCredential (not saveKilterCredentialViaPassword) when linking a non-kilter board', async () => {
@@ -152,7 +164,6 @@ describe('AuroraCredentialsSection', () => {
             syncError: null,
           },
         ],
-        kilterSyncAllowed: false,
       });
 
       render(<AuroraCredentialsSection />);

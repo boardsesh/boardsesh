@@ -16,12 +16,11 @@ const mocks = vi.hoisted(() => ({
   refetch: vi.fn(() => Promise.resolve()),
   flags: {} as Record<string, boolean | undefined>,
   credentials: [] as AuroraCredentialStatus[],
-  kilterSyncAllowed: true,
 }));
 
 vi.mock('../../../lib/aurora-credentials', () => ({
   BoardAccountError: class BoardAccountError extends Error {},
-  getAuroraCredentials: () => Promise.resolve({ credentials: [], kilterSyncAllowed: true }),
+  getAuroraCredentials: () => Promise.resolve({ credentials: [] }),
   getAuroraUnsyncedCounts: () => Promise.resolve({}),
   saveAuroraCredential: mocks.saveAurora,
   saveKilterCredentialViaPassword: mocks.saveKilterViaPassword,
@@ -40,9 +39,7 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery: (opts: { queryKey: readonly unknown[] }) => {
     const isCredentials = opts.queryKey[0] === 'auroraCredentials' && opts.queryKey[1] !== 'unsynced';
     return {
-      data: isCredentials
-        ? ({ credentials: mocks.credentials, kilterSyncAllowed: mocks.kilterSyncAllowed } as AuroraCredentialsResponse)
-        : {},
+      data: isCredentials ? ({ credentials: mocks.credentials } as AuroraCredentialsResponse) : {},
       isPending: false,
       isError: false,
       isSuccess: true,
@@ -151,10 +148,9 @@ describe('BoardAccountsSection — Kilter password card', () => {
     mocks.invalidate.mockClear();
     mocks.flags = {};
     mocks.credentials = [];
-    mocks.kilterSyncAllowed = true;
   });
 
-  it('shows the Kilter (new) sign-in card when the flag and gate are on', () => {
+  it('shows the Kilter (new) sign-in card when the flag is on', () => {
     mocks.flags = { 'kilter-oauth-linking': true };
     const { container } = render(<BoardAccountsSection />);
     expect(button(container, 'aurora.card.kilterSignIn')).not.toBeNull();

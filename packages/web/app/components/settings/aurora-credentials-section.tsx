@@ -385,7 +385,6 @@ export default function AuroraCredentialsSection() {
   const [unsyncedCounts, setUnsyncedCounts] = useState<UnsyncedCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [credentialsLoadError, setCredentialsLoadError] = useState(false);
-  const [kilterSyncAllowed, setKilterSyncAllowed] = useState(false);
   const kilterOauthLinkingEnabled = useFeatureFlag('kilter-oauth-linking') === true;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBoard, setSelectedBoard] = useState<AuroraBoardName>('kilter');
@@ -417,7 +416,6 @@ export default function AuroraCredentialsSection() {
     try {
       const data = await getAuroraCredentials(transport);
       setCredentials(data.credentials);
-      setKilterSyncAllowed(data.kilterSyncAllowed);
     } catch (error) {
       console.error('Failed to fetch credentials:', error);
       setCredentialsLoadError(true);
@@ -698,9 +696,9 @@ export default function AuroraCredentialsSection() {
     return credentials.find((credential) => credential.boardType === boardType) || null;
   };
 
-  // Show the new Kilter card when the flag + backend gate are on, or whenever a
+  // Show the new Kilter card when the `kilter-oauth-linking` flag is on, or whenever a
   // Kilter account is already linked (so it stays manageable if the flag flips off).
-  const showKilterNew = (kilterOauthLinkingEnabled && kilterSyncAllowed) || getCredentialForBoard('kilter') !== null;
+  const showKilterNew = kilterOauthLinkingEnabled || getCredentialForBoard('kilter') !== null;
   const cardConfigs = AURORA_BOARDS.flatMap<{
     key: string;
     boardType: AuroraBoardName;

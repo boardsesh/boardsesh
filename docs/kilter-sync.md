@@ -293,7 +293,7 @@ than persisting an unrenewable credential.
 
 ### Access gate
 
-Account linking is gated by `KILTER_SYNC_ALLOWED_USER_IDS` (comma-separated NextAuth user IDs) - see [`packages/web/app/lib/kilter-sync/access.ts`](../packages/web/app/lib/kilter-sync/access.ts). Empty/unset means the feature is off for everyone. Handoff, start, callback, and finalize enforce the gate, and the settings UI hides the Connect button when it returns false. The allowlist is parsed once at module load; flipping it requires a redeploy. PR 15 removes the gate.
+Account linking is gated client-side by the `kilter-oauth-linking` PostHog feature flag. The web and mobile settings UIs read the flag (`useFeatureFlag('kilter-oauth-linking')`) and only show the Kilter sign-in card when it's on (or when a Kilter account is already linked, so it stays manageable if the flag flips off). Toggling the flag in PostHog rolls the importer in or out without a redeploy. The backend OAuth/password endpoints stay authenticated and rate-limited but no longer enforce a user allowlist.
 
 ## Daemon
 
@@ -332,7 +332,6 @@ op run --env-file=packages/kilter-sync/.env.1password -- bunx kilter-sync daemon
 | `KILTER_OAUTH_CLIENT_ID`       | yes (web + daemon) | Keycloak client ID. Today: `kilter`                                |
 | `KILTER_OAUTH_CLIENT_SECRET`   | no                 | Confidential-client secret. Leave unset for the public PKCE client |
 | `KILTER_OAUTH_REDIRECT_URI`    | yes (web)          | Must match the redirect URI registered in Keycloak                 |
-| `KILTER_SYNC_ALLOWED_USER_IDS` | yes during rollout | Comma-separated NextAuth user IDs allowed to link                  |
 | `AURORA_CREDENTIALS_SECRET`    | yes                | Shared encryption key with aurora-sync — same key, same table      |
 | `KILTER_IDP_HOST`              | no                 | Override Keycloak host (sandbox)                                   |
 | `KILTER_SYNC_HOST`             | no                 | Override PowerSync host (sandbox)                                  |
