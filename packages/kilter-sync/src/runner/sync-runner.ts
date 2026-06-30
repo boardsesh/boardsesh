@@ -131,8 +131,31 @@ export class SyncRunner {
       const transient = isTransientKilterError(err);
 
       if (transient) {
-        // Don't touch syncStatus — retry next cycle. Surface the message
-        // so the daemon log shows what's been retrying.
+        // Leave syncStatus/syncError untouched (a genuine transient must
+        // not get flagged 'error' in the UI) but DO stamp last_sync_at.
+        // getNextCredentialToSync orders by `last_sync_at ASC NULLS
+        // FIRST`, and isTransientKilterError fails OPEN — a non-
+        // KilterApiError (a DB error, a programming bug) is classified
+        // transient. Without this stamp, a credential that fails
+        // deterministically here keeps its old/NULL last_sync_at and is
+        // re-selected FIRST every cycle, monopolising the single-user-per-
+        // cycle queue and starving every other user. Stamping rotates it
+        // to the back of the queue; it still retries on its next turn.
+        // last_sync_at thus tracks "last attempt", not "last success" —
+        // syncStatus + syncError remain the success/failure signal.
+        //
+        // No data is lost by stamping on failure: last_sync_at is ONLY a
+        // scheduling key (which credential to pick next), never a data
+        // cursor. Each cycle re-pulls the FULL PowerSync snapshot and the
+        // apply is idempotent (dedup + natural-key adoption + ON CONFLICT),
+        // so rows missed by a failed cycle are re-applied on the credential's
+        // next successful turn. If the pull ever becomes incremental, this
+        // stamp must move to the success path only.
+        await db
+          .update(auroraCredentials)
+          .set({ lastSyncAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
+
         this.handleError(err, { userId: cred.userId, board: KILTER_BOARD_TYPE });
         summary.failed = 1;
         summary.errors.push({ userId: cred.userId, boardType: KILTER_BOARD_TYPE, error: err.message });
@@ -144,9 +167,14 @@ export class SyncRunner {
       // the UI knows to prompt re-auth instead of "something went wrong".
       const isExpired = err instanceof KilterApiError && err.code === 'invalid_grant';
       const status = isExpired ? 'expired' : 'error';
+      // Stamp last_sync_at on the permanent path too. 'expired' is excluded
+      // from selection so it can't be re-picked, but 'error' stays in the
+      // candidate set — without the stamp an errored credential with a
+      // NULL last_sync_at would keep sorting first and monopolise the
+      // queue. (See the transient branch above for the full rationale.)
       await db
         .update(auroraCredentials)
-        .set({ syncStatus: status, syncError: err.message, updatedAt: new Date() })
+        .set({ syncStatus: status, syncError: err.message, lastSyncAt: new Date(), updatedAt: new Date() })
         .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, KILTER_BOARD_TYPE)));
 
       this.handleError(err, { userId: cred.userId, board: KILTER_BOARD_TYPE });

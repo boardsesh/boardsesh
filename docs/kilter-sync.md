@@ -109,10 +109,12 @@ A single `logs` row maps to either a flash/send tick or an attempt tick, with `k
 
 ### Natural-key adoption (design §4.3)
 
-When a `logs` op arrives, the writer does a **three-way match** rather than a straight upsert:
+Incoming `logs` PUT ops are first **deduped by `log_uuid`** (last-op-wins). PowerSync's oplog can carry more than one op for the same row within a single snapshot — an edited or re-logged climb shows up as several PUTs. The reference PowerSync client collapses these into a table keyed by id; our hand-rolled stream forwards every op, so the writer dedupes explicitly. Without this, two ops for the same `log_uuid` would both reach the bulk insert with the same `kilter_id` and violate the **global** `boardsesh_ticks_kilter_id_unique` index, aborting the whole flush.
 
-1. If a tick with the same `kilter_id` already exists, update it in place (PowerSync echoing the same `log_uuid` is normal — keep it idempotent).
-2. Otherwise, look for a Boardsesh-originated tick matching the **natural key** `(user_id, board_type, climb_uuid, angle, climbed_at ± 60s)` whose `kilter_id IS NULL`. If found, **adopt**: fill in `kilter_id` on the existing row instead of inserting a duplicate. This is the path where a tick the user logged in Boardsesh now comes back from Kilter after a board sync.
+After dedup, the writer does a **three-way match** rather than a straight upsert:
+
+1. If a tick with the same `kilter_id` already exists, update it in place (PowerSync echoing the same `log_uuid` is normal — keep it idempotent). The lookup is **global**, not user-scoped: if the matching `kilter_id` belongs to a **different** Boardsesh user (the same Kilter account linked to two Boardsesh accounts), the row is skipped-and-logged — inserting it would collide on the global unique index and adopting it would stamp a globally-taken `kilter_id`.
+2. Otherwise, look for a Boardsesh-originated tick matching the **natural key** `(user_id, board_type, climb_uuid, angle, climbed_at ± 60s)` whose `kilter_id IS NULL`. If found, **adopt**: fill in `kilter_id` on the existing row instead of inserting a duplicate. This is the path where a tick the user logged in Boardsesh now comes back from Kilter after a board sync. The match is **status-aware** in one direction: an incoming `attempt` will not adopt (and thereby downgrade) an existing `send`/`flash` — the natural key ignores status, so the attempt is left to insert as its own tick. Upgrades (incoming `send`/`flash` onto an existing `attempt`) and same-status re-syncs still adopt.
 3. If the natural-key match exists but has a **different** `kilter_id`, log a `divergent kilter_id` warning and skip the row. Almost always a server-side merge we didn't see; design says don't silently overwrite.
 4. If nothing matches, insert a fresh row.
 
@@ -297,7 +299,9 @@ Account linking is gated client-side by the `kilter-oauth-linking` PostHog featu
 
 ## Daemon
 
-Same loop shape as aurora-sync's daemon: one user per cycle, oldest `last_sync_at` first (`NULLS FIRST`), random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout, Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`).
+Same loop shape as aurora-sync's daemon: one user per cycle, oldest `last_sync_at` first (`NULLS FIRST`), random 1–15 min jitter between cycles, Sydney quiet hours (`10pm–7am`), transient errors (HTTP 5xx, network, timeout) leave `syncStatus` untouched for retry, while Keycloak `invalid_grant` is treated as permanent and routes to `syncStatus = 'expired'`.
+
+`last_sync_at` is stamped on **every** cycle outcome — success _and_ failure (transient or permanent) — not just success. Because the scheduler picks the oldest `last_sync_at` (`NULLS FIRST`) and the error classifier fails open (a non-`KilterApiError`, e.g. a DB error or a bug, is treated transient), a credential that fails deterministically would otherwise keep its `NULL`/old `last_sync_at` and be re-selected first every cycle, monopolising the single-user-per-cycle queue and starving everyone else. Stamping on failure rotates it to the back; it still retries on its next turn. So `last_sync_at` here means "last attempt", not "last success" — `syncStatus` + `syncError` carry the success/failure signal.
 
 The daemon loop primitives (`resolveDaemonOptions`, `runDaemonLoop`, quiet-hours math) live in the neutral `@boardsesh/sync-runtime` package; both aurora-sync and kilter-sync consume them. Only the per-cycle work differs.
 
@@ -327,16 +331,16 @@ op run --env-file=packages/kilter-sync/.env.1password -- bunx kilter-sync daemon
 
 ## Environment variables
 
-| Variable                       | Required           | Purpose                                                            |
-| ------------------------------ | ------------------ | ------------------------------------------------------------------ |
-| `KILTER_OAUTH_CLIENT_ID`       | yes (web + daemon) | Keycloak client ID. Today: `kilter`                                |
-| `KILTER_OAUTH_CLIENT_SECRET`   | no                 | Confidential-client secret. Leave unset for the public PKCE client |
-| `KILTER_OAUTH_REDIRECT_URI`    | yes (web)          | Must match the redirect URI registered in Keycloak                 |
-| `AURORA_CREDENTIALS_SECRET`    | yes                | Shared encryption key with aurora-sync — same key, same table      |
-| `KILTER_IDP_HOST`              | no                 | Override Keycloak host (sandbox)                                   |
-| `KILTER_SYNC_HOST`             | no                 | Override PowerSync host (sandbox)                                  |
-| `KILTER_PORTAL_HOST`           | no                 | Override REST portal host (sandbox)                                |
-| `DATABASE_URL`                 | yes                | Same Postgres as everything else                                   |
+| Variable                     | Required           | Purpose                                                            |
+| ---------------------------- | ------------------ | ------------------------------------------------------------------ |
+| `KILTER_OAUTH_CLIENT_ID`     | yes (web + daemon) | Keycloak client ID. Today: `kilter`                                |
+| `KILTER_OAUTH_CLIENT_SECRET` | no                 | Confidential-client secret. Leave unset for the public PKCE client |
+| `KILTER_OAUTH_REDIRECT_URI`  | yes (web)          | Must match the redirect URI registered in Keycloak                 |
+| `AURORA_CREDENTIALS_SECRET`  | yes                | Shared encryption key with aurora-sync — same key, same table      |
+| `KILTER_IDP_HOST`            | no                 | Override Keycloak host (sandbox)                                   |
+| `KILTER_SYNC_HOST`           | no                 | Override PowerSync host (sandbox)                                  |
+| `KILTER_PORTAL_HOST`         | no                 | Override REST portal host (sandbox)                                |
+| `DATABASE_URL`               | yes                | Same Postgres as everything else                                   |
 
 ## Open wire questions
 

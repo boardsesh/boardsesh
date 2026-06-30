@@ -42,7 +42,8 @@ type SelectResult = Array<Record<string, unknown>>;
 // What this DOESN'T cover, and what an integration test would add:
 //   - column-name typos inside the raw `tx.execute(sql\`...\`)` calls
 //   - jsonb_to_recordset column types matching the schema
-//   - real partial-unique-index conflict behaviour on (user, kilter_id)
+//   - real conflict behaviour on the GLOBAL boardsesh_ticks_kilter_id_unique
+//     index (kilter_id alone, not scoped to user)
 //   - CASCADE behaviour when a user row gets deleted mid-sync
 //
 // We accept this gap deliberately: the failure mode is "first prod run
@@ -197,7 +198,7 @@ describe('applyLogs — natural-key adoption', () => {
     // First SELECT returns the existing row by kilter_id; second SELECT is
     // not executed because every incoming op was already matched.
     const { tx, calls, insertValues } = createTx({
-      selectResults: [[{ uuid: 'tick-uuid-1', kilterId: 'log-A' }]],
+      selectResults: [[{ uuid: 'tick-uuid-1', kilterId: 'log-A', ownerUserId: 'user-1' }]],
     });
 
     const op = makeLogPutOp({
@@ -452,7 +453,7 @@ describe('applyLogs — natural-key adoption', () => {
     const { tx, calls, insertValues } = createTx({
       selectResults: [
         // kilter_id SELECT: only log-EXISTING is found
-        [{ uuid: 'tick-existing', kilterId: 'log-EXISTING' }],
+        [{ uuid: 'tick-existing', kilterId: 'log-EXISTING', ownerUserId: 'user-1' }],
         // natural-key SELECT: returns matches for log-ADOPT and log-DIVERGE
         [
           {
@@ -530,8 +531,8 @@ describe('applyLogs — natural-key adoption', () => {
     const { tx, calls } = createTx({
       selectResults: [
         [
-          { uuid: 'tick-1', kilterId: 'log-A' },
-          { uuid: 'tick-2', kilterId: 'log-B' },
+          { uuid: 'tick-1', kilterId: 'log-A', ownerUserId: 'user-1' },
+          { uuid: 'tick-2', kilterId: 'log-B', ownerUserId: 'user-1' },
         ],
       ],
     });
@@ -619,6 +620,148 @@ describe('applyLogs — natural-key adoption', () => {
     // The where clause is opaque inside drizzle's sql builder; just make
     // sure the update was issued exactly once for the table.
     expect(boardseshTicks).toBeDefined();
+  });
+
+  it('dedupes two PUTs with the same log_uuid into a single insert (last-op-wins, no kilter_id collision)', async () => {
+    // PowerSync's oplog can deliver the same row (object_id = log_uuid)
+    // more than once in a snapshot. Both selects empty → insert path. The
+    // two ops carry the SAME log_uuid; without dedup the bulk INSERT would
+    // carry two rows with identical kilter_id and violate the global
+    // boardsesh_ticks_kilter_id_unique index. After dedup exactly one row
+    // inserts, and the LAST op wins (freshest state).
+    const { tx, calls, insertValues } = createTx({ selectResults: [[], []] });
+
+    const ops: PowerSyncOp[] = [
+      makeLogPutOp({
+        log_uuid: 'log-DUP',
+        climb_uuid: 'climb-1',
+        angle: 40,
+        created_at: '2026-05-01T12:00:00.000Z',
+        topped: 1,
+        flashed: 0, // first delivery: a send
+      }),
+      makeLogPutOp({
+        log_uuid: 'log-DUP',
+        climb_uuid: 'climb-1',
+        angle: 40,
+        created_at: '2026-05-01T12:00:00.000Z',
+        topped: 0,
+        attempts: 3, // second delivery: re-logged as a 3-try attempt
+      }),
+    ];
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', ops, aliasCacheFor(['climb-1']), logSpy);
+
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
+    expect(insertValues[0]).toHaveLength(1);
+    // Last op wins: the attempt, not the send.
+    expect(insertValues[0][0]).toMatchObject({
+      kilterId: 'log-DUP',
+      status: 'attempt',
+      attemptCount: 3,
+    });
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT let an incoming attempt adopt (downgrade) an existing send — inserts as its own tick', async () => {
+    // Natural-key match ignores status. The incoming op is an attempt
+    // (topped=0) within ±60s of an existing send. Adopting would overwrite
+    // the send → attempt. Instead the send is left alone and the attempt
+    // inserts separately.
+    const { tx, calls, insertValues } = createTx({
+      selectResults: [
+        [],
+        [
+          {
+            uuid: 'tick-send',
+            kilterId: null,
+            climbUuid: 'climb-1',
+            angle: 40,
+            climbedAt: '2026-05-01T12:00:20.000Z',
+            status: 'send',
+          },
+        ],
+      ],
+    });
+
+    const op = makeLogPutOp({
+      log_uuid: 'log-attempt',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+      topped: 0,
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    // No adoption UPDATE; the attempt is a fresh insert.
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
+    expect(insertValues[0][0]).toMatchObject({ kilterId: 'log-attempt', status: 'attempt' });
+    expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('DOES let an incoming send adopt an existing attempt (upgrade)', async () => {
+    const { tx, calls, insertValues } = createTx({
+      selectResults: [
+        [],
+        [
+          {
+            uuid: 'tick-attempt',
+            kilterId: null,
+            climbUuid: 'climb-1',
+            angle: 40,
+            climbedAt: '2026-05-01T12:00:20.000Z',
+            status: 'attempt',
+          },
+        ],
+      ],
+    });
+
+    const op = makeLogPutOp({
+      log_uuid: 'log-send',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+      topped: 1,
+      flashed: 0,
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    // Adoption UPDATE, no insert.
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
+    expect(insertValues).toHaveLength(0);
+  });
+
+  it('skips and logs a log_uuid already owned by a different Boardsesh user (duplicate Kilter account link)', async () => {
+    // The global kilter_id SELECT finds the incoming log under ANOTHER
+    // user. Inserting it would collide on the global unique index; adopting
+    // it would stamp a globally-taken kilter_id. It must be skipped-and-
+    // logged, never inserted/adopted. With the only op foreign, the
+    // natural-key candidate set is empty so the second SELECT never runs.
+    const { tx, calls, insertValues } = createTx({
+      selectResults: [[{ uuid: 'tick-other-user', kilterId: 'log-FOREIGN', ownerUserId: 'other-user' }]],
+    });
+
+    const op = makeLogPutOp({
+      log_uuid: 'log-FOREIGN',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
+    expect(insertValues).toHaveLength(0);
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const message = logSpy.mock.calls[0]?.[0] as string;
+    expect(message).toContain('different Boardsesh user');
+    expect(message).toContain('log-FOREIGN');
   });
 });
 
