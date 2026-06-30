@@ -308,7 +308,7 @@ Same loop shape as aurora-sync's daemon: one user per cycle, random 1–15 min j
 
 The split exists because the error classifier fails open — a non-`KilterApiError` (a DB error, a bug) is treated transient. If the scheduler ordered by `last_sync_at` and we never advanced anything on failure, a credential that fails deterministically would keep its `NULL`/old timestamp and be re-selected first every cycle, monopolising the single-user-per-cycle queue and starving everyone else. Advancing `last_sync_attempt_at` on every outcome rotates a failing credential to the back while keeping `last_sync_at` honest; it still retries on its next turn. No data is lost: `last_sync_attempt_at` is a scheduling key, never a data cursor — each cycle re-pulls the full snapshot idempotently, so a failed cycle's rows land on the next successful turn.
 
-(aurora-sync still orders by `last_sync_at` and has the same latent starvation gap — adopting this attempt clock there is a follow-up.)
+(aurora-sync still orders by `last_sync_at` and has the same latent starvation gap — adopting this attempt clock there is tracked in [#3331](https://github.com/boardsesh/boardsesh/issues/3331). The `last_sync_attempt_at` column and its index already cover aurora-sync's query shape; only its runner needs updating.)
 
 The daemon loop primitives (`resolveDaemonOptions`, `runDaemonLoop`, quiet-hours math) live in the neutral `@boardsesh/sync-runtime` package; both aurora-sync and kilter-sync consume them. Only the per-cycle work differs.
 

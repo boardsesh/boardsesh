@@ -528,7 +528,10 @@ export async function applyLogs(
   // (a) One GLOBAL SELECT (deliberately NOT user-scoped) to find ticks
   // already present by kilter_id. boardsesh_ticks_kilter_id_unique is a
   // GLOBAL unique index, so a given kilter_id lives on at most one row
-  // table-wide. Partition the hits by owner:
+  // table-wide. Efficiency depends on that index being on `kilter_id`
+  // ALONE (not a composite): the IN-list probe is index-served and returns
+  // ≤1 row per kilter_id, so dropping the user_id filter doesn't turn this
+  // into a scan. Partition the hits by owner:
   //   - same user  → kilterIdMap, the idempotent re-sync UPDATE path.
   //   - other user → foreignKilterIds. The same Kilter account is linked
   //     to two Boardsesh accounts (duplicate-account / "linked but empty"

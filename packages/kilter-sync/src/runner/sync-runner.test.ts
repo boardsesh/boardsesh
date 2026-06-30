@@ -142,8 +142,8 @@ describe('SyncRunner.syncNextUser', () => {
       syncStatus: 'active',
       syncError: null,
     });
-    expect(activeUpdate?.set.lastSyncAt).toBeDefined();
-    expect(activeUpdate?.set.lastSyncAttemptAt).toBeDefined();
+    expect(activeUpdate?.set.lastSyncAt).toBeInstanceOf(Date);
+    expect(activeUpdate?.set.lastSyncAttemptAt).toBeInstanceOf(Date);
   });
 
   it('transient error leaves syncStatus untouched and reports failure', async () => {
@@ -172,11 +172,11 @@ describe('SyncRunner.syncNextUser', () => {
     });
     // No syncStatus write — transient errors leave the credential alone.
     expect(updates.find((u) => u.set.syncStatus !== undefined)).toBeUndefined();
-    // last_sync_attempt_at IS stamped so the credential rotates to the back
-    // of the `last_sync_attempt_at ASC NULLS FIRST` queue instead of
-    // monopolising it — but last_sync_at (the user-facing "last successful
-    // sync") must NOT advance on a failed cycle.
-    expect(updates.find((u) => u.set.lastSyncAttemptAt !== undefined)).toBeDefined();
+    // last_sync_attempt_at IS stamped (with a real Date — not null) so the
+    // credential rotates to the back of the `last_sync_attempt_at ASC NULLS
+    // FIRST` queue instead of monopolising it — but last_sync_at (the
+    // user-facing "last successful sync") must NOT advance on a failed cycle.
+    expect(updates.find((u) => u.set.lastSyncAttemptAt !== undefined)?.set.lastSyncAttemptAt).toBeInstanceOf(Date);
     expect(updates.find((u) => u.set.lastSyncAt !== undefined)).toBeUndefined();
     expect(onError).toHaveBeenCalledTimes(1);
   });
@@ -208,7 +208,7 @@ describe('SyncRunner.syncNextUser', () => {
 
     expect(summary.failed).toBe(1);
     expect(updates.find((u) => u.set.syncStatus !== undefined)).toBeUndefined();
-    expect(updates.find((u) => u.set.lastSyncAttemptAt !== undefined)).toBeDefined();
+    expect(updates.find((u) => u.set.lastSyncAttemptAt !== undefined)?.set.lastSyncAttemptAt).toBeInstanceOf(Date);
     expect(updates.find((u) => u.set.lastSyncAt !== undefined)).toBeUndefined();
   });
 
@@ -230,7 +230,7 @@ describe('SyncRunner.syncNextUser', () => {
     expect(summary.failed).toBe(1);
     const errorUpdate = updates.find((u) => u.set.syncStatus === 'error');
     expect(errorUpdate?.set).toMatchObject({ syncStatus: 'error', syncError: 'something broke' });
-    expect(errorUpdate?.set.lastSyncAttemptAt).toBeDefined();
+    expect(errorUpdate?.set.lastSyncAttemptAt).toBeInstanceOf(Date);
     expect(errorUpdate?.set.lastSyncAt).toBeUndefined();
   });
 
