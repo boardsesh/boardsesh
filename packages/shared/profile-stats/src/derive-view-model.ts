@@ -7,6 +7,11 @@ import {
   buildStatisticsSummary,
   buildVPointsTimeline,
   buildActivityHeatmap,
+  buildWeeklyStreak,
+  buildProjectingStats,
+  buildActiveDaysMoM,
+  buildLastSendGap,
+  buildBenchmarkSummary,
 } from './chart-builders';
 import { getDifficultyMapping } from './grade-mapping';
 import type {
@@ -20,6 +25,11 @@ import type {
   RawStatisticsSummary,
   RawGradeHighlight,
   RawActivityHeatmap,
+  RawStreaks,
+  RawProjectingStats,
+  RawActiveDaysDelta,
+  RawLastSendGap,
+  RawBenchmarkSummary,
 } from './types';
 
 export type DeriveProfileViewModelInput = {
@@ -47,6 +57,13 @@ export type ProfileViewModel = {
   activityHeatmap: RawActivityHeatmap | null;
   hardestSend: RawGradeHighlight | null;
   hardestFlash: RawGradeHighlight | null;
+  // ── Dashboard metrics (redesigned Progress tab). Scoped to the active
+  // board + timeframe via `filteredLogbook`, same as the heatmap/weekly bars.
+  streaks: RawStreaks;
+  projectingStats: RawProjectingStats;
+  activeDaysDelta: RawActiveDaysDelta;
+  lastSendGap: RawLastSendGap;
+  benchmarkSummary: RawBenchmarkSummary;
 };
 
 /**
@@ -95,6 +112,18 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
 
   const { hardestSend, hardestFlash } = computeHardest(filteredBoardsTicks, gradeFormat);
 
+  // Dashboard hero + glance metrics are lifetime identity stats: scoped to the
+  // selected board but NOT the timeframe (same as `hardestSend` above), so the
+  // timeframe filter only narrows the detailed charts below — not "best streak
+  // ever" or "benchmarks sent". Avoids the mixed-scope confusion of an all-time
+  // hardest send sitting next to a timeframe-capped streak.
+  const boardScopedTicks = Object.values(filteredBoardsTicks).flat();
+  const streaks = buildWeeklyStreak(boardScopedTicks);
+  const projectingStats = buildProjectingStats(boardScopedTicks, gradeFormat);
+  const activeDaysDelta = buildActiveDaysMoM(boardScopedTicks);
+  const lastSendGap = buildLastSendGap(boardScopedTicks);
+  const benchmarkSummary = buildBenchmarkSummary(boardScopedTicks, gradeFormat);
+
   return {
     filteredLogbook,
     weeklyBars,
@@ -105,6 +134,11 @@ export function deriveProfileViewModel(input: DeriveProfileViewModelInput): Prof
     activityHeatmap,
     hardestSend,
     hardestFlash,
+    streaks,
+    projectingStats,
+    activeDaysDelta,
+    lastSendGap,
+    benchmarkSummary,
   };
 }
 

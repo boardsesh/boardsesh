@@ -19,6 +19,13 @@ import type {
   RawLayoutPercentage,
   RawActivityDay,
   RawActivityHeatmap,
+  RawStreaks,
+  RawProjectingStats,
+  RawProjectingBucket,
+  RawBiggestProject,
+  RawActiveDaysDelta,
+  RawLastSendGap,
+  RawBenchmarkSummary,
 } from './types';
 
 dayjs.extend(isoWeek);
@@ -505,5 +512,227 @@ export function buildActivityHeatmap(
     maxCount,
     startDate: gridStart.format('YYYY-MM-DD'),
     endDate: gridEnd.format('YYYY-MM-DD'),
+  };
+}
+
+// ── Weekly streak ───────────────────────────────────────────────────
+
+/**
+ * "Don't break the chain" weekly streak. An active week is any ISO week with at
+ * least one logged tick (attempts included — showing up counts, same rule as
+ * the activity heatmap). `currentWeeks` counts the run ending at the most recent
+ * active week, but lapses to 0 once that week is older than last week so a stale
+ * streak never lingers on the hero. `today` is injectable for deterministic
+ * tests (matches `buildActivityHeatmap`).
+ */
+export function buildWeeklyStreak(filteredLogbook: LogbookEntry[], today: dayjs.Dayjs = dayjs()): RawStreaks {
+  if (filteredLogbook.length === 0) {
+    return { currentWeeks: 0, longestWeeks: 0, isCurrentWeekActive: false };
+  }
+
+  // Distinct active-week starts (ISO Monday), ascending. Dedup by date string
+  // so two ticks in the same week collapse to one entry.
+  const weekStartKeys = new Set<string>();
+  for (const entry of filteredLogbook) {
+    weekStartKeys.add(parseTickTime(entry.climbed_at).startOf('isoWeek').format('YYYY-MM-DD'));
+  }
+  const weekStarts = Array.from(weekStartKeys)
+    .map((d) => dayjs(d))
+    .sort((a, b) => a.valueOf() - b.valueOf());
+
+  // `run` tracks the current consecutive-week run; because weekStarts is sorted
+  // ascending, its value after the loop IS the run ending at the most recent
+  // active week. `longestWeeks` is the max run seen.
+  let longestWeeks = 1;
+  let run = 1;
+  for (let i = 1; i < weekStarts.length; i++) {
+    const consecutive = weekStarts[i].isSame(weekStarts[i - 1].add(1, 'week'), 'day');
+    run = consecutive ? run + 1 : 1;
+    if (run > longestWeeks) longestWeeks = run;
+  }
+
+  const currentWeekStart = today.startOf('isoWeek');
+  const lastActive = weekStarts[weekStarts.length - 1];
+  const isCurrentWeekActive = lastActive.isSame(currentWeekStart, 'day');
+  // Grace: a streak is still "current" through the following week (you have
+  // until Sunday to keep it alive), so don't zero it out mid-week.
+  const withinGrace = isCurrentWeekActive || lastActive.isSame(currentWeekStart.subtract(1, 'week'), 'day');
+
+  return {
+    currentWeeks: withinGrace ? run : 0,
+    longestWeeks,
+    isCurrentWeekActive,
+  };
+}
+
+// ── Projecting (tries-to-send) ──────────────────────────────────────
+
+function projectingBucketKey(tries: number): RawProjectingBucket['key'] {
+  if (tries <= 1) return '1';
+  if (tries <= 5) return '2-5';
+  if (tries <= 20) return '6-20';
+  return '20+';
+}
+
+const PROJECTING_BUCKET_LABELS: Record<RawProjectingBucket['key'], string> = {
+  '1': '1',
+  '2-5': '2–5',
+  '6-20': '6–20',
+  '20+': '20+',
+};
+
+/**
+ * Tries-to-send histogram + the biggest fight. Scoped to sent climbs only
+ * (`status` send|flash) so the headline copy ("{n}-try send") and the unlock
+ * gate can never describe an unsent project — attempts carry high `tries` but
+ * were never sent. `unlocked` is true once the hardest-won send took ≥4 tries.
+ */
+export function buildProjectingStats(
+  filteredLogbook: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): RawProjectingStats {
+  const mapping = getDifficultyMapping(gradeFormat);
+  const counts: Record<RawProjectingBucket['key'], number> = { '1': 0, '2-5': 0, '6-20': 0, '20+': 0 };
+  let biggestProject: RawBiggestProject | null = null;
+
+  for (const entry of filteredLogbook) {
+    if (entry.status !== 'send' && entry.status !== 'flash') continue;
+    const tries = Math.max(entry.tries ?? 1, 1);
+    counts[projectingBucketKey(tries)] += 1;
+    if (biggestProject == null || tries > biggestProject.tries) {
+      const gradeId = gradeIdForEntry(entry);
+      biggestProject = {
+        climbUuid: entry.climbUuid ?? null,
+        tries,
+        difficulty: gradeId,
+        label: gradeId != null ? (mapping[gradeId] ?? `${gradeId}`) : '',
+      };
+    }
+  }
+
+  const buckets: RawProjectingBucket[] = (Object.keys(counts) as RawProjectingBucket['key'][]).map((key) => ({
+    key,
+    label: PROJECTING_BUCKET_LABELS[key],
+    value: counts[key],
+  }));
+
+  return {
+    buckets,
+    biggestProject,
+    unlocked: biggestProject != null && biggestProject.tries >= 4,
+  };
+}
+
+// ── Active days month-over-month ────────────────────────────────────
+
+/**
+ * Distinct active calendar days this month vs last, plus a trailing 6-month
+ * sparkline (oldest→newest, including the current month). Reframes the
+ * demotivating "1 session/week" average around showing up. `today` injectable.
+ */
+export function buildActiveDaysMoM(filteredLogbook: LogbookEntry[], today: dayjs.Dayjs = dayjs()): RawActiveDaysDelta {
+  const daysByMonth = new Map<string, Set<string>>();
+  for (const entry of filteredLogbook) {
+    const d = parseTickTime(entry.climbed_at);
+    const monthKey = d.format('YYYY-MM');
+    const dayKey = d.format('YYYY-MM-DD');
+    let set = daysByMonth.get(monthKey);
+    if (!set) {
+      set = new Set<string>();
+      daysByMonth.set(monthKey, set);
+    }
+    set.add(dayKey);
+  }
+
+  const activeDaysIn = (month: dayjs.Dayjs): number => daysByMonth.get(month.format('YYYY-MM'))?.size ?? 0;
+
+  const thisMonth = activeDaysIn(today);
+  const lastMonth = activeDaysIn(today.subtract(1, 'month'));
+
+  // Trailing 6 months, oldest→newest.
+  const sparkline: number[] = [];
+  for (let i = 5; i >= 0; i--) {
+    sparkline.push(activeDaysIn(today.subtract(i, 'month')));
+  }
+
+  return { thisMonth, lastMonth, delta: thisMonth - lastMonth, sparkline };
+}
+
+// ── Last-send gap / comeback ────────────────────────────────────────
+
+/**
+ * Days since the most recent send and whether that send closed a long break —
+ * powers the hero's "12 days since your last send" line and the welcome-back
+ * badge. Comeback = the most recent send followed a gap of more than 30 days
+ * since the previous send. `today` injectable for tests.
+ */
+export function buildLastSendGap(filteredLogbook: LogbookEntry[], today: dayjs.Dayjs = dayjs()): RawLastSendGap {
+  const sends = filteredLogbook
+    .filter((entry) => entry.status === 'send' || entry.status === 'flash')
+    .sort((a, b) => tickTimeMs(b.climbed_at) - tickTimeMs(a.climbed_at));
+
+  if (sends.length === 0) {
+    return { daysSinceLastSend: null, lastSendAt: null, isComeback: false, comebackGapDays: null };
+  }
+
+  const lastSend = sends[0];
+  const daysSinceLastSend = Math.max(
+    0,
+    today.startOf('day').diff(parseTickTime(lastSend.climbed_at).startOf('day'), 'day'),
+  );
+
+  let comebackGapDays: number | null = null;
+  if (sends.length > 1) {
+    comebackGapDays = parseTickTime(lastSend.climbed_at)
+      .startOf('day')
+      .diff(parseTickTime(sends[1].climbed_at).startOf('day'), 'day');
+  }
+
+  return {
+    daysSinceLastSend,
+    lastSendAt: lastSend.climbed_at,
+    isComeback: comebackGapDays != null && comebackGapDays > 30,
+    comebackGapDays,
+  };
+}
+
+// ── Benchmarks sent ─────────────────────────────────────────────────
+
+/**
+ * Distinct benchmark climbs sent + the hardest among them. Uses the climb-level
+ * `isBenchmark` flag (sourced from the GraphQL `resolvedIsBenchmark` field, the
+ * same consensus resolution `userAscentsFeed` uses) — NOT the near-empty
+ * tick-level flag. Counts sent climbs only (send|flash) and dedups by climb.
+ */
+export function buildBenchmarkSummary(
+  filteredLogbook: LogbookEntry[],
+  gradeFormat: GradeDisplayFormat = 'v-grade',
+): RawBenchmarkSummary {
+  const mapping = getDifficultyMapping(gradeFormat);
+  const seen = new Set<string>();
+  let count = 0;
+  let hardestDifficulty: number | null = null;
+
+  for (const entry of filteredLogbook) {
+    if (!entry.isBenchmark) continue;
+    if (entry.status !== 'send' && entry.status !== 'flash') continue;
+    // Dedup by climb when we have a uuid; otherwise count the tick.
+    if (entry.climbUuid) {
+      if (seen.has(entry.climbUuid)) {
+        const gradeId = gradeIdForEntry(entry);
+        if (gradeId != null && (hardestDifficulty == null || gradeId > hardestDifficulty)) hardestDifficulty = gradeId;
+        continue;
+      }
+      seen.add(entry.climbUuid);
+    }
+    count += 1;
+    const gradeId = gradeIdForEntry(entry);
+    if (gradeId != null && (hardestDifficulty == null || gradeId > hardestDifficulty)) hardestDifficulty = gradeId;
+  }
+
+  return {
+    count,
+    hardestDifficulty,
+    hardestLabel: hardestDifficulty != null ? (mapping[hardestDifficulty] ?? `${hardestDifficulty}`) : null,
   };
 }

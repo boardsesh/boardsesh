@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { deriveProfileViewModel, type UnifiedTimeframeType } from '@boardsesh/profile-stats';
 import { useGradeFormat } from '../../../hooks/use-grade-format';
-import { useAllBoardsTicks, useUserProfileStats, useUserClimbPercentile } from './use-you-data';
+import { useAllBoardsTicks, useUserProfileStats } from './use-you-data';
 
 /**
  * Mobile counterpart of web's `useProfileData`. Fans out the per-board ticks +
@@ -27,7 +27,6 @@ export function useYouProfileData(userId: string | undefined) {
 
   const allBoardsTicksQuery = useAllBoardsTicks(userId);
   const profileStatsQuery = useUserProfileStats(userId);
-  const percentileQuery = useUserClimbPercentile(userId);
 
   const allBoardsTicks = useMemo(() => allBoardsTicksQuery.data ?? {}, [allBoardsTicksQuery.data]);
 
@@ -48,15 +47,14 @@ export function useYouProfileData(userId: string | undefined) {
   const refetch = useCallback(() => {
     void allBoardsTicksQuery.refetch();
     void profileStatsQuery.refetch();
-    void percentileQuery.refetch();
-  }, [allBoardsTicksQuery, profileStatsQuery, percentileQuery]);
+  }, [allBoardsTicksQuery, profileStatsQuery]);
 
   // `!userId` (the brief post-login window before useProfile resolves) counts
   // as loading so the Progress tab shows a spinner instead of flashing the
   // empty state, then the charts.
   const loading = !userId || allBoardsTicksQuery.isPending || profileStatsQuery.isPending;
 
-  const refreshing = allBoardsTicksQuery.isRefetching || profileStatsQuery.isRefetching || percentileQuery.isRefetching;
+  const refreshing = allBoardsTicksQuery.isRefetching || profileStatsQuery.isRefetching;
 
   const hasActiveFilters = timeframe !== 'all' || selectedBoard !== 'all';
 
@@ -64,7 +62,6 @@ export function useYouProfileData(userId: string | undefined) {
     loading,
     refreshing,
     refetch,
-    percentile: percentileQuery.data ?? null,
 
     // Filter state
     selectedBoard,

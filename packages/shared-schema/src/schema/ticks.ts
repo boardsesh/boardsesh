@@ -61,6 +61,10 @@ export const ticksTypeDefs = /* GraphQL */ `
     auroraSyncedAt: String
     "Layout ID when the climb was attempted"
     layoutId: Int
+    "Setter handle for the climb (from board_climbs.setter_username). Null unless populated by a read query that joins the climb."
+    setterUsername: String
+    "Climb-level benchmark resolution (consensus benchmark_difficulty OR the tick flag), matching userAscentsFeed. Distinct from the near-empty tick-level \`isBenchmark\`. Null unless populated by a read query that joins climb stats."
+    resolvedIsBenchmark: Boolean
     "Board entity ID if tick was associated with a board"
     boardId: Int
     # Social aggregates are only populated by read queries (e.g. \`ticks\`).

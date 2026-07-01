@@ -9,7 +9,9 @@ import { Card } from '../Card';
 import { SectionHeader } from '../SectionHeader';
 import { ActivityIndicator } from '../ActivityIndicator';
 import { ProfileBetaShelf } from './ProfileBetaShelf';
-import { StatsSummaryCard } from './StatsSummaryCard';
+import { HeroCeilingCard } from './HeroCeilingCard';
+import { ProgressControlBar } from './ProgressControlBar';
+import { ProgressGlanceGrid } from './ProgressGlanceGrid';
 import { StackedBarChart, GroupedBarChart, TotalAreaChart, type ChartLegendItem } from './YouCharts';
 import { ActivityHeatmap } from './ActivityHeatmap';
 import { LayoutShareDonut } from './LayoutShareDonut';
@@ -34,9 +36,19 @@ type ProgressTabProps = {
   /** Climber whose beta-video shelf to show above the stats. Omit to hide it
    *  (e.g. before the viewer's own id resolves). */
   userId?: string;
+  /** Whether the viewer is looking at their OWN profile. Drives second-person
+   *  hero copy ("your last send", "welcome back"); a stranger's profile gets the
+   *  neutral wording. Defaults to true (the own-profile tab). */
+  isSelf?: boolean;
 };
 
-export const ProgressTab = memo(function ProgressTab({ data, topInset, screenTitle, userId }: ProgressTabProps) {
+export const ProgressTab = memo(function ProgressTab({
+  data,
+  topInset,
+  screenTitle,
+  userId,
+  isSelf = true,
+}: ProgressTabProps) {
   const { t } = useTranslation('profile');
   const { t: tYou } = useTranslation('you');
   const { t: tCommon } = useTranslation('common');
@@ -65,6 +77,14 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, screenTit
     setRecordTipVisible(false);
     void markTipSeen(ONBOARDING_TIP_RECORD_KEY);
   }, []);
+
+  // Inline control-bar reset → back to all-time / all-boards (the setters are
+  // stable useState updaters, so this stays referentially stable).
+  const { setTimeframe, setSelectedBoard } = data;
+  const handleResetFilters = useCallback(() => {
+    setTimeframe('all');
+    setSelectedBoard('all');
+  }, [setTimeframe, setSelectedBoard]);
 
   // Legends so the layout-colored grade-distribution bars and the
   // flash-vs-redpoint pairs can be decoded (charts are color-only otherwise).
@@ -129,16 +149,43 @@ export const ProgressTab = memo(function ProgressTab({ data, topInset, screenTit
         </View>
       ) : (
         <>
-          <SectionHeader title={t('stats.summary')} />
-          <StatsSummaryCard
-            statisticsSummary={data.statisticsSummary}
+          {/* Grade-tinted hero: the climber's ceiling, streak, and where they
+              stand — the screenshot-worthy top of the page. */}
+          <HeroCeilingCard
             hardestSend={data.hardestSend}
-            hardestFlash={data.hardestFlash}
-            percentile={data.percentile}
+            streaks={data.streaks}
+            lastSendGap={data.lastSendGap}
+            totalAscents={totalAscents}
+            layoutPercentages={data.statisticsSummary.layoutPercentages}
+            isSelf={isSelf}
           />
 
-          {/* Recent beta videos shelf — sits below the stats summary, hidden when
-              the climber has shared none (or has no stats yet). */}
+          {/* Inline timeframe (+ board) filter — scopes every section below. */}
+          <View style={styles.controlBar}>
+            <ProgressControlBar
+              timeframe={data.timeframe}
+              onSelectTimeframe={setTimeframe}
+              selectedBoard={data.selectedBoard}
+              onSelectBoard={setSelectedBoard}
+              hasActiveFilters={data.hasActiveFilters}
+              onReset={handleResetFilters}
+              layoutPercentages={data.statisticsSummary.layoutPercentages}
+            />
+          </View>
+
+          {/* 2×2 trophy grid: streak · biggest fight · benchmarks · this month. */}
+          <View style={styles.glanceGrid}>
+            <ProgressGlanceGrid
+              streaks={data.streaks}
+              projectingStats={data.projectingStats}
+              benchmarkSummary={data.benchmarkSummary}
+              activeDaysDelta={data.activeDaysDelta}
+              totalAscents={totalAscents}
+            />
+          </View>
+
+          {/* Recent beta videos shelf — proven the most-tapped profile content,
+              so it sits right under the glance grid. Hidden when none shared. */}
           {userId ? <ProfileBetaShelf userId={userId} /> : null}
 
           {data.activityHeatmap && (
@@ -227,6 +274,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[2],
   },
   chartCard: { marginHorizontal: spacing[4] },
+  controlBar: { marginTop: spacing[4] },
+  glanceGrid: { marginTop: spacing[4] },
   tipInset: { marginHorizontal: spacing[4], marginBottom: spacing[3] },
   vpTotal: { marginBottom: spacing[2] },
   empty: {

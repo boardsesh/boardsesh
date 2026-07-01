@@ -13,6 +13,11 @@ export {
   buildVPointsTimeline,
   buildStatisticsSummary,
   buildActivityHeatmap,
+  buildWeeklyStreak,
+  buildProjectingStats,
+  buildActiveDaysMoM,
+  buildLastSendGap,
+  buildBenchmarkSummary,
 } from './chart-builders';
 export { difficultyMapping, getDifficultyMapping, sortGrades } from './grade-mapping';
 export {

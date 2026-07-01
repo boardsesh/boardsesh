@@ -181,10 +181,22 @@ export const tickQueries = {
     // `effectiveDifficulty` that COALESCEs with the climb's consensus grade
     // for chart-bucket / aggregation consumers. NULL difficulty means "use
     // consensus" — see docs/ascents-and-attempts.md.
+    // Climb-level benchmark resolution, identical to userAscentsFeed: a climb is
+    // a benchmark if it has a consensus benchmark grade OR the tick is flagged.
+    // Exposed as the NEW `resolvedIsBenchmark` field — the tick-level
+    // `isBenchmark` flag (below) is near-empty and left untouched for its
+    // existing consumers (SessionDetailTick, etc.).
+    const resolvedBenchmarkExpr = sql<boolean>`CASE
+      WHEN COALESCE(${dbSchema.boardClimbStats.benchmarkDifficulty}, 0) > 0 OR ${dbSchema.boardseshTicks.isBenchmark} = true THEN true
+      ELSE false
+    END`;
+
     const results = await db
       .select({
         tick: dbSchema.boardseshTicks,
         layoutId: dbSchema.boardClimbs.layoutId,
+        setterUsername: dbSchema.boardClimbs.setterUsername,
+        resolvedIsBenchmark: resolvedBenchmarkExpr,
         effectiveDifficulty: sql<
           number | null
         >`COALESCE(${dbSchema.boardseshTicks.difficulty}, ${consensusDifficultyExpr})`,
@@ -218,7 +230,7 @@ export const tickQueries = {
       .where(and(...conditions))
       .orderBy(desc(dbSchema.boardseshTicks.climbedAt));
 
-    return results.map(({ tick, layoutId, effectiveDifficulty }) => ({
+    return results.map(({ tick, layoutId, setterUsername, resolvedIsBenchmark, effectiveDifficulty }) => ({
       uuid: tick.uuid,
       userId: tick.userId,
       boardType: tick.boardType,
@@ -231,6 +243,7 @@ export const tickQueries = {
       difficulty: tick.difficulty,
       effectiveDifficulty,
       isBenchmark: tick.isBenchmark,
+      resolvedIsBenchmark: Boolean(resolvedIsBenchmark),
       comment: tick.comment,
       climbedAt: tick.climbedAt,
       createdAt: tick.createdAt,
@@ -240,6 +253,7 @@ export const tickQueries = {
       auroraId: tick.auroraId,
       auroraSyncedAt: tick.auroraSyncedAt,
       layoutId,
+      setterUsername,
     }));
   },
 
