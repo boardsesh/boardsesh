@@ -306,14 +306,22 @@ export class RNBleAdapter implements BluetoothAdapter {
     const chunkSize =
       this.scanFamily === 'moonboard' ? MAX_BLUETOOTH_MESSAGE_SIZE : effectiveChunkSizeForMtu(this.negotiatedMtu);
     const chunks = splitMessages(data, chunkSize);
+    // Aurora boards always use write-without-response (proven path; on some
+    // iOS versions the characteristic under-reports the property but still
+    // needs no-response). Only the original MoonBoard (RedBearLab) write
+    // characteristic — which advertises `.write` only — falls back to
+    // write-with-response, mirroring the native preferredWriteType gating.
+    // Android sends no-response writes regardless, so this only matters on
+    // Expo Go iOS. Decided once per write (the characteristic object never
+    // changes mid-write, only nulls on disconnect) so the dispatch below and
+    // the diagnostics report the same value by construction.
+    const usesWithoutResponse =
+      this.scanFamily !== 'moonboard' || (writeCharacteristic.isWritableWithoutResponse ?? true);
     // Every write through this adapter is JS-driven (Android has no
     // widget-intent write path), hence the fixed 'js' origin.
     this.lastWriteDiagnostics = {
       origin: 'js',
-      writeType:
-        this.scanFamily !== 'moonboard' || (writeCharacteristic.isWritableWithoutResponse ?? true)
-          ? 'withoutResponse'
-          : 'withResponse',
+      writeType: usesWithoutResponse ? 'withoutResponse' : 'withResponse',
       negotiatedMtu: this.negotiatedMtu,
       chunkSize,
       chunkCount: chunks.length,
@@ -341,17 +349,8 @@ export class RNBleAdapter implements BluetoothAdapter {
       const chunk = chunks[chunkIndex];
       const base64Chunk = uint8ArrayToBase64(chunk);
 
-      // Aurora boards always use write-without-response (proven path; on some
-      // iOS versions the characteristic under-reports the property but still
-      // needs no-response). Only the original MoonBoard (RedBearLab) write
-      // characteristic — which advertises `.write` only — falls back to
-      // write-with-response, mirroring the native preferredWriteType gating.
-      // Android sends no-response writes regardless, so this only matters on
-      // Expo Go iOS.
-      const useWithoutResponse = this.scanFamily !== 'moonboard' || (characteristic.isWritableWithoutResponse ?? true);
-
       try {
-        if (useWithoutResponse) {
+        if (usesWithoutResponse) {
           await characteristic.writeWithoutResponse(base64Chunk);
         } else {
           await characteristic.writeWithResponse(base64Chunk);

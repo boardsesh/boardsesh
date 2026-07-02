@@ -29,9 +29,10 @@ public class BoardBleModule: Module {
     /// and JS fetches it via `getLastWriteDiagnostics` right after the reject.
     /// Native-origin writes (widget intents) never route through this module's
     /// `write`, so they can't overwrite a failure JS is about to fetch.
-    /// Guarded by `bufferQueue`, which is safe to enter synchronously from the
-    /// BLE queue (the write completion's context): `bufferQueue` blocks only
-    /// touch this module's own state and never dispatch onto `bleQueue`.
+    /// Guarded by `bufferQueue`. The write completion (on the BLE queue)
+    /// stashes with `bufferQueue.async` so the BLE queue never blocks on this
+    /// queue; the serial FIFO still orders that stash before any
+    /// `getLastWriteDiagnostics` read that follows the promise rejection.
     private var lastFailedWriteDiagnostics: [String: Any]?
 
     public func definition() -> ModuleDefinition {
@@ -131,7 +132,13 @@ public class BoardBleModule: Module {
             BoardBleManager.shared.write(hex: value) { error, telemetry in
                 if let error {
                     self.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
-                    self.bufferQueue.sync {
+                    // async, not sync: this completion runs on the BLE queue and
+                    // must never block on another queue. Ordering is still
+                    // guaranteed — the stash block is enqueued on the serial
+                    // bufferQueue before the reject reaches JS, so a subsequent
+                    // getLastWriteDiagnostics read (also on bufferQueue) runs
+                    // after it.
+                    self.bufferQueue.async {
                         self.lastFailedWriteDiagnostics = telemetry?.analyticsDictionary
                     }
                     promise.reject("BLE_WRITE_FAILED", error.localizedDescription)

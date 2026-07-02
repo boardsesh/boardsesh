@@ -331,6 +331,10 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     }
   }
 
+  // Unlike the native module's stash (clear-on-read, one failure exactly),
+  // this adapter-level copy deliberately persists until the next write
+  // settles: one settle can feed several consumers (the success/failure
+  // analytics event and the Sentry report), so reads must not consume it.
   async getLastWriteDiagnostics(): Promise<BleWriteDiagnostics | null> {
     return this.lastWriteDiagnostics;
   }
