@@ -38,6 +38,10 @@ vi.mock('@boardsesh/ble-protocol', () => ({
   REDBEARLAB_SERVICE_UUID: 'redbearlab-uuid',
   REDBEARLAB_WRITE_CHARACTERISTIC_UUID: 'redbearlab-write-uuid',
   splitMessages: vi.fn((passedData: Uint8Array) => [passedData]),
+  // Real chunk-sizing maths so the #3230 assertions (mtu 247 → 244, fallback
+  // 23 → 20) exercise the actual clamp the adapter passes to splitMessages.
+  MAX_BLUETOOTH_MESSAGE_SIZE: 20,
+  effectiveChunkSizeForMtu: (mtu: number) => Math.min(Math.max(mtu - 3, 20), 244),
   INTER_CHUNK_DELAY_MS: 0,
   parseSerialNumber: vi.fn(),
 }));
@@ -80,16 +84,58 @@ function setupConnectableAdapter(
   const mockDeviceWithServices = {
     id: deviceId,
     characteristicsForService,
-    requestMTU: vi.fn().mockResolvedValue(undefined),
+    requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
     discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
   };
   mockBleManager.connectToDevice.mockResolvedValue({
     id: deviceId,
-    requestMTU: vi.fn().mockResolvedValue(undefined),
+    requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
     discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
   });
 
   return new RNBleAdapter(() => Promise.resolve(deviceId), family);
+}
+
+// Connects a single board the way setupConnectableAdapter does, but hands back
+// the requestMTU + write mock fns so the #3230 MTU/chunking tests can control
+// negotiation and assert on the chunk size. `connectedDeviceMtu` is the value
+// read on the requestMTU-rejection fallback (`connected.mtu`).
+function setupWriteDiagnosticsAdapter(
+  family: BoardScanFamily,
+  requestMtuFn: ReturnType<typeof vi.fn>,
+  connectedDeviceMtu?: number,
+): { adapter: RNBleAdapter; requestMtuFn: ReturnType<typeof vi.fn>; writeFn: ReturnType<typeof vi.fn> } {
+  const deviceId = `write-diag-${family}-device`;
+  const writeFn = vi.fn().mockResolvedValue(undefined);
+  const characteristic = {
+    uuid: 'uart-write-uuid',
+    isWritableWithoutResponse: true,
+    writeWithoutResponse: writeFn,
+    writeWithResponse: vi.fn().mockResolvedValue(undefined),
+  };
+  const mockDeviceWithServices = {
+    id: deviceId,
+    characteristicsForService: vi.fn().mockResolvedValue([characteristic]),
+    requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
+    discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
+  };
+  mockBleManager.connectToDevice.mockResolvedValue({
+    id: deviceId,
+    mtu: connectedDeviceMtu,
+    requestMTU: requestMtuFn,
+    discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
+  });
+  mockBleManager.onDeviceDisconnected.mockReturnValue({ remove: vi.fn() });
+
+  const scanName = family === 'aurora' ? 'Kilter Board#TEST@3' : 'MoonBoard A1';
+  const serviceUUIDs = family === 'aurora' ? ['aurora-uuid'] : undefined;
+  mockBleManager.startDeviceScan.mockImplementation(
+    (_uuids: unknown, _opts: unknown, callback: (error: unknown, device: unknown) => void) => {
+      callback(null, { id: deviceId, localName: scanName, name: scanName, rssi: -40, serviceUUIDs });
+    },
+  );
+
+  return { adapter: new RNBleAdapter(() => Promise.resolve(deviceId), family), requestMtuFn, writeFn };
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────
@@ -189,13 +235,13 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'test-device-id',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
 
       const mockConnectedDevice = {
         id: 'test-device-id',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       };
 
@@ -251,13 +297,13 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'device-1',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
 
       const mockConnectedDevice = {
         id: 'device-1',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       };
 
@@ -298,13 +344,13 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'write-device',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
 
       const mockConnectedDevice = {
         id: 'write-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       };
 
@@ -331,7 +377,8 @@ describe('RNBleAdapter', () => {
 
       await adapter.write(testData);
 
-      expect(splitMessages).toHaveBeenCalledWith(testData);
+      // Aurora chunk size comes from the negotiated ATT MTU (247 → 244), #3230.
+      expect(splitMessages).toHaveBeenCalledWith(testData, 244);
       expect(mockWriteFn).toHaveBeenCalledOnce();
       // The written value should be base64-encoded
       expect(mockWriteFn).toHaveBeenCalledWith(expect.stringMatching(/^[A-Za-z0-9+/=]+$/));
@@ -347,13 +394,13 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'chunk-device',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
 
       const mockConnectedDevice = {
         id: 'chunk-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       };
 
@@ -401,13 +448,13 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'abort-device',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
 
       const mockConnectedDevice = {
         id: 'abort-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       };
 
@@ -457,13 +504,13 @@ describe('RNBleAdapter', () => {
         const mockDeviceWithServices = {
           id: 'abort-delay-device',
           characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-          requestMTU: vi.fn().mockResolvedValue(undefined),
+          requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
           discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
         };
 
         const mockConnectedDevice = {
           id: 'abort-delay-device',
-          requestMTU: vi.fn().mockResolvedValue(undefined),
+          requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
           discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
         };
 
@@ -519,12 +566,12 @@ describe('RNBleAdapter', () => {
         id: 'drop-device',
         isConnected: isConnectedFn,
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
       const mockConnectedDevice = {
         id: 'drop-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       };
 
@@ -564,12 +611,12 @@ describe('RNBleAdapter', () => {
         id: 'live-device',
         isConnected: isConnectedFn,
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
       const mockConnectedDevice = {
         id: 'live-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       };
 
@@ -623,12 +670,12 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'moon-device',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
       mockBleManager.connectToDevice.mockResolvedValue({
         id: 'moon-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       });
 
@@ -667,12 +714,12 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'kilter-device',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
       mockBleManager.connectToDevice.mockResolvedValue({
         id: 'kilter-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       });
 
@@ -716,12 +763,12 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'second-native-id',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
       mockBleManager.connectToDevice.mockResolvedValue({
         id: 'second-native-id',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       });
 
@@ -765,12 +812,12 @@ describe('RNBleAdapter', () => {
       const mockDeviceWithServices = {
         id: 'late-name-device',
         characteristicsForService: vi.fn().mockResolvedValue([mockCharacteristic]),
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnThis(),
       };
       mockBleManager.connectToDevice.mockResolvedValue({
         id: 'late-name-device',
-        requestMTU: vi.fn().mockResolvedValue(undefined),
+        requestMTU: vi.fn().mockResolvedValue({ mtu: 247 }),
         discoverAllServicesAndCharacteristics: vi.fn().mockReturnValue(mockDeviceWithServices),
       });
 
@@ -1149,6 +1196,70 @@ describe('RNBleAdapter', () => {
       // Family gate wins over the characteristic's reported property.
       expect(characteristic.writeWithoutResponse).toHaveBeenCalledOnce();
       expect(characteristic.writeWithResponse).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('write — MTU-sized chunking and diagnostics (#3230)', () => {
+    it('requests ATT MTU 247 on connect (below the iOS-26.5 ATT-512 cliff)', async () => {
+      const requestMtuFn = vi.fn().mockResolvedValue({ mtu: 247 });
+      const { adapter } = setupWriteDiagnosticsAdapter('aurora', requestMtuFn);
+
+      await adapter.requestAndConnect();
+
+      expect(requestMtuFn).toHaveBeenCalledWith(247);
+    });
+
+    it('sizes Aurora write chunks from the negotiated MTU (247 → 244)', async () => {
+      const { adapter } = setupWriteDiagnosticsAdapter('aurora', vi.fn().mockResolvedValue({ mtu: 247 }));
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(splitMessages).toHaveBeenCalledWith(data, 244);
+    });
+
+    it('keeps MoonBoard writes on the proven 20-byte chunks regardless of MTU', async () => {
+      const { adapter } = setupWriteDiagnosticsAdapter('moonboard', vi.fn().mockResolvedValue({ mtu: 247 }));
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(splitMessages).toHaveBeenCalledWith(data, 20);
+    });
+
+    it('falls back to the default ATT chunk (20) when MTU negotiation rejects', async () => {
+      // requestMTU rejects → negotiatedMtu = connected.mtu (23) → chunk clamps to 20.
+      const { adapter } = setupWriteDiagnosticsAdapter(
+        'aurora',
+        vi.fn().mockRejectedValue(new Error('MTU negotiation failed')),
+        23,
+      );
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01]);
+      vi.mocked(splitMessages).mockReturnValue([data]);
+      await adapter.write(data);
+
+      expect(splitMessages).toHaveBeenCalledWith(data, 20);
+    });
+
+    it('exposes the last write MTU, chunk size and chunk count via getLastWriteDiagnostics', async () => {
+      const { adapter } = setupWriteDiagnosticsAdapter('aurora', vi.fn().mockResolvedValue({ mtu: 247 }));
+      await adapter.requestAndConnect();
+
+      const data = new Uint8Array([0x01, 0x02]);
+      vi.mocked(splitMessages).mockReturnValue([new Uint8Array([0x01]), new Uint8Array([0x02])]);
+      await adapter.write(data);
+
+      await expect(adapter.getLastWriteDiagnostics()).resolves.toEqual({
+        negotiatedMtu: 247,
+        chunkSize: 244,
+        chunkCount: 2,
+      });
     });
   });
 });

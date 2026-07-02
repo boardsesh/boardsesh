@@ -19,7 +19,20 @@ export const REDBEARLAB_WRITE_CHARACTERISTIC_UUID = '713d0003-503e-4c75-ba94-314
 
 export const INTER_CHUNK_DELAY_MS = 5;
 
-export const splitMessages = (buffer: Uint8Array) =>
-  Array.from({ length: Math.ceil(buffer.length / MAX_BLUETOOTH_MESSAGE_SIZE) }, (_, i) =>
-    buffer.slice(i * MAX_BLUETOOTH_MESSAGE_SIZE, (i + 1) * MAX_BLUETOOTH_MESSAGE_SIZE),
+// Ceiling for MTU-sized chunks: ATT 247 minus the 3-byte write header. iOS-26.5
+// telemetry (#3230) shows failures clustering at the full ATT 512 while ATT
+// ≤255 is clean in the field, so a negotiated maximum is never passed through
+// unclamped. Lockstep with `BoardBleEncoding.maxAttChunkSize` in
+// packages/mobile/modules/live-activity/ios/BoardBleEncoding.swift.
+export const MAX_ATT_CHUNK_SIZE = 244;
+
+// Chunk size for a negotiated ATT MTU (`mtu - 3` write-header bytes), clamped
+// to [MAX_BLUETOOTH_MESSAGE_SIZE, MAX_ATT_CHUNK_SIZE]. Chunking is a transport
+// detail — framing is byte-identical at any size (#3230).
+export const effectiveChunkSizeForMtu = (mtu: number) =>
+  Math.min(Math.max(mtu - 3, MAX_BLUETOOTH_MESSAGE_SIZE), MAX_ATT_CHUNK_SIZE);
+
+export const splitMessages = (buffer: Uint8Array, chunkSize: number = MAX_BLUETOOTH_MESSAGE_SIZE) =>
+  Array.from({ length: Math.ceil(buffer.length / chunkSize) }, (_, i) =>
+    buffer.slice(i * chunkSize, (i + 1) * chunkSize),
   );

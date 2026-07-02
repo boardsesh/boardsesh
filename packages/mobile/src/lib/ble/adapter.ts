@@ -6,7 +6,9 @@ import {
   REDBEARLAB_SERVICE_UUID,
   REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
   splitMessages,
+  effectiveChunkSizeForMtu,
   INTER_CHUNK_DELAY_MS,
+  MAX_BLUETOOTH_MESSAGE_SIZE,
   parseSerialNumber,
 } from '@boardsesh/ble-protocol';
 import { bleManager } from './ble-manager';
@@ -17,6 +19,7 @@ import type {
   BluetoothAdapter,
   BleConnection,
   BleDisconnectInfo,
+  BleWriteDiagnostics,
   BoardScanFamily,
   DevicePickerFn,
   DiscoveredDevice,
@@ -24,6 +27,13 @@ import type {
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 
 const CONNECTION_TIMEOUT_MS = 12_000;
+
+// The ATT MTU requested after connect. 247 (chunk 244) is the DLE-friendly
+// sweet spot: the iOS-26.5 failure cohort clusters at ATT 512 (#3230), so
+// don't ask for more than we'd ever write. The default ATT 23 (chunk 20) is
+// the fallback when negotiation fails.
+const REQUESTED_ATT_MTU = 247;
+const DEFAULT_ATT_MTU = 23;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -52,6 +62,10 @@ export class RNBleAdapter implements BluetoothAdapter {
   private writeCharacteristic: Characteristic | null = null;
   private disconnectCallback: ((info?: BleDisconnectInfo) => void) | null = null;
   private disconnectSubscription: { remove: () => void } | null = null;
+  // Negotiated ATT MTU for the current connection; sizes write chunks (#3230).
+  private negotiatedMtu = DEFAULT_ATT_MTU;
+  // Transport diagnostics of the most recently settled write, for analytics.
+  private lastWriteDiagnostics: BleWriteDiagnostics | null = null;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
@@ -209,10 +223,15 @@ export class RNBleAdapter implements BluetoothAdapter {
 
     // Negotiate MTU before service discovery (Android requires this order
     // for best results; iOS handles MTU automatically but the call is safe).
+    // The negotiated value sizes write chunks below — fewer, larger writes
+    // per climb, mirroring the native iOS path and the official Kilter app
+    // (#3230).
     try {
-      await connected.requestMTU(512);
+      const negotiated = await connected.requestMTU(REQUESTED_ATT_MTU);
+      this.negotiatedMtu = negotiated.mtu || DEFAULT_ATT_MTU;
     } catch {
-      // Fall back to default MTU (23 bytes, 20 usable) — splitMessages handles chunking.
+      // Negotiation failed — fall back to the default ATT 23 (20 usable).
+      this.negotiatedMtu = connected.mtu || DEFAULT_ATT_MTU;
     }
 
     const deviceWithServices = await connected.discoverAllServicesAndCharacteristics();
@@ -278,7 +297,17 @@ export class RNBleAdapter implements BluetoothAdapter {
       throw new Error('Not connected');
     }
 
-    const chunks = splitMessages(data);
+    // Aurora chunks are sized from the negotiated MTU (clamped well below the
+    // ATT-512 cliff, see #3230). Both MoonBoard generations stay on the proven
+    // 20-byte chunks, mirroring the native iOS effectiveChunkSize gating.
+    const chunkSize =
+      this.scanFamily === 'moonboard' ? MAX_BLUETOOTH_MESSAGE_SIZE : effectiveChunkSizeForMtu(this.negotiatedMtu);
+    const chunks = splitMessages(data, chunkSize);
+    this.lastWriteDiagnostics = {
+      negotiatedMtu: this.negotiatedMtu,
+      chunkSize,
+      chunkCount: chunks.length,
+    };
 
     for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
       if (signal?.aborted) {
@@ -340,6 +369,12 @@ export class RNBleAdapter implements BluetoothAdapter {
     return () => {
       this.disconnectCallback = null;
     };
+  }
+
+  // ble-plx can't observe CoreBluetooth-style flow control, so this only
+  // carries the MTU/chunking story; the park/resume fields are iOS-native-only.
+  async getLastWriteDiagnostics(): Promise<BleWriteDiagnostics | null> {
+    return this.lastWriteDiagnostics;
   }
 }
 
