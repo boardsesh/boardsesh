@@ -92,6 +92,7 @@ const boardConfig = {
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
+  useWindowDimensions: () => ({ width: 390, height: 844 }),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled }: PressableProps) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;

@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
 import {
   View,
+  Platform,
   Pressable,
   StyleSheet,
+  useWindowDimensions,
   type ViewStyle,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -91,6 +93,11 @@ const STATUS_OPTIONS_UI = ['any', 'drafts', 'projects'] as const;
 // status into one control. undefined = Any; 2 = Established (≥2 ascents).
 const POPULARITY_BUCKETS: ReadonlyArray<number | undefined> = [undefined, 2, 10, 100, 1000];
 const PREWARM_BOARD_HOLDS_AFTER_REFINE_EXPAND_MS = 150;
+
+// One source of truth for the sheet's native detent and the iOS JS-side height
+// bound derived from it (see sheetColumnStyle).
+const SHEET_DETENT_FRACTION = 0.9;
+const SHEET_TOP_CHROME_PT = 20;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -223,7 +230,24 @@ export function ClimbFilterSheet({
     };
   }, []);
 
-  const snapPoints = useMemo(() => androidSafeSnapPoints(['90%']), []);
+  const snapPoints = useMemo(() => androidSafeSnapPoints([`${SHEET_DETENT_FRACTION * 100}%`]), []);
+  // iOS cannot be trusted to bound the sheet's flex column: SwiftUI can propose
+  // an unbounded height to the RN host, so a flex:1 column sizes to its CONTENT
+  // and anything past the detent (the pinned Apply footer) lands off-screen
+  // (#3330 — reproduced on-device even on a freshly mounted host). Pin the
+  // column to the detent height computed JS-side instead. `.fraction` detents
+  // resolve against the sheet's maximum height (window minus the top safe
+  // area); the extra SHEET_TOP_CHROME_PT covers the wrapper's drag-indicator
+  // padding, erring short — a few spare points below the footer beat a clipped
+  // footer. Android bounds the column natively, so it keeps flex:1.
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetColumnStyle = useMemo<ViewStyle>(
+    () =>
+      Platform.OS === 'ios'
+        ? { height: Math.round((windowHeight - insets.top) * SHEET_DETENT_FRACTION) - SHEET_TOP_CHROME_PT }
+        : styles.fill,
+    [insets.top, windowHeight],
+  );
   const isKilter = boardName === 'kilter';
 
   // Live "Show N" preview for the in-progress edits (matches what Apply yields).
@@ -669,11 +693,11 @@ export function ClimbFilterSheet({
       onChange={managed.onChange}
       handleIndicatorStyle={styles.indicator}
     >
-      {/* One flex:1 child so the native sheet bounds the column to the detent
-          height — the scroll body then actually scrolls and the footer pins.
-          Handed multiple direct children, the native sheet sizes to content and
-          the flex:1 ScrollView collapses (no scrolling). Matches ModalSheet. */}
-      <View style={styles.fill}>
+      {/* One column child bounded to the detent height (JS-computed on iOS, see
+          sheetColumnStyle) — the scroll body then actually scrolls and the
+          footer pins. Handed multiple direct children, the native sheet sizes
+          to content and the flex:1 ScrollView collapses (no scrolling). */}
+      <View style={sheetColumnStyle}>
         <View style={styles.header}>
           <Text variant="title3">{t('mobile.filter.title')}</Text>
           <Pressable onPress={handleReset} hitSlop={8} accessibilityRole="button" disabled={!anyActive}>
