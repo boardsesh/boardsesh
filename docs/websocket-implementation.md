@@ -1027,7 +1027,7 @@ sequenceDiagram
 - Current climb must exist in queue
 - Sequence numbers must increment by 1
 - Hash updated after each delta event
-- The comparison and backoff live in the shared sync gate's `verifyLocalHash()`: after `RESYNC_LOOP_THRESHOLD` (3) consecutive resyncs against the *same* unchanging server hash, the gate returns a `backoff` verdict — the client reports to Sentry once per drift streak and stops refiring the per-minute resync (issue #2359). The counter resets when the hashes agree again or the server hash changes.
+- The comparison and backoff live in the shared sync gate's `verifyLocalHash()`: after `RESYNC_LOOP_THRESHOLD` (3) consecutive resyncs against the _same_ unchanging server hash, the gate returns a `backoff` verdict — the client reports to Sentry once per drift streak and stops refiring the per-minute resync (issue #2359). The counter resets when the hashes agree again or the server hash changes.
 
 ### 6. Queue Item Corruption Detection
 
