@@ -400,7 +400,7 @@ describe('QueueProvider queue sync gate', () => {
     );
   });
 
-  it('resyncs exactly once from a burst of sequence-gap events (single-flight)', async () => {
+  it('coalesces a burst of sequence-gap events into one in-flight fetch plus one trailing rerun', async () => {
     const snapshots: Snapshot[] = [];
     let queueStateCalls = 0;
     const serverItem = makeQueueItem('server-item', 'climb-server');
@@ -421,9 +421,13 @@ describe('QueueProvider queue sync gate', () => {
     });
 
     // Two events land back-to-back, both far ahead of the tracked sequence
-    // (1) — a gap. Firing them in one `act` keeps both calls to
-    // resyncQueueFromServerRef inside the same synchronous tick, so the
-    // single-flight guard (resyncInFlightRef) coalesces them into one fetch.
+    // (1) — a gap. Firing them in one `act` keeps both resync requests in the
+    // same synchronous tick: the first starts the fetch, the second arrives
+    // mid-flight. It must NOT be dropped outright (its mutation may postdate
+    // the in-flight snapshot — e.g. the tail of a clearQueue burst), so the
+    // single-flight guard coalesces it into exactly one trailing rerun after
+    // the first fetch settles: 2 fetches total for the burst, not 1, not one
+    // per event.
     act(() => {
       queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(5, 'hash-5', wireItem('q-gap-1')) } });
       queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(6, 'hash-6', wireItem('q-gap-2')) } });
@@ -435,11 +439,115 @@ describe('QueueProvider queue sync gate', () => {
       // in; only the server's item did.
       expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item']);
     });
-    expect(queueStateCalls).toBe(1);
+    await waitFor(() => {
+      expect(queueStateCalls).toBe(2);
+    });
+    // Settled: the trailing rerun must not chain into a third fetch.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(queueStateCalls).toBe(2);
     expect(analytics.track).toHaveBeenCalledWith(
       'Queue Sync Gap Resync',
       expect.objectContaining({ eventType: 'QueueItemAdded' }),
     );
+  });
+
+  it('re-baselines the gate to the snapshot sequence after a gap resync', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-item', 'climb-server');
+    // The resync snapshot reports sequence 99 — the gate must track it.
+    routeHttpRequest(queueStateResponse([serverItem], null, 99, 'post-resync-hash'));
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
+    });
+    // Single gap event (sequence 5 ≫ 1) → one resync, no coalesced rerun.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(5, 'hash-5', wireItem('q-gap')) } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item']);
+    });
+
+    // A stale delta at (or below) the snapshot's sequence must be dropped —
+    // the re-baseline set lastSequence to 99, not back to null (which would
+    // blindly apply whatever came next).
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(99, 'hash-99', wireItem('q-stale')) } });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item']);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Queue Sync Stale Event Ignored',
+      expect.objectContaining({ eventType: 'QueueItemAdded', sequence: 99 }),
+    );
+
+    // The next contiguous delta (snapshot.sequence + 1) applies cleanly.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(100, 'hash-100', wireItem('q-next')) } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item', 'q-next']);
+    });
+  });
+
+  it('falls back to restarting the WS subscriptions when the resync snapshot is unavailable', async () => {
+    const snapshots: Snapshot[] = [];
+    let queueStateCalls = 0;
+    // The backend returns queueState: null when the HTTP caller fails the
+    // session-membership check — permanently true for anonymous HTTP callers
+    // (membership lives on the WS connection; see PR #3341). The provider
+    // must restart the joined subscriptions instead (their initial FullSync
+    // heals state), and must not loop back into more doomed fetches.
+    http.request.mockImplementation(async (operation: string) => {
+      if (operation.includes('GetSessionQueueState')) {
+        queueStateCalls += 1;
+        return { session: { queueState: null } };
+      }
+      if (operation.includes('SessionStatus')) {
+        return statusResponse();
+      }
+      return { endSession: { sessionId: 'session-1' } };
+    });
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    // Initial mount: queueUpdates + sessionUpdates.
+    expect(ws.client.subscribe).toHaveBeenCalledTimes(2);
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
+    });
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(5, 'hash-5', wireItem('q-gap')) } });
+    });
+
+    // The gap resync fetched once, got no queueState, and restarted the
+    // joined subscriptions — both re-subscribed (2 + 2 = 4).
+    await waitFor(() => {
+      expect(ws.client.subscribe).toHaveBeenCalledTimes(4);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Exactly one fetch: the restart never chains into another HTTP resync.
+    expect(queueStateCalls).toBe(1);
   });
 
   it('lets PlaybackStateChanged bypass the gate and still reach transient listeners', async () => {
@@ -537,6 +645,19 @@ describe('QueueProvider queue sync gate', () => {
         'Queue Sync Hash Drift',
         expect.objectContaining({ verdict: 'backoff', consecutiveResyncs: 4 }),
       );
+
+      // Tick 5 (and beyond): still no resync, and no FURTHER backoff
+      // analytics — a stuck-drift session must report once per streak, not
+      // every 60s forever.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(queueStateCalls).toBe(3);
+      const backoffTrackCalls = analytics.track.mock.calls.filter(
+        ([eventName, properties]) =>
+          eventName === 'Queue Sync Hash Drift' && (properties as { verdict?: string }).verdict === 'backoff',
+      );
+      expect(backoffTrackCalls).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
