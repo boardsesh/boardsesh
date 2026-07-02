@@ -29,6 +29,15 @@ export const SHARED_EVENTS = {
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
   AngleChanged: 'Angle Changed',
+  // Queue sync-gate telemetry (createQueueSyncGate in @boardsesh/queue-runtime)
+  // — observability for the sequence-gap / stale-event / hash-drift guards so
+  // a resync loop or a dropped duplicate shows up in the field instead of only
+  // in dev logs. Mirrors the signal web's Sentry-based watchdog captures
+  // today (use-session-subscriptions.ts); mobile fires these via track()
+  // since it has no equivalent Sentry breadcrumb for this path yet.
+  QueueSyncStaleEventIgnored: 'Queue Sync Stale Event Ignored',
+  QueueSyncGapResync: 'Queue Sync Gap Resync',
+  QueueSyncHashDrift: 'Queue Sync Hash Drift',
   // Climb actions
   FavoriteToggle: 'Favorite Toggle',
   MirrorClimb: 'Mirror Climb',

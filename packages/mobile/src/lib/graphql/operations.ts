@@ -724,6 +724,11 @@ export type GetSessionQueueStateQueryResponse = {
     // resolver returns a redacted preview rather than an error. Callers
     // already null-guard this (see resyncQueueFromServer in queue-provider.tsx).
     queueState: {
+      // Selected so the caller can re-baseline the shared sync gate
+      // (createQueueSyncGate) to this snapshot's authoritative sequence/hash
+      // after applying it — see resyncQueueFromServer in queue-provider.tsx.
+      sequence: number;
+      stateHash: string;
       queue: SubscriptionQueueItem[];
       currentClimbQueueItem: SubscriptionQueueItem | null;
     } | null;
@@ -1233,6 +1238,8 @@ export const GET_SESSION_QUEUE_STATE = gql`
   query GetSessionQueueState($sessionId: ID!) {
     session(sessionId: $sessionId) {
       queueState {
+        sequence
+        stateHash
         queue { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
         currentClimbQueueItem { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
       }
