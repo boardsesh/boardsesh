@@ -679,6 +679,52 @@ describe('useBoardBluetooth', () => {
       bleParkCount: 5,
     });
   });
+
+  it('suppresses the failure event when the drop event lands before the write rejection (#3365)', async () => {
+    let hookDisconnectCallback: ((info?: unknown) => void) | null = null;
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      onDisconnect: vi.fn((callback: (info?: unknown) => void) => {
+        hookDisconnectCallback = callback;
+        return () => {};
+      }),
+      getLastWriteDiagnostics: vi.fn().mockResolvedValue({ chunkSize: 20 }),
+    };
+    // A mid-write link drop where the adapter delivers the disconnect event
+    // BEFORE the write rejection reaches performSend's catch. The disconnect
+    // handler runs clearConnectionAfterDrop, which aborts the write generation
+    // — so the catch classifies this send as aborted and must NOT emit a
+    // ClimbSentToBoardFailure event: the drop is reported once, via the
+    // Bluetooth Disconnected transition, not double-counted as a send failure.
+    // (This is also why the diagnostics fetch reads the captured send adapter,
+    // not adapterRef — the ref is already null in this ordering.)
+    fakeAdapter.write = vi.fn().mockImplementation(() => {
+      hookDisconnectCallback?.({ source: 'ble-plx' });
+      return Promise.reject(new Error('Device disconnected during write'));
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetLedPlacements.mockReturnValue({ 100: 7 });
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x09]),
+      skippedPositionCount: 0,
+      skippedRoleCount: 0,
+      totalPlacements: 1,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r12');
+    });
+
+    const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failureCall).toBeUndefined();
+    expect(result.current.isConnected).toBe(false);
+  });
 });
 
 // ── Native connection adoption (iOS) ───────────────────────────────────────

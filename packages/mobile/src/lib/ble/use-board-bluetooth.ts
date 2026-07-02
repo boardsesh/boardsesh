@@ -483,15 +483,21 @@ export function useBoardBluetooth({
       const performSend = async (): Promise<boolean | undefined> => {
         // Transport diagnostics of the write that just settled (#3230) — iOS
         // native adapter (full flow-control story) or ble-plx (MTU/chunking
-        // only); null on web-era adapters and old binaries. Never let the
-        // fetch itself fail an already-settled send.
+        // only); null on web-era adapters and old binaries. Read from the
+        // adapter INSTANCE that performed the send, not the mutable ref: a
+        // mid-write link drop runs clearConnectionAfterDrop (which nulls
+        // adapterRef) before this send's catch fetches, and the failures that
+        // race that way are exactly the ones whose diagnostics matter. Never
+        // let the fetch itself fail an already-settled send.
+        let sendAdapter: BluetoothAdapter | null = null;
         const fetchWriteDiagnostics = async (): Promise<BleWriteDiagnostics | null> =>
-          (await adapterRef.current?.getLastWriteDiagnostics?.().catch(() => null)) ?? null;
+          (await sendAdapter?.getLastWriteDiagnostics?.().catch(() => null)) ?? null;
         try {
           // The send may have queued behind another write; by the time it runs
           // the connection generation may be gone (reconnect/disconnect) — bail
           // before touching the (possibly new) adapter.
           if (combinedSignal.aborted || !adapterRef.current) return;
+          sendAdapter = adapterRef.current;
 
           if (boardName === 'moonboard') {
             const sent = await dispatchMoonboardPacket(
