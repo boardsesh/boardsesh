@@ -153,10 +153,8 @@ export function ClimbFilterSheet({
   const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
   // Latest scroll offset, captured on scroll into a ref (no re-render).
   const scrollOffsetRef = useRef(0);
-  // Offset snapshotted at suspend time and restored after the host remounts on
-  // resume (see presentEpoch). A live read of scrollOffsetRef at restore time
-  // would race the fresh ScrollView's initial onScroll (y=0), which can land
-  // before onContentSizeChange and clobber the target.
+  // Snapshotted at suspend: the remounted ScrollView's initial onScroll (y=0) can
+  // land before onContentSizeChange, so a live read would restore to 0.
   const pendingRestoreOffsetRef = useRef(0);
   // The epoch whose offset has already been restored — makes the restore in
   // onContentSizeChange one-shot per remount, not re-fire on later content growth.
@@ -492,10 +490,8 @@ export function ClimbFilterSheet({
     scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
   }, []);
 
-  // Restore the snapshotted offset once the freshly remounted host has laid out
-  // its content. Guarded to fire once per epoch so later content growth (e.g. a
-  // section expanding) can't yank the scroll position. onContentSizeChange fires
-  // on every platform (unlike the iOS-only contentOffset prop).
+  // One-shot per epoch: a repeat restore on later content growth (e.g. a section
+  // expanding) would yank the user's scroll position.
   const handleScrollContentSizeChange = useCallback(() => {
     if (restoredScrollEpochRef.current === presentEpoch) return;
     restoredScrollEpochRef.current = presentEpoch;
@@ -693,7 +689,7 @@ export function ClimbFilterSheet({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           onScroll={handleScroll}
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           onContentSizeChange={handleScrollContentSizeChange}
         >
           {/* PRIMARY — the levers the analytics say carry the product. Always open. */}

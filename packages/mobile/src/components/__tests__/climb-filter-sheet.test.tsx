@@ -6,6 +6,7 @@ import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from '../../lib/climb-filter-types';
 import { ClimbFilterSheet } from '../ClimbFilterSheet';
 import { emitSetterFilterSelection } from '../../lib/setter-filter-handoff';
+import { hapticSelection } from '../../lib/haptics';
 import { emitHoldsFilterSelection } from '../../lib/hold-filter-handoff';
 import { emitZoneFilterSelection } from '../../lib/zone-filter-handoff';
 
@@ -54,6 +55,12 @@ const bottomSheetScrollViewProps = vi.hoisted(() => ({
 // can simulate the climbs screen regaining focus after a sub-route pops.
 const routerPush = vi.hoisted(() => vi.fn());
 const focusEffectHolder = vi.hoisted(() => ({ cb: null as null | (() => void) }));
+
+// Drives the Reset button's enabled state (`anyActive`); default inactive.
+const filterActivityMocks = vi.hoisted(() => ({
+  hasActiveClimbFilters: vi.fn(() => false),
+  hasActiveBoardFilters: vi.fn(() => false),
+}));
 
 const createBoardHoldsMocks = vi.hoisted(() => ({
   parseSetIdsParam: vi.fn((setIds: string) => setIds.split(',').map(Number).filter(Number.isFinite)),
@@ -190,8 +197,8 @@ vi.mock('@boardsesh/climb-filters', () => ({
     routes: false,
   },
   DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
-  hasActiveClimbFilters: () => false,
-  hasActiveBoardFilters: () => false,
+  hasActiveClimbFilters: filterActivityMocks.hasActiveClimbFilters,
+  hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
   applyStatusChange: (_filters: unknown, status: string) => ({ status }),
   normalizeRetiredStatus: (filters: unknown) => filters,
   toClimbSearchInput: () => ({}),
@@ -310,6 +317,8 @@ function simulateScreenRefocus() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => false);
+  filterActivityMocks.hasActiveBoardFilters.mockImplementation(() => false);
   bottomSheetModalProps.latest = null;
   bottomSheetModalProps.mountCount = 0;
   bottomSheetScrollViewProps.latest = null;
@@ -570,6 +579,21 @@ describe('ClimbFilterSheet sub-pickers', () => {
     simulateScreenRefocus();
 
     expect(getByTestId('section-mobile.filter.section.advanced').getAttribute('data-expanded')).toBe('true');
+  });
+
+  it('collapses Advanced after Reset across a sub-route round trip', () => {
+    // Reset is only enabled while the draft has active filters.
+    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+    const { getByLabelText, getByTestId, getByText } = renderFilterSheet();
+
+    fireEvent.click(getByText('expand-mobile.filter.section.advanced'));
+    fireEvent.click(getByText('mobile.filter.reset'));
+    expect(vi.mocked(hapticSelection)).toHaveBeenCalled();
+
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    simulateScreenRefocus();
+
+    expect(getByTestId('section-mobile.filter.section.advanced').getAttribute('data-expanded')).toBe('false');
   });
 
   it('remounts the sheet host on resume so each present is a first present (#3330)', () => {
