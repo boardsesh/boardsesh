@@ -143,8 +143,13 @@ public class BoardBleModule: Module {
 
         // Diagnostics for the most recent failed JS write (#3230). Presence of
         // this function is the JS feature gate, mirroring getConnectedDevice.
+        // Clear-on-read: the stash describes exactly one failure, and a later
+        // fetch must not re-attribute it to a different analytics event.
         AsyncFunction("getLastWriteDiagnostics") { () -> [String: Any]? in
-            self.bufferQueue.sync { self.lastFailedWriteDiagnostics }
+            self.bufferQueue.sync {
+                defer { self.lastFailedWriteDiagnostics = nil }
+                return self.lastFailedWriteDiagnostics
+            }
         }
 
         AsyncFunction("cancelWrites") { () -> Void in

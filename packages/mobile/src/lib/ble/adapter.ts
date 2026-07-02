@@ -293,7 +293,8 @@ export class RNBleAdapter implements BluetoothAdapter {
   }
 
   async write(data: Uint8Array, signal?: AbortSignal): Promise<void> {
-    if (!this.writeCharacteristic) {
+    const writeCharacteristic = this.writeCharacteristic;
+    if (!writeCharacteristic) {
       throw new Error('Not connected');
     }
 
@@ -303,7 +304,14 @@ export class RNBleAdapter implements BluetoothAdapter {
     const chunkSize =
       this.scanFamily === 'moonboard' ? MAX_BLUETOOTH_MESSAGE_SIZE : effectiveChunkSizeForMtu(this.negotiatedMtu);
     const chunks = splitMessages(data, chunkSize);
+    // Every write through this adapter is JS-driven (Android has no
+    // widget-intent write path), hence the fixed 'js' origin.
     this.lastWriteDiagnostics = {
+      origin: 'js',
+      writeType:
+        this.scanFamily !== 'moonboard' || (writeCharacteristic.isWritableWithoutResponse ?? true)
+          ? 'withoutResponse'
+          : 'withResponse',
       negotiatedMtu: this.negotiatedMtu,
       chunkSize,
       chunkCount: chunks.length,

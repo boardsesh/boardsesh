@@ -1287,6 +1287,15 @@ describe('bleWriteDiagnosticsProperties', () => {
     expect(bleWriteDiagnosticsProperties(undefined)).toEqual({});
   });
 
+  it('drops unreported fields instead of spreading undefined keys (Android reports only MTU/chunking)', () => {
+    expect(bleWriteDiagnosticsProperties({ origin: 'js', negotiatedMtu: 247, chunkSize: 244, chunkCount: 2 })).toEqual({
+      bleWriteOrigin: 'js',
+      bleNegotiatedMtu: 247,
+      bleChunkSize: 244,
+      bleChunkCount: 2,
+    });
+  });
+
   it('maps every field to its ble*-prefixed analytics prop', () => {
     const diagnostics: BleWriteDiagnostics = {
       origin: 'native',

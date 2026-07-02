@@ -59,11 +59,14 @@ export function bleConnectReportLevel(category: BleFailureCategory): 'warning' |
 
 // Per-write transport diagnostics → analytics props (#3230). Prefixed `ble` to
 // sit beside the connect-time `bleChosenWriteType`/`bleMaxWriteWithoutResponse`
-// props; every field optional so Android/web adapters and old binaries simply
-// omit what they can't report. Exported for testing.
-export function bleWriteDiagnosticsProperties(diagnostics: BleWriteDiagnostics | null | undefined) {
+// props. Every field is optional (Android reports only its MTU/chunking story;
+// old binaries none), and unreported fields are dropped rather than spread as
+// undefined so the event payload carries only real values. Exported for testing.
+export function bleWriteDiagnosticsProperties(
+  diagnostics: BleWriteDiagnostics | null | undefined,
+): Record<string, string | number | boolean> {
   if (!diagnostics) return {};
-  return {
+  const mappedProperties = {
     bleWriteOrigin: diagnostics.origin,
     bleWriteType: diagnostics.writeType,
     bleChunkSize: diagnostics.chunkSize,
@@ -79,6 +82,10 @@ export function bleWriteDiagnosticsProperties(diagnostics: BleWriteDiagnostics |
     bleCanSendAtTrip: diagnostics.canSendAtTrip,
     bleWriteDurationMs: diagnostics.durationMs,
   };
+  return Object.fromEntries(Object.entries(mappedProperties).filter(([, value]) => value !== undefined)) as Record<
+    string,
+    string | number | boolean
+  >;
 }
 
 // Exported for testing — isolates the .packet extraction so regressions are caught.

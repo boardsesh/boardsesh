@@ -1478,10 +1478,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // Only the in-flight head request has meaningful telemetry; requests
         // that never started get nil. Finalizing folds any still-open park into
         // the totals and clears the slot (and parkStartedAt), so a later
-        // defensive call on an empty queue can't re-deliver stale data.
-        let headTelemetry = wasWriting ? finalizeCurrentWriteTelemetry() : nil
-        currentWriteTelemetry = nil
-        parkStartedAt = nil
+        // defensive call on an empty queue can't re-deliver stale data. When
+        // nothing was writing, both should already be nil — clear defensively.
+        let headTelemetry: BoardBleWriteTelemetry?
+        if wasWriting {
+            headTelemetry = finalizeCurrentWriteTelemetry()
+        } else {
+            headTelemetry = nil
+            currentWriteTelemetry = nil
+            parkStartedAt = nil
+        }
         for (requestIndex, request) in queuedWrites.enumerated() {
             request.completion(error, requestIndex == 0 ? headTelemetry : nil)
         }

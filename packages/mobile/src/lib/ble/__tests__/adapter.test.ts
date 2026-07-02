@@ -1256,6 +1256,8 @@ describe('RNBleAdapter', () => {
       await adapter.write(data);
 
       await expect(adapter.getLastWriteDiagnostics()).resolves.toEqual({
+        origin: 'js',
+        writeType: 'withoutResponse',
         negotiatedMtu: 247,
         chunkSize: 244,
         chunkCount: 2,
