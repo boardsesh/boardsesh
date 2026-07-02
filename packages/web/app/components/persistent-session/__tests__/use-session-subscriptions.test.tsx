@@ -113,4 +113,29 @@ describe('useSessionSubscriptions — reducer-flagged corruption resync', () => 
     expect(clearResyncFlag).toHaveBeenCalledTimes(3);
     expect(triggerResync).toHaveBeenCalledTimes(2);
   });
+
+  it('leaves needsResync pending when there is no session (no silent acknowledgement)', () => {
+    const triggerResync = vi.fn();
+    const clearResyncFlag = vi.fn();
+    const syncGate = createQueueSyncGate();
+
+    renderHook(() =>
+      useSessionSubscriptions({
+        session: null,
+        queue: [] as unknown as SubscriptionsArgs['queue'],
+        currentClimbQueueItem: null,
+        lastReceivedStateHash: null,
+        needsResync: true,
+        clearResyncFlag,
+        syncGate,
+        refs: createRefs(triggerResync),
+      }),
+    );
+
+    // Without a session there is nothing to resync against; the flag stays
+    // pending (the next connect()'s FullSync recomputes it) rather than being
+    // acknowledged with no action taken.
+    expect(clearResyncFlag).not.toHaveBeenCalled();
+    expect(triggerResync).not.toHaveBeenCalled();
+  });
 });

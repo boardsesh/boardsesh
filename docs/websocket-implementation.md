@@ -704,10 +704,13 @@ sequenceDiagram
     S->>C: Event (sequence: 6)
     C->>C: 6 == 5+1 ✓ Apply event
 
+    S->>C: Event (sequence: 5)
+    C->>C: 5 <= 6 → stale duplicate, drop silently
+
     S->>C: Event (sequence: 8)
     C->>C: 8 != 6+1 ⚠️ Gap detected!
-    C->>C: Log warning
-    C->>C: Apply anyway (hash will catch drift)
+    C->>C: Drop event, trigger resync
+    S->>C: FullSync event
 
     Note over C: Periodic hash verification (60s)
     C->>C: Compute local state hash
@@ -719,6 +722,15 @@ sequenceDiagram
         S->>C: FullSync event
     end
 ```
+
+### Web Root Event Processor (shared reducer + sync gate)
+
+The web app's root queue mirror (`persistent-session/hooks/use-event-processor.ts`) runs every incoming queue event through the **same shared `queueReducer`** (`@boardsesh/queue`) that the board-route `graphql-queue/QueueContext` uses, so both copies apply identical semantics. Resync decisions — sequence gating, the reconnect strategy, the 60s hash watchdog's 3-strike backoff, and the corruption-resync cooldown — all live in one `createQueueSyncGate` instance (`@boardsesh/queue-runtime`, see `sync-gate.ts`) created by `PersistentSessionProvider` and shared by the event processor, `use-session-lifecycle` (which resets it on connection teardown), and `use-session-subscriptions`.
+
+Two root-processor specifics:
+
+- **FullSync offline merge**: offline-buffered additions are merged into the FullSync payload before dispatch (visual continuity during reconciliation), but external subscribers receive the original unmerged event — `useOfflineReconciliation` compares the raw server queue against its buffer.
+- **Reorder pre-validation**: a `QueueReordered` event is applied only when the item at `oldIndex` matches the uuid the server says it moved; on mismatch the client resyncs instead of guessing. Order drift is invisible to the sorted-uuid state hash, so a bad guess would never be caught by the watchdog.
 
 ---
 
@@ -1015,6 +1027,7 @@ sequenceDiagram
 - Current climb must exist in queue
 - Sequence numbers must increment by 1
 - Hash updated after each delta event
+- The comparison and backoff live in the shared sync gate's `verifyLocalHash()`: after `RESYNC_LOOP_THRESHOLD` (3) consecutive resyncs against the *same* unchanging server hash, the gate returns a `backoff` verdict — the client reports to Sentry once per drift streak and stops refiring the per-minute resync (issue #2359). The counter resets when the hashes agree again or the server hash changes.
 
 ### 6. Queue Item Corruption Detection
 
@@ -1022,29 +1035,30 @@ The client detects and recovers from corrupted queue items (null/undefined entri
 
 ```mermaid
 sequenceDiagram
-    participant C as Client
+    participant R as queueReducer
     participant PS as PersistentSession
     participant S as Server
 
-    Note over C: useEffect runs on queue change
-
-    C->>C: Check for null/undefined items
+    S->>R: FullSync / queue update payload
+    R->>R: Filter null / climbless items
 
     alt No corrupted items
-        C->>C: Compute and update state hash
-    else Corrupted items detected
-        C->>C: Check resync cooldown (30s)
+        R->>R: needsResync stays false
+    else Corrupted items filtered
+        R->>R: Set needsResync = true
+        PS->>PS: Consult sync gate cooldown (30s)
 
         alt Within cooldown
-            C->>C: Filter items locally
-            C->>C: Log error (Sentry)
-            Note over C: Prevents infinite loops
+            PS->>PS: Keep locally filtered state
+            PS->>PS: Log error (Sentry)
+            Note over PS: Prevents resync storms
         else Cooldown expired
-            C->>C: Log error (Sentry)
-            C->>S: Trigger resync
-            S->>C: FullSync event
-            C->>C: Apply clean state
+            PS->>PS: Log error (Sentry)
+            PS->>S: Trigger resync
+            S->>PS: FullSync event
+            PS->>R: Apply clean state
         end
+        PS->>R: CLEAR_RESYNC_FLAG
     end
 ```
 
@@ -1056,22 +1070,21 @@ sequenceDiagram
 
 **Detection points:**
 
-1. **FullSync handler**: Filters null items when receiving initial/full state
-2. **QueueItemAdded handler**: Skips events with null items
-3. **State hash effect**: Detects corruption in current queue state
+1. **Reducer (`INITIAL_QUEUE_DATA` / `UPDATE_QUEUE`)**: filters null/climbless items out of every incoming full payload and raises the `needsResync` flag when it filtered anything — reducer state can never contain nulls post-dispatch, so there is no separate local re-filtering step
+2. **Action mapper**: `QueueItemAdded` events with no item payload are ignored (sequence tracking still advances)
 
 **Resync cooldown:**
 
-- 30 second cooldown between corruption-triggered resyncs
+- 30 second cooldown between corruption-triggered resyncs, owned by the shared sync gate (`evaluateCorruption()` in `@boardsesh/queue-runtime`)
 - Prevents infinite loop if server keeps returning corrupted data
-- During cooldown: filter corrupted items locally instead of resyncing
+- During cooldown: keep the reducer-filtered local state instead of resyncing
 - All corruption events logged at `logger.error` level (see [Backend Logging](./logging.md)) for Sentry visibility
 
 **Implementation:**
 
 - `computeQueueStateHash()` defensively filters null/undefined items
-- `isFilteringCorruptedItemsRef` prevents useEffect re-trigger loops
-- `lastCorruptionResyncRef` tracks cooldown timing
+- `useSessionSubscriptions` watches the reducer's `needsResync` flag, consults `syncGate.evaluateCorruption()`, then acknowledges the flag via `CLEAR_RESYNC_FLAG`
+- The gate is reset on connection teardown, so a new session starts with a fresh cooldown
 
 ### 7. Subscription Error / Complete
 

@@ -52,8 +52,11 @@ export function useSessionSubscriptions({
   // gate's cooldown so resync storms can't loop.
   useEffect(() => {
     if (!needsResync) return;
-    clearResyncFlag();
+    // No session: leave the flag pending rather than acknowledging it with no
+    // action — the next connect()'s FullSync overwrites `needsResync` anyway
+    // (INITIAL_QUEUE_DATA recomputes it from the fresh payload).
     if (!session) return;
+    clearResyncFlag();
 
     if (syncGate.evaluateCorruption() === 'cooldown') {
       console.error(
