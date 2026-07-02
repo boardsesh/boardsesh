@@ -226,6 +226,8 @@ export class RNBleAdapter implements BluetoothAdapter {
     // The negotiated value sizes write chunks below — fewer, larger writes
     // per climb, mirroring the native iOS path and the official Kilter app
     // (#3230).
+    // `||` (not `??`) is deliberate: ble-plx types mtu as number, so the only
+    // bad runtime values are falsy ones (0/NaN), which must also fall back.
     try {
       const negotiated = await connected.requestMTU(REQUESTED_ATT_MTU);
       this.negotiatedMtu = negotiated.mtu || DEFAULT_ATT_MTU;

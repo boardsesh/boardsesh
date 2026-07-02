@@ -457,6 +457,8 @@ bluetoothChunkSize = 20
 
 Each 20-byte chunk is written to the RX characteristic as a separate GATT write operation, sequenced through the command queue (Section 14).
 
+> **Boardsesh implementation note (#3230):** the 20-byte chunk is the Aurora *app's* classic transport size, not a protocol requirement — framing is byte-identical at any chunk size (the Kilter Grips app negotiates a larger MTU; see `LED_BOX_BLE_CONNECTION_PROTOCOL.md` §5). Boardsesh sizes chunks from the connection's negotiated max write length, clamped to **[20, 244]** (ATT 247): iOS-26.5 field telemetry showed write failures clustering at the full ATT 512, so the negotiated maximum is never used unclamped. See `BoardBleEncoding.effectiveChunkSize` (iOS) and `effectiveChunkSizeForMtu` in `packages/shared/ble-protocol/src/transport.ts`. The iOS write loop additionally polls `canSendWriteWithoutResponse` while parked, because iOS 26.5 can update the property without delivering the `peripheralIsReady` delegate.
+
 ### Write Properties
 
 - **Write type**: Write Without Response (implied by Nordic UART RX characteristic)

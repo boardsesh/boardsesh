@@ -29,6 +29,9 @@ public class BoardBleModule: Module {
     /// and JS fetches it via `getLastWriteDiagnostics` right after the reject.
     /// Native-origin writes (widget intents) never route through this module's
     /// `write`, so they can't overwrite a failure JS is about to fetch.
+    /// Guarded by `bufferQueue`, which is safe to enter synchronously from the
+    /// BLE queue (the write completion's context): `bufferQueue` blocks only
+    /// touch this module's own state and never dispatch onto `bleQueue`.
     private var lastFailedWriteDiagnostics: [String: Any]?
 
     public func definition() -> ModuleDefinition {

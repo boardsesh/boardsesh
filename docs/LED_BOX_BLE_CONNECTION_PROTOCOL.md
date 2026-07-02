@@ -246,6 +246,8 @@ Colour comes from the placement role's 6-hex LED colour (`_colorFromHex`); unkno
 - LED records are packed into frames; when a frame would exceed 255 payload bytes a new frame is started. One frame → `Single`; many → `First` / `Middle…` / `Last`.
 - All frames are concatenated, then the byte stream is split into BLE writes. The classic transport size is **20 bytes/write**; with this app's negotiated MTU each `writeWithoutResponse` can be larger. ✅ Write type is **Write Without Response** (`, writeWithoutResponse: …`).
 
+> **Boardsesh implementation note (#3230):** Boardsesh follows this app's MTU-negotiated chunking, but clamps the without-response chunk to **[20, 244]** (ATT 247) — iOS-26.5 field telemetry showed write failures clustering at the full ATT 512. Android requests ATT 247 explicitly (`requestMTU(247)`); iOS clamps whatever CoreBluetooth auto-negotiated. See `effectiveChunkSizeForMtu` in `packages/shared/ble-protocol/src/transport.ts` and its Swift twin `BoardBleEncoding.effectiveChunkSize`.
+
 ### 6.6 Power budget (API v2 only)
 
 🔁 v2 caps total board draw at **18 W** by trying brightness scales `[1.0, 0.8, 0.6, 0.4, 0.2, 0.1, 0.05]` until it fits, with Kilter counting **2 LEDs per hold**. v3 omits this (firmware-managed). `_brightnessFor` in this app is the analogue. Full algorithm: `computeV2Scale` in `aurora.ts`.
