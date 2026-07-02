@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, forwardRef, useImperativeHandle, useState, type ReactNode } from 'react';
+import { createElement, forwardRef, useEffect, useImperativeHandle, useState, type ReactNode } from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
@@ -27,6 +27,10 @@ const bottomSheetModalProps = vi.hoisted(() => ({
     enablePanDownToClose?: boolean;
     onChange?: (index: number) => void;
   },
+  // Incremented once per host mount. The suspend → resume cycle bumps the sheet's
+  // `key`, so a remount (mountCount going 1 → 2) proves the host is torn down and
+  // rebuilt — the fresh-first-present that fixes #3330.
+  mountCount: 0,
 }));
 
 // Captures the controlled `open` the sheet hands the coordinator, so tests can
@@ -34,6 +38,16 @@ const bottomSheetModalProps = vi.hoisted(() => ({
 // focus restore.
 const managedSheetProps = vi.hoisted(() => ({
   latest: null as null | { open?: boolean },
+}));
+
+// Captures the scroll handlers + the ref's scrollTo, so tests can drive scroll
+// offsets around a suspend/resume cycle and assert the post-remount restore.
+const bottomSheetScrollViewProps = vi.hoisted(() => ({
+  latest: null as null | {
+    onScroll?: (event: { nativeEvent: { contentOffset: { y: number } } }) => void;
+    onContentSizeChange?: () => void;
+  },
+  scrollTo: vi.fn(),
 }));
 
 // expo-router stand-ins: a push spy and a holder for the focus callback so a test
@@ -106,13 +120,21 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   ) {
     bottomSheetModalProps.latest = props;
     useImperativeHandle(ref, () => ({ present: vi.fn(), dismiss: vi.fn() }), []);
+    useEffect(() => {
+      bottomSheetModalProps.mountCount += 1;
+    }, []);
     return createElement('div', null, children);
   }),
-  BottomSheetScrollView: forwardRef<unknown, { children?: ReactNode }>(function BottomSheetScrollView(
-    { children },
-    ref,
-  ) {
-    useImperativeHandle(ref, () => ({}), []);
+  BottomSheetScrollView: forwardRef<
+    unknown,
+    {
+      children?: ReactNode;
+      onScroll?: (event: { nativeEvent: { contentOffset: { y: number } } }) => void;
+      onContentSizeChange?: () => void;
+    }
+  >(function BottomSheetScrollView({ children, onScroll, onContentSizeChange }, ref) {
+    bottomSheetScrollViewProps.latest = { onScroll, onContentSizeChange };
+    useImperativeHandle(ref, () => ({ scrollTo: bottomSheetScrollViewProps.scrollTo }), []);
     return createElement('div', null, children);
   }),
 }));
@@ -289,6 +311,8 @@ function simulateScreenRefocus() {
 beforeEach(() => {
   vi.clearAllMocks();
   bottomSheetModalProps.latest = null;
+  bottomSheetModalProps.mountCount = 0;
+  bottomSheetScrollViewProps.latest = null;
   managedSheetProps.latest = null;
   focusEffectHolder.cb = null;
 });
@@ -531,5 +555,56 @@ describe('ClimbFilterSheet sub-pickers', () => {
     simulateScreenRefocus();
 
     expect(getByTestId('section-mobile.filter.section.refine').getAttribute('data-expanded')).toBe('true');
+  });
+
+  it('keeps Advanced expanded across a sub-route round trip', () => {
+    const { getByLabelText, getByTestId, getByText } = renderFilterSheet();
+
+    fireEvent.click(getByText('expand-mobile.filter.section.advanced'));
+    expect(getByTestId('section-mobile.filter.section.advanced').getAttribute('data-expanded')).toBe('true');
+
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    act(() => {
+      emitSetterFilterSelection(['route-setter']);
+    });
+    simulateScreenRefocus();
+
+    expect(getByTestId('section-mobile.filter.section.advanced').getAttribute('data-expanded')).toBe('true');
+  });
+
+  it('remounts the sheet host on resume so each present is a first present (#3330)', () => {
+    const { getByLabelText } = renderFilterSheet();
+    expect(bottomSheetModalProps.mountCount).toBe(1);
+
+    // Suspend for a sub-picker, then return.
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    expect(managedSheetProps.latest?.open).toBe(false);
+
+    simulateScreenRefocus();
+
+    // Re-presented (open flips back true) AND the host was torn down + rebuilt.
+    expect(managedSheetProps.latest?.open).toBe(true);
+    expect(bottomSheetModalProps.mountCount).toBe(2);
+  });
+
+  it('restores the pre-suspend scroll offset after the remount, ignoring mount-time scroll noise', () => {
+    const { getByLabelText } = renderFilterSheet();
+
+    // User scrolls down, then opens a sub-picker (offset snapshotted at suspend).
+    act(() => {
+      bottomSheetScrollViewProps.latest?.onScroll?.({ nativeEvent: { contentOffset: { y: 240 } } });
+    });
+    fireEvent.click(getByLabelText('mobile.filter.setters'));
+    simulateScreenRefocus();
+
+    // The fresh ScrollView can emit an initial onScroll at y=0 before its content
+    // lays out — the restore must not pick that up as the target.
+    act(() => {
+      bottomSheetScrollViewProps.latest?.onScroll?.({ nativeEvent: { contentOffset: { y: 0 } } });
+      bottomSheetScrollViewProps.latest?.onContentSizeChange?.();
+    });
+
+    expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledTimes(1);
+    expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledWith({ y: 240, animated: false });
   });
 });

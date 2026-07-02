@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useRef, useState, useEffect, type ComponentRef, type SetStateAction } from 'react';
-import { View, Pressable, StyleSheet, type ViewStyle } from 'react-native';
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  type ViewStyle,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -144,6 +151,16 @@ export function ClimbFilterSheet({
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetModal>(null);
   const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
+  // Latest scroll offset, captured on scroll into a ref (no re-render).
+  const scrollOffsetRef = useRef(0);
+  // Offset snapshotted at suspend time and restored after the host remounts on
+  // resume (see presentEpoch). A live read of scrollOffsetRef at restore time
+  // would race the fresh ScrollView's initial onScroll (y=0), which can land
+  // before onContentSizeChange and clobber the target.
+  const pendingRestoreOffsetRef = useRef(0);
+  // The epoch whose offset has already been restored — makes the restore in
+  // onContentSizeChange one-shot per remount, not re-fire on later content growth.
+  const restoredScrollEpochRef = useRef(0);
   const refinePrewarmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLocalDraftEditsRef = useRef(false);
   const boardName = boardConfig?.boardName ?? '';
@@ -156,6 +173,10 @@ export function ClimbFilterSheet({
   // Bumped on Reset so the Refine/Advanced sections collapse back to default.
   const [sectionResetKey, setSectionResetKey] = useState(0);
   const [refineExpanded, setRefineExpanded] = useState(false);
+  // Hoisted like refineExpanded so it survives the sheet-host remount on resume
+  // (see presentEpoch). Kept internal to the section, it would collapse back to
+  // default on every sub-picker round trip.
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
   // The sub-pickers (setters / holds / zone) are pushed routes, not stacked
   // sheets (native sheets can't stack above this one). While a sub-route is open
   // we suspend — dismiss the native sheet without unmounting, so the draft below
@@ -164,6 +185,14 @@ export function ClimbFilterSheet({
   const router = useRouter();
   const [suspended, setSuspended] = useState(false);
   const pendingResumeRef = useRef(false);
+  // A sub-picker round trip re-presents the native sheet host. On iOS a re-present
+  // of an ALREADY-MOUNTED SwiftUI sheet host loses the detent height bound, so the
+  // flex:1 column stops being clamped to the 90% detent — the ScrollView then grows
+  // to content height and pushes the pinned Apply footer off-screen (#3330). Bumping
+  // this epoch on resume remounts the host under a fresh key, so every re-present
+  // takes the same first-present path as the initial mount (Android already rebuilds
+  // its native host each present; this just makes the code path uniform).
+  const [presentEpoch, setPresentEpoch] = useState(0);
 
   // Sync committed parent filters only until the user starts editing. After that,
   // local edits are draft-only until Apply and must not be overwritten by parent
@@ -403,14 +432,23 @@ export function ClimbFilterSheet({
     updateLocalFilters(DEFAULT_FILTERS);
     updateLocalBoardFilters(DEFAULT_CLIMB_BOARD_FILTER_STATE);
     setRefineExpanded(false);
+    setAdvancedExpanded(false);
     hasLocalDraftEditsRef.current = false;
     setSectionResetKey((key) => key + 1);
   }, [updateLocalBoardFilters, updateLocalFilters]);
 
-  const openSetters = useCallback(() => {
-    if (!boardConfig || pendingResumeRef.current) return;
+  // Shared suspend preamble for the sub-picker openers: snapshot the scroll
+  // offset for the post-remount restore, then dismiss the native sheet without
+  // unmounting (see the suspended/pendingResumeRef comment above).
+  const beginSubPickerSuspend = useCallback(() => {
+    pendingRestoreOffsetRef.current = scrollOffsetRef.current;
     pendingResumeRef.current = true;
     setSuspended(true);
+  }, []);
+
+  const openSetters = useCallback(() => {
+    if (!boardConfig || pendingResumeRef.current) return;
+    beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/setters',
       params: {
@@ -422,7 +460,7 @@ export function ClimbFilterSheet({
         setters: JSON.stringify(localFilters.setter ?? []),
       },
     });
-  }, [boardConfig, localFilters.setter, router]);
+  }, [beginSubPickerSuspend, boardConfig, localFilters.setter, router]);
 
   const scheduleBoardHoldsPrewarm = useCallback(() => {
     if (!boardConfig) return;
@@ -446,10 +484,27 @@ export function ClimbFilterSheet({
     [scheduleBoardHoldsPrewarm],
   );
 
+  const handleAdvancedExpandedChange = useCallback((expanded: boolean) => {
+    setAdvancedExpanded(expanded);
+  }, []);
+
+  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+  }, []);
+
+  // Restore the snapshotted offset once the freshly remounted host has laid out
+  // its content. Guarded to fire once per epoch so later content growth (e.g. a
+  // section expanding) can't yank the scroll position. onContentSizeChange fires
+  // on every platform (unlike the iOS-only contentOffset prop).
+  const handleScrollContentSizeChange = useCallback(() => {
+    if (restoredScrollEpochRef.current === presentEpoch) return;
+    restoredScrollEpochRef.current = presentEpoch;
+    scrollRef.current?.scrollTo({ y: pendingRestoreOffsetRef.current, animated: false });
+  }, [presentEpoch]);
+
   const openHoldFilter = useCallback(() => {
     if (!boardConfig || pendingResumeRef.current) return;
-    pendingResumeRef.current = true;
-    setSuspended(true);
+    beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/holds',
       params: {
@@ -460,12 +515,11 @@ export function ClimbFilterSheet({
         holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
       },
     });
-  }, [boardConfig, localBoardFilters.holdsFilter, router]);
+  }, [beginSubPickerSuspend, boardConfig, localBoardFilters.holdsFilter, router]);
 
   const openZoneFilter = useCallback(() => {
     if (!boardConfig || pendingResumeRef.current) return;
-    pendingResumeRef.current = true;
-    setSuspended(true);
+    beginSubPickerSuspend();
     router.push({
       pathname: '/(tabs)/climbs/zone',
       params: {
@@ -479,7 +533,14 @@ export function ClimbFilterSheet({
         holdsFilter: JSON.stringify(localBoardFilters.holdsFilter ?? {}),
       },
     });
-  }, [boardConfig, localBoardFilters.holdsFilter, localBoardFilters.zoneBox, localBoardFilters.zoneMode, router]);
+  }, [
+    beginSubPickerSuspend,
+    boardConfig,
+    localBoardFilters.holdsFilter,
+    localBoardFilters.zoneBox,
+    localBoardFilters.zoneMode,
+    router,
+  ]);
 
   // Re-present after a sub-picker route pops (Done button OR swipe-back both
   // re-focus this screen). On initial mount the screen is already focused with no
@@ -489,6 +550,8 @@ export function ClimbFilterSheet({
       if (pendingResumeRef.current) {
         pendingResumeRef.current = false;
         setSuspended(false);
+        // Remount the native sheet host so the re-present is a first present (#3330).
+        setPresentEpoch((epoch) => epoch + 1);
       }
     }, []),
   );
@@ -601,6 +664,7 @@ export function ClimbFilterSheet({
 
   return (
     <BottomSheetModal
+      key={presentEpoch}
       ref={sheetRef}
       index={0}
       snapPoints={snapPoints}
@@ -628,6 +692,9 @@ export function ClimbFilterSheet({
           style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onContentSizeChange={handleScrollContentSizeChange}
         >
           {/* PRIMARY — the levers the analytics say carry the product. Always open. */}
           <View style={styles.primary}>
@@ -725,12 +792,14 @@ export function ClimbFilterSheet({
               <View style={styles.subsectionGap} />
               <Pressable
                 onPress={openSetters}
+                disabled={!boardConfig}
                 accessibilityRole="button"
                 accessibilityLabel={t('mobile.filter.setters')}
                 style={({ pressed }) => [
                   styles.tappableRow,
                   { backgroundColor: systemColors.tertiaryBackground },
                   pressed && styles.tappableRowPressed,
+                  !boardConfig && styles.tappableRowDisabled,
                 ]}
               >
                 <Text variant="body">{t('mobile.filter.setters')}</Text>
@@ -818,8 +887,10 @@ export function ClimbFilterSheet({
             {/* ADVANCED — the sub-2% long tail. Kept, off the primary surface. */}
             <CollapsibleSection
               title={t('mobile.filter.section.advanced')}
+              defaultExpanded={advancedExpanded}
               summary={advancedSummary ?? t('mobile.filter.advancedHint')}
               resetKey={sectionResetKey}
+              onExpandedChange={handleAdvancedExpandedChange}
             >
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.section.status')}
