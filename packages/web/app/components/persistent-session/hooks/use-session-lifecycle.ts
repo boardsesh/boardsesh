@@ -22,6 +22,7 @@ import {
 import {
   applySessionRuntimeEvent,
   hasContiguousReplayCoverage,
+  type QueueSyncGate,
   type RuntimeSessionEvent,
 } from '@boardsesh/queue-runtime';
 import type {
@@ -157,7 +158,14 @@ type UseSessionLifecycleArgs = {
   isAuthLoading: boolean;
   handleQueueEvent: (event: SubscriptionQueueEvent) => void;
   handleSessionEvent: (event: SessionEvent) => void;
-  setLastReceivedStateHash: Dispatch<SetStateAction<string | null>>;
+  /**
+   * Shared sync gate owned by `PersistentSessionProvider`. This hook asks it
+   * for the reconnect strategy (none / delta-replay / full-sync) and RESETS
+   * it whenever the connection effect tears down (session change, auth
+   * change, unmount) — the next `connect()` re-establishes tracking from a
+   * fresh FullSync.
+   */
+  syncGate: QueueSyncGate;
   refs: Pick<
     SharedRefs,
     | 'wsAuthTokenRef'
@@ -210,7 +218,7 @@ export function useSessionLifecycle({
   isAuthLoading,
   handleQueueEvent,
   handleSessionEvent,
-  setLastReceivedStateHash,
+  syncGate,
   refs,
 }: UseSessionLifecycleArgs): SessionLifecycleState & SessionLifecycleActions {
   const {
@@ -494,7 +502,9 @@ export function useSessionLifecycle({
       try {
         if (DEBUG) console.info('[PersistentSession] Reconnecting...');
 
-        const lastSeq = lastReceivedSequenceRef.current;
+        // The gate owns sequence tracking; the ref is just a mirror for
+        // use-offline-reconciliation.
+        const lastSeq = syncGate.getLastSequence();
         const sessionData = await joinSession(clientForReconnect);
         if (!sessionData || !mountedRef.current) return;
         // joinSession (WS member payload) always returns a full queue
@@ -521,16 +531,30 @@ export function useSessionLifecycle({
         subscriptionRetryCount = 0;
 
         const currentSeq = rejoinedQueueState.sequence;
-        const gap = lastSeq !== null ? currentSeq - lastSeq : 0;
+        // Strategy selection (gap thresholds, first-connection, gap=0 hash
+        // compare) lives in the shared gate — the old inline gap/hash chain
+        // is gone.
+        const strategy = syncGate.decideReconnectStrategy({
+          lastSequence: lastSeq,
+          serverSequence: currentSeq,
+          serverStateHash: rejoinedQueueState.stateHash,
+          localStateHash: computeQueueStateHash(queueRef.current, currentClimbQueueItemRef.current?.uuid || null),
+        });
 
         if (DEBUG)
           console.info(
-            `[PersistentSession] Reconnected. Last seq: ${lastSeq}, Current seq: ${currentSeq}, Gap: ${gap}`,
+            `[PersistentSession] Reconnected. Last seq: ${lastSeq}, Current seq: ${currentSeq}, Strategy: ${strategy}`,
           );
 
-        if (gap > 0 && gap <= 100 && lastSeq !== null && sessionId) {
+        // The gate picks 'delta-replay' purely from the sequence gap; the
+        // legacy branch additionally required a truthy sessionId (falsy → no
+        // resync at all), so that guard stays here at the call site. The
+        // lastSeq null-check is for TypeScript — the gate never returns
+        // 'delta-replay' without a tracked sequence.
+        if (strategy === 'delta-replay' && lastSeq !== null && sessionId) {
           try {
-            if (DEBUG) console.info(`[PersistentSession] Attempting delta sync for ${gap} missed events...`);
+            if (DEBUG)
+              console.info(`[PersistentSession] Attempting delta sync for ${currentSeq - lastSeq} missed events...`);
 
             const response = await execute<{ eventsReplay: EventsReplayResponse }>(clientForReconnect, {
               query: EVENTS_REPLAY,
@@ -567,21 +591,14 @@ export function useSessionLifecycle({
             console.warn('[PersistentSession] Delta sync failed, falling back to full sync:', err);
             applyFullSync(sessionData);
           }
-        } else if (gap > 100) {
-          if (DEBUG) console.info(`[PersistentSession] Gap too large (${gap}), using full sync`);
+        } else if (strategy === 'full-sync') {
+          if (DEBUG) console.info('[PersistentSession] Applying full sync on reconnect');
           applyFullSync(sessionData);
-        } else if (lastSeq === null) {
-          if (DEBUG) console.info('[PersistentSession] First connection, applying initial state');
-          applyFullSync(sessionData);
-        } else if (gap === 0) {
-          const localHash = computeQueueStateHash(queueRef.current, currentClimbQueueItemRef.current?.uuid || null);
-          if (localHash !== rejoinedQueueState.stateHash) {
-            if (DEBUG) console.info('[PersistentSession] Hash mismatch on reconnect despite gap=0, applying full sync');
-            applyFullSync(sessionData);
-          } else {
-            setLastReceivedStateHash(rejoinedQueueState.stateHash);
-            if (DEBUG) console.info('[PersistentSession] No missed events, already in sync');
-          }
+        } else {
+          // 'none': the event processor's hash tracking already matches the
+          // server, so there is no state to update here (the old code's
+          // redundant setLastReceivedStateHash call is gone).
+          if (DEBUG) console.info('[PersistentSession] No missed events, already in sync');
         }
 
         setSession(sessionData);
@@ -844,6 +861,16 @@ export function useSessionLifecycle({
       sessionUnsubscribeRef.current?.();
       sessionUnsubscribeRef.current = null;
 
+      // Gate tracking is connection-scoped: the next connect() (same or
+      // different session) re-establishes sequence/hash tracking from a fresh
+      // FullSync, and a new session deserves a clean corruption cooldown and
+      // resync-loop counter. Transient socket drops do NOT run this cleanup
+      // (graphql-ws reconnects internally via onReconnect), so delta replay
+      // across a network blip still sees the pre-disconnect sequence. Keep
+      // the legacy ref mirror in sync for use-offline-reconciliation.
+      syncGate.reset();
+      lastReceivedSequenceRef.current = null;
+
       if (clientToCleanup) {
         void Promise.resolve()
           .then(async () => {
@@ -874,7 +901,7 @@ export function useSessionLifecycle({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refs are stable, only .current changes; intentional dep list
-  }, [activeSession, isAuthLoading, handleQueueEvent, handleSessionEvent, setLastReceivedStateHash, setSession]);
+  }, [activeSession, isAuthLoading, handleQueueEvent, handleSessionEvent, syncGate, setSession]);
 
   return {
     activeSession,

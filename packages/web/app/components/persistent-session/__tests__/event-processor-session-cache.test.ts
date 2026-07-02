@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vite-plus/test';
 import { renderHook, act } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createQueueSyncGate } from '@boardsesh/queue-runtime';
 import { useEventProcessor } from '../hooks/use-event-processor';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
 import type {
@@ -18,8 +19,6 @@ function createRefs() {
   return {
     lastReceivedSequenceRef: { current: null as number | null },
     triggerResyncRef: { current: null as (() => void) | null },
-    lastCorruptionResyncRef: { current: 0 },
-    isFilteringCorruptedItemsRef: { current: false },
     queueEventSubscribersRef: { current: new Set<(event: SubscriptionQueueEvent) => void>() },
     sessionEventSubscribersRef: { current: new Set<(event: SessionEvent) => void>() },
     offlineBufferRef: { current: [] as LocalClimbQueueItem[] },
@@ -125,7 +124,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
 
   it('does not seed cache when no existing data (waits for HTTP fetch)', () => {
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.handleSessionEvent(createStatsEvent());
@@ -139,7 +140,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     queryClient.setQueryData(SESSION_DETAIL_QUERY_KEY('session-abc'), createExistingSession());
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.handleSessionEvent(createStatsEvent());
@@ -172,7 +175,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     );
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.handleSessionEvent(
@@ -200,7 +205,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     queryClient.setQueryData(SESSION_DETAIL_QUERY_KEY('session-abc'), createExistingSession());
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     const ticks = [
       createTick('2026-04-30T10:00:00Z'),
@@ -221,7 +228,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     queryClient.setQueryData(SESSION_DETAIL_QUERY_KEY('session-abc'), createExistingSession());
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     // Ticks arrive ascending — opposite of the documented newest-first contract.
     const ticks = [
@@ -249,7 +258,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     queryClient.setQueryData(SESSION_DETAIL_QUERY_KEY('session-abc'), createExistingSession());
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     // 14:30+05:30 == 09:00Z; 12:00Z is later; 11:00Z is earliest in absolute time.
     const ticks = [
@@ -271,7 +282,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     queryClient.setQueryData(SESSION_DETAIL_QUERY_KEY('session-abc'), createExistingSession());
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.handleSessionEvent(createStatsEvent({ ticks: [] }));
@@ -290,7 +303,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     );
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     // The live SessionStatsUpdated event's ticks omit betaLinks (the subscription
     // doesn't select them), so the optimistic merge must preserve the cached ones.
@@ -326,7 +341,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
     );
 
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.handleSessionEvent(
@@ -356,7 +373,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
       subscriberCalls.push(e),
     );
 
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     const event = createStatsEvent();
     act(() => {
@@ -369,7 +388,9 @@ describe('useEventProcessor - SessionStatsUpdated → React Query cache', () => 
 
   it('handles non-SessionStatsUpdated events without touching cache', () => {
     const refs = createRefs();
-    const { result } = renderHook(() => useEventProcessor({ refs }), { wrapper: createWrapper() });
+    const { result } = renderHook(() => useEventProcessor({ syncGate: createQueueSyncGate(), refs }), {
+      wrapper: createWrapper(),
+    });
 
     act(() => {
       result.current.handleSessionEvent({

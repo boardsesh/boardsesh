@@ -280,9 +280,15 @@ export type SharedRefs = {
   isReconnectingRef: MutableRefObject<boolean>;
   connectionGenerationRef: MutableRefObject<number>;
   triggerResyncRef: MutableRefObject<(() => void) | null>;
+  /**
+   * Mirror of the sync gate's `getLastSequence()` — the gate (created in
+   * `persistent-session-context.tsx`) owns the value; the event processor
+   * writes it here after every applied event and the lifecycle nulls it on
+   * gate reset. Kept as a ref because `use-offline-reconciliation` (board
+   * route) reads it through the context at disconnect time without
+   * subscribing to re-renders.
+   */
   lastReceivedSequenceRef: MutableRefObject<number | null>;
-  lastCorruptionResyncRef: MutableRefObject<number>;
-  isFilteringCorruptedItemsRef: MutableRefObject<boolean>;
   queueUnsubscribeRef: MutableRefObject<(() => void) | null>;
   sessionUnsubscribeRef: MutableRefObject<(() => void) | null>;
   queueEventSubscribersRef: MutableRefObject<Set<(event: SubscriptionQueueEvent) => void>>;
@@ -295,7 +301,8 @@ export const DEFAULT_BACKEND_URL = getBackendWsUrl();
 // Key for persisting ActiveSessionInfo in user-preferences IndexedDB
 export const ACTIVE_SESSION_KEY = 'activeSession';
 
-// Cooldown for corruption-triggered resyncs to prevent infinite loops
-export const CORRUPTION_RESYNC_COOLDOWN_MS = 30000; // 30 seconds
+// The corruption-resync cooldown moved to @boardsesh/queue-runtime
+// (CORRUPTION_RESYNC_COOLDOWN_MS in sync-gate.ts) — the shared sync gate owns
+// that concern now.
 
 export const DEBUG = process.env.NODE_ENV === 'development';

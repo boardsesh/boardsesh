@@ -1,79 +1,16 @@
 import { type Dispatch, type RefObject, useEffect } from 'react';
 import type { SubscriptionQueueEvent } from '@boardsesh/shared-schema';
-import type { ClimbQueueItem } from '@boardsesh/queue';
-import { mapSubscriptionEnvelopeToAction, type SubscriptionWireEnvelope } from '@boardsesh/queue-runtime';
+import { mapSubscriptionEnvelopeToAction } from '@boardsesh/queue-runtime';
+import { toWireEnvelope } from '../../persistent-session/event-utils';
 import type { QueueAction } from '../../queue-control/types';
 import { track } from '@/app/lib/analytics';
 
-/**
- * Queue-state events only — `PlaybackStateChanged` is ephemeral (consumed by
- * `use-drawer-playback` for the engine; doesn't mutate queue state) and is
- * filtered out at the subscription callback before reaching `toWireEnvelope`.
- */
-export type QueueStateEvent = Exclude<SubscriptionQueueEvent, { __typename: 'PlaybackStateChanged' }>;
-
-/**
- * Adapt the wire-format `SubscriptionQueueEvent` (from `@boardsesh/shared-schema`)
- * to the runtime's structural `SubscriptionWireEnvelope<ClimbQueueItem>` (from
- * `@boardsesh/queue-runtime`). Both unions share the same `__typename` set and
- * the same aliased field names, but their `ClimbQueueItem` declarations come
- * from different packages so direct assignment isn't possible.
- *
- * Explicit per-variant rebuild + `assertNever` default rather than an
- * `as unknown as` cast: TypeScript — not runtime — surfaces drift between the
- * two unions (new variant, renamed field, narrowed field type). A silent cast
- * would let an unrecognized __typename fall through to
- * `mapSubscriptionEnvelopeToAction`'s switch which has no `default` clause and
- * would silently drop the event.
- */
-export function toWireEnvelope(event: QueueStateEvent): SubscriptionWireEnvelope<ClimbQueueItem> {
-  switch (event.__typename) {
-    case 'FullSync':
-      return {
-        __typename: 'FullSync',
-        state: {
-          queue: event.state.queue,
-          currentClimbQueueItem: event.state.currentClimbQueueItem,
-        },
-      };
-    case 'QueueItemAdded':
-      return {
-        __typename: 'QueueItemAdded',
-        addedItem: event.addedItem,
-        position: event.position,
-      };
-    case 'QueueItemRemoved':
-      return { __typename: 'QueueItemRemoved', uuid: event.uuid };
-    case 'QueueReordered':
-      return {
-        __typename: 'QueueReordered',
-        uuid: event.uuid,
-        oldIndex: event.oldIndex,
-        newIndex: event.newIndex,
-      };
-    case 'CurrentClimbChanged':
-      return {
-        __typename: 'CurrentClimbChanged',
-        currentItem: event.currentItem,
-        clientId: event.clientId,
-        correlationId: event.correlationId,
-      };
-    case 'ClimbMirrored':
-      return {
-        __typename: 'ClimbMirrored',
-        mirrored: event.mirrored,
-        mirroredUuid: event.mirroredUuid,
-      };
-    default:
-      return assertNever(event);
-  }
-}
-
-function assertNever(unhandledEvent: never): never {
-  throw new Error(`Unhandled SubscriptionQueueEvent variant: ${JSON.stringify(unhandledEvent)}`);
-}
-
-export const toSyncQueueEvent = toWireEnvelope;
+// `toWireEnvelope` (and its `QueueStateEvent` input type) moved to
+// `persistent-session/event-utils.ts` so the root persistent-session event
+// processor can share it. Re-export for this hook's existing importers; a
+// later workstream deletes this hook entirely.
+export { toWireEnvelope, toSyncQueueEvent } from '../../persistent-session/event-utils';
+export type { QueueStateEvent } from '../../persistent-session/event-utils';
 
 type UseQueueEventSubscriptionParams = {
   isPersistentSessionActive: boolean;

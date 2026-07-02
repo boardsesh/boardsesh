@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import type { SubscriptionQueueEvent, SessionEvent } from '@boardsesh/shared-schema';
+import { createQueueSyncGate, type QueueSyncGate } from '@boardsesh/queue-runtime';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/types';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { usePartyProfile } from '../party-manager/party-profile-context';
@@ -56,8 +57,6 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
   const connectionGenerationRef = useRef(0);
   const triggerResyncRef = useRef<(() => void) | null>(null);
   const lastReceivedSequenceRef = useRef<number | null>(null);
-  const lastCorruptionResyncRef = useRef<number>(0);
-  const isFilteringCorruptedItemsRef = useRef(false);
   const queueUnsubscribeRef = useRef<(() => void) | null>(null);
   const sessionUnsubscribeRef = useRef<(() => void) | null>(null);
   const queueEventSubscribersRef = useRef<Set<(event: SubscriptionQueueEvent) => void>>(new Set());
@@ -93,16 +92,27 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     connectionGenerationRef,
     triggerResyncRef,
     lastReceivedSequenceRef,
-    lastCorruptionResyncRef,
-    isFilteringCorruptedItemsRef,
     queueUnsubscribeRef,
     sessionUnsubscribeRef,
     queueEventSubscribersRef,
     sessionEventSubscribersRef,
   };
 
-  // 1. Event processor: queue state + event handling
-  const eventProcessor = useEventProcessor({ refs });
+  // Shared queue sync gate — ONE instance for all three hooks below, so
+  // sequence/hash tracking, the corruption cooldown, and the resync-loop
+  // backoff read the same state. Ownership: created here (lazily, once per
+  // provider mount); the event processor advances it per applied event; the
+  // lifecycle consults it on reconnect and RESETS it when the connection
+  // effect tears down (session change/disconnect); the subscriptions hook
+  // consumes its watchdog/corruption verdicts.
+  const syncGateRef = useRef<QueueSyncGate | null>(null);
+  if (syncGateRef.current === null) {
+    syncGateRef.current = createQueueSyncGate();
+  }
+  const syncGate = syncGateRef.current;
+
+  // 1. Event processor: queue state (shared queueReducer) + event handling
+  const eventProcessor = useEventProcessor({ syncGate, refs });
 
   // Keep queue refs in sync with event processor state
   useEffect(() => {
@@ -117,7 +127,7 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     isAuthLoading,
     handleQueueEvent: eventProcessor.handleQueueEvent,
     handleSessionEvent: eventProcessor.handleSessionEvent,
-    setLastReceivedStateHash: eventProcessor.setLastReceivedStateHash,
+    syncGate,
     refs,
   });
 
@@ -153,7 +163,9 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     queue: eventProcessor.queue,
     currentClimbQueueItem: eventProcessor.currentClimbQueueItem,
     lastReceivedStateHash: eventProcessor.lastReceivedStateHash,
-    setQueueState: eventProcessor.setQueueState,
+    needsResync: eventProcessor.needsResync,
+    clearResyncFlag: eventProcessor.clearResyncFlag,
+    syncGate,
     refs,
   });
 

@@ -1,18 +1,32 @@
-import { useCallback, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useReducer, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SubscriptionQueueEvent, SessionEvent, SessionDetail } from '@boardsesh/shared-schema';
+import {
+  queueReducer,
+  initialState as queueInitialState,
+  type QueueAction,
+  type QueueSearchParams,
+  type QueueState,
+} from '@boardsesh/queue';
+import { mapSubscriptionEnvelopeToAction, type QueueSyncGate, type QueueSyncGateEvent } from '@boardsesh/queue-runtime';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/types';
-import { evaluateQueueEventSequence, insertQueueItemIdempotent } from '../event-utils';
+import { toWireEnvelope, type QueueStateEvent } from '../event-utils';
 import { type SharedRefs, DEBUG } from '../types';
 import { SESSION_DETAIL_QUERY_KEY } from '@/app/hooks/use-session-detail';
 
 type UseEventProcessorArgs = {
+  /**
+   * Shared sync gate owned by `PersistentSessionProvider`. The same instance
+   * is passed to `useSessionLifecycle` (reconnect strategy + reset on session
+   * change/disconnect) and `useSessionSubscriptions` (hash watchdog +
+   * corruption cooldown) so every resync decision reads one sequence/hash
+   * tracker.
+   */
+  syncGate: QueueSyncGate;
   refs: Pick<
     SharedRefs,
     | 'lastReceivedSequenceRef'
     | 'triggerResyncRef'
-    | 'lastCorruptionResyncRef'
-    | 'isFilteringCorruptedItemsRef'
     | 'queueEventSubscribersRef'
     | 'sessionEventSubscribersRef'
     | 'offlineBufferRef'
@@ -23,24 +37,54 @@ export type EventProcessorState = {
   queue: LocalClimbQueueItem[];
   currentClimbQueueItem: LocalClimbQueueItem | null;
   lastReceivedStateHash: string | null;
+  /** Reducer-detected corruption: INITIAL_QUEUE_DATA / UPDATE_QUEUE filtered
+   *  null (or climbless) items out of an incoming payload.
+   *  `useSessionSubscriptions` watches this and consults the gate's
+   *  corruption cooldown before resyncing. */
+  needsResync: boolean;
 };
 
 export type EventProcessorActions = {
   handleQueueEvent: (event: SubscriptionQueueEvent) => void;
   handleSessionEvent: (event: SessionEvent) => void;
-  setQueueState: Dispatch<SetStateAction<LocalClimbQueueItem[]>>;
-  setCurrentClimbQueueItem: Dispatch<SetStateAction<LocalClimbQueueItem | null>>;
-  setLastReceivedStateHash: Dispatch<SetStateAction<string | null>>;
+  /** Acknowledge the reducer's `needsResync` flag after acting on it. */
+  clearResyncFlag: () => void;
   notifyQueueSubscribers: (event: SubscriptionQueueEvent) => void;
   notifySessionSubscribers: (event: SessionEvent) => void;
 };
 
-export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcessorState & EventProcessorActions {
+/**
+ * Flatten a wire event into the shape the sync gate reasons about. FullSync
+ * nests its stateHash under `state`; PlaybackStateChanged carries no hash
+ * (it doesn't mutate the queue).
+ */
+function toGateEvent(event: SubscriptionQueueEvent): QueueSyncGateEvent {
+  if (event.__typename === 'FullSync') {
+    return { __typename: event.__typename, sequence: event.sequence, stateHash: event.state.stateHash };
+  }
+  if (event.__typename === 'PlaybackStateChanged') {
+    return { __typename: event.__typename, sequence: event.sequence };
+  }
+  return { __typename: event.__typename, sequence: event.sequence, stateHash: event.stateHash };
+}
+
+/**
+ * Root-level queue event processor. Runs every incoming queue event through
+ * the shared `queueReducer` — the exact reducer the board-route
+ * `graphql-queue/QueueContext` uses — gated by the shared sync gate, so both
+ * queue copies apply identical semantics (full state unification is a later
+ * workstream). Deliberately does NOT pass a `myClientId` echo-suppression
+ * hint to the action mapper: this copy is the server-authoritative mirror
+ * and must apply every broadcast, including echoes of this client's own
+ * mutations.
+ */
+export function useEventProcessor({
+  syncGate,
+  refs,
+}: UseEventProcessorArgs): EventProcessorState & EventProcessorActions {
   const {
     lastReceivedSequenceRef,
     triggerResyncRef,
-    lastCorruptionResyncRef: _lastCorruptionResyncRef,
-    isFilteringCorruptedItemsRef: _isFilteringCorruptedItemsRef,
     queueEventSubscribersRef,
     sessionEventSubscribersRef,
     offlineBufferRef,
@@ -48,8 +92,28 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
 
   const queryClient = useQueryClient();
 
-  const [queue, setQueueState] = useState<LocalClimbQueueItem[]>([]);
-  const [currentClimbQueueItem, setCurrentClimbQueueItem] = useState<LocalClimbQueueItem | null>(null);
+  const [reducerState, dispatchToReducer] = useReducer(
+    queueReducer<QueueSearchParams>,
+    undefined,
+    (): QueueState<QueueSearchParams> => queueInitialState<QueueSearchParams>({}),
+  );
+
+  // Synchronous mirror of the reducer state. `handleQueueEvent` can run
+  // several times in one task (the reconnect delta-replay loop feeds a whole
+  // batch synchronously); React batches those dispatches, so the render
+  // closure's `reducerState` goes stale mid-batch. The reorder pre-validation
+  // below must read the state the reducer will actually see next, so the
+  // wrapped dispatch replays each action against this mirror — the reducer is
+  // pure, so replaying is deterministic and side-effect-free.
+  const latestStateRef = useRef<QueueState<QueueSearchParams>>(queueInitialState<QueueSearchParams>({}));
+  const dispatch = useCallback((action: QueueAction<QueueSearchParams>) => {
+    latestStateRef.current = queueReducer(latestStateRef.current, action);
+    dispatchToReducer(action);
+  }, []);
+
+  // Server hash mirror for React consumers (the watchdog effect re-arms on
+  // it). The gate tracks the same value internally for its own comparisons;
+  // this state updates at exactly the gate's tracking points.
   const [lastReceivedStateHash, setLastReceivedStateHash] = useState<string | null>(null);
 
   // Notify queue event subscribers
@@ -68,149 +132,112 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
     [sessionEventSubscribersRef],
   );
 
-  // Helper to update sequence ref
-  const updateLastReceivedSequence = useCallback(
-    (sequence: number) => {
-      lastReceivedSequenceRef.current = sequence;
-    },
-    [lastReceivedSequenceRef],
-  );
-
   // Handle queue events internally
   const handleQueueEvent = useCallback(
     (event: SubscriptionQueueEvent) => {
-      // Sequence validation for stale/gap detection (use ref to avoid stale closure).
-      // FullSync always resets local state and sequence tracking.
-      //
-      // PlaybackStateChanged is also exempt: the server stamps it with the
-      // *current* sequence number (it doesn't mutate the queue, so the room
-      // manager doesn't bump). Routing it through the dedup gate would mark
-      // every event after the first as stale and silently drop party-mode
-      // playback sync. The post-switch block below already skips updating
-      // `lastReceivedSequence`/`stateHash` for this event type.
-      if (event.__typename !== 'FullSync' && event.__typename !== 'PlaybackStateChanged') {
-        const lastSeq = lastReceivedSequenceRef.current;
-        const sequenceDecision = evaluateQueueEventSequence(lastSeq, event.sequence);
+      const gateEvent = toGateEvent(event);
+      const decision = syncGate.evaluateIncoming(gateEvent);
 
-        if (sequenceDecision === 'ignore-stale') {
-          if (DEBUG) {
-            console.info(
-              `[PersistentSession] Ignoring stale/duplicate event with sequence ${event.sequence} ` +
-                `(last received: ${lastSeq})`,
-            );
-          }
-          return;
-        }
-
-        if (sequenceDecision === 'gap') {
-          console.warn(
-            `[PersistentSession] Sequence gap detected: expected ${lastSeq! + 1}, got ${event.sequence}. ` +
-              `Triggering resync.`,
+      if (decision === 'ignore-stale') {
+        if (DEBUG) {
+          console.info(
+            `[PersistentSession] Ignoring stale/duplicate event with sequence ${gateEvent.sequence} ` +
+              `(last received: ${syncGate.getLastSequence()})`,
           );
-          if (triggerResyncRef.current) {
-            triggerResyncRef.current();
-          }
-          return;
         }
+        return;
       }
 
-      switch (event.__typename) {
-        case 'FullSync': {
-          const serverQueue = (event.state.queue as LocalClimbQueueItem[]).filter((item) => item != null);
-          // Merge offline-buffered items for visual continuity during reconciliation
-          const pending = offlineBufferRef.current;
-          if (pending.length > 0) {
-            const serverUuids = new Set(serverQueue.map((item) => item.uuid));
-            for (const item of pending) {
-              if (!serverUuids.has(item.uuid)) {
-                serverQueue.push(item);
-              }
+      if (decision === 'resync-gap') {
+        console.warn(
+          `[PersistentSession] Sequence gap detected: expected ${(syncGate.getLastSequence() ?? 0) + 1}, ` +
+            `got ${gateEvent.sequence}. Triggering resync.`,
+        );
+        triggerResyncRef.current?.();
+        return;
+      }
+
+      // decision === 'apply'. PlaybackStateChanged is ephemeral — the queue
+      // reducer has no concept of playback frames, and the gate never
+      // advances tracking for it (the server stamps it with the *current*
+      // sequence, so tracking it would mark the next real delta stale).
+      if (event.__typename !== 'PlaybackStateChanged') {
+        let stateEvent: QueueStateEvent = event;
+
+        if (stateEvent.__typename === 'FullSync') {
+          // Merge offline-buffered items into the FullSync payload BEFORE
+          // dispatch, for visual continuity during reconciliation — climbs
+          // the user added while disconnected must not blink out of the queue
+          // until `useOfflineReconciliation` pushes them to the server.
+          // Server-sent nulls (corrupted items) are deliberately left in
+          // place so the reducer's INITIAL_QUEUE_DATA filter can flag
+          // `needsResync`.
+          const pendingOfflineItems = offlineBufferRef.current;
+          if (pendingOfflineItems.length > 0) {
+            const serverUuids = new Set(stateEvent.state.queue.filter((item) => item != null).map((item) => item.uuid));
+            const missingOfflineItems = pendingOfflineItems.filter((item) => !serverUuids.has(item.uuid));
+            if (missingOfflineItems.length > 0) {
+              stateEvent = {
+                ...stateEvent,
+                state: {
+                  ...stateEvent.state,
+                  queue: [
+                    ...stateEvent.state.queue,
+                    ...(missingOfflineItems as unknown as typeof stateEvent.state.queue),
+                  ],
+                },
+              };
             }
           }
-          setQueueState(serverQueue);
-          setCurrentClimbQueueItem(event.state.currentClimbQueueItem as LocalClimbQueueItem | null);
-          updateLastReceivedSequence(event.sequence);
-          setLastReceivedStateHash(event.state.stateHash);
-          break;
         }
-        case 'QueueItemAdded':
-          if (event.addedItem == null) {
-            console.error('[PersistentSession] Received QueueItemAdded with null/undefined item, skipping');
-            break;
-          }
-          setQueueState((prev) => {
-            return insertQueueItemIdempotent(prev, event.addedItem as LocalClimbQueueItem, event.position ?? undefined);
-          });
-          break;
-        case 'QueueItemRemoved':
-          setQueueState((prev) => prev.filter((item) => item.uuid !== event.uuid));
-          setCurrentClimbQueueItem((prev) => (prev?.uuid === event.uuid ? null : prev));
-          break;
-        case 'QueueReordered':
-          setQueueState((prev) => {
-            const sourceIndex = prev.findIndex((item) => item.uuid === event.uuid);
-            const oldIndex = sourceIndex >= 0 ? sourceIndex : event.oldIndex;
-            if (oldIndex < 0 || oldIndex >= prev.length) {
-              console.warn(
-                `[PersistentSession] Received QueueReordered for missing item ${event.uuid}; waiting for hash watchdog resync`,
-              );
-              return prev;
-            }
-            const newQueue = [...prev];
-            const [item] = newQueue.splice(oldIndex, 1);
-            const newIndex = Math.max(0, Math.min(event.newIndex, newQueue.length));
-            newQueue.splice(newIndex, 0, item);
-            return newQueue;
-          });
-          break;
-        case 'CurrentClimbChanged':
-          setCurrentClimbQueueItem(event.currentItem as LocalClimbQueueItem | null);
-          break;
-        case 'ClimbMirrored':
-          if (event.mirroredUuid) {
-            setQueueState((prev) =>
-              prev.map((item) =>
-                item.uuid === event.mirroredUuid
-                  ? {
-                      ...item,
-                      climb: {
-                        ...item.climb,
-                        mirrored: event.mirrored,
-                      },
-                    }
-                  : item,
-              ),
+
+        if (stateEvent.__typename === 'QueueReordered') {
+          // Reorder pre-validation — a deliberate behavior change from the
+          // old hand-rolled switch, which clamped out-of-range indices and
+          // moved whatever item it found. If the item at oldIndex isn't the
+          // item the server says it moved, local order has drifted from the
+          // server's. Order drift is invisible to the sorted-uuid state hash,
+          // so the 60s watchdog would never catch it and clamping could
+          // diverge silently forever. Resync instead of dispatching.
+          const itemAtOldIndex = latestStateRef.current.queue[stateEvent.oldIndex];
+          if (itemAtOldIndex?.uuid !== stateEvent.uuid) {
+            console.warn(
+              `[PersistentSession] QueueReordered mismatch: expected item ${stateEvent.uuid} at index ` +
+                `${stateEvent.oldIndex}, found ${itemAtOldIndex?.uuid ?? 'nothing'}. Triggering resync.`,
             );
+            triggerResyncRef.current?.();
+            return;
           }
-          setCurrentClimbQueueItem((prev) => {
-            if (!prev) return prev;
-            if (event.mirroredUuid && prev.uuid !== event.mirroredUuid) return prev;
-            return {
-              ...prev,
-              climb: {
-                ...prev.climb,
-                mirrored: event.mirrored,
-              },
-            };
-          });
-          break;
+        }
+
+        const mappingResult = mapSubscriptionEnvelopeToAction(toWireEnvelope(stateEvent));
+        if (mappingResult.kind === 'dispatch') {
+          dispatch(mappingResult.action);
+        } else {
+          // Malformed payload (e.g. QueueItemAdded with no item). Skip the
+          // dispatch but still advance sequence/hash tracking below — the
+          // server did consume this sequence number.
+          console.error(`[PersistentSession] Ignoring ${mappingResult.eventType} event: ${mappingResult.reason}`);
+        }
+
+        syncGate.noteApplied(gateEvent);
+        // `use-offline-reconciliation` reads this ref to detect server-side
+        // changes across a disconnect; the gate owns the value now.
+        lastReceivedSequenceRef.current = syncGate.getLastSequence();
+        setLastReceivedStateHash(gateEvent.stateHash ?? null);
       }
 
-      if (event.__typename !== 'FullSync' && event.__typename !== 'PlaybackStateChanged') {
-        // PlaybackStateChanged is ephemeral — it doesn't carry a stateHash
-        // because it doesn't mutate the queue. The room manager reuses the
-        // current sequence number for ordering, so skip both updates here
-        // to avoid clobbering the watchdog's drift detection with a stale
-        // sequence repeat.
-        updateLastReceivedSequence(event.sequence);
-        setLastReceivedStateHash(event.stateHash);
-      }
-
-      // Notify external subscribers
+      // Notify external subscribers with the ORIGINAL event — the offline
+      // reconciliation hook compares the unmerged server queue against its
+      // buffer, so it must not see the offline items merged in above.
       notifyQueueSubscribers(event);
     },
-    [lastReceivedSequenceRef, triggerResyncRef, notifyQueueSubscribers, updateLastReceivedSequence, offlineBufferRef],
+    [syncGate, dispatch, triggerResyncRef, notifyQueueSubscribers, lastReceivedSequenceRef, offlineBufferRef],
   );
+
+  const clearResyncFlag = useCallback(() => {
+    dispatch({ type: 'CLEAR_RESYNC_FLAG' });
+  }, [dispatch]);
 
   // Handle session events internally
   const handleSessionEvent = useCallback(
@@ -262,14 +289,16 @@ export function useEventProcessor({ refs }: UseEventProcessorArgs): EventProcess
   );
 
   return {
-    queue,
-    currentClimbQueueItem,
+    // TYPE SEAM: the reducer state's items use the shared @boardsesh/queue
+    // ClimbQueueItem; the provider surface exposes the structurally-compatible
+    // web ClimbQueueItem (see the seam note in queue-control/types.ts).
+    queue: reducerState.queue as LocalClimbQueueItem[],
+    currentClimbQueueItem: reducerState.currentClimbQueueItem as LocalClimbQueueItem | null,
     lastReceivedStateHash,
+    needsResync: reducerState.needsResync,
     handleQueueEvent,
     handleSessionEvent,
-    setQueueState,
-    setCurrentClimbQueueItem,
-    setLastReceivedStateHash,
+    clearResyncFlag,
     notifyQueueSubscribers,
     notifySessionSubscribers,
   };
