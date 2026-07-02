@@ -222,20 +222,24 @@ final class LiveActivityWidgetTests: XCTestCase {
     // the negotiated maximumWriteValueLength clamped to [20, 244] — never the
     // ATT-512-derived 509 the failing iOS 26.5 cohort clusters at. MoonBoard
     // (both controller generations) and any with-response path stay at 20.
-    // Mirrors `effectiveChunkSizeForMtu` in
-    // packages/shared/ble-protocol/src/transport.ts — keep the value matrices
-    // in lockstep.
+    // Twin of `effectiveChunkSizeForMtu` in
+    // packages/shared/ble-protocol/src/transport.ts, with one domain
+    // difference: this side takes maximumWriteValueLength, which iOS reports
+    // as a PAYLOAD length (ATT MTU − 3), while the TS side takes the raw MTU —
+    // so the matrices differ by exactly 3 (TS mtu 23 ↔ Swift length 20).
     func testEffectiveChunkSizeClampsAuroraAndPinsMoonboard() {
         // Aurora without-response: clamp to the ATT-247 ceiling (244 payload).
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withoutResponse, boardName: "kilter"), 244)
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 512, writeType: .withoutResponse, boardName: "tension"), 244)
-        // Pass through negotiated values inside the window.
+        // Pass through negotiated payload lengths inside the window.
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 244, writeType: .withoutResponse, boardName: "kilter"), 244)
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 182, writeType: .withoutResponse, boardName: "kilter"), 182)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 23, writeType: .withoutResponse, boardName: "kilter"), 23)
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 252, writeType: .withoutResponse, boardName: "tension"), 244)
-        // Floor at the classic 20 for degenerate/default negotiations.
-        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 23, writeType: .withoutResponse, boardName: "kilter"), 20)
+        // Floor at the classic 20: the BLE-default link reports payload 20
+        // (ATT 23 − 3); anything below is degenerate and must not shrink chunks.
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 20, writeType: .withoutResponse, boardName: "kilter"), 20)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 19, writeType: .withoutResponse, boardName: "kilter"), 20)
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 0, writeType: .withoutResponse, boardName: "kilter"), 20)
         // nil board (a JS write before configureBoard) is Aurora-shaped: clamped MTU sizing.
         XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withoutResponse, boardName: nil), 244)
