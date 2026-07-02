@@ -80,6 +80,9 @@ export class RNBleAdapter implements BluetoothAdapter {
   // fallback → scan timeout) mirrors NativeIosBleAdapter.requestAndConnect and
   // the web adapters. Kept in lockstep by hand; if you change one, change the others.
   async requestAndConnect(targetSerial?: string): Promise<BleConnection> {
+    // Reset up front so a reused adapter whose reconnect fails before MTU
+    // negotiation can't write with the previous connection's stale MTU.
+    this.negotiatedMtu = DEFAULT_ATT_MTU;
     const devices = new Map<string, DiscoveredDevice>();
     let updateListener: ((devices: DiscoveredDevice[]) => void) | null = null;
     let scanStoppedListener: (() => void) | null = null;

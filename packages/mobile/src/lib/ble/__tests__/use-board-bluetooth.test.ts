@@ -637,6 +637,39 @@ describe('useBoardBluetooth', () => {
     });
   });
 
+  it('attaches write diagnostics to the MoonBoard send-success event too (#3230)', async () => {
+    // MoonBoard sends route through dispatchMoonboardPacket rather than the
+    // Aurora branch — the diagnostics wiring must reach this track call too.
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      getLastWriteDiagnostics: vi.fn().mockResolvedValue({ negotiatedMtu: 23, chunkSize: 20, chunkCount: 3 }),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x01]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r12');
+    });
+
+    const successCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success');
+    expect(successCall?.[1]).toMatchObject({
+      bleNegotiatedMtu: 23,
+      bleChunkSize: 20,
+      bleChunkCount: 3,
+    });
+  });
+
   it('attaches write diagnostics alongside failureReason on a failed send (#3230)', async () => {
     const writeDiagnostics: BleWriteDiagnostics = {
       chunkSize: 244,

@@ -81,7 +81,10 @@ export function bleWriteDiagnosticsProperties(
     bleWatchdogTripped: diagnostics.watchdogTripped,
     bleCanSendAtTrip: diagnostics.canSendAtTrip,
     bleWriteDurationMs: diagnostics.durationMs,
-  };
+    // `satisfies` keeps the literal honest if BleWriteDiagnostics grows an
+    // incompatible field; the cast below only asserts what the filter
+    // guarantees at runtime — no undefined values survive.
+  } satisfies Record<string, string | number | boolean | undefined>;
   return Object.fromEntries(Object.entries(mappedProperties).filter(([, value]) => value !== undefined)) as Record<
     string,
     string | number | boolean
