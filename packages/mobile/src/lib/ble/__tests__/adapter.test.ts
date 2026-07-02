@@ -1220,14 +1220,18 @@ describe('RNBleAdapter', () => {
       expect(splitMessages).toHaveBeenCalledWith(data, 244);
     });
 
-    it('keeps MoonBoard writes on the proven 20-byte chunks regardless of MTU', async () => {
-      const { adapter } = setupWriteDiagnosticsAdapter('moonboard', vi.fn().mockResolvedValue({ mtu: 247 }));
+    it('keeps MoonBoard writes on the proven 20-byte chunks and skips MTU negotiation entirely', async () => {
+      const requestMtuFn = vi.fn().mockResolvedValue({ mtu: 247 });
+      const { adapter } = setupWriteDiagnosticsAdapter('moonboard', requestMtuFn);
       await adapter.requestAndConnect();
 
       const data = new Uint8Array([0x01, 0x02, 0x03]);
       vi.mocked(splitMessages).mockReturnValue([data]);
       await adapter.write(data);
 
+      // No requestMTU for the moonboard family — chunks are pinned at 20 and
+      // the RedBearLab box shouldn't see avoidable GATT ops.
+      expect(requestMtuFn).not.toHaveBeenCalled();
       expect(splitMessages).toHaveBeenCalledWith(data, 20);
     });
 

@@ -1405,13 +1405,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 // would stay true forever and the wall would freeze until a
                 // manual disconnect. `canSendAtTrip` disambiguates in the
                 // field: true would mean the poller missed a flip (logic bug);
-                // false proves the wedge that only a link cycle clears.
+                // false proves the wedge that only a link cycle clears; absent
+                // means the peripheral was already gone when the watchdog ran.
                 let watchdog = DispatchWorkItem { [weak self] in
                     guard let self, self.pendingWriteResume != nil else { return }
-                    let canSendAtTrip = self.connectedPeripheral?.canSendWriteWithoutResponse ?? false
+                    // Tri-state on purpose: true = the poller missed a flip
+                    // (logic bug), false = wedged buffer on a live link, nil
+                    // (omitted from analytics) = the peripheral was already
+                    // gone at trip time, so neither claim would be honest.
+                    let canSendAtTrip = self.connectedPeripheral?.canSendWriteWithoutResponse
                     self.currentWriteTelemetry?.watchdogTripped = true
                     self.currentWriteTelemetry?.canSendAtTrip = canSendAtTrip
-                    self.logger.error("BLE write stalled: peripheral never became ready for write-without-response (canSendAtTrip=\(canSendAtTrip, privacy: .public)); attempting recovery")
+                    self.logger.error("BLE write stalled: peripheral never became ready for write-without-response (canSendAtTrip=\(String(describing: canSendAtTrip), privacy: .public)); attempting recovery")
                     self.handleWriteStall()
                 }
                 pendingWriteResumeWatchdog?.cancel()

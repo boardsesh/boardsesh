@@ -60,6 +60,7 @@ export type NativeBleWriteDiagnostics = {
   origin: 'js' | 'native';
   writeType: 'withoutResponse' | 'withResponse';
   chunkSize: number;
+  /** Planned chunks for the write (stamped at enqueue), not progress. */
   chunkCount: number;
   negotiatedMaxWriteWithoutResponse: number;
   /** Times a chunk parked on `canSendWriteWithoutResponse` during this write. */
