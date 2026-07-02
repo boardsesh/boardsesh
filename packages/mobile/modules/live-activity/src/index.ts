@@ -49,6 +49,34 @@ export type NativeBleConnectedDevice = {
   maxWriteWithoutResponse?: number;
 };
 
+/**
+ * Per-write BLE transport telemetry (#3230), reported by the native write path
+ * so `Climb Sent to Board` events can carry a measurable before/after for the
+ * iOS 26.5 `peripheralIsReady` write stall. `write()` resolves it on success;
+ * after a rejected write, fetch the failed write's copy via
+ * `getLastWriteDiagnostics`.
+ */
+export type NativeBleWriteDiagnostics = {
+  origin: 'js' | 'native';
+  writeType: 'withoutResponse' | 'withResponse';
+  chunkSize: number;
+  chunkCount: number;
+  negotiatedMaxWriteWithoutResponse: number;
+  /** Times a chunk parked on `canSendWriteWithoutResponse` during this write. */
+  parkCount: number;
+  /** Whether iOS delivered the `peripheralIsReady` delegate during this write. */
+  peripheralIsReadyFired: boolean;
+  /** What woke the last parked chunk: the delegate, or the #3230 poller. */
+  lastResumeSource?: 'callback' | 'poll';
+  maxParkMs: number;
+  totalParkMs: number;
+  /** The 5 s stall watchdog fired (the write then failed as write_timeout). */
+  watchdogTripped: boolean;
+  /** `canSendWriteWithoutResponse` at the moment the watchdog fired. */
+  canSendAtTrip?: boolean;
+  durationMs: number;
+};
+
 export type NativeBleConfigureBoardOptions = {
   boardName: string;
   layoutId: number;
@@ -65,7 +93,12 @@ type BoardBleNativeModule = {
   stopScan(): Promise<void>;
   connect(deviceId: string): Promise<void>;
   disconnect(): Promise<void>;
-  write(value: string): Promise<void>;
+  /**
+   * Resolves the write's transport diagnostics on binaries new enough to
+   * report them; older binaries resolve nothing. Treat a nullish result as
+   * "no diagnostics".
+   */
+  write(value: string): Promise<NativeBleWriteDiagnostics | null | void>;
   cancelWrites(): Promise<void>;
   configureBoard(options: NativeBleConfigureBoardOptions): Promise<void>;
   /**
@@ -76,6 +109,13 @@ type BoardBleNativeModule = {
    * (an OTA JS update can run against an older binary).
    */
   getConnectedDevice?(): Promise<NativeBleConnectedDevice | null>;
+  /**
+   * Diagnostics of the most recent failed JS write, for tagging the failure
+   * analytics event (a rejected promise can't carry them). Only present on
+   * newer binaries — gate on `typeof getLastWriteDiagnostics === 'function'`
+   * (an OTA JS update can run against an older binary).
+   */
+  getLastWriteDiagnostics?(): Promise<NativeBleWriteDiagnostics | null>;
   addListener(event: 'scanResult', listener: (payload: NativeBleScanEvent) => void): EventSubscription;
   addListener(event: 'disconnected', listener: (payload: NativeBleDisconnectEvent) => void): EventSubscription;
   addListener(event: 'connected', listener: (payload: NativeBleConnectedEvent) => void): EventSubscription;

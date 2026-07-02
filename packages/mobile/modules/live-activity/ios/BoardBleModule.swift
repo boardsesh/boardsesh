@@ -24,6 +24,12 @@ public class BoardBleModule: Module {
     private var pendingEvents: [PendingEvent] = []
     private var hasListener = false
     private var isDraining = false
+    /// Telemetry of the most recent FAILED JS-originated write (#3230). Expo's
+    /// `promise.reject` can't carry structured data, so `write` stashes it here
+    /// and JS fetches it via `getLastWriteDiagnostics` right after the reject.
+    /// Native-origin writes (widget intents) never route through this module's
+    /// `write`, so they can't overwrite a failure JS is about to fetch.
+    private var lastFailedWriteDiagnostics: [String: Any]?
 
     public func definition() -> ModuleDefinition {
         Name("BoardBle")
@@ -119,15 +125,26 @@ public class BoardBleModule: Module {
                 promise.reject("BLE_BAD_ARG", "Missing required parameter: value")
                 return
             }
-            BoardBleManager.shared.write(hex: value) { result in
-                switch result {
-                case .success:
-                    promise.resolve(nil)
-                case .failure(let error):
+            BoardBleManager.shared.write(hex: value) { error, telemetry in
+                if let error {
                     self.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
+                    self.bufferQueue.sync {
+                        self.lastFailedWriteDiagnostics = telemetry?.analyticsDictionary
+                    }
                     promise.reject("BLE_WRITE_FAILED", error.localizedDescription)
+                } else {
+                    // Additive: older JS bundles ignore the resolved value; older
+                    // binaries resolve nil and newer JS treats that as "no
+                    // diagnostics" (#3230).
+                    promise.resolve(telemetry?.analyticsDictionary)
                 }
             }
+        }
+
+        // Diagnostics for the most recent failed JS write (#3230). Presence of
+        // this function is the JS feature gate, mirroring getConnectedDevice.
+        AsyncFunction("getLastWriteDiagnostics") { () -> [String: Any]? in
+            self.bufferQueue.sync { self.lastFailedWriteDiagnostics }
         }
 
         AsyncFunction("cancelWrites") { () -> Void in

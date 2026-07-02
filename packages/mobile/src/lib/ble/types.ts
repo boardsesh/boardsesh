@@ -40,10 +40,36 @@ export type DevicePickerFn = (
   subscribe: (onUpdate: (devices: DiscoveredDevice[]) => void, onScanStopped?: () => void) => void,
 ) => Promise<string>;
 
+// Per-write transport diagnostics (#3230), attached to the Climb Sent to Board
+// analytics events. Sparse by platform: native iOS reports the full
+// flow-control story (parks, resume source, watchdog); the ble-plx (Android)
+// adapter only knows its negotiated MTU and chunking. Every field optional so
+// adapters/binaries that can't report a value simply omit it.
+export type BleWriteDiagnostics = {
+  origin?: 'js' | 'native';
+  writeType?: 'withoutResponse' | 'withResponse';
+  chunkSize?: number;
+  chunkCount?: number;
+  negotiatedMaxWriteWithoutResponse?: number;
+  negotiatedMtu?: number;
+  parkCount?: number;
+  peripheralIsReadyFired?: boolean;
+  lastResumeSource?: 'callback' | 'poll';
+  maxParkMs?: number;
+  totalParkMs?: number;
+  watchdogTripped?: boolean;
+  canSendAtTrip?: boolean;
+  durationMs?: number;
+};
+
 export type BluetoothAdapter = {
   isAvailable(): Promise<boolean>;
   requestAndConnect(targetSerial?: string): Promise<BleConnection>;
   disconnect(): Promise<void>;
   write(data: Uint8Array, signal?: AbortSignal): Promise<void>;
   onDisconnect(callback: (info?: BleDisconnectInfo) => void): () => void;
+  // Transport diagnostics of the adapter's most recently settled write
+  // (success or failure), for analytics tagging. Optional: web-era adapters
+  // and old binaries don't report any.
+  getLastWriteDiagnostics?(): Promise<BleWriteDiagnostics | null>;
 };

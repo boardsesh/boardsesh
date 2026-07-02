@@ -30,7 +30,13 @@ import {
   subscribeNativeBleConnected,
 } from './adapter-factory';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
-import type { BleDisconnectInfo, BluetoothAdapter, DevicePickerFn, DiscoveredDevice } from './types';
+import type {
+  BleDisconnectInfo,
+  BleWriteDiagnostics,
+  BluetoothAdapter,
+  DevicePickerFn,
+  DiscoveredDevice,
+} from './types';
 import type { HoldPlacement } from '../../components/board-renderer/types';
 import { track } from '../analytics';
 import { reportHandledError } from '../error-reporting';
@@ -49,6 +55,30 @@ export function bleConnectReportLevel(category: BleFailureCategory): 'warning' |
   if (category === 'user_cancelled') return null;
   if (category === 'board_not_found' || category === 'connect_failed') return 'warning';
   return 'error';
+}
+
+// Per-write transport diagnostics → analytics props (#3230). Prefixed `ble` to
+// sit beside the connect-time `bleChosenWriteType`/`bleMaxWriteWithoutResponse`
+// props; every field optional so Android/web adapters and old binaries simply
+// omit what they can't report. Exported for testing.
+export function bleWriteDiagnosticsProperties(diagnostics: BleWriteDiagnostics | null | undefined) {
+  if (!diagnostics) return {};
+  return {
+    bleWriteOrigin: diagnostics.origin,
+    bleWriteType: diagnostics.writeType,
+    bleChunkSize: diagnostics.chunkSize,
+    bleChunkCount: diagnostics.chunkCount,
+    bleMaxWriteWithoutResponse: diagnostics.negotiatedMaxWriteWithoutResponse,
+    bleNegotiatedMtu: diagnostics.negotiatedMtu,
+    bleParkCount: diagnostics.parkCount,
+    blePeripheralIsReadyFired: diagnostics.peripheralIsReadyFired,
+    bleLastResumeSource: diagnostics.lastResumeSource,
+    bleMaxParkMs: diagnostics.maxParkMs,
+    bleTotalParkMs: diagnostics.totalParkMs,
+    bleWatchdogTripped: diagnostics.watchdogTripped,
+    bleCanSendAtTrip: diagnostics.canSendAtTrip,
+    bleWriteDurationMs: diagnostics.durationMs,
+  };
 }
 
 // Exported for testing — isolates the .packet extraction so regressions are caught.
@@ -444,6 +474,12 @@ export function useBoardBluetooth({
       const combinedSignal = merged ? merged.signal : generationSignal;
 
       const performSend = async (): Promise<boolean | undefined> => {
+        // Transport diagnostics of the write that just settled (#3230) — iOS
+        // native adapter (full flow-control story) or ble-plx (MTU/chunking
+        // only); null on web-era adapters and old binaries. Never let the
+        // fetch itself fail an already-settled send.
+        const fetchWriteDiagnostics = async (): Promise<BleWriteDiagnostics | null> =>
+          (await adapterRef.current?.getLastWriteDiagnostics?.().catch(() => null)) ?? null;
         try {
           // The send may have queued behind another write; by the time it runs
           // the connection generation may be gone (reconnect/disconnect) — bail
@@ -471,7 +507,12 @@ export function useBoardBluetooth({
               });
               return false;
             }
-            if (sent) track(SHARED_EVENTS.ClimbSentToBoardSuccess, boardAnalyticsProperties);
+            if (sent) {
+              track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
+                ...boardAnalyticsProperties,
+                ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
+              });
+            }
             return sent;
           }
 
@@ -551,7 +592,10 @@ export function useBoardBluetooth({
           }
 
           await adapterRef.current.write(result.packet, combinedSignal);
-          track(SHARED_EVENTS.ClimbSentToBoardSuccess, boardAnalyticsProperties);
+          track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
+            ...boardAnalyticsProperties,
+            ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
+          });
           return true;
         } catch (error) {
           // An aborted write (unmount, or a reconnect cancelling the old
@@ -563,9 +607,11 @@ export function useBoardBluetooth({
           }
           const bleFailureReason = classifyBleFailureReason(error);
           console.error('Error sending frames to board:', error);
+          const writeDiagnostics = await fetchWriteDiagnostics();
           track(SHARED_EVENTS.ClimbSentToBoardFailure, {
             ...boardAnalyticsProperties,
             failureReason: bleFailureReason,
+            ...bleWriteDiagnosticsProperties(writeDiagnostics),
           });
           // A dropped link is routine on these last-connection-wins boards
           // (another climber grabbed it, or it disconnected mid-session), so keep
@@ -574,6 +620,7 @@ export function useBoardBluetooth({
           reportHandledError(error, {
             level: bleFailureReason === 'disconnected' ? 'warning' : 'error',
             tags: { source: 'ble-send', failure_reason: bleFailureReason },
+            extra: writeDiagnostics ? { bleWriteDiagnostics: writeDiagnostics } : undefined,
           });
           // A write that fails because the link is gone (the board dropped or
           // another device grabbed it — these boards are last-connection-wins) is

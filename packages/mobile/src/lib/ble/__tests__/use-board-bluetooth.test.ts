@@ -114,10 +114,12 @@ import {
 import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol/aurora';
 import {
   bleConnectReportLevel,
+  bleWriteDiagnosticsProperties,
   convertToMirroredFramesString,
   dispatchMoonboardPacket,
   useBoardBluetooth,
 } from '../use-board-bluetooth';
+import type { BleWriteDiagnostics } from '../types';
 
 // ── Factory helpers ────────────────────────────────────────────────────────
 
@@ -592,6 +594,90 @@ describe('useBoardBluetooth', () => {
     const successCall = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success');
     expect(successCall).toBeDefined();
     expect(successCall?.[1]).toMatchObject({ apiLevel: 2, deviceNamePresent: false });
+  });
+
+  it('attaches per-write transport diagnostics to the send-success event (#3230)', async () => {
+    const writeDiagnostics: BleWriteDiagnostics = {
+      chunkSize: 244,
+      chunkCount: 2,
+      negotiatedMtu: 247,
+      lastResumeSource: 'poll',
+    };
+    // The adapter reports getLastWriteDiagnostics — the iOS-native / ble-plx path.
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      getLastWriteDiagnostics: vi.fn().mockResolvedValue(writeDiagnostics),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetLedPlacements.mockReturnValue({ 100: 7 });
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x01]),
+      skippedPositionCount: 0,
+      skippedRoleCount: 0,
+      totalPlacements: 1,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r13');
+    });
+
+    expect(fakeAdapter.getLastWriteDiagnostics).toHaveBeenCalled();
+    const successCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success');
+    expect(successCall?.[1]).toMatchObject({
+      bleChunkSize: 244,
+      bleChunkCount: 2,
+      bleNegotiatedMtu: 247,
+      bleLastResumeSource: 'poll',
+    });
+  });
+
+  it('attaches write diagnostics alongside failureReason on a failed send (#3230)', async () => {
+    const writeDiagnostics: BleWriteDiagnostics = {
+      chunkSize: 244,
+      chunkCount: 2,
+      watchdogTripped: true,
+      parkCount: 5,
+    };
+    const fakeAdapter = {
+      // A write-resume stall on a still-live link (classifies as write_timeout).
+      ...makeFakeAdapter({
+        write: vi.fn().mockRejectedValue(new Error('BLE write timed out waiting for the board to accept data')),
+      }),
+      getLastWriteDiagnostics: vi.fn().mockResolvedValue(writeDiagnostics),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetLedPlacements.mockReturnValue({ 100: 7 });
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x09]),
+      skippedPositionCount: 0,
+      skippedRoleCount: 0,
+      totalPlacements: 1,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r12');
+    });
+
+    const failureCall = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(failureCall?.[1]).toMatchObject({
+      failureReason: 'write_timeout',
+      bleChunkSize: 244,
+      bleChunkCount: 2,
+      bleWatchdogTripped: true,
+      bleParkCount: 5,
+    });
   });
 });
 
@@ -1192,5 +1278,48 @@ describe('bleConnectReportLevel', () => {
     expect(bleConnectReportLevel('unavailable')).toBe('error');
     expect(bleConnectReportLevel('service_missing')).toBe('error');
     expect(bleConnectReportLevel('unknown')).toBe('error');
+  });
+});
+
+describe('bleWriteDiagnosticsProperties', () => {
+  it('returns an empty object for null or undefined diagnostics', () => {
+    expect(bleWriteDiagnosticsProperties(null)).toEqual({});
+    expect(bleWriteDiagnosticsProperties(undefined)).toEqual({});
+  });
+
+  it('maps every field to its ble*-prefixed analytics prop', () => {
+    const diagnostics: BleWriteDiagnostics = {
+      origin: 'native',
+      writeType: 'withoutResponse',
+      chunkSize: 244,
+      chunkCount: 3,
+      negotiatedMaxWriteWithoutResponse: 244,
+      negotiatedMtu: 247,
+      parkCount: 2,
+      peripheralIsReadyFired: true,
+      lastResumeSource: 'poll',
+      maxParkMs: 30,
+      totalParkMs: 45,
+      watchdogTripped: false,
+      canSendAtTrip: true,
+      durationMs: 88,
+    };
+
+    expect(bleWriteDiagnosticsProperties(diagnostics)).toEqual({
+      bleWriteOrigin: 'native',
+      bleWriteType: 'withoutResponse',
+      bleChunkSize: 244,
+      bleChunkCount: 3,
+      bleMaxWriteWithoutResponse: 244,
+      bleNegotiatedMtu: 247,
+      bleParkCount: 2,
+      blePeripheralIsReadyFired: true,
+      bleLastResumeSource: 'poll',
+      bleMaxParkMs: 30,
+      bleTotalParkMs: 45,
+      bleWatchdogTripped: false,
+      bleCanSendAtTrip: true,
+      bleWriteDurationMs: 88,
+    });
   });
 });

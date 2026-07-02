@@ -218,6 +218,34 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: [.read], boardName: "moonboard"), .withResponse)
     }
 
+    // Transport chunk sizing (#3230). Aurora without-response chunks come from
+    // the negotiated maximumWriteValueLength clamped to [20, 244] — never the
+    // ATT-512-derived 509 the failing iOS 26.5 cohort clusters at. MoonBoard
+    // (both controller generations) and any with-response path stay at 20.
+    // Mirrors `effectiveChunkSizeForMtu` in
+    // packages/shared/ble-protocol/src/transport.ts — keep the value matrices
+    // in lockstep.
+    func testEffectiveChunkSizeClampsAuroraAndPinsMoonboard() {
+        // Aurora without-response: clamp to the ATT-247 ceiling (244 payload).
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withoutResponse, boardName: "kilter"), 244)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 512, writeType: .withoutResponse, boardName: "tension"), 244)
+        // Pass through negotiated values inside the window.
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 244, writeType: .withoutResponse, boardName: "kilter"), 244)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 182, writeType: .withoutResponse, boardName: "kilter"), 182)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 252, writeType: .withoutResponse, boardName: "tension"), 244)
+        // Floor at the classic 20 for degenerate/default negotiations.
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 23, writeType: .withoutResponse, boardName: "kilter"), 20)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 20, writeType: .withoutResponse, boardName: "kilter"), 20)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 0, writeType: .withoutResponse, boardName: "kilter"), 20)
+        // nil board (a JS write before configureBoard) is Aurora-shaped: clamped MTU sizing.
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withoutResponse, boardName: nil), 244)
+        // MoonBoard stays on the proven 20-byte chunks on BOTH write types.
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withoutResponse, boardName: "moonboard"), 20)
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 509, writeType: .withResponse, boardName: "moonboard"), 20)
+        // Any with-response path stays at 20 regardless of board.
+        XCTAssertEqual(BoardBleEncoding.effectiveChunkSize(negotiatedMaxWriteLength: 512, writeType: .withResponse, boardName: "kilter"), 20)
+    }
+
     // MARK: - Aurora packet encoding (parity with @boardsesh/ble-protocol)
 
     private func hex(_ data: Data) -> String {

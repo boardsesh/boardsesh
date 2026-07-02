@@ -65,6 +65,7 @@ vi.mock('../../../../modules/live-activity/src/index', () => ({
 
 import { NativeIosBleAdapter } from '../native-ios-adapter';
 import { SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
+import type { BleWriteDiagnostics } from '../types';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -527,5 +528,76 @@ describe('NativeIosBleAdapter on older binaries (no adoption surface)', () => {
     // Original RedBearLab MoonBoards advertise their own service, newer ones the
     // Nordic UART service — without an unfiltered scan we must list both.
     expect(nativeMock.startScan).toHaveBeenCalledWith(['UART-UUID', 'REDBEARLAB-UUID']);
+  });
+});
+
+// ── Per-write transport diagnostics (#3230) ─────────────────────────────────
+
+describe('NativeIosBleAdapter write diagnostics', () => {
+  // A representative full-fidelity native diagnostics payload (iOS reports the
+  // whole flow-control story). Shape-only — the adapter stores it verbatim.
+  const sampleDiagnostics: BleWriteDiagnostics = {
+    origin: 'native',
+    writeType: 'withoutResponse',
+    chunkSize: 244,
+    chunkCount: 3,
+    negotiatedMaxWriteWithoutResponse: 244,
+    parkCount: 1,
+    peripheralIsReadyFired: true,
+    lastResumeSource: 'callback',
+    maxParkMs: 12,
+    totalParkMs: 12,
+    watchdogTripped: false,
+    durationMs: 40,
+  };
+
+  afterEach(() => {
+    // Some cases attach the newer-binary getLastWriteDiagnostics; keep the
+    // default native mock (old binary) clean for the next test.
+    delete (nativeMock as Record<string, unknown>).getLastWriteDiagnostics;
+  });
+
+  it('stores the diagnostics the native write resolves on success', async () => {
+    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    adapter.adoptConnection('adopted-dev');
+    nativeMock.write.mockResolvedValueOnce(sampleDiagnostics);
+
+    await adapter.write(new Uint8Array([0x01, 0x02]));
+
+    await expect(adapter.getLastWriteDiagnostics()).resolves.toEqual(sampleDiagnostics);
+  });
+
+  it('records null (not undefined) when an old binary resolves no diagnostics', async () => {
+    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    adapter.adoptConnection('adopted-dev');
+    nativeMock.write.mockResolvedValueOnce(undefined);
+
+    await expect(adapter.write(new Uint8Array([0x01]))).resolves.toBeUndefined();
+    await expect(adapter.getLastWriteDiagnostics()).resolves.toBeNull();
+  });
+
+  it('fetches the native stash and rethrows when a write rejects on a newer binary', async () => {
+    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    adapter.adoptConnection('adopted-dev');
+    const writeError = new Error('write_timeout');
+    nativeMock.write.mockRejectedValueOnce(writeError);
+    const getStash = vi.fn().mockResolvedValue(sampleDiagnostics);
+    (nativeMock as Record<string, unknown>).getLastWriteDiagnostics = getStash;
+
+    await expect(adapter.write(new Uint8Array([0x01]))).rejects.toBe(writeError);
+    expect(getStash).toHaveBeenCalledOnce();
+    await expect(adapter.getLastWriteDiagnostics()).resolves.toEqual(sampleDiagnostics);
+  });
+
+  it('rethrows without a stash fetch when a write rejects on an old binary', async () => {
+    // The default native mock has no getLastWriteDiagnostics — the old-binary
+    // case where the reject path must not attempt (and must not throw from) a fetch.
+    const adapter = new NativeIosBleAdapter(() => Promise.reject(new Error('picker should not open')));
+    adapter.adoptConnection('adopted-dev');
+    const writeError = new Error('write_timeout');
+    nativeMock.write.mockRejectedValueOnce(writeError);
+
+    await expect(adapter.write(new Uint8Array([0x01]))).rejects.toBe(writeError);
+    await expect(adapter.getLastWriteDiagnostics()).resolves.toBeNull();
   });
 });

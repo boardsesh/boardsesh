@@ -14,6 +14,7 @@ import type {
   BluetoothAdapter,
   BleConnection,
   BleDisconnectInfo,
+  BleWriteDiagnostics,
   BoardScanFamily,
   DevicePickerFn,
   DiscoveredDevice,
@@ -67,6 +68,9 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
   private connectedDeviceId: string | null = null;
   private disconnectCallback: ((info?: BleDisconnectInfo) => void) | null = null;
   private disconnectSubscription: { remove: () => void } | null = null;
+  // Transport diagnostics of the most recently settled write (#3230): the
+  // resolved value on success, the native module's stash after a reject.
+  private lastWriteDiagnostics: BleWriteDiagnostics | null = null;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
@@ -279,13 +283,13 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     if (signal?.aborted) {
       throw new DOMException('Write aborted', 'AbortError');
     }
-    // Native side handles chunking (20-byte UART chunks with 5ms inter-chunk
+    // Native side handles chunking (MTU-sized UART chunks with 5ms inter-chunk
     // delay) inside BoardBleManager, so we pass the full payload as a single
     // hex string. An abort while the chunks are still draining natively flushes
     // the native queue too — without cancelWrites the stale climb would keep
     // streaming to the wall after the caller gave up on it.
     if (!signal) {
-      await native.write(uint8ArrayToHex(data));
+      await this.writeCapturingDiagnostics(uint8ArrayToHex(data));
       return;
     }
     const onAbort = () => {
@@ -293,7 +297,7 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     };
     signal.addEventListener('abort', onAbort, { once: true });
     try {
-      await native.write(uint8ArrayToHex(data));
+      await this.writeCapturingDiagnostics(uint8ArrayToHex(data));
     } catch (error) {
       // The native queue rejects cancelled writes with its own error shape;
       // normalise to AbortError so callers classify it as a cancellation.
@@ -304,6 +308,31 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     } finally {
       signal.removeEventListener('abort', onAbort);
     }
+  }
+
+  // Runs the native write and captures its transport diagnostics (#3230):
+  // resolved with the promise on success; after a reject, fetched from the
+  // module's stash (an Expo reject can't carry structured data). The stash is
+  // written before the reject reaches JS, so the fetch never races it. Both
+  // capabilities are absent on older binaries (OTA JS can outrun the native
+  // build) — then the write resolves nothing and there's no stash to fetch.
+  private async writeCapturingDiagnostics(hex: string): Promise<void> {
+    const native = this.requireNative();
+    try {
+      const diagnostics = await native.write(hex);
+      this.lastWriteDiagnostics = diagnostics ?? null;
+    } catch (error) {
+      if (typeof native.getLastWriteDiagnostics === 'function') {
+        this.lastWriteDiagnostics = await native.getLastWriteDiagnostics().catch(() => null);
+      } else {
+        this.lastWriteDiagnostics = null;
+      }
+      throw error;
+    }
+  }
+
+  async getLastWriteDiagnostics(): Promise<BleWriteDiagnostics | null> {
+    return this.lastWriteDiagnostics;
   }
 
   onDisconnect(callback: (info?: BleDisconnectInfo) => void): () => void {

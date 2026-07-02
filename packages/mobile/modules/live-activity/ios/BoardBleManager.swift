@@ -26,6 +26,59 @@ struct BoardBleConnectionDiagnostics {
     let maxWriteWithoutResponse: Int
 }
 
+/// Who enqueued a write: the JS bridge (`BoardBleModule.write`) or native code
+/// (widget intents, stall-recovery re-lights, clear-on-connect). Surfaced in the
+/// per-write telemetry so PostHog can segment the two populations.
+enum BoardBleWriteOrigin: String {
+    case js
+    case native
+}
+
+/// Per-write transport telemetry (#3230): how a single queued write moved
+/// through the without-response flow-control machinery. Attached to the JS
+/// write promise (success) or stashed for `getLastWriteDiagnostics` (failure)
+/// so `Climb Sent to Board` events carry a measurable before/after for the
+/// iOS 26.5 `peripheralIsReady` stall.
+struct BoardBleWriteTelemetry {
+    let origin: String              // BoardBleWriteOrigin.rawValue
+    let writeType: String           // "withoutResponse" | "withResponse"
+    let chunkSize: Int
+    let chunkCount: Int
+    let negotiatedMaxWriteWithoutResponse: Int
+    let startedAt: DispatchTime     // internal timing anchor; not surfaced
+    var parkCount = 0               // times a chunk parked on canSendWriteWithoutResponse
+    var peripheralIsReadyFired = false
+    var lastResumeSource: String?   // "callback" | "poll"
+    var maxParkMs = 0
+    var totalParkMs = 0
+    var watchdogTripped = false
+    var canSendAtTrip: Bool?        // canSendWriteWithoutResponse when the watchdog fired
+    var durationMs = 0
+
+    var analyticsDictionary: [String: Any] {
+        var dictionary: [String: Any] = [
+            "origin": origin,
+            "writeType": writeType,
+            "chunkSize": chunkSize,
+            "chunkCount": chunkCount,
+            "negotiatedMaxWriteWithoutResponse": negotiatedMaxWriteWithoutResponse,
+            "parkCount": parkCount,
+            "peripheralIsReadyFired": peripheralIsReadyFired,
+            "maxParkMs": maxParkMs,
+            "totalParkMs": totalParkMs,
+            "watchdogTripped": watchdogTripped,
+            "durationMs": durationMs,
+        ]
+        if let lastResumeSource {
+            dictionary["lastResumeSource"] = lastResumeSource
+        }
+        if let canSendAtTrip {
+            dictionary["canSendAtTrip"] = canSendAtTrip
+        }
+        return dictionary
+    }
+}
+
 enum BoardBleError: LocalizedError {
     case bluetoothUnavailable
     case deviceNotFound
@@ -82,9 +135,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private struct WriteRequest {
         let chunks: [Data]
+        // Write type and chunk size are snapshotted at enqueue so one request is
+        // internally consistent: a configureBoard landing mid-request must not
+        // flip the write type (or pacing) between chunks of a single frame.
+        let writeType: CBCharacteristicWriteType
+        let chunkSize: Int
+        let negotiatedMaxWriteWithoutResponse: Int
+        let origin: BoardBleWriteOrigin
         let connectionGeneration: UInt64
         let writeGeneration: UInt64
-        let completion: (Error?) -> Void
+        let completion: (Error?, BoardBleWriteTelemetry?) -> Void
     }
 
     private let logger = Logger(subsystem: "com.boardsesh.app", category: "BoardBleManager")
@@ -99,13 +159,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // family. See docs/MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md §2.1.
     private let redBearLabServiceUuid = CBUUID(string: "713D0000-503E-4C75-BA94-3148F18D941E")
     private let redBearLabWriteCharacteristicUuid = CBUUID(string: "713D0003-503E-4C75-BA94-3148F18D941E")
-    private let chunkSize = 20
     private let chunkDelay: TimeInterval = 0.005
     private let connectTimeout: TimeInterval = 8
     // How long a write parked on `canSendWriteWithoutResponse` may wait for
     // peripheralIsReady before the queue is failed. Generous: a healthy link
     // drains its transmit buffer in milliseconds.
     private let writeResumeTimeout: TimeInterval = 5
+    // Second resume path for a parked write (#3230): iOS 26.5 updates
+    // `canSendWriteWithoutResponse` but can skip the `peripheralIsReady`
+    // delegate entirely, so a poller re-checks the property while parked.
+    // 50 ms ≈ 100 chances inside the 5 s watchdog; healthy parks last tens of
+    // milliseconds.
+    private let writeResumePollInterval: TimeInterval = 0.05
     // How many CONSECUTIVE write stalls (with no successful write between them)
     // we recover from by cycling the connection before giving up and surfacing
     // the disconnect to JS. A fresh GATT link clears CoreBluetooth's wedged
@@ -146,6 +211,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var isWriting = false
     private var pendingWriteResume: (() -> Void)?
     private var pendingWriteResumeWatchdog: DispatchWorkItem?
+    // Poller behind the parked write (#3230): re-checks
+    // `canSendWriteWithoutResponse` while `pendingWriteResume` is set, because
+    // iOS 26.5 can flip the property without ever delivering the
+    // `peripheralIsReady` delegate. Cancelled wherever the watchdog is.
+    private var writeResumePoller: DispatchSourceTimer?
+    // Telemetry for the request currently being written (#3230). Requests are
+    // strictly serial (`isWriting`), so one slot suffices: seeded when a request
+    // starts, finalized at whichever settle point delivers its completion.
+    private var currentWriteTelemetry: BoardBleWriteTelemetry?
+    private var parkStartedAt: DispatchTime?
     // Write-WITH-response pacing (the original MoonBoard LED box, whose UART RX
     // characteristic advertises only `.write`). The `didWriteValueFor` ack is
     // the resume signal — the with-response analogue of `pendingWriteResume`.
@@ -277,23 +352,20 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
     }
 
-    func write(hex: String, completion: @escaping (Result<Void, Error>) -> Void) {
+    /// JS-bridge write entry point. The completion carries the per-write
+    /// telemetry (#3230) on BOTH outcomes so the module can resolve it with the
+    /// promise (success) or stash it for `getLastWriteDiagnostics` (failure).
+    func write(hex: String, completion: @escaping (Error?, BoardBleWriteTelemetry?) -> Void) {
         guard let data = Data(hexString: hex) else {
-            completion(.failure(BoardBleError.invalidHex))
+            completion(BoardBleError.invalidHex, nil)
             return
         }
-        write(data: data) { error in
-            if let error {
-                completion(.failure(error))
-            } else {
-                completion(.success(()))
-            }
-        }
+        write(data: data, origin: .js, completion: completion)
     }
 
-    func write(data: Data, completion: ((Error?) -> Void)? = nil) {
+    func write(data: Data, origin: BoardBleWriteOrigin = .native, completion: ((Error?, BoardBleWriteTelemetry?) -> Void)? = nil) {
         runOnBleQueue { [weak self] in
-            self?.writeOnBleQueue(data: data, completion: completion)
+            self?.writeOnBleQueue(data: data, origin: origin, completion: completion)
         }
     }
 
@@ -577,17 +649,26 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         completion?()
     }
 
-    private func writeOnBleQueue(data: Data, completion: ((Error?) -> Void)? = nil) {
-        guard connectedPeripheral != nil, writeCharacteristic != nil else {
+    private func writeOnBleQueue(data: Data, origin: BoardBleWriteOrigin = .native, completion: ((Error?, BoardBleWriteTelemetry?) -> Void)? = nil) {
+        guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic else {
             // During a write-stall recovery the link is briefly down between the
             // cancel and the reconnect. Surface the self-healing `writeTimedOut`
             // (a warning JS rides out with `isConnected` kept) rather than
             // `notConnected`, which the JS classifier treats as a hard drop and
             // would tear the connection down mid-recovery (#3181).
-            completion?(writeStallRecoveringPeripheralId != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected)
+            completion?(writeStallRecoveringPeripheralId != nil ? BoardBleError.writeTimedOut : BoardBleError.notConnected, nil)
             return
         }
 
+        let writeType = BoardBleEncoding.preferredWriteType(
+            for: characteristic.properties,
+            boardName: configuration?.boardName
+        )
+        let chunkSize = BoardBleEncoding.effectiveChunkSize(
+            negotiatedMaxWriteLength: peripheral.maximumWriteValueLength(for: writeType),
+            writeType: writeType,
+            boardName: configuration?.boardName
+        )
         let chunks = stride(from: 0, to: data.count, by: chunkSize).map { offset in
             data.subdata(in: offset..<min(offset + chunkSize, data.count))
         }
@@ -595,9 +676,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         writeQueue.append(
             WriteRequest(
                 chunks: chunks,
+                writeType: writeType,
+                chunkSize: chunkSize,
+                negotiatedMaxWriteWithoutResponse: peripheral.maximumWriteValueLength(for: .withoutResponse),
+                origin: origin,
                 connectionGeneration: connectionGeneration,
                 writeGeneration: writeGeneration,
-                completion: completion ?? { _ in }
+                completion: completion ?? { _, _ in }
             )
         )
         processWriteQueue()
@@ -635,7 +720,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         )
 
         guard !result.packet.isEmpty else { return }
-        writeOnBleQueue(data: result.packet) { [weak self] error in
+        writeOnBleQueue(data: result.packet) { [weak self] error, _ in
             if let error {
                 self?.logger.error("BLE clear failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -662,7 +747,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 logger.warning("Skipping MoonBoard BLE write: no encodable holds for climb \(item.climbUuid, privacy: .public)")
                 return
             }
-            writeOnBleQueue(data: result.packet) { [weak self] error in
+            writeOnBleQueue(data: result.packet) { [weak self] error, _ in
                 if let error {
                     self?.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
                 }
@@ -708,7 +793,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
-        writeOnBleQueue(data: result.packet) { [weak self] error in
+        writeOnBleQueue(data: result.packet) { [weak self] error, _ in
             if let error {
                 self?.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -1027,11 +1112,68 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        // Recorded even when nothing is parked: the diagnostic question for
+        // #3230 is whether iOS delivered this delegate at all during a request.
+        currentWriteTelemetry?.peripheralIsReadyFired = true
+        resumeParkedWrite(source: "callback")
+    }
+
+    /// Single resume point for a write parked on `canSendWriteWithoutResponse`,
+    /// shared by the `peripheralIsReady` delegate and the #3230 poller. Strict
+    /// ordering: retire BOTH wake-up sources and capture-and-nil the parked
+    /// continuation BEFORE invoking it — the resume can synchronously re-park
+    /// (the property is CoreBluetooth-internal and can flip back between our
+    /// read and `writeChunk`'s) and install a fresh poller + watchdog, which a
+    /// late cancel here would otherwise kill. Safe to call with nothing parked.
+    private func resumeParkedWrite(source: String) {
         pendingWriteResumeWatchdog?.cancel()
         pendingWriteResumeWatchdog = nil
-        let resume = pendingWriteResume
+        writeResumePoller?.cancel()
+        writeResumePoller = nil
+        guard let resume = pendingWriteResume else { return }
         pendingWriteResume = nil
-        resume?()
+        if let parkStartedAt {
+            let parkMs = Int((DispatchTime.now().uptimeNanoseconds - parkStartedAt.uptimeNanoseconds) / 1_000_000)
+            currentWriteTelemetry?.maxParkMs = max(currentWriteTelemetry?.maxParkMs ?? 0, parkMs)
+            currentWriteTelemetry?.totalParkMs += parkMs
+        }
+        parkStartedAt = nil
+        currentWriteTelemetry?.lastResumeSource = source
+        resume()
+    }
+
+    /// Second resume path for a parked write (#3230): on iOS 26.5 CoreBluetooth
+    /// can update `canSendWriteWithoutResponse` without ever calling
+    /// `peripheralIsReady`, leaving the park to the 5 s watchdog → link cycle →
+    /// `write_timeout`. While parked, re-check the property on a repeating
+    /// timer and resume the instant it flips true. The timer is created,
+    /// scheduled and activated in one place and never suspended; stale ticks
+    /// are provably inert via the identity guard + the `pendingWriteResume`
+    /// guard (and, beyond those, `writeChunk`'s generation guards).
+    private func startWriteResumePollerOnBleQueue() {
+        writeResumePoller?.cancel()
+        let poller = DispatchSource.makeTimerSource(queue: bleQueue)
+        poller.setEventHandler { [weak self, weak poller] in
+            guard let self, let poller, self.writeResumePoller === poller else { return }
+            guard self.pendingWriteResume != nil else {
+                self.writeResumePoller?.cancel()
+                self.writeResumePoller = nil
+                return
+            }
+            // Read the live connection each tick rather than capturing the
+            // parked CBPeripheral: while a park exists the connected peripheral
+            // can't change without failQueuedWrites cancelling this poller
+            // first, and not capturing avoids keeping a dead peripheral alive.
+            guard let peripheral = self.connectedPeripheral, peripheral.canSendWriteWithoutResponse else { return }
+            self.resumeParkedWrite(source: "poll")
+        }
+        poller.schedule(
+            deadline: .now() + writeResumePollInterval,
+            repeating: writeResumePollInterval,
+            leeway: .milliseconds(20)
+        )
+        writeResumePoller = poller
+        poller.activate()
     }
 
     // The ack for the write-WITH-response path. Mirrors `peripheralIsReady`:
@@ -1056,7 +1198,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 return
             }
             let request = writeQueue.removeFirst()
-            request.completion(error)
+            request.completion(error, finalizeCurrentWriteTelemetry())
             isWriting = false
             processWriteQueue()
             return
@@ -1158,12 +1300,41 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
         isWriting = true
         let request = writeQueue[0]
+        // Single seed point for the per-write telemetry: `isWriting` just
+        // flipped false→true, so exactly one request owns the slot until a
+        // settle point finalizes it (#3230).
+        currentWriteTelemetry = BoardBleWriteTelemetry(
+            origin: request.origin.rawValue,
+            writeType: request.writeType == .withoutResponse ? "withoutResponse" : "withResponse",
+            chunkSize: request.chunkSize,
+            chunkCount: request.chunks.count,
+            negotiatedMaxWriteWithoutResponse: request.negotiatedMaxWriteWithoutResponse,
+            startedAt: .now()
+        )
         writeChunk(
             requestIndex: 0,
             chunkIndex: 0,
             connectionGeneration: request.connectionGeneration,
             writeGeneration: request.writeGeneration
         )
+    }
+
+    /// Close out the in-flight request's telemetry (duration stamp, plus any
+    /// still-open park — a watchdog-tripped write settles while parked, and
+    /// that fatal park must count) and clear the slot so a later settle point
+    /// can't re-deliver stale data. Every path that settles the head request
+    /// routes its completion through this.
+    private func finalizeCurrentWriteTelemetry() -> BoardBleWriteTelemetry? {
+        guard var telemetry = currentWriteTelemetry else { return nil }
+        currentWriteTelemetry = nil
+        if let parkStartedAt {
+            let parkMs = Int((DispatchTime.now().uptimeNanoseconds - parkStartedAt.uptimeNanoseconds) / 1_000_000)
+            telemetry.maxParkMs = max(telemetry.maxParkMs, parkMs)
+            telemetry.totalParkMs += parkMs
+        }
+        parkStartedAt = nil
+        telemetry.durationMs = Int((DispatchTime.now().uptimeNanoseconds - telemetry.startedAt.uptimeNanoseconds) / 1_000_000)
+        return telemetry
     }
 
     private func writeChunk(
@@ -1198,7 +1369,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         guard let peripheral = connectedPeripheral, let characteristic = writeCharacteristic else {
             let request = writeQueue.removeFirst()
-            request.completion(BoardBleError.notConnected)
+            request.completion(BoardBleError.notConnected, finalizeCurrentWriteTelemetry())
             isWriting = false
             processWriteQueue()
             return
@@ -1209,19 +1380,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // A write got through end-to-end: the link is healthy, so refresh the
             // write-stall recovery budget (#3181).
             writeStallRecoveries = 0
-            request.completion(nil)
+            request.completion(nil, finalizeCurrentWriteTelemetry())
             isWriting = false
             processWriteQueue()
             return
         }
 
-        let writeType = BoardBleEncoding.preferredWriteType(
-            for: characteristic.properties,
-            boardName: configuration?.boardName
-        )
-
-        if writeType == .withoutResponse {
+        if request.writeType == .withoutResponse {
             guard peripheral.canSendWriteWithoutResponse else {
+                currentWriteTelemetry?.parkCount += 1
+                parkStartedAt = .now()
                 pendingWriteResume = { [weak self] in
                     self?.writeChunk(
                         requestIndex: requestIndex,
@@ -1230,18 +1398,26 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                         writeGeneration: writeGeneration
                     )
                 }
-                // Watchdog: peripheralIsReady is the ONLY resume signal, and a
-                // marginal link can simply never deliver it (without ever
-                // disconnecting either). Unbounded, `isWriting` would stay true
-                // forever and the wall would freeze until a manual disconnect.
+                // Watchdog: last resort when NEITHER resume path fires — the
+                // peripheralIsReady delegate stays silent AND the poller below
+                // never sees `canSendWriteWithoutResponse` flip true (a
+                // genuinely wedged transmit buffer). Unbounded, `isWriting`
+                // would stay true forever and the wall would freeze until a
+                // manual disconnect. `canSendAtTrip` disambiguates in the
+                // field: true would mean the poller missed a flip (logic bug);
+                // false proves the wedge that only a link cycle clears.
                 let watchdog = DispatchWorkItem { [weak self] in
                     guard let self, self.pendingWriteResume != nil else { return }
-                    self.logger.error("BLE write stalled: peripheral never became ready for write-without-response; attempting recovery")
+                    let canSendAtTrip = self.connectedPeripheral?.canSendWriteWithoutResponse ?? false
+                    self.currentWriteTelemetry?.watchdogTripped = true
+                    self.currentWriteTelemetry?.canSendAtTrip = canSendAtTrip
+                    self.logger.error("BLE write stalled: peripheral never became ready for write-without-response (canSendAtTrip=\(canSendAtTrip, privacy: .public)); attempting recovery")
                     self.handleWriteStall()
                 }
                 pendingWriteResumeWatchdog?.cancel()
                 pendingWriteResumeWatchdog = watchdog
                 bleQueue.asyncAfter(deadline: .now() + writeResumeTimeout, execute: watchdog)
+                startWriteResumePollerOnBleQueue()
                 return
             }
 
@@ -1275,6 +1451,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // acks within writeResumeTimeout, recover by cycling the link (#3181).
         let ackWatchdog = DispatchWorkItem { [weak self] in
             guard let self, self.pendingWriteAck != nil else { return }
+            self.currentWriteTelemetry?.watchdogTripped = true
             self.logger.error("BLE write stalled: peripheral never acked write-with-response; attempting recovery")
             self.handleWriteStall()
         }
@@ -1288,15 +1465,25 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         writeGeneration += 1
         let queuedWrites = writeQueue
         writeQueue = []
+        let wasWriting = isWriting
         isWriting = false
         pendingWriteResume = nil
         pendingWriteResumeWatchdog?.cancel()
         pendingWriteResumeWatchdog = nil
+        writeResumePoller?.cancel()
+        writeResumePoller = nil
         pendingWriteAck = nil
         pendingWriteAckWatchdog?.cancel()
         pendingWriteAckWatchdog = nil
-        for request in queuedWrites {
-            request.completion(error)
+        // Only the in-flight head request has meaningful telemetry; requests
+        // that never started get nil. Finalizing folds any still-open park into
+        // the totals and clears the slot (and parkStartedAt), so a later
+        // defensive call on an empty queue can't re-deliver stale data.
+        let headTelemetry = wasWriting ? finalizeCurrentWriteTelemetry() : nil
+        currentWriteTelemetry = nil
+        parkStartedAt = nil
+        for (requestIndex, request) in queuedWrites.enumerated() {
+            request.completion(error, requestIndex == 0 ? headTelemetry : nil)
         }
         notifyDrainWaitersIfDrainedOnBleQueue()
     }

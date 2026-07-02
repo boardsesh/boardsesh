@@ -44,6 +44,34 @@ enum BoardBleEncoding {
         return properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
     }
 
+    /// The classic 20-byte BLE payload (ATT 23 − 3): the floor every controller
+    /// generation is proven on, and the fixed size for both MoonBoard paths.
+    static let classicChunkSize = 20
+    /// Ceiling for MTU-sized Aurora chunks: ATT 247 − 3 header bytes. iOS-26.5
+    /// telemetry (#3230) shows the failing "oversized" cohort clusters at the
+    /// full ATT 512 (`maximumWriteValueLength` 509), while ATT ≤255 is clean in
+    /// the field — so never pass the negotiated maximum straight through.
+    /// Lockstep with `MAX_ATT_CHUNK_SIZE` in
+    /// packages/shared/ble-protocol/src/transport.ts (Android mirror).
+    static let maxAttChunkSize = 244
+
+    /// Transport chunk size for one GATT write. Chunking is a transport detail —
+    /// framing (SOH·LEN·CHK·STX·payload·ETX) is byte-identical at any size; the
+    /// official Kilter app negotiates MTU the same way (#3230).
+    ///
+    /// Aurora on write-without-response sizes chunks from the connection's
+    /// negotiated `maximumWriteValueLength`, clamped to [20, 244]. MoonBoard —
+    /// both the Nordic-UART and RedBearLab boxes — and any with-response path
+    /// stay at the proven 20 bytes.
+    static func effectiveChunkSize(
+        negotiatedMaxWriteLength: Int,
+        writeType: CBCharacteristicWriteType,
+        boardName: String?
+    ) -> Int {
+        guard writeType == .withoutResponse, boardName != "moonboard" else { return classicChunkSize }
+        return min(max(negotiatedMaxWriteLength, classicChunkSize), maxAttChunkSize)
+    }
+
     private struct HoldRoleInfo {
         let state: String
         let color: String
