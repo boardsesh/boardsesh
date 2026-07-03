@@ -23,8 +23,12 @@ class InstallReferrerModule : Module() {
         // The `Coroutine` infix (not a plain trailing lambda) is required for the
         // body to run as a suspend function — a plain AsyncFunction lambda is not
         // itself a coroutine, so calling the suspend fetchInstallReferrer() from
-        // inside it doesn't compile.
-        AsyncFunction("getInstallReferrer") Coroutine {
+        // inside it doesn't compile. `Coroutine` is overloaded for 0-8 params; an
+        // explicit empty parameter list (`->` with nothing before it) is required
+        // too — a lambda with no declared params is otherwise ambiguous between the
+        // 0-arg overload and a 1-arg overload's implicit unused `it`, and the
+        // compiler can't pick one ("Overload resolution ambiguity").
+        AsyncFunction("getInstallReferrer") Coroutine { ->
             fetchInstallReferrer()
         }
     }
