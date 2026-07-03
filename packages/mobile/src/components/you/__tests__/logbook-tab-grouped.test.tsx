@@ -247,4 +247,18 @@ describe('LogbookTab grouped mode', () => {
     expect(chooser.props).toBeNull();
     expect(deleteTick.mutate).toHaveBeenCalledWith('tick-send', expect.anything());
   });
+
+  it('opens the edit sheet directly for a single-entry group, skipping the chooser', async () => {
+    groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
+      { key: 'solo', climbUuid: 'climb-1', date: '2026-06-15', items: [GROUP_ITEMS[0]] },
+    ];
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await act(async () => {
+      row.requestEdit?.();
+    });
+
+    expect(chooser.props).toBeNull();
+    expect(editSheet.ascent?.uuid).toBe('tick-send');
+  });
 });
