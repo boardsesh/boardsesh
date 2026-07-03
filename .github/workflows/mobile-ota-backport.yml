@@ -174,7 +174,9 @@ jobs:
           set -uo pipefail
           raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform "$PLATFORM" 2>/dev/null || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
-          if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
+          # Require >= 12 hex chars: we compare the first 12 against the anchor's
+          # shortfp, so anything shorter couldn't form a valid comparison anyway.
+          if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{12,}$'; then
             echo "::error::Could not resolve the $PLATFORM fingerprint for the hotfix tree."
             exit 1
           fi
