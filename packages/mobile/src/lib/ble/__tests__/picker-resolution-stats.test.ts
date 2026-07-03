@@ -123,6 +123,13 @@ describe('effectiveBoardType', () => {
     expect(effectiveBoardType(device('d2', 'Tension Board#SN-9@2'), new Map())).toBe('tension'); // parsed from name
     expect(effectiveBoardType(device('d3'), new Map())).toBeUndefined(); // nameless
   });
+
+  it('falls back to the parsed name when a resolved entry carries no usable type', () => {
+    // Corrupted saved board (empty boardType → configFromResolvedEntry undefined):
+    // the device is still a Tension board by its advertised name.
+    const corrupted = new Map<string, ResolvedBoardEntry>([['SN-1', savedEntry('')]]);
+    expect(effectiveBoardType(device('d1', 'Tension Board#SN-1@2'), corrupted)).toBe('tension');
+  });
 });
 
 describe('noListedBoardMatchesSelectedType', () => {

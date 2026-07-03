@@ -14,7 +14,11 @@ export const SHEET_TOP_CHROME_PT = 20;
 // chrome) below the top safe area — not at `windowHeight − topInset`. Omitting
 // it made the `%` estimate run LONG on short screens (iPhone 13 mini / iOS
 // 26.1), pushing the pinned footer off the bottom. Folded into the base before
-// the fraction so the correction scales with the detent. Tunable on-device.
+// the fraction so the correction scales with the detent. Calibrated for the
+// grabber card presentation every sheet in this app uses (the default
+// `BottomSheetModal`); a non-card `.pageSheet`/`.formSheet` has no such gap and
+// would just be bounded a touch short — safe, since erring short beats a
+// clipped footer. Tunable on-device.
 export const SHEET_TOP_GAP_PT = 24;
 
 const fillStyle = StyleSheet.create({ fill: { flex: 1 } }).fill;

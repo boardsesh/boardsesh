@@ -15,7 +15,11 @@ export function effectiveBoardType(
 ): BoardName | undefined {
   const serial = parseSerialNumber(device.name);
   const resolvedEntry = serial ? resolvedBoards.get(serial) : undefined;
-  return resolvedEntry ? configFromResolvedEntry(resolvedEntry)?.boardName : parseBoardTypeFromDeviceName(device.name);
+  // A resolved board's real type wins; fall back to the name parse when there's
+  // no resolved entry OR the entry carries no usable board type (e.g. a
+  // corrupted saved board) — otherwise a known board would count as unknown.
+  const resolvedType = resolvedEntry ? configFromResolvedEntry(resolvedEntry)?.boardName : undefined;
+  return resolvedType ?? parseBoardTypeFromDeviceName(device.name);
 }
 
 /**
@@ -127,7 +131,9 @@ export function summarizePickerResolution(
     }
   }
 
-  stats.noneMatchedSelectedType = noListedBoardMatchesSelectedType(devices, resolvedBoards, currentBoardConfig);
+  // Equivalent to noListedBoardMatchesSelectedType (which the picker UI calls),
+  // but read off the tally we already built so we don't scan devices twice.
+  stats.noneMatchedSelectedType = selectedType != null && devices.length > 0 && stats.matchedSelectedType === 0;
 
   return stats;
 }
