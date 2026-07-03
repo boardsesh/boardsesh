@@ -87,10 +87,7 @@ export default function EditGym() {
 
   // Remount the form per gym so its once-only field seeds come from a fully-loaded
   // gym (mirrors the board-edit screen). The wrapper paints `background` like the
-  // loading/not-found states above (the glass contentStyle is transparent, so an
-  // unpainted root-level scene shows whatever sits behind the push — see
-  // changelog.tsx); `background`, not groupedBackground, so the form's
-  // secondaryBackground inputs keep their contrast step.
+  // states above — the glass contentStyle is transparent (see changelog.tsx).
   return (
     <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       {header}

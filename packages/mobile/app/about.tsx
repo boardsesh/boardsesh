@@ -69,9 +69,7 @@ export default function AboutScreen() {
       {/* Variant-aware header (transparent blur on Liquid Glass, opaque M3 on
           Material) from the shared hook; this screen just turns it on + titles it. */}
       <Stack.Screen options={{ ...screenOptions, title: t('mobile.about.title'), headerShown: true }} />
-      {/* Paints groupedBackground (mirrors changelog.tsx): the glass contentStyle
-          is transparent and this route is pushed root-level off the user-drawer,
-          so an unpainted scene shows the drawer's near-black scrim. */}
+      {/* Glass contentStyle is transparent: unpainted, this scene shows the user-drawer's scrim (see changelog.tsx). */}
       <ScrollView
         style={{ backgroundColor: systemColors.groupedBackground }}
         contentInsetAdjustmentBehavior="automatic"
