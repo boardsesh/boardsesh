@@ -83,9 +83,8 @@ describe('summarizePickerResolution', () => {
   });
 
   it('flags noneMatchedSelectedType when no listed board is the selected type', () => {
-    // The reported case: selected board is tension, but the only devices are the
-    // user's saved kilter and an unidentified non-tension board — their tension
-    // board was never discovered.
+    // Selected board is tension, but the only devices are a saved kilter and an
+    // unidentified non-tension board — the tension board was never discovered.
     const devices = [
       device('d1', 'Kilter Board#SN-1@3'), // saved kilter
       device('d2', 'Kilter Board#SN-7@3'), // unresolved, parses to kilter

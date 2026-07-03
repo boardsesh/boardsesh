@@ -20,10 +20,9 @@ export function effectiveBoardType(
 
 /**
  * True when a board is selected and devices were listed, yet none of them are
- * the selected board's type — the reported "my board isn't here" case, where
- * the user's target board was never discovered. Shared by the picker UI (to
- * show a hint) and the resolution stats (to flag it in analytics) so both read
- * the same rule.
+ * the selected board's type — i.e. the user's target board was never
+ * discovered. Shared by the picker UI (to show a hint) and the resolution stats
+ * (to flag it in analytics) so both read the same rule.
  */
 export function noListedBoardMatchesSelectedType(
   devices: ReadonlyArray<DiscoveredDevice>,
@@ -61,8 +60,7 @@ export type PickerResolutionStats = {
   unknownType: number;
   /**
    * True when a board is selected, devices were listed, yet none match the
-   * selected board type — the reported "my board isn't here" case, where the
-   * user's target board was never discovered.
+   * selected board type — i.e. the user's target board was never discovered.
    */
   noneMatchedSelectedType: boolean;
 };

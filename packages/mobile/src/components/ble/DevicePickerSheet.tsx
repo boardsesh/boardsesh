@@ -57,12 +57,11 @@ export function DevicePickerSheet({
     [devices],
   );
 
-  // The reported failure: every listed board is a different type than the one
-  // the user selected (e.g. a saved kilter + an unidentified board, selected =
-  // tension), so their gym board simply isn't here. Surface that so they don't
-  // tap the wrong board (and hit the config-mismatch alert) or give up thinking
-  // the picker is broken. Same rule the resolution stats flag as
-  // `noneMatchedSelectedType`, shared so UI and analytics can't drift.
+  // True when every listed board is a different type than the one the user
+  // selected, so their board isn't here. Surfaces a hint so they don't tap the
+  // wrong board (and hit the config-mismatch alert) or assume the picker is
+  // broken. Same rule the resolution stats flag as `noneMatchedSelectedType`,
+  // shared so UI and analytics can't drift.
   const noneMatchedSelectedType = useMemo(
     () => noListedBoardMatchesSelectedType(devices, resolvedBoards, currentBoardConfig),
     [currentBoardConfig, devices, resolvedBoards],
@@ -153,14 +152,17 @@ export function DevicePickerSheet({
       )}
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
-        <View style={styles.troubleshoot}>
-          <Text variant="footnote" color={systemColors.secondaryLabel}>
-            {t('ble.troubleshootTitle')}
-          </Text>
-          <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
-            {t('ble.troubleshootTips')}
-          </Text>
-        </View>
+        {/* Only when the board they want may be missing — not when it's clearly listed. */}
+        {(devices.length === 0 || noneMatchedSelectedType) && (
+          <View style={styles.troubleshoot}>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {t('ble.troubleshootTitle')}
+            </Text>
+            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+              {t('ble.troubleshootTips')}
+            </Text>
+          </View>
+        )}
         <Button title={t('ble.cancel')} onPress={onDismiss} variant="text" size="medium" role="cancel" />
       </View>
     </BottomSheetModal>
