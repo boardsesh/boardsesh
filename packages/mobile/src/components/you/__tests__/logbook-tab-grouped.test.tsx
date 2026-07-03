@@ -254,9 +254,12 @@ describe('LogbookTab grouped mode', () => {
     expect(deleteTick.mutate).not.toHaveBeenCalled();
 
     // The chooserOpenRef guard reset — a fresh gesture opens the chooser again.
+    // Read via a local: the `= null` above narrows chooser.props for the rest
+    // of the scope, and TS can't see the re-render repopulating it.
     await fireDeleteRequest('swipe');
-    expect(chooser.props).not.toBeNull();
-    expect(chooser.props?.intent).toBe('delete');
+    const reopenedProps = chooser.props as Record<string, unknown> | null;
+    expect(reopenedProps).not.toBeNull();
+    expect(reopenedProps?.intent).toBe('delete');
   });
 
   it('acts directly when the group has a single entry', async () => {
