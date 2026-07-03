@@ -44,19 +44,12 @@ const V2_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
   benchmarkOnly: false,
 };
 
-// The v1 resting filter (both statuses on) — the pre-v2 default. Frozen for
-// the same reason as the v2 shape below: the never-diverged check must compare
-// against history, not today's defaults.
-// The spread from V2 is deliberate, not a shortcut: historically the v2 default
-// changed ONLY includeAttempts, so the two snapshots share every other field by
-// construction (equalsV1Defaults leans on the same fact). Amending one snapshot
-// amends both — correct exactly as long as that shared history holds.
-const V1_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
-  ...V2_DEFAULT_LOGBOOK_FILTERS,
-  includeAttempts: true,
-};
-
-/** True when a filter state matches the frozen v1 both-on default exactly. */
+/**
+ * True when a filter state matches the frozen v1 both-on resting default.
+ * Defined by derivation, not a snapshot constant: historically the v2 default
+ * changed ONLY includeAttempts, so "v1 resting" is exactly "attempts on, and
+ * everything else equal to the frozen v2 shape".
+ */
 function equalsV1Defaults(filters: LogbookFilterState): boolean {
   return filters.includeAttempts === true && equalsV2Defaults({ ...filters, includeAttempts: false });
 }

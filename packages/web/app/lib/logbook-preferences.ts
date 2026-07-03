@@ -59,16 +59,12 @@ const V2_DEFAULT_FILTERS: LogbookFilterState = {
   benchmarkOnly: false,
 };
 
-// The v1 resting shape: the pre-v2 "both statuses" default.
-// The spread from V2 is deliberate, not a shortcut: historically the v2 default
-// changed ONLY includeAttempts, so the two snapshots share every other field by
-// construction (filtersEqualV1Defaults leans on the same fact). Amending one
-// snapshot amends both — correct exactly as long as that shared history holds.
-const V1_DEFAULT_FILTERS: LogbookFilterState = {
-  ...V2_DEFAULT_FILTERS,
-  includeAttempts: true,
-};
-
+/**
+ * True when a filter state matches the frozen v1 both-on resting default.
+ * Defined by derivation, not a snapshot constant: historically the v2 default
+ * changed ONLY includeAttempts, so "v1 resting" is exactly "attempts on, and
+ * everything else equal to the frozen v2 shape".
+ */
 function filtersEqualV1Defaults(filters: LogbookFilterState): boolean {
   return filters.includeAttempts === true && filtersEqualV2Defaults({ ...filters, includeAttempts: false });
 }
