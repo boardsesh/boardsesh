@@ -493,10 +493,6 @@ export function ClimbFilterSheet({
     [scheduleBoardHoldsPrewarm],
   );
 
-  const handleAdvancedExpandedChange = useCallback((expanded: boolean) => {
-    setAdvancedExpanded(expanded);
-  }, []);
-
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
   }, []);
@@ -898,7 +894,7 @@ export function ClimbFilterSheet({
               defaultExpanded={advancedExpanded}
               summary={advancedSummary ?? t('mobile.filter.advancedHint')}
               resetKey={sectionResetKey}
-              onExpandedChange={handleAdvancedExpandedChange}
+              onExpandedChange={setAdvancedExpanded}
             >
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.section.status')}

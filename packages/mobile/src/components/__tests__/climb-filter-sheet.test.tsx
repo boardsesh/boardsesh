@@ -10,13 +10,23 @@ import { hapticSelection } from '../../lib/haptics';
 import { emitHoldsFilterSelection } from '../../lib/hold-filter-handoff';
 import { emitZoneFilterSelection } from '../../lib/zone-filter-handoff';
 
+type StyleProp = Record<string, unknown> | unknown[] | ((state: { pressed: boolean }) => unknown) | undefined;
+
 type PressableProps = {
   children?: ReactNode | ((state: { pressed: boolean }) => ReactNode);
   onPress?: () => void;
   accessibilityLabel?: string;
   accessibilityRole?: string;
   disabled?: boolean;
+  style?: StyleProp;
 };
+
+// Serialize a style prop (array | object | style-returning fn) so a test can
+// assert the resting (unpressed) style applied to a row.
+function resolveStyle(style: StyleProp): string {
+  const resolved = typeof style === 'function' ? style({ pressed: false }) : style;
+  return JSON.stringify(resolved);
+}
 
 type BottomSheetModalHandle = {
   present: () => void;
@@ -94,7 +104,7 @@ vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled }: PressableProps) => {
+  Pressable: ({ children, onPress, accessibilityLabel, accessibilityRole, disabled, style }: PressableProps) => {
     const renderedChildren = typeof children === 'function' ? children({ pressed: false }) : children;
     return createElement(
       'button',
@@ -102,6 +112,7 @@ vi.mock('react-native', () => ({
         onClick: disabled ? undefined : onPress,
         'aria-label': accessibilityLabel,
         'data-role': accessibilityRole,
+        'data-style': resolveStyle(style),
         disabled,
       },
       renderedChildren,
@@ -631,5 +642,30 @@ describe('ClimbFilterSheet sub-pickers', () => {
 
     expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledTimes(1);
     expect(bottomSheetScrollViewProps.scrollTo).toHaveBeenCalledWith({ y: 240, animated: false });
+  });
+});
+
+describe('ClimbFilterSheet rows without a board config', () => {
+  it('disables the Setters row and applies the disabled style when boardConfig is null', () => {
+    const { getByLabelText } = renderFilterSheet({ boardConfig: null });
+
+    const setters = getByLabelText('mobile.filter.setters') as HTMLButtonElement;
+    expect(setters.disabled).toBe(true);
+
+    fireEvent.click(setters);
+    expect(routerPush).not.toHaveBeenCalled();
+
+    const rowStyle = JSON.parse(setters.getAttribute('data-style') ?? 'null');
+    expect(rowStyle ?? []).toContainEqual({ opacity: 0.4 });
+  });
+
+  it('keeps the Setters row enabled and unstyled when a board config is present', () => {
+    const { getByLabelText } = renderFilterSheet();
+
+    const setters = getByLabelText('mobile.filter.setters') as HTMLButtonElement;
+    expect(setters.disabled).toBe(false);
+
+    const rowStyle = JSON.parse(setters.getAttribute('data-style') ?? 'null');
+    expect(rowStyle ?? []).not.toContainEqual({ opacity: 0.4 });
   });
 });
