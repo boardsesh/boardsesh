@@ -13,6 +13,15 @@ const mocks = vi.hoisted(() => ({
     uuid: 'climb-2',
     name: 'Zenith',
   } as unknown as Climb,
+  // Mutable per-test fixtures for useInfiniteSearchClimbs / useClimbSearch — read
+  // at call time (render), so a test can set these before rendering to exercise
+  // a different search/filter state without a separate mock scaffold file.
+  searchClimbs: [] as unknown as Climb[],
+  searchState: {
+    filters: {} as Record<string, unknown>,
+    boardFilters: {} as Record<string, unknown>,
+    name: '',
+  },
   activateClimb: vi.fn(),
   dismissKeyboard: vi.fn(),
   getLastSearch: vi.fn(),
@@ -118,6 +127,22 @@ vi.mock('@boardsesh/board-react', () => ({
   useBoardActions: () => ({ getLogbook: mocks.getLogbook }),
 }));
 
+// Reads mocks.searchState (mutated per-test) instead of the real reducer, so a
+// test can force a specific filter/name without driving the UI through it.
+vi.mock('../../../../src/providers/climb-search-provider', () => ({
+  ClimbSearchProvider: ({ children }: { children?: ReactNode }) => children,
+  useClimbSearch: () => ({
+    ...mocks.searchState,
+    setFilters: vi.fn(),
+    setBoardFilters: vi.fn(),
+    setGrade: vi.fn(),
+    setName: vi.fn(),
+    replaceSearch: vi.fn(),
+    patchFilters: vi.fn(),
+    patchBoardFilters: vi.fn(),
+  }),
+}));
+
 vi.mock('../../../../src/components/ClimbListRow', () => ({
   ClimbListRow: ({ climb: rowClimb, onPress }: { climb: Climb; onPress?: (pressedClimb: Climb) => void }) =>
     createElement('button', { onClick: () => onPress?.(rowClimb) }, rowClimb.name),
@@ -217,7 +242,7 @@ vi.mock('../../../../src/hooks/use-last-used-grade', () => ({
 
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
   useInfiniteSearchClimbs: () => ({
-    data: { pages: [{ climbs: [mocks.climb, mocks.secondClimb], hasMore: false }] },
+    data: { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] },
     isLoading: false,
     isFetchingNextPage: false,
     isRefetching: false,
@@ -307,6 +332,8 @@ beforeEach(() => {
   mocks.saveLastSearch.mockResolvedValue(undefined);
   mocks.getRecentFilters.mockResolvedValue([]);
   mocks.track.mockClear();
+  mocks.searchClimbs = [mocks.climb, mocks.secondClimb];
+  mocks.searchState = { filters: {}, boardFilters: {}, name: '' };
 });
 
 describe('ClimbList keyboard handling', () => {
@@ -321,7 +348,7 @@ describe('ClimbList keyboard handling', () => {
   });
 });
 
-describe('ClimbList search result selection tracking (issue #3401)', () => {
+describe('ClimbList search result selection tracking', () => {
   it('tracks the rank of the first result when it is pressed', async () => {
     const { findByText } = render(<ClimbList />);
 
@@ -342,5 +369,41 @@ describe('ClimbList search result selection tracking (issue #3401)', () => {
       'Search Result Selected',
       expect.objectContaining({ rank: 1, loadedResultCount: 2, boardName: 'kilter', angle: 40 }),
     );
+  });
+});
+
+describe('ClimbList zero-result filter snapshot', () => {
+  it('attaches the zero-result filter snapshot when the search comes up empty', async () => {
+    mocks.searchClimbs = [];
+    mocks.searchState = { filters: { status: 'any', boulders: true, routes: false, onlyTallClimbs: true }, boardFilters: {}, name: 'no such climb' };
+
+    render(<ClimbList />);
+
+    await waitFor(() =>
+      expect(mocks.track).toHaveBeenCalledWith(
+        'Climb Search Performed',
+        expect.objectContaining({
+          resultCount: 0,
+          zeroResultOnlyTallClimbs: true,
+          zeroResultStatus: 'any',
+          zeroResultBoulders: true,
+          zeroResultRoutes: false,
+        }),
+      ),
+    );
+  });
+
+  it('omits the zero-result snapshot fields when results are found', async () => {
+    mocks.searchClimbs = [mocks.climb];
+    mocks.searchState = { filters: { status: 'any', boulders: true, routes: false, onlyTallClimbs: true }, boardFilters: {}, name: 'no such climb' };
+
+    render(<ClimbList />);
+
+    await waitFor(() => expect(mocks.track).toHaveBeenCalledWith('Climb Search Performed', expect.anything()));
+
+    const [, properties] = mocks.track.mock.calls.find(([eventName]) => eventName === 'Climb Search Performed') ?? [];
+    expect(properties).toMatchObject({ resultCount: 1 });
+    expect(properties).not.toHaveProperty('zeroResultOnlyTallClimbs');
+    expect(properties).not.toHaveProperty('zeroResultStatus');
   });
 });

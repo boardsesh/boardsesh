@@ -566,7 +566,10 @@ function ClimbListInner() {
     const trackKey = JSON.stringify({ name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle });
     if (lastSearchTrackKeyRef.current === trackKey) return;
     lastSearchTrackKeyRef.current = trackKey;
-    const isZeroResult = firstSearchPage.climbs.length === 0;
+    // Matches the `isEmpty` check driving the empty-state UI below (deduped
+    // count, not the raw page-0 length) so the snapshot fires exactly when the
+    // user actually sees zero rows.
+    const isZeroResult = visibleClimbs.length === 0;
     track(SHARED_EVENTS.ClimbSearchPerformed, {
       hasQuery: name.length > 0,
       queryLengthBucket: queryLengthBucket(name),
@@ -596,10 +599,10 @@ function ClimbListInner() {
       setterCount: filters.setter?.length ?? 0,
       minAscents: filters.minAscents ?? 0,
       minRating: filters.minRating ?? 0,
-      // Zero-result filter snapshot (issue #3401): the fields above already
-      // cover grade/sort/setter/ascents/rating unconditionally, so this only
-      // adds the *remaining* filter dimensions, and only on a dead end — the
-      // signal for "which filter caused this search to come up empty".
+      // Zero-result filter snapshot: the fields above already cover
+      // grade/sort/setter/ascents/rating unconditionally, so this only adds the
+      // *remaining* filter dimensions, and only on a dead end — the signal for
+      // "which filter caused this search to come up empty".
       ...(isZeroResult && {
         zeroResultStatus: filters.status,
         zeroResultGradeAccuracy: filters.gradeAccuracy ?? null,
@@ -619,7 +622,7 @@ function ClimbListInner() {
         zeroResultHasSetterIdFilter: boardFilters.setterId != null,
       }),
     });
-  }, [firstSearchPage, name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle]);
+  }, [firstSearchPage, visibleClimbs, name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle]);
 
   // Feed the visible climb UUIDs into the shared logbook so the ascent badge
   // can render flash/send/attempt without baking per-user counts into the
@@ -687,37 +690,62 @@ function ClimbListInner() {
     refreshErrorMessage: 'Failed to refresh climb-list suggestions:',
   });
 
+  // Latest search context for the SearchResultSelected press handler, read via
+  // ref rather than useCallback deps so handleClimbPress keeps the stable
+  // identity it had before (activateClimbListClimb + blurSearchInputs only) —
+  // putting climbRankByUuid/visibleClimbs.length in the deps would recreate the
+  // callback (and therefore every row's onPress prop) on every page load,
+  // against the renderItem-chain stability rule in
+  // docs/react-native-performance.md.
+  const searchTrackingContextRef = useRef({
+    climbRankByUuid,
+    visibleResultCount: visibleClimbs.length,
+    boardName,
+    angle,
+    name,
+    filters,
+    boardFilters,
+  });
+  searchTrackingContextRef.current = {
+    climbRankByUuid,
+    visibleResultCount: visibleClimbs.length,
+    boardName,
+    angle,
+    name,
+    filters,
+    boardFilters,
+  };
+
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       blurSearchInputs();
-      // Rank/position in the loaded result list — the relevance signal issue
-      // #3401 asks for (undefined only if the climb isn't in the current search
-      // results at all, which shouldn't happen for a row-driven press).
-      const rank = climbRankByUuid.get(climb.uuid);
+      const {
+        climbRankByUuid: currentClimbRankByUuid,
+        visibleResultCount,
+        boardName: currentBoardName,
+        angle: currentAngle,
+        name: currentName,
+        filters: currentFilters,
+        boardFilters: currentBoardFilters,
+      } = searchTrackingContextRef.current;
+      // Rank/position in the loaded result list (undefined only if the climb
+      // isn't in the current search results at all, which shouldn't happen for
+      // a row-driven press).
+      const rank = currentClimbRankByUuid.get(climb.uuid);
       if (rank !== undefined) {
         track(SHARED_EVENTS.SearchResultSelected, {
           rank,
-          loadedResultCount: visibleClimbs.length,
-          boardName,
-          angle,
-          hasQuery: name.length > 0,
-          queryLengthBucket: queryLengthBucket(name),
-          activeFilterCount: countActiveFilters(filters, boardFilters),
+          loadedResultCount: visibleResultCount,
+          boardName: currentBoardName,
+          angle: currentAngle,
+          hasQuery: currentName.length > 0,
+          queryLengthBucket: queryLengthBucket(currentName),
+          activeFilterCount: countActiveFilters(currentFilters, currentBoardFilters),
         });
       }
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
-    [
-      activateClimbListClimb,
-      blurSearchInputs,
-      climbRankByUuid,
-      visibleClimbs.length,
-      boardName,
-      angle,
-      name,
-      filters,
-      boardFilters,
-    ],
+    [activateClimbListClimb, blurSearchInputs],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active

@@ -108,7 +108,7 @@ export const SHARED_EVENTS = {
   ClimbSearchPerformed: 'Climb Search Performed',
   // Fired when a user opens a climb from the search result list. Carries the
   // tapped result's rank/position so the App Success dashboard can measure
-  // search relevance (not just coverage) — see issue #3401.
+  // search relevance, not just coverage.
   SearchResultSelected: 'Search Result Selected',
   // Grade-range control changed (web's GradeRangePicker / mobile's GradeRangeRail).
   // Shared so the native event lands in the same PostHog funnel as web's — the
