@@ -15,6 +15,7 @@ export {
   useHealthKitSaveState,
   autoSaveToAppleHealth,
   manualSaveToAppleHealth,
+  trackAppleHealthIntegrationConnected,
   _resetHealthKitSaveStateForTests,
   type HealthKitSaveState,
 } from './apple-health';

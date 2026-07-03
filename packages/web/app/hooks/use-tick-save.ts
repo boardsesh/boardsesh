@@ -174,6 +174,7 @@ export function useTickSave(options: UseTickSaveOptions): {
             hasComment: comment.length > 0,
           });
           track(SHARED_EVENTS.TickLogged, {
+            climbUuid: climb.uuid,
             boardLayout: targetBoard.layout_name || '',
             status,
             platform: 'web',

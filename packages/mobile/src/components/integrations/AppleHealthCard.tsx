@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Text } from '../Text';
 import { ListRow } from '../ListRow';
 import { SwitchRow } from '../SwitchRow';
 import { useTheme } from '../../providers/theme-provider';
 import { borderRadius, spacing } from '../../theme/tokens';
-import { track } from '../../lib/analytics';
 import {
   getAppleHealthAuthorizationStatus,
   requestAppleHealthAuthorization,
+  trackAppleHealthIntegrationConnected,
   useHealthKitAutoSavePreference,
 } from '../../lib/integrations';
 
@@ -65,7 +64,7 @@ export function AppleHealthCard() {
             const granted = await requestAppleHealthAuthorization();
             setDenied(!granted);
             if (granted) {
-              track(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
+              trackAppleHealthIntegrationConnected();
             }
           } else {
             setDenied(status === 'denied');

@@ -102,10 +102,12 @@ export const SHARED_EVENTS = {
   // The canonical "a climb was logged" event — fired on EVERY successful tick
   // save, on both platforms, in addition to each flow's own event above
   // (QuickTickSaved, and web's full-form-only history under this same name).
-  // Props: { platform: 'web' | 'mobile', surface: 'web_full_form' |
-  // 'web_quick_modal' | 'mobile_quick_tick' } plus each site's existing
-  // fields. This is the join point for cross-platform "send logged" funnels
-  // — the flow-specific events above stay split by UI surface on purpose.
+  // Props: { climbUuid: string, platform: 'web' | 'mobile', surface:
+  // 'web_full_form' | 'web_quick_modal' | 'mobile_quick_tick' } plus each
+  // site's existing fields. `climbUuid` is required at every call site —
+  // it's the join key cross-platform funnels filter/group on. This is the
+  // join point for cross-platform "send logged" funnels — the flow-specific
+  // events above stay split by UI surface on purpose.
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',

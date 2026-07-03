@@ -66,6 +66,25 @@ export async function requestAppleHealthAuthorization(): Promise<boolean> {
   return granted;
 }
 
+// The settings-card toggle and the session auto/manual-save paths each poll
+// `getAppleHealthAuthorizationStatus()` independently, so a user who toggles
+// the card while a save is mid-flight can have both sides observe
+// `notDetermined` before either resolves. This flag is checked and set
+// synchronously (no `await` in between), so it closes that race for the
+// life of the JS runtime — the only window a double-fire could occur in,
+// since HealthKit's status is permanently decided (non-`notDetermined`)
+// forever after the first grant.
+let integrationConnectedTracked = false;
+
+/** Fire `IntegrationConnected` for Apple Health at most once per fresh grant,
+ *  regardless of which call site (settings card, auto-save, manual save)
+ *  observes it first. */
+export function trackAppleHealthIntegrationConnected(): void {
+  if (integrationConnectedTracked) return;
+  integrationConnectedTracked = true;
+  track(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
+}
+
 // ============================================
 // Auto-save preference (default ON)
 // ============================================
@@ -212,6 +231,7 @@ export function _resetHealthKitSaveStateForTests(): void {
   autoSaveLoaded = false;
   autoSaveLoadPromise = null;
   notifyAutoSave();
+  integrationConnectedTracked = false;
 }
 
 // ============================================
@@ -326,7 +346,7 @@ export async function autoSaveToAppleHealth(
     // HealthKit prompt — track only the fresh grant, not every already-
     // authorized auto-save, or this would fire on every session.
     if (isFreshGrant) {
-      track(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
+      trackAppleHealthIntegrationConnected();
     }
 
     const options = buildSaveOptions(healthExport);
@@ -405,7 +425,7 @@ export async function manualSaveToAppleHealth(
       return 'denied';
     }
     if (isFreshGrant) {
-      track(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
+      trackAppleHealthIntegrationConnected();
     }
 
     const options = buildSaveOptions(healthExport);

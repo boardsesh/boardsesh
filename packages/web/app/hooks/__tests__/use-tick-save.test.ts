@@ -376,7 +376,7 @@ describe('useTickSave', () => {
 
     expect(mockTrack).toHaveBeenCalledWith(
       SHARED_EVENTS.TickLogged,
-      expect.objectContaining({ status: 'send', platform: 'web', surface: 'web_quick_modal' }),
+      expect.objectContaining({ climbUuid: 'climb-1', status: 'send', platform: 'web', surface: 'web_quick_modal' }),
     );
   });
 

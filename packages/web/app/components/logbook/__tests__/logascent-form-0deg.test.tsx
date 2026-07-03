@@ -187,7 +187,7 @@ describe('LogAscentForm — 0° regression', () => {
     await waitFor(() =>
       expect(mockTrack).toHaveBeenCalledWith(
         SHARED_EVENTS.TickLogged,
-        expect.objectContaining({ platform: 'web', surface: 'web_full_form' }),
+        expect.objectContaining({ climbUuid: 'climb-1', platform: 'web', surface: 'web_full_form' }),
       ),
     );
   });

@@ -210,6 +210,7 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
       });
 
       track(SHARED_EVENTS.TickLogged, {
+        climbUuid: currentClimb.uuid,
         boardLayout: boardDetails.layout_name || '',
         status,
         hasDifficulty: logType === 'ascent' && values.difficulty !== undefined,

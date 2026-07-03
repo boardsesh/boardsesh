@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionHealthExport, SessionSummary } from '@boardsesh/shared-schema';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 // ── Mock native module, preference store, analytics, graphql client ──────────
 // `vi.hoisted` is required: bare `vi.mock` factories are hoisted above top-level
@@ -49,7 +50,12 @@ vi.mock('@boardsesh/graphql/operations/activity-feed', () => ({
   SET_SESSION_HEALTHKIT_WORKOUT_ID: 'SET_SESSION_HEALTHKIT_WORKOUT_ID',
 }));
 
-import { autoSaveToAppleHealth, manualSaveToAppleHealth, _resetHealthKitSaveStateForTests } from '../apple-health';
+import {
+  autoSaveToAppleHealth,
+  manualSaveToAppleHealth,
+  trackAppleHealthIntegrationConnected,
+  _resetHealthKitSaveStateForTests,
+} from '../apple-health';
 import type { SessionExportContext } from '../types';
 
 const makeSummary = (overrides?: Partial<SessionSummary>): SessionSummary => ({
@@ -185,14 +191,14 @@ describe('autoSaveToAppleHealth', () => {
     expect(requestAuthorizationMock).toHaveBeenCalledTimes(1);
     // Auto-save (default ON) is the moment most users actually decide the
     // HealthKit prompt, so this is the fresh-grant edge that must be tracked.
-    expect(trackMock).toHaveBeenCalledWith('Integration Connected', { integration: 'apple_health' });
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
   });
 
   it('does NOT re-fire Integration Connected for an already-authorized auto-save', async () => {
     // beforeEach's default status is 'authorized' — not a fresh grant.
     await autoSaveToAppleHealth(makeSummary(), ctx);
 
-    expect(trackMock).not.toHaveBeenCalledWith('Integration Connected', expect.anything());
+    expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.IntegrationConnected, expect.anything());
   });
 
   it('saves once, persists the workout id, and marks state saved', async () => {
@@ -308,7 +314,7 @@ describe('autoSaveToAppleHealth', () => {
     const result = await manualSaveToAppleHealth(makeSummary({ sessionId: 'manual-undecided' }), ctx);
 
     expect(result).toBe('saved');
-    expect(trackMock).toHaveBeenCalledWith('Integration Connected', { integration: 'apple_health' });
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
   });
 
   it('runs the native save once under concurrent auto + manual', async () => {
@@ -332,5 +338,33 @@ describe('autoSaveToAppleHealth', () => {
     expect(saveWorkoutMock).toHaveBeenCalledTimes(1);
     expect(autoResult).toBe('hk-workout-concurrent');
     expect(manualResult).toBe('inFlight');
+  });
+
+  it('trackAppleHealthIntegrationConnected only fires once even when called twice', () => {
+    // Direct unit test of the guard itself — the settings card and the
+    // auto/manual-save paths all funnel through this one function so a race
+    // between them (both observing `notDetermined` before either resolves)
+    // can't double-count the connect event.
+    trackAppleHealthIntegrationConnected();
+    trackAppleHealthIntegrationConnected();
+
+    expect(trackMock).toHaveBeenCalledTimes(1);
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
+  });
+
+  it('tracks Integration Connected only once when auto-save races a second fresh-grant session', async () => {
+    // Two different sessionIds so the per-session saveState dedup guard
+    // doesn't short-circuit the second call before it reaches the shared
+    // authorization/tracking race this test targets.
+    getAuthorizationStatusMock.mockResolvedValue({ status: 'notDetermined' });
+    requestAuthorizationMock.mockResolvedValue({ granted: true });
+
+    await Promise.all([
+      autoSaveToAppleHealth(makeSummary({ sessionId: 'race-a' }), ctx),
+      autoSaveToAppleHealth(makeSummary({ sessionId: 'race-b' }), ctx),
+    ]);
+
+    const connectedCalls = trackMock.mock.calls.filter(([event]) => event === SHARED_EVENTS.IntegrationConnected);
+    expect(connectedCalls).toHaveLength(1);
   });
 });

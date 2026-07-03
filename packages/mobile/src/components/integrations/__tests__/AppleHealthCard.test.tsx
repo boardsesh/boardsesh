@@ -2,13 +2,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 // --- Hoisted mock state, mutated per-test before render ---
 const mocks = vi.hoisted(() => ({
   getAppleHealthAuthorizationStatus: vi.fn<() => Promise<'notDetermined' | 'granted' | 'denied'>>(),
   requestAppleHealthAuthorization: vi.fn<() => Promise<boolean>>(),
-  track: vi.fn(),
+  trackAppleHealthIntegrationConnected: vi.fn(),
   enabled: false,
   loaded: true,
   setEnabled: vi.fn(),
@@ -18,15 +17,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../lib/integrations', () => ({
   getAppleHealthAuthorizationStatus: mocks.getAppleHealthAuthorizationStatus,
   requestAppleHealthAuthorization: mocks.requestAppleHealthAuthorization,
+  trackAppleHealthIntegrationConnected: mocks.trackAppleHealthIntegrationConnected,
   useHealthKitAutoSavePreference: () => ({
     enabled: mocks.enabled,
     loaded: mocks.loaded,
     setEnabled: mocks.setEnabled,
   }),
-}));
-
-vi.mock('../../../lib/analytics', () => ({
-  track: mocks.track,
 }));
 
 type RNViewProps = { children?: ReactNode };
@@ -81,7 +77,7 @@ describe('AppleHealthCard', () => {
   beforeEach(() => {
     mocks.getAppleHealthAuthorizationStatus.mockReset();
     mocks.requestAppleHealthAuthorization.mockReset();
-    mocks.track.mockReset();
+    mocks.trackAppleHealthIntegrationConnected.mockReset();
     mocks.setEnabled.mockReset();
     mocks.openSettings.mockReset();
     mocks.enabled = false;
@@ -91,26 +87,24 @@ describe('AppleHealthCard', () => {
     mocks.getAppleHealthAuthorizationStatus.mockResolvedValue('notDetermined');
   });
 
-  it('fires IntegrationConnected when a first-time grant succeeds', async () => {
+  it('routes a first-time grant through the shared, dedup-guarded tracker', async () => {
     mocks.requestAppleHealthAuthorization.mockResolvedValue(true);
     const { container } = render(<AppleHealthCard />);
 
     fireEvent.click(toggle(container)!);
 
     await waitFor(() => expect(mocks.requestAppleHealthAuthorization).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(mocks.track).toHaveBeenCalledWith(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' }),
-    );
+    await waitFor(() => expect(mocks.trackAppleHealthIntegrationConnected).toHaveBeenCalledTimes(1));
   });
 
-  it('does NOT fire IntegrationConnected when the permission is denied', async () => {
+  it('does NOT call the tracker when the permission is denied', async () => {
     mocks.requestAppleHealthAuthorization.mockResolvedValue(false);
     const { container } = render(<AppleHealthCard />);
 
     fireEvent.click(toggle(container)!);
 
     await waitFor(() => expect(mocks.requestAppleHealthAuthorization).toHaveBeenCalledTimes(1));
-    expect(mocks.track).not.toHaveBeenCalled();
+    expect(mocks.trackAppleHealthIntegrationConnected).not.toHaveBeenCalled();
   });
 
   it('does not re-request authorization (or track) once the status is already decided', async () => {
@@ -124,6 +118,6 @@ describe('AppleHealthCard', () => {
 
     await waitFor(() => expect(mocks.setEnabled).toHaveBeenCalledWith(true));
     expect(mocks.requestAppleHealthAuthorization).not.toHaveBeenCalled();
-    expect(mocks.track).not.toHaveBeenCalled();
+    expect(mocks.trackAppleHealthIntegrationConnected).not.toHaveBeenCalled();
   });
 });
