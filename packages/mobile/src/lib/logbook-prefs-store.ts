@@ -10,7 +10,6 @@ import {
   sanitizeLogbookFilters,
   sanitizeLogbookSort,
   DEFAULT_LOGBOOK_FILTERS,
-  DEFAULT_LOGBOOK_ANGLE_RANGE,
   type LogbookFilterState,
   type LogbookSortState,
 } from '@boardsesh/logbook';
@@ -39,7 +38,9 @@ const V2_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
   maxGrade: '',
   fromDate: '',
   toDate: '',
-  angleRange: DEFAULT_LOGBOOK_ANGLE_RANGE,
+  // Frozen LITERAL, deliberately not DEFAULT_LOGBOOK_ANGLE_RANGE: if the live
+  // constant ever changes, this historical snapshot must NOT move with it.
+  angleRange: [0, 70],
   benchmarkOnly: false,
 };
 

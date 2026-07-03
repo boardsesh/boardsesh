@@ -20,6 +20,7 @@ const row = vi.hoisted(() => ({
   requestEdit: null as (() => void) | null,
   props: null as Record<string, unknown> | null,
 }));
+const mountedRows = vi.hoisted(() => ({ log: [] as Array<Record<string, unknown>> }));
 const chooser = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 const editSheet = vi.hoisted(() => ({ ascent: null as { uuid: string } | null }));
 const flagState = vi.hoisted(() => ({ groupingKill: undefined as boolean | undefined }));
@@ -112,6 +113,7 @@ vi.mock('../LogbookRow', () => ({
     ascent: { uuid: string };
   }) => {
     row.props = props as unknown as Record<string, unknown>;
+    mountedRows.log.push(props as unknown as Record<string, unknown>);
     row.requestDelete = props.onDeleteRequest ? (method) => props.onDeleteRequest?.(props.ascent, method) : null;
     row.requestEdit = props.onEdit ? () => props.onEdit?.(props.ascent) : null;
     return createElement('div');
@@ -186,6 +188,7 @@ beforeEach(() => {
   row.requestEdit = null;
   flagState.groupingKill = undefined;
   row.props = null;
+  mountedRows.log = [];
   chooser.props = null;
   editSheet.ascent = null;
   groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
@@ -312,6 +315,29 @@ describe('LogbookTab grouped mode', () => {
     const reopenedEditChooser = chooser.props as Record<string, unknown> | null;
     expect(reopenedEditChooser).not.toBeNull();
     expect(reopenedEditChooser?.intent).toBe('edit');
+  });
+
+  it('splits a same-day backend group into one row per angle', () => {
+    // The backend groups by (climb, day) only; the client re-buckets by
+    // (climb, LOCAL day, angle) — a day spent on both 40° and 45° must render
+    // two honest rows, each with its own outcome and per-angle tries.
+    groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
+      {
+        key: 'climb-1-2026-06-15',
+        climbUuid: 'climb-1',
+        date: '2026-06-15',
+        items: [GROUP_ITEMS[0], { ...GROUP_ITEMS[1], angle: 45 }],
+      },
+    ];
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    const rowsByAngle = mountedRows.log.map((rowProps) => {
+      const ascent = rowProps.ascent as { angle: number; status: string };
+      return { angle: ascent.angle, status: ascent.status, groupTries: rowProps.groupTries };
+    });
+    expect(rowsByAngle).toHaveLength(2);
+    expect(rowsByAngle).toContainEqual({ angle: 40, status: 'send', groupTries: 2 });
+    expect(rowsByAngle).toContainEqual({ angle: 45, status: 'attempt', groupTries: 3 });
   });
 
   it('falls back to the flat feed when the grouping kill switch flag is on', () => {

@@ -53,7 +53,9 @@ const V2_DEFAULT_FILTERS: LogbookFilterState = {
   maxGrade: '',
   fromDate: '',
   toDate: '',
-  angleRange: [DEFAULT_LOGBOOK_ANGLE_RANGE[0], DEFAULT_LOGBOOK_ANGLE_RANGE[1]],
+  // Frozen LITERAL, deliberately not DEFAULT_LOGBOOK_ANGLE_RANGE: if the live
+  // constant ever changes, this historical snapshot must NOT move with it.
+  angleRange: [0, 70],
   benchmarkOnly: false,
 };
 
