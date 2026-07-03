@@ -13,6 +13,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import type { BoardDetails, BoardName, Climb } from '@/app/lib/types';
 import type { LogbookEntry } from '@boardsesh/board-react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 vi.mock('react-i18next', () => ({
   useTranslation: (ns?: string) => ({
@@ -25,6 +26,7 @@ vi.mock('react-i18next', () => ({
 const mockSaveTick = vi.fn();
 const mockLogbookRef: { current: LogbookEntry[] } = { current: [] };
 const mockPresenceControls = vi.hoisted(() => ({ boardId: null as number | null }));
+const mockTrack = vi.hoisted(() => vi.fn());
 
 vi.mock('../../board-provider/board-provider-context', () => ({
   useBoardProvider: () => ({
@@ -49,7 +51,7 @@ vi.mock('../../board-presence/board-presence-context', () => ({
 }));
 
 vi.mock('@/app/lib/analytics', () => ({
-  track: vi.fn(),
+  track: mockTrack,
 }));
 
 // The hook ships from `@/app/hooks/use-effective-angle`. Mock it directly
@@ -173,6 +175,21 @@ describe('LogAscentForm — 0° regression', () => {
       climbUuid: 'climb-1',
       boardId: 77,
     });
+  });
+
+  it('fires the canonical TickLogged event on submit', async () => {
+    mockEffectiveAngle.current = 0;
+
+    renderForm({ currentClimb: makeClimb(), boardDetails: makeBoardDetails(), onClose: vi.fn() });
+
+    fireEvent.click(screen.getByRole('button', { name: /Log at 0°/i }));
+
+    await waitFor(() =>
+      expect(mockTrack).toHaveBeenCalledWith(
+        SHARED_EVENTS.TickLogged,
+        expect.objectContaining({ platform: 'web', surface: 'web_full_form' }),
+      ),
+    );
   });
 
   it('disables submit when no angle resolved (null), with the helper text spelled out', () => {

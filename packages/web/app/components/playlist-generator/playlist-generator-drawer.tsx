@@ -18,6 +18,7 @@ import {
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { type WorkoutType, type GeneratorOptions, type PlannedClimbSlot, WORKOUT_TYPES } from './types';
 import WorkoutTypeSelector from './workout-type-selector';
 import GeneratorOptionsForm, { getDefaultOptions } from './generator-options-form';
@@ -88,7 +89,7 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
       setGenerating(false);
       setProgress({ current: 0, total: 0 });
       runCompletedRef.current = false;
-      track('Workout Generator Opened', {
+      track(SHARED_EVENTS.WorkoutGeneratorOpened, {
         targetType,
         boardName: boardDetails.board_name,
         angle: defaultAngle,
@@ -299,7 +300,7 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
     runCompletedRef.current = true;
     const durationMs = Math.round(performance.now() - startedAt);
 
-    track('Workout Generated', {
+    track(SHARED_EVENTS.WorkoutGenerated, {
       targetType,
       boardName: boardDetails.board_name,
       plannedCount: plannedSlots.length,

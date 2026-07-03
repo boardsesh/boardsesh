@@ -264,6 +264,13 @@ export const QuickTickBar = React.memo(function QuickTickBar({
               grade: resolvedGradeName ?? null,
               hasComment: comment.length > 0,
             });
+            track(SHARED_EVENTS.TickLogged, {
+              climbUuid,
+              layoutId: layoutId ?? null,
+              status,
+              platform: 'mobile',
+              surface: 'mobile_quick_tick',
+            });
             hapticSuccess();
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.

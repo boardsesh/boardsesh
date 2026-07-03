@@ -61,6 +61,17 @@ export const SHARED_EVENTS = {
   // Workout / session-queue generator
   WorkoutGeneratorOpened: 'Workout Generator Opened',
   SessionQueueGenerated: 'Session Queue Generated',
+  // Web-only: fired on the discrete "tap Generate, wait, done" completion of
+  // the click-triggered generator (shared by both the standalone-playlist
+  // flow and the session-embedded flow). Mobile's session-embedded generator
+  // is a live, auto-regenerating preview with no matching discrete "generate"
+  // moment by design — do not add a mobile fire here (it would either fire on
+  // every filter tweak or require a UX change out of scope for analytics
+  // reconciliation). For cross-platform "workout generator" adoption funnels,
+  // use WorkoutGeneratorOpened (open) + SessionQueueGenerated (commit)
+  // instead — both are already correctly aligned across platforms for the
+  // session-generator flow.
+  WorkoutGenerated: 'Workout Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',
   // Logbook
@@ -88,6 +99,13 @@ export const SHARED_EVENTS = {
   // field-completeness snapshot so abandonment can be measured directly
   // instead of inferred from TickButtonClicked - QuickTickSaved - QuickTickFailed.
   QuickTickDismissed: 'Quick Tick Dismissed',
+  // The canonical "a climb was logged" event — fired on EVERY successful tick
+  // save, on both platforms, in addition to each flow's own event above
+  // (QuickTickSaved, and web's full-form-only history under this same name).
+  // Props: { platform: 'web' | 'mobile', surface: 'web_full_form' |
+  // 'web_quick_modal' | 'mobile_quick_tick' } plus each site's existing
+  // fields. This is the join point for cross-platform "send logged" funnels
+  // — the flow-specific events above stay split by UI surface on purpose.
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',

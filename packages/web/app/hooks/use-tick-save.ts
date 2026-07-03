@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { hasPriorHistoryForClimb as _hasPriorHistoryForClimb } from '@boardsesh/play-view';
 import type { Climb, BoardDetails, Angle } from '@/app/lib/types';
 import { useBoardProvider } from '../components/board-provider/board-provider-context';
@@ -171,6 +172,12 @@ export function useTickSave(options: UseTickSaveOptions): {
             difficulty: difficulty ?? null,
             grade: gradeName ?? null,
             hasComment: comment.length > 0,
+          });
+          track(SHARED_EVENTS.TickLogged, {
+            boardLayout: targetBoard.layout_name || '',
+            status,
+            platform: 'web',
+            surface: 'web_quick_modal',
           });
           void clearTickDraft(climb.uuid, Number(targetAngle));
           saving.current = false;

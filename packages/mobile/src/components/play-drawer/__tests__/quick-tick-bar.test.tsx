@@ -92,6 +92,7 @@ vi.mock('@boardsesh/analytics', () => ({
     TickButtonClicked: 'Tick Button Clicked',
     QuickTickSaved: 'Quick Tick Saved',
     QuickTickFailed: 'Quick Tick Failed',
+    TickLogged: 'Tick Logged',
   },
 }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
@@ -123,6 +124,7 @@ vi.mock('@boardsesh/board-react', async (importOriginal) => {
 
 import { QuickTickBar, type QuickTickBarProps, type QuickTickDismissSnapshot } from '../QuickTickBar';
 import { track } from '../../../lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 function renderBar(overrides: Partial<QuickTickBarProps> = {}) {
   return render(
@@ -290,5 +292,26 @@ describe('QuickTickBar dismiss-analytics plumbing (savedRef / fieldSnapshotRef)'
     fireEvent.click(sendButton as Element);
 
     expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('QuickTickBar analytics', () => {
+  it('fires the canonical TickLogged event alongside QuickTickSaved on a successful save', () => {
+    boardState.current = null;
+    const { container } = renderBar();
+
+    const sendButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.sendSaveLabel',
+    );
+    fireEvent.click(sendButton as Element);
+
+    expect(track).toHaveBeenCalledWith(
+      SHARED_EVENTS.QuickTickSaved,
+      expect.objectContaining({ climbUuid: CLIMB_UUID }),
+    );
+    expect(track).toHaveBeenCalledWith(
+      SHARED_EVENTS.TickLogged,
+      expect.objectContaining({ climbUuid: CLIMB_UUID, platform: 'mobile', surface: 'mobile_quick_tick' }),
+    );
   });
 });

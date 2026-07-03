@@ -21,6 +21,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import InfoOutlined from '@mui/icons-material/InfoOutlined';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { Climb, BoardDetails } from '@/app/lib/types';
 import { useBoardProvider } from '../board-provider/board-provider-context';
 import { useBoardPresenceControls } from '../board-presence/board-presence-context';
@@ -208,11 +209,13 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({ currentClimb, boar
         videoUrl: logType === 'ascent' && trimmedVideoUrl ? trimmedVideoUrl : undefined,
       });
 
-      track('Tick Logged', {
+      track(SHARED_EVENTS.TickLogged, {
         boardLayout: boardDetails.layout_name || '',
         status,
         hasDifficulty: logType === 'ascent' && values.difficulty !== undefined,
         difficulty: logType === 'ascent' ? (values.difficulty ?? null) : null,
+        platform: 'web',
+        surface: 'web_full_form',
       });
 
       setFormValues(getInitialValues());

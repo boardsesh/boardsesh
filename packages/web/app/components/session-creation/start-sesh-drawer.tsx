@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { registerSessionStart } from '@/app/lib/session-lifecycle-tracking';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -605,7 +606,7 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
             if (added > 0) {
               setGeneratedQueue(runBufferRef.current);
               setGeneratedWorkoutType(workoutType);
-              track('Session Queue Generated', {
+              track(SHARED_EVENTS.SessionQueueGenerated, {
                 workoutType,
                 boardName: generatorBoardDetails.board_name,
                 angle: generatorDefaultAngle,

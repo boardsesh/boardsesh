@@ -7,12 +7,14 @@ import type { LogbookEntry } from '@boardsesh/board-react';
 import { hasPriorHistoryForClimb, buildTickTarget, useTickSave, type UseTickSaveOptions } from '../use-tick-save';
 import { saveTickDraft } from '@/app/lib/tick-draft-db';
 import { track } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 // --- Mocks (must be hoisted before imports of the module under test) ---
 
 const mockSaveTick = vi.fn();
 const mockLogbookRef: { current: LogbookEntry[] } = { current: [] };
 const mockPresenceControls = vi.hoisted(() => ({ boardId: null as number | null }));
+const mockTrack = vi.hoisted(() => vi.fn());
 
 vi.mock('../../components/board-provider/board-provider-context', () => ({
   useBoardProvider: () => ({
@@ -42,7 +44,7 @@ vi.mock('../use-confetti', () => ({
 }));
 
 vi.mock('@/app/lib/analytics', () => ({
-  track: vi.fn(),
+  track: mockTrack,
 }));
 
 vi.mock('@/app/lib/tick-draft-db', () => ({
@@ -353,6 +355,29 @@ describe('useTickSave', () => {
 
     const call = mockSaveTick.mock.calls[0][0];
     expect(call.status).toBe('send');
+  });
+
+  it('save() fires the canonical TickLogged event alongside Quick Tick Saved on success', async () => {
+    const opts = makeOptions({
+      tickTarget: {
+        climb: makeClimb(),
+        angle: 40 as Angle,
+        boardDetails: makeBoardDetails(),
+        hasPriorHistory: true,
+      },
+    });
+
+    const { result } = renderHook(() => useTickSave(opts));
+
+    await act(async () => {
+      result.current.save();
+      await vi.waitFor(() => expect(mockTrack).toHaveBeenCalledWith('Quick Tick Saved', expect.anything()));
+    });
+
+    expect(mockTrack).toHaveBeenCalledWith(
+      SHARED_EVENTS.TickLogged,
+      expect.objectContaining({ status: 'send', platform: 'web', surface: 'web_quick_modal' }),
+    );
   });
 
   it('save() sends status send when attemptCount > 1', () => {
