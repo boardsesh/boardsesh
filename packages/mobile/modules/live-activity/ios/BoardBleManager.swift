@@ -654,10 +654,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // supported on MoonBoard (boardSupportsMirroring is false), so frames go
         // out as-is.
         if configuration.boardName == "moonboard" {
-            let result = BoardBleEncoding.makeMoonboardPacket(
-                frames: item.frames,
-                numRows: configuration.numRows ?? BoardBleEncoding.moonboardDefaultGridRows
-            )
+            // numRows nil (config persisted by an older build) → the encoder's
+            // 18-row standard-wall default.
+            let result = BoardBleEncoding.makeMoonboardPacket(frames: item.frames, numRows: configuration.numRows)
             guard !result.packet.isEmpty else {
                 // Every hold was unrecognised/out-of-range, or the climb has no
                 // holds. Refuse to write rather than dark the wall — there is no

@@ -1180,13 +1180,19 @@ describe('dispatchMoonboardPacket', () => {
 });
 
 describe('moonboardNumRowsForNative', () => {
-  // The value native re-encodes address the serpentine grid with (#3392) —
+  // The row count native re-encodes use to address the serpentine grid —
   // Mini layouts (6 = 2020, 7 = 2025) are 12 rows, everything else 18.
   it('resolves 12 rows for Mini layouts and 18 for standard walls', () => {
     expect(moonboardNumRowsForNative('moonboard', 6)).toBe(12);
     expect(moonboardNumRowsForNative('moonboard', 7)).toBe(12);
     expect(moonboardNumRowsForNative('moonboard', 1)).toBe(18);
     expect(moonboardNumRowsForNative('moonboard', 3)).toBe(18);
+  });
+
+  it('falls back to the standard 18-row wall for an unknown layout id', () => {
+    // getMoonBoardGeometryByLayoutId returns STANDARD_MOONBOARD_GEOMETRY when
+    // the layout lookup misses, so this never throws.
+    expect(moonboardNumRowsForNative('moonboard', 999)).toBe(18);
   });
 
   it('is undefined for non-MoonBoard boards (Aurora has no grid maths)', () => {
