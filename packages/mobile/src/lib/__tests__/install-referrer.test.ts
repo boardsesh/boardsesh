@@ -24,6 +24,7 @@ import {
   INSTALL_ATTRIBUTED_EVENT,
   maybeFetchAndAttachInstallReferrer,
   parseInstallReferrer,
+  resetInstallReferrerFetchInFlightForTests,
 } from '../install-referrer';
 import { getPreference, setPreference } from '../preference-store';
 import { reportError } from '../error-reporting';
@@ -39,6 +40,7 @@ beforeEach(() => {
   getPreferenceMock.mockClear();
   setPreferenceMock.mockClear();
   reportErrorMock.mockClear();
+  resetInstallReferrerFetchInFlightForTests();
 });
 
 describe('parseInstallReferrer', () => {

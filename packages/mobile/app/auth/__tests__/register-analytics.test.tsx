@@ -7,6 +7,8 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 const analytics = vi.hoisted(() => ({ track: vi.fn(), setPersonProperties: vi.fn() }));
 const auth = vi.hoisted(() => ({ register: vi.fn() }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
+const oauth = vi.hoisted(() => ({ signIn: vi.fn(async () => ({ success: true }) as unknown) }));
+const googleButton = vi.hoisted(() => ({ press: null as (() => void) | null }));
 
 // Captures the fields + submit callback AuthFieldset receives, so the test can
 // drive the form like a real user (fill email/password/confirmPassword, then
@@ -22,9 +24,11 @@ vi.mock('../../../src/lib/analytics', () => ({
 }));
 vi.mock('../../../src/providers/auth-provider', () => ({ useAuth: () => ({ register: auth.register }) }));
 vi.mock('../../../src/hooks/use-native-oauth-sign-in', () => ({
-  useNativeOAuthSignIn: () => ({ signIn: vi.fn(), inProgress: false }),
+  useNativeOAuthSignIn: () => ({ signIn: oauth.signIn, inProgress: false }),
 }));
-vi.mock('../../../src/lib/auth', () => ({ isGoogleSignInConfigured: () => false }));
+// true (not the earlier false) so the Google button renders — needed to drive
+// the OAuth-path negative test below via a real press, not just a stubbed hook.
+vi.mock('../../../src/lib/auth', () => ({ isGoogleSignInConfigured: () => true }));
 vi.mock('../../../src/lib/error-reporting', () => ({ reportError: vi.fn() }));
 vi.mock('../../../src/lib/haptics', () => ({ hapticLight: vi.fn() }));
 vi.mock('../../../src/providers/theme-provider', () => ({
@@ -41,10 +45,13 @@ vi.mock('expo-apple-authentication', () => ({
   AppleAuthenticationButtonStyle: { WHITE: 'white', BLACK: 'black' },
 }));
 vi.mock('@react-native-google-signin/google-signin', () => ({
-  GoogleSigninButton: Object.assign(() => null, {
-    Size: { Wide: 'wide' },
-    Color: { Dark: 'dark', Light: 'light' },
-  }),
+  GoogleSigninButton: Object.assign(
+    ({ onPress }: { onPress?: () => void }) => {
+      googleButton.press = onPress ?? null;
+      return createElement('button');
+    },
+    { Size: { Wide: 'wide' }, Color: { Dark: 'dark', Light: 'light' } },
+  ),
 }));
 vi.mock('react-native', () => ({
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -85,8 +92,10 @@ beforeEach(() => {
   analytics.setPersonProperties.mockClear();
   auth.register.mockReset();
   router.replace.mockClear();
+  oauth.signIn.mockClear();
   form.setters = {};
   form.submit = null;
+  googleButton.press = null;
 });
 
 async function fillAndSubmit() {
@@ -130,6 +139,25 @@ describe('RegisterScreen analytics', () => {
     await fillAndSubmit();
 
     await waitFor(() => expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object)));
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, expect.any(Object));
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it('does not fire SignupCompleted through the OAuth sign-in path', async () => {
+    // register.tsx has exactly one SignupCompleted call site: the credentials
+    // onSubmit() success branch. OAuth registration goes through
+    // useNativeOAuthSignIn (already tagged is_registration: true on
+    // LoginSucceeded there, tested separately in
+    // use-native-oauth-sign-in.test.tsx) and must not also fire SignupCompleted
+    // — matching web, which has no OAuth-signup-distinct event either.
+    render(createElement(RegisterScreen));
+    expect(googleButton.press).not.toBeNull();
+
+    await act(async () => {
+      googleButton.press?.();
+    });
+
+    expect(oauth.signIn).toHaveBeenCalledWith('google');
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, expect.any(Object));
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   });

@@ -5,6 +5,8 @@ import com.android.installreferrer.api.InstallReferrerClient.InstallReferrerResp
 import com.android.installreferrer.api.InstallReferrerStateListener
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicBoolean
@@ -107,10 +109,18 @@ class InstallReferrerModule : Module() {
                     }
                 }
             }
+        } catch (timeoutError: TimeoutCancellationException) {
+            // Our own withTimeout expiring — this is an internal, expected degrade
+            // path (same outcome as FEATURE_NOT_SUPPORTED etc.), not a signal from
+            // an outer scope, so it's fine to swallow and resolve null.
+            null
+        } catch (cancellationError: CancellationException) {
+            // Any OTHER cancellation is the coroutine's own scope being cancelled
+            // from outside (e.g. the caller torn down) — rethrow so structured
+            // concurrency's cancellation propagates instead of this call silently
+            // reporting "no referrer found" for a cancellation that was never ours.
+            throw cancellationError
         } catch (unexpectedError: Exception) {
-            // Also catches TimeoutCancellationException from withTimeout above —
-            // resolving null on a timeout matches every other degrade-gracefully path
-            // in this function.
             null
         }
     }

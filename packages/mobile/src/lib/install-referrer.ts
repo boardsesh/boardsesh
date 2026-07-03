@@ -24,6 +24,13 @@ const INSTALL_REFERRER_FETCHED_KEY = 'installReferrerFetched';
 // launches; this only closes the same-process overlap window.
 let fetchInFlight = false;
 
+// Test-only: resets the in-flight guard so each test starts clean, even if a
+// prior test's async chain didn't run to its `finally` (e.g. an aborted test).
+// Mirrors resetOtaStatusReportedForTests in OtaUpdateTracker.tsx.
+export function resetInstallReferrerFetchInFlightForTests(): void {
+  fetchInFlight = false;
+}
+
 export type ParsedInstallReferrer = {
   raw: string;
   source: string | null;
