@@ -68,6 +68,20 @@ describe('parseInstallReferrer', () => {
     expect(parsed.raw).toBe(raw);
     expect(parsed.source).toBe('google');
   });
+
+  it('decodes URL-encoded params for the parsed fields but preserves raw verbatim', () => {
+    // URLSearchParams treats a literal `+` as a space (application/x-www-form-
+    // urlencoded convention) and decodes %XX escapes for the parsed fields —
+    // intentional, since that's the correct decoding of a query string. `raw`
+    // stays untouched either way, so nothing is lost if that divergence ever
+    // matters downstream.
+    const raw = 'utm_campaign=spring+sale&utm_source=go%20ogle';
+    const parsed = parseInstallReferrer(raw);
+
+    expect(parsed.raw).toBe(raw);
+    expect(parsed.campaign).toBe('spring sale');
+    expect(parsed.source).toBe('go ogle');
+  });
 });
 
 describe('maybeFetchAndAttachInstallReferrer', () => {
@@ -178,6 +192,26 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
     // already-fetched case above.
     await maybeFetchAndAttachInstallReferrer(fetchNative);
     expect(fetchNative).toHaveBeenCalledTimes(2);
+  });
+
+  it('never throws when setPreference rejects after a successful fetch, reports the error, and leaves the flag unset so the next launch retries', async () => {
+    const rejection = new Error('AsyncStorage write failed');
+    setPreferenceMock.mockRejectedValueOnce(rejection);
+    const fetchNative = vi.fn(async () => ({
+      installReferrer: 'utm_source=google',
+      referrerClickTimestampSeconds: 100,
+      installBeginTimestampSeconds: 200,
+    }));
+
+    await expect(maybeFetchAndAttachInstallReferrer(fetchNative)).resolves.toBeUndefined();
+
+    expect(fetchNative).toHaveBeenCalledTimes(1);
+    // The flag write itself is what rejected, so the attribution attach steps
+    // after it never run — the failed write is the reported error, not a
+    // downstream side effect.
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(reportErrorMock).toHaveBeenCalledWith(rejection);
   });
 
   it('never throws when getPreference itself rejects, reports the error, and never reaches fetchNative', async () => {
