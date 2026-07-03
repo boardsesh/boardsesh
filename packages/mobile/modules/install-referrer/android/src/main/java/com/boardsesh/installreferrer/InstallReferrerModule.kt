@@ -6,6 +6,7 @@ import com.android.installreferrer.api.InstallReferrerStateListener
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.atomic.AtomicBoolean
 
 class InstallReferrerModule : Module() {
     override fun definition() = ModuleDefinition {
@@ -25,14 +26,19 @@ class InstallReferrerModule : Module() {
         return try {
             suspendCancellableCoroutine { continuation ->
                 val client = InstallReferrerClient.newBuilder(reactContext).build()
-                var settled = false
+                // AtomicBoolean, not a plain var: InstallReferrerStateListener callbacks
+                // and the coroutine's cancellation handler can dispatch on different
+                // threads, and a plain var gives no cross-thread visibility guarantee —
+                // a cancellation racing a listener callback could observe a stale
+                // pre-write value and double-run the settle path. compareAndSet makes
+                // the check-and-set atomic and visible across threads.
+                val settled = AtomicBoolean(false)
 
                 fun finish(result: Map<String, Any?>?) {
                     // InstallReferrerClient docs: call endConnection() promptly once
-                    // done with the binding. Guarded by `settled` so a listener
-                    // callback firing after cancellation/timeout can't double-resume.
-                    if (settled) return
-                    settled = true
+                    // done with the binding. compareAndSet so a listener callback firing
+                    // after cancellation/timeout can't double-resume.
+                    if (!settled.compareAndSet(false, true)) return
                     try {
                         client.endConnection()
                     } catch (endError: Exception) {
@@ -47,7 +53,10 @@ class InstallReferrerModule : Module() {
                 // Registered BEFORE startConnection: a cancellation landing in the
                 // window between the two calls must still close the binding — if this
                 // were registered after, a cancel in that gap would never fire cleanup.
+                // Gated on the same `settled` flag as finish() so a cancellation racing
+                // an already-settled listener callback doesn't call endConnection() twice.
                 continuation.invokeOnCancellation {
+                    if (!settled.compareAndSet(false, true)) return@invokeOnCancellation
                     try {
                         client.endConnection()
                     } catch (endError: Exception) {

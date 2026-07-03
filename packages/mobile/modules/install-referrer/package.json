@@ -1,6 +1,7 @@
 {
   "name": "@boardsesh/install-referrer-module",
   "version": "0.1.0",
+  "private": true,
   "description": "Native Play Install Referrer bridge for Android first-install attribution",
   "license": "MIT",
   "main": "src/index.ts"
