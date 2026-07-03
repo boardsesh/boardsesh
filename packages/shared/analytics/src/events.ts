@@ -106,6 +106,10 @@ export const SHARED_EVENTS = {
   BleBoardConfigMismatchResolved: 'BLE Board Config Mismatch Resolved',
   // Search
   ClimbSearchPerformed: 'Climb Search Performed',
+  // Fired when a user opens a climb from the search result list. Carries the
+  // tapped result's rank/position so the App Success dashboard can measure
+  // search relevance (not just coverage) — see issue #3401.
+  SearchResultSelected: 'Search Result Selected',
   // Grade-range control changed (web's GradeRangePicker / mobile's GradeRangeRail).
   // Shared so the native event lands in the same PostHog funnel as web's — the
   // gap #3290 closed: web fired this 10,933× on the legacy webview, native 0×.

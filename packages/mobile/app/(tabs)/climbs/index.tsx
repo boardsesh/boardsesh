@@ -525,17 +525,24 @@ function ClimbListInner() {
   } = useInfiniteSearchClimbs(searchInput, searchReady);
   const isLoadingMoreRef = useRef(false);
 
-  const visibleClimbs = useMemo(() => {
+  // climbRankByUuid is built in the same pass as the dedup so a row's rank (its
+  // position in the loaded/deduped list) is a cheap Map lookup at press time —
+  // avoids threading an `index` prop through renderClimbItem's row chain, which
+  // would mean a fresh onPress closure per row (see the mobile perf rule against
+  // inline closures in renderItem, docs/react-native-performance.md).
+  const { visibleClimbs, climbRankByUuid } = useMemo(() => {
     const seenUuids = new Set<string>();
     const climbs: Climb[] = [];
+    const rankByUuid = new Map<string, number>();
     for (const page of searchPages?.pages ?? []) {
       for (const climb of page.climbs) {
         if (seenUuids.has(climb.uuid)) continue;
         seenUuids.add(climb.uuid);
+        rankByUuid.set(climb.uuid, climbs.length);
         climbs.push(climb);
       }
     }
-    return climbs;
+    return { visibleClimbs: climbs, climbRankByUuid: rankByUuid };
   }, [searchPages?.pages]);
 
   const firstSearchPage = searchPages?.pages[0];
@@ -559,6 +566,7 @@ function ClimbListInner() {
     const trackKey = JSON.stringify({ name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle });
     if (lastSearchTrackKeyRef.current === trackKey) return;
     lastSearchTrackKeyRef.current = trackKey;
+    const isZeroResult = firstSearchPage.climbs.length === 0;
     track(SHARED_EVENTS.ClimbSearchPerformed, {
       hasQuery: name.length > 0,
       queryLengthBucket: queryLengthBucket(name),
@@ -588,6 +596,28 @@ function ClimbListInner() {
       setterCount: filters.setter?.length ?? 0,
       minAscents: filters.minAscents ?? 0,
       minRating: filters.minRating ?? 0,
+      // Zero-result filter snapshot (issue #3401): the fields above already
+      // cover grade/sort/setter/ascents/rating unconditionally, so this only
+      // adds the *remaining* filter dimensions, and only on a dead end — the
+      // signal for "which filter caused this search to come up empty".
+      ...(isZeroResult && {
+        zeroResultStatus: filters.status,
+        zeroResultGradeAccuracy: filters.gradeAccuracy ?? null,
+        zeroResultOnlyTallClimbs: filters.onlyTallClimbs ?? false,
+        zeroResultOnlyWideClimbs: filters.onlyWideClimbs ?? false,
+        zeroResultOnlyWithBetaVideos: filters.onlyWithBetaVideos ?? false,
+        zeroResultBoulders: filters.boulders ?? true,
+        zeroResultRoutes: filters.routes ?? false,
+        zeroResultHideAttempted: filters.hideAttempted ?? false,
+        zeroResultHideCompleted: filters.hideCompleted ?? false,
+        zeroResultShowOnlyAttempted: filters.showOnlyAttempted ?? false,
+        zeroResultShowOnlyCompleted: filters.showOnlyCompleted ?? false,
+        zeroResultOnlyBenchmarks: boardFilters.onlyBenchmarks ?? false,
+        zeroResultHasHoldsFilter: !!(boardFilters.holdsFilter && Object.keys(boardFilters.holdsFilter).length > 0),
+        zeroResultHasZoneFilter: boardFilters.zoneBox != null,
+        zeroResultZoneMode: boardFilters.zoneMode ?? null,
+        zeroResultHasSetterIdFilter: boardFilters.setterId != null,
+      }),
     });
   }, [firstSearchPage, name, filters, boardFilters, boardName, layoutId, sizeId, setIds, angle]);
 
@@ -660,9 +690,34 @@ function ClimbListInner() {
   const handleClimbPress = useCallback(
     (climb: Climb) => {
       blurSearchInputs();
+      // Rank/position in the loaded result list — the relevance signal issue
+      // #3401 asks for (undefined only if the climb isn't in the current search
+      // results at all, which shouldn't happen for a row-driven press).
+      const rank = climbRankByUuid.get(climb.uuid);
+      if (rank !== undefined) {
+        track(SHARED_EVENTS.SearchResultSelected, {
+          rank,
+          loadedResultCount: visibleClimbs.length,
+          boardName,
+          angle,
+          hasQuery: name.length > 0,
+          queryLengthBucket: queryLengthBucket(name),
+          activeFilterCount: countActiveFilters(filters, boardFilters),
+        });
+      }
       void activateClimbListClimb.activate(toQueueClimb(climb));
     },
-    [activateClimbListClimb, blurSearchInputs],
+    [
+      activateClimbListClimb,
+      blurSearchInputs,
+      climbRankByUuid,
+      visibleClimbs.length,
+      boardName,
+      angle,
+      name,
+      filters,
+      boardFilters,
+    ],
   );
 
   // Screenshot mode: when a specific board index is requested, switch the active

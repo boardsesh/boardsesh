@@ -1,18 +1,19 @@
 // @vitest-environment jsdom
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
 
+// Scaffolding mirrors index-keyboard.test.tsx (this screen's mocks are heavy
+// and file-scoped by repo convention — see holds.test.tsx / setters.test.tsx /
+// zone-screen.test.tsx). This file's addition: `useClimbSearch` is mocked
+// directly so a specific filter (`onlyTallClimbs`) can be forced active, and
+// `useInfiniteSearchClimbs`'s climb list is mutable per test so both the
+// zero-result and non-zero-result paths of the "Climb Search Performed"
+// zero-result filter snapshot (issue #3401) can be exercised.
 const mocks = vi.hoisted(() => ({
-  climb: {
-    uuid: 'climb-1',
-    name: 'Moonage',
-  } as unknown as Climb,
-  secondClimb: {
-    uuid: 'climb-2',
-    name: 'Zenith',
-  } as unknown as Climb,
+  climb: { uuid: 'climb-1', name: 'Moonage' } as unknown as Climb,
+  searchClimbs: [] as unknown as Climb[],
   activateClimb: vi.fn(),
   dismissKeyboard: vi.fn(),
   getLastSearch: vi.fn(),
@@ -36,8 +37,6 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, absoluteFill: {}, hairlineWidth: 1 },
   RefreshControl: () => createElement('div', { 'data-refresh-control': 'true' }),
   Keyboard: { dismiss: mocks.dismissKeyboard },
-  // Run deferred work synchronously in tests; the prewarm + background-cache
-  // effects schedule through InteractionManager.runAfterInteractions in the screen.
   InteractionManager: {
     runAfterInteractions: (callback: () => void) => {
       callback();
@@ -85,9 +84,6 @@ vi.mock('expo-router', () => ({
   useFocusEffect: () => {},
 }));
 
-// The onboarding reveal banner + its storage pull expo-haptics / expo-secure-store
-// (expo-modules-core EventEmitter) into the graph — irrelevant to the keyboard
-// test, so stub both.
 vi.mock('../../../../src/components/onboarding/OnboardingTipBanner', () => ({
   OnboardingTipBanner: () => null,
 }));
@@ -108,14 +104,32 @@ vi.mock('@boardsesh/climb-filters', () => ({
   DEFAULT_CLIMB_BOARD_FILTER_STATE: {},
   toClimbSearchInput: () => ({}),
   mergeBoardFilters: (input: unknown) => input,
-  countActiveFilters: () => 0,
+  countActiveFilters: () => 1,
   hasActiveBoardFilters: () => false,
-  // Consumed by filter-chip-menus (imported via index.tsx for the chip row).
   SORT_OPTIONS: ['ascents', 'quality', 'difficulty', 'name', 'popular', 'creation'],
 }));
 
 vi.mock('@boardsesh/board-react', () => ({
   useBoardActions: () => ({ getLogbook: mocks.getLogbook }),
+}));
+
+// Forces a specific active filter (`onlyTallClimbs`) plus a non-empty search
+// term, so the "Climb Search Performed" effect's default-state skip is
+// bypassed and the zero-result snapshot has a known filter to assert on.
+vi.mock('../../../../src/providers/climb-search-provider', () => ({
+  ClimbSearchProvider: ({ children }: { children?: ReactNode }) => children,
+  useClimbSearch: () => ({
+    filters: { sortBy: 'ascents', sortOrder: 'desc', status: 'any', boulders: true, routes: false, onlyTallClimbs: true },
+    boardFilters: {},
+    name: 'no such climb',
+    setFilters: vi.fn(),
+    setBoardFilters: vi.fn(),
+    setGrade: vi.fn(),
+    setName: vi.fn(),
+    replaceSearch: vi.fn(),
+    patchFilters: vi.fn(),
+    patchBoardFilters: vi.fn(),
+  }),
 }));
 
 vi.mock('../../../../src/components/ClimbListRow', () => ({
@@ -146,7 +160,7 @@ vi.mock('../../../../src/components/Button', () => ({
 
 vi.mock('../../../../src/components/ClimbFilterSheet', () => ({
   ClimbFilterSheet: () => null,
-  hasActiveFilters: () => false,
+  hasActiveFilters: () => true,
 }));
 
 vi.mock('../../../../src/components/search/ClimbTopChrome', () => ({ ClimbTopChrome: () => null }));
@@ -209,15 +223,13 @@ vi.mock('../../../../src/hooks/use-grade-format', () => ({
   useGradeFormat: () => ({ formatGradeByDifficultyId: (difficultyId: number) => String(difficultyId) }),
 }));
 
-// Stub the SecureStore-backed last-used-grade hook so the screen test doesn't
-// pull in expo-secure-store / expo-modules-core (matches the last-search mock).
 vi.mock('../../../../src/hooks/use-last-used-grade', () => ({
   useLastUsedGrade: () => ({ lastUsedGrade: undefined, rememberGrade: vi.fn() }),
 }));
 
 vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
   useInfiniteSearchClimbs: () => ({
-    data: { pages: [{ climbs: [mocks.climb, mocks.secondClimb], hasMore: false }] },
+    data: { pages: [{ climbs: mocks.searchClimbs, hasMore: false }] },
     isLoading: false,
     isFetchingNextPage: false,
     isRefetching: false,
@@ -307,40 +319,39 @@ beforeEach(() => {
   mocks.saveLastSearch.mockResolvedValue(undefined);
   mocks.getRecentFilters.mockResolvedValue([]);
   mocks.track.mockClear();
+  mocks.searchClimbs = [];
 });
 
-describe('ClimbList keyboard handling', () => {
-  it('dismisses the climb-name keyboard before activating a pressed climb', async () => {
-    const { findByText } = render(<ClimbList />);
+describe('ClimbList zero-result filter snapshot (issue #3401)', () => {
+  it('attaches the zero-result filter snapshot when the search comes up empty', async () => {
+    mocks.searchClimbs = [];
 
-    fireEvent.click(await findByText('Moonage'));
+    render(<ClimbList />);
 
-    expect(mocks.dismissKeyboard).toHaveBeenCalledTimes(1);
-    expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
-    await waitFor(() => expect(mocks.getLogbook).toHaveBeenCalledWith(['climb-1']));
-  });
-});
-
-describe('ClimbList search result selection tracking (issue #3401)', () => {
-  it('tracks the rank of the first result when it is pressed', async () => {
-    const { findByText } = render(<ClimbList />);
-
-    fireEvent.click(await findByText('Moonage'));
-
-    expect(mocks.track).toHaveBeenCalledWith(
-      'Search Result Selected',
-      expect.objectContaining({ rank: 0, loadedResultCount: 2, boardName: 'kilter', angle: 40 }),
+    await waitFor(() =>
+      expect(mocks.track).toHaveBeenCalledWith(
+        'Climb Search Performed',
+        expect.objectContaining({
+          resultCount: 0,
+          zeroResultOnlyTallClimbs: true,
+          zeroResultStatus: 'any',
+          zeroResultBoulders: true,
+          zeroResultRoutes: false,
+        }),
+      ),
     );
   });
 
-  it('tracks the rank of a later result when it is pressed', async () => {
-    const { findByText } = render(<ClimbList />);
+  it('omits the zero-result snapshot fields when results are found', async () => {
+    mocks.searchClimbs = [mocks.climb];
 
-    fireEvent.click(await findByText('Zenith'));
+    render(<ClimbList />);
 
-    expect(mocks.track).toHaveBeenCalledWith(
-      'Search Result Selected',
-      expect.objectContaining({ rank: 1, loadedResultCount: 2, boardName: 'kilter', angle: 40 }),
-    );
+    await waitFor(() => expect(mocks.track).toHaveBeenCalledWith('Climb Search Performed', expect.anything()));
+
+    const [, properties] = mocks.track.mock.calls.find(([eventName]) => eventName === 'Climb Search Performed') ?? [];
+    expect(properties).toMatchObject({ resultCount: 1 });
+    expect(properties).not.toHaveProperty('zeroResultOnlyTallClimbs');
+    expect(properties).not.toHaveProperty('zeroResultStatus');
   });
 });
