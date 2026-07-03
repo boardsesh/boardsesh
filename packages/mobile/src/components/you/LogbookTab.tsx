@@ -349,11 +349,11 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
 
   // Swipe left-to-right → edit this tick (owner-only). The old tap behaviour.
   const handleEdit = useCallback(
-    (ascent: AscentFeedItem) => {
+    (ascent: AscentFeedItem, method: 'swipe' | 'a11y' = 'swipe') => {
       if (chooserOpenRef.current) return;
       const unit = ascent as LogbookGroupUnit;
       if (unit.groupItems && unit.groupItems.length > 1) {
-        setChooser({ intent: 'edit', entries: unit.groupItems, method: 'swipe' });
+        setChooser({ intent: 'edit', entries: unit.groupItems, method });
         return;
       }
       openEditSheet(ascent);
@@ -479,7 +479,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
           setIds: config.setIds.join(','),
           angle: ascent.angle,
         },
-        viewerIsOwner ? { onEditEntry: () => handleEdit(ascent) } : undefined,
+        viewerIsOwner ? { onEditEntry: () => handleEdit(ascent, 'a11y') } : undefined,
       );
     },
     [openClimbActions, viewerIsOwner, handleEdit],
@@ -540,13 +540,20 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
           // carries the filter entry + sort + active-filter chips (so no separate
           // filter button here).
           <>
-            <SearchHeader
-              ref={searchHeaderRef}
-              placeholder={t('mobile.logbook.searchPlaceholder')}
-              onChangeText={handleSearchChange}
-              initialValue={name}
-              height={40}
-            />
+            {/* The row wrapper is load-bearing: SearchHeader's capsule is flex:1,
+                sized for a HORIZONTAL slot (Climbs toolbar, the Material row
+                below). As a direct child of this vertical toolbar, flex-basis 0
+                in an auto-height column beats the explicit height and collapses
+                the capsule to 0px — the search box invisibly disappears. */}
+            <View style={styles.searchRow}>
+              <SearchHeader
+                ref={searchHeaderRef}
+                placeholder={t('mobile.logbook.searchPlaceholder')}
+                onChangeText={handleSearchChange}
+                initialValue={name}
+                height={40}
+              />
+            </View>
             {/* Filter entry + Latest/Hardest + every facet chip (grade/angle/show/
                 date) — switch sort and adjust filters inline without opening the
                 sheet. Grade/angle/date toggle the rail below; Show is a native
@@ -722,6 +729,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
+  },
+  // Horizontal slot for the Liquid Glass search capsule (see the comment at the
+  // render site — flex:1 needs a row parent or it collapses to 0 height).
+  searchRow: {
+    flexDirection: 'row',
+    marginBottom: spacing[2],
   },
   filterButton: {
     width: 40,
