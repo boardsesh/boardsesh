@@ -8,6 +8,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // column bound.
 export const SHEET_TOP_CHROME_PT = 20;
 
+// The gap an iOS large-sheet card leaves BELOW the top safe area. SwiftUI's
+// `.fraction(f)` detent measures against the sheet's own maximum (`.large`)
+// height, which starts a card-inset (and, on iOS 26, Liquid-Glass/grabber
+// chrome) below the top safe area — not at `windowHeight − topInset`. Omitting
+// it made the `%` estimate run LONG on short screens (iPhone 13 mini / iOS
+// 26.1), pushing the pinned footer off the bottom. Folded into the base before
+// the fraction so the correction scales with the detent. Tunable on-device.
+export const SHEET_TOP_GAP_PT = 24;
+
 const fillStyle = StyleSheet.create({ fill: { flex: 1 } }).fill;
 
 type SheetColumnStyleOptions = {
@@ -28,8 +37,9 @@ type SheetColumnStyleOptions = {
  * (#3330, device-verified). So on iOS we pin the column to the current detent's
  * height, computed JS-side: a `%`/fraction detent resolves against the sheet's
  * maximum height (the window minus the top safe area, where SwiftUI's `.fraction`
- * detents measure from); a px detent is the literal sheet height. The
- * `SHEET_TOP_CHROME_PT` margin covers the drag-indicator chrome, erring short.
+ * detents measure from, less the `SHEET_TOP_GAP_PT` card gap); a px detent is
+ * the literal sheet height. The `SHEET_TOP_CHROME_PT` margin covers the
+ * drag-indicator chrome, erring short.
  *
  * Android's Material sheet bounds the column natively, and fitToContents sheets
  * are measured natively too, so both keep `flex: 1`.
@@ -58,5 +68,5 @@ function detentColumnHeight(snapPoint: string | number, windowHeight: number, to
   if (!trimmed.endsWith('%')) return null;
   const fraction = parseFloat(trimmed) / 100;
   if (!Number.isFinite(fraction)) return null;
-  return Math.round((windowHeight - topInset) * fraction) - SHEET_TOP_CHROME_PT;
+  return Math.round((windowHeight - topInset - SHEET_TOP_GAP_PT) * fraction) - SHEET_TOP_CHROME_PT;
 }

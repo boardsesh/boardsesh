@@ -7,13 +7,20 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import type { BoardSerialConfig } from '@boardsesh/graphql/operations';
 
 const KILTER_CONFIG: BleBoardConfig = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,20' };
+const TENSION_CONFIG: BleBoardConfig = { boardName: 'tension', layoutId: 10, sizeId: 6, setIds: '12,13' };
 
-function savedEntry(): ResolvedBoardEntry {
-  return { kind: 'saved', board: { name: 'Garage Kilter' } as UserBoard };
+function savedEntry(boardType = 'kilter'): ResolvedBoardEntry {
+  return {
+    kind: 'saved',
+    board: { name: 'Garage Kilter', boardType, layoutId: 1, sizeId: 10, setIds: '1,20' } as UserBoard,
+  };
 }
 
-function recordedEntry(): ResolvedBoardEntry {
-  return { kind: 'recorded', config: { serialNumber: 'SN-2' } as BoardSerialConfig };
+function recordedEntry(boardName = 'kilter'): ResolvedBoardEntry {
+  return {
+    kind: 'recorded',
+    config: { serialNumber: 'SN-2', boardName, layoutId: 1, sizeId: 10, setIds: '1,20' } as BoardSerialConfig,
+  };
 }
 
 function device(deviceId: string, name?: string): DiscoveredDevice {
@@ -42,6 +49,12 @@ describe('summarizePickerResolution', () => {
       unresolvedWithSerial: 2,
       fallbackPreview: 2,
       noPreview: 1,
+      // d1 (saved kilter), d2 (recorded kilter), d3 (kilter) match; d4 (tension)
+      // mismatches; d5 (nameless) is unknown. At least one matched → not "none".
+      matchedSelectedType: 3,
+      mismatchedSelectedType: 1,
+      unknownType: 1,
+      noneMatchedSelectedType: false,
     });
   });
 
@@ -56,7 +69,30 @@ describe('summarizePickerResolution', () => {
       unresolvedWithSerial: 1,
       fallbackPreview: 0,
       noPreview: 2,
+      // No selected board: a known type can't "match", and noneMatched only
+      // applies when a board is selected.
+      matchedSelectedType: 0,
+      mismatchedSelectedType: 1,
+      unknownType: 1,
+      noneMatchedSelectedType: false,
     });
+  });
+
+  it('flags noneMatchedSelectedType when no listed board is the selected type', () => {
+    // The reported case: selected board is tension, but the only devices are the
+    // user's saved kilter and an unidentified non-tension board — their tension
+    // board was never discovered.
+    const devices = [
+      device('d1', 'Kilter Board#SN-1@3'), // saved kilter
+      device('d2', 'Kilter Board#SN-7@3'), // unresolved, parses to kilter
+    ];
+    const resolvedBoards = new Map<string, ResolvedBoardEntry>([['SN-1', savedEntry('kilter')]]);
+
+    const stats = summarizePickerResolution(devices, resolvedBoards, TENSION_CONFIG);
+    expect(stats.matchedSelectedType).toBe(0);
+    expect(stats.mismatchedSelectedType).toBe(2);
+    expect(stats.unknownType).toBe(0);
+    expect(stats.noneMatchedSelectedType).toBe(true);
   });
 
   it('returns all-zero tallies for an empty scan', () => {
@@ -68,6 +104,11 @@ describe('summarizePickerResolution', () => {
       unresolvedWithSerial: 0,
       fallbackPreview: 0,
       noPreview: 0,
+      matchedSelectedType: 0,
+      mismatchedSelectedType: 0,
+      unknownType: 0,
+      // No devices → nothing to match, so not flagged.
+      noneMatchedSelectedType: false,
     });
   });
 });

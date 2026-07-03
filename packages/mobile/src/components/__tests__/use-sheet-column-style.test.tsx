@@ -17,7 +17,8 @@ vi.mock('react-native-safe-area-context', () => ({
 
 import { useSheetColumnStyle } from '../use-sheet-column-style';
 
-// window 844 − top inset 44 = 800 usable; minus the 20pt chrome margin.
+// window 844 − top inset 44 − 24pt card gap = 776 usable base for a % detent;
+// then × fraction, minus the 20pt chrome margin. A px detent skips the gap.
 const FILL = { flex: 1 };
 
 beforeEach(() => {
@@ -25,10 +26,10 @@ beforeEach(() => {
 });
 
 describe('useSheetColumnStyle', () => {
-  it('bounds an iOS % detent to (window − topInset) × fraction − chrome', () => {
+  it('bounds an iOS % detent to (window − topInset − gap) × fraction − chrome', () => {
     const { result } = renderHook(() => useSheetColumnStyle(['90%']));
-    // round(800 × 0.9) − 20 = 700
-    expect(result.current).toEqual({ height: 700 });
+    // round(776 × 0.9) − 20 = 678
+    expect(result.current).toEqual({ height: 678 });
   });
 
   it('bounds an iOS px detent to the literal height − chrome', () => {
@@ -39,16 +40,16 @@ describe('useSheetColumnStyle', () => {
   it('selects the active detent among multiple % snap points', () => {
     const { result: shorter } = renderHook(() => useSheetColumnStyle(['50%', '90%'], { activeIndex: 0 }));
     const { result: taller } = renderHook(() => useSheetColumnStyle(['50%', '90%'], { activeIndex: 1 }));
-    // round(800 × 0.5) − 20 = 380 ; round(800 × 0.9) − 20 = 700
-    expect(shorter.current).toEqual({ height: 380 });
-    expect(taller.current).toEqual({ height: 700 });
+    // round(776 × 0.5) − 20 = 368 ; round(776 × 0.9) − 20 = 678
+    expect(shorter.current).toEqual({ height: 368 });
+    expect(taller.current).toEqual({ height: 678 });
   });
 
   it('clamps activeIndex into range (over and under)', () => {
     const { result: over } = renderHook(() => useSheetColumnStyle(['50%', '90%'], { activeIndex: 9 }));
     const { result: under } = renderHook(() => useSheetColumnStyle(['50%', '90%'], { activeIndex: -3 }));
-    expect(over.current).toEqual({ height: 700 }); // clamped to last (90%)
-    expect(under.current).toEqual({ height: 380 }); // clamped to first (50%)
+    expect(over.current).toEqual({ height: 678 }); // clamped to last (90%)
+    expect(under.current).toEqual({ height: 368 }); // clamped to first (50%)
   });
 
   it('falls through to flex for a non-% string detent', () => {

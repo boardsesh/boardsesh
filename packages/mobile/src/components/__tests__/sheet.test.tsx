@@ -155,13 +155,13 @@ describe('Sheet', () => {
     // carry the iOS detent bound directly — a flex:1 body sizes to content under
     // SwiftUI's unbounded proposal and clips anything past the detent. Default
     // snap points ['50%','90%'] at index 0 on an 844pt window with a 0 top inset:
-    // round(844 * 0.5) - 20pt top chrome = 402.
+    // round((844 − 24pt card gap) * 0.5) − 20pt top chrome = 390.
     render(
       <Sheet scrollable>
         <div>body</div>
       </Sheet>,
     );
-    expect(captures.scrollStyle).toEqual({ height: 402 });
+    expect(captures.scrollStyle).toEqual({ height: 390 });
   });
 
   it('fires a haptic and onChange only when the sheet opens (index >= 0)', () => {

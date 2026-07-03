@@ -3,12 +3,13 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { parseSerialNumber } from '@boardsesh/ble-protocol';
+import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
 import type { DiscoveredDevice } from '../../lib/ble/types';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
-import type { BleBoardConfig } from '../../lib/ble/board-config-match';
+import { configFromResolvedEntry, type BleBoardConfig } from '../../lib/ble/board-config-match';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
@@ -54,6 +55,24 @@ export function DevicePickerSheet({
     () => new Map(devices.map((device) => [device.deviceId, parseSerialNumber(device.name)])),
     [devices],
   );
+
+  // The reported failure: every listed board is a different type than the one
+  // the user selected (e.g. a saved kilter + an unidentified board, selected =
+  // tension), so their gym board simply isn't here. Surface that so they don't
+  // tap the wrong board (and hit the config-mismatch alert) or give up thinking
+  // the picker is broken. Effective type = the resolved board's type, else the
+  // type parsed from the advertised name — mirrors DeviceCard's own rule.
+  const noneMatchSelectedType = useMemo(() => {
+    if (!currentBoardConfig || devices.length === 0) return false;
+    return !devices.some((device) => {
+      const serialNumber = deviceSerials.get(device.deviceId);
+      const resolvedEntry = serialNumber ? resolvedBoards.get(serialNumber) : undefined;
+      const effectiveType = resolvedEntry
+        ? configFromResolvedEntry(resolvedEntry)?.boardName
+        : parseBoardTypeFromDeviceName(device.name);
+      return effectiveType === currentBoardConfig.boardName;
+    });
+  }, [currentBoardConfig, devices, deviceSerials, resolvedBoards]);
 
   const renderDeviceItem = useCallback(
     ({ item: discoveredDevice }: { item: DiscoveredDevice }) => {
@@ -121,6 +140,14 @@ export function DevicePickerSheet({
         </View>
       )}
 
+      {devices.length > 0 && noneMatchSelectedType && currentBoardConfig && (
+        <View style={styles.typeHint}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('ble.differentBoardType', { board: formatBoardDisplayName(currentBoardConfig.boardName) })}
+          </Text>
+        </View>
+      )}
+
       {devices.length > 0 && (
         <BottomSheetFlatList
           data={sortedDevices}
@@ -132,6 +159,14 @@ export function DevicePickerSheet({
       )}
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing[3] }]}>
+        <View style={styles.troubleshoot}>
+          <Text variant="footnote" color={systemColors.secondaryLabel}>
+            {t('ble.troubleshootTitle')}
+          </Text>
+          <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.troubleshootTip}>
+            {t('ble.troubleshootTips')}
+          </Text>
+        </View>
         <Button title={t('ble.cancel')} onPress={onDismiss} variant="text" size="medium" role="cancel" />
       </View>
     </BottomSheetModal>
@@ -163,11 +198,24 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[4],
     gap: spacing[1],
   },
+  typeHint: {
+    paddingHorizontal: spacing[4],
+    paddingBottom: spacing[2],
+    alignItems: 'center',
+  },
   footer: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
     alignItems: 'center',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: iosSystemColors.separator,
+  },
+  troubleshoot: {
+    alignItems: 'center',
+    gap: 2,
+    paddingBottom: spacing[2],
+  },
+  troubleshootTip: {
+    textAlign: 'center',
   },
 });
