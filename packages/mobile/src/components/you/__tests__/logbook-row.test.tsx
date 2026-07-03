@@ -280,10 +280,12 @@ describe('LogbookRow — meta line', () => {
     expect(a11y.props?.accessibilityLabel).toContain('mobile.logbook.tries:5');
   });
 
-  it('keeps a plain flash as a bare "Flash" with no tries part, in text and a11y', () => {
-    const { container } = renderRow(ascent({ status: 'flash', attemptCount: 1 }));
+  it('keeps an ungrouped flash bare even with a contradictory imported attemptCount', () => {
+    // Imported data can carry status=flash with attemptCount > 1; without
+    // groupTries (flat views) the row must not grow a tries suffix.
+    const { container } = renderRow(ascent({ status: 'flash', attemptCount: 3 }));
     expect(container.textContent).toContain('mobile.logbook.status.flash');
-    expect(container.textContent).not.toContain('mobile.logbook.tries:1');
+    expect(container.textContent).not.toContain('mobile.logbook.tries:3');
     expect(a11y.props?.accessibilityLabel).not.toContain('mobile.logbook.tries');
   });
 

@@ -109,10 +109,11 @@ export function useUserAscentsFeed(
         // Spread caller input first so the paginator's limit/offset always win.
         input: { ...input, limit: FEED_PAGE_SIZE, offset: pageParam },
       }),
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.userAscentsFeed.hasMore
-        ? allPages.reduce((total, page) => total + page.userAscentsFeed.items.length, 0)
-        : undefined,
+    // Offset from pageParam arithmetic, NOT from summing cached item counts:
+    // the optimistic delete strip shrinks cached pages, and a count-derived
+    // offset would then re-request (and re-receive) rows the list already has.
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.userAscentsFeed.hasMore ? lastPageParam + FEED_PAGE_SIZE : undefined,
     enabled: !!userId && (options?.enabled ?? true),
   });
 }
@@ -138,10 +139,10 @@ export function useUserGroupedAscentsFeed(
         // Spread caller input first so the paginator's limit/offset always win.
         input: { ...input, limit: FEED_PAGE_SIZE, offset: pageParam },
       }),
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.userGroupedAscentsFeed.hasMore
-        ? allPages.reduce((total, page) => total + page.userGroupedAscentsFeed.groups.length, 0)
-        : undefined,
+    // Same pageParam arithmetic as the flat feed: group-strips must not shift
+    // the server offset (see the note on useUserAscentsFeed).
+    getNextPageParam: (lastPage, _allPages, lastPageParam) =>
+      lastPage.userGroupedAscentsFeed.hasMore ? lastPageParam + FEED_PAGE_SIZE : undefined,
     enabled: !!userId && (options?.enabled ?? true),
   });
 }

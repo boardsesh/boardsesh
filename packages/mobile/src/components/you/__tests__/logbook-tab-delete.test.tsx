@@ -117,6 +117,9 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 vi.mock('@boardsesh/board-react', () => ({ useDeleteTick: () => deleteTick }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => dialog.confirm }));
+// Pin the flags explicitly: kill switch off, filters off — the suite must
+// not silently change code path if a provider default ever moves.
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => undefined }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toast }));
 
 import { LogbookTab } from '../LogbookTab';

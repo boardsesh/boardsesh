@@ -107,6 +107,9 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 }));
 vi.mock('@boardsesh/board-react', () => ({ useDeleteTick: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => vi.fn(async () => false) }));
+// Pin the flags explicitly: kill switch off, filters off — the suite must
+// not silently change code path if a provider default ever moves.
+vi.mock('../../../providers/feature-flags-provider', () => ({ useFeatureFlag: () => undefined }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ setQueriesData: vi.fn() }) }));
 

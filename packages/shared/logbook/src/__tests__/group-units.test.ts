@@ -42,3 +42,13 @@ describe('sumGroupTries', () => {
     expect(sumGroupTries(items)).toBe(8);
   });
 });
+
+describe('pickBestGroupEntry tie-breaks', () => {
+  it('prefers the LATEST entry when status and grade-richness tie', () => {
+    const morningSend = { uuid: 'am', status: 'send' as const, climbedAt: '2026-06-15 09:00:00', attemptCount: 2 };
+    const eveningSend = { uuid: 'pm', status: 'send' as const, climbedAt: '2026-06-15 18:00:00', attemptCount: 1 };
+    // Robust to input order: newest-first and oldest-first both pick the evening send.
+    expect(pickBestGroupEntry([eveningSend, morningSend]).uuid).toBe('pm');
+    expect(pickBestGroupEntry([morningSend, eveningSend]).uuid).toBe('pm');
+  });
+});
