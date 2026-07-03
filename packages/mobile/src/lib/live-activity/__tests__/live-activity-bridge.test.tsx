@@ -213,7 +213,11 @@ describe('LiveActivityBridge widget navigation (always-live)', () => {
     expect(queue.dispatchWidgetNavigation).not.toHaveBeenCalled();
   });
 
-  it('always allows widget navigation in a party session (no driver gate)', () => {
+  it('keeps widget navigation enabled in a party session while this device holds the board', () => {
+    // Navigation IS gated on holding the board (boardConnection ===
+    // 'connectedByMe', set in beforeEach) — being in a party session doesn't
+    // disable it. The heldByPeer/disconnected cases above cover the gate.
+    boardState.boardConnection = 'connectedByMe';
     renderBridge();
 
     expect(widget.useLiveActivity).toHaveBeenCalledWith(

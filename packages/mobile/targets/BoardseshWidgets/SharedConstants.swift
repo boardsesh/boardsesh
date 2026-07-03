@@ -105,7 +105,21 @@ enum SharedConstants {
     /// Minimum seconds between consecutive ActivityKit pushes.
     /// Redundant JS-side updates that arrive within this window are skipped
     /// because the native WebSocket callback already applied the state.
+    /// Only truly redundant pushes are skipped: a push whose content differs
+    /// from the last pushed state always goes through (a dropped
+    /// content-changing update would leave the widget on the wrong climb
+    /// until some later update).
     static let liveActivityDedupWindow: TimeInterval = 0.5
+
+    /// How far in the future every ActivityKit update pushes the stale date.
+    /// The server-side APNs heartbeat (`packages/backend/src/services/apns/
+    /// heartbeat.ts`) re-sends the latest content state every 90 s while a
+    /// push token is registered, so 10 minutes gives ~6× headroom against
+    /// missed pushes. Shared with the widget-extension intents — they used a
+    /// 180 s stale date, which flipped the activity to "Session ended" three
+    /// minutes after a lock-screen tap whenever no heartbeat covered the
+    /// session (push registration pending, local session).
+    static let liveActivityStaleInterval: TimeInterval = 10 * 60
 
     // MARK: Helpers
 

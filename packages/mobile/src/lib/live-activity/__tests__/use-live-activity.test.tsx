@@ -27,6 +27,7 @@ const plugin = vi.hoisted(() => ({
 vi.mock('../live-activity-plugin', () => plugin);
 
 import { useLiveActivity } from '../use-live-activity';
+import { getAuthToken } from '../../auth-store';
 
 const queueItem = {
   uuid: 'queue-item-1',
@@ -165,6 +166,72 @@ describe('useLiveActivity start-failure contract', () => {
     );
   });
 
+  it('retries the start automatically after a transient failure, within budget', async () => {
+    vi.useFakeTimers();
+    try {
+      // Two transient rejections (e.g. a stale activity still counting against
+      // the ActivityKit limit), then success — all within one activation.
+      plugin.startLiveActivitySession
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValue(undefined);
+
+      render(<Harness {...activeProps()} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1);
+
+      // Attempt 2 fires after one backoff step…
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(2);
+
+      // …attempt 3 after two steps, and it succeeds: initial state pushed.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8000);
+      });
+      expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(3);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(plugin.updateLiveActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ climbName: 'Test Climb', currentIndex: 0, totalClimbs: 1 }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops retrying once the budget is exhausted', async () => {
+    vi.useFakeTimers();
+    try {
+      plugin.startLiveActivitySession.mockRejectedValue(new Error('persistent'));
+
+      render(<Harness {...activeProps()} />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8000);
+      });
+      expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(3);
+      // Budget exhausted (initial attempt + 2 retries) — silence from here.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps a newer session active when an older start rejects late', async () => {
     const firstStart = createDeferredStartPromise();
     plugin.startLiveActivitySession.mockReturnValueOnce(firstStart.promise).mockResolvedValueOnce(undefined);
@@ -197,6 +264,59 @@ describe('useLiveActivity start-failure contract', () => {
       expect(plugin.updateLiveActivityClimb).toHaveBeenCalledWith(
         expect.objectContaining({ climbName: 'Next Climb', currentIndex: 1, totalClimbs: 2 }),
       ),
+    );
+  });
+});
+
+describe('useLiveActivity auth-token gating', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    plugin.isLiveActivityAvailable.mockResolvedValue(true);
+    plugin.updateLiveActivity.mockResolvedValue(undefined);
+    plugin.updateLiveActivityClimb.mockResolvedValue(undefined);
+    plugin.endLiveActivitySession.mockResolvedValue(undefined);
+    plugin.startLiveActivitySession.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("waits for the new session's token load instead of starting with the previous one", async () => {
+    // Guest phase: SecureStore answers null while no session is active.
+    vi.mocked(getAuthToken).mockResolvedValueOnce(null);
+
+    const { rerender } = render(<Harness {...activeProps({ sessionId: null, isSessionActive: false })} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(plugin.startLiveActivitySession).not.toHaveBeenCalled();
+
+    // The user signed in; the next SecureStore read returns the fresh token,
+    // but slowly — the start must wait for it rather than racing ahead with
+    // the guest-phase null (which silently killed push registration for the
+    // whole session).
+    let resolveToken!: (token: string | null) => void;
+    vi.mocked(getAuthToken).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveToken = resolve;
+        }),
+    );
+
+    rerender(<Harness {...activeProps({ sessionId: 'session-2' })} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(plugin.startLiveActivitySession).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveToken('fresh-token');
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(plugin.startLiveActivitySession).toHaveBeenCalledTimes(1));
+    expect(plugin.startLiveActivitySession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 'session-2', authToken: 'fresh-token' }),
     );
   });
 });

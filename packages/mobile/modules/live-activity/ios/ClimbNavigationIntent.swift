@@ -88,7 +88,7 @@ enum ClimbNavigationIntent {
 
         for activity in Activity<ClimbSessionAttributes>.activities {
             guard activity.activityState == .active else { continue }
-            let content = ActivityContent(state: newState, staleDate: Date().addingTimeInterval(180))
+            let content = ActivityContent(state: newState, staleDate: Date().addingTimeInterval(SharedConstants.liveActivityStaleInterval))
             await activity.update(content)
         }
 

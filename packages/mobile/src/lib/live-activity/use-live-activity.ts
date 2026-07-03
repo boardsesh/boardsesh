@@ -54,6 +54,12 @@ type UseLiveActivityOptions = {
 // presence surface; everything else short-circuits at the plugin layer.
 const supportsSessionPresence = Platform.OS === 'ios' || Platform.OS === 'android';
 
+// Retry budget for a failed native start (transient ActivityKit rejections).
+// Attempt n waits n × START_RETRY_DELAY_MS; the budget resets on a successful
+// start or a deactivation.
+const MAX_START_RETRIES = 2;
+const START_RETRY_DELAY_MS = 4000;
+
 function getGraphqlHttpUrl(): string {
   return `${BACKEND_URL.replace(/\/+$/, '')}/graphql`;
 }
@@ -142,14 +148,25 @@ export function useLiveActivity({
   const isActiveRef = useRef(false);
   const generationRef = useRef(0);
   const [available, setAvailable] = useState<boolean | null>(null);
-  const [authToken, setAuthToken] = useState<string | null>(null);
-  const [authTokenLoaded, setAuthTokenLoaded] = useState(false);
+  // The token is stored WITH the sessionId it was loaded for. Deriving
+  // authTokenLoaded from that pairing (instead of a boolean that latched true
+  // on the first load and never reset) closes a race: when sessionId changes,
+  // shouldBeActive stays false until SecureStore answers for the NEW session,
+  // so startSession can no longer ship the previous session's token — which
+  // silently killed push-token registration for the whole session (native
+  // retries all bail on "no auth token in keychain", and no later update
+  // carries the token). It also forces an end/restart when sessionId swaps
+  // directly A→B, rebinding the native WebSocket and push registration.
+  const [loadedAuthToken, setLoadedAuthToken] = useState<{ forSessionId: string | null; token: string | null } | null>(
+    null,
+  );
+  const authTokenLoaded = loadedAuthToken !== null && loadedAuthToken.forSessionId === sessionId;
 
   // Keep refs for values the start callback needs without triggering restarts
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
-  const authTokenRef = useRef(authToken);
-  authTokenRef.current = authToken;
+  const authTokenRef = useRef<string | null>(null);
+  authTokenRef.current = authTokenLoaded ? loadedAuthToken.token : null;
   const androidNotificationRef = useRef(androidNotification);
   androidNotificationRef.current = androidNotification;
   const widgetNavigationAllowedRef = useRef(widgetNavigationAllowed);
@@ -205,15 +222,15 @@ export function useLiveActivity({
     };
   }, []);
 
-  // Load auth token once. Re-load if the start effect's deps change (cheap
-  // enough — SecureStore read).
+  // (Re)load the auth token for the current sessionId (cheap — SecureStore
+  // read). The result is paired with the sessionId it answers for; see
+  // loadedAuthToken above.
   useEffect(() => {
     if (!supportsSessionPresence) return;
     let cancelled = false;
     void getAuthToken().then((token) => {
       if (cancelled) return;
-      setAuthToken(token);
-      setAuthTokenLoaded(true);
+      setLoadedAuthToken({ forSessionId: sessionId, token });
     });
     return () => {
       cancelled = true;
@@ -224,6 +241,22 @@ export function useLiveActivity({
   // board config. Does NOT restart when the current climb changes.
   const hasContent = queue.length > 0 || currentClimbQueueItem !== null;
   const shouldBeActive = isSessionActive && hasContent && stableBoard !== null && available === true && authTokenLoaded;
+
+  // ActivityKit start failures include transient ones (a stale activity still
+  // counting against the per-app limit, momentary throttling). Without a
+  // retry, one failure killed the widget for the whole session — the effect's
+  // deps never change again, so it only recovered on a full deactivate/
+  // reactivate. Bounded: the nonce re-fires the start effect, the counter
+  // stops after MAX_START_RETRIES, and both reset on success or deactivation.
+  const [startRetryNonce, setStartRetryNonce] = useState(0);
+  const startFailureCountRef = useRef(0);
+  const startRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearStartRetry = () => {
+    if (startRetryTimerRef.current !== null) {
+      clearTimeout(startRetryTimerRef.current);
+      startRetryTimerRef.current = null;
+    }
+  };
 
   useEffect(() => {
     if (!supportsSessionPresence || available !== true) return;
@@ -258,6 +291,7 @@ export function useLiveActivity({
         })
         .then(() => {
           if (!isActiveRef.current || generationRef.current !== startGeneration) return;
+          startFailureCountRef.current = 0;
           // Send an initial update so the widget doesn't stay on "Loading...".
           const q = queueRef.current;
           const displayItem = currentClimbRef.current ?? (q.length > 0 ? q[0] : null);
@@ -297,19 +331,36 @@ export function useLiveActivity({
           // tear those down here — JS otherwise believes nothing is active and
           // never reaches the teardown paths. endSession is idempotent.
           void endLiveActivitySession();
+          startFailureCountRef.current += 1;
+          if (startFailureCountRef.current <= MAX_START_RETRIES) {
+            const attempt = startFailureCountRef.current;
+            startRetryTimerRef.current = setTimeout(() => {
+              startRetryTimerRef.current = null;
+              setStartRetryNonce((nonce) => nonce + 1);
+            }, START_RETRY_DELAY_MS * attempt);
+          }
         });
     } else if (!shouldBeActive && isActiveRef.current) {
       void endLiveActivitySession();
       isActiveRef.current = false;
     }
 
+    if (!shouldBeActive) {
+      // Deactivation abandons any scheduled retry and resets the budget for
+      // the next activation.
+      clearStartRetry();
+      startFailureCountRef.current = 0;
+    }
+
     return () => {
+      clearStartRetry();
       if (isActiveRef.current) {
         void endLiveActivitySession();
         isActiveRef.current = false;
       }
     };
-  }, [shouldBeActive, stableBoard, available]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startRetryNonce re-fires the start after a failed attempt
+  }, [shouldBeActive, stableBoard, available, startRetryNonce]);
 
   // Stable scalar trigger for the on-device thumbnail backgrounds: the paths array
   // has a fresh identity each render, so depending on it directly would churn the

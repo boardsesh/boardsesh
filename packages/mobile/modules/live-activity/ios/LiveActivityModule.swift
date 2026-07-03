@@ -54,6 +54,26 @@ public class LiveActivityModule: Module {
     private var hasListener = false
     private var isDraining = false
 
+    /// FIFO chain for ActivityKit lifecycle work (start/end/update). The
+    /// naked `Task {}`s these used to spawn are unordered, so a fast
+    /// end-then-start (board switch) could run endAllActivities AFTER the new
+    /// start (killing the fresh activity), a start-then-end (quick unmount)
+    /// could start AFTER the end (orphaning a "Loading..." activity), and an
+    /// older update could land after a newer one. Chaining preserves the JS
+    /// call order end-to-end.
+    private let lifecycleQueue = DispatchQueue(label: "com.boardsesh.LiveActivityModule.lifecycle")
+    private var _lifecycleTask: Task<Void, Never>?
+
+    private func enqueueLifecycleWork(_ operation: @escaping () async -> Void) {
+        lifecycleQueue.sync {
+            let previous = _lifecycleTask
+            _lifecycleTask = Task {
+                await previous?.value
+                await operation()
+            }
+        }
+    }
+
     public func definition() -> ModuleDefinition {
         Name("LiveActivity")
 
@@ -736,7 +756,7 @@ public class LiveActivityModule: Module {
             }
         }
 
-        Task {
+        enqueueLifecycleWork {
             do {
                 try await activityManager.startActivity(
                     boardName: boardName,
@@ -796,7 +816,7 @@ public class LiveActivityModule: Module {
         SharedKeychain.remove(SharedKeychain.livePushTokenKey)
 
         if #available(iOS 17.0, *) {
-            Task {
+            enqueueLifecycleWork {
                 await LiveActivityManager.shared.endAllActivities()
                 self.logger.info("Ended session and cleaned up Live Activity")
                 promise.resolve(nil)
@@ -861,9 +881,10 @@ public class LiveActivityModule: Module {
         )
 
         let activityManager = LiveActivityManager.shared
-        Task {
+        enqueueLifecycleWork {
             let elapsed = await activityManager.timeSinceLastUpdate()
-            if !wallControlChanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
+            let unchanged = await activityManager.lastPushedState() == state
+            if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
                 await activityManager.updateActivity(state: state)
@@ -912,9 +933,10 @@ public class LiveActivityModule: Module {
         )
 
         let activityManager = LiveActivityManager.shared
-        Task {
+        enqueueLifecycleWork {
             let elapsed = await activityManager.timeSinceLastUpdate()
-            if !wallControlChanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
+            let unchanged = await activityManager.lastPushedState() == state
+            if !wallControlChanged, unchanged, let elapsed, elapsed < SharedConstants.liveActivityDedupWindow {
                 self.logger.debug("Skipping redundant climb ActivityKit push (\(Int(elapsed * 1000))ms since last native update)")
             } else {
                 await activityManager.updateActivity(state: state)

@@ -31,14 +31,18 @@ actor LiveActivityManager {
     /// Timestamp of the last ActivityKit update, used for deduplication.
     private var lastUpdateTime: Date?
 
-    /// How far in the future the stale date is set. The server-side APNs
-    /// heartbeat (`packages/backend/src/services/apns/heartbeat.ts`) re-sends
-    /// the latest content state every 90 s while at least one push token is
-    /// registered for the session, so a 10-minute stale interval gives ~6×
-    /// headroom against missed pushes (network blip, APNs latency, server
-    /// restart). After a force-quit with no server keepalive the activity
-    /// goes stale in 10 minutes instead of lingering indefinitely.
-    private let staleInterval: TimeInterval = 10 * 60
+    /// How far in the future the stale date is set — see the rationale on
+    /// `SharedConstants.liveActivityStaleInterval` (shared with the
+    /// widget-extension intents so a lock-screen tap can't shorten the
+    /// deadline the app maintains).
+    private let staleInterval = SharedConstants.liveActivityStaleInterval
+
+    /// Bumped by every startActivity/endAllActivities entry. Ended-then-
+    /// restarted flows interleave on this reentrant actor (both hop through
+    /// `await activity.end` / `Activity.request`), and an end that resumes
+    /// after a newer start must not sweep the activity that start just
+    /// created.
+    private var lifecycleGeneration = 0
 
     // MARK: - Init
 
@@ -74,11 +78,25 @@ actor LiveActivityManager {
         // Clean up any existing activities first.
         await endAllActivities()
 
+        // Claim the lifecycle AFTER the cleanup sweep (which takes its own
+        // generation) so a later end can supersede this start across the
+        // suspension below.
+        lifecycleGeneration += 1
+        let generation = lifecycleGeneration
+
         // A new session/board is starting — drop the previous board's decoded
         // background layers now instead of waiting for the next composite to
         // prune them (which never runs if no thumbnail is requested before the
         // app backgrounds).
         await thumbnailFetcher.clearBackgroundLayerCache()
+
+        // A newer start/end entered the actor while we were suspended — it
+        // owns the lifecycle now; requesting an activity here would leak one
+        // nobody tracks.
+        guard generation == lifecycleGeneration else {
+            logger.info("startActivity superseded during setup; skipping Activity.request")
+            return
+        }
 
         // Install the push-token callback before requesting the activity.
         // ActivityKit can emit the first token between Activity.request returning
@@ -162,6 +180,14 @@ actor LiveActivityManager {
         return Date().timeIntervalSince(lastUpdateTime)
     }
 
+    /// The content state currently shown by the tracked activity, or nil when
+    /// none is active. Lets the dedup gate skip only pushes whose content is
+    /// actually identical — a time-only window dropped the second of two
+    /// quick navigations and left the widget on the wrong climb.
+    func lastPushedState() -> ClimbSessionAttributes.ContentState? {
+        currentActivity?.content.state
+    }
+
     // MARK: - Refresh Stale Date
 
     /// Pushes the stale deadline forward without changing the displayed content.
@@ -177,20 +203,31 @@ actor LiveActivityManager {
     /// Ends all Live Activities, including the tracked one and any stale
     /// activities from previous sessions that may still be visible.
     func endAllActivities() async {
+        lifecycleGeneration += 1
+        let generation = lifecycleGeneration
+
         pushTokenTask?.cancel()
         pushTokenTask = nil
 
-        // End the currently tracked activity.
+        // End the currently tracked activity. Clear the reference BEFORE the
+        // await: a start that interleaves during the suspension assigns a new
+        // activity, and resuming here must not nil that out.
         if let activity = currentActivity {
+            currentActivity = nil
             let activityId = activity.id
             await activity.end(nil, dismissalPolicy: .immediate)
             logger.info("Ended tracked Live Activity \(activityId, privacy: .public)")
-            currentActivity = nil
         }
 
         // Also clean up any stale activities that might linger from crashes
-        // or previous sessions.
+        // or previous sessions — unless a newer start claimed the lifecycle
+        // while we were suspended, in which case sweeping would kill the
+        // activity it just created.
         for activity in Activity<ClimbSessionAttributes>.activities {
+            guard generation == lifecycleGeneration else {
+                logger.info("endAllActivities superseded by a newer start; leaving remaining activities")
+                return
+            }
             await activity.end(nil, dismissalPolicy: .immediate)
         }
     }

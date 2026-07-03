@@ -51,7 +51,7 @@ struct ReconnectBoardIntent: LiveActivityIntent {
     private func refreshActivities() async {
         for activity in Activity<ClimbSessionAttributes>.activities {
             guard activity.activityState == .active else { continue }
-            let content = ActivityContent(state: activity.content.state, staleDate: Date().addingTimeInterval(180))
+            let content = ActivityContent(state: activity.content.state, staleDate: Date().addingTimeInterval(SharedConstants.liveActivityStaleInterval))
             await activity.update(content)
         }
     }
