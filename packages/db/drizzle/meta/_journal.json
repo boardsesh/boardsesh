@@ -981,6 +981,13 @@
       "when": 1783060078712,
       "tag": "0139_backfill_json_import_tick_quality",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1783064460613,
+      "tag": "0140_clamp_json_import_raw_stars_4",
+      "breakpoints": true
     }
   ]
 }
