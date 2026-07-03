@@ -604,7 +604,7 @@ function ClimbListInner() {
       // *remaining* filter dimensions, and only on a dead end — the signal for
       // "which filter caused this search to come up empty".
       ...(isZeroResult && {
-        zeroResultStatus: filters.status,
+        zeroResultStatus: filters.status ?? null,
         zeroResultGradeAccuracy: filters.gradeAccuracy ?? null,
         zeroResultOnlyTallClimbs: filters.onlyTallClimbs ?? false,
         zeroResultOnlyWideClimbs: filters.onlyWideClimbs ?? false,

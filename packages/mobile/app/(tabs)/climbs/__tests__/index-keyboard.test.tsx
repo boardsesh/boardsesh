@@ -372,10 +372,16 @@ describe('ClimbList search result selection tracking', () => {
   });
 });
 
+const ACTIVE_TALL_FILTER_STATE = {
+  filters: { status: 'any', boulders: true, routes: false, onlyTallClimbs: true },
+  boardFilters: {},
+  name: 'no such climb',
+};
+
 describe('ClimbList zero-result filter snapshot', () => {
   it('attaches the zero-result filter snapshot when the search comes up empty', async () => {
     mocks.searchClimbs = [];
-    mocks.searchState = { filters: { status: 'any', boulders: true, routes: false, onlyTallClimbs: true }, boardFilters: {}, name: 'no such climb' };
+    mocks.searchState = ACTIVE_TALL_FILTER_STATE;
 
     render(<ClimbList />);
 
@@ -395,7 +401,7 @@ describe('ClimbList zero-result filter snapshot', () => {
 
   it('omits the zero-result snapshot fields when results are found', async () => {
     mocks.searchClimbs = [mocks.climb];
-    mocks.searchState = { filters: { status: 'any', boulders: true, routes: false, onlyTallClimbs: true }, boardFilters: {}, name: 'no such climb' };
+    mocks.searchState = ACTIVE_TALL_FILTER_STATE;
 
     render(<ClimbList />);
 
