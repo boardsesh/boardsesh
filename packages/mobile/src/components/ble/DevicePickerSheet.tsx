@@ -3,13 +3,14 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { BottomSheetModal, BottomSheetView, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
-import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
+import { parseSerialNumber } from '@boardsesh/ble-protocol';
 import { formatBoardDisplayName } from '@boardsesh/board-config';
 import type { DiscoveredDevice } from '../../lib/ble/types';
 import { useManagedSheet } from '../../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from '../sheet-snap-points';
 import type { ResolvedBoardEntry } from '../../lib/ble/resolve-serials';
-import { configFromResolvedEntry, type BleBoardConfig } from '../../lib/ble/board-config-match';
+import type { BleBoardConfig } from '../../lib/ble/board-config-match';
+import { noListedBoardMatchesSelectedType } from '../../lib/ble/picker-resolution-stats';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { DeviceCard } from './DeviceCard';
@@ -60,19 +61,12 @@ export function DevicePickerSheet({
   // the user selected (e.g. a saved kilter + an unidentified board, selected =
   // tension), so their gym board simply isn't here. Surface that so they don't
   // tap the wrong board (and hit the config-mismatch alert) or give up thinking
-  // the picker is broken. Effective type = the resolved board's type, else the
-  // type parsed from the advertised name — mirrors DeviceCard's own rule.
-  const noneMatchSelectedType = useMemo(() => {
-    if (!currentBoardConfig || devices.length === 0) return false;
-    return !devices.some((device) => {
-      const serialNumber = deviceSerials.get(device.deviceId);
-      const resolvedEntry = serialNumber ? resolvedBoards.get(serialNumber) : undefined;
-      const effectiveType = resolvedEntry
-        ? configFromResolvedEntry(resolvedEntry)?.boardName
-        : parseBoardTypeFromDeviceName(device.name);
-      return effectiveType === currentBoardConfig.boardName;
-    });
-  }, [currentBoardConfig, devices, deviceSerials, resolvedBoards]);
+  // the picker is broken. Same rule the resolution stats flag as
+  // `noneMatchedSelectedType`, shared so UI and analytics can't drift.
+  const noneMatchedSelectedType = useMemo(
+    () => noListedBoardMatchesSelectedType(devices, resolvedBoards, currentBoardConfig),
+    [currentBoardConfig, devices, resolvedBoards],
+  );
 
   const renderDeviceItem = useCallback(
     ({ item: discoveredDevice }: { item: DiscoveredDevice }) => {
@@ -140,7 +134,7 @@ export function DevicePickerSheet({
         </View>
       )}
 
-      {devices.length > 0 && noneMatchSelectedType && currentBoardConfig && (
+      {devices.length > 0 && noneMatchedSelectedType && currentBoardConfig && (
         <View style={styles.typeHint}>
           <Text variant="footnote" color={systemColors.secondaryLabel}>
             {t('ble.differentBoardType', { board: formatBoardDisplayName(currentBoardConfig.boardName) })}
@@ -212,7 +206,7 @@ const styles = StyleSheet.create({
   },
   troubleshoot: {
     alignItems: 'center',
-    gap: 2,
+    gap: spacing[1],
     paddingBottom: spacing[2],
   },
   troubleshootTip: {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { summarizePickerResolution } from '../picker-resolution-stats';
+import {
+  effectiveBoardType,
+  noListedBoardMatchesSelectedType,
+  summarizePickerResolution,
+} from '../picker-resolution-stats';
 import type { ResolvedBoardEntry } from '../resolve-serials';
 import type { BleBoardConfig } from '../board-config-match';
 import type { DiscoveredDevice } from '../types';
@@ -110,5 +114,33 @@ describe('summarizePickerResolution', () => {
       // No devices → nothing to match, so not flagged.
       noneMatchedSelectedType: false,
     });
+  });
+});
+
+describe('effectiveBoardType', () => {
+  it('reads a resolved board type, else the type parsed from the name, else undefined', () => {
+    const resolvedBoards = new Map<string, ResolvedBoardEntry>([['SN-1', savedEntry('tension')]]);
+    expect(effectiveBoardType(device('d1', 'Kilter Board#SN-1@3'), resolvedBoards)).toBe('tension'); // resolved wins
+    expect(effectiveBoardType(device('d2', 'Tension Board#SN-9@2'), new Map())).toBe('tension'); // parsed from name
+    expect(effectiveBoardType(device('d3'), new Map())).toBeUndefined(); // nameless
+  });
+});
+
+describe('noListedBoardMatchesSelectedType', () => {
+  const resolvedKilter = new Map<string, ResolvedBoardEntry>([['SN-1', savedEntry('kilter')]]);
+
+  it('is true when a board is selected, devices exist, but none are that type', () => {
+    const devices = [device('d1', 'Kilter Board#SN-1@3'), device('d2', 'Kilter Board#SN-7@3')];
+    expect(noListedBoardMatchesSelectedType(devices, resolvedKilter, TENSION_CONFIG)).toBe(true);
+  });
+
+  it('is false when at least one listed board is the selected type', () => {
+    const devices = [device('d1', 'Kilter Board#SN-1@3'), device('d2', 'Tension Board#SN-7@2')];
+    expect(noListedBoardMatchesSelectedType(devices, resolvedKilter, TENSION_CONFIG)).toBe(false);
+  });
+
+  it('is false with no selected board or no devices', () => {
+    expect(noListedBoardMatchesSelectedType([device('d1', 'Kilter Board#SN-7@3')], new Map(), undefined)).toBe(false);
+    expect(noListedBoardMatchesSelectedType([], new Map(), TENSION_CONFIG)).toBe(false);
   });
 });

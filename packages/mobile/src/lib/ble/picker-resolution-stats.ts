@@ -1,7 +1,39 @@
 import { parseBoardTypeFromDeviceName, parseSerialNumber } from '@boardsesh/ble-protocol';
+import type { BoardName } from '@boardsesh/shared-schema';
 import type { DiscoveredDevice } from './types';
 import type { ResolvedBoardEntry } from './resolve-serials';
 import { configFromResolvedEntry, type BleBoardConfig } from './board-config-match';
+
+/**
+ * The board type a picker row effectively represents, mirroring DeviceCard: a
+ * resolved (saved/recorded) board's real type, else the type parsed from the
+ * advertised name. `undefined` when neither can identify it.
+ */
+export function effectiveBoardType(
+  device: DiscoveredDevice,
+  resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>,
+): BoardName | undefined {
+  const serial = parseSerialNumber(device.name);
+  const resolvedEntry = serial ? resolvedBoards.get(serial) : undefined;
+  return resolvedEntry ? configFromResolvedEntry(resolvedEntry)?.boardName : parseBoardTypeFromDeviceName(device.name);
+}
+
+/**
+ * True when a board is selected and devices were listed, yet none of them are
+ * the selected board's type — the reported "my board isn't here" case, where
+ * the user's target board was never discovered. Shared by the picker UI (to
+ * show a hint) and the resolution stats (to flag it in analytics) so both read
+ * the same rule.
+ */
+export function noListedBoardMatchesSelectedType(
+  devices: ReadonlyArray<DiscoveredDevice>,
+  resolvedBoards: ReadonlyMap<string, ResolvedBoardEntry>,
+  currentBoardConfig: BleBoardConfig | undefined,
+): boolean {
+  const selectedType = currentBoardConfig?.boardName;
+  if (selectedType == null || devices.length === 0) return false;
+  return !devices.some((device) => effectiveBoardType(device, resolvedBoards) === selectedType);
+}
 
 // Per-picker-session tallies of how each listed device's board preview
 // resolved, flushed as one analytics event when the sheet closes. Answers
@@ -68,14 +100,10 @@ export function summarizePickerResolution(
 
     const resolvedEntry = serial ? resolvedBoards.get(serial) : undefined;
 
-    // Effective board type per device, mirroring DeviceCard: a resolved entry's
-    // real board type, else the type parsed from the advertised name.
-    const effectiveType = resolvedEntry
-      ? configFromResolvedEntry(resolvedEntry)?.boardName
-      : parseBoardTypeFromDeviceName(device.name);
-    if (effectiveType == null) {
+    const deviceType = effectiveBoardType(device, resolvedBoards);
+    if (deviceType == null) {
       stats.unknownType += 1;
-    } else if (effectiveType === selectedType) {
+    } else if (deviceType === selectedType) {
       stats.matchedSelectedType += 1;
     } else {
       stats.mismatchedSelectedType += 1;
@@ -101,7 +129,7 @@ export function summarizePickerResolution(
     }
   }
 
-  stats.noneMatchedSelectedType = selectedType != null && devices.length > 0 && stats.matchedSelectedType === 0;
+  stats.noneMatchedSelectedType = noListedBoardMatchesSelectedType(devices, resolvedBoards, currentBoardConfig);
 
   return stats;
 }
