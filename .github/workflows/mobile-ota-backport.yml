@@ -106,9 +106,6 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Install Node.js dependencies (workspace root)
-        run: bun install --frozen-lockfile
-
       - name: Locate the release anchor and prepare the hotfix tree
         id: anchor
         env:
@@ -145,6 +142,13 @@ jobs:
           done
           echo "Cherry-picking onto $tag: ${commits[*]}"
           git cherry-pick "${commits[@]}"
+
+      # Install AFTER the anchor checkout + cherry-pick so node_modules matches the
+      # OLD release's lockfile, not main's. Resolving the fingerprint against
+      # main's deps would diverge from what the shipped binary embedded and cause
+      # a spurious mismatch (or, worse, a false match).
+      - name: Install Node.js dependencies (workspace root)
+        run: bun install --frozen-lockfile
 
       - name: Write .env for Expo build-time inlining
         working-directory: packages/mobile

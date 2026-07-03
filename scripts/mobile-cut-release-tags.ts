@@ -25,7 +25,7 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { formatBuildTag, formatReleaseTag, pickBuildTagForVersion, type Platform } from './lib/release-tags';
 
@@ -58,7 +58,7 @@ function emitOutput(name: string, value: string): void {
   console.log(`output: ${name}=${value}`);
 }
 
-function parseAcceptedBuilds(raw: string | undefined): AcceptedVersion[] {
+export function parseAcceptedBuilds(raw: string | undefined): AcceptedVersion[] {
   if (!raw || raw.trim().length === 0) return [];
   const parsed: unknown = JSON.parse(raw);
   if (!Array.isArray(parsed)) throw new Error('ACCEPTED_BUILDS must be a JSON array');
@@ -146,9 +146,12 @@ function main(): number {
   return 0;
 }
 
-try {
-  process.exit(main());
-} catch (error) {
-  console.error(`[mobile-cut-release-tags] ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
+// Only run when invoked directly (not when imported by a test).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    process.exit(main());
+  } catch (error) {
+    console.error(`[mobile-cut-release-tags] ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
 }
