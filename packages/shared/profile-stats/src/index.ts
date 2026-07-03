@@ -24,5 +24,10 @@ export {
   sortLayoutKeys,
 } from './layouts';
 export { parseTickTime, tickTimeMs, formatTickRelativeTime, formatTickAbsoluteTime } from './format-tick-time';
-export { deriveAngleLifetimeStats, type AngleLifetimeStats } from './angle-lifetime';
+export {
+  deriveAngleLifetimeStats,
+  groupEntriesByAngle,
+  type AngleLifetimeStats,
+  type AngleEntriesSection,
+} from './angle-lifetime';
 export { deriveProfileViewModel, type DeriveProfileViewModelInput, type ProfileViewModel } from './derive-view-model';

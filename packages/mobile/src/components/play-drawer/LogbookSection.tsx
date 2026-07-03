@@ -3,7 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useLogbook } from '@boardsesh/board-react';
-import { deriveAngleLifetimeStats } from '@boardsesh/profile-stats';
+import { groupEntriesByAngle } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { LogbookEntryRow } from './LogbookEntryRow';
@@ -37,27 +37,47 @@ export const LogbookSection = memo(function LogbookSection({
   // Only Tension/Decoy log mirrored sends, so the mirror tag is board-gated.
   const showMirrorTag = boardName === 'tension' || boardName === 'decoy';
 
-  // Lifetime per angle — "13 tries over 3 sessions". The logbook list shows
-  // per-day truth; the climb's own view is where the whole journey lives.
+  // Entries bucketed under per-angle headers, most recently climbed angle
+  // first. Each header recaps the lifetime at that angle — "13 tries over
+  // 3 sessions · 2 sends" — so the rows below drop their own angle chip.
   // Sessions = distinct days, matching the logbook's day-scoped grouping.
-  const angleLifetime = useMemo(() => deriveAngleLifetimeStats(entries), [entries]);
+  const angleSections = useMemo(() => groupEntriesByAngle(entries), [entries]);
 
   if (entries.length > 0) {
     return (
       <View style={styles.container}>
-        {angleLifetime.length > 0 ? (
-          <View style={styles.lifetimeBlock}>
-            {angleLifetime.map((stats) => (
-              <Text key={stats.angle} variant="footnote" color={iosSystemColors.systemGray}>
-                {`${stats.angle}° — ${t('mobile.logbook.lifetimeTries', { count: stats.totalTries })} ${t('mobile.logbook.lifetimeSessions', { count: stats.sessionCount })}`}
-                {stats.sendCount > 0 ? ` · ${t('mobile.logbook.lifetimeSends', { count: stats.sendCount })}` : ''}
-              </Text>
-            ))}
-          </View>
-        ) : null}
-        {entries.map((entry) => (
-          <LogbookEntryRow key={entry.uuid} entry={entry} showMirrorTag={showMirrorTag} />
-        ))}
+        {angleSections.map((section) => {
+          const recap = `${t('mobile.logbook.lifetimeTries', { count: section.stats.totalTries })} ${t('mobile.logbook.lifetimeSessions', { count: section.stats.sessionCount })}${
+            section.stats.sendCount > 0
+              ? ` · ${t('mobile.logbook.lifetimeSends', { count: section.stats.sendCount })}`
+              : ''
+          }`;
+          return (
+            <View key={section.angle} style={styles.angleSection}>
+              <View
+                accessible
+                accessibilityRole="header"
+                accessibilityLabel={`${section.angle}°, ${recap}`}
+                style={styles.angleHeader}
+              >
+                <Text variant="caption1" color={iosSystemColors.systemGray} style={styles.angleHeaderLabel}>
+                  {`${section.angle}°`}
+                </Text>
+                <Text
+                  variant="caption1"
+                  color={iosSystemColors.systemGray}
+                  style={styles.angleHeaderRecap}
+                  numberOfLines={1}
+                >
+                  {recap}
+                </Text>
+              </View>
+              {section.entries.map((entry) => (
+                <LogbookEntryRow key={entry.uuid} entry={entry} showMirrorTag={showMirrorTag} showAngleChip={false} />
+              ))}
+            </View>
+          );
+        })}
       </View>
     );
   }
@@ -104,12 +124,27 @@ export const LogbookSection = memo(function LogbookSection({
 });
 
 const styles = StyleSheet.create({
-  lifetimeBlock: {
-    gap: 2,
-    marginBottom: spacing[2],
-  },
   container: {
+    gap: spacing[2],
+  },
+  angleSection: {
     gap: spacing[1],
+  },
+  angleHeader: {
+    flexDirection: 'row',
+    // Wrap instead of colliding at accessibility type sizes — the recap drops
+    // below the angle label when one line can't hold both.
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    columnGap: spacing[2],
+    marginTop: spacing[1],
+  },
+  angleHeaderLabel: {
+    fontWeight: '600',
+  },
+  angleHeaderRecap: {
+    flexShrink: 1,
   },
   emptyContainer: {
     flexDirection: 'row',

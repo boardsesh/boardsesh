@@ -14,6 +14,8 @@ import { spacing, borderRadius } from '../../theme/tokens';
 type LogbookEntryRowProps = {
   entry: LogbookEntry;
   showMirrorTag: boolean;
+  /** False when an angle section header above already names the angle. */
+  showAngleChip?: boolean;
 };
 
 function formatClimbedAt(iso: string): string {
@@ -40,7 +42,11 @@ const STATUS_ICON: Record<AscentStatusValue, { name: 'flash' | 'tick' | 'close';
   attempt: { name: 'close', color: iosSystemColors.systemOrange },
 };
 
-export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirrorTag }: LogbookEntryRowProps) {
+export const LogbookEntryRow = memo(function LogbookEntryRow({
+  entry,
+  showMirrorTag,
+  showAngleChip = true,
+}: LogbookEntryRowProps) {
   const { t } = useTranslation('session');
   const { formatGradeByDifficultyId } = useGradeFormat();
 
@@ -82,11 +88,13 @@ export const LogbookEntryRow = memo(function LogbookEntryRow({ entry, showMirror
         <Text variant="subheadline" style={styles.date} numberOfLines={1}>
           {formatClimbedAt(entry.climbed_at)}
         </Text>
-        <View style={styles.angleChip}>
-          <Text variant="caption2" color={iosSystemColors.white}>
-            {`${entry.angle}°`}
-          </Text>
-        </View>
+        {showAngleChip ? (
+          <View style={styles.angleChip}>
+            <Text variant="caption2" color={iosSystemColors.white}>
+              {`${entry.angle}°`}
+            </Text>
+          </View>
+        ) : null}
         {gradeLabel ? (
           <View style={styles.gradeChip}>
             <Text variant="caption2" color={gradeColor} style={styles.gradeText}>
