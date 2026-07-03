@@ -36,6 +36,9 @@ type ClaimMode = 'domain' | 'admin';
 type ClaimGymSheetProps = {
   sheetRef: RefObject<BottomSheetModal | null>;
   gym: Gym;
+  /** Fired after the sheet fully dismisses. A host that mounts this per-target
+   *  (the wall finder) clears its target here so the same gym can re-open later. */
+  onClosed?: () => void;
 };
 
 /**
@@ -47,7 +50,7 @@ type ClaimGymSheetProps = {
  * link is opened in the browser and handled by the backend, so the app does
  * nothing further after confirming.
  */
-export function ClaimGymSheet({ sheetRef, gym }: ClaimGymSheetProps) {
+export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
   const requestClaim = useRequestGymClaim();
@@ -68,6 +71,11 @@ export function ClaimGymSheet({ sheetRef, gym }: ClaimGymSheetProps) {
     setConfirmation(null);
     requestClaim.reset();
   }, [domain, requestClaim]);
+
+  const handleFullyDismissed = useCallback(() => {
+    resetState();
+    onClosed?.();
+  }, [resetState, onClosed]);
 
   const dismiss = useCallback(() => sheetRef.current?.dismiss(), [sheetRef]);
 
@@ -98,7 +106,7 @@ export function ClaimGymSheet({ sheetRef, gym }: ClaimGymSheetProps) {
       snapPoints={['58%', '88%']}
       scrollable
       contentContainerStyle={styles.content}
-      onFullyDismissed={resetState}
+      onFullyDismissed={handleFullyDismissed}
     >
       <View style={styles.headerRow}>
         <Text variant="title3" style={styles.title}>

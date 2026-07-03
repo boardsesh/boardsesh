@@ -123,6 +123,29 @@ function makeData(): GymListRow[] {
   ];
 }
 
+const claimableGym = {
+  uuid: 'g2',
+  name: 'Blackheath Boulders',
+  address: '2 Boulder Rd',
+  boardCount: 0,
+  boardTypes: [],
+  canClaim: true,
+} as unknown as Gym;
+
+function makeExpandedClaimData(): GymListRow[] {
+  return [
+    {
+      kind: 'gym',
+      key: 'gym:g2',
+      gym: claimableGym,
+      subtitle: '2 Boulder Rd',
+      expanded: true,
+      selected: false,
+      boards: [],
+    },
+  ];
+}
+
 beforeEach(() => {
   ensureVisible.mockClear();
   snapTo.mockClear();
@@ -167,6 +190,46 @@ describe('GymListPanel', () => {
     // The only pressable in this data set is the gym row.
     fireEvent.click(getAllByRole('button')[0]);
     expect(onPressGym).toHaveBeenCalledWith(gym);
+  });
+
+  it('renders a claim action inside an expanded claimable row and calls onClaimGym', () => {
+    const onClaimGym = vi.fn();
+    const { getAllByRole } = render(
+      <GymListPanel
+        data={makeExpandedClaimData()}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        onClaimGym={onClaimGym}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />,
+    );
+    // The expanded, claimable, board-less row yields two pressables: the gym
+    // header (index 0) and the claim action (index 1).
+    const buttons = getAllByRole('button');
+    expect(buttons).toHaveLength(2);
+    fireEvent.click(buttons[1]);
+    expect(onClaimGym).toHaveBeenCalledWith(claimableGym);
+  });
+
+  it('does not render a claim action when no onClaimGym handler is supplied', () => {
+    const { getAllByRole } = render(
+      <GymListPanel
+        data={makeExpandedClaimData()}
+        mapAvailable
+        onPressGym={vi.fn()}
+        onActivateBoard={vi.fn()}
+        onEditGym={vi.fn()}
+        onEditBoard={vi.fn()}
+        noBoardsLabel="No boards yet"
+        searchSlot={<div>search</div>}
+      />,
+    );
+    // Only the gym header row is pressable without a claim handler.
+    expect(getAllByRole('button')).toHaveLength(1);
   });
 
   it('shows the location prompt in place of the list before a location resolves', () => {

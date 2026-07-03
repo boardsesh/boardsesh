@@ -3,6 +3,7 @@ import { Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import type { BoardName, Gym, UserBoard } from '@boardsesh/shared-schema';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
 import { useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
@@ -18,6 +19,7 @@ import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { GymMap, type GymMapHandle, type GymMapMarker } from '../../src/components/gym-directory/GymMap';
 import { GymListPanel, type GymListPanelHandle } from '../../src/components/gym-directory/GymListPanel';
+import { ClaimGymSheet } from '../../src/components/gym-directory/ClaimGymSheet';
 import { WallFinderFilterChips } from '../../src/components/gym-directory/WallFinderFilterChips';
 import { buildGymListRows } from '../../src/components/gym-directory/gym-list-rows';
 import {
@@ -80,6 +82,11 @@ export default function GymDiscovery() {
   const [mapAvailable, setMapAvailable] = useState(true);
   const mapRef = useRef<GymMapHandle>(null);
   const panelRef = useRef<GymListPanelHandle>(null);
+  // The gym an ownership claim is being started for. Set from an expanded row's
+  // "Claim this gym" action; the ClaimGymSheet is mounted per-target so its form
+  // starts clean each open, and cleared when the sheet fully dismisses.
+  const [claimTargetGym, setClaimTargetGym] = useState<Gym | null>(null);
+  const claimSheetRef = useRef<BottomSheetModal>(null);
 
   // `inputText` is the raw field; `appliedFilter` is the applied filter sent to the
   // backend (name + the board-type chips' selected `boardTypes`).
@@ -273,6 +280,20 @@ export default function GymDiscovery() {
     },
     [router],
   );
+
+  // Start an ownership claim from an expanded gym row (reaches the non-editor
+  // owner the edit-screen entry can't). Stash the target; the effect below
+  // presents once the per-target sheet has mounted.
+  const onClaimGym = useCallback((gym: Gym) => {
+    hapticSelection();
+    setClaimTargetGym(gym);
+  }, []);
+
+  useEffect(() => {
+    if (claimTargetGym) claimSheetRef.current?.present();
+  }, [claimTargetGym]);
+
+  const onClaimSheetClosed = useCallback(() => setClaimTargetGym(null), []);
 
   // Tap/expand a gym row: toggle its boards, select it, and recenter the map on it
   // (no-op when the map is blank — the row just expands).
@@ -508,6 +529,7 @@ export default function GymDiscovery() {
         onActivateBoard={activate}
         onEditGym={onEditGym}
         onEditBoard={onEditBoard}
+        onClaimGym={onClaimGym}
         noBoardsLabel={t('mobile.gyms.noBoards')}
         searchSlot={searchField}
         placeCaption={placeCaption}
@@ -516,6 +538,15 @@ export default function GymDiscovery() {
       />
 
       {closeButton}
+
+      {claimTargetGym ? (
+        <ClaimGymSheet
+          key={claimTargetGym.uuid}
+          sheetRef={claimSheetRef}
+          gym={claimTargetGym}
+          onClosed={onClaimSheetClosed}
+        />
+      ) : null}
     </View>
   );
 }

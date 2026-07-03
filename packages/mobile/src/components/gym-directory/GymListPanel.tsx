@@ -38,6 +38,10 @@ type GymListPanelProps = {
   onEditGym: (gym: Gym) => void;
   /** Edit a board the viewer can edit — only shown on rows whose `board.canEdit` is true. */
   onEditBoard: (board: UserBoard) => void;
+  /** Start an ownership claim — shown inside an EXPANDED gym row whose `gym.canClaim`
+   *  is true. Kept off collapsed rows (almost every signed-in viewer can claim almost
+   *  any gym, so a per-row button would clutter the finder). */
+  onClaimGym?: (gym: Gym) => void;
   /** Caption shown under an expanded gym that has no boards yet. */
   noBoardsLabel: string;
   /** The pinned search field (lives in the panel header so it survives a blank map). */
@@ -69,6 +73,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
     onActivateBoard,
     onEditGym,
     onEditBoard,
+    onClaimGym,
     noBoardsLabel,
     searchSlot,
     placeCaption,
@@ -131,6 +136,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
               onActivateBoard={onActivateBoard}
               onEditGym={onEditGym}
               onEditBoard={onEditBoard}
+              onClaimGym={onClaimGym}
             />
           );
         case 'standalone':
@@ -145,7 +151,7 @@ export const GymListPanel = forwardRef<GymListPanelHandle, GymListPanelProps>(fu
           );
       }
     },
-    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard],
+    [noBoardsLabel, onPressGym, onActivateBoard, onEditGym, onEditBoard, onClaimGym],
   );
 
   const listContentStyle = useMemo(
@@ -232,6 +238,7 @@ type GymRowProps = {
   onActivateBoard: (board: UserBoard) => void;
   onEditGym: (gym: Gym) => void;
   onEditBoard: (board: UserBoard) => void;
+  onClaimGym?: (gym: Gym) => void;
 };
 
 const GymRow = memo(function GymRow({
@@ -245,11 +252,13 @@ const GymRow = memo(function GymRow({
   onActivateBoard,
   onEditGym,
   onEditBoard,
+  onClaimGym,
 }: GymRowProps) {
   const { systemColors, brandColors } = useTheme();
   const { t } = useTranslation('boards');
   const handlePress = useCallback(() => onPressGym(gym), [onPressGym, gym]);
   const handleEdit = useCallback(() => onEditGym(gym), [onEditGym, gym]);
+  const handleClaim = useCallback(() => onClaimGym?.(gym), [onClaimGym, gym]);
   return (
     <View style={[styles.gymBlock, { borderColor: selected ? brandColors.primary : systemColors.separator }]}>
       {selected ? <View style={[styles.selectedAccent, { backgroundColor: brandColors.primary }]} /> : null}
@@ -286,7 +295,37 @@ const GymRow = memo(function GymRow({
           </Text>
         )
       ) : null}
+
+      {/* The claim entry for the person a claim is FOR — a real gym owner with no
+          Boardsesh rights yet (canClaim true, canEdit false). Only inside the
+          expanded row so it never clutters the collapsed finder list. */}
+      {expanded && gym.canClaim && onClaimGym ? (
+        <ClaimRow onPress={handleClaim} label={t('mobile.gymClaim.claimAction')} />
+      ) : null}
     </View>
+  );
+});
+
+/**
+ * The "Claim this gym" action shown at the foot of an expanded gym row. Reads its
+ * own colours so the parent's `renderItem` deps stay free of theme values; the
+ * label is resolved by the caller (a literal `t(...)`) so the i18n key stays static.
+ */
+const ClaimRow = memo(function ClaimRow({ onPress, label }: { onPress: () => void; label: string }) {
+  const { systemColors, brandColors } = useTheme();
+  return (
+    <PressableSurface
+      onPress={onPress}
+      rippleColor={brandColors.primary}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={[styles.claimRow, { borderTopColor: systemColors.separator }]}
+    >
+      <Icon name="person.badge.plus" size={18} color={brandColors.primary} />
+      <Text variant="subheadline" color={brandColors.primary}>
+        {label}
+      </Text>
+    </PressableSurface>
   );
 });
 
@@ -457,6 +496,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[3],
     paddingBottom: spacing[3],
     paddingLeft: spacing[6],
+  },
+  claimRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
+    paddingLeft: spacing[6],
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   standaloneRow: {
     flexDirection: 'row',
