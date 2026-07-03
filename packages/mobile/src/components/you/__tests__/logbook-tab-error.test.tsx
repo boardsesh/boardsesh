@@ -49,6 +49,7 @@ vi.mock('@shopify/flash-list', () => ({
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../LogbookRow', () => ({ LogbookRow: () => createElement('div') }));
 vi.mock('../LogbookDayDivider', () => ({ LogbookDayDivider: () => null }));
+vi.mock('../LogbookEntryChooserSheet', () => ({ LogbookEntryChooserSheet: () => null }));
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
 vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
 vi.mock('../../SearchHeader', () => ({ SearchHeader: () => null }));
@@ -59,8 +60,33 @@ vi.mock('../../Text', () => ({
 }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
+const toGroupedFeed = (flat: Record<string, unknown>) => {
+  const data = flat.data as
+    | { pages: Array<{ userAscentsFeed: { items: Array<{ uuid: string; climbUuid: string }> } }> }
+    | undefined;
+  return {
+    ...flat,
+    data: data
+      ? {
+          pages: data.pages.map((page) => ({
+            userGroupedAscentsFeed: {
+              groups: page.userAscentsFeed.items.map((item) => ({
+                key: `g-${item.uuid}`,
+                climbUuid: item.climbUuid,
+                date: '2026-06-15',
+                items: [item],
+              })),
+              totalCount: page.userAscentsFeed.items.length,
+              hasMore: false,
+            },
+          })),
+        }
+      : data,
+  };
+};
 vi.mock('../../../lib/graphql/hooks', () => ({
   useUserAscentsFeed: () => feed.current,
+  useUserGroupedAscentsFeed: () => toGroupedFeed(feed.current as unknown as Record<string, unknown>),
   useGrades: () => ({ data: [] }),
 }));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({

@@ -64,6 +64,12 @@ type LogbookRowProps = {
    */
   showBoardInMeta?: boolean;
   /**
+   * Day-summed tries for a grouped row (same climb, same day collapsed).
+   * Overrides the single entry's count; the best-outcome entry supplies
+   * everything else on the row. Absent for ungrouped rows.
+   */
+  groupTries?: number;
+  /**
    * Device font scale, passed by the host so a 50-row list holds ONE dimension
    * subscription (the tab's) instead of one per row — useWindowDimensions in a
    * memo'd row re-renders every visible row on any dimension event (keyboard,
@@ -156,6 +162,7 @@ export const LogbookRow = memo(function LogbookRow({
   onEdit,
   onDeleteRequest,
   showBoardInMeta = true,
+  groupTries,
   fontScale = 1,
 }: LogbookRowProps) {
   const { t, i18n } = useTranslation('you');
@@ -194,7 +201,7 @@ export const LogbookRow = memo(function LogbookRow({
   // crowd's). Board+angle always renders: with no thumbnail it is the only
   // repeat-ascent disambiguator, and it must not mutate with the result set.
   const attemptsKind = logbookAttemptsKind(ascent.status);
-  const triesShown = displayedAttemptCount(ascent.attemptCount);
+  const triesShown = groupTries ?? displayedAttemptCount(ascent.attemptCount);
   const quality = normalizeLogbookQuality(ascent.quality);
   const hasNote = logbookNoteIsVisible(ascent.comment);
   const hasBetaVideo = ascent.hasBetaVideo === true;

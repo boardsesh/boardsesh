@@ -324,6 +324,8 @@ export const GET_USER_GROUPED_ASCENTS_FEED = gql`
           climbName
           setterUsername
           boardType
+          boardId
+          boardDisplayName
           layoutId
           angle
           isMirror
@@ -332,11 +334,15 @@ export const GET_USER_GROUPED_ASCENTS_FEED = gql`
           quality
           difficulty
           difficultyName
+          consensusDifficulty
+          consensusDifficultyName
+          qualityAverage
           isBenchmark
           isNoMatch
           comment
           climbedAt
           frames
+          hasBetaVideo
         }
       }
       totalCount

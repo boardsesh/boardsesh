@@ -905,6 +905,7 @@ export {
   useUserProfileStats,
   useUserClimbPercentile,
   useUserAscentsFeed,
+  useUserGroupedAscentsFeed,
   useAscentCaptionMatches,
   useActivityFeed,
   useSessionGroupedFeed,

@@ -182,6 +182,10 @@
         "sends_one": "{{count}} réussite",
         "sends_other": "{{count}} réussites",
         "top": "max {{grade}}"
+      },
+      "chooser": {
+        "editTitle": "Quelle entrée modifier ?",
+        "deleteTitle": "Quelle entrée supprimer ?"
       }
     }
   }

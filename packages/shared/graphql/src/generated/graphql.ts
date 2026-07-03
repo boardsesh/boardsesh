@@ -8306,6 +8306,8 @@ export type GetUserGroupedAscentsFeedQuery = {
         climbName: string;
         setterUsername?: string | null;
         boardType: string;
+        boardId?: number | null;
+        boardDisplayName?: string | null;
         layoutId?: number | null;
         angle: number;
         isMirror: boolean;
@@ -8314,11 +8316,15 @@ export type GetUserGroupedAscentsFeedQuery = {
         quality?: number | null;
         difficulty?: number | null;
         difficultyName?: string | null;
+        consensusDifficulty?: number | null;
+        consensusDifficultyName?: string | null;
+        qualityAverage?: number | null;
         isBenchmark: boolean;
         isNoMatch: boolean;
         comment: string;
         climbedAt: string;
         frames?: string | null;
+        hasBetaVideo?: boolean | null;
       }>;
     }>;
   };
@@ -14134,6 +14140,8 @@ export const GetUserGroupedAscentsFeedDocument = {
                             { kind: 'Field', name: { kind: 'Name', value: 'climbName' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'setterUsername' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardId' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'boardDisplayName' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'layoutId' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'isMirror' } },
@@ -14142,11 +14150,15 @@ export const GetUserGroupedAscentsFeedDocument = {
                             { kind: 'Field', name: { kind: 'Name', value: 'quality' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'difficulty' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'difficultyName' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'consensusDifficulty' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'consensusDifficultyName' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'qualityAverage' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'isNoMatch' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
                             { kind: 'Field', name: { kind: 'Name', value: 'frames' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'hasBetaVideo' } },
                           ],
                         },
                       },

@@ -182,6 +182,10 @@
         "sends_one": "{{count}} encadene",
         "sends_other": "{{count}} encadenes",
         "top": "máx. {{grade}}"
+      },
+      "chooser": {
+        "editTitle": "¿Qué registro quieres editar?",
+        "deleteTitle": "¿Qué registro quieres eliminar?"
       }
     }
   }

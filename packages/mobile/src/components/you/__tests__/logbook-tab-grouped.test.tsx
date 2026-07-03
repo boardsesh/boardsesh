@@ -3,10 +3,10 @@ import { render, act } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Guarded-delete contract: swipe/a11y delete must go through the destructive
-// confirm dialog before DELETE_TICK fires (a real server-side, Aurora-synced
-// delete), and a success must be tracked. (The optimistic cache strip lives
-// in useDeleteTick — covered by use-mutate-tick.test.tsx.)
+// Grouped-mode contract: in date-ordered views the tab renders (climb, day)
+// groups as single rows — best outcome carries the row, tries sum — and
+// edit/delete on a multi-entry group routes through the day-entries chooser
+// (never acting on the whole group).
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
 const deleteTick = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
 const dialog = vi.hoisted(() => ({ confirm: vi.fn<(options: unknown) => Promise<boolean>>(async () => false) }));
@@ -17,30 +17,61 @@ const haptics = vi.hoisted(() => ({ hapticSelection: vi.fn(), hapticSuccess: vi.
 // a delete without a real list renderer.
 const row = vi.hoisted(() => ({
   requestDelete: null as ((method: 'swipe' | 'a11y') => void) | null,
+  requestEdit: null as (() => void) | null,
+  props: null as Record<string, unknown> | null,
 }));
+const chooser = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
+const editSheet = vi.hoisted(() => ({ ascent: null as { uuid: string } | null }));
 
-const feed = vi.hoisted(() => ({
+const GROUP_ITEMS = [
+  {
+    uuid: 'tick-send',
+    climbUuid: 'climb-1',
+    status: 'send',
+    attemptCount: 2,
+    quality: 4,
+    comment: null,
+    climbedAt: '2026-06-15T12:00:00.000Z',
+    boardType: 'kilter',
+    layoutId: 1,
+    angle: 40,
+    boardDisplayName: 'Test Board',
+  },
+  {
+    uuid: 'tick-burn',
+    climbUuid: 'climb-1',
+    status: 'attempt',
+    attemptCount: 3,
+    quality: null,
+    comment: null,
+    climbedAt: '2026-06-15T10:00:00.000Z',
+    boardType: 'kilter',
+    layoutId: 1,
+    angle: 40,
+    boardDisplayName: 'Test Board',
+  },
+];
+const groupedFeed = vi.hoisted(() => ({
   data: {
     pages: [
       {
-        userAscentsFeed: {
-          items: [
-            {
-              uuid: 'tick-1',
-              climbUuid: 'climb-1',
-              status: 'send',
-              comment: null,
-              climbedAt: '2026-06-15T10:00:00.000Z',
-              boardType: 'kilter',
-              layoutId: 1,
-              angle: 40,
-              boardDisplayName: 'Test Board',
-            },
-          ],
+        userGroupedAscentsFeed: {
+          groups: [] as unknown[],
+          totalCount: 1,
+          hasMore: false,
         },
       },
     ],
   },
+  isPending: false,
+  isRefetching: false,
+  isFetchingNextPage: false,
+  hasNextPage: false,
+  refetch: vi.fn(),
+  fetchNextPage: vi.fn(),
+}));
+const flatFeed = vi.hoisted(() => ({
+  data: { pages: [] as unknown[] },
   isPending: false,
   isRefetching: false,
   isFetchingNextPage: false,
@@ -74,20 +105,30 @@ vi.mock('@shopify/flash-list', () => ({
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../LogbookRow', () => ({
-  LogbookRow: ({
-    onDeleteRequest,
-    ascent,
-  }: {
+  LogbookRow: (props: {
     onDeleteRequest?: (ascent: { uuid: string }, method: 'swipe' | 'a11y') => void;
+    onEdit?: (ascent: { uuid: string }) => void;
     ascent: { uuid: string };
   }) => {
-    row.requestDelete = onDeleteRequest ? (method) => onDeleteRequest(ascent, method) : null;
+    row.props = props as unknown as Record<string, unknown>;
+    row.requestDelete = props.onDeleteRequest ? (method) => props.onDeleteRequest?.(props.ascent, method) : null;
+    row.requestEdit = props.onEdit ? () => props.onEdit?.(props.ascent) : null;
+    return createElement('div');
+  },
+}));
+vi.mock('../LogbookEntryChooserSheet', () => ({
+  LogbookEntryChooserSheet: (props: Record<string, unknown>) => {
+    chooser.props = props;
     return createElement('div');
   },
 }));
 vi.mock('../LogbookDayDivider', () => ({ LogbookDayDivider: () => null }));
-vi.mock('../LogbookEntryChooserSheet', () => ({ LogbookEntryChooserSheet: () => null }));
-vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
+vi.mock('../LogbookEditSheet', () => ({
+  LogbookEditSheet: ({ ascent }: { ascent: { uuid: string } | null }) => {
+    editSheet.ascent = ascent;
+    return null;
+  },
+}));
 vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
 vi.mock('../../SearchHeader', () => ({ SearchHeader: () => null }));
 vi.mock('../../../lib/haptics', () => haptics);
@@ -95,34 +136,9 @@ vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { black: '#000' }
 vi.mock('../../Text', () => ({ Text: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
-const toGroupedFeed = (flat: Record<string, unknown>) => {
-  const data = flat.data as
-    | { pages: Array<{ userAscentsFeed: { items: Array<{ uuid: string; climbUuid: string }> } }> }
-    | undefined;
-  return {
-    ...flat,
-    data: data
-      ? {
-          pages: data.pages.map((page) => ({
-            userGroupedAscentsFeed: {
-              groups: page.userAscentsFeed.items.map((item) => ({
-                key: `g-${item.uuid}`,
-                climbUuid: item.climbUuid,
-                date: '2026-06-15',
-                items: [item],
-              })),
-              totalCount: page.userAscentsFeed.items.length,
-              hasMore: false,
-            },
-          })),
-        }
-      : data,
-  };
-};
-
 vi.mock('../../../lib/graphql/hooks', () => ({
-  useUserAscentsFeed: () => feed,
-  useUserGroupedAscentsFeed: () => toGroupedFeed(feed as unknown as Record<string, unknown>),
+  useUserAscentsFeed: () => flatFeed,
+  useUserGroupedAscentsFeed: () => groupedFeed,
   useGrades: () => ({ data: [] }),
 }));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
@@ -159,91 +175,76 @@ beforeEach(() => {
   analytics.track.mockClear();
   deleteTick.mutate.mockClear();
   dialog.confirm.mockClear();
-  dialog.confirm.mockImplementation(async () => false);
+  dialog.confirm.mockImplementation(async () => true);
   toast.showToast.mockClear();
   haptics.hapticError.mockClear();
   row.requestDelete = null;
+  row.requestEdit = null;
+  row.props = null;
+  chooser.props = null;
+  editSheet.ascent = null;
+  groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
+    { key: 'climb-1-2026-06-15', climbUuid: 'climb-1', date: '2026-06-15', items: GROUP_ITEMS },
+  ];
 });
 
-describe('LogbookTab guarded delete', () => {
-  it('asks a destructive confirm and does NOT mutate when the dialog is declined', async () => {
+describe('LogbookTab grouped mode', () => {
+  it('renders the group as one row: best outcome carries it, tries sum', () => {
     render(createElement(LogbookTab, { userId: 'user-1' }));
-    expect(row.requestDelete).not.toBeNull();
+    expect(row.props).not.toBeNull();
+    // Best outcome = the send, even though the burn is also in the group.
+    expect((row.props?.ascent as { uuid: string }).uuid).toBe('tick-send');
+    // 2 + 3 tries across the day.
+    expect(row.props?.groupTries).toBe(5);
+  });
+
+  it('routes delete on a multi-entry group through the chooser, then deletes the picked tick', async () => {
+    render(createElement(LogbookTab, { userId: 'user-1' }));
 
     await fireDeleteRequest('swipe');
 
+    // No direct confirm — the chooser opens instead.
+    expect(dialog.confirm).not.toHaveBeenCalled();
+    expect(chooser.props).not.toBeNull();
+    expect(chooser.props?.intent).toBe('delete');
+
+    // Picking the burn routes to the guarded delete for THAT tick.
+    const onPickDelete = chooser.props?.onPick as ((entry: { uuid: string }) => void) | undefined;
+    expect(onPickDelete).toBeDefined();
+    await act(async () => {
+      onPickDelete?.(GROUP_ITEMS[1]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(dialog.confirm).toHaveBeenCalledWith(expect.objectContaining({ destructive: true }));
+    expect(deleteTick.mutate).toHaveBeenCalledWith('tick-burn', expect.anything());
+  });
+
+  it('routes edit on a multi-entry group through the chooser to the edit sheet', async () => {
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await act(async () => {
+      row.requestEdit?.();
+    });
+    expect(chooser.props?.intent).toBe('edit');
+
+    const onPickEdit = chooser.props?.onPick as ((entry: { uuid: string }) => void) | undefined;
+    expect(onPickEdit).toBeDefined();
+    await act(async () => {
+      onPickEdit?.(GROUP_ITEMS[0]);
+    });
+    expect(editSheet.ascent?.uuid).toBe('tick-send');
     expect(deleteTick.mutate).not.toHaveBeenCalled();
   });
 
-  it('deletes the captured uuid once confirmed and tracks the method on success', async () => {
-    dialog.confirm.mockImplementation(async () => true);
+  it('acts directly when the group has a single entry', async () => {
+    groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
+      { key: 'solo', climbUuid: 'climb-1', date: '2026-06-15', items: [GROUP_ITEMS[0]] },
+    ];
     render(createElement(LogbookTab, { userId: 'user-1' }));
 
     await fireDeleteRequest('swipe');
 
-    expect(deleteTick.mutate).toHaveBeenCalledWith(
-      'tick-1',
-      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
-    );
-
-    // Drive the mutation's success path. (The optimistic cache strip lives in
-    // useDeleteTick itself — covered by use-mutate-tick.test.tsx.)
-    const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onSuccess: () => void };
-    act(() => mutateOptions.onSuccess());
-
-    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'swipe' });
-  });
-
-  it('tracks the a11y method when the delete came from an accessibility action', async () => {
-    dialog.confirm.mockImplementation(async () => true);
-    render(createElement(LogbookTab, { userId: 'user-1' }));
-
-    await fireDeleteRequest('a11y');
-
-    const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onSuccess: () => void };
-    act(() => mutateOptions.onSuccess());
-
-    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'a11y' });
-  });
-
-  it('ignores a second delete request while the confirm dialog is open', async () => {
-    // Controllable confirm: hold the dialog open across both requests.
-    let resolveConfirm: ((confirmed: boolean) => void) | undefined;
-    dialog.confirm.mockImplementation(
-      () =>
-        new Promise<boolean>((resolve) => {
-          resolveConfirm = resolve;
-        }),
-    );
-    render(createElement(LogbookTab, { userId: 'user-1' }));
-
-    await fireDeleteRequest('swipe');
-    await fireDeleteRequest('swipe'); // second swipe while the dialog is up
-
-    expect(dialog.confirm).toHaveBeenCalledTimes(1);
-
-    // Declining re-arms the flow for the next request.
-    await act(async () => {
-      resolveConfirm?.(false);
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    dialog.confirm.mockImplementation(async () => false);
-    await fireDeleteRequest('swipe');
-    expect(dialog.confirm).toHaveBeenCalledTimes(2);
-  });
-
-  it('surfaces a failed delete with the error haptic + toast', async () => {
-    dialog.confirm.mockImplementation(async () => true);
-    render(createElement(LogbookTab, { userId: 'user-1' }));
-
-    await fireDeleteRequest('swipe');
-
-    const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onError: () => void };
-    act(() => mutateOptions.onError());
-
-    expect(haptics.hapticError).toHaveBeenCalled();
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.logbook.deleteError', 'error');
-    expect(analytics.track).not.toHaveBeenCalledWith('Logbook Entry Deleted', expect.anything());
+    expect(chooser.props).toBeNull();
+    expect(deleteTick.mutate).toHaveBeenCalledWith('tick-send', expect.anything());
   });
 });

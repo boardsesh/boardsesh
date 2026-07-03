@@ -11,6 +11,7 @@ import { loadLogbookPrefs } from '../../../lib/logbook-prefs-store';
 const captured = vi.hoisted(() => ({
   feedInput: undefined as unknown,
   feedEnabled: undefined as boolean | undefined,
+  groupedEnabled: undefined as boolean | undefined,
   onSearchChange: null as ((text: string) => void) | null,
   onApply: null as ((filters: LogbookFilterState, sort: typeof DEFAULT_LOGBOOK_SORT) => void) | null,
   sheetMounted: false,
@@ -81,6 +82,7 @@ vi.mock('../LogbookFilterSheet', () => ({
 
 vi.mock('../LogbookRow', () => ({ LogbookRow: () => createElement('div') }));
 vi.mock('../LogbookDayDivider', () => ({ LogbookDayDivider: () => null }));
+vi.mock('../LogbookEntryChooserSheet', () => ({ LogbookEntryChooserSheet: () => null }));
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
 vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -89,11 +91,42 @@ vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 
 // Real feed hook capture: record the input arg + the enabled gate each render.
+const toGroupedFeed = (flat: Record<string, unknown>) => {
+  const data = flat.data as
+    | { pages: Array<{ userAscentsFeed: { items: Array<{ uuid: string; climbUuid: string }> } }> }
+    | undefined;
+  return {
+    ...flat,
+    data: data
+      ? {
+          pages: data.pages.map((page) => ({
+            userGroupedAscentsFeed: {
+              groups: page.userAscentsFeed.items.map((item) => ({
+                key: `g-${item.uuid}`,
+                climbUuid: item.climbUuid,
+                date: '2026-06-15',
+                items: [item],
+              })),
+              totalCount: page.userAscentsFeed.items.length,
+              hasMore: false,
+            },
+          })),
+        }
+      : data,
+  };
+};
 vi.mock('../../../lib/graphql/hooks', () => ({
   useUserAscentsFeed: (_userId: string | undefined, input: unknown, options?: { enabled?: boolean }) => {
     captured.feedInput = input;
     captured.feedEnabled = options?.enabled;
     return feed;
+  },
+  // Grouped hook receives the SAME input; date-ordered views enable it and
+  // disable the flat one, so the enabled gate captured above flips per mode.
+  useUserGroupedAscentsFeed: (_userId: string | undefined, input: unknown, options?: { enabled?: boolean }) => {
+    captured.feedInput = input;
+    captured.groupedEnabled = options?.enabled;
+    return toGroupedFeed(feed as unknown as Record<string, unknown>);
   },
   useGrades: () => ({ data: [] }),
 }));
@@ -181,12 +214,15 @@ describe('LogbookTab toolbar', () => {
     // Before hydration the feed is disabled, so it never fetches with defaults
     // (the guard against a default-then-persisted double fetch).
     expect(captured.feedEnabled).toBe(false);
+    expect(captured.groupedEnabled).toBe(false);
     // Flush the mocked loadLogbookPrefs microtask → hydrate → gate opens.
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(captured.feedEnabled).toBe(true);
+    expect(captured.groupedEnabled).toBe(true);
+    // Flat feed stays parked in date-ordered (grouped) views.
+    expect(captured.feedEnabled).toBe(false);
   });
 
   it('still opens the feed when hydration rejects (no deadlock)', async () => {
@@ -196,7 +232,9 @@ describe('LogbookTab toolbar', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(captured.feedEnabled).toBe(true);
+    expect(captured.groupedEnabled).toBe(true);
+    // Flat feed stays parked in date-ordered (grouped) views.
+    expect(captured.feedEnabled).toBe(false);
   });
 
   it('applies sheet filters/sort into the feed input', () => {

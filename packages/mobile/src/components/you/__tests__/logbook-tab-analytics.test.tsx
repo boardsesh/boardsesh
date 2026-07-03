@@ -76,6 +76,7 @@ vi.mock('../LogbookRow', () => ({
   },
 }));
 vi.mock('../LogbookDayDivider', () => ({ LogbookDayDivider: () => null }));
+vi.mock('../LogbookEntryChooserSheet', () => ({ LogbookEntryChooserSheet: () => null }));
 vi.mock('../LogbookEditSheet', () => ({ LogbookEditSheet: () => null }));
 vi.mock('../LogbookFilterSheet', () => ({ LogbookFilterSheet: () => null }));
 vi.mock('../../SearchHeader', () => ({ SearchHeader: () => null }));
@@ -84,7 +85,36 @@ vi.mock('../../../theme/ios-colors', () => ({ iosSystemColors: { black: '#000' }
 vi.mock('../../Text', () => ({ Text: () => null }));
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
-vi.mock('../../../lib/graphql/hooks', () => ({ useUserAscentsFeed: () => feed, useGrades: () => ({ data: [] }) }));
+const toGroupedFeed = (flat: Record<string, unknown>) => {
+  const data = flat.data as
+    | { pages: Array<{ userAscentsFeed: { items: Array<{ uuid: string; climbUuid: string }> } }> }
+    | undefined;
+  return {
+    ...flat,
+    data: data
+      ? {
+          pages: data.pages.map((page) => ({
+            userGroupedAscentsFeed: {
+              groups: page.userAscentsFeed.items.map((item) => ({
+                key: `g-${item.uuid}`,
+                climbUuid: item.climbUuid,
+                date: '2026-06-15',
+                items: [item],
+              })),
+              totalCount: page.userAscentsFeed.items.length,
+              hasMore: false,
+            },
+          })),
+        }
+      : data,
+  };
+};
+
+vi.mock('../../../lib/graphql/hooks', () => ({
+  useUserAscentsFeed: () => feed,
+  useUserGroupedAscentsFeed: () => toGroupedFeed(feed as unknown as Record<string, unknown>),
+  useGrades: () => ({ data: [] }),
+}));
 vi.mock('../../../hooks/use-bottom-chrome-metrics', () => ({
   useBottomChromeMetrics: () => ({ scrollBottomPadding: 0 }),
 }));
@@ -125,6 +155,8 @@ describe('LogbookTab analytics', () => {
       rowIndex: 0,
       hasNote: true,
       status: 'send',
+      grouped: false,
+      groupSize: 1,
     });
   });
 });

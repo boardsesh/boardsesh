@@ -13,9 +13,12 @@ import {
   dedupeLogbookItems,
   shouldShowLogbookDividers,
   logbookNoteIsVisible,
+  pickBestGroupEntry,
+  sumGroupTries,
   type LogbookFilterState,
   type LogbookSortPreset,
   type LogbookListRow,
+  type LogbookDayItem,
 } from '@boardsesh/logbook';
 import { useDeleteTick } from '@boardsesh/board-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -28,11 +31,12 @@ import { LogbookRow } from './LogbookRow';
 import { LogbookDayDivider, LogbookWallSubDivider } from './LogbookDayDivider';
 import { LogbookEditSheet } from './LogbookEditSheet';
 import { LogbookFilterSheet } from './LogbookFilterSheet';
+import { LogbookEntryChooserSheet } from './LogbookEntryChooserSheet';
 import { LogbookChipRow } from './LogbookChipRow';
 import { LogbookFacetRail } from './LogbookFacetRail';
 import type { LogbookFacetKey } from './LogbookChipRow.logic';
 import { useLogbookSearch, countActiveLogbookFilters } from './use-logbook-search';
-import { useUserAscentsFeed, useGrades } from '../../lib/graphql/hooks';
+import { useUserAscentsFeed, useUserGroupedAscentsFeed, useGrades } from '../../lib/graphql/hooks';
 import type { Grade } from '@boardsesh/shared-schema';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { tickToClimb } from '../../lib/tick-to-climb';
@@ -73,6 +77,16 @@ type LogbookTabProps = {
    * read-only in the play drawer instead of the editable LogbookEditSheet.
    */
   viewerIsOwner?: boolean;
+};
+
+// One list unit for both modes: in grouped (date-ordered) views it is the
+// group's best-outcome entry extended with the day's summed tries and the
+// sibling entries (for the chooser); in flat views the optional fields stay
+// absent and the unit is just the tick.
+type LogbookGroupUnit = AscentFeedItem & {
+  wall?: string;
+  groupTries?: number;
+  groupItems?: AscentFeedItem[];
 };
 
 export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: LogbookTabProps) {
@@ -201,7 +215,16 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // off `feedInput` already ignores persisted prefs, so this just fetches the
   // defaults once hydration settles. Keeping the gate while the flag is still
   // resolving avoids an early default fetch for the flag-on cohort.)
-  const feed = useUserAscentsFeed(userId, feedInput, { enabled: hydrated });
+  // Date-ordered views use the GROUPED feed (same climb + same day collapses
+  // to one row; the backend shares filter semantics with the flat feed). Grade
+  // and custom non-date sorts keep the flat feed — interleaved one-day groups
+  // mean nothing there. Exactly one of the two is enabled at a time.
+  const groupedMode = shouldShowLogbookDividers(feedInput);
+  const flatFeed = useUserAscentsFeed(userId, feedInput, { enabled: hydrated && !groupedMode });
+  const groupedFeed = useUserGroupedAscentsFeed(userId, feedInput, { enabled: hydrated && groupedMode });
+  // Control-surface alias (status flags, pagination); data is read per-mode in
+  // the rows memo below where the types differ.
+  const feed = groupedMode ? groupedFeed : flatFeed;
 
   // Day dividers render only on a date-ordered feed (the Latest preset or a
   // custom date sort) — keyed off the EFFECTIVE feedInput, so the flag-off
@@ -211,22 +234,34 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // can repeat a row across page boundaries (swipe-delete shifts offsets), and
   // duplicate FlashList keys throw. Memoised so the FlashList `data` identity
   // is stable between unrelated re-renders.
-  const showDividers = shouldShowLogbookDividers(feedInput);
   const { listRows, entryIndexByUuid } = useMemo(() => {
-    const items = feed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [];
-    // The wall label ("Alex's board 35°") feeds the divider/subdivider context;
-    // derivation needs the app's board metadata so it happens here, not in the
-    // shared builder.
-    // Board identity only — the angle stays on every row (it varies per climb
-    // on adjustable boards and is the repeat-ascent disambiguator; a per-angle
-    // wall key would ping-pong sub-dividers through an angle-hopping session).
-    const withWalls = items.map((item) => ({
-      ...item,
-      wall: item.boardDisplayName ?? getLayoutDisplayName(item.boardType, item.layoutId),
-    }));
-    const rows: LogbookListRow<AscentFeedItem>[] = showDividers
-      ? buildLogbookListRows(withWalls, { hasMore: feed.hasNextPage ?? false })
-      : dedupeLogbookItems(items).map((item) => ({ type: 'entry', key: item.uuid, item, wallCovered: false }));
+    // Wall label ("Alex's board") feeds the divider/subdivider context; board
+    // identity only — the angle stays on every row. Derivation needs the app's
+    // board metadata so it happens here, not in the shared builder.
+    const wallOf = (item: AscentFeedItem) =>
+      item.boardDisplayName ?? getLayoutDisplayName(item.boardType, item.layoutId);
+
+    let rows: LogbookListRow<LogbookGroupUnit>[];
+    if (groupedMode) {
+      const groups = groupedFeed.data?.pages.flatMap((page) => page.userGroupedAscentsFeed.groups) ?? [];
+      // One unit per (climb, day) group: the best-outcome entry carries the
+      // row; the day's tries sum; siblings ride along for the entry chooser.
+      const units: LogbookGroupUnit[] = groups
+        .filter((group) => group.items.length > 0)
+        .map((group) => {
+          const best = pickBestGroupEntry(group.items);
+          return {
+            ...best,
+            wall: wallOf(best),
+            groupTries: sumGroupTries(group.items),
+            groupItems: group.items,
+          };
+        });
+      rows = buildLogbookListRows(units, { hasMore: groupedFeed.hasNextPage ?? false });
+    } else {
+      const items = flatFeed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [];
+      rows = dedupeLogbookItems(items).map((item) => ({ type: 'entry', key: item.uuid, item, wallCovered: false }));
+    }
     // Entry ordinal (dividers excluded) for the analytics `rowIndex` — the raw
     // FlashList index counts divider rows, which would skew position funnels.
     const ordinals = new Map<string, number>();
@@ -234,7 +269,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       if (row.type === 'entry') ordinals.set(row.item.uuid, ordinals.size);
     }
     return { listRows: rows, entryIndexByUuid: ordinals };
-  }, [feed.data, feed.hasNextPage, showDividers]);
+  }, [groupedFeed.data, groupedFeed.hasNextPage, flatFeed.data, groupedMode]);
 
   // Tap → set the climb active and open the play drawer (own logbook and another
   // climber's read-only logbook alike). AscentFeedItem structurally satisfies the
@@ -246,11 +281,14 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   entryIndexRef.current = entryIndexByUuid;
   const handleActivate = useCallback(
     (ascent: AscentFeedItem) => {
+      const groupSize = (ascent as LogbookGroupUnit).groupItems?.length ?? 1;
       track(SHARED_EVENTS.LogbookRowClicked, {
         climbUuid: ascent.climbUuid,
         rowIndex: entryIndexRef.current.get(ascent.uuid),
         hasNote: logbookNoteIsVisible(ascent.comment),
         status: ascent.status,
+        grouped: groupSize > 1,
+        groupSize,
       });
       // Default open mode is now "set active", so no option is needed here.
       openClimbInPlayDrawer({ kind: 'tick', tick: ascent }, { openPlayDrawer, router });
@@ -258,11 +296,36 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
     [openPlayDrawer, router],
   );
 
-  // Swipe left-to-right → edit this tick (owner-only). The old tap behaviour.
-  const handleEdit = useCallback((ascent: AscentFeedItem) => {
+  // Day-entries chooser for grouped rows: swipe-edit/delete on a row that
+  // collapses several same-day entries must act on ONE tick, so the climber
+  // picks which. Single-entry rows act directly, as before.
+  const [chooser, setChooser] = useState<{
+    intent: 'edit' | 'delete';
+    entries: AscentFeedItem[];
+    method: 'swipe' | 'a11y';
+  } | null>(null);
+  const chooserOpenRef = useRef(false);
+  chooserOpenRef.current = chooser != null;
+  const closeChooser = useCallback(() => setChooser(null), []);
+
+  const openEditSheet = useCallback((ascent: AscentFeedItem) => {
     setEditAscent(ascent);
     editSheetRef.current?.snapToIndex(0);
   }, []);
+
+  // Swipe left-to-right → edit this tick (owner-only). The old tap behaviour.
+  const handleEdit = useCallback(
+    (ascent: AscentFeedItem) => {
+      if (chooserOpenRef.current) return;
+      const unit = ascent as LogbookGroupUnit;
+      if (unit.groupItems && unit.groupItems.length > 1) {
+        setChooser({ intent: 'edit', entries: unit.groupItems, method: 'swipe' });
+        return;
+      }
+      openEditSheet(ascent);
+    },
+    [openEditSheet],
+  );
 
   // Swipe right-to-left (or the a11y action) → delete this tick, owner-only and
   // confirm-guarded: DELETE_TICK is a real server-side delete synced to Aurora,
@@ -286,11 +349,11 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // dialog. The modal itself blocks touches on both platforms; this flag makes
   // single-flight true by construction rather than by dialog behaviour.
   const deleteFlowActiveRef = useRef(false);
-  const handleDeleteRequest = useCallback(
-    (ascent: AscentFeedItem, method: 'swipe' | 'a11y') => {
-      if (deleteFlowActiveRef.current || deleteTickPendingRef.current) return;
-      deleteFlowActiveRef.current = true;
-      const targetUuid = ascent.uuid;
+  // The guarded core, shared by direct deletes and chooser picks: confirm
+  // dialog, then DELETE_TICK. Callers own the single-flight flag transitions
+  // into this function; it owns them out.
+  const startGuardedDelete = useCallback(
+    (targetUuid: string, method: 'swipe' | 'a11y') => {
       const runGuardedDelete = async () => {
         const confirmed = await confirmDialog({
           title: t('mobile.logbook.deleteTitle'),
@@ -324,6 +387,40 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       });
     },
     [deleteTickMutate, confirmDialog, showToast, t],
+  );
+
+  const handleDeleteRequest = useCallback(
+    (ascent: AscentFeedItem, method: 'swipe' | 'a11y') => {
+      if (chooserOpenRef.current || deleteFlowActiveRef.current || deleteTickPendingRef.current) return;
+      const unit = ascent as LogbookGroupUnit;
+      if (unit.groupItems && unit.groupItems.length > 1) {
+        // The chooser is part of the delete flow: chooserOpenRef blocks
+        // re-entry until it resolves; the flag flips on the actual pick.
+        setChooser({ intent: 'delete', entries: unit.groupItems, method });
+        return;
+      }
+      deleteFlowActiveRef.current = true;
+      startGuardedDelete(ascent.uuid, method);
+    },
+    [startGuardedDelete],
+  );
+
+  // Chooser pick → route to the intent that opened it. Delete re-checks the
+  // single-flight guards the direct path enforces at swipe time.
+  const handleChooserPick = useCallback(
+    (entry: AscentFeedItem) => {
+      const active = chooser;
+      setChooser(null);
+      if (!active) return;
+      if (active.intent === 'edit') {
+        openEditSheet(entry);
+        return;
+      }
+      if (deleteFlowActiveRef.current || deleteTickPendingRef.current) return;
+      deleteFlowActiveRef.current = true;
+      startGuardedDelete(entry.uuid, active.method);
+    },
+    [chooser, openEditSheet, startGuardedDelete],
   );
 
   // Long press → open the climb actions sheet. For the owner it carries an
@@ -363,7 +460,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   }, [feed.refetch]);
 
   const renderItem = useCallback(
-    ({ item: row }: { item: LogbookListRow<AscentFeedItem> }) => {
+    ({ item: row }: { item: LogbookListRow<LogbookGroupUnit> }) => {
       if (row.type === 'divider') {
         // The divider owns its "now" clock (focus-refreshed) so this callback's
         // identity survives tab focus — a `now` dep here would re-render every
@@ -376,6 +473,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       return (
         <LogbookRow
           ascent={row.item}
+          groupTries={row.item.groupTries}
           showBoardInMeta={!row.wallCovered}
           fontScale={fontScale}
           onActivate={handleActivate}
@@ -543,6 +641,15 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
         <LogbookEditSheet sheetRef={editSheetRef} ascent={editAscent} onClose={() => setEditAscent(null)} />
       ) : null}
 
+      {chooser ? (
+        <LogbookEntryChooserSheet
+          entries={chooser.entries}
+          intent={chooser.intent}
+          onPick={handleChooserPick}
+          onDismiss={closeChooser}
+        />
+      ) : null}
+
       {logbookFiltersEnabled && filterSheetOpen ? (
         <LogbookFilterSheet
           onDismiss={handleCloseFilters}
@@ -559,13 +666,13 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   );
 }
 
-function keyExtractor(row: LogbookListRow<AscentFeedItem>) {
+function keyExtractor(row: LogbookListRow<LogbookDayItem>) {
   return row.key;
 }
 
 // Divider vs entry recycling pools — FlashList must never recycle a divider
 // into a climb row or vice versa.
-function getRowType(row: LogbookListRow<AscentFeedItem>) {
+function getRowType(row: LogbookListRow<LogbookDayItem>) {
   return row.type;
 }
 
