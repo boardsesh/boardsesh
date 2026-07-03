@@ -339,6 +339,31 @@ describe('LogbookTab grouped mode', () => {
     expect(reopenedEditChooser?.intent).toBe('edit');
   });
 
+  it('splits mirrored ascents into their own row within a same-day group', () => {
+    // Tension/Decoy: the mirrored orientation is its own problem — it must not
+    // sum tries with the normal ascent or steal the row's mirror tag.
+    groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
+      {
+        key: 'climb-1-2026-06-15',
+        climbUuid: 'climb-1',
+        date: '2026-06-15',
+        items: [
+          { ...GROUP_ITEMS[0], isMirror: false },
+          { ...GROUP_ITEMS[1], isMirror: true },
+        ],
+      },
+    ];
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    const rowsByMirror = mountedRows.log.map((rowProps) => {
+      const ascent = rowProps.ascent as { isMirror: boolean; status: string };
+      return { isMirror: ascent.isMirror, status: ascent.status, groupTries: rowProps.groupTries };
+    });
+    expect(rowsByMirror).toHaveLength(2);
+    expect(rowsByMirror).toContainEqual({ isMirror: false, status: 'send', groupTries: 2 });
+    expect(rowsByMirror).toContainEqual({ isMirror: true, status: 'attempt', groupTries: 3 });
+  });
+
   it('splits a same-day backend group into one row per angle', () => {
     // The backend groups by (climb, day) only; the client re-buckets by
     // (climb, LOCAL day, angle) — a day spent on both 40° and 45° must render

@@ -7,6 +7,8 @@ import type { LogbookEntry } from './types';
  * the logbook's repeat grouping uses), and sends. This is where "sent in 13
  * tries over 3 sessions" lives — the logbook list shows per-day truth, the
  * climb's own view shows the journey (PR #3350 thread).
+ * Returned ASCENDING by angle (a stable stats order for charts/tables);
+ * groupEntriesByAngle re-orders its SECTIONS steepest-first for display.
  */
 export type AngleLifetimeStats = {
   angle: number;

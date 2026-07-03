@@ -2,6 +2,7 @@ import { useMutation, useQueryClient, type QueryClient, type InfiniteData } from
 import {
   UPDATE_TICK,
   DELETE_TICK,
+  type AscentFeedItem,
   type UpdateTickInput,
   type UpdateTickVariables,
   type UpdateTickResponse,
@@ -71,13 +72,15 @@ export function useUpdateTick() {
  * response, so there is nothing to roll back.
  */
 function patchTickInAscentFeeds(queryClient: QueryClient, updatedTick: UpdateTickResponse['updateTick']) {
-  // The response types status as plain string while feed items carry the
-  // narrower union; the values come from the same enum server-side.
-  const patchItem = <T extends { uuid: string }>(item: T): T =>
+  // Concrete AscentFeedItem in/out — both feed caches carry exactly that item
+  // type, and a narrower cast here would hide a future shape drift. Only the
+  // status needs narrowing: the mutation response types it as plain string
+  // while feed items carry the union; the values share one server-side enum.
+  const patchItem = (item: AscentFeedItem): AscentFeedItem =>
     item.uuid === updatedTick.uuid
-      ? ({
+      ? {
           ...item,
-          status: updatedTick.status,
+          status: updatedTick.status as AscentFeedItem['status'],
           attemptCount: updatedTick.attemptCount,
           quality: updatedTick.quality,
           difficulty: updatedTick.difficulty,
@@ -86,7 +89,7 @@ function patchTickInAscentFeeds(queryClient: QueryClient, updatedTick: UpdateTic
           isBenchmark: updatedTick.isBenchmark,
           comment: updatedTick.comment,
           climbedAt: updatedTick.climbedAt,
-        } as T)
+        }
       : item;
 
   queryClient.setQueriesData<InfiniteData<GetUserGroupedAscentsFeedQueryResponse>>(

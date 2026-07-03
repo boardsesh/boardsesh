@@ -267,7 +267,10 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
         for (const item of group.items) {
           if (seenTickUuids.has(item.uuid)) continue;
           seenTickUuids.add(item.uuid);
-          const localKey = `${item.climbUuid}|${logbookDayKey(item.climbedAt)}|${item.angle}`;
+          // isMirror splits the bucket: on Tension/Decoy the mirrored ascent is
+          // its own problem — collapsing it with the normal orientation would
+          // sum tries across orientations and mislabel the row's mirror tag.
+          const localKey = `${item.climbUuid}|${logbookDayKey(item.climbedAt)}|${item.angle}|${item.isMirror}`;
           const bucket = itemsByLocalKey.get(localKey);
           if (bucket) bucket.push(item);
           else itemsByLocalKey.set(localKey, [item]);
