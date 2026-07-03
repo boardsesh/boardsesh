@@ -316,12 +316,17 @@ export async function autoSaveToAppleHealth(
     // first session end is the natural moment to ask). A decided user must
     // never see a re-request call — and a denied one silently skips.
     const authorizationStatus = await getAppleHealthAuthorizationStatus();
-    const granted =
-      authorizationStatus === 'authorized' ||
-      (authorizationStatus === 'notDetermined' && (await requestAppleHealthAuthorization()));
+    const isFreshGrant = authorizationStatus === 'notDetermined' && (await requestAppleHealthAuthorization());
+    const granted = authorizationStatus === 'authorized' || isFreshGrant;
     if (!granted) {
       clearSaveState(sessionId);
       return null;
+    }
+    // Auto-save (default ON) is the moment most users actually decide the
+    // HealthKit prompt — track only the fresh grant, not every already-
+    // authorized auto-save, or this would fire on every session.
+    if (isFreshGrant) {
+      track(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
     }
 
     const options = buildSaveOptions(healthExport);
@@ -393,12 +398,14 @@ export async function manualSaveToAppleHealth(
     // Manual taps are explicit user intent, so prompting an undecided user is
     // correct — but a decided user still skips the request call.
     const authorizationStatus = await getAppleHealthAuthorizationStatus();
-    const granted =
-      authorizationStatus === 'authorized' ||
-      (authorizationStatus === 'notDetermined' && (await requestAppleHealthAuthorization()));
+    const isFreshGrant = authorizationStatus === 'notDetermined' && (await requestAppleHealthAuthorization());
+    const granted = authorizationStatus === 'authorized' || isFreshGrant;
     if (!granted) {
       clearSaveState(sessionId);
       return 'denied';
+    }
+    if (isFreshGrant) {
+      track(SHARED_EVENTS.IntegrationConnected, { integration: 'apple_health' });
     }
 
     const options = buildSaveOptions(healthExport);

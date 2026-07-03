@@ -183,6 +183,16 @@ describe('autoSaveToAppleHealth', () => {
 
     expect(result).toBe('hk-workout-1');
     expect(requestAuthorizationMock).toHaveBeenCalledTimes(1);
+    // Auto-save (default ON) is the moment most users actually decide the
+    // HealthKit prompt, so this is the fresh-grant edge that must be tracked.
+    expect(trackMock).toHaveBeenCalledWith('Integration Connected', { integration: 'apple_health' });
+  });
+
+  it('does NOT re-fire Integration Connected for an already-authorized auto-save', async () => {
+    // beforeEach's default status is 'authorized' — not a fresh grant.
+    await autoSaveToAppleHealth(makeSummary(), ctx);
+
+    expect(trackMock).not.toHaveBeenCalledWith('Integration Connected', expect.anything());
   });
 
   it('saves once, persists the workout id, and marks state saved', async () => {
@@ -289,6 +299,16 @@ describe('autoSaveToAppleHealth', () => {
     expect(result).toBe('savedWithoutEnergy');
     expect(await manualSaveToAppleHealth(makeSummary({ sessionId: 'no-energy' }), ctx)).toBe('savedWithoutEnergy');
     expect(saveWorkoutMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks Integration Connected on a fresh grant from a manual export', async () => {
+    getAuthorizationStatusMock.mockResolvedValueOnce({ status: 'notDetermined' });
+    requestAuthorizationMock.mockResolvedValueOnce({ granted: true });
+
+    const result = await manualSaveToAppleHealth(makeSummary({ sessionId: 'manual-undecided' }), ctx);
+
+    expect(result).toBe('saved');
+    expect(trackMock).toHaveBeenCalledWith('Integration Connected', { integration: 'apple_health' });
   });
 
   it('runs the native save once under concurrent auto + manual', async () => {
