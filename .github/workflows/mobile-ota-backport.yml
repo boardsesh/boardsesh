@@ -114,6 +114,13 @@ jobs:
           FIX_COMMITS: ${{ inputs.fix_commits }}
         run: |
           set -euo pipefail
+          # Validate the version is x.y.z before using it in a tag glob, so a
+          # glob-like input (e.g. '*') can't match unrelated anchors and surface a
+          # confusing "Multiple anchors" error instead of a clear bad-input one.
+          if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must be x.y.z (got '$VERSION')."
+            exit 1
+          fi
           mapfile -t tags < <(git tag -l "release/${PLATFORM}-v${VERSION}-*")
           if [ "${#tags[@]}" -eq 0 ]; then
             echo "::error::No release/${PLATFORM}-v${VERSION}-* anchor tag. Has ${VERSION} been approved and anchored on ${PLATFORM}?"
