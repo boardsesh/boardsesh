@@ -37,10 +37,11 @@ export const LogbookSection = memo(function LogbookSection({
   // Only Tension/Decoy log mirrored sends, so the mirror tag is board-gated.
   const showMirrorTag = boardName === 'tension' || boardName === 'decoy';
 
-  // Entries bucketed under per-angle headers, most recently climbed angle
-  // first. Each header recaps the lifetime at that angle — "13 tries over
-  // 3 sessions · 2 sends" — so the rows below drop their own angle chip.
-  // Sessions = distinct days, matching the logbook's day-scoped grouping.
+  // Entries bucketed under per-angle headers, steepest angle first (the
+  // hardest version of the climb leads). Each header recaps the lifetime at
+  // that angle — "13 tries over 3 sessions · 2 sends" — so the rows below drop
+  // their own angle chip. Sessions = distinct days, matching the logbook's
+  // day-scoped grouping.
   const angleSections = useMemo(() => groupEntriesByAngle(entries), [entries]);
 
   if (entries.length > 0) {

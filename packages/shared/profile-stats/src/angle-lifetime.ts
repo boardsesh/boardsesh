@@ -17,9 +17,9 @@ export type AngleLifetimeStats = {
 
 /**
  * The climb's entries bucketed under per-angle section headers, each section
- * carrying its lifetime recap. Section order follows the entries' own order
- * (callers pass newest-first, so the most recently climbed angle leads);
- * entries keep their relative order within a section.
+ * carrying its lifetime recap. Sections are ordered steepest angle first (the
+ * hardest version of the climb leads); entries keep their relative order
+ * (callers pass newest-first) within a section.
  */
 export type AngleEntriesSection<T extends LogbookEntry> = {
   angle: number;
@@ -29,7 +29,6 @@ export type AngleEntriesSection<T extends LogbookEntry> = {
 
 export function groupEntriesByAngle<T extends LogbookEntry>(entries: readonly T[]): AngleEntriesSection<T>[] {
   const statsByAngle = new Map(deriveAngleLifetimeStats(entries).map((stats) => [stats.angle, stats]));
-  const sections: AngleEntriesSection<T>[] = [];
   const sectionByAngle = new Map<number, AngleEntriesSection<T>>();
   for (const entry of entries) {
     let section = sectionByAngle.get(entry.angle);
@@ -38,11 +37,10 @@ export function groupEntriesByAngle<T extends LogbookEntry>(entries: readonly T[
       if (!stats) continue;
       section = { angle: entry.angle, stats, entries: [] };
       sectionByAngle.set(entry.angle, section);
-      sections.push(section);
     }
     section.entries.push(entry);
   }
-  return sections;
+  return Array.from(sectionByAngle.values()).sort((sectionA, sectionB) => sectionB.angle - sectionA.angle);
 }
 
 export function deriveAngleLifetimeStats(entries: readonly LogbookEntry[]): AngleLifetimeStats[] {

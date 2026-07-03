@@ -93,7 +93,7 @@ beforeEach(() => {
 });
 
 describe('LogbookSection — per-angle section headers', () => {
-  it('renders one header per angle, most recently climbed first, with the lifetime recap', () => {
+  it('renders one header per angle, steepest first, with the lifetime recap', () => {
     logbookState.logbook = [
       makeEntry({
         uuid: 'a',
@@ -103,7 +103,8 @@ describe('LogbookSection — per-angle section headers', () => {
         is_ascent: false,
         climbed_at: '2026-06-01T10:00:00',
       }),
-      makeEntry({ uuid: 'b', angle: 40, tries: 3, status: 'send', climbed_at: '2026-06-08T10:00:00' }),
+      // 40° holds the NEWEST activity; 45° must still lead (steepest first).
+      makeEntry({ uuid: 'b', angle: 40, tries: 3, status: 'send', climbed_at: '2026-06-22T10:00:00' }),
       makeEntry({
         uuid: 'c',
         angle: 45,
@@ -116,7 +117,7 @@ describe('LogbookSection — per-angle section headers', () => {
     const { container } = renderSection();
     const text = container.textContent ?? '';
 
-    // Newest activity (45°) leads; its recap has no sends part.
+    // Steepest angle (45°) leads regardless of recency; its recap has no sends part.
     const fortyFiveAt = text.indexOf('45°');
     const fortyAt = text.indexOf('40°');
     expect(fortyFiveAt).toBeGreaterThanOrEqual(0);
@@ -132,13 +133,13 @@ describe('LogbookSection — per-angle section headers', () => {
 
   it('drops the per-row angle chip under the headers and buckets rows by angle', () => {
     logbookState.logbook = [
-      makeEntry({ uuid: 'a', angle: 40, climbed_at: '2026-06-01T10:00:00' }),
+      makeEntry({ uuid: 'a', angle: 40, climbed_at: '2026-06-21T10:00:00' }),
       makeEntry({ uuid: 'b', angle: 45, climbed_at: '2026-06-20T10:00:00' }),
     ];
     renderSection();
     expect(rows.props).toHaveLength(2);
     expect(rows.props.every((rowProps) => rowProps.showAngleChip === false)).toBe(true);
-    // Section order (45° first) governs row order too.
+    // Steepest-first section order governs row order, not recency (40° is newer).
     const rowAngles = rows.props.map((rowProps) => (rowProps.entry as LogbookEntry).angle);
     expect(rowAngles).toEqual([45, 40]);
   });
