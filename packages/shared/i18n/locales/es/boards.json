@@ -62,7 +62,10 @@
       "coordinatePlaceholder": "Grados decimales",
       "invalidCoordinate": "Introduce una coordenada válida",
       "public": "Gimnasio público",
-      "publicHint": "Muéstralo en el mapa para que los escaladores lo encuentren"
+      "publicHint": "Muéstralo en el mapa para que los escaladores lo encuentren",
+      "website": "Sitio web",
+      "websitePlaceholder": "https://tugimnasio.com",
+      "websiteHint": "Lo usamos para verificar la propiedad cuando alguien reclama el gimnasio"
     },
     "manage": {
       "ownedHeader": "Tus plafones",
@@ -185,6 +188,55 @@
       "scanning": "Buscando temporizadores cercanos…",
       "empty": "No se encontraron temporizadores. Asegúrate de que esté encendido y dentro del alcance.",
       "cancel": "Cancelar"
+    },
+    "gymGrant": {
+      "sectionTitle": "Acceso de edición",
+      "description": "Permite que escaladores de confianza editen los detalles de este gimnasio. No podrán eliminarlo ni gestionar a los miembros.",
+      "searchLabel": "Buscar escaladores",
+      "searchPlaceholder": "Buscar por nombre",
+      "clearSearch": "Borrar búsqueda",
+      "noResults": "Ningún escalador coincide con ese nombre",
+      "unknownUser": "Escalador desconocido",
+      "grant": "Conceder",
+      "grantFor": "Conceder acceso de edición a {{name}}",
+      "granted": "Acceso de edición concedido",
+      "grantFailed": "No se pudo conceder el acceso. Inténtalo de nuevo.",
+      "membersTitle": "Miembros actuales",
+      "membersEmpty": "Aún no hay miembros",
+      "revoke": "Revocar",
+      "revokeFor": "Revocar el acceso de edición a {{name}}",
+      "revoked": "Acceso de edición revocado",
+      "revokeFailed": "No se pudo revocar el acceso. Inténtalo de nuevo.",
+      "roles": {
+        "admin": "Administrador",
+        "editor": "Editor",
+        "member": "Miembro"
+      }
+    },
+    "gymClaim": {
+      "title": "Reclamar {{gym}}",
+      "close": "Cerrar",
+      "done": "Listo",
+      "sectionTitle": "¿Es tuyo este gimnasio?",
+      "sectionDescription": "Reclámalo para mantener la ficha y los plafones al día.",
+      "claimAction": "Reclamar este gimnasio",
+      "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
+      "switchToAdmin": "¿No tienes un correo de trabajo? Solicita una revisión",
+      "switchToDomain": "Verificar con un correo de trabajo",
+      "domain": {
+        "description": "¿Gestionas {{gym}}? Introduce tu correo en {{domain}} y te enviaremos un enlace para confirmar.",
+        "emailLabel": "Correo de trabajo",
+        "emailPlaceholder": "tu@{{domain}}",
+        "submit": "Enviar correo de verificación",
+        "sent": "Revisa tu bandeja en {{email}} y toca el enlace para terminar."
+      },
+      "admin": {
+        "description": "Dinos que gestionas {{gym}} y nuestro equipo revisará tu solicitud.",
+        "messageLabel": "Mensaje (opcional)",
+        "messagePlaceholder": "Cualquier cosa que nos ayude a verificar que gestionas este gimnasio",
+        "submit": "Solicitar revisión",
+        "sent": "Hemos avisado a nuestro equipo. Se pondrán en contacto pronto."
+      }
     }
   },
   "boardEntity": {
@@ -358,6 +410,31 @@
     "snackbar": {
       "removed": "Miembro eliminado",
       "removeFailed": "Error al eliminar miembro"
+    },
+    "remove": "Quitar",
+    "roles": {
+      "admin": "Administrador",
+      "editor": "Editor",
+      "member": "Miembro"
+    },
+    "grant": {
+      "button": "Dar acceso de edición",
+      "revoke": "Revocar acceso de edición",
+      "snackbar": {
+        "granted": "Acceso de edición concedido",
+        "grantFailed": "No se pudo conceder el acceso",
+        "revoked": "Acceso de edición revocado",
+        "revokeFailed": "No se pudo revocar el acceso"
+      },
+      "dialog": {
+        "title": "Dar acceso de edición",
+        "description": "Busca a un escalador para que edite los detalles de este gimnasio. No podrá eliminarlo ni gestionar miembros.",
+        "searchLabel": "Buscar escaladores",
+        "searchPlaceholder": "Buscar por nombre",
+        "change": "Cambiar",
+        "cancel": "Cancelar",
+        "submit": "Conceder acceso"
+      }
     }
   },
   "gymSelector": {
@@ -385,7 +462,8 @@
     },
     "actions": {
       "edit": "Editar",
-      "delete": "Eliminar"
+      "delete": "Eliminar",
+      "claim": "Reclamar"
     },
     "stats": {
       "boards": "plafones",
@@ -418,14 +496,16 @@
       "address": "Dirección",
       "contactEmail": "Correo de contacto",
       "contactPhone": "Teléfono de contacto",
-      "isPublic": "Gimnasio público"
+      "isPublic": "Gimnasio público",
+      "website": "Sitio web"
     },
     "placeholders": {
       "name": "p. ej., Boulder World, The Climbing Factory",
       "description": "Descripción opcional",
       "address": "p. ej., Calle Mayor 123, Ciudad",
       "contactEmail": "Correo de contacto opcional",
-      "contactPhone": "Teléfono de contacto opcional"
+      "contactPhone": "Teléfono de contacto opcional",
+      "website": "p. ej., https://tugimnasio.com"
     },
     "actions": {
       "cancel": "Cancelar"
@@ -437,6 +517,49 @@
       "errorMessage": "Error al crear el gimnasio",
       "nameRequired": "Se requiere el nombre del gimnasio",
       "createdNamed": "¡Gimnasio \"{{name}}\" creado!"
+    },
+    "helpers": {
+      "website": "Se usa para verificar la propiedad cuando alguien reclama este gimnasio"
+    }
+  },
+  "claimGym": {
+    "title": "Reclamar {{gym}}",
+    "cancel": "Cancelar",
+    "done": "Listo",
+    "switchToAdmin": "¿No tienes un correo de trabajo? Solicita una revisión",
+    "switchToDomain": "Verificar con un correo de trabajo",
+    "errors": {
+      "generic": "Algo salió mal. Inténtalo de nuevo."
+    },
+    "domain": {
+      "description": "¿Gestionas {{gym}}? Introduce tu correo en {{domain}} y te enviaremos un enlace para confirmar.",
+      "emailLabel": "Correo de trabajo",
+      "emailPlaceholder": "tu@{{domain}}",
+      "submit": "Enviar correo de verificación",
+      "sent": "Revisa tu bandeja en {{email}} y haz clic en el enlace para terminar."
+    },
+    "admin": {
+      "description": "Dinos que gestionas {{gym}} y nuestro equipo revisará tu solicitud.",
+      "messageLabel": "Mensaje (opcional)",
+      "messagePlaceholder": "Cualquier cosa que nos ayude a verificar que gestionas este gimnasio",
+      "submit": "Solicitar revisión",
+      "sent": "Hemos avisado a nuestro equipo. Se pondrán en contacto pronto."
+    }
+  },
+  "claimLanding": {
+    "backHome": "Volver a Boardsesh",
+    "success": {
+      "title": "El gimnasio es tuyo",
+      "body": "Ahora eres el propietario. Mantén la ficha y los plafones al día, e invita a tu grupo a ayudar."
+    },
+    "error": {
+      "title": "Ese enlace no funcionó",
+      "reasons": {
+        "invalid": "Este enlace de reclamación no es válido. Vuelve a iniciar la reclamación desde el gimnasio.",
+        "expired": "Este enlace ha caducado. Vuelve a iniciar la reclamación para obtener uno nuevo.",
+        "used": "Este enlace ya se ha usado.",
+        "serverError": "Algo salió mal por nuestra parte. Inténtalo de nuevo en un momento."
+      }
     }
   }
 }

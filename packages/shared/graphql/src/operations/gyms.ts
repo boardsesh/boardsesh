@@ -12,6 +12,13 @@ import type {
   SearchGymsInput,
   GymMembersInput,
   LinkBoardToGymInput,
+  GrantGymWriteAccessInput,
+  RevokeGymWriteAccessInput,
+  RequestGymClaimInput,
+  RequestGymClaimResult,
+  ReviewGymClaimInput,
+  PendingGymClaimsInput,
+  GymClaimConnection,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -27,6 +34,7 @@ const GYM_FIELDS = `
   name
   description
   address
+  website
   contactEmail
   contactPhone
   latitude
@@ -43,6 +51,8 @@ const GYM_FIELDS = `
   isMember
   myRole
   canEdit
+  canGrantAccess
+  canClaim
 `;
 
 export const GET_GYM = gql`
@@ -157,6 +167,63 @@ export const LINK_BOARD_TO_GYM = gql`
   }
 `;
 
+export const GRANT_GYM_WRITE_ACCESS = gql`
+  mutation GrantGymWriteAccess($input: GrantGymWriteAccessInput!) {
+    grantGymWriteAccess(input: $input)
+  }
+`;
+
+export const REVOKE_GYM_WRITE_ACCESS = gql`
+  mutation RevokeGymWriteAccess($input: RevokeGymWriteAccessInput!) {
+    revokeGymWriteAccess(input: $input)
+  }
+`;
+
+export const REQUEST_GYM_CLAIM = gql`
+  mutation RequestGymClaim($input: RequestGymClaimInput!) {
+    requestGymClaim(input: $input) {
+      status
+      email
+    }
+  }
+`;
+
+export const REVIEW_GYM_CLAIM = gql`
+  mutation ReviewGymClaim($input: ReviewGymClaimInput!) {
+    reviewGymClaim(input: $input)
+  }
+`;
+
+// ============================================
+// Gym Claim Admin Queue
+// ============================================
+
+const GYM_CLAIM_FIELDS = `
+  id
+  gymUuid
+  gymName
+  claimantUserId
+  claimantDisplayName
+  claimantAvatarUrl
+  method
+  status
+  claimEmail
+  message
+  createdAt
+`;
+
+export const PENDING_GYM_CLAIMS = gql`
+  query PendingGymClaims($input: PendingGymClaimsInput) {
+    pendingGymClaims(input: $input) {
+      claims {
+        ${GYM_CLAIM_FIELDS}
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
 // ============================================
 // Query/Mutation Variable Types
 // ============================================
@@ -263,4 +330,44 @@ export type LinkBoardToGymMutationVariables = {
 
 export type LinkBoardToGymMutationResponse = {
   linkBoardToGym: boolean;
+};
+
+export type GrantGymWriteAccessMutationVariables = {
+  input: GrantGymWriteAccessInput;
+};
+
+export type GrantGymWriteAccessMutationResponse = {
+  grantGymWriteAccess: boolean;
+};
+
+export type RevokeGymWriteAccessMutationVariables = {
+  input: RevokeGymWriteAccessInput;
+};
+
+export type RevokeGymWriteAccessMutationResponse = {
+  revokeGymWriteAccess: boolean;
+};
+
+export type RequestGymClaimMutationVariables = {
+  input: RequestGymClaimInput;
+};
+
+export type RequestGymClaimMutationResponse = {
+  requestGymClaim: RequestGymClaimResult;
+};
+
+export type ReviewGymClaimMutationVariables = {
+  input: ReviewGymClaimInput;
+};
+
+export type ReviewGymClaimMutationResponse = {
+  reviewGymClaim: boolean;
+};
+
+export type PendingGymClaimsQueryVariables = {
+  input?: PendingGymClaimsInput;
+};
+
+export type PendingGymClaimsQueryResponse = {
+  pendingGymClaims: GymClaimConnection;
 };

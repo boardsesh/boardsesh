@@ -118,7 +118,8 @@
     }
   },
   "nav": {
-    "retention": "Panel de retención"
+    "retention": "Panel de retención",
+    "gymClaims": "Reclamaciones de gimnasios"
   },
   "retention": {
     "heading": "Retención de usuarios",
@@ -142,6 +143,31 @@
       "title": "Retención D7 por semana de cohorte",
       "label": "Marcas",
       "labelAny": "Cualquier actividad"
+    }
+  },
+  "gymClaims": {
+    "title": "Reclamaciones de gimnasios",
+    "backToAdmin": "Volver al panel",
+    "heading": "Reclamaciones pendientes",
+    "empty": "No hay reclamaciones pendientes",
+    "approve": "Aprobar",
+    "deny": "Rechazar",
+    "method": {
+      "domain": "Dominio",
+      "admin": "Revisión"
+    },
+    "snackbar": {
+      "approved": "Reclamación aprobada: propiedad transferida",
+      "denied": "Reclamación rechazada",
+      "failed": "No se pudo actualizar la reclamación"
+    },
+    "table": {
+      "claimant": "Solicitante",
+      "gym": "Gimnasio",
+      "method": "Método",
+      "detail": "Detalle",
+      "date": "Fecha",
+      "actions": "Acciones"
     }
   }
 }

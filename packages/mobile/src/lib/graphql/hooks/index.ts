@@ -19,6 +19,9 @@ import type {
   SessionSummary,
   SessionHealthExport,
   UpdateGymInput,
+  GrantGymWriteAccessInput,
+  RevokeGymWriteAccessInput,
+  RequestGymClaimInput,
 } from '@boardsesh/shared-schema';
 import {
   SIMILAR_CLIMBS_QUERY,
@@ -41,9 +44,17 @@ import {
   SEARCH_GYMS,
   GET_GYM,
   UPDATE_GYM,
+  GET_GYM_MEMBERS,
+  GRANT_GYM_WRITE_ACCESS,
+  REVOKE_GYM_WRITE_ACCESS,
+  REQUEST_GYM_CLAIM,
   type SearchGymsQueryResponse,
   type GetGymQueryResponse,
   type UpdateGymMutationResponse,
+  type GetGymMembersQueryResponse,
+  type GrantGymWriteAccessMutationResponse,
+  type RevokeGymWriteAccessMutationResponse,
+  type RequestGymClaimMutationResponse,
 } from '@boardsesh/graphql/operations/gyms';
 import {
   UPDATE_BOARD,
@@ -426,6 +437,78 @@ export function useUpdateGym() {
       void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+    },
+  });
+}
+
+/**
+ * The roster of a gym (owner, admins, editors, members) with each member's role.
+ * Backs the write-access section on the gym-edit screen, where editors are given a
+ * revoke action. Disabled until a uuid resolves.
+ */
+export function useGymMembers(gymUuid: string | null, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['gymMembers', gymUuid],
+    queryFn: () => getHttpClient().request<GetGymMembersQueryResponse>(GET_GYM_MEMBERS, { input: { gymUuid } }),
+    select: (data) => data.gymMembers,
+    enabled: (options?.enabled ?? true) && !!gymUuid,
+  });
+}
+
+/**
+ * Grant a climber `editor` write access to a gym the viewer administers (owner,
+ * gym admin, or community leader — the server enforces the grant permission).
+ * Refresh the roster so the newly added editor appears, and the single-gym cache
+ * in case the viewer's own capability flags change.
+ */
+export function useGrantGymWriteAccess() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: GrantGymWriteAccessInput) => {
+      const response = await getHttpClient().request<GrantGymWriteAccessMutationResponse>(GRANT_GYM_WRITE_ACCESS, {
+        input,
+      });
+      return response.grantGymWriteAccess;
+    },
+    onSuccess: (_granted, input) => {
+      void queryClient.invalidateQueries({ queryKey: ['gymMembers', input.gymUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['gym', input.gymUuid] });
+    },
+  });
+}
+
+/**
+ * Revoke a gym editor's write access. Refreshes the roster (the member drops back
+ * to no role) and the single-gym cache.
+ */
+export function useRevokeGymWriteAccess() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RevokeGymWriteAccessInput) => {
+      const response = await getHttpClient().request<RevokeGymWriteAccessMutationResponse>(REVOKE_GYM_WRITE_ACCESS, {
+        input,
+      });
+      return response.revokeGymWriteAccess;
+    },
+    onSuccess: (_revoked, input) => {
+      void queryClient.invalidateQueries({ queryKey: ['gymMembers', input.gymUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['gym', input.gymUuid] });
+    },
+  });
+}
+
+/**
+ * Start an ownership claim for a gym. With a `claimEmail` matching the gym's
+ * website domain the server sends a verification email (`email_sent`); otherwise
+ * the claim goes to admin review (`admin_review`). A domain mismatch rejects with
+ * a GraphQL error the caller surfaces inline. No cache invalidation — ownership
+ * only transfers once the emailed link is followed in the browser.
+ */
+export function useRequestGymClaim() {
+  return useMutation({
+    mutationFn: async (input: RequestGymClaimInput) => {
+      const response = await getHttpClient().request<RequestGymClaimMutationResponse>(REQUEST_GYM_CLAIM, { input });
+      return response.requestGymClaim;
     },
   });
 }

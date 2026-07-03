@@ -4,8 +4,34 @@ export const gymsTypeDefs = /* GraphQL */ `
   # ============================================
 
   enum GymMemberRole {
+    "Full gym admin: edit details, manage members/boards."
     admin
+    "Write access: edit gym details only. No membership/board management, no delete."
+    editor
+    "Plain member (social membership; no edit access)."
     member
+  }
+
+  enum GymClaimMethod {
+    "Verified control of an email at the gym's website domain."
+    domain
+    "Awaiting a Boardsesh admin's review."
+    admin
+  }
+
+  enum GymClaimStatus {
+    pending
+    approved
+    denied
+    expired
+  }
+
+  "Outcome of a requestGymClaim call, so clients can show the right next step."
+  enum GymClaimRequestStatus {
+    "A verification email was sent to the claimant's work address."
+    email_sent
+    "The claim was queued for admin review and our team was notified."
+    admin_review
   }
 
   """
@@ -28,6 +54,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     description: String
     "Physical address"
     address: String
+    "Website URL (used for domain-verified ownership claims)"
+    website: String
     "Contact email"
     contactEmail: String
     "Contact phone"
@@ -58,8 +86,12 @@ export const gymsTypeDefs = /* GraphQL */ `
     isMember: Boolean!
     "Current user's role (null if not a member/owner)"
     myRole: GymMemberRole
-    "Whether the current viewer may edit this gym (owner, gym admin, or community admin/leader for one of its board types)"
+    "Whether the current viewer may edit this gym (owner, gym admin, gym editor, or community admin/leader for one of its board types)"
     canEdit: Boolean!
+    "Whether the current viewer may grant/revoke write access to other users (owner, gym admin, or community admin/leader for one of its board types)"
+    canGrantAccess: Boolean!
+    "Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin)"
+    canClaim: Boolean!
   }
 
   """
@@ -112,6 +144,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     description: String
     "Physical address"
     address: String
+    "Website URL"
+    website: String
     "Contact email"
     contactEmail: String
     "Contact phone"
@@ -142,6 +176,8 @@ export const gymsTypeDefs = /* GraphQL */ `
     description: String
     "New address"
     address: String
+    "New website URL"
+    website: String
     "New contact email"
     contactEmail: String
     "New contact phone"
@@ -244,5 +280,115 @@ export const gymsTypeDefs = /* GraphQL */ `
     boardUuid: ID!
     "Gym UUID (null to unlink)"
     gymUuid: String
+  }
+
+  """
+  Input for granting a user write (editor) access to a gym.
+  """
+  input GrantGymWriteAccessInput {
+    "Gym UUID"
+    gymUuid: ID!
+    "User ID to grant write access to"
+    userId: ID!
+  }
+
+  """
+  Input for revoking a user's write (editor) access to a gym.
+  """
+  input RevokeGymWriteAccessInput {
+    "Gym UUID"
+    gymUuid: ID!
+    "User ID to revoke write access from"
+    userId: ID!
+  }
+
+  """
+  Input for requesting ownership of a gym.
+  """
+  input RequestGymClaimInput {
+    "Gym UUID to claim"
+    gymUuid: ID!
+    "Work email at the gym's website domain (domain-verified path). Omit to request admin review."
+    claimEmail: String
+    "Optional note to the reviewer (admin-review path)."
+    message: String
+  }
+
+  """
+  Result of requesting a gym claim.
+  """
+  type RequestGymClaimResult {
+    "Which path the claim took."
+    status: GymClaimRequestStatus!
+    "The address a verification email was sent to (domain path only)."
+    email: String
+  }
+
+  """
+  A pending or resolved gym ownership claim (admin queue).
+  """
+  type GymClaim {
+    "Claim ID"
+    id: ID!
+    "The gym being claimed"
+    gymUuid: ID!
+    "Gym name (denormalized for the admin queue)"
+    gymName: String!
+    "Claimant user ID"
+    claimantUserId: ID!
+    "Claimant display name"
+    claimantDisplayName: String
+    "Claimant avatar URL"
+    claimantAvatarUrl: String
+    "How the claim was made"
+    method: GymClaimMethod!
+    "Current status"
+    status: GymClaimStatus!
+    "Email address (domain path)"
+    claimEmail: String
+    "Note to reviewer (admin path)"
+    message: String
+    "When the claim was created"
+    createdAt: String!
+  }
+
+  """
+  Paginated list of gym claims.
+  """
+  type GymClaimConnection {
+    "List of claims"
+    claims: [GymClaim!]!
+    "Total number of claims"
+    totalCount: Int!
+    "Whether more claims are available"
+    hasMore: Boolean!
+  }
+
+  """
+  Decision for reviewing a gym claim.
+  """
+  enum GymClaimDecision {
+    approve
+    deny
+  }
+
+  """
+  Input for an admin reviewing a pending gym claim.
+  """
+  input ReviewGymClaimInput {
+    "Claim ID to review"
+    claimId: ID!
+    "Whether to approve (transfer ownership) or deny"
+    decision: GymClaimDecision!
+  }
+
+  """
+  Input for listing pending gym claims (admin only).
+  """
+  input PendingGymClaimsInput {
+    "Max claims to return"
+    limit: Int
+    "Offset for pagination"
+    offset: Int
   }
 `;

@@ -24,6 +24,7 @@ import {
   handleKilterCredentialsPassword,
   handleKilterCredentialsStart,
 } from './handlers/kilter-credentials-oauth';
+import { handleGymClaimVerify } from './handlers/gym-claims';
 import { handleWidgetNavigate } from './handlers/widget-navigate';
 import { handleWidgetTakeControl } from './handlers/widget-take-control';
 import { handleSessionNavigate, handleSessionTakeControl } from './handlers/session-actions';
@@ -417,6 +418,12 @@ export async function startServer(): Promise<ServerResources> {
         }
         res.writeHead(400);
         res.end();
+        return;
+      }
+
+      // Gym claim domain-verification link (browser click from the claim email).
+      if (pathname === '/api/gym-claims/verify' && req.method === 'GET') {
+        await handleGymClaimVerify(req, res, url);
         return;
       }
 

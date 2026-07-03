@@ -15,6 +15,7 @@ export type GymFormFieldValues = {
   slug?: string;
   description: string;
   address: string;
+  website: string;
   contactEmail: string;
   contactPhone: string;
   isPublic: boolean;
@@ -42,6 +43,7 @@ export default function GymForm({
   const [slug, setSlug] = useState(initialValues.slug ?? '');
   const [description, setDescription] = useState(initialValues.description);
   const [address, setAddress] = useState(initialValues.address);
+  const [website, setWebsite] = useState(initialValues.website);
   const [contactEmail, setContactEmail] = useState(initialValues.contactEmail);
   const [contactPhone, setContactPhone] = useState(initialValues.contactPhone);
   const [isPublic, setIsPublic] = useState(initialValues.isPublic);
@@ -57,6 +59,7 @@ export default function GymForm({
         slug: slug.trim() || undefined,
         description: description.trim(),
         address: address.trim(),
+        website: website.trim(),
         contactEmail: contactEmail.trim(),
         contactPhone: contactPhone.trim(),
         isPublic,
@@ -111,6 +114,17 @@ export default function GymForm({
         fullWidth
         size="small"
         placeholder={t('gymForm.placeholders.address')}
+      />
+
+      <TextField
+        label={t('gymForm.fields.website')}
+        value={website}
+        onChange={(e) => setWebsite(e.target.value)}
+        fullWidth
+        size="small"
+        type="url"
+        placeholder={t('gymForm.placeholders.website')}
+        helperText={t('gymForm.helpers.website')}
       />
 
       <TextField

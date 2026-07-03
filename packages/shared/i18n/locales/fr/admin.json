@@ -19,7 +19,8 @@
     "settings": "Paramètres"
   },
   "nav": {
-    "retention": "Tableau de rétention"
+    "retention": "Tableau de rétention",
+    "gymClaims": "Revendications de salles"
   },
   "retention": {
     "heading": "Rétention utilisateur",
@@ -142,6 +143,31 @@
       "saved_one": "{{count}} paramètre enregistré",
       "saved_other": "{{count}} paramètres enregistrés",
       "saveFailed": "Impossible d'enregistrer les paramètres"
+    }
+  },
+  "gymClaims": {
+    "title": "Revendications de salles",
+    "backToAdmin": "Retour à l’administration",
+    "heading": "Revendications en attente",
+    "empty": "Aucune revendication en attente",
+    "approve": "Approuver",
+    "deny": "Refuser",
+    "method": {
+      "domain": "Domaine",
+      "admin": "Vérification"
+    },
+    "snackbar": {
+      "approved": "Revendication approuvée — propriété transférée",
+      "denied": "Revendication refusée",
+      "failed": "Impossible de mettre à jour la revendication"
+    },
+    "table": {
+      "claimant": "Demandeur",
+      "gym": "Salle",
+      "method": "Méthode",
+      "detail": "Détail",
+      "date": "Date",
+      "actions": "Actions"
     }
   }
 }

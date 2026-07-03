@@ -349,6 +349,7 @@ export const schemaSQL = `
     "slug" text,
     "owner_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
     "address" text,
+    "website" text,
     "contact_email" text,
     "contact_phone" text,
     "latitude" double precision,
@@ -654,6 +655,29 @@ export const schemaSQL = `
     "created_at" timestamp DEFAULT now() NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "gym_follows_unique_gym_user" ON "gym_follows" ("gym_id", "user_id");
+
+  -- Gym ownership claims (domain-verified or admin-reviewed). method/status are
+  -- plain text here (prod uses enums); the resolvers only read the string value.
+  DROP TABLE IF EXISTS "gym_claims" CASCADE;
+  CREATE TABLE IF NOT EXISTS "gym_claims" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
+    "claimant_user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "method" text NOT NULL,
+    "status" text DEFAULT 'pending' NOT NULL,
+    "claim_email" text,
+    "message" text,
+    "token_hash" text,
+    "expires_at" timestamp,
+    "reviewed_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "gym_claims_gym_idx" ON "gym_claims" ("gym_id");
+  CREATE INDEX IF NOT EXISTS "gym_claims_claimant_idx" ON "gym_claims" ("claimant_user_id");
+  CREATE INDEX IF NOT EXISTS "gym_claims_status_idx" ON "gym_claims" ("status");
+  CREATE UNIQUE INDEX IF NOT EXISTS "gym_claims_token_hash_idx" ON "gym_claims" ("token_hash") WHERE "token_hash" IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS "gym_claims_unique_pending" ON "gym_claims" ("gym_id", "claimant_user_id") WHERE "status" = 'pending';
 
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;

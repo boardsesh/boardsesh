@@ -1,4 +1,4 @@
-import { useCallback, useState, type ComponentProps } from 'react';
+import { useCallback, useState, type ComponentProps, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +16,7 @@ export type GymFormSeed = {
   name: string;
   description: string;
   address: string;
+  website: string;
   contactEmail: string;
   contactPhone: string;
   latitude: number | null;
@@ -29,6 +30,7 @@ export type GymFormSubmitValues = {
   name: string;
   description: string | null;
   address: string | null;
+  website: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
   latitude: number | null;
@@ -41,6 +43,9 @@ type GymFormProps = {
   submitting: boolean;
   onSubmit: (values: GymFormSubmitValues) => void;
   submitLabel: string;
+  /** Extra sections rendered inside the scroll, below the fields (e.g. the
+   *  write-access manager and the claim entry on the gym-edit screen). */
+  extraSections?: ReactNode;
 };
 
 function coordToText(value: number | null): string {
@@ -55,7 +60,7 @@ function coordToText(value: number | null): string {
  * `useState` initializers, so re-renders never clobber in-progress edits (the
  * screen remounts it per gym).
  */
-export function GymForm({ seed, submitting, onSubmit, submitLabel }: GymFormProps) {
+export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections }: GymFormProps) {
   const { t } = useTranslation('boards');
   const { systemColors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -64,6 +69,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel }: GymFormProp
   const [name, setName] = useState(seed.name);
   const [description, setDescription] = useState(seed.description);
   const [address, setAddress] = useState(seed.address);
+  const [website, setWebsite] = useState(seed.website);
   const [contactEmail, setContactEmail] = useState(seed.contactEmail);
   const [contactPhone, setContactPhone] = useState(seed.contactPhone);
   const [latitudeText, setLatitudeText] = useState(coordToText(seed.latitude));
@@ -83,6 +89,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel }: GymFormProp
       name: trimmedName,
       description: description.trim() || null,
       address: address.trim() || null,
+      website: website.trim() || null,
       contactEmail: contactEmail.trim() || null,
       contactPhone: contactPhone.trim() || null,
       latitude: lat.value,
@@ -95,6 +102,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel }: GymFormProp
     onSubmit,
     description,
     address,
+    website,
     contactEmail,
     contactPhone,
     latitudeText,
@@ -139,6 +147,21 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel }: GymFormProp
           accessibilityLabel={t('mobile.gymEdit.address')}
           maxLength={200}
         />
+
+        <SectionLabel>{t('mobile.gymEdit.website')}</SectionLabel>
+        <GymTextInput
+          value={website}
+          onChangeText={setWebsite}
+          placeholder={t('mobile.gymEdit.websitePlaceholder')}
+          accessibilityLabel={t('mobile.gymEdit.website')}
+          keyboardType="url"
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={200}
+        />
+        <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.fieldHint}>
+          {t('mobile.gymEdit.websiteHint')}
+        </Text>
 
         <SectionLabel>{t('mobile.gymEdit.contactEmail')}</SectionLabel>
         <GymTextInput
@@ -207,6 +230,8 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel }: GymFormProp
             onValueChange={setIsPublic}
           />
         </View>
+
+        {extraSections}
       </ScrollView>
 
       {/* Pinned, safe-area-aware primary action — mirrors the board form footer. */}
@@ -285,6 +310,9 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 88,
     textAlignVertical: 'top',
+  },
+  fieldHint: {
+    marginTop: spacing[1],
   },
   coordRow: {
     flexDirection: 'row',

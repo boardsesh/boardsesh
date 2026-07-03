@@ -62,7 +62,10 @@
       "coordinatePlaceholder": "Degrés décimaux",
       "invalidCoordinate": "Saisissez une coordonnée valide",
       "public": "Salle publique",
-      "publicHint": "Affiche-la sur la carte pour que les grimpeurs la trouvent"
+      "publicHint": "Affiche-la sur la carte pour que les grimpeurs la trouvent",
+      "website": "Site web",
+      "websitePlaceholder": "https://tasalle.com",
+      "websiteHint": "Sert à vérifier la propriété lorsque quelqu'un revendique la salle"
     },
     "manage": {
       "ownedHeader": "Tes boards",
@@ -185,6 +188,55 @@
       "scanning": "Recherche de minuteurs à proximité…",
       "empty": "Aucun minuteur trouvé. Vérifie qu'il est allumé et à portée.",
       "cancel": "Annuler"
+    },
+    "gymGrant": {
+      "sectionTitle": "Accès en écriture",
+      "description": "Laisse des grimpeurs de confiance modifier les détails de cette salle. Ils ne peuvent ni la supprimer ni gérer les membres.",
+      "searchLabel": "Rechercher des grimpeurs",
+      "searchPlaceholder": "Rechercher par nom",
+      "clearSearch": "Effacer la recherche",
+      "noResults": "Aucun grimpeur ne correspond à ce nom",
+      "unknownUser": "Grimpeur inconnu",
+      "grant": "Accorder",
+      "grantFor": "Accorder l'accès en écriture à {{name}}",
+      "granted": "Accès en écriture accordé",
+      "grantFailed": "Impossible d'accorder l'accès. Réessaie.",
+      "membersTitle": "Membres actuels",
+      "membersEmpty": "Pas encore de membres",
+      "revoke": "Révoquer",
+      "revokeFor": "Révoquer l'accès en écriture de {{name}}",
+      "revoked": "Accès en écriture révoqué",
+      "revokeFailed": "Impossible de révoquer l'accès. Réessaie.",
+      "roles": {
+        "admin": "Admin",
+        "editor": "Éditeur",
+        "member": "Membre"
+      }
+    },
+    "gymClaim": {
+      "title": "Revendiquer {{gym}}",
+      "close": "Fermer",
+      "done": "Terminé",
+      "sectionTitle": "Cette salle est à toi ?",
+      "sectionDescription": "Revendique-la pour garder ses informations à jour.",
+      "claimAction": "Revendiquer cette salle",
+      "errorGeneric": "Une erreur est survenue. Réessaie.",
+      "switchToAdmin": "Pas d'e-mail professionnel ? Demande une vérification",
+      "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
+      "domain": {
+        "description": "Tu gères {{gym}} ? Saisis ton e-mail chez {{domain}} et nous enverrons un lien de confirmation.",
+        "emailLabel": "E-mail professionnel",
+        "emailPlaceholder": "toi@{{domain}}",
+        "submit": "Envoyer l'e-mail de vérification",
+        "sent": "Consulte ta boîte à {{email}} et touche le lien pour terminer."
+      },
+      "admin": {
+        "description": "Dis-nous que tu gères {{gym}} et notre équipe examinera ta demande.",
+        "messageLabel": "Message (facultatif)",
+        "messagePlaceholder": "Tout ce qui nous aide à vérifier que tu gères cette salle",
+        "submit": "Demander une vérification",
+        "sent": "Nous avons prévenu notre équipe. Elle te contactera bientôt."
+      }
     }
   },
   "boardEntity": {
@@ -358,6 +410,31 @@
     "snackbar": {
       "removed": "Membre retiré",
       "removeFailed": "Échec du retrait du membre"
+    },
+    "remove": "Retirer",
+    "roles": {
+      "admin": "Admin",
+      "editor": "Éditeur",
+      "member": "Membre"
+    },
+    "grant": {
+      "button": "Donner l’accès en écriture",
+      "revoke": "Révoquer l’accès en écriture",
+      "snackbar": {
+        "granted": "Accès en écriture accordé",
+        "grantFailed": "Impossible d’accorder l’accès",
+        "revoked": "Accès en écriture révoqué",
+        "revokeFailed": "Impossible de révoquer l’accès"
+      },
+      "dialog": {
+        "title": "Donner l’accès en écriture",
+        "description": "Trouvez un grimpeur pour lui permettre de modifier les détails de cette salle. Il ne pourra ni la supprimer ni gérer les membres.",
+        "searchLabel": "Rechercher des grimpeurs",
+        "searchPlaceholder": "Rechercher par nom",
+        "change": "Changer",
+        "cancel": "Annuler",
+        "submit": "Accorder l’accès"
+      }
     }
   },
   "gymSelector": {
@@ -385,7 +462,8 @@
     },
     "actions": {
       "edit": "Modifier",
-      "delete": "Supprimer"
+      "delete": "Supprimer",
+      "claim": "Revendiquer"
     },
     "stats": {
       "boards": "boards",
@@ -418,14 +496,16 @@
       "address": "Adresse",
       "contactEmail": "E-mail de contact",
       "contactPhone": "Téléphone de contact",
-      "isPublic": "Salle publique"
+      "isPublic": "Salle publique",
+      "website": "Site web"
     },
     "placeholders": {
       "name": "ex. Boulder World, The Climbing Factory",
       "description": "Description facultative",
       "address": "ex. 123 rue Principale, ville",
       "contactEmail": "E-mail de contact facultatif",
-      "contactPhone": "Téléphone de contact facultatif"
+      "contactPhone": "Téléphone de contact facultatif",
+      "website": "p. ex., https://votresalle.com"
     },
     "actions": {
       "cancel": "Annuler"
@@ -437,6 +517,49 @@
       "errorMessage": "Échec de la création de la salle",
       "nameRequired": "Le nom de la salle est obligatoire",
       "createdNamed": "Salle « {{name}} » créée !"
+    },
+    "helpers": {
+      "website": "Sert à vérifier la propriété lorsque quelqu’un revendique cette salle"
+    }
+  },
+  "claimGym": {
+    "title": "Revendiquer {{gym}}",
+    "cancel": "Annuler",
+    "done": "Terminé",
+    "switchToAdmin": "Pas d’e-mail professionnel ? Demandez une vérification",
+    "switchToDomain": "Vérifier plutôt avec un e-mail professionnel",
+    "errors": {
+      "generic": "Une erreur est survenue. Réessayez."
+    },
+    "domain": {
+      "description": "Vous gérez {{gym}} ? Saisissez votre e-mail chez {{domain}} et nous enverrons un lien de confirmation.",
+      "emailLabel": "E-mail professionnel",
+      "emailPlaceholder": "vous@{{domain}}",
+      "submit": "Envoyer l’e-mail de vérification",
+      "sent": "Consultez votre boîte à {{email}} et cliquez sur le lien pour terminer."
+    },
+    "admin": {
+      "description": "Dites-nous que vous gérez {{gym}} et notre équipe examinera votre demande.",
+      "messageLabel": "Message (facultatif)",
+      "messagePlaceholder": "Tout ce qui nous aide à vérifier que vous gérez cette salle",
+      "submit": "Demander une vérification",
+      "sent": "Nous avons prévenu notre équipe. Elle vous contactera bientôt."
+    }
+  },
+  "claimLanding": {
+    "backHome": "Retour à Boardsesh",
+    "success": {
+      "title": "La salle est à vous",
+      "body": "Vous en êtes maintenant le propriétaire. Gardez la fiche et les plafonds à jour, et invitez votre équipe à participer."
+    },
+    "error": {
+      "title": "Ce lien n’a pas fonctionné",
+      "reasons": {
+        "invalid": "Ce lien de revendication n’est pas valide. Relancez la revendication depuis la salle.",
+        "expired": "Ce lien a expiré. Relancez la revendication pour en obtenir un nouveau.",
+        "used": "Ce lien a déjà été utilisé.",
+        "serverError": "Une erreur est survenue de notre côté. Réessayez dans un instant."
+      }
     }
   }
 }

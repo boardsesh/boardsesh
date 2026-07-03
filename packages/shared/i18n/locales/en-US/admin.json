@@ -19,7 +19,8 @@
     "settings": "Settings"
   },
   "nav": {
-    "retention": "Retention dashboard"
+    "retention": "Retention dashboard",
+    "gymClaims": "Gym claims"
   },
   "retention": {
     "heading": "User retention",
@@ -142,6 +143,31 @@
       "saved_one": "Saved {{count}} setting",
       "saved_other": "Saved {{count}} settings",
       "saveFailed": "Failed to save settings"
+    }
+  },
+  "gymClaims": {
+    "title": "Gym claims",
+    "backToAdmin": "Back to admin",
+    "heading": "Pending claims",
+    "empty": "No pending claims",
+    "approve": "Approve",
+    "deny": "Deny",
+    "method": {
+      "domain": "Domain",
+      "admin": "Review"
+    },
+    "snackbar": {
+      "approved": "Claim approved — ownership transferred",
+      "denied": "Claim denied",
+      "failed": "Couldn't update the claim"
+    },
+    "table": {
+      "claimant": "Claimant",
+      "gym": "Gym",
+      "method": "Method",
+      "detail": "Detail",
+      "date": "Date",
+      "actions": "Actions"
     }
   }
 }

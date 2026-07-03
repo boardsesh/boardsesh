@@ -43,6 +43,7 @@
     "@boardsesh/db": "*",
     "@boardsesh/graphql": "*",
     "@boardsesh/graphql-client": "*",
+    "@boardsesh/gym-claim": "*",
     "@boardsesh/i18n": "*",
     "@boardsesh/logbook": "*",
     "@boardsesh/moonboard-ocr": "*",

@@ -1162,6 +1162,8 @@ export type CreateGymInput = {
   longitude?: InputMaybe<Scalars['Float']['input']>;
   /** Gym name */
   name: Scalars['String']['input'];
+  /** Website URL */
+  website?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Input for creating a playlist. */
@@ -1736,6 +1738,14 @@ export type GradeCount = {
   grade: Scalars['String']['output'];
 };
 
+/** Input for granting a user write (editor) access to a gym. */
+export type GrantGymWriteAccessInput = {
+  /** Gym UUID */
+  gymUuid: Scalars['ID']['input'];
+  /** User ID to grant write access to */
+  userId: Scalars['ID']['input'];
+};
+
 export type GrantRoleInput = {
   boardType?: InputMaybe<Scalars['String']['input']>;
   role: CommunityRoleType;
@@ -1865,8 +1875,12 @@ export type Gym = {
   boardCount: Scalars['Int']['output'];
   /** Distinct board types at this gym (kilter, tension, ...) — for filtering and badges */
   boardTypes: Array<Scalars['String']['output']>;
-  /** Whether the current viewer may edit this gym (owner, gym admin, or community admin/leader for one of its board types) */
+  /** Whether the current viewer may start an ownership claim for this gym (signed-in and not already the owner/gym admin) */
+  canClaim: Scalars['Boolean']['output'];
+  /** Whether the current viewer may edit this gym (owner, gym admin, gym editor, or community admin/leader for one of its board types) */
   canEdit: Scalars['Boolean']['output'];
+  /** Whether the current viewer may grant/revoke write access to other users (owner, gym admin, or community admin/leader for one of its board types) */
+  canGrantAccess: Scalars['Boolean']['output'];
   /** Number of comments */
   commentCount: Scalars['Int']['output'];
   /** Contact email */
@@ -1907,7 +1921,65 @@ export type Gym = {
   slug?: Maybe<Scalars['String']['output']>;
   /** Unique identifier */
   uuid: Scalars['ID']['output'];
+  /** Website URL (used for domain-verified ownership claims) */
+  website?: Maybe<Scalars['String']['output']>;
 };
+
+/** A pending or resolved gym ownership claim (admin queue). */
+export type GymClaim = {
+  __typename?: 'GymClaim';
+  /** Email address (domain path) */
+  claimEmail?: Maybe<Scalars['String']['output']>;
+  /** Claimant avatar URL */
+  claimantAvatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Claimant display name */
+  claimantDisplayName?: Maybe<Scalars['String']['output']>;
+  /** Claimant user ID */
+  claimantUserId: Scalars['ID']['output'];
+  /** When the claim was created */
+  createdAt: Scalars['String']['output'];
+  /** Gym name (denormalized for the admin queue) */
+  gymName: Scalars['String']['output'];
+  /** The gym being claimed */
+  gymUuid: Scalars['ID']['output'];
+  /** Claim ID */
+  id: Scalars['ID']['output'];
+  /** Note to reviewer (admin path) */
+  message?: Maybe<Scalars['String']['output']>;
+  /** How the claim was made */
+  method: GymClaimMethod;
+  /** Current status */
+  status: GymClaimStatus;
+};
+
+/** Paginated list of gym claims. */
+export type GymClaimConnection = {
+  __typename?: 'GymClaimConnection';
+  /** List of claims */
+  claims: Array<GymClaim>;
+  /** Whether more claims are available */
+  hasMore: Scalars['Boolean']['output'];
+  /** Total number of claims */
+  totalCount: Scalars['Int']['output'];
+};
+
+/** Decision for reviewing a gym claim. */
+export type GymClaimDecision = 'approve' | 'deny';
+
+export type GymClaimMethod =
+  /** Awaiting a Boardsesh admin's review. */
+  | 'admin'
+  /** Verified control of an email at the gym's website domain. */
+  | 'domain';
+
+/** Outcome of a requestGymClaim call, so clients can show the right next step. */
+export type GymClaimRequestStatus =
+  /** The claim was queued for admin review and our team was notified. */
+  | 'admin_review'
+  /** A verification email was sent to the claimant's work address. */
+  | 'email_sent';
+
+export type GymClaimStatus = 'approved' | 'denied' | 'expired' | 'pending';
 
 /** Paginated list of gyms. */
 export type GymConnection = {
@@ -1946,7 +2018,13 @@ export type GymMemberConnection = {
   totalCount: Scalars['Int']['output'];
 };
 
-export type GymMemberRole = 'admin' | 'member';
+export type GymMemberRole =
+  /** Full gym admin: edit details, manage members/boards. */
+  | 'admin'
+  /** Write access: edit gym details only. No membership/board management, no delete. */
+  | 'editor'
+  /** Plain member (social membership; no edit access). */
+  | 'member';
 
 /** Input for listing gym members. */
 export type GymMembersInput = {
@@ -2269,6 +2347,12 @@ export type Mutation = {
   followUser: Scalars['Boolean']['output'];
   /** Freeze or unfreeze a climb from receiving proposals (admin/leader only). */
   freezeClimb: Scalars['Boolean']['output'];
+  /**
+   * Grant a user write (editor) access to a gym: edit details only, no
+   * membership/board management, no delete. Callable by the gym owner, a gym
+   * admin, or a community admin/leader for one of the gym's board types.
+   */
+  grantGymWriteAccess: Scalars['Boolean']['output'];
   /** Grant a community role to a user (admin only). */
   grantRole: CommunityRoleAssignment;
   /**
@@ -2357,6 +2441,13 @@ export type Mutation = {
    */
   reportWallDisconnect: Session;
   /**
+   * Request ownership of a gym. With a matching work email at the gym's website
+   * domain, a verification email is sent and clicking it transfers ownership.
+   * Otherwise the claim is queued for admin review (and admin@boardsesh.com is
+   * notified). Requires authentication.
+   */
+  requestGymClaim: RequestGymClaimResult;
+  /**
    * Resolve a BLE serial for clients that can disambiguate. Returns a single
    * `board` when the serial is unambiguous (remembered choice, only one match,
    * or freshly created), or a list of `candidates` when several boards share
@@ -2388,6 +2479,16 @@ export type Mutation = {
   resolveBoardForUuid: ResolvedBoard;
   /** Resolve a proposal (admin/leader only). */
   resolveProposal: Proposal;
+  /**
+   * Approve or deny a pending gym claim (admin only). Approving transfers
+   * ownership to the claimant.
+   */
+  reviewGymClaim: Scalars['Boolean']['output'];
+  /**
+   * Revoke a user's write (editor) access to a gym. Only removes editors —
+   * never a gym admin or plain member. Same authorization as grantGymWriteAccess.
+   */
+  revokeGymWriteAccess: Scalars['Boolean']['output'];
   /** Revoke a community role from a user (admin only). */
   revokeRole: Scalars['Boolean']['output'];
   /**
@@ -2695,6 +2796,11 @@ export type MutationFreezeClimbArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationGrantGymWriteAccessArgs = {
+  input: GrantGymWriteAccessInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationGrantRoleArgs = {
   input: GrantRoleInput;
 };
@@ -2813,6 +2919,11 @@ export type MutationReportBoardDisconnectArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationRequestGymClaimArgs = {
+  input: RequestGymClaimInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationResolveBoardCandidatesForSerialArgs = {
   boardType: Scalars['String']['input'];
   layoutId: Scalars['Int']['input'];
@@ -2846,6 +2957,16 @@ export type MutationResolveBoardForUuidArgs = {
 /** Root mutation type for all write operations. */
 export type MutationResolveProposalArgs = {
   input: ResolveProposalInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReviewGymClaimArgs = {
+  input: ReviewGymClaimInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationRevokeGymWriteAccessArgs = {
+  input: RevokeGymWriteAccessInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -3209,6 +3330,14 @@ export type OutlierAnalysis = {
   isOutlier: Scalars['Boolean']['output'];
   neighborAverage: Scalars['Float']['output'];
   neighborCount: Scalars['Int']['output'];
+};
+
+/** Input for listing pending gym claims (admin only). */
+export type PendingGymClaimsInput = {
+  /** Max claims to return */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Offset for pagination */
+  offset?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Input for pinning/unpinning a playlist. */
@@ -3734,6 +3863,8 @@ export type Query = {
    * empty list when the source is unavailable.
    */
   otaPreviewChannels: Array<OtaPreviewChannel>;
+  /** List pending gym ownership claims for the admin review queue (admin only). */
+  pendingGymClaims: GymClaimConnection;
   /**
    * Get a specific playlist by ID.
    * Checks ownership/access permissions.
@@ -4186,6 +4317,11 @@ export type QueryNotificationsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryPendingGymClaimsArgs = {
+  input?: InputMaybe<PendingGymClaimsInput>;
+};
+
+/** Root query type for all read operations. */
 export type QueryPlaylistArgs = {
   playlistId: Scalars['ID']['input'];
 };
@@ -4565,6 +4701,25 @@ export type ReorderPlaylistClimbInput = {
   playlistId: Scalars['ID']['input'];
 };
 
+/** Input for requesting ownership of a gym. */
+export type RequestGymClaimInput = {
+  /** Work email at the gym's website domain (domain-verified path). Omit to request admin review. */
+  claimEmail?: InputMaybe<Scalars['String']['input']>;
+  /** Gym UUID to claim */
+  gymUuid: Scalars['ID']['input'];
+  /** Optional note to the reviewer (admin-review path). */
+  message?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Result of requesting a gym claim. */
+export type RequestGymClaimResult = {
+  __typename?: 'RequestGymClaimResult';
+  /** The address a verification email was sent to (domain path only). */
+  email?: Maybe<Scalars['String']['output']>;
+  /** Which path the claim took. */
+  status: GymClaimRequestStatus;
+};
+
 /**
  * Result of resolving a BLE serial that may map to several boards. Exactly one
  * of `board` / `candidates` is set: `board` when the serial is unambiguous
@@ -4603,6 +4758,22 @@ export type ResolvedBoard = {
   setIds: Scalars['String']['output'];
   /** Size id */
   sizeId: Scalars['Int']['output'];
+};
+
+/** Input for an admin reviewing a pending gym claim. */
+export type ReviewGymClaimInput = {
+  /** Claim ID to review */
+  claimId: Scalars['ID']['input'];
+  /** Whether to approve (transfer ownership) or deny */
+  decision: GymClaimDecision;
+};
+
+/** Input for revoking a user's write (editor) access to a gym. */
+export type RevokeGymWriteAccessInput = {
+  /** Gym UUID */
+  gymUuid: Scalars['ID']['input'];
+  /** User ID to revoke write access from */
+  userId: Scalars['ID']['input'];
 };
 
 export type RevokeRoleInput = {
@@ -5813,6 +5984,8 @@ export type UpdateGymInput = {
   name?: InputMaybe<Scalars['String']['input']>;
   /** New slug */
   slug?: InputMaybe<Scalars['String']['input']>;
+  /** New website URL */
+  website?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Input for updating a playlist. */

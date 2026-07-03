@@ -489,6 +489,33 @@ export const mutationsTypeDefs = /* GraphQL */ `
     linkBoardToGym(input: LinkBoardToGymInput!): Boolean!
 
     """
+    Grant a user write (editor) access to a gym: edit details only, no
+    membership/board management, no delete. Callable by the gym owner, a gym
+    admin, or a community admin/leader for one of the gym's board types.
+    """
+    grantGymWriteAccess(input: GrantGymWriteAccessInput!): Boolean!
+
+    """
+    Revoke a user's write (editor) access to a gym. Only removes editors —
+    never a gym admin or plain member. Same authorization as grantGymWriteAccess.
+    """
+    revokeGymWriteAccess(input: RevokeGymWriteAccessInput!): Boolean!
+
+    """
+    Request ownership of a gym. With a matching work email at the gym's website
+    domain, a verification email is sent and clicking it transfers ownership.
+    Otherwise the claim is queued for admin review (and admin@boardsesh.com is
+    notified). Requires authentication.
+    """
+    requestGymClaim(input: RequestGymClaimInput!): RequestGymClaimResult!
+
+    """
+    Approve or deny a pending gym claim (admin only). Approving transfers
+    ownership to the claimant.
+    """
+    reviewGymClaim(input: ReviewGymClaimInput!): Boolean!
+
+    """
     Record that an explicitly-created session has been mirrored to Apple HealthKit,
     storing the workout UUID for de-duplication and UI status.
     Must be a participant of the session.

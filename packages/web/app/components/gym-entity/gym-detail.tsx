@@ -9,6 +9,7 @@ import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Divider from '@mui/material/Divider';
 import MuiButton from '@mui/material/Button';
+import MuiLink from '@mui/material/Link';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -16,8 +17,10 @@ import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
 import CircularProgress from '@mui/material/CircularProgress';
 import LocationOnOutlined from '@mui/icons-material/LocationOnOutlined';
+import LanguageOutlined from '@mui/icons-material/LanguageOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
+import VerifiedUserOutlined from '@mui/icons-material/VerifiedUserOutlined';
 import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
@@ -42,6 +45,7 @@ import { themeTokens } from '@/app/theme/theme-config';
 import FollowButton from '@/app/components/ui/follow-button';
 import EditGymForm from './edit-gym-form';
 import GymMemberManagement from './gym-member-management';
+import ClaimGymDialog from './claim-gym-dialog';
 import CommentSection from '@/app/components/social/comment-section';
 
 type GymDetailProps = {
@@ -60,6 +64,7 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showClaimDialog, setShowClaimDialog] = useState(false);
   const { token } = useWsAuthToken();
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
@@ -162,6 +167,20 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
                   </MuiTypography>
                 </Box>
               )}
+              {gym.website && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                  <LanguageOutlined sx={{ fontSize: 16, color: 'var(--neutral-400)' }} />
+                  <MuiLink
+                    href={gym.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="body2"
+                    underline="hover"
+                  >
+                    {gym.website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                  </MuiLink>
+                </Box>
+              )}
             </Box>
           </Box>
 
@@ -229,6 +248,17 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
                 {t('gymEntity.actions.edit')}
               </MuiButton>
             )}
+            {gym.canClaim && (
+              <MuiButton
+                variant="outlined"
+                size="small"
+                startIcon={<VerifiedUserOutlined />}
+                onClick={() => setShowClaimDialog(true)}
+                sx={{ textTransform: 'none' }}
+              >
+                {t('gymEntity.actions.claim')}
+              </MuiButton>
+            )}
             {isOwner && (
               <MuiButton
                 variant="outlined"
@@ -255,7 +285,14 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
 
         {/* Tab content */}
         <Box sx={{ flex: 1, overflow: 'auto', px: 2, py: 2 }}>
-          {activeTab === 0 && <GymMemberManagement gymUuid={gym.uuid} isOwnerOrAdmin={isOwnerOrAdmin} />}
+          {activeTab === 0 && (
+            <GymMemberManagement
+              gymUuid={gym.uuid}
+              isOwnerOrAdmin={isOwnerOrAdmin}
+              canGrantAccess={gym.canGrantAccess ?? false}
+              onMembersChanged={fetchGym}
+            />
+          )}
           {activeTab === 1 && (
             <CommentSection entityType="gym" entityId={gym.uuid} title={t('gymEntity.comments.title')} />
           )}
@@ -275,6 +312,17 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
       >
         {drawerContent}
       </SwipeableDrawer>
+
+      {/* Claim gym dialog */}
+      {gym && (
+        <ClaimGymDialog
+          gymUuid={gym.uuid}
+          gymName={gym.name}
+          website={gym.website}
+          open={showClaimDialog}
+          onClose={() => setShowClaimDialog(false)}
+        />
+      )}
 
       {/* Delete confirmation dialog */}
       <Dialog open={showDeleteDialog} onClose={() => setShowDeleteDialog(false)}>

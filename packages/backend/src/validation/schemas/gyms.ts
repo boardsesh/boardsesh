@@ -4,7 +4,7 @@ import { UUIDSchema, LatitudeSchema, LongitudeSchema, SlugSchema, BoardNameSchem
 /**
  * Gym member role validation schema
  */
-export const GymMemberRoleSchema = z.enum(['admin', 'member']);
+export const GymMemberRoleSchema = z.enum(['admin', 'editor', 'member']);
 
 /**
  * Create gym input validation schema
@@ -13,6 +13,7 @@ export const CreateGymInputSchema = z.object({
   name: z.string().min(1, 'Gym name cannot be empty').max(100, 'Gym name too long'),
   description: z.string().max(500, 'Description too long').optional(),
   address: z.string().max(300, 'Address too long').optional(),
+  website: z.string().url('Invalid website URL').max(500).optional(),
   contactEmail: z.string().email('Invalid email').max(200).optional(),
   contactPhone: z.string().max(30, 'Phone number too long').optional(),
   latitude: LatitudeSchema.optional(),
@@ -31,12 +32,54 @@ export const UpdateGymInputSchema = z.object({
   slug: SlugSchema.optional(),
   description: z.string().max(500).optional().nullable(),
   address: z.string().max(300).optional().nullable(),
+  website: z.string().url().max(500).optional().nullable(),
   contactEmail: z.string().email().max(200).optional().nullable(),
   contactPhone: z.string().max(30).optional().nullable(),
   latitude: LatitudeSchema.optional().nullable(),
   longitude: LongitudeSchema.optional().nullable(),
   isPublic: z.boolean().optional(),
   imageUrl: z.string().url().max(500).optional().nullable(),
+});
+
+/**
+ * Grant gym write (editor) access input validation schema
+ */
+export const GrantGymWriteAccessInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  userId: z.string().min(1, 'User ID cannot be empty'),
+});
+
+/**
+ * Revoke gym write (editor) access input validation schema
+ */
+export const RevokeGymWriteAccessInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  userId: z.string().min(1, 'User ID cannot be empty'),
+});
+
+/**
+ * Request gym claim input validation schema
+ */
+export const RequestGymClaimInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  claimEmail: z.string().email('Invalid email').max(200).optional(),
+  message: z.string().max(1000, 'Message too long').optional(),
+});
+
+/**
+ * Review gym claim input validation schema (admin)
+ */
+export const ReviewGymClaimInputSchema = z.object({
+  claimId: z.coerce.number().int().positive(),
+  decision: z.enum(['approve', 'deny']),
+});
+
+/**
+ * Pending gym claims list input validation schema (admin)
+ */
+export const PendingGymClaimsInputSchema = z.object({
+  limit: z.number().int().min(1).max(50).optional().default(20),
+  offset: z.number().int().min(0).optional().default(0),
 });
 
 /**

@@ -530,6 +530,11 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     gymMembers(input: GymMembersInput!): GymMemberConnection!
 
+    """
+    List pending gym ownership claims for the admin review queue (admin only).
+    """
+    pendingGymClaims(input: PendingGymClaimsInput): GymClaimConnection!
+
     # ============================================
     # Notification Queries (require auth)
     # ============================================
