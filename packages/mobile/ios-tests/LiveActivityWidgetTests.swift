@@ -190,6 +190,33 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertTrue(url?.absoluteString.contains("include_background=1") ?? false)
     }
 
+    // The disconnect-reason dict feeds the JS `disconnected` event
+    // (NativeBleDisconnectEvent) and, through it, the `Bluetooth Disconnected`
+    // analytics event — key names and the nil-for-clean contract are load-bearing.
+    func testDisconnectReasonBodyIsNilForCleanDisconnect() {
+        XCTAssertNil(BoardBleEncoding.disconnectReasonBody(from: nil))
+    }
+
+    func testDisconnectReasonBodyCarriesCBErrorFields() {
+        let timeout = BoardBleEncoding.disconnectReasonBody(from: CBError(.connectionTimeout))
+        XCTAssertEqual(timeout?["errorCode"] as? Int, CBError.connectionTimeout.rawValue)
+        XCTAssertEqual(timeout?["errorDomain"] as? String, CBErrorDomain)
+        XCTAssertFalse((timeout?["errorDescription"] as? String ?? "").isEmpty)
+        // The takeover-vs-idle distinction rides on the code: peer-terminated
+        // (another central grabbing the last-connection-wins board) must stay
+        // distinguishable from the range/idle timeout above.
+        let peerDropped = BoardBleEncoding.disconnectReasonBody(from: CBError(.peripheralDisconnected))
+        XCTAssertNotEqual(peerDropped?["errorCode"] as? Int, timeout?["errorCode"] as? Int)
+    }
+
+    func testDisconnectReasonBodyWrapsArbitraryNSError() {
+        let error = NSError(domain: "com.example.test", code: 42, userInfo: [NSLocalizedDescriptionKey: "boom"])
+        let body = BoardBleEncoding.disconnectReasonBody(from: error)
+        XCTAssertEqual(body?["errorCode"] as? Int, 42)
+        XCTAssertEqual(body?["errorDomain"] as? String, "com.example.test")
+        XCTAssertEqual(body?["errorDescription"] as? String, "boom")
+    }
+
     // The write type is gated on board family. Aurora (Kilter/Tension) drove the
     // wall with write-without-response through the entire Capacitor era and the
     // first RN port, so it ALWAYS takes that path — even when iOS reports the

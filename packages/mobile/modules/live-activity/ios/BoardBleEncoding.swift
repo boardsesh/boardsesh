@@ -116,6 +116,23 @@ enum BoardBleEncoding {
         "soill": commonAuroraRoleMap(),
     ]
 
+    /// Builds the JS-bound reason dict from a CoreBluetooth disconnect error.
+    /// Returns nil for a clean disconnect (no error) so the JS side reads a
+    /// missing reason as "iOS reported none" rather than a fabricated one. The
+    /// NSError `code` is the CBError.Code (e.g. 6 connectionTimeout, 7
+    /// peripheralDisconnected) that distinguishes a range/idle drop from a
+    /// peer-terminated link (another central taking the last-connection-wins board).
+    /// Keys must stay in sync with `NativeBleDisconnectEvent` in
+    /// `modules/live-activity/src/index.ts`.
+    static func disconnectReasonBody(from error: Error?) -> [String: Any]? {
+        guard let error = error as NSError? else { return nil }
+        return [
+            "errorCode": error.code,
+            "errorDomain": error.domain,
+            "errorDescription": error.localizedDescription,
+        ]
+    }
+
     static func parseApiLevel(deviceName: String?) -> Int {
         guard let deviceName else { return 2 }
         // Mirror the TS regex /@(\d+)/: the FIRST '@' immediately followed by one

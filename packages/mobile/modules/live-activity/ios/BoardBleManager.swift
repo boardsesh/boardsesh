@@ -748,6 +748,23 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // with a depleted budget (#3181).
             writeStallRecoveringPeripheralId = nil
             writeStallRecoveries = 0
+
+            // Below .poweredOn iOS invalidates every peripheral WITHOUT
+            // delivering didDisconnectPeripheral, so an active link vanishes
+            // silently — JS would keep showing "connected" until the next write
+            // failed. Surface it as an explicit disconnect with a context marker
+            // so analytics can tell bluetooth-off apart from a link loss.
+            if let peripheral = connectedPeripheral {
+                let deviceId = peripheral.identifier.uuidString
+                peripheralGenerations.removeValue(forKey: peripheral.identifier)
+                connectedPeripheral = nil
+                writeCharacteristic = nil
+                failQueuedWrites(BoardBleError.bluetoothUnavailable)
+                onDisconnect?(deviceId, [
+                    "context": "bluetooth_unavailable",
+                    "errorDescription": "central state \(central.state.rawValue)",
+                ])
+            }
         }
     }
 
@@ -856,21 +873,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         completePendingConnect(.failure(error ?? BoardBleError.notConnected))
     }
 
-    /// Builds the JS-bound reason dict from a CoreBluetooth disconnect error.
-    /// Returns nil for a clean disconnect (no error) so the JS side reads a
-    /// missing reason as "iOS reported none" rather than a fabricated one. The
-    /// NSError `code` is the CBError.Code (e.g. 6 connectionTimeout, 7
-    /// peripheralDisconnected) that distinguishes a range/idle drop from a
-    /// peer-terminated link (another central taking the last-connection-wins board).
-    private static func disconnectReasonBody(from error: Error?) -> [String: Any]? {
-        guard let error = error as NSError? else { return nil }
-        return [
-            "errorCode": error.code,
-            "errorDomain": error.domain,
-            "errorDescription": error.localizedDescription,
-        ]
-    }
-
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         let deviceId = peripheral.identifier.uuidString
         let wasCurrentPeripheral = connectedPeripheral?.identifier == peripheral.identifier
@@ -921,7 +923,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectedPeripheral = nil
         writeCharacteristic = nil
         failQueuedWrites(error ?? BoardBleError.notConnected)
-        onDisconnect?(deviceId, Self.disconnectReasonBody(from: error))
+        onDisconnect?(deviceId, BoardBleEncoding.disconnectReasonBody(from: error))
 
         // No auto-reconnect. These boards are last-connection-wins, so silently
         // re-grabbing the link would steal the wall back from whoever took it — a

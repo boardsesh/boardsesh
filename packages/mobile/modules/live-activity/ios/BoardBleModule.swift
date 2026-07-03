@@ -46,7 +46,9 @@ public class BoardBleModule: Module {
                 onDisconnect: { [weak self] deviceId, reason in
                     var body: [String: Any] = ["deviceId": deviceId]
                     if let reason {
-                        body.merge(reason) { _, new in new }
+                        // deviceId is authoritative — a reason dict must never
+                        // overwrite keys the event body already carries.
+                        body.merge(reason) { current, _ in current }
                     }
                     self?.emitOrBuffer(name: "disconnected", body: body)
                 },
