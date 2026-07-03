@@ -60,7 +60,7 @@ export type PickerResolutionStats = {
   matchedSelectedType: number;
   /** Listed devices whose effective board type is a KNOWN, different type. */
   mismatchedSelectedType: number;
-  /** Listed devices whose board type couldn't be determined at all. */
+  /** Listed devices whose type couldn't be determined (or with no selected board to compare). */
   unknownType: number;
   /**
    * True when a board is selected, devices were listed, yet none match the
@@ -103,7 +103,10 @@ export function summarizePickerResolution(
     const resolvedEntry = serial ? resolvedBoards.get(serial) : undefined;
 
     const deviceType = effectiveBoardType(device, resolvedBoards);
-    if (deviceType == null) {
+    if (deviceType == null || selectedType == null) {
+      // Type couldn't be determined, or there's no selected board to compare
+      // against — either way it's neither a match nor a mismatch. (No selected
+      // board doesn't happen from the picker, which always has an active board.)
       stats.unknownType += 1;
     } else if (deviceType === selectedType) {
       stats.matchedSelectedType += 1;

@@ -73,11 +73,11 @@ describe('summarizePickerResolution', () => {
       unresolvedWithSerial: 1,
       fallbackPreview: 0,
       noPreview: 2,
-      // No selected board: a known type can't "match", and noneMatched only
-      // applies when a board is selected.
+      // No selected board: nothing can be a match or a mismatch, so both listed
+      // devices land in unknownType; noneMatched only applies with a selection.
       matchedSelectedType: 0,
-      mismatchedSelectedType: 1,
-      unknownType: 1,
+      mismatchedSelectedType: 0,
+      unknownType: 2,
       noneMatchedSelectedType: false,
     });
   });
