@@ -162,6 +162,7 @@ function ascent(overrides: Partial<AscentFeedItem> = {}): AscentFeedItem {
 type RowHandlers = {
   onActivate?: (item: AscentFeedItem) => void;
   showBoardInMeta?: boolean;
+  groupTries?: number;
   onOpenActions?: (item: AscentFeedItem) => void;
   onEdit?: (item: AscentFeedItem) => void;
   onDeleteRequest?: (item: AscentFeedItem, method: 'swipe' | 'a11y') => void;
@@ -271,6 +272,19 @@ describe('LogbookRow — meta line', () => {
 
     const { container: uncovered } = renderRow(ascent({}));
     expect(uncovered.textContent).toContain('Kilter 40°');
+  });
+
+  it('renders the composite "Flash · N tries" label when a grouped flash day carries extra tries', () => {
+    const { container } = renderRow(ascent({ status: 'flash', attemptCount: 1 }), { groupTries: 5 });
+    expect(container.textContent).toContain('mobile.logbook.status.flash · mobile.logbook.tries:5');
+    expect(a11y.props?.accessibilityLabel).toContain('mobile.logbook.tries:5');
+  });
+
+  it('keeps a plain flash as a bare "Flash" with no tries part, in text and a11y', () => {
+    const { container } = renderRow(ascent({ status: 'flash', attemptCount: 1 }));
+    expect(container.textContent).toContain('mobile.logbook.status.flash');
+    expect(container.textContent).not.toContain('mobile.logbook.tries:1');
+    expect(a11y.props?.accessibilityLabel).not.toContain('mobile.logbook.tries');
   });
 
   it('clamps an imported 0-attempt send to 1 try', () => {

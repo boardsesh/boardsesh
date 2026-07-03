@@ -128,7 +128,6 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
           </Text>
         }
         renderItem={renderEntry}
-
       />
     </BottomSheetModal>
   );
