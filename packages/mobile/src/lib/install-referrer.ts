@@ -15,6 +15,15 @@ export const INSTALL_ATTRIBUTED_EVENT = 'Install Attributed';
 
 const INSTALL_REFERRER_FETCHED_KEY = 'installReferrerFetched';
 
+// In-memory guard against a concurrent overlapping call — e.g. if the mount
+// effect that drives this ever re-fires (remount, fast refresh) before the
+// first call's async preference read resolves. Without it, two concurrent
+// callers could both observe the persisted flag as unset and both invoke
+// fetchNative, doubling the native call and sending duplicate PostHog events.
+// The persisted flag alone still does the real "once ever" job across
+// launches; this only closes the same-process overlap window.
+let fetchInFlight = false;
+
 export type ParsedInstallReferrer = {
   raw: string;
   source: string | null;
@@ -43,6 +52,8 @@ export async function maybeFetchAndAttachInstallReferrer(
   fetchNative: () => Promise<NativeInstallReferrerResult | null> = () =>
     installReferrerNative?.getInstallReferrer() ?? Promise.resolve(null),
 ): Promise<void> {
+  if (fetchInFlight) return;
+  fetchInFlight = true;
   try {
     const alreadyFetched = await getPreference<boolean>(INSTALL_REFERRER_FETCHED_KEY);
     if (alreadyFetched) return;
@@ -85,5 +96,7 @@ export async function maybeFetchAndAttachInstallReferrer(
     // so a broken preference store / PostHog init doesn't fail this pipeline
     // invisibly.
     reportError(error);
+  } finally {
+    fetchInFlight = false;
   }
 }

@@ -115,6 +115,28 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
     expect(analytics.track).not.toHaveBeenCalled();
   });
 
+  it('ignores a concurrent overlapping call — only the first invocation reaches fetchNative', async () => {
+    let resolveFetch: (() => void) | undefined;
+    const fetchNative = vi.fn(
+      () =>
+        new Promise<null>((resolve) => {
+          resolveFetch = () => resolve(null);
+        }),
+    );
+
+    const first = maybeFetchAndAttachInstallReferrer(fetchNative);
+    // Give the first call's getPreference() microtask a chance to resolve and
+    // set fetchInFlight before the second call starts, mirroring a real
+    // remount racing the first mount's in-flight fetch.
+    await Promise.resolve();
+    const second = maybeFetchAndAttachInstallReferrer(fetchNative);
+
+    resolveFetch?.();
+    await Promise.all([first, second]);
+
+    expect(fetchNative).toHaveBeenCalledTimes(1);
+  });
+
   it('skips the native call entirely once already fetched', async () => {
     preferenceStore.values.set('installReferrerFetched', true);
     const fetchNative = vi.fn(async () => null);
