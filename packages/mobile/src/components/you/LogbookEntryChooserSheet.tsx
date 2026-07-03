@@ -17,8 +17,9 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { hapticSelection } from '../../lib/haptics';
 
 type LogbookEntryChooserSheetProps = {
-  /** The grouped day's entries, newest first. Always length > 1 (a single-entry
-   *  row acts directly and never opens the chooser). */
+  /** The grouped day's entries, newest first. Opens with length > 1 (a
+   *  single-entry row acts directly), but the sequential-delete flow prunes
+   *  entries in place, so the list can shrink to one before the sheet closes. */
   entries: AscentFeedItem[];
   /** What the pick routes to — worded in the title so the climber knows what
    *  tapping an entry will do. */
@@ -29,10 +30,13 @@ type LogbookEntryChooserSheetProps = {
 
 const chooserKeyExtractor = (entry: AscentFeedItem) => entry.uuid;
 
+// Same status iconography as the logbook rows (bolt / filled tick / X) — the
+// earlier outline-circle glyphs read as radio buttons and invited a
+// select-them-all mental model this one-at-a-time sheet doesn't have.
 const STATUS_ICON: Record<AscentFeedItem['status'], IconName> = {
   flash: 'flash',
-  send: 'tick.outline',
-  attempt: 'circle',
+  send: 'tick',
+  attempt: 'close',
 };
 
 /**
@@ -65,7 +69,7 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
           ? brandColors.warning
           : entry.status === 'send'
             ? brandColors.success
-            : iosSystemColors.systemGray;
+            : iosSystemColors.systemOrange;
       const quality = normalizeLogbookQuality(entry.quality);
       const timeLabel = parseTickTime(entry.climbedAt)
         .toDate()

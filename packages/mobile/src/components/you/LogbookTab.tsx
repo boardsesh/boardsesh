@@ -410,6 +410,16 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
             deleteFlowActiveRef.current = false;
             track(SHARED_EVENTS.LogbookEntryDeleted, { method, viaChooser });
             hapticSuccess();
+            // Sequential-delete flow: prune the deleted entry so the chooser
+            // stays open (even down to a single entry) while any remain, and
+            // closes itself once the day's group is emptied.
+            if (viaChooser) {
+              setChooser((current) => {
+                if (!current) return current;
+                const remainingEntries = current.entries.filter((chooserEntry) => chooserEntry.uuid !== targetUuid);
+                return remainingEntries.length > 0 ? { ...current, entries: remainingEntries } : null;
+              });
+            }
           },
           onError: () => {
             deleteFlowActiveRef.current = false;
@@ -445,13 +455,17 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   );
 
   // Chooser pick → route to the intent that opened it. Delete re-checks the
-  // single-flight guards the direct path enforces at swipe time.
+  // single-flight guards the direct path enforces at swipe time. For DELETE the
+  // chooser stays mounted through the confirm + mutation: a climber clearing a
+  // day's mislogs deletes sequentially without reopening the sheet — it prunes
+  // the deleted entry on success (see startGuardedDelete) and only closes when
+  // the group is empty or the sheet is dismissed.
   const handleChooserPick = useCallback(
     (entry: AscentFeedItem) => {
       const active = chooser;
-      setChooser(null);
       if (!active) return;
       if (active.intent === 'edit') {
+        setChooser(null);
         openEditSheet(entry);
         return;
       }

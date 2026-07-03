@@ -180,6 +180,9 @@ async function fireDeleteRequest(method: 'swipe' | 'a11y') {
 beforeEach(() => {
   analytics.track.mockClear();
   deleteTick.mutate.mockClear();
+  deleteTick.mutate.mockImplementation((_uuid: string, mutateOptions?: { onSuccess?: () => void }) => {
+    mutateOptions?.onSuccess?.();
+  });
   dialog.confirm.mockClear();
   dialog.confirm.mockImplementation(async () => true);
   toast.showToast.mockClear();
@@ -225,6 +228,22 @@ describe('LogbookTab grouped mode', () => {
     });
     expect(dialog.confirm).toHaveBeenCalledWith(expect.objectContaining({ destructive: true }));
     expect(deleteTick.mutate).toHaveBeenCalledWith('tick-burn', expect.anything());
+
+    // Sequential-delete flow: the sheet stays open with the deleted entry
+    // pruned (down to a single entry) so the next delete needs no reopen.
+    const remaining = chooser.props?.entries as Array<{ uuid: string }>;
+    expect(remaining.map((entry) => entry.uuid)).toEqual(['tick-send']);
+
+    // Deleting the last entry empties the group and the sheet closes itself:
+    // no re-render of the (cleared) capture stub means no sheet remounted.
+    chooser.props = null;
+    const onPickLast = onPickDelete;
+    await act(async () => {
+      onPickLast?.(GROUP_ITEMS[0]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(deleteTick.mutate).toHaveBeenCalledWith('tick-send', expect.anything());
+    expect(chooser.props).toBeNull();
   });
 
   it('routes edit on a multi-entry group through the chooser to the edit sheet', async () => {
@@ -244,7 +263,7 @@ describe('LogbookTab grouped mode', () => {
     expect(deleteTick.mutate).not.toHaveBeenCalled();
   });
 
-  it('does not delete when the confirm is cancelled after a chooser pick, and re-arms', async () => {
+  it('keeps the chooser open with all entries when the confirm is cancelled, ready for another pick', async () => {
     dialog.confirm.mockImplementationOnce(async () => false);
     render(createElement(LogbookTab, { userId: 'user-1' }));
 
@@ -258,12 +277,15 @@ describe('LogbookTab grouped mode', () => {
     expect(dialog.confirm).toHaveBeenCalled();
     expect(deleteTick.mutate).not.toHaveBeenCalled();
 
-    // deleteFlowActiveRef reset on the cancel path — a fresh gesture reopens
-    // the chooser. (Stub only captures on render; clear before re-firing.)
-    chooser.props = null;
-    await fireDeleteRequest('swipe');
-    const reopenedAfterCancel = chooser.props as Record<string, unknown> | null;
-    expect(reopenedAfterCancel).not.toBeNull();
+    // Cancel keeps the sheet open, nothing pruned — and deleteFlowActiveRef
+    // reset, so picking again goes straight back to a (now accepted) confirm.
+    const entriesAfterCancel = chooser.props?.entries as Array<{ uuid: string }>;
+    expect(entriesAfterCancel.map((entry) => entry.uuid)).toEqual(['tick-send', 'tick-burn']);
+    await act(async () => {
+      onPickCancelled?.(GROUP_ITEMS[1]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(deleteTick.mutate).toHaveBeenCalledWith('tick-burn', expect.anything());
   });
 
   it('re-arms the delete flow after the chooser is dismissed without a pick', async () => {
