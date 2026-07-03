@@ -536,7 +536,8 @@
       "emailLabel": "E-mail professionnel",
       "emailPlaceholder": "vous@{{domain}}",
       "submit": "Envoyer l’e-mail de vérification",
-      "sent": "Consultez votre boîte à {{email}} et cliquez sur le lien pour terminer."
+      "sent": "Consultez votre boîte à {{email}} et cliquez sur le lien pour terminer.",
+      "mismatch": "Cet e-mail n’est pas chez {{domain}}. Utilisez une adresse du domaine du site de la salle, ou demandez une vérification."
     },
     "admin": {
       "description": "Dites-nous que vous gérez {{gym}} et notre équipe examinera votre demande.",

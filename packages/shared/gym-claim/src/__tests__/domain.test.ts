@@ -25,12 +25,26 @@ describe('extractDomain', () => {
     expect(extractDomain('localhost')).toBeNull();
     expect(extractDomain('not a url')).toBeNull();
   });
+
+  it('rejects userinfo and non-http(s) schemes (defense-in-depth)', () => {
+    // Userinfo could mislead a viewer while hostname resolves elsewhere.
+    expect(extractDomain('https://victim.com@evil.com')).toBeNull();
+    expect(extractDomain('https://user:pass@gym.com')).toBeNull();
+    // Only http(s) is a real website.
+    expect(extractDomain('javascript:alert(1)')).toBeNull();
+    expect(extractDomain('data:text/html,x')).toBeNull();
+    expect(extractDomain('ftp://gym.com')).toBeNull();
+  });
 });
 
 describe('extractEmailDomain', () => {
   it('extracts the lowercased domain', () => {
     expect(extractEmailDomain('Manager@Bonsist.BG')).toBe('bonsist.bg');
     expect(extractEmailDomain('a.b+tag@sub.example.com')).toBe('sub.example.com');
+  });
+
+  it('strips a leading www. for parity with extractDomain', () => {
+    expect(extractEmailDomain('x@www.gym.com')).toBe('gym.com');
   });
 
   it('returns null for malformed addresses', () => {
@@ -56,6 +70,13 @@ describe('isClaimableDomain', () => {
     expect(isClaimableDomain('https://gmail.com')).toBe(false);
     expect(isClaimableDomain('gmail.com')).toBe(false);
     expect(isClaimableDomain('www.yahoo.com')).toBe(false);
+  });
+
+  it('is false for ISP webmail and shared page hosts', () => {
+    expect(isClaimableDomain('https://comcast.net')).toBe(false);
+    expect(isClaimableDomain('orange.fr')).toBe(false);
+    expect(isClaimableDomain('https://sites.google.com')).toBe(false);
+    expect(isClaimableDomain('mygym.wixsite.com')).toBe(false);
   });
 });
 

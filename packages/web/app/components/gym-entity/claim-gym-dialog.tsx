@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -14,7 +14,7 @@ import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutline';
-import { extractDomain, isClaimableDomain } from '@boardsesh/gym-claim';
+import { extractDomain, isClaimableDomain, emailDomainMatchesWebsite } from '@boardsesh/gym-claim';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
@@ -52,7 +52,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [adminSent, setAdminSent] = useState(false);
 
-  const reset = () => {
+  const reset = useCallback(() => {
     setMode(canUseDomain ? 'domain' : 'admin');
     setEmail('');
     setMessage('');
@@ -60,7 +60,13 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     setError(null);
     setSentTo(null);
     setAdminSent(false);
-  };
+  }, [canUseDomain]);
+
+  // A single GymDetail/ClaimGymDialog instance is reused across gyms, so re-init
+  // every time it opens — otherwise mode/inputs leak from the previously shown gym.
+  useEffect(() => {
+    if (open) reset();
+  }, [open, reset]);
 
   const handleClose = () => {
     reset();
@@ -89,6 +95,17 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
     }
   };
 
+  // Check the domain match client-side so es/fr users get a localized error
+  // instead of the backend's English message for the common mismatch case.
+  const submitDomainClaim = () => {
+    const trimmed = email.trim();
+    if (!emailDomainMatchesWebsite(trimmed, website)) {
+      setError(t('claimGym.domain.mismatch', { domain: domain ?? '' }));
+      return;
+    }
+    void submit({ input: { gymUuid, claimEmail: trimmed } });
+  };
+
   const succeeded = sentTo !== null || adminSent;
 
   let body: React.ReactNode;
@@ -110,7 +127,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
         <DialogContentText>{t('claimGym.admin.sent')}</DialogContentText>
       </Box>
     );
-  } else if (mode === 'domain' && domain) {
+  } else if (mode === 'domain' && canUseDomain && domain) {
     body = (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <DialogContentText>{t('claimGym.domain.description', { gym: gymName, domain })}</DialogContentText>
@@ -169,11 +186,11 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
 
   let primaryAction: React.ReactNode = null;
   if (!succeeded) {
-    if (mode === 'domain' && domain) {
+    if (mode === 'domain' && canUseDomain && domain) {
       primaryAction = (
         <MuiButton
           variant="contained"
-          onClick={() => submit({ input: { gymUuid, claimEmail: email.trim() } })}
+          onClick={submitDomainClaim}
           disabled={submitting || !email.trim()}
           sx={{ textTransform: 'none' }}
         >

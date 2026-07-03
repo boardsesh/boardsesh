@@ -7,13 +7,24 @@ import { UUIDSchema, LatitudeSchema, LongitudeSchema, SlugSchema, BoardNameSchem
 export const GymMemberRoleSchema = z.enum(['admin', 'editor', 'member']);
 
 /**
+ * Website URL: a valid http(s) URL. Rejecting other schemes (javascript:, data:)
+ * matters because the website is rendered as an href on web and is the basis for
+ * domain-verified ownership claims.
+ */
+export const GymWebsiteSchema = z
+  .string()
+  .url('Invalid website URL')
+  .max(500)
+  .refine((value) => /^https?:\/\//i.test(value), 'Website must start with http:// or https://');
+
+/**
  * Create gym input validation schema
  */
 export const CreateGymInputSchema = z.object({
   name: z.string().min(1, 'Gym name cannot be empty').max(100, 'Gym name too long'),
   description: z.string().max(500, 'Description too long').optional(),
   address: z.string().max(300, 'Address too long').optional(),
-  website: z.string().url('Invalid website URL').max(500).optional(),
+  website: GymWebsiteSchema.optional(),
   contactEmail: z.string().email('Invalid email').max(200).optional(),
   contactPhone: z.string().max(30, 'Phone number too long').optional(),
   latitude: LatitudeSchema.optional(),
@@ -32,7 +43,7 @@ export const UpdateGymInputSchema = z.object({
   slug: SlugSchema.optional(),
   description: z.string().max(500).optional().nullable(),
   address: z.string().max(300).optional().nullable(),
-  website: z.string().url().max(500).optional().nullable(),
+  website: GymWebsiteSchema.optional().nullable(),
   contactEmail: z.string().email().max(200).optional().nullable(),
   contactPhone: z.string().max(30).optional().nullable(),
   latitude: LatitudeSchema.optional().nullable(),

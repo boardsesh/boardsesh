@@ -91,6 +91,9 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
       void fetchGym();
       setIsEditing(false);
       setActiveTab(0);
+      // This is a single reused instance across gyms — clear per-gym dialog state.
+      setShowClaimDialog(false);
+      setShowDeleteDialog(false);
     }
   }, [open, fetchGym]);
 

@@ -31,11 +31,13 @@ vi.mock('../email/email-service', () => ({
   sendGymClaimVerificationEmail: vi.fn(() => Promise.resolve()),
   sendGymClaimAdminNotification: vi.fn(() => Promise.resolve()),
   sendGymClaimApprovedEmail: vi.fn(() => Promise.resolve()),
+  sendGymClaimOwnershipLostEmail: vi.fn(() => Promise.resolve()),
 }));
 import {
   sendGymClaimVerificationEmail,
   sendGymClaimAdminNotification,
   sendGymClaimApprovedEmail,
+  sendGymClaimOwnershipLostEmail,
 } from '../email/email-service';
 
 // The system/import owner — a real prior owner is kept on as a gym admin after a
@@ -89,11 +91,12 @@ const insertGym = async (opts: {
   name: string;
   uuid?: string;
   website?: string | null;
+  isPublic?: boolean;
 }): Promise<{ id: number; uuid: string }> => {
-  const { ownerId, name, uuid = uuidv4(), website = null } = opts;
+  const { ownerId, name, uuid = uuidv4(), website = null, isPublic = true } = opts;
   const result = await db.execute(sql`
     INSERT INTO gyms (uuid, name, slug, owner_id, website, is_public, created_at, updated_at)
-    VALUES (${uuid}, ${name}, ${uuid}, ${ownerId}, ${website}, true, now(), now())
+    VALUES (${uuid}, ${name}, ${uuid}, ${ownerId}, ${website}, ${isPublic}, now(), now())
     RETURNING id
   `);
   return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
@@ -424,7 +427,13 @@ describe('requestGymClaim — domain path', () => {
     expect(new Date(rows[0].expires_at as string).getTime()).toBeGreaterThan(Date.now());
 
     expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
-    expect(sendGymClaimVerificationEmail).toHaveBeenCalledWith('manager@bonsist.bg', expect.any(String), 'Bonsist');
+    // Args: (email, token, gymName, claimantName) — the claimant is named for informed consent.
+    expect(sendGymClaimVerificationEmail).toHaveBeenCalledWith(
+      'manager@bonsist.bg',
+      expect.any(String),
+      'Bonsist',
+      expect.any(String),
+    );
   });
 
   it('throws when the email domain does not match the gym website', async () => {
@@ -507,7 +516,7 @@ describe('applyGymClaim / verifyGymClaimByToken — ownership transfer', () => {
     expect(claimRow).toBeDefined();
 
     const applied = await applyGymClaim(claimRow);
-    expect(applied).toEqual({ gymName: 'Real Gym', claimEmail: 'boss@realgym.com' });
+    expect(applied).toEqual({ gymName: 'Real Gym', claimEmail: 'boss@realgym.com', priorOwnerId: PRIOR_OWNER });
 
     expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
     // Prior owner kept on as a gym admin.
@@ -579,6 +588,8 @@ describe('reviewGymClaim (admin-gated)', () => {
     expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
     expect(await gymMemberRole(claimGym.id, PRIOR_OWNER)).toBe('admin');
     expect(await claimStatus(claimId)).toBe('approved');
+    // The displaced real owner is notified.
+    expect(sendGymClaimOwnershipLostEmail).toHaveBeenCalledWith(`${PRIOR_OWNER}@test.com`, 'Approve Gym');
   });
 
   it('admin deny marks the claim denied without transferring', async () => {
@@ -615,5 +626,149 @@ describe('pendingGymClaims (admin-gated)', () => {
     expect(result.claims).toHaveLength(2);
     expect(result.claims.every((claim) => claim.status === 'pending')).toBe(true);
     expect(result.claims.map((claim) => claim.gymName).sort()).toEqual(['Pending A', 'Pending B']);
+  });
+});
+
+// ============================================================================
+// Security regressions (review findings)
+// ============================================================================
+
+describe('claim security hardening', () => {
+  it('blocks the domain path for anyone who can already edit the gym (privilege-escalation guard)', async () => {
+    // A gym with a kilter board so a kilter community_leader covers it, plus a website.
+    const claimGym = await insertGym({
+      ownerId: PRIOR_OWNER,
+      name: 'Escalate Gym',
+      website: 'https://www.escalate.com',
+    });
+    await insertBoard(claimGym.id, PRIOR_OWNER, 'kilter');
+
+    // A covering community leader could rewrite `website` then self-claim — refuse the domain path.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'me@escalate.com' } },
+        authCtx(KILTER_LEADER),
+      ),
+    ).rejects.toThrow(/already have edit access/);
+
+    // Same for a gym editor member.
+    await insertGymMember(claimGym.id, EDITOR_TARGET, 'editor');
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'me@escalate.com' } },
+        authCtx(EDITOR_TARGET),
+      ),
+    ).rejects.toThrow(/already have edit access/);
+
+    // And a gym admin member (of THIS gym).
+    await insertGymMember(claimGym.id, GYM_ADMIN_MEMBER, 'admin');
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'me@escalate.com' } },
+        authCtx(GYM_ADMIN_MEMBER),
+      ),
+    ).rejects.toThrow(/already have edit access/);
+
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+
+    // A plain user with no edit access can still domain-claim.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'me@escalate.com' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'email_sent', email: 'me@escalate.com' });
+  });
+
+  it('refuses to claim a private gym', async () => {
+    const privateGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Private Gym', isPublic: false });
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: privateGym.uuid, message: 'mine' } },
+        authCtx(CLAIMANT),
+      ),
+    ).rejects.toThrow(/private/);
+  });
+
+  it('keeps domain claims out of the admin queue and unapprovable by an admin', async () => {
+    const claimGym = await insertGym({
+      ownerId: PRIOR_OWNER,
+      name: 'Domain Only',
+      website: 'https://www.domainonly.com',
+    });
+    const domainClaimId = await insertClaim({
+      gymId: claimGym.id,
+      claimantUserId: CLAIMANT,
+      method: 'domain',
+      status: 'pending',
+      claimEmail: 'x@domainonly.com',
+      tokenHash: hashClaimToken('dtok'),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+
+    // Not listed in the admin review queue (domain claims self-verify).
+    const queue = await socialGymClaimQueries.pendingGymClaims(null, { input: {} }, authCtx(GLOBAL_ADMIN));
+    expect(queue.claims.some((claim) => claim.id === String(domainClaimId))).toBe(false);
+
+    // An admin cannot approve it by id — bypassing the domain proof.
+    await expect(
+      socialGymClaimMutations.reviewGymClaim(
+        null,
+        { input: { claimId: domainClaimId, decision: 'approve' } },
+        authCtx(GLOBAL_ADMIN),
+      ),
+    ).rejects.toThrow(/not found or already resolved/);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(PRIOR_OWNER);
+  });
+
+  it('rejects granting write access to the gym owner', async () => {
+    await expect(
+      socialGymMutations.grantGymWriteAccess(null, { input: { gymUuid, userId: OWNER } }, authCtx(GLOBAL_ADMIN)),
+    ).rejects.toThrow(/owner already has full access/);
+    expect(await gymMemberRole(gymId, OWNER)).toBeNull();
+  });
+
+  it('does not re-send a verification email for a duplicate pending domain claim', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Dedupe Gym', website: 'https://www.dedupe.com' });
+    const input = { gymUuid: claimGym.uuid, claimEmail: 'me@dedupe.com' };
+
+    await socialGymClaimMutations.requestGymClaim(null, { input }, authCtx(CLAIMANT));
+    await socialGymClaimMutations.requestGymClaim(null, { input }, authCtx(CLAIMANT));
+
+    // Second identical request is a no-op re-send; still one row, one email.
+    expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+    const [countRow] = Array.from(
+      (await db.execute(sql`SELECT count(*)::int AS c FROM gym_claims WHERE gym_id = ${claimGym.id}`)) as Iterable<{
+        c: number;
+      }>,
+    );
+    expect(Number(countRow.c)).toBe(1);
+  });
+
+  it('upgrades (not preserves) a prior owner who already had a lower-role membership row to admin', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Upgrade Gym', website: 'https://www.upgrade.com' });
+    // Contrived: the prior owner also has a stale lower-role membership row.
+    await insertGymMember(claimGym.id, PRIOR_OWNER, 'member');
+    const claimId = await insertClaim({
+      gymId: claimGym.id,
+      claimantUserId: CLAIMANT,
+      method: 'domain',
+      status: 'pending',
+      claimEmail: 'x@upgrade.com',
+      tokenHash: hashClaimToken('utok'),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+
+    await verifyGymClaimByToken('utok');
+
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+    // Upgraded to admin, not left at 'member'.
+    expect(await gymMemberRole(claimGym.id, PRIOR_OWNER)).toBe('admin');
+    expect(await claimStatus(claimId)).toBe('approved');
   });
 });

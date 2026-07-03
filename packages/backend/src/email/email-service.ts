@@ -59,6 +59,16 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => htmlEscapes[char]);
 }
 
+// Strip CR/LF (and collapse whitespace) before interpolating user text into a
+// header like the subject. Nodemailer already encodes headers, but this is cheap
+// defense-in-depth against header injection.
+function headerSafe(text: string): string {
+  return text
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+    .slice(0, 200);
+}
+
 function fromAddress(): string | undefined {
   return process.env.EMAIL_FROM || process.env.SMTP_USER;
 }
@@ -79,35 +89,44 @@ function shell(heading: string, body: string): string {
 /**
  * Send the domain-verification email for a gym claim. Clicking the link proves
  * the claimant controls an address at the gym's website domain and transfers
- * ownership.
+ * ownership TO THE CLAIMANT. The email names the requester so a recipient who
+ * isn't them won't hand over the gym (guards against a confused-deputy transfer
+ * to a third party who supplied someone else's work address).
  */
-export async function sendGymClaimVerificationEmail(email: string, token: string, gymName: string): Promise<void> {
+export async function sendGymClaimVerificationEmail(
+  email: string,
+  token: string,
+  gymName: string,
+  claimantName: string,
+): Promise<void> {
   const validatedEmail = emailSchema.parse(email);
   const verifyUrl = `${backendPublicUrl()}/api/gym-claims/verify?token=${encodeURIComponent(token)}`;
   const safeUrl = escapeHtml(verifyUrl);
   const safeGym = escapeHtml(gymName);
+  const safeClaimant = escapeHtml(claimantName);
 
   await getTransporter().sendMail({
     from: fromAddress(),
     to: validatedEmail,
-    subject: `Verify your ownership of ${gymName} on Boardsesh`,
+    subject: headerSafe(`Confirm the ownership claim for ${gymName} on Boardsesh`),
     html: shell(
-      'Claim your gym',
+      'Confirm a gym ownership claim',
       `
       <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
-        Confirm you manage <strong>${safeGym}</strong> to take ownership of its Boardsesh listing.
-        Click below and it's yours.
+        <strong>${safeClaimant}</strong> is claiming ownership of <strong>${safeGym}</strong> on Boardsesh.
+        If that's you, confirm below and the listing is yours.
       </p>
       ${button(safeUrl, 'Confirm ownership')}
       <p style="color: ${colors.textSecondary}; font-size: 14px; margin-top: 24px;">Or paste this link into your browser:</p>
       <p style="color: ${colors.primary}; font-size: 14px; word-break: break-all;">${safeUrl}</p>
       <hr style="border: none; border-top: 1px solid ${colors.border}; margin: 32px 0;" />
       <p style="color: ${colors.textMuted}; font-size: 12px;">
-        This link expires in 24 hours. If you didn't request this, you can ignore this email.
+        This link expires in 24 hours. Clicking it transfers ${safeGym} to ${safeClaimant}'s Boardsesh account.
+        If you don't recognise this request, ignore this email — nothing changes.
       </p>
     `,
     ),
-    text: `Confirm you manage ${gymName} to take ownership of its Boardsesh listing:\n\n${verifyUrl}\n\nThis link expires in 24 hours. If you didn't request this, you can ignore this email.`,
+    text: `${claimantName} is claiming ownership of ${gymName} on Boardsesh. If that's you, confirm here (this transfers the listing to ${claimantName}'s account):\n\n${verifyUrl}\n\nThis link expires in 24 hours. If you don't recognise this request, ignore this email.`,
   });
 }
 
@@ -130,7 +149,7 @@ export async function sendGymClaimAdminNotification(details: {
   await getTransporter().sendMail({
     from: fromAddress(),
     to: ADMIN_NOTIFICATION_EMAIL,
-    subject: `Gym claim to review: ${details.gymName}`,
+    subject: headerSafe(`Gym claim to review: ${details.gymName}`),
     html: shell(
       'New gym claim',
       `
@@ -159,7 +178,7 @@ export async function sendGymClaimApprovedEmail(email: string, gymName: string):
     await getTransporter().sendMail({
       from: fromAddress(),
       to: validatedEmail,
-      subject: `You now own ${gymName} on Boardsesh`,
+      subject: headerSafe(`You now own ${gymName} on Boardsesh`),
       html: shell(
         `${safeGym} is yours`,
         `
@@ -173,5 +192,35 @@ export async function sendGymClaimApprovedEmail(email: string, gymName: string):
     });
   } catch (error) {
     logger.warn('[GymClaim] Failed to send approval email:', error instanceof Error ? error.message : error);
+  }
+}
+
+/**
+ * Heads-up to a previous owner whose gym was claimed by someone who verified
+ * control of the gym's domain (or was approved by an admin). They're kept on as
+ * a gym admin, so this is transparency, not a lockout. Best-effort.
+ */
+export async function sendGymClaimOwnershipLostEmail(email: string, gymName: string): Promise<void> {
+  try {
+    const validatedEmail = emailSchema.parse(email);
+    const safeGym = escapeHtml(gymName);
+    await getTransporter().sendMail({
+      from: fromAddress(),
+      to: validatedEmail,
+      subject: headerSafe(`Ownership of ${gymName} was transferred on Boardsesh`),
+      html: shell(
+        'A gym you owned was claimed',
+        `
+        <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
+          Someone verified they manage <strong>${safeGym}</strong> and took over its Boardsesh listing.
+          You're still a gym admin, so you can keep editing it. If this looks wrong, reply to this email
+          and our team will take a look.
+        </p>
+      `,
+      ),
+      text: `Someone verified they manage ${gymName} and took over its Boardsesh listing. You're still a gym admin and can keep editing it. If this looks wrong, reply and our team will take a look.`,
+    });
+  } catch (error) {
+    logger.warn('[GymClaim] Failed to send ownership-lost email:', error instanceof Error ? error.message : error);
   }
 }

@@ -536,7 +536,8 @@
       "emailLabel": "Correo de trabajo",
       "emailPlaceholder": "tu@{{domain}}",
       "submit": "Enviar correo de verificación",
-      "sent": "Revisa tu bandeja en {{email}} y haz clic en el enlace para terminar."
+      "sent": "Revisa tu bandeja en {{email}} y haz clic en el enlace para terminar.",
+      "mismatch": "Ese correo no es de {{domain}}. Usa una dirección del dominio del sitio web del gimnasio, o solicita una revisión."
     },
     "admin": {
       "description": "Dinos que gestionas {{gym}} y nuestro equipo revisará tu solicitud.",

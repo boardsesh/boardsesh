@@ -287,6 +287,24 @@ async function hasGymCommunityAccess(gym: typeof dbSchema.gyms.$inferSelect, use
 }
 
 /**
+ * Whether a user already has edit access to a gym (owner, gym admin/editor
+ * member, or a covering community admin/leader). Exported so the claim flow can
+ * refuse the self-service domain path to anyone who can already edit the gym's
+ * `website` — otherwise they could rewrite it and self-verify into ownership.
+ */
+export async function userCanEditGym(gym: typeof dbSchema.gyms.$inferSelect, userId: string): Promise<boolean> {
+  if (gym.ownerId === userId) return true;
+  const [member] = await db
+    .select({ role: dbSchema.gymMembers.role })
+    .from(dbSchema.gymMembers)
+    .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, userId)))
+    .limit(1);
+  const role = member?.role as GymMemberRole | undefined;
+  if (role === 'admin' || role === 'editor') return true;
+  return hasGymCommunityAccess(gym, userId);
+}
+
+/**
  * Gate for gym MANAGEMENT (add/remove members, link boards): owner or gym admin
  * member only. Community moderators are intentionally excluded here — otherwise
  * a board-type-scoped role could self-promote to a persistent gym admin (a
@@ -824,6 +842,12 @@ export const socialGymMutations = {
 
     if (!targetUser) {
       throw new Error('User not found');
+    }
+
+    // The owner already has full access; granting them "editor" would plant a
+    // stale member row that a later ownership change could misread.
+    if (validatedInput.userId === gym.ownerId) {
+      throw new Error('The gym owner already has full access');
     }
 
     // Upsert an editor row. Never downgrade an existing admin — only promote a

@@ -536,7 +536,8 @@
       "emailLabel": "Work email",
       "emailPlaceholder": "you@{{domain}}",
       "submit": "Send verification email",
-      "sent": "Check your inbox at {{email}} and click the link to finish."
+      "sent": "Check your inbox at {{email}} and click the link to finish.",
+      "mismatch": "That email isn’t at {{domain}}. Use an address at the gym’s website domain, or request a review instead."
     },
     "admin": {
       "description": "Tell us you manage {{gym}} and our team will review your claim.",

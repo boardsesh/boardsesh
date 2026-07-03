@@ -50,6 +50,66 @@ export const FREE_EMAIL_PROVIDERS: ReadonlySet<string> = new Set([
   'qq.com',
   '163.com',
   '126.com',
+  // ISP / country webmail
+  'comcast.net',
+  'verizon.net',
+  'att.net',
+  'sbcglobal.net',
+  'cox.net',
+  'orange.fr',
+  'wanadoo.fr',
+  'free.fr',
+  'sfr.fr',
+  'laposte.net',
+  'yahoo.fr',
+  'yahoo.de',
+  'yahoo.co.jp',
+  'yahoo.es',
+  'yahoo.it',
+  'yahoo.ca',
+  'yahoo.com.br',
+  'yahoo.com.au',
+  't-online.de',
+  'gmx.at',
+  'gmx.ch',
+  'freenet.de',
+  'libero.it',
+  'virgilio.it',
+  'seznam.cz',
+  'naver.com',
+  'daum.net',
+  'hanmail.net',
+  'rediffmail.com',
+  'wp.pl',
+  'o2.pl',
+  'interia.pl',
+  'bell.net',
+  'rogers.com',
+  'shaw.ca',
+  'telus.net',
+  'bigpond.com',
+  'btinternet.com',
+  'ntlworld.com',
+  'blueyonder.co.uk',
+  'ukr.net',
+  'inbox.ru',
+  'bk.ru',
+  'list.ru',
+  // Shared website / page hosts — anyone can get a mailbox/subdomain here, so a
+  // gym whose "website" is one of these can't be domain-proof claimed.
+  'sites.google.com',
+  'wixsite.com',
+  'blogspot.com',
+  'wordpress.com',
+  'weebly.com',
+  'squarespace.com',
+  'godaddysites.com',
+  'business.site',
+  'myshopify.com',
+  'github.io',
+  'netlify.app',
+  'vercel.app',
+  'linktr.ee',
 ]);
 
 /**
@@ -67,14 +127,20 @@ export function extractDomain(websiteUrl: string | null | undefined): string | n
   // Prepend a scheme so bare hostnames parse through the URL constructor.
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 
-  let hostname: string;
+  let url: URL;
   try {
-    hostname = new URL(withScheme).hostname;
+    url = new URL(withScheme);
   } catch {
     return null;
   }
 
-  const normalized = hostname.toLowerCase().replace(/^www\./, '');
+  // A website URL must be http(s) — never javascript:/data:/etc. — and must not
+  // carry userinfo (`https://victim.com@evil.com`), which would let the visible
+  // host mislead a viewer while `hostname` resolves elsewhere.
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (url.username || url.password) return null;
+
+  const normalized = url.hostname.toLowerCase().replace(/^www\./, '');
   // A real domain has at least one dot (`example.com`); reject bare labels.
   if (!normalized || !normalized.includes('.')) return null;
   return normalized;
@@ -88,18 +154,33 @@ export function extractEmailDomain(email: string | null | undefined): string | n
   const trimmed = email.trim().toLowerCase();
   const atIndex = trimmed.lastIndexOf('@');
   if (atIndex <= 0 || atIndex === trimmed.length - 1) return null;
-  const domain = trimmed.slice(atIndex + 1);
+  // Strip a leading `www.` so it matches extractDomain (which strips it too),
+  // otherwise `x@www.gym.com` would fail to verify against website `gym.com`.
+  const domain = trimmed.slice(atIndex + 1).replace(/^www\./, '');
   if (!domain.includes('.') || /\s/.test(domain)) return null;
   return domain;
 }
 
 /**
+ * Whether a domain is (a subdomain of) a free/consumer provider or shared host.
+ * Subdomain-aware so shared page hosts like `mygym.wixsite.com` are caught, not
+ * just the bare `wixsite.com`. `notgmail.com` does NOT match `gmail.com` (the
+ * dot boundary is required).
+ */
+function isFreeProviderDomain(domain: string): boolean {
+  for (const provider of FREE_EMAIL_PROVIDERS) {
+    if (domain === provider || domain.endsWith(`.${provider}`)) return true;
+  }
+  return false;
+}
+
+/**
  * Whether a website's domain is usable for domain-proof claims: it parses to a
- * real domain and isn't a free/consumer email provider.
+ * real domain and isn't a free/consumer email provider or shared page host.
  */
 export function isClaimableDomain(websiteUrl: string | null | undefined): boolean {
   const domain = extractDomain(websiteUrl);
-  return domain !== null && !FREE_EMAIL_PROVIDERS.has(domain);
+  return domain !== null && !isFreeProviderDomain(domain);
 }
 
 /**
@@ -115,6 +196,6 @@ export function emailDomainMatchesWebsite(
   const websiteDomain = extractDomain(websiteUrl);
   const emailDomain = extractEmailDomain(email);
   if (!websiteDomain || !emailDomain) return false;
-  if (FREE_EMAIL_PROVIDERS.has(emailDomain)) return false;
+  if (isFreeProviderDomain(emailDomain)) return false;
   return emailDomain === websiteDomain;
 }

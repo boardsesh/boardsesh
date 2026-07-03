@@ -6,6 +6,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { requireAdmin } from './roles';
+import { userCanEditGym } from './gyms';
 import {
   RequestGymClaimInputSchema,
   ReviewGymClaimInputSchema,
@@ -16,6 +17,7 @@ import {
   sendGymClaimVerificationEmail,
   sendGymClaimAdminNotification,
   sendGymClaimApprovedEmail,
+  sendGymClaimOwnershipLostEmail,
 } from '../../../email/email-service';
 
 const CLAIM_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -25,16 +27,20 @@ export function hashClaimToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+type ClaimApplied = { gymName: string; claimEmail: string | null; priorOwnerId: string | null };
+
 /**
- * Apply a claim: transfer gym ownership to the claimant. A real prior owner (not
- * the system/import user) is kept on as a gym admin so they don't lose access.
- * Marks the claim approved. Returns the gym name + claim email for the follow-up
- * notification, or null if the gym vanished.
+ * Apply a claim: transfer gym ownership to the claimant. The pending row is
+ * flipped to `approved` atomically first — if another transaction already
+ * resolved it (double-clicked verify link, concurrent admin approval), this
+ * returns null and does nothing, so the transfer + emails happen exactly once.
+ * A real prior owner (not the system/import user) is kept on as a gym admin and
+ * reported back so they can be notified. Returns null if the gym vanished.
  */
 export async function applyGymClaim(
   claim: typeof dbSchema.gymClaims.$inferSelect,
   reviewerId?: string,
-): Promise<{ gymName: string; claimEmail: string | null } | null> {
+): Promise<ClaimApplied | null> {
   return db.transaction(async (tx) => {
     const [gym] = await tx
       .select()
@@ -43,8 +49,17 @@ export async function applyGymClaim(
       .limit(1);
     if (!gym) return null;
 
+    // Claim the pending row atomically; 0 rows means someone else already resolved it.
+    const flipped = await tx
+      .update(dbSchema.gymClaims)
+      .set({ status: 'approved', reviewedBy: reviewerId ?? null, updatedAt: new Date() })
+      .where(and(eq(dbSchema.gymClaims.id, claim.id), eq(dbSchema.gymClaims.status, 'pending')))
+      .returning({ id: dbSchema.gymClaims.id });
+    if (flipped.length === 0) return null;
+
     const priorOwnerId = gym.ownerId;
     const claimantId = claim.claimantUserId;
+    let notifyPriorOwnerId: string | null = null;
 
     if (priorOwnerId !== claimantId) {
       await tx
@@ -53,11 +68,16 @@ export async function applyGymClaim(
         .where(eq(dbSchema.gyms.id, gym.id));
 
       // Keep a real prior owner on as a gym admin (never the system import user).
+      // Upsert to admin so an existing lower-role membership row is upgraded, not left behind.
       if (priorOwnerId !== SYSTEM_BOARD_OWNER_ID) {
         await tx
           .insert(dbSchema.gymMembers)
           .values({ gymId: gym.id, userId: priorOwnerId, role: 'admin' })
-          .onConflictDoNothing();
+          .onConflictDoUpdate({
+            target: [dbSchema.gymMembers.gymId, dbSchema.gymMembers.userId],
+            set: { role: 'admin' },
+          });
+        notifyPriorOwnerId = priorOwnerId;
       }
 
       // The claimant is the owner now; drop any leftover membership row for them.
@@ -66,13 +86,25 @@ export async function applyGymClaim(
         .where(and(eq(dbSchema.gymMembers.gymId, gym.id), eq(dbSchema.gymMembers.userId, claimantId)));
     }
 
-    await tx
-      .update(dbSchema.gymClaims)
-      .set({ status: 'approved', reviewedBy: reviewerId ?? null, updatedAt: new Date() })
-      .where(eq(dbSchema.gymClaims.id, claim.id));
-
-    return { gymName: gym.name, claimEmail: claim.claimEmail };
+    return { gymName: gym.name, claimEmail: claim.claimEmail, priorOwnerId: notifyPriorOwnerId };
   });
+}
+
+/** Fire the post-transfer notifications (best-effort): claimant gets a confirmation, the displaced owner a heads-up. */
+async function notifyClaimApplied(result: ClaimApplied): Promise<void> {
+  if (result.claimEmail) {
+    void sendGymClaimApprovedEmail(result.claimEmail, result.gymName);
+  }
+  if (result.priorOwnerId) {
+    const [prior] = await db
+      .select({ email: dbSchema.users.email })
+      .from(dbSchema.users)
+      .where(eq(dbSchema.users.id, result.priorOwnerId))
+      .limit(1);
+    if (prior?.email) {
+      void sendGymClaimOwnershipLostEmail(prior.email, result.gymName);
+    }
+  }
 }
 
 /**
@@ -98,29 +130,49 @@ export async function verifyGymClaimByToken(
     await db
       .update(dbSchema.gymClaims)
       .set({ status: 'expired', updatedAt: new Date() })
-      .where(eq(dbSchema.gymClaims.id, claim.id));
+      .where(and(eq(dbSchema.gymClaims.id, claim.id), eq(dbSchema.gymClaims.status, 'pending')));
     return { ok: false, reason: 'expired' };
   }
 
   const result = await applyGymClaim(claim);
-  if (!result) return { ok: false, reason: 'invalid' };
-  if (result.claimEmail) {
-    void sendGymClaimApprovedEmail(result.claimEmail, result.gymName);
-  }
+  if (!result) return { ok: false, reason: 'used' };
+  await notifyClaimApplied(result);
   return { ok: true, gymName: result.gymName };
 }
 
-/** Remove any open (pending) claim this user already has on this gym, so a new one is the only live claim. */
-async function clearPendingClaims(gymId: number, claimantUserId: string): Promise<void> {
-  await db
-    .delete(dbSchema.gymClaims)
+/** The single pending claim (if any) this user has on this gym. */
+async function findPendingClaim(
+  gymId: number,
+  claimantUserId: string,
+): Promise<typeof dbSchema.gymClaims.$inferSelect | undefined> {
+  const [existing] = await db
+    .select()
+    .from(dbSchema.gymClaims)
     .where(
       and(
         eq(dbSchema.gymClaims.gymId, gymId),
         eq(dbSchema.gymClaims.claimantUserId, claimantUserId),
         eq(dbSchema.gymClaims.status, 'pending'),
       ),
-    );
+    )
+    .limit(1);
+  return existing;
+}
+
+/** Atomically replace this user's pending claim on this gym with a fresh row. */
+async function replacePendingClaim(values: typeof dbSchema.gymClaims.$inferInsert): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(dbSchema.gymClaims)
+      .where(
+        and(
+          eq(dbSchema.gymClaims.gymId, values.gymId),
+          eq(dbSchema.gymClaims.claimantUserId, values.claimantUserId),
+          eq(dbSchema.gymClaims.status, 'pending'),
+        ),
+      );
+    await tx.insert(dbSchema.gymClaims).values(values);
+  });
 }
 
 export const socialGymClaimQueries = {
@@ -130,10 +182,11 @@ export const socialGymClaimQueries = {
     const limit = validatedInput.limit ?? 20;
     const offset = validatedInput.offset ?? 0;
 
-    const [countResult] = await db
-      .select({ count: count() })
-      .from(dbSchema.gymClaims)
-      .where(eq(dbSchema.gymClaims.status, 'pending'));
+    // Only admin-method claims belong in the review queue — domain claims
+    // self-verify via the emailed link and must never be admin-approvable.
+    const pendingAdminClaims = and(eq(dbSchema.gymClaims.status, 'pending'), eq(dbSchema.gymClaims.method, 'admin'));
+
+    const [countResult] = await db.select({ count: count() }).from(dbSchema.gymClaims).where(pendingAdminClaims);
     const totalCount = Number(countResult?.count || 0);
 
     const rows = await db
@@ -156,7 +209,7 @@ export const socialGymClaimQueries = {
       .innerJoin(dbSchema.gyms, eq(dbSchema.gymClaims.gymId, dbSchema.gyms.id))
       .leftJoin(dbSchema.users, eq(dbSchema.gymClaims.claimantUserId, dbSchema.users.id))
       .leftJoin(dbSchema.userProfiles, eq(dbSchema.gymClaims.claimantUserId, dbSchema.userProfiles.userId))
-      .where(eq(dbSchema.gymClaims.status, 'pending'))
+      .where(pendingAdminClaims)
       .orderBy(desc(dbSchema.gymClaims.createdAt))
       .limit(limit)
       .offset(offset);
@@ -198,9 +251,24 @@ export const socialGymClaimMutations = {
     if (gym.ownerId === userId) {
       throw new Error('You already own this gym');
     }
+    // Claims are for public listings only. A private gym is someone's personal
+    // record, not a listing to be taken over.
+    if (!gym.isPublic) {
+      throw new Error('This gym is private and cannot be claimed');
+    }
+
+    const claimantName = await loadClaimantName(userId);
+    const existingPending = await findPendingClaim(gym.id, userId);
 
     // Domain-verified path: the claimant supplied a work email.
     if (validatedInput.claimEmail) {
+      // Anyone who can already edit the gym could set `website` to a domain they
+      // control and self-verify into ownership. Route them to admin review instead.
+      if (await userCanEditGym(gym, userId)) {
+        throw new Error(
+          'You already have edit access to this gym. Ownership changes for editors go through admin review.',
+        );
+      }
       if (!isClaimableDomain(gym.website)) {
         throw new Error('This gym has no verifiable website domain on file. Request admin review instead.');
       }
@@ -208,9 +276,20 @@ export const socialGymClaimMutations = {
         throw new Error("That email's domain doesn't match the gym's website.");
       }
 
+      // Don't re-send if the same address already has a live verification email.
+      if (
+        existingPending?.method === 'domain' &&
+        existingPending.claimEmail === validatedInput.claimEmail &&
+        (!existingPending.expiresAt || existingPending.expiresAt.getTime() > Date.now())
+      ) {
+        return { status: 'email_sent', email: validatedInput.claimEmail };
+      }
+
+      // Bound outbound verification emails per user (in addition to the general limit).
+      await applyRateLimit(ctx, 5, 'gymClaimVerificationEmail');
+
       const token = randomUUID();
-      await clearPendingClaims(gym.id, userId);
-      await db.insert(dbSchema.gymClaims).values({
+      await replacePendingClaim({
         gymId: gym.id,
         claimantUserId: userId,
         method: 'domain',
@@ -220,13 +299,17 @@ export const socialGymClaimMutations = {
         expiresAt: new Date(Date.now() + CLAIM_TOKEN_TTL_MS),
       });
 
-      await sendGymClaimVerificationEmail(validatedInput.claimEmail, token, gym.name);
+      await sendGymClaimVerificationEmail(validatedInput.claimEmail, token, gym.name, claimantName);
       return { status: 'email_sent', email: validatedInput.claimEmail };
     }
 
-    // Admin-review path: no usable email, queue for a human.
-    await clearPendingClaims(gym.id, userId);
-    await db.insert(dbSchema.gymClaims).values({
+    // Admin-review path: no usable email, queue for a human. Don't re-notify if a
+    // pending admin claim already exists for this (gym, user).
+    if (existingPending?.method === 'admin') {
+      return { status: 'admin_review' };
+    }
+
+    await replacePendingClaim({
       gymId: gym.id,
       claimantUserId: userId,
       method: 'admin',
@@ -234,17 +317,10 @@ export const socialGymClaimMutations = {
       message: validatedInput.message ?? null,
     });
 
-    const [claimant] = await db
-      .select({ name: dbSchema.users.name, displayName: dbSchema.userProfiles.displayName })
-      .from(dbSchema.users)
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
-      .where(eq(dbSchema.users.id, userId))
-      .limit(1);
-
     await sendGymClaimAdminNotification({
       gymName: gym.name,
       gymUuid: gym.uuid,
-      claimantName: claimant?.displayName || claimant?.name || 'A Boardsesh user',
+      claimantName,
       message: validatedInput.message ?? null,
     });
 
@@ -258,10 +334,18 @@ export const socialGymClaimMutations = {
     const validatedInput = validateInput(ReviewGymClaimInputSchema, input, 'input');
     const adminUserId = ctx.userId!;
 
+    // Admins only act on admin-method claims. Domain claims prove themselves via
+    // the emailed link, so approving one by id would bypass that proof.
     const [claim] = await db
       .select()
       .from(dbSchema.gymClaims)
-      .where(and(eq(dbSchema.gymClaims.id, validatedInput.claimId), eq(dbSchema.gymClaims.status, 'pending')))
+      .where(
+        and(
+          eq(dbSchema.gymClaims.id, validatedInput.claimId),
+          eq(dbSchema.gymClaims.status, 'pending'),
+          eq(dbSchema.gymClaims.method, 'admin'),
+        ),
+      )
       .limit(1);
     if (!claim) {
       throw new Error('Claim not found or already resolved');
@@ -276,9 +360,20 @@ export const socialGymClaimMutations = {
     }
 
     const result = await applyGymClaim(claim, adminUserId);
-    if (result?.claimEmail) {
-      void sendGymClaimApprovedEmail(result.claimEmail, result.gymName);
+    if (result) {
+      await notifyClaimApplied(result);
     }
     return true;
   },
 };
+
+/** The claimant's display name for emails, falling back to a neutral label. */
+async function loadClaimantName(userId: string): Promise<string> {
+  const [claimant] = await db
+    .select({ name: dbSchema.users.name, displayName: dbSchema.userProfiles.displayName })
+    .from(dbSchema.users)
+    .leftJoin(dbSchema.userProfiles, eq(dbSchema.users.id, dbSchema.userProfiles.userId))
+    .where(eq(dbSchema.users.id, userId))
+    .limit(1);
+  return claimant?.displayName || claimant?.name || 'A Boardsesh user';
+}
