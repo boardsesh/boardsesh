@@ -236,6 +236,28 @@ describe('LogbookTab grouped mode', () => {
     expect(deleteTick.mutate).not.toHaveBeenCalled();
   });
 
+  it('does not delete when the confirm is cancelled after a chooser pick, and re-arms', async () => {
+    dialog.confirm.mockImplementationOnce(async () => false);
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await fireDeleteRequest('swipe');
+    const onPickCancelled = chooser.props?.onPick as ((entry: { uuid: string }) => void) | undefined;
+    expect(onPickCancelled).toBeDefined();
+    await act(async () => {
+      onPickCancelled?.(GROUP_ITEMS[1]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(dialog.confirm).toHaveBeenCalled();
+    expect(deleteTick.mutate).not.toHaveBeenCalled();
+
+    // deleteFlowActiveRef reset on the cancel path — a fresh gesture reopens
+    // the chooser. (Stub only captures on render; clear before re-firing.)
+    chooser.props = null;
+    await fireDeleteRequest('swipe');
+    const reopenedAfterCancel = chooser.props as Record<string, unknown> | null;
+    expect(reopenedAfterCancel).not.toBeNull();
+  });
+
   it('re-arms the delete flow after the chooser is dismissed without a pick', async () => {
     render(createElement(LogbookTab, { userId: 'user-1' }));
 
