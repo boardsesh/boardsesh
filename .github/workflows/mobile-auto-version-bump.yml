@@ -89,6 +89,7 @@ jobs:
       # on the next scheduled run. Skipped when there are no accepted versions
       # (accepted_builds is '[]' or unset), so it doesn't run for nothing.
       - name: Cut release anchor tags for accepted versions
+        id: anchor
         if: steps.bump.outputs.accepted_builds != '' && steps.bump.outputs.accepted_builds != '[]'
         continue-on-error: true
         env:
@@ -98,6 +99,14 @@ jobs:
           git config user.name "boardsesh-repo-bot[bot]"
           git config user.email "boardsesh-repo-bot[bot]@users.noreply.github.com"
           bun scripts/mobile-cut-release-tags.ts
+
+      # Surface an anchor-cut failure loudly. continue-on-error keeps it from
+      # blocking the bump, but a persistent failure (e.g. a tag-push permission
+      # error) would otherwise be easy to miss — accepted versions are re-anchored
+      # next run, so this is a signal to investigate, not a hard failure.
+      - name: Warn if anchoring failed
+        if: steps.anchor.outcome == 'failure'
+        run: echo "::warning::Cutting release anchor tags failed (see the step above). The version bump still proceeds and accepted versions are re-anchored on the next scheduled run; investigate if this persists."
 
       - name: Commit and push version bump to main
         if: steps.bump.outputs.bumped == 'true' && vars.OTA_PUSH_APP_ID != ''

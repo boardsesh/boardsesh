@@ -36,6 +36,11 @@ concurrency:
   group: mobile-store-draft
   cancel-in-progress: false
 
+# Only checkout is needed; store uploads authenticate via secrets, not the
+# GitHub token. Explicit read-only, consistent with the other new workflows.
+permissions:
+  contents: read
+
 jobs:
   ios:
     if: >-

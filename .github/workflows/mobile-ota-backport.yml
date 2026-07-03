@@ -29,6 +29,10 @@ on:
       fix_commits:
         description: 'JS-only commit SHA(s) to cherry-pick onto the anchor (space/comma separated)'
         required: true
+      confirm_android_shipped:
+        description: 'Required for an Android backport: the Android anchor is cut on iOS approval, so confirm this version actually shipped on Google Play first.'
+        type: boolean
+        default: false
       dry_run:
         description: 'Resolve + verify the fingerprint but skip the actual OTA publish'
         type: boolean
@@ -112,6 +116,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           PLATFORM: ${{ matrix.platform }}
           FIX_COMMITS: ${{ inputs.fix_commits }}
+          CONFIRM_ANDROID_SHIPPED: ${{ inputs.confirm_android_shipped }}
         run: |
           set -euo pipefail
           # Validate the version is x.y.z before using it in a tag glob, so a
@@ -119,6 +124,13 @@ jobs:
           # confusing "Multiple anchors" error instead of a clear bad-input one.
           if ! printf '%s' "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::version must be x.y.z (got '$VERSION')."
+            exit 1
+          fi
+          # The Android anchor is cut on iOS approval (no Google Play query), so it
+          # can be premature. Require an explicit confirmation that the version
+          # actually shipped on Play before an Android backport can publish.
+          if [ "$PLATFORM" = "android" ] && [ "$CONFIRM_ANDROID_SHIPPED" != "true" ]; then
+            echo "::error::Android backport requires confirm_android_shipped=true — verify v${VERSION} actually shipped on Google Play first (its anchor is cut on iOS approval)."
             exit 1
           fi
           mapfile -t tags < <(git tag -l "release/${PLATFORM}-v${VERSION}-*")
@@ -146,6 +158,12 @@ jobs:
             case "$commit" in
               -*) echo "::error::Refusing commit-ish '$commit' that looks like a flag."; exit 1 ;;
             esac
+            # Require explicit SHAs (7-40 hex): reject moving refs like main/HEAD or
+            # branch names so a backport always cherry-picks a fixed, auditable commit.
+            if ! printf '%s' "$commit" | grep -qE '^[0-9a-f]{7,40}$'; then
+              echo "::error::'$commit' is not a commit SHA (7-40 hex). Pass explicit SHAs, not refs like main/HEAD."
+              exit 1
+            fi
           done
           echo "Cherry-picking onto $tag: ${commits[*]}"
           git cherry-pick "${commits[@]}"
