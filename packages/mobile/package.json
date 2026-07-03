@@ -90,7 +90,7 @@
     "react-native": "0.86.0",
     "react-native-ble-plx": "3.5.1",
     "react-native-edge-to-edge": "1.8.1",
-    "react-native-gesture-handler": "~2.32.0",
+    "react-native-gesture-handler": "~3.0.2",
     "react-native-gifted-charts": "^1.4.77",
     "react-native-pager-view": "8.0.2",
     "react-native-paper": "^5.15.3",
