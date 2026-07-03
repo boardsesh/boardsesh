@@ -356,11 +356,17 @@ describe('enrichGym canGrantAccess and canClaim', () => {
     expect((await gymFor(anonCtx())).canGrantAccess).toBe(false);
   });
 
-  it('canClaim is true for an authenticated non-owner and false for the owner', async () => {
+  it('canClaim is true for a non-owner with no edit access, false for anyone who can already edit', async () => {
     expect((await gymFor(authCtx(PLAIN_USER))).canClaim).toBe(true);
     expect((await gymFor(authCtx(OWNER))).canClaim).toBe(false);
     // Anonymous viewers can't claim either.
     expect((await gymFor(anonCtx())).canClaim).toBe(false);
+    // Anyone who can already edit the gym is excluded (they'd hit the domain-path
+    // block and shouldn't see a Claim button).
+    await socialGymMutations.grantGymWriteAccess(null, { input: { gymUuid, userId: EDITOR_TARGET } }, authCtx(OWNER));
+    expect((await gymFor(authCtx(EDITOR_TARGET))).canClaim).toBe(false);
+    expect((await gymFor(authCtx(GYM_ADMIN_MEMBER))).canClaim).toBe(false);
+    expect((await gymFor(authCtx(KILTER_LEADER))).canClaim).toBe(false);
   });
 });
 
@@ -770,5 +776,47 @@ describe('claim security hardening', () => {
     // Upgraded to admin, not left at 'member'.
     expect(await gymMemberRole(claimGym.id, PRIOR_OWNER)).toBe('admin');
     expect(await claimStatus(claimId)).toBe('approved');
+  });
+
+  it('does not leave a stuck pending row when the verification email fails to send', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'SMTP Gym', website: 'https://www.smtpgym.com' });
+    const input = { gymUuid: claimGym.uuid, claimEmail: 'me@smtpgym.com' };
+
+    // First attempt: the mailer is down.
+    vi.mocked(sendGymClaimVerificationEmail).mockRejectedValueOnce(new Error('SMTP down'));
+    await expect(socialGymClaimMutations.requestGymClaim(null, { input }, authCtx(CLAIMANT))).rejects.toThrow(
+      /SMTP down/,
+    );
+
+    // No pending row lingers to block a retry.
+    const [afterFail] = Array.from(
+      (await db.execute(sql`SELECT count(*)::int AS c FROM gym_claims WHERE gym_id = ${claimGym.id}`)) as Iterable<{
+        c: number;
+      }>,
+    );
+    expect(Number(afterFail.c)).toBe(0);
+
+    // Retry succeeds now that the mailer recovered.
+    await expect(socialGymClaimMutations.requestGymClaim(null, { input }, authCtx(CLAIMANT))).resolves.toEqual({
+      status: 'email_sent',
+      email: 'me@smtpgym.com',
+    });
+    const [afterOk] = Array.from(
+      (await db.execute(sql`SELECT count(*)::int AS c FROM gym_claims WHERE gym_id = ${claimGym.id}`)) as Iterable<{
+        c: number;
+      }>,
+    );
+    expect(Number(afterOk.c)).toBe(1);
+  });
+
+  it('reviewGymClaim surfaces an error instead of a false success when the gym is gone', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Vanishing Gym' });
+    const claimId = await insertClaim({ gymId: claimGym.id, claimantUserId: CLAIMANT, method: 'admin' });
+    // Soft-delete the gym after the claim exists.
+    await db.execute(sql`UPDATE gyms SET deleted_at = now() WHERE id = ${claimGym.id}`);
+
+    await expect(
+      socialGymClaimMutations.reviewGymClaim(null, { input: { claimId, decision: 'approve' } }, authCtx(GLOBAL_ADMIN)),
+    ).rejects.toThrow(/may have been removed/);
   });
 });

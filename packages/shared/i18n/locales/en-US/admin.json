@@ -168,6 +168,7 @@
       "detail": "Detail",
       "date": "Date",
       "actions": "Actions"
-    }
+    },
+    "loadMore": "Load more"
   }
 }

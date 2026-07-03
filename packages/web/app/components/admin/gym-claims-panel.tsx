@@ -34,25 +34,32 @@ export default function GymClaimsPanel() {
   const { token } = useWsAuthToken();
   const [claims, setClaims] = useState<GymClaim[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState('');
 
-  const fetchClaims = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
-      const client = createGraphQLHttpClient(token);
-      const result = await client.request<PendingGymClaimsQueryResponse, PendingGymClaimsQueryVariables>(
-        PENDING_GYM_CLAIMS,
-        { input: { limit: 50, offset: 0 } },
-      );
-      setClaims(result.pendingGymClaims.claims);
-    } catch (err) {
-      console.error('[GymClaimsPanel] Failed to fetch claims:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
+  const fetchClaims = useCallback(
+    async (offset = 0) => {
+      if (!token) return;
+      setLoading(true);
+      try {
+        const client = createGraphQLHttpClient(token);
+        const result = await client.request<PendingGymClaimsQueryResponse, PendingGymClaimsQueryVariables>(
+          PENDING_GYM_CLAIMS,
+          { input: { limit: 50, offset } },
+        );
+        setClaims((prev) =>
+          offset === 0 ? result.pendingGymClaims.claims : [...prev, ...result.pendingGymClaims.claims],
+        );
+        setHasMore(result.pendingGymClaims.hasMore);
+      } catch (err) {
+        console.error('[GymClaimsPanel] Failed to fetch claims:', err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token],
+  );
 
   useEffect(() => {
     void fetchClaims();
@@ -165,6 +172,19 @@ export default function GymClaimsPanel() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      {hasMore && (
+        <Box sx={{ mt: 2, textAlign: 'center' }}>
+          <Button
+            variant="outlined"
+            onClick={() => fetchClaims(claims.length)}
+            disabled={loading}
+            sx={{ textTransform: 'none' }}
+          >
+            {t('gymClaims.loadMore')}
+          </Button>
+        </Box>
+      )}
 
       <Snackbar open={!!snackbar} autoHideDuration={3000} onClose={() => setSnackbar('')} message={snackbar} />
     </Box>

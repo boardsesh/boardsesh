@@ -157,7 +157,7 @@ export function GymForm({ seed, submitting, onSubmit, submitLabel, extraSections
           keyboardType="url"
           autoCapitalize="none"
           autoCorrect={false}
-          maxLength={200}
+          maxLength={500}
         />
         <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.fieldHint}>
           {t('mobile.gymEdit.websiteHint')}

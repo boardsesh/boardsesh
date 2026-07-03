@@ -200,8 +200,16 @@ async function enrichGym(gym: typeof dbSchema.gyms.$inferSelect, authenticatedUs
   // Grantable (write-access grants) by owner/gym-admin or a covering community
   // admin/leader — NOT plain editors. Mirrors requireGymGrantAccess.
   const canGrantAccess = isOwner || memberRow?.role === 'admin' || hasCommunityAccess;
-  // Any signed-in viewer who isn't already the owner/gym-admin can start a claim.
-  const canClaim = !!authenticatedUserId && !isOwner && memberRow?.role !== 'admin';
+  // A signed-in viewer who has no edit access can start a claim. Owners, gym
+  // admins/editors, and covering community leaders are excluded — they can
+  // already edit the gym, so the self-service claim path isn't for them (and the
+  // domain path would reject them anyway).
+  const canClaim =
+    !!authenticatedUserId &&
+    !isOwner &&
+    memberRow?.role !== 'admin' &&
+    memberRow?.role !== 'editor' &&
+    !hasCommunityAccess;
 
   return {
     uuid: gym.uuid,

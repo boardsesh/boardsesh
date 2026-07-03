@@ -299,7 +299,23 @@ export const socialGymClaimMutations = {
         expiresAt: new Date(Date.now() + CLAIM_TOKEN_TTL_MS),
       });
 
-      await sendGymClaimVerificationEmail(validatedInput.claimEmail, token, gym.name, claimantName);
+      try {
+        await sendGymClaimVerificationEmail(validatedInput.claimEmail, token, gym.name, claimantName);
+      } catch (error) {
+        // The token row is already committed; if the send fails (SMTP down),
+        // drop it so a retry isn't blocked by the dedup check for 24h.
+        await db
+          .delete(dbSchema.gymClaims)
+          .where(
+            and(
+              eq(dbSchema.gymClaims.gymId, gym.id),
+              eq(dbSchema.gymClaims.claimantUserId, userId),
+              eq(dbSchema.gymClaims.status, 'pending'),
+              eq(dbSchema.gymClaims.method, 'domain'),
+            ),
+          );
+        throw error;
+      }
       return { status: 'email_sent', email: validatedInput.claimEmail };
     }
 
@@ -360,9 +376,12 @@ export const socialGymClaimMutations = {
     }
 
     const result = await applyGymClaim(claim, adminUserId);
-    if (result) {
-      await notifyClaimApplied(result);
+    if (!result) {
+      // The gym was removed, or the claim was resolved concurrently — don't
+      // report a success the admin panel would show as "approved".
+      throw new Error('Could not approve this claim — the gym may have been removed or it was already resolved');
     }
+    await notifyClaimApplied(result);
     return true;
   },
 };
