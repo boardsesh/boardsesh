@@ -19,7 +19,6 @@ import {
   type LogbookFilterState,
   type LogbookSortPreset,
   type LogbookListRow,
-  type LogbookDayItem,
 } from '@boardsesh/logbook';
 import { useDeleteTick } from '@boardsesh/board-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -223,7 +222,13 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // sort keeps the flat feed (with dividers); grade/custom non-date sorts keep
   // the flat feed without dividers. Exactly one feed is enabled at a time.
   const showDividers = shouldShowLogbookDividers(feedInput);
-  const groupedMode = feedInput.sortBy === 'recent' || (feedInput.sortBy === 'date' && feedInput.sortOrder !== 'asc');
+  // Emergency kill switch (absent flag = grouping on): flipping the PostHog
+  // flag true reverts every device to the flat feed on next flag refresh, no
+  // OTA needed, if the client-side re-bucketing misbehaves in production.
+  const groupingKilled = useFeatureFlag('logbook-grouping-kill') === true;
+  const groupedMode =
+    !groupingKilled &&
+    (feedInput.sortBy === 'recent' || (feedInput.sortBy === 'date' && feedInput.sortOrder !== 'asc'));
   const flatFeed = useUserAscentsFeed(userId, feedInput, { enabled: hydrated && !groupedMode });
   const groupedFeed = useUserGroupedAscentsFeed(userId, feedInput, { enabled: hydrated && groupedMode });
   // Control-surface alias (status flags, pagination); data is read per-mode in
@@ -707,13 +712,13 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   );
 }
 
-function keyExtractor(row: LogbookListRow<LogbookDayItem>) {
+function keyExtractor(row: LogbookListRow<LogbookGroupUnit>) {
   return row.key;
 }
 
 // Divider vs entry recycling pools — FlashList must never recycle a divider
 // into a climb row or vice versa.
-function getRowType(row: LogbookListRow<LogbookDayItem>) {
+function getRowType(row: LogbookListRow<LogbookGroupUnit>) {
   return row.type;
 }
 

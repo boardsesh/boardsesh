@@ -22,6 +22,7 @@ const row = vi.hoisted(() => ({
 }));
 const chooser = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 const editSheet = vi.hoisted(() => ({ ascent: null as { uuid: string } | null }));
+const flagState = vi.hoisted(() => ({ groupingKill: undefined as boolean | undefined }));
 
 const GROUP_ITEMS = [
   {
@@ -158,6 +159,9 @@ vi.mock('../../../providers/drawer-host-provider', () => ({
 vi.mock('@boardsesh/board-react', () => ({ useDeleteTick: () => deleteTick }));
 vi.mock('../../../providers/dialog-provider', () => ({ useConfirm: () => dialog.confirm }));
 vi.mock('../../../providers/toast-provider', () => ({ useToast: () => toast }));
+vi.mock('../../../providers/feature-flags-provider', () => ({
+  useFeatureFlag: (key: string) => (key === 'logbook-grouping-kill' ? flagState.groupingKill : undefined),
+}));
 
 import { LogbookTab } from '../LogbookTab';
 
@@ -180,6 +184,7 @@ beforeEach(() => {
   haptics.hapticError.mockClear();
   row.requestDelete = null;
   row.requestEdit = null;
+  flagState.groupingKill = undefined;
   row.props = null;
   chooser.props = null;
   editSheet.ascent = null;
@@ -307,6 +312,16 @@ describe('LogbookTab grouped mode', () => {
     const reopenedEditChooser = chooser.props as Record<string, unknown> | null;
     expect(reopenedEditChooser).not.toBeNull();
     expect(reopenedEditChooser?.intent).toBe('edit');
+  });
+
+  it('falls back to the flat feed when the grouping kill switch flag is on', () => {
+    flagState.groupingKill = true;
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    // groupedMode is off: rows come from the (empty) flat feed, so no grouped
+    // row mounts — the group in the grouped fixture is ignored entirely.
+    expect(row.requestDelete).toBeNull();
+    expect(row.requestEdit).toBeNull();
   });
 
   it('acts directly when the group has a single entry', async () => {

@@ -42,6 +42,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Kilter account linking',
     description: 'Show the Kilter username/password sign-in card in Integrations.',
   },
+  {
+    key: 'logbook-grouping-kill',
+    label: 'Disable logbook grouping',
+    description: 'Emergency kill switch: fall back to flat logbook entries if day-scoped repeat grouping misbehaves.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the

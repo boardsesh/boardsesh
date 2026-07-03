@@ -20,10 +20,11 @@ const STORAGE_KEY = 'logbookSearchPrefs';
 // Persisted-schema version.
 //   v2 = the sends-only status default.
 //   v3 = the sends+attempts default (a climber's projects show next to sends).
-// A v1/unstamped payload still on the pre-v2 "both" default gets attempts dropped
-// (the v2 step); a v2 payload that still deep-equals the v2 sends-only defaults —
-// i.e. the user never diverged — is refreshed to the new v3 defaults (the v3
-// step). A payload the user changed is left as-is. Both steps stamp the version.
+// There is no chained v1→v2 step anymore: ONE rule migrates every pre-v3
+// payload. A filter set still deep-equal to EITHER historical resting default
+// (v1 both-on or v2 sends-only) means the user never diverged and is refreshed
+// to the v3 defaults; anything the user changed is left as-is. The migration
+// stamps v3 either way.
 const LOGBOOK_PREFS_VERSION = 3;
 
 // The v2 resting filter (sends-only) — the value a v2 install persisted when the
