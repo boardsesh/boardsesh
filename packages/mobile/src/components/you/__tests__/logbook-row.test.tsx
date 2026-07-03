@@ -309,7 +309,7 @@ describe('LogbookRow — swipe wiring', () => {
     expect(onEdit).not.toHaveBeenCalled();
 
     willOpen('right');
-    expect(onEdit).toHaveBeenCalledWith(item);
+    expect(onEdit).toHaveBeenCalledWith(item, 'swipe');
     expect(onDeleteRequest).toHaveBeenCalledTimes(1);
   });
 });

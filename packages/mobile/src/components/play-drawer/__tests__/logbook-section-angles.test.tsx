@@ -18,8 +18,23 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Icon', () => ({ Icon: () => createElement('i', null) }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    // Interpolate counts so `mobile.logbook.lifetimeTries:7` is assertable.
-    t: (key: string, opts?: { count?: number }) => (opts?.count != null ? `${key}:${opts.count}` : key),
+    // Counts render as `key:count`; the recap template keys interpolate their
+    // pre-translated segments like the real en-US catalog so joining is exercised.
+    t: (key: string, opts?: Record<string, unknown>) => {
+      if (opts && typeof opts.count === 'number') return `${key}:${opts.count}`;
+      const templates: Record<string, string> = {
+        'mobile.logbook.lifetimeRecap': '{{tries}} {{sessions}}',
+        'mobile.logbook.lifetimeRecapWithSends': '{{tries}} {{sessions}} · {{sends}}',
+      };
+      const template = templates[key];
+      if (template && opts) {
+        return Object.entries(opts).reduce(
+          (rendered, [name, value]) => rendered.replace(`{{${name}}}`, String(value)),
+          template,
+        );
+      }
+      return key;
+    },
   }),
 }));
 

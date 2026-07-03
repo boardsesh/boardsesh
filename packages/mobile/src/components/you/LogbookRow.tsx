@@ -45,7 +45,7 @@ type LogbookRowProps = {
   onOpenActions?: (ascent: AscentFeedItem) => void;
   /** Swipe left-to-right → edit the logbook entry. Owner-only; when omitted the
    *  left swipe action is disabled (you can't edit another climber's ticks). */
-  onEdit?: (ascent: AscentFeedItem) => void;
+  onEdit?: (ascent: AscentFeedItem, method: 'swipe' | 'a11y') => void;
   /**
    * Swipe right-to-left → delete the logbook entry, behind the host's confirm
    * dialog (DELETE_TICK is a real server-side, Aurora-synced delete). Owner-only;
@@ -288,7 +288,7 @@ export const LogbookRow = memo(function LogbookRow({
     const edit = onEditRef.current;
     if (!edit) return;
     hapticSuccess();
-    edit(ascentRef.current);
+    edit(ascentRef.current, 'swipe');
   }, []);
 
   // Capture the ascent NOW — the host's confirm dialog awaits, and FlashList can
@@ -414,7 +414,7 @@ export const LogbookRow = memo(function LogbookRow({
 
   const handleAccessibilityAction = useCallback((event: AccessibilityActionEvent) => {
     const actionName = event.nativeEvent.actionName;
-    if (actionName === 'edit') onEditRef.current?.(ascentRef.current);
+    if (actionName === 'edit') onEditRef.current?.(ascentRef.current, 'a11y');
     else if (actionName === 'delete') onDeleteRequestRef.current?.(ascentRef.current, 'a11y');
     else if (actionName === 'more') onOpenActionsRef.current?.(ascentRef.current);
   }, []);

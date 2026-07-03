@@ -301,7 +301,9 @@
       "lifetimeSessions_one": "sur {{count}} session",
       "lifetimeSessions_other": "sur {{count}} sessions",
       "lifetimeSends_one": "{{count}} réussite",
-      "lifetimeSends_other": "{{count}} réussites"
+      "lifetimeSends_other": "{{count}} réussites",
+      "lifetimeRecap": "{{tries}} {{sessions}}",
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
     },
     "similarClimbs": {
       "title": "Voies similaires",

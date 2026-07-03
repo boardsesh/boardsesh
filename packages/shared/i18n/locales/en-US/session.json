@@ -301,7 +301,9 @@
       "lifetimeSessions_one": "over {{count}} session",
       "lifetimeSessions_other": "over {{count}} sessions",
       "lifetimeSends_one": "{{count}} send",
-      "lifetimeSends_other": "{{count}} sends"
+      "lifetimeSends_other": "{{count}} sends",
+      "lifetimeRecap": "{{tries}} {{sessions}}",
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
     },
     "similarClimbs": {
       "title": "Similar Climbs",

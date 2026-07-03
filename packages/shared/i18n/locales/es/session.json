@@ -301,7 +301,9 @@
       "lifetimeSessions_one": "en {{count}} sesión",
       "lifetimeSessions_other": "en {{count}} sesiones",
       "lifetimeSends_one": "{{count}} encadene",
-      "lifetimeSends_other": "{{count}} encadenes"
+      "lifetimeSends_other": "{{count}} encadenes",
+      "lifetimeRecap": "{{tries}} {{sessions}}",
+      "lifetimeRecapWithSends": "{{tries}} {{sessions}} · {{sends}}"
     },
     "similarClimbs": {
       "title": "Escaladas similares",

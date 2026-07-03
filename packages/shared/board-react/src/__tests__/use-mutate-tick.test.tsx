@@ -77,6 +77,66 @@ describe('useUpdateTick (shared)', () => {
 
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
+
+  it('writes the server response through to cached feed items before the refetch lands', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({
+      updateTick: {
+        uuid: 'tick-1',
+        status: 'send',
+        attemptCount: 5,
+        quality: 3,
+        difficulty: 16,
+        isBenchmark: false,
+        comment: 'sent it',
+        climbedAt: '2026-07-01 10:00:00',
+        updatedAt: '2026-07-03 09:00:00',
+      },
+    });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    queryClient.setQueryData(['userGroupedAscentsFeed', 'user-1', {}], {
+      pages: [
+        {
+          userGroupedAscentsFeed: {
+            groups: [
+              {
+                key: 'climb-1-2026-07-01',
+                items: [
+                  { uuid: 'tick-1', status: 'attempt', attemptCount: 4, quality: null, comment: '' },
+                  { uuid: 'tick-2', status: 'attempt', attemptCount: 1, quality: null, comment: '' },
+                ],
+              },
+            ],
+            totalCount: 1,
+            hasMore: false,
+          },
+        },
+      ],
+      pageParams: [0],
+    });
+    queryClient.setQueryData(['userAscentsFeed', 'user-1', {}], {
+      pages: [{ userAscentsFeed: { items: [{ uuid: 'tick-1', status: 'attempt', attemptCount: 4 }], hasMore: false } }],
+      pageParams: [0],
+    });
+    const { result } = renderHook(() => useUpdateTick(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate(updateVars);
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    type GroupedCache = {
+      pages: { userGroupedAscentsFeed: { groups: { items: Record<string, unknown>[] }[] } }[];
+    };
+    type FlatCache = { pages: { userAscentsFeed: { items: Record<string, unknown>[] } }[] };
+    const groupedItems = queryClient.getQueryData<GroupedCache>(['userGroupedAscentsFeed', 'user-1', {}])?.pages[0]
+      .userGroupedAscentsFeed.groups[0].items;
+    expect(groupedItems?.[0]).toMatchObject({ uuid: 'tick-1', status: 'send', attemptCount: 5, quality: 3 });
+    // Sibling untouched.
+    expect(groupedItems?.[1]).toMatchObject({ uuid: 'tick-2', status: 'attempt', attemptCount: 1 });
+    const flatItems = queryClient.getQueryData<FlatCache>(['userAscentsFeed', 'user-1', {}])?.pages[0].userAscentsFeed
+      .items;
+    expect(flatItems?.[0]).toMatchObject({ uuid: 'tick-1', status: 'send', attemptCount: 5, comment: 'sent it' });
+  });
 });
 
 describe('useDeleteTick (shared)', () => {

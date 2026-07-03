@@ -47,11 +47,18 @@ export const LogbookSection = memo(function LogbookSection({
     return (
       <View style={styles.container}>
         {angleSections.map((section) => {
-          const recap = `${t('mobile.logbook.lifetimeTries', { count: section.stats.totalTries })} ${t('mobile.logbook.lifetimeSessions', { count: section.stats.sessionCount })}${
+          // Segments pluralize individually; the recap TEMPLATE owns word order
+          // and joining so a locale can rearrange the clauses.
+          const triesLabel = t('mobile.logbook.lifetimeTries', { count: section.stats.totalTries });
+          const sessionsLabel = t('mobile.logbook.lifetimeSessions', { count: section.stats.sessionCount });
+          const recap =
             section.stats.sendCount > 0
-              ? ` · ${t('mobile.logbook.lifetimeSends', { count: section.stats.sendCount })}`
-              : ''
-          }`;
+              ? t('mobile.logbook.lifetimeRecapWithSends', {
+                  tries: triesLabel,
+                  sessions: sessionsLabel,
+                  sends: t('mobile.logbook.lifetimeSends', { count: section.stats.sendCount }),
+                })
+              : t('mobile.logbook.lifetimeRecap', { tries: triesLabel, sessions: sessionsLabel });
           return (
             <View key={section.angle} style={styles.angleSection}>
               <View

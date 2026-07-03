@@ -284,6 +284,31 @@ describe('LogbookTab grouped mode', () => {
     expect(reopenedProps?.intent).toBe('delete');
   });
 
+  it('re-arms the edit flow after the edit chooser is dismissed without a pick', async () => {
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await act(async () => {
+      row.requestEdit?.();
+    });
+    expect(chooser.props?.intent).toBe('edit');
+
+    const onDismissEdit = chooser.props?.onDismiss as (() => void) | undefined;
+    expect(onDismissEdit).toBeDefined();
+    await act(async () => {
+      onDismissEdit?.();
+    });
+    chooser.props = null;
+    expect(editSheet.ascent).toBeNull();
+
+    // chooserOpenRef reset — the next edit gesture opens the chooser again.
+    await act(async () => {
+      row.requestEdit?.();
+    });
+    const reopenedEditChooser = chooser.props as Record<string, unknown> | null;
+    expect(reopenedEditChooser).not.toBeNull();
+    expect(reopenedEditChooser?.intent).toBe('edit');
+  });
+
   it('acts directly when the group has a single entry', async () => {
     groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
       { key: 'solo', climbUuid: 'climb-1', date: '2026-06-15', items: [GROUP_ITEMS[0]] },

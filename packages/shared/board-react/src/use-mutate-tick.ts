@@ -43,8 +43,77 @@ export function useUpdateTick() {
       const response = await executeHttp<UpdateTickResponse, UpdateTickVariables>(UPDATE_TICK, variables);
       return response.updateTick;
     },
-    onSuccess: () => invalidateTickDependents(queryClient),
+    onSuccess: (updatedTick) => {
+      // Write-through first so the row is right immediately, then invalidate so
+      // the background refetch reconciles anything derived server-side.
+      patchTickInAscentFeeds(queryClient, updatedTick);
+      invalidateTickDependents(queryClient);
+    },
   });
+}
+
+/**
+ * Write the server's updated tick straight into every cached feed item that
+ * carries it. The invalidation that follows refetches the loaded offset pages
+ * sequentially — seconds on a deep logbook — and the grouped logbook re-derives
+ * best-entry and summed tries from raw items on render, so patching the item
+ * fields is enough for an edited row (status flip, tries change) to display
+ * correctly before any refetch lands. Not optimistic: this is the server's own
+ * response, so there is nothing to roll back.
+ */
+function patchTickInAscentFeeds(queryClient: QueryClient, updatedTick: UpdateTickResponse['updateTick']) {
+  // The response types status as plain string while feed items carry the
+  // narrower union; the values come from the same enum server-side.
+  const patchItem = <T extends { uuid: string }>(item: T): T =>
+    item.uuid === updatedTick.uuid
+      ? ({
+          ...item,
+          status: updatedTick.status,
+          attemptCount: updatedTick.attemptCount,
+          quality: updatedTick.quality,
+          difficulty: updatedTick.difficulty,
+          isBenchmark: updatedTick.isBenchmark,
+          comment: updatedTick.comment,
+          climbedAt: updatedTick.climbedAt,
+        } as T)
+      : item;
+
+  queryClient.setQueriesData<InfiniteData<GetUserGroupedAscentsFeedQueryResponse>>(
+    { queryKey: ['userGroupedAscentsFeed'] },
+    (cached) => {
+      if (!cached) return cached;
+      return {
+        ...cached,
+        pages: cached.pages.map((page) => ({
+          ...page,
+          userGroupedAscentsFeed: {
+            ...page.userGroupedAscentsFeed,
+            groups: page.userGroupedAscentsFeed.groups.map((group) => ({
+              ...group,
+              items: group.items.map(patchItem),
+            })),
+          },
+        })),
+      };
+    },
+  );
+
+  queryClient.setQueriesData<InfiniteData<GetUserAscentsFeedQueryResponse>>(
+    { queryKey: ['userAscentsFeed'] },
+    (cached) => {
+      if (!cached) return cached;
+      return {
+        ...cached,
+        pages: cached.pages.map((page) => ({
+          ...page,
+          userAscentsFeed: {
+            ...page.userAscentsFeed,
+            items: page.userAscentsFeed.items.map(patchItem),
+          },
+        })),
+      };
+    },
+  );
 }
 
 /**
