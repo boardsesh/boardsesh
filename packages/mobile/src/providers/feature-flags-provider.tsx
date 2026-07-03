@@ -35,7 +35,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
   {
     key: 'logbook-filters',
     label: 'Logbook filters',
-    description: 'Search box and filter sheet on the logbook (unfinished UI).',
+    description: 'Search box and filter sheet on the logbook (shipped: 100% rollout since 2026-07-03).',
   },
   {
     key: 'kilter-oauth-linking',

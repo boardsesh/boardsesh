@@ -93,7 +93,8 @@ type LogbookGroupUnit = AscentFeedItem & {
 export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: LogbookTabProps) {
   const { t } = useTranslation('you');
   const { systemColors, brandColors, variant } = useTheme();
-  // Temporary kill switch while the search + filter UI is unfinished.
+  // Kill switch for the search + filter UI — rolled out 100% in PostHog since
+  // 2026-07-03; the gate stays so a bad release can be turned off server-side.
   const logbookFiltersEnabled = useFeatureFlag('logbook-filters') === true;
   // Latest/Hardest become top-level Liquid Glass chips (iOS 26 only) so sort is
   // switchable without opening the sheet; the variant goes through selectByVariant
