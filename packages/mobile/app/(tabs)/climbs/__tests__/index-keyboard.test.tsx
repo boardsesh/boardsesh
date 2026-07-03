@@ -344,7 +344,9 @@ describe('ClimbList keyboard handling', () => {
 
     expect(mocks.dismissKeyboard).toHaveBeenCalledTimes(1);
     expect(mocks.activateClimb).toHaveBeenCalledWith({ uuid: 'climb-1' });
-    await waitFor(() => expect(mocks.getLogbook).toHaveBeenCalledWith(['climb-1']));
+    // Logbook is fetched for every visible row, not just the pressed one — the
+    // default fixture now has two climbs (added for the rank-tracking tests).
+    await waitFor(() => expect(mocks.getLogbook).toHaveBeenCalledWith(['climb-1', 'climb-2']));
   });
 });
 
