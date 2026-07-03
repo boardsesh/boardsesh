@@ -44,15 +44,18 @@ type AppStoreVersionResource = {
   };
 };
 
-type BuildResource = {
-  type: 'builds';
+// A side-loaded resource in the JSON:API `included` array. Typed loosely on
+// `type` so the runtime `type === 'builds'` filter below is meaningful — ASC could
+// include other resource types, whose ids must not shadow build ids.
+type IncludedResource = {
+  type: string;
   id: string;
   attributes?: { version?: string };
 };
 
 type JsonApiCollectionResponse<T> = {
   data: T[];
-  included?: BuildResource[];
+  included?: IncludedResource[];
 };
 
 // A version App Store Connect has accepted, plus the build number of the build
@@ -128,6 +131,7 @@ async function resolveAppId(token: string): Promise<string> {
 export function mapAcceptedVersions(data: JsonApiCollectionResponse<AppStoreVersionResource>): AcceptedVersion[] {
   const buildNumberById = new Map<string, number>();
   for (const included of data.included ?? []) {
+    if (included.type !== 'builds') continue;
     const rawVersion = included.attributes?.version;
     const parsed = typeof rawVersion === 'string' ? Number.parseInt(rawVersion, 10) : Number.NaN;
     if (Number.isFinite(parsed)) buildNumberById.set(included.id, parsed);

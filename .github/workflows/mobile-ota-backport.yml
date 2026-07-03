@@ -197,7 +197,10 @@ jobs:
           GOOGLE_MAPS_API_KEY: ${{ matrix.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
         run: |
           set -uo pipefail
-          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform "$PLATFORM" 2>/dev/null || true)"
+          # Keep stderr visible: if the resolve fails for a reason other than a
+          # fingerprint mismatch (missing dep, config/network error), surfacing it
+          # beats the bare "Could not resolve" message below with no root cause.
+          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform "$PLATFORM" || true)"
           fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
           # Require >= 12 hex chars: we compare the first 12 against the anchor's
           # shortfp, so anything shorter couldn't form a valid comparison anyway.

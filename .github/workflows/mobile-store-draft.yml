@@ -77,6 +77,7 @@ jobs:
           echo "ASC_KEY_PATH=$key_path" >> "$GITHUB_ENV"
 
       - name: Prepare App Store draft submission
+        id: draft
         continue-on-error: true
         working-directory: fastlane
         env:
@@ -88,6 +89,12 @@ jobs:
           set -euo pipefail
           [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || { echo "::error::Missing APP_STORE_CONNECT_ISSUER_ID."; exit 1; }
           bundle exec fastlane ios draft_submission
+
+      # Surface a best-effort failure loudly (continue-on-error keeps the job
+      # green otherwise, which would hide a broken draft submission).
+      - name: Warn if the App Store draft step failed
+        if: steps.draft.outcome == 'failure'
+        run: echo "::warning::App Store draft submission failed (see the step above). Best-effort — re-run after resolving, or prepare the draft manually in App Store Connect."
 
       - name: Clean up App Store Connect key
         if: always()
@@ -113,6 +120,7 @@ jobs:
           working-directory: fastlane
 
       - name: Prepare Play Store draft release
+        id: draft
         continue-on-error: true
         working-directory: fastlane
         env:
@@ -123,3 +131,7 @@ jobs:
           set -euo pipefail
           [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON" ] || { echo "::error::Missing GOOGLE_PLAY_SERVICE_ACCOUNT_JSON."; exit 1; }
           bundle exec fastlane android draft_submission
+
+      - name: Warn if the Play draft step failed
+        if: steps.draft.outcome == 'failure'
+        run: echo "::warning::Play draft release failed (see the step above). Best-effort — re-run after resolving, or prepare the draft manually in the Play Console."

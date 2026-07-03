@@ -56,6 +56,40 @@ describe('mapAcceptedVersions', () => {
     expect(out).toEqual([{ versionString: '2.1.0', buildNumber: null }]);
   });
 
+  it('ignores non-build included resources (their ids must not shadow build ids)', () => {
+    const out = mapAcceptedVersions({
+      data: [
+        {
+          type: 'appStoreVersions',
+          id: 'v1',
+          attributes: { versionString: '2.1.0', appStoreState: 'READY_FOR_SALE' },
+          relationships: { build: { data: { type: 'builds', id: 'shared-id' } } },
+        },
+      ],
+      // A non-build resource sharing the build's id must not be mapped as a build.
+      included: [
+        { type: 'appStoreVersionSubmissions', id: 'shared-id', attributes: { version: '999' } },
+        { type: 'builds', id: 'shared-id', attributes: { version: '42' } },
+      ],
+    });
+    expect(out).toEqual([{ versionString: '2.1.0', buildNumber: 42 }]);
+  });
+
+  it('treats a non-numeric build version as null', () => {
+    const out = mapAcceptedVersions({
+      data: [
+        {
+          type: 'appStoreVersions',
+          id: 'v1',
+          attributes: { versionString: '2.1.0', appStoreState: 'READY_FOR_SALE' },
+          relationships: { build: { data: { type: 'builds', id: 'b1' } } },
+        },
+      ],
+      included: [{ type: 'builds', id: 'b1', attributes: { version: 'abc' } }],
+    });
+    expect(out).toEqual([{ versionString: '2.1.0', buildNumber: null }]);
+  });
+
   it('drops versions without a usable versionString', () => {
     const out = mapAcceptedVersions({
       data: [
