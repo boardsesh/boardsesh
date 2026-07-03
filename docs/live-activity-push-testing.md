@@ -372,7 +372,7 @@ This is the key test — verifying that APNs keeps the Live Activity alive when 
 3. Wait 30+ seconds for iOS to fully suspend the app
 4. From a **second device or browser**, change the current climb
 5. Check your iPhone's lock screen — the Live Activity should update within a few seconds via APNs push
-6. The stale date (3 minutes) should NOT trigger because APNs pushes refresh it
+6. The stale date (10 minutes, `SharedConstants.liveActivityStaleInterval`) should NOT trigger because APNs pushes refresh it
 
 ### Verify the Update Source
 
@@ -510,7 +510,7 @@ The .p8 key JWT has expired (tokens are valid for 1 hour). The `@parse/node-apn`
 - The widget extension must have the App Group entitlement to read SharedDefaults.
 - Check backend logs for incoming requests to `/api/widget/navigate` or `/api/widget/take-control`.
 
-### Live Activity goes stale after 3 minutes
+### Live Activity goes stale after 10 minutes
 
 - APNs pushes are not reaching the device. Check backend logs for send failures.
 - The APNs rate limit may be exceeded (~4/hr for non-prominent activities). When the activity is on the lock screen, the limit is much higher.
