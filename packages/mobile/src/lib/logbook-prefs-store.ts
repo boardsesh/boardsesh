@@ -45,6 +45,10 @@ const V2_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
 // The v1 resting filter (both statuses on) — the pre-v2 default. Frozen for
 // the same reason as the v2 shape below: the never-diverged check must compare
 // against history, not today's defaults.
+// The spread from V2 is deliberate, not a shortcut: historically the v2 default
+// changed ONLY includeAttempts, so the two snapshots share every other field by
+// construction (equalsV1Defaults leans on the same fact). Amending one snapshot
+// amends both — correct exactly as long as that shared history holds.
 const V1_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
   ...V2_DEFAULT_LOGBOOK_FILTERS,
   includeAttempts: true,
@@ -92,6 +96,11 @@ export async function loadLogbookPrefs(): Promise<StoredLogbookPrefs | null> {
     // (v1 both-on or v2 sends-only) means the user never diverged — refresh it
     // to the current defaults. Anything else is a deliberate choice and
     // round-trips untouched.
+    // Known unrecoverable cohort: a v1 user with extra filters (e.g. a grade)
+    // whom the OLD v1→v2 attempts-drop already migrated is stored as a diverged
+    // v2 state — sends-only plus their filters. Their attempts-on intent was
+    // destroyed by that migration before v3 existed and is indistinguishable
+    // from a genuine sends-only choice, so they keep sends-only here.
     if (storedVersion == null || storedVersion < LOGBOOK_PREFS_VERSION) {
       if (equalsV2Defaults(filters) || equalsV1Defaults(filters)) {
         filters.includeAttempts = DEFAULT_LOGBOOK_FILTERS.includeAttempts;

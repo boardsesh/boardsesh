@@ -58,6 +58,10 @@ const V2_DEFAULT_FILTERS: LogbookFilterState = {
 };
 
 // The v1 resting shape: the pre-v2 "both statuses" default.
+// The spread from V2 is deliberate, not a shortcut: historically the v2 default
+// changed ONLY includeAttempts, so the two snapshots share every other field by
+// construction (filtersEqualV1Defaults leans on the same fact). Amending one
+// snapshot amends both — correct exactly as long as that shared history holds.
 const V1_DEFAULT_FILTERS: LogbookFilterState = {
   ...V2_DEFAULT_FILTERS,
   includeAttempts: true,
@@ -150,6 +154,10 @@ export function sanitizeLogbookPreferences(value: unknown): LogbookPreferences {
   // filter set still deep-equal to EITHER historical resting default (v1
   // both-on or v2 sends-only) means the user never diverged — refresh to the
   // current defaults. Anything else was a deliberate choice and round-trips.
+  // Known unrecoverable cohort: a v1 user with extra filters whom the OLD
+  // v1→v2 attempts-drop already migrated is stored as a diverged v2 state;
+  // their attempts-on intent was destroyed before v3 existed and can't be
+  // told apart from a genuine sends-only choice, so they keep sends-only.
   if (
     (storedVersion == null || storedVersion < 3) &&
     (filtersEqualV2Defaults(filters) || filtersEqualV1Defaults(filters))
