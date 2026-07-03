@@ -86,12 +86,16 @@ export default function EditGym() {
   }
 
   // Remount the form per gym so its once-only field seeds come from a fully-loaded
-  // gym (mirrors the board-edit screen).
+  // gym (mirrors the board-edit screen). The wrapper paints `background` like the
+  // loading/not-found states above (the glass contentStyle is transparent, so an
+  // unpainted root-level scene shows whatever sits behind the push — see
+  // changelog.tsx); `background`, not groupedBackground, so the form's
+  // secondaryBackground inputs keep their contrast step.
   return (
-    <>
+    <View style={[styles.flex, { backgroundColor: systemColors.background }]}>
       {header}
       <EditGymForm key={gym.uuid} gym={gym} />
-    </>
+    </View>
   );
 }
 
@@ -163,6 +167,9 @@ function EditGymForm({ gym }: { gym: Gym }) {
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',

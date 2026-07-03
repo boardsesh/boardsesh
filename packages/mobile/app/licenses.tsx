@@ -89,7 +89,11 @@ export default function LicensesScreen() {
   return (
     <>
       <Stack.Screen options={{ ...screenOptions, title: t('mobile.licenses.title'), headerShown: true }} />
-      <View style={styles.flex}>
+      {/* flex:1 bounds the FlashList; the groupedBackground paint (mirrors
+          changelog.tsx) covers the transparent glass scene — this root-level
+          route is reached via the user-drawer chain, where an unpainted scene
+          shows the drawer's near-black scrim. */}
+      <View style={[styles.flex, { backgroundColor: systemColors.groupedBackground }]}>
         {licenses === null ? (
           <View style={styles.loading}>
             <ActivityIndicator size="large" />

@@ -119,7 +119,11 @@ export default function AcknowledgementsScreen() {
   return (
     <>
       <Stack.Screen options={{ ...screenOptions, title: t('mobile.acknowledgements.title'), headerShown: true }} />
+      {/* Paints groupedBackground (mirrors changelog.tsx): the glass contentStyle
+          is transparent and this root-level route is reached via the user-drawer →
+          About chain, so an unpainted scene shows the drawer's near-black scrim. */}
       <ScrollView
+        style={{ backgroundColor: systemColors.groupedBackground }}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={[styles.container, { paddingBottom: bottomChrome.scrollBottomPadding + spacing[6] }]}
       >
