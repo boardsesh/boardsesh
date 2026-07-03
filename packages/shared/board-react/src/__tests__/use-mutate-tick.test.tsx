@@ -160,6 +160,89 @@ describe('useDeleteTick (shared)', () => {
     expect(hardest?.pages[0].userAscentsFeed.totalCount).toBe(0);
   });
 
+  it('strips a tick from grouped caches: shrinks its group, recomputing counts', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ deleteTick: true });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    queryClient.setQueryData(['userGroupedAscentsFeed', 'user-1', {}], {
+      pages: [
+        {
+          userGroupedAscentsFeed: {
+            groups: [
+              {
+                key: 'climb-1-2026-06-20',
+                items: [
+                  { uuid: 'tick-1', status: 'attempt' },
+                  { uuid: 'tick-2', status: 'send' },
+                ],
+                flashCount: 0,
+                sendCount: 1,
+                attemptCount: 1,
+              },
+            ],
+            totalCount: 5,
+            hasMore: false,
+          },
+        },
+      ],
+      pageParams: [0],
+    });
+    const { result } = renderHook(() => useDeleteTick(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate('tick-1');
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    type GroupedCache = {
+      pages: {
+        userGroupedAscentsFeed: {
+          groups: { items: { uuid: string }[]; sendCount: number; attemptCount: number }[];
+          totalCount: number;
+        };
+      }[];
+    };
+    const cached = queryClient.getQueryData<GroupedCache>(['userGroupedAscentsFeed', 'user-1', {}]);
+    const group = cached?.pages[0].userGroupedAscentsFeed.groups[0];
+    expect(group?.items.map((item) => item.uuid)).toEqual(['tick-2']);
+    expect(group?.attemptCount).toBe(0);
+    expect(group?.sendCount).toBe(1);
+    // Group survived → totalCount (a GROUP count) unchanged.
+    expect(cached?.pages[0].userGroupedAscentsFeed.totalCount).toBe(5);
+  });
+
+  it('drops an emptied group from grouped caches and decrements the group total', async () => {
+    const executeHttp = vi.fn().mockResolvedValue({ deleteTick: true });
+    const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });
+    queryClient.setQueryData(['userGroupedAscentsFeed', 'user-1', {}], {
+      pages: [
+        {
+          userGroupedAscentsFeed: {
+            groups: [
+              { key: 'g1', items: [{ uuid: 'tick-1', status: 'send' }], flashCount: 0, sendCount: 1, attemptCount: 0 },
+              { key: 'g2', items: [{ uuid: 'tick-9', status: 'send' }], flashCount: 0, sendCount: 1, attemptCount: 0 },
+            ],
+            totalCount: 2,
+            hasMore: false,
+          },
+        },
+      ],
+      pageParams: [0],
+    });
+    const { result } = renderHook(() => useDeleteTick(), { wrapper });
+
+    await act(async () => {
+      result.current.mutate('tick-1');
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    type GroupedCache = {
+      pages: { userGroupedAscentsFeed: { groups: { key: string }[]; totalCount: number } }[];
+    };
+    const cached = queryClient.getQueryData<GroupedCache>(['userGroupedAscentsFeed', 'user-1', {}]);
+    expect(cached?.pages[0].userGroupedAscentsFeed.groups.map((group) => group.key)).toEqual(['g2']);
+    expect(cached?.pages[0].userGroupedAscentsFeed.totalCount).toBe(1);
+  });
+
   it('decrements totalCount by ONE even when offset overlap duplicated the row across pages', async () => {
     const executeHttp = vi.fn().mockResolvedValue({ deleteTick: true });
     const { wrapper, queryClient } = createWrapper({ executeHttp: executeHttp as unknown as ExecuteHttp });

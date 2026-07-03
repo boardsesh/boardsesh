@@ -8,6 +8,7 @@ import {
   type DeleteTickMutationVariables,
   type DeleteTickMutationResponse,
   type GetUserAscentsFeedQueryResponse,
+  type GetUserGroupedAscentsFeedQueryResponse,
 } from '@boardsesh/graphql/operations';
 import { useBoardAdapter } from './adapter';
 
@@ -19,6 +20,7 @@ function invalidateTickDependents(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: ['userProfileStats'] });
   void queryClient.invalidateQueries({ queryKey: ['userClimbPercentile'] });
   void queryClient.invalidateQueries({ queryKey: ['userAscentsFeed'] });
+  void queryClient.invalidateQueries({ queryKey: ['userGroupedAscentsFeed'] });
   void queryClient.invalidateQueries({ queryKey: ['logbook'] });
   void queryClient.invalidateQueries({ queryKey: ['climb'] });
   void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
@@ -54,6 +56,54 @@ export function useUpdateTick() {
  * the same and the query-key shape isn't duplicated at call sites.
  */
 function stripTickFromAscentFeeds(queryClient: QueryClient, uuid: string) {
+  // Grouped variant: remove the tick from its group's items, recompute that
+  // group's per-status counts, drop the group when emptied, and decrement the
+  // page's totalCount ONLY then (it counts groups). One drop max per delete —
+  // duplicate rows across pages are cache artifacts.
+  queryClient.setQueriesData<InfiniteData<GetUserGroupedAscentsFeedQueryResponse>>(
+    { queryKey: ['userGroupedAscentsFeed'] },
+    (cached) => {
+      if (!cached) return cached;
+      const holdsTick = cached.pages.some((page) =>
+        page.userGroupedAscentsFeed.groups.some((group) => group.items.some((item) => item.uuid === uuid)),
+      );
+      if (!holdsTick) return cached;
+      let groupDropped = false;
+      return {
+        ...cached,
+        pages: cached.pages.map((page) => {
+          const groups = page.userGroupedAscentsFeed.groups
+            .map((group) => {
+              if (!group.items.some((item) => item.uuid === uuid)) return group;
+              const items = group.items.filter((item) => item.uuid !== uuid);
+              if (items.length === 0) {
+                groupDropped = true;
+                return null;
+              }
+              return {
+                ...group,
+                items,
+                flashCount: items.filter((item) => item.status === 'flash').length,
+                sendCount: items.filter((item) => item.status === 'send').length,
+                attemptCount: items.filter((item) => item.status === 'attempt').length,
+              };
+            })
+            .filter((group): group is NonNullable<typeof group> => group !== null);
+          return {
+            ...page,
+            userGroupedAscentsFeed: {
+              ...page.userGroupedAscentsFeed,
+              groups,
+              totalCount: groupDropped
+                ? Math.max(0, page.userGroupedAscentsFeed.totalCount - 1)
+                : page.userGroupedAscentsFeed.totalCount,
+            },
+          };
+        }),
+      };
+    },
+  );
+
   queryClient.setQueriesData<InfiniteData<GetUserAscentsFeedQueryResponse>>(
     { queryKey: ['userAscentsFeed'] },
     (cached) => {

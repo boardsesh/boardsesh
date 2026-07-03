@@ -295,7 +295,13 @@
       "attemptsOnly": "{{attempts}} tentatives",
       "tries_one": "{{count}} essai",
       "tries_other": "{{count}} essais",
-      "mirroredTag": "Miroir"
+      "mirroredTag": "Miroir",
+      "lifetimeTries_one": "{{count}} essai",
+      "lifetimeTries_other": "{{count}} essais",
+      "lifetimeSessions_one": "sur {{count}} session",
+      "lifetimeSessions_other": "sur {{count}} sessions",
+      "lifetimeSends_one": "{{count}} réussite",
+      "lifetimeSends_other": "{{count}} réussites"
     },
     "similarClimbs": {
       "title": "Voies similaires",

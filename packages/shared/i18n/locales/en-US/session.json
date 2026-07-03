@@ -295,7 +295,13 @@
       "attemptsOnly": "{{attempts}} attempts",
       "tries_one": "{{count}} try",
       "tries_other": "{{count}} tries",
-      "mirroredTag": "Mirror"
+      "mirroredTag": "Mirror",
+      "lifetimeTries_one": "{{count}} try",
+      "lifetimeTries_other": "{{count}} tries",
+      "lifetimeSessions_one": "over {{count}} session",
+      "lifetimeSessions_other": "over {{count}} sessions",
+      "lifetimeSends_one": "{{count}} send",
+      "lifetimeSends_other": "{{count}} sends"
     },
     "similarClimbs": {
       "title": "Similar Climbs",

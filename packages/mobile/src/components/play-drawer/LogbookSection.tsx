@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useLogbook } from '@boardsesh/board-react';
+import { deriveAngleLifetimeStats } from '@boardsesh/profile-stats';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { LogbookEntryRow } from './LogbookEntryRow';
@@ -36,9 +37,24 @@ export const LogbookSection = memo(function LogbookSection({
   // Only Tension/Decoy log mirrored sends, so the mirror tag is board-gated.
   const showMirrorTag = boardName === 'tension' || boardName === 'decoy';
 
+  // Lifetime per angle — "13 tries over 3 sessions". The logbook list shows
+  // per-day truth; the climb's own view is where the whole journey lives.
+  // Sessions = distinct days, matching the logbook's day-scoped grouping.
+  const angleLifetime = useMemo(() => deriveAngleLifetimeStats(entries), [entries]);
+
   if (entries.length > 0) {
     return (
       <View style={styles.container}>
+        {angleLifetime.length > 0 ? (
+          <View style={styles.lifetimeBlock}>
+            {angleLifetime.map((stats) => (
+              <Text key={stats.angle} variant="footnote" color={iosSystemColors.systemGray}>
+                {`${stats.angle}° — ${t('mobile.logbook.lifetimeTries', { count: stats.totalTries })} ${t('mobile.logbook.lifetimeSessions', { count: stats.sessionCount })}`}
+                {stats.sendCount > 0 ? ` · ${t('mobile.logbook.lifetimeSends', { count: stats.sendCount })}` : ''}
+              </Text>
+            ))}
+          </View>
+        ) : null}
         {entries.map((entry) => (
           <LogbookEntryRow key={entry.uuid} entry={entry} showMirrorTag={showMirrorTag} />
         ))}
@@ -88,6 +104,10 @@ export const LogbookSection = memo(function LogbookSection({
 });
 
 const styles = StyleSheet.create({
+  lifetimeBlock: {
+    gap: 2,
+    marginBottom: spacing[2],
+  },
   container: {
     gap: spacing[1],
   },
