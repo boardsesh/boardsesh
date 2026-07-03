@@ -58,6 +58,55 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
     [onPick],
   );
 
+  const renderEntry = useCallback(
+    ({ item: entry }: { item: AscentFeedItem }) => {
+      const statusColor =
+        entry.status === 'flash'
+          ? brandColors.warning
+          : entry.status === 'send'
+            ? brandColors.success
+            : iosSystemColors.systemGray;
+      const quality = normalizeLogbookQuality(entry.quality);
+      const timeLabel = parseTickTime(entry.climbedAt)
+        .toDate()
+        .toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' });
+      const meta = [
+        t('mobile.logbook.tries', { count: displayedAttemptCount(entry.attemptCount) }),
+        quality != null ? t('mobile.logbook.row.stars', { count: quality }) : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return (
+        <Pressable
+          onPress={() => handlePick(entry)}
+          accessibilityRole="button"
+          accessibilityLabel={`${timeLabel}, ${meta}`}
+          style={({ pressed }) => [
+            styles.entryRow,
+            { backgroundColor: systemColors.secondaryBackground },
+            pressed && styles.entryRowPressed,
+          ]}
+        >
+          <Icon name={STATUS_ICON[entry.status]} size={20} color={statusColor} />
+          <View style={styles.entryText}>
+            <Text variant="body" style={styles.entryTime}>
+              {timeLabel}
+            </Text>
+            <Text variant="footnote" color={systemColors.secondaryLabel}>
+              {meta}
+            </Text>
+          </View>
+          <Icon
+            name={intent === 'delete' ? 'delete' : 'edit'}
+            size={18}
+            color={intent === 'delete' ? brandColors.error : systemColors.secondaryLabel}
+          />
+        </Pressable>
+      );
+    },
+    [brandColors, systemColors, i18n.language, t, intent, handlePick],
+  );
+
   return (
     <BottomSheetModal
       ref={sheetRef}
@@ -78,52 +127,8 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
             {intent === 'delete' ? t('mobile.logbook.chooser.deleteTitle') : t('mobile.logbook.chooser.editTitle')}
           </Text>
         }
-        renderItem={({ item: entry }) => {
-          const statusColor =
-            entry.status === 'flash'
-              ? brandColors.warning
-              : entry.status === 'send'
-                ? brandColors.success
-                : iosSystemColors.systemGray;
-          const quality = normalizeLogbookQuality(entry.quality);
-          const timeLabel = parseTickTime(entry.climbedAt)
-            .toDate()
-            .toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' });
-          const meta = [
-            t('mobile.logbook.tries', { count: displayedAttemptCount(entry.attemptCount) }),
-            quality != null ? t('mobile.logbook.row.stars', { count: quality }) : null,
-          ]
-            .filter(Boolean)
-            .join(' · ');
-          return (
-            <Pressable
-              key={entry.uuid}
-              onPress={() => handlePick(entry)}
-              accessibilityRole="button"
-              accessibilityLabel={`${timeLabel}, ${meta}`}
-              style={({ pressed }) => [
-                styles.entryRow,
-                { backgroundColor: systemColors.secondaryBackground },
-                pressed && styles.entryRowPressed,
-              ]}
-            >
-              <Icon name={STATUS_ICON[entry.status]} size={20} color={statusColor} />
-              <View style={styles.entryText}>
-                <Text variant="body" style={styles.entryTime}>
-                  {timeLabel}
-                </Text>
-                <Text variant="footnote" color={systemColors.secondaryLabel}>
-                  {meta}
-                </Text>
-              </View>
-              <Icon
-                name={intent === 'delete' ? 'delete' : 'edit'}
-                size={18}
-                color={intent === 'delete' ? brandColors.error : systemColors.secondaryLabel}
-              />
-            </Pressable>
-          );
-        }}
+        renderItem={renderEntry}
+
       />
     </BottomSheetModal>
   );
