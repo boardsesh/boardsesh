@@ -192,7 +192,7 @@ describe('LogbookTab guarded delete', () => {
     const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onSuccess: () => void };
     act(() => mutateOptions.onSuccess());
 
-    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'swipe' });
+    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'swipe', viaChooser: false });
   });
 
   it('tracks the a11y method when the delete came from an accessibility action', async () => {
@@ -204,7 +204,7 @@ describe('LogbookTab guarded delete', () => {
     const mutateOptions = deleteTick.mutate.mock.calls[0][1] as { onSuccess: () => void };
     act(() => mutateOptions.onSuccess());
 
-    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'a11y' });
+    expect(analytics.track).toHaveBeenCalledWith('Logbook Entry Deleted', { method: 'a11y', viaChooser: false });
   });
 
   it('ignores a second delete request while the confirm dialog is open', async () => {

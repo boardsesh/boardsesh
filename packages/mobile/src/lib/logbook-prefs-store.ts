@@ -42,6 +42,19 @@ const V2_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
   benchmarkOnly: false,
 };
 
+// The v1 resting filter (both statuses on) — the pre-v2 default. Frozen for
+// the same reason as the v2 shape below: the never-diverged check must compare
+// against history, not today's defaults.
+const V1_DEFAULT_LOGBOOK_FILTERS: LogbookFilterState = {
+  ...V2_DEFAULT_LOGBOOK_FILTERS,
+  includeAttempts: true,
+};
+
+/** True when a filter state matches the frozen v1 both-on default exactly. */
+function equalsV1Defaults(filters: LogbookFilterState): boolean {
+  return filters.includeAttempts === true && equalsV2Defaults({ ...filters, includeAttempts: false });
+}
+
 /** True when a filter state matches the frozen v2 sends-only default exactly. */
 function equalsV2Defaults(filters: LogbookFilterState): boolean {
   return (
@@ -71,19 +84,19 @@ export async function loadLogbookPrefs(): Promise<StoredLogbookPrefs | null> {
     const sort = sanitizeLogbookSort(stored.sort);
     const storedVersion = stored.version;
     const needsMigration = storedVersion !== LOGBOOK_PREFS_VERSION;
-    // v1→v2: a pre-v2 payload still on the old "both" default dropped attempts to
-    // land on the sends-only default. That step only ran for unstamped/v1 data.
-    if (storedVersion == null || storedVersion < 2) {
-      if (filters.includeSends && filters.includeAttempts) {
-        filters.includeAttempts = false;
+    // →v3: attempts show by default again. The obsolete v1→v2 attempts-drop is
+    // GONE — chaining it would strand never-touched legacy payloads on
+    // sends-only, the opposite of the new default (v1's "both" resting state
+    // already matches where v3 lands). One rule for every pre-v3 payload:
+    // a filter set still deep-equal to EITHER historical resting default
+    // (v1 both-on or v2 sends-only) means the user never diverged — refresh it
+    // to the current defaults. Anything else is a deliberate choice and
+    // round-trips untouched.
+    if (storedVersion == null || storedVersion < LOGBOOK_PREFS_VERSION) {
+      if (equalsV2Defaults(filters) || equalsV1Defaults(filters)) {
+        filters.includeAttempts = DEFAULT_LOGBOOK_FILTERS.includeAttempts;
+        filters.includeSends = DEFAULT_LOGBOOK_FILTERS.includeSends;
       }
-    }
-    // v2→v3: attempts are now shown by default. A v2 payload that still deep-equals
-    // the v2 sends-only default means the user never diverged — refresh it to the
-    // new sends+attempts default. A payload the user actually changed is left
-    // untouched (their "sends only" or any other custom choice round-trips).
-    if (storedVersion === 2 && equalsV2Defaults(filters)) {
-      filters.includeAttempts = DEFAULT_LOGBOOK_FILTERS.includeAttempts;
     }
     // Stamp the current version now rather than waiting for the next filter change,
     // so the migration check doesn't re-run on every cold launch for users who

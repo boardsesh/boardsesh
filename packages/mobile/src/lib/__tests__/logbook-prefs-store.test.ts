@@ -45,7 +45,9 @@ describe('logbook-prefs-store', () => {
     await expect(loadLogbookPrefs()).resolves.toBeNull();
   });
 
-  it('migrates a legacy "both" payload to sends-only on load (v1 -> v2 step)', async () => {
+  it('keeps a never-touched legacy "both" payload on the new attempts-included default (v1 -> v3)', async () => {
+    // The obsolete v1→v2 attempts-drop must NOT chain: stranding legacy users
+    // on sends-only would be the opposite of the new default they never left.
     store.get.mockResolvedValue({
       version: 1,
       filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: true },
@@ -53,7 +55,18 @@ describe('logbook-prefs-store', () => {
     });
     const prefs = await loadLogbookPrefs();
     expect(prefs?.filters.includeSends).toBe(true);
-    expect(prefs?.filters.includeAttempts).toBe(false);
+    expect(prefs?.filters.includeAttempts).toBe(true);
+  });
+
+  it('keeps a DIVERGED legacy payload verbatim, attempts included (v1 -> v3)', async () => {
+    store.get.mockResolvedValue({
+      version: 1,
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: true, minGrade: 12 },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    const prefs = await loadLogbookPrefs();
+    expect(prefs?.filters.includeAttempts).toBe(true);
+    expect(prefs?.filters.minGrade).toBe(12);
   });
 
   it('refreshes an untouched v2 sends-only payload to the new attempts-included default (v2 -> v3)', async () => {

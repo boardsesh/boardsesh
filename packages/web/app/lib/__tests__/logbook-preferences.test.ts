@@ -49,7 +49,9 @@ describe('sanitizeLogbookPreferences', () => {
     expect(result.filters.flashOnly).toBe(true);
   });
 
-  it('drops attempts from a pre-v2 "both" payload (v1 to v2 step) and stamps v3', () => {
+  it('keeps a never-touched pre-v2 "both" payload on the new attempts-included default and stamps v3', () => {
+    // The obsolete v1→v2 attempts-drop must NOT chain into v3: legacy users
+    // who never diverged land on the current default, not an obsolete one.
     const migrated = sanitizeLogbookPreferences({
       version: 1,
       boardFilter: 'all',
@@ -57,11 +59,21 @@ describe('sanitizeLogbookPreferences', () => {
       filters: { ...DEFAULT_LOGBOOK_PREFERENCES.filters, includeSends: true, includeAttempts: true },
       sort: DEFAULT_LOGBOOK_PREFERENCES.sort,
     });
-    // The v1→v2 step ran (attempts dropped) and the payload is stamped to the
-    // current version.
     expect(migrated.version).toBe(3);
     expect(migrated.filters.includeSends).toBe(true);
-    expect(migrated.filters.includeAttempts).toBe(false);
+    expect(migrated.filters.includeAttempts).toBe(true);
+  });
+
+  it('keeps a diverged pre-v2 payload verbatim, attempts included', () => {
+    const migrated = sanitizeLogbookPreferences({
+      version: 1,
+      boardFilter: 'all',
+      layoutSelections: ALL_LAYOUT_SELECTIONS,
+      filters: { ...DEFAULT_LOGBOOK_PREFERENCES.filters, includeSends: true, includeAttempts: true, minGrade: 12 },
+      sort: DEFAULT_LOGBOOK_PREFERENCES.sort,
+    });
+    expect(migrated.filters.includeAttempts).toBe(true);
+    expect(migrated.filters.minGrade).toBe(12);
   });
 
   it('refreshes an untouched v2 sends-only payload to attempts-included (v2 to v3)', () => {

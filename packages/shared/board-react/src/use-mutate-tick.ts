@@ -68,7 +68,13 @@ function stripTickFromAscentFeeds(queryClient: QueryClient, uuid: string) {
         page.userGroupedAscentsFeed.groups.some((group) => group.items.some((item) => item.uuid === uuid)),
       );
       if (!holdsTick) return cached;
-      let groupDropped = false;
+      // Decide the drop FIRST: totalCount copies live on every page, and a
+      // flag mutated during the map would miss pages processed before the
+      // emptied group's page (breaking the lockstep invariant the flat strip
+      // documents).
+      const groupDropped = cached.pages.some((page) =>
+        page.userGroupedAscentsFeed.groups.some((group) => group.items.length === 1 && group.items[0].uuid === uuid),
+      );
       return {
         ...cached,
         pages: cached.pages.map((page) => {
@@ -77,7 +83,6 @@ function stripTickFromAscentFeeds(queryClient: QueryClient, uuid: string) {
               if (!group.items.some((item) => item.uuid === uuid)) return group;
               const items = group.items.filter((item) => item.uuid !== uuid);
               if (items.length === 0) {
-                groupDropped = true;
                 return null;
               }
               return {

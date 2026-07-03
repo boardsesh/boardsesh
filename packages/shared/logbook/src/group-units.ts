@@ -17,6 +17,8 @@ export type GroupableEntry = {
   status: GroupableStatus;
   climbedAt: string;
   attemptCount: number;
+  /** The climber's own grade, when logged — richer entries win status ties. */
+  difficulty?: number | null;
 };
 
 const STATUS_RANK: Record<GroupableStatus, number> = { flash: 3, send: 2, attempt: 1 };
@@ -31,12 +33,21 @@ export function pickBestGroupEntry<T extends GroupableEntry>(items: readonly T[]
   if (items.length === 0) {
     throw new Error('pickBestGroupEntry requires a non-empty group');
   }
+  // Tie-breaks within a status rank: a GRADED entry beats an ungraded one
+  // (an ungraded quick repeat must not demote the row to the crowd's grade),
+  // then the latest wins. Stored naive timestamps share one format, so
+  // lexicographic order is chronological — the same assumption the resolver's
+  // ORDER BY makes.
+  const richness = (entry: GroupableEntry) => (entry.difficulty != null ? 1 : 0);
   let best = items[0];
   for (const item of items.slice(1)) {
     const rankDelta = STATUS_RANK[item.status] - STATUS_RANK[best.status];
-    // Stored naive timestamps share one format, so lexicographic order is
-    // chronological — the same assumption the resolver's ORDER BY makes.
-    if (rankDelta > 0 || (rankDelta === 0 && item.climbedAt > best.climbedAt)) {
+    const richnessDelta = richness(item) - richness(best);
+    if (
+      rankDelta > 0 ||
+      (rankDelta === 0 && richnessDelta > 0) ||
+      (rankDelta === 0 && richnessDelta === 0 && item.climbedAt > best.climbedAt)
+    ) {
       best = item;
     }
   }

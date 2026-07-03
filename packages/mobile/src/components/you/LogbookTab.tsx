@@ -15,6 +15,7 @@ import {
   logbookNoteIsVisible,
   pickBestGroupEntry,
   sumGroupTries,
+  logbookDayKey,
   type LogbookFilterState,
   type LogbookSortPreset,
   type LogbookListRow,
@@ -215,11 +216,13 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // off `feedInput` already ignores persisted prefs, so this just fetches the
   // defaults once hydration settles. Keeping the gate while the flag is still
   // resolving avoids an early default fetch for the flag-on cohort.)
-  // Date-ordered views use the GROUPED feed (same climb + same day collapses
-  // to one row; the backend shares filter semantics with the flat feed). Grade
-  // and custom non-date sorts keep the flat feed — interleaved one-day groups
-  // mean nothing there. Exactly one of the two is enabled at a time.
-  const groupedMode = shouldShowLogbookDividers(feedInput);
+  // Date-DESC views use the GROUPED feed (same climb + same day collapses to
+  // one row; the backend shares filter semantics with the flat feed). The
+  // grouped resolver orders by latest activity DESC only, so a custom date-ASC
+  // sort keeps the flat feed (with dividers); grade/custom non-date sorts keep
+  // the flat feed without dividers. Exactly one feed is enabled at a time.
+  const showDividers = shouldShowLogbookDividers(feedInput);
+  const groupedMode = feedInput.sortBy === 'recent' || (feedInput.sortBy === 'date' && feedInput.sortOrder !== 'asc');
   const flatFeed = useUserAscentsFeed(userId, feedInput, { enabled: hydrated && !groupedMode });
   const groupedFeed = useUserGroupedAscentsFeed(userId, feedInput, { enabled: hydrated && groupedMode });
   // Control-surface alias (status flags, pagination); data is read per-mode in
@@ -244,20 +247,50 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
     let rows: LogbookListRow<LogbookGroupUnit>[];
     if (groupedMode) {
       const groups = groupedFeed.data?.pages.flatMap((page) => page.userGroupedAscentsFeed.groups) ?? [];
-      // One unit per (climb, day) group: the best-outcome entry carries the
-      // row; the day's tries sum; siblings ride along for the entry chooser.
-      const units: LogbookGroupUnit[] = groups
-        .filter((group) => group.items.length > 0)
-        .map((group) => {
-          const best = pickBestGroupEntry(group.items);
-          return {
-            ...best,
-            wall: wallOf(best),
-            groupTries: sumGroupTries(group.items),
-            groupItems: group.items,
-          };
-        });
+      // RE-BUCKET the backend groups client-side by (climb, LOCAL day, angle):
+      // the resolver cuts groups on the stored UTC calendar day, which
+      // disagrees with the local-day dividers on any non-UTC device (an
+      // evening session would split), and its key ignores angle, which would
+      // sum tries across angles under one row — the exact honesty rules the
+      // redesign set. Flattening items and regrouping fixes both without a
+      // backend timezone parameter; item-level dedupe absorbs group overlap
+      // from offset pagination.
+      const itemsByLocalKey = new Map<string, AscentFeedItem[]>();
+      const seenTickUuids = new Set<string>();
+      for (const group of groups) {
+        for (const item of group.items) {
+          if (seenTickUuids.has(item.uuid)) continue;
+          seenTickUuids.add(item.uuid);
+          const localKey = `${item.climbUuid}|${logbookDayKey(item.climbedAt)}|${item.angle}`;
+          const bucket = itemsByLocalKey.get(localKey);
+          if (bucket) bucket.push(item);
+          else itemsByLocalKey.set(localKey, [item]);
+        }
+      }
+      const units: LogbookGroupUnit[] = Array.from(itemsByLocalKey.values()).map((bucketItems) => {
+        const best = pickBestGroupEntry(bucketItems);
+        // The unit's timestamp is the bucket's LATEST activity (not the best
+        // entry's) so ordering reads "when did I last touch this today".
+        const latestClimbedAt = bucketItems.reduce(
+          (latest, item) => (item.climbedAt > latest ? item.climbedAt : latest),
+          bucketItems[0].climbedAt,
+        );
+        return {
+          ...best,
+          climbedAt: latestClimbedAt,
+          wall: wallOf(best),
+          groupTries: sumGroupTries(bucketItems),
+          groupItems: bucketItems,
+        };
+      });
+      units.sort((a, b) => (a.climbedAt < b.climbedAt ? 1 : a.climbedAt > b.climbedAt ? -1 : 0));
       rows = buildLogbookListRows(units, { hasMore: groupedFeed.hasNextPage ?? false });
+    } else if (showDividers) {
+      // Date-ASC custom sort: dividers without grouping (the grouped resolver
+      // is DESC-only) — one row per tick, exactly as before grouping existed.
+      const items = flatFeed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [];
+      const withWalls = items.map((item) => ({ ...item, wall: wallOf(item) }));
+      rows = buildLogbookListRows(withWalls, { hasMore: flatFeed.hasNextPage ?? false });
     } else {
       const items = flatFeed.data?.pages.flatMap((page) => page.userAscentsFeed.items) ?? [];
       rows = dedupeLogbookItems(items).map((item) => ({ type: 'entry', key: item.uuid, item, wallCovered: false }));
@@ -269,7 +302,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       if (row.type === 'entry') ordinals.set(row.item.uuid, ordinals.size);
     }
     return { listRows: rows, entryIndexByUuid: ordinals };
-  }, [groupedFeed.data, groupedFeed.hasNextPage, flatFeed.data, groupedMode]);
+  }, [groupedFeed.data, groupedFeed.hasNextPage, flatFeed.data, flatFeed.hasNextPage, groupedMode, showDividers]);
 
   // Tap → set the climb active and open the play drawer (own logbook and another
   // climber's read-only logbook alike). AscentFeedItem structurally satisfies the
@@ -353,7 +386,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
   // dialog, then DELETE_TICK. Callers own the single-flight flag transitions
   // into this function; it owns them out.
   const startGuardedDelete = useCallback(
-    (targetUuid: string, method: 'swipe' | 'a11y') => {
+    (targetUuid: string, method: 'swipe' | 'a11y', viaChooser = false) => {
       const runGuardedDelete = async () => {
         const confirmed = await confirmDialog({
           title: t('mobile.logbook.deleteTitle'),
@@ -369,7 +402,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
         deleteTickMutate(targetUuid, {
           onSuccess: () => {
             deleteFlowActiveRef.current = false;
-            track(SHARED_EVENTS.LogbookEntryDeleted, { method });
+            track(SHARED_EVENTS.LogbookEntryDeleted, { method, viaChooser });
             hapticSuccess();
           },
           onError: () => {
@@ -418,7 +451,7 @@ export function LogbookTab({ userId, topInset = 0, viewerIsOwner = true }: Logbo
       }
       if (deleteFlowActiveRef.current || deleteTickPendingRef.current) return;
       deleteFlowActiveRef.current = true;
-      startGuardedDelete(entry.uuid, active.method);
+      startGuardedDelete(entry.uuid, active.method, true);
     },
     [chooser, openEditSheet, startGuardedDelete],
   );

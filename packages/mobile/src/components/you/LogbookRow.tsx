@@ -210,9 +210,13 @@ export const LogbookRow = memo(function LogbookRow({
   // context worth keeping; unnamed ticks still get the wall product.
   const wallLabel = ascent.boardDisplayName ?? getLayoutDisplayName(ascent.boardType, ascent.layoutId);
   const boardAngleLabel = `${wallLabel} ${ascent.angle}°`;
+  // A grouped flash day (flash + later repeats) still owns its summed tries —
+  // "Flash · 5 tries" — while a plain flash stays a bare "Flash".
   const attemptsLabel =
     attemptsKind === 'flash'
-      ? t('mobile.logbook.status.flash')
+      ? triesShown > 1
+        ? `${t('mobile.logbook.status.flash')} · ${t('mobile.logbook.tries', { count: triesShown })}`
+        : t('mobile.logbook.status.flash')
       : attemptsKind === 'send'
         ? t('mobile.logbook.tries', { count: triesShown })
         : `${t('mobile.logbook.row.project')} · ${t('mobile.logbook.tries', { count: triesShown })}`;
@@ -389,7 +393,7 @@ export const LogbookRow = memo(function LogbookRow({
     consensusGradeLabel
       ? t('mobile.logbook.row.a11yGradeDelta', { logged: gradeLabel, consensus: consensusGradeLabel })
       : null,
-    attemptsKind === 'flash' ? null : t('mobile.logbook.tries', { count: triesShown }),
+    attemptsKind === 'flash' && triesShown <= 1 ? null : t('mobile.logbook.tries', { count: triesShown }),
     quality != null ? t('mobile.logbook.row.a11yStars', { count: quality }) : null,
     hasNote ? t('mobile.logbook.row.a11yHasNote') : null,
     hasBetaVideo ? t('mobile.logbook.row.a11yHasBetaVideo') : null,

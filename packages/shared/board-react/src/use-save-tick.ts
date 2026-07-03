@@ -124,6 +124,7 @@ export function useSaveTick(boardName: BoardName | null) {
       // a new tick won't appear there without busting them. Matches the
       // edit/delete path (use-mutate-tick) — the create path was missing these.
       void queryClient.invalidateQueries({ queryKey: ['userAscentsFeed'] });
+      void queryClient.invalidateQueries({ queryKey: ['userGroupedAscentsFeed'] });
       void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
       void queryClient.invalidateQueries({ queryKey: ['sessionDetail'] });
 

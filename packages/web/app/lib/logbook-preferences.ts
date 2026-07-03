@@ -42,11 +42,30 @@ export type LogbookPreferences = {
 // check compares against the historical v2 default, not today's default (now
 // sends+attempts). Only the status pair distinguishes it from the v3 default,
 // so that pair is what the check reads.
+// Frozen LITERALLY (not spread from the live defaults): the never-diverged
+// check must compare against what v2 actually persisted, and a future change
+// to any live default would silently redefine history through a spread.
 const V2_DEFAULT_FILTERS: LogbookFilterState = {
-  ...DEFAULT_LOGBOOK_FILTERS,
   includeSends: true,
   includeAttempts: false,
+  flashOnly: false,
+  minGrade: '',
+  maxGrade: '',
+  fromDate: '',
+  toDate: '',
+  angleRange: [DEFAULT_LOGBOOK_ANGLE_RANGE[0], DEFAULT_LOGBOOK_ANGLE_RANGE[1]],
+  benchmarkOnly: false,
 };
+
+// The v1 resting shape: the pre-v2 "both statuses" default.
+const V1_DEFAULT_FILTERS: LogbookFilterState = {
+  ...V2_DEFAULT_FILTERS,
+  includeAttempts: true,
+};
+
+function filtersEqualV1Defaults(filters: LogbookFilterState): boolean {
+  return filters.includeAttempts === true && filtersEqualV2Defaults({ ...filters, includeAttempts: false });
+}
 
 export const ALL_LAYOUT_SELECTIONS: Record<Exclude<BoardFilter, 'all'>, number[]> = {
   kilter: getAllLayouts('kilter').map((layout) => layout.id),
@@ -124,18 +143,19 @@ export function sanitizeLogbookPreferences(value: unknown): LogbookPreferences {
   // mobile coerce persisted state identically.
   const filters = sanitizeLogbookFilters(source.filters);
 
-  // v1→v2: pre-v2 prefs (no stamp) that still carried the old "both" default get
-  // attempts dropped to land on the sends-only default. Only for unstamped/v1 data.
-  if ((storedVersion == null || storedVersion < 2) && filters.includeSends && filters.includeAttempts) {
-    filters.includeAttempts = false;
-  }
-
-  // v2→v3: attempts are now shown by default. A v2 payload that still deep-equals
-  // the v2 sends-only default means the user never diverged — refresh it to the
-  // new sends+attempts default. Prefs the user actually changed are left as-is, so
-  // an explicit "sends only" round-trips.
-  if (storedVersion === 2 && filtersEqualV2Defaults(filters)) {
+  // →v3: attempts show by default again. The obsolete v1→v2 attempts-drop is
+  // gone — chaining it would strand never-touched legacy payloads on
+  // sends-only, the opposite of the new default (v1's "both" resting state
+  // already matches where v3 lands). One rule for every pre-v3 payload: a
+  // filter set still deep-equal to EITHER historical resting default (v1
+  // both-on or v2 sends-only) means the user never diverged — refresh to the
+  // current defaults. Anything else was a deliberate choice and round-trips.
+  if (
+    (storedVersion == null || storedVersion < 3) &&
+    (filtersEqualV2Defaults(filters) || filtersEqualV1Defaults(filters))
+  ) {
     filters.includeAttempts = DEFAULT_LOGBOOK_FILTERS.includeAttempts;
+    filters.includeSends = DEFAULT_LOGBOOK_FILTERS.includeSends;
   }
 
   return {

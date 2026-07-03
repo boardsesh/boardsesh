@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, type ComponentRef } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetModal, BottomSheetFlatList } from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { AscentFeedItem } from '@boardsesh/graphql/operations';
@@ -26,6 +26,8 @@ type LogbookEntryChooserSheetProps = {
   onPick: (entry: AscentFeedItem) => void;
   onDismiss: () => void;
 };
+
+const chooserKeyExtractor = (entry: AscentFeedItem) => entry.uuid;
 
 const STATUS_ICON: Record<AscentFeedItem['status'], IconName> = {
   flash: 'flash',
@@ -67,11 +69,16 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
       handleIndicatorStyle={{ backgroundColor: systemColors.tertiaryLabel }}
       backgroundStyle={{ backgroundColor: systemColors.background }}
     >
-      <BottomSheetScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] }]}>
-        <Text variant="headline" style={styles.title}>
-          {intent === 'delete' ? t('mobile.logbook.chooser.deleteTitle') : t('mobile.logbook.chooser.editTitle')}
-        </Text>
-        {entries.map((entry) => {
+      <BottomSheetFlatList
+        data={entries}
+        keyExtractor={chooserKeyExtractor}
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] }]}
+        ListHeaderComponent={
+          <Text variant="headline" style={styles.title}>
+            {intent === 'delete' ? t('mobile.logbook.chooser.deleteTitle') : t('mobile.logbook.chooser.editTitle')}
+          </Text>
+        }
+        renderItem={({ item: entry }) => {
           const statusColor =
             entry.status === 'flash'
               ? brandColors.warning
@@ -116,8 +123,8 @@ export function LogbookEntryChooserSheet({ entries, intent, onPick, onDismiss }:
               />
             </Pressable>
           );
-        })}
-      </BottomSheetScrollView>
+        }}
+      />
     </BottomSheetModal>
   );
 }
