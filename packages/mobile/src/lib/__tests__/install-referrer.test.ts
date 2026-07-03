@@ -12,6 +12,7 @@ vi.mock('../preference-store', () => ({
   }),
 }));
 vi.mock('../analytics', () => ({ track: analytics.track, setPersonProperties: analytics.setPersonProperties }));
+vi.mock('../error-reporting', () => ({ reportError: vi.fn() }));
 // Every test drives maybeFetchAndAttachInstallReferrer via its injectable
 // `fetchNative` param, so the native module itself is never exercised — but
 // install-referrer.ts still imports it at module scope (for the default
@@ -25,9 +26,11 @@ import {
   parseInstallReferrer,
 } from '../install-referrer';
 import { getPreference, setPreference } from '../preference-store';
+import { reportError } from '../error-reporting';
 
 const getPreferenceMock = vi.mocked(getPreference);
 const setPreferenceMock = vi.mocked(setPreference);
+const reportErrorMock = vi.mocked(reportError);
 
 beforeEach(() => {
   preferenceStore.values.clear();
@@ -35,6 +38,7 @@ beforeEach(() => {
   analytics.setPersonProperties.mockClear();
   getPreferenceMock.mockClear();
   setPreferenceMock.mockClear();
+  reportErrorMock.mockClear();
 });
 
 describe('parseInstallReferrer', () => {
@@ -132,9 +136,10 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
     expect(analytics.track).not.toHaveBeenCalled();
   });
 
-  it('never throws when the native call rejects, and leaves the flag unset so the next launch retries', async () => {
+  it('never throws when the native call rejects, reports the error, and leaves the flag unset so the next launch retries', async () => {
+    const rejection = new Error('SERVICE_UNAVAILABLE');
     const fetchNative = vi.fn(async () => {
-      throw new Error('SERVICE_UNAVAILABLE');
+      throw rejection;
     });
 
     await expect(maybeFetchAndAttachInstallReferrer(fetchNative)).resolves.toBeUndefined();
@@ -142,5 +147,12 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
     expect(setPreferenceMock).not.toHaveBeenCalled();
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
     expect(analytics.track).not.toHaveBeenCalled();
+    expect(reportErrorMock).toHaveBeenCalledWith(rejection);
+
+    // The flag was never set, so a second call (the next launch) actually
+    // re-invokes fetchNative instead of short-circuiting like the
+    // already-fetched case above.
+    await maybeFetchAndAttachInstallReferrer(fetchNative);
+    expect(fetchNative).toHaveBeenCalledTimes(2);
   });
 });

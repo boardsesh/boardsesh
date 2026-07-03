@@ -38,6 +38,9 @@ class InstallReferrerModule : Module() {
                     } catch (endError: Exception) {
                         // Best-effort — the binding is being torn down regardless.
                     }
+                    // Empty onCancellation is deliberate: endConnection() above already
+                    // ran before this resume() call, so there's nothing left to clean up
+                    // if cancellation races the resume itself.
                     if (continuation.isActive) continuation.resume(result) { }
                 }
 

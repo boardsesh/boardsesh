@@ -1,5 +1,6 @@
 import { installReferrerNative, type NativeInstallReferrerResult } from '../../modules/install-referrer/src/index';
 import { setPersonProperties, track } from './analytics';
+import { reportError } from './error-reporting';
 import { getPreference, setPreference } from './preference-store';
 
 // Android-only: Play Install Referrer is a Play Store mechanism with no iOS
@@ -79,7 +80,10 @@ export async function maybeFetchAndAttachInstallReferrer(
         install_campaign: parsed.campaign,
       });
     }
-  } catch {
-    // Must never throw — this runs fire-and-forget at startup.
+  } catch (error) {
+    // Must never throw — this runs fire-and-forget at startup. Still reported
+    // so a broken preference store / PostHog init doesn't fail this pipeline
+    // invisibly.
+    reportError(error);
   }
 }
