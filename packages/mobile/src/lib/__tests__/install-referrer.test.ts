@@ -155,4 +155,18 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
     await maybeFetchAndAttachInstallReferrer(fetchNative);
     expect(fetchNative).toHaveBeenCalledTimes(2);
   });
+
+  it('never throws when getPreference itself rejects, reports the error, and never reaches fetchNative', async () => {
+    const rejection = new Error('AsyncStorage unavailable');
+    getPreferenceMock.mockRejectedValueOnce(rejection);
+    const fetchNative = vi.fn(async () => null);
+
+    await expect(maybeFetchAndAttachInstallReferrer(fetchNative)).resolves.toBeUndefined();
+
+    expect(fetchNative).not.toHaveBeenCalled();
+    expect(setPreferenceMock).not.toHaveBeenCalled();
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+    expect(analytics.track).not.toHaveBeenCalled();
+    expect(reportErrorMock).toHaveBeenCalledWith(rejection);
+  });
 });
