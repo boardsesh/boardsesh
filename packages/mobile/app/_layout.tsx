@@ -61,6 +61,7 @@ import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
+import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
@@ -502,6 +503,7 @@ function RootLayout() {
                                                         </TabBarHeightProvider>
                                                         <AnalyticsScreenTracker />
                                                         <OtaUpdateTracker />
+                                                        <InstallReferrerTracker />
                                                       </ShareTargetProvider>
                                                     </DeepLinkProvider>
                                                   </DrawerHostProvider>

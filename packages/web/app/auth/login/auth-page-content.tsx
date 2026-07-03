@@ -35,6 +35,7 @@ import { TabPanel } from '@/app/components/ui/tab-panel';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
 import { themeTokens } from '@/app/theme/theme-config';
 import { track, setPersonProperties } from '@/app/lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { authMethodFromError, safeAuthError } from './auth-error-classification';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
@@ -158,7 +159,7 @@ export default function AuthPageContent() {
         return;
       }
 
-      track('Signup Completed', {
+      track(SHARED_EVENTS.SignupCompleted, {
         auth_method: 'credentials',
         requires_verification: Boolean(data.requiresVerification),
       });

@@ -16,6 +16,14 @@ export const SHARED_EVENTS = {
   // Kept distinct from LoginFailed so the failure metric isn't inflated by cancels.
   LoginCancelled: 'Login Cancelled',
   Logout: 'Logout',
+  // Fired once, immediately after a NEW account is created via credentials
+  // (both platforms). OAuth registration is indistinguishable from OAuth
+  // sign-in and stays tagged only via LoginSucceeded's `is_registration: true`
+  // — web has no separate OAuth-signup event either. Kept distinct from
+  // LoginSucceeded so "created an account" and "successfully authenticated"
+  // stay separately measurable — web's signup can require email verification
+  // and never reach a LoginSucceeded in that same session.
+  SignupCompleted: 'Signup Completed',
   // Queue / session
   AddToQueue: 'Add to Queue',
   ClimbAddedToQueue: 'Climb Added to Queue',

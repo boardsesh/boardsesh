@@ -506,6 +506,12 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       // Play device filtering. Unconditional (EAS-safe) — it's a pure manifest
       // addition with no signing/credential implications.
       './plugins/with-android-bluetooth-feature',
+      // Declares com.android.vending as a visible package under Android 11+
+      // package-visibility filtering, so the Play Install Referrer native module
+      // (packages/mobile/modules/install-referrer) can bind to the Play Store
+      // service instead of always resolving FEATURE_NOT_SUPPORTED. EAS-safe pure
+      // manifest addition.
+      './plugins/with-android-install-referrer-queries',
       // Adds the <service android:foregroundServiceType="connectedDevice"> + the
       // notification-action <receiver> for the background BLE session (the
       // Android counterpart to the iOS Live Activity). EAS-safe manifest-only mod.

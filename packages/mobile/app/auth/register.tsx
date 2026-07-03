@@ -14,7 +14,7 @@ import { useNativeOAuthSignIn } from '../../src/hooks/use-native-oauth-sign-in';
 import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { Text } from '../../src/components/Text';
-import { track } from '../../src/lib/analytics';
+import { track, setPersonProperties } from '../../src/lib/analytics';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 
@@ -97,6 +97,17 @@ export default function RegisterScreen() {
       const result = await register(trimmedEmail, values.password, values.name.trim() || undefined);
       if (result.success) {
         track(SHARED_EVENTS.LoginSucceeded, { auth_method: 'credentials', flow: 'native', is_registration: true });
+        track(SHARED_EVENTS.SignupCompleted, { auth_method: 'credentials', flow: 'native' });
+        // First-touch attribution — written once and never overwritten. Mirrors
+        // web's handleRegister (auth-page-content.tsx): PostHog merges these onto
+        // the authenticated user once reconcileAnalyticsIdentity's alias() runs.
+        // Native registration always auto-logs-in (registerWithCredentials has no
+        // email-verification branch, unlike web's /api/auth/register), so unlike
+        // web there's no "early return before alias()" caveat here.
+        setPersonProperties(undefined, {
+          signup_at: new Date().toISOString(),
+          signup_auth_method: 'credentials',
+        });
         // AuthProvider flips isAuthenticated and the auth-group Redirect lands the
         // new user in the app — same auto-login path as signInWithCredentials.
         return;

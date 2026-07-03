@@ -1,0 +1,32 @@
+plugins {
+  id 'com.android.library'
+  // Canonical Expo local-module plugin: applies Kotlin + provides
+  // expo-modules-core (Module/ModuleDefinition API) on the compile classpath,
+  // version-proof. Groovy (not .kts) so the library defaultConfig
+  // versionCode/versionName the plugin requires can be set.
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.boardsesh'
+version = '1.0.0'
+
+android {
+  namespace 'com.boardsesh.installreferrer'
+  compileSdk 36
+
+  defaultConfig {
+    minSdk 24
+    // Required by expo-module-gradle-plugin's publication setup.
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // Google's official Play Install Referrer client — resolves off the
+  // google() Maven repo already on the generated project's classpath.
+  // InstallReferrerClient is a one-shot, callback-based service binding; the
+  // Kotlin module wraps it in a coroutine (kotlinx-coroutines-core comes
+  // transitively via expo-modules-core, which the plugin above provides).
+  implementation 'com.android.installreferrer:installreferrer:2.2'
+}
