@@ -1,0 +1,189 @@
+name: Mobile OTA Backport (Approved Release)
+
+# Ships a JS-only fix to an already-APPROVED store release over-the-air, without a
+# new store build. It checks out that release's frozen anchor
+# (release/<platform>-v<version>-<shortfp>, cut by mobile-auto-version-bump.yml on
+# approval), cherry-picks the fix onto it, and publishes an OTA under the anchor's
+# fingerprint — which is exactly the fingerprint that release's installs request.
+#
+# The safety rail is the fingerprint check: after the cherry-pick it resolves the
+# runtimeVersion and aborts unless its 12-char prefix equals the <shortfp> baked
+# into the anchor tag. A drift means the cherry-pick touched native inputs, so the
+# OTA would resolve a fingerprint no shipped binary has and silently never land —
+# better to fail loudly. See docs/mobile-ota-updates.md.
+#
+# Manual only. Prepare the fix as normal commits on main (or anywhere fetchable)
+# first, then dispatch this with those commit SHAs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Approved marketing version to patch, e.g. 2.1.0'
+        required: true
+      platform:
+        description: 'Which approved store binary to reach'
+        type: choice
+        options: [all, ios, android]
+        default: all
+      fix_commits:
+        description: 'JS-only commit SHA(s) to cherry-pick onto the anchor (space/comma separated)'
+        required: true
+      dry_run:
+        description: 'Resolve + verify the fingerprint but skip the actual OTA publish'
+        type: boolean
+        default: true
+
+# Share the production OTA lane so a backport can never publish concurrently with a
+# main production OTA (repo-wide group, across workflows). Queued, never cancelled.
+concurrency:
+  group: mobile-ota-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
+# Byte-identical to ios-testflight-rn.yml / android-apk-rn.yml / mobile-ota-production.yml
+# — scripts/mobile-ci-env-parity.test.ts fails the build if these drift. The
+# fingerprint check below only means anything if this resolves under the same env
+# the shipped binary did. GOOGLE_MAPS_API_KEY is Android-only and set per-step.
+env:
+  EXPO_PUBLIC_BACKEND_URL: https://ws.boardsesh.com
+  EXPO_PUBLIC_WS_URL: wss://ws.boardsesh.com/graphql
+  EXPO_PUBLIC_WEB_URL: https://www.boardsesh.com
+  EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID: 401523882502-0f6d7te1vekvkpmg18t8di6l0ig560q7.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
+  EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
+  EXPO_PUBLIC_SENTRY_DSN: https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400
+  EXPO_PUBLIC_POSTHOG_KEY: ${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
+  EXPO_UPDATES_CHANNEL: production
+  EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+
+jobs:
+  # Turn the platform choice into a matrix so iOS and Android publish independently
+  # (each under its own release anchor / fingerprint).
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      platforms: ${{ steps.platforms.outputs.platforms }}
+    steps:
+      - id: platforms
+        env:
+          PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          case "$PLATFORM" in
+            all) echo 'platforms=["ios","android"]' >> "$GITHUB_OUTPUT" ;;
+            ios) echo 'platforms=["ios"]' >> "$GITHUB_OUTPUT" ;;
+            android) echo 'platforms=["android"]' >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::Unknown platform '$PLATFORM'"; exit 1 ;;
+          esac
+
+  backport:
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Gates EXPO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
+    environment: Production
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(needs.setup.outputs.platforms) }}
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history + tags: need the release anchor tag and the fix commits
+          # (on main) reachable for the cherry-pick.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: voidzero-dev/setup-vp@v1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node.js dependencies (workspace root)
+        run: bun install --frozen-lockfile
+
+      - name: Locate the release anchor and prepare the hotfix tree
+        id: anchor
+        env:
+          VERSION: ${{ inputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          FIX_COMMITS: ${{ inputs.fix_commits }}
+        run: |
+          set -euo pipefail
+          mapfile -t tags < <(git tag -l "release/${PLATFORM}-v${VERSION}-*")
+          if [ "${#tags[@]}" -eq 0 ]; then
+            echo "::error::No release/${PLATFORM}-v${VERSION}-* anchor tag. Has ${VERSION} been approved and anchored on ${PLATFORM}?"
+            exit 1
+          fi
+          if [ "${#tags[@]}" -gt 1 ]; then
+            echo "::error::Multiple ${PLATFORM} anchors for ${VERSION}: ${tags[*]}. Expected exactly one."
+            exit 1
+          fi
+          tag="${tags[0]}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "shortfp=${tag##*-}" >> "$GITHUB_OUTPUT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "hotfix/${PLATFORM}-v${VERSION}-${GITHUB_RUN_ID}" "$tag"
+
+          commits="$(printf '%s' "$FIX_COMMITS" | tr ',' ' ')"
+          echo "Cherry-picking onto $tag: $commits"
+          # shellcheck disable=SC2086
+          git cherry-pick $commits
+
+      - name: Write .env for Expo build-time inlining
+        working-directory: packages/mobile
+        run: |
+          cat > .env <<EOF
+          EXPO_PUBLIC_BACKEND_URL=$EXPO_PUBLIC_BACKEND_URL
+          EXPO_PUBLIC_WS_URL=$EXPO_PUBLIC_WS_URL
+          EXPO_PUBLIC_WEB_URL=$EXPO_PUBLIC_WEB_URL
+          EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+          EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=$EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+          EXPO_PUBLIC_SENTRY_DSN=$EXPO_PUBLIC_SENTRY_DSN
+          EXPO_PUBLIC_POSTHOG_KEY=$EXPO_PUBLIC_POSTHOG_KEY
+          EOF
+
+      - name: Resolve fingerprint and verify it matches the approved anchor
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          EXPECTED_SHORTFP: ${{ steps.anchor.outputs.shortfp }}
+          # Android's approved fingerprint was resolved WITH the maps key; iOS without.
+          GOOGLE_MAPS_API_KEY: ${{ matrix.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
+        run: |
+          set -uo pipefail
+          raw="$(cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform "$PLATFORM" 2>/dev/null || true)"
+          fp="$(printf '%s' "$raw" | jq -r '.runtimeVersion // empty' 2>/dev/null || true)"
+          if ! printf '%s' "$fp" | grep -qiE '^[0-9a-f]{8,}$'; then
+            echo "::error::Could not resolve the $PLATFORM fingerprint for the hotfix tree."
+            exit 1
+          fi
+          short="${fp:0:12}"
+          if [ "$short" != "$EXPECTED_SHORTFP" ]; then
+            echo "::error::Resolved fingerprint $short != approved anchor $EXPECTED_SHORTFP. The cherry-pick changed native inputs, so an OTA published now would resolve a fingerprint no shipped ${{ inputs.version }} binary has and never land. Aborting — ship this fix as a new native build instead."
+            exit 1
+          fi
+          echo "::notice::$PLATFORM fingerprint $short matches the approved anchor — safe to publish."
+
+      - name: Publish OTA to the approved release
+        if: ${{ !inputs.dry_run }}
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          GOOGLE_MAPS_API_KEY: ${{ matrix.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
+          VERSION: ${{ inputs.version }}
+          FIX_COMMITS: ${{ inputs.fix_commits }}
+        run: |
+          vp run mobile:publish -- --channel production --platform "$PLATFORM" --message "Backport to v$VERSION ($FIX_COMMITS)"
+
+      - name: Dry-run note
+        if: ${{ inputs.dry_run }}
+        run: echo "::notice::dry_run — verified the fingerprint match for ${{ matrix.platform }} but skipped the publish. Re-run with dry_run unchecked to ship."

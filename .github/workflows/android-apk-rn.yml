@@ -559,6 +559,31 @@ jobs:
             exit 1
           fi
 
+      # Map the STORE BUILD NUMBER (Android versionCode) back to this commit +
+      # fingerprint, so the approval workflow can cut the
+      # release/android-v<version>-<shortfp> anchor at the exact commit the
+      # approved binary was built from. Google Play later tells the approval step
+      # only the approved versionCode; this tag is the lookup. <shortfp> is the
+      # first 12 chars of the canonical gate fingerprint the binary embeds. Gated
+      # like the fingerprint tag (github_release + build_aab succeeded), NOT on the
+      # best-effort Play upload. Same idempotent push. See docs/mobile-ota-updates.md.
+      - name: Tag the uploaded Android build number
+        if: github.ref == 'refs/heads/main' && steps.github_release.outcome == 'success' && steps.build_aab.outcome == 'success' && env.FINGERPRINT_ANDROID != '' && steps.version_code.outputs.value != '' && env.BOARDSESH_MOBILE_VERSION != ''
+        env:
+          VERSION_CODE: ${{ steps.version_code.outputs.value }}
+        run: |
+          set -uo pipefail
+          tag="build-android-v${BOARDSESH_MOBILE_VERSION}-${VERSION_CODE}-${FINGERPRINT_ANDROID:0:12}"
+          git tag "$tag" "$GITHUB_SHA" 2>/dev/null || true
+          if git push origin "refs/tags/$tag"; then
+            echo "::notice::Tagged $tag — maps Play versionCode $VERSION_CODE to this commit + fingerprint for the approval anchor."
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::$tag already exists (concurrent run) — nothing to do."
+          else
+            echo "::error::Failed to push $tag."
+            exit 1
+          fi
+
       - name: Clean up keystore
         if: always()
         run: rm -f packages/mobile/android/app/release.keystore

@@ -208,6 +208,30 @@ rescue => error
   nil
 end
 
+# Highest versionCode uploaded to any Play track (internal/alpha/beta/production),
+# used by the Android draft-submission lane to know which build to draft to
+# production. Returns nil when nothing has been uploaded (or the tracks can't be
+# read), so the lane skips instead of erroring.
+def latest_uploaded_version_code(json_key_data)
+  codes = []
+  %w[internal alpha beta production].each do |track|
+    begin
+      codes.concat(
+        Array(
+          google_play_track_version_codes(
+            package_name: APP_IDENTIFIER,
+            json_key_data: json_key_data,
+            track: track
+          )
+        ).map(&:to_i)
+      )
+    rescue => error
+      UI.important("Could not read '#{track}' track: #{error.message}")
+    end
+  end
+  codes.empty? ? nil : codes.max
+end
+
 platform :ios do
   desc "Upload App Store screenshots to App Store Connect (no binary, no metadata, no review)"
   lane :screenshots do
@@ -319,6 +343,47 @@ platform :ios do
     UI.success("iOS build number: #{number}")
     emit_ci_output(number)
     number
+  end
+
+  desc "Prepare a DRAFT App Store version for the current marketing version with its latest build attached (no review submission)"
+  lane :draft_submission do
+    api_key = asc_api_key
+    version = mobile_app_version
+
+    # Attach the highest TestFlight build for this marketing version. 0 means no
+    # build has finished processing yet — nothing to draft, so skip cleanly (this
+    # lane is best-effort and re-runs on a schedule once a build is available).
+    build_number = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      version: version,
+      initial_build_number: 0
+    )
+    if build_number.to_i <= 0
+      UI.important("No processed TestFlight build for #{version} yet — nothing to attach. Skipping the draft submission.")
+      next
+    end
+
+    # Create the App Store version if it doesn't exist and attach the build,
+    # leaving it in 'Prepare for Submission' (a DRAFT). No screenshots/metadata
+    # here (owned by the screenshots/metadata lanes); crucially submit_for_review:
+    # false, so a human reviews and hits Submit — we never auto-submit.
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      app_version: version,
+      build_number: build_number.to_s,
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      submit_for_review: false,
+      automatic_release: false,
+      run_precheck_before_submit: false,
+      precheck_include_in_app_purchases: false,
+      # force: true — no interactive HTML preview in CI (same as the other lanes).
+      force: true
+    )
+    UI.success("Prepared a draft App Store version #{version} with build #{build_number}.")
   end
 end
 
@@ -498,5 +563,36 @@ platform :android do
     UI.success("Android versionCode: #{code}")
     emit_ci_output(code)
     code
+  end
+
+  desc "Prepare a DRAFT production release for the latest uploaded build (no review submission, no rollout)"
+  lane :draft_submission do
+    json_key_data = ENV.fetch("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON")
+    version_code = latest_uploaded_version_code(json_key_data)
+    if version_code.nil?
+      UI.important("No uploaded Android build found on any track — nothing to draft. Skipping.")
+      next
+    end
+
+    # Create a production release in DRAFT status referencing the build already
+    # uploaded (to the internal track by android-apk-rn.yml). release_status:
+    # 'draft' means it is never sent for review — a human promotes/rolls it out.
+    # No text/images/screenshots here (owned by the metadata/images/screenshots
+    # lanes); no AAB upload (the binary already exists).
+    upload_to_play_store(
+      package_name: APP_IDENTIFIER,
+      json_key_data: json_key_data,
+      track: "production",
+      version_code: version_code,
+      release_status: "draft",
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      timeout: 300
+    )
+    UI.success("Prepared a draft production release for versionCode #{version_code}.")
   end
 end

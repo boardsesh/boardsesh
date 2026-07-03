@@ -40,6 +40,12 @@ const OTA_CHECK = 'mobile-ota-check.yml';
 // fingerprint — including EXPO_UPDATES_CHANNEL=production (the baked header), NOT
 // pr-N (which is only the eoas upload target). Same parity rule as the rest.
 const OTA_PREVIEW = 'mobile-ota-preview.yml';
+// The approved-release backport publish (mobile-ota-backport.yml) resolves the
+// fingerprint of an OLD release and asserts it against the anchor tag before
+// publishing an OTA under it — so its fingerprint-affecting env must match the
+// native builds too, or the assertion diverges from the value the shipped binary
+// actually embeds.
+const OTA_BACKPORT = 'mobile-ota-backport.yml';
 
 // Workflow-level env keys that feed the resolved config (fingerprint) and/or the
 // inlined JS bundle (runtime correctness). Every one must be declared identically
@@ -73,7 +79,7 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
   // The PR-time OTA-compat check + the per-PR preview publish resolve the same
   // fingerprint as the native builds + OTA publish, so they must share the same
   // fingerprint-affecting env.
-  const workflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW];
+  const workflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, OTA_BACKPORT];
 
   it.each(SHARED_ENV_KEYS)('declares %s identically across all mobile fingerprint workflows', (key) => {
     const values = workflows.map((name) => ({ name, value: workflowEnvValue(readWorkflow(name), key) }));

@@ -186,6 +186,54 @@ Resolve the current fingerprint locally to predict what the gate will see: `cd p
 bunx expo-updates runtimeversion:resolve --platform ios` (add the production env to match CI
 exactly — see the parity check above).
 
+## Backporting a JS fix to an approved release (release anchors)
+
+The gating above delivers a JS fix to binaries whose fingerprint still matches `main`. Once native
+churn has moved `main`'s fingerprint, an **already-released** (approved) store binary is
+OTA-orphaned: a fix published from `main` goes out under the new fingerprint that old install never
+requests (issue #3098). The remedy is to publish an OTA under the *old* release's fingerprint. We
+make that reproducible by anchoring each approved release with a tag.
+
+**Anchoring is tied to App Store approval, not to merge.** `main` iterates through many fingerprints
+between releases; we only care about the ones that actually shipped and were approved (an approved
+binary is frozen forever). The marketing `version` *is* part of the fingerprint, so bumping it moves
+the fingerprint — which is fine, because we never rely on an intermediate fingerprint staying
+OTA-compatible; we only anchor approved ones.
+
+Two tag families do this:
+
+- `build-<platform>-v<version>-<buildNumber>-<shortfp>` — pushed by the native build workflows
+  (`ios-testflight-rn.yml` / `android-apk-rn.yml`) on a successful store upload. Maps a store build
+  number (iOS `CFBundleVersion` / Android `versionCode`) to the commit and the canonical gate
+  fingerprint the binary embeds. `<shortfp>` is the first 12 hex chars of the fingerprint.
+- `release/<platform>-v<version>-<shortfp>` — cut by `mobile-auto-version-bump.yml` when App Store
+  Connect reports a version accepted (`scripts/mobile-cut-release-tags.ts`). It points at the commit
+  the approved binary was built from; its `<shortfp>` records the fingerprint an OTA must resolve to
+  reach that release. This is the frozen **backport anchor**.
+
+`mobile-auto-version-bump.yml` runs on a schedule (every 6h) and, per accepted version: looks up the
+approved build's `build-*` tag (iOS by the approved build number, Android by the latest build of the
+same marketing version — the app ships both platforms at one version), cuts the `release/*` anchor at
+that commit, and — once per version — bumps the patch on `main` (`[skip ci]`). All idempotent, so the
+second platform's approval and any re-run are safe.
+
+### Backport runbook
+
+1. Land the JS-only fix on `main` as normal (get its commit SHA). It also ships to current-`main`
+   installs via the usual production OTA.
+2. Run the **Mobile OTA Backport** workflow (`mobile-ota-backport.yml`, `workflow_dispatch`) with the
+   approved `version` (e.g. `2.1.0`), the `platform` (`all`/`ios`/`android`), and the fix commit
+   SHA(s). Leave `dry_run` on for the first pass.
+3. It checks out `release/<platform>-v<version>-<shortfp>`, cherry-picks the fix, and **verifies the
+   resolved fingerprint's 12-char prefix equals the anchor's `<shortfp>`**. A mismatch means the
+   cherry-pick touched native inputs — it aborts, because an OTA would resolve a fingerprint no
+   shipped binary has and silently never land. Ship such a fix as a new native build instead.
+4. Re-run with `dry_run` off to `eoas publish --channel production` under the approved fingerprint,
+   reaching that release's installs. It shares the `mobile-ota-production` concurrency lane, so it
+   never races a `main` OTA.
+
+To find the anchor for a release: `git tag -l 'release/ios-v2.1.0-*'`.
+
 ## OTA observability (adoption + funnel)
 
 A JS-only fix lands OTA-only, so "did it actually reach users?" needs telemetry — without it an

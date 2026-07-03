@@ -586,6 +586,31 @@ jobs:
             exit 1
           fi
 
+      # Map the STORE BUILD NUMBER back to this commit + fingerprint. App Store
+      # Connect later tells the approval workflow only the APPROVED build number
+      # (not its commit or runtimeVersion), so this tag is the lookup that lets
+      # mobile-auto-version-bump cut the release/ios-v<version>-<shortfp> anchor at
+      # exactly the commit the approved binary was built from. <shortfp> is the
+      # first 12 chars of the canonical gate fingerprint (same value the binary
+      # embeds), so the anchor records the fingerprint OTAs must match. Same
+      # idempotent push as the fingerprint tag above. See docs/mobile-ota-updates.md.
+      - name: Tag the uploaded iOS build number
+        if: github.ref == 'refs/heads/main' && steps.testflight_upload.outcome == 'success' && env.FINGERPRINT_IOS != '' && steps.build_number.outputs.value != '' && env.BOARDSESH_MOBILE_VERSION != ''
+        env:
+          BUILD_NUMBER: ${{ steps.build_number.outputs.value }}
+        run: |
+          set -uo pipefail
+          tag="build-ios-v${BOARDSESH_MOBILE_VERSION}-${BUILD_NUMBER}-${FINGERPRINT_IOS:0:12}"
+          git tag "$tag" "$GITHUB_SHA" 2>/dev/null || true
+          if git push origin "refs/tags/$tag"; then
+            echo "::notice::Tagged $tag — maps App Store build $BUILD_NUMBER to this commit + fingerprint for the approval anchor."
+          elif git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::notice::$tag already exists (concurrent run) — nothing to do."
+          else
+            echo "::error::Failed to push $tag."
+            exit 1
+          fi
+
       - name: Clean up keychain and credentials
         if: always()
         run: |
