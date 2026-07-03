@@ -12,7 +12,7 @@
 
 import type { TFunction } from 'i18next';
 import type { Grade } from '@boardsesh/shared-schema';
-import { DEFAULT_LOGBOOK_ANGLE_RANGE, type LogbookFilterState } from '@boardsesh/logbook';
+import { DEFAULT_LOGBOOK_ANGLE_RANGE, DEFAULT_LOGBOOK_FILTERS, type LogbookFilterState } from '@boardsesh/logbook';
 
 /** The facet chips the row controls inline (grade/angle/date open a rail; show is a menu). */
 export type LogbookFacetKey = 'grade' | 'angle' | 'show' | 'date';
@@ -104,9 +104,13 @@ function isAngleActive(filters: LogbookFilterState): boolean {
 
 /** Whether the Show facet (status / flash / benchmarks) is off its default. */
 function isShowActive(filters: LogbookFilterState): boolean {
-  // The default rests on sends-only; "both" and "attempts only" are the active
-  // (amber) states, so active = NOT the sends-only default.
-  return !(filters.includeSends && !filters.includeAttempts) || filters.flashOnly || filters.benchmarkOnly;
+  // The status resting state is the shared default (now sends + attempts). Any
+  // status narrowing off it — sends-only or attempts-only — is an active (amber)
+  // state, as are flash-only and benchmarks-only.
+  const statusNarrowed =
+    filters.includeSends !== DEFAULT_LOGBOOK_FILTERS.includeSends ||
+    filters.includeAttempts !== DEFAULT_LOGBOOK_FILTERS.includeAttempts;
+  return statusNarrowed || filters.flashOnly || filters.benchmarkOnly;
 }
 
 /** Whether the date facet has either bound set. */

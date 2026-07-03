@@ -31,11 +31,21 @@ export {
 export type BoardFilter = 'all' | 'moonboard' | AuroraBoardName;
 
 export type LogbookPreferences = {
-  version: 2;
+  version: 3;
   boardFilter: BoardFilter;
   layoutSelections: Record<Exclude<BoardFilter, 'all'>, number[]>;
   filters: LogbookFilterState;
   sort: LogbookSortState;
+};
+
+// The v2 resting filter (sends-only). Frozen so the v3 "did the user diverge?"
+// check compares against the historical v2 default, not today's default (now
+// sends+attempts). Only the status pair distinguishes it from the v3 default,
+// so that pair is what the check reads.
+const V2_DEFAULT_FILTERS: LogbookFilterState = {
+  ...DEFAULT_LOGBOOK_FILTERS,
+  includeSends: true,
+  includeAttempts: false,
 };
 
 export const ALL_LAYOUT_SELECTIONS: Record<Exclude<BoardFilter, 'all'>, number[]> = {
@@ -49,12 +59,28 @@ export const ALL_LAYOUT_SELECTIONS: Record<Exclude<BoardFilter, 'all'>, number[]
 };
 
 export const DEFAULT_LOGBOOK_PREFERENCES: LogbookPreferences = {
-  version: 2,
+  version: 3,
   boardFilter: 'all',
   layoutSelections: ALL_LAYOUT_SELECTIONS,
   filters: DEFAULT_LOGBOOK_FILTERS,
   sort: DEFAULT_LOGBOOK_SORT,
 };
+
+/** True when a filter state matches the frozen v2 sends-only default exactly. */
+function filtersEqualV2Defaults(filters: LogbookFilterState): boolean {
+  return (
+    filters.includeSends === V2_DEFAULT_FILTERS.includeSends &&
+    filters.includeAttempts === V2_DEFAULT_FILTERS.includeAttempts &&
+    filters.flashOnly === V2_DEFAULT_FILTERS.flashOnly &&
+    filters.minGrade === V2_DEFAULT_FILTERS.minGrade &&
+    filters.maxGrade === V2_DEFAULT_FILTERS.maxGrade &&
+    filters.fromDate === V2_DEFAULT_FILTERS.fromDate &&
+    filters.toDate === V2_DEFAULT_FILTERS.toDate &&
+    filters.benchmarkOnly === V2_DEFAULT_FILTERS.benchmarkOnly &&
+    filters.angleRange[0] === V2_DEFAULT_FILTERS.angleRange[0] &&
+    filters.angleRange[1] === V2_DEFAULT_FILTERS.angleRange[1]
+  );
+}
 
 const VALID_BOARD_FILTERS: BoardFilter[] = ['all', 'moonboard', ...AURORA_BOARDS];
 
@@ -98,17 +124,22 @@ export function sanitizeLogbookPreferences(value: unknown): LogbookPreferences {
   // mobile coerce persisted state identically.
   const filters = sanitizeLogbookFilters(source.filters);
 
-  // One-time migration to the sends-only default (schema v2): legacy prefs (no v2
-  // stamp) that still carry the old "both" default get attempts dropped, so an
-  // untouched logbook stops showing a phantom filter badge. An explicit "both" is
-  // clobbered too (rare; re-add attempts from the filters). Stamping version 2
-  // below makes this run once — "both" is fully selectable afterward.
-  if (storedVersion !== 2 && filters.includeSends && filters.includeAttempts) {
+  // v1→v2: pre-v2 prefs (no stamp) that still carried the old "both" default get
+  // attempts dropped to land on the sends-only default. Only for unstamped/v1 data.
+  if ((storedVersion == null || storedVersion < 2) && filters.includeSends && filters.includeAttempts) {
     filters.includeAttempts = false;
   }
 
+  // v2→v3: attempts are now shown by default. A v2 payload that still deep-equals
+  // the v2 sends-only default means the user never diverged — refresh it to the
+  // new sends+attempts default. Prefs the user actually changed are left as-is, so
+  // an explicit "sends only" round-trips.
+  if (storedVersion === 2 && filtersEqualV2Defaults(filters)) {
+    filters.includeAttempts = DEFAULT_LOGBOOK_FILTERS.includeAttempts;
+  }
+
   return {
-    version: 2,
+    version: 3,
     boardFilter,
     layoutSelections: sanitizeLayoutSelections(source.layoutSelections),
     filters,

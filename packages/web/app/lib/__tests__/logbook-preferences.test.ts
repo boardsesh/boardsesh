@@ -49,25 +49,58 @@ describe('sanitizeLogbookPreferences', () => {
     expect(result.filters.flashOnly).toBe(true);
   });
 
-  it('migrates the legacy both default to sends-only once (v1 to v2)', () => {
-    const legacyBoth = sanitizeLogbookPreferences({
+  it('drops attempts from a pre-v2 "both" payload (v1 to v2 step) and stamps v3', () => {
+    const migrated = sanitizeLogbookPreferences({
       version: 1,
       boardFilter: 'all',
       layoutSelections: ALL_LAYOUT_SELECTIONS,
       filters: { ...DEFAULT_LOGBOOK_PREFERENCES.filters, includeSends: true, includeAttempts: true },
       sort: DEFAULT_LOGBOOK_PREFERENCES.sort,
     });
-    expect(legacyBoth.version).toBe(2);
-    expect(legacyBoth.filters.includeSends).toBe(true);
-    expect(legacyBoth.filters.includeAttempts).toBe(false);
+    // The v1→v2 step ran (attempts dropped) and the payload is stamped to the
+    // current version.
+    expect(migrated.version).toBe(3);
+    expect(migrated.filters.includeSends).toBe(true);
+    expect(migrated.filters.includeAttempts).toBe(false);
+  });
 
-    // Re-sanitising the migrated (v2) prefs keeps an explicit "both" — the strip is
-    // one-time, so "both" stays selectable afterward.
-    const reBoth = sanitizeLogbookPreferences({
-      ...legacyBoth,
-      filters: { ...legacyBoth.filters, includeAttempts: true },
+  it('refreshes an untouched v2 sends-only payload to attempts-included (v2 to v3)', () => {
+    const refreshed = sanitizeLogbookPreferences({
+      version: 2,
+      boardFilter: 'all',
+      layoutSelections: ALL_LAYOUT_SELECTIONS,
+      // The v2 resting default: sends only.
+      filters: { ...DEFAULT_LOGBOOK_PREFERENCES.filters, includeSends: true, includeAttempts: false },
+      sort: DEFAULT_LOGBOOK_PREFERENCES.sort,
     });
-    expect(reBoth.version).toBe(2);
-    expect(reBoth.filters.includeAttempts).toBe(true);
+    expect(refreshed.version).toBe(3);
+    expect(refreshed.filters.includeAttempts).toBe(true);
+  });
+
+  it('keeps an explicit v2 "sends only" choice when the user diverged elsewhere', () => {
+    const kept = sanitizeLogbookPreferences({
+      version: 2,
+      boardFilter: 'all',
+      layoutSelections: ALL_LAYOUT_SELECTIONS,
+      // sends-only AND a grade floor — a real, diverged choice.
+      filters: { ...DEFAULT_LOGBOOK_PREFERENCES.filters, includeSends: true, includeAttempts: false, minGrade: 12 },
+      sort: DEFAULT_LOGBOOK_PREFERENCES.sort,
+    });
+    expect(kept.version).toBe(3);
+    expect(kept.filters.includeAttempts).toBe(false);
+    expect(kept.filters.minGrade).toBe(12);
+  });
+
+  it('leaves an already-v3 payload untouched', () => {
+    const stable = sanitizeLogbookPreferences({
+      version: 3,
+      boardFilter: 'all',
+      layoutSelections: ALL_LAYOUT_SELECTIONS,
+      // A v3 install that turned attempts off — respected, not re-defaulted.
+      filters: { ...DEFAULT_LOGBOOK_PREFERENCES.filters, includeSends: true, includeAttempts: false },
+      sort: DEFAULT_LOGBOOK_PREFERENCES.sort,
+    });
+    expect(stable.version).toBe(3);
+    expect(stable.filters.includeAttempts).toBe(false);
   });
 });

@@ -61,13 +61,13 @@ describe('readFiltersFromQuery', () => {
     expect(result).toEqual({});
   });
 
-  it('yields the sends-only default when no sends/attempts params are present', () => {
-    // A URL with no status params must resolve to the sends-only default (not
-    // "both"). readFiltersFromQuery omits unset status, so merging its partial over
+  it('yields the sends+attempts default when no sends/attempts params are present', () => {
+    // A URL with no status params must resolve to the resting default (now sends +
+    // attempts). readFiltersFromQuery omits unset status, so merging its partial over
     // DEFAULT_FILTERS is the real resolution the feed sees. Guard the default too so
     // this test tracks any future flip of the resting status.
     expect(DEFAULT_FILTERS.includeSends).toBe(true);
-    expect(DEFAULT_FILTERS.includeAttempts).toBe(false);
+    expect(DEFAULT_FILTERS.includeAttempts).toBe(true);
 
     const partial = readFiltersFromQuery(new URLSearchParams('minGrade=10'));
     expect(partial.includeSends).toBeUndefined();
@@ -75,7 +75,7 @@ describe('readFiltersFromQuery', () => {
 
     const resolved = { ...DEFAULT_FILTERS, ...partial };
     expect(resolved.includeSends).toBe(true);
-    expect(resolved.includeAttempts).toBe(false);
+    expect(resolved.includeAttempts).toBe(true);
   });
 
   it('parses boolean filter params', () => {
@@ -278,19 +278,21 @@ describe('filtersToQueryParams', () => {
     expect(result.attempts).toBeUndefined();
   });
 
-  it('serialises enabled attempts (off the sends-only default)', () => {
-    // The status resting state is sends-only, so turning attempts ON is the
-    // non-default change and is serialised as the real value.
-    const filters = { ...DEFAULT_FILTERS, includeAttempts: true };
+  it('serialises disabled attempts (off the sends+attempts default)', () => {
+    // The status resting state now includes attempts, so turning attempts OFF is
+    // the non-default change and is serialised as the real value.
+    const filters = { ...DEFAULT_FILTERS, includeAttempts: false };
     const result = filtersToQueryParams('', filters, DEFAULT_SORT, []);
-    expect(result.attempts).toBe('1');
+    expect(result.attempts).toBe('0');
   });
 
   it('serialises attempts-only (sends off, attempts on)', () => {
+    // Sends off is the non-default change; attempts on is now the default, so only
+    // the sends param is emitted.
     const filters = { ...DEFAULT_FILTERS, includeSends: false, includeAttempts: true };
     const result = filtersToQueryParams('', filters, DEFAULT_SORT, []);
     expect(result.sends).toBe('0');
-    expect(result.attempts).toBe('1');
+    expect(result.attempts).toBeUndefined();
   });
 
   it('includes date range', () => {

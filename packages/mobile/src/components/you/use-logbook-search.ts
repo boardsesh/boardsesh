@@ -140,9 +140,9 @@ export function useLogbookSearch(): UseLogbookSearch {
 /** Number of active (non-default) logbook filters — drives the filter-button badge. */
 export function countActiveLogbookFilters(filters: LogbookFilterState): number {
   let count = 0;
-  // The status rests on sends-only (the default); "both" and "attempts only"
-  // count, so it's active when NOT sends-only.
-  if (!filters.includeSends || filters.includeAttempts) count += 1;
+  // The status rests on sends+attempts (the default); sends-only and
+  // attempts-only count, so it's active when either half is off.
+  if (!filters.includeSends || !filters.includeAttempts) count += 1;
   if (filters.flashOnly) count += 1;
   if (filters.minGrade !== '' || filters.maxGrade !== '') count += 1;
   if (filters.fromDate || filters.toDate) count += 1;

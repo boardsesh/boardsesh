@@ -45,7 +45,7 @@ describe('logbook-prefs-store', () => {
     await expect(loadLogbookPrefs()).resolves.toBeNull();
   });
 
-  it('migrates a legacy "both" payload to sends-only on load (v1 -> v2)', async () => {
+  it('migrates a legacy "both" payload to sends-only on load (v1 -> v2 step)', async () => {
     store.get.mockResolvedValue({
       version: 1,
       filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: true },
@@ -56,19 +56,43 @@ describe('logbook-prefs-store', () => {
     expect(prefs?.filters.includeAttempts).toBe(false);
   });
 
-  it('keeps an explicit "both" once the payload is stamped v2 (one-time migration)', async () => {
+  it('refreshes an untouched v2 sends-only payload to the new attempts-included default (v2 -> v3)', async () => {
     store.get.mockResolvedValue({
       version: 2,
-      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: true },
+      // The v2 resting default: sends only, everything else at defaults.
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: false },
       sort: DEFAULT_LOGBOOK_SORT,
     });
     const prefs = await loadLogbookPrefs();
     expect(prefs?.filters.includeAttempts).toBe(true);
   });
 
+  it('keeps an explicit v2 "sends only" choice when the user diverged elsewhere', async () => {
+    store.get.mockResolvedValue({
+      version: 2,
+      // User narrowed to a grade AND kept sends-only — a real, diverged choice.
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: false, minGrade: 12 },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    const prefs = await loadLogbookPrefs();
+    expect(prefs?.filters.includeAttempts).toBe(false);
+    expect(prefs?.filters.minGrade).toBe(12);
+  });
+
+  it('leaves an already-v3 payload untouched', async () => {
+    store.get.mockResolvedValue({
+      version: 3,
+      filters: { ...DEFAULT_LOGBOOK_FILTERS, includeSends: true, includeAttempts: false },
+      sort: DEFAULT_LOGBOOK_SORT,
+    });
+    const prefs = await loadLogbookPrefs();
+    // v3 install that turned attempts off — respected, not re-defaulted.
+    expect(prefs?.filters.includeAttempts).toBe(false);
+  });
+
   it('stamps the schema version when saving', async () => {
     store.set.mockResolvedValue(undefined);
     await saveLogbookPrefs({ filters: DEFAULT_LOGBOOK_FILTERS, sort: DEFAULT_LOGBOOK_SORT });
-    expect(store.set).toHaveBeenCalledWith('logbookSearchPrefs', expect.objectContaining({ version: 2 }));
+    expect(store.set).toHaveBeenCalledWith('logbookSearchPrefs', expect.objectContaining({ version: 3 }));
   });
 });

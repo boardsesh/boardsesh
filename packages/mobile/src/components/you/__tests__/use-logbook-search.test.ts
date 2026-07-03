@@ -23,16 +23,16 @@ describe('countActiveLogbookFilters', () => {
     expect(countActiveLogbookFilters(DEFAULT_LOGBOOK_FILTERS)).toBe(0);
   });
 
-  it('does not count the sends-only default status', () => {
-    // Sends-only is the resting state, so it adds nothing.
+  it('does not count the sends+attempts default status', () => {
+    // Sends+attempts is the resting state, so it adds nothing.
     expect(countActiveLogbookFilters(DEFAULT_LOGBOOK_FILTERS)).toBe(0);
   });
 
-  it('counts a non-default status (both or attempts-only) as one', () => {
-    // "both" (sends + attempts) is off the sends-only default.
-    expect(countActiveLogbookFilters(withFilters({ includeAttempts: true }))).toBe(1);
+  it('counts a non-default status (sends-only or attempts-only) as one', () => {
+    // Narrowing to sends-only is off the sends+attempts default.
+    expect(countActiveLogbookFilters(withFilters({ includeAttempts: false }))).toBe(1);
     // attempts-only.
-    expect(countActiveLogbookFilters(withFilters({ includeSends: false, includeAttempts: true }))).toBe(1);
+    expect(countActiveLogbookFilters(withFilters({ includeSends: false }))).toBe(1);
   });
 
   it('counts flash-only as one (the flash+no-sends edge still counts via status)', () => {
@@ -62,10 +62,10 @@ describe('countActiveLogbookFilters', () => {
   });
 
   it('sums independent active filters', () => {
-    // status (both) + flash + grade + angle = 4
+    // status (sends-only) + flash + grade + angle = 4
     expect(
       countActiveLogbookFilters(
-        withFilters({ includeAttempts: true, flashOnly: true, minGrade: 12, angleRange: [20, 50] }),
+        withFilters({ includeAttempts: false, flashOnly: true, minGrade: 12, angleRange: [20, 50] }),
       ),
     ).toBe(4);
   });
