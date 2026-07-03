@@ -573,7 +573,10 @@ jobs:
           VERSION_CODE: ${{ steps.version_code.outputs.value }}
         run: |
           set -uo pipefail
-          tag="build-android-v${BOARDSESH_MOBILE_VERSION}-${VERSION_CODE}-${FINGERPRINT_ANDROID:0:12}"
+          # Lowercase the short fingerprint so the tag matches the lowercase hex the
+          # tag parsers expect.
+          shortfp="$(printf '%s' "${FINGERPRINT_ANDROID:0:12}" | tr '[:upper:]' '[:lower:]')"
+          tag="build-android-v${BOARDSESH_MOBILE_VERSION}-${VERSION_CODE}-${shortfp}"
           git tag "$tag" "$GITHUB_SHA" 2>/dev/null || true
           if git push origin "refs/tags/$tag"; then
             echo "::notice::Tagged $tag — maps Play versionCode $VERSION_CODE to this commit + fingerprint for the approval anchor."

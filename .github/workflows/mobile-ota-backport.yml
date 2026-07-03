@@ -134,10 +134,17 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B "hotfix/${PLATFORM}-v${VERSION}-${GITHUB_RUN_ID}" "$tag"
 
-          commits="$(printf '%s' "$FIX_COMMITS" | tr ',' ' ')"
-          echo "Cherry-picking onto $tag: $commits"
-          # shellcheck disable=SC2086
-          git cherry-pick $commits
+          # Split into an array and reject any token that looks like a git flag, so
+          # a malformed "commit" like -n / --abort can't be smuggled in as an option.
+          read -r -a commits <<< "$(printf '%s' "$FIX_COMMITS" | tr ',' ' ')"
+          if [ "${#commits[@]}" -eq 0 ]; then echo "::error::No fix commits provided."; exit 1; fi
+          for commit in "${commits[@]}"; do
+            case "$commit" in
+              -*) echo "::error::Refusing commit-ish '$commit' that looks like a flag."; exit 1 ;;
+            esac
+          done
+          echo "Cherry-picking onto $tag: ${commits[*]}"
+          git cherry-pick "${commits[@]}"
 
       - name: Write .env for Expo build-time inlining
         working-directory: packages/mobile
@@ -167,7 +174,9 @@ jobs:
             echo "::error::Could not resolve the $PLATFORM fingerprint for the hotfix tree."
             exit 1
           fi
-          short="${fp:0:12}"
+          # Lowercase before comparing: the anchor's shortfp is always lowercase hex,
+          # so a stray uppercase resolve would false-mismatch and wrongly abort.
+          short="$(printf '%s' "${fp:0:12}" | tr '[:upper:]' '[:lower:]')"
           if [ "$short" != "$EXPECTED_SHORTFP" ]; then
             echo "::error::Resolved fingerprint $short != approved anchor $EXPECTED_SHORTFP. The cherry-pick changed native inputs, so an OTA published now would resolve a fingerprint no shipped ${{ inputs.version }} binary has and never land. Aborting — ship this fix as a new native build instead."
             exit 1

@@ -122,21 +122,10 @@ async function resolveAppId(token: string): Promise<string> {
   return app.id;
 }
 
-async function getAcceptedVersions(token: string, appId: string): Promise<AcceptedVersion[]> {
-  const data = await ascFetch<JsonApiCollectionResponse<AppStoreVersionResource>>(
-    `/v1/apps/${appId}/appStoreVersions`,
-    token,
-    {
-      'filter[appStoreState]': ACCEPTED_APP_STORE_STATES,
-      'fields[appStoreVersions]': 'versionString,appStoreState,build',
-      // Pull the attached build inline so we learn its build number without a
-      // second round-trip per version.
-      include: 'build',
-      'fields[builds]': 'version',
-      limit: '10',
-    },
-  );
-
+// Pure mapping from the ASC appStoreVersions response (with `include=build`) to
+// the accepted (version, build number) pairs. Exported so it can be unit-tested
+// without the network; getAcceptedVersions is the thin fetch wrapper.
+export function mapAcceptedVersions(data: JsonApiCollectionResponse<AppStoreVersionResource>): AcceptedVersion[] {
   const buildNumberById = new Map<string, number>();
   for (const included of data.included ?? []) {
     const rawVersion = included.attributes?.version;
@@ -153,6 +142,24 @@ async function getAcceptedVersions(token: string, appId: string): Promise<Accept
       return { versionString, buildNumber };
     })
     .filter((version): version is AcceptedVersion => version !== null);
+}
+
+async function getAcceptedVersions(token: string, appId: string): Promise<AcceptedVersion[]> {
+  const data = await ascFetch<JsonApiCollectionResponse<AppStoreVersionResource>>(
+    `/v1/apps/${appId}/appStoreVersions`,
+    token,
+    {
+      'filter[appStoreState]': ACCEPTED_APP_STORE_STATES,
+      'fields[appStoreVersions]': 'versionString,appStoreState,build',
+      // Pull the attached build inline so we learn its build number without a
+      // second round-trip per version.
+      include: 'build',
+      'fields[builds]': 'version',
+      limit: '10',
+    },
+  );
+
+  return mapAcceptedVersions(data);
 }
 
 function emitOutput(name: string, value: string): void {

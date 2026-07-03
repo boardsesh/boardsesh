@@ -37,7 +37,12 @@ describe('formatBuildTag / parseBuildTag round-trip', () => {
 
   it('handles a large Android versionCode', () => {
     const tag = formatBuildTag('android', '2.1.0', 2_000_042, SHORT);
-    expect(parseBuildTag(tag)).toEqual({ platform: 'android', version: '2.1.0', buildNumber: 2_000_042, shortFp: SHORT });
+    expect(parseBuildTag(tag)).toEqual({
+      platform: 'android',
+      version: '2.1.0',
+      buildNumber: 2_000_042,
+      shortFp: SHORT,
+    });
   });
 
   it('rejects unrelated or malformed tags', () => {
@@ -72,14 +77,20 @@ describe('pickBuildTagForVersion', () => {
     'fingerprint-ios-a1b2c3d4e5f6', // noise
   ];
 
-  it('prefers the exact approved build number when present', () => {
-    expect(pickBuildTagForVersion(tags, 'ios', '2.1.0', 41)).toMatchObject({ buildNumber: 41, shortFp: 'cccccccccccc' });
+  it('returns the exact approved build number when present', () => {
+    expect(pickBuildTagForVersion(tags, 'ios', '2.1.0', 41)).toMatchObject({
+      buildNumber: 41,
+      shortFp: 'cccccccccccc',
+    });
   });
 
-  it('falls back to the highest build number when no preferred / no exact match', () => {
+  it('returns null (never the highest) when a preferred build number has no exact match', () => {
+    // Strict: a wrong-commit anchor is worse than none. The caller warns + skips.
+    expect(pickBuildTagForVersion(tags, 'ios', '2.1.0', 999)).toBeNull();
+  });
+
+  it('falls back to the highest build number only when no preferred is given', () => {
     expect(pickBuildTagForVersion(tags, 'ios', '2.1.0')).toMatchObject({ buildNumber: 42, shortFp: 'bbbbbbbbbbbb' });
-    // preferred build number not present -> highest wins
-    expect(pickBuildTagForVersion(tags, 'ios', '2.1.0', 999)).toMatchObject({ buildNumber: 42 });
   });
 
   it('picks the sibling platform by highest build number', () => {

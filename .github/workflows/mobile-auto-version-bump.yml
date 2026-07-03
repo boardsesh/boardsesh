@@ -83,8 +83,14 @@ jobs:
       # accepted version may still be unanchored). Idempotent, so the sibling
       # platform's approval and any re-run are safe. Uses the checkout's persisted
       # token to push the tags. dry_run mirrors the bump step.
+      #
+      # continue-on-error: a transient tag-push failure for an old release must not
+      # block the (independent) version bump below — accepted versions are re-anchored
+      # on the next scheduled run. Skipped when there are no accepted versions
+      # (accepted_builds is '[]' or unset), so it doesn't run for nothing.
       - name: Cut release anchor tags for accepted versions
-        if: steps.bump.outputs.accepted_builds != ''
+        if: steps.bump.outputs.accepted_builds != '' && steps.bump.outputs.accepted_builds != '[]'
+        continue-on-error: true
         env:
           ACCEPTED_BUILDS: ${{ steps.bump.outputs.accepted_builds }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}

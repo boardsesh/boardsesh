@@ -213,9 +213,20 @@ Two tag families do this:
 
 `mobile-auto-version-bump.yml` runs on a schedule (every 6h) and, per accepted version: looks up the
 approved build's `build-*` tag (iOS by the approved build number, Android by the latest build of the
-same marketing version — the app ships both platforms at one version), cuts the `release/*` anchor at
-that commit, and — once per version — bumps the patch on `main` (`[skip ci]`). All idempotent, so the
-second platform's approval and any re-run are safe.
+same marketing version), cuts the `release/*` anchor at that commit, and — once per version — bumps
+the patch on `main` (`[skip ci]`). All idempotent, so the second platform's approval and any re-run
+are safe.
+
+**iOS anchoring is strict:** it uses App Store Connect's exact approved build number, and if no
+`build-ios-v<version>-<buildNumber>-*` tag matches it, it skips (rather than anchoring a different
+build's commit + fingerprint) and retries on the next run once the tag exists.
+
+**Android caveat:** approval is detected from App Store Connect only — there is no Google Play query.
+The Android anchor is cut alongside the iOS approval, pointing at the *latest* Android build of the
+same marketing version. If Android hasn't actually shipped that version to the store, the anchor is
+premature; a backport under it would just reach whatever installs hold that fingerprint (and the
+backport re-verifies the fingerprint before publishing), so it is ineffective rather than incorrect.
+Confirm the Android release actually shipped before relying on an Android backport.
 
 ### Backport runbook
 

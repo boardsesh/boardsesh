@@ -210,8 +210,11 @@ end
 
 # Highest versionCode uploaded to any Play track (internal/alpha/beta/production),
 # used by the Android draft-submission lane to know which build to draft to
-# production. Returns nil when nothing has been uploaded (or the tracks can't be
-# read), so the lane skips instead of erroring.
+# production. versionCode is monotonic (android-apk-rn.yml only ever raises it —
+# max(sideload floor, Play ceiling + 1)), so the global max IS the most recently
+# built binary, i.e. the latest marketing version's build — never an older release
+# sitting on a track. Returns nil when nothing has been uploaded (or the tracks
+# can't be read), so the lane skips instead of erroring.
 def latest_uploaded_version_code(json_key_data)
   codes = []
   %w[internal alpha beta production].each do |track|

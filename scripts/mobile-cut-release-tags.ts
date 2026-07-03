@@ -89,12 +89,22 @@ function main(): number {
 
   for (const { versionString, buildNumber } of accepted) {
     for (const platform of PLATFORMS) {
-      // iOS: prefer the store's approved build number. Android: no approved number
-      // is available here, so take the latest build of this marketing version.
+      // iOS: the store reports the EXACT approved build number, so anchor that build
+      // (pickBuildTagForVersion is strict — it won't fall back to another build).
+      // Android CAVEAT: approval is detected from App Store Connect only; there is no
+      // Google Play query here. We assume the app ships both platforms at one
+      // marketing version and take the latest Android build of that version. If
+      // Android hasn't actually shipped that version to the store, its anchor is
+      // premature — but a backport under it just reaches whatever installs hold that
+      // fingerprint (and the backport re-verifies the fingerprint before publishing),
+      // so it's ineffective rather than wrong. Verify the Android release actually
+      // shipped before relying on an Android backport. See docs/mobile-ota-updates.md.
       const preferredBuildNumber = platform === 'ios' ? (buildNumber ?? undefined) : undefined;
       const buildTag = pickBuildTagForVersion(allTags, platform, versionString, preferredBuildNumber);
       if (!buildTag) {
-        console.log(`No build-${platform}-v${versionString}-* tag found — skipping ${platform} anchor for ${versionString}.`);
+        console.log(
+          `No build-${platform}-v${versionString}-* tag found — skipping ${platform} anchor for ${versionString}.`,
+        );
         continue;
       }
 
@@ -124,7 +134,9 @@ function main(): number {
         // A concurrent run may have pushed it between the check and here.
         if (!remoteTagExists(releaseTag)) throw error;
       }
-      console.log(`::notice::Cut ${releaseTag} at ${commit.slice(0, 12)} — backport anchor for ${platform} ${versionString}.`);
+      console.log(
+        `::notice::Cut ${releaseTag} at ${commit.slice(0, 12)} — backport anchor for ${platform} ${versionString}.`,
+      );
       cut.push(releaseTag);
     }
   }

@@ -600,7 +600,10 @@ jobs:
           BUILD_NUMBER: ${{ steps.build_number.outputs.value }}
         run: |
           set -uo pipefail
-          tag="build-ios-v${BOARDSESH_MOBILE_VERSION}-${BUILD_NUMBER}-${FINGERPRINT_IOS:0:12}"
+          # Lowercase the short fingerprint so the tag always matches the lowercase
+          # hex the tag parsers expect (macOS bash lacks ${var,,}, so use tr).
+          shortfp="$(printf '%s' "${FINGERPRINT_IOS:0:12}" | tr '[:upper:]' '[:lower:]')"
+          tag="build-ios-v${BOARDSESH_MOBILE_VERSION}-${BUILD_NUMBER}-${shortfp}"
           git tag "$tag" "$GITHUB_SHA" 2>/dev/null || true
           if git push origin "refs/tags/$tag"; then
             echo "::notice::Tagged $tag — maps App Store build $BUILD_NUMBER to this commit + fingerprint for the approval anchor."

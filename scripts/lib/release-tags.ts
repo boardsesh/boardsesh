@@ -30,9 +30,7 @@ export const SHORT_FP_LENGTH = 12;
 
 const VERSION_PATTERN = String.raw`\d+\.\d+\.\d+`;
 const SHORT_FP_PATTERN = `[0-9a-f]{${SHORT_FP_LENGTH}}`;
-const BUILD_TAG_RE = new RegExp(
-  String.raw`^build-(ios|android)-v(${VERSION_PATTERN})-(\d+)-(${SHORT_FP_PATTERN})$`,
-);
+const BUILD_TAG_RE = new RegExp(String.raw`^build-(ios|android)-v(${VERSION_PATTERN})-(\d+)-(${SHORT_FP_PATTERN})$`);
 const RELEASE_TAG_RE = new RegExp(String.raw`^release/(ios|android)-v(${VERSION_PATTERN})-(${SHORT_FP_PATTERN})$`);
 
 export type BuildTag = {
@@ -85,12 +83,21 @@ export function parseReleaseTag(tag: string): ReleaseTag | null {
 
 /**
  * From a list of tag names, pick the build tag that identifies the store binary
- * for (platform, version). When `preferredBuildNumber` is given (the store's
- * approved build number) and an exact match exists, that wins — it's the precise
- * binary the store approved. Otherwise fall back to the highest build number for
- * that version, i.e. the most recent build of it (used for the sibling platform,
- * which the store doesn't report an approved number for). Returns null when no
- * build tag matches — the caller warns and skips that platform's anchor.
+ * for (platform, version).
+ *
+ * When `preferredBuildNumber` is given, the store told us the EXACT approved build
+ * number, so only that build's tag is a correct anchor — this returns the exact
+ * match or `null` (it does NOT fall back to the highest build). Falling back would
+ * anchor a different commit + fingerprint than the approved binary, silently
+ * publishing backports that never reach it; returning null lets the caller warn
+ * and skip, and a later run retries once the exact build tag exists.
+ *
+ * When `preferredBuildNumber` is omitted — the sibling platform, for which the
+ * store reports no approved number (see the Android caveat in
+ * mobile-cut-release-tags.ts) — it best-effort returns the highest build number
+ * for that version, i.e. the most recent build of it.
+ *
+ * Returns `null` when no build tag matches the (platform, version) at all.
  */
 export function pickBuildTagForVersion(
   tags: readonly string[],
@@ -100,13 +107,14 @@ export function pickBuildTagForVersion(
 ): BuildTag | null {
   const candidates = tags
     .map(parseBuildTag)
-    .filter((parsed): parsed is BuildTag => parsed !== null && parsed.platform === platform && parsed.version === version);
+    .filter(
+      (parsed): parsed is BuildTag => parsed !== null && parsed.platform === platform && parsed.version === version,
+    );
 
   if (candidates.length === 0) return null;
 
   if (preferredBuildNumber !== undefined) {
-    const exact = candidates.find((candidate) => candidate.buildNumber === preferredBuildNumber);
-    if (exact) return exact;
+    return candidates.find((candidate) => candidate.buildNumber === preferredBuildNumber) ?? null;
   }
 
   return candidates.reduce((best, candidate) => (candidate.buildNumber > best.buildNumber ? candidate : best));
