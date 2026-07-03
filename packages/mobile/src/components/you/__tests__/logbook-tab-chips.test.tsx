@@ -131,7 +131,6 @@ vi.mock('../../Text', () => ({
 vi.mock('../../Icon', () => ({ Icon: () => null }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => null }));
 
-
 vi.mock('../../../lib/graphql/hooks', () => ({
   useUserAscentsFeed: () => feed,
   useUserGroupedAscentsFeed: () => toGroupedFeed(feed as unknown as Record<string, unknown>),
