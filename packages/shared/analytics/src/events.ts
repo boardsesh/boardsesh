@@ -94,8 +94,8 @@ export const SHARED_EVENTS = {
   QuickTickDismissed: 'Quick Tick Dismissed',
   // Canonical "a climb was logged" join event, fired on every successful tick
   // save on both platforms alongside each flow's own event above. Required
-  // props: { climbUuid, platform: 'web' | 'mobile', surface: 'web_full_form'
-  // | 'web_quick_modal' | 'mobile_quick_tick' }.
+  // props: { climbUuid, status, platform: 'web' | 'mobile', surface:
+  // 'web_full_form' | 'web_quick_modal' | 'mobile_quick_tick' }.
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',
