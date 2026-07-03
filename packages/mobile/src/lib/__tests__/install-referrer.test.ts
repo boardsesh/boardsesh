@@ -19,7 +19,11 @@ vi.mock('../analytics', () => ({ track: analytics.track, setPersonProperties: an
 // requireOptionalNativeModule, which can't resolve under vitest's node env.
 vi.mock('../../../modules/install-referrer/src/index', () => ({ installReferrerNative: null }));
 
-import { maybeFetchAndAttachInstallReferrer, parseInstallReferrer } from '../install-referrer';
+import {
+  INSTALL_ATTRIBUTED_EVENT,
+  maybeFetchAndAttachInstallReferrer,
+  parseInstallReferrer,
+} from '../install-referrer';
 import { getPreference, setPreference } from '../preference-store';
 
 const getPreferenceMock = vi.mocked(getPreference);
@@ -80,11 +84,31 @@ describe('maybeFetchAndAttachInstallReferrer', () => {
       install_click_timestamp: 100,
       install_begin_timestamp: 200,
     });
-    expect(analytics.track).toHaveBeenCalledWith('Install Attributed', {
+    expect(analytics.track).toHaveBeenCalledWith(INSTALL_ATTRIBUTED_EVENT, {
       install_source: 'google',
       install_medium: 'cpc',
       install_campaign: 'spring_sale',
     });
+  });
+
+  it('writes person properties but does NOT fire Install Attributed for an organic install (no utm params)', async () => {
+    const fetchNative = vi.fn(async () => ({
+      installReferrer: '',
+      referrerClickTimestampSeconds: 0,
+      installBeginTimestampSeconds: 300,
+    }));
+
+    await maybeFetchAndAttachInstallReferrer(fetchNative);
+
+    expect(analytics.setPersonProperties).toHaveBeenCalledWith(undefined, {
+      install_referrer_raw: '',
+      install_source: null,
+      install_medium: null,
+      install_campaign: null,
+      install_click_timestamp: 0,
+      install_begin_timestamp: 300,
+    });
+    expect(analytics.track).not.toHaveBeenCalled();
   });
 
   it('skips the native call entirely once already fetched', async () => {

@@ -40,6 +40,10 @@ function withAndroidInstallReferrerQueries(config) {
   });
 }
 
-module.exports = createRunOncePlugin(withAndroidInstallReferrerQueries, 'with-android-install-referrer-queries', '1.0.0');
+module.exports = createRunOncePlugin(
+  withAndroidInstallReferrerQueries,
+  'with-android-install-referrer-queries',
+  '1.0.0',
+);
 module.exports.addInstallReferrerQueries = addInstallReferrerQueries;
 module.exports.VENDING_PACKAGE = VENDING_PACKAGE;

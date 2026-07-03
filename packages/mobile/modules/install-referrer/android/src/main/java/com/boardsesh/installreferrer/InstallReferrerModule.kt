@@ -41,6 +41,17 @@ class InstallReferrerModule : Module() {
                     if (continuation.isActive) continuation.resume(result) { }
                 }
 
+                // Registered BEFORE startConnection: a cancellation landing in the
+                // window between the two calls must still close the binding — if this
+                // were registered after, a cancel in that gap would never fire cleanup.
+                continuation.invokeOnCancellation {
+                    try {
+                        client.endConnection()
+                    } catch (endError: Exception) {
+                        // Best-effort cleanup on cancellation.
+                    }
+                }
+
                 try {
                     client.startConnection(object : InstallReferrerStateListener {
                         override fun onInstallReferrerSetupFinished(responseCode: Int) {
@@ -68,14 +79,6 @@ class InstallReferrerModule : Module() {
                     })
                 } catch (connectError: Exception) {
                     finish(null)
-                }
-
-                continuation.invokeOnCancellation {
-                    try {
-                        client.endConnection()
-                    } catch (endError: Exception) {
-                        // Best-effort cleanup on cancellation.
-                    }
                 }
             }
         } catch (unexpectedError: Exception) {

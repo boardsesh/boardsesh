@@ -6,6 +6,11 @@ import { getPreference, setPreference } from './preference-store';
 // equivalent in this PR (an iOS equivalent — SKAdNetwork / Apple Search Ads
 // attribution — is out of scope, see boardsesh#3402). InstallReferrerTracker
 // gates the call site on Platform.OS so this module is never invoked on iOS.
+// Mobile-only (web has no Play Store install), so the event name stays a
+// free-string constant rather than an entry in @boardsesh/analytics'
+// SHARED_EVENTS (which is for names fired by BOTH platforms) — same
+// convention as OTA_UPDATE_STATUS_EVENT in ota-telemetry.ts.
+export const INSTALL_ATTRIBUTED_EVENT = 'Install Attributed';
 
 const INSTALL_REFERRER_FETCHED_KEY = 'installReferrerFetched';
 
@@ -52,6 +57,12 @@ export async function maybeFetchAndAttachInstallReferrer(
     if (!result) return;
 
     const parsed = parseInstallReferrer(result.installReferrer);
+    // Person properties are written even for an organic/direct install (all
+    // three utm_* fields null) — that's honest, useful data for channel-mix
+    // cohorting. But INSTALL_ATTRIBUTED_EVENT specifically means "we resolved
+    // a campaign for this install", so only fire it when at least one utm_*
+    // field is present — an unconditional fire here would name every organic
+    // install "attributed" and inflate attributed-install counts.
     setPersonProperties(undefined, {
       install_referrer_raw: parsed.raw,
       install_source: parsed.source,
@@ -60,11 +71,14 @@ export async function maybeFetchAndAttachInstallReferrer(
       install_click_timestamp: result.referrerClickTimestampSeconds,
       install_begin_timestamp: result.installBeginTimestampSeconds,
     });
-    track('Install Attributed', {
-      install_source: parsed.source,
-      install_medium: parsed.medium,
-      install_campaign: parsed.campaign,
-    });
+    const hasAttribution = parsed.source !== null || parsed.medium !== null || parsed.campaign !== null;
+    if (hasAttribution) {
+      track(INSTALL_ATTRIBUTED_EVENT, {
+        install_source: parsed.source,
+        install_medium: parsed.medium,
+        install_campaign: parsed.campaign,
+      });
+    }
   } catch {
     // Must never throw — this runs fire-and-forget at startup.
   }

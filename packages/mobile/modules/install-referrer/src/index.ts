@@ -14,5 +14,4 @@ type InstallReferrerNativeModule = {
 // linked into the running binary — iOS (this module is Android-only), Expo
 // Go, or a dev client built before this module existed — so callers never
 // need a platform/linked check before calling.
-export const installReferrerNative =
-  requireOptionalNativeModule<InstallReferrerNativeModule>('InstallReferrer');
+export const installReferrerNative = requireOptionalNativeModule<InstallReferrerNativeModule>('InstallReferrer');

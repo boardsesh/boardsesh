@@ -129,9 +129,7 @@ describe('RegisterScreen analytics', () => {
 
     await fillAndSubmit();
 
-    await waitFor(() =>
-      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object)),
-    );
+    await waitFor(() => expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object)));
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, expect.any(Object));
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   });
