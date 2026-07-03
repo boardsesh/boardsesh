@@ -66,14 +66,8 @@ export async function requestAppleHealthAuthorization(): Promise<boolean> {
   return granted;
 }
 
-// The settings-card toggle and the session auto/manual-save paths each poll
-// `getAppleHealthAuthorizationStatus()` independently, so a user who toggles
-// the card while a save is mid-flight can have both sides observe
-// `notDetermined` before either resolves. This flag is checked and set
-// synchronously (no `await` in between), so it closes that race for the
-// life of the JS runtime — the only window a double-fire could occur in,
-// since HealthKit's status is permanently decided (non-`notDetermined`)
-// forever after the first grant.
+// Guards against the settings-card toggle and a session save racing to both
+// observe `notDetermined` before either resolves; checked+set synchronously.
 let integrationConnectedTracked = false;
 
 /** Fire `IntegrationConnected` for Apple Health at most once per fresh grant,

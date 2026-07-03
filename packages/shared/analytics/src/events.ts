@@ -61,16 +61,9 @@ export const SHARED_EVENTS = {
   // Workout / session-queue generator
   WorkoutGeneratorOpened: 'Workout Generator Opened',
   SessionQueueGenerated: 'Session Queue Generated',
-  // Web-only: fired on the discrete "tap Generate, wait, done" completion of
-  // the click-triggered generator (shared by both the standalone-playlist
-  // flow and the session-embedded flow). Mobile's session-embedded generator
-  // is a live, auto-regenerating preview with no matching discrete "generate"
-  // moment by design — do not add a mobile fire here (it would either fire on
-  // every filter tweak or require a UX change out of scope for analytics
-  // reconciliation). For cross-platform "workout generator" adoption funnels,
-  // use WorkoutGeneratorOpened (open) + SessionQueueGenerated (commit)
-  // instead — both are already correctly aligned across platforms for the
-  // session-generator flow.
+  // Web-only by design: mobile's generator is a live auto-regenerating
+  // preview with no matching discrete "generate" moment. Use
+  // WorkoutGeneratorOpened + SessionQueueGenerated for cross-platform funnels.
   WorkoutGenerated: 'Workout Generated',
   // Deep-link session join
   SessionJoined: 'Session Joined',
@@ -99,15 +92,10 @@ export const SHARED_EVENTS = {
   // field-completeness snapshot so abandonment can be measured directly
   // instead of inferred from TickButtonClicked - QuickTickSaved - QuickTickFailed.
   QuickTickDismissed: 'Quick Tick Dismissed',
-  // The canonical "a climb was logged" event — fired on EVERY successful tick
-  // save, on both platforms, in addition to each flow's own event above
-  // (QuickTickSaved, and web's full-form-only history under this same name).
-  // Props: { climbUuid: string, platform: 'web' | 'mobile', surface:
-  // 'web_full_form' | 'web_quick_modal' | 'mobile_quick_tick' } plus each
-  // site's existing fields. `climbUuid` is required at every call site —
-  // it's the join key cross-platform funnels filter/group on. This is the
-  // join point for cross-platform "send logged" funnels — the flow-specific
-  // events above stay split by UI surface on purpose.
+  // Canonical "a climb was logged" join event, fired on every successful tick
+  // save on both platforms alongside each flow's own event above. Required
+  // props: { climbUuid, platform: 'web' | 'mobile', surface: 'web_full_form'
+  // | 'web_quick_modal' | 'mobile_quick_tick' }.
   TickLogged: 'Tick Logged',
   // Bluetooth / hardware
   BluetoothConnectionSuccess: 'Bluetooth Connection Success',

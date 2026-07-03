@@ -82,8 +82,8 @@ describe('AppleHealthCard', () => {
     mocks.openSettings.mockReset();
     mocks.enabled = false;
     mocks.loaded = true;
-    // Mount-time status probe defaults to a decided state so it never fires
-    // the auth request itself.
+    // 'notDetermined' is safe as the mount-time default: the status probe is
+    // read-only and never triggers the OS consent sheet by itself.
     mocks.getAppleHealthAuthorizationStatus.mockResolvedValue('notDetermined');
   });
 

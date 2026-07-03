@@ -371,7 +371,7 @@ describe('useTickSave', () => {
 
     await act(async () => {
       result.current.save();
-      await vi.waitFor(() => expect(mockTrack).toHaveBeenCalledWith('Quick Tick Saved', expect.anything()));
+      await vi.waitFor(() => expect(mockTrack).toHaveBeenCalledWith(SHARED_EVENTS.QuickTickSaved, expect.anything()));
     });
 
     expect(mockTrack).toHaveBeenCalledWith(
