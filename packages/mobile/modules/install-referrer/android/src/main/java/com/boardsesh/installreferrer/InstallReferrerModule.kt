@@ -3,6 +3,7 @@ package com.boardsesh.installreferrer
 import com.android.installreferrer.api.InstallReferrerClient
 import com.android.installreferrer.api.InstallReferrerClient.InstallReferrerResponse
 import com.android.installreferrer.api.InstallReferrerStateListener
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.CancellationException
@@ -19,7 +20,11 @@ class InstallReferrerModule : Module() {
         // in src/lib/install-referrer.ts for the JS-side fetch-once/cache policy).
         // Resolves null — never throws — on any non-OK response, disconnect, or
         // exception, so a sideloaded/non-Play install degrades silently.
-        AsyncFunction("getInstallReferrer") {
+        // The `Coroutine` infix (not a plain trailing lambda) is required for the
+        // body to run as a suspend function — a plain AsyncFunction lambda is not
+        // itself a coroutine, so calling the suspend fetchInstallReferrer() from
+        // inside it doesn't compile.
+        AsyncFunction("getInstallReferrer") Coroutine {
             fetchInstallReferrer()
         }
     }
