@@ -56,6 +56,12 @@ export type NativeBleConfigureBoardOptions = {
   apiLevel?: number;
   deviceName?: string;
   colorOverrides?: Record<string, string>;
+  /**
+   * MoonBoard grid rows (18 standard, 12 Mini) so native re-encodes (widget
+   * intents, reconnect re-light) address the right serpentine grid (#3392).
+   * Older binaries ignore it.
+   */
+  numRows?: number;
 };
 
 type BoardBleNativeModule = {

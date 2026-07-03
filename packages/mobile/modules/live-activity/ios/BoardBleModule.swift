@@ -160,7 +160,8 @@ public class BoardBleModule: Module {
                     sizeId: options.sizeId,
                     apiLevel: options.apiLevel,
                     deviceName: options.deviceName,
-                    colorOverrides: options.colorOverrides ?? [:]
+                    colorOverrides: options.colorOverrides ?? [:],
+                    numRows: options.numRows
                 )
             )
         }
@@ -211,4 +212,6 @@ struct ConfigureBoardOptions: Record {
     @Field var apiLevel: Int?
     @Field var deviceName: String?
     @Field var colorOverrides: [String: String]?
+    // MoonBoard grid rows (18 standard, 12 Mini) — see #3392.
+    @Field var numRows: Int?
 }

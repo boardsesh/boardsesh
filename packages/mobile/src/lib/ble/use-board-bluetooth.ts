@@ -79,6 +79,14 @@ export async function dispatchMoonboardPacket(
   return true;
 }
 
+// MoonBoard grid rows for the native configureBoard payload, so native
+// re-encodes (widget intents, reconnect re-light) use the same serpentine grid
+// as the JS send path — Mini strips are 12 rows, standard 18 (#3392). Undefined
+// for Aurora boards, whose encoder has no grid maths.
+export function moonboardNumRowsForNative(boardName: string | undefined, layoutId: number): number | undefined {
+  return boardName === 'moonboard' ? getMoonBoardGeometryByLayoutId(layoutId).numRows : undefined;
+}
+
 export type PickerState = {
   devices: DiscoveredDevice[];
   isScanning: boolean;
@@ -706,6 +714,7 @@ export function useBoardBluetooth({
               apiLevel: apiLevelRef.current,
               deviceName: connection.deviceName,
               colorOverrides: sanitizedColorOverrides,
+              numRows: moonboardNumRowsForNative(boardName, layoutId),
             });
           } catch (error) {
             console.warn('[BLE] Failed to push board configuration to native side:', error);
@@ -983,6 +992,7 @@ export function useBoardBluetooth({
           apiLevel: apiLevelRef.current,
           deviceName,
           colorOverrides: sanitizedColorOverrides,
+          numRows: moonboardNumRowsForNative(boardName, layoutId),
         })
         .catch(() => {});
 
@@ -1056,6 +1066,7 @@ export function useBoardBluetooth({
         apiLevel: apiLevelRef.current,
         deviceName: configuredDeviceNameRef.current,
         colorOverrides: sanitizedColorOverrides,
+        numRows: moonboardNumRowsForNative(boardName, layoutId),
       })
       .catch(() => {});
   }, [boardName, layoutId, sizeId, isConnected, sanitizedColorOverrides]);

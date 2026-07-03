@@ -320,6 +320,30 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(state.currentIndex, 2)
     }
 
+    func testMoonboardSerialPositionMiniGridMath() {
+        // Parity with moonboard.test.ts §Mini (numRows = 12): the Mini LED strip
+        // is 11×12, so the odd-column serpentine reversal folds at row 12 (#3392).
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 1, numRows: 12), 0)
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 2, numRows: 12), 23)
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 11, numRows: 12), 120)
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 12, numRows: 12), 1)
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 123, numRows: 12), 12)
+        XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 132, numRows: 12), 131)
+        // Past the 132-LED Mini strip; valid only on the 18-row wall.
+        XCTAssertNil(BoardBleEncoding.moonboardSerialPosition(holdId: 133, numRows: 12))
+    }
+
+    func testMoonboardPacketEncodesMiniPositions() {
+        // Same holds address different LEDs on the two grids: B1 is serial 35 on
+        // the 18-row wall but 23 on the 12-row Mini.
+        let mini = BoardBleEncoding.makeMoonboardPacket(frames: "p1r42p2r43p132r44", numRows: 12)
+        XCTAssertEqual(String(decoding: mini.packet, as: UTF8.self), "l#S0,P23,E131#")
+        XCTAssertEqual(mini.skippedPositionCount, 0)
+
+        let standard = BoardBleEncoding.makeMoonboardPacket(frames: "p2r43")
+        XCTAssertEqual(String(decoding: standard.packet, as: UTF8.self), "l#P35#")
+    }
+
     func testBoardRenderUrlUsesSharedBoardContext() {
         defaults.set("https://www.boardsesh.com", forKey: SharedConstants.serverUrlKey)
         defaults.set("kilter", forKey: SharedConstants.boardNameKey)

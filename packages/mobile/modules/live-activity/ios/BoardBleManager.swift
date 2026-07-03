@@ -654,7 +654,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // supported on MoonBoard (boardSupportsMirroring is false), so frames go
         // out as-is.
         if configuration.boardName == "moonboard" {
-            let result = BoardBleEncoding.makeMoonboardPacket(frames: item.frames)
+            let result = BoardBleEncoding.makeMoonboardPacket(
+                frames: item.frames,
+                numRows: configuration.numRows ?? BoardBleEncoding.moonboardDefaultGridRows
+            )
             guard !result.packet.isEmpty else {
                 // Every hold was unrecognised/out-of-range, or the climb has no
                 // holds. Refuse to write rather than dark the wall — there is no
