@@ -236,6 +236,29 @@ describe('LogbookTab grouped mode', () => {
     expect(deleteTick.mutate).not.toHaveBeenCalled();
   });
 
+  it('re-arms the delete flow after the chooser is dismissed without a pick', async () => {
+    render(createElement(LogbookTab, { userId: 'user-1' }));
+
+    await fireDeleteRequest('swipe');
+    expect(chooser.props).not.toBeNull();
+
+    // Dismiss without picking: nothing deletes, no confirm fires. The stub only
+    // captures on render, so clear it to make the reopen below provable.
+    const onDismiss = chooser.props?.onDismiss as (() => void) | undefined;
+    expect(onDismiss).toBeDefined();
+    await act(async () => {
+      onDismiss?.();
+    });
+    chooser.props = null;
+    expect(dialog.confirm).not.toHaveBeenCalled();
+    expect(deleteTick.mutate).not.toHaveBeenCalled();
+
+    // The chooserOpenRef guard reset — a fresh gesture opens the chooser again.
+    await fireDeleteRequest('swipe');
+    expect(chooser.props).not.toBeNull();
+    expect(chooser.props?.intent).toBe('delete');
+  });
+
   it('acts directly when the group has a single entry', async () => {
     groupedFeed.data.pages[0].userGroupedAscentsFeed.groups = [
       { key: 'solo', climbUuid: 'climb-1', date: '2026-06-15', items: [GROUP_ITEMS[0]] },
