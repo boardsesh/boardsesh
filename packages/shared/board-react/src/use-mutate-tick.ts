@@ -10,7 +10,16 @@ import {
   type GetUserAscentsFeedQueryResponse,
   type GetUserGroupedAscentsFeedQueryResponse,
 } from '@boardsesh/graphql/operations';
+import { BOULDER_GRADES } from '@boardsesh/board-constants/boulder-grade-mapping';
 import { useBoardAdapter } from './adapter';
+
+// Canonical difficulty_id → "6a/V3" display name, the same names the feed
+// resolvers serve. UPDATE_TICK returns only the numeric difficulty, so the
+// write-through derives the paired name to keep patched items internally
+// consistent (grade colors and the day divider's top-grade label read the NAME).
+const GRADE_NAME_BY_DIFFICULTY_ID = new Map<number, string>(
+  BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade.difficulty_name]),
+);
 
 // Stats / feed / climb-state caches that derive from a user's ticks. Editing or
 // deleting a tick must refresh all of them. Prefix matching means the bare root
@@ -72,6 +81,8 @@ function patchTickInAscentFeeds(queryClient: QueryClient, updatedTick: UpdateTic
           attemptCount: updatedTick.attemptCount,
           quality: updatedTick.quality,
           difficulty: updatedTick.difficulty,
+          difficultyName:
+            updatedTick.difficulty != null ? (GRADE_NAME_BY_DIFFICULTY_ID.get(updatedTick.difficulty) ?? null) : null,
           isBenchmark: updatedTick.isBenchmark,
           comment: updatedTick.comment,
           climbedAt: updatedTick.climbedAt,

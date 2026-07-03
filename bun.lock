@@ -419,6 +419,7 @@
       "name": "@boardsesh/board-react",
       "version": "1.0.0",
       "dependencies": {
+        "@boardsesh/board-constants": "*",
         "@boardsesh/graphql": "*",
         "@boardsesh/graphql-client": "*",
         "@boardsesh/shared-schema": "*",

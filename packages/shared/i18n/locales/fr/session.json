@@ -290,8 +290,8 @@
     "logbook": {
       "title": "Carnet",
       "noEntries": "Pas encore d'ascensions",
-      "sendsAndAttempts": "{{sends}} envois, {{attempts}} tentatives",
-      "sendsOnly": "{{sends}} envois",
+      "sendsAndAttempts": "{{sends}} réussites, {{attempts}} tentatives",
+      "sendsOnly": "{{sends}} réussites",
       "attemptsOnly": "{{attempts}} tentatives",
       "tries_one": "{{count}} essai",
       "tries_other": "{{count}} essais",

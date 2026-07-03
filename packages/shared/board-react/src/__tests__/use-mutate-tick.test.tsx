@@ -130,7 +130,17 @@ describe('useUpdateTick (shared)', () => {
     type FlatCache = { pages: { userAscentsFeed: { items: Record<string, unknown>[] } }[] };
     const groupedItems = queryClient.getQueryData<GroupedCache>(['userGroupedAscentsFeed', 'user-1', {}])?.pages[0]
       .userGroupedAscentsFeed.groups[0].items;
-    expect(groupedItems?.[0]).toMatchObject({ uuid: 'tick-1', status: 'send', attemptCount: 5, quality: 3 });
+    // difficultyName derives client-side from the canonical grade table (the
+    // mutation returns only the numeric id) so name-consumers — grade colors,
+    // the day divider's top-grade label — stay consistent with the new id.
+    expect(groupedItems?.[0]).toMatchObject({
+      uuid: 'tick-1',
+      status: 'send',
+      attemptCount: 5,
+      quality: 3,
+      difficulty: 16,
+      difficultyName: '6a/V3',
+    });
     // Sibling untouched.
     expect(groupedItems?.[1]).toMatchObject({ uuid: 'tick-2', status: 'attempt', attemptCount: 1 });
     const flatItems = queryClient.getQueryData<FlatCache>(['userAscentsFeed', 'user-1', {}])?.pages[0].userAscentsFeed

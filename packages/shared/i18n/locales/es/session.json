@@ -290,8 +290,8 @@
     "logbook": {
       "title": "Registro",
       "noEntries": "Sin ascensiones todavía",
-      "sendsAndAttempts": "{{sends}} envios, {{attempts}} intentos",
-      "sendsOnly": "{{sends}} envios",
+      "sendsAndAttempts": "{{sends}} encadenes, {{attempts}} intentos",
+      "sendsOnly": "{{sends}} encadenes",
       "attemptsOnly": "{{attempts}} intentos",
       "tries_one": "{{count}} intento",
       "tries_other": "{{count}} intentos",
