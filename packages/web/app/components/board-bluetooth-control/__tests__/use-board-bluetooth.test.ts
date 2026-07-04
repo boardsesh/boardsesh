@@ -616,6 +616,38 @@ describe('useBoardBluetooth', () => {
       expect(mockShowMessage).toHaveBeenCalledTimes(1);
     });
 
+    it('re-toasts the same climb when it is also incompatible with the next board', async () => {
+      // The hook outlives route changes; the dedup key is board-scoped so the
+      // first refusal on the NEW board toasts even though the climb uuid is
+      // unchanged (and regardless of effect ordering on the switch commit).
+      const homewallDetails = {
+        ...(mockBoardDetails as unknown as Record<string, unknown>),
+        layout_id: 8,
+      } as unknown as Parameters<typeof useBoardBluetooth>[0]['boardDetails'];
+
+      const { result, rerender } = renderHook(({ details }) => useBoardBluetooth({ boardDetails: details }), {
+        initialProps: { details: mockBoardDetails },
+      });
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      // Tension climb: incompatible with kilter layout 1 AND kilter layout 8.
+      const spillContext = { climbUuid: 'spill-x', climbBoardType: 'tension', climbLayoutId: 1 };
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      // Switch to the Homewall config — same climb, still incompatible.
+      rerender({ details: homewallDetails });
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(2);
+    });
+
     it('refuses silently when the caller suppresses the toast (play-drawer path)', async () => {
       const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
       await act(async () => {

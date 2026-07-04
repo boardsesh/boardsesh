@@ -256,18 +256,14 @@ export function useBoardBluetooth({
   // a failing call resolving and the AutoSender's same-microtask read.
   const lastSendFailureReasonRef = useRef<BleSendFailureReason | null>(null);
 
-  // Dedups the cross-board toast per climb: the play-drawer playback loop and
-  // the AutoSender both re-invoke sendFramesToBoard for the same climb, and
-  // one toast per climb is enough. Cleared on any successful send so a later
-  // board switch back to a mismatched config re-surfaces the message.
-  // Also cleared on both disconnect paths (handleDisconnection, disconnect()) so a fresh connection re-arms it.
+  // Dedups the cross-board toast per board+climb: the play-drawer playback
+  // loop and the AutoSender both re-invoke sendFramesToBoard for the same
+  // climb, and one toast per climb per board is enough. Keyed on board
+  // identity (not reset via effect — child send effects run before this
+  // hook's effects on a board-switch commit, so an effect reset would race),
+  // cleared on any successful send, and cleared on both disconnect paths
+  // (handleDisconnection, disconnect()) so a fresh connection re-arms it.
   const lastIncompatibleToastUuidRef = useRef<string | null>(null);
-  // The hook outlives route changes (root provider), so also re-arm on a board
-  // switch — the same climb can be incompatible with the NEW board too and
-  // deserves a fresh toast there.
-  useEffect(() => {
-    lastIncompatibleToastUuidRef.current = null;
-  }, [boardDetails]);
 
   // Device picker state for custom Capacitor scanning.
   // pickerRejectRef holds the pending promise's reject so unmount cleanup
@@ -411,8 +407,9 @@ export function useBoardBluetooth({
           ) === 'incompatible'
         ) {
           // Contextless callers dedup under a sentinel so a retry loop can't
-          // spam the toast; the ref clears on any successful send.
-          const toastKey = climbUuid ?? '__no-uuid__';
+          // spam the toast; the ref clears on any successful send. Board scope
+          // matches the guard's granularity (name + layout).
+          const toastKey = `${boardDetails.board_name}-${boardDetails.layout_id}::${climbUuid ?? '__no-uuid__'}`;
           if (!sendContext?.suppressIncompatibleToast && lastIncompatibleToastUuidRef.current !== toastKey) {
             lastIncompatibleToastUuidRef.current = toastKey;
             showMessage(t('bluetooth.incompatibleClimb'), 'error');
