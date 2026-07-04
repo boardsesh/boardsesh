@@ -93,16 +93,15 @@ export function bleWriteDiagnosticsProperties(
 
 // Exported for testing — isolates the .packet extraction so regressions are caught.
 //
-// Empty frames now deliberately send MoonBoard's clear-all `l##` frame:
-// getMoonboardBluetoothPacket('') returns totalPlacements 0, so the all-skipped
-// guard below never trips and the clear packet is written — web parity
-// (use-board-bluetooth.ts).
+// Empty frames deliberately send MoonBoard's clear-all `l##` frame (the builder
+// marks that result `isClear`) — web parity (use-board-bluetooth.ts).
 //
 // Returns:
-//  - false when every placement was skipped for a non-empty climb (the packet
-//    builder still emits `l##`, so writing it would silently dark the board while
-//    the caller reported success). The caller surfaces the incompatible-climb
-//    error instead of writing.
+//  - false when a non-clear send encodes zero holds — every placement skipped,
+//    or a degenerate frames string that parses to no placements. The builder
+//    still emits `l##` for those, so writing it would silently dark the board
+//    while the caller reported success; the caller surfaces the
+//    incompatible-climb error instead.
 //  - true after a successful write.
 export async function dispatchMoonboardPacket(
   frames: string,
@@ -110,12 +109,12 @@ export async function dispatchMoonboardPacket(
   signal?: AbortSignal,
   numRows?: number,
 ): Promise<boolean> {
-  const { packet, skippedRoleCount, skippedPositionCount, totalPlacements } = getMoonboardBluetoothPacket(
+  const { packet, skippedRoleCount, skippedPositionCount, totalPlacements, isClear } = getMoonboardBluetoothPacket(
     frames,
     numRows,
   );
-  const skippedCount = skippedRoleCount + skippedPositionCount;
-  if (totalPlacements > 0 && skippedCount === totalPlacements) {
+  const encodedCount = totalPlacements - skippedRoleCount - skippedPositionCount;
+  if (!isClear && encodedCount === 0) {
     return false;
   }
   await write(packet, signal);
@@ -515,38 +514,19 @@ export function useBoardBluetooth({
           sendAdapter = adapterRef.current;
 
           if (boardName === 'moonboard') {
-            // Empty frames = deliberate clear-all. `l##` (empty frame) is
-            // MoonBoard's clear-all: community firmware (ArduinoMoonBoardLED)
-            // clears every LED on each incoming frame; unverified on official Moon
-            // controllers (at worst a no-op). Sent only on a deliberate clear —
-            // never as a fallback for an all-skipped climb, which surfaces an error
-            // below instead of silently darking the board.
-            if (frames === '') {
-              const cleared = await dispatchMoonboardPacket(
-                '',
-                adapterRef.current.write.bind(adapterRef.current),
-                combinedSignal,
-                moonNumRows,
-              );
-              if (cleared) {
-                track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
-              }
-              return cleared;
-            }
-
             const sent = await dispatchMoonboardPacket(
               frames,
               adapterRef.current.write.bind(adapterRef.current),
               combinedSignal,
               moonNumRows,
             );
-            // false = every placement was skipped (unrecognised/corrupt hold
-            // data) for a non-empty climb. The packet builder would emit the
+            // false = the climb encoded zero holds (every placement skipped, or
+            // a degenerate frames string). The packet builder would emit the
             // clear-all packet `l##`, darking the board, so dispatchMoonboardPacket
             // refuses to write. Surface the same incompatible-climb error the
             // Aurora branch uses instead of letting the AutoSender buzz success on
             // a dark board.
-            if (sent === false) {
+            if (!sent) {
               console.warn('[BLE] All MoonBoard placements skipped — climb has unrecognised hold data');
               Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
               track(SHARED_EVENTS.ClimbSentToBoardFailure, {
@@ -555,20 +535,34 @@ export function useBoardBluetooth({
               });
               return false;
             }
-            if (sent) {
-              track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
-                ...boardAnalyticsProperties,
-                ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
-              });
+            if (frames === '') {
+              // Deliberate clear-all just went out as `l##`: community firmware
+              // (ArduinoMoonBoardLED) clears every LED on each incoming frame;
+              // unverified on official Moon controllers (at worst a no-op). Only a
+              // user-initiated clear counts as "lights cleared" — an auto-sent
+              // climb with empty frames darks the wall (Aurora parity) but is not
+              // a clear action.
+              if (sendContext?.sendSource === 'clear') {
+                track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
+              }
+              return true;
             }
-            return sent;
+            track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
+              ...boardAnalyticsProperties,
+              ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
+            });
+            return true;
           }
 
-          // Empty frames = "clear all LEDs" for Aurora boards
+          // Empty frames = "clear all LEDs" for Aurora boards. Only a
+          // user-initiated clear is tracked; auto-sent empty frames clear the
+          // wall (long-standing Aurora behaviour) without counting as one.
           if (frames === '') {
             const clearResult = getAuroraBluetoothPacket('', {}, boardName as AuroraBoardName, apiLevelRef.current);
             await adapterRef.current.write(clearResult.packet, combinedSignal);
-            track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
+            if (sendContext?.sendSource === 'clear') {
+              track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
+            }
             return true;
           }
 

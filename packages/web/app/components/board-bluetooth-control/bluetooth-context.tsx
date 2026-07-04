@@ -680,7 +680,10 @@ export function BluetoothProvider({
   );
 
   const [partyMode, setPartyMode] = useState<'off' | 'glyphs' | 'disco'>('off');
-  const clearBoard = useCallback(() => sendFramesToBoard(''), [sendFramesToBoard]);
+  const clearBoard = useCallback(
+    () => sendFramesToBoard('', false, undefined, { sendSource: 'clear' }),
+    [sendFramesToBoard],
+  );
 
   // Skip-spill handler: solo advances the queue past the incompatible climb;
   // party only clears this wall — the shared current climb must not be

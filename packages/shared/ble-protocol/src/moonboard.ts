@@ -17,6 +17,14 @@ export type MoonboardPacketResult = {
   skippedRoleCount: number;
   skippedPositionCount: number;
   totalPlacements: number;
+  /**
+   * True only for the deliberate clear-all input (`frames === ''`), whose
+   * packet is the bare `l##` frame. Consumers must refuse to write whenever
+   * `!isClear` and nothing encoded (all placements skipped, or a degenerate
+   * non-empty frames string that parses to zero placements) — writing `l##`
+   * there would silently dark the wall while the send reported success.
+   */
+  isClear: boolean;
 };
 
 // Note: UART_SERVICE_UUID is available from './transport' — not re-exported
@@ -56,20 +64,6 @@ export function getMoonboardBluetoothPacket(
   frames: string,
   numRows: number = MOONBOARD_GRID.numRows,
 ): MoonboardPacketResult {
-  // `l##` (empty frame) is MoonBoard's clear-all: community firmware
-  // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified on
-  // official Moon controllers (at worst a no-op). Sent only on a deliberate clear
-  // — never as a fallback for an all-skipped climb, which must surface an error
-  // instead of silently darking the board.
-  if (frames === '') {
-    return {
-      packet: new TextEncoder().encode(`${MOONBOARD_FRAME_PREFIX}${MOONBOARD_FRAME_SUFFIX}`),
-      skippedRoleCount: 0,
-      skippedPositionCount: 0,
-      totalPlacements: 0,
-    };
-  }
-
   const encodedHolds: string[] = [];
   let skippedRoleCount = 0;
   let skippedPositionCount = 0;
@@ -99,10 +93,16 @@ export function getMoonboardBluetoothPacket(
 
   const holdPayload = encodedHolds.join(',');
 
+  // `l##` (empty holdPayload) is MoonBoard's clear-all: community firmware
+  // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified on
+  // official Moon controllers (at worst a no-op). Only the deliberate-clear input
+  // (frames === '') marks the result `isClear` — a climb that merely encodes to
+  // nothing produces the same bytes but must be refused by the caller.
   return {
     packet: new TextEncoder().encode(`${MOONBOARD_FRAME_PREFIX}${holdPayload}${MOONBOARD_FRAME_SUFFIX}`),
     skippedRoleCount,
     skippedPositionCount,
     totalPlacements: frameParts.length,
+    isClear: frames === '',
   };
 }

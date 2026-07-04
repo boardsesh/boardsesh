@@ -52,10 +52,11 @@ describe('getMoonboardBluetoothPacket', () => {
   });
 
   it('sends the deliberate clear-all `l##` frame for empty frames (#3420)', () => {
-    const { packet, totalPlacements } = getMoonboardBluetoothPacket('');
+    const { packet, totalPlacements, isClear } = getMoonboardBluetoothPacket('');
 
     expect(new TextDecoder().decode(packet)).toBe('l##');
     expect(totalPlacements).toBe(0);
+    expect(isClear).toBe(true);
   });
 
   it('skips unsupported Moonboard hold state codes gracefully', () => {

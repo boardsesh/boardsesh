@@ -79,7 +79,7 @@ struct BoardBleWriteTelemetry {
     }
 }
 
-enum BoardBleError: LocalizedError, Equatable {
+enum BoardBleError: LocalizedError {
     case bluetoothUnavailable
     case deviceNotFound
     case connectTimedOut
@@ -258,9 +258,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     #if DEBUG || BOARDSESH_TESTS
     /// Test-only interception of the single concrete `cancelPeripheralConnection`
     /// call site so a fake peripheral never has to be a real `CBPeripheral` and no
-    /// `CBCentralManager` is instantiated. nil in production/dev; only the write
-    /// flow-control test suite sets it.
-    var cancelPeripheralConnectionOverrideForTesting: ((WritableBlePeripheral) -> Void)?
+    /// `CBCentralManager` is instantiated. nil in production/dev; set only through
+    /// `TestHooks.setCancelPeripheralConnectionOverride` (same-file extension).
+    private var cancelPeripheralConnectionOverrideForTesting: ((WritableBlePeripheral) -> Void)?
     #endif
 
     private var onScanResult: ((BoardBleScanResult) -> Void)?
@@ -275,19 +275,28 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// wall. Payload: (deviceId, deviceName).
     private var onConnected: ((String, String?) -> Void)?
 
-    /// Production must use `BoardBleManager.shared`, which calls this with the
-    /// default arguments — reproducing the original `override private init()`
-    /// exactly: the real GCD `DispatchBleTimerScheduler` and an eagerly created
-    /// `CBCentralManager`. Tests construct isolated instances with a fake
-    /// scheduler and `createCentralManagerEagerly: false` so no CoreBluetooth
-    /// stack (or permission prompt) spins up.
-    init(timerScheduler: BleTimerScheduling? = nil, createCentralManagerEagerly: Bool = true) {
+    /// `private` keeps the singleton compiler-enforced: a second live instance
+    /// would register a second `CBCentralManager` with the same restoration
+    /// identifier and split connection state across two delegates.
+    override private init() {
         super.init()
-        // Assign before the lazy `timerScheduler` default (or anything else) can
-        // touch it — nothing in this initializer reads the scheduler.
-        if let timerScheduler {
-            self.timerScheduler = timerScheduler
-        }
+        completeInit(createCentralManagerEagerly: true)
+    }
+
+    #if DEBUG || BOARDSESH_TESTS
+    /// Test-only isolated instance: a fake scheduler plus
+    /// `createCentralManagerEagerly: false` means no CoreBluetooth stack (or
+    /// permission prompt) ever spins up. Production must use `.shared`.
+    init(timerScheduler: BleTimerScheduling, createCentralManagerEagerly: Bool) {
+        super.init()
+        // Assign before the lazy `timerScheduler` default (or anything else)
+        // can touch it — nothing in completeInit reads the scheduler.
+        self.timerScheduler = timerScheduler
+        completeInit(createCentralManagerEagerly: createCentralManagerEagerly)
+    }
+    #endif
+
+    private func completeInit(createCentralManagerEagerly: Bool) {
         bleQueue.setSpecific(key: bleQueueKey, value: ())
         runOnBleQueueSync {
             configuration = readConfiguration()

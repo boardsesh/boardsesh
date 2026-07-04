@@ -360,14 +360,14 @@ enum BoardBleEncoding {
     }
 
     static func makeMoonboardPacket(frames: String, numRows: Int? = nil) -> BoardBlePacketResult {
-        let parsedFrames = parseFrames(frames)
-
         // `l##` (empty frame) is MoonBoard's clear-all: community firmware
         // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified
-        // on official Moon controllers (at worst a no-op). Sent only on a
-        // deliberate clear (empty frames) — never as a fallback for an all-skipped
-        // climb, which must surface an error instead of silently darking the board.
-        if parsedFrames.isEmpty {
+        // on official Moon controllers (at worst a no-op). Gate on the RAW string —
+        // only the deliberate-clear input (`frames == ""`) may produce `l##`. A
+        // non-empty frames string that parses to nothing (corrupt/truncated data)
+        // must fall through to the zero-encodable refusal below, matching the JS
+        // builder's `isClear` contract.
+        if frames.isEmpty {
             return BoardBlePacketResult(
                 packet: Data((moonboardFramePrefix + moonboardFrameSuffix).utf8),
                 skippedPositionCount: 0,
@@ -376,6 +376,7 @@ enum BoardBleEncoding {
             )
         }
 
+        let parsedFrames = parseFrames(frames)
         var encodedHolds: [String] = []
         var skippedRoleCount = 0
         var skippedPositionCount = 0
@@ -392,11 +393,11 @@ enum BoardBleEncoding {
             encodedHolds.append("\(roleLetter)\(position)")
         }
 
-        // All placements skipped → refuse: a non-empty climb whose holds all
-        // dropped (unrecognised roles or out-of-range ids) must not fall through
-        // to `l##` (that's the deliberate clear-all above), so return an empty
-        // packet and let the caller refuse to write — matching
-        // dispatchMoonboardPacket on the JS side.
+        // Zero encodable holds on a non-empty climb → refuse: whether every
+        // placement was skipped (unrecognised roles, out-of-range ids) or the
+        // frames string parsed to nothing at all, falling through to `l##` would
+        // silently dark the wall, so return an empty packet and let the caller
+        // refuse to write — matching dispatchMoonboardPacket on the JS side.
         guard !encodedHolds.isEmpty else {
             return BoardBlePacketResult(
                 packet: Data(),

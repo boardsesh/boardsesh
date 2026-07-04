@@ -92,6 +92,9 @@ describe('getMoonboardBluetoothPacket', () => {
     const decoded = new TextDecoder().decode(result.packet);
     expect(decoded).toBe('l##');
     expect(result.skippedRoleCount).toBe(1);
+    // The bytes match the clear frame but this is NOT a clear — consumers must
+    // refuse to write it (zero encodable holds on a non-clear send).
+    expect(result.isClear).toBe(false);
   });
 
   it('encodes valid holds and skips invalid role codes', () => {
@@ -111,13 +114,24 @@ describe('getMoonboardBluetoothPacket', () => {
 
   it('sends the deliberate clear-all `l##` frame for empty frames (#3420)', () => {
     // Empty frames is the deliberate clear path: `l##` clears every LED on
-    // community firmware. totalPlacements 0 (nothing to skip) is what lets the
-    // caller's all-skipped guard pass this through instead of refusing to write.
+    // community firmware. Only this input marks the result isClear — the flag
+    // consumers use to let the clear through their zero-encodable refusal.
     const result = getMoonboardBluetoothPacket('');
     expect(new TextDecoder().decode(result.packet)).toBe('l##');
     expect(result.totalPlacements).toBe(0);
     expect(result.skippedRoleCount).toBe(0);
     expect(result.skippedPositionCount).toBe(0);
+    expect(result.isClear).toBe(true);
+  });
+
+  it('never marks a degenerate non-empty frames string as a clear (#3420)', () => {
+    // Separator-only input parses to zero placements and produces the same
+    // `l##` bytes, but isClear false tells consumers to refuse the write
+    // instead of silently darking the wall on a corrupt climb.
+    const result = getMoonboardBluetoothPacket('p');
+    expect(new TextDecoder().decode(result.packet)).toBe('l##');
+    expect(result.totalPlacements).toBe(0);
+    expect(result.isClear).toBe(false);
   });
 });
 

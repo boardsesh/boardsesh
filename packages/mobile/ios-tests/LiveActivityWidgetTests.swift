@@ -173,6 +173,15 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "p1r45").packet.isEmpty)
     }
 
+    func testMoonboardPacketIsEmptyForMalformedFrames() {
+        // Corrupt/truncated frames that PARSE to nothing are not a clear: the
+        // clear-all gate is the raw empty string, so these must hit the
+        // zero-encodable refusal (empty packet), never emit `l##` (#3420).
+        XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "p12").packet.isEmpty)
+        XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "pXr42").packet.isEmpty)
+        XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "garbage").packet.isEmpty)
+    }
+
     func testMoonboardSerialPositionMirrorsGridMath() {
         XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 1), 0)
         XCTAssertEqual(BoardBleEncoding.moonboardSerialPosition(holdId: 2), 35)

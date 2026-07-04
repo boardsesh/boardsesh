@@ -644,7 +644,7 @@ describe('BluetoothProvider', () => {
 
       expect(mockSetCurrentClimbQueueItem).not.toHaveBeenCalled();
       // clearBoard sends empty frames to dark the wall.
-      expect(mockSendFramesToBoard).toHaveBeenCalledWith('');
+      expect(mockSendFramesToBoard).toHaveBeenCalledWith('', false, undefined, { sendSource: 'clear' });
       expect(mockTrack).toHaveBeenCalledWith(
         'BLE Queue Climb Skipped',
         expect.objectContaining({ skippedClimbUuid: 'c-spill', advancedToClimbUuid: null }),
@@ -663,7 +663,7 @@ describe('BluetoothProvider', () => {
       await act(async () => {});
 
       expect(mockSetCurrentClimbQueueItem).not.toHaveBeenCalled();
-      expect(mockSendFramesToBoard).toHaveBeenCalledWith('');
+      expect(mockSendFramesToBoard).toHaveBeenCalledWith('', false, undefined, { sendSource: 'clear' });
       expect(mockTrack).toHaveBeenCalledWith(
         'BLE Queue Climb Skipped',
         expect.objectContaining({ skippedClimbUuid: 'c-spill', inSession: true }),

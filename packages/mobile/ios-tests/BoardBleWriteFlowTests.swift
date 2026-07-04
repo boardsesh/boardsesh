@@ -15,7 +15,6 @@ final class FakeWritablePeripheral: WritableBlePeripheral {
     var canSendScript: [Bool]
     var maxWriteValueLength: Int
     private(set) var writtenChunks: [(data: Data, type: CBCharacteristicWriteType)] = []
-    private(set) var canSendReadCount = 0
 
     init(
         identifier: UUID = UUID(),
@@ -32,7 +31,6 @@ final class FakeWritablePeripheral: WritableBlePeripheral {
     }
 
     var canSendWriteWithoutResponse: Bool {
-        canSendReadCount += 1
         if !canSendScript.isEmpty {
             return canSendScript.removeFirst()
         }
@@ -53,14 +51,12 @@ final class FakeWritablePeripheral: WritableBlePeripheral {
 @available(iOS 17.0, *)
 final class FakeOneShotTimer: BleOneShotTimer {
     let label: String
-    let delay: TimeInterval
     private let handler: () -> Void
     private(set) var cancelled = false
     private(set) var fired = false
 
-    init(label: String, delay: TimeInterval, handler: @escaping () -> Void) {
+    init(label: String, handler: @escaping () -> Void) {
         self.label = label
-        self.delay = delay
         self.handler = handler
     }
 
@@ -81,8 +77,6 @@ final class FakeOneShotTimer: BleOneShotTimer {
 /// manager's `===` identity self-guard.
 @available(iOS 17.0, *)
 final class FakeRepeatingTimer: BleRepeatingTimer {
-    private(set) var interval: TimeInterval?
-    private(set) var leeway: DispatchTimeInterval?
     private(set) var activated = false
     private(set) var cancelled = false
     private var handler: (() -> Void)?
@@ -91,10 +85,7 @@ final class FakeRepeatingTimer: BleRepeatingTimer {
         self.handler = handler
     }
 
-    func schedule(interval: TimeInterval, leeway: DispatchTimeInterval) {
-        self.interval = interval
-        self.leeway = leeway
-    }
+    func schedule(interval _: TimeInterval, leeway _: DispatchTimeInterval) {}
 
     func activate() {
         activated = true
@@ -116,8 +107,8 @@ final class FakeBleTimerScheduler: BleTimerScheduling {
     private(set) var oneShotTimers: [FakeOneShotTimer] = []
     private(set) var repeatingTimers: [FakeRepeatingTimer] = []
 
-    func scheduleOneShot(after delay: TimeInterval, label: String, _ handler: @escaping () -> Void) -> BleOneShotTimer {
-        let timer = FakeOneShotTimer(label: label, delay: delay, handler: handler)
+    func scheduleOneShot(after _: TimeInterval, label: String, _ handler: @escaping () -> Void) -> BleOneShotTimer {
+        let timer = FakeOneShotTimer(label: label, handler: handler)
         oneShotTimers.append(timer)
         return timer
     }

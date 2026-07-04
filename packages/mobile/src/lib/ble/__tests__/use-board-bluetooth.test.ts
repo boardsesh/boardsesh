@@ -672,8 +672,8 @@ describe('useBoardBluetooth', () => {
   });
 
   it('fires Board Lights Cleared (not Climb Sent to Board Success) on a MoonBoard deliberate clear (#3420)', async () => {
-    // Empty frames deliberately sends `l##` (totalPlacements 0), so the clear is
-    // written and tracked as a clear — never as a climb send.
+    // Empty frames sends `l##` (isClear), and sendSource 'clear' marks it a
+    // user-initiated clear — tracked as a clear, never as a climb send.
     const fakeAdapter = makeFakeAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(
       fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
@@ -683,6 +683,7 @@ describe('useBoardBluetooth', () => {
       skippedRoleCount: 0,
       skippedPositionCount: 0,
       totalPlacements: 0,
+      isClear: true,
     });
 
     const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
@@ -691,13 +692,44 @@ describe('useBoardBluetooth', () => {
     });
     let cleared: boolean | undefined;
     await act(async () => {
-      cleared = await result.current.sendFramesToBoard('');
+      cleared = await result.current.sendFramesToBoard('', false, undefined, { sendSource: 'clear' });
     });
 
     expect(cleared).toBe(true);
     expect(fakeAdapter.write).toHaveBeenCalled();
     const clearedCall = mockTrack.mock.calls.find(([name]) => name === 'Board Lights Cleared');
-    expect(clearedCall?.[1]).toMatchObject({ boardName: 'moonboard', layoutId: 1, sizeId: 1 });
+    expect(clearedCall?.[1]).toMatchObject({ boardName: 'moonboard', layoutId: 1, sizeId: 1, sendSource: 'clear' });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();
+  });
+
+  it('clears the wall silently for auto-sent empty frames — no clear or success event (#3420)', async () => {
+    // A queue/presence climb whose frames are empty still overwrites the wall
+    // (Aurora parity) but is not a user clear action: the write goes out and
+    // neither Board Lights Cleared nor Climb Sent to Board Success fires.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new TextEncoder().encode('l##'),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 0,
+      isClear: true,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sent: boolean | undefined;
+    await act(async () => {
+      sent = await result.current.sendFramesToBoard('');
+    });
+
+    expect(sent).toBe(true);
+    expect(fakeAdapter.write).toHaveBeenCalled();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Board Lights Cleared')).toBeUndefined();
     expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();
   });
 
@@ -1289,6 +1321,7 @@ describe('dispatchMoonboardPacket', () => {
       totalPlacements: 2,
       skippedRoleCount: 0,
       skippedPositionCount: 0,
+      isClear: false,
     });
     const write = vi.fn().mockResolvedValue(undefined);
 
@@ -1306,6 +1339,7 @@ describe('dispatchMoonboardPacket', () => {
       totalPlacements: 1,
       skippedRoleCount: 0,
       skippedPositionCount: 0,
+      isClear: false,
     });
     const write = vi.fn().mockResolvedValue(undefined);
 
@@ -1324,6 +1358,7 @@ describe('dispatchMoonboardPacket', () => {
       totalPlacements: 0,
       skippedRoleCount: 0,
       skippedPositionCount: 0,
+      isClear: true,
     });
     const write = vi.fn().mockResolvedValue(undefined);
 
@@ -1340,6 +1375,7 @@ describe('dispatchMoonboardPacket', () => {
       totalPlacements: 1,
       skippedRoleCount: 0,
       skippedPositionCount: 0,
+      isClear: false,
     });
     const write = vi.fn().mockResolvedValue(undefined);
     const controller = new AbortController();
@@ -1358,10 +1394,30 @@ describe('dispatchMoonboardPacket', () => {
       totalPlacements: 2,
       skippedRoleCount: 2,
       skippedPositionCount: 0,
+      isClear: false,
     });
     const write = vi.fn().mockResolvedValue(undefined);
 
     const result = await dispatchMoonboardPacket('p1r99p2r98', write);
+
+    expect(result).toBe(false);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it('returns false and never writes for a degenerate non-empty frames string (#3420)', async () => {
+    // A corrupt frames string like 'p' parses to zero placements, so the
+    // builder emits `l##` with isClear false — writing it would dark the wall
+    // on a climb send, so the zero-encodable guard must refuse.
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new TextEncoder().encode('l##'),
+      totalPlacements: 0,
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      isClear: false,
+    });
+    const write = vi.fn().mockResolvedValue(undefined);
+
+    const result = await dispatchMoonboardPacket('p', write);
 
     expect(result).toBe(false);
     expect(write).not.toHaveBeenCalled();
@@ -1374,6 +1430,7 @@ describe('dispatchMoonboardPacket', () => {
       totalPlacements: 2,
       skippedRoleCount: 1,
       skippedPositionCount: 0,
+      isClear: false,
     });
     const write = vi.fn().mockResolvedValue(undefined);
 

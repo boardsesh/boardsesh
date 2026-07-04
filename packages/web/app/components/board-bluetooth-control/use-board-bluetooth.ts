@@ -42,6 +42,9 @@ export type BleSendContext = {
   /** Refuse silently: for callers racing the AutoSender on the same current
    * climb (play-drawer playback), whose skip toast already covers the user. */
   suppressIncompatibleToast?: boolean;
+  /** 'clear' marks a user-initiated clear-all so it's tracked as one (#3420);
+   * auto-sent empty frames clear the wall without counting as a clear action. */
+  sendSource?: 'clear';
 };
 
 // Module-level cache for Aurora LED placements loader to avoid repeated dynamic import overhead
@@ -376,7 +379,10 @@ export function useBoardBluetooth({
   // An empty `frames` string is the "clear all LEDs" path on both board
   // families: Aurora's packet builder returns a zero-length placement set the
   // board reads as "no LEDs lit", and MoonBoard's `l##` empty frame clears every
-  // LED on community firmware — either way whatever was on the wall is overwritten.
+  // LED on community firmware (unverified on official Moon controllers; at worst
+  // a no-op) — either way whatever was on the wall is overwritten. Pass
+  // `sendSource: 'clear'` for a user-initiated clear so it's tracked as one;
+  // auto-sent empty frames clear the wall without counting as a clear action.
   const sendFramesToBoard = useCallback(
     async (frames: string, mirrored: boolean = false, signal?: AbortSignal, sendContext?: BleSendContext) => {
       if (!adapterRef.current || !boardDetails) return;
@@ -404,34 +410,40 @@ export function useBoardBluetooth({
           return false;
         }
 
-        if (boardDetails.board_name === 'moonboard') {
-          // Mini boards wire a 12-row LED strip; the standard board is 18 rows.
-          const moonNumRows = getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows;
-
-          // Empty frames = deliberate clear-all. `l##` (empty frame) is
-          // MoonBoard's clear-all: community firmware (ArduinoMoonBoardLED) clears
-          // every LED on each incoming frame; unverified on official Moon
-          // controllers (at worst a no-op). Sent only on a deliberate clear —
-          // never as a fallback for an all-skipped climb, which surfaces an error
-          // below instead of silently darking the board.
-          if (frames === '') {
-            const moonClearResult = getMoonboardBluetoothPacket('', moonNumRows);
-            await serialisedWrite(adapterRef.current, moonClearResult.packet, signal);
+        // The clear-all path is family-agnostic apart from the packet builder.
+        if (frames === '') {
+          const clearPacket =
+            boardDetails.board_name === 'moonboard'
+              ? getMoonboardBluetoothPacket('', getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows).packet
+              : getAuroraBluetoothPacket('', {}, boardDetails.board_name, apiLevelRef.current).packet;
+          await serialisedWrite(adapterRef.current, clearPacket, signal);
+          if (sendContext?.sendSource === 'clear') {
             track(SHARED_EVENTS.BoardLightsCleared, {
               boardName: boardDetails.board_name,
               layoutId: boardDetails.layout_id,
               sizeId: boardDetails.size_id,
             });
-            void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
-            return true;
           }
+          void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
+          lastIncompatibleToastUuidRef.current = null;
+          return true;
+        }
+
+        if (boardDetails.board_name === 'moonboard') {
+          // Mini boards wire a 12-row LED strip; the standard board is 18 rows.
+          const moonNumRows = getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows;
 
           const moonResult = getMoonboardBluetoothPacket(frames, moonNumRows);
           const moonSkipped = moonResult.skippedRoleCount + moonResult.skippedPositionCount;
+          const moonEncoded = moonResult.totalPlacements - moonSkipped;
 
-          if (moonSkipped > 0 && moonResult.totalPlacements === moonSkipped) {
+          // Zero encodable holds on a non-empty climb — every placement skipped,
+          // or a degenerate frames string that parses to no placements. The
+          // builder still emits the clear-all `l##` for those, so refuse rather
+          // than silently dark the wall while reporting success.
+          if (moonEncoded === 0) {
             Sentry.captureMessage(
-              `[BLE] All ${moonResult.totalPlacements} MoonBoard placements skipped — climb data may be corrupted`,
+              `[BLE] MoonBoard climb encoded no holds (${moonSkipped} of ${moonResult.totalPlacements} placements skipped) — climb data may be corrupted`,
               {
                 level: 'warning',
                 tags: { board: 'moonboard' },
@@ -465,22 +477,6 @@ export function useBoardBluetooth({
           }
 
           await serialisedWrite(adapterRef.current, moonResult.packet, signal);
-          void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
-          lastIncompatibleToastUuidRef.current = null;
-          return true;
-        }
-
-        // Empty frames is the "clear all LEDs" path. Skip mirroring and the
-        // LED-placement load entirely — the Aurora packet builder produces a
-        // standalone clear packet that doesn't depend on placement data.
-        if (frames === '') {
-          const clearResult = getAuroraBluetoothPacket('', {}, boardDetails.board_name, apiLevelRef.current);
-          await serialisedWrite(adapterRef.current, clearResult.packet, signal);
-          track(SHARED_EVENTS.BoardLightsCleared, {
-            boardName: boardDetails.board_name,
-            layoutId: boardDetails.layout_id,
-            sizeId: boardDetails.size_id,
-          });
           void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
           lastIncompatibleToastUuidRef.current = null;
           return true;
