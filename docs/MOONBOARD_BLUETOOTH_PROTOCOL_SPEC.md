@@ -116,7 +116,7 @@ Neither matches the RedBearLab or Nordic UART families, and neither is part of t
 
 ✅ The app scans with `flutter_reactive_ble` (symbols `ScanForDevicesRequest`, `scanMode`, `requireLocationServicesEnabled`). Discovered devices arrive as `DiscoveredDevice(id: …)`; services and characteristics are resolved per `DiscoveredService(serviceId: …)` after connect.
 
-MoonBoard controllers advertise a BLE name beginning with **`MoonBoard`** (the app's user-facing copy and Boardsesh's existing `MOONBOARD_DEVICE_NAME_PREFIXES = ['MoonBoard', 'Moonboard']` both key on this prefix). The exact membership of the scan's service-UUID filter is not provable from static strings; what is certain is that the app carries **both** service UUIDs from §2 and resolves the right write characteristic after connecting.
+MoonBoard controllers advertise a BLE name beginning with **`MoonBoard`** (the app's user-facing copy and Boardsesh's existing `MOONBOARD_DEVICE_NAME_PREFIXES = ['MoonBoard', 'Moonboard']` both key on this prefix). The exact membership of the **official app's** scan service-UUID filter is not provable from static strings; what is certain is that the app carries **both** service UUIDs from §2 and resolves the right write characteristic after connecting. (Boardsesh scans unfiltered for the MoonBoard family and accepts a result on either generation's service UUID or the name prefix.)
 
 ---
 

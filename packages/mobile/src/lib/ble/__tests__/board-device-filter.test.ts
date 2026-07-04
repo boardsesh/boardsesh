@@ -81,6 +81,17 @@ describe('isLikelyBoardDevice', () => {
     expect(isLikelyBoardDevice({ name: 'Garage Wall', serviceUuids: null, scanFamily: 'aurora' })).toBe(false);
   });
 
+  it('falls back to name matching when a moonboard scan omits serviceUuids entirely', () => {
+    // Unlike the Aurora branch, `undefined` is not vouched for on moonboard
+    // scans (old iOS binaries filtered those natively on [UART, RedBearLab],
+    // but the name check still applies).
+    expect(isLikelyBoardDevice({ name: 'MoonBoard A1B2', serviceUuids: undefined, scanFamily: 'moonboard' })).toBe(
+      true,
+    );
+    expect(isLikelyBoardDevice({ name: 'Garage Wall', serviceUuids: undefined, scanFamily: 'moonboard' })).toBe(false);
+    expect(isLikelyBoardDevice({ name: undefined, serviceUuids: undefined, scanFamily: 'moonboard' })).toBe(false);
+  });
+
   it('rejects unrelated devices', () => {
     expect(isLikelyBoardDevice({ name: 'JBL Flip 6', serviceUuids: [], scanFamily: 'moonboard' })).toBe(false);
     expect(isLikelyBoardDevice({ name: undefined, serviceUuids: [], scanFamily: 'aurora' })).toBe(false);
