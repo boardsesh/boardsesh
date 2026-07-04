@@ -2,8 +2,9 @@
 
 Status: proposal for review · Surface: CI only (`.github/workflows/android-pr-rn.yml`) ·
 No change to what the job verifies, no change to release/dev-client builds.
-All numbers from `gh run list` / `gh run view` / `gh cache list` on 2026-07-03; run ids
-cited so everything is re-checkable.
+All numbers from `gh run list` / `gh run view` / `gh cache list` on 2026-07-03. Every
+load-bearing number is reproduced inline; the cited run ids are provenance (their logs
+expire after ~90 days, the tables here don't).
 
 ## TL;DR
 
@@ -161,8 +162,9 @@ jobs:
 ```
 
 - **Cost:** the ~2 min setup block runs twice, in parallel, on free public-repo runners —
-  wall time unaffected. If the duplication bothers on review, the setup block can become
-  a local composite action; not required for the win.
+  wall time unaffected. The implementation extracts the shared setup into a local
+  composite action (under `.github/actions/`), so a future setup change (new env var,
+  SDK bump) stays a single edit rather than two.
 - **The "tests surface fast" intent survives and improves.** The current ordering exists
   so a test regression shows before the slow build; after the split the test job reports
   in ~5 min standalone instead of at minute 4–10 of a 21-min job, and test vs build
@@ -170,11 +172,13 @@ jobs:
 
 ## Expected outcome
 
-| Scenario                                                  | Today   | After 1 + 2      |
-| --------------------------------------------------------- | ------- | ---------------- |
-| Typical PR push (new PR, or sibling PR evicted the cache) | ~21 min | **~12.5–13 min** |
-| Best case                                                 | ~15 min | ~12.5 min        |
-| Worst case (`main` cache evicted)                         | ~23 min | ~16 min          |
+The table is by cache state, because the real effect of fix 1 is flipping which state is
+the norm — after the change, warm *is* the typical case, so "typical" and "best" converge:
+
+| Cache state at build time | Today                                              | After 1 + 2                                     |
+| ------------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| Warm                      | ~15 min — rare (same-PR repush, if not yet evicted) | **~12.5–13 min — the norm** (restored from `main`; exact vs prefix hit differ by well under a minute) |
+| Cold                      | ~21–23 min — **the norm** (every new PR)            | ~15–16 min — rare (`main`'s cache evicted or stale) |
 
 The Android build likely stays the longest mobile check, but the gap to CI (~7.5 min)
 shrinks from ~3× to well under 2×, and the wait after the last review-fix push drops by
@@ -193,6 +197,11 @@ artifact. Testers mostly ride the `pr-<number>` OTA channels for JS testing, so 
 artifact may be vestigial — but that's a judgement call about what signal and artifacts a
 PR should always produce, not a pure speed win. Deliberately left out of this change;
 worth deciding separately.
+
+If we had to lean today: **keep the job on JS-only PRs.** Once fixes 1 + 2 land the job
+costs ~12.5 min, the APK stays the only zero-setup way to hand a branch build to someone
+without the dev-client or a `tester` role (fork contributors included), and path-scoping
+is a small follow-up if the job ever creeps back up.
 
 ## Not doing (and why)
 
