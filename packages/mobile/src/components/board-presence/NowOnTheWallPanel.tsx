@@ -52,6 +52,7 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { getHttpClient } from '../../lib/graphql/client';
 import { GET_CLIMB, type GetClimbQueryResponse } from '../../lib/graphql/operations';
 import { boardPresenceClimbToClimb } from '../../lib/board-presence/presence-climb';
+import { computeSessionRanking, type SessionRankingEntry } from '../../lib/board-presence/session-ranking';
 import { withAlpha } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/tokens';
 
@@ -142,8 +143,19 @@ function setActionClimbCacheEntry(cache: Map<string, Climb>, key: string, climb:
 }
 
 export type NowOnTheWallPanelProps = {
-  /** 'sheet' renders inside the native modal (BottomSheetFlatList); 'column' renders inline (FlatList). */
-  variant: 'sheet' | 'column';
+  /**
+   * 'sheet' renders inside the native modal (BottomSheetFlatList); 'column' and
+   * 'screen' render inline (plain FlatList) and own both safe-area insets. 'screen'
+   * is the full-width "On the Wall" tab — it additionally shows the client-derived
+   * "This session" leaderboard under the stats.
+   */
+  variant: 'sheet' | 'column' | 'screen';
+  /**
+   * Show the live hero (the currently-lit climb) as the first list row. Default
+   * true. The landscape wall tab sets it false because a dedicated focal pane
+   * (`WallFocalClimb`) already owns the lit climb, so the list starts at the stats.
+   */
+  showHero?: boolean;
   /** The active board label, shown as the panel title. */
   boardLabel: string | null;
   /**
@@ -169,6 +181,7 @@ export type NowOnTheWallPanelProps = {
 function NowOnTheWallPanelComponent(
   {
     variant,
+    showHero = true,
     boardLabel,
     boardConfig,
     onClose,
@@ -227,6 +240,10 @@ function NowOnTheWallPanelComponent(
         : history,
     [currentClimb, history],
   );
+
+  // Client-derived "This session" leaderboard from the loaded history window.
+  // Cheap + memoized; only rendered on the full-screen tab (variant 'screen').
+  const sessionRanking = useMemo(() => computeSessionRanking(history), [history]);
 
   // "Load older" — pages further back through the durable history log, past
   // the live feed's in-memory HISTORY_CAP window.
@@ -533,35 +550,36 @@ function NowOnTheWallPanelComponent(
   const listHeader = useMemo(
     () => (
       <View>
-        {canUseInteractiveRows && rowBoard && currentClimb ? (
-          <InteractiveHeroRow
-            climb={currentClimb}
-            rowBoard={rowBoard}
-            boardConfig={boardConfig}
-            labelColor={systemColors.label}
-            secondaryColor={systemColors.secondaryLabel}
-            accentColor={brandColors.warning}
-            surfaceColor={systemColors.secondaryBackground}
-            formattedGrade={currentClimb.grade ? formatGrade(currentClimb.grade) : null}
-            gradeColor={getGradeColor(currentClimb.grade ?? '') ?? DEFAULT_GRADE_COLOR}
-            isActionLoading={heroActionLoading}
-            onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
-            onAddToQueue={handleInteractiveAddToQueue}
-            onOpenPlaylist={handleInteractiveOpenPlaylist}
-            onOpenActions={handleInteractiveOpenActions}
-          />
-        ) : (
-          <NowOnTheWallHero
-            climb={currentClimb}
-            boardConfig={boardConfig}
-            labelColor={systemColors.label}
-            secondaryColor={systemColors.secondaryLabel}
-            accentColor={brandColors.warning}
-            surfaceColor={systemColors.secondaryBackground}
-            formattedGrade={currentClimb?.grade ? formatGrade(currentClimb.grade) : null}
-            gradeColor={getGradeColor(currentClimb?.grade ?? '') ?? DEFAULT_GRADE_COLOR}
-          />
-        )}
+        {showHero &&
+          (canUseInteractiveRows && rowBoard && currentClimb ? (
+            <InteractiveHeroRow
+              climb={currentClimb}
+              rowBoard={rowBoard}
+              boardConfig={boardConfig}
+              labelColor={systemColors.label}
+              secondaryColor={systemColors.secondaryLabel}
+              accentColor={brandColors.warning}
+              surfaceColor={systemColors.secondaryBackground}
+              formattedGrade={currentClimb.grade ? formatGrade(currentClimb.grade) : null}
+              gradeColor={getGradeColor(currentClimb.grade ?? '') ?? DEFAULT_GRADE_COLOR}
+              isActionLoading={heroActionLoading}
+              onPress={onClimbPress ? handleInteractiveClimbPress : undefined}
+              onAddToQueue={handleInteractiveAddToQueue}
+              onOpenPlaylist={handleInteractiveOpenPlaylist}
+              onOpenActions={handleInteractiveOpenActions}
+            />
+          ) : (
+            <NowOnTheWallHero
+              climb={currentClimb}
+              boardConfig={boardConfig}
+              labelColor={systemColors.label}
+              secondaryColor={systemColors.secondaryLabel}
+              accentColor={brandColors.warning}
+              surfaceColor={systemColors.secondaryBackground}
+              formattedGrade={currentClimb?.grade ? formatGrade(currentClimb.grade) : null}
+              gradeColor={getGradeColor(currentClimb?.grade ?? '') ?? DEFAULT_GRADE_COLOR}
+            />
+          ))}
         {stats ? (
           <View style={styles.statsBlock}>
             <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
@@ -610,6 +628,28 @@ function NowOnTheWallPanelComponent(
             ) : null}
           </View>
         ) : null}
+        {/* Client-derived "This session" leaderboard — full-screen wall tab only,
+            and only worth showing once at least two climbers have sent. The
+            backend hardest-send crown above tells the grade story; this ranks by
+            who's been most active on the loaded history window. */}
+        {variant === 'screen' && sessionRanking.length >= 2 ? (
+          <View style={styles.statsBlock}>
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
+              {t('mobile.boardPresence.sessionLeaderboardHeader')}
+            </Text>
+            {sessionRanking.map((entry, index) => (
+              <SessionRankRow
+                key={entry.key}
+                rank={index + 1}
+                entry={entry}
+                labelColor={systemColors.label}
+                secondaryColor={systemColors.secondaryLabel}
+                surfaceColor={systemColors.secondaryBackground}
+                sendsLabel={t('mobile.boardPresence.sessionSends', { count: entry.sendCount })}
+              />
+            ))}
+          </View>
+        ) : null}
         {visibleHistory.length > 0 ? (
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.sectionHeader}>
             {t('mobile.boardPresence.historyHeader')}
@@ -618,6 +658,9 @@ function NowOnTheWallPanelComponent(
       </View>
     ),
     [
+      variant,
+      showHero,
+      sessionRanking,
       currentClimb,
       boardConfig,
       stats,
@@ -687,9 +730,9 @@ function NowOnTheWallPanelComponent(
   const listContentContainerStyle = useMemo(() => ({ paddingBottom: spacing[4] }), []);
 
   // Sheet mode sits inside the native sheet chrome (which owns the bottom safe
-  // area), so the footer only needs its own spacing. The inline column renders at
-  // the top of the shell with no chrome, so it owns both safe-area insets.
-  const headerTopPadding = variant === 'column' ? insets.top + spacing[2] : 0;
+  // area), so the footer only needs its own spacing. The inline column and the
+  // full-screen tab render with no chrome, so they own both safe-area insets.
+  const headerTopPadding = variant === 'sheet' ? 0 : insets.top + spacing[2];
   const footerBottomPadding = variant === 'sheet' ? spacing[3] : insets.bottom + spacing[3];
 
   const refreshControl = (
@@ -748,6 +791,9 @@ function NowOnTheWallPanelComponent(
           onEndReached={hasMore ? handleEndReached : undefined}
           onEndReachedThreshold={0.6}
           onScrollBeginDrag={handleScrollBeginDrag}
+          // Fill the bounded height between the header and the switch-board footer
+          // (the inline column and the full-screen tab both render in a flex parent).
+          style={styles.fillList}
           contentContainerStyle={listContentContainerStyle}
           refreshControl={refreshControl}
         />
@@ -1247,6 +1293,32 @@ function HardestSendRow({
   );
 }
 
+type SessionRankRowProps = {
+  rank: number;
+  entry: SessionRankingEntry;
+  labelColor: ColorValue;
+  secondaryColor: ColorValue;
+  surfaceColor: ColorValue;
+  sendsLabel: string;
+};
+
+function SessionRankRow({ rank, entry, labelColor, secondaryColor, surfaceColor, sendsLabel }: SessionRankRowProps) {
+  return (
+    <View style={[styles.sessionRankRow, { backgroundColor: surfaceColor }]}>
+      <Text variant="subheadline" color={secondaryColor} style={styles.sessionRankNumber}>
+        {String(rank)}
+      </Text>
+      <PressableAvatar userId={entry.userId} uri={entry.avatarUrl} name={entry.displayName} size={30} />
+      <Text variant="subheadline" color={labelColor} numberOfLines={1} style={styles.sessionRankName}>
+        {entry.displayName}
+      </Text>
+      <Text variant="footnote" color={secondaryColor} numberOfLines={1}>
+        {sendsLabel}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
@@ -1266,6 +1338,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: spacing[2],
     textAlign: 'center',
+  },
+  fillList: {
+    flex: 1,
   },
   hero: {
     flexDirection: 'row',
@@ -1363,6 +1438,26 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   hardestName: {
+    fontWeight: '600',
+  },
+  sessionRankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    marginHorizontal: spacing[4],
+    marginTop: spacing[2],
+    paddingVertical: spacing[2],
+    paddingHorizontal: spacing[3],
+    borderRadius: borderRadius.md,
+  },
+  sessionRankNumber: {
+    minWidth: 18,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+    fontWeight: '700',
+  },
+  sessionRankName: {
+    flex: 1,
     fontWeight: '600',
   },
   historyRow: {

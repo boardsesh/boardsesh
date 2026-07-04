@@ -432,7 +432,14 @@
       "actionLoading": "Loading climb",
       "actionFailed": "Couldn't load that climb. Try again.",
       "loadingMore": "Loading more history",
-      "loadMore": "Load more"
+      "loadMore": "Load more",
+      "wallEmptyTitle": "Nobody's on the wall",
+      "wallEmptyBody": "Connect to your board over Bluetooth to see what's lit, who's crushing it, and the session's hardest send.",
+      "wallEmptyCta": "Connect a board",
+      "wallDark": "Nothing lit right now",
+      "sessionLeaderboardHeader": "This session",
+      "sessionSends_one": "{{count}} send",
+      "sessionSends_other": "{{count}} sends"
     },
     "toast": {
       "sessionEnded": "Session ended"

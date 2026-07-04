@@ -113,6 +113,9 @@ function IpadSidebarComponent({ showWallCell = true }: { showWallCell?: boolean 
       { segment: 'home', href: '/home', icon: 'home', label: t('mobile.nav.home') },
       { segment: 'climbs', href: '/climbs', icon: 'search', label: t('mobile.nav.climbs') },
       { segment: 'record', href: '/record', icon: 'record', label: tSession('mobile.session.recordTab') },
+      // The "On the Wall" destination sits with Record — the two "I'm at the
+      // board" activities. iPad-only: it's a rail row here, never a phone tab.
+      { segment: 'wall', href: '/wall', icon: 'lightbulb', label: t('mobile.nav.wall') },
       { segment: 'discover', href: '/discover', icon: 'discover', label: tPlaylists('bottomTabBar.discover') },
     ],
     [t, tSession, tPlaylists],

@@ -33,7 +33,14 @@ const cfg = vi.hoisted(() => ({
   // The column also needs a resolved active board (the panel renders its config);
   // boardId can be set from BLE without one, so the layout gates on this too.
   activeBoard: null as { uuid: string } | null,
-  materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean } }>,
+  // Launch-fixed device-size class: 'panel-capable' (11" Pro / 13") keeps the wall
+  // panel; 'sheet-only' (mini / base 11" / Air) collapses it to the sheet + tab.
+  // Default panel-capable so the width-driven wall-surface tests still hold.
+  wallDeviceClass: 'panel-capable' as 'panel-capable' | 'sheet-only',
+  // Focused route segments — drives the wall-tab redundancy rule (the ambient
+  // column is hidden while the "On the Wall" tab is the focused destination).
+  segments: ['(tabs)', 'home'] as readonly string[],
+  materialScreens: [] as Array<{ name: string; options?: { lazy?: boolean; href?: string | null } }>,
 }));
 
 vi.mock('react-native', () => ({
@@ -86,6 +93,7 @@ vi.mock('../../../src/hooks/use-device-layout', () => ({
     widthClass: cfg.widthClass,
     expanded: false,
     isPad: cfg.widthClass === 'regular' || cfg.isPad,
+    wallDeviceClass: cfg.wallDeviceClass,
   }),
 }));
 
@@ -148,7 +156,7 @@ vi.mock('expo-router', () => {
     },
   );
 
-  return { Tabs };
+  return { Tabs, useSegments: () => cfg.segments };
 });
 
 vi.mock('../../../src/components/navigation/MaterialTabBar', () => ({
@@ -161,8 +169,9 @@ vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
 
 vi.mock('expo-router/unstable-native-tabs', () => {
   const Trigger = Object.assign(
-    ({ name, children }: { name: string; children?: ReactNode }) =>
-      createElement('section', { 'data-trigger': name }, children),
+    ({ name, hidden, children }: { name: string; hidden?: boolean; children?: ReactNode }) =>
+      // Model NativeTabs: a `hidden` trigger declares the route but is not a tab.
+      hidden ? null : createElement('section', { 'data-trigger': name }, children),
     {
       Icon: () => createElement('span', { 'data-icon': 'true' }),
       Label: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -223,6 +232,8 @@ describe('TabLayout', () => {
     cfg.boardPresenceEnabled = false;
     cfg.boardPresenceBoardId = null;
     cfg.activeBoard = null;
+    cfg.wallDeviceClass = 'panel-capable';
+    cfg.segments = ['(tabs)', 'home'];
     cfg.materialScreens = [];
   });
 
@@ -248,6 +259,7 @@ describe('TabLayout', () => {
       'home',
       'climbs',
       'record',
+      'wall',
       'discover',
       'profile',
     ]);
@@ -267,6 +279,7 @@ describe('TabLayout', () => {
       'home',
       'climbs',
       'record',
+      'wall',
       'discover',
       'profile',
     ]);
@@ -291,12 +304,13 @@ describe('TabLayout', () => {
       'home',
       'climbs',
       'record',
+      'wall',
       'discover',
       'profile',
     ]);
   });
 
-  it('renders the iPad sidebar shell at regular width and registers all five tabs', () => {
+  it('renders the iPad sidebar shell at regular width and registers all six tabs (wall hidden from the bar)', () => {
     // Regular-width iPad takes the sidebar branch before the native/Material tab
     // bars: the glass sidebar carries navigation and the native iOS 26 tab bar is
     // gone, but the Tabs navigator still registers every tab screen.
@@ -316,9 +330,13 @@ describe('TabLayout', () => {
       'home',
       'climbs',
       'record',
+      'wall',
       'discover',
       'profile',
     ]);
+    // The wall screen registers with href:null so it never shows as a Material tab
+    // button (MaterialTabBar filters the resulting display:none item).
+    expect(cfg.materialScreens.find((screen) => screen.name === 'wall')?.options).toMatchObject({ href: null });
   });
 
   it('suppresses the detail pane on the tightest regular portraits, keeping the list full width', () => {
@@ -354,6 +372,43 @@ describe('TabLayout', () => {
     // pixel widths of each are covered by size-class.test.ts (resolveDetailPaneWidth,
     // WALL_COLUMN_WIDTH), so assert the surfaces are present, not their arithmetic.
     expect(container.querySelector('[data-ipad-play-pane="true"]')).not.toBeNull();
+  });
+
+  it('collapses the wall column to the sheet on a small (sheet-only) iPad, even in landscape', () => {
+    // iPad mini / base 11" / Air 11": physically below the 11" Pro, so the wall panel
+    // is dropped even though the window is wide enough for a column — the wall reaches
+    // the user via the BoardSheet peek + the "On the Wall" tab instead, like the phone.
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    cfg.wallDeviceClass = 'sheet-only';
+    cfg.boardPresenceEnabled = true;
+    cfg.boardPresenceBoardId = 1;
+    cfg.activeBoard = { uuid: 'board-1' };
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
+    // No rich wall surface on this device → the ambient sidebar cell stays the launcher.
+    expect(container.querySelector('[data-ipad-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe('true');
+  });
+
+  it('hides the wall column while the "On the Wall" tab is the focused destination', () => {
+    // Panel-capable landscape with a bound board would show the column, but on the
+    // wall tab the same feed is already the content pane — so the ambient column
+    // steps aside (no two live copies of the feed).
+    cfg.widthClass = 'regular';
+    cfg.windowWidth = 1366;
+    cfg.boardPresenceEnabled = true;
+    cfg.boardPresenceBoardId = 1;
+    cfg.activeBoard = { uuid: 'board-1' };
+    cfg.segments = ['(tabs)', 'wall'];
+
+    const { container } = render(<TabLayout />);
+
+    expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
+    // The surface still EXISTS for this layout, so the sidebar cell stays hidden — it
+    // doesn't pop back in merely because the wall tab is open.
+    expect(container.querySelector('[data-ipad-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe('false');
   });
 
   it('hides the sidebar wall cell when the portrait play-pane strip owns the wall surface', () => {

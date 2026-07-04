@@ -432,7 +432,14 @@
       "actionLoading": "Chargement du bloc",
       "actionFailed": "Impossible de charger ce bloc. Réessayez.",
       "loadingMore": "Chargement de l'historique",
-      "loadMore": "Charger plus"
+      "loadMore": "Charger plus",
+      "wallEmptyTitle": "Personne sur le mur",
+      "wallEmptyBody": "Connecte-toi à ta board en Bluetooth pour voir ce qui est allumé, qui déroule et la plus grosse croix de la séance.",
+      "wallEmptyCta": "Connecter une board",
+      "wallDark": "Rien d'allumé pour l'instant",
+      "sessionLeaderboardHeader": "Cette séance",
+      "sessionSends_one": "{{count}} croix",
+      "sessionSends_other": "{{count}} croix"
     },
     "toast": {
       "sessionEnded": "Session terminée"

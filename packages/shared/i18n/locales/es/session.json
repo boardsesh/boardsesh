@@ -432,7 +432,14 @@
       "actionLoading": "Cargando el bloque",
       "actionFailed": "No se pudo cargar ese bloque. Inténtalo de nuevo.",
       "loadingMore": "Cargando más historial",
-      "loadMore": "Cargar más"
+      "loadMore": "Cargar más",
+      "wallEmptyTitle": "No hay nadie en el muro",
+      "wallEmptyBody": "Conéctate a tu plafón por Bluetooth para ver qué está encendido, quién está reventando y el encadene más duro de la sesión.",
+      "wallEmptyCta": "Conectar un plafón",
+      "wallDark": "Nada encendido ahora mismo",
+      "sessionLeaderboardHeader": "Esta sesión",
+      "sessionSends_one": "{{count}} encadene",
+      "sessionSends_other": "{{count}} encadenes"
     },
     "toast": {
       "sessionEnded": "Sesión terminada"

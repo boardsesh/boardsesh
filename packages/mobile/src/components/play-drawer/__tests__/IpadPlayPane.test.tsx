@@ -9,6 +9,10 @@ import { createElement, type ReactNode } from 'react';
 const cfg = vi.hoisted(() => ({
   width: 834,
   widthClass: 'regular' as 'compact' | 'regular',
+  // 'panel-capable' (11" Pro / 13") keeps the strip/column; 'sheet-only' collapses it.
+  wallDeviceClass: 'panel-capable' as 'panel-capable' | 'sheet-only',
+  // Focused route — the strip is suppressed while the "On the Wall" tab is open.
+  segments: ['(tabs)', 'record'] as readonly string[],
   presenceEnabled: true,
   presenceBoardId: 1 as number | null,
   paneProps: { boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } } as Record<
@@ -27,6 +31,7 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
 }));
 
+vi.mock('expo-router', () => ({ useSegments: () => cfg.segments }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 24, bottom: 0, left: 0, right: 0 }),
@@ -61,7 +66,7 @@ vi.mock('../../../providers/board-presence-provider', () => ({
 }));
 
 vi.mock('../../../hooks/use-device-layout', () => ({
-  useDeviceLayout: () => ({ widthClass: cfg.widthClass, expanded: false }),
+  useDeviceLayout: () => ({ widthClass: cfg.widthClass, expanded: false, wallDeviceClass: cfg.wallDeviceClass }),
 }));
 
 import { IpadPlayPane } from '../IpadPlayPane';
@@ -70,6 +75,8 @@ describe('IpadPlayPane wall surface', () => {
   beforeEach(() => {
     cfg.width = 834;
     cfg.widthClass = 'regular';
+    cfg.wallDeviceClass = 'panel-capable';
+    cfg.segments = ['(tabs)', 'record'];
     cfg.presenceEnabled = true;
     cfg.presenceBoardId = 1;
     cfg.paneProps = { boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 1, setIds: '1', angle: 40 } };
@@ -92,6 +99,23 @@ describe('IpadPlayPane wall surface', () => {
 
   it('shows no strip when board presence is not bound, keeping the pane top inset', () => {
     cfg.presenceBoardId = null;
+    const { container } = render(<IpadPlayPane />);
+    expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
+    expect(captured.playDrawerProps?.paneTopInset).toBe(true);
+  });
+
+  it('shows no strip on a small (sheet-only) iPad — the wall collapses to the sheet', () => {
+    // Same 834pt portrait that would dock a strip, but the device is below the 11"
+    // Pro floor, so the wall is sheet-only (matches the shell gate).
+    cfg.wallDeviceClass = 'sheet-only';
+    const { container } = render(<IpadPlayPane />);
+    expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
+    expect(captured.playDrawerProps?.paneTopInset).toBe(true);
+  });
+
+  it('shows no strip while the "On the Wall" tab is the focused destination', () => {
+    // The tab already shows the wall feed, so the ambient strip steps aside.
+    cfg.segments = ['(tabs)', 'wall'];
     const { container } = render(<IpadPlayPane />);
     expect(container.querySelector('[data-wall-strip="true"]')).toBeNull();
     expect(captured.playDrawerProps?.paneTopInset).toBe(true);

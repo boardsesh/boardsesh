@@ -52,6 +52,12 @@ export function MaterialTabBar({ state, descriptors, navigation, insets }: Botto
     >
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
+        // expo-router turns a screen's `href: null` into `tabBarItemStyle:
+        // { display: 'none' }` (the iPad-only /wall destination). This custom bar
+        // renders every route in `state.routes`, so without this filter a hidden
+        // route would show as a phone tab button. Skip it — the default RN tab bar
+        // hides it via `tabBarButton`, which a custom bar doesn't honor.
+        if (StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none') return null;
         const focused = state.index === index;
         const label = typeof options.title === 'string' ? options.title : route.name;
         const iconColor = focused ? activeIconColor : inactiveColor;

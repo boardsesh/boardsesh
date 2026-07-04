@@ -2,10 +2,13 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveDeviceLayout,
   resolveWallSurface,
+  resolveWallDeviceClass,
+  resolveEffectiveWallSurface,
   resolveDetailPaneSurface,
   resolveDetailPaneWidth,
   REGULAR_WIDTH_BREAKPOINT,
   EXPANDED_WIDTH_BREAKPOINT,
+  WALL_PANEL_MIN_DEVICE_LONG_SIDE,
 } from '../size-class';
 
 const SIDEBAR_WIDTH = 96;
@@ -78,6 +81,54 @@ describe('resolveWallSurface', () => {
     // balancedContentWidth = (width - 96 - 300) / 2; column requires >= 390 → width >= 1176.
     expect(resolveWallSurface({ width: 1175, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('strip');
     expect(resolveWallSurface({ width: 1176, widthClass: 'regular', sidebarWidth: SIDEBAR_WIDTH })).toBe('column');
+  });
+});
+
+describe('resolveWallDeviceClass', () => {
+  it('is always sheet-only off iPad, whatever the screen size', () => {
+    // Phones never mount the persistent wall panel — the wall lives in the sheet.
+    for (const screenLongSide of [844, 932, 1133, 1366]) {
+      expect(resolveWallDeviceClass({ screenLongSide, isPad: false })).toBe('sheet-only');
+    }
+  });
+
+  it('keeps the small iPads on the sheet: mini, base 10.9/11" and Air 11"', () => {
+    // Below the 11" Pro's long side (1194): iPad mini (1133), base iPad and Air
+    // 11" (1180), and one point under the floor.
+    for (const screenLongSide of [1133, 1180, WALL_PANEL_MIN_DEVICE_LONG_SIDE - 1]) {
+      expect(resolveWallDeviceClass({ screenLongSide, isPad: true })).toBe('sheet-only');
+    }
+  });
+
+  it('keeps the panel on the 11" Pro and every 13"', () => {
+    // 11" Pro (1194 / M4 1210) and all 13" (12.9" 1366, M4 13" 1376).
+    for (const screenLongSide of [WALL_PANEL_MIN_DEVICE_LONG_SIDE, 1210, 1366, 1376]) {
+      expect(resolveWallDeviceClass({ screenLongSide, isPad: true })).toBe('panel-capable');
+    }
+  });
+});
+
+describe('resolveEffectiveWallSurface', () => {
+  it('collapses the wall to none on a sheet-only device, at any width', () => {
+    // A small iPad in landscape would otherwise get a column; the device floor
+    // forces the sheet + "On the Wall" tab instead.
+    for (const width of [834, 1194, 1366]) {
+      expect(
+        resolveEffectiveWallSurface({
+          width,
+          widthClass: 'regular',
+          wallDeviceClass: 'sheet-only',
+          sidebarWidth: SIDEBAR_WIDTH,
+        }),
+      ).toBe('none');
+    }
+  });
+
+  it('defers to the live width logic on a panel-capable device', () => {
+    const capable = { wallDeviceClass: 'panel-capable' as const, sidebarWidth: SIDEBAR_WIDTH };
+    expect(resolveEffectiveWallSurface({ width: 1366, widthClass: 'regular', ...capable })).toBe('column');
+    expect(resolveEffectiveWallSurface({ width: 834, widthClass: 'regular', ...capable })).toBe('strip');
+    expect(resolveEffectiveWallSurface({ width: 932, widthClass: 'compact', ...capable })).toBe('none');
   });
 });
 

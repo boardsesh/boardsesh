@@ -19,6 +19,21 @@ export const REGULAR_WIDTH_BREAKPOINT = 700;
 /** At/above this width a regular layout also fits a master + detail pane. */
 export const EXPANDED_WIDTH_BREAKPOINT = 1024;
 
+/**
+ * An iPad whose physical screen long side is below this drops the persistent
+ * "Now on the wall" panel (landscape column / portrait strip) and reaches the
+ * wall through the phone-style bottom SHEET instead — the "smaller than the
+ * 11-inch iPad Pro" line. This is a DEVICE-SIZE question the live width axis
+ * physically can't answer: an iPad mini and an 11" Pro are both
+ * Regular/Regular fullscreen, so no `UITraitCollection` separates them.
+ *
+ * 1194 = the 11" Pro's long side. Below it — iPad mini (1133), base iPad
+ * 10.9/11" and Air 11" (1180), and legacy small iPads — the wall is sheet-only;
+ * the 11" Pro (1194/1210) and every 13" (1366/1376) keep the panel. (1180 is
+ * the one-line knob if you later want to keep the panel on the base 11" class.)
+ */
+export const WALL_PANEL_MIN_DEVICE_LONG_SIDE = 1194;
+
 export type WidthClass = 'compact' | 'regular';
 
 export type DeviceLayout = {
@@ -38,6 +53,32 @@ export function resolveDeviceLayout({ width, isPad }: { width: number; isPad: bo
     return { widthClass: 'compact', expanded: false };
   }
   return { widthClass: 'regular', expanded: width >= EXPANDED_WIDTH_BREAKPOINT };
+}
+
+/**
+ * `panel-capable` — the device is physically large enough for the persistent
+ * wall panel. `sheet-only` — it isn't, so the wall falls back to the phone-style
+ * bottom sheet. A launch-fixed axis, orthogonal to the live width class.
+ */
+export type WallDeviceClass = 'panel-capable' | 'sheet-only';
+
+/**
+ * Resolve the wall device class from the physical screen long side (see
+ * {@link WALL_PANEL_MIN_DEVICE_LONG_SIDE}). Non-iPad is always `sheet-only` —
+ * phones never mount the panel — so this is only consulted on iPad. Pure (the
+ * long side is injected), so it unit-tests without react-native like the width
+ * resolvers; the React wrapper reads `Dimensions.get('screen')` in
+ * `use-device-layout.ts`.
+ */
+export function resolveWallDeviceClass({
+  screenLongSide,
+  isPad,
+}: {
+  screenLongSide: number;
+  isPad: boolean;
+}): WallDeviceClass {
+  if (!isPad || screenLongSide < WALL_PANEL_MIN_DEVICE_LONG_SIDE) return 'sheet-only';
+  return 'panel-capable';
 }
 
 /**
@@ -86,6 +127,29 @@ export function resolveWallSurface({
   if (widthClass !== 'regular') return 'none';
   const balancedContentWidth = (width - sidebarWidth - WALL_COLUMN_WIDTH) / 2;
   return balancedContentWidth >= WALL_COLUMN_BALANCED_CONTENT_FLOOR ? 'column' : 'strip';
+}
+
+/**
+ * The wall surface after the device-size floor is applied: a `sheet-only` device
+ * never mounts the column or strip (the wall lives in the bottom sheet + the
+ * "On the Wall" tab instead), so it always resolves to `none`; a `panel-capable`
+ * device defers to the live width logic in {@link resolveWallSurface}. The one
+ * gate the shell and the play pane both consult, so they never diverge. Pure —
+ * `wallDeviceClass` and the sidebar width are injected — for unit testing.
+ */
+export function resolveEffectiveWallSurface({
+  width,
+  widthClass,
+  wallDeviceClass,
+  sidebarWidth,
+}: {
+  width: number;
+  widthClass: WidthClass;
+  wallDeviceClass: WallDeviceClass;
+  sidebarWidth: number;
+}): WallSurface {
+  if (wallDeviceClass === 'sheet-only') return 'none';
+  return resolveWallSurface({ width, widthClass, sidebarWidth });
 }
 
 /** Minimum width the persistent detail (play) pane needs to be useful — the floor

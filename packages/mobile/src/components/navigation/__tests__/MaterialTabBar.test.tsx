@@ -18,6 +18,7 @@ vi.mock('react-native', () => ({
     hairlineWidth: 1,
     absoluteFill: { position: 'absolute' },
     create: (styles: unknown) => styles,
+    flatten: (style: unknown) => (Array.isArray(style) ? Object.assign({}, ...style) : style),
   },
   View: ({
     children,
@@ -249,6 +250,39 @@ describe('MaterialTabBar', () => {
         type: 'tabLongPress',
         target: 'route-b',
       });
+    });
+  });
+
+  describe('hidden (href:null) routes', () => {
+    it('does not render a route whose tabBarItemStyle is display:none', () => {
+      // expo-router turns a screen's `href: null` into tabBarItemStyle:{display:'none'}
+      // (the iPad-only /wall destination). This custom bar renders every route in
+      // state.routes, so it must filter that item or it would show as a phone tab.
+      const routes = [
+        { key: 'a', name: 'home' },
+        { key: 'wall', name: 'wall' },
+        { key: 'b', name: 'profile' },
+      ];
+      const props = {
+        state: { routes, index: 0 },
+        descriptors: {
+          a: { options: { title: 'Home' } },
+          wall: { options: { title: 'On the Wall', tabBarItemStyle: { display: 'none' } } },
+          b: { options: { title: 'Profile' } },
+        },
+        navigation: {
+          emit: vi.fn(() => ({ defaultPrevented: false })),
+          navigate: vi.fn(),
+        },
+        insets: { bottom: 0, top: 0, left: 0, right: 0 },
+      };
+      const { getAllByRole, queryByLabelText } = render(
+        <MaterialTabBar {...(props as unknown as Parameters<typeof MaterialTabBar>[0])} />,
+      );
+      expect(getAllByRole('tab')).toHaveLength(2);
+      expect(queryByLabelText('On the Wall')).toBeNull();
+      expect(queryByLabelText('Home')).not.toBeNull();
+      expect(queryByLabelText('Profile')).not.toBeNull();
     });
   });
 

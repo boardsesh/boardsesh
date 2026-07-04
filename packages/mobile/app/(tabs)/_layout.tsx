@@ -1,7 +1,7 @@
 import type { ComponentProps } from 'react';
 import { Platform, StyleSheet, View, useWindowDimensions, type ColorValue } from 'react-native';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { Tabs } from 'expo-router';
+import { Tabs, useSegments } from 'expo-router';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useTranslation } from 'react-i18next';
 import { useBluetoothConnectedStatus } from '../../src/lib/ble/bluetooth-status-store';
@@ -20,11 +20,12 @@ import { IpadWallColumn } from '../../src/components/board-presence/IpadWallColu
 import { useBoardPresenceControls } from '../../src/providers/board-presence-provider';
 import { useActiveBoard } from '../../src/lib/graphql/use-active-board';
 import {
-  resolveWallSurface,
+  resolveEffectiveWallSurface,
   resolveDetailPaneSurface,
   resolveDetailPaneWidth,
   WALL_COLUMN_WIDTH,
 } from '../../src/theme/size-class';
+import { tabsActiveSegment } from '../../src/lib/route-segments';
 import { SIDEBAR_WIDTH } from '../../src/theme/layout';
 
 // Cold-start on Home: the leftmost tab carries the beta shelf and followed
@@ -96,6 +97,12 @@ export default function TabLayout() {
   // reserved for the Phase-3 master+detail Climbs browser; see size-class.ts.)
   const deviceLayout = useDeviceLayout();
   const { width: windowWidth } = useWindowDimensions();
+  // The focused tab drives the wall-redundancy rule below: when the "On the
+  // Wall" destination is open, the ambient column is suppressed so the same feed
+  // isn't shown twice. `tabsActiveSegment` reads segment 1 without indexing the
+  // route-typed tuple (see route-segments.ts).
+  const segments = useSegments();
+  const onWallTab = tabsActiveSegment(segments) === 'wall';
   // The live wall gets a dedicated column in landscape (room for sidebar + browse
   // list + detail pane + wall) and falls back to a strip atop the pane in portrait
   // (see resolveWallSurface). Gated on a bound board so an empty column never sits
@@ -107,9 +114,15 @@ export default function TabLayout() {
   // serial before/without an active board, so gate on the active board too — else
   // the column View reserves 300pt while `IpadWallColumn` renders null (dead space).
   const { data: activeBoard } = useActiveBoard();
-  const wallSurface = resolveWallSurface({
+  // Below the device-size floor (iPad mini / base 11" / Air 11" — see
+  // WALL_PANEL_MIN_DEVICE_LONG_SIDE) `resolveEffectiveWallSurface` collapses the
+  // column AND the strip to `none`; those devices reach the wall through the
+  // BoardSheet peek and the "On the Wall" tab, like the phone. Only the 11" Pro
+  // and 13" iPads keep the persistent panel.
+  const wallSurface = resolveEffectiveWallSurface({
     width: windowWidth,
     widthClass: deviceLayout.widthClass,
+    wallDeviceClass: deviceLayout.wallDeviceClass,
     sidebarWidth: SIDEBAR_WIDTH,
   });
   const showWallColumn =
@@ -171,6 +184,18 @@ export default function TabLayout() {
       }}
     />,
     <Tabs.Screen
+      key="wall"
+      name="wall"
+      // iPad-only "On the Wall" destination. `href: null` hides it from the JS
+      // Material tab bar (expo-router turns it into tabBarItemStyle:{display:'none'},
+      // which MaterialTabBar filters) and there's no NativeTabs.Trigger below, so it
+      // never appears as a 6th bottom tab on any phone. It's registered here anyway
+      // so the single JS Tabs navigator can route /wall INSIDE the shell content
+      // (keeping the sidebar + panes), reached from the iPad sidebar rail row; a root
+      // route would cover the shell instead.
+      options={{ href: null, title: t('mobile.nav.wall') }}
+    />,
+    <Tabs.Screen
       key="discover"
       name="discover"
       options={{
@@ -226,8 +251,10 @@ export default function TabLayout() {
         ) : null}
         {/* Dedicated "Now on the wall" column — landscape only, where the width
             budget leaves room for it (see resolveWallSurface). In portrait the wall
-            rides a strip atop the pane (IpadPlayPane) instead. */}
-        {isRegular && showWallColumn ? (
+            rides a strip atop the pane (IpadPlayPane) instead. Hidden while the
+            "On the Wall" tab is the focused destination — it shows the same feed,
+            so two live copies would be redundant. */}
+        {isRegular && showWallColumn && !onWallTab ? (
           <View
             key="wall"
             style={[styles.wallColumn, { width: WALL_COLUMN_WIDTH, borderLeftColor: systemColors.separator }]}
@@ -281,6 +308,11 @@ export default function TabLayout() {
           <NativeTabs.Trigger.Badge selectedBackgroundColor={brandColors.success}> </NativeTabs.Trigger.Badge>
         ) : null}
       </NativeTabs.Trigger>
+
+      {/* /wall is a (tabs) route (the iPad sidebar routes to it), so it must be
+          declared to NativeTabs — but `hidden` keeps it off the iPhone glass bar,
+          where a 6th tab would spill into "More" and clash with the search slot. */}
+      <NativeTabs.Trigger name="wall" hidden />
 
       <NativeTabs.Trigger name="discover">
         <NativeTabs.Trigger.Icon sf="bookmark" md="bookmarks" />
