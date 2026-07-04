@@ -27,4 +27,8 @@ describe('parseSetIds', () => {
   it('drops non-numeric tokens', () => {
     expect(parseSetIds('1,abc,2')).toEqual([1, 2]);
   });
+
+  it('drops non-positive and non-integer ids (in lockstep with the sibling parsers)', () => {
+    expect(parseSetIds('0,1,-3,2,1.5')).toEqual([1, 2]);
+  });
 });

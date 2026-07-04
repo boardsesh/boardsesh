@@ -436,10 +436,32 @@
       "wallEmptyTitle": "No hay nadie en el muro",
       "wallEmptyBody": "Conéctate a tu plafón por Bluetooth para ver qué está encendido, quién está reventando y el encadene más duro de la sesión.",
       "wallEmptyCta": "Conectar un plafón",
-      "wallDark": "Nada encendido ahora mismo",
-      "sessionLeaderboardHeader": "Esta sesión",
-      "sessionSends_one": "{{count}} encadene",
-      "sessionSends_other": "{{count}} encadenes"
+      "kiosk": {
+        "liveBadge": "En el muro ahora",
+        "historyBadge": "Historial",
+        "historyPosition": "{{count}} atrás",
+        "wallDark": "El muro está apagado",
+        "lastOnWall": "Último en el muro",
+        "idleHint": "El muro está apagado. Explora el historial para volver a encender un bloque reciente, o enciende uno desde tu teléfono.",
+        "lightThis": "Encender {{name}}",
+        "lighting": "Encendiendo…",
+        "lightFailed": "No se pudo encender: inténtalo de nuevo",
+        "notDriverChip": "Conéctate para encender {{name}}",
+        "noFrames": "No hay presas guardadas para esta",
+        "confirmOverrideBody": "Alguien acaba de encender {{name}}. ¿Enciendes tu elección igualmente?",
+        "confirmOverrideConfirm": "Encender mi elección",
+        "confirmOverrideCancel": "Dejar el muro",
+        "scrubOlderAria": "Mostrar el bloque anterior del muro",
+        "scrubNewerAria": "Mostrar el bloque siguiente del muro",
+        "scrubOldestAria": "Ir al bloque más antiguo",
+        "scrubOldestLabel": "Más antiguo",
+        "scrubOlderLabel": "Anterior",
+        "scrubNewerLabel": "Siguiente",
+        "rangeLabel": "{{count}} de {{total}}",
+        "previewTag": "Vista previa",
+        "backToLive": "Volver al muro",
+        "browseHistory": "Ver historial"
+      }
     },
     "toast": {
       "sessionEnded": "Sesión terminada"

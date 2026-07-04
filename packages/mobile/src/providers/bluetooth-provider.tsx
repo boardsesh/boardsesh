@@ -63,6 +63,16 @@ type BluetoothContextValue = {
    */
   undoWallChange: () => Promise<boolean>;
   /**
+   * Re-light an arbitrary board-presence climb (e.g. one the wall kiosk scrubbed
+   * back to). Writes the frames over BLE FIRST, then — only if the write is
+   * confirmed — reports it to board presence, so a failed/absent write never
+   * broadcasts a phantom-live wall. Returns false when this device isn't the
+   * driver, presence is disabled, the board is unbound, or the climb has no
+   * frames (an empty write would blank the wall). Does not arm the undo toast:
+   * a kiosk relight is its own restore model.
+   */
+  relightPresenceClimb: (climb: BoardPresenceClimb) => Promise<boolean>;
+  /**
    * Show the undo affordance for the next accepted wall report only. UI control
    * surfaces call this immediately before a deliberate control-gain action.
    */
@@ -106,6 +116,12 @@ function presenceClimbReportSignature(climb: BoardPresenceClimb | null): string 
   return `${climb.climbUuid}:${climb.frames ?? ''}:${climb.angle ?? ''}`;
 }
 
+/** The `frames::mirror` of the LEDs physically on the wall — what any write path
+ *  records so a dedup-path report never confirms a climb the wall isn't showing. */
+function physicalFramesSignature(frames: string, mirrored: boolean): string {
+  return `${frames}::${mirrored ? 1 : 0}`;
+}
+
 function presenceClimbToQueueInput(climb: BoardPresenceClimb): ClimbQueueItemInput {
   return {
     uuid: climb.queueItemUuid ?? `undo:${climb.climbUuid}:${climb.seq}`,
@@ -146,6 +162,7 @@ function BluetoothAutoSender({
   onWallConfirmed,
   reassertNonce,
   connectInitialSendRef,
+  lastPhysicalFramesRef,
   colorSignature,
   activeConfig,
   onSkipSpillClimb,
@@ -161,6 +178,12 @@ function BluetoothAutoSender({
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
   connectInitialSendRef: React.MutableRefObject<{ frames: string; mirrored: boolean; colorSignature: string } | null>;
+  // The `frames::mirror` of the LEDs PHYSICALLY on the wall right now, written by
+  // ANY path (this auto-sender, an undo, a kiosk relight). The dedup-report branch
+  // only confirms a climb whose frames match this — otherwise a relight/undo that
+  // changed the wall out from under a byte-identical queue climb would make the
+  // dedup path report the queue climb (a phantom, not on the wall).
+  lastPhysicalFramesRef: React.MutableRefObject<string | null>;
   colorSignature: string;
   // Active board (name + layout) so a climb set for a different board can be
   // detected and skipped before it dark-fires the wall. Undefined until the board
@@ -309,6 +332,10 @@ function BluetoothAutoSender({
               connectSend.colorSignature === requestColorSignature
             ) {
               lastSentSignatureRef.current = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}`;
+              // connect() physically wrote these frames, so record them as what's on
+              // the wall — else the dedup-confirm below (which now requires the wall
+              // to actually show the climb) would suppress the confirm.
+              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
             }
           }
 
@@ -326,7 +353,13 @@ function BluetoothAutoSender({
           // hold edit, or colour change updates the signature and re-pushes.
           const sendSignature = `${item.climb.uuid}::${item.climb.frames}::${item.climb.mirrored ? 1 : 0}::${requestColorSignature}`;
           if (sendSignature === lastSentSignatureRef.current) {
-            onWallConfirmedRef.current(item);
+            // Re-broadcast of the byte-identical climb: skip the physical write —
+            // but only CONFIRM it if the wall still physically shows these frames.
+            // A relight/undo may have changed the wall out from under us, in which
+            // case confirming here would report a climb that isn't lit (a phantom).
+            if (physicalFramesSignature(item.climb.frames, !!item.climb.mirrored) === lastPhysicalFramesRef.current) {
+              onWallConfirmedRef.current(item);
+            }
             toSend = pendingSendRef.current;
             pendingSendRef.current = null;
             continue;
@@ -347,6 +380,7 @@ function BluetoothAutoSender({
 
             if (result === true) {
               lastSentSignatureRef.current = sendSignature;
+              lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
               onWallConfirmedRef.current(item);
               hapticSuccess();
             }
@@ -463,6 +497,10 @@ export function BluetoothProvider({
   // still shows that same signature.
   const lastAcceptedReportSignatureRef = useRef<string | null>(null);
   const lastAcceptedWallSignatureRef = useRef<string | null>(null);
+  // The `frames::mirror` of the LEDs physically on the wall, updated by every
+  // write path (auto-sender, undo, kiosk relight). Shared with the AutoSender so
+  // its dedup-report branch never confirms a queue climb the wall isn't showing.
+  const lastPhysicalFramesRef = useRef<string | null>(null);
   const pendingReportSignatureRef = useRef<string | null>(null);
   const pendingWallReportRef = useRef<PendingWallReport | null>(null);
   const pendingPresenceResolveRef = useRef(false);
@@ -1016,6 +1054,7 @@ export function BluetoothProvider({
     if (writeSucceeded !== true) {
       return false;
     }
+    lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
 
     const accepted = await reportClimbForBoardRef
       .current(boardId, presenceClimbToQueueInput(undoTarget), undoTarget.angle ?? null)
@@ -1036,6 +1075,58 @@ export function BluetoothProvider({
     });
     return true;
   }, [sendFramesToBoard]);
+
+  // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
+  // "Light this" confirm), not just the captured undo target. Same BLE-first-
+  // then-report contract, but parameterized and frames-guarded so an empty
+  // `frames` (which `sendFramesToBoard('')` treats as clearBoard) can never blank
+  // the wall. Deliberately does NOT arm the undo toast.
+  const relightPresenceClimb = useCallback(
+    async (climb: BoardPresenceClimb): Promise<boolean> => {
+      // While a board bind is resolving, the board-id refs still hold the PREVIOUS
+      // board — reporting now would land a lit-climb ghost on the old wall's feed
+      // (matches `handleWallConfirmed`'s resolve guard).
+      const boardId = pendingPresenceResolveRef.current
+        ? null
+        : (presenceBoardIdRef.current ?? resolvedPresenceBoardIdRef.current);
+      const frames = climb.frames;
+      if (!presenceEnabledRef.current || !frames || boardId === null) {
+        return false;
+      }
+
+      lastAcceptedReportSignatureRef.current = null;
+      const writeSucceeded = await sendFramesToBoard(frames, false, undefined, {
+        sendSource: 'wall-relight',
+        climbUuid: climb.climbUuid,
+      }).catch((error: unknown) => {
+        console.warn('[board-presence] kiosk relight BLE resend failed', error);
+        return false;
+      });
+      if (writeSucceeded !== true) {
+        return false;
+      }
+      lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
+
+      const accepted = await reportClimbForBoardRef
+        .current(boardId, presenceClimbToQueueInput(climb), climb.angle ?? null)
+        .catch((error: unknown) => {
+          console.warn('[board-presence] kiosk relight report failed', error);
+          return false;
+        });
+      if (!accepted) {
+        return false;
+      }
+
+      lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb);
+      track(SHARED_EVENTS.BoardClimbReported, {
+        boardId,
+        climbUuid: climb.climbUuid,
+        inSession: sessionIdRef.current != null,
+      });
+      return true;
+    },
+    [sendFramesToBoard],
+  );
 
   const clearBoard = useCallback(
     () => sendFramesToBoard('', false, undefined, { sendSource: 'clear' }),
@@ -1204,6 +1295,7 @@ export function BluetoothProvider({
       clearBoard,
       reassertWall,
       undoWallChange,
+      relightPresenceClimb,
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
     }),
@@ -1216,6 +1308,7 @@ export function BluetoothProvider({
       clearBoard,
       reassertWall,
       undoWallChange,
+      relightPresenceClimb,
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
     ],
@@ -1245,6 +1338,7 @@ export function BluetoothProvider({
           onWallConfirmed={handleWallConfirmed}
           reassertNonce={reassertNonce}
           connectInitialSendRef={connectInitialSendRef}
+          lastPhysicalFramesRef={lastPhysicalFramesRef}
           colorSignature={holdColorSignature}
           activeConfig={currentBoardConfig}
           onSkipSpillClimb={handleSkipSpillClimb}

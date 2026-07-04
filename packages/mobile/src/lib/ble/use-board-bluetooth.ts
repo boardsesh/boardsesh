@@ -230,9 +230,9 @@ export const convertToMirroredFramesString = (frames: string, holdsData: HoldPla
  * (e.g. a manual mirror re-send) just omit it.
  */
 export type BleSendContext = {
-  /** Where the send came from: the queue auto-sender, an undo, or a deliberate
-   *  clear (passed by clearBoard). */
-  sendSource: 'auto' | 'undo' | 'clear';
+  /** Where the send came from: the queue auto-sender, an undo, a deliberate
+   *  clear (passed by clearBoard), or a wall-kiosk relight. */
+  sendSource: 'auto' | 'undo' | 'clear' | 'wall-relight';
   targetQueueItemUuid?: string;
   climbUuid?: string;
   /** The climb's own board metadata, when known — lets a board/climb mismatch be seen. */

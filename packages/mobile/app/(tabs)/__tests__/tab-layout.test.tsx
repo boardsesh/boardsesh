@@ -406,6 +406,9 @@ describe('TabLayout', () => {
     const { container } = render(<TabLayout />);
 
     expect(container.querySelector('[data-ipad-wall-column="true"]')).toBeNull();
+    // The kiosk IS the wall surface on this tab, so the persistent detail pane also
+    // steps aside — it would otherwise squeeze the kiosk into a narrow left column.
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).toBeNull();
     // The surface still EXISTS for this layout, so the sidebar cell stays hidden — it
     // doesn't pop back in merely because the wall tab is open.
     expect(container.querySelector('[data-ipad-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe('false');

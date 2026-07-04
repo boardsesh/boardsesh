@@ -13,7 +13,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useWindowDimensions } from 'react-native';
-import { router } from 'expo-router';
+import { router, useSegments } from 'expo-router';
+import { tabsActiveSegment } from '../lib/route-segments';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { buildBoardPath, formatBoardDisplayName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -267,8 +268,14 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   // read it without churning its identity.
   const { width: windowWidth } = useWindowDimensions();
   const { widthClass } = useDeviceLayout();
+  // The "On the Wall" kiosk tab hides the shell's detail pane (it IS the wall
+  // surface and needs the full content pane), so a climb open there must fall back
+  // to the `/play` route instead of a paneTarget that lands in an unmounted pane.
+  // Folding it into `usesDetailPane` also makes the effect below clear a stale
+  // paneTarget when the wall tab becomes focused.
+  const onWallTab = tabsActiveSegment(useSegments()) === 'wall';
   const usesDetailPane =
-    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+    resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane' && !onWallTab;
   const usesDetailPaneRef = useRef(usesDetailPane);
   usesDetailPaneRef.current = usesDetailPane;
   // Auth gates two things here. (1) myBoards requires authentication: running it

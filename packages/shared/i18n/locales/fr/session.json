@@ -436,10 +436,32 @@
       "wallEmptyTitle": "Personne sur le mur",
       "wallEmptyBody": "Connecte-toi à ta board en Bluetooth pour voir ce qui est allumé, qui déroule et la plus grosse croix de la séance.",
       "wallEmptyCta": "Connecter une board",
-      "wallDark": "Rien d'allumé pour l'instant",
-      "sessionLeaderboardHeader": "Cette séance",
-      "sessionSends_one": "{{count}} croix",
-      "sessionSends_other": "{{count}} croix"
+      "kiosk": {
+        "liveBadge": "Sur le mur maintenant",
+        "historyBadge": "Historique",
+        "historyPosition": "{{count}} en arrière",
+        "wallDark": "Le mur est éteint",
+        "lastOnWall": "Dernier sur le mur",
+        "idleHint": "Le mur est éteint. Parcours l'historique pour rallumer un bloc récent, ou allume-en un depuis ton téléphone.",
+        "lightThis": "Allumer {{name}}",
+        "lighting": "Allumage…",
+        "lightFailed": "Impossible d'allumer — réessaie",
+        "notDriverChip": "Connecte-toi pour allumer {{name}}",
+        "noFrames": "Aucune prise enregistrée pour celle-ci",
+        "confirmOverrideBody": "Quelqu'un vient d'allumer {{name}}. Rallumer quand même ton choix ?",
+        "confirmOverrideConfirm": "Rallumer mon choix",
+        "confirmOverrideCancel": "Garder le mur",
+        "scrubOlderAria": "Afficher la voie précédente du mur",
+        "scrubNewerAria": "Afficher la voie suivante du mur",
+        "scrubOldestAria": "Aller à la voie la plus ancienne",
+        "scrubOldestLabel": "Le plus ancien",
+        "scrubOlderLabel": "Précédent",
+        "scrubNewerLabel": "Suivant",
+        "rangeLabel": "{{count}} sur {{total}}",
+        "previewTag": "Aperçu",
+        "backToLive": "Revenir au mur",
+        "browseHistory": "Voir l'historique"
+      }
     },
     "toast": {
       "sessionEnded": "Session terminée"

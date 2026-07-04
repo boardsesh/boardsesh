@@ -436,10 +436,32 @@
       "wallEmptyTitle": "Nobody's on the wall",
       "wallEmptyBody": "Connect to your board over Bluetooth to see what's lit, who's crushing it, and the session's hardest send.",
       "wallEmptyCta": "Connect a board",
-      "wallDark": "Nothing lit right now",
-      "sessionLeaderboardHeader": "This session",
-      "sessionSends_one": "{{count}} send",
-      "sessionSends_other": "{{count}} sends"
+      "kiosk": {
+        "liveBadge": "On the wall now",
+        "historyBadge": "History",
+        "historyPosition": "{{count}} back",
+        "wallDark": "Wall is dark",
+        "lastOnWall": "Last on the wall",
+        "idleHint": "Wall's dark. Browse history to relight a recent climb, or cast one from your phone.",
+        "lightThis": "Light {{name}}",
+        "lighting": "Lighting…",
+        "lightFailed": "Couldn't light it — try again",
+        "notDriverChip": "Connect to light {{name}}",
+        "noFrames": "No holds saved for this one",
+        "confirmOverrideBody": "Someone just lit {{name}}. Still relight your pick?",
+        "confirmOverrideConfirm": "Relight my pick",
+        "confirmOverrideCancel": "Keep the wall",
+        "scrubOlderAria": "Show the previous climb on the wall",
+        "scrubNewerAria": "Show the next climb on the wall",
+        "scrubOldestAria": "Jump to the oldest climb",
+        "scrubOldestLabel": "Oldest",
+        "scrubOlderLabel": "Older",
+        "scrubNewerLabel": "Newer",
+        "rangeLabel": "{{count}} of {{total}}",
+        "previewTag": "Preview",
+        "backToLive": "Back to live",
+        "browseHistory": "Browse history"
+      }
     },
     "toast": {
       "sessionEnded": "Session ended"

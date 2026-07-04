@@ -47,6 +47,9 @@ export const iosSystemColors: Record<string, OpaqueColorValue> | null =
  * - `live`: the "this climb is physically lit / now on the wall" status hue. A
  *   dedicated role (not `warning`) so a future warning retune can't silently shift
  *   the board-presence affordance. Resolves to the warm amber per scheme.
+ * - `historyFill`: the FILLED slate bar behind the wall kiosk's "viewing history"
+ *   state — a positive, distinct-from-amber signal, not an absence-of-amber wash.
+ *   White text clears AA on both schemes.
  *
  * Contrast (WCAG, light): white-on-primary #6D28D9 = 7.10:1; black-on-accent = 8.95:1.
  */
@@ -60,6 +63,7 @@ export const brandColors = {
   warning: '#B45309',
   error: '#C81E1E',
   live: '#B45309',
+  historyFill: '#475569',
 } as const;
 
 /**
@@ -81,6 +85,7 @@ export const brandColorsDark = {
   warning: '#FBBF24',
   error: '#F87171',
   live: '#FBBF24',
+  historyFill: '#64748B',
 } as const;
 
 /**

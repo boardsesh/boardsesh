@@ -202,6 +202,7 @@ vi.mock('../../components/board-presence/UndoWallChangeSnackbar', () => ({
 
 vi.mock('expo-router', () => ({
   router: { push: vi.fn(), navigate: vi.fn(), dismiss: vi.fn() },
+  useSegments: () => ['(tabs)', 'climbs'],
 }));
 
 vi.mock('@boardsesh/board-presence-react', () => ({

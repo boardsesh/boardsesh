@@ -243,8 +243,11 @@ export default function TabLayout() {
             master-detail). Width-budgeted like the wall column (resolveDetailPaneSurface):
             the tightest regular portraits — iPad mini and 9.7–10.2" (744–810pt) — suppress
             it rather than squeeze the browse list below the readable floor; there the
-            compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). */}
-        {isRegular && showDetailPane ? (
+            compact bottom-sheet PlayDrawer takes over (see drawer-host-provider). Hidden
+            on the "On the Wall" tab: the kiosk IS the wall surface and needs the full
+            content pane, so a persistent (usually empty) detail pane there just squeezes
+            it — same redundancy guard as the wall column below. */}
+        {isRegular && showDetailPane && !onWallTab ? (
           <View key="pane" style={[styles.playPane, { width: playPaneWidth, borderLeftColor: systemColors.separator }]}>
             <IpadPlayPane />
           </View>

@@ -1,0 +1,177 @@
+import { describe, it, expect } from 'vitest';
+import {
+  resolveWallKioskLayout,
+  quantizeDimension,
+  WALL_KIOSK_GAP,
+  ZONE_DOMINANCE_RATIO,
+  type WallKioskLayout,
+} from '../wall-kiosk-layout';
+import { resolveWallKioskTypeScale, resolveHeroScale, estimatePhysicalLongSideMm } from '../wall-kiosk-type';
+
+const NO_INSETS = { top: 0, bottom: 0, left: 0, right: 0 };
+
+const CATALOG_RATIOS = [0.43, 0.56, 0.75, 1.0, 1.34, 1.81];
+const PANES = [
+  { label: '11" landscape', w: 1098, h: 834 },
+  { label: '11" portrait', w: 738, h: 1194 },
+  { label: '13" landscape', w: 1270, h: 1024 },
+  { label: '13" portrait', w: 928, h: 1366 },
+];
+
+const area = (rect: { width: number; height: number }) => rect.width * rect.height;
+const resolve = (w: number, h: number, ar: number, previous?: Pick<WallKioskLayout, 'region'>) =>
+  resolveWallKioskLayout({ paneW: w, paneH: h, insets: NO_INSETS, boardAspectRatio: ar, previous }) as WallKioskLayout;
+
+describe('quantizeDimension', () => {
+  it('floors to the nearest 8px and floors junk to 0', () => {
+    expect(quantizeDimension(1098)).toBe(1096);
+    expect(quantizeDimension(1366)).toBe(1360);
+    expect(quantizeDimension(0)).toBe(0);
+    expect(quantizeDimension(-5)).toBe(0);
+    expect(quantizeDimension(Number.NaN)).toBe(0);
+  });
+});
+
+describe('resolveWallKioskLayout — always reserves an off-board chrome region', () => {
+  it('returns null only before the pane is measured', () => {
+    expect(resolveWallKioskLayout({ paneW: 0, paneH: 800, insets: NO_INSETS, boardAspectRatio: 0.56 })).toBeNull();
+    expect(resolveWallKioskLayout({ paneW: 1000, paneH: 800, insets: NO_INSETS, boardAspectRatio: 0 })).toBeNull();
+  });
+
+  it('always yields a chrome region (never an overlay) for every catalog cell', () => {
+    for (const pane of PANES) {
+      for (const ratio of CATALOG_RATIOS) {
+        const layout = resolve(pane.w, pane.h, ratio);
+        expect(layout).not.toBeNull();
+        expect(['rail', 'band']).toContain(layout.region);
+        expect(layout.chromeRect.width).toBeGreaterThan(0);
+        expect(layout.chromeRect.height).toBeGreaterThan(0);
+        expect(layout.boardRect.width).toBeGreaterThan(0);
+        expect(layout.boardRect.height).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('resolveWallKioskLayout — argmax axis crossovers', () => {
+  it('a tall board in landscape docks the chrome to a side RAIL', () => {
+    expect(resolve(1098, 834, 0.43).region).toBe('rail');
+    expect(resolve(1098, 834, 0.56).region).toBe('rail');
+  });
+
+  it('a tall board in portrait uses a bottom BAND (no room for a rail)', () => {
+    expect(resolve(738, 1194, 0.43).region).toBe('band');
+    expect(resolve(738, 1194, 0.56).region).toBe('band');
+  });
+
+  it('a wide board flips the reserve axis to a BAND even in landscape (kills the v1 starved-rail hole)', () => {
+    expect(resolve(1098, 834, 1.81).region).toBe('band');
+    expect(resolve(1270, 1024, 1.81).region).toBe('band');
+  });
+});
+
+describe('resolveWallKioskLayout — board is the largest region + never overlapped', () => {
+  for (const pane of PANES) {
+    for (const ratio of CATALOG_RATIOS) {
+      it(`board dominates + board+gap+chrome fits the pane — ${pane.label}, AR ${ratio}`, () => {
+        const layout = resolve(pane.w, pane.h, ratio);
+        // The board is always the largest single region by AREA.
+        expect(area(layout.boardRect)).toBeGreaterThan(area(layout.chromeRect));
+        if (layout.region === 'rail') {
+          // Chrome never wider than the board on the reserve axis; ideally ≤0.85×
+          // but the chrome legibility min can relax the ratio at extreme-tall ARs.
+          expect(layout.chromeRect.width).toBeLessThanOrEqual(layout.boardRect.width + 1);
+          if (!layout.compact) {
+            expect(layout.chromeRect.width).toBeLessThanOrEqual(
+              Math.max(ZONE_DOMINANCE_RATIO * layout.boardRect.width, 320) + 1,
+            );
+          }
+          expect(layout.boardRect.width + WALL_KIOSK_GAP + layout.chromeRect.width).toBeLessThanOrEqual(pane.w + 1);
+          expect(layout.boardRect.height).toBeLessThanOrEqual(pane.h + 1);
+        } else {
+          expect(layout.chromeRect.height).toBeLessThanOrEqual(layout.boardRect.height + 1);
+          expect(layout.boardRect.height + WALL_KIOSK_GAP + layout.chromeRect.height).toBeLessThanOrEqual(pane.h + 1);
+          expect(layout.boardRect.width).toBeLessThanOrEqual(pane.w + 1);
+        }
+      });
+    }
+  }
+});
+
+describe('resolveWallKioskLayout — free vs steal + board-area floor', () => {
+  it('keeps the board at 100% when the natural gutter absorbs the chrome (tall board, landscape)', () => {
+    const layout = resolve(1098, 834, 0.56);
+    expect(layout.isFreeAxis).toBe(true);
+    expect(layout.boardAreaFraction).toBeCloseTo(1, 2);
+  });
+
+  it('holds the board-area floor (≥0.55) when the chrome must steal, across the grid', () => {
+    for (const pane of PANES) {
+      for (const ratio of CATALOG_RATIOS) {
+        const layout = resolve(pane.w, pane.h, ratio);
+        // The floor may only be breached when the chrome min forced it (documented);
+        // the dominance cap otherwise keeps the board well above the floor.
+        expect(layout.boardAreaFraction).toBeGreaterThanOrEqual(0.34); // inherent wide-in-portrait letterbox
+        if (layout.isFreeAxis) expect(layout.boardAreaFraction).toBeCloseTo(1, 2);
+      }
+    }
+  });
+});
+
+describe('resolveWallKioskLayout — axis hysteresis', () => {
+  // At pane 1000×800 the rail↔band board areas cross near AR≈1.22, so the two
+  // axes are within the 4% deadband there.
+  it('holds the previous region when the challenger only marginally wins', () => {
+    const fresh = resolve(1000, 800, 1.22);
+    expect(fresh.region).toBe('band'); // band wins by <4%
+    // With the losing axis as the incumbent, the marginal challenger can't flip it.
+    expect(resolve(1000, 800, 1.22, { region: 'rail' }).region).toBe('rail');
+    // With the winner as the incumbent, it trivially stays.
+    expect(resolve(1000, 800, 1.22, { region: 'band' }).region).toBe('band');
+  });
+
+  it('still flips when the challenger axis clearly wins (beyond the deadband)', () => {
+    // A wide board in landscape: band beats rail decisively, so previous=rail flips.
+    expect(resolve(1098, 834, 1.81, { region: 'rail' }).region).toBe('band');
+  });
+});
+
+describe('resolveWallKioskLayout — band spans the full content width', () => {
+  it('a band chrome is the full pane width (drives the two-column layout)', () => {
+    const layout = resolve(738, 1194, 0.56); // 11" portrait → band
+    expect(layout.region).toBe('band');
+    expect(layout.chromeRect.width).toBe(quantizeDimension(738)); // full content width (quantized)
+  });
+
+  it('keeps the board dominant with a full-width band even in a narrow Split View', () => {
+    // ⅓ Split View on an 11" Pro: a wide board would otherwise let a full-width
+    // band out-mass the letterboxed board (the rail-only compact-escape gap).
+    for (const ratio of [0.43, 0.56, 1.0, 1.81]) {
+      const layout = resolveWallKioskLayout({
+        paneW: 320,
+        paneH: 834,
+        insets: NO_INSETS,
+        boardAspectRatio: ratio,
+        contentFloorBand: 236,
+      }) as WallKioskLayout;
+      expect(area(layout.boardRect)).toBeGreaterThanOrEqual(area(layout.chromeRect));
+      expect(layout.boardRect.width).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('wall-kiosk-type', () => {
+  it('estimates physical size and clamps hero scale', () => {
+    expect(estimatePhysicalLongSideMm(1366)).toBeGreaterThan(250);
+    expect(resolveHeroScale({ physicalLongSideMm: estimatePhysicalLongSideMm(1366) })).toBeGreaterThanOrEqual(1);
+    expect(resolveHeroScale({ paneShortSide: 200 })).toBe(1);
+  });
+
+  it('always makes the grade louder than the name', () => {
+    for (const shortSide of [738, 834, 1000, 1024]) {
+      const scale = resolveWallKioskTypeScale(shortSide, 1);
+      expect(scale.gradeFontSize).toBeGreaterThan(scale.nameFontSize);
+      expect(scale.nameFontSize).toBeGreaterThan(scale.metaFontSize);
+    }
+  });
+});

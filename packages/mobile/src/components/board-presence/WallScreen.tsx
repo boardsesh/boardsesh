@@ -1,84 +1,49 @@
-import { memo, useCallback, useState, type ReactNode } from 'react';
-import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import { NowOnTheWallPanel } from './NowOnTheWallPanel';
-import { WallFocalClimb } from './WallFocalClimb';
+import { memo, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { WallEmptyState } from './WallEmptyState';
+import { WallKioskScreen } from './wall-kiosk/WallKioskScreen';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { useTheme } from '../../providers/theme-provider';
-import { REGULAR_WIDTH_BREAKPOINT } from '../../theme/size-class';
 
 /**
- * The "On the Wall" tab body. iPad-only destination (routed from the sidebar), so
- * it always renders inside the regular-width shell content pane. Its layout is
- * driven by its OWN measured width (not the window, which is wider than the
- * content pane, and not an orientation API): at/above the regular breakpoint it
- * splits into a leading focal pane (the lit climb) + a trailing scrolling list
- * (stats + "This session" leaderboard + history); below it — a narrow Split View
- * window, or the content pane once the play pane takes its share — it falls back
- * to the single-column composition so nothing gets crushed.
+ * The "On the Wall" tab body — a wall-mounted iPad KIOSK. Its job is to DISPLAY
+ * what climb is currently lit on the physical wall, big and glanceable from across
+ * a gym, and to step back/forward through the wall's own history to restore an
+ * accidental change (preview-then-confirm). It is NOT a search/driving surface —
+ * that's the climber's phone or the Climbs tab.
  *
- * The wall is live only when a board is bound over Bluetooth, matching
- * `SidebarWallCell` and the shell column. `boardPanelProps` is non-null whenever a
- * board is merely stored, so the empty state gates on the presence controls.
+ * The wall is live only when a board is bound over Bluetooth. When it is,
+ * `WallKioskScreen` owns the responsive layout (the board art dominates, secondary
+ * chrome fills whatever gutter the board's aspect ratio leaves). When it isn't,
+ * the empty state prompts a connect. `boardPanelProps` is non-null whenever a
+ * board's config is resolved; while it's still resolving we render a neutral
+ * themed blank, never the "Connect a board" CTA (wrong for someone who just
+ * connected).
  */
 function WallScreenComponent() {
   const { systemColors } = useTheme();
   const { boardPanelProps } = useDrawerHost();
   const { enabled, boardId } = useBoardPresenceControls();
 
-  const [containerWidth, setContainerWidth] = useState(0);
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    const nextWidth = event.nativeEvent.layout.width;
-    setContainerWidth((prev) => (prev === nextWidth ? prev : nextWidth));
-  }, []);
-
   const isWallLive = enabled && boardId !== null;
-  const twoPane = containerWidth >= REGULAR_WIDTH_BREAKPOINT;
 
   let content: ReactNode;
   if (!isWallLive) {
     content = <WallEmptyState />;
-  } else if (!boardPanelProps) {
+  } else if (!boardPanelProps?.boardConfig) {
     // Bound over Bluetooth, but the active board config hasn't resolved yet — a
-    // neutral blank (the themed background), never the "Connect a board" CTA, which
-    // would be wrong for someone who just connected.
+    // neutral themed blank, never the "Connect a board" CTA.
     content = null;
-  } else if (twoPane) {
-    content = (
-      <View style={styles.row}>
-        <View style={[styles.focal, { borderRightColor: systemColors.separator }]}>
-          <WallFocalClimb boardConfig={boardPanelProps.boardConfig} />
-        </View>
-        <View style={styles.list}>
-          <NowOnTheWallPanel variant="screen" showHero={false} {...boardPanelProps} />
-        </View>
-      </View>
-    );
   } else {
-    content = <NowOnTheWallPanel variant="screen" {...boardPanelProps} />;
+    content = <WallKioskScreen boardConfig={boardPanelProps.boardConfig} />;
   }
 
-  return (
-    <View style={[styles.root, { backgroundColor: systemColors.background }]} onLayout={handleLayout}>
-      {content}
-    </View>
-  );
+  return <View style={[styles.root, { backgroundColor: systemColors.background }]}>{content}</View>;
 }
 
 export const WallScreen = memo(WallScreenComponent);
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  row: { flex: 1, flexDirection: 'row' },
-  // The focal pane leads at ~48% but caps so the extra width on a 13" goes to the
-  // readable list, not an oversized board (mirrors Apple Photos/Files).
-  focal: {
-    flexBasis: '48%',
-    flexGrow: 0,
-    flexShrink: 0,
-    maxWidth: 520,
-    borderRightWidth: StyleSheet.hairlineWidth,
-  },
-  list: { flex: 1 },
 });
