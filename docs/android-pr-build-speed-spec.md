@@ -143,10 +143,12 @@ them takes the tests off the critical path entirely:
 jobs:
   robolectric-tests: # ~5 min wall, off the critical path
     runs-on: ubuntu-latest
+    # 20 min ≈ 2.5× the observed cold-cache duration (7m32s): kills a hung
+    # Gradle daemon reasonably fast without flaking on a slow runner.
     timeout-minutes: 20
     steps:
-      # identical setup block: checkout, bun install, Java, Android SDK,
-      # cache restore (fix 1), .env, expo prebuild
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/android-rn-setup
       - name: Run live-activity module unit tests (Robolectric)
         # existing step, moved verbatim (incl. the project-discovery logic)
 
@@ -154,11 +156,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      # identical setup block
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/android-rn-setup
       - name: Build debug-signed release APK
         # existing step, unchanged
       - name: Upload sideloadable APK
         # existing step, unchanged (if: always())
+```
+
+The shared setup becomes a local composite action — no inputs needed (the
+`EXPO_PUBLIC_*` vars stay workflow-level `env`, which composite steps inherit; no
+secrets involved). Checkout stays in each job: a local action can't run before the repo
+that defines it is checked out.
+
+```yaml
+# .github/actions/android-rn-setup/action.yml
+name: Android RN setup
+description: Shared setup for android-pr-rn jobs
+runs:
+  using: composite
+  steps:
+    # existing steps, moved verbatim, each `run:` step gaining `shell: bash`:
+    # setup-bun → bun install --frozen-lockfile → setup-java (temurin 21) →
+    # setup-android + sdkmanager licenses/components →
+    # actions/cache/restore (fix 1 block) → write packages/mobile/.env →
+    # bunx expo prebuild --platform android --clean --no-install
 ```
 
 - **Cost:** the ~2 min setup block runs twice, in parallel, on free public-repo runners —
@@ -213,6 +235,12 @@ is a small follow-up if the job ever creeps back up.
 
 ## Validation & rollback
 
+0. **Required-check names:** fix 2 renames the job, so any branch-protection or ruleset
+   entry requiring `prebuild-and-build` must switch to the two new job names in the same
+   change, or the gate goes stale. As of 2026-07-03 no ruleset-based required status
+   checks exist on `main` (`gh api repos/boardsesh/boardsesh/rules/branches/main` is
+   empty; classic branch protection needs an admin to confirm), so this is likely a
+   no-op — check it at implementation time.
 1. Implement both fixes on a branch; open a PR touching `packages/mobile/**`.
 2. Confirm the restore step logs a hit on `Linux-gradle-rn-*` and no `Post Cache` save
    runs.
