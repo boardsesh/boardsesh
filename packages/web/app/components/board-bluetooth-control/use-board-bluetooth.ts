@@ -393,8 +393,12 @@ export function useBoardBluetooth({
             { boardType: sendContext?.climbBoardType, layoutId: sendContext?.climbLayoutId },
           ) === 'incompatible'
         ) {
-          if (climbUuid == null || lastIncompatibleToastUuidRef.current !== climbUuid) {
-            lastIncompatibleToastUuidRef.current = climbUuid ?? null;
+          // Contextless callers dedup under a shared sentinel so a retry loop
+          // without a uuid can't spam the toast; the ref clears on any
+          // successful send.
+          const toastKey = climbUuid ?? '__no-uuid__';
+          if (lastIncompatibleToastUuidRef.current !== toastKey) {
+            lastIncompatibleToastUuidRef.current = toastKey;
             showMessage(t('bluetooth.incompatibleClimb'), 'error');
           }
           lastSendFailureReasonRef.current = 'incompatible_climb';

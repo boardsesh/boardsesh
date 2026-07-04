@@ -215,9 +215,7 @@ function BluetoothAutoSender({
   const activeConfigRef = useRef(activeConfig);
   activeConfigRef.current = activeConfig;
   const onSkipSpillClimbRef = useRef(onSkipSpillClimb);
-  useEffect(() => {
-    onSkipSpillClimbRef.current = onSkipSpillClimb;
-  }, [onSkipSpillClimb]);
+  onSkipSpillClimbRef.current = onSkipSpillClimb;
   const queueRef = useRef(queue);
   queueRef.current = queue;
   // Dedup spill reports: the async drain can re-enter for the same incompatible

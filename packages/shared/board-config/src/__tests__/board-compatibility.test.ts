@@ -104,4 +104,14 @@ describe('findNextCompatibleQueueItem', () => {
     expect(result.item?.uuid).toBe('q1');
     expect(result.skippedCount).toBe(1);
   });
+
+  it('returns the current item unskipped when the active config is unknown', () => {
+    const queue = [
+      makeItem('q0', { boardType: 'tension', layoutId: 1 }),
+      makeItem('q1', { boardType: 'kilter', layoutId: 1 }),
+    ];
+    const result = findNextCompatibleQueueItem(queue, 'q0', undefined);
+    expect(result.item?.uuid).toBe('q0');
+    expect(result.skippedCount).toBe(0);
+  });
 });

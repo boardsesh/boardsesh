@@ -517,6 +517,21 @@ describe('useBoardBluetooth', () => {
       expect(mockShowMessage).toHaveBeenCalledTimes(2);
     });
 
+    it('dedups the toast for contextless (no-uuid) incompatible sends too', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      // Identity present, uuid absent — e.g. a caller passing identity only.
+      const noUuidContext = { climbBoardType: 'kilter', climbLayoutId: 8 };
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, noUuidContext);
+        await result.current.sendFramesToBoard('p1r12', false, undefined, noUuidContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('sends normally when the climb carries no identity metadata', async () => {
       const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
       await act(async () => {
