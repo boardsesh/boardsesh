@@ -151,6 +151,9 @@ export function useDrawerPlayback({
               climbUuid: activeClimbUuid,
               climbBoardType: activeClimbBoardType,
               climbLayoutId: activeClimbLayoutId,
+              // The AutoSender processes the same current climb and owns the
+              // user-visible skip toast — avoid a second toast from this loop.
+              suppressIncompatibleToast: true,
             });
           } catch (error) {
             console.error('[useDrawerPlayback] BLE frame send failed:', error);

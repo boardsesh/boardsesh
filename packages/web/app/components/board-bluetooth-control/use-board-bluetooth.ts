@@ -39,6 +39,9 @@ export type BleSendContext = {
   climbUuid?: string;
   climbBoardType?: string | null;
   climbLayoutId?: number | null;
+  /** Refuse silently: for callers racing the AutoSender on the same current
+   * climb (play-drawer playback), whose skip toast already covers the user. */
+  suppressIncompatibleToast?: boolean;
 };
 
 // Module-level cache for Aurora LED placements loader to avoid repeated dynamic import overhead
@@ -392,7 +395,7 @@ export function useBoardBluetooth({
           // Contextless callers dedup under a sentinel so a retry loop can't
           // spam the toast; the ref clears on any successful send.
           const toastKey = climbUuid ?? '__no-uuid__';
-          if (lastIncompatibleToastUuidRef.current !== toastKey) {
+          if (!sendContext?.suppressIncompatibleToast && lastIncompatibleToastUuidRef.current !== toastKey) {
             lastIncompatibleToastUuidRef.current = toastKey;
             showMessage(t('bluetooth.incompatibleClimb'), 'error');
           }

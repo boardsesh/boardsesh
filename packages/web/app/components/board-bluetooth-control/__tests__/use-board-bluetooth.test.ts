@@ -517,6 +517,29 @@ describe('useBoardBluetooth', () => {
       expect(mockShowMessage).toHaveBeenCalledTimes(2);
     });
 
+    it('refuses silently when the caller suppresses the toast (play-drawer path)', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+      mockAdapter.write.mockClear();
+
+      let sendResult: boolean | undefined;
+      await act(async () => {
+        sendResult = await result.current.sendFramesToBoard('p1r12', false, undefined, {
+          climbUuid: 'spill',
+          climbBoardType: 'kilter',
+          climbLayoutId: 8,
+          suppressIncompatibleToast: true,
+        });
+      });
+
+      expect(sendResult).toBe(false);
+      expect(result.current.lastSendFailureReasonRef.current).toBe('incompatible_climb');
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockShowMessage).not.toHaveBeenCalled();
+    });
+
     it('dedups the toast for contextless (no-uuid) incompatible sends too', async () => {
       const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
       await act(async () => {
