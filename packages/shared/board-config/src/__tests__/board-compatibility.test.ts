@@ -114,4 +114,17 @@ describe('findNextCompatibleQueueItem', () => {
     expect(result.item?.uuid).toBe('q0');
     expect(result.skippedCount).toBe(0);
   });
+
+  it('scans from the queue head when the current uuid is no longer in the queue', () => {
+    // A racing queue mutation can remove the current item between the
+    // incompatibility check and this scan; the fallback restarts from the head
+    // and still refuses spills.
+    const queue = [
+      makeItem('q0', { boardType: 'tension', layoutId: 1 }), // spill
+      makeItem('q1', { boardType: 'kilter', layoutId: 1 }), // compatible
+    ];
+    const result = findNextCompatibleQueueItem(queue, 'gone', KILTER_L1);
+    expect(result.item?.uuid).toBe('q1');
+    expect(result.skippedCount).toBe(1);
+  });
 });
