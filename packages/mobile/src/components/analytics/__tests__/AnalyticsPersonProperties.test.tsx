@@ -55,10 +55,22 @@ describe('AnalyticsPersonProperties', () => {
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   });
 
-  it('waits for the account-created date before writing', () => {
+  it('does not write until the profile query resolves', () => {
     // Authenticated but the profile query hasn't resolved yet.
     state.profile = null;
     state.activeBoard = { boardType: 'tension' };
+
+    render(createElement(AnalyticsPersonProperties));
+
+    expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it('does not write when the profile resolved without a created-at date', () => {
+    // Guards the createdAt branch specifically: an identified user (id present)
+    // whose account age hasn't come back yet must not write a setOnce with
+    // undefined account_created_at.
+    state.profile = { id: 'user-1', createdAt: null, isTester: false, favoriteCount: 2 };
+    state.activeBoard = { boardType: 'kilter' };
 
     render(createElement(AnalyticsPersonProperties));
 
