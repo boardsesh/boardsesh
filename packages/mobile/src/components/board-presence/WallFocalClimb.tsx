@@ -9,6 +9,7 @@ import { BoardDriverAvatar } from './BoardDriverAvatar';
 import { Icon } from '../Icon';
 import { Text } from '../Text';
 import { getBoardRenderData } from '../../lib/board-details';
+import { parseSetIds } from '../../lib/board-presence/parse-set-ids';
 import { computeContainedBoardSize } from '../play-drawer/play-drawer-layout';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { useTheme } from '../../providers/theme-provider';
@@ -27,19 +28,6 @@ import { spacing, borderRadius } from '../../theme/tokens';
  * which would crop or letterbox several boards. Recomputed on every width change
  * (rotation / Split View); the contained size is not memoized across a resize.
  */
-function setIdsToNumbers(setIds: string): number[] {
-  return (
-    setIds
-      .split(',')
-      .map((setIdText) => setIdText.trim())
-      // Drop empty tokens BEFORE Number(): Number('') is 0 (finite), so an empty
-      // setIds string would otherwise yield [0] and slip past the length===0 guard.
-      .filter((setIdText) => setIdText.length > 0)
-      .map((setIdText) => Number(setIdText))
-      .filter((setIdValue) => Number.isFinite(setIdValue))
-  );
-}
-
 function WallFocalClimbComponent({ boardConfig }: { boardConfig: BoardConfig | null }) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
@@ -54,7 +42,7 @@ function WallFocalClimbComponent({ boardConfig }: { boardConfig: BoardConfig | n
 
   const renderData = useMemo(() => {
     if (!boardConfig) return null;
-    const setIds = setIdsToNumbers(boardConfig.setIds);
+    const setIds = parseSetIds(boardConfig.setIds);
     if (setIds.length === 0) return null;
     return getBoardRenderData({
       boardName: boardConfig.boardName as BoardName,
