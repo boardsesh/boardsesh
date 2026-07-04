@@ -28,10 +28,16 @@ import { spacing, borderRadius } from '../../theme/tokens';
  * (rotation / Split View); the contained size is not memoized across a resize.
  */
 function setIdsToNumbers(setIds: string): number[] {
-  return setIds
-    .split(',')
-    .map((setIdText) => Number(setIdText))
-    .filter((setIdValue) => Number.isFinite(setIdValue));
+  return (
+    setIds
+      .split(',')
+      .map((setIdText) => setIdText.trim())
+      // Drop empty tokens BEFORE Number(): Number('') is 0 (finite), so an empty
+      // setIds string would otherwise yield [0] and slip past the length===0 guard.
+      .filter((setIdText) => setIdText.length > 0)
+      .map((setIdText) => Number(setIdText))
+      .filter((setIdValue) => Number.isFinite(setIdValue))
+  );
 }
 
 function WallFocalClimbComponent({ boardConfig }: { boardConfig: BoardConfig | null }) {
