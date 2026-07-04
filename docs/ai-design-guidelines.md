@@ -326,8 +326,8 @@ split, falls through to the phone UI **verbatim**. The size class is pure and un
 `PlayDrawer presentation="pane"`) follows the user's **selection** — tapping a list row updates it —
 mirroring Mail/Notes/Files. It is the SELECTION surface; do not repoint it at shared/live status (that
 was the original bug). A `setAsCurrent:false` open (feed / beta / climb view) previews in the pane
-without committing to the queue (`drawer-host-provider`'s `panePreviewItem`), so every climb-open entry
-point populates the pane.
+without committing to the queue (`openPlayDrawer(..., { previewQueueItem })`, carried on
+`playDrawerPaneProps.openTarget.options`), so every climb-open entry point populates the pane.
 
 **The live wall is STATUS, with its own width-adaptive home** (`resolveWallSurface({ width, widthClass,
 sidebarWidth })` → `'none' | 'strip' | 'column'`):

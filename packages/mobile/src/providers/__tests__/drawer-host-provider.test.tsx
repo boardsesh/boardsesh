@@ -1203,4 +1203,31 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     // an open target on compact — that path drives the route's playTarget instead.
     expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
   });
+
+  it('clears the pane open target when a resize drops out of pane width', async () => {
+    // Open a climb in the pane at regular width, then resize to compact (Stage
+    // Manager / Split View shrink). The pane goes away, so its stale selection must
+    // be dropped — otherwise returning to pane width would flash the old climb.
+    const hosts: Array<HostValue> = [];
+    const onHost = (host: HostValue) => hosts.push(host);
+    const { rerender } = renderHost(onHost);
+    await waitFor(() => expect(hosts.at(-1)).toBeDefined());
+
+    const climb = makeQueueItem('queue-x', 'pane-resize-1').climb as unknown as Climb;
+    act(() => {
+      hosts.at(-1)?.openPlayDrawer(climb);
+    });
+    await waitFor(() => {
+      expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget?.climb.uuid).toBe('pane-resize-1');
+    });
+
+    // Resize below the pane budget: usesDetailPane flips false and the reset effect
+    // fires, clearing the target (not merely that compact starts null — it was set).
+    layoutCfg.widthClass = 'compact';
+    rerender(createElement(DrawerHostProvider, null, createElement(Probe, { onHost, onRoute: () => {} })));
+
+    await waitFor(() => {
+      expect(hosts.at(-1)?.playDrawerPaneProps?.openTarget).toBeNull();
+    });
+  });
 });

@@ -25,6 +25,7 @@
  *                                 [--locales all|<comma-list>] [--device "iPhone 16 Pro Max"]
  *                                 [--variant material|liquidGlass] [--shutdown]
  *                                 [--app-path <path/to/Boardsesh.app|app.apk>]
+ *                                 [--orientation portrait|landscape]
  *
  * Requires: Maestro (https://maestro.mobile.dev) plus platform tooling (xcrun for
  * iOS, adb for Android). For --backend local, bring up the seeded dev DB +
@@ -160,6 +161,12 @@ export interface ScreenshotOptions {
   workout: string | null;
   /** Prebuilt/cached app artifact to install; iOS can build one when null. */
   appPath: string | null;
+  /**
+   * Capture orientation override for iOS device names not in IOS_SCREENSHOT_DEVICES
+   * (e.g. an ad-hoc iPad passed via --device). Known devices keep their own
+   * orientation; null falls back to portrait for unlisted names.
+   */
+  orientation: IosDeviceOrientation | null;
   shutdown: boolean;
 }
 
@@ -180,6 +187,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     // can't tap/scroll). `--workout off` leaves the generator Off ("Start a session").
     workout: 'volume',
     appPath: null,
+    orientation: null,
     shutdown: false,
   };
 
@@ -232,6 +240,12 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
         options.appPath = resolve(expectValue(flag, value));
         index++;
         break;
+      case '--orientation': {
+        const orientation = expectEnum(flag, value, ['portrait', 'landscape']);
+        options.orientation = orientation === 'landscape' ? 'LANDSCAPE_LEFT' : 'PORTRAIT';
+        index++;
+        break;
+      }
       case '--shutdown':
         options.shutdown = true;
         break;
@@ -432,17 +446,23 @@ function newestIosRuntime(): string | null {
   return ios.length > 0 ? ios[ios.length - 1].identifier : null;
 }
 
-export function resolveIosScreenshotDevices(deviceNames: readonly string[]): IosScreenshotDevice[] {
+export function resolveIosScreenshotDevices(
+  deviceNames: readonly string[],
+  orientationOverride: IosDeviceOrientation | null = null,
+): IosScreenshotDevice[] {
   return deviceNames.map((deviceName) => {
     const knownDevice = IOS_SCREENSHOT_DEVICES.find((device) => device.name === deviceName);
+    // A known device keeps its own orientation — an override never clobbers a
+    // record whose orientation we already know is correct.
     if (knownDevice) return knownDevice;
     // An unlisted device name: usable only if a simulator by that name already
     // exists (typeId: '' tells findOrCreateIosDevice it can't auto-create one, so
-    // it errors with a clear message instead).
+    // it errors with a clear message instead). Portrait is the fallback, but an
+    // explicit --orientation lets an ad-hoc iPad capture in landscape.
     return {
       name: deviceName,
       typeId: '',
-      orientation: 'PORTRAIT',
+      orientation: orientationOverride ?? 'PORTRAIT',
     };
   });
 }
@@ -1003,7 +1023,7 @@ function runIos(options: ScreenshotOptions): number {
   }
 
   const appPath = resolveAppPath(options);
-  const screenshotDevices = resolveIosScreenshotDevices(options.devices);
+  const screenshotDevices = resolveIosScreenshotDevices(options.devices, options.orientation);
   const localeTargets = resolveAppStoreLocaleTargets(options.appLocales);
 
   for (let localeIndex = 0; localeIndex < localeTargets.length; localeIndex++) {

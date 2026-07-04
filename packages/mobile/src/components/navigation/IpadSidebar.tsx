@@ -52,26 +52,30 @@ function SidebarItem({
   onPress: (destination: SidebarDestination) => void;
 }) {
   const { systemColors } = useTheme();
-  // Pointer-hover / keyboard-focus on the iPad rail (no-op on touch). Treated as
-  // a single "active-ish" cue: it brightens the glyph and fills the pill, the
-  // same affordance selection uses, so hovering/focusing previews selection.
-  const [interactive, setInteractive] = useState(false);
-  const active = focused || interactive;
+  // Pointer-hover and keyboard-focus are tracked separately (both no-op on touch):
+  // hovering and focusing each light the same "active-ish" cue — brighter glyph,
+  // filled pill — but a hover-out must not drop the highlight while the item still
+  // holds keyboard focus, so we OR two independent flags instead of sharing one.
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const active = focused || isHovered || isFocused;
   // Neutral chrome glyphs, matching NativeTabs / MaterialTabBar (the systemFill
   // pill is the sole active affordance, not a brand tint). See
   // docs/ai-design-guidelines.md — chrome carries state with fills, not colour.
   const tint = active ? systemColors.label : systemColors.secondaryLabel;
   const handlePress = useCallback(() => onPress(destination), [onPress, destination]);
-  const handleInteractiveOn = useCallback(() => setInteractive(true), []);
-  const handleInteractiveOff = useCallback(() => setInteractive(false), []);
+  const handleHoverIn = useCallback(() => setIsHovered(true), []);
+  const handleHoverOut = useCallback(() => setIsHovered(false), []);
+  const handleFocus = useCallback(() => setIsFocused(true), []);
+  const handleBlur = useCallback(() => setIsFocused(false), []);
 
   return (
     <PressableSurface
       onPress={handlePress}
-      onHoverIn={handleInteractiveOn}
-      onHoverOut={handleInteractiveOff}
-      onFocus={handleInteractiveOn}
-      onBlur={handleInteractiveOff}
+      onHoverIn={handleHoverIn}
+      onHoverOut={handleHoverOut}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
       feedback="scale"
       accessibilityRole="tab"
       accessibilityState={{ selected: focused }}

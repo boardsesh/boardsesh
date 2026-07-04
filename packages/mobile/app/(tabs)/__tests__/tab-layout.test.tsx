@@ -207,12 +207,6 @@ vi.mock('expo-router/unstable-native-tabs', () => {
 
 import TabLayout, { unstable_settings } from '../_layout';
 
-function renderedViewStyles(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('[data-style]')).map(
-    (element) => element.getAttribute('data-style') ?? '',
-  );
-}
-
 describe('TabLayout', () => {
   beforeEach(() => {
     cfg.bluetoothConnected = false;
@@ -356,8 +350,10 @@ describe('TabLayout', () => {
 
     expect(container.querySelector('[data-ipad-wall-column="true"]')).not.toBeNull();
     expect(container.querySelector('[data-ipad-sidebar="true"]')?.getAttribute('data-show-wall-cell')).toBe('false');
-    expect(renderedViewStyles(container).some((style) => style.includes('"width":485'))).toBe(true);
-    expect(renderedViewStyles(container).some((style) => style.includes('"width":300'))).toBe(true);
+    // The detail pane mounts alongside the list and the dedicated wall column — the
+    // pixel widths of each are covered by size-class.test.ts (resolveDetailPaneWidth,
+    // WALL_COLUMN_WIDTH), so assert the surfaces are present, not their arithmetic.
+    expect(container.querySelector('[data-ipad-play-pane="true"]')).not.toBeNull();
   });
 
   it('hides the sidebar wall cell when the portrait play-pane strip owns the wall surface', () => {

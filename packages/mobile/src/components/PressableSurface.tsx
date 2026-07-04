@@ -11,12 +11,12 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-
-type RNPressableProps = ComponentProps<typeof Pressable>;
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { springs } from '../theme/animations';
 import { androidRipple } from '../theme/tokens';
 import { brandColors } from '../theme/colors';
+
+type RNPressableProps = ComponentProps<typeof Pressable>;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 

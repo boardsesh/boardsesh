@@ -11,6 +11,7 @@ import {
   parseArgs,
   renderMaestroFlowForIosDevice,
   resolveAppStoreLocaleTargets,
+  resolveIosScreenshotDevices,
   rotationDegreesForIosOrientation,
   validateIosAppLauncherUrl,
   type IosScreenshotDevice,
@@ -34,6 +35,7 @@ function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOpti
     theme: 'dark',
     workout: 'volume',
     appPath: null,
+    orientation: null,
     shutdown: false,
     ...overrides,
   };
@@ -102,8 +104,16 @@ describe('parseArgs', () => {
       theme: 'light',
       workout: 'ladder',
       appPath: '/tmp/Boardsesh.app',
+      orientation: null,
       shutdown: true,
     });
+  });
+
+  it('maps --orientation landscape/portrait to the iOS orientation override', () => {
+    expect(parseArgs(['--orientation', 'landscape']).orientation).toBe('LANDSCAPE_LEFT');
+    expect(parseArgs(['--orientation', 'portrait']).orientation).toBe('PORTRAIT');
+    expect(parseArgs([]).orientation).toBeNull();
+    expect(() => parseArgs(['--orientation', 'sideways'])).toThrow(/--orientation must be one of/);
   });
 
   it('defaults Android captures to the Play phone emulator device', () => {
@@ -297,6 +307,30 @@ describe('rotationDegreesForIosOrientation', () => {
   it('normalizes raw iPad landscape-left captures into upright landscape PNGs', () => {
     expect(rotationDegreesForIosOrientation('LANDSCAPE_LEFT')).toBe(-90);
     expect(rotationDegreesForIosOrientation('PORTRAIT')).toBeNull();
+  });
+});
+
+describe('resolveIosScreenshotDevices', () => {
+  it('keeps a known device record and its orientation', () => {
+    const [ipad] = resolveIosScreenshotDevices(['iPad Pro 13-inch (M5)']);
+    expect(ipad.typeId).toBe('com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB');
+    expect(ipad.orientation).toBe('LANDSCAPE_LEFT');
+  });
+
+  it('falls back to portrait for an unlisted device name with no override', () => {
+    const [device] = resolveIosScreenshotDevices(['iPad Air 13-inch (M3)']);
+    expect(device).toEqual({ name: 'iPad Air 13-inch (M3)', typeId: '', orientation: 'PORTRAIT' });
+  });
+
+  it('applies an orientation override to unlisted devices only, never to known ones', () => {
+    const [unlisted, known] = resolveIosScreenshotDevices(
+      ['iPad Air 13-inch (M3)', 'iPhone 16 Pro Max'],
+      'LANDSCAPE_LEFT',
+    );
+    // The ad-hoc iPad captures landscape instead of the portrait default…
+    expect(unlisted.orientation).toBe('LANDSCAPE_LEFT');
+    // …but the known iPhone keeps its own portrait orientation.
+    expect(known.orientation).toBe('PORTRAIT');
   });
 });
 
