@@ -34,7 +34,7 @@
       "emptyBody": "Suivez des grimpeurs et des ouvreurs pour remplir ce fil.",
       "unknownClimb": "Bloc inconnu",
       "sessionsTitle": "Sessions récentes",
-      "betaTitleBoard": "Beta récente sur ce board",
+      "betaTitleBoard": "Beta récente sur cette board",
       "boardEmptyTitle": "Calme sur {{board}} en ce moment",
       "boardEmptyBody": "Sois le premier à enregistrer une session, ou regarde ce que grimpent les autres.",
       "boardEmptyCta": "Voir tout le monde",
@@ -90,7 +90,7 @@
     "angle": "{{angle}}°",
     "openOnInstagram": "Ouvrir sur Instagram",
     "board": {
-      "label": "Quel board ?",
+      "label": "Quelle board ?",
       "kilter": "Kilter",
       "tension": "Tension"
     },
@@ -209,7 +209,7 @@
   },
   "search": {
     "minCharsHint": "Tapez au moins 2 caractères pour rechercher",
-    "noBoards": "Aucun board pour « {{query}} »",
+    "noBoards": "Aucune board pour « {{query}} »",
     "noGyms": "Aucune salle pour « {{query}} »",
     "noPlaylists": "Aucune playlist pour « {{query}} »",
     "noUsers": "Aucun grimpeur ni ouvreur pour « {{query}} »",

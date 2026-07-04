@@ -65,19 +65,19 @@
       },
       "crowdFavorites": {
         "title": "Favoris de la communauté",
-        "description": "Les classiques les plus enchaînés pour votre panneau que vous n'avez pas encore faits."
+        "description": "Les classiques les plus enchaînés pour votre board que vous n'avez pas encore faits."
       },
       "hiddenGems": {
         "title": "Pépites cachées",
-        "description": "Des voies très bien notées pour votre panneau, encore méconnues."
+        "description": "Des voies très bien notées pour votre board, encore méconnues."
       },
       "atYourLevel": {
         "title": "À votre niveau",
-        "description": "Des voies autour de votre niveau, adaptées à votre panneau."
+        "description": "Des voies autour de votre niveau, adaptées à votre board."
       },
       "fresh": {
         "title": "Nouveautés",
-        "description": "De nouvelles voies pour votre panneau, signées par des ouvreurs à suivre."
+        "description": "De nouvelles voies pour votre board, signées par des ouvreurs à suivre."
       },
       "notFound": {
         "title": "Playlist intelligente introuvable",
@@ -106,11 +106,11 @@
     "activateAll": "Mettre toutes les voies en file",
     "boardMismatch": {
       "title": "Passez à {{board}} pour grimper cette playlist",
-      "subtitle": "Ce sont des voies {{board}}. Changez de planche pour les mettre en file.",
-      "cta": "Changer de planche"
+      "subtitle": "Ce sont des voies {{board}}. Changez de board pour les mettre en file.",
+      "cta": "Changer de board"
     },
     "unrenderableClimb": {
-      "subtitle": "Les données de planche manquent pour cette voie."
+      "subtitle": "Les données de board manquent pour cette voie."
     },
     "menu": {
       "generate": "Générer",
@@ -303,7 +303,7 @@
     "you": "Vous",
     "youSignInTitle": "Connectez-vous pour voir votre progression",
     "youSignInDescription": "Connectez-vous pour suivre vos stats, vos sessions et votre carnet.",
-    "selectBoardForPlaylist": "Choisissez un board avant de créer une playlist",
+    "selectBoardForPlaylist": "Choisissez une board avant de créer une playlist",
     "createdPlaylistToast": "Playlist « {{name}} » créée",
     "createPlaylistFailed": "Impossible de créer la playlist"
   }

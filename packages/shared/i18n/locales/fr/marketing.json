@@ -15,7 +15,7 @@
     },
     "docs": {
       "title": "Documentation API",
-      "description": "Documentation des API REST et WebSocket de Boardsesh - intégration des boards d'entraînement interactifs"
+      "description": "Documentation des API REST et WebSocket de Boardsesh - intégration des boards d'entraînement interactives"
     },
     "legal": {
       "title": "Politique légale et de propriété intellectuelle",
@@ -107,15 +107,15 @@
     "headerTitle": "Mentions légales",
     "intro": {
       "title": "Politique légale et de propriété intellectuelle",
-      "p1": "Boardsesh est une alternative gratuite, open source et communautaire pour parcourir et interagir avec les boards d'entraînement à LED standardisés (Kilter Board, Tension Board, MoonBoard et autres). Le projet est non commercial et entièrement maintenu par des bénévoles.",
+      "p1": "Boardsesh est une alternative gratuite, open source et communautaire pour parcourir et interagir avec les boards d'entraînement à LED standardisées (Kilter Board, Tension Board, MoonBoard et autres). Le projet est non commercial et entièrement maintenu par des bénévoles.",
       "p2": "Nous pensons que les grimpeurs doivent être libres de choisir comment ils interagissent avec le matériel qu'ils ont acheté, et que les données créées par la communauté doivent rester accessibles à la communauté."
     },
     "climbData": {
       "title": "Notre position sur les données de blocs",
       "facts": {
         "title": "Les blocs sont des données factuelles",
-        "p1": "Un bloc sur un board standardisé est une liste de positions de prises sur une disposition fixe et standardisée (ex. : « départ sur A5, utilise B12, C3, D18, arrivée sur K11 »), associée à une cotation et un angle de mur. Ce sont des informations factuelles et fonctionnelles, comparables à une position d'échecs, à des coordonnées GPS ou à un numéro de téléphone, et non une œuvre originale de l'esprit.",
-        "p2": "Selon le droit d'auteur américain, les faits ne sont pas protégeables par le copyright (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Un board standardisé avec un nombre fini de prises (typiquement 200 à 500) produit des définitions de blocs intrinsèquement contraintes, factuelles et fonctionnelles."
+        "p1": "Un bloc sur une board standardisée est une liste de positions de prises sur une disposition fixe et standardisée (ex. : « départ sur A5, utilise B12, C3, D18, arrivée sur K11 »), associée à une cotation et un angle de mur. Ce sont des informations factuelles et fonctionnelles, comparables à une position d'échecs, à des coordonnées GPS ou à un numéro de téléphone, et non une œuvre originale de l'esprit.",
+        "p2": "Selon le droit d'auteur américain, les faits ne sont pas protégeables par le copyright (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Une board standardisée avec un nombre fini de prises (typiquement 200 à 500) produit des définitions de blocs intrinsèquement contraintes, factuelles et fonctionnelles."
       },
       "community": {
         "title": "La base de données est créée par la communauté",
@@ -141,7 +141,7 @@
     },
     "interop": {
       "title": "Interopérabilité et compatibilité matérielle",
-      "intro": "Ce projet fournit des logiciels et des conceptions matérielles compatibles avec les boards d'escalade standardisés. Les grimpeurs qui ont acheté ces boards ont le droit d'utiliser des logiciels et des contrôleurs tiers avec leur propre matériel.",
+      "intro": "Ce projet fournit des logiciels et des conceptions matérielles compatibles avec les boards d'escalade standardisées. Les grimpeurs qui ont acheté ces boards ont le droit d'utiliser des logiciels et des contrôleurs tiers avec leur propre matériel.",
       "software": {
         "title": "Interopérabilité logicielle",
         "body": "Notre app communique avec les contrôleurs des boards via des protocoles Bluetooth standards. Le protocole utilisé par ces boards n'est pas chiffré et repose sur du matériel courant (LEDs adressables WS2812B pilotées par des contrôleurs Bluetooth standards). Implémenter une interface Bluetooth compatible à des fins d'interopérabilité est reconnu comme légal en droit américain et européen (<em>Sega Enterprises Ltd. v. Accolade, Inc.</em>, 977 F.2d 1510 (9th Cir. 1992) ; Directive UE 2009/24/CE, Article 6)."
@@ -215,7 +215,7 @@
       "accessLabel": "Pour accéder à la heatmap :",
       "access1": "Ouvrez le tiroir de recherche et déployez la section « Prises »",
       "access2": "Cliquez sur « Afficher la heatmap »",
-      "access3": "Le board affichera un dégradé du vert (faible utilisation) au rouge (forte utilisation)",
+      "access3": "La board affichera un dégradé du vert (faible utilisation) au rouge (forte utilisation)",
       "modesLabel": "Modes de couleur disponibles :",
       "modes": {
         "ascentsLabel": "Enchaînements :",
@@ -230,7 +230,7 @@
       "outro": "Utilisez les interrupteurs pour afficher ou masquer les numéros des prises et pour inclure ou exclure les prises de pied."
     },
     "holdClassification": {
-      "q": "Comment classer les prises de mon board ?",
+      "q": "Comment classer les prises de ma board ?",
       "imgAlt": "Assistant de classification des prises",
       "intro": "La classification des prises vous permet de noter chaque prise de votre board à votre manière, ce qui vous aide à cerner vos points forts et à trouver des blocs qui vous correspondent.",
       "attrsLabel": "Attributs de classification :",
@@ -249,7 +249,7 @@
     "partyMode": {
       "q": "Comment démarrer une session collaborative ?",
       "imgAlt": "Session active en mode party",
-      "intro": "Le mode Party permet à plusieurs grimpeurs de partager une file et de se relayer sur le board en temps réel.",
+      "intro": "Le mode Party permet à plusieurs grimpeurs de partager une file et de se relayer sur la board en temps réel.",
       "startLabel": "Pour démarrer une session :",
       "start1": "Touchez l'icône ampoule dans la barre de file en bas",
       "start2": "Allez à l'onglet « Démarrer la session » et connectez-vous si ce n'est pas déjà fait",
@@ -267,7 +267,7 @@
       "featuresLabel": "Fonctionnalités de session :",
       "feature1": "Synchronisation en temps réel de la file sur tous les appareils",
       "feature2": "Plusieurs personnes peuvent ajouter ou retirer des blocs",
-      "feature3": "Le leader de la session contrôle l'affichage du board",
+      "feature3": "Le leader de la session contrôle l'affichage de la board",
       "feature4": "Passage automatique du leadership si le leader actuel se déconnecte",
       "feature5": "La session tient bon en cas de rafraîchissement de page ou de reconnexion"
     },
@@ -313,12 +313,12 @@
     },
     "mirroring": {
       "q": "Comment mettre un bloc en miroir ?",
-      "intro": "Le miroir d'un bloc inverse toutes les prises sur le côté opposé du board, idéal pour un entraînement de force bilatéral.",
+      "intro": "Le miroir d'un bloc inverse toutes les prises sur le côté opposé de la board, idéal pour un entraînement de force bilatéral.",
       "howLabel": "Pour mettre un bloc en miroir :",
       "step1": "Trouvez le bloc que vous voulez inverser",
       "step2": "Cherchez l'icône de bascule miroir dans les actions du bloc",
       "step3": "Activez-la pour inverser le bloc horizontalement",
-      "outro": "Quand vous êtes connecté en Bluetooth, le board affiche automatiquement le motif inversé. Cette fonctionnalité est disponible sur les boards compatibles comme le Kilter Homewall."
+      "outro": "Quand vous êtes connecté en Bluetooth, la board affiche automatiquement le motif inversé. Cette fonctionnalité est disponible sur les boards compatibles comme le Kilter Homewall."
     },
     "searchFilters": {
       "q": "Quels filtres de recherche sont disponibles ?",
@@ -349,11 +349,11 @@
     "searchByHold": {
       "q": "Comment chercher par prises spécifiques ?",
       "imgAlt": "Recherche par prise",
-      "intro": "La recherche par prise vous permet de trouver des blocs qui utilisent (ou évitent) des prises précises du board.",
+      "intro": "La recherche par prise vous permet de trouver des blocs qui utilisent (ou évitent) des prises précises de la board.",
       "howLabel": "Pour rechercher par prises :",
       "step1": "Ouvrez le tiroir de recherche et déployez la section « Prises »",
       "step2": "Sélectionnez le mode « Inclure » ou « Exclure » dans le menu déroulant",
-      "step3": "Touchez les prises sur le board pour les sélectionner",
+      "step3": "Touchez les prises sur la board pour les sélectionner",
       "step4": "Les résultats se mettent à jour automatiquement au fur et à mesure",
       "includeLabel": "Mode Inclure :",
       "includeBody": "Les blocs doivent utiliser les prises sélectionnées",
@@ -361,13 +361,13 @@
       "excludeBody": "Les blocs ne doivent pas utiliser les prises sélectionnées"
     },
     "bluetooth": {
-      "q": "Comment connecter les LEDs de mon board ?",
+      "q": "Comment connecter les LEDs de ma board ?",
       "intro": "Boardsesh utilise Web Bluetooth pour piloter le système LED de votre board directement depuis le navigateur.",
       "requirementsLabel": "Prérequis :",
       "req1": "Navigateur Chrome (recommandé) ou autre navigateur compatible Web Bluetooth",
       "req2": "Sur iOS : utilisez l'app Boardsesh (Safari ne prend pas en charge Web Bluetooth)",
       "req3": "Bluetooth activé sur votre appareil",
-      "req4": "Board allumé et à portée",
+      "req4": "Board allumée et à portée",
       "connectLabel": "Pour vous connecter :",
       "connect1": "Touchez l'icône ampoule dans la barre de file",
       "connect2": "Sélectionnez votre board dans la liste des appareils",
@@ -427,10 +427,10 @@
     },
     "overview": {
       "title": "Aperçu de l'API Boardsesh",
-      "intro": "Boardsesh fournit deux API complémentaires pour interagir avec les boards d'entraînement interactifs (Kilter, Tension) :",
+      "intro": "Boardsesh fournit deux API complémentaires pour interagir avec les boards d'entraînement interactives (Kilter, Tension) :",
       "rest": {
         "title": "API REST",
-        "intro": "Utilisez l'API REST pour des opérations sans état comme la recherche de blocs, la récupération de la configuration du board et l'authentification utilisateur. L'API REST est idéale pour :",
+        "intro": "Utilisez l'API REST pour des opérations sans état comme la recherche de blocs, la récupération de la configuration de la board et l'authentification utilisateur. L'API REST est idéale pour :",
         "feature1": "Récupérer les données et statistiques de blocs",
         "feature2": "Inscription et authentification des utilisateurs",
         "feature3": "Gestion de profil",
@@ -500,7 +500,7 @@
     },
     "bluetooth": {
       "title": "Bluetooth",
-      "body": "Boardsesh utilise Bluetooth Low Energy (BLE) pour se connecter au contrôleur LED de votre board. La connexion Bluetooth sert exclusivement à envoyer des commandes d'éclairage des prises au board. Aucune donnée personnelle n'est transmise par Bluetooth. L'app ne lit pas de données depuis le board, en dehors de l'identification basique de l'appareil lors de l'appairage."
+      "body": "Boardsesh utilise Bluetooth Low Energy (BLE) pour se connecter au contrôleur LED de votre board. La connexion Bluetooth sert exclusivement à envoyer des commandes d'éclairage des prises à la board. Aucune donnée personnelle n'est transmise par Bluetooth. L'app ne lit pas de données depuis la board, en dehors de l'identification basique de l'appareil lors de l'appairage."
     },
     "location": {
       "title": "Données de localisation",

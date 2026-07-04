@@ -18,7 +18,7 @@
       "metroServersSubtitle": "Basculer entre les bundlers Tailnet",
       "accessibility": {
         "title": "Accessibilité",
-        "description": "Choisis des couleurs de prises et des formes de marqueurs plus faciles à distinguer. Les changements de couleur allument aussi ton board ; la forme, la taille et l'épaisseur ne modifient que la superposition de l'app.",
+        "description": "Choisis des couleurs de prises et des formes de marqueurs plus faciles à distinguer. Les changements de couleur allument aussi ta board ; la forme, la taille et l'épaisseur ne modifient que la superposition de l'app.",
         "rowSubtitleShort": "Couleurs et formes des prises pour la vision des couleurs",
         "markersTitle": "Marqueurs de prise",
         "resetAll": "Réinitialiser les marqueurs de prise",
@@ -50,7 +50,7 @@
         },
         "preview": {
           "title": "Aperçu",
-          "caption": "Tes marqueurs sur ton board. Les couleurs sont affichées telles quelles ici — utilise la vérification ci-dessous pour voir comment elles se distinguent."
+          "caption": "Tes marqueurs sur ta board. Les couleurs sont affichées telles quelles ici — utilise la vérification ci-dessous pour voir comment elles se distinguent."
         },
         "cvd": {
           "title": "Vérification daltonisme",
@@ -175,9 +175,9 @@
       "replayError": "Impossible de rouvrir le tutoriel. Réessaie.",
       "prompt": {
         "title": "Vois ce qui est allumé sur ton mur, en direct",
-        "body": "Suis le board de ta salle et Boardsesh te montre ce qui est allumé en ce moment : qui l'a allumé, la cotation, qui l'a ouvert, et les croix récentes. Tu ne lances rien ; c'est juste là.",
+        "body": "Suis la board de ta salle et Boardsesh te montre ce qui est allumé en ce moment : qui l'a allumé, la cotation, qui l'a ouvert, et les croix récentes. Tu ne lances rien ; c'est juste là.",
         "footnote": "En plus : les séances avec ta crew, le générateur d'entraînement et le suivi de tes croix, une fois sur un mur.",
-        "findBoard": "Trouver mon board",
+        "findBoard": "Trouver ma board",
         "lookAround": "Jeter un œil d'abord"
       },
       "boardRevealTip": "Touche pour voir ce que d'autres utilisateurs de Boardsesh ont allumé au mur.",
@@ -276,18 +276,18 @@
     "turnOffAll": "Tout éteindre",
     "partyMode": "Mode soirée",
     "stopParty": "Arrêter la soirée",
-    "partyUnsupported": "Le mode soirée n'est pas dispo sur ce board",
+    "partyUnsupported": "Le mode soirée n'est pas dispo sur cette board",
     "discoMode": "Disco sur le bloc",
     "stopDisco": "Arrêter le disco",
     "discoNeedsClimb": "Chargez un bloc pour lancer le disco",
-    "clearFailed": "Impossible d'éteindre le board",
-    "lightShowFailed": "Board perdu en plein show. Reconnectez-vous et réessayez.",
+    "clearFailed": "Impossible d'éteindre la board",
+    "lightShowFailed": "Board perdue en plein show. Reconnectez-vous et réessayez.",
     "customizeColors": "Personnaliser les couleurs LED",
-    "customizeColorsUnsupported": "Couleurs personnalisées indisponibles sur ce board",
+    "customizeColorsUnsupported": "Couleurs personnalisées indisponibles sur cette board",
     "customizeColorsTitle": "Couleurs des LED",
     "customizeColorsHelp": "Choisissez les couleurs des prises pour les mains, les pieds et l'arrivée. Les prises de départ gardent leur vert par défaut.",
     "resetColors": "Réinitialiser",
-    "disconnect": "Déconnecter le board",
+    "disconnect": "Déconnecter la board",
     "role": {
       "HAND": "Mains",
       "FOOT": "Pieds",
@@ -295,13 +295,13 @@
     }
   },
   "bluetooth": {
-    "boardTaken": "Board perdu : un autre téléphone ou une autre app s'y est connecté.",
-    "takeItBack": "Le reprendre",
-    "boardNotFound": "Board introuvable. Vérifiez qu'il est allumé et à proximité ; et si un autre téléphone y est connecté, déconnectez-le d'abord.",
-    "connectFailed": "Connexion impossible. Rapprochez-vous du board et réessayez.",
-    "serviceMissing": "Connecté, mais le board n'a pas répondu. Redémarrez-le et réessayez.",
+    "boardTaken": "Board perdue : un autre téléphone ou une autre app s'y est connecté.",
+    "takeItBack": "La reprendre",
+    "boardNotFound": "Board introuvable. Vérifiez qu'elle est allumée et à proximité ; et si un autre téléphone y est connecté, déconnectez-le d'abord.",
+    "connectFailed": "Connexion impossible. Rapprochez-vous de la board et réessayez.",
+    "serviceMissing": "Connecté, mais la board n'a pas répondu. Redémarrez-la et réessayez.",
     "unavailable": "Le Bluetooth est éteint. Activez-le pour vous connecter à votre board.",
-    "unknownError": "Connexion au board impossible. Réessayez."
+    "unknownError": "Connexion à la board impossible. Réessayez."
   },
   "actions": {
     "yes": "Oui",
@@ -332,7 +332,7 @@
     "toggleDarkMode": "Activer/désactiver le mode sombre"
   },
   "boardSelector": {
-    "title": "Choisir un board"
+    "title": "Choisir une board"
   },
   "header": {
     "you": "Vous",
@@ -354,12 +354,12 @@
   },
   "myBoards": {
     "title": "Mes boards",
-    "findBoard": "Trouver un board",
+    "findBoard": "Trouver une board",
     "boardDetail": "Board",
     "searchPlaceholder": "Rechercher par nom ou emplacement...",
-    "ariaFindBoard": "Trouver un board",
-    "ariaCreateBoard": "Créer un board",
-    "empty": "Aucun board pour le moment. Créez-en un depuis le sélecteur."
+    "ariaFindBoard": "Trouver une board",
+    "ariaCreateBoard": "Créer une board",
+    "empty": "Aucune board pour le moment. Créez-en une depuis le sélecteur."
   },
   "userDrawer": {
     "signIn": "Se connecter",
@@ -386,13 +386,13 @@
   },
   "loading": {
     "messages": [
-      "Préparation du board...",
+      "Préparation de la board...",
       "Configuration des blocs...",
       "On chauffe le mur...",
       "Chargement des prises...",
       "Bientôt prêt à grimper...",
       "Allumage des LED...",
-      "Synchronisation du board...",
+      "Synchronisation de la board...",
       "Calibrage des cotations...",
       "Mise en jambes...",
       "Vérification des conditions..."

@@ -76,7 +76,7 @@
       "roleLabel": "Rôle",
       "boardTypeLabel": "Type de board (facultatif)",
       "boardTypeOptions": {
-        "global": "Global (tous les boards)",
+        "global": "Global (toutes les boards)",
         "kilter": "Kilter",
         "tension": "Tension"
       },

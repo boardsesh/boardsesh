@@ -1,8 +1,8 @@
 {
   "boardMismatch": {
     "title": "Passez à {{board}} pour grimper cette voie",
-    "subtitle": "C'est une voie {{board}}. Changez de planche pour la mettre en file.",
-    "cta": "Changer de planche"
+    "subtitle": "C'est une voie {{board}}. Changez de board pour la mettre en file.",
+    "cta": "Changer de board"
   },
   "metadata": {
     "detail": {
@@ -147,7 +147,7 @@
     "dialogTitle": "Créer une session",
     "dialogSubmit": "Créer la session",
     "started": "Session lancée !",
-    "selectBoardWarning": "Sélectionne d'abord un board",
+    "selectBoardWarning": "Sélectionne d'abord une board",
     "boardsNearYou": "Boards près de toi",
     "loggedInBlurb": "Suis tes blocs et invite la crew à grimper avec toi.",
     "anonymousBlurb": "Lance-toi sans compte. Connecte-toi plus tard pour garder ta progression.",
@@ -170,7 +170,7 @@
     },
     "generateQueue": {
       "button": "Générer une file d'entraînement",
-      "buttonHint": "Choisis d'abord un board",
+      "buttonHint": "Choisis d'abord une board",
       "regenerate": "Régénérer",
       "clear": "Effacer",
       "summary_one": "{{count}} voie en file",
@@ -365,7 +365,7 @@
     "angleSelector": {
       "title": "Choisir l'angle",
       "fromVerticalHint": "Mesuré depuis la verticale",
-      "diagramAria": "Planche inclinée à {{angle}}° depuis la verticale"
+      "diagramAria": "Board inclinée à {{angle}}° depuis la verticale"
     },
     "queue": {
       "unknownClimb": "Bloc inconnu",
@@ -374,7 +374,7 @@
       "syncError": "Erreur de synchronisation de la file",
       "outOfSyncRefreshed": "La file était désynchronisée. Actualisée depuis ton groupe.",
       "sessionCreateError": "Impossible de créer la session",
-      "noBoardSelected": "Choisissez d'abord un board",
+      "noBoardSelected": "Choisissez d'abord une board",
       "actionFailed": "Action échouée. Réessayez.",
       "rateLimited": "Trop de changements trop vite. Attends un instant.",
       "endSession": "Terminer la session",
@@ -502,12 +502,12 @@
       "inStop": "Arrêter",
       "notification": {
         "channelName": "Session d'escalade active",
-        "channelDescription": "Garde ta planche connectée et affiche les commandes de session quand Boardsesh est en arrière-plan.",
+        "channelDescription": "Garde ta board connectée et affiche les commandes de session quand Boardsesh est en arrière-plan.",
         "contentTitleFallback": "Session d'escalade",
         "previous": "Précédent",
         "next": "Suivant",
         "relight": "Rallumer le mur",
-        "reconnect": "Se connecter à la planche",
+        "reconnect": "Se connecter à la board",
         "onWall": "{{name}} est sur le mur"
       },
       "inStatsFlashes": "Flashs",

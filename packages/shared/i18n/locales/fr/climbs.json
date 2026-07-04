@@ -11,7 +11,7 @@
     "view": {
       "title": "{{climbName}} - {{grade}}",
       "description": "{{climbName}} - {{grade}} par {{setter}}. Qualité : {{quality}}/5. Enchaînements : {{ascents}}",
-      "imageAlt": "{{climbName}} - {{grade}} sur le board {{boardName}}",
+      "imageAlt": "{{climbName}} - {{grade}} sur la board {{boardName}}",
       "fallbackTitle": "Bloc",
       "fallbackDescription": "Voir les détails du bloc et les vidéos de beta",
       "seoHeading": "{{climbName}} — {{grade}}",
@@ -33,7 +33,7 @@
     },
     "logbook": {
       "title": "Carnet",
-      "description": "Votre carnet de croix sur ce board"
+      "description": "Votre carnet de croix sur cette board"
     }
   },
   "list": {
@@ -205,7 +205,7 @@
   "create": {
     "auth": {
       "signInTitle": "Connectez-vous pour enregistrer votre bloc",
-      "signInDescription": "Créez un compte ou connectez-vous pour enregistrer votre bloc sur le board.",
+      "signInDescription": "Créez un compte ou connectez-vous pour enregistrer votre bloc sur la board.",
       "signInAria": "Se connecter pour enregistrer",
       "logInTitle": "Connectez-vous pour enregistrer votre bloc",
       "logInAria": "Se connecter pour enregistrer",
@@ -256,15 +256,15 @@
       }
     },
     "sendToBoard": {
-      "label": "Allumer sur le board",
+      "label": "Allumer sur la board",
       "active": "Sur le mur",
-      "tooltip": "Allumer sur le board",
+      "tooltip": "Allumer sur la board",
       "activeTooltip": "Actuellement sur le mur"
     },
     "tick": {
       "drawer": {
         "signInRequired": "Connexion requise",
-        "selectBoard": "Choisir le board",
+        "selectBoard": "Choisir la board",
         "logAscent": "Enregistrer la croix",
         "signInToRecord": "Connectez-vous pour enregistrer vos croix",
         "createAccountBlurb": "Créez un compte Boardsesh pour enregistrer vos croix et suivre votre progression.",
@@ -275,7 +275,7 @@
         "authModalTitle": "Connectez-vous pour enregistrer vos croix",
         "authModalDescription": "Créez un compte pour enregistrer vos croix et suivre votre progression.",
         "mirroredTooltip": "Cliquez sur l'étiquette pour indiquer si vous l'avez enchaîné en miroir",
-        "whichBoard": "Sur quel board avez-vous grimpé ?"
+        "whichBoard": "Sur quelle board avez-vous grimpé ?"
       }
     },
     "navigation": {
@@ -345,7 +345,7 @@
     "emptyIdentical": "Aucun bloc identique trouvé pour le moment.",
     "untitledClimb": "Bloc sans nom",
     "openActions": "Plus d'actions",
-    "actionsUnavailable": "Impossible d'ouvrir les actions pour ce bloc — configuration du panneau indisponible."
+    "actionsUnavailable": "Impossible d'ouvrir les actions pour ce bloc — configuration de la board indisponible."
   },
   "multiboardList": {
     "noClimbsFound": "Aucun bloc trouvé",
@@ -549,8 +549,8 @@
     "emptyState": {
       "noBoard": {
         "title": "Suis ton mur",
-        "subtitle": "Choisis le board où tu grimpes pour parcourir ses blocs et voir ce qui est allumé en ce moment.",
-        "cta": "Trouver mon board"
+        "subtitle": "Choisis la board où tu grimpes pour parcourir ses blocs et voir ce qui est allumé en ce moment.",
+        "cta": "Trouver ma board"
       },
       "noClimbs": {
         "title": "Aucun bloc trouvé",
@@ -750,7 +750,7 @@
         "draftLabel": "Enregistrer comme brouillon",
         "draftDescription": "Les brouillons restent privés jusqu’à publication.",
         "showAllHoldsLabel": "Afficher toutes les prises",
-        "showAllHoldsDescription": "Met en évidence chaque prise cliquable du panneau.",
+        "showAllHoldsDescription": "Met en évidence chaque prise cliquable de la board.",
         "noMatchLabel": "Une main par prise",
         "noMatchDescription": "Les mains ne peuvent pas se rejoindre sur la même prise"
       },
@@ -761,7 +761,7 @@
       },
       "unavailable": {
         "title": "Création indisponible ici",
-        "subtitle": "Cette configuration de panneau ne permet pas de créer des voies."
+        "subtitle": "Cette configuration de board ne permet pas de créer des voies."
       },
       "fab": {
         "ariaLabel": "Créer une voie"

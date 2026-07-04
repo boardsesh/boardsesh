@@ -29,13 +29,14 @@ Use instead:
 
 ### Lighting a climb on the wall is « allumer »
 
-"Send to the wall / board" (transmitting the LEDs) is technically a legitimate « envoyer », but next to climbs it collides with the climbing sense. Use **« allumer »**: « Allumer la voie au mur », « Allumer sur le board ». Reserve « envoyer » for genuinely sending data with no climb as the object: emails, bug reports, exports, session data, and BLE lighting _commands_ in technical prose (privacy policy).
+"Send to the wall / board" (transmitting the LEDs) is technically a legitimate « envoyer », but next to climbs it collides with the climbing sense. Use **« allumer »**: « Allumer la voie au mur », « Allumer sur la board ». Reserve « envoyer » for genuinely sending data with no climb as the object: emails, bug reports, exports, session data, and BLE lighting _commands_ in technical prose (privacy policy).
 
 ## Other climbing terms
 
 | English                 | French                                |
 | ----------------------- | ------------------------------------- |
 | attempt (on a climb)    | essai (verb: essayer; status: Essayé) |
+| board (the device)      | la board (feminine — see below)       |
 | flash                   | flash (verb: flasher; plural: flashs) |
 | climb / boulder problem | bloc                                  |
 | route                   | voie                                  |
@@ -56,9 +57,9 @@ Use instead:
 - **beta**, **flash**, **crew**, **playlist** — anglicisms French climbers use as-is.
 - **JSON keys** (`send`, `sends`, `statSent`, …) and **ICU placeholders** (`{{board}}`, `{{sends}}`). Only translate values.
 
-## Known inconsistency (do not add more)
+## The board device is « la board » (feminine)
 
-The board device is currently « board », « panneau », and « planche » depending on the string. New or edited strings should say **« board »** (masculine: _le board, les boards_) — that is what French board climbers say; « planche » is wrong and « panneau » is translationese. Migrating the legacy strings is a separate cleanup.
+Every string names the board device **« board »**, feminine: _la board, une board, les boards_, with feminine agreement (_la board connectée_, _une board trouvée_). That is what French board climbers say and how French climbing media writes it (La Fabrique Verticale: « la board », « une Kilterboard ») — it patterns with « la planche », like skate and snowboard French. Do **not** use « planche » (wrong) or « panneau » (translationese) for the device; « panneau » survives only in the UI-panel sense (« Panneau d'administration »). Brand names stay in English (above) and take feminine agreement when an article is needed: _la board Kilter_. One exception: « le Kilter Homewall » stays masculine — it reads as a wall (« le mur »), not a board.
 
 ## Process
 

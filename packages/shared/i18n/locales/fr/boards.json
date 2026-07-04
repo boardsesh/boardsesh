@@ -7,37 +7,37 @@
       "loading": "Recherche de boards…",
       "geoDenied": "Localisation indisponible",
       "error": "Échec du chargement des boards à proximité",
-      "noResults": "Aucun board près de chez vous",
+      "noResults": "Aucune board près de chez vous",
       "idle": "Chercher à proximité"
     },
     "search": {
-      "ariaLabel": "Rechercher un board",
+      "ariaLabel": "Rechercher une board",
       "label": "Rechercher"
     },
     "custom": {
-      "ariaLabel": "Créer un board personnalisé",
-      "label": "Board personnalisé"
+      "ariaLabel": "Créer une board personnalisée",
+      "label": "Board personnalisée"
     },
     "create": {
-      "defaultLabel": "Nouveau board"
+      "defaultLabel": "Nouvelle board"
     },
     "bluetooth": {
       "scanning": "Recherche en cours…",
-      "boardsFound": "Boards trouvés",
-      "noBoardsFound": "Aucun board trouvé",
+      "boardsFound": "Boards trouvées",
+      "noBoardsFound": "Aucune board trouvée",
       "unavailable": "Bluetooth indisponible",
       "idle": "Démarrage rapide"
     }
   },
   "mobile": {
     "edit": {
-      "screenTitle": "Modifier le board",
+      "screenTitle": "Modifier la board",
       "save": "Enregistrer",
       "updateError": "Impossible d'enregistrer les modifications. Réessaie.",
       "notFound": "Board introuvable",
-      "noAccess": "Vous n'avez pas la permission de modifier ce board",
+      "noAccess": "Vous n'avez pas la permission de modifier cette board",
       "back": "Retour",
-      "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de ce board."
+      "configLockedHint": "Vous n'avez pas la permission de modifier le layout, la taille ou les sets de cette board."
     },
     "gymEdit": {
       "screenTitle": "Modifier la salle",
@@ -67,24 +67,24 @@
     "manage": {
       "ownedHeader": "Tes boards",
       "followingHeader": "Abonnements",
-      "deleteTitle": "Supprimer le board ?",
+      "deleteTitle": "Supprimer la board ?",
       "deleteMessage": "Retirer \"{{name}}\" de tes boards ? C'est définitif.",
       "deleteConfirm": "Supprimer",
       "cancel": "Annuler",
-      "deleteError": "Impossible de supprimer ce board. Réessaie.",
-      "unfollowError": "Impossible de te désabonner de ce board. Réessaie.",
+      "deleteError": "Impossible de supprimer cette board. Réessaie.",
+      "unfollowError": "Impossible de te désabonner de cette board. Réessaie.",
       "editAria": "Modifier {{name}}",
       "deleteAria": "Supprimer {{name}}",
       "unfollowAria": "Se désabonner de {{name}}"
     },
-    "emptyTitle": "Aucun board pour le moment",
-    "emptySubtitle": "Cherche un board pour commencer",
+    "emptyTitle": "Aucune board pour le moment",
+    "emptySubtitle": "Cherche une board pour commencer",
     "signInTitle": "Connecte-toi pour voir tes boards",
-    "signInSubtitle": "Tes boards sont liés à ton compte.",
+    "signInSubtitle": "Tes boards sont liées à ton compte.",
     "signInCta": "Se connecter",
     "errorTitle": "Impossible de charger tes boards",
     "errorRetry": "Réessayer",
-    "boardSwitchError": "Impossible d'enregistrer ce board. Réessaie.",
+    "boardSwitchError": "Impossible d'enregistrer cette board. Réessaie.",
     "onboardingPrompt": "Suis le mur où tu grimpes : c'est ça qui active son historique.",
     "discovery": {
       "findNearby": "À proximité",
@@ -95,17 +95,17 @@
       "yourBoardsTitle": "Tes boards",
       "popularTitle": "Configurations populaires",
       "findGym": "Trouver une salle",
-      "create": "Créer un board"
+      "create": "Créer une board"
     },
     "create": {
-      "screenTitle": "Configure ton board",
+      "screenTitle": "Configure ta board",
       "previewHint": "Choisis ton layout et on affiche ton mur",
       "adjustable": "Angle réglable",
       "anglePreview": "Mur incliné à {{angle}}°",
       "moreOptions": "Plus d'options",
-      "ownBoard": "Ce board est à moi",
-      "public": "Board public",
-      "publicHint": "Affiche-le sur la carte pour que ton crew le trouve",
+      "ownBoard": "Cette board est à moi",
+      "public": "Board publique",
+      "publicHint": "Affiche-la sur la carte pour que ton crew la trouve",
       "unlisted": "Non listé",
       "hideLocation": "Masquer l'emplacement exact",
       "location": "Emplacement",
@@ -115,8 +115,8 @@
       "serial": "Numéro de série du contrôleur",
       "serialPlaceholder": "p. ex. ABC-12345",
       "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
-      "save": "Enregistrer mon board",
-      "createError": "Impossible de créer ce board. Réessaie."
+      "save": "Enregistrer ma board",
+      "createError": "Impossible de créer cette board. Réessaie."
     },
     "custom": {
       "board": "Board",
@@ -124,18 +124,18 @@
       "size": "Taille",
       "sets": "Sets",
       "angle": "Angle",
-      "name": "Nom du tableau"
+      "name": "Nom de la board"
     },
     "bluetooth": {
       "title": "Boards près de toi",
       "scanning": "Recherche de boards…",
       "resolving": "Chargement des boards…",
-      "noResults": "Aucun board à portée",
+      "noResults": "Aucune board à portée",
       "unavailable": "Active le Bluetooth pour rechercher"
     },
     "boardDetail": {
-      "setActive": "Utiliser ce board",
-      "alreadyActive": "Board actif",
+      "setActive": "Utiliser cette board",
+      "alreadyActive": "Board active",
       "stats": {
         "ascents": "ascensions",
         "climbers": "grimpeurs",
@@ -151,26 +151,26 @@
     },
     "disambiguation": {
       "title": "Sur quel mur es-tu ?",
-      "subtitle": "Ce numéro de série est partagé par plusieurs tableaux. Choisis le mur où tu te trouves.",
-      "yourBoard": "Ton tableau",
+      "subtitle": "Ce numéro de série est partagé par plusieurs boards. Choisis le mur où tu te trouves.",
+      "yourBoard": "Ta board",
       "cancel": "Pas maintenant"
     },
     "gyms": {
       "title": "Salles près de toi",
-      "subtitle": "Touche une salle pour utiliser son tableau",
+      "subtitle": "Touche une salle pour utiliser sa board",
       "locationNeeded": "Partage ta position pour trouver des salles à proximité",
       "grantLocation": "Utiliser ma position",
       "empty": "Aucune salle à proximité pour l'instant",
-      "noBoards": "Aucun tableau ici pour l'instant",
-      "boardCount": "{{count}} tableaux",
+      "noBoards": "Aucune board ici pour l'instant",
+      "boardCount": "{{count}} boards",
       "searchPlaceholder": "Rechercher une ville, une salle ou un mur",
       "showingPlace": "Résultats pour {{place}}",
       "clearSearch": "Effacer la recherche",
       "closeMap": "Fermer",
-      "otherBoardsTitle": "Murs à proximité",
-      "multiBoardChip": "2+ types de mur",
+      "otherBoardsTitle": "Boards à proximité",
+      "multiBoardChip": "2+ types de board",
       "editGym": "Modifier la salle",
-      "editBoard": "Modifier le board"
+      "editBoard": "Modifier la board"
     }
   },
   "boardEntity": {
@@ -195,20 +195,20 @@
       "comments": "commentaires"
     },
     "delete": {
-      "title": "Supprimer le board",
+      "title": "Supprimer la board",
       "confirm": "Supprimer « {{name}} » ? Cette action est irréversible.",
       "cancel": "Annuler",
       "delete": "Supprimer"
     },
     "snackbar": {
-      "deleted": "Board supprimé",
-      "deleteFailed": "Échec de la suppression du board",
-      "linkedToGym": "Board lié à la salle",
-      "unlinkedFromGym": "Board dissocié de la salle",
-      "linkFailed": "Échec de l'association du board à la salle"
+      "deleted": "Board supprimée",
+      "deleteFailed": "Échec de la suppression de la board",
+      "linkedToGym": "Board liée à la salle",
+      "unlinkedFromGym": "Board dissociée de la salle",
+      "linkFailed": "Échec de l'association de la board à la salle"
     },
     "comments": {
-      "title": "Discussion sur le board"
+      "title": "Discussion sur la board"
     },
     "follow": {
       "entityLabel": "board"
@@ -216,28 +216,28 @@
   },
   "boardForm": {
     "create": {
-      "submit": "Créer le board",
-      "authRequired": "Vous devez être connecté pour créer un board",
-      "errorMessage": "Impossible de créer le board. Il existe peut-être déjà pour cette configuration.",
-      "duplicateNamed": "Vous avez déjà un board nommé « {{name}} » avec cette configuration.",
+      "submit": "Créer la board",
+      "authRequired": "Vous devez être connecté pour créer une board",
+      "errorMessage": "Impossible de créer la board. Elle existe peut-être déjà pour cette configuration.",
+      "duplicateNamed": "Vous avez déjà une board nommée « {{name}} » avec cette configuration.",
       "goToExisting": "Aller à votre board",
-      "nameRequired": "Le nom du board est obligatoire",
-      "createdNamed": "Board « {{name}} » créé !",
+      "nameRequired": "Le nom de la board est obligatoire",
+      "createdNamed": "Board « {{name}} » créée !",
       "namePlaceholder": "ex. Home Board, nom de la salle",
       "locationPlaceholder": "ex. ville, nom de la salle"
     },
     "fields": {
-      "name": "Nom du board",
+      "name": "Nom de la board",
       "slug": "Slug d'URL",
       "description": "Description",
       "location": "Emplacement",
       "serialNumber": "Numéro de série du contrôleur",
       "defaultAngle": "Inclinaison par défaut",
       "angleAdjustable": "Inclinaison réglable",
-      "isPublic": "Board public",
+      "isPublic": "Board publique",
       "unlisted": "Non répertorié",
       "hideLocation": "Masquer des boards à proximité",
-      "isOwned": "Je possède ce board",
+      "isOwned": "Je possède cette board",
       "layout": "Layout",
       "size": "Taille",
       "holdSets": "Jeux de prises"
@@ -255,11 +255,11 @@
     }
   },
   "editBoard": {
-    "title": "Modifier le board",
+    "title": "Modifier la board",
     "submitLabel": "Enregistrer les modifications",
     "snackbar": {
-      "updated": "Board mis à jour !",
-      "updateFailed": "Échec de la mise à jour du board"
+      "updated": "Board mise à jour !",
+      "updateFailed": "Échec de la mise à jour de la board"
     }
   },
   "editGym": {
@@ -301,7 +301,7 @@
   },
   "boardFilterStrip": {
     "all": "Tous",
-    "allBoards": "Tous les boards"
+    "allBoards": "Toutes les boards"
   },
   "boardPill": {
     "switchHint": "Ouvre le sélecteur de board"
@@ -319,12 +319,12 @@
     "switch": "Changer de board"
   },
   "boardSearchDrawer": {
-    "title": "Trouver un board",
+    "title": "Trouver une board",
     "searchPlaceholder": "Rechercher des boards par nom ou emplacement",
     "clear": "Effacer",
     "radiusInfo": "Affichage des boards dans un rayon de {{radiusKm}} km autour du centre de la carte",
-    "empty": "Aucun board dans le coin. Déplacez la carte ou dézoomez pour en trouver d'autres.",
-    "emptyWithQuery": "Aucun board ne correspond à « {{query}} » par ici. Dézoomez ou cherchez ailleurs.",
+    "empty": "Aucune board dans le coin. Déplacez la carte ou dézoomez pour en trouver d'autres.",
+    "emptyWithQuery": "Aucune board ne correspond à « {{query}} » par ici. Dézoomez ou cherchez ailleurs.",
     "open": "Ouvrir"
   },
   "boardSearchMap": {
@@ -353,14 +353,14 @@
     "createNew": "Créer"
   },
   "selectorDrawer": {
-    "customTitle": "Board personnalisé",
-    "createTitle": "Créer un board",
-    "createButton": "Créer un board",
+    "customTitle": "Board personnalisée",
+    "createTitle": "Créer une board",
+    "createButton": "Créer une board",
     "quickSession": "Session rapide",
     "configSection": {
-      "label": "Configuration du board",
-      "title": "Configuration du board",
-      "defaultSummary": "Choisissez un board"
+      "label": "Configuration de la board",
+      "title": "Configuration de la board",
+      "defaultSummary": "Choisissez une board"
     }
   },
   "gymEntity": {

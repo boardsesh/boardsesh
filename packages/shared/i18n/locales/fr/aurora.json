@@ -2,22 +2,22 @@
   "metadata": {
     "migration": {
       "title": "Migrer depuis l'ancienne app Kilter",
-      "description": "Rapatriez vos données du board Kilter dans Boardsesh après la fermeture du backend Aurora."
+      "description": "Rapatriez vos données de la board Kilter dans Boardsesh après la fermeture du backend Aurora."
     }
   },
   "migration": {
     "whatHappened": {
       "title": "Ce qui s'est passé",
       "lead": "Le backend Aurora pour Kilter n'existe plus. Vos playlists, votre carnet et vos brouillons de blocs partent avec, sauf si vous les exportez.",
-      "body": "Le 25 mars, l'app du board Kilter a disparu d'un coup : Aurora a coupé son backend Kilter sans prévenir. Kilter a sorti en urgence sa propre app, encore en bêta, mais le résultat de cette bagarre entre les deux entreprises, c'est que le grimpeur reste sur le carreau. Pour le contexte complet :",
-      "articleTitle": "L'app du board Kilter a disparu sans prévenir. Voici ce qui s'est vraiment passé.",
-      "articleDescription": "Pendant des années, le board d'entraînement le plus populaire chez les grimpeurs a été en guerre avec le développeur de son app. Aujourd'hui, ce sont les grimpeurs qui paient les pots cassés.",
+      "body": "Le 25 mars, l'app de la board Kilter a disparu d'un coup : Aurora a coupé son backend Kilter sans prévenir. Kilter a sorti en urgence sa propre app, encore en bêta, mais le résultat de cette bagarre entre les deux entreprises, c'est que le grimpeur reste sur le carreau. Pour le contexte complet :",
+      "articleTitle": "L'app de la board Kilter a disparu sans prévenir. Voici ce qui s'est vraiment passé.",
+      "articleDescription": "Pendant des années, la board d'entraînement la plus populaire chez les grimpeurs a été en guerre avec le développeur de son app. Aujourd'hui, ce sont les grimpeurs qui paient les pots cassés.",
       "articleSource": "climbing.com",
-      "articleAlt": "L'app du board Kilter a disparu sans prévenir",
+      "articleAlt": "L'app de la board Kilter a disparu sans prévenir",
       "ledRisk": "Ce risque de dépendre d'un seul fournisseur s'était déjà vu il y a 2 ans, quand on ne pouvait plus acheter de kit LED pour ses prises Kilter à cause d'un litige juridique entre Kilter et Aurora.",
       "boardseshIntroPrefix": "Pour supprimer ce risque, ",
       "boardseshLink": "Boardsesh",
-      "boardseshIntroSuffix": " est né comme alternative open source à toutes les apps de board. Boardsesh a sa propre copie des bases de blocs et prendra à terme en charge tous les boards. Il s'auto-héberge facilement et vous laissera récupérer vos données quand vous voulez."
+      "boardseshIntroSuffix": " est né comme alternative open source à toutes les apps de board. Boardsesh a sa propre copie des bases de blocs et prendra à terme en charge toutes les boards. Il s'auto-héberge facilement et vous laissera récupérer vos données quand vous voulez."
     },
     "howToMigrate": {
       "title": "Comment migrer",
