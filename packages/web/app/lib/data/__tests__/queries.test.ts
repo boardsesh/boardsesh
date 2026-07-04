@@ -1,5 +1,15 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { getClimb } from '../queries';
+
+const { mockSqlTag, rowsFromResultMock } = vi.hoisted(() => {
+  const mockSqlTag = vi.fn();
+  const rowsFromResultMock = <T>(result: unknown): T[] => {
+    if (Array.isArray(result)) return result as T[];
+    throw new TypeError('Expected postgres-js query result to be a row array');
+  };
+  return { mockSqlTag, rowsFromResultMock };
+});
 
 vi.mock('server-only', () => ({}));
 
@@ -10,17 +20,10 @@ vi.mock('next/cache', () => ({
       fn(...args),
 }));
 
-const mockSqlTag = vi.fn();
-const rowsFromResultMock = <T>(result: unknown): T[] => {
-  if (Array.isArray(result)) return result as T[];
-  throw new TypeError('Expected postgres-js query result to be a row array');
-};
 vi.mock('@/app/lib/db/db', () => ({
   sql: mockSqlTag,
   rowsFromResult: rowsFromResultMock,
 }));
-
-import { getClimb } from '../queries';
 
 describe('getClimb', () => {
   beforeEach(() => {
