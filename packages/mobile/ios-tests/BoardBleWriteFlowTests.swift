@@ -351,6 +351,10 @@ final class BoardBleWriteFlowTests: XCTestCase {
         // Poller#1 tick reads true -> resume -> writeChunk re-reads false -> re-park.
         hooks.sync { scheduler.repeatingTimers[0].fire() }
 
+        // Every scripted read was consumed exactly where expected — a leftover
+        // entry means a read the scenario never made (the default would then
+        // silently answer later reads and mask it).
+        XCTAssertTrue(peripheral.canSendScript.isEmpty)
         XCTAssertTrue(peripheral.writtenChunks.isEmpty)
         XCTAssertEqual(completionCount, 0)
         XCTAssertEqual(hooks.sync { hooks.currentTelemetry?.parkCount }, 2)

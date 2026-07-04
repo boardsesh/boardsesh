@@ -43,7 +43,9 @@ export type BleSendContext = {
    * climb (play-drawer playback), whose skip toast already covers the user. */
   suppressIncompatibleToast?: boolean;
   /** 'clear' marks a user-initiated clear-all so it's tracked as one (#3420);
-   * auto-sent empty frames clear the wall without counting as a clear action. */
+   * auto-sent empty frames clear the wall without counting as a clear action.
+   * Deliberately narrower than mobile's 'auto' | 'undo' | 'clear' union — web
+   * only distinguishes clears; widen it if a caller ever needs the others. */
   sendSource?: 'clear';
 };
 

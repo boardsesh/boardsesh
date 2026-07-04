@@ -702,6 +702,31 @@ describe('useBoardBluetooth', () => {
     expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();
   });
 
+  it('fires Board Lights Cleared on an Aurora deliberate clear (#3420)', async () => {
+    // The Aurora clear branch is separate from dispatchMoonboardPacket, so its
+    // sendSource-gated tracking needs its own pin.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetAuroraBluetoothPacket.mockReturnValue({ packet: new Uint8Array([0x01, 0x02]) });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let cleared: boolean | undefined;
+    await act(async () => {
+      cleared = await result.current.sendFramesToBoard('', false, undefined, { sendSource: 'clear' });
+    });
+
+    expect(cleared).toBe(true);
+    expect(fakeAdapter.write).toHaveBeenCalled();
+    const clearedCall = mockTrack.mock.calls.find(([name]) => name === 'Board Lights Cleared');
+    expect(clearedCall?.[1]).toMatchObject({ boardName: 'kilter', sendSource: 'clear' });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();
+  });
+
   it('clears the wall silently for auto-sent empty frames — no clear or success event (#3420)', async () => {
     // A queue/presence climb whose frames are empty still overwrites the wall
     // (Aurora parity) but is not a user clear action: the write goes out and
