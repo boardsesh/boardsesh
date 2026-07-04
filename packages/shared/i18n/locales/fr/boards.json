@@ -164,7 +164,7 @@
       "noBoards": "Aucune board ici pour l'instant",
       "boardCount_one": "{{count}} board",
       "boardCount_other": "{{count}} boards",
-      "searchPlaceholder": "Rechercher une ville, une salle ou un mur",
+      "searchPlaceholder": "Rechercher une ville, une salle ou une board",
       "showingPlace": "Résultats pour {{place}}",
       "clearSearch": "Effacer la recherche",
       "closeMap": "Fermer",
