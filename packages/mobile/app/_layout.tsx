@@ -66,6 +66,7 @@ import { reportError } from '../src/lib/error-reporting';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
 import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
+import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
 import { OtaUpdateTracker } from '../src/components/analytics/OtaUpdateTracker';
 import { InstallReferrerTracker } from '../src/components/analytics/InstallReferrerTracker';
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
@@ -323,6 +324,10 @@ function RootLayout() {
                   <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS}>
                     <AuthProvider onReady={onAuthReady}>
                       <PartyProfileProvider>
+                        {/* Durable PostHog person properties (account age, home
+                            board, role, favourite depth) for dashboard cohorting.
+                            Null render; needs auth + query, both in scope here. */}
+                        <AnalyticsPersonProperties />
                         <ConnectionSettingsProvider>
                           <ToastProvider>
                             <ClimbActionsDataWrapper>
