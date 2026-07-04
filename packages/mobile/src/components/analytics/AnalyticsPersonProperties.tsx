@@ -1,12 +1,6 @@
-// Writes durable PostHog person properties for the signed-in user (issue #3399):
-// account age, home board, tester role, and favourite depth. These are user
-// *traits*, set once the authenticated profile resolves, so every App Success
-// dashboard tile can segment by who the user is — not only what they did.
-//
-// Mounted once at the app root inside PartyProfileProvider (below AuthProvider +
-// QueryProvider, where both data hooks are valid). Renders null. No-op while
-// signed out, and while analytics is disabled (dev / no key) — the
-// setPersonProperties wrapper drops the write when getClient() returns null.
+// Writes durable PostHog person properties for the signed-in user (issue #3399)
+// so App Success dashboard tiles can segment by who the user is, not just what
+// they did. Mounted once at the app root; renders null.
 
 import { useEffect } from 'react';
 import { setPersonProperties } from '../../lib/analytics';
@@ -17,12 +11,9 @@ import { useAuth } from '../../providers/auth-provider';
 
 export function AnalyticsPersonProperties(): null {
   const { isAuthenticated } = useAuth();
-  // Shared ['profile'] query key — dedupes with PartyProfileProvider and the
-  // profile screens that also read it, so this adds no extra fetch.
   const { data: profile } = useProfile({ enabled: isAuthenticated });
-  // Cheap AsyncStorage-backed read (no network). Deliberately the active board
-  // rather than useHomeBoard(), which would fan out a logbook-ticks query at app
-  // root just for analytics.
+  // The active board (a cheap AsyncStorage read), not useHomeBoard() — the latter
+  // fans out a logbook-ticks query we don't want to run at app root for analytics.
   const { data: activeBoard } = useActiveBoard();
 
   const profileId = profile?.id ?? null;

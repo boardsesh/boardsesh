@@ -324,9 +324,7 @@ function RootLayout() {
                   <FeatureFlagsProvider flags={STATIC_FEATURE_FLAGS}>
                     <AuthProvider onReady={onAuthReady}>
                       <PartyProfileProvider>
-                        {/* Durable PostHog person properties (account age, home
-                            board, role, favourite depth) for dashboard cohorting.
-                            Null render; needs auth + query, both in scope here. */}
+                        {/* Needs auth + query, both in scope here. Null render. */}
                         <AnalyticsPersonProperties />
                         <ConnectionSettingsProvider>
                           <ToastProvider>

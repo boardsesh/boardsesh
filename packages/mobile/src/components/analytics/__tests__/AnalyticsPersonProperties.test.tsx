@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// jsdom is required: @testing-library/react's render() mounts into document.body,
+// even though this component renders null.
 import { render } from '@testing-library/react';
 import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,5 +63,25 @@ describe('AnalyticsPersonProperties', () => {
     render(createElement(AnalyticsPersonProperties));
 
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it('re-writes when a live trait changes after the first resolve', () => {
+    state.profile = { id: 'user-1', createdAt: '2024-01-02T03:04:05.000Z', isTester: false, favoriteCount: 1 };
+    state.activeBoard = { boardType: 'kilter' };
+
+    const { rerender } = render(createElement(AnalyticsPersonProperties));
+    expect(analytics.setPersonProperties).toHaveBeenCalledTimes(1);
+
+    // User earns the tester role and switches board — the effect must re-fire with
+    // the new values (React only re-runs it because the deps actually changed).
+    state.profile = { id: 'user-1', createdAt: '2024-01-02T03:04:05.000Z', isTester: true, favoriteCount: 4 };
+    state.activeBoard = { boardType: 'tension' };
+    rerender(createElement(AnalyticsPersonProperties));
+
+    expect(analytics.setPersonProperties).toHaveBeenCalledTimes(2);
+    expect(analytics.setPersonProperties).toHaveBeenLastCalledWith(
+      { role: 'tester', favorite_count: 4, home_board: 'tension' },
+      { account_created_at: '2024-01-02T03:04:05.000Z' },
+    );
   });
 });
