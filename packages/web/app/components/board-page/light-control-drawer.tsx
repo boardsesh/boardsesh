@@ -225,7 +225,11 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
       const handFrames = handPlacementIds
         .map((id) => `p${id}r${stateCodes[Math.floor(Math.random() * stateCodes.length)]}`)
         .join('');
-      const result = await sendFramesToBoard(`${baseFrames}${handFrames}`, climbMirrored);
+      const result = await sendFramesToBoard(`${baseFrames}${handFrames}`, climbMirrored, undefined, {
+        climbUuid: currentClimbQueueItem?.climb.uuid,
+        climbBoardType: currentClimbQueueItem?.climb.boardType,
+        climbLayoutId: currentClimbQueueItem?.climb.layoutId,
+      });
       inFlight = false;
       // The effect may have been torn down while the write was in flight — don't
       // touch state (setPartyMode/showMessage) after cleanup.
@@ -252,6 +256,7 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
     boardDetails.board_name,
     climbFrames,
     climbMirrored,
+    currentClimbQueueItem,
     sendFramesToBoard,
     setPartyMode,
     showMessage,

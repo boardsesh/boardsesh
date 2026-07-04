@@ -502,7 +502,12 @@
     "connectFailed": "No se pudo conectar. Acércate al plafón e inténtalo de nuevo.",
     "serviceMissing": "Conectado, pero el plafón no respondió. Reinícialo e inténtalo de nuevo.",
     "unavailable": "El Bluetooth está apagado. Actívalo para conectar con tu plafón.",
-    "unknownError": "No se pudo conectar con tu plafón. Inténtalo de nuevo."
+    "unknownError": "No se pudo conectar con tu plafón. Inténtalo de nuevo.",
+    "incompatibleClimb": "Este bloque es de otro plafón, así que no se encendió.",
+    "unrecognisedHoldData": "Este bloque tiene datos de presas no reconocidos y no se puede enviar al plafón.",
+    "ledDataMissing": "No se pudo enviar al plafón: faltan los datos LED de esta configuración.",
+    "partialHoldsSkipped_one": "{{count}} presa no se pudo encender; puede que tu plafón sea de un tamaño distinto al del bloque.",
+    "partialHoldsSkipped_other": "{{count}} presas no se pudieron encender; puede que tu plafón sea de un tamaño distinto al del bloque."
   },
   "ascents": {
     "deleteTitle": "Eliminar encadene",

@@ -301,7 +301,12 @@
     "connectFailed": "Connexion impossible. Rapprochez-vous de la board et réessayez.",
     "serviceMissing": "Connecté, mais la board n'a pas répondu. Redémarrez-la et réessayez.",
     "unavailable": "Le Bluetooth est éteint. Activez-le pour vous connecter à votre board.",
-    "unknownError": "Connexion à la board impossible. Réessayez."
+    "unknownError": "Connexion à la board impossible. Réessayez.",
+    "incompatibleClimb": "Ce bloc est prévu pour une autre board, il n'a donc pas été allumé.",
+    "unrecognisedHoldData": "Ce bloc contient des données de prises non reconnues et ne peut pas être allumé sur la board.",
+    "ledDataMissing": "Impossible d'allumer la board — les données LED de cette configuration sont manquantes.",
+    "partialHoldsSkipped_one": "{{count}} prise n'a pas pu être allumée — votre board est peut-être d'une taille différente de celle prévue pour ce bloc.",
+    "partialHoldsSkipped_other": "{{count}} prises n'ont pas pu être allumées — votre board est peut-être d'une taille différente de celle prévue pour ce bloc."
   },
   "actions": {
     "yes": "Oui",

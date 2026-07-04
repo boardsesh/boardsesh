@@ -21,6 +21,7 @@ async function fetchClimbFromDb(params: ParsedBoardRouteParametersWithUuid): Pro
   const result = rowsFromResult<Climb & { difficulty_id: number | null }>(
     await sql`
         SELECT climbs.uuid, climbs.setter_username, climbs.user_id as "userId", climbs.name, climbs.description,
+        climbs.layout_id as "layoutId", climbs.board_type as "boardType",
         climbs.frames, climbs.frames_count as "framesCount", climbs.frames_pace as "framesPace",
         COALESCE(climb_stats.angle, ${params.angle}) as angle, COALESCE(climb_stats.ascensionist_count, 0) as ascensionist_count,
         ROUND(climb_stats.display_difficulty::numeric, 0) as difficulty_id,

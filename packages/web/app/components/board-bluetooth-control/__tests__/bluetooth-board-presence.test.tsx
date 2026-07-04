@@ -85,6 +85,8 @@ vi.mock('@/app/components/persistent-session', () => ({
 const queue = vi.hoisted(() => ({ current: null as ClimbQueueItem | null }));
 vi.mock('../../graphql-queue', () => ({
   useCurrentClimb: () => ({ currentClimbQueueItem: queue.current, currentClimb: queue.current?.climb ?? null }),
+  useQueueList: () => ({ queue: queue.current ? [queue.current] : [], suggestedClimbs: [] }),
+  useOptionalQueueActions: () => null,
 }));
 
 vi.mock('@boardsesh/play-view', () => ({ emitWallConfirm: vi.fn() }));

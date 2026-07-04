@@ -288,6 +288,10 @@ export function toClimbQueueItemInput(item: LocalClimbQueueItem): ClimbQueueItem
       // through to the DEFAULT_PACE_MS (750 ms) heuristic.
       framesCount: item.climb.framesCount ?? null,
       framesPace: item.climb.framesPace ?? null,
+      // Board identity so a peer on a different wall can classify this climb
+      // as a spill instead of dark-firing their board (issue #3193).
+      boardType: item.climb.boardType,
+      layoutId: item.climb.layoutId ?? null,
     },
     addedBy: item.addedBy,
     addedByUser: item.addedByUser

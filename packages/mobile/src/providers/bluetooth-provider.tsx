@@ -4,7 +4,13 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 import type { BoardName, UserBoard } from '@boardsesh/shared-schema';
-import { formatBoardDisplayName, toBoardName } from '@boardsesh/board-config';
+import {
+  classifyClimbBoardCompatibility,
+  findNextCompatibleQueueItem,
+  formatBoardDisplayName,
+  toBoardName,
+  type ActiveBoardForCompatibility,
+} from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent } from '@boardsesh/board-presence-react';
 import type { BoardPresenceClimb, ClimbQueueItemInput } from '@boardsesh/shared-schema';
@@ -14,10 +20,7 @@ import { useResolvedBleDeviceBoards } from '../lib/ble/resolve-serials';
 import { classifyBleDisconnect } from '../lib/ble/disconnect-category';
 import {
   decideBlePickerSelection,
-  classifyClimbBoardCompatibility,
-  findNextCompatibleQueueItem,
   type BleBoardConfig,
-  type ActiveBoardForCompatibility,
   type PickerSelectionDecision,
 } from '../lib/ble/board-config-match';
 import { summarizePickerResolution, type PickerResolutionStats } from '../lib/ble/picker-resolution-stats';
@@ -1064,11 +1067,15 @@ export function BluetoothProvider({
         inSession: sessionIdRef.current != null,
       });
 
-      showToast(
-        t('boardConfigMismatch.mobileSkippedSpillToast', { count: skippedCount, name: skipped.climb.name }),
-        'info',
-      );
+      showToast(t('boardConfigMismatch.skippedSpillToast', { count: skippedCount, name: skipped.climb.name }), 'info');
 
+      // Party: never advance — the current climb is shared session state, and a
+      // member whose wall can't light it must not hijack the queue for everyone.
+      // Just clear this wall so it doesn't keep showing the previous climb.
+      if (sessionIdRef.current != null) {
+        void clearBoard();
+        return;
+      }
       if (next) {
         setCurrentClimb(next);
       } else {

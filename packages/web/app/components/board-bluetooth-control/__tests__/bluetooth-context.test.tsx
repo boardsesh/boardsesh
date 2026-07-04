@@ -168,9 +168,20 @@ vi.mock('../../board-presence/board-presence-context', () => ({
   useOptionalWallReport: () => ({ currentClimb: null, previousClimb: null, reportClimb: vi.fn() }),
 }));
 
-let mockCurrentClimbQueueItem: {
-  climb: { uuid: string; frames: string; mirrored: boolean };
-} | null = null;
+type MockQueueItem = {
+  uuid?: string;
+  climb: {
+    uuid: string;
+    frames: string;
+    mirrored: boolean;
+    name?: string;
+    boardType?: string;
+    layoutId?: number | null;
+  };
+};
+let mockCurrentClimbQueueItem: MockQueueItem | null = null;
+let mockQueue: MockQueueItem[] = [];
+const mockSetCurrentClimbQueueItem = vi.fn();
 
 vi.mock('../../graphql-queue', () => ({
   useQueueContext: () => ({
@@ -179,6 +190,13 @@ vi.mock('../../graphql-queue', () => ({
   useCurrentClimb: () => ({
     currentClimbQueueItem: mockCurrentClimbQueueItem,
     currentClimb: mockCurrentClimbQueueItem?.climb ?? null,
+  }),
+  useQueueList: () => ({
+    queue: mockQueue,
+    suggestedClimbs: [],
+  }),
+  useOptionalQueueActions: () => ({
+    setCurrentClimbQueueItem: mockSetCurrentClimbQueueItem,
   }),
 }));
 
@@ -215,6 +233,7 @@ describe('BluetoothProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCurrentClimbQueueItem = null;
+    mockQueue = [];
     mockSendFailureReasonRef.current = null;
     mockBluetoothState = {
       isConnected: false,
@@ -324,7 +343,12 @@ describe('BluetoothProvider', () => {
       // The useEffect triggers async sendClimb
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockSendFramesToBoard).toHaveBeenCalledWith('p1r12p2r13', false, expect.any(AbortSignal), 'climb-1');
+          expect(mockSendFramesToBoard).toHaveBeenCalledWith(
+            'p1r12p2r13',
+            false,
+            expect.any(AbortSignal),
+            expect.objectContaining({ climbUuid: 'climb-1' }),
+          );
         });
       });
     });
@@ -341,7 +365,12 @@ describe('BluetoothProvider', () => {
 
       await act(async () => {
         await vi.waitFor(() => {
-          expect(mockSendFramesToBoard).toHaveBeenCalledWith('p3r14p4r15', true, expect.any(AbortSignal), 'climb-2');
+          expect(mockSendFramesToBoard).toHaveBeenCalledWith(
+            'p3r14p4r15',
+            true,
+            expect.any(AbortSignal),
+            expect.objectContaining({ climbUuid: 'climb-2' }),
+          );
         });
       });
     });
@@ -562,6 +591,140 @@ describe('BluetoothProvider', () => {
     });
   });
 
+  // Issue #3193: a "spill" climb (set for a different board/layout than the
+  // active board) must never be written — it would dark-fire the wall. The
+  // AutoSender skips it; solo advances the queue to the next compatible item,
+  // party clears its own wall without touching the shared queue.
+  describe('spill climb skip', () => {
+    const makeSpillItem = (uuid: string, boardType: string, layoutId: number): MockQueueItem => ({
+      uuid,
+      climb: { uuid: `c-${uuid}`, frames: `p1r12`, mirrored: false, name: `Climb ${uuid}`, boardType, layoutId },
+    });
+
+    it('solo: skips the spill, advances to the next compatible item, toasts and tracks', async () => {
+      const spill = makeSpillItem('spill', 'kilter', 8); // active board is kilter layout 1
+      const compatible = makeSpillItem('ok', 'kilter', 1);
+      mockCurrentClimbQueueItem = spill;
+      mockQueue = [spill, compatible];
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {});
+
+      // The spill frames were never written.
+      expect(mockSendFramesToBoard).not.toHaveBeenCalledWith(
+        'p1r12',
+        false,
+        expect.anything(),
+        expect.objectContaining({ climbUuid: 'c-spill' }),
+      );
+      expect(mockSetCurrentClimbQueueItem).toHaveBeenCalledWith(compatible);
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+      expect(mockTrack).toHaveBeenCalledWith(
+        'BLE Queue Climb Skipped',
+        expect.objectContaining({
+          skippedClimbUuid: 'c-spill',
+          skippedClimbBoardType: 'kilter',
+          skippedClimbLayoutId: 8,
+          skippedCount: 1,
+          advancedToClimbUuid: 'c-ok',
+          inSession: false,
+        }),
+      );
+    });
+
+    it('solo: clears the board when no compatible climb remains', async () => {
+      const spill = makeSpillItem('spill', 'moonboard', 1);
+      mockCurrentClimbQueueItem = spill;
+      mockQueue = [spill];
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {});
+
+      expect(mockSetCurrentClimbQueueItem).not.toHaveBeenCalled();
+      // clearBoard sends empty frames to dark the wall.
+      expect(mockSendFramesToBoard).toHaveBeenCalledWith('');
+      expect(mockTrack).toHaveBeenCalledWith(
+        'BLE Queue Climb Skipped',
+        expect.objectContaining({ skippedClimbUuid: 'c-spill', advancedToClimbUuid: null }),
+      );
+    });
+
+    it('party: never advances the shared queue — clears its own wall instead', async () => {
+      mockPersistentSessionState = { session: { id: 'party-1' } };
+      const spill = makeSpillItem('spill', 'kilter', 8);
+      const compatible = makeSpillItem('ok', 'kilter', 1);
+      mockCurrentClimbQueueItem = spill;
+      mockQueue = [spill, compatible];
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {});
+
+      expect(mockSetCurrentClimbQueueItem).not.toHaveBeenCalled();
+      expect(mockSendFramesToBoard).toHaveBeenCalledWith('');
+      expect(mockTrack).toHaveBeenCalledWith(
+        'BLE Queue Climb Skipped',
+        expect.objectContaining({ skippedClimbUuid: 'c-spill', inSession: true }),
+      );
+    });
+
+    it('does not skip a climb with unknown board metadata', async () => {
+      mockSendFramesToBoard.mockResolvedValue(true);
+      const unknown: MockQueueItem = {
+        uuid: 'unknown',
+        climb: { uuid: 'c-unknown', frames: 'p1r12', mirrored: false },
+      };
+      mockCurrentClimbQueueItem = unknown;
+      mockQueue = [unknown];
+      mockBluetoothState.isConnected = true;
+
+      renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {
+        await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1));
+      });
+
+      expect(mockSetCurrentClimbQueueItem).not.toHaveBeenCalled();
+      expect(mockTrack).not.toHaveBeenCalledWith('BLE Queue Climb Skipped', expect.anything());
+    });
+
+    it('reports a given spill once, and again after a compatible climb was processed', async () => {
+      mockSendFramesToBoard.mockResolvedValue(true);
+      const spill = makeSpillItem('spill', 'kilter', 8);
+      const compatible = makeSpillItem('ok', 'kilter', 1);
+      mockCurrentClimbQueueItem = spill;
+      mockQueue = [spill, compatible];
+      mockBluetoothState.isConnected = true;
+
+      const { rerender } = renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {});
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      // The advance lands: the compatible climb becomes current and is sent,
+      // clearing the spill dedup.
+      mockCurrentClimbQueueItem = compatible;
+      await act(async () => {
+        rerender();
+      });
+      await vi.waitFor(() =>
+        expect(mockSendFramesToBoard).toHaveBeenCalledWith(
+          'p1r12',
+          false,
+          expect.anything(),
+          expect.objectContaining({ climbUuid: 'c-ok' }),
+        ),
+      );
+
+      // Navigating back to the spill re-toasts — not a silent stick.
+      mockCurrentClimbQueueItem = spill;
+      await act(async () => {
+        rerender();
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('rapid-swiping serialization', () => {
     it('queues the latest climb while a write is in flight and sends it after current completes', async () => {
       // Web BT on Android can't actually cancel an in-flight GATT operation,
@@ -615,7 +778,12 @@ describe('BluetoothProvider', () => {
           expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2);
         });
       });
-      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith('p5r16', false, expect.any(AbortSignal), 'climb-3');
+      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith(
+        'p5r16',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ climbUuid: 'climb-3' }),
+      );
     });
 
     it('deduplicates the WRITE for byte-identical re-broadcasts but re-confirms the wall', async () => {
@@ -694,7 +862,12 @@ describe('BluetoothProvider', () => {
       await act(async () => {
         await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2));
       });
-      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith('p1r12', false, expect.any(AbortSignal), 'climb-1');
+      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith(
+        'p1r12',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ climbUuid: 'climb-1' }),
+      );
     });
 
     it('re-sends when the same climb is mirrored (same uuid, mirror flipped)', async () => {
@@ -713,7 +886,12 @@ describe('BluetoothProvider', () => {
       await act(async () => {
         await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(1));
       });
-      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith('p1r12', false, expect.any(AbortSignal), 'climb-1');
+      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith(
+        'p1r12',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ climbUuid: 'climb-1' }),
+      );
 
       // Mirror the current climb: same uuid + frames, mirrored now true.
       mockCurrentClimbQueueItem = {
@@ -724,7 +902,12 @@ describe('BluetoothProvider', () => {
       await act(async () => {
         await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2));
       });
-      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith('p1r12', true, expect.any(AbortSignal), 'climb-1');
+      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith(
+        'p1r12',
+        true,
+        expect.any(AbortSignal),
+        expect.objectContaining({ climbUuid: 'climb-1' }),
+      );
     });
 
     it('re-sends when the same climb uuid gets edited frames (create-form live preview)', async () => {
@@ -753,7 +936,12 @@ describe('BluetoothProvider', () => {
       await act(async () => {
         await vi.waitFor(() => expect(mockSendFramesToBoard).toHaveBeenCalledTimes(2));
       });
-      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith('p1r12p2r13', false, expect.any(AbortSignal), 'draft-1');
+      expect(mockSendFramesToBoard).toHaveBeenLastCalledWith(
+        'p1r12p2r13',
+        false,
+        expect.any(AbortSignal),
+        expect.objectContaining({ climbUuid: 'draft-1' }),
+      );
     });
   });
 

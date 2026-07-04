@@ -16,6 +16,7 @@ const {
   mockFetch,
   mockGraphqlRequest,
   mockTrack,
+  mockCaptureMessage,
 } = vi.hoisted(() => {
   const mockAdapter = {
     isAvailable: vi.fn(),
@@ -71,8 +72,13 @@ const {
       Promise.resolve({ recordBoardSerial: null }),
     ),
     mockTrack: vi.fn(),
+    mockCaptureMessage: vi.fn(),
   };
 });
+
+vi.mock('@sentry/nextjs', () => ({
+  captureMessage: mockCaptureMessage,
+}));
 
 vi.mock('@/app/lib/graphql/client', () => ({
   createGraphQLHttpClient: vi.fn(() => ({ request: mockGraphqlRequest })),
@@ -399,10 +405,7 @@ describe('useBoardBluetooth', () => {
 
     expect(sendResult).toBe(false);
     expect(result.current.lastSendFailureReasonRef.current).toBe('missing_led_placements');
-    expect(mockShowMessage).toHaveBeenCalledWith(
-      'Could not send to board — LED data missing for this board configuration.',
-      'error',
-    );
+    expect(mockShowMessage).toHaveBeenCalledWith('bluetooth.ledDataMissing', 'error');
     expect(mockAdapter.write).not.toHaveBeenCalledWith(new Uint8Array([1, 2, 3]), undefined);
   });
 
@@ -428,8 +431,144 @@ describe('useBoardBluetooth', () => {
 
     expect(sendResult).toBe(false);
     expect(result.current.lastSendFailureReasonRef.current).toBe('incompatible_climb');
-    expect(mockShowMessage).toHaveBeenCalledWith('This climb is for a different board configuration.', 'error');
+    expect(mockShowMessage).toHaveBeenCalledWith('bluetooth.incompatibleClimb', 'error');
+    // No identity metadata was passed, so the guard classified 'unknown' and
+    // the packet-level all-skipped detector still reports to Sentry — this is
+    // the surviving LED-map-gap telemetry.
+    expect(mockCaptureMessage).toHaveBeenCalledTimes(1);
     warnSpy.mockRestore();
+  });
+
+  describe('cross-board identity guard (issue #3193)', () => {
+    it('refuses a climb whose layoutId differs from the active board, before building a packet', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+      mockAdapter.write.mockClear();
+
+      let sendResult: boolean | undefined;
+      await act(async () => {
+        // Active board is kilter layout 1; the climb is a kilter layout 8
+        // (Homewall) climb — the BOARDSESH-39 repro shape.
+        sendResult = await result.current.sendFramesToBoard('p4131r42', false, undefined, {
+          climbUuid: 'climb-l8',
+          climbBoardType: 'kilter',
+          climbLayoutId: 8,
+        });
+      });
+
+      expect(sendResult).toBe(false);
+      expect(result.current.lastSendFailureReasonRef.current).toBe('incompatible_climb');
+      expect(mockShowMessage).toHaveBeenCalledWith('bluetooth.incompatibleClimb', 'error');
+      expect(mockGetAuroraBluetoothPacket).not.toHaveBeenCalled();
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockCaptureMessage).not.toHaveBeenCalled();
+    });
+
+    it('refuses a kilter climb on a moonboard before the moonboard encoder runs (BOARDSESH-6P repro)', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockMoonboardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+      mockAdapter.write.mockClear();
+
+      let sendResult: boolean | undefined;
+      await act(async () => {
+        sendResult = await result.current.sendFramesToBoard('p1086r15p1113r15', false, undefined, {
+          climbUuid: 'proj-braj',
+          climbBoardType: 'kilter',
+          climbLayoutId: 1,
+        });
+      });
+
+      expect(sendResult).toBe(false);
+      expect(result.current.lastSendFailureReasonRef.current).toBe('incompatible_climb');
+      expect(mockGetMoonboardBluetoothPacket).not.toHaveBeenCalled();
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockCaptureMessage).not.toHaveBeenCalled();
+    });
+
+    it('toasts once per climb, and again after a different climb was sent', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      const spillContext = { climbUuid: 'spill-1', climbBoardType: 'kilter', climbLayoutId: 8 };
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      // A successful send of a compatible climb clears the dedup...
+      await act(async () => {
+        await result.current.sendFramesToBoard('p4131r42', false, undefined, {
+          climbUuid: 'ok-1',
+          climbBoardType: 'kilter',
+          climbLayoutId: 1,
+        });
+      });
+      // ...so returning to the spill re-toasts.
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('sends normally when the climb carries no identity metadata', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+      mockAdapter.write.mockClear();
+
+      let sendResult: boolean | undefined;
+      await act(async () => {
+        sendResult = await result.current.sendFramesToBoard('p4131r42', false, undefined, { climbUuid: 'legacy' });
+      });
+
+      expect(sendResult).toBe(true);
+      expect(mockAdapter.write).toHaveBeenCalled();
+      expect(mockShowMessage).not.toHaveBeenCalled();
+    });
+
+    it('sends normally when identity matches the active board', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+      mockAdapter.write.mockClear();
+
+      let sendResult: boolean | undefined;
+      await act(async () => {
+        sendResult = await result.current.sendFramesToBoard('p4131r42', false, undefined, {
+          climbUuid: 'ok',
+          climbBoardType: 'kilter',
+          climbLayoutId: 1,
+        });
+      });
+
+      expect(sendResult).toBe(true);
+      expect(mockAdapter.write).toHaveBeenCalled();
+    });
+
+    it('never blocks the clear-board packet (empty frames)', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+      mockAdapter.write.mockClear();
+
+      let sendResult: boolean | undefined;
+      await act(async () => {
+        sendResult = await result.current.sendFramesToBoard('');
+      });
+
+      expect(sendResult).toBe(true);
+      expect(mockAdapter.write).toHaveBeenCalled();
+    });
   });
 
   it('records missing_mirror_data when a mirrored send has no holdsData', async () => {

@@ -56,6 +56,8 @@ export function useDrawerPlayback({
 
   const [externalPlayback, setExternalPlayback] = useState<ExternalPlaybackState | null>(null);
   const activeClimbUuid = currentClimb?.uuid;
+  const activeClimbBoardType = currentClimb?.boardType;
+  const activeClimbLayoutId = currentClimb?.layoutId;
 
   // Reset peer state on climb change so a stale event from the previous climb
   // can't bleed into the new engine's convergence pass.
@@ -145,7 +147,11 @@ export function useDrawerPlayback({
           }
           lastSentFrameRef.current = next;
           try {
-            await sendFramesToBoard(next, isMirroredRef.current, undefined, activeClimbUuid);
+            await sendFramesToBoard(next, isMirroredRef.current, undefined, {
+              climbUuid: activeClimbUuid,
+              climbBoardType: activeClimbBoardType,
+              climbLayoutId: activeClimbLayoutId,
+            });
           } catch (error) {
             console.error('[useDrawerPlayback] BLE frame send failed:', error);
             track('BLE Frame Send Failed', {
@@ -168,6 +174,8 @@ export function useDrawerPlayback({
     playback.isAnimatable,
     playback.currentFrameString,
     activeClimbUuid,
+    activeClimbBoardType,
+    activeClimbLayoutId,
   ]);
 
   // Pre-warm every snapshot through the Rust/WASM canvas renderer the moment

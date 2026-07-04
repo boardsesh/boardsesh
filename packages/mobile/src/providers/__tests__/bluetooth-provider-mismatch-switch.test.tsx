@@ -786,4 +786,24 @@ describe('BluetoothProvider spill skip', () => {
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
     expect(toast.showToast).not.toHaveBeenCalled();
   });
+
+  it('never advances the shared queue in a party session — clears its own wall instead', async () => {
+    // The current climb is shared session state: a member whose wall can't
+    // light it must not hijack the queue for everyone (issue #3193).
+    queue.sessionId = 'party-1';
+    const spill = makeBoardItem('spill', 'tension', 1);
+    const compatible = makeBoardItem('ok', 'kilter', 1);
+    queue.currentClimbQueueItem = spill;
+    queue.queue = [spill, compatible];
+
+    renderProvider(KILTER_PROPS);
+    await act(async () => {});
+
+    // No advance, wall cleared locally, user still told + telemetry marked in-session.
+    expect(queue.setCurrentClimb).not.toHaveBeenCalled();
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith('');
+    expect(toast.showToast).toHaveBeenCalledTimes(1);
+    const skipCall = analytics.track.mock.calls.find(([name]) => name === 'BLE Queue Climb Skipped');
+    expect(skipCall?.[1]).toMatchObject({ skippedClimbUuid: 'spill', inSession: true });
+  });
 });

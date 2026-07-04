@@ -301,7 +301,12 @@
     "connectFailed": "Couldn't connect. Move closer to the board and try again.",
     "serviceMissing": "Connected, but the board didn't respond. Power-cycle it and try again.",
     "unavailable": "Bluetooth is off. Turn it on to connect to your board.",
-    "unknownError": "Couldn't connect to your board. Try again."
+    "unknownError": "Couldn't connect to your board. Try again.",
+    "incompatibleClimb": "This climb is for a different board, so it wasn't lit.",
+    "unrecognisedHoldData": "This climb has unrecognised hold data and cannot be sent to the board.",
+    "ledDataMissing": "Could not send to board — LED data missing for this board configuration.",
+    "partialHoldsSkipped_one": "{{count}} hold couldn't be lit — your board may be a different size than this climb was set for.",
+    "partialHoldsSkipped_other": "{{count}} holds couldn't be lit — your board may be a different size than this climb was set for."
   },
   "actions": {
     "yes": "Yes",

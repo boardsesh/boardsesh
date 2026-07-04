@@ -9,6 +9,7 @@ import {
   type BleSendFailureReason,
 } from '@boardsesh/ble-protocol/connection-error';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { classifyClimbBoardCompatibility } from '@boardsesh/board-config';
 import { normaliseSetIds } from '@/app/lib/ble/board-config-match';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { RECORD_BOARD_SERIAL } from '@boardsesh/graphql/operations';
@@ -30,6 +31,14 @@ export type PickerState = {
   devices: DiscoveredDevice[];
   handleSelect: (deviceId: string) => void;
   handleCancel: () => void;
+};
+
+/** Identity of the climb being sent, used to refuse cross-board sends before
+ * building a packet (issue #3193). Mirrors mobile's `BleSendContext`. */
+export type BleSendContext = {
+  climbUuid?: string;
+  climbBoardType?: string | null;
+  climbLayoutId?: number | null;
 };
 
 // Module-level cache for Aurora LED placements loader to avoid repeated dynamic import overhead
@@ -239,6 +248,12 @@ export function useBoardBluetooth({
   // a failing call resolving and the AutoSender's same-microtask read.
   const lastSendFailureReasonRef = useRef<BleSendFailureReason | null>(null);
 
+  // Dedups the cross-board toast per climb: the play-drawer playback loop and
+  // the AutoSender both re-invoke sendFramesToBoard for the same climb, and
+  // one toast per climb is enough. Cleared on any successful send so a later
+  // board switch back to a mismatched config re-surfaces the message.
+  const lastIncompatibleToastUuidRef = useRef<string | null>(null);
+
   // Device picker state for custom Capacitor scanning.
   // pickerRejectRef holds the pending promise's reject so unmount cleanup
   // can drain it, which causes the adapter's finally block to call stopLEScan.
@@ -359,10 +374,33 @@ export function useBoardBluetooth({
   // builder already returns a zero-length placement set, which the board
   // interprets as "no LEDs lit", overwriting whatever was on the wall.
   const sendFramesToBoard = useCallback(
-    async (frames: string, mirrored: boolean = false, signal?: AbortSignal, climbUuid?: string) => {
+    async (frames: string, mirrored: boolean = false, signal?: AbortSignal, sendContext?: BleSendContext) => {
       if (!adapterRef.current || !boardDetails) return;
+      const climbUuid = sendContext?.climbUuid;
 
       try {
+        // Identity guard (issue #3193): a climb from another board/layout can
+        // never light here — placement IDs and role codes are scoped per
+        // board+layout, so the packet would come out empty. Refuse before
+        // building a packet instead of dark-firing the wall. Climbs without
+        // identity metadata classify as 'unknown' and fall through to the
+        // packet-level all-skipped detectors below, which stay as the last
+        // line of defence (and as true LED-map-gap telemetry).
+        if (
+          frames !== '' &&
+          classifyClimbBoardCompatibility(
+            { boardName: boardDetails.board_name, layoutId: boardDetails.layout_id },
+            { boardType: sendContext?.climbBoardType, layoutId: sendContext?.climbLayoutId },
+          ) === 'incompatible'
+        ) {
+          if (climbUuid == null || lastIncompatibleToastUuidRef.current !== climbUuid) {
+            lastIncompatibleToastUuidRef.current = climbUuid ?? null;
+            showMessage(t('bluetooth.incompatibleClimb'), 'error');
+          }
+          lastSendFailureReasonRef.current = 'incompatible_climb';
+          return false;
+        }
+
         if (boardDetails.board_name === 'moonboard') {
           // MoonBoard's packet format isn't designed to encode "clear" via an
           // empty frame string — skip the write rather than send a malformed
@@ -381,12 +419,14 @@ export function useBoardBluetooth({
                 tags: { board: 'moonboard' },
                 extra: {
                   climbUuid,
+                  climbBoardType: sendContext?.climbBoardType,
+                  climbLayoutId: sendContext?.climbLayoutId,
                   skippedRoleCount: moonResult.skippedRoleCount,
                   skippedPositionCount: moonResult.skippedPositionCount,
                 },
               },
             );
-            showMessage('This climb has unrecognised hold data and cannot be sent to the board.', 'error');
+            showMessage(t('bluetooth.unrecognisedHoldData'), 'error');
             lastSendFailureReasonRef.current = 'incompatible_climb';
             return false;
           }
@@ -408,6 +448,7 @@ export function useBoardBluetooth({
 
           await serialisedWrite(adapterRef.current, moonResult.packet, signal);
           void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
+          lastIncompatibleToastUuidRef.current = null;
           return true;
         }
 
@@ -418,6 +459,7 @@ export function useBoardBluetooth({
           const clearResult = getAuroraBluetoothPacket('', {}, boardDetails.board_name, apiLevelRef.current);
           await serialisedWrite(adapterRef.current, clearResult.packet, signal);
           void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
+          lastIncompatibleToastUuidRef.current = null;
           return true;
         }
 
@@ -448,7 +490,7 @@ export function useBoardBluetooth({
             `[BLE] LED placement map is empty for ${boardDetails.board_name} layout=${boardDetails.layout_id} size=${boardDetails.size_id}. ` +
               'Board configuration may be incorrect or LED data may need regeneration.',
           );
-          showMessage('Could not send to board — LED data missing for this board configuration.', 'error');
+          showMessage(t('bluetooth.ledDataMissing'), 'error');
           lastSendFailureReasonRef.current = 'missing_led_placements';
           return false;
         }
@@ -472,6 +514,8 @@ export function useBoardBluetooth({
               tags: { board: boardDetails.board_name, layout: boardDetails.layout_id, size: boardDetails.size_id },
               extra: {
                 climbUuid,
+                climbBoardType: sendContext?.climbBoardType,
+                climbLayoutId: sendContext?.climbLayoutId,
                 layoutId: boardDetails.layout_id,
                 sizeId: boardDetails.size_id,
                 setIds: boardDetails.set_ids,
@@ -480,7 +524,7 @@ export function useBoardBluetooth({
               },
             },
           );
-          showMessage('This climb is for a different board configuration.', 'error');
+          showMessage(t('bluetooth.incompatibleClimb'), 'error');
           lastSendFailureReasonRef.current = 'incompatible_climb';
           return false;
         }
@@ -492,6 +536,8 @@ export function useBoardBluetooth({
             tags: { board: boardDetails.board_name, layout: boardDetails.layout_id, size: boardDetails.size_id },
             extra: {
               climbUuid,
+              climbBoardType: sendContext?.climbBoardType,
+              climbLayoutId: sendContext?.climbLayoutId,
               layoutId: boardDetails.layout_id,
               sizeId: boardDetails.size_id,
               setIds: boardDetails.set_ids,
@@ -499,14 +545,12 @@ export function useBoardBluetooth({
               skippedRoleCount: result.skippedRoleCount,
             },
           });
-          showMessage(
-            `${skippedCount} hold${skippedCount > 1 ? 's' : ''} couldn't be lit — your board may be a different size than this climb was set for.`,
-            'warning',
-          );
+          showMessage(t('bluetooth.partialHoldsSkipped', { count: skippedCount }), 'warning');
         }
 
         await serialisedWrite(adapterRef.current, result.packet, signal);
         void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
+        lastIncompatibleToastUuidRef.current = null;
         return true;
       } catch (error) {
         // AbortError is now the primary unmount-mid-write path — the
@@ -538,7 +582,7 @@ export function useBoardBluetooth({
         return false;
       }
     },
-    [boardDetails, showMessage, ledColorOverrides, serialisedWrite, handleDisconnection, analyticsBoardId],
+    [boardDetails, showMessage, t, ledColorOverrides, serialisedWrite, handleDisconnection, analyticsBoardId],
   );
 
   const configureConnectedBoard = useCallback(
