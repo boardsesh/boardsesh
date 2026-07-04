@@ -517,6 +517,81 @@ describe('useBoardBluetooth', () => {
       expect(mockShowMessage).toHaveBeenCalledTimes(2);
     });
 
+    it('re-arms the incompatible toast after an unexpected disconnect (write-triggered)', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // Real BoardDetails carry a number[] set_ids; the shared mock lies with a
+      // string, so use array set_ids here (boardIdentityKey joins the array).
+      const arraySetIdsDetails = {
+        ...mockBoardDetails,
+        set_ids: [1, 2],
+      } as unknown as Parameters<typeof useBoardBluetooth>[0]['boardDetails'];
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: arraySetIdsDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      const spillContext = { climbUuid: 'spill-1', climbBoardType: 'kilter', climbLayoutId: 8 };
+
+      // First send of the incompatible climb toasts once.
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      // A write to a DIFFERENT, compatible climb fails with a disconnect-shaped
+      // error — this drives the catch block's handleDisconnection() call
+      // (classifyBleFailureReason -> 'disconnected'), simulating a GATT drop
+      // that happens before any success-clear site is reached.
+      mockAdapter.write.mockRejectedValueOnce(new DOMException('GATT Server is disconnected.', 'NetworkError'));
+      await act(async () => {
+        await result.current.sendFramesToBoard('p4131r42', false, undefined, {
+          climbUuid: 'ok-1',
+          climbBoardType: 'kilter',
+          climbLayoutId: 1,
+        });
+      });
+      expect(result.current.isConnected).toBe(false);
+      mockShowMessage.mockClear();
+
+      // Reconnect and resend the ORIGINAL spill climb: previously the stale ref
+      // would suppress this toast because it still pointed at 'spill-1'.
+      await act(async () => {
+        await result.current.connect();
+      });
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      errorSpy.mockRestore();
+    });
+
+    it('re-arms the incompatible toast after an explicit disconnect()', async () => {
+      const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
+      await act(async () => {
+        await result.current.connect();
+      });
+
+      const spillContext = { climbUuid: 'spill-1', climbBoardType: 'kilter', climbLayoutId: 8 };
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await result.current.disconnect();
+      });
+      mockShowMessage.mockClear();
+
+      await act(async () => {
+        await result.current.connect();
+      });
+      await act(async () => {
+        await result.current.sendFramesToBoard('p1r12', false, undefined, spillContext);
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('refuses silently when the caller suppresses the toast (play-drawer path)', async () => {
       const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockBoardDetails }));
       await act(async () => {

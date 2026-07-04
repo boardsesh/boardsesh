@@ -723,6 +723,82 @@ describe('BluetoothProvider', () => {
       });
       expect(mockShowMessage).toHaveBeenCalledTimes(2);
     });
+
+    it('reports a spill again after an intervening compatible climb write throws', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      mockSendFramesToBoard.mockResolvedValue(true);
+      const spill = makeSpillItem('spill', 'kilter', 8);
+      const compatible = makeSpillItem('ok', 'kilter', 1);
+      mockCurrentClimbQueueItem = spill;
+      mockQueue = [spill, compatible];
+      mockBluetoothState.isConnected = true;
+
+      const { rerender } = renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {});
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      // The intervening compatible climb's write throws (e.g. a mid-send GATT
+      // drop). The dedup ref is cleared synchronously the moment the loop moves
+      // past the incompatible branch — before this awaited call even starts —
+      // so the clear must survive regardless of how this write resolves.
+      mockSendFramesToBoard.mockRejectedValueOnce(new Error('Bluetooth write failed'));
+      mockCurrentClimbQueueItem = compatible;
+      await act(async () => {
+        rerender();
+      });
+      await vi.waitFor(() =>
+        expect(mockTrack).toHaveBeenCalledWith(
+          'Climb Sent to Board Failure',
+          expect.objectContaining({ climbUuid: 'c-ok', failureReason: 'write_aborted' }),
+        ),
+      );
+
+      // Returning to the spill climb must still re-toast/re-advance — proving
+      // the dedup reset was unaffected by the intervening write's failure.
+      mockCurrentClimbQueueItem = spill;
+      await act(async () => {
+        rerender();
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(2);
+
+      consoleSpy.mockRestore();
+    });
+
+    it('reports a spill again after an intervening compatible climb write fails (resolves false)', async () => {
+      mockSendFramesToBoard.mockResolvedValue(true);
+      const spill = makeSpillItem('spill', 'kilter', 8);
+      const compatible = makeSpillItem('ok', 'kilter', 1);
+      mockCurrentClimbQueueItem = spill;
+      mockQueue = [spill, compatible];
+      mockBluetoothState.isConnected = true;
+
+      const { rerender } = renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {});
+      expect(mockShowMessage).toHaveBeenCalledTimes(1);
+
+      // Mirrors the hook's real failing path: set the shared failure-reason ref
+      // synchronously and resolve false, rather than throwing.
+      mockSendFramesToBoard.mockImplementationOnce(async () => {
+        mockSendFailureReasonRef.current = 'disconnected';
+        return false;
+      });
+      mockCurrentClimbQueueItem = compatible;
+      await act(async () => {
+        rerender();
+      });
+      await vi.waitFor(() =>
+        expect(mockTrack).toHaveBeenCalledWith(
+          'Climb Sent to Board Failure',
+          expect.objectContaining({ climbUuid: 'c-ok', failureReason: 'disconnected' }),
+        ),
+      );
+
+      mockCurrentClimbQueueItem = spill;
+      await act(async () => {
+        rerender();
+      });
+      expect(mockShowMessage).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('rapid-swiping serialization', () => {

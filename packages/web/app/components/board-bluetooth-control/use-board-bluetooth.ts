@@ -254,7 +254,11 @@ export function useBoardBluetooth({
   // Dedups the cross-board toast per climb: the play-drawer playback loop and
   // the AutoSender both re-invoke sendFramesToBoard for the same climb, and
   // one toast per climb is enough. Cleared on any successful send so a later
-  // board switch back to a mismatched config re-surfaces the message.
+  // board switch back to a mismatched config re-surfaces the message. Also
+  // cleared on disconnect (both the unexpected drop in handleDisconnection
+  // and the explicit user-initiated disconnect()) — a fresh connection should
+  // always get its own first toast for a climb, even one already flagged
+  // incompatible on the previous connection.
   const lastIncompatibleToastUuidRef = useRef<string | null>(null);
 
   // Device picker state for custom Capacitor scanning.
@@ -299,6 +303,13 @@ export function useBoardBluetooth({
     const connectedAt = connectedAtRef.current;
     connectedAtRef.current = null;
     configuredBoardKeyRef.current = null;
+    // A fresh connection should get its own first incompatible-climb toast,
+    // even for a climb already flagged on the connection we just lost —
+    // otherwise a write that fails mid-session (e.g. the catch block below
+    // calling handleDisconnection on a 'disconnected' classification) can
+    // leave this ref pointing at a stale climb and wrongly suppress the
+    // toast after reconnect.
+    lastIncompatibleToastUuidRef.current = null;
     if (connectedAt !== null) {
       const connectionDurationSec = Math.max(0, Math.round((Date.now() - connectedAt) / 1000));
       track('Bluetooth Disconnected', {
@@ -814,6 +825,10 @@ export function useBoardBluetooth({
     // later genuine drop can prompt again, and forget the board so a later tap
     // opens the picker rather than silently grabbing this board back.
     boardTakenPromptShownRef.current = false;
+    // Symmetric with the take-back guard above: a deliberate disconnect should
+    // equally allow the incompatible-climb toast to resurface on the next
+    // connection instead of staying suppressed from this session.
+    lastIncompatibleToastUuidRef.current = null;
     setLastConnectedBoard(null);
     setIsConnected(false);
     onConnectionChange?.(false);
