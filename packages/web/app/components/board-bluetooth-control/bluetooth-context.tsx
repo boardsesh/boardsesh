@@ -188,15 +188,11 @@ function BluetoothAutoSender({
    * climb hasn't changed.
    */
   reassertNonce: number;
-  /** Active board (name + layout) so a climb set for a different board can be
-   * detected and skipped before it dark-fires the wall. Undefined until the
-   * board config resolves — then everything classifies as "unknown" (sent as
-   * today). */
+  /** Active board for the spill guard; undefined classifies everything as
+   * "unknown" (sent as today). */
   activeConfig: ActiveBoardForCompatibility | undefined;
-  /** Called when the current climb is a "spill" (belongs to another board).
-   * Hands the provider the next compatible queue item to advance to (or null)
-   * plus the skip count, so it can re-point the queue + toast without the
-   * AutoSender owning queue actions or i18n. Mirrors mobile's AutoSender. */
+  /** Fired once per skipped spill climb with the next compatible queue item
+   * (or null); the provider owns the queue advance + toast. */
   onSkipSpillClimb: (args: { skipped: ClimbQueueItem; next: ClimbQueueItem | null; skippedCount: number }) => void;
 }) {
   const { currentClimbQueueItem } = useCurrentClimb();
@@ -208,21 +204,16 @@ function BluetoothAutoSender({
     onWallConfirmedRef.current = onWallConfirmed;
   }, [onWallConfirmed]);
 
-  // Live refs so the drain loop reads the latest board config + skip handler +
-  // queue without listing them as effect deps (which would re-run the loop on
-  // every queue change). A board change re-creates sendFramesToBoard, which IS
-  // a dep, so the loop still re-evaluates compatibility when the board flips.
+  // Live refs: kept off the effect deps; a board change re-creates
+  // sendFramesToBoard (a dep), which re-evaluates compatibility.
   const activeConfigRef = useRef(activeConfig);
   activeConfigRef.current = activeConfig;
   const onSkipSpillClimbRef = useRef(onSkipSpillClimb);
   onSkipSpillClimbRef.current = onSkipSpillClimb;
   const queueRef = useRef(queue);
   queueRef.current = queue;
-  // Dedup spill reports: the async drain can re-enter for the same incompatible
-  // current before the advance lands (a reassert re-render races the queue
-  // advance). Report a given spill uuid once, then clear the moment a
-  // compatible/unknown climb is processed — so deliberately navigating BACK to
-  // a skipped spill re-advances and re-toasts instead of silently sticking.
+  // Report a spill uuid once; cleared when a compatible/unknown climb is
+  // processed so navigating back to a skipped spill re-advances + re-toasts.
   const lastSkipReportedUuidRef = useRef<string | null>(null);
 
   // Serialize BLE writes with a latest-wins queue. Web Bluetooth on Android
@@ -295,13 +286,8 @@ function BluetoothAutoSender({
         while (toSend) {
           if (signal?.aborted) return;
           const item = toSend;
-          // Spill guard (issue #3193): a climb set for a DIFFERENT board/layout
-          // than the connected board would skip every LED placement and
-          // dark-fire the wall (surfacing as the incompatible_climb failure).
-          // Don't write it — hand the provider the next compatible queue item
-          // to advance to (the queue snapshot + active config live in refs so
-          // this stays off the effect deps). Only a KNOWN mismatch is skipped;
-          // unknown/missing metadata is sent as today. No onWallConfirmed here:
+          // Spill guard (issue #3193): only a KNOWN board/layout mismatch is
+          // skipped (unknown metadata sends as today), and no onWallConfirmed —
           // the climb never reached the wall.
           if (classifyClimbBoardCompatibility(activeConfigRef.current, item.climb) === 'incompatible') {
             if (lastSkipReportedUuidRef.current !== item.uuid) {
@@ -696,14 +682,9 @@ export function BluetoothProvider({
   const [partyMode, setPartyMode] = useState<'off' | 'glyphs' | 'disco'>('off');
   const clearBoard = useCallback(() => sendFramesToBoard(''), [sendFramesToBoard]);
 
-  // Advance the queue past a "spill" climb (one set for a different board/layout
-  // than the connected board) instead of dark-firing the wall, and tell the user.
-  // The auto-sender detects the mismatch (and dedups repeat reports for the same
-  // spill), computes the next compatible item, and calls this once. Solo: re-point
-  // the queue so the auto-sender lights the next climb (or clear the wall when
-  // nothing compatible remains). Party: never advance — the current climb is
-  // shared session state and a member on a different wall must not hijack it for
-  // everyone — just clear this wall so it doesn't keep showing the previous climb.
+  // Skip-spill handler: solo advances the queue past the incompatible climb;
+  // party only clears this wall — the shared current climb must not be
+  // hijacked by one member's board.
   const queueActions = useOptionalQueueActions();
   const queueActionsRef = useRef(queueActions);
   queueActionsRef.current = queueActions;

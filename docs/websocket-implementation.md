@@ -124,6 +124,10 @@ The queue-action surface itself (add/remove/set-current/navigate/mirror/replace/
 
 **Solo queue persistence is unchanged** (root-owned, in-memory only): it survives SPA navigation because the root provider is mounted once and never unmounted across route changes, and does **not** survive a full page reload — the same behavior since IndexedDB persistence for the queue itself was deliberately removed (not part of this workstream; see the "Local queue management" comment in `persistent-session/types.ts`). Only `ActiveSessionInfo` (the party-session pointer) persists to IndexedDB via `user-preferences-db`.
 
+### Cross-board ("spill") climbs and the BLE auto-sender
+
+Party mode deliberately does **not** clear the queue on navigation (`setBoardContext` early-returns while a session is active), and the reducer applies peer `CurrentClimbChanged` broadcasts unconditionally — so a member connected to a different wall can legitimately receive a current climb their board can't light. Since issue #3193, both platforms' BLE auto-senders classify the current climb against the active board (`classifyClimbBoardCompatibility` in `@boardsesh/board-config`, boardType + layoutId only; missing metadata never blocks) and skip a known mismatch instead of dark-firing the wall. The invariant: **solo** advances the local queue to the next compatible item (or clears the wall); **party** only clears its own wall and never advances the shared current climb — the session state every peer sees is untouched, and members on the right wall keep climbing. Climb identity rides the wire via `boardType`/`layoutId` on `ClimbInput` (`toClimbQueueItemInput` on web, `toClimbInput` on mobile).
+
 ## Technology Stack
 
 | Component          | Technology                        | Purpose                                                       |

@@ -507,7 +507,8 @@
     "unrecognisedHoldData": "Este bloque tiene datos de presas no reconocidos y no se puede enviar al plafón.",
     "ledDataMissing": "No se pudo enviar al plafón: faltan los datos LED de esta configuración.",
     "partialHoldsSkipped_one": "{{count}} presa no se pudo encender; puede que tu plafón sea de un tamaño distinto al del bloque.",
-    "partialHoldsSkipped_other": "{{count}} presas no se pudieron encender; puede que tu plafón sea de un tamaño distinto al del bloque."
+    "partialHoldsSkipped_other": "{{count}} presas no se pudieron encender; puede que tu plafón sea de un tamaño distinto al del bloque.",
+    "allHoldsSkipped": "No se pudo encender ninguna presa de este bloque; puede que sea de otro plafón."
   },
   "ascents": {
     "deleteTitle": "Eliminar encadene",

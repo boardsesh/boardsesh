@@ -431,7 +431,7 @@ describe('useBoardBluetooth', () => {
 
     expect(sendResult).toBe(false);
     expect(result.current.lastSendFailureReasonRef.current).toBe('incompatible_climb');
-    expect(mockShowMessage).toHaveBeenCalledWith('bluetooth.incompatibleClimb', 'error');
+    expect(mockShowMessage).toHaveBeenCalledWith('bluetooth.allHoldsSkipped', 'error');
     // No identity metadata was passed, so the guard classified 'unknown' and
     // the packet-level all-skipped detector still reports to Sentry — this is
     // the surviving LED-map-gap telemetry.

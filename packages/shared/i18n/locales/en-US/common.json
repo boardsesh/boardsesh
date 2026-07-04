@@ -306,7 +306,8 @@
     "unrecognisedHoldData": "This climb has unrecognised hold data and cannot be sent to the board.",
     "ledDataMissing": "Could not send to board — LED data missing for this board configuration.",
     "partialHoldsSkipped_one": "{{count}} hold couldn't be lit — your board may be a different size than this climb was set for.",
-    "partialHoldsSkipped_other": "{{count}} holds couldn't be lit — your board may be a different size than this climb was set for."
+    "partialHoldsSkipped_other": "{{count}} holds couldn't be lit — your board may be a different size than this climb was set for.",
+    "allHoldsSkipped": "None of this climb's holds could be lit — it may be set for a different board."
   },
   "actions": {
     "yes": "Yes",

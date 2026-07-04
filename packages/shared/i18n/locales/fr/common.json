@@ -306,7 +306,8 @@
     "unrecognisedHoldData": "Ce bloc contient des données de prises non reconnues et ne peut pas être allumé sur la board.",
     "ledDataMissing": "Impossible d'allumer la board — les données LED de cette configuration sont manquantes.",
     "partialHoldsSkipped_one": "{{count}} prise n'a pas pu être allumée — votre board est peut-être d'une taille différente de celle prévue pour ce bloc.",
-    "partialHoldsSkipped_other": "{{count}} prises n'ont pas pu être allumées — votre board est peut-être d'une taille différente de celle prévue pour ce bloc."
+    "partialHoldsSkipped_other": "{{count}} prises n'ont pas pu être allumées — votre board est peut-être d'une taille différente de celle prévue pour ce bloc.",
+    "allHoldsSkipped": "Aucune prise de ce bloc n'a pu être allumée — il est peut-être prévu pour une autre board."
   },
   "actions": {
     "yes": "Oui",

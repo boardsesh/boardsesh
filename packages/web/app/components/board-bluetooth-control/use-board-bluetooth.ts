@@ -379,13 +379,9 @@ export function useBoardBluetooth({
       const climbUuid = sendContext?.climbUuid;
 
       try {
-        // Identity guard (issue #3193): a climb from another board/layout can
-        // never light here — placement IDs and role codes are scoped per
-        // board+layout, so the packet would come out empty. Refuse before
-        // building a packet instead of dark-firing the wall. Climbs without
-        // identity metadata classify as 'unknown' and fall through to the
-        // packet-level all-skipped detectors below, which stay as the last
-        // line of defence (and as true LED-map-gap telemetry).
+        // Identity guard (issue #3193): refuse a known cross-board climb before
+        // building a packet; missing metadata classifies 'unknown' and falls
+        // through to the packet-level all-skipped detectors below.
         if (
           frames !== '' &&
           classifyClimbBoardCompatibility(
@@ -393,9 +389,8 @@ export function useBoardBluetooth({
             { boardType: sendContext?.climbBoardType, layoutId: sendContext?.climbLayoutId },
           ) === 'incompatible'
         ) {
-          // Contextless callers dedup under a shared sentinel so a retry loop
-          // without a uuid can't spam the toast; the ref clears on any
-          // successful send.
+          // Contextless callers dedup under a sentinel so a retry loop can't
+          // spam the toast; the ref clears on any successful send.
           const toastKey = climbUuid ?? '__no-uuid__';
           if (lastIncompatibleToastUuidRef.current !== toastKey) {
             lastIncompatibleToastUuidRef.current = toastKey;
@@ -528,7 +523,9 @@ export function useBoardBluetooth({
               },
             },
           );
-          showMessage(t('bluetooth.incompatibleClimb'), 'error');
+          // Distinct copy from the identity guard: with no identity mismatch,
+          // an all-skip here can also mean an LED-data gap, not a foreign climb.
+          showMessage(t('bluetooth.allHoldsSkipped'), 'error');
           lastSendFailureReasonRef.current = 'incompatible_climb';
           return false;
         }
