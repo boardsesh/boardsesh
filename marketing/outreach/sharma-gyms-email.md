@@ -3,7 +3,7 @@
 Draft email for Sharma gym managers after an in-person conversation about putting
 up a banner or QR code near the Kilter / Tension boards.
 
-Voice and positioning follow the about page (`packages/web/i18n/locales/en-US/marketing.json`,
+Voice and positioning follow the about page (`packages/shared/i18n/locales/en-US/marketing.json`,
 `about.*`) and the trademark guidance in `LEGAL.md`. Keep it climber-talk, no
 buzzwords, and explicitly non-affiliated with Aurora / Moon / Tension.
 

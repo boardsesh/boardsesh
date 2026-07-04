@@ -321,17 +321,18 @@ We are using next.js app router, it's important we try to use server side compon
 - Prefer skeleton or shadow content for loading states. Use spinners only when representative placeholder content is not reasonably possible, such as a single indeterminate action with no stable content shape.
 - **Dark mode uses white input fields** — This is intentional for contrast. All input components (TextField, Select, Autocomplete, etc.) have white backgrounds in dark mode via `darkTokens.semantic.inputSurface`. Do not change them to dark backgrounds.
 - **Never use `any` type** - The `no-explicit-any` lint rule is set to `deny` across all packages. Use `unknown`, proper types, or `as unknown as SpecificType` for type assertions. No exceptions - `any` defeats the purpose of TypeScript
-- **Never hardcode user-facing strings** - All visible text must come from the i18n catalogs in `packages/web/i18n/locales/`. See the Internationalisation section below for the call-site pattern. CI runs `vp run check:i18n` on every PR, which fails the build if a `.tsx` file under `packages/web/app/` introduces a hardcoded English string. Pre-existing violations are silenced with `// i18n-ignore-next-line` (or `{/* i18n-ignore-next-line */}`) comments — chip away at these by translating them and removing the marker.
+- **Never hardcode user-facing strings** - All visible text must come from the i18n catalogs in `packages/shared/i18n/locales/`. See the Internationalisation section below for the call-site pattern. CI runs `vp run check:i18n` on every PR, which fails the build if a `.tsx` file under `packages/web/app/` introduces a hardcoded English string. Pre-existing violations are silenced with `// i18n-ignore-next-line` (or `{/* i18n-ignore-next-line */}`) comments — chip away at these by translating them and removing the marker.
 - **Variable names must describe their contents** - No single-letter aliases (`r`, `x`, `s`) or vague placeholders (`data`, `info`, `latest`, `temp`, `value`) outside of tight loops or well-known math conventions. The name should tell the next reader what's inside without forcing them to scroll back to the declaration. Prefer destructuring at the use site over a generic alias — `const { queue, currentClimb } = stateRef.current` reads better than `const s = stateRef.current` followed by `s.queue` / `s.currentClimb`.
 
 ### Internationalisation
 
-Boardsesh ships English (`en-US`) at root paths and Spanish (`es`) at `/es/*`. The i18n stack is `i18next` + `react-i18next` with JSON catalogs under `packages/web/i18n/locales/<locale>/<namespace>.json`. Locale detection is path-based — middleware (`packages/web/middleware.ts`) reads the `/es/` prefix, rewrites the URL internally, and sets the `x-boardsesh-locale` request header.
+Boardsesh ships English (`en-US`) at root paths, Spanish (`es`) at `/es/*`, and French (`fr`) at `/fr/*`. The i18n stack is `i18next` + `react-i18next` with JSON catalogs under `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Locale detection is path-based — middleware (`packages/web/middleware.ts`) reads the locale prefix, rewrites the URL internally, and sets the `x-boardsesh-locale` request header.
 
 **Adding new copy**
 
-- Add the key to the matching English catalog only: `packages/web/i18n/locales/en-US/<namespace>.json`. Spanish catalogs are filled by community contributors. Missing Spanish keys fall back to English automatically (i18next `fallbackLng`).
-- Pick the right namespace. Currently `common` (shared chrome) and `marketing` (about/help/docs/legal/privacy/home). Add a new namespace by adding it to `SEED_NAMESPACES` in `packages/web/app/lib/i18n/config.ts` and creating `<lang>/<namespace>.json` files for each supported locale.
+- Add the key to every locale's catalog: `packages/shared/i18n/locales/<locale>/<namespace>.json` for `en-US`, `es`, and `fr`. `catalog-completeness.test.ts` in `@boardsesh/i18n` enforces per-namespace parity, so a key added to English only fails CI.
+- Pick the right namespace — `common` (shared chrome), `marketing` (about/help/docs/legal/privacy/home), `auth`, `climbs`, and friends; the full list is `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts`. Add a new namespace there (web re-exports the list as `SEED_NAMESPACES`; add it to `MOBILE_NAMESPACES` too if mobile needs it) and create `<locale>/<namespace>.json` files for each supported locale.
+- Spanish and French strings follow fixed glossaries: `docs/i18n-spanish-glossary.md` and `docs/i18n-french-glossary.md`.
 - Use ICU-style placeholders for interpolation: `"greeting": "Hello {{name}}"`.
 
 **Server components**
@@ -358,7 +359,7 @@ export default function Foo() {
 
 **Internal links** must preserve the active locale — use `<LocaleLink>` (from `@/app/components/i18n/locale-link`), not raw `next/link`. For MUI links: `<MuiLink component={LocaleLink} href="/docs">`. External links (`https://`, `mailto:`) and `router.push()` calls are unaffected for now (locale-preserving navigation helpers for `router.push` are a follow-up).
 
-**Page metadata** must use the locale-aware helper — `createPageMetadata` already populates `alternates.languages` (en-US, es, x-default) when given a `path`:
+**Page metadata** must use the locale-aware helper — `createPageMetadata` already populates `alternates.languages` (every supported locale plus x-default) when given a `path`:
 
 ```ts
 export async function generateMetadata() {
@@ -376,13 +377,13 @@ export async function generateMetadata() {
 
 **Adding a new page**
 
-- Make it reachable at both `/path` (English) and `/es/path` (Spanish). Verify in the dev server.
+- Make it reachable at `/path` (English) and the locale-prefixed variants (`/es/path`, `/fr/path`). Verify in the dev server.
 - Use `generateMetadata` with the pattern above so hreflang alternates are emitted.
 - Add the URL to `packages/web/app/sitemap.ts` if it should be indexable — sitemap entries automatically get per-locale variants.
 
 **Adding a new locale**
 
-Touch all of: `SUPPORTED_LOCALES` and `LOCALE_HTML_LANG`/`LOCALE_OG`/`LOCALE_LABELS` in `packages/web/app/lib/i18n/config.ts`, every catalog directory under `packages/web/i18n/locales/`, the language switcher options, and the sitemap. `detectLocale` (`packages/web/app/lib/i18n/detect-locale.ts`) iterates `SUPPORTED_LOCALES` and needs no edit — adding the locale to `config.ts` is sufficient for routing. Don't ship a partial locale — middleware will rewrite paths but pages will fall back to English everywhere.
+Touch all of: `SUPPORTED_LOCALES` and `LOCALE_HTML_LANG`/`LOCALE_OG`/`LOCALE_LABELS` in `packages/shared/i18n/src/config.ts`, every catalog directory under `packages/shared/i18n/locales/`, the language switcher options, and the sitemap. `detectLocale` (`packages/web/app/lib/i18n/detect-locale.ts`) iterates `SUPPORTED_LOCALES` and needs no edit — adding the locale to the shared config is sufficient for routing. Don't ship a partial locale — middleware will rewrite paths but pages will fall back to English everywhere.
 
 **Don't translate** code samples in `<pre>` blocks (e.g. `app/docs/docs-client.tsx`), brand names ("Boardsesh", "Kilter", "Tension", "MoonBoard"), or user-generated content (climb names, comments, usernames). Trademark phrasing in CLAUDE.md still applies.
 

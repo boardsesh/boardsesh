@@ -535,7 +535,7 @@ Frontend UI:
 
 i18n catalog:
 
-- `packages/web/i18n/locales/en-US/session.json` — new keys for "Pick this
+- `packages/shared/i18n/locales/en-US/session.json` — new keys for "Pick this
   climb", "Take the wall", "No pick yet", "<user> sent <climb>", history
   tab labels, plan-ahead scope chips, transfer icon ARIA, etc.
 

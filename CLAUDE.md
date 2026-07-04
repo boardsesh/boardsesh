@@ -157,9 +157,9 @@ Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/back
 
 ### Internationalisation
 
-Supported locales: `en-US` (root), `es` (`/es/*`), `fr`. Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing` (add new ones in `SEED_NAMESPACES` in `app/lib/i18n/config.ts`).
+Supported locales: `en-US` (root), `es` (`/es/*`), `fr`. Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
 
-- **Add every new key to every locale.** `i18n-catalog-completeness.test.ts` enforces parity per namespace.
+- **Add every new key to every locale.** `catalog-completeness.test.ts` in `@boardsesh/i18n` enforces parity per namespace.
 - Server: `const { t } = await getServerTranslation('marketing')`.
 - Client: `const { t } = useTranslation('marketing')`.
 - Internal links: `<LocaleLink>` from `@/app/components/i18n/locale-link` (not raw `next/link`). MUI: `<MuiLink component={LocaleLink} href="...">`.
@@ -169,7 +169,7 @@ Supported locales: `en-US` (root), `es` (`/es/*`), `fr`. Path-based detection vi
 - **Don't translate** code samples in `<pre>` blocks, brand names (Boardsesh, Kilter, Tension, MoonBoard), or user-generated content.
 - Linter hard-fails on `t(variable)` / `t('a' + b)` — use string literals or template literals only.
 
-Adding a new locale: update `SUPPORTED_LOCALES` and friends in `app/lib/i18n/config.ts`, add catalog dir, language switcher, sitemap.
+Adding a new locale: update `SUPPORTED_LOCALES` and friends in `packages/shared/i18n/src/config.ts`, add catalog dir, language switcher, sitemap.
 
 **Spanish terminology:** Spanish translations follow a fixed glossary. Most importantly, a climbing board is **"plafón"** (masculine — _el plafón_, plural _plafones_), never "tabla"/"tablero"/"tabla de escalada" or raw English "board"; fix article/adjective agreement when you swap the word. Brand product names ("Kilter Board", "Tension Board", "MoonBoard") stay as-is. Full terminology, grammar rules, and exceptions: **`docs/i18n-spanish-glossary.md`** — follow it for every Spanish string you add.
 

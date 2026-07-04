@@ -397,7 +397,7 @@ Update `packages/web/` imports to reference the shared packages. Run `vp check` 
 
 ### Phase 2: Core climb experience (5 weeks)
 
-- i18n setup: `i18next` + `react-i18next` with shared catalogs from `packages/web/i18n/locales/` (en-US, es, fr). All user-facing strings must go through `t()` — Phase 1 placeholder screens use hardcoded English that must be replaced.
+- i18n setup: `i18next` + `react-i18next` with shared catalogs from `packages/shared/i18n/locales/` (en-US, es, fr). All user-facing strings must go through `t()` — Phase 1 placeholder screens use hardcoded English that must be replaced.
 - **Sync backend prerequisites**: `updated_at` columns on 8 tables + auto-update triggers, `sync_deletions` table + per-table trigger functions, idempotent `saveTick`/`createPlaylist` (accept client UUID), new `addFavorite`/`removeFavorite` mutations, sync pull resolvers (10 GraphQL queries with composite cursor). See [offline-sync-plan.md](offline-sync-plan.md).
 - Climb browsing with FlashList, swipe actions, context menus
 - Board renderer with SwiftUI `Canvas` on iOS — validate 120fps on ProMotion early in week 1
