@@ -13,6 +13,8 @@ const CLIMB_SEARCH_FIELDS = `
   setter_username
   name
   frames
+  boardType
+  layoutId
   angle
   ascensionist_count
   difficulty
@@ -42,6 +44,8 @@ const CLIMB_DETAIL_FIELDS = `
   name
   description
   frames
+  boardType
+  layoutId
   angle
   ascensionist_count
   difficulty
