@@ -77,6 +77,21 @@ describe('AnalyticsPersonProperties', () => {
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   });
 
+  it('stops writing after the user signs out', () => {
+    state.profile = { id: 'user-1', createdAt: '2024-01-02T03:04:05.000Z', isTester: false, favoriteCount: 1 };
+    state.activeBoard = { boardType: 'kilter' };
+
+    const { rerender } = render(createElement(AnalyticsPersonProperties));
+    expect(analytics.setPersonProperties).toHaveBeenCalledTimes(1);
+
+    // Sign-out clears auth + the gated profile query — the guard must hold.
+    state.isAuthenticated = false;
+    state.profile = null;
+    rerender(createElement(AnalyticsPersonProperties));
+
+    expect(analytics.setPersonProperties).toHaveBeenCalledTimes(1);
+  });
+
   it('re-writes when a live trait changes after the first resolve', () => {
     state.profile = { id: 'user-1', createdAt: '2024-01-02T03:04:05.000Z', isTester: false, favoriteCount: 1 };
     state.activeBoard = { boardType: 'kilter' };
