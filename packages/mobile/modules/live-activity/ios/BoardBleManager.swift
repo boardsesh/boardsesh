@@ -79,7 +79,7 @@ struct BoardBleWriteTelemetry {
     }
 }
 
-enum BoardBleError: LocalizedError {
+enum BoardBleError: LocalizedError, Equatable {
     case bluetoothUnavailable
     case deviceNotFound
     case connectTimedOut
@@ -192,7 +192,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // device; without this gate every repeat advertisement would cross the
     // native→JS bridge. Cleared on every startScan so a fresh scan re-emits.
     private var emittedScanResults: [String: String] = [:]
-    private var connectedPeripheral: CBPeripheral?
+    private var connectedPeripheral: WritableBlePeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var pendingConnectCompletion: ((Result<Void, Error>) -> Void)?
     private var connectTimeoutWorkItem: DispatchWorkItem?
@@ -210,12 +210,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var writeGeneration: UInt64 = 0
     private var isWriting = false
     private var pendingWriteResume: (() -> Void)?
-    private var pendingWriteResumeWatchdog: DispatchWorkItem?
+    private var pendingWriteResumeWatchdog: BleOneShotTimer?
     // Poller behind the parked write (#3230): re-checks
     // `canSendWriteWithoutResponse` while `pendingWriteResume` is set, because
     // iOS 26.5 can flip the property without ever delivering the
     // `peripheralIsReady` delegate. Cancelled wherever the watchdog is.
-    private var writeResumePoller: DispatchSourceTimer?
+    private var writeResumePoller: BleRepeatingTimer?
     // Telemetry for the request currently being written (#3230). Requests are
     // strictly serial (`isWriting`), so one slot suffices: seeded when a request
     // starts, finalized at whichever settle point delivers its completion.
@@ -225,7 +225,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // characteristic advertises only `.write`). The `didWriteValueFor` ack is
     // the resume signal — the with-response analogue of `pendingWriteResume`.
     private var pendingWriteAck: (() -> Void)?
-    private var pendingWriteAckWatchdog: DispatchWorkItem?
+    private var pendingWriteAckWatchdog: BleOneShotTimer?
     // Write-stall recovery (#3181). `writeStallRecoveries` counts consecutive
     // stalls (reset on any drained write). `writeStallRecoveringPeripheralId` is
     // the board whose congested link we deliberately cycled; it is set across the
@@ -243,10 +243,25 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // stays on), this fires so the window can't strand forever (wall dark, JS
     // still "connected"). Cancelled the moment the reconnect actually starts —
     // from there the reconnect's own connect timeout owns the deadline (#3181).
-    private var writeStallRecoveryWatchdog: DispatchWorkItem?
+    private var writeStallRecoveryWatchdog: BleOneShotTimer?
     private var configuration: BoardBleConfiguration?
     private lazy var readyWaiters = WaiterPool(queue: bleQueue)
     private lazy var drainWaiters = WaiterPool(queue: bleQueue)
+
+    /// Injectable factory for the write flow-control timers (#3366). Production
+    /// (`.shared`, or any default-arg init) uses the GCD-backed
+    /// `DispatchBleTimerScheduler` — byte-for-byte the pre-refactor inline code.
+    /// An init that supplies a scheduler assigns it before this lazy default can
+    /// be touched, so tests get their fake instead.
+    private lazy var timerScheduler: BleTimerScheduling = DispatchBleTimerScheduler(queue: bleQueue)
+
+    #if DEBUG || BOARDSESH_TESTS
+    /// Test-only interception of the single concrete `cancelPeripheralConnection`
+    /// call site so a fake peripheral never has to be a real `CBPeripheral` and no
+    /// `CBCentralManager` is instantiated. nil in production/dev; only the write
+    /// flow-control test suite sets it.
+    var cancelPeripheralConnectionOverrideForTesting: ((WritableBlePeripheral) -> Void)?
+    #endif
 
     private var onScanResult: ((BoardBleScanResult) -> Void)?
     // Second arg carries the disconnect reason (CoreBluetooth NSError code/domain/
@@ -260,12 +275,25 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// wall. Payload: (deviceId, deviceName).
     private var onConnected: ((String, String?) -> Void)?
 
-    override private init() {
+    /// Production must use `BoardBleManager.shared`, which calls this with the
+    /// default arguments — reproducing the original `override private init()`
+    /// exactly: the real GCD `DispatchBleTimerScheduler` and an eagerly created
+    /// `CBCentralManager`. Tests construct isolated instances with a fake
+    /// scheduler and `createCentralManagerEagerly: false` so no CoreBluetooth
+    /// stack (or permission prompt) spins up.
+    init(timerScheduler: BleTimerScheduling? = nil, createCentralManagerEagerly: Bool = true) {
         super.init()
+        // Assign before the lazy `timerScheduler` default (or anything else) can
+        // touch it — nothing in this initializer reads the scheduler.
+        if let timerScheduler {
+            self.timerScheduler = timerScheduler
+        }
         bleQueue.setSpecific(key: bleQueueKey, value: ())
         runOnBleQueueSync {
             configuration = readConfiguration()
-            _ = centralManager
+            if createCentralManagerEagerly {
+                _ = centralManager
+            }
         }
     }
 
@@ -646,7 +674,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         intentionalDisconnectGenerations[peripheral.identifier] = connectionGeneration
         peripheralGenerations[peripheral.identifier] = connectionGeneration
-        centralManager.cancelPeripheralConnection(peripheral)
+        cancelPeripheralConnection(peripheral)
         writeCharacteristic = nil
         connectedPeripheral = nil
         completion?()
@@ -1144,6 +1172,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
+        handlePeripheralIsReadyOnBleQueue()
+    }
+
+    /// Body of `peripheralIsReady(toSendWriteWithoutResponse:)`, extracted so the
+    /// write flow-control tests can drive it without a real `CBPeripheral`
+    /// (#3366). The delegate already ignored the peripheral arg, so this is a
+    /// pure move. Runs on `bleQueue` (CoreBluetooth delivers the delegate there).
+    func handlePeripheralIsReadyOnBleQueue() {
         // Recorded even when nothing is parked: the diagnostic question for
         // #3230 is whether iOS delivered this delegate at all during a request.
         currentWriteTelemetry?.peripheralIsReadyFired = true
@@ -1190,7 +1226,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// guard (and, beyond those, `writeChunk`'s generation guards).
     private func startWriteResumePollerOnBleQueue() {
         writeResumePoller?.cancel()
-        let poller = DispatchSource.makeTimerSource(queue: bleQueue)
+        let poller = timerScheduler.makeRepeatingTimer()
         poller.setEventHandler { [weak self, weak poller] in
             guard let self, let poller, self.writeResumePoller === poller else { return }
             guard self.pendingWriteResume != nil else {
@@ -1206,8 +1242,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             self.resumeParkedWrite(source: "poll")
         }
         poller.schedule(
-            deadline: .now() + writeResumePollInterval,
-            repeating: writeResumePollInterval,
+            interval: writeResumePollInterval,
             leeway: .milliseconds(20)
         )
         writeResumePoller = poller
@@ -1220,6 +1255,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // already nil'd it) no-ops. Stale-generation acks are caught by
     // `writeChunk`'s generation guard when the continuation re-enters.
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        handleDidWriteValueOnBleQueue(error: error)
+    }
+
+    /// Body of `didWriteValueFor`, extracted so the write flow-control tests can
+    /// drive the with-response ack path without a real `CBPeripheral` (#3366).
+    /// The delegate used only `error` (never the peripheral/characteristic), so
+    /// this is a pure move. Runs on `bleQueue`.
+    func handleDidWriteValueOnBleQueue(error: Error?) {
         pendingWriteAckWatchdog?.cancel()
         pendingWriteAckWatchdog = nil
         let ack = pendingWriteAck
@@ -1291,7 +1334,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func connectionDiagnosticsOnBleQueue(
-        peripheral: CBPeripheral,
+        peripheral: WritableBlePeripheral,
         characteristic: CBCharacteristic
     ) -> BoardBleConnectionDiagnostics {
         let properties = characteristic.properties
@@ -1445,7 +1488,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 // field: true would mean the poller missed a flip (logic bug);
                 // false proves the wedge that only a link cycle clears; absent
                 // means the peripheral was already gone when the watchdog ran.
-                let watchdog = DispatchWorkItem { [weak self] in
+                pendingWriteResumeWatchdog?.cancel()
+                pendingWriteResumeWatchdog = timerScheduler.scheduleOneShot(after: writeResumeTimeout, label: "writeResumeWatchdog") { [weak self] in
                     guard let self, self.pendingWriteResume != nil else { return }
                     // Tri-state on purpose: true = the poller missed a flip
                     // (logic bug), false = wedged buffer on a live link, nil
@@ -1457,15 +1501,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                     self.logger.error("BLE write stalled: peripheral never became ready for write-without-response (canSendAtTrip=\(String(describing: canSendAtTrip), privacy: .public)); attempting recovery")
                     self.handleWriteStall()
                 }
-                pendingWriteResumeWatchdog?.cancel()
-                pendingWriteResumeWatchdog = watchdog
-                bleQueue.asyncAfter(deadline: .now() + writeResumeTimeout, execute: watchdog)
                 startWriteResumePollerOnBleQueue()
                 return
             }
 
             peripheral.writeValue(request.chunks[chunkIndex], for: characteristic, type: .withoutResponse)
-            bleQueue.asyncAfter(deadline: .now() + chunkDelay) { [weak self] in
+            _ = timerScheduler.scheduleOneShot(after: chunkDelay, label: "chunkDelay") { [weak self] in
                 self?.writeChunk(
                     requestIndex: requestIndex,
                     chunkIndex: chunkIndex + 1,
@@ -1492,15 +1533,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
         // Watchdog mirrors the without-response stall path: if the board never
         // acks within writeResumeTimeout, recover by cycling the link (#3181).
-        let ackWatchdog = DispatchWorkItem { [weak self] in
+        pendingWriteAckWatchdog?.cancel()
+        pendingWriteAckWatchdog = timerScheduler.scheduleOneShot(after: writeResumeTimeout, label: "writeAckWatchdog") { [weak self] in
             guard let self, self.pendingWriteAck != nil else { return }
             self.currentWriteTelemetry?.watchdogTripped = true
             self.logger.error("BLE write stalled: peripheral never acked write-with-response; attempting recovery")
             self.handleWriteStall()
         }
-        pendingWriteAckWatchdog?.cancel()
-        pendingWriteAckWatchdog = ackWatchdog
-        bleQueue.asyncAfter(deadline: .now() + writeResumeTimeout, execute: ackWatchdog)
         peripheral.writeValue(request.chunks[chunkIndex], for: characteristic, type: .withResponse)
     }
 
@@ -1612,7 +1651,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // recovery arm cancels this and hands the deadline to the reconnect's own
         // connect timeout; if didDisconnect never lands, this fails closed.
         let recoveringId = peripheral.identifier
-        let recoveryWatchdog = DispatchWorkItem { [weak self] in
+        writeStallRecoveryWatchdog?.cancel()
+        writeStallRecoveryWatchdog = timerScheduler.scheduleOneShot(after: connectTimeout, label: "writeStallRecoveryWatchdog") { [weak self] in
             guard let self, self.writeStallRecoveringPeripheralId == recoveringId else { return }
             self.logger.error("BLE write-stall recovery stalled before reconnect (no didDisconnect); surfacing disconnect for \(recoveringId.uuidString, privacy: .public)")
             self.writeStallRecoveringPeripheralId = nil
@@ -1621,22 +1661,38 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             self.connectedPeripheral = nil
             self.onDisconnect?(recoveringId.uuidString, ["context": "write_stall_recovery_timeout"])
         }
-        writeStallRecoveryWatchdog?.cancel()
-        writeStallRecoveryWatchdog = recoveryWatchdog
-        bleQueue.asyncAfter(deadline: .now() + connectTimeout, execute: recoveryWatchdog)
     }
 
     /// Intentionally drop the current link: bump the generation, mark the
     /// disconnect intentional (so didDisconnectPeripheral suppresses the
     /// onDisconnect-to-JS and invalidates the old link's stale callbacks), cancel,
     /// and null the connection. Shared by the write-stall recovery paths (#3181).
-    private func cancelConnectionIntentionallyOnBleQueue(_ peripheral: CBPeripheral) {
+    private func cancelConnectionIntentionallyOnBleQueue(_ peripheral: WritableBlePeripheral) {
         connectionGeneration += 1
         intentionalDisconnectGenerations[peripheral.identifier] = connectionGeneration
         peripheralGenerations[peripheral.identifier] = connectionGeneration
-        centralManager.cancelPeripheralConnection(peripheral)
+        cancelPeripheralConnection(peripheral)
         writeCharacteristic = nil
         connectedPeripheral = nil
+    }
+
+    /// The single concrete `CBCentralManager.cancelPeripheralConnection` call
+    /// site. Every `WritableBlePeripheral` is a `CBPeripheral` outside tests, so
+    /// in production this is exactly the old inline call. The test override lets
+    /// the write flow-control suite observe intentional cancels without a real
+    /// CoreBluetooth peripheral.
+    private func cancelPeripheralConnection(_ peripheral: WritableBlePeripheral) {
+        #if DEBUG || BOARDSESH_TESTS
+        if let overrideForTesting = cancelPeripheralConnectionOverrideForTesting {
+            overrideForTesting(peripheral)
+            return
+        }
+        #endif
+        guard let concretePeripheral = peripheral as? CBPeripheral else {
+            assertionFailure("WritableBlePeripheral is always CBPeripheral outside tests")
+            return
+        }
+        centralManager.cancelPeripheralConnection(concretePeripheral)
     }
 
     private func readConfiguration() -> BoardBleConfiguration? {
@@ -1677,3 +1733,69 @@ private extension Data {
         self = Data(bytes)
     }
 }
+
+#if DEBUG || BOARDSESH_TESTS
+extension BoardBleManager {
+    /// Test-only seam into the write flow-control internals (#3366). Reaches the
+    /// manager's `private` state via same-file extension access, so the write
+    /// flow-control suite can set up an isolated connection, drive the timers /
+    /// delegate callbacks the fakes replace, and read back the resulting state
+    /// without touching CoreBluetooth. Never compiled into release builds.
+    struct TestHooks {
+        fileprivate let manager: BoardBleManager
+
+        /// Run `body` on the BLE serial queue synchronously. Nested manager hops
+        /// (`runOnBleQueue`) execute inline under this, so a whole action settles
+        /// before the call returns — the suite's determinism relies on it.
+        func sync<T>(_ body: () -> T) -> T {
+            manager.runOnBleQueueSync(body)
+        }
+
+        /// Directly seed the connection the write path guards on. No CoreBluetooth
+        /// side effects, unlike the real connect flow.
+        func setConnection(peripheral: WritableBlePeripheral?, characteristic: CBCharacteristic?) {
+            manager.connectedPeripheral = peripheral
+            manager.writeCharacteristic = characteristic
+        }
+
+        /// Set the in-memory board configuration WITHOUT the app-group persistence
+        /// `configure()` performs — so a dev machine's stored config can't leak in.
+        func setConfiguration(_ configuration: BoardBleConfiguration?) {
+            manager.configuration = configuration
+        }
+
+        /// Seed the consecutive-stall counter to exercise the recovery-budget
+        /// boundary in `handleWriteStall`.
+        func setWriteStallRecoveries(_ count: Int) {
+            manager.writeStallRecoveries = count
+        }
+
+        /// Intercept the single concrete `cancelPeripheralConnection` call so a
+        /// fake peripheral never has to be a real `CBPeripheral`.
+        func setCancelPeripheralConnectionOverride(_ handler: ((WritableBlePeripheral) -> Void)?) {
+            manager.cancelPeripheralConnectionOverrideForTesting = handler
+        }
+
+        /// Fire the `peripheralIsReady(toSendWriteWithoutResponse:)` delegate body.
+        func firePeripheralIsReady() {
+            manager.runOnBleQueueSync { manager.handlePeripheralIsReadyOnBleQueue() }
+        }
+
+        /// Fire the `didWriteValueFor` delegate body (with-response ack path).
+        func fireWriteAck(error: Error?) {
+            manager.runOnBleQueueSync { manager.handleDidWriteValueOnBleQueue(error: error) }
+        }
+
+        var hasPendingWriteResume: Bool { manager.pendingWriteResume != nil }
+        var capturedPendingWriteResume: (() -> Void)? { manager.pendingWriteResume }
+        var isWriting: Bool { manager.isWriting }
+        var writeQueueDepth: Int { manager.writeQueue.count }
+        var writeGeneration: UInt64 { manager.writeGeneration }
+        var currentTelemetry: BoardBleWriteTelemetry? { manager.currentWriteTelemetry }
+        var writeStallRecoveries: Int { manager.writeStallRecoveries }
+        var writeStallRecoveringPeripheralId: UUID? { manager.writeStallRecoveringPeripheralId }
+    }
+
+    var testHooks: TestHooks { TestHooks(manager: self) }
+}
+#endif

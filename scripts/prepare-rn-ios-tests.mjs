@@ -9,12 +9,28 @@ const TEST_TARGET_NAME = 'BoardseshTests';
 const APP_TARGET_NAME = 'Boardsesh';
 const BUNDLE_IDENTIFIER = 'com.boardsesh.app.tests';
 const DEPLOYMENT_TARGET = '17.0';
-const SWIFT_FLAGS = '"$(inherited) -D WIDGET_EXTENSION"';
+const SWIFT_FLAGS = '"$(inherited) -D WIDGET_EXTENSION -D BOARDSESH_TESTS"';
 
 const TEST_SOURCE_FILES = [
   {
     sourcePath: '../ios-tests/LiveActivityWidgetTests.swift',
     projectPath: 'BoardseshTests/LiveActivityWidgetTests.swift',
+  },
+  {
+    sourcePath: '../ios-tests/BoardBleWriteFlowTests.swift',
+    projectPath: 'BoardseshTests/BoardBleWriteFlowTests.swift',
+  },
+  {
+    sourcePath: '../modules/live-activity/ios/BoardBleManager.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/BoardBleManager.swift',
+  },
+  {
+    sourcePath: '../modules/live-activity/ios/BoardBleWriteSeams.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/BoardBleWriteSeams.swift',
+  },
+  {
+    sourcePath: '../modules/live-activity/ios/WaiterPool.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/WaiterPool.swift',
   },
   {
     sourcePath: '../modules/live-activity/ios/ClimbSessionAttributes.swift',
