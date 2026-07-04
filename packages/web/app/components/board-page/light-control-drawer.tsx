@@ -98,6 +98,9 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
   const isMoonboard = boardDetails.board_name === 'moonboard';
   const climbFrames = currentClimbQueueItem?.climb.frames ?? '';
   const climbMirrored = !!currentClimbQueueItem?.climb.mirrored;
+  const climbUuid = currentClimbQueueItem?.climb.uuid;
+  const climbBoardType = currentClimbQueueItem?.climb.boardType;
+  const climbLayoutId = currentClimbQueueItem?.climb.layoutId;
   const hasClimbLoaded = climbFrames.length > 0;
 
   const [colorDialogOpen, setColorDialogOpen] = useState(false);
@@ -226,9 +229,9 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
         .map((id) => `p${id}r${stateCodes[Math.floor(Math.random() * stateCodes.length)]}`)
         .join('');
       const result = await sendFramesToBoard(`${baseFrames}${handFrames}`, climbMirrored, undefined, {
-        climbUuid: currentClimbQueueItem?.climb.uuid,
-        climbBoardType: currentClimbQueueItem?.climb.boardType,
-        climbLayoutId: currentClimbQueueItem?.climb.layoutId,
+        climbUuid,
+        climbBoardType,
+        climbLayoutId,
       });
       inFlight = false;
       // The effect may have been torn down while the write was in flight — don't
@@ -256,7 +259,9 @@ export const LightControlDrawer: React.FC<LightControlDrawerProps> = ({ open, on
     boardDetails.board_name,
     climbFrames,
     climbMirrored,
-    currentClimbQueueItem,
+    climbUuid,
+    climbBoardType,
+    climbLayoutId,
     sendFramesToBoard,
     setPartyMode,
     showMessage,

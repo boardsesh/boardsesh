@@ -262,6 +262,12 @@ export function useBoardBluetooth({
   // board switch back to a mismatched config re-surfaces the message.
   // Also cleared on both disconnect paths (handleDisconnection, disconnect()) so a fresh connection re-arms it.
   const lastIncompatibleToastUuidRef = useRef<string | null>(null);
+  // The hook outlives route changes (root provider), so also re-arm on a board
+  // switch — the same climb can be incompatible with the NEW board too and
+  // deserves a fresh toast there.
+  useEffect(() => {
+    lastIncompatibleToastUuidRef.current = null;
+  }, [boardDetails]);
 
   // Device picker state for custom Capacitor scanning.
   // pickerRejectRef holds the pending promise's reject so unmount cleanup

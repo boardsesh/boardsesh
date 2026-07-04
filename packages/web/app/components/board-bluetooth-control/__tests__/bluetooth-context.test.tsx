@@ -799,6 +799,52 @@ describe('BluetoothProvider', () => {
       });
       expect(mockShowMessage).toHaveBeenCalledTimes(2);
     });
+
+    it('physically re-lights the previously lit climb after a spill cleared the wall', async () => {
+      // Regression: the skip handler clears the wall, so the send-signature
+      // dedup must not treat the previously lit climb as "already on the wall"
+      // when the user returns to it — that would leave the wall dark while
+      // still firing wall-confirm.
+      mockSendFramesToBoard.mockResolvedValue(true);
+      const lit: MockQueueItem = {
+        uuid: 'lit',
+        climb: { uuid: 'c-lit', frames: 'p9r12', mirrored: false, name: 'Lit', boardType: 'kilter', layoutId: 1 },
+      };
+      const spill = makeSpillItem('spill', 'kilter', 8);
+      mockCurrentClimbQueueItem = lit;
+      mockQueue = [lit, spill];
+      mockBluetoothState.isConnected = true;
+
+      const { rerender } = renderHook(() => useBluetoothContext(), { wrapper: createWrapper() });
+      await act(async () => {
+        await vi.waitFor(() =>
+          expect(mockSendFramesToBoard).toHaveBeenCalledWith(
+            'p9r12',
+            false,
+            expect.anything(),
+            expect.objectContaining({ climbUuid: 'c-lit' }),
+          ),
+        );
+      });
+
+      // Spill becomes current with nothing compatible after it → wall cleared.
+      mockCurrentClimbQueueItem = spill;
+      await act(async () => {
+        rerender();
+      });
+      expect(mockSendFramesToBoard).toHaveBeenCalledWith('');
+
+      // Returning to the previously lit climb must re-write it, not dedup.
+      const litSendsBefore = mockSendFramesToBoard.mock.calls.filter(([frames]) => frames === 'p9r12').length;
+      mockCurrentClimbQueueItem = lit;
+      await act(async () => {
+        rerender();
+      });
+      await vi.waitFor(() => {
+        const litSendsAfter = mockSendFramesToBoard.mock.calls.filter(([frames]) => frames === 'p9r12').length;
+        expect(litSendsAfter).toBe(litSendsBefore + 1);
+      });
+    });
   });
 
   describe('rapid-swiping serialization', () => {

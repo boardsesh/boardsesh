@@ -290,6 +290,11 @@ function BluetoothAutoSender({
           // skipped (unknown metadata sends as today), and no onWallConfirmed —
           // the climb never reached the wall.
           if (classifyClimbBoardCompatibility(activeConfigRef.current, item.climb) === 'incompatible') {
+            // The skip handler may clearBoard(), so whatever the dedup ref
+            // remembers is no longer on the wall — drop it, or returning to
+            // the previously lit climb would hit the byte-identical skip and
+            // leave the wall dark while still firing onWallConfirmed.
+            lastSentSignatureRef.current = null;
             if (lastSkipReportedUuidRef.current !== item.uuid) {
               lastSkipReportedUuidRef.current = item.uuid;
               const { item: nextItem, skippedCount } = findNextCompatibleQueueItem(

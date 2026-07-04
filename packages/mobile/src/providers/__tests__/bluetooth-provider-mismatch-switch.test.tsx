@@ -806,4 +806,33 @@ describe('BluetoothProvider spill skip', () => {
     const skipCall = analytics.track.mock.calls.find(([name]) => name === 'BLE Queue Climb Skipped');
     expect(skipCall?.[1]).toMatchObject({ skippedClimbUuid: 'spill', inSession: true });
   });
+
+  it('physically re-lights the previously lit climb after a spill cleared the wall', async () => {
+    // Regression: the skip handler clears the wall, so the send-signature
+    // dedup must not treat the previously lit climb as "already on the wall"
+    // when the user returns to it — that would leave the wall dark while
+    // still firing wall-confirm.
+    const lit = makeBoardItem('lit', 'kilter', 1);
+    const spill = makeBoardItem('spill', 'tension', 1);
+    queue.currentClimbQueueItem = lit;
+    queue.queue = [lit, spill];
+
+    const { rerender } = renderProvider(KILTER_PROPS);
+    await act(async () => {});
+    const litSends = () =>
+      (bluetooth.state.sendFramesToBoard.mock.calls as unknown[][]).filter((call) => call[0] === 'frames-lit').length;
+    expect(litSends()).toBe(1);
+
+    // Spill becomes current with nothing compatible after it → wall cleared.
+    queue.currentClimbQueueItem = spill;
+    rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+    await act(async () => {});
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith('');
+
+    // Returning to the previously lit climb must re-write it, not dedup.
+    queue.currentClimbQueueItem = lit;
+    rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+    await act(async () => {});
+    expect(litSends()).toBe(2);
+  });
 });
