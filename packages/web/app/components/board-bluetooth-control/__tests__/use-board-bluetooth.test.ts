@@ -359,6 +359,30 @@ describe('useBoardBluetooth', () => {
     expect(mockAdapter.write).toHaveBeenCalledWith(new Uint8Array([9, 8, 7]), undefined);
   });
 
+  it('clear-all writes the MoonBoard clear packet; only user-initiated clears are tracked (#3420)', async () => {
+    const { result } = renderHook(() => useBoardBluetooth({ boardDetails: mockMoonboardDetails }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    // Auto-sent empty frames: the wall clears silently — no Board Lights Cleared.
+    await act(async () => {
+      await result.current.sendFramesToBoard('');
+    });
+    expect(mockGetMoonboardBluetoothPacket).toHaveBeenCalledWith('', 18);
+    expect(mockAdapter.write).toHaveBeenCalledWith(new Uint8Array([9, 8, 7]), undefined);
+    expect(mockTrack.mock.calls.find(([eventName]) => eventName === 'Board Lights Cleared')).toBeUndefined();
+
+    // User-initiated clear (sendSource 'clear'): same write, tracked.
+    let clearResult: boolean | undefined;
+    await act(async () => {
+      clearResult = await result.current.sendFramesToBoard('', false, undefined, { sendSource: 'clear' });
+    });
+    expect(clearResult).toBe(true);
+    const clearedCall = mockTrack.mock.calls.find(([eventName]) => eventName === 'Board Lights Cleared');
+    expect(clearedCall?.[1]).toMatchObject({ boardName: 'moonboard' });
+  });
+
   it('calls onConnectionChange callback', async () => {
     const onConnectionChange = vi.fn();
 

@@ -718,17 +718,19 @@ export function BluetoothProvider({
         'info',
       );
 
+      // Untagged internal clear (no sendSource): the user didn't press the
+      // clear control, so this must not count towards Board Lights Cleared.
       if (sessionIdRef.current != null) {
-        void clearBoard();
+        void sendFramesToBoard('');
         return;
       }
       if (next) {
         queueActionsRef.current?.setCurrentClimbQueueItem(next);
       } else {
-        void clearBoard();
+        void sendFramesToBoard('');
       }
     },
-    [boardDetails, clearBoard, showMessage, t],
+    [boardDetails, sendFramesToBoard, showMessage, t],
   );
 
   // Stop any active light show the moment the board disconnects so a

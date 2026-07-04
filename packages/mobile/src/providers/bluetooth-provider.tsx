@@ -1075,17 +1075,19 @@ export function BluetoothProvider({
       // Party: never advance — the current climb is shared session state, and a
       // member whose wall can't light it must not hijack the queue for everyone.
       // Just clear this wall so it doesn't keep showing the previous climb.
+      // Untagged internal clear (no sendSource): the user didn't press Clear
+      // Lights, so this must not count towards Board Lights Cleared.
       if (sessionIdRef.current != null) {
-        void clearBoard();
+        void sendFramesToBoard('');
         return;
       }
       if (next) {
         setCurrentClimb(next);
       } else {
-        void clearBoard();
+        void sendFramesToBoard('');
       }
     },
-    [setCurrentClimb, showToast, clearBoard, t],
+    [setCurrentClimb, showToast, sendFramesToBoard, t],
   );
 
   // Bumped by `reassertWall()` to force the auto-sender to re-push the current

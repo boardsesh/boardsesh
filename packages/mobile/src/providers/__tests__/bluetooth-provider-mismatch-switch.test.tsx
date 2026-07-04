@@ -716,12 +716,7 @@ describe('BluetoothProvider spill skip', () => {
 
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
     // clearBoard sends empty frames (tagged as a deliberate clear) to dark the wall.
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
-      '',
-      false,
-      undefined,
-      expect.objectContaining({ sendSource: 'clear' }),
-    );
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith('');
     expect(toast.showToast).toHaveBeenCalledTimes(1);
     const skipCall = analytics.track.mock.calls.find(([name]) => name === 'BLE Queue Climb Skipped');
     expect(skipCall?.[1]).toMatchObject({ skippedClimbUuid: 'spill', advancedToClimbUuid: null });
@@ -806,12 +801,7 @@ describe('BluetoothProvider spill skip', () => {
 
     // No advance, wall cleared locally, user still told + telemetry marked in-session.
     expect(queue.setCurrentClimb).not.toHaveBeenCalled();
-    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
-      '',
-      false,
-      undefined,
-      expect.objectContaining({ sendSource: 'clear' }),
-    );
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith('');
     expect(toast.showToast).toHaveBeenCalledTimes(1);
     const skipCall = analytics.track.mock.calls.find(([name]) => name === 'BLE Queue Climb Skipped');
     expect(skipCall?.[1]).toMatchObject({ skippedClimbUuid: 'spill', inSession: true });

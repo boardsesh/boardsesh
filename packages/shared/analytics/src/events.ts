@@ -114,10 +114,12 @@ export const SHARED_EVENTS = {
   BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
   ClimbSentToBoardSuccess: 'Climb Sent to Board Success',
   ClimbSentToBoardFailure: 'Climb Sent to Board Failure',
-  // Fired on a successful deliberate clear-all write (both Aurora and MoonBoard,
-  // the latter via its `l##` empty frame — see #3420). Props: boardName,
-  // layoutId, sizeId, boardId?, sendSource?, mirrored, connectedViaMismatchOverride
-  // (web sends at least boardName).
+  // Fired on a successful USER-INITIATED clear-all write (sendSource 'clear';
+  // both Aurora and MoonBoard, the latter via its `l##` empty frame — #3420).
+  // Internal clears (spill skip, auto-sent empty frames) are untagged and do
+  // not fire this. Props: mobile sends its full board analytics set (boardName,
+  // layoutId, sizeId, mirrored, boardId?, connectedViaMismatchOverride,
+  // sendSource); web sends boardName, layoutId, sizeId.
   BoardLightsCleared: 'Board Lights Cleared',
   // A queued climb set for a DIFFERENT board/layout than the connected board was
   // skipped instead of dark-firing the wall. Props: skippedClimbUuid,
