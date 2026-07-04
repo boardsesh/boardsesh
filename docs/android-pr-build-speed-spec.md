@@ -1,7 +1,7 @@
 # Android PR build: stop paying for a cold Gradle cache on every PR
 
-Status: proposal for review · Surface: CI only (`.github/workflows/android-pr-rn.yml`) ·
-No change to what the job verifies, no change to release/dev-client builds.
+Status: proposal for review · Surface: CI only (`.github/workflows/android-pr-rn.yml`;
+fix 3 also touches `ios-rn-ci.yml`) · No change to release/dev-client builds.
 All numbers from `gh run list` / `gh run view` / `gh cache list` on 2026-07-03. Every
 load-bearing number is reproduced inline; the cited run ids are provenance (their logs
 expire after ~90 days, the tables here don't).
@@ -12,7 +12,7 @@ expire after ~90 days, the tables here don't).
 essentially every mobile PR: **~21 min typical, ~15 min best case**, vs ~7.5 min for the
 next-longest check (CI). It can't start any earlier — it already starts at t=0 with every
 other workflow (single job, no `needs:`, runner pickup ~20 s). The duration is the
-problem, and most of it is avoidable with two config-only changes:
+problem, and most of it is avoidable with three config-only changes:
 
 1. **Restore-only Gradle cache, warmed by `main`.** Today every PR run saves its own
    3.4 GB cache under a PR-only key prefix. Those saves blow the repo's 10 GB cache
@@ -23,10 +23,14 @@ problem, and most of it is avoidable with two config-only changes:
    build in the same job, adding their full 2.5–7.5 min to the critical path for no
    ordering reason.
 
-Expected result: typical run **~21 min → ~12.5–13 min**, worst case ~23 → ~16. Free
-runners, no signal lost, one-revert rollback. There's one genuinely open product-ish
-question at the end (should JS-only PRs run this job at all?) that this doc deliberately
-does *not* bundle in.
+3. **Skip the native build entirely on JS-only PRs** (maintainer decision, from review):
+   `main` already skips the native release build for JS-only merges via the fingerprint
+   gate in `android-apk-rn.yml`; PRs should behave the same. A gate job compares the
+   PR's Expo fingerprint against its merge-base and skips both jobs when they match.
+
+Expected result: JS-only mobile PRs (the majority) stop paying for the native build at
+all — the PR tail becomes CI's ~7.5 min. Native-input PRs go from ~21 min typical to
+**~14–15 min** (warm cache + ~2 min gate). Free runners, one-revert rollback.
 
 ## The problem
 
@@ -135,8 +139,9 @@ prefixes are separate "so a debug-signed cache never masks a release-build regre
 The release and dev-client workflows are untouched: same keys, same save behaviour.
 
 **Residual risk:** if `main`'s cache is evicted anyway — budget-pressure LRU during a
-stretch without mobile merges, or GitHub's 7-day unused-cache TTL (every PR restore
-refreshes it, so that takes 7+ days with no mobile activity at all) — PR builds degrade
+stretch without mobile merges, or GitHub's 7-day unused-cache TTL (restores refresh it,
+but with fix 3 only native-input PRs restore, so eviction takes 7+ days without a
+native-input PR or a mobile merge) — PR builds degrade
 to today's cold behaviour, no worse. The next mobile merge (or a manual
 `workflow_dispatch` of `android-apk-rn.yml`) repopulates it.
 
@@ -216,38 +221,62 @@ catch. This ships in the same implementation PR as fixes 1–2 — it's a one-li
 addition, nothing to defer. (The cache key needs no change: bun records patches in
 `bun.lock`, which is already hashed.)
 
+## Fix 3: skip the native build on JS-only PRs (maintainer decision)
+
+Decided in review (@marcodejongh): JS-only PRs shouldn't build the Android or iOS apps —
+`main` already skips the native build for JS-only merges, and PRs should behave the
+same. A JS-only change can't break the native compile (Metro bundling is separately
+covered by `check:mobile-bundle` in ci.yml), and JS testing rides the `pr-<number>` OTA
+channels, so losing the sideload APK on JS-only PRs is acceptable. This supersedes the
+earlier draft's lean toward keeping the job.
+
+**Mirror `main`'s principle, not its mechanism.** `android-apk-rn.yml`'s gate resolves
+the Expo fingerprint and skips when a `fingerprint-android-<hash>` tag says that native
+shape already shipped. That exact lookup can't run on PRs: the production fingerprint
+depends on Production-environment secrets (`GOOGLE_MAPS_API_KEY` perturbs it), which PR
+runs — fork PRs especially — can't read, so a PR-side resolve would never match the
+shipped tags. The PR-side equivalent that stays env-consistent: **resolve the
+fingerprint twice with the PR workflow's own env — once at the PR head, once at the
+merge-base — and skip when they're equal** (same env on both sides, so env differences
+cancel; only actual native-input changes move the comparison).
+
+Shape, mirroring the release workflow's `gate` → `needs:` pattern:
+
+- A `gate` job (~30 s–2.5 min) decides `should_build`:
+  1. **Path screen (instant):** `git diff --name-only <merge-base>...HEAD`; if nothing
+     matches the native-candidate globs (`app.config.ts`, `plugins/**`, `modules/**`,
+     `packages/mobile/package.json`, root `package.json`, `patches/**`, `bun.lock`),
+     skip without resolving anything. This is the exit ~every JS-only PR takes.
+  2. **Fingerprint diff (only when candidates changed):** resolve head + merge-base
+     fingerprints and compare — this is what correctly skips e.g. a `bun.lock` churn
+     from a web-only dependency bump. Implementation note: the merge-base resolve needs
+     that revision's `node_modules` (config plugins execute at resolve time), so the
+     gate re-runs `bun install` after checking out the base. Fail-open: if either
+     resolve errors, build.
+- `robolectric-tests` and `build-apk` gain `needs: gate` +
+  `if: needs.gate.outputs.should_build == 'true'`. The Robolectric tests are correctly
+  gated too — they test Kotlin module code, which only native inputs can change.
+- **`ios-rn-ci.yml` gets the same gate** (it runs a full `xcodebuild build-for-testing`
+  on macOS today). Same two-layer decision, `--platform ios`.
+- Cost on native-input PRs: the gate prefixes the critical path (~2–2.5 min with the
+  fingerprint resolve), taking the warm-cache path from ~12.5 to ~14–15 min. Native-input
+  PRs are the minority; the majority drop from ~21 min to zero.
+
 ## Expected outcome
 
-The table is by cache state, because the real effect of fix 1 is flipping which state is
-the norm — after the change, warm *is* the typical case, so "typical" and "best" converge:
+Rows split by what the fix-3 gate decides (JS-only vs native-input); within native-input
+PRs, by cache state — the real effect of fix 1 is flipping which cache state is the norm,
+so "typical" and "best" converge there:
 
-| Cache state at build time | Today                                              | After 1 + 2                                     |
-| ------------------------- | -------------------------------------------------- | ----------------------------------------------- |
-| Warm                      | ~15 min — rare (same-PR repush, if not yet evicted) | **~12.5–13 min — the norm** (restored from `main`; exact vs prefix hit differ by well under a minute) |
-| Cold                      | ~21–23 min — **the norm** (every new PR)            | ~15–16 min — rare (`main`'s cache evicted or stale) |
+| PR type / cache state       | Today                                               | After 1 + 2 + 3                                                                |
+| --------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| JS-only PR (the majority)   | ~21 min — **the norm**                               | **skipped** (~30 s gate) — the PR tail becomes CI's ~7.5 min                    |
+| Native-input PR, warm cache | ~15 min — rare (same-PR repush, if not yet evicted)  | **~14–15 min — the norm** (~12.5 min build restored from `main` + ~2 min gate; exact vs prefix cache hit differ by well under a minute) |
+| Native-input PR, cold cache | ~21–23 min                                           | ~17–18 min — rare (`main`'s cache evicted or stale)                             |
 
-The Android build likely stays the longest mobile check, but the gap to CI (~7.5 min)
-shrinks from ~3× to well under 2×, and the wait after the last review-fix push drops by
-~8 min in the common case.
-
-## Open question (not bundled here): should JS-only PRs run this job at all?
-
-A JS-only mobile change can't break the native Gradle compile, and Metro bundling is
-already covered by `check:mobile-bundle` in ci.yml. Path-scoping the trigger to native
-inputs only (`app.config.ts`, `plugins/**`, `modules/**`, `package.json`, `patches/**`,
-`bun.lock` — the same globs the iOS screenshot cache keys on) would remove the 15–21 min
-job from the majority of mobile PRs entirely.
-
-The trade-off is real, though: JS-only PRs would lose the per-PR sideloadable APK
-artifact. Testers mostly ride the `pr-<number>` OTA channels for JS testing, so the
-artifact may be vestigial — but that's a judgement call about what signal and artifacts a
-PR should always produce, not a pure speed win. Deliberately left out of this change;
-worth deciding separately.
-
-If we had to lean today: **keep the job on JS-only PRs.** Once fixes 1 + 2 land the job
-costs ~12.5 min, the APK stays the only zero-setup way to hand a branch build to someone
-without the dev-client or a `tester` role (fork contributors included), and path-scoping
-is a small follow-up if the job ever creeps back up.
+For the majority of mobile PRs the Android build stops being the tail entirely. On
+native-input PRs it stays the longest check but drops ~6–8 min, and the wait after the
+last review-fix push shrinks accordingly.
 
 ## Not doing (and why)
 
@@ -268,13 +297,18 @@ is a small follow-up if the job ever creeps back up.
    implementation PR: re-run that command (plus an admin check of classic branch
    protection) and paste the output into the implementation PR description so the
    confirmation is reviewable, not word-of-mouth.
-1. Implement both fixes on a branch; open a PR touching `packages/mobile/**`.
-2. Confirm the restore step logs a hit on `Linux-gradle-rn-*` and no `Post Cache` save
-   runs.
-3. Push a second commit; confirm both pushes land in the 12–14 min range and
+1. Implement all three fixes on a branch; open a PR touching **native inputs** (e.g. a
+   `plugins/**` comment tweak).
+2. Confirm the gate resolves `should_build=true`, the restore step logs a hit on
+   `Linux-gradle-rn-*`, and no `Post Cache` save runs.
+3. Push a second commit; confirm both pushes land in the ~14–15 min range and
    `gh cache list` shows no new `gradle-rn-pr-` entries.
-4. After merge, watch a week of mobile PRs: the `gradle-rn-` / `gradle-rn-dev-` caches
-   should persist on `main` (LRU refreshed by every PR restore) and Android PR durations
-   should settle around 12–13 min.
+4. Gate checks, one PR each: a JS-only diff (gate skips both Android jobs + the iOS
+   build via the path screen, ~30 s); a web-only dependency bump that churns `bun.lock`
+   (path screen escalates, fingerprint diff comes back equal → skip); a native-input
+   change (fingerprints differ → build).
+5. After merge, watch a week of mobile PRs: the `gradle-rn-` / `gradle-rn-dev-` caches
+   should persist on `main` (LRU refreshed by every native-PR restore), most PRs should
+   show the ~30 s gate skip, and native-PR durations should settle around 14–15 min.
 
 Rollback is a single revert; caches repopulate automatically either way.
