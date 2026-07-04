@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useState, type ReactNode } from 'react';
 import { StyleSheet, View, type LayoutChangeEvent } from 'react-native';
 import { NowOnTheWallPanel } from './NowOnTheWallPanel';
 import { WallFocalClimb } from './WallFocalClimb';
@@ -36,22 +36,32 @@ function WallScreenComponent() {
   const isWallLive = enabled && boardId !== null;
   const twoPane = containerWidth >= REGULAR_WIDTH_BREAKPOINT;
 
+  let content: ReactNode;
+  if (!isWallLive) {
+    content = <WallEmptyState />;
+  } else if (!boardPanelProps) {
+    // Bound over Bluetooth, but the active board config hasn't resolved yet — a
+    // neutral blank (the themed background), never the "Connect a board" CTA, which
+    // would be wrong for someone who just connected.
+    content = null;
+  } else if (twoPane) {
+    content = (
+      <View style={styles.row}>
+        <View style={[styles.focal, { borderRightColor: systemColors.separator }]}>
+          <WallFocalClimb boardConfig={boardPanelProps.boardConfig} />
+        </View>
+        <View style={styles.list}>
+          <NowOnTheWallPanel variant="screen" showHero={false} {...boardPanelProps} />
+        </View>
+      </View>
+    );
+  } else {
+    content = <NowOnTheWallPanel variant="screen" {...boardPanelProps} />;
+  }
+
   return (
     <View style={[styles.root, { backgroundColor: systemColors.background }]} onLayout={handleLayout}>
-      {!isWallLive || !boardPanelProps ? (
-        <WallEmptyState />
-      ) : twoPane ? (
-        <View style={styles.row}>
-          <View style={[styles.focal, { borderRightColor: systemColors.separator }]}>
-            <WallFocalClimb boardConfig={boardPanelProps.boardConfig} />
-          </View>
-          <View style={styles.list}>
-            <NowOnTheWallPanel variant="screen" showHero={false} {...boardPanelProps} />
-          </View>
-        </View>
-      ) : (
-        <NowOnTheWallPanel variant="screen" {...boardPanelProps} />
-      )}
+      {content}
     </View>
   );
 }

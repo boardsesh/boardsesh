@@ -80,6 +80,16 @@ describe('WallScreen', () => {
     expect(container.querySelector('[data-empty="true"]')).not.toBeNull();
   });
 
+  it('renders a neutral blank (not the connect CTA) while a bound board config is still resolving', () => {
+    // Bound over Bluetooth (enabled + boardId) but boardPanelProps not yet resolved:
+    // the connect CTA would be wrong for someone who just connected.
+    cfg.boardPanelProps = null;
+    const { container } = render(<WallScreen />);
+    expect(container.querySelector('[data-empty="true"]')).toBeNull();
+    expect(container.querySelector('[data-panel="true"]')).toBeNull();
+    expect(container.querySelector('[data-focal="true"]')).toBeNull();
+  });
+
   it('renders a single-column panel (hero shown, no focal) in a narrow pane', () => {
     cfg.layoutWidth = 400;
     const { container } = render(<WallScreen />);

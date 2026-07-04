@@ -33,7 +33,8 @@ function IpadPlayPaneComponent() {
   const { width } = useWindowDimensions();
   const { widthClass, wallDeviceClass } = useDeviceLayout();
   const { enabled, boardId } = useBoardPresenceControls();
-  const onWallTab = tabsActiveSegment(useSegments()) === 'wall';
+  const segments = useSegments();
+  const onWallTab = tabsActiveSegment(segments) === 'wall';
 
   // In portrait/narrow regular there's no room for a wall column, so the wall
   // lives as a strip atop the pane. It shows only when board presence is active,

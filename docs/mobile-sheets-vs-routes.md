@@ -170,6 +170,26 @@ waits out the whole transition and is disabled in screenshot mode.
   boards → pushed routes (rule 3); setters is a searchable list route.
 - **Onboarding** — immersive cover, not over the live tab bar → `fullScreenModal`.
 
+## iPad-only tab destinations (sidebar rail, never a phone tab)
+
+To add a `(tabs)` destination that appears only on the iPad sidebar rail and NEVER as a phone
+bottom tab (e.g. `/wall`, the "On the Wall" tab — `app/(tabs)/wall/`):
+
+- Register it as a keyed `<Tabs.Screen name="wall" options={{ href: null }} />` in the shared
+  `tabScreens` array (`app/(tabs)/_layout.tsx`). It **must** be a `(tabs)` route so it renders in
+  the iPad shell's content pane (keeping the sidebar + play/wall panes); a root route would cover
+  them.
+- `href: null` is meant to hide it from the bar — but expo-router turns it into
+  `tabBarItemStyle: { display: 'none' }` and **strips the `href` key**, so a _custom_ tab bar still
+  renders it unless it filters. `MaterialTabBar` skips
+  `StyleSheet.flatten(options.tabBarItemStyle)?.display === 'none'`.
+- Add `<NativeTabs.Trigger name="wall" hidden />` (the `hidden` prop) so the iOS-26 glass bar
+  declares the route but shows no 6th tab (a 6th would spill into "More" and clash with the
+  `role="search"` slot).
+- Add a `SidebarDestination` in `IpadSidebar.tsx`; `tabsActiveSegment` (route-segments.ts) already
+  highlights it. Suppress any ambient duplicate of the same content (e.g. the wall column) while
+  the destination is the focused segment.
+
 ## See also
 
 - `docs/react-native-performance.md` — list/provider/gesture performance rules.
