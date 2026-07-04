@@ -835,4 +835,42 @@ describe('BluetoothProvider spill skip', () => {
     await act(async () => {});
     expect(litSends()).toBe(2);
   });
+
+  it('drops the connect-initial-send seed when a spill clears the wall', async () => {
+    // Regression: connect-and-light seeds the dedup so the freshly mounted
+    // AutoSender doesn't repeat connect()'s initial write. If a spill lands
+    // during the handshake and clears the wall (party: the skip never
+    // advances, it only clears), consuming that seed later would set the
+    // signature WITHOUT a write — dark wall + false confirm.
+    queue.sessionId = 'party-1';
+    const lit = makeBoardItem('lit', 'kilter', 1);
+    const spill = makeBoardItem('spill', 'tension', 1);
+    // Simulate connect(initialFrames) having just written the lit climb.
+    bluetooth.state.connectInitialSendRef.current = {
+      frames: 'frames-lit',
+      mirrored: false,
+      colorSignature: 'default',
+    };
+    queue.currentClimbQueueItem = spill;
+    queue.queue = [spill, lit];
+
+    const { rerender } = renderProvider(KILTER_PROPS);
+    await act(async () => {});
+
+    // The spill was skipped (wall cleared) and the stale seed dropped with it.
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith('');
+    expect(bluetooth.state.connectInitialSendRef.current).toBeNull();
+
+    // The lit climb becoming current must produce a real write, not a
+    // seed-satisfied silent confirm.
+    queue.currentClimbQueueItem = lit;
+    rerender(createElement(BluetoothProvider, { ...KILTER_PROPS, children: createElement('div', null) }));
+    await act(async () => {});
+    expect(bluetooth.state.sendFramesToBoard).toHaveBeenCalledWith(
+      'frames-lit',
+      false,
+      expect.anything(),
+      expect.objectContaining({ sendSource: 'auto', climbUuid: 'lit' }),
+    );
+  });
 });
