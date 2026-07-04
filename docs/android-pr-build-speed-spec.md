@@ -127,10 +127,11 @@ prefixes are separate "so a debug-signed cache never masks a release-build regre
 
 The release and dev-client workflows are untouched: same keys, same save behaviour.
 
-**Residual risk:** if `main`'s cache is evicted anyway (long stretch without mobile
-merges plus heavy churn elsewhere), PR builds degrade to today's cold behaviour — no
-worse. The next mobile merge (or a manual `workflow_dispatch` of `android-apk-rn.yml`)
-repopulates it.
+**Residual risk:** if `main`'s cache is evicted anyway — budget-pressure LRU during a
+stretch without mobile merges, or GitHub's 7-day unused-cache TTL (every PR restore
+refreshes it, so that takes 7+ days with no mobile activity at all) — PR builds degrade
+to today's cold behaviour, no worse. The next mobile merge (or a manual
+`workflow_dispatch` of `android-apk-rn.yml`) repopulates it.
 
 ## Fix 2: run the Robolectric tests in a parallel job
 
@@ -181,6 +182,9 @@ runs:
     # setup-android + sdkmanager licenses/components →
     # actions/cache/restore (fix 1 block) → write packages/mobile/.env →
     # bunx expo prebuild --platform android --clean --no-install
+    #   (prebuild keeps its step-level `env: TAILSCALE_HOSTS: ''` — step env
+    #   travels with the step into the composite; don't drop it, or both jobs
+    #   pay the 2 s tailscale-probe timeout again)
 ```
 
 - **Cost:** the ~2 min setup block runs twice, in parallel, on free public-repo runners —
@@ -191,6 +195,15 @@ runs:
   so a test regression shows before the slow build; after the split the test job reports
   in ~5 min standalone instead of at minute 4–10 of a 21-min job, and test vs build
   failures are distinguishable at a glance in the checks list.
+
+## Companion one-liner: `patches/**` is missing from the trigger paths
+
+Spotted while writing this spec: `android-apk-rn.yml` triggers on `patches/**` (bun
+patches to mobile native deps live at the repo root), but `android-pr-rn.yml` does not.
+A PR that only changes a patch file skips the PR native build and the breakage lands
+directly on `main`'s release build — the exact class of failure this workflow exists to
+catch. The implementation PR adds `patches/**` to this workflow's `paths`. (The cache
+key needs no change: bun records patches in `bun.lock`, which is already hashed.)
 
 ## Expected outcome
 
@@ -240,7 +253,8 @@ is a small follow-up if the job ever creeps back up.
    change, or the gate goes stale. As of 2026-07-03 no ruleset-based required status
    checks exist on `main` (`gh api repos/boardsesh/boardsesh/rules/branches/main` is
    empty; classic branch protection needs an admin to confirm), so this is likely a
-   no-op — check it at implementation time.
+   no-op — but treat the confirmation as a blocking pre-merge item on the
+   implementation PR.
 1. Implement both fixes on a branch; open a PR touching `packages/mobile/**`.
 2. Confirm the restore step logs a hit on `Linux-gradle-rn-*` and no `Post Cache` save
    runs.
