@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AURORA_ADVERTISED_SERVICE_UUID, UART_SERVICE_UUID } from '@boardsesh/ble-protocol';
+import { AURORA_ADVERTISED_SERVICE_UUID, UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID } from '@boardsesh/ble-protocol';
 import { isLikelyBoardDevice } from '../board-device-filter';
 
 describe('isLikelyBoardDevice', () => {
@@ -31,6 +31,28 @@ describe('isLikelyBoardDevice', () => {
         scanFamily: 'moonboard',
       }),
     ).toBe(true);
+  });
+
+  it('accepts an original RedBearLab box on MoonBoard scans regardless of name', () => {
+    // First-generation MoonBoard LED boxes (RedBearLab controller, #3299): if
+    // the box advertises its service UUID, don't depend on the name prefix.
+    expect(
+      isLikelyBoardDevice({
+        name: undefined,
+        serviceUuids: [REDBEARLAB_SERVICE_UUID.toUpperCase()],
+        scanFamily: 'moonboard',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not accept RedBearLab devices on Aurora scans', () => {
+    expect(
+      isLikelyBoardDevice({
+        name: 'whatever',
+        serviceUuids: [REDBEARLAB_SERVICE_UUID],
+        scanFamily: 'aurora',
+      }),
+    ).toBe(false);
   });
 
   it('accepts a MoonBoard by name even when no service UUIDs are advertised', () => {

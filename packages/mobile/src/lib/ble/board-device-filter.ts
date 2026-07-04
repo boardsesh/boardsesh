@@ -1,10 +1,20 @@
-import { AURORA_ADVERTISED_SERVICE_UUID, UART_SERVICE_UUID, parseSerialNumber } from '@boardsesh/ble-protocol';
+import {
+  AURORA_ADVERTISED_SERVICE_UUID,
+  UART_SERVICE_UUID,
+  REDBEARLAB_SERVICE_UUID,
+  parseSerialNumber,
+} from '@boardsesh/ble-protocol';
 import { parseBoardTypeFromDeviceName } from '@boardsesh/ble-protocol/aurora';
 import { isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
 import type { BoardScanFamily } from './types';
 
 const AURORA_SERVICE_UUID = AURORA_ADVERTISED_SERVICE_UUID.toLowerCase();
 const UART_SERVICE_UUID_LOWER = UART_SERVICE_UUID.toLowerCase();
+const REDBEARLAB_SERVICE_UUID_LOWER = REDBEARLAB_SERVICE_UUID.toLowerCase();
+// Both MoonBoard controller generations: newer boards advertise Nordic UART,
+// the original RedBearLab LED box its own service. Matches the service-UUID
+// scan filters in native-ios-adapter.ts and BoardBleManager.swift.
+const MOONBOARD_SERVICE_UUIDS = [UART_SERVICE_UUID_LOWER, REDBEARLAB_SERVICE_UUID_LOWER];
 const STRICT_AURORA_SERIAL_SUFFIX = /#[A-Za-z0-9-]+@\d+$/;
 
 /**
@@ -45,7 +55,7 @@ export function isLikelyBoardDevice({
     return STRICT_AURORA_SERIAL_SUFFIX.test(name.trim()) && parseSerialNumber(name) !== undefined;
   }
 
-  if (serviceUuids?.some((serviceUuid) => serviceUuid.toLowerCase() === UART_SERVICE_UUID_LOWER)) {
+  if (serviceUuids?.some((serviceUuid) => MOONBOARD_SERVICE_UUIDS.includes(serviceUuid.toLowerCase()))) {
     return true;
   }
 
