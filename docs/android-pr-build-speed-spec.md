@@ -104,7 +104,14 @@ Replace `actions/cache@v4` with `actions/cache/restore@v4` and adopt the release
 - **Every PR run — first push included — restores the cache `main` last built.** Exact
   hit when `bun.lock` / `packages/mobile/package.json` match `main`; prefix fallback
   otherwise (Gradle re-downloads only the delta). The prefix also matches the dev-client
-  cache as a secondary fallback.
+  cache (`gradle-rn-dev-<hash>`) — whichever `main` cache was written most recently wins
+  a prefix match, and that's fine: Gradle's dependency cache is additive-only (entries
+  are keyed by module coordinates + checksums; wrong or extra entries are ignored, never
+  mis-built from), both builds resolve the same monorepo dependency graph, and the dev
+  client merely adds the `expo-dev-client` modules. A dev-cache hit is marginally less
+  complete than a release hit, never incorrect. Narrowing the prefix to exclude `-dev-`
+  isn't possible (restore-keys are prefix-only) and re-keying the release workflow to
+  allow it isn't worth the churn.
 - **PR runs stop saving.** The repo drops back under the 10 GB budget, so `main`'s caches
   stop being evicted — that persistence is what makes the restore reliable. The 40 s
   post-step save disappears from PR runs too.
@@ -191,6 +198,9 @@ runs:
   wall time unaffected. The implementation extracts the shared setup into a local
   composite action (under `.github/actions/`), so a future setup change (new env var,
   SDK bump) stays a single edit rather than two.
+- **No artifacts from cancelled runs — unchanged.** `cancel-in-progress: true` kills
+  both jobs on a superseding push before the upload step, exactly as it kills the single
+  job today. The `if: always()` upload only covers step failures within a completed job.
 - **The "tests surface fast" intent survives and improves.** The current ordering exists
   so a test regression shows before the slow build; after the split the test job reports
   in ~5 min standalone instead of at minute 4–10 of a 21-min job, and test vs build
@@ -202,8 +212,9 @@ Spotted while writing this spec: `android-apk-rn.yml` triggers on `patches/**` (
 patches to mobile native deps live at the repo root), but `android-pr-rn.yml` does not.
 A PR that only changes a patch file skips the PR native build and the breakage lands
 directly on `main`'s release build — the exact class of failure this workflow exists to
-catch. The implementation PR adds `patches/**` to this workflow's `paths`. (The cache
-key needs no change: bun records patches in `bun.lock`, which is already hashed.)
+catch. This ships in the same implementation PR as fixes 1–2 — it's a one-line `paths:`
+addition, nothing to defer. (The cache key needs no change: bun records patches in
+`bun.lock`, which is already hashed.)
 
 ## Expected outcome
 
@@ -254,7 +265,9 @@ is a small follow-up if the job ever creeps back up.
    checks exist on `main` (`gh api repos/boardsesh/boardsesh/rules/branches/main` is
    empty; classic branch protection needs an admin to confirm), so this is likely a
    no-op — but treat the confirmation as a blocking pre-merge item on the
-   implementation PR.
+   implementation PR: re-run that command (plus an admin check of classic branch
+   protection) and paste the output into the implementation PR description so the
+   confirmation is reviewable, not word-of-mouth.
 1. Implement both fixes on a branch; open a PR touching `packages/mobile/**`.
 2. Confirm the restore step logs a hit on `Linux-gradle-rn-*` and no `Post Cache` save
    runs.
