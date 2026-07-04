@@ -221,46 +221,57 @@ catch. This ships in the same implementation PR as fixes 1–2 — it's a one-li
 addition, nothing to defer. (The cache key needs no change: bun records patches in
 `bun.lock`, which is already hashed.)
 
-## Fix 3: skip the native build on JS-only PRs (maintainer decision)
+## Fix 3: skip the native build on JS-only PRs and branch pushes (maintainer decision)
 
-Decided in review (@marcodejongh): JS-only PRs shouldn't build the Android or iOS apps —
-`main` already skips the native build for JS-only merges, and PRs should behave the
-same. A JS-only change can't break the native compile (Metro bundling is separately
-covered by `check:mobile-bundle` in ci.yml), and JS testing rides the `pr-<number>` OTA
-channels, so losing the sideload APK on JS-only PRs is acceptable. This supersedes the
-earlier draft's lean toward keeping the job.
+Decided in review (@marcodejongh): JS-only changes shouldn't build the Android or iOS
+apps — `main` already skips the native build for JS-only merges, and PRs should behave
+the same. His review added a second half: **skip the JS-only branch-push builds too** —
+`ios-rn-ci.yml` builds on every non-`main` branch push, which "only builds on branches
+because I didn't have OTA at the beginning," and no longer needs to for JS-only changes.
+A JS-only change can't break the native compile (Metro bundling is separately covered by
+`check:mobile-bundle` in ci.yml), and JS testing rides the `pr-<number>` OTA channels, so
+losing the sideload APK on JS-only runs is acceptable. This supersedes the earlier
+draft's lean toward keeping the job.
 
 **Mirror `main`'s principle, not its mechanism.** `android-apk-rn.yml`'s gate resolves
 the Expo fingerprint and skips when a `fingerprint-android-<hash>` tag says that native
 shape already shipped. That exact lookup can't run on PRs: the production fingerprint
 depends on Production-environment secrets (`GOOGLE_MAPS_API_KEY` perturbs it), which PR
 runs — fork PRs especially — can't read, so a PR-side resolve would never match the
-shipped tags. The PR-side equivalent that stays env-consistent: **resolve the
-fingerprint twice with the PR workflow's own env — once at the PR head, once at the
-merge-base — and skip when they're equal** (same env on both sides, so env differences
-cancel; only actual native-input changes move the comparison).
+shipped tags. The env-consistent equivalent: **resolve the fingerprint twice with this
+workflow's own env — once at HEAD, once at `main` — and skip when they're equal** (same
+env on both sides, so env differences cancel; only real native-input changes move the
+comparison). Diffing against `main` is uniform for both event types: it's `base.sha` for
+a PR's merge ref and the merge target for a branch push.
 
 Shape, mirroring the release workflow's `gate` → `needs:` pattern:
 
-- A `gate` job (~30 s–2.5 min) decides `should_build`:
-  1. **Path screen (instant):** `git diff --name-only <merge-base>...HEAD`; if nothing
-     matches the native-candidate globs (`app.config.ts`, `plugins/**`, `modules/**`,
-     `packages/mobile/package.json`, root `package.json`, `patches/**`, `bun.lock`),
-     skip without resolving anything. This is the exit ~every JS-only PR takes.
-  2. **Fingerprint diff (only when candidates changed):** resolve head + merge-base
-     fingerprints and compare — this is what correctly skips e.g. a `bun.lock` churn
-     from a web-only dependency bump. Implementation note: the merge-base resolve needs
-     that revision's `node_modules` (config plugins execute at resolve time), so the
-     gate re-runs `bun install` after checking out the base. Fail-open: if either
-     resolve errors, build.
+- A `gate` job (~30 s–2.5 min) decides `should_build`, diffing against a shallow-fetched
+  `main` tip (`git diff <main> HEAD` compares the two trees directly — no merge-base or
+  full history needed, so it works on both a PR merge ref and a branch push):
+  1. **Path screen (fast):** if none of the canonical native-input files changed vs
+     `main` (`packages/mobile/package.json`, `bun.lock`, `app.config.ts`, `plugins/`,
+     `modules/`, `patches/` — the set `ios-rn-ci`'s Pods cache key already hashes), skip
+     without resolving anything. This is the exit ~every JS-only run takes. A change to
+     the workflow/action plumbing forces a build so it's exercised.
+  2. **Fingerprint diff (only when a candidate changed):** resolve HEAD + `main`
+     fingerprints and compare — this is what correctly skips e.g. a `bun.lock` churn from
+     a web-only dependency bump. Implementation note: the `main` resolve needs that
+     revision's `node_modules` (config plugins execute at resolve time), so the gate
+     `bun install`s in an isolated `git worktree` for `main` (never mutating the primary
+     checkout). Fail-open: any resolve / install / worktree error builds.
+  - A plain `git diff` path screen (not `dorny/paths-filter`) keeps one mechanism for
+    both PRs and pushes and needs no `pull-requests` permission.
 - `robolectric-tests` and `build-apk` gain `needs: gate` +
   `if: needs.gate.outputs.should_build == 'true'`. The Robolectric tests are correctly
   gated too — they test Kotlin module code, which only native inputs can change.
 - **`ios-rn-ci.yml` gets the same gate** (it runs a full `xcodebuild build-for-testing`
-  on macOS today). Same two-layer decision, `--platform ios`.
-- Cost on native-input PRs: the gate prefixes the critical path (~2–2.5 min with the
+  on macOS today), on both its `pull_request` and its branch-`push` triggers,
+  `--platform ios`. The gate runs on **ubuntu**, so a skipped iOS run spends no macOS
+  minutes.
+- Cost on native-input runs: the gate prefixes the critical path (~2–2.5 min with the
   fingerprint resolve), taking the warm-cache path from ~12.5 to ~14–15 min. Native-input
-  PRs are the minority; the majority drop from ~21 min to zero.
+  runs are the minority; the majority drop from ~21 min to zero.
 
 ## Expected outcome
 
