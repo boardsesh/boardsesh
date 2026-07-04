@@ -373,9 +373,10 @@ export function useBoardBluetooth({
   }, []);
 
   // Function to send frames string to the board.
-  // An empty `frames` string is the "clear all LEDs" path: Aurora's packet
-  // builder already returns a zero-length placement set, which the board
-  // interprets as "no LEDs lit", overwriting whatever was on the wall.
+  // An empty `frames` string is the "clear all LEDs" path on both board
+  // families: Aurora's packet builder returns a zero-length placement set the
+  // board reads as "no LEDs lit", and MoonBoard's `l##` empty frame clears every
+  // LED on community firmware — either way whatever was on the wall is overwritten.
   const sendFramesToBoard = useCallback(
     async (frames: string, mirrored: boolean = false, signal?: AbortSignal, sendContext?: BleSendContext) => {
       if (!adapterRef.current || !boardDetails) return;
@@ -404,12 +405,27 @@ export function useBoardBluetooth({
         }
 
         if (boardDetails.board_name === 'moonboard') {
-          // MoonBoard's packet format isn't designed to encode "clear" via an
-          // empty frame string — skip the write rather than send a malformed
-          // packet to the board.
-          if (!frames) return;
           // Mini boards wire a 12-row LED strip; the standard board is 18 rows.
           const moonNumRows = getMoonBoardGeometryByLayoutId(boardDetails.layout_id).numRows;
+
+          // Empty frames = deliberate clear-all. `l##` (empty frame) is
+          // MoonBoard's clear-all: community firmware (ArduinoMoonBoardLED) clears
+          // every LED on each incoming frame; unverified on official Moon
+          // controllers (at worst a no-op). Sent only on a deliberate clear —
+          // never as a fallback for an all-skipped climb, which surfaces an error
+          // below instead of silently darking the board.
+          if (frames === '') {
+            const moonClearResult = getMoonboardBluetoothPacket('', moonNumRows);
+            await serialisedWrite(adapterRef.current, moonClearResult.packet, signal);
+            track(SHARED_EVENTS.BoardLightsCleared, {
+              boardName: boardDetails.board_name,
+              layoutId: boardDetails.layout_id,
+              sizeId: boardDetails.size_id,
+            });
+            void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
+            return true;
+          }
+
           const moonResult = getMoonboardBluetoothPacket(frames, moonNumRows);
           const moonSkipped = moonResult.skippedRoleCount + moonResult.skippedPositionCount;
 
@@ -460,6 +476,11 @@ export function useBoardBluetooth({
         if (frames === '') {
           const clearResult = getAuroraBluetoothPacket('', {}, boardDetails.board_name, apiLevelRef.current);
           await serialisedWrite(adapterRef.current, clearResult.packet, signal);
+          track(SHARED_EVENTS.BoardLightsCleared, {
+            boardName: boardDetails.board_name,
+            layoutId: boardDetails.layout_id,
+            sizeId: boardDetails.size_id,
+          });
           void incrementBluetoothSends().then(maybeFireFeedbackPromptEvent);
           lastIncompatibleToastUuidRef.current = null;
           return true;

@@ -155,10 +155,21 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(result.totalPlacements, 3)
     }
 
-    func testMoonboardPacketIsEmptyWhenNothingEncodes() {
-        // No clear-all: an empty or all-skipped frame must produce no packet so
-        // the BLE manager refuses to write and leaves the wall lit as-is.
-        XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "").packet.isEmpty)
+    func testMoonboardPacketClearsForEmptyFrames() {
+        // Empty frames = deliberate clear-all: `l##` clears every LED on community
+        // firmware (JS parity). totalPlacements 0 (nothing to skip) is what keeps
+        // the caller's all-skipped guard from refusing it.
+        let result = BoardBleEncoding.makeMoonboardPacket(frames: "")
+        XCTAssertEqual(String(decoding: result.packet, as: UTF8.self), "l##")
+        XCTAssertEqual(result.totalPlacements, 0)
+        XCTAssertEqual(result.skippedRoleCount, 0)
+        XCTAssertEqual(result.skippedPositionCount, 0)
+    }
+
+    func testMoonboardPacketIsEmptyWhenAllPlacementsSkipped() {
+        // A non-empty climb whose holds all drop (role 45 is not a MoonBoard LED
+        // role) must produce no packet so the BLE manager refuses to write and
+        // leaves the wall lit as-is — never falls through to the clear-all frame.
         XCTAssertTrue(BoardBleEncoding.makeMoonboardPacket(frames: "p1r45").packet.isEmpty)
     }
 

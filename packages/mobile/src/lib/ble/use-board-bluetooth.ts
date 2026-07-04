@@ -93,20 +93,23 @@ export function bleWriteDiagnosticsProperties(
 
 // Exported for testing — isolates the .packet extraction so regressions are caught.
 //
+// Empty frames now deliberately send MoonBoard's clear-all `l##` frame:
+// getMoonboardBluetoothPacket('') returns totalPlacements 0, so the all-skipped
+// guard below never trips and the clear packet is written — web parity
+// (use-board-bluetooth.ts).
+//
 // Returns:
-//  - undefined when there are no frames (nothing to send)
-//  - false when every placement was skipped (the packet builder still emits the
-//    "clear all" packet `l##`, so writing it would silently dark the board while
+//  - false when every placement was skipped for a non-empty climb (the packet
+//    builder still emits `l##`, so writing it would silently dark the board while
 //    the caller reported success). The caller surfaces the incompatible-climb
-//    error instead of writing — web parity (use-board-bluetooth.ts:348-363).
+//    error instead of writing.
 //  - true after a successful write.
 export async function dispatchMoonboardPacket(
   frames: string,
   write: BluetoothAdapter['write'],
   signal?: AbortSignal,
   numRows?: number,
-): Promise<boolean | undefined> {
-  if (!frames) return undefined;
+): Promise<boolean> {
   const { packet, skippedRoleCount, skippedPositionCount, totalPlacements } = getMoonboardBluetoothPacket(
     frames,
     numRows,
@@ -228,7 +231,8 @@ export const convertToMirroredFramesString = (frames: string, holdsData: HoldPla
  * (e.g. a manual mirror re-send) just omit it.
  */
 export type BleSendContext = {
-  /** Where the send came from: the queue auto-sender, an undo, or a clear. */
+  /** Where the send came from: the queue auto-sender, an undo, or a deliberate
+   *  clear (passed by clearBoard). */
   sendSource: 'auto' | 'undo' | 'clear';
   targetQueueItemUuid?: string;
   climbUuid?: string;
@@ -511,6 +515,25 @@ export function useBoardBluetooth({
           sendAdapter = adapterRef.current;
 
           if (boardName === 'moonboard') {
+            // Empty frames = deliberate clear-all. `l##` (empty frame) is
+            // MoonBoard's clear-all: community firmware (ArduinoMoonBoardLED)
+            // clears every LED on each incoming frame; unverified on official Moon
+            // controllers (at worst a no-op). Sent only on a deliberate clear —
+            // never as a fallback for an all-skipped climb, which surfaces an error
+            // below instead of silently darking the board.
+            if (frames === '') {
+              const cleared = await dispatchMoonboardPacket(
+                '',
+                adapterRef.current.write.bind(adapterRef.current),
+                combinedSignal,
+                moonNumRows,
+              );
+              if (cleared) {
+                track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
+              }
+              return cleared;
+            }
+
             const sent = await dispatchMoonboardPacket(
               frames,
               adapterRef.current.write.bind(adapterRef.current),
@@ -518,10 +541,11 @@ export function useBoardBluetooth({
               moonNumRows,
             );
             // false = every placement was skipped (unrecognised/corrupt hold
-            // data). The packet builder would emit a "clear all" packet, darking
-            // the board, so dispatchMoonboardPacket refuses to write. Surface the
-            // same incompatible-climb error the Aurora branch uses instead of
-            // letting the AutoSender buzz success on a dark board.
+            // data) for a non-empty climb. The packet builder would emit the
+            // clear-all packet `l##`, darking the board, so dispatchMoonboardPacket
+            // refuses to write. Surface the same incompatible-climb error the
+            // Aurora branch uses instead of letting the AutoSender buzz success on
+            // a dark board.
             if (sent === false) {
               console.warn('[BLE] All MoonBoard placements skipped — climb has unrecognised hold data');
               Alert.alert(t('ble.sendFailedTitle'), t('ble.errorIncompatible'));
@@ -544,6 +568,7 @@ export function useBoardBluetooth({
           if (frames === '') {
             const clearResult = getAuroraBluetoothPacket('', {}, boardName as AuroraBoardName, apiLevelRef.current);
             await adapterRef.current.write(clearResult.packet, combinedSignal);
+            track(SHARED_EVENTS.BoardLightsCleared, boardAnalyticsProperties);
             return true;
           }
 

@@ -14,13 +14,6 @@ type BleControlSheetProps = {
   onReassert: () => void;
   /** Clear every LED on the wall, keeping the connection alive. */
   onClearLights: () => void;
-  /**
-   * Whether the connected board can encode a clear-all frame. MoonBoard's
-   * protocol has no "clear" packet (an empty frame is a deliberate no-op in
-   * sendFramesToBoard, matching web), so the row is hidden rather than left
-   * as a silent dead tap.
-   */
-  supportsClearLights: boolean;
   /** Drop the BLE connection. */
   onDisconnect: () => void;
   onClose: () => void;
@@ -29,14 +22,7 @@ type BleControlSheetProps = {
 // Secondary BLE controls (Re-light / Turn off all lights / Disconnect) revealed
 // by long-pressing the lightbulb — keeps the destructive Disconnect behind a
 // labelled menu.
-function BleControlSheet({
-  visible,
-  onReassert,
-  onClearLights,
-  supportsClearLights,
-  onDisconnect,
-  onClose,
-}: BleControlSheetProps) {
+function BleControlSheet({ visible, onReassert, onClearLights, onDisconnect, onClose }: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
   const { brandColors, systemColors } = useTheme();
@@ -67,14 +53,12 @@ function BleControlSheet({
           onPress={handleReassert}
           showSeparator
         />
-        {supportsClearLights && (
-          <ListRow
-            title={tCommon('lightControl.turnOffAll')}
-            leading={<Icon name="lightbulb.slash" size={22} color={systemColors.secondaryLabel} />}
-            onPress={handleClearLights}
-            showSeparator
-          />
-        )}
+        <ListRow
+          title={tCommon('lightControl.turnOffAll')}
+          leading={<Icon name="lightbulb.slash" size={22} color={systemColors.secondaryLabel} />}
+          onPress={handleClearLights}
+          showSeparator
+        />
         <ListRow
           title={tCommon('lightControl.disconnect')}
           leading={<Icon name="bluetooth.off" size={22} color={iosSystemColors.systemRed} />}

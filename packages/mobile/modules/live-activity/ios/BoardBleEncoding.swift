@@ -360,11 +360,26 @@ enum BoardBleEncoding {
     }
 
     static func makeMoonboardPacket(frames: String, numRows: Int? = nil) -> BoardBlePacketResult {
+        let parsedFrames = parseFrames(frames)
+
+        // `l##` (empty frame) is MoonBoard's clear-all: community firmware
+        // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified
+        // on official Moon controllers (at worst a no-op). Sent only on a
+        // deliberate clear (empty frames) — never as a fallback for an all-skipped
+        // climb, which must surface an error instead of silently darking the board.
+        if parsedFrames.isEmpty {
+            return BoardBlePacketResult(
+                packet: Data((moonboardFramePrefix + moonboardFrameSuffix).utf8),
+                skippedPositionCount: 0,
+                skippedRoleCount: 0,
+                totalPlacements: 0
+            )
+        }
+
         var encodedHolds: [String] = []
         var skippedRoleCount = 0
         var skippedPositionCount = 0
 
-        let parsedFrames = parseFrames(frames)
         for frame in parsedFrames {
             guard let roleLetter = moonboardRoleMap[frame.roleCode] else {
                 skippedRoleCount += 1
@@ -377,10 +392,11 @@ enum BoardBleEncoding {
             encodedHolds.append("\(roleLetter)\(position)")
         }
 
-        // No clear-all for MoonBoard: an empty `l##` frame is a no-op on the
-        // controller, so when nothing encodes (unrecognised roles, out-of-range
-        // ids, or no holds) return an empty packet and let the caller refuse to
-        // write — matching dispatchMoonboardPacket on the JS side.
+        // All placements skipped → refuse: a non-empty climb whose holds all
+        // dropped (unrecognised roles or out-of-range ids) must not fall through
+        // to `l##` (that's the deliberate clear-all above), so return an empty
+        // packet and let the caller refuse to write — matching
+        // dispatchMoonboardPacket on the JS side.
         guard !encodedHolds.isEmpty else {
             return BoardBlePacketResult(
                 packet: Data(),

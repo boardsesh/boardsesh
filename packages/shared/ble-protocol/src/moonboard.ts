@@ -56,6 +56,20 @@ export function getMoonboardBluetoothPacket(
   frames: string,
   numRows: number = MOONBOARD_GRID.numRows,
 ): MoonboardPacketResult {
+  // `l##` (empty frame) is MoonBoard's clear-all: community firmware
+  // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified on
+  // official Moon controllers (at worst a no-op). Sent only on a deliberate clear
+  // — never as a fallback for an all-skipped climb, which must surface an error
+  // instead of silently darking the board.
+  if (frames === '') {
+    return {
+      packet: new TextEncoder().encode(`${MOONBOARD_FRAME_PREFIX}${MOONBOARD_FRAME_SUFFIX}`),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 0,
+    };
+  }
+
   const encodedHolds: string[] = [];
   let skippedRoleCount = 0;
   let skippedPositionCount = 0;

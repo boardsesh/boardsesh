@@ -709,18 +709,23 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard let configuration else { return }
         guard connectedPeripheral != nil, writeCharacteristic != nil else { return }
 
-        // MoonBoard has no clear-all command (an empty `l##` frame is a no-op on
-        // the controller and the JS layer refuses to send it), so leave the wall
-        // lit as-is rather than writing an Aurora clear packet to it.
-        if configuration.boardName == "moonboard" { return }
-
-        let result = BoardBleEncoding.makeAuroraPacket(
-            frames: "",
-            placementPositions: [:],
-            boardName: configuration.boardName,
-            apiLevel: apiLevelOnBleQueue(configuration: configuration),
-            colorOverrides: configuration.colorOverrides
-        )
+        // `l##` (empty frame) is MoonBoard's clear-all: community firmware
+        // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified
+        // on official Moon controllers (at worst a no-op). Aurora clears via its
+        // own empty-frames packet. Either way a deliberate clear darks the wall,
+        // matching the JS clear path.
+        let result: BoardBlePacketResult
+        if configuration.boardName == "moonboard" {
+            result = BoardBleEncoding.makeMoonboardPacket(frames: "", numRows: configuration.numRows)
+        } else {
+            result = BoardBleEncoding.makeAuroraPacket(
+                frames: "",
+                placementPositions: [:],
+                boardName: configuration.boardName,
+                apiLevel: apiLevelOnBleQueue(configuration: configuration),
+                colorOverrides: configuration.colorOverrides
+            )
+        }
 
         guard !result.packet.isEmpty else { return }
         writeOnBleQueue(data: result.packet) { [weak self] error, _ in
@@ -746,9 +751,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // 18-row standard-wall default.
             let result = BoardBleEncoding.makeMoonboardPacket(frames: item.frames, numRows: configuration.numRows)
             guard !result.packet.isEmpty else {
-                // Every hold was unrecognised/out-of-range, or the climb has no
-                // holds. Refuse to write rather than dark the wall — there is no
-                // MoonBoard clear-all.
+                // A non-empty climb whose holds all dropped (unrecognised/out-of-
+                // range) → refuse to write rather than dark the wall. Only a
+                // deliberate empty-frames item clears (via `l##`, Aurora parity);
+                // makeMoonboardPacket returns an empty packet for this all-skipped
+                // case so it never reaches the wall.
                 logger.warning("Skipping MoonBoard BLE write: no encodable holds for climb \(item.climbUuid, privacy: .public)")
                 return
             }

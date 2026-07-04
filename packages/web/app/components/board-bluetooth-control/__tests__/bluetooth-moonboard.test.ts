@@ -51,6 +51,13 @@ describe('getMoonboardBluetoothPacket', () => {
     expect(new TextDecoder().decode(packet)).toBe('l#S0,P35,E197#');
   });
 
+  it('sends the deliberate clear-all `l##` frame for empty frames (#3420)', () => {
+    const { packet, totalPlacements } = getMoonboardBluetoothPacket('');
+
+    expect(new TextDecoder().decode(packet)).toBe('l##');
+    expect(totalPlacements).toBe(0);
+  });
+
   it('skips unsupported Moonboard hold state codes gracefully', () => {
     const { packet, skippedRoleCount, totalPlacements } = getMoonboardBluetoothPacket('p1r45');
 

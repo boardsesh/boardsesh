@@ -40,7 +40,6 @@ const baseProps = {
   visible: true,
   onReassert: vi.fn(),
   onClearLights: vi.fn(),
-  supportsClearLights: true,
   onDisconnect: vi.fn(),
   onClose: vi.fn(),
 };
@@ -85,11 +84,10 @@ describe('BleControlSheet', () => {
     expect(baseProps.onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('hides the turn-off row when the board cannot encode a clear frame (MoonBoard)', () => {
-    const { queryByText, getByText } = render(<BleControlSheet {...baseProps} supportsClearLights={false} />);
-    expect(queryByText('lightControl.turnOffAll')).toBeNull();
-    // The other controls stay available.
-    expect(getByText('ble.relightBoard')).toBeDefined();
-    expect(getByText('lightControl.disconnect')).toBeDefined();
+  it('always renders the turn-off row (every board now has a clear-all, incl. MoonBoard)', () => {
+    // MoonBoard clears via its `l##` empty frame (#3420), so the row is no longer
+    // board-gated — it shows on every connected board.
+    const { getByText } = render(<BleControlSheet {...baseProps} />);
+    expect(getByText('lightControl.turnOffAll')).toBeDefined();
   });
 });

@@ -1,7 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { toBoardName } from '@boardsesh/board-config';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
 
@@ -18,12 +16,9 @@ type BleControlSheetHostProps = {
  *   - inside the play route (PlayDrawer) so the lightbulb's sheet presents ABOVE
  *     the route instead of behind it (an @expo/ui sheet presents off the VC that
  *     owns its subtree; a root-only instance lands under the modal player).
- * supportsClearLights keys off the CONNECTED (active) board's protocol, not the
- * displayed climb's board, so it's correct wherever this is mounted.
  */
 export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostProps) {
   const bluetooth = useOptionalBluetoothContext();
-  const { data: activeBoard } = useActiveBoard();
   const isConnected = bluetooth?.isConnected ?? false;
 
   // Close if the link drops while the sheet is open — otherwise it lingers
@@ -48,8 +43,6 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
       visible={visible}
       onReassert={handleReassert}
       onClearLights={handleClearLights}
-      // MoonBoard's protocol has no clear-all frame; hide the row there.
-      supportsClearLights={toBoardName(activeBoard?.boardType) !== 'moonboard'}
       onDisconnect={disconnectAllBluetooth}
       onClose={onClose}
     />

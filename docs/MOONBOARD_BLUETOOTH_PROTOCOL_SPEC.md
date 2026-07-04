@@ -42,6 +42,7 @@ Each claim is tagged so you can separate what was observed in the app from what 
 | Per-board LED version?                 | **Yes.** Boards persist a `led_version`; the app tracks LED hardware generation per board.                              | ✅  |
 | LED payload format                     | ASCII `l#<marker><pos>,<marker><pos>,…#` over the chosen write characteristic.                                          | 🔁  |
 | LED position numbering                 | Column-major **serpentine** over the 11×18 grid (positions 0–197).                                                      | 🔁  |
+| Clearing the board                     | Empty frame `l##` clears all LEDs (community firmware); Boardsesh sends it only on a deliberate clear (§5.5).            | 🔁❓ |
 | Two extra 128-bit UUIDs in the binary  | Present, but match **neither** BLE service family; they live in the app's `uuid`-package / SDK realm, not the LED path. | ❓  |
 
 ---
@@ -211,6 +212,14 @@ The position index is a property of the **physical LED string**, so it is identi
 🔁 The ASCII string is split into BLE writes. The classic transport size is **20 bytes per write** (`MAX_BLUETOOTH_MESSAGE_SIZE` in `transport.ts`); chunking is a transport detail and does not change the message.
 
 **Write type depends on the controller generation.** The newer Nordic-UART RX characteristic (`6e400002`) supports **Write Without Response**. The original RedBearLab write characteristic (`713d0003`), however, advertises only the plain `.write` property — on iOS, CoreBluetooth **silently drops** a write-without-response to a characteristic that lacks the no-response property, leaving the wall dark. So an interoperable iOS client must use **write-with-response** for the RedBearLab box (pacing on the GATT write ack), and may use write-without-response for the Nordic-UART boards. Android's GATT stack issues no-response writes regardless of the advertised property, so the same write call works on both there. Boardsesh implements exactly this gating (`BoardBleEncoding.preferredWriteType` in `packages/mobile/modules/live-activity/ios/`): MoonBoard falls back to write-with-response whenever the chosen write characteristic doesn't advertise `.writeWithoutResponse`.
+
+### 5.5 Clearing the board
+
+🔁 A frame with no holds — `l##` (the prefix and suffix with an empty payload) — is the clear-all. The ArduinoMoonBoardLED community firmware clears every LED at the start of each incoming frame before lighting the holds it names, so an empty frame darks the whole wall.
+
+❓ Unconfirmed on official Moon controllers (flagged for a live BLE capture); at worst it is a no-op there.
+
+Boardsesh sends `l##` **only on a deliberate clear** (the "Turn off all lights" control, or advancing the queue past the last compatible climb). A climb whose holds all drop out (unrecognised roles / out-of-range ids) is **never** cleared this way — it refuses to write and surfaces an incompatible-climb error instead, so a corrupt climb can't silently dark the wall.
 
 ---
 

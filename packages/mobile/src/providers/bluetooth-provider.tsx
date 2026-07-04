@@ -1037,7 +1037,10 @@ export function BluetoothProvider({
     return true;
   }, [sendFramesToBoard]);
 
-  const clearBoard = useCallback(() => sendFramesToBoard(''), [sendFramesToBoard]);
+  const clearBoard = useCallback(
+    () => sendFramesToBoard('', false, undefined, { sendSource: 'clear' }),
+    [sendFramesToBoard],
+  );
 
   // Advance the queue past a "spill" climb (one set for a different board/layout
   // than the connected board) instead of dark-firing the wall, and tell the user.

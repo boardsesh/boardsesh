@@ -671,6 +671,36 @@ describe('useBoardBluetooth', () => {
     });
   });
 
+  it('fires Board Lights Cleared (not Climb Sent to Board Success) on a MoonBoard deliberate clear (#3420)', async () => {
+    // Empty frames deliberately sends `l##` (totalPlacements 0), so the clear is
+    // written and tracked as a clear — never as a climb send.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new TextEncoder().encode('l##'),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 0,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+    let cleared: boolean | undefined;
+    await act(async () => {
+      cleared = await result.current.sendFramesToBoard('');
+    });
+
+    expect(cleared).toBe(true);
+    expect(fakeAdapter.write).toHaveBeenCalled();
+    const clearedCall = mockTrack.mock.calls.find(([name]) => name === 'Board Lights Cleared');
+    expect(clearedCall?.[1]).toMatchObject({ boardName: 'moonboard', layoutId: 1, sizeId: 1 });
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();
+  });
+
   it('attaches write diagnostics alongside failureReason on a failed send (#3230)', async () => {
     const writeDiagnostics: BleWriteDiagnostics = {
       chunkSize: 244,
@@ -1284,13 +1314,23 @@ describe('dispatchMoonboardPacket', () => {
     expect(result).toBe(true);
   });
 
-  it('returns undefined and skips write when frames is empty', async () => {
-    const write = vi.fn();
+  it('writes the deliberate clear-all `l##` packet and returns true for empty frames (#3420)', async () => {
+    // getMoonboardBluetoothPacket('') returns the clear-all packet with
+    // totalPlacements 0, so the all-skipped guard never trips and the clear is
+    // written — MoonBoard's deliberate clear path (web parity).
+    const clearPacket = new TextEncoder().encode('l##');
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: clearPacket,
+      totalPlacements: 0,
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+    });
+    const write = vi.fn().mockResolvedValue(undefined);
 
     const result = await dispatchMoonboardPacket('', write);
 
-    expect(result).toBeUndefined();
-    expect(write).not.toHaveBeenCalled();
+    expect(result).toBe(true);
+    expect(write).toHaveBeenCalledWith(clearPacket, undefined);
   });
 
   it('forwards the AbortSignal to write()', async () => {

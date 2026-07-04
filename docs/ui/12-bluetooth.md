@@ -57,7 +57,7 @@ The BLE connection is managed by `useBoardBluetooth` hook and exposed via `Bluet
 
 **MoonBoard:**
 
-1. Empty frames are skipped (MoonBoard packet format doesn't support "clear").
+1. Empty frames send MoonBoard's clear-all `l##` frame (deliberate clear only — verified against the ArduinoMoonBoardLED community firmware, which clears every LED on each incoming frame; unverified on official Moon controllers, where it is at worst a no-op). An all-placements-skipped climb still refuses to write rather than fall through to this clear.
 2. `getMoonboardBluetoothPacket(frames)` produces the packet.
 3. If all placements are skipped, shows error snackbar and returns `false`.
 4. Partial skips are logged to Sentry.

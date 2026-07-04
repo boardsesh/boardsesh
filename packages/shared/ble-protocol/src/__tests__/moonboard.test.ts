@@ -108,6 +108,17 @@ describe('getMoonboardBluetoothPacket', () => {
     const result = getMoonboardBluetoothPacket('p1r42p2r43p198r44');
     expect(new TextDecoder().decode(result.packet)).toBe('l#S0,P35,E197#');
   });
+
+  it('sends the deliberate clear-all `l##` frame for empty frames (#3420)', () => {
+    // Empty frames is the deliberate clear path: `l##` clears every LED on
+    // community firmware. totalPlacements 0 (nothing to skip) is what lets the
+    // caller's all-skipped guard pass this through instead of refusing to write.
+    const result = getMoonboardBluetoothPacket('');
+    expect(new TextDecoder().decode(result.packet)).toBe('l##');
+    expect(result.totalPlacements).toBe(0);
+    expect(result.skippedRoleCount).toBe(0);
+    expect(result.skippedPositionCount).toBe(0);
+  });
 });
 
 // =============================================================================
