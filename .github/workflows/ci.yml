@@ -93,7 +93,7 @@ jobs:
               - 'packages/shared-schema/**'
               - 'packages/shared/graphql/**'
             i18nCatalogs:
-              - 'packages/web/i18n/locales/**'
+              - 'packages/shared/i18n/locales/**'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -295,7 +295,9 @@ jobs:
 
   test-default:
     needs: [changes, setup]
-    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true'
+    # i18nCatalogs: a catalog-only PR (pure JSON) must still run the
+    # catalog-completeness parity test, which lives in this job.
+    if: needs.changes.outputs.anyJs == 'true' || needs.changes.outputs.rootCi == 'true' || needs.changes.outputs.i18nCatalogs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
