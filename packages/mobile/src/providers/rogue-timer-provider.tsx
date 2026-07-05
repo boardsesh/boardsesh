@@ -70,6 +70,9 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
   // The timer name we currently hold (or are opening) a connection for, so the
   // reconcile effect doesn't reconnect on unrelated re-renders.
   const connectedTargetRef = useRef<string | null>(null);
+  // Bumped when the connected timer drops unexpectedly, to re-run the reconcile
+  // effect for a single reconnect attempt (while the board LED is still held).
+  const [reconnectTick, setReconnectTick] = useState(0);
 
   // Reconcile the timer connection with "driving the wall + a paired timer".
   // Connects when both become true; disconnects when either goes false, the
@@ -77,6 +80,7 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const shouldConnect = boardConnected && timerName !== null;
     let cancelled = false;
+    let unsubscribeDisconnect: (() => void) | undefined;
 
     if (shouldConnect) {
       if (connectedTargetRef.current === timerName) return;
@@ -91,6 +95,18 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
           }
           setStatus('connected');
           setDeviceName(connection.deviceName ?? timerName);
+          // Reflect an unsolicited drop (out of range / powered off): the
+          // controller clears its own refs, but the provider must clear the
+          // target + status too, or the badge stays stuck on "connected" and
+          // the reconcile guard blocks any reconnect. Bumping reconnectTick
+          // re-runs this effect for one reconnect attempt while the board LED
+          // is still held.
+          unsubscribeDisconnect = controller.onDisconnect(() => {
+            connectedTargetRef.current = null;
+            setDeviceName(undefined);
+            setStatus('idle');
+            setReconnectTick((tick) => tick + 1);
+          });
         })
         .catch(() => {
           if (cancelled) return;
@@ -109,8 +125,9 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      unsubscribeDisconnect?.();
     };
-  }, [controller, boardConnected, timerName]);
+  }, [controller, boardConnected, timerName, reconnectTick]);
 
   // Drop the connection when the provider unmounts (app teardown).
   useEffect(() => {
@@ -134,8 +151,11 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
 
   const startStopwatch = useCallback(async () => {
     if (!controller.isConnected()) return;
-    // Enter stopwatch mode, zero it, then start counting. Fire-and-forget: a
-    // dropped frame shouldn't reject the tick's success handler.
+    // Enter stopwatch mode, zero it, then start counting. Assumes the timer is
+    // at its top-level screen (not buried in a setup sub-menu) — the STOPWATCH
+    // key selects the mode from the home screen; there is no telemetry back, so
+    // a wrong precondition fails silently. Fire-and-forget: a dropped frame
+    // shouldn't reject the tick's success handler.
     try {
       await controller.pressButton(RogueTimerCommand.STOPWATCH);
       await wait(KEY_SEQUENCE_GAP_MS);

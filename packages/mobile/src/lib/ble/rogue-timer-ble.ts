@@ -97,6 +97,12 @@ export class RogueTimerController {
    * Gating (permissions + radio powered-on) is async, so the scan starts on a
    * later tick; the returned stop function is safe to call before then — it
    * flags the scan as cancelled so it never starts.
+   *
+   * Known contention: `bleManager` is a shared singleton and react-native-ble-plx
+   * allows only one scan at a time — a `connectByName` (runtime reconnect) scan
+   * started while this pairing scan is open would replace it. In practice the two
+   * don't overlap (pairing runs on the board-edit screen; reconnect runs on the
+   * play screen with the board LED already connected), so this is left un-serialized.
    */
   scanForTimers(onUpdate: (devices: DiscoveredDevice[]) => void, onScanStopped?: () => void): () => void {
     const devices = new Map<string, DiscoveredDevice>();

@@ -43,7 +43,10 @@ export const CreateBoardInputSchema = z.object({
   angle: z.number().int().min(0).max(70).optional(),
   isAngleAdjustable: z.boolean().optional(),
   serialNumber: OptionalBoardSerialInputSchema,
-  timerName: z.string().max(200, 'Timer name too long').optional(),
+  // Min 1: a paired timer is stored by its advertised BLE name; an empty string
+  // is meaningless (the "no timer" sentinel is null/absent, and the mobile
+  // builder already coerces blank → omitted).
+  timerName: z.string().min(1).max(200, 'Timer name too long').optional(),
 });
 
 /**
@@ -67,7 +70,7 @@ export const UpdateBoardInputSchema = z.object({
   sizeId: z.number().int().positive('Size ID must be positive').optional(),
   setIds: z.string().min(1, 'Set IDs cannot be empty').optional(),
   serialNumber: NullableBoardSerialInputSchema,
-  timerName: z.string().max(200, 'Timer name too long').optional().nullable(),
+  timerName: z.string().min(1).max(200, 'Timer name too long').optional().nullable(),
 });
 
 /**
