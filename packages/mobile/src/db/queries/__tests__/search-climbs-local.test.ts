@@ -3,11 +3,7 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 import { runMigrations } from '../../migrations';
 import { ensureMutationQueueTable } from '../../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../__tests__/sqlite-test-db';
-import {
-  searchClimbsLocal,
-  countClimbsLocal,
-  isOfflineSearchSupported,
-} from '../search-climbs-local';
+import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../search-climbs-local';
 
 // A minimal, well-formed search input; individual tests override the pieces they exercise.
 function makeInput(overrides: Partial<ClimbSearchInput> = {}): ClimbSearchInput {
@@ -67,9 +63,19 @@ async function insertClimb(db: TestSqliteDb, fixture: ClimbFixture): Promise<voi
       fixture.isDraft ?? 0,
       fixture.framesCount ?? 1,
       fixture.frames ?? '',
-      fixture.compatibleSizeIds === undefined ? '[5]' : fixture.compatibleSizeIds === null ? null : JSON.stringify(fixture.compatibleSizeIds),
-      fixture.requiredSetIds === undefined ? null : fixture.requiredSetIds === null ? null : JSON.stringify(fixture.requiredSetIds),
-      fixture.characteristics === undefined || fixture.characteristics === null ? null : JSON.stringify(fixture.characteristics),
+      fixture.compatibleSizeIds === undefined
+        ? '[5]'
+        : fixture.compatibleSizeIds === null
+          ? null
+          : JSON.stringify(fixture.compatibleSizeIds),
+      fixture.requiredSetIds === undefined
+        ? null
+        : fixture.requiredSetIds === null
+          ? null
+          : JSON.stringify(fixture.requiredSetIds),
+      fixture.characteristics === undefined || fixture.characteristics === null
+        ? null
+        : JSON.stringify(fixture.characteristics),
       fixture.setterUsername ?? 'setter',
       fixture.createdAt ?? '2026-01-01T00:00:00Z',
       '2026-01-01T00:00:00Z',
@@ -103,7 +109,16 @@ async function insertTick(
   await db.runAsync(
     `INSERT INTO boardsesh_ticks (uuid, user_id, board_type, climb_uuid, angle, is_mirror, status, attempt_count, is_benchmark, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, 0, ?, 1, 0, ?, ?)`,
-    [opts.uuid, 'me', opts.boardType ?? 'kilter', opts.climbUuid, opts.angle ?? 40, opts.status, '2026-02-01T00:00:00Z', '2026-02-01T00:00:00Z'],
+    [
+      opts.uuid,
+      'me',
+      opts.boardType ?? 'kilter',
+      opts.climbUuid,
+      opts.angle ?? 40,
+      opts.status,
+      '2026-02-01T00:00:00Z',
+      '2026-02-01T00:00:00Z',
+    ],
   );
 }
 
@@ -197,7 +212,9 @@ describe('searchClimbsLocal', () => {
 
     expect(uuids(await searchClimbsLocal(db, makeInput({ name: 'crimp' })))).toEqual(['crimpy']);
     expect(uuids(await searchClimbsLocal(db, makeInput({ sortBy: 'quality' })))).toEqual(['juggy', 'crimpy']);
-    expect(uuids(await searchClimbsLocal(db, makeInput({ holdsFilter: { hold_22: { ANY: 'include' } } })))).toEqual(['crimpy']);
+    expect(uuids(await searchClimbsLocal(db, makeInput({ holdsFilter: { hold_22: { ANY: 'include' } } })))).toEqual([
+      'crimpy',
+    ]);
   });
 
   it('applies personal-progress filters against local ticks and surfaces user counts', async () => {
@@ -224,7 +241,13 @@ describe('searchClimbsLocal', () => {
 
   it('maps difficulty label, stars, and is_no_match from local columns', async () => {
     await insertClimb(db, { uuid: 'x', characteristics: ['no_match'] });
-    await insertStat(db, { climbUuid: 'x', displayDifficulty: 16.0, difficultyAverage: 16.3, qualityAverage: 4.4, ascensionistCount: 10 });
+    await insertStat(db, {
+      climbUuid: 'x',
+      displayDifficulty: 16.0,
+      difficultyAverage: 16.3,
+      qualityAverage: 4.4,
+      ascensionistCount: 10,
+    });
 
     const [climb] = (await searchClimbsLocal(db, makeInput())).climbs;
     expect(climb.difficulty).toBe('6a/V3'); // grade id 16
@@ -245,7 +268,9 @@ describe('isOfflineSearchSupported', () => {
     expect(isOfflineSearchSupported(makeInput({ onlyDrafts: true }))).toBe(false);
     expect(isOfflineSearchSupported(makeInput({ onlyWithBetaVideos: true }))).toBe(false);
     expect(isOfflineSearchSupported(makeInput({ onlyTallClimbs: true }))).toBe(false);
-    expect(isOfflineSearchSupported(makeInput({ zoneBox: { edgeLeft: 0, edgeRight: 10, edgeBottom: 0, edgeTop: 10 } }))).toBe(false);
+    expect(
+      isOfflineSearchSupported(makeInput({ zoneBox: { edgeLeft: 0, edgeRight: 10, edgeBottom: 0, edgeTop: 10 } })),
+    ).toBe(false);
     expect(isOfflineSearchSupported(makeInput({ holdsFilter: { hold_5: { STARTING: 'include' } } }))).toBe(false);
   });
 });

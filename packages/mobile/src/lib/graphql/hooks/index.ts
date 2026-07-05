@@ -3,7 +3,6 @@ import type {
   BoardName,
   UserBoard,
   UserBoardConnection,
-  Climb,
   ClimbSearchInput,
   Grade,
   Angle,

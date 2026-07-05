@@ -32,26 +32,16 @@ type ScopeArgs = {
 };
 
 const callSyncClimbs = (args: ScopeArgs) =>
-  syncQueries.syncClimbs(
-    undefined,
-    { cursor: null, limit: 500, ...args },
-    ctx(),
-  ) as Promise<SyncResult>;
+  syncQueries.syncClimbs(undefined, { cursor: null, limit: 500, ...args }, ctx()) as Promise<SyncResult>;
 
 const callSyncClimbStats = (args: ScopeArgs) =>
-  syncQueries.syncClimbStats(
-    undefined,
-    { cursor: null, limit: 500, ...args },
-    ctx(),
-  ) as Promise<SyncResult>;
+  syncQueries.syncClimbStats(undefined, { cursor: null, limit: 500, ...args }, ctx()) as Promise<SyncResult>;
 
 const uuidsOf = (result: SyncResult) =>
   (result.documents as Array<Record<string, unknown>>).map((d) => String(d.uuid)).sort();
 
 const statKeysOf = (result: SyncResult) =>
-  (result.documents as Array<Record<string, unknown>>)
-    .map((d) => `${String(d.climb_uuid)}@${String(d.angle)}`)
-    .sort();
+  (result.documents as Array<Record<string, unknown>>).map((d) => `${String(d.climb_uuid)}@${String(d.angle)}`).sort();
 
 async function insertClimb(opts: {
   uuid: string;

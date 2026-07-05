@@ -14,7 +14,13 @@ import { useAuth } from '../../../src/providers/auth-provider';
 import { useProfile } from '../../../src/lib/graphql/hooks';
 import { useConfirm } from '../../../src/providers/dialog-provider';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
-import { getDeadLetterCount, getDeadLetters, retryDeadLetter, getPendingCount, drainMutationQueue } from '../../../src/mutation-queue';
+import {
+  getDeadLetterCount,
+  getDeadLetters,
+  retryDeadLetter,
+  getPendingCount,
+  drainMutationQueue,
+} from '../../../src/mutation-queue';
 import type { GraphQLFetch } from '../../../src/mutation-queue/handlers';
 import { getHttpClient } from '../../../src/lib/graphql/client';
 import { hapticLight, hapticSelection } from '../../../src/lib/haptics';

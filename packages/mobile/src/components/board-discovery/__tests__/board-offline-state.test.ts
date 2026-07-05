@@ -23,15 +23,15 @@ describe('boardDownloadState', () => {
   });
 
   it('is downloading while its own board_climbs table is being pulled', () => {
-    expect(
-      boardDownloadState({ ...base, isSyncing: true, currentTable: 'board_climbs:kilter:1:5' }),
-    ).toBe('downloading');
+    expect(boardDownloadState({ ...base, isSyncing: true, currentTable: 'board_climbs:kilter:1:5' })).toBe(
+      'downloading',
+    );
   });
 
   it('is downloading while its own board_climb_stats table is being pulled', () => {
-    expect(
-      boardDownloadState({ ...base, isSyncing: true, currentTable: 'board_climb_stats:kilter:1:5' }),
-    ).toBe('downloading');
+    expect(boardDownloadState({ ...base, isSyncing: true, currentTable: 'board_climb_stats:kilter:1:5' })).toBe(
+      'downloading',
+    );
   });
 
   it('does not cross-trigger on a sibling scope with a shared prefix', () => {

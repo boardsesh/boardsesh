@@ -390,10 +390,7 @@ export const syncQueries = {
 
     let scope: SQL = sql`board_type = ${boardType}`;
     if (lid !== null || (sid !== null && boardType !== 'moonboard')) {
-      const sub: SQL[] = [
-        sql`bc.uuid = board_climb_stats.climb_uuid`,
-        sql`bc.board_type = ${boardType}`,
-      ];
+      const sub: SQL[] = [sql`bc.uuid = board_climb_stats.climb_uuid`, sql`bc.board_type = ${boardType}`];
       if (lid !== null) {
         sub.push(sql`bc.layout_id = ${lid}`);
       }

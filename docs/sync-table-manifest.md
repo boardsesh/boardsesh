@@ -71,8 +71,14 @@ type Query {
   syncUserFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
   syncSetterFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
   syncPlaylistFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
-  syncClimbs(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
-  syncClimbStats(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+  syncClimbs(boardType: String!, layoutId: Int, sizeId: Int, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+  syncClimbStats(
+    boardType: String!
+    layoutId: Int
+    sizeId: Int
+    cursor: SyncCursorInput
+    limit: Int! = 500
+  ): SyncResult!
   syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
 }
 
@@ -149,7 +155,7 @@ Legend — **Scope**: how the resolver filters rows. **Seq**: cursor 2nd compone
 - Del: trigger emits `record_id = OLD.uuid` (1 segment).
 - Columns (snake*case): `uuid` (PK), `user_id`, `board_type`, `climb_uuid`, `angle`, `is_mirror`, `status`,
   `attempt_count`, `quality`, `difficulty`, `is_benchmark`, `comment`, `climbed_at`, `session_id`, `created_at`, `updated_at`.
-  (Skip aurora*_/kilter\__ bookkeeping, `board_id`, `inferred_session_id`.) Index `(climb_uuid, board_type, angle)` for logbook reads.
+  (Skip aurora*\_/kilter\_\_ bookkeeping, `board_id`, `inferred_session_id`.) Index `(climb_uuid, board_type, angle)` for logbook reads.
 
 ### `playlists` — `syncPlaylists` (user data)
 
@@ -203,21 +209,26 @@ Legend — **Scope**: how the resolver filters rows. **Seq**: cursor 2nd compone
 - Del: `record_id = OLD.playlist_uuid` (1 seg).
 - Columns: `playlist_uuid`, `follower_id`, `created_at`, `updated_at`.
 
-### `board_climbs` — `syncClimbs(boardType)` (board data, per-board)
+### `board_climbs` — `syncClimbs(boardType, layoutId?, sizeId?)` (board data, per-board)
 
-- Scope: `board_type = $boardType`. Seq: **`sync_seq`** (new). updated_at: **added by Phase 2**. Hook: no.
+- Scope: `board_type = $boardType` [`AND layout_id = $layoutId` `AND compatible_size_ids @> ARRAY[$sizeId]` when given;
+  `sizeId` ignored for moonboard]. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`uuid`**. table-config: `['uuid']` ✓.
 - Del: trigger emits `record_id = OLD.uuid` (1 seg), `user_id = NULL` (reference data).
 - Columns: `uuid` (PK), `board_type`, `layout_id`, `setter_id`, `setter_username`, `name`, `description`, `hsm`,
   `edge_left`, `edge_right`, `edge_bottom`, `edge_top`, `angle`, `frames_count`, `frames_pace`, `frames`,
   `is_draft`, `is_listed`, `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
-  `compatible_size_ids` (JSON text), `hold_fingerprint`, `updated_at`, `sync_seq`.
-- NOTE: **dormant this phase** — climb search is NOT repointed to local SQLite yet (needs the pre-warmed DB; see
-  deferred work). Build it correct; default `syncEnabledBoards` is `[]` so it won't run unless a board is enabled.
+  `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`, `updated_at`, `sync_seq`.
+- LIVE: `syncEnabledBoards` holds `"boardType:layoutId:sizeId"` scope keys (My Boards → offline toggle), so a
+  download is a fixed (type, layout, size) superset — all sets — that stays cacheable across users. When offline and
+  a scope is downloaded, climb **search + detail** read from these tables (`search-climbs-local.ts` /
+  `get-climb-local.ts`). Default `syncEnabledBoards` is `[]` so nothing downloads until a board is enabled.
 
-### `board_climb_stats` — `syncClimbStats(boardType)` (board data, per-board)
+### `board_climb_stats` — `syncClimbStats(boardType, layoutId?, sizeId?)` (board data, per-board)
 
-- Scope: `board_type = $boardType`. Seq: **`sync_seq`** (new). updated_at: **added by Phase 2**. Hook: no.
+- Scope: `board_type = $boardType` [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId
+AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table has no `layout_id`, so it correlates
+  back to `board_climbs`, with fully-qualified cursor columns]. Seq: **`sync_seq`**. Hook: no.
 - Local PK: **`(board_type, climb_uuid, angle)`** (B9). table-config: change `['climb_uuid','angle']` →
   **`['board_type','climb_uuid','angle']`**.
 - Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`.

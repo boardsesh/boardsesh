@@ -395,7 +395,9 @@ LIMIT $limit;
 
 ### Per-board selective sync
 
-User data (ticks, playlists, favorites, follows) syncs always. Board reference data syncs per-board based on user settings. Checkpoints are keyed by `(tableName, boardType)` — not just `tableName` — so enabling Tension after syncing Kilter starts Tension from the pre-warmed timestamp, not from Kilter's checkpoint.
+User data (ticks, playlists, favorites, follows) syncs always. Board reference data syncs per-**scope**, where a scope is one `(boardType, layoutId, sizeId)` a user made available offline in **My Boards** (the offline toggle writes an encoded `"boardType:layoutId:sizeId"` key into `syncEnabledBoards`). Downloading always pulls **all sets** for that layout/size — a fixed superset that stays cacheable across users. `syncClimbs`/`syncClimbStats` take optional `layoutId`/`sizeId` args to scope the pull server-side (see the manifest); `sizeId` is ignored for moonboard. Checkpoints are keyed by `(tableName, scopeKey)` so each scope resumes from its own cursor, and they survive sign-out (the rows do too) so the next sign-in doesn't re-crawl.
+
+**Offline browse (live).** When the device is offline and the active board's exact scope is downloaded, climb **search + count + detail** read from local `board_climbs`/`board_climb_stats` (`search-climbs-local.ts` / `get-climb-local.ts`), mirroring the server's LEFT-JOIN standard search. A coarse `offline` flag in the React Query key swaps network⇄local on a connectivity flip. **Offline limitations:** filters needing tables we don't sync — hold-state (STARTING/HAND/FOOT/FINISH), zone, tall/wide, beta-video — and the drafts path fall back to the network (online) or are unavailable (offline); name search is ASCII-case-insensitive only; climb-detail satellites (comments, beta links, similar climbs, stats history) are network-only and absent offline.
 
 ```typescript
 const enabledBoards = getMMKVPreference<string[]>('sync_boards') ?? [];

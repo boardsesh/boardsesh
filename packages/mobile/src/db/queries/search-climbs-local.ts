@@ -149,7 +149,10 @@ function buildJoinAndWhere(input: ClimbSearchInput): JoinAndWhere {
 
   // Size: compatible_size_ids contains sizeId (skip for moonboard's single size).
   if (!isMoonboard) {
-    push('c.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(c.compatible_size_ids) WHERE value = ?)', input.sizeId);
+    push(
+      'c.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(c.compatible_size_ids) WHERE value = ?)',
+      input.sizeId,
+    );
   }
 
   // Set membership (subset): every required set is in the selected sets. NULL

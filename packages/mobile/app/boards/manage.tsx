@@ -16,7 +16,13 @@ import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metric
 import { useSyncStatus, triggerSync, setSyncProgress } from '../../src/sync';
 import { drainMutationQueue } from '../../src/mutation-queue';
 import type { GraphQLFetch } from '../../src/mutation-queue/handlers';
-import { getSetting, useSetting, setOfflineBoardEnabled, offlineBoardKeyForBoard, offlineBoardScopeForBoard } from '../../src/settings';
+import {
+  getSetting,
+  useSetting,
+  setOfflineBoardEnabled,
+  offlineBoardKeyForBoard,
+  offlineBoardScopeForBoard,
+} from '../../src/settings';
 import { getHttpClient } from '../../src/lib/graphql/client';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
@@ -79,11 +85,11 @@ export default function ManageBoards() {
   const currentTable = syncStatus.progress?.currentTable ?? null;
   const currentTableProcessed = syncStatus.progress?.currentTableProcessed;
 
-  const graphqlFetch = useMemo<GraphQLFetch>(
-    () => (query, variables) => getHttpClient().request(query, variables),
-    [],
+  const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
+  const drainQueue = useCallback(
+    () => drainMutationQueue(db, queryClient, graphqlFetch),
+    [db, queryClient, graphqlFetch],
   );
-  const drainQueue = useCallback(() => drainMutationQueue(db, queryClient, graphqlFetch), [db, queryClient, graphqlFetch]);
 
   const handleToggleOffline = useCallback(
     async (board: UserBoard) => {
