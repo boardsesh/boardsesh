@@ -6,11 +6,9 @@ using Toybox.Lang;
 //   * Switch session    -> re-query mySessions and show the picker
 //   * End activity      -> ExitConfirm
 class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
-    private var _view as ClimbView;
 
-    function initialize(view as ClimbView) {
+    function initialize() {
         Menu2InputDelegate.initialize();
-        _view = view;
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
@@ -28,7 +26,7 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
 
         } else if (id == :end) {
             WatchUi.popView(WatchUi.SLIDE_DOWN);
-            WatchUi.pushView(Menus.buildExitConfirm(), new ExitConfirmDelegate(_view), WatchUi.SLIDE_UP);
+            WatchUi.pushView(Menus.buildExitConfirm(), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
         }
     }
 

@@ -47,7 +47,7 @@ class NoSessionDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onBack() as Lang.Boolean {     // BACK -> exit
+        // System.exit() does not return, so no `return` follows (it'd be dead code).
         System.exit();
-        return true;
     }
 }
