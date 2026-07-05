@@ -170,6 +170,16 @@ describe('offlineAwareRequest — SEARCH_CLIMBS_COUNT', () => {
     expect(countClimbsLocal).not.toHaveBeenCalled();
   });
 
+  it('counts locally when downloaded (offline)', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, {
+      input: searchInput,
+    });
+    expect(result).toEqual({ searchClimbs: { totalCount: 7 } });
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('returns totalCount 0 when offline with no local data', async () => {
     setOnline(false);
     isBoardDownloadedLocally.mockResolvedValue(false);

@@ -104,7 +104,8 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
     const db = getDatabaseHandle();
     // The `variables !== undefined` guard makes a registered document called
     // without variables degrade to HTTP rather than throw in a destructure;
-    // the offline fallback below still applies either way.
+    // the offline fallback below still applies either way. `as never` re-narrows
+    // the storage-erased generics — see the OFFLINE_OPERATIONS declaration.
     if (db && variables !== undefined && (await operation.canServeLocal(db, variables as never))) {
       return (await operation.resolveLocal(db, variables as never)) as TResponse;
     }
