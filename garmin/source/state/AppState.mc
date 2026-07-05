@@ -19,6 +19,18 @@ module AppState {
     // Whether the last poll succeeded (drives the offline banner).
     var online = true;
 
+    // Attach (or switch to) a session. Called from LoadingView and the session
+    // picker. `id`/`name` are the opaque values from mySessions (used as-is), so
+    // typed permissively. NOTE: the per-session climb log (SessionLog) is NOT
+    // reset here — it is tied to the FIT recording's lifetime instead (reset in
+    // ActivityController.startIfNeeded when a new recording begins). Switching
+    // Boardsesh sessions mid-climb keeps one continuous FIT activity, so the log
+    // must keep accumulating to stay consistent with the recorded laps.
+    function attachSession(id as Lang.Object or Null, name as Lang.Object or Null) as Void {
+        sessionId = id;
+        sessionName = name;
+    }
+
     function currentIndex() as Lang.Number {
         if (state == null) { return 0; }
         var idx = state["currentIndex"];

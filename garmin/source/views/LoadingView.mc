@@ -21,16 +21,15 @@ class LoadingView extends WatchUi.View {
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+        Theme.ensure(dc);
+        dc.setColor(Theme.TEXT, Theme.BG);
         dc.clear();
-        var cx = dc.getWidth() / 2;
-        var cy = dc.getHeight() / 2;
-        dc.drawText(cx, cy - 18, Graphics.FONT_MEDIUM,
-            WatchUi.loadResource(Rez.Strings.AppName),
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
-        dc.drawText(cx, cy + 18, Graphics.FONT_XTINY,
-            WatchUi.loadResource(Rez.Strings.Loading),
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        var cx = Theme.cx;
+        var cy = Theme.cy;
+        Theme.textC(dc, cx, cy - 18, Theme.nameFont(), Theme.TEXT,
+            WatchUi.loadResource(Rez.Strings.AppName));
+        Theme.textC(dc, cx, cy + 18, Theme.metaFont(), Theme.DIM,
+            WatchUi.loadResource(Rez.Strings.Loading));
     }
 
     function onSessions(code as Lang.Number, data) as Void {
@@ -56,8 +55,7 @@ class LoadingView extends WatchUi.View {
     }
 
     private function _attach(session as Lang.Dictionary) as Void {
-        AppState.sessionId = session["id"];
-        AppState.sessionName = session["name"];
+        AppState.attachSession(session["id"], session["name"]);
     }
 
     // Filter mySessions to isActive == true.

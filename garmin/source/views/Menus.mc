@@ -3,16 +3,10 @@ using Toybox.WatchUi;
 // Menu2 builders. Kept separate from the delegates so the same menu can be
 // opened from more than one place (e.g. ExitConfirm from both ClimbDelegate and
 // SessionActionsDelegate). Construction only — no callbacks here.
+//
+// Logging is no longer a menu: it's one-press (START = send, BACK = attempt)
+// handled directly in ClimbDelegate.
 module Menus {
-
-    function buildLogMenu() as WatchUi.Menu2 {
-        var menu = new WatchUi.Menu2({ :title => WatchUi.loadResource(Rez.Strings.LogTitle) });
-        menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.LogAttempt), null, :attempt, null));
-        menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.LogSend), null, :send, null));
-        menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.LogFlash), null, :flash, null));
-        menu.addItem(new WatchUi.MenuItem(WatchUi.loadResource(Rez.Strings.Cancel), null, :cancel, null));
-        return menu;
-    }
 
     function buildActionsMenu() as WatchUi.Menu2 {
         var menu = new WatchUi.Menu2({ :title => WatchUi.loadResource(Rez.Strings.ActionsTitle) });

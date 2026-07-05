@@ -118,3 +118,14 @@ function testSaveTickInputAttempt(logger as Test.Logger) as Lang.Boolean {
     Test.assertEqual(input["attemptCount"], 1);
     return true;
 }
+
+(:test)
+function testSaveTickInputPassesAttemptCountThrough(logger as Test.Logger) as Lang.Boolean {
+    // The builder is generic: it forwards whatever attemptCount the caller passes.
+    // (ClimbDelegate currently always sends 1 — one tick per logged effort — but
+    // the builder must not hardcode it.)
+    var input = BsEndpoints.saveTickInput(sampleState(), "sess-1", "send", 4, "2026-07-05T12:00:00Z");
+    Test.assertEqual(input["status"], "send");
+    Test.assertEqual(input["attemptCount"], 4);
+    return true;
+}

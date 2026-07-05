@@ -15,24 +15,55 @@ class NoSessionView extends WatchUi.View {
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+        Theme.ensure(dc);
+        dc.setColor(Theme.TEXT, Theme.BG);
         dc.clear();
-        var cx = dc.getWidth() / 2;
-        var cy = dc.getHeight() / 2;
+        var cx = Theme.cx;
+        var h = Theme.h;
+        var w = Theme.w;
 
-        dc.drawText(cx, cy - 40, Graphics.FONT_SMALL,
-            WatchUi.loadResource(Rez.Strings.NoSessionTitle),
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        // A little board glyph up top.
+        _drawBoard(dc, cx, h * 26 / 100, w * 16 / 100);
 
-        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx, cy - 2, Graphics.FONT_XTINY,
-            WatchUi.loadResource(Rez.Strings.StartOnPhone),
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        Theme.textC(dc, cx, h * 50 / 100, Theme.nameFont(), Theme.TEXT,
+            WatchUi.loadResource(Rez.Strings.NoSessionTitle));
+        Theme.textC(dc, cx, h * 62 / 100, Theme.metaFont(), Theme.DIM,
+            WatchUi.loadResource(Rez.Strings.StartOnPhone));
 
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.drawText(cx, dc.getHeight() - 30, Graphics.FONT_XTINY,
-            WatchUi.loadResource(Rez.Strings.Retry),
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        // Retry, styled as a button pill (press START).
+        _drawPill(dc, cx, h * 80 / 100, WatchUi.loadResource(Rez.Strings.Retry));
+    }
+
+    // A rounded board outline with a few coloured holds — a geometric mark, no
+    // bitmap, so it scales cleanly on every screen.
+    private function _drawBoard(dc as Graphics.Dc, cx as Lang.Number, cy as Lang.Number, size as Lang.Number) as Void {
+        var half = size / 2;
+        dc.setColor(Theme.DIM, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(3);
+        dc.drawRoundedRectangle(cx - half, cy - half, size, size, size / 6);
+        dc.setPenWidth(1);
+        var dot = size / 12;
+        if (dot < 2) { dot = 2; }
+        dc.setColor(Theme.SEND, Graphics.COLOR_TRANSPARENT);
+        dc.fillCircle(cx - size * 20 / 100, cy - size * 15 / 100, dot);
+        dc.setColor(Theme.BENCH, Graphics.COLOR_TRANSPARENT);
+        dc.fillCircle(cx + size * 15 / 100, cy + size * 5 / 100, dot);
+        dc.setColor(Theme.WARN, Graphics.COLOR_TRANSPARENT);
+        dc.fillCircle(cx - size * 5 / 100, cy + size * 22 / 100, dot);
+    }
+
+    private function _drawPill(dc as Graphics.Dc, cx as Lang.Number, cy as Lang.Number, text as Lang.String) as Void {
+        var font = Theme.metaFont();
+        var textW = dc.getTextWidthInPixels(text, font);
+        var padX = Theme.w * 6 / 100;
+        var padY = Theme.h * 3 / 100;
+        var pillW = textW + padX * 2;
+        var pillH = dc.getFontHeight(font) + padY * 2;
+        dc.setColor(Theme.DIM, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(2);
+        dc.drawRoundedRectangle(cx - pillW / 2, cy - pillH / 2, pillW, pillH, pillH / 2);
+        dc.setPenWidth(1);
+        Theme.textC(dc, cx, cy, font, Theme.TEXT, text);
     }
 }
 
