@@ -153,4 +153,32 @@ describe('RogueTimerProvider', () => {
     rerender();
     await waitFor(() => expect(result.current.isConnected).toBe(true));
   });
+
+  it('gives up after repeated flaps instead of reconnecting forever', async () => {
+    scenario.timerName = 'Rogue Home Timer';
+    scenario.boardConnected = true;
+    const { result } = renderHook(() => useRogueTimer(), { wrapper });
+    await waitFor(() => expect(result.current.isConnected).toBe(true));
+
+    // MAX_RECONNECT_ATTEMPTS is 4: the first 4 drops each trigger a reconnect,
+    // and each reconnect re-registers the disconnect callback.
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      await act(async () => {
+        controllerMock.state.connected = false;
+        controllerMock.state.disconnectCb?.();
+      });
+      // initial connect (1) + `attempt` reconnects.
+      await waitFor(() => expect(controllerMock.connectByName).toHaveBeenCalledTimes(attempt + 1));
+    }
+
+    expect(controllerMock.connectByName).toHaveBeenCalledTimes(5);
+
+    // The 5th drop exceeds the cap: give up (status 'error'), no more reconnects.
+    await act(async () => {
+      controllerMock.state.connected = false;
+      controllerMock.state.disconnectCb?.();
+    });
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(controllerMock.connectByName).toHaveBeenCalledTimes(5);
+  });
 });

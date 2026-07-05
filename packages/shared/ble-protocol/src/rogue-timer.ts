@@ -79,7 +79,10 @@ export function buildRogueTimerFrame(code: RogueTimerCommandCode): Uint8Array {
 }
 
 // Discovery name match (spec §3): name or localName contains `rogue` or `echo`.
-export function isRogueTimerName(name: string | null | undefined): boolean {
+// NOTE: this identifies the Rogue/Echo *brand*, not a timer specifically — it is
+// true for Echo cardio too (rower/bike/skier). Pair it with
+// `detectRogueDeviceType(name) === 'timer'` to isolate drivable timers.
+export function isRogueEchoDeviceName(name: string | null | undefined): boolean {
   if (!name) return false;
   const lower = name.toLowerCase();
   return lower.includes('rogue') || lower.includes('echo');

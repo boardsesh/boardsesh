@@ -5,7 +5,7 @@ import {
   ROGUE_TIMER_CHARACTERISTIC_UUID,
   ROGUE_TIMER_ADVERTISED_SERVICE_UUID,
   buildRogueTimerFrame,
-  isRogueTimerName,
+  isRogueEchoDeviceName,
   detectRogueDeviceType,
   type RogueTimerCommandCode,
 } from '@boardsesh/ble-protocol/rogue-timer';
@@ -76,7 +76,7 @@ export type RogueTimerConnection = {
 // gate is the belt-and-braces so a stray FFE0-advertising Echo unit can't be
 // listed or connected as a timer.
 function isDrivableTimer(name: string | null | undefined): boolean {
-  return isRogueTimerName(name) && detectRogueDeviceType(name) === 'timer';
+  return isRogueEchoDeviceName(name) && detectRogueDeviceType(name) === 'timer';
 }
 
 export class RogueTimerController {
@@ -86,10 +86,14 @@ export class RogueTimerController {
   // stale characteristic can never be written after the link is gone.
   private disconnectSubscription: { remove: () => void } | null = null;
   private connectedDeviceName: string | undefined;
+  // True while *this* controller holds the shared bleManager's scan slot. Lets
+  // `teardownConnection` stop only a scan we started, so a provider disconnect
+  // can't kill an unrelated pairing-sheet scan on another controller instance.
+  private scanActive = false;
 
   /**
    * Start a service-filtered scan for Rogue timers. Keeps a de-duped list (by
-   * deviceId) of candidates whose advertised name passes `isRogueTimerName`,
+   * deviceId) of candidates whose advertised name passes `isRogueEchoDeviceName`,
    * pushing the growing list to `onUpdate` as devices arrive. Self-stops after
    * `SCAN_TIMEOUT_MS` (firing `onScanStopped`). Returns a stop function that
    * halts the scan immediately.
@@ -112,6 +116,7 @@ export class RogueTimerController {
     const stopScan = () => {
       if (stopped) return;
       stopped = true;
+      this.scanActive = false;
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       void bleManager.stopDeviceScan();
     };
@@ -123,6 +128,7 @@ export class RogueTimerController {
       const poweredOn = await waitForBlePoweredOn();
       if (!poweredOn || stopped) return;
 
+      this.scanActive = true;
       void bleManager.startDeviceScan([ROGUE_TIMER_ADVERTISED_SERVICE_UUID], null, (scanError, scannedDevice) => {
         if (scanError) {
           stopScan();
@@ -258,6 +264,7 @@ export class RogueTimerController {
           resolve(device);
         };
 
+        this.scanActive = true;
         void bleManager.startDeviceScan([ROGUE_TIMER_ADVERTISED_SERVICE_UUID], null, (scanError, scannedDevice) => {
           if (scanError) {
             if (!resolved) reject(new Error(`BLE scan failed: ${scanError.message}`));
@@ -302,11 +309,13 @@ export class RogueTimerController {
       // Stop the scan the moment the timer is resolved — scanning through the
       // (up to 12s) connect window degrades Android connection reliability.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
+      this.scanActive = false;
       void bleManager.stopDeviceScan();
       return await this.connectById(found.deviceId);
     } finally {
       // Safety net: idempotent stop for the reject/throw paths too.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
+      this.scanActive = false;
       void bleManager.stopDeviceScan();
     }
   }
@@ -346,13 +355,18 @@ export class RogueTimerController {
    * write a characteristic that's on its way out.
    */
   private async teardownConnection(): Promise<void> {
-    // Release the shared bleManager's scan slot: a `connectByName` may be
-    // mid-scan when the board LED drops and the provider calls `disconnect()`
-    // (e.g. the timer dropped at the same moment). Without this, that scan holds
-    // the singleton's single scan slot for up to CONNECT_BY_NAME_SCAN_TIMEOUT_MS
-    // and a board reconnect scan started in that window would fail or be
-    // silently replaced. Idempotent — safe when nothing is scanning.
-    void bleManager.stopDeviceScan();
+    // Release the shared bleManager's scan slot if *this* controller is
+    // scanning: a `connectByName` may be mid-scan when the board LED drops and
+    // the provider calls `disconnect()` (e.g. the timer dropped at the same
+    // moment). Without this, that scan holds the singleton's single scan slot
+    // for up to CONNECT_BY_NAME_SCAN_TIMEOUT_MS and a board reconnect scan
+    // started in that window would fail or be silently replaced. Gated on
+    // `scanActive` so an unrelated teardown can't kill another controller's
+    // scan (e.g. an open pairing sheet).
+    if (this.scanActive) {
+      this.scanActive = false;
+      void bleManager.stopDeviceScan();
+    }
 
     if (this.disconnectSubscription) {
       this.disconnectSubscription.remove();

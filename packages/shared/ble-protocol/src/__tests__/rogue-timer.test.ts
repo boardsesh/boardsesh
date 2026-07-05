@@ -3,7 +3,7 @@ import {
   RogueTimerCommand,
   buildRogueTimerFrame,
   rogueTimerNumpadCode,
-  isRogueTimerName,
+  isRogueEchoDeviceName,
   detectRogueDeviceType,
   ROGUE_TIMER_SERVICE_UUID,
   ROGUE_TIMER_CHARACTERISTIC_UUID,
@@ -57,12 +57,12 @@ describe('rogue-timer protocol', () => {
   });
 
   it('matches Rogue/Echo device names case-insensitively (spec §3)', () => {
-    expect(isRogueTimerName('Rogue Home Timer')).toBe(true);
-    expect(isRogueTimerName('Rogue Echo Gym Timer')).toBe(true);
-    expect(isRogueTimerName('ECHO_ROWER')).toBe(true);
-    expect(isRogueTimerName('Kilter Board A1B2')).toBe(false);
-    expect(isRogueTimerName(null)).toBe(false);
-    expect(isRogueTimerName(undefined)).toBe(false);
+    expect(isRogueEchoDeviceName('Rogue Home Timer')).toBe(true);
+    expect(isRogueEchoDeviceName('Rogue Echo Gym Timer')).toBe(true);
+    expect(isRogueEchoDeviceName('ECHO_ROWER')).toBe(true);
+    expect(isRogueEchoDeviceName('Kilter Board A1B2')).toBe(false);
+    expect(isRogueEchoDeviceName(null)).toBe(false);
+    expect(isRogueEchoDeviceName(undefined)).toBe(false);
   });
 
   it('classifies the Rogue device family from the name (spec §3)', () => {

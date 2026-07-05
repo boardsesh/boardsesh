@@ -52,6 +52,16 @@ const RogueTimerContext = createContext<RogueTimerContextValue | undefined>(unde
 const KEY_SEQUENCE_GAP_MS = 180;
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// Bounded auto-reconnect: after this many consecutive drop→reconnect cycles the
+// provider gives up (status 'error') instead of looping forever, so a timer
+// flapping at range-edge can't burn the battery for the whole wall session. A
+// board-LED toggle or re-pair resets the counter and tries again.
+const MAX_RECONNECT_ATTEMPTS = 4;
+// A connection that survives this long is treated as stable, resetting the
+// attempt counter — so a single drop much later in a long session still gets a
+// fresh set of retries rather than counting against early-session churn.
+const STABLE_CONNECTION_MS = 30_000;
+
 export function RogueTimerProvider({ children }: { children: ReactNode }) {
   const { data: activeBoard } = useActiveBoard();
   const bluetooth = useOptionalBluetoothContext();
@@ -73,6 +83,16 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
   // Bumped when the connected timer drops unexpectedly, to re-run the reconcile
   // effect for a single reconnect attempt (while the board LED is still held).
   const [reconnectTick, setReconnectTick] = useState(0);
+  // Consecutive drop→reconnect cycles, and the "connection is stable" timer that
+  // resets them. Bounded by MAX_RECONNECT_ATTEMPTS so a flapping timer stops.
+  const reconnectAttemptsRef = useRef(0);
+  const stableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearStableTimer = useCallback(() => {
+    if (stableTimerRef.current) {
+      clearTimeout(stableTimerRef.current);
+      stableTimerRef.current = null;
+    }
+  }, []);
 
   // Reconcile the timer connection with "driving the wall + a paired timer".
   // Connects when both become true; disconnects when either goes false, the
@@ -95,21 +115,29 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
           }
           setStatus('connected');
           setDeviceName(connection.deviceName ?? timerName);
+          // A connection that holds for STABLE_CONNECTION_MS is "good" — reset
+          // the flap counter so a much-later single drop still gets fresh retries.
+          clearStableTimer();
+          stableTimerRef.current = setTimeout(() => {
+            reconnectAttemptsRef.current = 0;
+          }, STABLE_CONNECTION_MS);
           // Reflect an unsolicited drop (out of range / powered off): the
           // controller clears its own refs, but the provider must clear the
-          // target + status too, or the badge stays stuck on "connected" and
-          // the reconcile guard blocks any reconnect. Bumping reconnectTick
-          // re-runs this effect for one reconnect attempt while the board LED
-          // is still held.
-          // No backoff / retry cap: a timer oscillating at range-edge will
-          // reconnect-drop-reconnect continuously. Acceptable for the POC (each
-          // attempt is a bounded ~10s scan, and the human-held board LED bounds
-          // the session); revisit with backoff if it drives real churn.
+          // target + status too, or the badge stays stuck on "connected" and the
+          // reconcile guard blocks any reconnect. Retry via reconnectTick until
+          // MAX_RECONNECT_ATTEMPTS consecutive flaps, then give up (status
+          // 'error') so a range-edge timer can't loop forever.
           unsubscribeDisconnect = controller.onDisconnect(() => {
+            clearStableTimer();
             connectedTargetRef.current = null;
             setDeviceName(undefined);
-            setStatus('idle');
-            setReconnectTick((tick) => tick + 1);
+            reconnectAttemptsRef.current += 1;
+            if (reconnectAttemptsRef.current > MAX_RECONNECT_ATTEMPTS) {
+              setStatus('error');
+            } else {
+              setStatus('idle');
+              setReconnectTick((tick) => tick + 1);
+            }
           });
         })
         .catch(() => {
@@ -130,6 +158,9 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
         connectedTargetRef.current = null;
         void controller.disconnect();
       }
+      // Stopped driving the wall — a fresh set of retries when we next connect.
+      clearStableTimer();
+      reconnectAttemptsRef.current = 0;
       setStatus('idle');
       setDeviceName(undefined);
     }
@@ -138,14 +169,15 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       unsubscribeDisconnect?.();
     };
-  }, [controller, boardConnected, timerName, reconnectTick]);
+  }, [controller, boardConnected, timerName, reconnectTick, clearStableTimer]);
 
   // Drop the connection when the provider unmounts (app teardown).
   useEffect(() => {
     return () => {
+      clearStableTimer();
       void controller.disconnect();
     };
-  }, [controller]);
+  }, [controller, clearStableTimer]);
 
   const pressButton = useCallback(
     async (code: RogueTimerCommandCode) => {
