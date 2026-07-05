@@ -84,6 +84,10 @@ class PairingView extends WatchUi.View {
     function onPairResult(code as Lang.Number, data) as Void {
         if (code >= 200 && code < 300 && data != null && data["jwt"] != null) {
             TokenStore.store(data["jwt"], data["refreshToken"], data["expiresAt"]);
+            // A fresh pairing may be a DIFFERENT account than the one whose ticks
+            // are still queued locally (shared / re-paired watch). Drop them so
+            // account A's ticks can't be flushed under account B's JWT.
+            TickQueue.clear();
             Router.toLoading();
             return;
         }

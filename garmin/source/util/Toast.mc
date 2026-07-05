@@ -9,7 +9,7 @@ using Toybox.Lang;
 module Toast {
     function show(text as Lang.String) as Void {
         // VERIFY: WatchUi.showToast was added around Connect IQ 3.4.0. minApiLevel
-        // here is 3.1.0, so we feature-gate with `has` and fall back below.
+        // here is 3.2.0, so we feature-gate with `has` and fall back below.
         if (WatchUi has :showToast) {
             WatchUi.showToast(text, null);
             return;
