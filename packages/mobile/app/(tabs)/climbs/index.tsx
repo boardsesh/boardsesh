@@ -54,7 +54,8 @@ import { useGradeFormat } from '../../../src/hooks/use-grade-format';
 import { useLastUsedGrade } from '../../../src/hooks/use-last-used-grade';
 import { useClimbListPlaylistMemberships } from '../../../src/hooks/use-climb-list-playlist-memberships';
 import { useInfiniteSearchClimbs } from '../../../src/lib/graphql/hooks/use-infinite-search-climbs';
-import { resolveClimbSearch } from '../../../src/lib/graphql/offline-search';
+import { offlineAwareRequest } from '../../../src/lib/graphql/offline-request';
+import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../../../src/lib/graphql/operations';
 import { usePlaylistActivation } from '../../../src/lib/playlists/use-playlist-activation';
 import { toQueueClimb, toQueueClimbs } from '../../../src/lib/climb-types';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../../../src/lib/create-board-holds';
@@ -673,10 +674,10 @@ function ClimbListInner() {
       );
       // Same offline-aware source the list uses, so the play-drawer swipe keeps
       // paging climbs with no signal on a downloaded board.
-      const result = await resolveClimbSearch(input);
+      const response = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input });
       return {
-        climbs: toQueueClimbs(result.climbs),
-        hasMore: result.hasMore,
+        climbs: toQueueClimbs(response.searchClimbs.climbs),
+        hasMore: response.searchClimbs.hasMore,
       };
     },
     [filters, boardName, layoutId, sizeId, setIds, angle, name, boardFilters],

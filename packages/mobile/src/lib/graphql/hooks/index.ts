@@ -33,7 +33,7 @@ import {
 } from '@boardsesh/graphql/operations/favorites';
 import { BOULDER_GRADES } from '@boardsesh/board-config';
 import { getDatabaseHandle } from '../../../db';
-import { resolveClimbSearch, resolveClimbSearchCount, resolveClimb } from '../offline-search';
+import { offlineAwareRequest } from '../offline-request';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import { drainMutationQueue } from '../../../mutation-queue';
 import type { GraphQLFetch } from '../../../mutation-queue/handlers';
@@ -73,6 +73,12 @@ import {
   GET_GRADES,
   GET_ANGLES,
   GET_SETTER_STATS,
+  SEARCH_CLIMBS,
+  SEARCH_CLIMBS_COUNT,
+  GET_CLIMB,
+  type SearchClimbsQueryResponse,
+  type SearchClimbsCountQueryResponse,
+  type GetClimbQueryResponse,
   GET_SESSION_SUMMARY,
   GET_SESSION_HEALTH_EXPORT,
   GET_OTA_PREVIEW_CHANNELS,
@@ -535,11 +541,12 @@ export function useSearchClimbs(
   enabled = true,
   options?: { staleTime?: number; gcTime?: number },
 ) {
-  // Keyed on input only — resolveClimbSearch is local-first and picks the source
+  // Keyed on input only — offlineAwareRequest is local-first and picks the source
   // live; a completed board sync invalidates ['searchClimbs'] to refresh it.
   return useQuery({
     queryKey: ['searchClimbs', input],
-    queryFn: () => resolveClimbSearch(input),
+    queryFn: () => offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
+    select: (data) => data.searchClimbs,
     enabled,
     // undefined → React Query's defaults.
     staleTime: options?.staleTime,
@@ -550,7 +557,8 @@ export function useSearchClimbs(
 export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
   return useQuery({
     queryKey: ['searchClimbsCount', input],
-    queryFn: () => resolveClimbSearchCount(input),
+    queryFn: () => offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
+    select: (data) => data.searchClimbs.totalCount,
     enabled,
     // Hold the last count while a new filter set is in flight so the bar /
     // "Show N" button doesn't flicker to blank on every filter change.
@@ -571,7 +579,8 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
 export function useClimb(variables: GetClimbQueryVariables | null) {
   return useQuery({
     queryKey: ['climb', variables],
-    queryFn: () => resolveClimb(variables!),
+    queryFn: () => offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, variables!),
+    select: (data) => data.climb,
     enabled: !!variables,
   });
 }
