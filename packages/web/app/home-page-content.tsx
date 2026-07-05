@@ -9,7 +9,8 @@ import Typography from '@mui/material/Typography';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import CardActionArea from '@mui/material/CardActionArea';
-import PlayArrowRounded from '@mui/icons-material/PlayArrowRounded';
+import InstallMobileOutlined from '@mui/icons-material/InstallMobileOutlined';
+import SystemUpdateOutlined from '@mui/icons-material/SystemUpdateOutlined';
 import PlayCircleOutlineOutlined from '@mui/icons-material/PlayCircleOutlineOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import BluetoothOutlined from '@mui/icons-material/BluetoothOutlined';
@@ -24,7 +25,6 @@ import { useSession } from 'next-auth/react';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useTranslation } from 'react-i18next';
 import { themeTokens } from '@/app/theme/theme-config';
-import { usePersistentSession } from '@/app/components/persistent-session';
 import BoardDiscoveryScroll from '@/app/components/board-scroll/board-discovery-scroll';
 import { constructBoardSlugListUrl, constructClimbListWithSlugs, tryConstructSlugListUrl } from '@/app/lib/url-utils';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
@@ -33,7 +33,6 @@ import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import { track } from '@/app/lib/analytics';
-import { setClimbSessionCookie } from '@/app/lib/climb-session-cookie';
 import { useOnboardingTourOptional } from '@/app/components/onboarding/onboarding-tour-provider';
 import { TOUR_OPEN_START_SESH_EVENT } from '@/app/components/onboarding/onboarding-tour-events';
 
@@ -165,6 +164,28 @@ function OnboardingCard({ icon, title, description, onClick, accent = 'action' }
 
 type InstallPlatform = 'unknown' | 'native' | 'android-web' | 'other-web';
 
+type HeroInstallStore = 'ios' | 'android';
+type HeroInstall = { mode: 'install' | 'update'; store: HeroInstallStore };
+
+// Maps the detected platform to the hero CTA. Web visitors get a store install
+// button; the last stragglers still on the retired Capacitor build (we ship a
+// React Native app now) get an "update" nudge to whichever store they came
+// from. The pre-detection 'unknown' state renders the App Store install so the
+// hero CTA is real and clickable on first paint — it corrects to Play Store /
+// update once the platform check runs on mount.
+function resolveHeroInstall(platform: InstallPlatform, nativeStore: HeroInstallStore): HeroInstall {
+  switch (platform) {
+    case 'android-web':
+      return { mode: 'install', store: 'android' };
+    case 'native':
+      return { mode: 'update', store: nativeStore };
+    case 'unknown':
+    case 'other-web':
+    default:
+      return { mode: 'install', store: 'ios' };
+  }
+}
+
 function InstallAppShadowCard() {
   return (
     <Card
@@ -242,7 +263,6 @@ export default function HomePageContent({
   const { t } = useTranslation('marketing');
   const { status } = useSession();
   const router = useLocaleRouter();
-  const { activeSession } = usePersistentSession();
   const onboardingTour = useOnboardingTourOptional();
   const [seshDrawerOpen, setSeshDrawerOpen] = useState(false);
   const [findClimbersOpen, setFindClimbersOpen] = useState(false);
@@ -251,10 +271,15 @@ export default function HomePageContent({
   const [findClimbersMounted, setFindClimbersMounted] = useState(false);
   const [createBoardMounted, setCreateBoardMounted] = useState(false);
   const [installPlatform, setInstallPlatform] = useState<InstallPlatform>('unknown');
+  // Which store a legacy native straggler installed from, so the hero "update"
+  // CTA points at the right place. Defaults to iOS; corrected from the UA when
+  // a native build is detected.
+  const [nativeStore, setNativeStore] = useState<HeroInstallStore>('ios');
 
   useEffect(() => {
     let cancelled = false;
     const classifyWeb = () => (/Android/i.test(navigator.userAgent) ? 'android-web' : 'other-web');
+    const classifyNativeStore = (): HeroInstallStore => (/Android/i.test(navigator.userAgent) ? 'android' : 'ios');
 
     // App-store screenshot tests set this flag so the install CTA matches
     // what users see in the actual iOS build (i.e. nothing).
@@ -264,11 +289,13 @@ export default function HomePageContent({
       sessionStorage.getItem('boardsesh:e2e-suppress-install-card') === '1'
     ) {
       setInstallPlatform('native');
+      setNativeStore(classifyNativeStore());
       return;
     }
 
     if (isNativeApp()) {
       setInstallPlatform('native');
+      setNativeStore(classifyNativeStore());
       return;
     }
 
@@ -279,7 +306,12 @@ export default function HomePageContent({
       waitForCapacitor()
         .then((appeared) => {
           if (cancelled) return;
-          setInstallPlatform(appeared && isNativeApp() ? 'native' : classifyWeb());
+          if (appeared && isNativeApp()) {
+            setInstallPlatform('native');
+            setNativeStore(classifyNativeStore());
+          } else {
+            setInstallPlatform(classifyWeb());
+          }
         })
         .catch(() => {
           if (!cancelled) setInstallPlatform(classifyWeb());
@@ -362,6 +394,18 @@ export default function HomePageContent({
     [router],
   );
 
+  // Hero CTA now drives app installs instead of starting a sesh. Store target,
+  // label, and icon all follow the detected platform.
+  const heroInstall = resolveHeroInstall(installPlatform, nativeStore);
+  const heroInstallUrl = heroInstall.store === 'android' ? ANDROID_PLAY_STORE_URL : IOS_APP_STORE_URL;
+  const HeroInstallIcon = heroInstall.mode === 'update' ? SystemUpdateOutlined : InstallMobileOutlined;
+  const heroInstallLabel =
+    heroInstall.mode === 'update'
+      ? t('home.hero.ctaUpdate')
+      : heroInstall.store === 'android'
+        ? t('home.hero.ctaInstallAndroid')
+        : t('home.hero.ctaInstallIos');
+
   return (
     // Page-level translate="no" was removed because it blocked browser
     // translation of every static UI label on this page. The error boundary
@@ -387,7 +431,7 @@ export default function HomePageContent({
           gap: 3,
         }}
       >
-        {/* Hero: Start Climbing CTA */}
+        {/* Hero: Install-the-app CTA */}
         <Box
           sx={{
             display: 'flex',
@@ -413,21 +457,15 @@ export default function HomePageContent({
           <Button
             variant="contained"
             size="large"
-            startIcon={<PlayArrowRounded />}
+            startIcon={<HeroInstallIcon />}
             onClick={() => {
-              if (activeSession) {
-                let url: string;
-                if (activeSession.boardPath.startsWith('/b/')) {
-                  const segments = activeSession.boardPath.split('/');
-                  url = constructBoardSlugListUrl(segments[2], activeSession.parsedParams.angle);
-                } else {
-                  url = activeSession.boardPath;
-                }
-                setClimbSessionCookie(activeSession.sessionId);
-                router.push(url);
-              } else {
-                setSeshDrawerOpen(true);
-              }
+              track('App Install Click', {
+                platform: heroInstall.store,
+                source: heroInstall.store === 'android' ? 'google-play' : 'app-store',
+                placement: 'hero',
+                mode: heroInstall.mode,
+              });
+              window.open(heroInstallUrl, '_blank', 'noopener,noreferrer');
             }}
             sx={{
               mt: 1,
@@ -457,9 +495,13 @@ export default function HomePageContent({
               },
             }}
           >
-            {activeSession ? t('home.hero.ctaContinue') : t('home.hero.ctaStart')}
+            {heroInstallLabel}
           </Button>
         </Box>
+
+        {/* Recent beta videos from across the community — leads the discovery
+            rail so the community signal is the first thing below the hero */}
+        <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
 
         {/* Board Discovery - Find nearby + Custom + My boards + Popular configs */}
         <BoardDiscoveryScroll
@@ -468,10 +510,6 @@ export default function HomePageContent({
           onCustomClick={handleCustomClick}
           initialPopularConfigs={initialPopularConfigs}
         />
-
-        {/* Recent beta videos from across the community — sits high in the page
-            so the community signal isn't buried under the onboarding stack */}
-        <HomeRecentBetaSection initialRecentBeta={initialRecentBeta} />
 
         {/* Onboarding Cards */}
         <Box

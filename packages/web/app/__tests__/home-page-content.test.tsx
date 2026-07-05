@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import enMarketing from '@boardsesh/i18n/locales/en-US/marketing.json';
-import type { ActiveSessionInfo } from '@/app/components/persistent-session/types';
+import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
 
 // --- Mocks ---
 
-// Resolve real en-US copy so assertions like /continue climbing/i still match
-// after the page started reading from i18n catalogs. Falls back to the raw
-// key, which surfaces missing keys clearly if a regex stops matching.
+// Resolve real en-US copy so assertions against the hero CTA still match after
+// the page started reading from i18n catalogs. Falls back to the raw key, which
+// surfaces missing keys clearly if a regex stops matching.
 function resolveMarketingKey(key: string): string {
   const segments = key.split('.');
   let node: unknown = enMarketing;
@@ -29,10 +29,14 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const mockTrack = vi.fn();
+vi.mock('@/app/lib/analytics', () => ({
+  track: (...args: unknown[]) => mockTrack(...args),
+}));
+
 import HomePageContent from '../home-page-content';
 
 const mockPush = vi.fn();
-const mockSetClimbSessionCookie = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, replace: vi.fn(), back: vi.fn() }),
   usePathname: () => '/',
@@ -48,19 +52,8 @@ vi.mock('@/app/lib/ble/capacitor-utils', () => ({
   waitForCapacitor: () => mockWaitForCapacitor(),
 }));
 
-vi.mock('@/app/lib/climb-session-cookie', () => ({
-  setClimbSessionCookie: (...args: unknown[]) => mockSetClimbSessionCookie(...args),
-}));
-
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'unauthenticated' }),
-}));
-
-let mockActiveSession: ActiveSessionInfo | null = null;
-vi.mock('@/app/components/persistent-session', () => ({
-  usePersistentSession: () => ({ activeSession: mockActiveSession }),
-  usePersistentSessionState: () => ({ activeSession: mockActiveSession }),
-  usePersistentSessionActions: () => ({}),
 }));
 
 vi.mock('@/app/components/session-creation/start-sesh-drawer', () => ({
@@ -85,171 +78,91 @@ vi.mock('@/app/components/beta-videos/home-recent-beta-section', () => ({
 
 // --- Helpers ---
 
-function makeActiveSession(overrides: Partial<ActiveSessionInfo> = {}): ActiveSessionInfo {
-  return {
-    sessionId: 'session-123',
-    boardPath: '/b/kilter-original-12x12/40/list',
-    boardDetails: {} as ActiveSessionInfo['boardDetails'],
-    parsedParams: {
-      board_name: 'kilter',
-      layout_id: 1,
-      size_id: 10,
-      set_ids: [1, 2],
-      angle: 40,
-    },
-    ...overrides,
-  };
-}
-
 const defaultProps = {
   boardConfigs: {} as React.ComponentProps<typeof HomePageContent>['boardConfigs'],
 };
 
+const ANDROID_UA =
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36';
+const IOS_SAFARI_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+
+const originalUA = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
+
+function setUserAgent(ua: string) {
+  Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
+}
+
 // --- Tests ---
 
 describe('HomePageContent', () => {
+  let openSpy: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mockActiveSession = null;
+    mockIsNativeApp.mockReturnValue(false);
+    mockIsCapacitorWebView.mockReturnValue(false);
+    mockWaitForCapacitor.mockResolvedValue(false);
+    openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
   });
 
-  describe('hero button without active session', () => {
-    it('shows "Start climbing" when no active session', () => {
-      render(<HomePageContent {...defaultProps} />);
-      expect(screen.getByRole('button', { name: /start climbing/i })).toBeTruthy();
-    });
+  afterEach(() => {
+    openSpy.mockRestore();
+    if (originalUA) {
+      Object.defineProperty(window.navigator, 'userAgent', originalUA);
+    }
+  });
 
-    it('opens the session creation drawer on click', async () => {
+  describe('hero install CTA', () => {
+    it('shows the App Store install CTA on iOS/desktop web and opens the store on click', async () => {
+      setUserAgent(IOS_SAFARI_UA);
       render(<HomePageContent {...defaultProps} />);
-      fireEvent.click(screen.getByRole('button', { name: /start climbing/i }));
-      // Drawer mounts asynchronously via useEffect after state change
-      await waitFor(() => {
-        expect(screen.getByTestId('start-sesh-drawer')).toBeTruthy();
-      });
+
+      const button = await screen.findByRole('button', { name: /install from app store/i });
+      fireEvent.click(button);
+
+      expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(mockTrack).toHaveBeenCalledWith(
+        'App Install Click',
+        expect.objectContaining({ platform: 'ios', source: 'app-store', placement: 'hero', mode: 'install' }),
+      );
+      // The hero no longer starts a sesh — the drawer must stay closed and no
+      // client navigation should fire.
+      expect(screen.queryByTestId('start-sesh-drawer')).toBeNull();
       expect(mockPush).not.toHaveBeenCalled();
     });
-  });
 
-  describe('hero button with active session', () => {
-    it('shows "Continue climbing" when active session exists', () => {
-      mockActiveSession = makeActiveSession();
+    it('shows the Google Play install CTA on Android web and opens Play on click', async () => {
+      setUserAgent(ANDROID_UA);
       render(<HomePageContent {...defaultProps} />);
-      expect(screen.getByRole('button', { name: /continue climbing/i })).toBeTruthy();
+
+      const button = await screen.findByRole('button', { name: /get it on google play/i });
+      fireEvent.click(button);
+
+      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(mockTrack).toHaveBeenCalledWith(
+        'App Install Click',
+        expect.objectContaining({ platform: 'android', source: 'google-play', placement: 'hero', mode: 'install' }),
+      );
     });
 
-    it('navigates to climb list for /b/ slug paths', () => {
-      mockActiveSession = makeActiveSession({
-        boardPath: '/b/kilter-original-12x12/40/list',
-        parsedParams: {
-          board_name: 'kilter',
-          layout_id: 1,
-          size_id: 10,
-          set_ids: [1, 2],
-          angle: 40,
-        },
-      });
+    it('shows an update CTA for the retired native app, pointed at the same store', async () => {
+      setUserAgent(IOS_SAFARI_UA);
+      mockIsNativeApp.mockReturnValue(true);
       render(<HomePageContent {...defaultProps} />);
-      fireEvent.click(screen.getByRole('button', { name: /continue climbing/i }));
-      expect(mockSetClimbSessionCookie).toHaveBeenCalledWith('session-123');
-      expect(mockPush).toHaveBeenCalledWith('/b/kilter-original-12x12/40/list');
-    });
 
-    it('extracts slug correctly regardless of trailing path segments', () => {
-      mockActiveSession = makeActiveSession({
-        boardPath: '/b/tension-tb2-original/25/view/some-uuid',
-        parsedParams: {
-          board_name: 'tension',
-          layout_id: 2,
-          size_id: 5,
-          set_ids: [3],
-          angle: 25,
-        },
-      });
-      render(<HomePageContent {...defaultProps} />);
-      fireEvent.click(screen.getByRole('button', { name: /continue climbing/i }));
-      expect(mockSetClimbSessionCookie).toHaveBeenCalledWith('session-123');
-      expect(mockPush).toHaveBeenCalledWith('/b/tension-tb2-original/25/list');
-    });
+      const button = await screen.findByRole('button', { name: /update the app/i });
+      fireEvent.click(button);
 
-    it('navigates directly to boardPath for legacy/custom paths', () => {
-      mockActiveSession = makeActiveSession({
-        boardPath: '/kilter/1/10/1,2/40',
-      });
-      render(<HomePageContent {...defaultProps} />);
-      fireEvent.click(screen.getByRole('button', { name: /continue climbing/i }));
-      expect(mockSetClimbSessionCookie).toHaveBeenCalledWith('session-123');
-      expect(mockPush).toHaveBeenCalledWith('/kilter/1/10/1,2/40');
-    });
-
-    it('does not open the session creation drawer when active session exists', () => {
-      mockActiveSession = makeActiveSession();
-      render(<HomePageContent {...defaultProps} />);
-      fireEvent.click(screen.getByRole('button', { name: /continue climbing/i }));
-      expect(screen.queryByTestId('start-sesh-drawer')).toBeNull();
-    });
-
-    it('uses parsedParams.angle for the URL, not the angle in boardPath', () => {
-      mockActiveSession = makeActiveSession({
-        boardPath: '/b/my-board/40/list',
-        parsedParams: {
-          board_name: 'kilter',
-          layout_id: 1,
-          size_id: 10,
-          set_ids: [1],
-          angle: 45,
-        },
-      });
-      render(<HomePageContent {...defaultProps} />);
-      fireEvent.click(screen.getByRole('button', { name: /continue climbing/i }));
-      // Should use parsedParams.angle (45), not the 40 from boardPath
-      expect(mockSetClimbSessionCookie).toHaveBeenCalledWith('session-123');
-      expect(mockPush).toHaveBeenCalledWith('/b/my-board/45/list');
-    });
-
-    it('handles negative angles correctly', () => {
-      mockActiveSession = makeActiveSession({
-        boardPath: '/b/tension-board/-20/list',
-        parsedParams: {
-          board_name: 'tension',
-          layout_id: 1,
-          size_id: 10,
-          set_ids: [1],
-          angle: -20,
-        },
-      });
-      render(<HomePageContent {...defaultProps} />);
-      fireEvent.click(screen.getByRole('button', { name: /continue climbing/i }));
-      expect(mockSetClimbSessionCookie).toHaveBeenCalledWith('session-123');
-      expect(mockPush).toHaveBeenCalledWith('/b/tension-board/-20/list');
+      expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(mockTrack).toHaveBeenCalledWith(
+        'App Install Click',
+        expect.objectContaining({ placement: 'hero', mode: 'update' }),
+      );
     });
   });
 
   describe('install app card', () => {
-    const originalUA = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
-    const ANDROID_UA =
-      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36';
-    const IOS_SAFARI_UA =
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
-
-    function setUserAgent(ua: string) {
-      Object.defineProperty(window.navigator, 'userAgent', {
-        value: ua,
-        configurable: true,
-      });
-    }
-
-    beforeEach(() => {
-      mockIsNativeApp.mockReturnValue(false);
-      mockIsCapacitorWebView.mockReturnValue(false);
-      mockWaitForCapacitor.mockResolvedValue(false);
-    });
-
-    afterEach(() => {
-      if (originalUA) {
-        Object.defineProperty(window.navigator, 'userAgent', originalUA);
-      }
-    });
-
     it('shows the iOS App Store CTA on a regular browser', async () => {
       setUserAgent(IOS_SAFARI_UA);
       render(<HomePageContent {...defaultProps} />);
@@ -299,8 +212,12 @@ describe('HomePageContent', () => {
   });
 
   describe('SSR popular configs', () => {
-    it('passes initialPopularConfigs to BoardDiscoveryScroll when provided', () => {
-      // BoardDiscoveryScroll is mocked, so we just verify the component renders without error
+    it('renders the hero install CTA when initialPopularConfigs are provided', async () => {
+      // BoardDiscoveryScroll is mocked, so we just verify the component renders
+      // without error and still surfaces the hero CTA. Pin the UA so the CTA
+      // label is deterministic (userAgent lives on the prototype, so the
+      // per-test restore can't reset it between cases).
+      setUserAgent(IOS_SAFARI_UA);
       const initialConfigs = [
         {
           boardType: 'kilter',
@@ -319,7 +236,7 @@ describe('HomePageContent', () => {
       ];
 
       render(<HomePageContent {...defaultProps} initialPopularConfigs={initialConfigs} />);
-      expect(screen.getByRole('button', { name: /start climbing/i })).toBeTruthy();
+      expect(await screen.findByRole('button', { name: /install from app store/i })).toBeTruthy();
     });
   });
 });

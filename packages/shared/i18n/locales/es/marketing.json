@@ -30,8 +30,9 @@
     "hero": {
       "title": "¡A escalar!",
       "subtitle": "Registra tus encadenes en Kilter, Tension y MoonBoard.",
-      "ctaStart": "Empezar a escalar",
-      "ctaContinue": "Seguir escalando"
+      "ctaInstallIos": "Descárgala en el App Store",
+      "ctaInstallAndroid": "Disponible en Google Play",
+      "ctaUpdate": "Actualiza la app"
     },
     "onboardingHeader": "Hazlo tuyo",
     "install": {
