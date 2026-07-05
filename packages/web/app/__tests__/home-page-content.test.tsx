@@ -87,7 +87,11 @@ const ANDROID_UA =
 const IOS_SAFARI_UA =
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
-const originalUA = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
+// `userAgent` lives on Navigator.prototype, so getOwnPropertyDescriptor returns
+// undefined and there's no own-property descriptor to hand back. Capture the
+// string value instead and always redefine it in afterEach so the UA never
+// bleeds between cases.
+const ORIGINAL_UA = window.navigator.userAgent;
 
 function setUserAgent(ua: string) {
   Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true });
@@ -108,9 +112,7 @@ describe('HomePageContent', () => {
 
   afterEach(() => {
     openSpy.mockRestore();
-    if (originalUA) {
-      Object.defineProperty(window.navigator, 'userAgent', originalUA);
-    }
+    setUserAgent(ORIGINAL_UA);
   });
 
   describe('hero install CTA', () => {
@@ -146,7 +148,7 @@ describe('HomePageContent', () => {
       );
     });
 
-    it('shows an update CTA for the retired native app, pointed at the same store', async () => {
+    it('shows an update CTA for a retired iOS native app, pointed at the App Store', async () => {
       setUserAgent(IOS_SAFARI_UA);
       mockIsNativeApp.mockReturnValue(true);
       render(<HomePageContent {...defaultProps} />);
@@ -157,7 +159,22 @@ describe('HomePageContent', () => {
       expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
       expect(mockTrack).toHaveBeenCalledWith(
         'App Install Click',
-        expect.objectContaining({ placement: 'hero', mode: 'update' }),
+        expect.objectContaining({ platform: 'ios', placement: 'hero', mode: 'update' }),
+      );
+    });
+
+    it('shows an update CTA for a retired Android native app, pointed at Google Play', async () => {
+      setUserAgent(ANDROID_UA);
+      mockIsNativeApp.mockReturnValue(true);
+      render(<HomePageContent {...defaultProps} />);
+
+      const button = await screen.findByRole('button', { name: /update the app/i });
+      fireEvent.click(button);
+
+      expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
+      expect(mockTrack).toHaveBeenCalledWith(
+        'App Install Click',
+        expect.objectContaining({ platform: 'android', placement: 'hero', mode: 'update' }),
       );
     });
   });
@@ -215,8 +232,7 @@ describe('HomePageContent', () => {
     it('renders the hero install CTA when initialPopularConfigs are provided', async () => {
       // BoardDiscoveryScroll is mocked, so we just verify the component renders
       // without error and still surfaces the hero CTA. Pin the UA so the CTA
-      // label is deterministic (userAgent lives on the prototype, so the
-      // per-test restore can't reset it between cases).
+      // label is deterministic.
       setUserAgent(IOS_SAFARI_UA);
       const initialConfigs = [
         {

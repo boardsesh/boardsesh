@@ -21,6 +21,7 @@ import Skeleton from '@mui/material/Skeleton';
 import SvgIcon from '@mui/material/SvgIcon';
 import { isNativeApp, isCapacitorWebView, waitForCapacitor } from '@/app/lib/ble/capacitor-utils';
 import { IOS_APP_STORE_URL, ANDROID_PLAY_STORE_URL } from '@/app/lib/store-urls';
+import { resolveHeroInstall, type InstallPlatform, type HeroInstallStore } from '@/app/lib/hero-install';
 import { useSession } from 'next-auth/react';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useTranslation } from 'react-i18next';
@@ -160,30 +161,6 @@ function OnboardingCard({ icon, title, description, onClick, accent = 'action' }
       </CardActionArea>
     </Card>
   );
-}
-
-type InstallPlatform = 'unknown' | 'native' | 'android-web' | 'other-web';
-
-type HeroInstallStore = 'ios' | 'android';
-type HeroInstall = { mode: 'install' | 'update'; store: HeroInstallStore };
-
-// Maps the detected platform to the hero CTA. Web visitors get a store install
-// button; the last stragglers still on the retired Capacitor build (we ship a
-// React Native app now) get an "update" nudge to whichever store they came
-// from. The pre-detection 'unknown' state renders the App Store install so the
-// hero CTA is real and clickable on first paint — it corrects to Play Store /
-// update once the platform check runs on mount.
-function resolveHeroInstall(platform: InstallPlatform, nativeStore: HeroInstallStore): HeroInstall {
-  switch (platform) {
-    case 'android-web':
-      return { mode: 'install', store: 'android' };
-    case 'native':
-      return { mode: 'update', store: nativeStore };
-    case 'unknown':
-    case 'other-web':
-    default:
-      return { mode: 'install', store: 'ios' };
-  }
 }
 
 function InstallAppShadowCard() {
