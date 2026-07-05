@@ -3,17 +3,27 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../lib/graphql/operations';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
 import { getCheckpoint, setCheckpoint, getCheckpointKey } from './checkpoints';
+import { parseOfflineBoardKey, type OfflineBoardScope } from '../settings/offline-board-key';
 
 export type SyncProgress = {
   phase: 'user_data' | 'board_data' | 'deletions' | 'idle';
   currentTable: string | null;
   documentsProcessed: number;
+  /**
+   * Rows processed for the current table only (resets per table), so a per-board
+   * download can show its own live count. Undefined for phases without a table.
+   */
+  currentTableProcessed?: number;
 };
 
 export type SyncOptions = {
+  /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
   onProgress?: (progress: SyncProgress) => void;
 };
+
+/** A per-board download target: the parsed scope plus its encoded key. */
+type BoardScope = OfflineBoardScope & { scopeKey: string };
 
 const PAGE_LIMIT = 500;
 const UPSERT_BATCH_SIZE = 50;
@@ -27,11 +37,14 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 function buildSyncQuery(queryName: string, isPerBoard: boolean): string {
-  const boardTypeParam = isPerBoard ? '$boardType: String!, ' : '';
-  const boardTypeArg = isPerBoard ? 'boardType: $boardType, ' : '';
+  // Per-board pulls carry the board type plus optional layout/size scope so a
+  // downloaded board is a fixed (boardType, layout, size) superset — all sets.
+  // layoutId/sizeId are nullable server-side, so passing them undefined is a no-op.
+  const boardScopeParam = isPerBoard ? '$boardType: String!, $layoutId: Int, $sizeId: Int, ' : '';
+  const boardScopeArg = isPerBoard ? 'boardType: $boardType, layoutId: $layoutId, sizeId: $sizeId, ' : '';
   return `
-    query ${queryName[0].toUpperCase()}${queryName.slice(1)}(${boardTypeParam}$cursor: SyncCursorInput, $limit: Int! = ${PAGE_LIMIT}) {
-      ${queryName}(${boardTypeArg}cursor: $cursor, limit: $limit) {
+    query ${queryName[0].toUpperCase()}${queryName.slice(1)}(${boardScopeParam}$cursor: SyncCursorInput, $limit: Int! = ${PAGE_LIMIT}) {
+      ${queryName}(${boardScopeArg}cursor: $cursor, limit: $limit) {
         documents
         cursor {
           updatedAt
@@ -108,13 +121,13 @@ async function syncTable(
   queryClient: QueryClient,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
   tableName: string,
-  boardType?: string,
+  boardScope?: BoardScope,
   onProgress?: (documentsProcessed: number) => void,
 ): Promise<void> {
   const config = TABLE_CONFIGS[tableName];
   if (!config) throw new Error(`No sync config for table: ${tableName}`);
 
-  const checkpointKey = getCheckpointKey(tableName, boardType);
+  const checkpointKey = getCheckpointKey(tableName, boardScope?.scopeKey);
   const checkpoint = await getCheckpoint(db, checkpointKey);
   const query = buildSyncQuery(config.queryName, config.isPerBoard);
 
@@ -126,8 +139,10 @@ async function syncTable(
   let hasMore = true;
   while (hasMore) {
     const variables: Record<string, unknown> = { cursor, limit: PAGE_LIMIT };
-    if (config.isPerBoard && boardType) {
-      variables.boardType = boardType;
+    if (config.isPerBoard && boardScope) {
+      variables.boardType = boardScope.boardType;
+      variables.layoutId = boardScope.layoutId;
+      variables.sizeId = boardScope.sizeId;
     }
 
     const response = await graphqlFetch<Record<string, SyncResult>>(query, variables);
@@ -241,14 +256,30 @@ export async function pullSync(
     });
   }
 
-  for (const boardType of enabledBoards) {
+  // Each enabled board is a "boardType:layoutId:sizeId" scope key. Malformed keys
+  // are skipped (parseOfflineBoardKey returns null) so a stray value can't crash the
+  // pull. currentTable carries the full scope key so a per-board UI can match itself.
+  for (const scopeKey of enabledBoards) {
+    const scope = parseOfflineBoardKey(scopeKey);
+    if (!scope) continue;
+    const boardScope: BoardScope = { ...scope, scopeKey };
     for (const tableName of BOARD_DATA_TABLES) {
-      const tableLabel = `${tableName}:${boardType}`;
-      onProgress?.({ phase: 'board_data', currentTable: tableLabel, documentsProcessed: totalDocuments });
+      const tableLabel = `${tableName}:${scopeKey}`;
+      onProgress?.({
+        phase: 'board_data',
+        currentTable: tableLabel,
+        documentsProcessed: totalDocuments,
+        currentTableProcessed: 0,
+      });
       const baseCount = totalDocuments;
-      await syncTable(db, queryClient, graphqlFetch, tableName, boardType, (tableProcessed) => {
+      await syncTable(db, queryClient, graphqlFetch, tableName, boardScope, (tableProcessed) => {
         totalDocuments = baseCount + tableProcessed;
-        onProgress?.({ phase: 'board_data', currentTable: tableLabel, documentsProcessed: totalDocuments });
+        onProgress?.({
+          phase: 'board_data',
+          currentTable: tableLabel,
+          documentsProcessed: totalDocuments,
+          currentTableProcessed: tableProcessed,
+        });
       });
     }
   }

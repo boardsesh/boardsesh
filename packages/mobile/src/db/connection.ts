@@ -8,7 +8,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { ensureMutationQueueTable } from '../mutation-queue/schema';
 import { runMigrations } from './migrations';
-import { deleteAllCheckpoints, setCheckpoint, getCheckpointKey } from '../sync/checkpoints';
+import { deleteUserCheckpoints, setCheckpoint, getCheckpointKey } from '../sync/checkpoints';
 import { BOARD_DATA_TABLES } from '../sync/table-config';
 import { resolveSeedAssetModuleId } from './seed-asset';
 
@@ -52,6 +52,29 @@ async function isTableEmpty(db: SQLiteDatabase, tableName: string): Promise<bool
     `SELECT EXISTS(SELECT 1 FROM ${tableName} LIMIT 1) AS has_rows`,
   );
   return (row?.has_rows ?? 0) === 0;
+}
+
+// Column names of a table, in definition order, for the given schema (default
+// main; pass 'seed' for the ATTACHed seed DB). Table names come from the fixed
+// SEEDABLE_BOARD_TABLES allowlist, never user input, so inlining is safe.
+async function getTableColumns(db: SQLiteDatabase, tableName: string, schema?: string): Promise<string[]> {
+  const source = schema
+    ? `SELECT name FROM pragma_table_info('${tableName}', '${schema}')`
+    : `SELECT name FROM pragma_table_info('${tableName}')`;
+  const rows = await db.getAllAsync<{ name: string }>(source);
+  return rows.map((row) => row.name);
+}
+
+// Columns present in both the live table and the seed's copy of it, in live order.
+// The seed asset is built at some app version; a later migration can add a column
+// the seed lacks (e.g. board_climbs.characteristics). Copying only shared columns
+// keeps the seed forward- and backward-compatible — newer columns are left NULL for
+// the next sync to fill — where a `SELECT *` would mismatch the arity and drop the
+// whole seed silently.
+async function getSharedSeedColumns(db: SQLiteDatabase, tableName: string): Promise<string[]> {
+  const liveColumns = await getTableColumns(db, tableName);
+  const seedColumns = new Set(await getTableColumns(db, tableName, 'seed'));
+  return liveColumns.filter((column) => seedColumns.has(column));
 }
 
 /**
@@ -98,7 +121,12 @@ async function loadOptionalSeed(db: SQLiteDatabase): Promise<void> {
       for (const table of SEEDABLE_BOARD_TABLES) {
         // Transaction extends SQLiteDatabase, so the txn reuses the helpers above.
         if (!(await isTableEmpty(txn, table))) continue;
-        await txn.execAsync(`INSERT OR IGNORE INTO ${table} SELECT * FROM seed.${table}`);
+        // Explicit shared-column copy (not SELECT *) so a seed built at an older
+        // schema than the migrated live DB still loads instead of failing on arity.
+        const sharedColumns = await getSharedSeedColumns(txn, table);
+        if (sharedColumns.length === 0) continue;
+        const columnList = sharedColumns.join(', ');
+        await txn.execAsync(`INSERT OR IGNORE INTO ${table} (${columnList}) SELECT ${columnList} FROM seed.${table}`);
       }
 
       // If the seed carries the sync cursor it was built at, stamp it as each
@@ -167,16 +195,19 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
  * either everything is cleared or nothing is.
  *
  * Board reference data is intentionally left in place (see
- * USER_DATA_TABLES_TO_CLEAR). Any pending mutations that had not yet reached the
- * server are discarded here along with their local rows — sign-out is an
- * explicit "this account is done on this device" signal, so dropping unsynced
- * writes is the documented behaviour rather than a data-loss bug.
+ * USER_DATA_TABLES_TO_CLEAR), and so are the board download checkpoints — the rows
+ * survive as the shared cache, so re-crawling them from epoch on the next sign-in
+ * would be wasteful. Only the user-scoped checkpoints (user tables + deletions) are
+ * reset. Any pending mutations that had not yet reached the server are discarded
+ * here along with their local rows — sign-out is an explicit "this account is done
+ * on this device" signal, so dropping unsynced writes is the documented behaviour
+ * rather than a data-loss bug.
  */
 export async function clearUserData(db: SQLiteDatabase): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
     for (const table of USER_DATA_TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
-    await deleteAllCheckpoints(txn);
+    await deleteUserCheckpoints(txn);
   });
 }

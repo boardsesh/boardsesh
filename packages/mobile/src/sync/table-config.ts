@@ -126,6 +126,7 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
       'user_id',
       'required_set_ids',
       'compatible_size_ids',
+      'characteristics',
       'hold_fingerprint',
       'updated_at',
       'sync_seq',

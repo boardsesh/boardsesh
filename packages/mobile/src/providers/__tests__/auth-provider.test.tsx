@@ -81,6 +81,13 @@ vi.mock('../../notifications', () => ({
   stopTokenManagement: vi.fn(async () => {}),
 }));
 
+// The provider clears the per-user offline-boards setting on sign-out. Stub the
+// settings barrel so the test's static graph never pulls react-native-mmkv (→ the
+// react-native Flow entry, which Rolldown's collection scan can't parse under RN 0.86).
+vi.mock('../../settings', () => ({
+  setSetting: vi.fn(),
+}));
+
 // The provider registers its forced-sign-out cleanup against this lib-layer hook
 // (and lazily imports ensureFreshToken in checkAuth). Record the register/clear
 // calls so the lifecycle test can assert the contract.

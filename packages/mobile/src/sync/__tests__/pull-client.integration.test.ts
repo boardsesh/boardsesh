@@ -270,7 +270,7 @@ describe('sync layer — real-DDL integration', () => {
         db,
         queryClient,
         makeSingleTableFetch({ queryName: 'syncClimbStats', documents: [statsDocument], cursor }),
-        { enabledBoards: ['kilter'] },
+        { enabledBoards: ['kilter:1:5'] },
       );
 
       const row = await db.getFirstAsync<Record<string, unknown>>(
@@ -291,8 +291,8 @@ describe('sync layer — real-DDL integration', () => {
         updated_at: '2024-05-27T00:00:00Z',
         sync_seq: 9001,
       });
-      // Per-board checkpoint is namespaced by board type.
-      expect(await readCheckpoint(db, 'checkpoint:board_climb_stats:kilter')).toEqual(cursor);
+      // Per-board checkpoint is namespaced by the full scope key.
+      expect(await readCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(cursor);
     });
 
     it('SANITY: a document with a column the DDL does not have makes pullSync throw (catches resolver↔DDL drift)', async () => {
@@ -384,7 +384,7 @@ describe('sync layer — real-DDL integration', () => {
           documents: [base],
           cursor: { updatedAt: '2024-05-01T00:00:00Z', syncSeq: '1' },
         }),
-        { enabledBoards: ['kilter'] },
+        { enabledBoards: ['kilter:1:5'] },
       );
 
       // Same composite key, changed stat → must REPLACE, not duplicate.
@@ -405,7 +405,7 @@ describe('sync layer — real-DDL integration', () => {
           documents: [updated, differentAngle],
           cursor: { updatedAt: '2024-05-03T00:00:00Z', syncSeq: '3' },
         }),
-        { enabledBoards: ['kilter'] },
+        { enabledBoards: ['kilter:1:5'] },
       );
 
       const angle40 = await db.getAllAsync<Record<string, unknown>>(

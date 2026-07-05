@@ -36,6 +36,14 @@ export const MIGRATIONS: Migration[] = [
     version: 1,
     statements: SCHEMA_STATEMENTS,
   },
+  {
+    // Structured climb characteristics (server `characteristics text[]`), stored
+    // locally as a JSON-string TEXT like the other array columns. Synced so offline
+    // browse + the BLE no-match guard can read them. Added as an ALTER (not a v1
+    // CREATE edit) so existing v1 databases pick it up without a re-crawl.
+    version: 2,
+    statements: ['ALTER TABLE board_climbs ADD COLUMN characteristics TEXT;'],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `

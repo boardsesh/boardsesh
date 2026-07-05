@@ -25,6 +25,7 @@ import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredActiveBoard } from '../lib/active-board-store';
 import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
 import { clearUserData, getDatabaseHandle } from '../db';
+import { setSetting } from '../settings';
 import { drainMutationQueue, setSigningOut } from '../mutation-queue';
 import { stopTokenManagement } from '../notifications';
 
@@ -128,6 +129,11 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     await stopTokenManagement(async () => {});
     await clearPersistedUserStores();
     await clearLocalOfflineUserData();
+    // Reset the per-user "downloaded boards" list so the next account on a shared
+    // device doesn't inherit the previous user's offline selection. The cached board
+    // rows + checkpoints survive (clearUserData preserves them), so if the next user
+    // enables the same board the download resumes instantly.
+    setSetting('syncEnabledBoards', []);
     // Drop the in-memory active-board cache too. It's `staleTime: Infinity`, so
     // without this the next user to sign in on a shared device would inherit the
     // previous user's board until a manual switch.

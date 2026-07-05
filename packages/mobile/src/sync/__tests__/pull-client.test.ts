@@ -102,7 +102,7 @@ describe('pullSync', () => {
   it('syncs user data tables first, then board data, then deletions', async () => {
     setupGraphqlFetchForAllTables();
 
-    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
     const callQueries = graphqlFetch.mock.calls.map((args: unknown[]) => args[0] as string);
 
@@ -242,7 +242,7 @@ describe('pullSync', () => {
     expect(insertCalls).toHaveLength(0);
   });
 
-  it('syncs per-board tables with boardType variable', async () => {
+  it('syncs per-board tables with boardType + layout/size scope variables', async () => {
     graphqlFetch.mockImplementation(async (query: string) => {
       if (query.includes('syncDeletions')) {
         return makeDeletionsResult([], false);
@@ -255,17 +255,39 @@ describe('pullSync', () => {
       throw new Error(`Unexpected query: ${query}`);
     });
 
-    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
     const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
     expect(climbsCalls).toHaveLength(1);
-    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
+    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
 
     const statsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) =>
       (args[0] as string).includes('syncClimbStats'),
     );
     expect(statsCalls).toHaveLength(1);
-    expect(statsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
+    expect(statsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
+  });
+
+  it('skips malformed board scope keys without crashing the pull', async () => {
+    graphqlFetch.mockImplementation(async (query: string) => {
+      if (query.includes('syncDeletions')) {
+        return makeDeletionsResult([], false);
+      }
+      for (const config of Object.values(TABLE_CONFIGS)) {
+        if (query.includes(config.queryName)) {
+          return makeSyncResult(config.queryName, [], false);
+        }
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+
+    // 'kilter' (legacy bare board type) and 'a:b:c' (non-numeric) are malformed and
+    // must be skipped; only the well-formed key downloads.
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter', 'a:b:c', 'tension:8:10'] });
+
+    const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
+    expect(climbsCalls).toHaveLength(1);
+    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'tension', layoutId: 8, sizeId: 10 }));
   });
 
   it('only syncs enabled boards', async () => {
@@ -281,11 +303,11 @@ describe('pullSync', () => {
       throw new Error(`Unexpected query: ${query}`);
     });
 
-    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
     const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
     expect(climbsCalls).toHaveLength(1);
-    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
+    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
 
     const allBoardTypeVars = graphqlFetch.mock.calls
       .map((args: unknown[]) => (args[1] as Record<string, unknown> | undefined)?.boardType)
@@ -540,12 +562,12 @@ describe('pullSync', () => {
       throw new Error(`Unexpected query: ${query}`);
     });
 
-    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter', 'tension'] });
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5', 'tension:8:10'] });
 
     const climbsCalls = graphqlFetch.mock.calls.filter((args: unknown[]) => (args[0] as string).includes('syncClimbs'));
     expect(climbsCalls).toHaveLength(2);
-    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter' }));
-    expect(climbsCalls[1][1]).toEqual(expect.objectContaining({ boardType: 'tension' }));
+    expect(climbsCalls[0][1]).toEqual(expect.objectContaining({ boardType: 'kilter', layoutId: 1, sizeId: 5 }));
+    expect(climbsCalls[1][1]).toEqual(expect.objectContaining({ boardType: 'tension', layoutId: 8, sizeId: 10 }));
   });
 
   it('skips board data entirely when enabledBoards is empty', async () => {
@@ -577,7 +599,7 @@ describe('pullSync', () => {
       throw new Error(`Unexpected query: ${query}`);
     });
 
-    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
     const insertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE INTO board_climbs'));
     expect(insertCalls).toHaveLength(1);
@@ -618,13 +640,13 @@ describe('pullSync', () => {
     expect(logbookKeyCount).toBeGreaterThanOrEqual(1);
   });
 
-  it('calls getCheckpointKey with boardType for per-board tables', async () => {
+  it('calls getCheckpointKey with the full scope key for per-board tables', async () => {
     setupGraphqlFetchForAllTables();
 
-    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter'] });
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
 
-    expect(getCheckpointKey).toHaveBeenCalledWith('board_climbs', 'kilter');
-    expect(getCheckpointKey).toHaveBeenCalledWith('board_climb_stats', 'kilter');
+    expect(getCheckpointKey).toHaveBeenCalledWith('board_climbs', 'kilter:1:5');
+    expect(getCheckpointKey).toHaveBeenCalledWith('board_climb_stats', 'kilter:1:5');
     expect(getCheckpointKey).toHaveBeenCalledWith('boardsesh_ticks', undefined);
   });
 });
