@@ -249,8 +249,10 @@ export default function HomePageContent({
   const [createBoardMounted, setCreateBoardMounted] = useState(false);
   const [installPlatform, setInstallPlatform] = useState<InstallPlatform>('unknown');
   // Which store a legacy native straggler installed from, so the hero "update"
-  // CTA points at the right place. Defaults to iOS; corrected from the UA when
-  // a native build is detected.
+  // CTA points at the right place. Only read once installPlatform === 'native',
+  // and set in the same effect pass that flips the platform to 'native', so the
+  // 'ios' seed here is never actually observed by the hero — it just keeps the
+  // state typed.
   const [nativeStore, setNativeStore] = useState<HeroInstallStore>('ios');
 
   useEffect(() => {

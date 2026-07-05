@@ -5,16 +5,12 @@ export type InstallPlatform = 'unknown' | 'native' | 'android-web' | 'other-web'
 export type HeroInstallStore = 'ios' | 'android';
 export type HeroInstall = { mode: 'install' | 'update'; store: HeroInstallStore };
 
-/**
- * Maps the detected platform to the home hero CTA.
- *
- * Web visitors get a store install button; the last stragglers still on the
- * retired Capacitor build (we ship a React Native app now) get an "update"
- * nudge to whichever store they came from. The pre-detection 'unknown' state
- * renders the App Store install so the hero CTA is real and clickable on first
- * paint (this is also what a crawler / SSR snapshot sees) — it corrects to Play
- * Store / update once the platform check runs on mount.
- */
+// Maps the detected platform to the home hero CTA. 'unknown' (pre-detection
+// first paint, also what a crawler / SSR snapshot sees) and 'other-web' both
+// get the App Store install; Android web gets Play; a retired native straggler
+// (we ship a React Native app now) gets an "update" nudge to the store it came
+// from. No `default` case — a new InstallPlatform member should fail the
+// typecheck here until it's handled explicitly.
 export function resolveHeroInstall(platform: InstallPlatform, nativeStore: HeroInstallStore): HeroInstall {
   switch (platform) {
     case 'android-web':
@@ -23,7 +19,6 @@ export function resolveHeroInstall(platform: InstallPlatform, nativeStore: HeroI
       return { mode: 'update', store: nativeStore };
     case 'unknown':
     case 'other-web':
-    default:
       return { mode: 'install', store: 'ios' };
   }
 }
