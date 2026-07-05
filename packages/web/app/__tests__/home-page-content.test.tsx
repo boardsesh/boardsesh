@@ -159,7 +159,7 @@ describe('HomePageContent', () => {
       expect(openSpy).toHaveBeenCalledWith(IOS_APP_STORE_URL, '_blank', 'noopener,noreferrer');
       expect(mockTrack).toHaveBeenCalledWith(
         'App Install Click',
-        expect.objectContaining({ platform: 'ios', placement: 'hero', mode: 'update' }),
+        expect.objectContaining({ platform: 'ios', source: 'app-store', placement: 'hero', mode: 'update' }),
       );
     });
 
@@ -174,7 +174,7 @@ describe('HomePageContent', () => {
       expect(openSpy).toHaveBeenCalledWith(ANDROID_PLAY_STORE_URL, '_blank', 'noopener,noreferrer');
       expect(mockTrack).toHaveBeenCalledWith(
         'App Install Click',
-        expect.objectContaining({ platform: 'android', placement: 'hero', mode: 'update' }),
+        expect.objectContaining({ platform: 'android', source: 'google-play', placement: 'hero', mode: 'update' }),
       );
     });
   });
