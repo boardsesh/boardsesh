@@ -33,7 +33,6 @@ import {
 } from '@boardsesh/graphql/operations/favorites';
 import { BOULDER_GRADES } from '@boardsesh/board-config';
 import { getDatabaseHandle } from '../../../db';
-import { useIsOffline } from '../../../hooks/use-is-offline';
 import { resolveClimbSearch, resolveClimbSearchCount, resolveClimb } from '../offline-search';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import { drainMutationQueue } from '../../../mutation-queue';
@@ -536,10 +535,10 @@ export function useSearchClimbs(
   enabled = true,
   options?: { staleTime?: number; gcTime?: number },
 ) {
-  // Offline in the key so a connectivity flip swaps to the local/network entry.
-  const offline = useIsOffline();
+  // Keyed on input only — resolveClimbSearch is local-first and picks the source
+  // live; a completed board sync invalidates ['searchClimbs'] to refresh it.
   return useQuery({
-    queryKey: ['searchClimbs', input, offline],
+    queryKey: ['searchClimbs', input],
     queryFn: () => resolveClimbSearch(input),
     enabled,
     // undefined → React Query's defaults.
@@ -549,9 +548,8 @@ export function useSearchClimbs(
 }
 
 export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
-  const offline = useIsOffline();
   return useQuery({
-    queryKey: ['searchClimbsCount', input, offline],
+    queryKey: ['searchClimbsCount', input],
     queryFn: () => resolveClimbSearchCount(input),
     enabled,
     // Hold the last count while a new filter set is in flight so the bar /
@@ -571,9 +569,8 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
 }
 
 export function useClimb(variables: GetClimbQueryVariables | null) {
-  const offline = useIsOffline();
   return useQuery({
-    queryKey: ['climb', variables, offline],
+    queryKey: ['climb', variables],
     queryFn: () => resolveClimb(variables!),
     enabled: !!variables,
   });

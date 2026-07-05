@@ -220,9 +220,10 @@ Legend — **Scope**: how the resolver filters rows. **Seq**: cursor 2nd compone
   `is_draft`, `is_listed`, `created_at`, `published_at`, `user_id`, `required_set_ids` (JSON text),
   `compatible_size_ids` (JSON text), `characteristics` (JSON text, schema v2), `hold_fingerprint`, `updated_at`, `sync_seq`.
 - LIVE: `syncEnabledBoards` holds `"boardType:layoutId:sizeId"` scope keys (My Boards → offline toggle), so a
-  download is a fixed (type, layout, size) superset — all sets — that stays cacheable across users. When offline and
-  a scope is downloaded, climb **search + detail** read from these tables (`search-climbs-local.ts` /
-  `get-climb-local.ts`). Default `syncEnabledBoards` is `[]` so nothing downloads until a board is enabled.
+  download is a fixed (type, layout, size) superset — all sets — that stays cacheable across users. Climb
+  **search + detail** are **local-first**: whenever a scope is downloaded they read these tables
+  (`search-climbs-local.ts` / `get-climb-local.ts`) even while online, for speed, with the background sync keeping
+  them fresh. Default `syncEnabledBoards` is `[]` so nothing downloads until a board is enabled.
 
 ### `board_climb_stats` — `syncClimbStats(boardType, layoutId?, sizeId?)` (board data, per-board)
 
