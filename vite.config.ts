@@ -112,6 +112,7 @@ export default defineConfig({
       './packages/shared/queue-react/vite.config.ts',
       './packages/shared/playlists-react/vite.config.ts',
       './packages/shared/party-profile/vite.config.ts',
+      './packages/shared/watch-pairing/vite.config.ts',
       './packages/shared/analytics/vite.config.ts',
       './packages/shared/climb-actions/vite.config.ts',
       './packages/shared/key-value-storage/vite.config.ts',
@@ -426,6 +427,9 @@ export default defineConfig({
       'typecheck:party-profile': {
         command: 'bun run --filter=@boardsesh/party-profile typecheck',
       },
+      'typecheck:watch-pairing': {
+        command: 'bun run --filter=@boardsesh/watch-pairing typecheck',
+      },
       'typecheck:analytics': {
         command: 'bun run --filter=@boardsesh/analytics typecheck',
       },
@@ -507,6 +511,7 @@ export default defineConfig({
           'typecheck:board-react',
           'typecheck:create-climb-react',
           'typecheck:party-profile',
+          'typecheck:watch-pairing',
           'typecheck:analytics',
           'typecheck:climb-actions',
           'typecheck:key-value-storage',

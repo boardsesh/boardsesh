@@ -183,7 +183,7 @@ export default function MoreScreen() {
         key: 'pairWatch',
         label: tSettings('watchPairing.title'),
         subtitle: tSettings('watchPairing.subtitle'),
-        icon: 'integrations',
+        icon: 'watch',
         onPress: navAction(() => router.push('/(tabs)/profile/watch-pair')),
       },
     ],

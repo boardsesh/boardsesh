@@ -227,6 +227,7 @@
         "@boardsesh/queue-react": "*",
         "@boardsesh/queue-runtime": "*",
         "@boardsesh/shared-schema": "*",
+        "@boardsesh/watch-pairing": "*",
         "@expo/ui": "57.0.3",
         "@expo/vector-icons": "15.1.1",
         "@react-native-async-storage/async-storage": "3.1.1",
@@ -648,6 +649,13 @@
         "typescript": "^5.9.3",
       },
     },
+    "packages/shared/watch-pairing": {
+      "name": "@boardsesh/watch-pairing",
+      "version": "1.0.0",
+      "devDependencies": {
+        "typescript": "^5.9.3",
+      },
+    },
     "packages/sync-runtime": {
       "name": "@boardsesh/sync-runtime",
       "version": "1.0.0",
@@ -695,6 +703,7 @@
         "@boardsesh/queue-react": "*",
         "@boardsesh/queue-runtime": "*",
         "@boardsesh/shared-schema": "*",
+        "@boardsesh/watch-pairing": "*",
         "@emoji-mart/data": "^1.2.1",
         "@emoji-mart/react": "^1.1.1",
         "@emotion/react": "^11.14.0",
@@ -1145,6 +1154,8 @@
     "@boardsesh/shared-schema": ["@boardsesh/shared-schema@workspace:packages/shared-schema"],
 
     "@boardsesh/sync-runtime": ["@boardsesh/sync-runtime@workspace:packages/sync-runtime"],
+
+    "@boardsesh/watch-pairing": ["@boardsesh/watch-pairing@workspace:packages/shared/watch-pairing"],
 
     "@boardsesh/web": ["@boardsesh/web@workspace:packages/web"],
 
@@ -4469,6 +4480,8 @@
     "@boardsesh/shared-schema/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@boardsesh/sync-runtime/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
+
+    "@boardsesh/watch-pairing/typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "@bramus/specificity/css-tree": ["css-tree@3.2.1", "", { "dependencies": { "mdn-data": "2.27.1", "source-map-js": "^1.2.1" } }, "sha512-X7sjQzceUhu1u7Y/ylrRZFU2FS6LRiFVp6rKLPg23y3x3c3DOKAwuXGDp+PAGjh6CSnCjYeAul8pcT8bAl+lSA=="],
 

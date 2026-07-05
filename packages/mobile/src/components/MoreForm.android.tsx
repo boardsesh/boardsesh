@@ -50,6 +50,9 @@ import type { MoreFormProps, MoreIconName, MoreRow, MoreSelectRow } from './More
 const MORE_ICON_SOURCE: Record<MoreIconName, ImageSourcePropType> = {
   playlists: require('../../assets/material-icons/playlists.xml'),
   integrations: require('../../assets/material-icons/integrations.xml'),
+  // No smartwatch glyph in the bundled Material set; the chain-link icon reads as
+  // "pair / link a device", the closest sensible fit for the watch-pairing row.
+  watch: require('../../assets/material-icons/link.xml'),
   accessibility: require('../../assets/material-icons/accessibility.xml'),
   translate: require('../../assets/material-icons/translate.xml'),
   replay: require('../../assets/material-icons/replay.xml'),

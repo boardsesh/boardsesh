@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
@@ -15,23 +15,7 @@ import Stack from '@mui/material/Stack';
 import { useTranslation } from 'react-i18next';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
-
-type PairCodeResponse = {
-  code: string;
-  expiresAt: string;
-};
-
-function isPairCodeResponse(value: unknown): value is PairCodeResponse {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const candidate = value as Record<string, unknown>;
-  return typeof candidate.code === 'string' && typeof candidate.expiresAt === 'string';
-}
-
-function secondsUntil(isoTimestamp: string): number {
-  return Math.max(0, Math.ceil((new Date(isoTimestamp).getTime() - Date.now()) / 1000));
-}
+import { remainingSeconds, isWatchPairingCode } from '@boardsesh/watch-pairing';
 
 export default function WatchPairingSection() {
   const { t } = useTranslation('settings');
@@ -42,9 +26,18 @@ export default function WatchPairingSection() {
   const [hasError, setHasError] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
-  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  // Monotonic id for the in-flight pair-code request. Bumped when a request
+  // starts and when the dialog closes, so a stale response from a request the
+  // user has since superseded (close+reopen, or a second "Regenerate" tap) is
+  // dropped instead of overwriting the current code.
+  const requestSeqRef = useRef(0);
 
   const requestCode = useCallback(async () => {
+    const requestId = requestSeqRef.current + 1;
+    requestSeqRef.current = requestId;
+
     const backendUrl = getBackendHttpUrl();
     if (!authToken || !backendUrl) {
       setHasError(true);
@@ -63,20 +56,32 @@ export default function WatchPairingSection() {
           Authorization: `Bearer ${authToken}`,
         },
       });
+      // Drop the response if a newer request started or the dialog closed.
+      if (requestId !== requestSeqRef.current) {
+        return;
+      }
       if (!response.ok) {
         throw new Error(`Pair code request failed: ${response.status}`);
       }
       const payload: unknown = await response.json();
-      if (!isPairCodeResponse(payload)) {
+      if (requestId !== requestSeqRef.current) {
+        return;
+      }
+      if (!isWatchPairingCode(payload)) {
         throw new Error('Unexpected pair code response shape');
       }
       setCode(payload.code);
       setExpiresAt(payload.expiresAt);
     } catch (error) {
+      if (requestId !== requestSeqRef.current) {
+        return;
+      }
       console.error('Failed to request watch pairing code:', error);
       setHasError(true);
     } finally {
-      setLoading(false);
+      if (requestId === requestSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [authToken]);
 
@@ -84,15 +89,15 @@ export default function WatchPairingSection() {
   // clears the interval on unmount, dialog close, or a fresh code.
   useEffect(() => {
     if (!expiresAt) {
-      setRemainingSeconds(0);
+      setSecondsLeft(0);
       return;
     }
 
-    setRemainingSeconds(secondsUntil(expiresAt));
+    setSecondsLeft(remainingSeconds(expiresAt));
     const interval = setInterval(() => {
-      const secondsLeft = secondsUntil(expiresAt);
-      setRemainingSeconds(secondsLeft);
-      if (secondsLeft <= 0) {
+      const next = remainingSeconds(expiresAt);
+      setSecondsLeft(next);
+      if (next <= 0) {
         clearInterval(interval);
       }
     }, 1000);
@@ -106,13 +111,15 @@ export default function WatchPairingSection() {
   };
 
   const handleClose = () => {
+    // Invalidate any in-flight request so its response can't reopen a stale code.
+    requestSeqRef.current += 1;
     setDialogOpen(false);
     setCode(null);
     setExpiresAt(null);
     setHasError(false);
   };
 
-  const isExpired = expiresAt !== null && remainingSeconds <= 0;
+  const isExpired = expiresAt !== null && secondsLeft <= 0;
   const showCode = !loading && !hasError && code !== null && !isExpired;
   const showRegenerate = !loading && (hasError || isExpired);
 
@@ -171,7 +178,7 @@ export default function WatchPairingSection() {
                 {code}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {t('watchPairing.expiresIn', { seconds: remainingSeconds })}
+                {t('watchPairing.expiresIn', { seconds: secondsLeft })}
               </Typography>
             </Stack>
           )}

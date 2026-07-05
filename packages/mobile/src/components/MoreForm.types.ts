@@ -26,6 +26,7 @@
 export type MoreIconName =
   | 'playlists'
   | 'integrations'
+  | 'watch'
   | 'accessibility'
   | 'translate'
   | 'replay'

@@ -53,6 +53,7 @@ type SystemImageName = NonNullable<ComponentProps<typeof Image>['systemName']>;
 const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   playlists: 'music.note.list',
   integrations: 'heart',
+  watch: 'applewatch',
   accessibility: 'accessibility',
   translate: 'character.bubble',
   replay: 'play.circle',

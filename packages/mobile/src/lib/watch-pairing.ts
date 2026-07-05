@@ -1,18 +1,11 @@
+import { isWatchPairingCode, type WatchPairingCode } from '@boardsesh/watch-pairing';
 import { authenticatedFetch } from './auth-interceptor';
 import { BACKEND_URL } from './env';
 
-// Re-export the pure countdown helper so consumers keep a single import site
-// (`from './watch-pairing'`) while the helper itself stays dependency-free and
-// directly unit-testable.
-export { remainingSeconds } from './watch-pairing-countdown';
-
-/** A short-lived code the user types on their Garmin watch to link it to their account. */
-export type WatchPairingCode = {
-  /** The short code shown to the user. */
-  code: string;
-  /** ISO-8601 timestamp after which the code stops working. */
-  expiresAt: string;
-};
+// Re-export the shared pair-code type + pure countdown helper so consumers keep a
+// single import site (`from './watch-pairing'`). The helpers themselves live in
+// `@boardsesh/watch-pairing`, shared with the web settings section.
+export { remainingSeconds, type WatchPairingCode } from '@boardsesh/watch-pairing';
 
 /**
  * Ask the backend for a fresh watch-pairing code. `authenticatedFetch` attaches
@@ -24,5 +17,9 @@ export async function requestWatchPairingCode(): Promise<WatchPairingCode> {
   if (!response.ok) {
     throw new Error(`pair-code ${response.status}`);
   }
-  return response.json() as Promise<WatchPairingCode>;
+  const data: unknown = await response.json();
+  if (!isWatchPairingCode(data)) {
+    throw new Error('pair-code bad response');
+  }
+  return data;
 }
