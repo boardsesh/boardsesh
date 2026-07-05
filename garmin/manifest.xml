@@ -51,12 +51,15 @@
             <iq:product id="vivoactive4s"/>
         </iq:products>
 
-        <!-- Outbound HTTPS (via the paired phone's Garmin Connect) plus Fit so
-             ActivityRecording can write the climbing-session FIT file. No
+        <!-- Outbound HTTPS (via the paired phone's Garmin Connect); Fit so
+             ActivityRecording can write the climbing-session FIT file; and
+             FitContributor so we can add per-lap (grade/result/attempt/angle) and
+             session-summary (sends/attempts/problems) developer fields to it. No
              Background, no Positioning. -->
         <iq:permissions>
             <iq:uses-permission id="Communications"/>
             <iq:uses-permission id="Fit"/>
+            <iq:uses-permission id="FitContributor"/>
         </iq:permissions>
 
         <iq:languages>

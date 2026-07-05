@@ -18,17 +18,15 @@
     <!-- Climb screen -->
     <string id="EmptyQueue">Queue is empty</string>
     <string id="UnknownClimb">Climb</string>
-    <string id="Mirror">MIRROR</string>
+    <string id="MirrorShort">MIR</string>
     <string id="DegreeSuffix">°</string>
     <string id="Offline">OFFLINE</string>
+    <string id="StatusSent">SENT</string>
+    <string id="StatusFlash">FLASH</string>
 
-    <!-- Log menu -->
-    <string id="LogTitle">Log</string>
-    <string id="LogAttempt">Attempt</string>
-    <string id="LogSend">Send</string>
-    <string id="LogFlash">Flash</string>
-    <string id="Cancel">Cancel</string>
-    <string id="Logged">Logged</string>
+    <!-- Logging feedback (one-press logging; no log menu) -->
+    <string id="SendBang">Send!</string>
+    <string id="FlashBang">Flash!</string>
     <string id="QueuedOffline">Saved offline</string>
     <string id="LogFailed">Couldn't log</string>
 
@@ -57,4 +55,21 @@
     <!-- Status / errors -->
     <string id="SessionEnded">Session ended</string>
     <string id="Expired">Sign-in expired</string>
+
+    <!-- FIT developer field labels (shown in Garmin Connect) -->
+    <string id="FitGrade">Grade</string>
+    <string id="FitResult">Result</string>
+    <string id="FitAttempt">Attempt</string>
+    <string id="FitAngle">Angle</string>
+    <string id="FitSends">Sends</string>
+    <string id="FitAttempts">Attempts</string>
+    <string id="FitProblems">Problems</string>
+    <string id="FitUnitNone"></string>
+
+    <!-- Session summary -->
+    <string id="SummaryTitle">Session</string>
+    <string id="SummarySends">Sends</string>
+    <string id="SummaryAttempts">Attempts</string>
+    <string id="SummaryProblems">Problems</string>
+    <string id="SummaryHint">START to end</string>
 </strings>

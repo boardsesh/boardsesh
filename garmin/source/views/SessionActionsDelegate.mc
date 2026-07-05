@@ -26,7 +26,8 @@ class SessionActionsDelegate extends WatchUi.Menu2InputDelegate {
 
         } else if (id == :end) {
             WatchUi.popView(WatchUi.SLIDE_DOWN);
-            WatchUi.pushView(Menus.buildExitConfirm(), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
+            // Show the session summary first; START there opens Save/Discard.
+            WatchUi.pushView(new SessionSummaryView(), new SessionSummaryDelegate(), WatchUi.SLIDE_UP);
         }
     }
 

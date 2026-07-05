@@ -86,8 +86,10 @@ class PairingView extends WatchUi.View {
             TokenStore.store(data["jwt"], data["refreshToken"], data["expiresAt"]);
             // A fresh pairing may be a DIFFERENT account than the one whose ticks
             // are still queued locally (shared / re-paired watch). Drop them so
-            // account A's ticks can't be flushed under account B's JWT.
+            // account A's ticks can't be flushed under account B's JWT, and clear
+            // the per-climb log so account A's pips/summary don't bleed through.
             TickQueue.clear();
+            SessionLog.reset();
             Router.toLoading();
             return;
         }
@@ -106,19 +108,18 @@ class PairingView extends WatchUi.View {
     // ---- Rendering ----------------------------------------------------------
 
     function onUpdate(dc as Graphics.Dc) as Void {
-        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_BLACK);
+        Theme.ensure(dc);
+        dc.setColor(Theme.TEXT, Theme.BG);
         dc.clear();
-        var cx = dc.getWidth() / 2;
-        var cy = dc.getHeight() / 2;
+        var cx = Theme.cx;
+        var cy = Theme.cy;
 
-        dc.drawText(cx, cy - 52, Graphics.FONT_XTINY,
-            WatchUi.loadResource(Rez.Strings.EnterCode),
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        Theme.textC(dc, cx, cy - 52, Theme.metaFont(), Theme.DIM,
+            WatchUi.loadResource(Rez.Strings.EnterCode));
 
         if (_submitting) {
-            dc.drawText(cx, cy, Graphics.FONT_MEDIUM,
-                WatchUi.loadResource(Rez.Strings.Pairing),
-                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            Theme.textC(dc, cx, cy, Theme.nameFont(), Theme.TEXT,
+                WatchUi.loadResource(Rez.Strings.Pairing));
             return;
         }
 
@@ -130,27 +131,45 @@ class PairingView extends WatchUi.View {
         while (display.length() < CODE_LEN) {
             display = display + "_";
         }
-        dc.drawText(cx, cy - 6, Graphics.FONT_NUMBER_MEDIUM, display,
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        var codeY = cy - 6;
+        // Alphanumeric font via Theme: the code contains letters, which
+        // FONT_NUMBER_* would drop.
+        Theme.gradeText(dc, cx, codeY, display, Theme.TEXT);
+        _underlineCandidate(dc, display, cx, codeY);
 
         // Position indicator "n / 8".
         var filled = _entered.length();
         if (filled < CODE_LEN) { filled = filled + 1; }
-        dc.drawText(cx, cy + 34, Graphics.FONT_XTINY,
-            filled.toString() + " / " + CODE_LEN.toString(),
-            Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        Theme.textC(dc, cx, cy + 34, Theme.metaFont(), Theme.DIM,
+            filled.toString() + " / " + CODE_LEN.toString());
 
         if (_error) {
-            dc.setColor(Graphics.COLOR_RED, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy + 56, Graphics.FONT_XTINY,
-                WatchUi.loadResource(Rez.Strings.PairFailed),
-                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            Theme.textC(dc, cx, cy + 56, Theme.metaFont(), Theme.ERROR,
+                WatchUi.loadResource(Rez.Strings.PairFailed));
         } else {
-            dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-            dc.drawText(cx, cy + 56, Graphics.FONT_XTINY,
-                WatchUi.loadResource(Rez.Strings.GetCode),
-                Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            Theme.textC(dc, cx, cy + 56, Theme.metaFont(), Theme.DIM,
+                WatchUi.loadResource(Rez.Strings.GetCode));
         }
+    }
+
+    // A gold underline under the active candidate character (the one UP/DOWN
+    // rotates), so the char picker reads as editable.
+    private function _underlineCandidate(dc as Graphics.Dc, display as Lang.String,
+                                         cx as Lang.Number, codeY as Lang.Number) as Void {
+        var candIdx = _entered.length();
+        if (candIdx >= CODE_LEN) {
+            return;
+        }
+        var font = Theme.gradeFont();
+        var fullW = dc.getTextWidthInPixels(display, font);
+        var leftEdge = cx - fullW / 2;
+        var prefixW = dc.getTextWidthInPixels(display.substring(0, candIdx), font);
+        var candW = dc.getTextWidthInPixels(display.substring(candIdx, candIdx + 1), font);
+        var y = codeY + dc.getFontHeight(font) / 2 + 2;
+        dc.setColor(Theme.BENCH, Graphics.COLOR_TRANSPARENT);
+        dc.setPenWidth(3);
+        dc.drawLine(leftEdge + prefixW, y, leftEdge + prefixW + candW, y);
+        dc.setPenWidth(1);
     }
 }
 
