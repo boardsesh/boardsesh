@@ -11,13 +11,11 @@ using Toybox.Lang;
 // popped immediately after firing so the save proceeds in the background — this
 // delegate stays alive because the saveTick callback Method retains it.
 class LogTickDelegate extends WatchUi.Menu2InputDelegate {
-    private var _view as ClimbView;
     private var _pendingStatus as Lang.String;
     private var _pendingInput as Lang.Dictionary or Null;
 
-    function initialize(view as ClimbView) {
+    function initialize() {
         Menu2InputDelegate.initialize();
-        _view = view;
         _pendingStatus = "";
         _pendingInput = null;
     }

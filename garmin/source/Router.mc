@@ -20,7 +20,7 @@ module Router {
 
     function toClimb() as Void {
         var view = new ClimbView();
-        WatchUi.switchToView(view, new ClimbDelegate(view), WatchUi.SLIDE_IMMEDIATE);
+        WatchUi.switchToView(view, new ClimbDelegate(), WatchUi.SLIDE_IMMEDIATE);
     }
 
     function toNoSession() as Void {

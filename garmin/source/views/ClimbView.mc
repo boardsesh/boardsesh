@@ -125,11 +125,9 @@ class ClimbView extends WatchUi.View {
 }
 
 class ClimbDelegate extends WatchUi.BehaviorDelegate {
-    private var _view as ClimbView;
 
-    function initialize(view as ClimbView) {
+    function initialize() {
         BehaviorDelegate.initialize();
-        _view = view;
     }
 
     // UP button / swipe-up = previous.
@@ -159,19 +157,19 @@ class ClimbDelegate extends WatchUi.BehaviorDelegate {
 
     // START = log a tick.
     function onSelect() as Lang.Boolean {
-        WatchUi.pushView(Menus.buildLogMenu(), new LogTickDelegate(_view), WatchUi.SLIDE_UP);
+        WatchUi.pushView(Menus.buildLogMenu(), new LogTickDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
 
     // MENU / long-press = session actions.
     function onMenu() as Lang.Boolean {
-        WatchUi.pushView(Menus.buildActionsMenu(), new SessionActionsDelegate(_view), WatchUi.SLIDE_UP);
+        WatchUi.pushView(Menus.buildActionsMenu(), new SessionActionsDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
 
     // BACK = confirm exit.
     function onBack() as Lang.Boolean {
-        WatchUi.pushView(Menus.buildExitConfirm(), new ExitConfirmDelegate(_view), WatchUi.SLIDE_UP);
+        WatchUi.pushView(Menus.buildExitConfirm(), new ExitConfirmDelegate(), WatchUi.SLIDE_UP);
         return true;
     }
 
