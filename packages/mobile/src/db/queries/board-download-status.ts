@@ -12,7 +12,7 @@ import { offlineBoardKey, type OfflineBoardScope } from '../../settings/offline-
  * sizeId (skipped for moonboard, which isn't size-scoped).
  *
  * `getSetting` (react-native-mmkv) is imported lazily so this module — pulled into
- * the search-hooks barrel via offline-search — doesn't drag react-native-mmkv (and
+ * the search-hooks barrel via offline-request — doesn't drag react-native-mmkv (and
  * thus react-native's Flow entry) into the test collection-time module scan. The
  * pure `offlineBoardKey` stays a static import.
  */

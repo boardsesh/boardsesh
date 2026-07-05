@@ -254,6 +254,10 @@ vi.mock('../../../../src/lib/graphql/hooks/use-infinite-search-climbs', () => ({
 
 vi.mock('../../../../src/lib/graphql/operations', () => ({ SEARCH_CLIMBS: 'SEARCH_CLIMBS' }));
 vi.mock('../../../../src/lib/graphql/client', () => ({ getHttpClient: () => ({ request: vi.fn() }) }));
+// Mock the interceptor module itself: its module-scope registry reads every
+// registered document from `operations`, so loading the real module would make
+// this test's partial operations mock load-bearing for future registrations.
+vi.mock('../../../../src/lib/graphql/offline-request', () => ({ offlineAwareRequest: vi.fn() }));
 
 vi.mock('../../../../src/lib/playlists/use-playlist-activation', () => ({
   usePlaylistActivation: () => ({
