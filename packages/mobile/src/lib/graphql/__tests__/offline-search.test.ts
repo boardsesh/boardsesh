@@ -1,40 +1,51 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { onlineManager } from '@tanstack/react-query';
+import type { ClimbSearchInput } from '@boardsesh/shared-schema';
+import type { GetClimbQueryVariables } from '../operations';
 
 // Local-first dispatcher: local when the board is downloaded + filters supported
 // (even online); network otherwise (online); empty/null when offline with no local data.
 
-const fakeDb = { tag: 'db' };
-vi.mock('../../../db', () => ({ getDatabaseHandle: () => fakeDb }));
-
-const isBoardDownloadedLocally = vi.fn();
-vi.mock('../../../db/queries/board-download-status', () => ({
-  isBoardDownloadedLocally: (...args: unknown[]) => isBoardDownloadedLocally(...args),
+const {
+  getDatabaseHandle,
+  isBoardDownloadedLocally,
+  searchClimbsLocal,
+  countClimbsLocal,
+  isOfflineSearchSupported,
+  getClimbLocal,
+  request,
+} = vi.hoisted(() => ({
+  getDatabaseHandle: vi.fn(),
+  isBoardDownloadedLocally: vi.fn(),
+  searchClimbsLocal: vi.fn(),
+  countClimbsLocal: vi.fn(),
+  isOfflineSearchSupported: vi.fn(),
+  getClimbLocal: vi.fn(),
+  request: vi.fn(),
 }));
 
-const searchClimbsLocal = vi.fn();
-const countClimbsLocal = vi.fn();
-const isOfflineSearchSupported = vi.fn(() => true);
+vi.mock('../../../db', () => ({ getDatabaseHandle }));
+vi.mock('../../../db/queries/board-download-status', () => ({ isBoardDownloadedLocally }));
 vi.mock('../../../db/queries/search-climbs-local', () => ({
-  searchClimbsLocal: (...args: unknown[]) => searchClimbsLocal(...args),
-  countClimbsLocal: (...args: unknown[]) => countClimbsLocal(...args),
-  isOfflineSearchSupported: (...args: unknown[]) => isOfflineSearchSupported(...args),
+  searchClimbsLocal,
+  countClimbsLocal,
+  isOfflineSearchSupported,
 }));
-
-const getClimbLocal = vi.fn();
-vi.mock('../../../db/queries/get-climb-local', () => ({
-  getClimbLocal: (...args: unknown[]) => getClimbLocal(...args),
-}));
-
-const request = vi.fn();
+vi.mock('../../../db/queries/get-climb-local', () => ({ getClimbLocal }));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
 
 import { resolveClimbSearch, resolveClimbSearchCount, resolveClimb } from '../offline-search';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const input = { boardName: 'kilter', layoutId: 1, sizeId: 5, setIds: '', angle: 40 } as any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const climbVars = { boardName: 'kilter', layoutId: 1, sizeId: 5, setIds: '', angle: 40, climbUuid: 'c1' } as any;
+const fakeDb = { tag: 'db' };
+const input: ClimbSearchInput = { boardName: 'kilter', layoutId: 1, sizeId: 5, setIds: '', angle: 40 };
+const climbVars: GetClimbQueryVariables = {
+  boardName: 'kilter',
+  layoutId: 1,
+  sizeId: 5,
+  setIds: '',
+  angle: 40,
+  climbUuid: 'c1',
+};
 
 function setOnline(online: boolean) {
   vi.spyOn(onlineManager, 'isOnline').mockReturnValue(online);
@@ -42,6 +53,7 @@ function setOnline(online: boolean) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  getDatabaseHandle.mockReturnValue(fakeDb);
   isOfflineSearchSupported.mockReturnValue(true);
   searchClimbsLocal.mockResolvedValue({ climbs: [{ uuid: 'local' }], hasMore: false });
   countClimbsLocal.mockResolvedValue(7);
