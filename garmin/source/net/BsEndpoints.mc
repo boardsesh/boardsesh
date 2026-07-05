@@ -1,4 +1,5 @@
 using Toybox.Lang;
+using Toybox.Communications;
 
 // Pure URL + request-body builders for the Boardsesh backend contract.
 //
@@ -18,9 +19,11 @@ module BsEndpoints {
     }
 
     // GET. The sessionId is carried in the query string; BsClient sends empty
-    // query params so this URL is used verbatim.
+    // query params so this URL is used verbatim. sessionId is a backend UUID
+    // (URL-safe), but encode it defensively so an unexpected value can't corrupt
+    // the query string.
     function stateUrl(base as Lang.String, sessionId as Lang.String) as Lang.String {
-        return base + "/api/session/state?sessionId=" + sessionId;
+        return base + "/api/session/state?sessionId=" + Communications.encodeURL(sessionId);
     }
 
     function navigateUrl(base as Lang.String) as Lang.String {
