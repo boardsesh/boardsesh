@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  User-facing strings. Referenced from code via WatchUi.loadResource(Rez.Strings.X)
+  and from manifest.xml via @Strings.AppName. Keep every visible string here so
+  future localisation is a matter of adding resources-<lang>/ catalogs.
+-->
+<strings>
+    <!-- App / branding -->
+    <string id="AppName">Boardsesh</string>
+    <string id="Loading">Loading…</string>
+
+    <!-- Pairing -->
+    <string id="EnterCode">Enter pairing code</string>
+    <string id="Pairing">Pairing…</string>
+    <string id="GetCode">Get a code in the Boardsesh app</string>
+    <string id="PairFailed">Bad code — try again</string>
+
+    <!-- Climb screen -->
+    <string id="EmptyQueue">Queue is empty</string>
+    <string id="UnknownClimb">Climb</string>
+    <string id="Mirror">MIRROR</string>
+    <string id="DegreeSuffix">°</string>
+    <string id="Offline">OFFLINE</string>
+
+    <!-- Log menu -->
+    <string id="LogTitle">Log</string>
+    <string id="LogAttempt">Attempt</string>
+    <string id="LogSend">Send</string>
+    <string id="LogFlash">Flash</string>
+    <string id="Cancel">Cancel</string>
+    <string id="Logged">Logged</string>
+    <string id="QueuedOffline">Saved offline</string>
+
+    <!-- Session actions -->
+    <string id="ActionsTitle">Session</string>
+    <string id="ReSend">Re-send to board</string>
+    <string id="SwitchSession">Switch session</string>
+    <string id="EndActivity">End activity</string>
+    <string id="Resent">Sent to board</string>
+    <string id="NavFailed">Couldn't reach the session</string>
+
+    <!-- Exit confirm -->
+    <string id="ExitTitle">End activity?</string>
+    <string id="Save">Save</string>
+    <string id="Discard">Discard</string>
+    <string id="KeepGoing">Keep going</string>
+
+    <!-- No session -->
+    <string id="NoSessionTitle">No session yet</string>
+    <string id="StartOnPhone">Start a session on your phone</string>
+    <string id="Retry">Retry</string>
+
+    <!-- Session picker -->
+    <string id="PickSession">Pick a session</string>
+
+    <!-- Status / errors -->
+    <string id="SessionEnded">Session ended</string>
+    <string id="Expired">Sign-in expired</string>
+</strings>

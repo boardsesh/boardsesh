@@ -152,3 +152,14 @@ ml/climb2vec/artifacts/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Garmin Connect IQ (Monkey C) watch app — build artifacts + developer key.
+# The developer key signs local/simulator builds; never commit it. Build
+# products (.prg / .iq) regenerate from source via monkeyc.
+garmin/bin/
+garmin/**/*.prg
+garmin/**/*.iq
+garmin/**/*.iq.debug.xml
+garmin/developer_key
+garmin/developer_key.der
+garmin/developer_key.pem
