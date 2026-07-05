@@ -20,4 +20,10 @@ export const SyncCursorInputSchema = z
  */
 export const SyncLimitSchema = z.number().int().min(1).max(500);
 
+/**
+ * Optional board-scope id (layoutId / sizeId) for the per-board sync resolvers.
+ * A positive integer when present; null/undefined means "whole board type".
+ */
+export const SyncBoardScopeIdSchema = z.number().int().positive().optional().nullable();
+
 export type SyncCursorInputValidated = z.infer<typeof SyncCursorInputSchema>;

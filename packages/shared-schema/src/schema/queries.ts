@@ -711,11 +711,18 @@ export const queriesTypeDefs = /* GraphQL */ `
     "Pull the authenticated user's playlist-follows changed since the cursor."
     syncPlaylistFollows(cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
 
-    "Pull board climbs for a board type, changed since the cursor (reference data)."
-    syncClimbs(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+    """
+    Pull board climbs for a board type, changed since the cursor (reference data).
+    Optional layoutId/sizeId narrow the pull to a single layout/size (all sets) so a
+    downloaded board stays a fixed, cacheable superset. sizeId is ignored for moonboard.
+    """
+    syncClimbs(boardType: String!, layoutId: Int, sizeId: Int, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
 
-    "Pull board climb stats for a board type, changed since the cursor (reference data)."
-    syncClimbStats(boardType: String!, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
+    """
+    Pull board climb stats for a board type, changed since the cursor (reference data).
+    Optional layoutId/sizeId scope stats to the climbs of that layout/size via board_climbs.
+    """
+    syncClimbStats(boardType: String!, layoutId: Int, sizeId: Int, cursor: SyncCursorInput, limit: Int! = 500): SyncResult!
 
     "Pull hard deletions (user-scoped + reference data) since the cursor."
     syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!

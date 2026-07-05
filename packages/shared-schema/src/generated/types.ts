@@ -3873,9 +3873,16 @@ export type Query = {
    * Public — no authentication required.
    */
   smartPlaylist: SmartPlaylistResult;
-  /** Pull board climb stats for a board type, changed since the cursor (reference data). */
+  /**
+   * Pull board climb stats for a board type, changed since the cursor (reference data).
+   * Optional layoutId/sizeId scope stats to the climbs of that layout/size via board_climbs.
+   */
   syncClimbStats: SyncResult;
-  /** Pull board climbs for a board type, changed since the cursor (reference data). */
+  /**
+   * Pull board climbs for a board type, changed since the cursor (reference data).
+   * Optional layoutId/sizeId narrow the pull to a single layout/size (all sets) so a
+   * downloaded board stays a fixed, cacheable superset. sizeId is ignored for moonboard.
+   */
   syncClimbs: SyncResult;
   /** Pull hard deletions (user-scoped + reference data) since the cursor. */
   syncDeletions: SyncDeletionsResult;
@@ -4373,14 +4380,18 @@ export type QuerySmartPlaylistArgs = {
 export type QuerySyncClimbStatsArgs = {
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: Scalars['Int']['input'];
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
 export type QuerySyncClimbsArgs = {
   boardType: Scalars['String']['input'];
   cursor?: InputMaybe<SyncCursorInput>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
   limit?: Scalars['Int']['input'];
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */

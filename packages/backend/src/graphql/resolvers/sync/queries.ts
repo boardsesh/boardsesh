@@ -3,7 +3,12 @@ import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInpu
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated } from '../shared/helpers';
-import { validateInput, SyncCursorInputSchema, SyncLimitSchema } from '../../../validation/schemas';
+import {
+  validateInput,
+  SyncCursorInputSchema,
+  SyncLimitSchema,
+  SyncBoardScopeIdSchema,
+} from '../../../validation/schemas';
 
 /**
  * Offline sync pull resolvers (Phase 2). See docs/sync-table-manifest.md — the
@@ -126,17 +131,38 @@ function prepareUserSync(
 
 /**
  * Board-data sync resolvers don't carry a user scope but still require auth and
- * the same cursor/limit validation.
+ * the same cursor/limit validation. Also validates the optional layout/size scope
+ * ids (positive ints, or null for "whole board type").
  */
 function prepareBoardSync(
   ctx: ConnectionContext,
   cursor: SyncCursorInput | null | undefined,
   limit: number,
-): { limit: number } {
+  layoutId?: number | null,
+  sizeId?: number | null,
+): { limit: number; layoutId: number | null; sizeId: number | null } {
   requireAuthenticated(ctx);
   validateInput(SyncCursorInputSchema, cursor, 'cursor');
   const validatedLimit = validateInput(SyncLimitSchema, limit, 'limit');
-  return { limit: validatedLimit };
+  const validatedLayoutId = validateInput(SyncBoardScopeIdSchema, layoutId, 'layoutId') ?? null;
+  const validatedSizeId = validateInput(SyncBoardScopeIdSchema, sizeId, 'sizeId') ?? null;
+  return { limit: validatedLimit, layoutId: validatedLayoutId, sizeId: validatedSizeId };
+}
+
+/**
+ * Build the board_climbs scope for a per-board pull. Optional layout/size narrow
+ * it to a single (layout, size) — all sets. sizeId is ignored for moonboard (its
+ * climbs aren't size-scoped), matching the search-side size filter.
+ */
+function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: number | null): SQL {
+  const conditions: SQL[] = [sql`board_type = ${boardType}`];
+  if (layoutId !== null) {
+    conditions.push(sql`layout_id = ${layoutId}`);
+  }
+  if (sizeId !== null && boardType !== 'moonboard') {
+    conditions.push(sql`compatible_size_ids @> ARRAY[${sizeId}]::int[]`);
+  }
+  return sql.join(conditions, sql` AND `);
 }
 
 export const syncQueries = {
@@ -300,21 +326,35 @@ export const syncQueries = {
 
   /**
    * Pull board climbs for a board type (reference data, per-board). Local PK =
-   * uuid. Seq = sync_seq. Dormant this phase (no board enabled by default).
+   * uuid. Seq = sync_seq. Optional layoutId/sizeId scope the pull to one
+   * (layout, size) — all sets — so a downloaded board is a fixed, cacheable
+   * superset (sizeId ignored for moonboard).
    */
   syncClimbs: async (
     _: unknown,
-    { boardType, cursor, limit }: { boardType: string; cursor?: SyncCursorInput | null; limit: number },
+    {
+      boardType,
+      layoutId,
+      sizeId,
+      cursor,
+      limit,
+    }: {
+      boardType: string;
+      layoutId?: number | null;
+      sizeId?: number | null;
+      cursor?: SyncCursorInput | null;
+      limit: number;
+    },
     ctx: ConnectionContext,
   ): Promise<SyncResult> => {
-    const { limit: lim } = prepareBoardSync(ctx, cursor, limit);
+    const { limit: lim, layoutId: lid, sizeId: sid } = prepareBoardSync(ctx, cursor, limit, layoutId, sizeId);
     return runSyncPage({
       selectList: sql`uuid, board_type, layout_id, setter_id, setter_username, name, description,
         hsm, edge_left, edge_right, edge_bottom, edge_top, angle, frames_count, frames_pace, frames,
         is_draft, is_listed, created_at, published_at, user_id, required_set_ids, compatible_size_ids,
-        hold_fingerprint, updated_at, sync_seq`,
+        characteristics, hold_fingerprint, updated_at, sync_seq`,
       fromClause: sql`board_climbs`,
-      scope: sql`board_type = ${boardType}`,
+      scope: boardClimbsScope(boardType, lid, sid),
       updatedAtColumn: sql`updated_at`,
       seqColumn: sql`sync_seq`,
       cursor,
@@ -324,21 +364,52 @@ export const syncQueries = {
 
   /**
    * Pull board climb stats for a board type (reference data, per-board). Local PK
-   * = (board_type, climb_uuid, angle). Seq = sync_seq.
+   * = (board_type, climb_uuid, angle). Seq = sync_seq. Optional layoutId/sizeId
+   * scope the stats to the climbs of that (layout, size) via a correlated EXISTS
+   * on board_climbs (board_climb_stats has no layout_id column). Cursor columns
+   * are fully qualified to stay unambiguous alongside the subquery.
    */
   syncClimbStats: async (
     _: unknown,
-    { boardType, cursor, limit }: { boardType: string; cursor?: SyncCursorInput | null; limit: number },
+    {
+      boardType,
+      layoutId,
+      sizeId,
+      cursor,
+      limit,
+    }: {
+      boardType: string;
+      layoutId?: number | null;
+      sizeId?: number | null;
+      cursor?: SyncCursorInput | null;
+      limit: number;
+    },
     ctx: ConnectionContext,
   ): Promise<SyncResult> => {
-    const { limit: lim } = prepareBoardSync(ctx, cursor, limit);
+    const { limit: lim, layoutId: lid, sizeId: sid } = prepareBoardSync(ctx, cursor, limit, layoutId, sizeId);
+
+    let scope: SQL = sql`board_type = ${boardType}`;
+    if (lid !== null || (sid !== null && boardType !== 'moonboard')) {
+      const sub: SQL[] = [
+        sql`bc.uuid = board_climb_stats.climb_uuid`,
+        sql`bc.board_type = ${boardType}`,
+      ];
+      if (lid !== null) {
+        sub.push(sql`bc.layout_id = ${lid}`);
+      }
+      if (sid !== null && boardType !== 'moonboard') {
+        sub.push(sql`bc.compatible_size_ids @> ARRAY[${sid}]::int[]`);
+      }
+      scope = sql`board_type = ${boardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sql.join(sub, sql` AND `)})`;
+    }
+
     return runSyncPage({
       selectList: sql`board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
         ascensionist_count, difficulty_average, quality_average, fa_username, fa_at, updated_at, sync_seq`,
       fromClause: sql`board_climb_stats`,
-      scope: sql`board_type = ${boardType}`,
-      updatedAtColumn: sql`updated_at`,
-      seqColumn: sql`sync_seq`,
+      scope,
+      updatedAtColumn: sql`board_climb_stats.updated_at`,
+      seqColumn: sql`board_climb_stats.sync_seq`,
       cursor,
       limit: lim,
     });
