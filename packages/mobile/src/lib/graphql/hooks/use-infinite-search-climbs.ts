@@ -1,11 +1,14 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import type { ClimbSearchInput } from '@boardsesh/shared-schema';
-import { getHttpClient } from '../client';
-import { SEARCH_CLIMBS, type SearchClimbsQueryResponse } from '../operations';
+import { resolveClimbSearch } from '../offline-search';
+import { useIsOffline } from '../../../hooks/use-is-offline';
 
-function getSearchClimbsQueryKey(input: ClimbSearchInput) {
+function getSearchClimbsQueryKey(input: ClimbSearchInput, offline: boolean) {
   const { page: _page, ...queryInput } = input;
-  return ['infiniteSearchClimbs', queryInput] as const;
+  // The offline flag is a coarse key discriminator: a connectivity flip swaps to a
+  // different cache entry (network ⇄ local) instead of reusing stale results. It's
+  // last so ['infiniteSearchClimbs', ...] prefix invalidations still match.
+  return ['infiniteSearchClimbs', queryInput, offline] as const;
 }
 
 export function useInfiniteSearchClimbs(
@@ -13,15 +16,11 @@ export function useInfiniteSearchClimbs(
   enabled = true,
   options?: { staleTime?: number; gcTime?: number },
 ) {
+  const offline = useIsOffline();
   return useInfiniteQuery({
-    queryKey: getSearchClimbsQueryKey(input),
+    queryKey: getSearchClimbsQueryKey(input, offline),
     initialPageParam: 0,
-    queryFn: async ({ pageParam }) => {
-      const response = await getHttpClient().request<SearchClimbsQueryResponse>(SEARCH_CLIMBS, {
-        input: { ...input, page: pageParam },
-      });
-      return response.searchClimbs;
-    },
+    queryFn: ({ pageParam }) => resolveClimbSearch({ ...input, page: pageParam }),
     getNextPageParam: (lastPage, allPages) => (lastPage.hasMore ? allPages.length : undefined),
     enabled,
     staleTime: options?.staleTime,

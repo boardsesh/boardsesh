@@ -32,7 +32,10 @@ import {
   type FavoritesQueryVariables,
   type FavoritesQueryResponse,
 } from '@boardsesh/graphql/operations/favorites';
+import { BOULDER_GRADES } from '@boardsesh/board-config';
 import { getDatabaseHandle } from '../../../db';
+import { useIsOffline } from '../../../hooks/use-is-offline';
+import { resolveClimbSearch, resolveClimbSearchCount, resolveClimb } from '../offline-search';
 import { addFavoriteLocal, removeFavoriteLocal } from '../../../hooks/use-offline-mutations';
 import { drainMutationQueue } from '../../../mutation-queue';
 import type { GraphQLFetch } from '../../../mutation-queue/handlers';
@@ -71,10 +74,7 @@ import {
   CREATE_BOARD,
   GET_GRADES,
   GET_ANGLES,
-  SEARCH_CLIMBS,
-  SEARCH_CLIMBS_COUNT,
   GET_SETTER_STATS,
-  GET_CLIMB,
   GET_SESSION_SUMMARY,
   GET_SESSION_HEALTH_EXPORT,
   GET_OTA_PREVIEW_CHANNELS,
@@ -91,10 +91,7 @@ import {
   type CreateBoardMutationResponse,
   type GetGradesQueryResponse,
   type GetAnglesQueryResponse,
-  type SearchClimbsQueryResponse,
-  type SearchClimbsCountQueryResponse,
   type GetSetterStatsQueryResponse,
-  type GetClimbQueryResponse,
   type GetClimbQueryVariables,
   type GetSessionSummaryQueryResponse,
   type GetSessionSummaryQueryVariables,
@@ -496,10 +493,23 @@ export function useUnfollowBoard() {
 // Board Configuration
 // ============================================
 
+// Bundled grade taxonomy (ids 10-33) for the cold-offline case: grades are static
+// V↔Font data, so the grade-range rail works with no signal even if the network
+// grades were never fetched. Online refetches the board's real list.
+const OFFLINE_GRADES: Grade[] = BOULDER_GRADES.map((grade) => ({
+  difficultyId: grade.difficulty_id,
+  name: grade.difficulty_name,
+}));
+
 export function useGrades(boardName: string, enabled = true) {
+  // Offline in the key so a flip swaps to the bundled fallback / real list.
+  const offline = useIsOffline();
   return useQuery({
-    queryKey: ['grades', boardName],
-    queryFn: () => getHttpClient().request<GetGradesQueryResponse>(GET_GRADES, { boardName }),
+    queryKey: ['grades', boardName, offline],
+    queryFn: async () => {
+      if (offline) return { grades: OFFLINE_GRADES };
+      return getHttpClient().request<GetGradesQueryResponse>(GET_GRADES, { boardName });
+    },
     select: (data) => data.grades,
     staleTime: 24 * 60 * 60 * 1000,
     enabled: enabled && boardName.length > 0,
@@ -524,10 +534,11 @@ export function useSearchClimbs(
   enabled = true,
   options?: { staleTime?: number; gcTime?: number },
 ) {
+  // Offline in the key so a connectivity flip swaps to the local/network entry.
+  const offline = useIsOffline();
   return useQuery({
-    queryKey: ['searchClimbs', input],
-    queryFn: () => getHttpClient().request<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input }),
-    select: (data) => data.searchClimbs,
+    queryKey: ['searchClimbs', input, offline],
+    queryFn: () => resolveClimbSearch(input),
     enabled,
     // undefined → React Query's defaults.
     staleTime: options?.staleTime,
@@ -536,10 +547,10 @@ export function useSearchClimbs(
 }
 
 export function useSearchClimbsCount(input: ClimbSearchInput, enabled = true) {
+  const offline = useIsOffline();
   return useQuery({
-    queryKey: ['searchClimbsCount', input],
-    queryFn: () => getHttpClient().request<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, { input }),
-    select: (data) => data.searchClimbs.totalCount,
+    queryKey: ['searchClimbsCount', input, offline],
+    queryFn: () => resolveClimbSearchCount(input),
     enabled,
     // Hold the last count while a new filter set is in flight so the bar /
     // "Show N" button doesn't flicker to blank on every filter change.
@@ -558,10 +569,10 @@ export function useSetterStats(input: SetterStatsInput, enabled = true) {
 }
 
 export function useClimb(variables: GetClimbQueryVariables | null) {
+  const offline = useIsOffline();
   return useQuery({
-    queryKey: ['climb', variables],
-    queryFn: () => getHttpClient().request<GetClimbQueryResponse>(GET_CLIMB, variables!),
-    select: (data) => data.climb,
+    queryKey: ['climb', variables, offline],
+    queryFn: () => resolveClimb(variables!),
     enabled: !!variables,
   });
 }
