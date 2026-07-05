@@ -24,9 +24,13 @@ const tx = {
   insert: () => ({
     values: (values: Record<string, unknown>) => {
       captureBetaInsert(values);
+      // The tick insert now chains `.onConflictDoNothing({ target }).returning()`
+      // for idempotent offline re-sync, so onConflictDoNothing must stay chainable
+      // to `.returning()`; the beta-link insert awaits it directly (returns the
+      // object, unused). Both call shapes are covered here.
       return {
         returning: () => Promise.resolve([values]),
-        onConflictDoNothing: () => Promise.resolve(),
+        onConflictDoNothing: () => ({ returning: () => Promise.resolve([values]) }),
       };
     },
   }),
