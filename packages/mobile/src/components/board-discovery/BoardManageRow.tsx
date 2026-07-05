@@ -25,8 +25,12 @@ type BoardManageRowProps = {
   isActive: boolean;
   /** A mutation targeting this row is in flight — show a spinner and disable the swipe. */
   isMutating: boolean;
-  /** Offline download state for this board's (type, layout, size) scope. */
-  downloadState: BoardDownloadState;
+  /**
+   * Offline download state for this board's (type, layout, size) scope.
+   * `undefined` means offline downloads are unavailable (feature-flagged off) —
+   * the toggle and status caption are not rendered at all.
+   */
+  downloadState: BoardDownloadState | undefined;
   /** Climbs pulled so far while this board is the one downloading. */
   downloadCount?: number;
   onEdit: (board: UserBoard) => void;
@@ -147,11 +151,13 @@ function BoardManageRowComponent({
         ) : null}
       </View>
 
-      <BoardOfflineToggle
-        state={downloadState}
-        onPress={() => onToggleOffline(board)}
-        accessibilityLabel={offlineToggleAria}
-      />
+      {downloadState !== undefined ? (
+        <BoardOfflineToggle
+          state={downloadState}
+          onPress={() => onToggleOffline(board)}
+          accessibilityLabel={offlineToggleAria}
+        />
+      ) : null}
 
       {isActive ? (
         <View style={styles.activeBadge}>

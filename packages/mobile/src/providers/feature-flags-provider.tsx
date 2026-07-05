@@ -47,6 +47,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Disable logbook grouping',
     description: 'Emergency kill switch: fall back to flat logbook entries if day-scoped repeat grouping misbehaves.',
   },
+  {
+    key: 'offline-board-downloads',
+    label: 'Offline board downloads',
+    description:
+      'Download toggle on My Boards: pull a board’s climbs into local SQLite for offline browsing. Off hides the toggle; already-enabled boards keep syncing.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the

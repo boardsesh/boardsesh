@@ -12,6 +12,7 @@ import { useAuth } from '../../src/providers/auth-provider';
 import { useToast } from '../../src/providers/toast-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
+import { useFeatureFlag } from '../../src/providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useSyncStatus, triggerSync, setSyncProgress, getDownloadedScopeKeys } from '../../src/sync';
 import { drainMutationQueue } from '../../src/mutation-queue';
@@ -75,6 +76,13 @@ export default function ManageBoards() {
   // Offline download wiring. Subscribe to the sync status + enabled-boards setting
   // ONCE here (not per row) and derive a primitive state per row, so a download's
   // frequent progress frames only re-render the one row that's changing.
+  //
+  // The whole surface is behind the offline-board-downloads flag: off (or absent)
+  // hides the per-row toggle + status caption — this screen is the only writer of
+  // syncEnabledBoards, and the sync/read machinery already no-ops while that
+  // setting is empty, so flag-off reproduces pre-offline behavior. Boards enabled
+  // while the flag was on keep syncing; only the UI to change them is gated.
+  const offlineDownloadsEnabled = useFeatureFlag('offline-board-downloads') === true;
   const db = useSQLiteContext();
   const queryClient = useQueryClient();
   const syncStatus = useSyncStatus();
@@ -90,11 +98,12 @@ export default function ManageBoards() {
   const { data: downloadedScopeKeys, refetch: refetchDownloaded } = useQuery({
     queryKey: ['downloadedScopeKeys'],
     queryFn: () => getDownloadedScopeKeys(db),
+    enabled: offlineDownloadsEnabled,
   });
   const downloadedSet = useMemo(() => new Set(downloadedScopeKeys ?? []), [downloadedScopeKeys]);
   useEffect(() => {
-    if (!isSyncing) void refetchDownloaded();
-  }, [isSyncing, refetchDownloaded]);
+    if (offlineDownloadsEnabled && !isSyncing) void refetchDownloaded();
+  }, [offlineDownloadsEnabled, isSyncing, refetchDownloaded]);
 
   const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
   const drainQueue = useCallback(
@@ -205,13 +214,16 @@ export default function ManageBoards() {
         (deleteBoard.isPending && deleteBoard.variables === item.board.uuid) ||
         (unfollowBoard.isPending && unfollowBoard.variables === item.board.uuid);
       const scopeKey = offlineBoardKeyForBoard(item.board);
-      const downloadState = boardDownloadState({
-        scopeKey,
-        enabled: enabledSet.has(scopeKey),
-        isSyncing,
-        downloaded: downloadedSet.has(scopeKey),
-        currentTable,
-      });
+      // undefined (flag off) hides the row's toggle + caption entirely.
+      const downloadState = offlineDownloadsEnabled
+        ? boardDownloadState({
+            scopeKey,
+            enabled: enabledSet.has(scopeKey),
+            isSyncing,
+            downloaded: downloadedSet.has(scopeKey),
+            currentTable,
+          })
+        : undefined;
       // Only the board actually downloading gets the live count; every other row
       // gets undefined (a stable prop), so its memo skips the per-frame churn.
       const downloadCount = downloadState === 'downloading' ? currentTableProcessed : undefined;
@@ -235,6 +247,7 @@ export default function ManageBoards() {
       deleteBoard.variables,
       unfollowBoard.isPending,
       unfollowBoard.variables,
+      offlineDownloadsEnabled,
       enabledSet,
       isSyncing,
       downloadedSet,
