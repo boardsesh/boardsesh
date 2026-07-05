@@ -6,6 +6,7 @@ import {
   ROGUE_TIMER_ADVERTISED_SERVICE_UUID,
   buildRogueTimerFrame,
   isRogueTimerName,
+  detectRogueDeviceType,
   type RogueTimerCommandCode,
 } from '@boardsesh/ble-protocol/rogue-timer';
 import { SCAN_TIMEOUT_MS } from '@boardsesh/ble-protocol/scan-constants';
@@ -68,6 +69,16 @@ export type RogueTimerConnection = {
   deviceName?: string;
 };
 
+// A scan candidate we're willing to treat as a drivable timer: a Rogue/Echo
+// device (spec §3 name match) that classifies as a timer, not Echo cardio
+// (rower/bike/skier), which share the `echo` name but speak a different
+// protocol. The FFE0 service filter already excludes most cardio, but the name
+// gate is the belt-and-braces so a stray FFE0-advertising Echo unit can't be
+// listed or connected as a timer.
+function isDrivableTimer(name: string | null | undefined): boolean {
+  return isRogueTimerName(name) && detectRogueDeviceType(name) === 'timer';
+}
+
 export class RogueTimerController {
   private connectedDevice: Device | null = null;
   private writeCharacteristic: Characteristic | null = null;
@@ -115,8 +126,9 @@ export class RogueTimerController {
 
         const deviceName = scannedDevice.localName ?? scannedDevice.name ?? undefined;
         // The service filter narrows to FFE0 advertisers; the name check keeps
-        // only genuine Rogue/Echo timers off that (shared, generic HM-10) UUID.
-        if (!isRogueTimerName(deviceName)) return;
+        // only genuine Rogue/Echo *timers* off that (shared, generic HM-10) UUID
+        // — Echo cardio equipment is excluded.
+        if (!isDrivableTimer(deviceName)) return;
 
         const device: DiscoveredDevice = {
           deviceId: scannedDevice.id,
@@ -149,6 +161,11 @@ export class RogueTimerController {
    * adapter's connect flow.
    */
   async connectById(deviceId: string): Promise<RogueTimerConnection> {
+    // Tear down any prior connection first: switching the paired timer (A → B)
+    // must not leak A's OS link or leave A's disconnect listener registered —
+    // that stale listener would otherwise fire later and wipe B's live refs.
+    await this.teardownConnection();
+
     let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
     const connected = await Promise.race([
       bleManager.connectToDevice(deviceId),
@@ -162,45 +179,51 @@ export class RogueTimerController {
       if (connectionTimeoutId != null) clearTimeout(connectionTimeoutId);
     });
 
-    // Android: negotiate MTU + a high-priority connection before service
-    // discovery, then let the link settle. iOS negotiates automatically.
-    if (Platform.OS === 'android') {
-      try {
-        await connected.requestMTU(REQUESTED_ATT_MTU);
-      } catch {
-        // Negotiation failing is non-fatal for 4-byte frames.
+    // From here the OS link is established; any failure must cancel it so a
+    // discovery/negotiation throw can't leave an untracked dangling connection.
+    try {
+      // Android: negotiate MTU + a high-priority connection before service
+      // discovery, then let the link settle. iOS negotiates automatically.
+      if (Platform.OS === 'android') {
+        try {
+          await connected.requestMTU(REQUESTED_ATT_MTU);
+        } catch {
+          // Negotiation failing is non-fatal for 4-byte frames.
+        }
+        try {
+          await connected.requestConnectionPriority(CONNECTION_PRIORITY_HIGH);
+        } catch {
+          // Priority is a hint; ignore if the platform refuses it.
+        }
+        await delay(ANDROID_SETTLE_DELAY_MS);
       }
-      try {
-        await connected.requestConnectionPriority(CONNECTION_PRIORITY_HIGH);
-      } catch {
-        // Priority is a hint; ignore if the platform refuses it.
-      }
-      await delay(ANDROID_SETTLE_DELAY_MS);
-    }
 
-    const deviceWithServices = await connected.discoverAllServicesAndCharacteristics();
-    const writeCharacteristic = await findTimerCharacteristic(deviceWithServices);
-    if (!writeCharacteristic) {
+      const deviceWithServices = await connected.discoverAllServicesAndCharacteristics();
+      const writeCharacteristic = await findTimerCharacteristic(deviceWithServices);
+      if (!writeCharacteristic) {
+        throw new Error('Rogue timer write characteristic (ffe1) not found');
+      }
+
+      this.connectedDevice = deviceWithServices;
+      this.writeCharacteristic = writeCharacteristic;
+      this.connectedDeviceName = deviceWithServices.localName ?? deviceWithServices.name ?? undefined;
+
+      // Clear cached refs on an unsolicited drop so `pressButton` can't write a
+      // dead characteristic. External listeners subscribe separately via
+      // `onDisconnect`.
+      this.disconnectSubscription = bleManager.onDeviceDisconnected(deviceId, () => {
+        this.connectedDevice = null;
+        this.writeCharacteristic = null;
+        this.connectedDeviceName = undefined;
+        this.disconnectSubscription?.remove();
+        this.disconnectSubscription = null;
+      });
+
+      return { deviceId, deviceName: this.connectedDeviceName };
+    } catch (error) {
       await bleManager.cancelDeviceConnection(deviceId).catch(() => {});
-      throw new Error('Rogue timer write characteristic (ffe1) not found');
+      throw error;
     }
-
-    this.connectedDevice = deviceWithServices;
-    this.writeCharacteristic = writeCharacteristic;
-    this.connectedDeviceName = deviceWithServices.localName ?? deviceWithServices.name ?? undefined;
-
-    // Clear cached refs on an unsolicited drop so `pressButton` can't write a
-    // dead characteristic. External listeners subscribe separately via
-    // `onDisconnect`.
-    this.disconnectSubscription = bleManager.onDeviceDisconnected(deviceId, () => {
-      this.connectedDevice = null;
-      this.writeCharacteristic = null;
-      this.connectedDeviceName = undefined;
-      this.disconnectSubscription?.remove();
-      this.disconnectSubscription = null;
-    });
-
-    return { deviceId, deviceName: this.connectedDeviceName };
   }
 
   /**
@@ -237,7 +260,7 @@ export class RogueTimerController {
           if (!scannedDevice) return;
 
           const deviceName = scannedDevice.localName ?? scannedDevice.name ?? undefined;
-          if (!isRogueTimerName(deviceName)) return;
+          if (!isDrivableTimer(deviceName)) return;
 
           const lowerName = deviceName?.trim().toLowerCase();
           const candidate: DiscoveredDevice = {
@@ -270,8 +293,13 @@ export class RogueTimerController {
           }
         }, CONNECT_BY_NAME_SCAN_TIMEOUT_MS);
       });
+      // Stop the scan the moment the timer is resolved — scanning through the
+      // (up to 12s) connect window degrades Android connection reliability.
+      if (scanTimeoutId) clearTimeout(scanTimeoutId);
+      void bleManager.stopDeviceScan();
       return await this.connectById(found.deviceId);
     } finally {
+      // Safety net: idempotent stop for the reject/throw paths too.
       if (scanTimeoutId) clearTimeout(scanTimeoutId);
       void bleManager.stopDeviceScan();
     }
@@ -301,6 +329,17 @@ export class RogueTimerController {
 
   /** Disconnect the timer and clear cached refs. */
   async disconnect(): Promise<void> {
+    await this.teardownConnection();
+  }
+
+  /**
+   * Drop the current connection (if any): remove the disconnect subscription,
+   * clear cached refs, and cancel the OS link. Shared by `disconnect()` and by
+   * `connectById` (so a reconnect/timer-switch can't leak the prior link). Refs
+   * are cleared before the async cancel so a concurrent `pressButton` can't
+   * write a characteristic that's on its way out.
+   */
+  private async teardownConnection(): Promise<void> {
     if (this.disconnectSubscription) {
       this.disconnectSubscription.remove();
       this.disconnectSubscription = null;
