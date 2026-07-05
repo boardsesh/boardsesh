@@ -1,4 +1,5 @@
 import { onlineManager } from '@tanstack/react-query';
+import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { getDatabaseHandle } from '../../db';
 import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../../db/queries/search-climbs-local';
@@ -40,14 +41,15 @@ function scopeOf(input: { boardName: string; layoutId: number; sizeId: number })
   return { boardType: input.boardName, layoutId: input.layoutId, sizeId: input.sizeId };
 }
 
-async function canReadLocal(input: ClimbSearchInput): Promise<boolean> {
-  const db = getDatabaseHandle();
-  return !!db && isOfflineSearchSupported(input) && (await isBoardDownloadedLocally(db, scopeOf(input)));
+// db is fetched once by the caller and passed in, so the routing decision and the
+// subsequent local read use the same handle (no second getDatabaseHandle() call).
+async function canReadLocal(db: SQLiteDatabase, input: ClimbSearchInput): Promise<boolean> {
+  return isOfflineSearchSupported(input) && (await isBoardDownloadedLocally(db, scopeOf(input)));
 }
 
 export async function resolveClimbSearch(input: ClimbSearchInput): Promise<SearchResult> {
   const db = getDatabaseHandle();
-  if (db && (await canReadLocal(input))) {
+  if (db && (await canReadLocal(db, input))) {
     return searchClimbsLocal(db, input);
   }
   if (!onlineManager.isOnline()) return EMPTY_SEARCH;
@@ -57,7 +59,7 @@ export async function resolveClimbSearch(input: ClimbSearchInput): Promise<Searc
 
 export async function resolveClimbSearchCount(input: ClimbSearchInput): Promise<number> {
   const db = getDatabaseHandle();
-  if (db && (await canReadLocal(input))) {
+  if (db && (await canReadLocal(db, input))) {
     return countClimbsLocal(db, input);
   }
   if (!onlineManager.isOnline()) return 0;

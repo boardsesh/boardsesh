@@ -16,6 +16,17 @@ export function toBoardName(value: string | null | undefined): BoardName | null 
 }
 
 /**
+ * Whether a board type's climbs are scoped by product size. MoonBoard has a single
+ * fixed size, so its climbs are never size-filtered; every other board has size
+ * variants (compatible_size_ids). One source of truth for the `!== 'moonboard'`
+ * size-scoping guard shared by the sync resolvers, the offline local search, and
+ * the offline download-availability check.
+ */
+export function isSizeScopedBoard(boardType: string): boolean {
+  return boardType !== 'moonboard';
+}
+
+/**
  * Trademark-safe display name for a board type (e.g. `kilter` → "Kilter",
  * `moonboard` → "MoonBoard", `soill` → "So iLL"). Lives here so both web
  * (`@/app/lib/string-utils`) and shared packages (`@boardsesh/profile-stats`)

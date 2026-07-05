@@ -77,7 +77,9 @@ export default function MoreScreen() {
     queryKey: ['deadLetters', 'count'],
     queryFn: () => getDeadLetterCount(db),
     enabled: !isOffline,
-    refetchInterval: 5000,
+    // Dead letters are sticky (they don't resolve without a user Retry), so a slow
+    // poll is plenty — no need to wake every 5s.
+    refetchInterval: 30000,
   });
 
   // Guard against a rapid double-tap spawning overlapping retries (the drain is

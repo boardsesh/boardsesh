@@ -1,5 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { ConnectionContext, SyncResult, SyncDeletionsResult, SyncCursorInput } from '@boardsesh/shared-schema';
+import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated } from '../shared/helpers';
@@ -150,19 +151,36 @@ function prepareBoardSync(
 }
 
 /**
+ * The optional layout/size scope conditions on board_climbs, `prefix`-qualified so
+ * they work both directly (empty prefix) and inside the syncClimbStats EXISTS
+ * subquery (`bc.`). sizeId is ignored for moonboard via the shared
+ * `isSizeScopedBoard` predicate (single source of truth for that guard).
+ */
+function boardClimbsLayoutSizeConditions(
+  boardType: string,
+  layoutId: number | null,
+  sizeId: number | null,
+  prefix: SQL = sql``,
+): SQL[] {
+  const conditions: SQL[] = [];
+  if (layoutId !== null) {
+    conditions.push(sql`${prefix}layout_id = ${layoutId}`);
+  }
+  if (sizeId !== null && isSizeScopedBoard(boardType)) {
+    conditions.push(sql`${prefix}compatible_size_ids @> ARRAY[${sizeId}]::int[]`);
+  }
+  return conditions;
+}
+
+/**
  * Build the board_climbs scope for a per-board pull. Optional layout/size narrow
- * it to a single (layout, size) — all sets. sizeId is ignored for moonboard (its
- * climbs aren't size-scoped), matching the search-side size filter.
+ * it to a single (layout, size) — all sets — matching the search-side filter.
  */
 function boardClimbsScope(boardType: string, layoutId: number | null, sizeId: number | null): SQL {
-  const conditions: SQL[] = [sql`board_type = ${boardType}`];
-  if (layoutId !== null) {
-    conditions.push(sql`layout_id = ${layoutId}`);
-  }
-  if (sizeId !== null && boardType !== 'moonboard') {
-    conditions.push(sql`compatible_size_ids @> ARRAY[${sizeId}]::int[]`);
-  }
-  return sql.join(conditions, sql` AND `);
+  return sql.join(
+    [sql`board_type = ${boardType}`, ...boardClimbsLayoutSizeConditions(boardType, layoutId, sizeId)],
+    sql` AND `,
+  );
 }
 
 export const syncQueries = {
@@ -388,16 +406,17 @@ export const syncQueries = {
   ): Promise<SyncResult> => {
     const { limit: lim, layoutId: lid, sizeId: sid } = prepareBoardSync(ctx, cursor, limit, layoutId, sizeId);
 
+    // Stats have no layout_id, so scope them to the climbs of that (layout, size)
+    // via a correlated EXISTS on board_climbs, reusing the same shared conditions
+    // syncClimbs uses (bc.-qualified here). No scope → plain board_type filter.
+    const scopeConditions = boardClimbsLayoutSizeConditions(boardType, lid, sid, sql`bc.`);
     let scope: SQL = sql`board_type = ${boardType}`;
-    if (lid !== null || (sid !== null && boardType !== 'moonboard')) {
-      const sub: SQL[] = [sql`bc.uuid = board_climb_stats.climb_uuid`, sql`bc.board_type = ${boardType}`];
-      if (lid !== null) {
-        sub.push(sql`bc.layout_id = ${lid}`);
-      }
-      if (sid !== null && boardType !== 'moonboard') {
-        sub.push(sql`bc.compatible_size_ids @> ARRAY[${sid}]::int[]`);
-      }
-      scope = sql`board_type = ${boardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sql.join(sub, sql` AND `)})`;
+    if (scopeConditions.length > 0) {
+      const sub = sql.join(
+        [sql`bc.uuid = board_climb_stats.climb_uuid`, sql`bc.board_type = ${boardType}`, ...scopeConditions],
+        sql` AND `,
+      );
+      scope = sql`board_type = ${boardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sub})`;
     }
 
     return runSyncPage({

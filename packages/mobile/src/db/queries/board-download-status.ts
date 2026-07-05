@@ -1,4 +1,5 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { offlineBoardKey, type OfflineBoardScope } from '../../settings/offline-board-key';
 
 /**
@@ -19,11 +20,11 @@ export async function isBoardDownloadedLocally(db: SQLiteDatabase, scope: Offlin
   const { getSetting } = await import('../../settings/hooks');
   if (!getSetting('syncEnabledBoards').includes(offlineBoardKey(scope))) return false;
 
-  const isMoonboard = scope.boardType === 'moonboard';
-  const sizeClause = isMoonboard
-    ? ''
-    : 'AND compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(compatible_size_ids) WHERE value = ?)';
-  const params = isMoonboard ? [scope.boardType, scope.layoutId] : [scope.boardType, scope.layoutId, scope.sizeId];
+  const sizeScoped = isSizeScopedBoard(scope.boardType);
+  const sizeClause = sizeScoped
+    ? 'AND compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(compatible_size_ids) WHERE value = ?)'
+    : '';
+  const params = sizeScoped ? [scope.boardType, scope.layoutId, scope.sizeId] : [scope.boardType, scope.layoutId];
 
   const row = await db.getFirstAsync<{ has_rows: number }>(
     `SELECT EXISTS(SELECT 1 FROM board_climbs WHERE board_type = ? AND layout_id = ? ${sizeClause} LIMIT 1) AS has_rows`,

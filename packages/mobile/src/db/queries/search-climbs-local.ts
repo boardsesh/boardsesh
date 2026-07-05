@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Climb, ClimbSearchInput } from '@boardsesh/shared-schema';
 import { isNoMatch } from '@boardsesh/shared-schema';
+import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { getGradeLabel, getClimbStars } from '../../lib/grade-label';
 
 /**
@@ -147,8 +148,9 @@ function buildJoinAndWhere(input: ClimbSearchInput): JoinAndWhere {
     push('c.frames_count > 1');
   }
 
-  // Size: compatible_size_ids contains sizeId (skip for moonboard's single size).
-  if (!isMoonboard) {
+  // Size: compatible_size_ids contains sizeId (skipped for boards without size
+  // variants — moonboard — via the shared isSizeScopedBoard predicate).
+  if (isSizeScopedBoard(boardType)) {
     push(
       'c.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(c.compatible_size_ids) WHERE value = ?)',
       input.sizeId,
