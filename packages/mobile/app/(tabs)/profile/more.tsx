@@ -50,6 +50,8 @@ export default function MoreScreen() {
   const { enabled: showPlaylistTags, setEnabled: setShowPlaylistTags } = useShowPlaylistTagsPreference();
   const { showToast } = useToast();
   const stravaEnabled = useFeatureFlag('strava-integration') === true;
+  // Off until the Connect IQ watch app ships — nothing to pair to before then.
+  const garminWatchEnabled = useFeatureFlag('garmin-watch') === true;
 
   // Live Metro dev-server switching needs expo-dev-client's native launcher, which
   // is only linked into dev-client / Debug builds — never the App Store / TestFlight
@@ -178,14 +180,18 @@ export default function MoreScreen() {
         icon: 'integrations',
         onPress: navAction(() => router.push('/(tabs)/profile/integrations')),
       },
-      {
-        kind: 'nav',
-        key: 'pairWatch',
-        label: tSettings('watchPairing.title'),
-        subtitle: tSettings('watchPairing.subtitle'),
-        icon: 'watch',
-        onPress: navAction(() => router.push('/(tabs)/profile/watch-pair')),
-      },
+      ...(garminWatchEnabled
+        ? [
+            {
+              kind: 'nav' as const,
+              key: 'pairWatch',
+              label: tSettings('watchPairing.title'),
+              subtitle: tSettings('watchPairing.subtitle'),
+              icon: 'watch' as const,
+              onPress: navAction(() => router.push('/(tabs)/profile/watch-pair')),
+            },
+          ]
+        : []),
     ],
   });
 

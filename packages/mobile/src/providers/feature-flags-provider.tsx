@@ -47,6 +47,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     label: 'Disable logbook grouping',
     description: 'Emergency kill switch: fall back to flat logbook entries if day-scoped repeat grouping misbehaves.',
   },
+  {
+    key: 'garmin-watch',
+    label: 'Garmin watch',
+    description: 'Show the "Pair a Garmin watch" row in More. Off until the Connect IQ watch app ships.',
+  },
 ] as const satisfies readonly FeatureFlagDefinition[];
 
 // The literal key union (e.g. `'strava-integration'`), preserved via the

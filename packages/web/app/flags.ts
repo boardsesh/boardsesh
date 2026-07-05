@@ -13,9 +13,13 @@ export const EMPTY_FEATURE_FLAGS: FeatureFlags = {};
 // install the RN app.
 export const CAPACITOR_UPDATE_BANNER_FLAG = 'capacitor-update-banner';
 
+// Gates the "Pair a Garmin watch" settings UI. OFF until the Connect IQ watch
+// app is live (nothing to pair to before then). Imported by WatchPairingSection.
+export const GARMIN_WATCH_FLAG = 'garmin-watch';
+
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
-export const FEATURE_FLAG_KEYS = [CAPACITOR_UPDATE_BANNER_FLAG, 'kilter-oauth-linking'] as const;
+export const FEATURE_FLAG_KEYS = [CAPACITOR_UPDATE_BANNER_FLAG, 'kilter-oauth-linking', GARMIN_WATCH_FLAG] as const;
 
 // Vercel's flags discovery endpoint expects an allFlags export.
 export const allFlags: Array<{ key: string }> = FEATURE_FLAG_KEYS.map((key) => ({ key }));

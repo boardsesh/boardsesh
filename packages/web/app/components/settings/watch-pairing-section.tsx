@@ -15,11 +15,16 @@ import Stack from '@mui/material/Stack';
 import { useTranslation } from 'react-i18next';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { getBackendHttpUrl } from '@/app/lib/backend-url';
+import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
+import { GARMIN_WATCH_FLAG } from '@/app/flags';
 import { remainingSeconds, isWatchPairingCode } from '@boardsesh/watch-pairing';
 
 export default function WatchPairingSection() {
   const { t } = useTranslation('settings');
   const { token: authToken } = useWsAuthToken();
+  // Gated OFF until the Connect IQ watch app ships — no point showing a pairing
+  // flow with nothing to pair to. Flip the `garmin-watch` PostHog flag to reveal.
+  const garminWatchEnabled = useFeatureFlag(GARMIN_WATCH_FLAG) === true;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -129,6 +134,11 @@ export default function WatchPairingSection() {
   const isExpired = expiresAt !== null && secondsLeft <= 0;
   const showCode = !loading && !hasError && code !== null && !isExpired;
   const showRegenerate = !loading && (hasError || isExpired);
+
+  // Hidden entirely until the flag is on (all hooks above run unconditionally).
+  if (!garminWatchEnabled) {
+    return null;
+  }
 
   return (
     <>
