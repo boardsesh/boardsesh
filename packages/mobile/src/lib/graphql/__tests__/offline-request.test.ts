@@ -170,6 +170,18 @@ describe('offlineAwareRequest — SEARCH_CLIMBS_COUNT', () => {
     expect(countClimbsLocal).not.toHaveBeenCalled();
   });
 
+  it('short-circuits an unsupported filter to the network, same as the list (shared gate)', async () => {
+    setOnline(true);
+    isOfflineSearchSupported.mockReturnValue(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, {
+      input: searchInput,
+    });
+    expect(result.searchClimbs.totalCount).toBe(99);
+    expect(isBoardDownloadedLocally).not.toHaveBeenCalled();
+    expect(countClimbsLocal).not.toHaveBeenCalled();
+  });
+
   it('counts locally when downloaded (offline)', async () => {
     setOnline(false);
     isBoardDownloadedLocally.mockResolvedValue(true);
