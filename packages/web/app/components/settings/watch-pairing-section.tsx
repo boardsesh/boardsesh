@@ -72,6 +72,10 @@ export default function WatchPairingSection() {
       }
       setCode(payload.code);
       setExpiresAt(payload.expiresAt);
+      // Seed the countdown synchronously so the render that first shows the new
+      // code already has a positive count — otherwise `secondsLeft` is still 0
+      // from before and the expired UI flashes for one frame until the effect runs.
+      setSecondsLeft(remainingSeconds(payload.expiresAt));
     } catch (error) {
       if (requestId !== requestSeqRef.current) {
         return;
@@ -117,6 +121,9 @@ export default function WatchPairingSection() {
     setCode(null);
     setExpiresAt(null);
     setHasError(false);
+    // Reset loading too, so reopening after closing mid-request doesn't show a
+    // stale spinner (the invalidated request's finally won't run this setter).
+    setLoading(false);
   };
 
   const isExpired = expiresAt !== null && secondsLeft <= 0;
