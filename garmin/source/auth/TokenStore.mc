@@ -31,7 +31,7 @@ module TokenStore {
 
     // Persist a fresh token triple. Callers MUST store the rotated pair BEFORE
     // issuing another request that could 401 again (single-use refresh tokens).
-    function store(jwtValue, refreshValue, expValue) as Void {
+    function store(jwtValue as Lang.String, refreshValue as Lang.String, expValue as Lang.String) as Void {
         Application.Storage.setValue(KEY_JWT, jwtValue);
         Application.Storage.setValue(KEY_REFRESH, refreshValue);
         Application.Storage.setValue(KEY_EXP, expValue);

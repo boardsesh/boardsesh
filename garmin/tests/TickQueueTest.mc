@@ -50,3 +50,34 @@ function testBoundedAppendDoesNotMutateInput(logger as Test.Logger) as Lang.Bool
     Test.assertEqual(derived.size(), 2);
     return true;
 }
+
+// --- TickFlusher outcome classification (poison-tick handling) --------------
+
+(:test)
+function testClassifyFlushSuccess(logger as Test.Logger) as Lang.Boolean {
+    Test.assertEqual(TickQueue.classifyFlushResult(200, true), :success);
+    Test.assertEqual(TickQueue.classifyFlushResult(201, true), :success);
+    return true;
+}
+
+(:test)
+function testClassifyFlushDropsPermanentFailures(logger as Test.Logger) as Lang.Boolean {
+    // GraphQL error (saveTick returns HTTP 200 with null data on error).
+    Test.assertEqual(TickQueue.classifyFlushResult(200, false), :drop);
+    // HTTP 4xx rejections that will never succeed for this tick.
+    Test.assertEqual(TickQueue.classifyFlushResult(400, false), :drop);
+    Test.assertEqual(TickQueue.classifyFlushResult(404, false), :drop);
+    Test.assertEqual(TickQueue.classifyFlushResult(422, false), :drop);
+    return true;
+}
+
+(:test)
+function testClassifyFlushRetriesTransient(logger as Test.Logger) as Lang.Boolean {
+    // Transport error (Connect IQ negative code), auth, rate limit, server 5xx.
+    Test.assertEqual(TickQueue.classifyFlushResult(-104, false), :retry);
+    Test.assertEqual(TickQueue.classifyFlushResult(401, false), :retry);
+    Test.assertEqual(TickQueue.classifyFlushResult(429, false), :retry);
+    Test.assertEqual(TickQueue.classifyFlushResult(500, false), :retry);
+    Test.assertEqual(TickQueue.classifyFlushResult(503, false), :retry);
+    return true;
+}

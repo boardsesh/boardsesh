@@ -23,7 +23,9 @@ module TickQueue {
             }
         }
         result.add(item);
-        while (result.size() > maxSize) {
+        // At most one item is added per call, so the result can exceed maxSize
+        // by at most one — a single drop-oldest is enough (no loop needed).
+        if (result.size() > maxSize) {
             var trimmed = [];
             for (var j = 1; j < result.size(); j += 1) {
                 trimmed.add(result[j]);
@@ -31,6 +33,27 @@ module TickQueue {
             result = trimmed;
         }
         return result;
+    }
+
+    // PURE: classify a tick-flush result so the front item is handled correctly.
+    // Returns one of:
+    //   :success -> the tick was accepted (2xx with a body) — pop and continue.
+    //   :drop    -> a PERMANENT failure for THIS tick: an HTTP 4xx rejection, or
+    //               a GraphQL error (saveTick returns HTTP 200 with null data
+    //               only on error). Pop it too, so a poison tick can't block the
+    //               rest of the queue forever.
+    //   :retry   -> a RETRYABLE failure: a transport error (negative code), auth
+    //               (401 — BsClient already tried refresh + routed to pairing),
+    //               rate limit (429), or a server 5xx. Keep the queue for later.
+    // Extracted as a pure function so the poison-tick handling is unit-testable.
+    function classifyFlushResult(code as Lang.Number, hasData as Lang.Boolean) as Lang.Symbol {
+        if (code >= 200 && code < 300 && hasData) {
+            return :success;
+        }
+        if (code < 200 || code == 401 || code == 429 || code >= 500) {
+            return :retry;
+        }
+        return :drop;
     }
 
     function all() as Lang.Array {
@@ -111,12 +134,16 @@ class TickFlusher {
     }
 
     function onResult(code as Lang.Number, data) as Void {
-        if (code >= 200 && code < 300 && data != null) {
-            TickQueue.popFront();   // accepted -> drop it, continue
-            _step();
-        } else {
-            _finish();              // still failing -> keep the rest for later
+        var outcome = TickQueue.classifyFlushResult(code, data != null);
+        if (outcome == :retry) {
+            // Retryable failure — keep the queue and try again on the next flush.
+            _finish();
+            return;
         }
+        // :success (accepted) or :drop (permanent failure) — either way remove
+        // the front item so it can't block the rest, and continue draining.
+        TickQueue.popFront();
+        _step();
     }
 
     private function _finish() as Void {

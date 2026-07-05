@@ -18,7 +18,10 @@ module BuildConfig {
 
     (:staging)
     function baseUrl() as Lang.String {
-        return "https://staging-ws.boardsesh.com";
+        // Placeholder — set this to YOUR staging / LAN backend before a
+        // `--flavor staging` build. Deliberately a non-real host so a staging
+        // build can't accidentally send traffic to production or an assumed host.
+        return "https://your-staging-host.example";
     }
 
     // Foreground poll cadence for /api/session/state.
