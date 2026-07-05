@@ -29,12 +29,12 @@ base.excludeAnnotations = staging
 #   Menu2, which adapts to round/rect on its own, so no shape-specific layouts
 #   ship yet — hence no resources-round/ or resources-rectangle/ dir today.
 
-# --- Staging flavor (staging backend) ----------------------------------------
-# Compiles the (:staging) baseUrl() instead of (:production).
-# Build with:  monkeyc -f monkey.jungle --flavor staging -d fenix7 ...
-# VERIFY: `--flavor <name>` flavor selection is supported by the installed
-#         monkeyc. If not, drive the same result with a dedicated jungle that
-#         sets excludeAnnotations=production, or bump the SDK.
-staging.sourcePath = $(base.sourcePath)
-staging.resourcePath = $(base.resourcePath)
-staging.excludeAnnotations = production
+# --- Staging backend -----------------------------------------------------------
+# Named build "flavors" via `<name>.sourcePath` are NOT supported by monkeyc —
+# the compiler reads `<name>.` as a device/family qualifier (e.g. `fenix7.`), so
+# a `staging.*` block errors with "not a valid device / family qualifier".
+# To build against the staging backend, flip the annotation this base build
+# strips: change `base.excludeAnnotations` above from `staging` to `production`
+# (so the (:staging) baseUrl() in BuildConfig.mc compiles instead of the
+# (:production) one), or keep a separate monkey-staging.jungle that overrides
+# only that line.

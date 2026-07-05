@@ -39,7 +39,9 @@ class SessionPickerDelegate extends WatchUi.Menu2InputDelegate {
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
-        var session = _view.sessionAt(item.getId());
+        // MenuItem ids are the backing-array indexes we set in the constructor;
+        // getId() is typed Object?, so narrow it back to the Number sessionAt wants.
+        var session = _view.sessionAt(item.getId() as Lang.Number);
         AppState.sessionId = session["id"];
         AppState.sessionName = session["name"];
         Router.toClimb();

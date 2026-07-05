@@ -113,7 +113,7 @@ class BsClient {
             }
         }
         var options = {
-            :method => httpMethod,
+            :method => httpMethod as Communications.HttpRequestMethod,
             :headers => headers,
             :responseType => Communications.HTTP_RESPONSE_CONTENT_TYPE_JSON
         };
