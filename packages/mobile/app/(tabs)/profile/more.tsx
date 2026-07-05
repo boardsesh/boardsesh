@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -79,7 +80,12 @@ export default function MoreScreen() {
     refetchInterval: 5000,
   });
 
+  // Guard against a rapid double-tap spawning overlapping retries (the drain is
+  // single-flight internally, but this avoids the wasted re-entrant work).
+  const retryingRef = useRef(false);
   const handleRetrySync = async () => {
+    if (retryingRef.current) return;
+    retryingRef.current = true;
     try {
       const deadLetters = await getDeadLetters(db);
       // Reset each dead letter independently — a single bad entry must not stop the
@@ -96,6 +102,7 @@ export default function MoreScreen() {
     } catch (error) {
       reportError(error);
     } finally {
+      retryingRef.current = false;
       void refetchDeadLetters();
     }
   };

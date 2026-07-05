@@ -42,7 +42,7 @@ function scopeOf(input: { boardName: string; layoutId: number; sizeId: number })
 
 async function canReadLocal(input: ClimbSearchInput): Promise<boolean> {
   const db = getDatabaseHandle();
-  return !!db && isOfflineSearchSupported(input) && isBoardDownloadedLocally(db, scopeOf(input));
+  return !!db && isOfflineSearchSupported(input) && (await isBoardDownloadedLocally(db, scopeOf(input)));
 }
 
 export async function resolveClimbSearch(input: ClimbSearchInput): Promise<SearchResult> {
