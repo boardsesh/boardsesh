@@ -85,6 +85,14 @@ describe('offlineAwareRequest — SEARCH_CLIMBS', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('serves a downloaded board from local SQLite while offline (the flagship offline browse)', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(result).toEqual({ searchClimbs: { climbs: [{ uuid: 'local' }], hasMore: false } });
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('falls back to the network when the board is not downloaded (online), with the { input } wrapping', async () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(false);
