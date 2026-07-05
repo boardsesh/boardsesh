@@ -45,26 +45,6 @@ class BsClient {
         request.fire();
     }
 
-    // Standalone refresh (stores the rotated triple on success). The withAuth
-    // retry path uses its own internal refresh (see _handleUnauthorized).
-    function refresh(cb) as Void {
-        var token = TokenStore.refreshToken();
-        if (token == null) {
-            cb.invoke(401, null);
-            return;
-        }
-        var request = new BsRequest(
-            self,
-            BsEndpoints.refreshUrl(_base),
-            BsEndpoints.refreshBody(token),
-            Communications.HTTP_REQUEST_METHOD_POST,
-            false,
-            null,
-            new StoringRefreshCb(cb)
-        );
-        request.fire();
-    }
-
     function fetchMySessions(cb) as Void {
         _graphql(BsEndpoints.mySessionsBody(), "mySessions", cb);
     }
@@ -173,8 +153,29 @@ class BsClient {
             for (var i = 0; i < queued.size(); i += 1) {
                 queued[i].fire();   // retry with the new token
             }
-        } else {
+        } else if (code >= 400 && code < 500) {
+            // Definitive auth failure (the refresh endpoint rejected the token):
+            // clear tokens and route to pairing.
             _onRefreshFailed();
+        } else {
+            // TRANSIENT: a transport error (Connect IQ negative code — phone out
+            // of range), a 5xx, or the refresh endpoint's own 429/503. The
+            // single-use refresh token was NOT consumed server-side, so DON'T
+            // clear tokens or route to pairing. Fail the queued requests so their
+            // callers see the error; the poll loop re-arms and retries refresh on
+            // the next 401.
+            _failQueuedTransient(code);
+        }
+    }
+
+    // Fail every queued request with the given code and empty the retry queue,
+    // WITHOUT clearing tokens or routing to pairing. _refreshing is already false
+    // (cleared at the top of _onRefreshResponse).
+    private function _failQueuedTransient(code as Lang.Number) as Void {
+        var queued = _retryQueue;
+        _retryQueue = [];
+        for (var i = 0; i < queued.size(); i += 1) {
+            queued[i].fail(code);
         }
     }
 
@@ -186,6 +187,10 @@ class BsClient {
             queued[i].fail(401);
         }
         TokenStore.clear();
+        // Drop any offline ticks queued under the outgoing account so they can't
+        // be flushed under a different account after a re-pair (cross-account
+        // leak on a shared/re-paired watch).
+        TickQueue.clear();
         if (_onAuthLost != null) {
             _onAuthLost.invoke();
         }
@@ -237,25 +242,14 @@ class BsRequest {
             return data;
         }
         // GraphQL: read data.data.<field>. On GraphQL errors data.data is null.
-        if (data != null && data.hasKey("data")) {
+        // Guard hasKey(): a non-JSON 200 body can arrive as a String, on which
+        // .hasKey() would throw — only a Dictionary has it.
+        if (data != null && data instanceof Toybox.Lang.Dictionary && data.hasKey("data")) {
             var gqlData = data["data"];
             if (gqlData != null) {
                 return gqlData[_unwrapField];
             }
         }
         return null;
-    }
-}
-
-// Adapter that stores the rotated token triple returned by a standalone
-// refresh() before handing the raw payload to the caller.
-class StoringRefreshCb {
-    private var _cb;
-    function initialize(cb) { _cb = cb; }
-    function invoke(code as Lang.Number, data) as Void {
-        if (code >= 200 && code < 300 && data != null && data["jwt"] != null) {
-            TokenStore.store(data["jwt"], data["refreshToken"], data["expiresAt"]);
-        }
-        _cb.invoke(code, data);
     }
 }

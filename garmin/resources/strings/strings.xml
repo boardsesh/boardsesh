@@ -30,6 +30,7 @@
     <string id="Cancel">Cancel</string>
     <string id="Logged">Logged</string>
     <string id="QueuedOffline">Saved offline</string>
+    <string id="LogFailed">Couldn't log</string>
 
     <!-- Session actions -->
     <string id="ActionsTitle">Session</string>

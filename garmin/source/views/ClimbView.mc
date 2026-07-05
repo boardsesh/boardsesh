@@ -5,37 +5,36 @@ using Toybox.Lang;
 
 // Main screen: the current climb + queue position, with an offline banner.
 //
-// Owns the PollController (foreground polling) and the ActivityController (FIT
-// recording). Inputs are handled by ClimbDelegate.
+// Owns the PollController (foreground polling). FIT recording lives in the
+// process-wide Services.activity singleton (started idempotently on show, kept
+// running across view transitions). Inputs are handled by ClimbDelegate.
 class ClimbView extends WatchUi.View {
     private var _poller as PollController;
-    private var _activity as ActivityController;
 
     function initialize() {
         View.initialize();
         _poller = new PollController(method(:onStateChanged));
-        _activity = new ActivityController();
     }
 
     function onLayout(dc as Graphics.Dc) as Void {
     }
 
     function onShow() as Void {
-        _activity.startIfNeeded();
+        // Idempotent: the singleton's _started guard prevents a second recording
+        // when ClimbView is re-entered (switch session / 410 -> retry).
+        Services.activity.startIfNeeded();
         _poller.start(AppState.sessionId);
     }
 
     function onHide() as Void {
+        // Only the poll loop stops here; the recording keeps running across view
+        // transitions and is only stopped on a real exit.
         _poller.stop();
     }
 
     // Invoked by PollController when the visible state changed.
     function onStateChanged() as Void {
         WatchUi.requestUpdate();
-    }
-
-    function activity() as ActivityController {
-        return _activity;
     }
 
     function onUpdate(dc as Graphics.Dc) as Void {

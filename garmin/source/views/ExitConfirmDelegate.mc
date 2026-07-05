@@ -12,14 +12,23 @@ using Toybox.Lang;
 class ExitConfirmDelegate extends WatchUi.Menu2InputDelegate {
     private var _view as ClimbView;
     private var _flusher as TickFlusher or Null;
+    // Set once we start the async flush. Blocks a second Save/Discard (which
+    // would spawn a duplicate TickFlusher — double saveTick + double popFront)
+    // and a Back-out while the app is on its way to exiting.
+    private var _submitting as Lang.Boolean;
 
     function initialize(view as ClimbView) {
         Menu2InputDelegate.initialize();
         _view = view;
         _flusher = null;
+        _submitting = false;
     }
 
     function onSelect(item as WatchUi.MenuItem) as Void {
+        if (_submitting) {
+            return;   // a flush is already running; ignore repeat selects
+        }
+
         var id = item.getId();
 
         if (id == :keep) {
@@ -28,12 +37,13 @@ class ExitConfirmDelegate extends WatchUi.Menu2InputDelegate {
         }
 
         if (id == :save) {
-            _view.activity().stopAndSave();
+            Services.activity.stopAndSave();
         } else if (id == :discard) {
-            _view.activity().stopAndDiscard();
+            Services.activity.stopAndDiscard();
         }
 
         // Drain any queued offline ticks, then exit.
+        _submitting = true;
         _flusher = new TickFlusher(Services.client);
         _flusher.start(method(:onFlushed));
     }
@@ -43,6 +53,9 @@ class ExitConfirmDelegate extends WatchUi.Menu2InputDelegate {
     }
 
     function onBack() as Void {
+        if (_submitting) {
+            return;   // committing/exiting; swallow the back press
+        }
         WatchUi.popView(WatchUi.SLIDE_DOWN);
     }
 }

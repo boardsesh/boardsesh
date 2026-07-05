@@ -11,12 +11,12 @@
         entry="BoardseshApp"
         id="791967af89f846d6bad608f915bd3ae9"
         launcherIcon="@Drawables.LauncherIcon"
-        minApiLevel="3.1.0"
+        minApiLevel="3.2.0"
         name="@Strings.AppName"
         type="watch-app">
 
         <!--
-          Product allow-list — a confident, modern CIQ 3.1+ device set that
+          Product allow-list — a confident, modern CIQ 3.2+ device set that
           exports (`monkeyc -e`) cleanly out of the box. A single wrong id fails
           the store export, so newer families whose exact tokens vary by SDK are
           deliberately NOT listed yet. To broaden coverage, confirm the exact ids
@@ -46,10 +46,12 @@
             <iq:product id="vivoactive4s"/>
         </iq:products>
 
-        <!-- MVP needs outbound HTTPS only (via the paired phone's Garmin
-             Connect). No Background, no Positioning. -->
+        <!-- Outbound HTTPS (via the paired phone's Garmin Connect) plus Fit so
+             ActivityRecording can write the climbing-session FIT file. No
+             Background, no Positioning. -->
         <iq:permissions>
             <iq:uses-permission id="Communications"/>
+            <iq:uses-permission id="Fit"/>
         </iq:permissions>
 
         <iq:languages>

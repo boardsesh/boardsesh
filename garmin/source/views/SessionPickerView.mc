@@ -15,7 +15,13 @@ class SessionPickerView extends WatchUi.Menu2 {
         for (var i = 0; i < sessions.size(); i += 1) {
             var session = sessions[i];
             var subLabel = session["boardPath"];
-            addItem(new WatchUi.MenuItem(session["name"], subLabel, i, null));
+            // DiscoverableSession.name is nullable; MenuItem needs a non-null
+            // label. Fall back to boardPath (always present).
+            var label = session["name"];
+            if (label == null) {
+                label = session["boardPath"];
+            }
+            addItem(new WatchUi.MenuItem(label, subLabel, i, null));
         }
     }
 
