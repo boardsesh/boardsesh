@@ -121,6 +121,32 @@ describe('offlineAwareRequest — SEARCH_CLIMBS', () => {
     expect(isBoardDownloadedLocally).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalled();
   });
+
+  it('degrades to the network when a registered document is called without variables (online)', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS);
+    expect(result.searchClimbs.climbs[0].uuid).toBe('net');
+    expect(isBoardDownloadedLocally).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(SEARCH_CLIMBS, undefined);
+  });
+
+  it('still returns the offline fallback when a registered document is called without variables (offline)', async () => {
+    setOnline(false);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS);
+    expect(result).toEqual({ searchClimbs: { climbs: [], hasMore: false } });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('propagates a local read error to the caller instead of retrying over the network', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    searchClimbsLocal.mockRejectedValue(new Error('sqlite read failed'));
+    await expect(offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow(
+      'sqlite read failed',
+    );
+    expect(request).not.toHaveBeenCalled();
+  });
 });
 
 describe('offlineAwareRequest — SEARCH_CLIMBS_COUNT', () => {

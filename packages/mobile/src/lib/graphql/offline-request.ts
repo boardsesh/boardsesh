@@ -100,10 +100,12 @@ registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
-  // undefined-vars guard: degrade to HTTP rather than throw in a destructure.
-  if (operation && variables !== undefined) {
+  if (operation) {
     const db = getDatabaseHandle();
-    if (db && (await operation.canServeLocal(db, variables as never))) {
+    // The `variables !== undefined` guard makes a registered document called
+    // without variables degrade to HTTP rather than throw in a destructure;
+    // the offline fallback below still applies either way.
+    if (db && variables !== undefined && (await operation.canServeLocal(db, variables as never))) {
       return (await operation.resolveLocal(db, variables as never)) as TResponse;
     }
     if (!onlineManager.isOnline()) return operation.offlineFallback() as TResponse;
