@@ -101,6 +101,10 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
           // the reconcile guard blocks any reconnect. Bumping reconnectTick
           // re-runs this effect for one reconnect attempt while the board LED
           // is still held.
+          // No backoff / retry cap: a timer oscillating at range-edge will
+          // reconnect-drop-reconnect continuously. Acceptable for the POC (each
+          // attempt is a bounded ~10s scan, and the human-held board LED bounds
+          // the session); revisit with backoff if it drives real churn.
           unsubscribeDisconnect = controller.onDisconnect(() => {
             connectedTargetRef.current = null;
             setDeviceName(undefined);
@@ -116,11 +120,18 @@ export function RogueTimerProvider({ children }: { children: ReactNode }) {
           setStatus('error');
           setDeviceName(undefined);
         });
-    } else if (connectedTargetRef.current !== null) {
-      connectedTargetRef.current = null;
+    } else {
+      // Not driving the wall (or no pairing). Drop any live connection, and
+      // always settle status back to 'idle' — including from a lingering
+      // 'error'/'connecting' from a prior failed attempt — so the badge reflects
+      // "not active" rather than a stale error. setStatus('idle') is a no-op
+      // when already idle (React bails), so this is cheap on every idle render.
+      if (connectedTargetRef.current !== null) {
+        connectedTargetRef.current = null;
+        void controller.disconnect();
+      }
       setStatus('idle');
       setDeviceName(undefined);
-      void controller.disconnect();
     }
 
     return () => {

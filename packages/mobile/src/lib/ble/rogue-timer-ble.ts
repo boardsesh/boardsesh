@@ -346,6 +346,14 @@ export class RogueTimerController {
    * write a characteristic that's on its way out.
    */
   private async teardownConnection(): Promise<void> {
+    // Release the shared bleManager's scan slot: a `connectByName` may be
+    // mid-scan when the board LED drops and the provider calls `disconnect()`
+    // (e.g. the timer dropped at the same moment). Without this, that scan holds
+    // the singleton's single scan slot for up to CONNECT_BY_NAME_SCAN_TIMEOUT_MS
+    // and a board reconnect scan started in that window would fail or be
+    // silently replaced. Idempotent — safe when nothing is scanning.
+    void bleManager.stopDeviceScan();
+
     if (this.disconnectSubscription) {
       this.disconnectSubscription.remove();
       this.disconnectSubscription = null;

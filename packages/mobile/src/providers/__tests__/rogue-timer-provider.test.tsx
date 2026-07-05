@@ -132,4 +132,25 @@ describe('RogueTimerProvider', () => {
     // while the board LED is still held.
     await waitFor(() => expect(controllerMock.connectByName).toHaveBeenCalledTimes(2));
   });
+
+  it('recovers from a failed connect: error → LED off resets to idle → LED on reconnects', async () => {
+    // First connect attempt fails.
+    controllerMock.connectByName.mockRejectedValueOnce(new Error('timer powered off'));
+    scenario.timerName = 'Rogue Home Timer';
+    scenario.boardConnected = true;
+    const { result, rerender } = renderHook(() => useRogueTimer(), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe('error'));
+
+    // Turning off the board LED must clear the lingering error, not leave the
+    // badge stuck on 'error'.
+    scenario.boardConnected = false;
+    rerender();
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    // Driving the wall again reconnects (the mock now resolves).
+    scenario.boardConnected = true;
+    rerender();
+    await waitFor(() => expect(result.current.isConnected).toBe(true));
+  });
 });

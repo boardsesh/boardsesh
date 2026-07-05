@@ -98,7 +98,10 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const saveTick = useSaveTick(toBoardName(boardName));
-  const rogueTimer = useOptionalRogueTimer();
+  // Only the (stable, memoized) startStopwatch action is used here — depend on
+  // it directly so the save handler isn't recreated on every timer status /
+  // deviceName change.
+  const startTimerStopwatch = useOptionalRogueTimer()?.startStopwatch;
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
   const { data: grades } = useGrades(boardName);
 
@@ -278,7 +281,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
             // timer is connected — which only happens while this user is driving
             // the wall (see RogueTimerProvider), so a passenger's tick can't
             // touch the timer. Fire-and-forget; never block the save flow.
-            void rogueTimer?.startStopwatch();
+            void startTimerStopwatch?.();
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.
             setTickState(createInitialTickState());
@@ -323,7 +326,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
       tClimbs,
       resolvedGradeName,
       savedRef,
-      rogueTimer,
+      startTimerStopwatch,
     ],
   );
 
