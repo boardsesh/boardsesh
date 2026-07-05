@@ -15,12 +15,13 @@ vi.mock('../handlers', () => ({
 
 vi.mock('../error-classification', () => ({
   isRetryable: vi.fn().mockReturnValue(false),
+  isNetworkError: vi.fn().mockReturnValue(false),
 }));
 
 import { drainMutationQueue, __resetDrainerStateForTests, setSigningOut } from '../drainer';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from '../queue';
 import { processMutation } from '../handlers';
-import { isRetryable } from '../error-classification';
+import { isRetryable, isNetworkError } from '../error-classification';
 
 const mockPeekPending = peekPending as ReturnType<typeof vi.fn>;
 const mockMarkCompleted = markCompleted as ReturnType<typeof vi.fn>;
@@ -28,6 +29,11 @@ const mockRecordFailure = recordFailure as ReturnType<typeof vi.fn>;
 const mockMarkDeadLetter = markDeadLetter as ReturnType<typeof vi.fn>;
 const mockProcessMutation = processMutation as ReturnType<typeof vi.fn>;
 const mockIsRetryable = isRetryable as ReturnType<typeof vi.fn>;
+const mockIsNetworkError = isNetworkError as ReturnType<typeof vi.fn>;
+
+// Always online unless a test opts out — matches the onlineManager default and
+// keeps every existing drain-behaviour test running as before.
+const ONLINE = { isOnline: () => true } as const;
 
 function makeMutation(overrides: Partial<PendingMutation> = {}): PendingMutation {
   return {
@@ -60,6 +66,41 @@ describe('drainMutationQueue', () => {
     vi.clearAllMocks();
     __resetDrainerStateForTests();
     mockPeekPending.mockResolvedValue([]);
+    // Re-assert the factory defaults each test (clearAllMocks keeps implementations,
+    // so a prior test's mockReturnValue(true) would otherwise leak forward).
+    mockIsRetryable.mockReturnValue(false);
+    mockIsNetworkError.mockReturnValue(false);
+  });
+
+  it('skips the drain entirely while offline', async () => {
+    const mutation = makeMutation({ id: 1 });
+    mockPeekPending.mockResolvedValue([mutation]);
+    const queryClient = createMockQueryClient();
+
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { isOnline: () => false });
+
+    // Never even peeks the queue: no processing, no retry bump, no dead-letter.
+    expect(mockPeekPending).not.toHaveBeenCalled();
+    expect(mockProcessMutation).not.toHaveBeenCalled();
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+    expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+  });
+
+  it('leaves a write pending (no retry bump, no dead-letter) when the connection drops mid-drain', async () => {
+    const mutation = makeMutation({ id: 1 });
+    mockPeekPending.mockResolvedValueOnce([mutation]);
+    mockProcessMutation.mockRejectedValueOnce(new TypeError('Network request failed'));
+    mockIsNetworkError.mockReturnValue(true);
+
+    const queryClient = createMockQueryClient();
+
+    await drainMutationQueue(mockDb, queryClient, mockGraphqlFetch, { ...ONLINE });
+
+    // The write stays pending to sync on reconnect — an offline blip must never
+    // advance retry_count toward the dead-letter.
+    expect(mockRecordFailure).not.toHaveBeenCalled();
+    expect(mockMarkDeadLetter).not.toHaveBeenCalled();
+    expect(mockMarkCompleted).not.toHaveBeenCalled();
   });
 
   it('processes mutations in order', async () => {

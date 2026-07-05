@@ -119,6 +119,19 @@
         "title": "Applications connectées",
         "subtitle": "Apple Health et Strava",
         "subtitleWithStrava": "Comptes de board, Apple Health, Strava"
+      },
+      "syncIssues": {
+        "title": "Problèmes de synchronisation",
+        "description_one": "1 modification n'a pas pu se synchroniser. Réessaie pour l'envoyer maintenant.",
+        "description_other": "{{count}} modifications n'ont pas pu se synchroniser. Réessaie pour les envoyer maintenant.",
+        "retry": "Réessayer la synchronisation"
+      },
+      "signOut": {
+        "pendingTitle": "Se déconnecter ?",
+        "pendingMessage_one": "Tu as 1 modification pas encore synchronisée. La déconnexion la supprimera.",
+        "pendingMessage_other": "Tu as {{count}} modifications pas encore synchronisées. La déconnexion les supprimera.",
+        "confirm": "Se déconnecter",
+        "cancel": "Annuler"
       }
     },
     "about": {

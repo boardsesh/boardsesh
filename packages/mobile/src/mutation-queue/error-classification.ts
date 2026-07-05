@@ -52,14 +52,26 @@ export function getErrorStatus(error: unknown): number | null {
   return null;
 }
 
-export function isRetryable(error: unknown): boolean {
-  // Network failures (TypeError with a network/fetch message) always retry —
-  // the request never reached the server, so replaying it is safe.
+/**
+ * A network-reachability failure: the request never reached the server (offline,
+ * DNS, connection reset). Surfaced as a TypeError with a network/fetch message by
+ * both WinterCG fetch and graphql-request. Distinct from a server that replied with
+ * an error status — the drainer treats these two very differently (a network error
+ * must never advance retry_count toward the dead-letter).
+ */
+export function isNetworkError(error: unknown): boolean {
   if (error instanceof TypeError) {
     const message = error.message.toLowerCase();
-    if (message.includes('network') || message.includes('fetch')) {
-      return true;
-    }
+    return message.includes('network') || message.includes('fetch');
+  }
+  return false;
+}
+
+export function isRetryable(error: unknown): boolean {
+  // Network failures always retry — the request never reached the server, so
+  // replaying it is safe.
+  if (isNetworkError(error)) {
+    return true;
   }
 
   const status = getErrorStatus(error);

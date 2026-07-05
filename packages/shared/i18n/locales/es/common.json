@@ -320,6 +320,19 @@
         "title": "Aplicaciones conectadas",
         "subtitle": "Apple Health y Strava",
         "subtitleWithStrava": "Cuentas de plafón, Apple Health, Strava"
+      },
+      "syncIssues": {
+        "title": "Problemas de sincronización",
+        "description_one": "1 cambio no se pudo sincronizar. Reintenta para enviarlo ahora.",
+        "description_other": "{{count}} cambios no se pudieron sincronizar. Reintenta para enviarlos ahora.",
+        "retry": "Reintentar sincronización"
+      },
+      "signOut": {
+        "pendingTitle": "¿Cerrar sesión?",
+        "pendingMessage_one": "Tienes 1 cambio sin sincronizar. Al cerrar sesión se descartará.",
+        "pendingMessage_other": "Tienes {{count}} cambios sin sincronizar. Al cerrar sesión se descartarán.",
+        "confirm": "Cerrar sesión",
+        "cancel": "Cancelar"
       }
     },
     "about": {

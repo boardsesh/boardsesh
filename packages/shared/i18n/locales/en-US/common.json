@@ -119,6 +119,19 @@
         "title": "Connected apps",
         "subtitle": "Board accounts, Apple Health",
         "subtitleWithStrava": "Board accounts, Apple Health, Strava"
+      },
+      "syncIssues": {
+        "title": "Sync issues",
+        "description_one": "1 change couldn't sync. Retry to send it now.",
+        "description_other": "{{count}} changes couldn't sync. Retry to send them now.",
+        "retry": "Retry sync"
+      },
+      "signOut": {
+        "pendingTitle": "Sign out?",
+        "pendingMessage_one": "You have 1 change that hasn't synced yet. Signing out discards it.",
+        "pendingMessage_other": "You have {{count}} changes that haven't synced yet. Signing out discards them.",
+        "confirm": "Sign out",
+        "cancel": "Cancel"
       }
     },
     "about": {

@@ -1,10 +1,10 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
-import type { QueryClient } from '@tanstack/react-query';
+import { onlineManager, type QueryClient } from '@tanstack/react-query';
 
 import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
-import { isRetryable } from './error-classification';
+import { isRetryable, isNetworkError } from './error-classification';
 
 let _isDraining = false;
 
@@ -37,6 +37,12 @@ export type DrainOptions = {
   baseDelayMs?: number;
   /** Upper bound on a single backoff delay. */
   maxDelayMs?: number;
+  /**
+   * Connectivity probe. Defaults to React Query's onlineManager (wired to NetInfo
+   * in query-provider). When it reports offline the drain is skipped entirely so a
+   * queued write never burns retry attempts while there's no connection.
+   */
+  isOnline?: () => boolean;
 };
 
 function defaultSleep(ms: number): Promise<void> {
@@ -86,6 +92,10 @@ export async function drainMutationQueue(
   // Don't start (or re-enter) a drain while sign-out is wiping local data.
   if (_isSigningOut) return;
   if (_isDraining) return;
+  // Offline: nothing can be pushed, and attempting would only churn retry counts
+  // and burn backoff sleeps. Skip; the reconnect/foreground trigger drains later.
+  const isOnline = options?.isOnline ?? (() => onlineManager.isOnline());
+  if (!isOnline()) return;
   _isDraining = true;
 
   const sleep = options?.sleep ?? defaultSleep;
@@ -103,6 +113,7 @@ export async function drainMutationQueue(
       if (batch.length === 0) break;
 
       let retryableHit = false;
+      let networkStop = false;
 
       for (const mutation of batch) {
         try {
@@ -111,6 +122,15 @@ export async function drainMutationQueue(
           invalidateForTable(queryClient, mutation.table_name);
         } catch (error: unknown) {
           const errorMessage = formatError(error);
+
+          if (isNetworkError(error)) {
+            // The connection dropped mid-drain. Leave this mutation PENDING without
+            // advancing retry_count — an offline write must never dead-letter for
+            // lack of a connection; it drains when connectivity returns. Stop the
+            // cycle rather than backing off against a network that's gone.
+            networkStop = true;
+            break;
+          }
 
           if (isRetryable(error)) {
             // One atomic UPDATE bumps the retry and, when the bumped count hits
@@ -126,6 +146,9 @@ export async function drainMutationQueue(
           }
         }
       }
+
+      // Connectivity is gone — end the cycle; the reconnect trigger drains again.
+      if (networkStop) break;
 
       if (retryableHit) {
         // Give up this cycle once the in-cycle attempt budget is spent; the next
