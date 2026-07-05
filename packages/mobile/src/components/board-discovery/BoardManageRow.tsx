@@ -6,6 +6,8 @@ import { toBoardName } from '@boardsesh/board-config';
 import { SwipeableRow } from '../SwipeableRow';
 import { BoardImageNative } from '../BoardImageNative';
 import { boardTypeLabel } from './board-builder-labels';
+import { BoardOfflineToggle } from './BoardOfflineToggle';
+import type { BoardDownloadState } from './board-offline-state';
 import { getBoardRenderData } from '../../lib/board-details';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -23,9 +25,14 @@ type BoardManageRowProps = {
   isActive: boolean;
   /** A mutation targeting this row is in flight — show a spinner and disable the swipe. */
   isMutating: boolean;
+  /** Offline download state for this board's (type, layout, size) scope. */
+  downloadState: BoardDownloadState;
+  /** Climbs pulled so far while this board is the one downloading. */
+  downloadCount?: number;
   onEdit: (board: UserBoard) => void;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
+  onToggleOffline: (board: UserBoard) => void;
 };
 
 /**
@@ -40,9 +47,12 @@ function BoardManageRowComponent({
   isOwned,
   isActive,
   isMutating,
+  downloadState,
+  downloadCount,
   onEdit,
   onDelete,
   onUnfollow,
+  onToggleOffline,
 }: BoardManageRowProps) {
   const { t } = useTranslation('boards');
   const { systemColors, brandColors } = useTheme();
@@ -71,6 +81,22 @@ function BoardManageRowComponent({
   const subtitle = isOwned
     ? (board.sizeName ?? board.locationName ?? boardTypeText)
     : (board.ownerDisplayName ?? boardTypeText);
+
+  // A third caption line, shown only while a board is opted into offline, so
+  // downloaded rows stay two lines and the extra line appears transiently.
+  const offlineStatus =
+    downloadState === 'downloading'
+      ? t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
+      : downloadState === 'downloaded'
+        ? t('mobile.offline.available')
+        : downloadState === 'pending'
+          ? t('mobile.offline.pending')
+          : null;
+
+  const offlineToggleAria =
+    downloadState === 'downloaded'
+      ? t('mobile.offline.removeAria', { name: board.name })
+      : t('mobile.offline.makeAvailableAria', { name: board.name });
 
   const content = (
     <View style={[styles.row, { backgroundColor: systemColors.background, borderBottomColor: systemColors.separator }]}>
@@ -110,7 +136,22 @@ function BoardManageRowComponent({
         <Text variant="subheadline" color={systemColors.secondaryLabel} numberOfLines={1}>
           {subtitle}
         </Text>
+        {offlineStatus ? (
+          <Text
+            variant="caption1"
+            color={downloadState === 'downloaded' ? brandColors.primary : systemColors.tertiaryLabel}
+            numberOfLines={1}
+          >
+            {offlineStatus}
+          </Text>
+        ) : null}
       </View>
+
+      <BoardOfflineToggle
+        state={downloadState}
+        onPress={() => onToggleOffline(board)}
+        accessibilityLabel={offlineToggleAria}
+      />
 
       {isActive ? (
         <View style={styles.activeBadge}>

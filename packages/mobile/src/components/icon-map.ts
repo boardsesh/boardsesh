@@ -105,6 +105,11 @@ export const iconMap = {
   error: { ios: 'xmark.circle', android: 'alert-circle-outline' },
   success: { ios: 'checkmark.circle', android: 'check-circle-outline' },
 
+  // Offline / downloads
+  'offline.download': { ios: 'icloud.and.arrow.down', android: 'cloud-download-outline' },
+  'offline.downloaded': { ios: 'checkmark.icloud.fill', android: 'cloud-check-variant' },
+  'offline.pending': { ios: 'icloud', android: 'cloud-outline' },
+
   // Social
   person: { ios: 'person', android: 'account-outline' },
   'person.fill': { ios: 'person.fill', android: 'account' },

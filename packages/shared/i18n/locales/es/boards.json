@@ -172,6 +172,17 @@
       "multiBoardChip": "2+ tipos de plafón",
       "editGym": "Editar gimnasio",
       "editBoard": "Editar plafón"
+    },
+    "offline": {
+      "available": "Disponible sin conexión",
+      "pending": "Esperando para descargar",
+      "downloadingCount_one": "Descargando {{count}} vía",
+      "downloadingCount_other": "Descargando {{count}} vías",
+      "makeAvailableAria": "Hacer que {{name}} esté disponible sin conexión",
+      "removeAria": "Quitar {{name}} del modo sin conexión",
+      "enableTitle": "¿Descargar {{name}}?",
+      "enableMessage": "Descarga todas las vías de este plafón para explorarlas y registrar tus ascensos sin conexión.",
+      "enableConfirm": "Descargar"
     }
   },
   "boardEntity": {

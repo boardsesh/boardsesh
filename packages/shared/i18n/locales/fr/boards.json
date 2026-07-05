@@ -172,6 +172,17 @@
       "multiBoardChip": "2+ types de board",
       "editGym": "Modifier la salle",
       "editBoard": "Modifier la board"
+    },
+    "offline": {
+      "available": "Disponible hors ligne",
+      "pending": "En attente de téléchargement",
+      "downloadingCount_one": "Téléchargement de {{count}} voie",
+      "downloadingCount_other": "Téléchargement de {{count}} voies",
+      "makeAvailableAria": "Rendre {{name}} disponible hors ligne",
+      "removeAria": "Retirer {{name}} du mode hors ligne",
+      "enableTitle": "Télécharger {{name}} ?",
+      "enableMessage": "Télécharge toutes les voies de cette board pour les parcourir et enregistrer tes croix hors ligne.",
+      "enableConfirm": "Télécharger"
     }
   },
   "boardEntity": {

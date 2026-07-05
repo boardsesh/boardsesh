@@ -172,6 +172,17 @@
       "multiBoardChip": "2+ board types",
       "editGym": "Edit gym",
       "editBoard": "Edit board"
+    },
+    "offline": {
+      "available": "Available offline",
+      "pending": "Waiting to download",
+      "downloadingCount_one": "Downloading {{count}} climb",
+      "downloadingCount_other": "Downloading {{count}} climbs",
+      "makeAvailableAria": "Make {{name}} available offline",
+      "removeAria": "Remove {{name}} from offline",
+      "enableTitle": "Download {{name}}?",
+      "enableMessage": "Downloads all this board's climbs so you can browse and log sends with no signal.",
+      "enableConfirm": "Download"
     }
   },
   "boardEntity": {

@@ -3,6 +3,8 @@ import { RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, useProfile, useDeleteBoard, useUnfollowBoard } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
@@ -11,11 +13,17 @@ import { useToast } from '../../src/providers/toast-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
+import { useSyncStatus, triggerSync, setSyncProgress } from '../../src/sync';
+import { drainMutationQueue } from '../../src/mutation-queue';
+import type { GraphQLFetch } from '../../src/mutation-queue/handlers';
+import { getSetting, useSetting, setOfflineBoardEnabled, offlineBoardKeyForBoard, offlineBoardScopeForBoard } from '../../src/settings';
+import { getHttpClient } from '../../src/lib/graphql/client';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { BoardManageRow } from '../../src/components/board-discovery/BoardManageRow';
+import { boardDownloadState } from '../../src/components/board-discovery/board-offline-state';
 import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
@@ -57,6 +65,51 @@ export default function ManageBoards() {
   const deleteBoard = useDeleteBoard();
   const unfollowBoard = useUnfollowBoard();
   const clearActiveBoard = useClearActiveBoard();
+
+  // Offline download wiring. Subscribe to the sync status + enabled-boards setting
+  // ONCE here (not per row) and derive a primitive state per row, so a download's
+  // frequent progress frames only re-render the one row that's changing.
+  const db = useSQLiteContext();
+  const queryClient = useQueryClient();
+  const syncStatus = useSyncStatus();
+  const [enabledBoards] = useSetting('syncEnabledBoards');
+  const enabledSet = useMemo(() => new Set(enabledBoards), [enabledBoards]);
+  const isSyncing = syncStatus.isSyncing;
+  const lastSyncedAt = syncStatus.lastSyncedAt;
+  const currentTable = syncStatus.progress?.currentTable ?? null;
+  const currentTableProcessed = syncStatus.progress?.currentTableProcessed;
+
+  const graphqlFetch = useMemo<GraphQLFetch>(
+    () => (query, variables) => getHttpClient().request(query, variables),
+    [],
+  );
+  const drainQueue = useCallback(() => drainMutationQueue(db, queryClient, graphqlFetch), [db, queryClient, graphqlFetch]);
+
+  const handleToggleOffline = useCallback(
+    async (board: UserBoard) => {
+      const scope = offlineBoardScopeForBoard(board);
+      const key = offlineBoardKeyForBoard(board);
+      const alreadyEnabled = getSetting('syncEnabledBoards').includes(key);
+      if (alreadyEnabled) {
+        // Disabling just drops the setting entry; the cached rows + checkpoint stay
+        // so re-enabling resumes instantly, so no confirm is needed.
+        setOfflineBoardEnabled(scope, false);
+        return;
+      }
+      const confirmed = await confirm({
+        title: t('mobile.offline.enableTitle', { name: board.name }),
+        message: t('mobile.offline.enableMessage'),
+        confirmLabel: t('mobile.offline.enableConfirm'),
+        cancelLabel: t('mobile.manage.cancel'),
+      });
+      if (!confirmed) return;
+      setOfflineBoardEnabled(scope, true);
+      // Kick a sync now so the download starts immediately rather than waiting for
+      // the next foreground/reconnect trigger.
+      triggerSync(db, queryClient, graphqlFetch, () => getSetting('syncEnabledBoards'), drainQueue, setSyncProgress);
+    },
+    [confirm, t, db, queryClient, graphqlFetch, drainQueue],
+  );
 
   // See boards/index.tsx: a hard 401 clears tokens without flipping
   // isAuthenticated, so re-validate on error to escape a stuck retry loop.
@@ -132,15 +185,29 @@ export default function ManageBoards() {
       const isMutating =
         (deleteBoard.isPending && deleteBoard.variables === item.board.uuid) ||
         (unfollowBoard.isPending && unfollowBoard.variables === item.board.uuid);
+      const scopeKey = offlineBoardKeyForBoard(item.board);
+      const downloadState = boardDownloadState({
+        scopeKey,
+        enabled: enabledSet.has(scopeKey),
+        isSyncing,
+        lastSyncedAt,
+        currentTable,
+      });
+      // Only the board actually downloading gets the live count; every other row
+      // gets undefined (a stable prop), so its memo skips the per-frame churn.
+      const downloadCount = downloadState === 'downloading' ? currentTableProcessed : undefined;
       return (
         <BoardManageRow
           board={item.board}
           isOwned={item.isOwned}
           isActive={item.isActive}
           isMutating={isMutating}
+          downloadState={downloadState}
+          downloadCount={downloadCount}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onUnfollow={handleUnfollow}
+          onToggleOffline={handleToggleOffline}
         />
       );
     },
@@ -149,9 +216,15 @@ export default function ManageBoards() {
       deleteBoard.variables,
       unfollowBoard.isPending,
       unfollowBoard.variables,
+      enabledSet,
+      isSyncing,
+      lastSyncedAt,
+      currentTable,
+      currentTableProcessed,
       handleEdit,
       handleDelete,
       handleUnfollow,
+      handleToggleOffline,
     ],
   );
 
