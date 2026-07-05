@@ -20,6 +20,7 @@ export default function ProfileLayout() {
       <Stack.Screen name="accessibility" options={{ title: t('mobile.more.accessibility.title') }} />
       <Stack.Screen name="edit" options={{ title: tSettings('profile.editAction') }} />
       <Stack.Screen name="integrations" options={{ title: tSettings('integrations.title') }} />
+      <Stack.Screen name="watch-pair" options={{ title: tSettings('watchPairing.title') }} />
       {/* i18n-ignore-next-line — preview-only screen */}
       <Stack.Screen name="branch-switcher" options={{ title: 'Branch Switcher' }} />
       <Stack.Screen name="dev-servers" options={{ title: t('mobile.more.metroServersTitle') }} />

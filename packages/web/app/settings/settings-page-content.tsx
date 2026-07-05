@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import AuroraCredentialsSection from '@/app/components/settings/aurora-credentials-section';
 import ControllersSection from '@/app/components/settings/controllers-section';
+import WatchPairingSection from '@/app/components/settings/watch-pairing-section';
 import DeleteAccountSection from '@/app/components/settings/delete-account-section';
 import SetPasswordSection from '@/app/components/settings/set-password-section';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -646,6 +647,10 @@ export default function SettingsPageContent() {
         <MuiDivider sx={{ my: 2 }} />
 
         <ControllersSection />
+
+        <MuiDivider sx={{ my: 2 }} />
+
+        <WatchPairingSection />
 
         <MuiDivider sx={{ my: 2 }} />
 

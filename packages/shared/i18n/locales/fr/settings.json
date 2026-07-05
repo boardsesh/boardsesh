@@ -492,5 +492,18 @@
       "disconnected": "Strava déconnecté",
       "disconnectFailed": "Impossible de déconnecter Strava. Réessayez."
     }
+  },
+  "watchPairing": {
+    "title": "Associer une montre Garmin",
+    "subtitle": "Pilote ta session depuis ton poignet",
+    "description": "Lance l'activité Boardsesh sur ta Garmin, puis saisis ce code pour associer la montre à ton compte.",
+    "generate": "Obtenir un code",
+    "regenerate": "Nouveau code",
+    "codeInstruction": "Saisis ce code sur ta montre",
+    "expiresIn": "Expire dans {{seconds}} s",
+    "expired": "Code expiré — obtiens-en un nouveau",
+    "generating": "Obtention d'un code…",
+    "error": "Impossible d'obtenir un code. Réessaie.",
+    "close": "Terminé"
   }
 }

@@ -178,6 +178,14 @@ export default function MoreScreen() {
         icon: 'integrations',
         onPress: navAction(() => router.push('/(tabs)/profile/integrations')),
       },
+      {
+        kind: 'nav',
+        key: 'pairWatch',
+        label: tSettings('watchPairing.title'),
+        subtitle: tSettings('watchPairing.subtitle'),
+        icon: 'integrations',
+        onPress: navAction(() => router.push('/(tabs)/profile/watch-pair')),
+      },
     ],
   });
 

@@ -492,5 +492,18 @@
       "disconnected": "Strava desconectado",
       "disconnectFailed": "No se pudo desconectar Strava. Inténtalo de nuevo."
     }
+  },
+  "watchPairing": {
+    "title": "Vincula un reloj Garmin",
+    "subtitle": "Controla la sesión desde la muñeca",
+    "description": "Inicia la actividad de Boardsesh en tu Garmin y escribe este código para vincular el reloj a tu cuenta.",
+    "generate": "Obtener un código",
+    "regenerate": "Código nuevo",
+    "codeInstruction": "Escribe este código en tu reloj",
+    "expiresIn": "Caduca en {{seconds}} s",
+    "expired": "Código caducado: obtén uno nuevo",
+    "generating": "Obteniendo un código…",
+    "error": "No se pudo obtener el código. Inténtalo de nuevo.",
+    "close": "Listo"
   }
 }

@@ -492,5 +492,18 @@
       "disconnected": "Strava disconnected",
       "disconnectFailed": "Couldn't disconnect Strava. Try again."
     }
+  },
+  "watchPairing": {
+    "title": "Pair a Garmin watch",
+    "subtitle": "Run your session from your wrist",
+    "description": "Start the Boardsesh activity on your Garmin, then type this code to link the watch to your account.",
+    "generate": "Get a pairing code",
+    "regenerate": "New code",
+    "codeInstruction": "Enter this code on your watch",
+    "expiresIn": "Expires in {{seconds}}s",
+    "expired": "Code expired — get a new one",
+    "generating": "Getting a code…",
+    "error": "Couldn't get a code. Try again.",
+    "close": "Done"
   }
 }
