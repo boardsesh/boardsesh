@@ -2132,6 +2132,8 @@ type UserBoard {
   distanceMeters: Float
   "Controller box serial number"
   serialNumber: String
+  "Paired Rogue Fitness timer's advertised BLE name"
+  timerName: String
   "Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym)"
   canEdit: Boolean!
 }
@@ -2252,6 +2254,8 @@ input CreateBoardInput {
   isAngleAdjustable: Boolean
   "Controller box serial number"
   serialNumber: String
+  "Paired Rogue Fitness timer's advertised BLE name"
+  timerName: String
 }
 
 """
@@ -2292,6 +2296,8 @@ input UpdateBoardInput {
   setIds: String
   "Controller box serial number"
   serialNumber: String
+  "Paired Rogue Fitness timer's advertised BLE name"
+  timerName: String
 }
 
 """

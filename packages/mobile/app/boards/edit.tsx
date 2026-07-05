@@ -117,6 +117,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       latitude: board.latitude ?? undefined,
       longitude: board.longitude ?? undefined,
       serialNumber: board.serialNumber ?? undefined,
+      timerName: board.timerName ?? undefined,
     };
   }, [board]);
 

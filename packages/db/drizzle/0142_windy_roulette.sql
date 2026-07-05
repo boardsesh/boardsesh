@@ -1,0 +1,1 @@
+ALTER TABLE "user_boards" ADD COLUMN "timer_name" text;

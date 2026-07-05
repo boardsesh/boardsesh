@@ -77,6 +77,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     distanceMeters: Float
     "Controller box serial number"
     serialNumber: String
+    "Paired Rogue Fitness timer's advertised BLE name"
+    timerName: String
     "Whether the current viewer may edit this board (owner, community admin/leader for its board type, or owner/admin of its linked gym)"
     canEdit: Boolean!
   }
@@ -197,6 +199,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     isAngleAdjustable: Boolean
     "Controller box serial number"
     serialNumber: String
+    "Paired Rogue Fitness timer's advertised BLE name"
+    timerName: String
   }
 
   """
@@ -237,6 +241,8 @@ export const boardEntitiesTypeDefs = /* GraphQL */ `
     setIds: String
     "Controller box serial number"
     serialNumber: String
+    "Paired Rogue Fitness timer's advertised BLE name"
+    timerName: String
   }
 
   """

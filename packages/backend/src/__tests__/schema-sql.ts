@@ -385,6 +385,7 @@ export const schemaSQL = `
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "serial_number" text,
+    "timer_name" text,
     "gym_id" bigint,
     "deleted_at" timestamp
   );

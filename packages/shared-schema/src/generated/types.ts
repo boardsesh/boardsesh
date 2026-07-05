@@ -1139,6 +1139,8 @@ export type CreateBoardInput = {
   setIds: Scalars['String']['input'];
   /** Size ID */
   sizeId: Scalars['Int']['input'];
+  /** Paired Rogue Fitness timer's advertised BLE name */
+  timerName?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Input for creating a gym. */
@@ -5752,6 +5754,8 @@ export type UpdateBoardInput = {
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /** New slug */
   slug?: InputMaybe<Scalars['String']['input']>;
+  /** Paired Rogue Fitness timer's advertised BLE name */
+  timerName?: InputMaybe<Scalars['String']['input']>;
 };
 
 /**
@@ -5928,6 +5932,8 @@ export type UserBoard = {
   sizeName?: Maybe<Scalars['String']['output']>;
   /** URL slug for this board */
   slug: Scalars['String']['output'];
+  /** Paired Rogue Fitness timer's advertised BLE name */
+  timerName?: Maybe<Scalars['String']['output']>;
   /** Total ascents on this board */
   totalAscents: Scalars['Int']['output'];
   /** Number of unique climbers */
@@ -10087,6 +10093,7 @@ export type UserBoardResolvers<
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   sizeName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   slug?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  timerName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   totalAscents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   uniqueClimbers?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   uuid?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;

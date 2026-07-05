@@ -44,6 +44,7 @@ export const userBoards = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     serialNumber: text('serial_number'),
+    timerName: text('timer_name'),
     gymId: bigint('gym_id', { mode: 'number' }).references(() => gyms.id, { onDelete: 'set null' }),
     deletedAt: timestamp('deleted_at'),
   },

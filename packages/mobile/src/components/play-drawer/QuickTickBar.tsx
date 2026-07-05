@@ -32,6 +32,7 @@ import {
 import { toBoardName } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useToast } from '../../providers/toast-provider';
+import { useOptionalRogueTimer } from '../../providers/rogue-timer-provider';
 import { useBoardPresenceControls } from '../../providers/board-presence-provider';
 import { track } from '../../lib/analytics';
 import { hapticSuccess, hapticError } from '../../lib/haptics';
@@ -97,6 +98,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const saveTick = useSaveTick(toBoardName(boardName));
+  const rogueTimer = useOptionalRogueTimer();
   const { enabled: boardPresenceEnabled, boardId: boardPresenceBoardId } = useBoardPresenceControls();
   const { data: grades } = useGrades(boardName);
 
@@ -272,6 +274,11 @@ export const QuickTickBar = React.memo(function QuickTickBar({
               surface: 'mobile_quick_tick',
             });
             hapticSuccess();
+            // Kick off the paired gym timer's stopwatch. No-op unless a Rogue
+            // timer is connected — which only happens while this user is driving
+            // the wall (see RogueTimerProvider), so a passenger's tick can't
+            // touch the timer. Fire-and-forget; never block the save flow.
+            void rogueTimer?.startStopwatch();
             // Reset on commit so reopening the sheet on the same climb
             // doesn't show stale state from the just-saved tick.
             setTickState(createInitialTickState());
@@ -316,6 +323,7 @@ export const QuickTickBar = React.memo(function QuickTickBar({
       tClimbs,
       resolvedGradeName,
       savedRef,
+      rogueTimer,
     ],
   );
 

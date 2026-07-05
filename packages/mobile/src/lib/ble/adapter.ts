@@ -12,6 +12,7 @@ import {
   parseSerialNumber,
 } from '@boardsesh/ble-protocol';
 import { bleManager } from './ble-manager';
+import { uint8ArrayToBase64 } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { upsertDiscoveredDevice } from './scan-device-cache';
@@ -409,12 +410,4 @@ function bleErrorToDisconnectInfo(error: BleError | null): BleDisconnectInfo {
     androidErrorCode: error.androidErrorCode ?? undefined,
     description: error.reason ?? error.message ?? undefined,
   };
-}
-
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let byteIndex = 0; byteIndex < bytes.length; byteIndex++) {
-    binary += String.fromCharCode(bytes[byteIndex]);
-  }
-  return btoa(binary);
 }

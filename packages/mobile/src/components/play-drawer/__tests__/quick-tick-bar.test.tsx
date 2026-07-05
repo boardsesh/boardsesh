@@ -101,6 +101,11 @@ vi.mock('../../../providers/toast-provider', () => ({ useToast: () => ({ showToa
 vi.mock('../../../providers/board-presence-provider', () => ({
   useBoardPresenceControls: () => ({ enabled: false, boardId: null }),
 }));
+// Mock the Rogue-timer provider so the test doesn't pull its rogue-timer-ble →
+// react-native-ble-plx chain (Flow source Rolldown can't parse) into the graph.
+vi.mock('../../../providers/rogue-timer-provider', () => ({
+  useOptionalRogueTimer: () => null,
+}));
 vi.mock('../../../lib/analytics', () => ({ track: vi.fn() }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
 vi.mock('../../../theme/colors', () => ({ brandColors: { success: '#047857' } }));

@@ -28,6 +28,7 @@ import { SwitchRow } from '../SwitchRow';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
 import { Button } from '../Button';
+import { TimerPairingSheet } from '../ble/TimerPairingSheet';
 import { spacing, borderRadius } from '../../theme/tokens';
 
 const PREVIEW_MAX_HEIGHT = 260;
@@ -69,6 +70,7 @@ export function BoardForm({
   const bottomChrome = useBottomChromeMetrics();
   const { width: windowWidth } = useWindowDimensions();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [timerPairingOpen, setTimerPairingOpen] = useState(false);
 
   const { setCoords } = builder;
   const location = useDeviceLocation();
@@ -301,9 +303,50 @@ export function BoardForm({
             <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
               {t('mobile.create.serialHint')}
             </Text>
+
+            <SectionLabel>{t('mobile.create.timer')}</SectionLabel>
+            <View style={[styles.timerRow, { borderColor: systemColors.separator }]}>
+              <Icon name="clock" size={20} color={systemColors.secondaryLabel} />
+              <Text
+                variant="body"
+                color={builder.timerName ? systemColors.label : systemColors.tertiaryLabel}
+                numberOfLines={1}
+                style={styles.timerName}
+              >
+                {builder.timerName || t('mobile.create.timerNone')}
+              </Text>
+            </View>
+            <View style={styles.timerActions}>
+              <Button
+                title={builder.timerName ? t('mobile.create.timerChangeCta') : t('mobile.create.timerPairCta')}
+                variant="text"
+                onPress={() => setTimerPairingOpen(true)}
+              />
+              {builder.timerName ? (
+                <Button
+                  title={t('mobile.create.timerRemoveCta')}
+                  variant="text"
+                  role="destructive"
+                  onPress={() => builder.setTimerName('')}
+                />
+              ) : null}
+            </View>
+            <Text variant="caption1" color={systemColors.tertiaryLabel} style={styles.serialHint}>
+              {t('mobile.create.timerHint')}
+            </Text>
           </View>
         ) : null}
       </ScrollView>
+
+      {timerPairingOpen ? (
+        <TimerPairingSheet
+          onSelect={(timerName) => {
+            builder.setTimerName(timerName);
+            setTimerPairingOpen(false);
+          }}
+          onDismiss={() => setTimerPairingOpen(false)}
+        />
+      ) : null}
 
       {/* Pinned, safe-area-aware primary action. */}
       <View
@@ -469,6 +512,23 @@ const styles = StyleSheet.create({
   },
   serialHint: {
     marginTop: spacing[1],
+  },
+  timerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[3],
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
+  },
+  timerName: {
+    flex: 1,
+  },
+  timerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
   },
   footer: {
     paddingHorizontal: spacing[4],

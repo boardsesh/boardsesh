@@ -69,6 +69,7 @@ const BOARD_FIELDS = `
   gymName
   distanceMeters
   serialNumber
+  timerName
   canEdit
 `;
 

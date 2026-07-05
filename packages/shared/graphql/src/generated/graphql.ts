@@ -1136,6 +1136,8 @@ export type CreateBoardInput = {
   setIds: Scalars['String']['input'];
   /** Size ID */
   sizeId: Scalars['Int']['input'];
+  /** Paired Rogue Fitness timer's advertised BLE name */
+  timerName?: InputMaybe<Scalars['String']['input']>;
 };
 
 /** Input for creating a gym. */
@@ -5749,6 +5751,8 @@ export type UpdateBoardInput = {
   sizeId?: InputMaybe<Scalars['Int']['input']>;
   /** New slug */
   slug?: InputMaybe<Scalars['String']['input']>;
+  /** Paired Rogue Fitness timer's advertised BLE name */
+  timerName?: InputMaybe<Scalars['String']['input']>;
 };
 
 /**
@@ -5925,6 +5929,8 @@ export type UserBoard = {
   sizeName?: Maybe<Scalars['String']['output']>;
   /** URL slug for this board */
   slug: Scalars['String']['output'];
+  /** Paired Rogue Fitness timer's advertised BLE name */
+  timerName?: Maybe<Scalars['String']['output']>;
   /** Total ascents on this board */
   totalAscents: Scalars['Int']['output'];
   /** Number of unique climbers */

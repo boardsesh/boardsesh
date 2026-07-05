@@ -35,6 +35,8 @@ export type BoardBuilderSeed = {
   latitude?: number | null;
   longitude?: number | null;
   serialNumber?: string;
+  /** Advertised BLE name of the Rogue workout timer paired to this board. */
+  timerName?: string;
 };
 
 function defaultAngle(boardName: BoardName): number {
@@ -77,6 +79,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
     seed?.latitude != null && seed?.longitude != null ? { latitude: seed.latitude, longitude: seed.longitude } : null,
   );
   const [serialNumber, setSerialNumber] = useState(seed?.serialNumber ?? '');
+  const [timerName, setTimerName] = useState(seed?.timerName ?? '');
 
   // Re-seed when the seed's VALUES change (opened from a different Popular
   // config). Keyed on the serialized seed, not its object identity, so an
@@ -166,6 +169,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
       hideLocation,
       isAngleAdjustable,
       serialNumber: serialNumber.trim() || undefined,
+      timerName: timerName.trim() || undefined,
       locationName: locationName.trim() || undefined,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
@@ -198,6 +202,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
       // null (not undefined) so emptying a previously-set field clears it on the
       // server — undefined would leave the old value in place (see UpdateBoardInput).
       serialNumber: serialNumber.trim() || null,
+      timerName: timerName.trim() || null,
       locationName: locationName.trim() || null,
       latitude: coords?.latitude,
       longitude: coords?.longitude,
@@ -227,6 +232,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
     locationName,
     coords,
     serialNumber,
+    timerName,
     // derived
     layouts,
     sizes,
@@ -249,6 +255,7 @@ export function useBoardBuilder(seed?: BoardBuilderSeed | null) {
     setLocationName,
     setCoords,
     setSerialNumber,
+    setTimerName,
     buildCreateInput,
     buildUpdateInput,
   };

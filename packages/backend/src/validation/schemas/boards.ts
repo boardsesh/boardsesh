@@ -43,6 +43,7 @@ export const CreateBoardInputSchema = z.object({
   angle: z.number().int().min(0).max(70).optional(),
   isAngleAdjustable: z.boolean().optional(),
   serialNumber: OptionalBoardSerialInputSchema,
+  timerName: z.string().max(200, 'Timer name too long').optional(),
 });
 
 /**
@@ -66,6 +67,7 @@ export const UpdateBoardInputSchema = z.object({
   sizeId: z.number().int().positive('Size ID must be positive').optional(),
   setIds: z.string().min(1, 'Set IDs cannot be empty').optional(),
   serialNumber: NullableBoardSerialInputSchema,
+  timerName: z.string().max(200, 'Timer name too long').optional().nullable(),
 });
 
 /**

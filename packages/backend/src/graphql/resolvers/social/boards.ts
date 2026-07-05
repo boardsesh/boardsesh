@@ -308,6 +308,7 @@ async function enrichBoard(
     gymName: gymInfo?.name ?? null,
     distanceMeters: distanceMeters ?? null,
     serialNumber: board.serialNumber ?? null,
+    timerName: board.timerName ?? null,
     canEdit,
   };
 }
@@ -498,6 +499,7 @@ async function enrichBoards(
       gymName: gym?.name ?? null,
       distanceMeters: distanceMeters ?? null,
       serialNumber: board.serialNumber ?? null,
+      timerName: board.timerName ?? null,
       canEdit,
     };
   });
@@ -844,6 +846,7 @@ export const socialBoardQueries = {
           gymName: null,
           distanceMeters: null,
           serialNumber: board.serialNumber ?? null,
+          timerName: board.timerName ?? null,
           canEdit: false,
         };
       });
@@ -1585,6 +1588,7 @@ export const socialBoardMutations = {
                 angle: validatedInput.angle ?? 40,
                 isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
                 serialNumber: validatedInput.serialNumber ?? null,
+                timerName: validatedInput.timerName ?? null,
                 gymId: newGym.id,
               })
               .returning();
@@ -1631,6 +1635,7 @@ export const socialBoardMutations = {
           angle: validatedInput.angle ?? 40,
           isAngleAdjustable: validatedInput.isAngleAdjustable ?? true,
           serialNumber: validatedInput.serialNumber ?? null,
+          timerName: validatedInput.timerName ?? null,
           gymId,
         })
         .returning();
@@ -1698,6 +1703,7 @@ export const socialBoardMutations = {
     if (validatedInput.isAngleAdjustable !== undefined)
       updateValues.isAngleAdjustable = validatedInput.isAngleAdjustable;
     if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
+    if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
     // Config field changes (layoutId, sizeId, setIds). Authorized editors may
     // change these even when the board has logged climbs — a config change

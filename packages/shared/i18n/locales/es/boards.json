@@ -116,7 +116,13 @@
       "serialPlaceholder": "p. ej. ABC-12345",
       "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
       "save": "Guardar mi plafón",
-      "createError": "No se pudo crear ese plafón. Inténtalo de nuevo."
+      "createError": "No se pudo crear ese plafón. Inténtalo de nuevo.",
+      "timer": "Temporizador de entrenamiento",
+      "timerNone": "Sin temporizador vinculado",
+      "timerHint": "Vincula un temporizador Rogue a este plafón. Mientras controlas el muro, cada encadene arranca su cronómetro.",
+      "timerPairCta": "Vincular temporizador",
+      "timerChangeCta": "Cambiar temporizador",
+      "timerRemoveCta": "Quitar"
     },
     "custom": {
       "board": "Plafón",
@@ -172,6 +178,13 @@
       "multiBoardChip": "2+ tipos de plafón",
       "editGym": "Editar gimnasio",
       "editBoard": "Editar plafón"
+    },
+    "timerPair": {
+      "title": "Vincular un temporizador",
+      "subtitle": "Elige el temporizador Rogue o Echo que está junto a este plafón.",
+      "scanning": "Buscando temporizadores cercanos…",
+      "empty": "No se encontraron temporizadores. Asegúrate de que esté encendido y dentro del alcance.",
+      "cancel": "Cancelar"
     }
   },
   "boardEntity": {

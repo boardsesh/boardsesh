@@ -116,7 +116,13 @@
       "serialPlaceholder": "e.g. ABC-12345",
       "serialHint": "Optional — your controller links itself the first time you connect.",
       "save": "Save my board",
-      "createError": "Couldn't create that board. Try again."
+      "createError": "Couldn't create that board. Try again.",
+      "timer": "Workout timer",
+      "timerNone": "No timer paired",
+      "timerHint": "Pair a Rogue gym timer to this board. While you're driving the wall, every send starts its stopwatch.",
+      "timerPairCta": "Pair a timer",
+      "timerChangeCta": "Change timer",
+      "timerRemoveCta": "Remove"
     },
     "custom": {
       "board": "Board",
@@ -172,6 +178,13 @@
       "multiBoardChip": "2+ board types",
       "editGym": "Edit gym",
       "editBoard": "Edit board"
+    },
+    "timerPair": {
+      "title": "Pair a workout timer",
+      "subtitle": "Pick the Rogue or Echo timer next to this board.",
+      "scanning": "Looking for nearby timers…",
+      "empty": "No timers found. Make sure the timer is powered on and within range.",
+      "cancel": "Cancel"
     }
   },
   "boardEntity": {

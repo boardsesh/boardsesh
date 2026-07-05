@@ -20,6 +20,11 @@
       "import": "./src/moonboard.ts",
       "default": "./src/moonboard.ts"
     },
+    "./rogue-timer": {
+      "types": "./src/rogue-timer.ts",
+      "import": "./src/rogue-timer.ts",
+      "default": "./src/rogue-timer.ts"
+    },
     "./connection-error": {
       "types": "./src/connection-error.ts",
       "import": "./src/connection-error.ts",

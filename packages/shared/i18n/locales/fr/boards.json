@@ -116,7 +116,13 @@
       "serialPlaceholder": "p. ex. ABC-12345",
       "serialHint": "Optionnel — ton contrôleur se lie tout seul à la première connexion.",
       "save": "Enregistrer ma board",
-      "createError": "Impossible de créer cette board. Réessaie."
+      "createError": "Impossible de créer cette board. Réessaie.",
+      "timer": "Minuteur d'entraînement",
+      "timerNone": "Aucun minuteur associé",
+      "timerHint": "Associe un minuteur Rogue à cette board. Quand tu pilotes le mur, chaque croix démarre son chronomètre.",
+      "timerPairCta": "Associer un minuteur",
+      "timerChangeCta": "Changer de minuteur",
+      "timerRemoveCta": "Retirer"
     },
     "custom": {
       "board": "Board",
@@ -172,6 +178,13 @@
       "multiBoardChip": "2+ types de board",
       "editGym": "Modifier la salle",
       "editBoard": "Modifier la board"
+    },
+    "timerPair": {
+      "title": "Associer un minuteur",
+      "subtitle": "Choisis le minuteur Rogue ou Echo situé à côté de cette board.",
+      "scanning": "Recherche de minuteurs à proximité…",
+      "empty": "Aucun minuteur trouvé. Vérifie qu'il est allumé et à portée.",
+      "cancel": "Annuler"
     }
   },
   "boardEntity": {
