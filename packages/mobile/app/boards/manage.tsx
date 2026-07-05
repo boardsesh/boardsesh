@@ -4,7 +4,7 @@ import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, useProfile, useDeleteBoard, useUnfollowBoard } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
@@ -13,7 +13,7 @@ import { useToast } from '../../src/providers/toast-provider';
 import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
-import { useSyncStatus, triggerSync, setSyncProgress } from '../../src/sync';
+import { useSyncStatus, triggerSync, setSyncProgress, getDownloadedScopeKeys } from '../../src/sync';
 import { drainMutationQueue } from '../../src/mutation-queue';
 import type { GraphQLFetch } from '../../src/mutation-queue/handlers';
 import {
@@ -81,9 +81,20 @@ export default function ManageBoards() {
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const enabledSet = useMemo(() => new Set(enabledBoards), [enabledBoards]);
   const isSyncing = syncStatus.isSyncing;
-  const lastSyncedAt = syncStatus.lastSyncedAt;
   const currentTable = syncStatus.progress?.currentTable ?? null;
   const currentTableProcessed = syncStatus.progress?.currentTableProcessed;
+
+  // Per-scope "downloaded" signal: which scopes actually have a board_climbs
+  // checkpoint. Refetched whenever a cycle finishes (isSyncing → false), so a
+  // board flips to "Available offline" only once its own data has landed.
+  const { data: downloadedScopeKeys, refetch: refetchDownloaded } = useQuery({
+    queryKey: ['downloadedScopeKeys'],
+    queryFn: () => getDownloadedScopeKeys(db),
+  });
+  const downloadedSet = useMemo(() => new Set(downloadedScopeKeys ?? []), [downloadedScopeKeys]);
+  useEffect(() => {
+    if (!isSyncing) void refetchDownloaded();
+  }, [isSyncing, refetchDownloaded]);
 
   const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
   const drainQueue = useCallback(
@@ -111,7 +122,9 @@ export default function ManageBoards() {
       if (!confirmed) return;
       setOfflineBoardEnabled(scope, true);
       // Kick a sync now so the download starts immediately rather than waiting for
-      // the next foreground/reconnect trigger.
+      // the next foreground/reconnect trigger. triggerSync → runSync is single-flight
+      // (one in-flight run + at most one queued follow-up), so enabling several boards
+      // in quick succession collapses into one cycle that reads the latest setting.
       triggerSync(db, queryClient, graphqlFetch, () => getSetting('syncEnabledBoards'), drainQueue, setSyncProgress);
     },
     [confirm, t, db, queryClient, graphqlFetch, drainQueue],
@@ -196,7 +209,7 @@ export default function ManageBoards() {
         scopeKey,
         enabled: enabledSet.has(scopeKey),
         isSyncing,
-        lastSyncedAt,
+        downloaded: downloadedSet.has(scopeKey),
         currentTable,
       });
       // Only the board actually downloading gets the live count; every other row
@@ -224,7 +237,7 @@ export default function ManageBoards() {
       unfollowBoard.variables,
       enabledSet,
       isSyncing,
-      lastSyncedAt,
+      downloadedSet,
       currentTable,
       currentTableProcessed,
       handleEdit,

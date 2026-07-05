@@ -14,6 +14,18 @@ export function getCheckpointKey(tableName: string, scope?: string): string {
   return scope ? `checkpoint:${tableName}:${scope}` : `checkpoint:${tableName}`;
 }
 
+/**
+ * The encoded board scope keys ("boardType:layoutId:sizeId") that have a
+ * board_climbs download checkpoint — i.e. at least one page of that scope's climbs
+ * has landed. Used by the My Boards UI as the per-scope "downloaded" signal (a
+ * completed cycle's global lastSyncedAt can't tell one board from another).
+ */
+export async function getDownloadedScopeKeys(db: SQLiteDatabase): Promise<string[]> {
+  const prefix = 'checkpoint:board_climbs:';
+  const rows = await db.getAllAsync<{ key: string }>(`SELECT key FROM sync_meta WHERE key LIKE '${prefix}%'`);
+  return rows.map((row) => row.key.slice(prefix.length));
+}
+
 export async function getCheckpoint(db: SQLiteDatabase, key: string): Promise<SyncCheckpoint | null> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [key]);
   if (!row) return null;

@@ -14,6 +14,7 @@ export {
   deleteAllCheckpoints,
   deleteUserCheckpoints,
   getCheckpointKey,
+  getDownloadedScopeKeys,
 } from './checkpoints';
 export type { SyncCheckpoint } from './checkpoints';
 export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';

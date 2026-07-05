@@ -15,8 +15,12 @@ export type BoardDownloadStateInput = {
   enabled: boolean;
   /** From useSyncStatus(): a cycle is mid-flight. */
   isSyncing: boolean;
-  /** From useSyncStatus(): epoch ms of the last completed cycle, or null. */
-  lastSyncedAt: number | null;
+  /**
+   * Whether THIS scope's own download checkpoint exists (its data has landed) —
+   * a per-scope signal (getDownloadedScopeKeys), not the global lastSyncedAt, so a
+   * second board doesn't read as "downloaded" the instant the first finishes.
+   */
+  downloaded: boolean;
   /** From useSyncStatus().progress: the table:scope label being pulled, or null. */
   currentTable: string | null;
 };
@@ -24,10 +28,9 @@ export type BoardDownloadStateInput = {
 /**
  * A board is "downloading" only while the pull is on one of its two per-board
  * tables — matched exactly so a sibling scope (e.g. kilter:1:50 vs kilter:1:5)
- * can't cross-trigger. "downloaded" leans on the global lastSyncedAt: every
- * enabled board is pulled in one cycle, so a completed cycle means this board's
- * data was fetched. "pending" covers enabled-but-never-synced (e.g. enabled while
- * offline), until the next cycle runs.
+ * can't cross-trigger. "downloaded" is driven by this scope's own checkpoint, so a
+ * board enabled after another already synced shows "pending" (not a false
+ * "downloaded") until its own data lands.
  */
 export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloadState {
   if (!input.enabled) return 'off';
@@ -37,6 +40,6 @@ export function boardDownloadState(input: BoardDownloadStateInput): BoardDownloa
     input.currentTable === `board_climb_stats:${input.scopeKey}`;
   if (input.isSyncing && isCurrentBoard) return 'downloading';
 
-  if (input.lastSyncedAt !== null) return 'downloaded';
+  if (input.downloaded) return 'downloaded';
   return 'pending';
 }

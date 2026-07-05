@@ -55,9 +55,13 @@ async function isTableEmpty(db: SQLiteDatabase, tableName: string): Promise<bool
 }
 
 // Column names of a table, in definition order, for the given schema (default
-// main; pass 'seed' for the ATTACHed seed DB). Table names come from the fixed
-// SEEDABLE_BOARD_TABLES allowlist, never user input, so inlining is safe.
-async function getTableColumns(db: SQLiteDatabase, tableName: string, schema?: string): Promise<string[]> {
+// main; pass 'seed' for the ATTACHed seed DB). Table names are inlined into the
+// pragma call, so a runtime allowlist assert keeps that safe regardless of caller
+// (the type system can't — SEEDABLE_BOARD_TABLES is derived to string[]).
+async function getTableColumns(db: SQLiteDatabase, tableName: string, schema?: 'seed'): Promise<string[]> {
+  if (!SEEDABLE_BOARD_TABLES.includes(tableName)) {
+    throw new Error(`getTableColumns: refusing non-allowlisted table "${tableName}"`);
+  }
   const source = schema
     ? `SELECT name FROM pragma_table_info('${tableName}', '${schema}')`
     : `SELECT name FROM pragma_table_info('${tableName}')`;

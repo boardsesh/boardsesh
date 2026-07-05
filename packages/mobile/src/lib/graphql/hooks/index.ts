@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData, onlineManager } from '@tanstack/react-query';
 import type {
   BoardName,
   UserBoard,
@@ -501,16 +501,19 @@ const OFFLINE_GRADES: Grade[] = BOULDER_GRADES.map((grade) => ({
 }));
 
 export function useGrades(boardName: string, enabled = true) {
-  // Offline in the key so a flip swaps to the bundled fallback / real list.
-  const offline = useIsOffline();
   return useQuery({
-    queryKey: ['grades', boardName, offline],
-    queryFn: async () => {
-      if (offline) return { grades: OFFLINE_GRADES };
+    queryKey: ['grades', boardName],
+    queryFn: () => {
+      // Grades are the same static data online/offline, so (unlike search) the
+      // offline flag stays OUT of the key — no cache miss / refetch on every flip.
+      if (!onlineManager.isOnline()) return { grades: OFFLINE_GRADES };
       return getHttpClient().request<GetGradesQueryResponse>(GET_GRADES, { boardName });
     },
     select: (data) => data.grades,
     staleTime: 24 * 60 * 60 * 1000,
+    // Bundled grades render immediately (and cover a cold-offline start); the
+    // network refines the board's real list when online.
+    placeholderData: { grades: OFFLINE_GRADES },
     enabled: enabled && boardName.length > 0,
   });
 }

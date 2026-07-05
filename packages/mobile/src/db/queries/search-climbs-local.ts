@@ -198,8 +198,9 @@ function buildJoinAndWhere(input: ClimbSearchInput): JoinAndWhere {
     push('s.quality_average >= ?', input.minRating);
   }
 
-  // Grade accuracy: |rounded display - difficulty_average| <= accuracy.
-  const gradeAccuracy = input.gradeAccuracy ? parseFloat(input.gradeAccuracy) : NaN;
+  // Grade accuracy: |rounded display - difficulty_average| <= accuracy. Number()
+  // (not parseFloat) so a non-numeric string is NaN → skipped, not silently 1.5.
+  const gradeAccuracy = input.gradeAccuracy ? Number(input.gradeAccuracy) : NaN;
   if (Number.isFinite(gradeAccuracy)) {
     push(`ABS(${roundedGrade} - s.difficulty_average) <= ?`, gradeAccuracy);
   }

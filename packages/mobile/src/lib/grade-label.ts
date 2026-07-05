@@ -1,35 +1,15 @@
-// Grade-id → label + quality → stars, ported from packages/db so the offline
-// local-search path produces the SAME `difficulty` string ("6a/V3") and `stars`
-// count the server does — mobile doesn't depend on @boardsesh/db (drizzle/pg),
-// so these tiny pure functions are duplicated rather than imported. Keep the map
-// and the star logic in lockstep with packages/db/src/queries/climbs/{grade-lookup,climb-stars}.ts.
+// Grade-id → label + quality → stars for the offline local-search path, so it
+// produces the SAME `difficulty` string ("6a/V3") and `stars` count the server
+// does. The id→label map is derived from the shared `BOULDER_GRADES` taxonomy
+// (board-constants, re-exported by board-config) rather than re-hardcoded — same
+// source the server's grade-lookup uses. getClimbStars mirrors
+// packages/db/src/queries/climbs/climb-stars.ts (a tiny pure function, no shared home).
 
-const GRADE_MAP: Record<number, string> = {
-  10: '4a/V0',
-  11: '4b/V0',
-  12: '4c/V0',
-  13: '5a/V1',
-  14: '5b/V1',
-  15: '5c/V2',
-  16: '6a/V3',
-  17: '6a+/V3',
-  18: '6b/V4',
-  19: '6b+/V4',
-  20: '6c/V5',
-  21: '6c+/V5',
-  22: '7a/V6',
-  23: '7a+/V7',
-  24: '7b/V8',
-  25: '7b+/V8',
-  26: '7c/V9',
-  27: '7c+/V10',
-  28: '8a/V11',
-  29: '8a+/V12',
-  30: '8b/V13',
-  31: '8b+/V14',
-  32: '8c/V15',
-  33: '8c+/V16',
-};
+import { BOULDER_GRADES } from '@boardsesh/board-config';
+
+const GRADE_MAP: Record<number, string> = Object.fromEntries(
+  BOULDER_GRADES.map((grade) => [grade.difficulty_id, grade.difficulty_name]),
+);
 
 /** Boulder grade label for a rounded difficulty id, or '' when out of range / null. */
 export function getGradeLabel(difficultyId: number | null | undefined): string {

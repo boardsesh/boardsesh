@@ -82,8 +82,14 @@ export default function MoreScreen() {
   const handleRetrySync = async () => {
     try {
       const deadLetters = await getDeadLetters(db);
+      // Reset each dead letter independently — a single bad entry must not stop the
+      // rest from being retried (a shared try would abort the loop on first throw).
       for (const deadLetter of deadLetters) {
-        await retryDeadLetter(db, deadLetter.id);
+        try {
+          await retryDeadLetter(db, deadLetter.id);
+        } catch (error) {
+          reportError(error);
+        }
       }
       const graphqlFetch: GraphQLFetch = (query, variables) => getHttpClient().request(query, variables);
       await drainMutationQueue(db, queryClient, graphqlFetch);

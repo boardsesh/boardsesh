@@ -5,7 +5,7 @@ const base = {
   scopeKey: 'kilter:1:5',
   enabled: true,
   isSyncing: false,
-  lastSyncedAt: null as number | null,
+  downloaded: false,
   currentTable: null as string | null,
 };
 
@@ -14,12 +14,12 @@ describe('boardDownloadState', () => {
     expect(boardDownloadState({ ...base, enabled: false })).toBe('off');
   });
 
-  it('is pending when enabled but never synced', () => {
-    expect(boardDownloadState({ ...base, enabled: true, lastSyncedAt: null })).toBe('pending');
+  it('is pending when enabled but its own data has not landed', () => {
+    expect(boardDownloadState({ ...base, enabled: true, downloaded: false })).toBe('pending');
   });
 
-  it('is downloaded after a cycle has completed', () => {
-    expect(boardDownloadState({ ...base, lastSyncedAt: 1_700_000_000_000 })).toBe('downloaded');
+  it('is downloaded once its own checkpoint exists', () => {
+    expect(boardDownloadState({ ...base, downloaded: true })).toBe('downloaded');
   });
 
   it('is downloading while its own board_climbs table is being pulled', () => {
@@ -41,8 +41,20 @@ describe('boardDownloadState', () => {
         scopeKey: 'kilter:1:50',
         enabled: true,
         isSyncing: true,
-        lastSyncedAt: null,
+        downloaded: false,
         currentTable: 'board_climbs:kilter:1:5',
+      }),
+    ).toBe('pending');
+  });
+
+  it('a freshly-enabled board stays pending while another board is mid-cycle', () => {
+    // Its own data hasn't landed yet even though a cycle is running for a sibling.
+    expect(
+      boardDownloadState({
+        ...base,
+        isSyncing: true,
+        downloaded: false,
+        currentTable: 'board_climbs:tension:8:10',
       }),
     ).toBe('pending');
   });
@@ -52,7 +64,7 @@ describe('boardDownloadState', () => {
       boardDownloadState({
         ...base,
         isSyncing: true,
-        lastSyncedAt: 1_700_000_000_000,
+        downloaded: true,
         currentTable: 'board_climbs:tension:8:10',
       }),
     ).toBe('downloaded');
