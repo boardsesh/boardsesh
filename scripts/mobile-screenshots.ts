@@ -1182,18 +1182,23 @@ export function portInUse(port: number): boolean {
  * group; `CI=1` keeps expo non-interactive (no keypress menu / TTY expectations).
  */
 export function startMetro(env: NodeJS.ProcessEnv): ChildProcess {
-  // Write Metro's output straight to METRO_LOG_PATH via a shell redirect (NOT a
-  // `tee` into the orchestrator's inherited stdout). waitForHomeReady polls that
-  // file for the app's "$screen /home" marker — the JS console logs land in Metro's
-  // stdout, NOT the device's unified log. The old `2>&1 | tee` with `stdio:'inherit'`
-  // made this detached process share the runner's stdout, which throws
-  // ERR_STREAM_UNABLE_TO_PIPE when that stream hits backpressure/close and silently
-  // stalls the log file mid-run — so the marker never lands and the slower-booting
-  // iPad shards time out at "did not reach the home screen". `> FILE 2>&1` (no `-a`,
-  // so it truncates for a clean run) plus `stdio:'ignore'` keeps the child off the
-  // parent's fds. Trade-off: Metro no longer streams into the live CI run log —
-  // dumpMetroLogTail surfaces it on a reach-home failure instead.
-  return spawn('sh', ['-c', `bunx expo start --port ${METRO_PORT} > ${METRO_LOG_PATH} 2>&1`], {
+  // Pipe Metro's output through `tee` to METRO_LOG_PATH so waitForHomeReady can poll
+  // it for the app's "$screen /home" marker — the JS console logs land in Metro's
+  // stdout, NOT the device's unified log.
+  //
+  // Two footguns this line threads:
+  //   - `stdio:'inherit'` (the old value) made this DETACHED child share the runner's
+  //     stdout, which throws ERR_STREAM_UNABLE_TO_PIPE when that stream hits
+  //     backpressure/close and stalls the log mid-run — so the marker never lands and
+  //     the slower-booting iPad shards time out. So use `stdio:'ignore'`.
+  //   - A plain `> FILE` redirect (which avoids the pipe) block-buffers `bunx`'s
+  //     forwarded child output when the target is a regular file, so the file stays
+  //     EMPTY until a flush that may never come during the wait → EVERY shard times
+  //     out with an empty log. `| tee` keeps stdout a pipe, which stays line-buffered,
+  //     so the marker appears promptly. `tee` (no `-a`) truncates for a clean run.
+  // Trade-off: Metro no longer streams into the live CI run log — dumpMetroLogTail
+  // surfaces it on a reach-home failure instead.
+  return spawn('sh', ['-c', `bunx expo start --port ${METRO_PORT} 2>&1 | tee ${METRO_LOG_PATH}`], {
     cwd: MOBILE_DIR,
     env: { ...env, CI: '1' },
     stdio: 'ignore',
