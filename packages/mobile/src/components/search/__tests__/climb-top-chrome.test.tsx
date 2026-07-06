@@ -370,10 +370,6 @@ const createAction = (root: HTMLElement) =>
   root.querySelector('[data-pressable="mobile.create.fab.ariaLabel"]') as HTMLButtonElement | null;
 const angleAction = (root: HTMLElement) =>
   root.querySelector('[data-pressable="mobile.angleSelector.title"]') as HTMLButtonElement | null;
-// Material variant: the angle is an M3 quick-row chip (Paper Chip), not a glass
-// toolbar action — the paper mock renders it as `[data-chip="<a11y label>"]`.
-const materialAngleChip = (root: HTMLElement) =>
-  root.querySelector('[data-chip="mobile.angleSelector.title"]') as HTMLButtonElement | null;
 const lightbulb = (root: HTMLElement) =>
   (root.querySelector('[data-pressable="ble.connectBoard"]') ??
     root.querySelector('[data-pressable="lightControl.disconnect"]')) as HTMLButtonElement | null;
@@ -553,31 +549,9 @@ describe('ClimbTopChrome', () => {
     expect(lightbulb(container)).toBeNull();
   });
 
-  it('renders the angle as a Material quick-row chip (not an app-bar action)', () => {
-    ctrl.variant = 'material';
-    ctrl.board = typedBoard;
-    const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    const chip = materialAngleChip(container);
-    expect(chip).not.toBeNull();
-    expect(chip?.textContent).toContain('40°');
-  });
-
-  it('omits the Material angle chip for fixed-angle boards', () => {
-    ctrl.variant = 'material';
-    ctrl.board = { ...typedBoard, isAngleAdjustable: false };
-    const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    expect(materialAngleChip(container)).toBeNull();
-  });
-
-  it('opens the angle sheet from the Material chip and persists the selection', () => {
-    ctrl.variant = 'material';
-    ctrl.board = typedBoard;
-    const { container } = render(<ClimbTopChrome {...makeProps()} />);
-    fireEvent.click(materialAngleChip(container)!);
-    expect(container.querySelector('[data-angle-selector]')).not.toBeNull();
-    fireEvent.click(container.querySelector('[data-angle-selector]') as HTMLButtonElement);
-    expect(ctrl.setActiveBoard).toHaveBeenCalledWith({ ...typedBoard, angle: 45 });
-  });
+  // The Material angle control moved out of ClimbTopChrome into the persistent filter
+  // chip row (FilterChipRow.android), which this component test doesn't render — the
+  // angle chip is covered by the Android screenshot QA, not here.
 
   it('reports its measured height through onHeightChange via onLayout', () => {
     const onHeightChange = vi.fn();
@@ -611,7 +585,9 @@ describe('ClimbTopChrome', () => {
     // label shows as the title with a down-caret affordance. Assert the hint too
     // so this pins the BoardSwitcherButton specifically, not any [data-capsule].
     const switcher = capsule(container);
-    expect(switcher?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12 • 40°');
+    // The Material board switcher drops the angle from the title (it rides its own
+    // filter chip now), so the label is the board name + size without "• 40°".
+    expect(switcher?.getAttribute('data-capsule')).toBe('Display:kilter • 12x12');
     expect(switcher?.getAttribute('data-hint')).toBe('mobile.search.boardSwitcherHint');
     expect(container.querySelector('[data-icon="chevron.down"]')).not.toBeNull();
     expect(container.querySelector('[data-search-field]')).not.toBeNull();

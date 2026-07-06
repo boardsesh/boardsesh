@@ -5,53 +5,23 @@
 // them. They are the flat M3 counterparts of the liquid-glass `AngleToolbarAction`
 // / `LightbulbToolbarAction` islands — each reads its own state and renders
 // nothing when it doesn't apply (no adjustable board / no bluetooth).
+//
+// The Climbs angle lives as the first chip in the native filter chip row
+// (`FilterChipRow.android`), not here — the app bar keeps only the create action.
+// `MaterialAngleAction` remains for Discover's `CollapsingTopChrome`.
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Appbar, Chip } from 'react-native-paper';
+import { Appbar } from 'react-native-paper';
 import { useTheme } from '../../providers/theme-provider';
-import { useActiveBoard, useSetActiveBoard } from '../../lib/graphql/use-active-board';
 import { hapticLight } from '../../lib/haptics';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { useBleControlSheet } from '../../providers/ble-control-sheet-provider';
 import { Text } from '../Text';
 import { iconMap } from '../icon-map';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
-
-/**
- * Shared angle state for the Material angle controls: reads the active board, owns
- * the selector sheet's open state, and writes the chosen angle back (re-grading the
- * list).
- *
- * Each consumer gets its OWN instance (and its own `visible` state) — that's by
- * design, not a bug: `MaterialAngleAction` (Discover's app bar) and
- * `MaterialAngleChip` (the Climbs quick row) never co-render on the same screen
- * (Climbs dropped the app-bar action when the angle moved to the chip row), so
- * there is no shared sheet-open state to diverge.
- */
-function useMaterialAngleControl() {
-  const { data: activeBoard } = useActiveBoard();
-  const setActiveBoard = useSetActiveBoard();
-  const [visible, setVisible] = useState(false);
-
-  const canAdjust = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
-  const open = useCallback(() => {
-    if (!activeBoard || activeBoard.isAngleAdjustable === false || activeBoard.angle == null) return;
-    hapticLight();
-    setVisible(true);
-  }, [activeBoard]);
-  const close = useCallback(() => setVisible(false), []);
-  const change = useCallback(
-    (newAngle: number) => {
-      if (!activeBoard || activeBoard.isAngleAdjustable === false || newAngle === activeBoard.angle) return;
-      void setActiveBoard({ ...activeBoard, angle: newAngle });
-    },
-    [activeBoard, setActiveBoard],
-  );
-
-  return { activeBoard, canAdjust, visible, open, close, change };
-}
+import { useMaterialAngleControl } from './use-material-angle-control';
 
 export function MaterialAngleAction() {
   const { systemColors } = useTheme();
@@ -72,41 +42,6 @@ export function MaterialAngleAction() {
   return (
     <>
       <Appbar.Action icon={angleIcon} onPress={open} accessibilityLabel={tSession('mobile.angleSelector.title')} />
-      <AngleSelectorSheet
-        visible={visible}
-        onClose={close}
-        boardName={activeBoard.boardType}
-        layoutId={activeBoard.layoutId}
-        currentAngle={activeBoard.angle}
-        onAngleChange={change}
-      />
-    </>
-  );
-}
-
-/**
- * The Material angle control as an M3 quick-row chip (Climbs). Angle re-grades the
- * whole list, so it belongs with the other list parameters (grade / filters) one
- * tap away, not buried — and it keeps the over-budget app bar lean. Renders nothing
- * for fixed-angle boards (or none).
- */
-export function MaterialAngleChip() {
-  const { t: tSession } = useTranslation('session');
-  const { activeBoard, canAdjust, visible, open, close, change } = useMaterialAngleControl();
-
-  if (!activeBoard || !canAdjust) return null;
-
-  return (
-    <>
-      <Chip
-        compact
-        mode="outlined"
-        onPress={open}
-        accessibilityLabel={tSession('mobile.angleSelector.title')}
-        textStyle={styles.materialChipText}
-      >
-        {`${activeBoard.angle}°`}
-      </Chip>
       <AngleSelectorSheet
         visible={visible}
         onClose={close}
@@ -158,8 +93,5 @@ const styles = StyleSheet.create({
   materialAngleText: {
     fontWeight: '700',
     textAlign: 'center',
-  },
-  materialChipText: {
-    fontWeight: '700',
   },
 });

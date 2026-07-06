@@ -16,12 +16,11 @@ import { Appbar, Chip } from 'react-native-paper';
 import type { Grade } from '@boardsesh/shared-schema';
 import type { GradeBound, GradeTapMeta } from '@boardsesh/climb-filters';
 import { useTheme } from '../../providers/theme-provider';
-import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { selectByVariant } from '../../theme/variants';
 import { spacing } from '../../theme/tokens';
 import { SearchHeader, type SearchHeaderHandle } from '../SearchHeader';
 import { iconMap } from '../icon-map';
-import { BoardSwitcherButton, CollapsingTopChrome, MaterialAngleChip, TOP_ACTION_SIZE } from '../chrome';
+import { BoardSwitcherButton, CollapsingTopChrome, TOP_ACTION_SIZE } from '../chrome';
 import { GradeRangeRail } from '../grade';
 import { UserAvatarToolbarAction } from '../user-drawer/UserAvatarToolbarAction';
 import { WallStatusCapsule } from '../queue-control/WallStatusCapsule';
@@ -116,14 +115,8 @@ export function ClimbTopChrome({
 }: ClimbTopChromeProps) {
   const { t } = useTranslation('climbs');
   const { systemColors, variant } = useTheme();
-  const { data: activeBoard } = useActiveBoard();
   const insets = useSafeAreaInsets();
   const usesCustomSearch = searchMode === 'custom';
-  // The Material angle control moved out of the (over-budget) app bar into the
-  // quick row beside the grade/filter chips. Gate the quick row on it OR a filter
-  // summary so the row never renders an empty gap.
-  const angleAdjustable = activeBoard?.isAngleAdjustable !== false && activeBoard?.angle != null;
-
   // "On the wall" capsule: own the gate here so a falsy centre slot falls back to
   // the title, and the capsule gets a clean mount/unmount (entering/exiting fade).
   // Only present when a board feed lights a climb that differs from the user's own
@@ -259,24 +252,25 @@ export function ClimbTopChrome({
                 default; it sits directly under the search field, like Liquid Glass. */}
             {showPersistentChips ? filterChrome : null}
 
-            {angleAdjustable || visibleFilterSummary ? (
+            {/* The angle now rides as the first chip in the persistent chip row above
+                (FilterChipRow.android); the quick row only carries the condensed filter
+                summary, which shows only when the top-chrome filters are active (i.e.
+                the persistent chip row is off). */}
+            {visibleFilterSummary ? (
               <View pointerEvents="box-none" style={styles.materialQuickRow}>
-                <MaterialAngleChip />
-                {visibleFilterSummary ? (
-                  <Chip
-                    compact
-                    mode="flat"
-                    icon={iconMap.filter.android}
-                    onPress={visibleFilterSummary.onClear}
-                    onClose={visibleFilterSummary.onClear}
-                    closeIcon={iconMap.close.android}
-                    accessibilityLabel={visibleFilterSummary.text}
-                    style={styles.materialChip}
-                    textStyle={styles.materialChipText}
-                  >
-                    {visibleFilterSummary.text}
-                  </Chip>
-                ) : null}
+                <Chip
+                  compact
+                  mode="flat"
+                  icon={iconMap.filter.android}
+                  onPress={visibleFilterSummary.onClear}
+                  onClose={visibleFilterSummary.onClear}
+                  closeIcon={iconMap.close.android}
+                  accessibilityLabel={visibleFilterSummary.text}
+                  style={styles.materialChip}
+                  textStyle={styles.materialChipText}
+                >
+                  {visibleFilterSummary.text}
+                </Chip>
               </View>
             ) : null}
 

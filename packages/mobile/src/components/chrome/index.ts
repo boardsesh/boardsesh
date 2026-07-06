@@ -6,4 +6,4 @@ export { LightbulbToolbarAction } from './LightbulbToolbarAction';
 export { CollapsingLargeTitleHeader } from './CollapsingLargeTitleHeader';
 export { CollapsingTopChrome } from './CollapsingTopChrome';
 export { DiscoverTopChrome } from './DiscoverTopChrome';
-export { MaterialAngleAction, MaterialAngleChip, MaterialLightbulbAction } from './MaterialBoardActions';
+export { MaterialAngleAction, MaterialLightbulbAction } from './MaterialBoardActions';

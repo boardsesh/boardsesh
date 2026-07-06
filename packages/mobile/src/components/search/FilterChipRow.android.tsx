@@ -47,6 +47,8 @@ import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus'
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
 import { filterChipBrandColors } from '../../theme/expo-ui-modifiers';
+import { useMaterialAngleControl } from '../chrome/use-material-angle-control';
+import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
 import { popularityChipLabel, ratingChipLabel } from './FilterChipRow.logic';
 import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
 
@@ -252,6 +254,19 @@ function FilterChipRowComponent({
   const { brandColors, colorScheme } = useTheme();
   const chipColors = filterChipBrandColors(brandColors);
 
+  // Angle rides as the first chip: it re-grades the whole list, so it belongs with
+  // the other list-refinement chips rather than in the app bar. Self-contained (reads
+  // the active board, owns its own selector sheet); renders nothing for fixed-angle
+  // boards. Android only — iOS keeps its toolbar angle island (see FilterChipRow.ios).
+  const {
+    activeBoard,
+    canAdjust: canAdjustAngle,
+    visible: angleSheetVisible,
+    open: openAngle,
+    close: closeAngle,
+    change: changeAngle,
+  } = useMaterialAngleControl();
+
   const currentRecentKey = getFilterKey(currentFilters, currentSearchText);
   const hasActivePopularity = minAscents != null;
   const hasActiveRating = minRating != null;
@@ -262,151 +277,169 @@ function FilterChipRowComponent({
       : t('mobile.filter.title');
 
   return (
-    // `colorScheme` keeps the Compose MaterialTheme on our in-app Light/Dark toggle.
-    // `matchContents={{ vertical: true }}` (NOT the boolean form) fills the parent
-    // width so the Row's `fillMaxWidth()` has a bounded width to scroll within, while
-    // height tracks the chip content — mirrors SwitchRow/SegmentedControl.
-    <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
-      <Row
-        modifiers={[fillMaxWidth(), horizontalScroll(), padding(spacing[4], spacing[2], spacing[4], spacing[2])]}
-        verticalAlignment="center"
-        horizontalArrangement={{ spacedBy: spacing[2] }}
-      >
-        {/* Filters · N → the long-tail sheet. Action chip, no menu. */}
-        <ActionChip
-          label={filtersLabel}
-          selected={activeFilterCount > 0}
-          colors={chipColors}
-          iconSource={ICON.tune}
-          onPress={onOpenFilters}
-        />
+    <>
+      {/* `colorScheme` keeps the Compose MaterialTheme on our in-app Light/Dark toggle.
+          `matchContents={{ vertical: true }}` (NOT the boolean form) fills the parent
+          width so the Row's `fillMaxWidth()` has a bounded width to scroll within, while
+          height tracks the chip content — mirrors SwitchRow/SegmentedControl. */}
+      <Host matchContents={{ vertical: true }} colorScheme={colorScheme} style={styles.host}>
+        <Row
+          modifiers={[fillMaxWidth(), horizontalScroll(), padding(spacing[4], spacing[2], spacing[4], spacing[2])]}
+          verticalAlignment="center"
+          horizontalArrangement={{ spacedBy: spacing[2] }}
+        >
+          {/* Angle → the angle picker. First chip; re-grades the list on change. Action
+              chip, no menu; outlined like the resting filters. Hidden for fixed-angle boards. */}
+          {canAdjustAngle && activeBoard ? (
+            <ActionChip label={`${activeBoard.angle}°`} selected={false} colors={chipColors} onPress={openAngle} />
+          ) : null}
 
-        {/* Recent ▾ — hidden when there are none. */}
-        {recentFilters.length > 0 ? (
-          <MenuChip
-            label={t('mobile.search.recentFilters')}
-            selected={false}
+          {/* Filters · N → the long-tail sheet. Action chip, no menu. */}
+          <ActionChip
+            label={filtersLabel}
+            selected={activeFilterCount > 0}
             colors={chipColors}
-            iconSource={ICON.history}
-            renderItems={(close) => (
-              <>
-                {recentFilters.map((recent) => (
+            iconSource={ICON.tune}
+            onPress={onOpenFilters}
+          />
+
+          {/* Recent ▾ — hidden when there are none. */}
+          {recentFilters.length > 0 ? (
+            <MenuChip
+              label={t('mobile.search.recentFilters')}
+              selected={false}
+              colors={chipColors}
+              iconSource={ICON.history}
+              renderItems={(close) => (
+                <>
+                  {recentFilters.map((recent) => (
+                    <MenuItem
+                      key={recent.id}
+                      label={recent.label}
+                      checked={getFilterKey(recent.filters, recent.searchText) === currentRecentKey}
+                      onClick={() => {
+                        onApplyRecent(recent.filters, recent.searchText);
+                        close();
+                      }}
+                    />
+                  ))}
+                  <HorizontalDivider />
                   <MenuItem
-                    key={recent.id}
-                    label={recent.label}
-                    checked={getFilterKey(recent.filters, recent.searchText) === currentRecentKey}
+                    label={t('mobile.search.clearRecentSearches')}
+                    checked={false}
+                    textColor={brandColors.error}
                     onClick={() => {
-                      onApplyRecent(recent.filters, recent.searchText);
+                      onClearRecent();
                       close();
                     }}
                   />
-                ))}
-                <HorizontalDivider />
+                </>
+              )}
+            />
+          ) : null}
+
+          {/* Grade → the range rail overlay. Action chip, no menu; tap toggles the rail. */}
+          <ActionChip
+            label={gradeLabel}
+            selected={gradeActive}
+            colors={chipColors}
+            onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+          />
+
+          {/* Show ▾ — hide-sent (auth-gated) + benchmarks. The controlled menu stays
+            OPEN while toggling (these items don't call close()). */}
+          <MenuChip
+            label={t('mobile.search.chips.show')}
+            selected={hideCompleted || onlyBenchmarks}
+            colors={chipColors}
+            renderItems={() => (
+              <>
+                {canHideCompleted ? (
+                  <MenuItem
+                    label={t('mobile.filter.hideSent')}
+                    checked={hideCompleted}
+                    onClick={() => onToggleHideCompleted(!hideCompleted)}
+                  />
+                ) : null}
                 <MenuItem
-                  label={t('mobile.search.clearRecentSearches')}
-                  checked={false}
-                  textColor={brandColors.error}
-                  onClick={() => {
-                    onClearRecent();
-                    close();
-                  }}
+                  label={t('mobile.filter.benchmark')}
+                  checked={onlyBenchmarks}
+                  onClick={() => onToggleBenchmarks(!onlyBenchmarks)}
                 />
               </>
             )}
           />
-        ) : null}
 
-        {/* Grade → the range rail overlay. Action chip, no menu; tap toggles the rail. */}
-        <ActionChip
-          label={gradeLabel}
-          selected={gradeActive}
-          colors={chipColors}
-          onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
-        />
-
-        {/* Show ▾ — hide-sent (auth-gated) + benchmarks. The controlled menu stays
-            OPEN while toggling (these items don't call close()). */}
-        <MenuChip
-          label={t('mobile.search.chips.show')}
-          selected={hideCompleted || onlyBenchmarks}
-          colors={chipColors}
-          renderItems={() => (
-            <>
-              {canHideCompleted ? (
-                <MenuItem
-                  label={t('mobile.filter.hideSent')}
-                  checked={hideCompleted}
-                  onClick={() => onToggleHideCompleted(!hideCompleted)}
-                />
-              ) : null}
-              <MenuItem
-                label={t('mobile.filter.benchmark')}
-                checked={onlyBenchmarks}
-                onClick={() => onToggleBenchmarks(!onlyBenchmarks)}
-              />
-            </>
-          )}
-        />
-
-        {/* Tall / Wide — board-shape chips for the current Kilter homewall size
+          {/* Tall / Wide — board-shape chips for the current Kilter homewall size
             (empty otherwise). Tap opens a menu: filter toggle + lock/unlock. */}
-        {dimensionChips.map((dimension) => (
-          <DimensionChipView
-            key={dimension.key}
-            dimension={dimension}
-            label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-            toggleLabel={dimension.key === 'tall' ? t('mobile.filter.tall') : t('mobile.filter.wide')}
+          {dimensionChips.map((dimension) => (
+            <DimensionChipView
+              key={dimension.key}
+              dimension={dimension}
+              label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+              toggleLabel={dimension.key === 'tall' ? t('mobile.filter.tall') : t('mobile.filter.wide')}
+              colors={chipColors}
+              lockLabel={t('mobile.search.chips.lock')}
+              unlockLabel={t('mobile.search.chips.unlock')}
+            />
+          ))}
+
+          {/* Popularity ▾ — single-choice min-ascents buckets. */}
+          <MenuChip
+            label={hasActivePopularity ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity')}
+            selected={hasActivePopularity}
             colors={chipColors}
-            lockLabel={t('mobile.search.chips.lock')}
-            unlockLabel={t('mobile.search.chips.unlock')}
+            renderItems={(close) => (
+              <>
+                {POPULARITY_BUCKETS.map((bucket) => (
+                  <MenuItem
+                    key={bucket ?? 'any'}
+                    label={popularityChipLabel(bucket, t)}
+                    checked={bucket === minAscents}
+                    onClick={() => {
+                      onChangePopularity(bucket);
+                      close();
+                    }}
+                  />
+                ))}
+              </>
+            )}
           />
-        ))}
 
-        {/* Popularity ▾ — single-choice min-ascents buckets. */}
-        <MenuChip
-          label={hasActivePopularity ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity')}
-          selected={hasActivePopularity}
-          colors={chipColors}
-          renderItems={(close) => (
-            <>
-              {POPULARITY_BUCKETS.map((bucket) => (
-                <MenuItem
-                  key={bucket ?? 'any'}
-                  label={popularityChipLabel(bucket, t)}
-                  checked={bucket === minAscents}
-                  onClick={() => {
-                    onChangePopularity(bucket);
-                    close();
-                  }}
-                />
-              ))}
-            </>
-          )}
+          {/* Min rating ▾ — single-choice star buckets. */}
+          <MenuChip
+            label={hasActiveRating ? ratingChipLabel(minRating, t) : t('mobile.filter.minRating')}
+            selected={hasActiveRating}
+            colors={chipColors}
+            renderItems={(close) => (
+              <>
+                {RATING_BUCKETS.map((bucket) => (
+                  <MenuItem
+                    key={bucket ?? 'any'}
+                    label={ratingChipLabel(bucket, t)}
+                    checked={bucket === minRating}
+                    onClick={() => {
+                      onChangeRating(bucket);
+                      close();
+                    }}
+                  />
+                ))}
+              </>
+            )}
+          />
+        </Row>
+      </Host>
+      {canAdjustAngle && activeBoard ? (
+        <AngleSelectorSheet
+          visible={angleSheetVisible}
+          onClose={closeAngle}
+          boardName={activeBoard.boardType}
+          layoutId={activeBoard.layoutId}
+          currentAngle={activeBoard.angle}
+          onAngleChange={changeAngle}
         />
-
-        {/* Min rating ▾ — single-choice star buckets. */}
-        <MenuChip
-          label={hasActiveRating ? ratingChipLabel(minRating, t) : t('mobile.filter.minRating')}
-          selected={hasActiveRating}
-          colors={chipColors}
-          renderItems={(close) => (
-            <>
-              {RATING_BUCKETS.map((bucket) => (
-                <MenuItem
-                  key={bucket ?? 'any'}
-                  label={ratingChipLabel(bucket, t)}
-                  checked={bucket === minRating}
-                  onClick={() => {
-                    onChangeRating(bucket);
-                    close();
-                  }}
-                />
-              ))}
-            </>
-          )}
-        />
-      </Row>
-    </Host>
+      ) : null}
+    </>
   );
 }
 

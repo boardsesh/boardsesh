@@ -8,10 +8,20 @@ type BoardLabelFields = {
   layoutName?: string | null;
 };
 
-export function formatActiveBoardLabel(activeBoard: BoardLabelFields | null | undefined): string | null {
+type BoardLabelOptions = {
+  /** Append the angle segment (e.g. "• 40°"). Default true. Set false where the
+   *  angle is surfaced separately (the Material board switcher — the angle rides
+   *  its own filter chip), to avoid showing it twice. */
+  includeAngle?: boolean;
+};
+
+export function formatActiveBoardLabel(
+  activeBoard: BoardLabelFields | null | undefined,
+  { includeAngle = true }: BoardLabelOptions = {},
+): string | null {
   if (!activeBoard) return null;
 
-  const angleLabel = activeBoard.angle != null ? `${activeBoard.angle}°` : null;
+  const angleLabel = includeAngle && activeBoard.angle != null ? `${activeBoard.angle}°` : null;
   const customName = activeBoard.name?.trim();
   const hasCustomName = customName != null && customName.length > 0;
   const labelParts = hasCustomName

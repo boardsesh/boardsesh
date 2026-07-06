@@ -21,10 +21,10 @@ type BoardSwitcherButtonProps = {
 };
 
 /**
- * The Material variant's board switcher: the active board label ("Kilter • M •
- * 45°", or "Garage Wall • 40°" for a named board) shown as the app-bar title
- * with a trailing down-caret affordance, so it reads as a tappable context
- * switcher rather than the static subtitle it replaces. It is the flat M3
+ * The Material variant's board switcher: the active board label ("Kilter • M", or
+ * "Garage Wall" for a named board — angle omitted, it rides its own filter chip)
+ * shown as the app-bar title with a trailing down-caret affordance, so it reads as
+ * a tappable context switcher rather than the static subtitle it replaces. It is the flat M3
  * counterpart of the liquid-glass `BoardToolbarAction` — reads the active board
  * itself, renders nothing when none is set, and fires the haptic here while the
  * caller injects what a tap does. Lives where `Appbar.Content` did, `flex: 1`.
@@ -33,7 +33,9 @@ export function BoardSwitcherButton({ onPress, accessibilityHint, badge = false 
   const { systemColors, brandColors } = useTheme();
   const { data: activeBoard } = useActiveBoard();
 
-  const boardLabel = useMemo(() => formatActiveBoardLabel(activeBoard), [activeBoard]);
+  // Drop the angle from the title — it now rides as its own chip in the filter row,
+  // so repeating it here would show the angle twice in the same header band.
+  const boardLabel = useMemo(() => formatActiveBoardLabel(activeBoard, { includeAngle: false }), [activeBoard]);
 
   const handlePress = useCallback(() => {
     hapticLight();

@@ -56,4 +56,30 @@ describe('formatActiveBoardLabel', () => {
       }),
     ).toBe('Display:kilter • 0°');
   });
+
+  it('omits the angle segment when includeAngle is false', () => {
+    expect(
+      formatActiveBoardLabel(
+        {
+          name: 'Garage Wall',
+          angle: 40,
+          boardType: 'kilter',
+          sizeName: '12x12',
+          layoutName: 'Homewall',
+        },
+        { includeAngle: false },
+      ),
+    ).toBe('Garage Wall');
+    expect(
+      formatActiveBoardLabel(
+        {
+          angle: 45,
+          boardType: 'tension',
+          sizeName: '12x12',
+          layoutName: 'Spray',
+        },
+        { includeAngle: false },
+      ),
+    ).toBe('Display:tension • 12x12');
+  });
 });

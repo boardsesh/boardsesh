@@ -101,25 +101,26 @@ describe('BoardSwitcherButton', () => {
     expect(button(container)).toBeNull();
   });
 
-  it('renders the board label with a caret and fires onPress with a haptic', () => {
+  it('renders the board label (angle omitted) with a caret and fires onPress with a haptic', () => {
     ctrl.board = typedBoard;
     const onPress = vi.fn();
     const { container } = render(createElement(BoardSwitcherButton, { onPress }));
     const target = button(container);
-    expect(target?.getAttribute('data-label')).toBe('Display:kilter • M • 40°');
+    // The angle rides its own filter chip now, so the title omits "• 40°".
+    expect(target?.getAttribute('data-label')).toBe('Display:kilter • M');
     expect(container.querySelector('[data-icon="chevron.down"]')).not.toBeNull();
     fireEvent.click(target!);
     expect(onPress).toHaveBeenCalledTimes(1);
     expect(haptics.light).toHaveBeenCalledTimes(1);
   });
 
-  it('leads with the custom board name for a named board', () => {
+  it('leads with the custom board name for a named board (angle omitted)', () => {
     ctrl.board = namedBoard;
     const { container } = render(createElement(BoardSwitcherButton, { onPress: vi.fn() }));
-    expect(button(container)?.getAttribute('data-label')).toBe('Garage Wall • 25°');
+    expect(button(container)?.getAttribute('data-label')).toBe('Garage Wall');
   });
 
-  it('renders a named board with no angle (label has no separator)', () => {
+  it('renders a named board with no angle', () => {
     ctrl.board = namedBoardNoAngle;
     const { container } = render(createElement(BoardSwitcherButton, { onPress: vi.fn() }));
     expect(button(container)?.getAttribute('data-label')).toBe('Garage Wall');
