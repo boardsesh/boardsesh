@@ -36,13 +36,32 @@ describe('screenshot-wall-seed', () => {
 
   it('serves the published climbs from the feed methods', async () => {
     const client = createScreenshotBoardPresenceClient();
-    expect(await client.fetchRecentClimbs(SCREENSHOT_SEED_BOARD_ID)).toEqual([]);
-
     const climbs = [makeClimb({ climbUuid: 'a', seq: 100 }), makeClimb({ climbUuid: 'b', seq: 99 })];
     publishScreenshotWallClimbs(climbs, null);
 
     expect(await client.fetchRecentClimbs(SCREENSHOT_SEED_BOARD_ID)).toEqual(climbs);
     expect(await client.fetchHistory(SCREENSHOT_SEED_BOARD_ID)).toEqual(climbs);
+  });
+
+  it('defers the one-shot fetches until the seed is published', async () => {
+    const client = createScreenshotBoardPresenceClient();
+    // The board-presence hook calls these once at boot, before the Climbs screen
+    // publishes — they must resolve with the full data once it does, not [] early.
+    const recentPromise = client.fetchRecentClimbs(SCREENSHOT_SEED_BOARD_ID);
+    const statsPromise = client.fetchStats(SCREENSHOT_SEED_BOARD_ID);
+
+    let resolvedEarly = false;
+    void recentPromise.then(() => {
+      resolvedEarly = true;
+    });
+    await Promise.resolve();
+    expect(resolvedEarly).toBe(false);
+
+    const climbs = [makeClimb({ climbUuid: 'a', grade: '7a', seq: 100 })];
+    publishScreenshotWallClimbs(climbs, null);
+
+    expect(await recentPromise).toEqual(climbs);
+    expect((await statsPromise).hardestGrade).toBe('7a');
   });
 
   it('derives stats from the seeded climbs (hardest = the lit climb)', async () => {

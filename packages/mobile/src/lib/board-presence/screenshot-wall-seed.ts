@@ -48,6 +48,25 @@ export function publishScreenshotWallClimbs(climbs: BoardPresenceClimb[], holder
   }
 }
 
+/**
+ * Resolve once the seed has climbs. The board-presence hook calls
+ * `fetchRecentClimbs`/`fetchStats` ONCE, at app boot — before the Climbs screen
+ * has published — so returning the (empty) seed immediately would leave the kiosk
+ * with a lit current climb but an empty history reel and 0/— stat tiles. Awaiting
+ * the first publish instead lets those one-shot fetches deliver the full history +
+ * stats whenever the Climbs screen runs (already-published → resolves at once).
+ */
+function whenSeeded(): Promise<void> {
+  if (seedClimbs.length > 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const listener = () => {
+      listeners.delete(listener);
+      resolve();
+    };
+    listeners.add(listener);
+  });
+}
+
 function currentSeedClimb(): BoardPresenceClimb | null {
   return seedClimbs[0] ?? null;
 }
@@ -111,15 +130,19 @@ export function createScreenshotBoardPresenceClient(): MobileBoardPresenceClient
       return () => {};
     },
     async fetchRecentClimbs() {
+      await whenSeeded();
       return seedClimbs;
     },
     async fetchHistory() {
+      await whenSeeded();
       return seedClimbs;
     },
     async fetchStats() {
+      await whenSeeded();
       return seedStats();
     },
     async fetchConnection() {
+      await whenSeeded();
       return seedHolder;
     },
     async reportDisconnect() {
