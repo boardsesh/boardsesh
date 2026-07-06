@@ -1,0 +1,72 @@
+appId: com.boardsesh.app
+name: app-store screenshots (iPad)
+---
+# iPad App Store hero shots against the prod backend + curated test user.
+#
+# Why this differs from the iPhone flow (app-store.yaml): the iPad CANNOT be driven
+# by deep links. On the iPad simulator every `openurl com.boardsesh.app://…` pops the
+# "Open in 'Boardsesh'?" scheme-confirm dialog and the URL is never delivered to the
+# app's router — navigation just never happens (verified: an all-deep-link run on
+# iPad produced 11 byte-identical "stuck on home + dialog" frames, while the same
+# flow on iPhone navigated 10 distinct screens). iPhone remembers the confirm after
+# the first prime; iPad does not.
+#
+# So the iPad navigates via the persistent left SIDEBAR using coordinate taps — the
+# same gesture-tap mechanism the rest of this RN/Fabric build needs (the accessibility
+# tree doesn't expose plain RN views, only native inputs + system dialogs). No
+# `openurl`, so no dialog. The orchestrator selects this flow for iPad devices (see
+# iosSourceFlowFile in scripts/mobile-screenshots.ts).
+#
+# The ${TAP_*} points are substituted per device by the orchestrator
+# (renderMaestroFlowForIosDevice): the sidebar is laid out in fixed logical points,
+# but Maestro taps are a percentage of the current screen, and the 13" and 11" iPad
+# have different landscape heights — so each item's percentage is computed from its
+# logical anchor and the device's pixel height. Do NOT hardcode percentages here.
+#
+# The wall kiosk is seeded from the active board's REAL climbs when the Climbs list
+# mounts (src/lib/board-presence/screenshot-wall-seed.ts), so Climbs is visited BEFORE
+# On the Wall. The active board is auto-activated on boot (ScreenshotBoardAutoActivator),
+# and the build auto-signs-in and lands on home — the orchestrator gates on
+# `$screen /home` before running this flow.
+- setOrientation: ${MAESTRO_DEVICE_ORIENTATION}
+- waitForAnimationToEnd
+
+# Climbs — the browse list. Visited FIRST because mounting it seeds the wall kiosk.
+- tapOn:
+    point: ${TAP_CLIMBS}
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 02-climbs
+
+# Home — the "Everyone" feed, with the persistent wall rail now showing the lit climb.
+- tapOn:
+    point: ${TAP_HOME}
+- waitForAnimationToEnd
+- takeScreenshot: 01-home
+
+# On the Wall — the wall-mounted kiosk HERO: the lit board + the current climb big and
+# readable from across the gym. The board-presence feed is seeded above.
+- tapOn:
+    point: ${TAP_WALL}
+- waitForAnimationToEnd
+- waitForAnimationToEnd
+- takeScreenshot: 00-wall
+
+# Record — the workout generator (a workout is pre-selected in screenshot mode via
+# EXPO_PUBLIC_SCREENSHOT_WORKOUT).
+- tapOn:
+    point: ${TAP_RECORD}
+- waitForAnimationToEnd
+- takeScreenshot: 03-workout-generator
+
+# Discover — the playlist library (smart "Your Picks" + saved playlists).
+- tapOn:
+    point: ${TAP_DISCOVER}
+- waitForAnimationToEnd
+- takeScreenshot: 04-discover
+
+# Profile — progress / stats (charts).
+- tapOn:
+    point: ${TAP_PROFILE}
+- waitForAnimationToEnd
+- takeScreenshot: 05-profile

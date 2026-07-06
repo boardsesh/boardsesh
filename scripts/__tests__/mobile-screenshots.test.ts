@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import {
   buildScreenshotEnv,
   deviceSlug,
+  iosSourceFlowFile,
+  ipadSidebarTapPoint,
   isIpadScreenshotDevice,
   metroDevClientUrl,
   parseArgs,
@@ -303,53 +305,85 @@ describe('renderMaestroFlowForIosDevice', () => {
     }
   });
 
-  it('renders the iPad-class gate to true on iPad and false on iPhone', () => {
-    const ipadDevice: IosScreenshotDevice = {
+  it('resolves iPad sidebar tap points from each device landscape height', () => {
+    const ipad13: IosScreenshotDevice = {
       name: 'iPad Pro 13-inch (M5)',
       typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB',
       orientation: 'LANDSCAPE_LEFT',
     };
-    const phoneDevice: IosScreenshotDevice = {
-      name: 'iPhone 16 Pro Max',
-      typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max',
-      orientation: 'PORTRAIT',
+    const ipad11: IosScreenshotDevice = {
+      name: 'iPad Pro 11-inch (M5)',
+      typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB',
+      orientation: 'LANDSCAPE_LEFT',
     };
-    const flowSource =
-      '- runFlow:\n    when:\n      true: ${__MAESTRO_IS_IPAD__}\n    commands:\n      - takeScreenshot: 00-wall\n';
+    const flow = '- tapOn:\n    point: ${TAP_CLIMBS}\n- tapOn:\n    point: ${TAP_PROFILE}\n';
 
-    const ipadRendered = renderMaestroFlowForIosDevice(flowSource, ipadDevice);
-    expect(ipadRendered).toContain('true: ${true}');
-    expect(ipadRendered).not.toContain('__MAESTRO_IS_IPAD__');
-
-    const phoneRendered = renderMaestroFlowForIosDevice(flowSource, phoneDevice);
-    expect(phoneRendered).toContain('true: ${false}');
-    expect(phoneRendered).not.toContain('__MAESTRO_IS_IPAD__');
+    // Climbs anchors at logical 144pt (=288px @2x): 288/2064 ≈ 14% on the 13",
+    // 288/1668 ≈ 17% on the shorter 11". Same item, different percentage per device.
+    // Maestro needs whole-number percentages, so the point is rounded.
+    const rendered13 = renderMaestroFlowForIosDevice(flow, ipad13);
+    const rendered11 = renderMaestroFlowForIosDevice(flow, ipad11);
+    expect(rendered13).toContain('point: 3%,14%');
+    expect(rendered11).toContain('point: 3%,17%');
+    // Profile is bottom-anchored — near the bottom on both, but not identical.
+    expect(rendered13).toContain('point: 3%,94%');
+    expect(rendered11).toContain('point: 3%,93%');
+    expect(rendered13).not.toContain('${TAP_');
+    expect(rendered11).not.toContain('${TAP_');
   });
 
-  it('gates the real app-store wall shot on the iPad device class', () => {
-    const ipadDevice: IosScreenshotDevice = {
-      name: 'iPad Pro 13-inch (M5)',
-      typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB',
-      orientation: 'LANDSCAPE_LEFT',
-    };
+  it('leaves iPad tap placeholders unresolved on a non-iPad device (the flow never runs there)', () => {
     const phoneDevice: IosScreenshotDevice = {
       name: 'iPhone 16 Pro Max',
       typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max',
       orientation: 'PORTRAIT',
     };
-    const flowSource = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
-    // The flow ships the placeholder and the iPad-only wall capture.
-    expect(flowSource).toContain('__MAESTRO_IS_IPAD__');
-    expect(flowSource).toContain('takeScreenshot: 00-wall');
-    expect(flowSource).toContain('com.boardsesh.app://wall');
+    expect(ipadSidebarTapPoint('TAP_CLIMBS', phoneDevice)).toBeNull();
+    expect(renderMaestroFlowForIosDevice('point: ${TAP_CLIMBS}', phoneDevice)).toContain('${TAP_CLIMBS}');
+  });
 
-    // Rendered per device, the wall gate resolves to a concrete boolean and the
-    // placeholder is gone (so neither run leaves an unresolved token).
-    expect(renderMaestroFlowForIosDevice(flowSource, ipadDevice)).toContain('true: ${true}');
-    expect(renderMaestroFlowForIosDevice(flowSource, phoneDevice)).toContain('true: ${false}');
-    for (const device of [ipadDevice, phoneDevice]) {
-      expect(renderMaestroFlowForIosDevice(flowSource, device)).not.toContain('__MAESTRO_IS_IPAD__');
-    }
+  it('the iPad flow uses only ${TAP_*} placeholders, never hardcoded percentages', () => {
+    const ipadFlow = readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8');
+    expect(ipadFlow).toContain('point: ${TAP_CLIMBS}');
+    expect(ipadFlow).toContain('point: ${TAP_WALL}');
+    // No literal "N%,M%" tap points — those wouldn't transfer between iPad sizes.
+    expect(ipadFlow).not.toMatch(/point:\s*'?\d/);
+  });
+});
+
+describe('iosSourceFlowFile', () => {
+  const ipadDevice: IosScreenshotDevice = {
+    name: 'iPad Pro 13-inch (M5)',
+    typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB',
+    orientation: 'LANDSCAPE_LEFT',
+  };
+  const phoneDevice: IosScreenshotDevice = {
+    name: 'iPhone 16 Pro Max',
+    typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max',
+    orientation: 'PORTRAIT',
+  };
+
+  it('routes the app-store flow to the iPad tap flow for iPad, and the shared flow for iPhone', () => {
+    expect(iosSourceFlowFile(makeOptions({ flow: 'app-store' }), ipadDevice)).toMatch(/app-store-ipad\.yaml$/);
+    const phoneFlow = iosSourceFlowFile(makeOptions({ flow: 'app-store' }), phoneDevice);
+    expect(phoneFlow).toMatch(/app-store\.yaml$/);
+    expect(phoneFlow).not.toMatch(/app-store-ipad\.yaml$/);
+  });
+
+  it('falls back to the shared flow on iPad when no iPad variant exists (onboarding)', () => {
+    expect(iosSourceFlowFile(makeOptions({ flow: 'onboarding' }), ipadDevice)).toMatch(/onboarding\.yaml$/);
+  });
+
+  it('the iPad flow is tap-driven (no openurl) and captures the wall kiosk; iPhone stays deep-link driven', () => {
+    const ipadFlow = readFileSync('packages/mobile/.maestro/app-store-ipad.yaml', 'utf8');
+    expect(ipadFlow).toContain('takeScreenshot: 00-wall');
+    expect(ipadFlow).toContain('point:');
+    expect(ipadFlow).not.toContain('openLink:');
+
+    const phoneFlow = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
+    expect(phoneFlow).toContain('openLink: com.boardsesh.app://climbs');
+    expect(phoneFlow).not.toContain('__MAESTRO_IS_IPAD__');
+    expect(phoneFlow).not.toContain('://wall');
   });
 });
 

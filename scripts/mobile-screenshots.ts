@@ -64,12 +64,33 @@ const LOG = '[mobile:screenshots]';
 const APP_ID = 'com.boardsesh.app';
 const DEV_CLIENT_URL_SCHEME = 'exp+boardsesh';
 const MAESTRO_DEVICE_ORIENTATION_PLACEHOLDER = '${MAESTRO_DEVICE_ORIENTATION}';
-// Substituted to the literal `true`/`false` per device, inside a flow `${…}`
-// condition, so an iPad-only capture step (`when: { true: ${__MAESTRO_IS_IPAD__} }`)
-// runs on iPads and is skipped on iPhones — same render-time substitution the
-// orientation placeholder uses (Maestro `test` reads `${VAR}` only from `-e`, not
-// a flow's own text, so substitution is the reliable path).
-const MAESTRO_IS_IPAD_PLACEHOLDER = '__MAESTRO_IS_IPAD__';
+
+// The iPad tap flow (app-store-ipad.yaml) navigates via the left SIDEBAR with
+// coordinate taps. The sidebar is laid out in LOGICAL POINTS (identical on every
+// iPad), but Maestro `point:` taps are percentages of the CURRENT screen — and the
+// 13" and 11" iPad have different landscape pixel heights, so the same item sits at
+// a different percentage on each. So the flow carries a `${TAP_*}` placeholder per
+// item and the orchestrator substitutes the concrete `x%,y%` computed from the
+// item's logical anchor and THIS device's pixel height. (All iPad simulators are
+// @2x, so logical points → pixels is ×2.)
+const IPAD_SIDEBAR_TAP_X_PERCENT = 3;
+// Vertical anchor of each top-anchored sidebar item, in logical points from the top.
+const IPAD_SIDEBAR_TOP_ITEM_PT: Record<string, number> = {
+  TAP_HOME: 72,
+  TAP_CLIMBS: 144,
+  TAP_RECORD: 206,
+  TAP_WALL: 278,
+  TAP_DISCOVER: 361,
+};
+// Profile is pinned to the BOTTOM of the sidebar, this many logical points up from
+// the bottom screen edge.
+const IPAD_SIDEBAR_PROFILE_FROM_BOTTOM_PT = 62;
+// Landscape pixel height per iPad, keyed by device slug (matches the sizes the
+// screenshot dimension gate accepts).
+const IPAD_LANDSCAPE_HEIGHT_PX: Record<string, number> = {
+  'ipad-pro-13-inch-m5': 2064,
+  'ipad-pro-11-inch-m5': 1668,
+};
 const DEFAULT_ANDROID_DEVICE = 'Pixel 2';
 const DEFAULT_ANDROID_APK = resolve(
   MOBILE_DIR,
@@ -615,10 +636,52 @@ export function isIpadScreenshotDevice(screenshotDevice: IosScreenshotDevice): b
   return screenshotDevice.typeId.includes('iPad');
 }
 
+/**
+ * The Maestro flow source for an iOS device. iPad deep links don't navigate on
+ * the simulator — the "Open in 'Boardsesh'?" scheme-confirm dialog swallows every
+ * `openurl` — so iPad drives navigation via sidebar coordinate taps from a
+ * dedicated `<flow>-ipad.yaml`. Falls back to the shared `<flow>[-ios].yaml`
+ * (iPhone's deep-link flow) when no iPad variant exists.
+ */
+export function iosSourceFlowFile(options: ScreenshotOptions, screenshotDevice: IosScreenshotDevice): string {
+  if (isIpadScreenshotDevice(screenshotDevice)) {
+    const ipadFlowFile = join(MAESTRO_DIR, `${options.flow}-ipad.yaml`);
+    if (existsSync(ipadFlowFile)) return ipadFlowFile;
+  }
+  return flowFileForPlatform(options, 'ios');
+}
+
+/**
+ * The `x%,y%` Maestro tap point for an iPad sidebar item, computed from its logical
+ * anchor and the device's landscape pixel height (iPad simulators are @2x, so
+ * `logicalPt × 2` = pixels). Top items are anchored from the top; Profile from the
+ * bottom. Returns null for a non-iPad device or an unknown iPad height.
+ */
+export function ipadSidebarTapPoint(placeholder: string, screenshotDevice: IosScreenshotDevice): string | null {
+  const heightPx = IPAD_LANDSCAPE_HEIGHT_PX[deviceSlug(screenshotDevice.name)];
+  if (heightPx === undefined) return null;
+  const topAnchorPt = IPAD_SIDEBAR_TOP_ITEM_PT[placeholder];
+  const yPercent =
+    topAnchorPt !== undefined
+      ? ((topAnchorPt * 2) / heightPx) * 100
+      : placeholder === 'TAP_PROFILE'
+        ? ((heightPx - IPAD_SIDEBAR_PROFILE_FROM_BOTTOM_PT * 2) / heightPx) * 100
+        : null;
+  if (yPercent === null) return null;
+  // Maestro `point:` percentages must be whole numbers (it throws on a decimal). The
+  // sidebar touch targets are ~44pt (~5%), so rounding is well within tolerance.
+  return `${IPAD_SIDEBAR_TAP_X_PERCENT}%,${Math.round(yPercent)}%`;
+}
+
 export function renderMaestroFlowForIosDevice(flowSource: string, screenshotDevice: IosScreenshotDevice): string {
-  return flowSource
-    .replaceAll(MAESTRO_DEVICE_ORIENTATION_PLACEHOLDER, screenshotDevice.orientation)
-    .replaceAll(MAESTRO_IS_IPAD_PLACEHOLDER, isIpadScreenshotDevice(screenshotDevice) ? 'true' : 'false');
+  let rendered = flowSource.replaceAll(MAESTRO_DEVICE_ORIENTATION_PLACEHOLDER, screenshotDevice.orientation);
+  for (const placeholder of [...Object.keys(IPAD_SIDEBAR_TOP_ITEM_PT), 'TAP_PROFILE']) {
+    const point = ipadSidebarTapPoint(placeholder, screenshotDevice);
+    if (point !== null) {
+      rendered = rendered.replaceAll(`\${${placeholder}}`, point);
+    }
+  }
+  return rendered;
 }
 
 export function rotationDegreesForIosOrientation(orientation: IosDeviceOrientation): number | null {
@@ -630,7 +693,7 @@ function renderedFlowFileForIosDevice(
   screenshotDevice: IosScreenshotDevice,
   captureDir: string,
 ): string {
-  const flowFile = flowFileForPlatform(options, 'ios');
+  const flowFile = iosSourceFlowFile(options, screenshotDevice);
   if (!existsSync(flowFile)) return flowFile;
   const renderedFlowFile = join(captureDir, `${options.flow}-${deviceSlug(screenshotDevice.name)}.yaml`);
   writeFileSync(renderedFlowFile, renderMaestroFlowForIosDevice(readFileSync(flowFile, 'utf8'), screenshotDevice));
@@ -724,16 +787,30 @@ function captureIosDevice(
     // there before Maestro runs — this is what login.yaml's readiness wait used to
     // do (now deleted; there's no login screen to gate on).
     console.log(`${LOG} Waiting for the app to auto-sign-in and reach home...`);
-    if (!waitForHomeReady(homeReadyBaseline, 45)) {
-      console.log(`${LOG} Plain launch did not reach home; retrying with the explicit dev-client URL...`);
-      runCapture('xcrun', ['simctl', 'openurl', device.udid, metroDevClientUrl()]);
+    // iPad cold-boots + first-bundle-loads slower, so give the plain launch more time
+    // before the retry.
+    const isIpad = isIpadScreenshotDevice(screenshotDevice);
+    if (!waitForHomeReady(homeReadyBaseline, isIpad ? 90 : 45)) {
+      if (isIpad) {
+        // iPad: re-launch PLAINLY — never `openurl`. The "Open in 'Boardsesh'?" confirm
+        // that an openurl raises is never dismissed on iPad (the URL isn't delivered to
+        // the app), and it then blocks the entire sidebar-tap flow. A fresh launch just
+        // re-triggers the dev-client's auto-connect + auto-sign-in, no dialog.
+        console.log(`${LOG} Plain launch did not reach home; terminating and re-launching (iPad, no openurl)...`);
+        runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
+        runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID]);
+      } else {
+        console.log(`${LOG} Plain launch did not reach home; retrying with the explicit dev-client URL...`);
+        runCapture('xcrun', ['simctl', 'openurl', device.udid, metroDevClientUrl()]);
+      }
     }
     if (!waitForHomeReady(homeReadyBaseline)) {
       console.error(`${LOG} FAILED: app did not reach the home screen (auto sign-in / bundle load).`);
+      dumpMetroLogTail();
       return 1;
     }
 
-    const sourceFlowFile = flowFileForPlatform(options, 'ios');
+    const sourceFlowFile = iosSourceFlowFile(options, screenshotDevice);
     if (!existsSync(sourceFlowFile)) {
       console.error(`${LOG} FAILED: flow not found: ${sourceFlowFile}`);
       return 1;
@@ -1105,16 +1182,40 @@ export function portInUse(port: number): boolean {
  * group; `CI=1` keeps expo non-interactive (no keypress menu / TTY expectations).
  */
 export function startMetro(env: NodeJS.ProcessEnv): ChildProcess {
-  // Pipe Metro's output through `tee` to METRO_LOG_PATH so waitForHomeReady can poll
-  // it for the app's "$screen /home" marker — the JS console logs land in Metro's
-  // stdout, NOT the device's unified log. `2>&1 | tee` keeps the output in the run
-  // log too; `tee` (no -a) truncates the file, so each run starts clean.
-  return spawn('sh', ['-c', `bunx expo start --port ${METRO_PORT} 2>&1 | tee ${METRO_LOG_PATH}`], {
+  // Write Metro's output straight to METRO_LOG_PATH via a shell redirect (NOT a
+  // `tee` into the orchestrator's inherited stdout). waitForHomeReady polls that
+  // file for the app's "$screen /home" marker — the JS console logs land in Metro's
+  // stdout, NOT the device's unified log. The old `2>&1 | tee` with `stdio:'inherit'`
+  // made this detached process share the runner's stdout, which throws
+  // ERR_STREAM_UNABLE_TO_PIPE when that stream hits backpressure/close and silently
+  // stalls the log file mid-run — so the marker never lands and the slower-booting
+  // iPad shards time out at "did not reach the home screen". `> FILE 2>&1` (no `-a`,
+  // so it truncates for a clean run) plus `stdio:'ignore'` keeps the child off the
+  // parent's fds. Trade-off: Metro no longer streams into the live CI run log —
+  // dumpMetroLogTail surfaces it on a reach-home failure instead.
+  return spawn('sh', ['-c', `bunx expo start --port ${METRO_PORT} > ${METRO_LOG_PATH} 2>&1`], {
     cwd: MOBILE_DIR,
     env: { ...env, CI: '1' },
-    stdio: 'inherit',
+    stdio: 'ignore',
     detached: true,
   });
+}
+
+/**
+ * Dump the tail of the Metro log to the run output. Metro no longer streams into
+ * the live CI log (see startMetro), so on a reach-home failure this is how the
+ * app-side console output (auth errors, a redbox, a missing `$screen /home`) is
+ * surfaced for debugging.
+ */
+function dumpMetroLogTail(lines = 80): void {
+  if (!existsSync(METRO_LOG_PATH)) {
+    console.error(`${LOG} (no Metro log at ${METRO_LOG_PATH} to dump)`);
+    return;
+  }
+  const tail = readFileSync(METRO_LOG_PATH, 'utf8').split('\n').slice(-lines).join('\n');
+  console.error(
+    `${LOG} --- last ${lines} lines of Metro log (${METRO_LOG_PATH}) ---\n${tail}\n${LOG} --- end Metro log ---`,
+  );
 }
 
 /**
