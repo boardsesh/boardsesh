@@ -332,6 +332,34 @@ describe('revokeGymWriteAccess', () => {
     ).resolves.toBe(true);
     expect(await gymMemberRole(gymId, GYM_ADMIN_MEMBER)).toBe('admin');
   });
+
+  it('rejects callers who are not owner/gym-admin/covering-community — same gate as grant', async () => {
+    await socialGymMutations.grantGymWriteAccess(null, { input: { gymUuid, userId: EDITOR_TARGET } }, authCtx(OWNER));
+
+    // A plain user can't revoke.
+    await expect(
+      socialGymMutations.revokeGymWriteAccess(null, { input: { gymUuid, userId: EDITOR_TARGET } }, authCtx(PLAIN_USER)),
+    ).rejects.toThrow(/Not authorized to grant write access/);
+    // An editor can't revoke (editors are not grantors — access can't unspread itself).
+    await expect(
+      socialGymMutations.revokeGymWriteAccess(
+        null,
+        { input: { gymUuid, userId: EDITOR_TARGET } },
+        authCtx(EDITOR_TARGET),
+      ),
+    ).rejects.toThrow(/Not authorized to grant write access/);
+    // A community leader scoped to the WRONG board type can't revoke.
+    await expect(
+      socialGymMutations.revokeGymWriteAccess(
+        null,
+        { input: { gymUuid, userId: EDITOR_TARGET } },
+        authCtx(MOON_LEADER),
+      ),
+    ).rejects.toThrow(/Not authorized to grant write access/);
+
+    // The editor row survived every rejected attempt.
+    expect(await gymMemberRole(gymId, EDITOR_TARGET)).toBe('editor');
+  });
 });
 
 describe('enrichGym canGrantAccess and canClaim', () => {
@@ -534,6 +562,20 @@ describe('requestGymClaim — admin-review path', () => {
     expect(sendGymClaimAdminNotification).toHaveBeenCalledWith(
       expect.objectContaining({ gymName: 'No Website Gym', gymUuid: claimGym.uuid }),
     );
+  });
+
+  it('rejects an unauthenticated caller', async () => {
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Anon Claim Gym' });
+    await expect(
+      socialGymClaimMutations.requestGymClaim(null, { input: { gymUuid: claimGym.uuid, message: 'mine' } }, anonCtx()),
+    ).rejects.toThrow();
+    const [countRow] = Array.from(
+      (await db.execute(sql`SELECT count(*)::int AS c FROM gym_claims WHERE gym_id = ${claimGym.id}`)) as Iterable<{
+        c: number;
+      }>,
+    );
+    expect(Number(countRow.c)).toBe(0);
+    expect(sendGymClaimAdminNotification).not.toHaveBeenCalled();
   });
 });
 
@@ -807,6 +849,40 @@ describe('claim security hardening', () => {
       }>,
     );
     expect(Number(countRow.c)).toBe(1);
+  });
+
+  it('re-requesting a domain claim with a different email replaces the row and invalidates the old token', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Retoken Gym', website: 'https://www.retoken.com' });
+
+    // First request with email A — capture the emitted token from the mailer args.
+    await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid: claimGym.uuid, claimEmail: 'a@retoken.com' } },
+      authCtx(CLAIMANT),
+    );
+    const firstToken = vi.mocked(sendGymClaimVerificationEmail).mock.calls[0][1];
+
+    // Second request with a DIFFERENT email replaces the pending row (fresh token).
+    await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid: claimGym.uuid, claimEmail: 'b@retoken.com' } },
+      authCtx(CLAIMANT),
+    );
+    const secondToken = vi.mocked(sendGymClaimVerificationEmail).mock.calls[1][1];
+    expect(secondToken).not.toBe(firstToken);
+
+    // Exactly one pending row remains, carrying the new email.
+    const rows = await db.select().from(dbSchema.gymClaims).where(eq(dbSchema.gymClaims.gymId, claimGym.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].claimEmail).toBe('b@retoken.com');
+
+    // The old token no longer resolves — its row was replaced, not left live.
+    expect(await verifyGymClaimByToken(firstToken)).toEqual({ ok: false, reason: 'invalid' });
+    // The new token still transfers ownership.
+    expect(await gymOwnerId(claimGym.uuid)).toBe(PRIOR_OWNER);
+    const applied = await verifyGymClaimByToken(secondToken);
+    expect(applied).toEqual({ ok: true, gymName: 'Retoken Gym' });
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
   });
 
   it('upgrades (not preserves) a prior owner who already had a lower-role membership row to admin', async () => {

@@ -106,6 +106,10 @@ export async function sendGymClaimVerificationEmail(
 ): Promise<void> {
   const validatedEmail = emailSchema.parse(email);
   const verifyUrl = `${backendPublicUrl()}/api/gym-claims/verify?token=${encodeURIComponent(token)}`;
+  // The URL is already percent-encoded. Use it raw in the href — HTML-entity-
+  // encoding it (`&`→`&amp;`) is for visible text, and some email clients don't
+  // decode entities in an href, which would corrupt a multi-param link. `safeUrl`
+  // is only for the human-readable "paste this link" line.
   const safeUrl = escapeHtml(verifyUrl);
   const safeGym = escapeHtml(gymName);
   const safeClaimant = escapeHtml(claimantName);
@@ -121,7 +125,7 @@ export async function sendGymClaimVerificationEmail(
         <strong>${safeClaimant}</strong> is claiming ownership of <strong>${safeGym}</strong> on Boardsesh.
         If that's you, confirm below and the listing is yours.
       </p>
-      ${button(safeUrl, 'Confirm ownership')}
+      ${button(verifyUrl, 'Confirm ownership')}
       <p style="color: ${colors.textSecondary}; font-size: 14px; margin-top: 24px;">Or paste this link into your browser:</p>
       <p style="color: ${colors.primary}; font-size: 14px; word-break: break-all;">${safeUrl}</p>
       <hr style="border: none; border-top: 1px solid ${colors.border}; margin: 32px 0;" />
@@ -145,8 +149,8 @@ export async function sendGymClaimAdminNotification(details: {
   claimantName: string;
   message?: string | null;
 }): Promise<void> {
+  // Static path, no user input — used raw in the href (see the verify email note).
   const reviewUrl = `${webPublicUrl()}/admin/gym-claims`;
-  const safeReviewUrl = escapeHtml(reviewUrl);
   const safeGym = escapeHtml(details.gymName);
   const safeClaimant = escapeHtml(details.claimantName);
   const safeMessage = details.message ? escapeHtml(details.message) : null;
@@ -162,7 +166,7 @@ export async function sendGymClaimAdminNotification(details: {
         <strong>${safeClaimant}</strong> wants to claim <strong>${safeGym}</strong>.
       </p>
       ${safeMessage ? `<p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">"${safeMessage}"</p>` : ''}
-      ${button(safeReviewUrl, 'Review claims')}
+      ${button(reviewUrl, 'Review claims')}
       <hr style="border: none; border-top: 1px solid ${colors.border}; margin: 32px 0;" />
       <p style="color: ${colors.textMuted}; font-size: 12px;">Gym UUID: ${escapeHtml(details.gymUuid)}</p>
     `,
