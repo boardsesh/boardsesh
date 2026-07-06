@@ -75,6 +75,18 @@ describe('useImageCacheMemoryManagement', () => {
     expect(clearMemoryCache).toHaveBeenCalledTimes(1);
   });
 
+  it('flushes again on each background across repeated background/foreground cycles', () => {
+    isBackgrounded.value = true;
+    const { rerender } = renderHook(() => useImageCacheMemoryManagement());
+    expect(clearMemoryCache).toHaveBeenCalledTimes(1);
+    isBackgrounded.value = false;
+    rerender();
+    isBackgrounded.value = true;
+    rerender();
+    // A second background sweeps again — the flag genuinely flipped.
+    expect(clearMemoryCache).toHaveBeenCalledTimes(2);
+  });
+
   it('registers and tears down the memoryWarning listener', () => {
     const { unmount } = renderHook(() => useImageCacheMemoryManagement());
     expect(appState.addEventListener).toHaveBeenCalledWith('memoryWarning', expect.any(Function));
