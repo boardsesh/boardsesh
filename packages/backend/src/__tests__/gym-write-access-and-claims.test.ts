@@ -368,6 +368,38 @@ describe('enrichGym canGrantAccess and canClaim', () => {
     expect((await gymFor(authCtx(GYM_ADMIN_MEMBER))).canClaim).toBe(false);
     expect((await gymFor(authCtx(KILTER_LEADER))).canClaim).toBe(false);
   });
+
+  it('canClaim stays true for a plain member (social membership, no edit access)', async () => {
+    // A plain `member` row is social-only — no edit access — so they can still
+    // start a claim, unlike an editor/admin.
+    await insertGymMember(gymId, PLAIN_USER, 'member');
+    const gym = await gymFor(authCtx(PLAIN_USER));
+    expect(gym.canClaim).toBe(true);
+    expect(gym.canEdit).toBe(false);
+  });
+});
+
+describe('addGymMember role restriction', () => {
+  it('rejects the editor role — write access must go through grantGymWriteAccess', async () => {
+    // `editor` is not addable via member management; it's planted only by the
+    // grant path (owner/admin/community-leader gate).
+    await expect(
+      socialGymMutations.addGymMember(
+        null,
+        { input: { gymUuid, userId: EDITOR_TARGET, role: 'editor' } },
+        authCtx(OWNER),
+      ),
+    ).rejects.toThrow();
+    expect(await gymMemberRole(gymId, EDITOR_TARGET)).toBeNull();
+
+    // admin and member still add fine.
+    await socialGymMutations.addGymMember(
+      null,
+      { input: { gymUuid, userId: EDITOR_TARGET, role: 'member' } },
+      authCtx(OWNER),
+    );
+    expect(await gymMemberRole(gymId, EDITOR_TARGET)).toBe('member');
+  });
 });
 
 describe('website field round-trips', () => {
@@ -566,6 +598,27 @@ describe('applyGymClaim / verifyGymClaimByToken — ownership transfer', () => {
     const result = await verifyGymClaimByToken('not-a-real-token');
     expect(result).toEqual({ ok: false, reason: 'invalid' });
     expect(await gymOwnerId(claimGym.uuid)).toBe(OWNER);
+  });
+
+  it('verifyGymClaimByToken rejects and expires a stale token without transferring', async () => {
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Expired Gym', website: 'https://www.expiredgym.com' });
+    const claimId = await insertClaim({
+      gymId: claimGym.id,
+      claimantUserId: CLAIMANT,
+      method: 'domain',
+      status: 'pending',
+      claimEmail: 'x@expiredgym.com',
+      tokenHash: hashClaimToken('expiredtok'),
+      expiresAt: new Date(Date.now() - 60 * 1000), // already lapsed
+    });
+
+    const result = await verifyGymClaimByToken('expiredtok');
+    expect(result).toEqual({ ok: false, reason: 'expired' });
+
+    // No ownership change, and the row is flipped to 'expired' so a later click can't reuse it.
+    expect(await gymOwnerId(claimGym.uuid)).toBe(OWNER);
+    expect(await claimStatus(claimId)).toBe('expired');
+    expect(sendGymClaimApprovedEmail).not.toHaveBeenCalled();
   });
 });
 
@@ -818,5 +871,74 @@ describe('claim security hardening', () => {
     await expect(
       socialGymClaimMutations.reviewGymClaim(null, { input: { claimId, decision: 'approve' } }, authCtx(GLOBAL_ADMIN)),
     ).rejects.toThrow(/may have been removed/);
+  });
+
+  it('blocks the admin-review path too for anyone who can already edit the gym', async () => {
+    // A gym with a kilter board so a kilter community_leader covers it.
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Admin-Path Escalate' });
+    await insertBoard(claimGym.id, PRIOR_OWNER, 'kilter');
+    await insertGymMember(claimGym.id, EDITOR_TARGET, 'editor');
+
+    // The admin-review fallback (no claimEmail) is gated at the top too, not just
+    // the domain path — an editor can't queue an ownership claim they can't win.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'let me in' } },
+        authCtx(EDITOR_TARGET),
+      ),
+    ).rejects.toThrow(/already have edit access/);
+    // A covering community leader is refused the same way.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'let me in' } },
+        authCtx(KILTER_LEADER),
+      ),
+    ).rejects.toThrow(/already have edit access/);
+
+    // Nothing queued, no admin notified.
+    const [countRow] = Array.from(
+      (await db.execute(sql`SELECT count(*)::int AS c FROM gym_claims WHERE gym_id = ${claimGym.id}`)) as Iterable<{
+        c: number;
+      }>,
+    );
+    expect(Number(countRow.c)).toBe(0);
+    expect(sendGymClaimAdminNotification).not.toHaveBeenCalled();
+
+    // A plain user with no edit access can still file for admin review.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'genuinely mine' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'admin_review' });
+  });
+
+  it('still queues an admin claim when the notification email fails (best-effort)', async () => {
+    const claimGym = await insertGym({ ownerId: PRIOR_OWNER, name: 'Notify-Down Gym' });
+    // The admin notification is fire-and-forget: a send failure must NOT roll the
+    // request back into an error, or the committed row + dedup check would strand
+    // the admin on retry. The queue is the source of truth.
+    vi.mocked(sendGymClaimAdminNotification).mockRejectedValueOnce(new Error('SMTP down'));
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, message: 'mine' } },
+        authCtx(CLAIMANT),
+      ),
+    ).resolves.toEqual({ status: 'admin_review' });
+
+    // The claim is committed and visible to an admin despite the failed email.
+    const rows = Array.from(
+      (await db.execute(sql`SELECT status, method FROM gym_claims WHERE gym_id = ${claimGym.id}`)) as Iterable<{
+        status: string;
+        method: string;
+      }>,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'pending', method: 'admin' });
   });
 });

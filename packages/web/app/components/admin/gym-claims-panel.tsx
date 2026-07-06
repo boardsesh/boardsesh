@@ -16,6 +16,7 @@ import Avatar from '@mui/material/Avatar';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
 import { themeTokens } from '@/app/theme/theme-config';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -37,11 +38,14 @@ export default function GymClaimsPanel() {
   const [hasMore, setHasMore] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState('');
+  // Track the last offset so the error state's Retry re-runs the same page.
+  const [error, setError] = useState<number | null>(null);
 
   const fetchClaims = useCallback(
     async (offset = 0) => {
       if (!token) return;
       setLoading(true);
+      setError(null);
       try {
         const client = createGraphQLHttpClient(token);
         const result = await client.request<PendingGymClaimsQueryResponse, PendingGymClaimsQueryVariables>(
@@ -54,6 +58,9 @@ export default function GymClaimsPanel() {
         setHasMore(result.pendingGymClaims.hasMore);
       } catch (err) {
         console.error('[GymClaimsPanel] Failed to fetch claims:', err);
+        // Surface the failure so an admin can tell an empty queue from a dead
+        // fetch. Remember the offset so Retry re-requests the same page.
+        setError(offset);
       } finally {
         setLoading(false);
       }
@@ -90,6 +97,20 @@ export default function GymClaimsPanel() {
       <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
         {t('gymClaims.heading')}
       </Typography>
+
+      {error !== null && (
+        <Alert
+          severity="error"
+          sx={{ mb: 2 }}
+          action={
+            <Button color="inherit" size="small" onClick={() => fetchClaims(error)} sx={{ textTransform: 'none' }}>
+              {t('gymClaims.retry')}
+            </Button>
+          }
+        >
+          {t('gymClaims.error')}
+        </Alert>
+      )}
 
       <TableContainer component={Paper} variant="outlined">
         <Table size="small">
@@ -153,7 +174,7 @@ export default function GymClaimsPanel() {
                 </TableCell>
               </TableRow>
             ))}
-            {claims.length === 0 && !loading && (
+            {claims.length === 0 && !loading && error === null && (
               <TableRow>
                 <TableCell colSpan={6} align="center">
                   <Typography variant="body2" sx={{ color: themeTokens.neutral[400], py: 2 }}>

@@ -1,10 +1,18 @@
 import { z } from 'zod';
+import { GYM_CLAIM_MESSAGE_MAX_LENGTH } from '@boardsesh/gym-claim';
 import { UUIDSchema, LatitudeSchema, LongitudeSchema, SlugSchema, BoardNameSchema } from './primitives';
 
 /**
- * Gym member role validation schema
+ * Gym member role validation schema (all roles). Used for reads/display.
  */
 export const GymMemberRoleSchema = z.enum(['admin', 'editor', 'member']);
+
+/**
+ * Roles assignable via addGymMember. `editor` is intentionally excluded: write
+ * access is granted only through grantGymWriteAccess (owner/admin/community-leader
+ * gate), so it can't be planted through the looser member-management path.
+ */
+export const AddGymMemberRoleSchema = z.enum(['admin', 'member']);
 
 /**
  * Website URL: a valid http(s) URL. Rejecting other schemes (javascript:, data:)
@@ -74,7 +82,7 @@ export const RevokeGymWriteAccessInputSchema = z.object({
 export const RequestGymClaimInputSchema = z.object({
   gymUuid: UUIDSchema,
   claimEmail: z.string().email('Invalid email').max(200).optional(),
-  message: z.string().max(1000, 'Message too long').optional(),
+  message: z.string().max(GYM_CLAIM_MESSAGE_MAX_LENGTH, 'Message too long').optional(),
 });
 
 /**
@@ -99,7 +107,7 @@ export const PendingGymClaimsInputSchema = z.object({
 export const AddGymMemberInputSchema = z.object({
   gymUuid: UUIDSchema,
   userId: z.string().min(1, 'User ID cannot be empty'),
-  role: GymMemberRoleSchema,
+  role: AddGymMemberRoleSchema,
 });
 
 /**

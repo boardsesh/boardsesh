@@ -34,6 +34,15 @@ describe('extractDomain', () => {
     expect(extractDomain('javascript:alert(1)')).toBeNull();
     expect(extractDomain('data:text/html,x')).toBeNull();
     expect(extractDomain('ftp://gym.com')).toBeNull();
+    expect(extractDomain('mailto:owner@gym.com')).toBeNull();
+  });
+
+  it('strips ports and query/fragment, and is case-insensitive on the scheme', () => {
+    // Parsed by hand (no URL constructor) so it also runs on React Native.
+    expect(extractDomain('https://gym.com:8080/path')).toBe('gym.com');
+    expect(extractDomain('HTTPS://www.Gym.com')).toBe('gym.com');
+    expect(extractDomain('gym.com?ref=x')).toBe('gym.com');
+    expect(extractDomain('http://gym.com#top')).toBe('gym.com');
   });
 });
 

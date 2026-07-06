@@ -38,10 +38,15 @@ function getTransporter(): Transporter {
     if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
       throw new Error('SMTP credentials not configured. Set SMTP_USER and SMTP_PASSWORD environment variables.');
     }
+    const port = parseInt(process.env.SMTP_PORT || '465', 10);
+    // `secure: true` means TLS-on-connect (port 465). Port 587 uses STARTTLS and
+    // must be `secure: false`, or the connection hangs. Derive it from the port,
+    // with an explicit SMTP_SECURE override for non-standard setups.
+    const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.fastmail.com',
-      port: parseInt(process.env.SMTP_PORT || '465', 10),
-      secure: true,
+      port,
+      secure,
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
     });
   }

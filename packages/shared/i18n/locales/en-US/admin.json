@@ -150,6 +150,8 @@
     "backToAdmin": "Back to admin",
     "heading": "Pending claims",
     "empty": "No pending claims",
+    "error": "Couldn't load claims. Try again.",
+    "retry": "Retry",
     "approve": "Approve",
     "deny": "Deny",
     "method": {

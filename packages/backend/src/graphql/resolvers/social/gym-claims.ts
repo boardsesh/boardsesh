@@ -19,6 +19,7 @@ import {
   sendGymClaimApprovedEmail,
   sendGymClaimOwnershipLostEmail,
 } from '../../../email/email-service';
+import { logger } from '../../../utils/logger';
 
 const CLAIM_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -256,19 +257,22 @@ export const socialGymClaimMutations = {
     if (!gym.isPublic) {
       throw new Error('This gym is private and cannot be claimed');
     }
+    // Anyone who can already edit the gym is not a claimant. Owners are handled
+    // above; gym admins/editors and covering community leaders already have edit
+    // access. Gate BOTH paths here (not just the domain path): an editor could
+    // rewrite `website` to a domain they control and self-verify into ownership,
+    // and filing an admin-review claim they can't be granted just wastes a
+    // reviewer's time. Mirrors `canClaim` (false for these roles) so the mutation
+    // rejects exactly what the UI hides.
+    if (await userCanEditGym(gym, userId)) {
+      throw new Error('You already have edit access to this gym, so you cannot file an ownership claim here.');
+    }
 
     const claimantName = await loadClaimantName(userId);
     const existingPending = await findPendingClaim(gym.id, userId);
 
     // Domain-verified path: the claimant supplied a work email.
     if (validatedInput.claimEmail) {
-      // Anyone who can already edit the gym could set `website` to a domain they
-      // control and self-verify into ownership. Route them to admin review instead.
-      if (await userCanEditGym(gym, userId)) {
-        throw new Error(
-          'You already have edit access to this gym. Ownership changes for editors go through admin review.',
-        );
-      }
       if (!isClaimableDomain(gym.website)) {
         throw new Error('This gym has no verifiable website domain on file. Request admin review instead.');
       }
@@ -333,12 +337,24 @@ export const socialGymClaimMutations = {
       message: validatedInput.message ?? null,
     });
 
-    await sendGymClaimAdminNotification({
-      gymName: gym.name,
-      gymUuid: gym.uuid,
-      claimantName,
-      message: validatedInput.message ?? null,
-    });
+    // Best-effort: the claim is already queued and visible in /admin/gym-claims,
+    // so a failed notification (SMTP down) must not throw — that would roll the
+    // request back into a GraphQL error while the row stays committed, and the
+    // dedup check would then suppress the re-notify on retry, silently stranding
+    // the admin. Log it for ops instead; the queue is the source of truth.
+    try {
+      await sendGymClaimAdminNotification({
+        gymName: gym.name,
+        gymUuid: gym.uuid,
+        claimantName,
+        message: validatedInput.message ?? null,
+      });
+    } catch (error) {
+      logger.warn(
+        '[GymClaim] Failed to send admin notification for queued claim:',
+        error instanceof Error ? error.message : error,
+      );
+    }
 
     return { status: 'admin_review' };
   },

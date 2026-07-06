@@ -118,31 +118,47 @@ export const FREE_EMAIL_PROVIDERS: ReadonlySet<string> = new Set([
  * Accepts bare hostnames (`bonsist.bg`) or full URLs (`https://www.Bonsist.BG/gym`),
  * lowercases, and strips a single leading `www.`. Returns null for empty or
  * unparseable input.
+ *
+ * Parsed by hand rather than via the `URL` constructor: this runs on React
+ * Native too, where the `URL` polyfill is incomplete (no reliable `hostname` /
+ * `protocol` / `username`). The manual parser keeps the same security
+ * properties — reject non-http(s) schemes and userinfo — on every platform.
  */
 export function extractDomain(websiteUrl: string | null | undefined): string | null {
   if (!websiteUrl) return null;
   const trimmed = websiteUrl.trim();
   if (!trimmed) return null;
 
-  // Prepend a scheme so bare hostnames parse through the URL constructor.
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-
-  let url: URL;
-  try {
-    url = new URL(withScheme);
-  } catch {
-    return null;
+  // An explicit `scheme://` must be http(s) — never javascript:/data:/ftp:/etc.
+  // A bare hostname (no scheme) is allowed and treated as a website.
+  const schemeMatch = /^([a-z][a-z0-9+.-]*):\/\//i.exec(trimmed);
+  let authority: string;
+  if (schemeMatch) {
+    const scheme = schemeMatch[1].toLowerCase();
+    if (scheme !== 'http' && scheme !== 'https') return null;
+    authority = trimmed.slice(schemeMatch[0].length);
+  } else {
+    authority = trimmed;
   }
 
-  // A website URL must be http(s) — never javascript:/data:/etc. — and must not
-  // carry userinfo (`https://victim.com@evil.com`), which would let the visible
-  // host mislead a viewer while `hostname` resolves elsewhere.
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  if (url.username || url.password) return null;
+  // Drop path / query / fragment, leaving just the authority.
+  authority = authority.split(/[/?#]/)[0];
 
-  const normalized = url.hostname.toLowerCase().replace(/^www\./, '');
-  // A real domain has at least one dot (`example.com`); reject bare labels.
+  // Reject userinfo (`victim.com@evil.com`, `user:pass@gym.com`): the visible
+  // host could mislead a viewer while the real host resolves elsewhere.
+  if (authority.includes('@')) return null;
+
+  // Strip a :port. A schemeless `javascript:alert(1)` lands here as
+  // `javascript:alert(1)` → `javascript`, which then fails the dot check below.
+  const normalized = authority
+    .split(':')[0]
+    .toLowerCase()
+    .replace(/^www\./, '');
+
+  // A real domain has at least one dot (`example.com`) and only hostname-legal
+  // characters; reject bare labels (`localhost`) and garbage (`not a url`).
   if (!normalized || !normalized.includes('.')) return null;
+  if (!/^[a-z0-9.-]+$/.test(normalized)) return null;
   return normalized;
 }
 

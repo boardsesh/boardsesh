@@ -150,6 +150,8 @@
     "backToAdmin": "Retour à l’administration",
     "heading": "Revendications en attente",
     "empty": "Aucune revendication en attente",
+    "error": "Impossible de charger les revendications. Réessaie.",
+    "retry": "Réessayer",
     "approve": "Approuver",
     "deny": "Refuser",
     "method": {

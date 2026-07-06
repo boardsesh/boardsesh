@@ -20,6 +20,7 @@
     "@boardsesh/create-climb-react": "*",
     "@boardsesh/graphql": "*",
     "@boardsesh/graphql-client": "*",
+    "@boardsesh/gym-claim": "*",
     "@boardsesh/i18n": "*",
     "@boardsesh/key-value-storage": "*",
     "@boardsesh/logbook": "*",

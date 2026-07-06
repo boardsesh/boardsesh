@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { BottomSheetModal, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
+import { extractDomain, isClaimableDomain, GYM_CLAIM_MESSAGE_MAX_LENGTH } from '@boardsesh/gym-claim';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -12,24 +13,6 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useRequestGymClaim } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
-
-const CLAIM_MESSAGE_MAX_LENGTH = 500;
-
-/**
- * Pull a bare hostname out of a stored website so the claim UI can show the domain
- * the work email must match ("you@yourgym.com"). No `URL` (RN's polyfill is not
- * guaranteed here) — strip the scheme, `www.`, and any path/query by hand.
- */
-export function extractGymDomain(website: string | null | undefined): string | null {
-  if (!website) return null;
-  const host = website
-    .trim()
-    .replace(/^[a-z]+:\/\//i, '')
-    .replace(/^www\./i, '')
-    .split(/[/?#]/)[0]
-    .trim();
-  return host.length > 0 ? host : null;
-}
 
 type ClaimMode = 'domain' | 'admin';
 
@@ -55,22 +38,26 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
   const { systemColors, brandColors } = useTheme();
   const requestClaim = useRequestGymClaim();
 
-  const domain = useMemo(() => extractGymDomain(gym.website), [gym.website]);
+  const domain = useMemo(() => extractDomain(gym.website), [gym.website]);
+  // A gym with a free/consumer-provider website (gmail.com, wixsite.com, …) can't
+  // be domain-proof claimed — anyone can get such an address — so start in and
+  // only offer admin review for those, matching the web dialog and the backend.
+  const canUseDomain = useMemo(() => isClaimableDomain(gym.website), [gym.website]);
 
-  const [mode, setMode] = useState<ClaimMode>(domain ? 'domain' : 'admin');
+  const [mode, setMode] = useState<ClaimMode>(canUseDomain ? 'domain' : 'admin');
   const [claimEmail, setClaimEmail] = useState('');
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<{ status: string; email?: string | null } | null>(null);
 
   const resetState = useCallback(() => {
-    setMode(domain ? 'domain' : 'admin');
+    setMode(canUseDomain ? 'domain' : 'admin');
     setClaimEmail('');
     setMessage('');
     setErrorMessage(null);
     setConfirmation(null);
     requestClaim.reset();
-  }, [domain, requestClaim]);
+  }, [canUseDomain, requestClaim]);
 
   const handleFullyDismissed = useCallback(() => {
     resetState();
@@ -134,10 +121,10 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
           </Text>
           <Button title={t('mobile.gymClaim.done')} onPress={dismiss} variant="filled" size="large" />
         </View>
-      ) : mode === 'domain' ? (
+      ) : mode === 'domain' && canUseDomain && domain ? (
         <>
           <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.description}>
-            {t('mobile.gymClaim.domain.description', { gym: gym.name, domain: domain ?? '' })}
+            {t('mobile.gymClaim.domain.description', { gym: gym.name, domain })}
           </Text>
           <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.fieldLabel}>
             {t('mobile.gymClaim.domain.emailLabel')}
@@ -147,7 +134,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
               styles.input,
               { backgroundColor: systemColors.fill, borderColor: systemColors.separator, color: systemColors.label },
             ]}
-            placeholder={t('mobile.gymClaim.domain.emailPlaceholder', { domain: domain ?? '' })}
+            placeholder={t('mobile.gymClaim.domain.emailPlaceholder', { domain })}
             placeholderTextColor={systemColors.tertiaryLabel}
             value={claimEmail}
             onChangeText={(value) => {
@@ -203,7 +190,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
               if (errorMessage) setErrorMessage(null);
             }}
             multiline
-            maxLength={CLAIM_MESSAGE_MAX_LENGTH}
+            maxLength={GYM_CLAIM_MESSAGE_MAX_LENGTH}
             textAlignVertical="top"
           />
           {errorMessage ? (
@@ -220,7 +207,7 @@ export function ClaimGymSheet({ sheetRef, gym, onClosed }: ClaimGymSheetProps) {
             loading={requestClaim.isPending}
             style={styles.submitButton}
           />
-          {domain ? (
+          {canUseDomain ? (
             <Button
               title={t('mobile.gymClaim.switchToDomain')}
               onPress={() => switchMode('domain')}

@@ -36,11 +36,11 @@ export type Gym = {
   isMember: boolean;
   myRole?: GymMemberRole | null;
   /** Whether the current viewer may edit this gym (owner, gym admin, gym editor, or community admin/leader for one of its board types). */
-  canEdit?: boolean;
+  canEdit: boolean;
   /** Whether the current viewer may grant/revoke write access to other users. */
-  canGrantAccess?: boolean;
+  canGrantAccess: boolean;
   /** Whether the current viewer may start an ownership claim for this gym. */
-  canClaim?: boolean;
+  canClaim: boolean;
 };
 
 export type GymConnection = {

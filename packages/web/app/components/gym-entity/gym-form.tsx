@@ -125,6 +125,7 @@ export default function GymForm({
         type="url"
         placeholder={t('gymForm.placeholders.website')}
         helperText={t('gymForm.helpers.website')}
+        slotProps={{ htmlInput: { maxLength: 500 } }}
       />
 
       <TextField

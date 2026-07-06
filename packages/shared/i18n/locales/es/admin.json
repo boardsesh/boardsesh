@@ -150,6 +150,8 @@
     "backToAdmin": "Volver al panel",
     "heading": "Reclamaciones pendientes",
     "empty": "No hay reclamaciones pendientes",
+    "error": "No se pudieron cargar las reclamaciones. Inténtalo de nuevo.",
+    "retry": "Reintentar",
     "approve": "Aprobar",
     "deny": "Rechazar",
     "method": {

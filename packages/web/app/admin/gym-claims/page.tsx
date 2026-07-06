@@ -1,74 +1,60 @@
-'use client';
-
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import MuiLink from '@mui/material/Link';
-import { useTranslation } from 'react-i18next';
+import { getServerTranslation } from '@/app/lib/i18n/server';
+import { getLocale } from '@/app/lib/i18n/get-locale';
+import I18nProvider from '@/app/components/providers/i18n-provider';
+import { checkAdmin } from '@/app/lib/admin/check-admin';
 import { themeTokens } from '@/app/theme/theme-config';
-import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
-import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
-import { GET_MY_ROLES } from '@boardsesh/graphql/operations/proposals';
-import type { CommunityRoleAssignment } from '@boardsesh/shared-schema';
 import GymClaimsPanel from '@/app/components/admin/gym-claims-panel';
 import LocaleLink from '@/app/components/i18n/locale-link';
 
-export default function AdminGymClaimsPage() {
-  const { t } = useTranslation('admin');
-  const { token } = useWsAuthToken();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+// Server-rendered so admin access is enforced before any markup ships — matching
+// /admin/retention. The GraphQL mutations are already admin-gated on the backend,
+// so this is defense-in-depth, but it keeps the whole /admin subtree consistent.
+export const dynamic = 'force-dynamic';
 
-  useEffect(() => {
-    async function checkRole() {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const client = createGraphQLHttpClient(token);
-        const result = await client.request<{ myRoles: CommunityRoleAssignment[] }>(GET_MY_ROLES);
-        setIsAdmin(result.myRoles.some((r) => r.role === 'admin'));
-      } catch {
-        setIsAdmin(false);
-      } finally {
-        setLoading(false);
-      }
-    }
-    void checkRole();
-  }, [token]);
+export default async function AdminGymClaimsPage() {
+  const access = await checkAdmin();
+  const locale = await getLocale();
+  const { t } = await getServerTranslation('admin');
 
-  if (loading) return null;
-
-  if (!token) {
+  if (!access.authenticated) {
     return (
-      <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Alert severity="warning">{t('auth.signInRequired')}</Alert>
-      </Container>
+      <I18nProvider locale={locale} namespaces={['common', 'admin']}>
+        <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
+          <Alert severity="warning">{t('auth.signInRequired')}</Alert>
+        </Container>
+      </I18nProvider>
     );
   }
 
-  if (!isAdmin) {
+  if (!access.isAdmin) {
     return (
-      <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-        <Alert severity="error">{t('auth.noAccess')}</Alert>
-      </Container>
+      <I18nProvider locale={locale} namespaces={['common', 'admin']}>
+        <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
+          <Alert severity="error">{t('auth.noAccess')}</Alert>
+        </Container>
+      </I18nProvider>
     );
   }
 
   return (
-    <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
-      <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: themeTokens.neutral[800] }}>
-        {t('gymClaims.title')}
-      </Typography>
-      <Box sx={{ mb: 3 }}>
-        <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: themeTokens.colors.primary }}>
-          {t('gymClaims.backToAdmin')}
-        </MuiLink>
-      </Box>
-      <GymClaimsPanel />
-    </Container>
+    <I18nProvider locale={locale} namespaces={['common', 'admin']}>
+      <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, color: themeTokens.neutral[800] }}>
+          {t('gymClaims.title')}
+        </Typography>
+        <Box sx={{ mb: 3 }}>
+          <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: themeTokens.colors.primary }}>
+            {t('gymClaims.backToAdmin')}
+          </MuiLink>
+        </Box>
+        <GymClaimsPanel />
+      </Container>
+    </I18nProvider>
   );
 }

@@ -14,7 +14,12 @@ import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import CheckCircleOutlined from '@mui/icons-material/CheckCircleOutline';
-import { extractDomain, isClaimableDomain, emailDomainMatchesWebsite } from '@boardsesh/gym-claim';
+import {
+  extractDomain,
+  isClaimableDomain,
+  emailDomainMatchesWebsite,
+  GYM_CLAIM_MESSAGE_MAX_LENGTH,
+} from '@boardsesh/gym-claim';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import {
@@ -168,6 +173,7 @@ export default function ClaimGymDialog({ gymUuid, gymName, website, open, onClos
           minRows={2}
           maxRows={5}
           placeholder={t('claimGym.admin.messagePlaceholder')}
+          slotProps={{ htmlInput: { maxLength: GYM_CLAIM_MESSAGE_MAX_LENGTH } }}
         />
         {canUseDomain && (
           <MuiLink
