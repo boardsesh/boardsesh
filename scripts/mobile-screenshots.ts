@@ -805,9 +805,22 @@ function captureIosDevice(
       }
     }
     if (!waitForHomeReady(homeReadyBaseline)) {
-      console.error(`${LOG} FAILED: app did not reach the home screen (auto sign-in / bundle load).`);
-      dumpMetroLogTail();
-      return 1;
+      // The readiness marker never landed. If Metro finished the JS bundle, the app
+      // has had the full timeout to auto-sign-in and reach home — the missing marker
+      // is almost always Metro's log-forwarding pipe dying with
+      // ERR_STREAM_UNABLE_TO_PIPE, not the app failing to boot. Proceed instead of
+      // failing the shard (a genuinely stuck app is caught downstream when the flow's
+      // deep links / taps land on a blank screen). If the bundle never even finished,
+      // this is a real failure.
+      if (metroBundleFinished()) {
+        console.warn(
+          `${LOG} Home marker not seen, but Metro finished the bundle — proceeding (Metro log forwarding likely broke; the app auto-signs-in and reaches home).`,
+        );
+      } else {
+        console.error(`${LOG} FAILED: app did not reach the home screen (auto sign-in / bundle load).`);
+        dumpMetroLogTail();
+        return 1;
+      }
     }
 
     const sourceFlowFile = iosSourceFlowFile(options, screenshotDevice);
@@ -1221,6 +1234,20 @@ function dumpMetroLogTail(lines = 80): void {
   console.error(
     `${LOG} --- last ${lines} lines of Metro log (${METRO_LOG_PATH}) ---\n${tail}\n${LOG} --- end Metro log ---`,
   );
+}
+
+/**
+ * Whether Metro logged a completed JS bundle for the app (`… Bundled 12345ms …`).
+ * The `$screen /home` readiness marker rides Metro's forwarding of the app's
+ * console.log to Metro stdout, which intermittently dies mid-run with
+ * `ERR_STREAM_UNABLE_TO_PIPE` — after which no further app logs (including the
+ * marker) are captured, even though the screenshot build still auto-signs-in and
+ * reaches home. The "Bundled" line lands BEFORE that break, so it's a reliable
+ * signal that the JS loaded and home is imminent — the reach-home fallback.
+ */
+export function metroBundleFinished(): boolean {
+  const metroLog = existsSync(METRO_LOG_PATH) ? readFileSync(METRO_LOG_PATH, 'utf8') : '';
+  return /Bundled \d+ms/.test(metroLog);
 }
 
 /**
