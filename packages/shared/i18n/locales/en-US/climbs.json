@@ -816,5 +816,13 @@
         "hint": "Swipe up or down to grow or shrink the region from this corner."
       }
     }
+  },
+  "spa": {
+    "backToList": "Back to list",
+    "notFound": "Climb not found",
+    "connectAndLightUp": "Connect & light up",
+    "lightUpClimb": "Light up this climb",
+    "unsupportedBrowser": "This experiment needs a Chromium browser (Chrome or Edge).",
+    "routeNotFound": "Page not found"
   }
 }

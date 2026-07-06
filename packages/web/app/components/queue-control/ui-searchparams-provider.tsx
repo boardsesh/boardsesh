@@ -13,7 +13,11 @@ type UISearchParamsContextType = {
   clearClimbSearchParams: () => void;
 };
 
-const UISearchParamsContext = createContext<UISearchParamsContextType | undefined>(undefined);
+// Exported so the pure-client SPA experiment (app/spa/) can supply its own
+// URL-backed provider using this same context — letting it reuse
+// AccordionSearchForm/ClimbSearchForm unmodified without going through
+// QueueContext. See app/spa/spa-ui-search-params-provider.tsx.
+export const UISearchParamsContext = createContext<UISearchParamsContextType | undefined>(undefined);
 
 /**
  * UI interacting with the search paramaters should always go through the ui-search-params-provider

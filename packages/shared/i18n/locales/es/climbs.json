@@ -816,5 +816,13 @@
         "hint": "Desliza hacia arriba o abajo para agrandar o reducir la zona desde esta esquina."
       }
     }
+  },
+  "spa": {
+    "backToList": "Volver a la lista",
+    "notFound": "No se encontró el bloque",
+    "connectAndLightUp": "Conectar y encender",
+    "lightUpClimb": "Encender este bloque",
+    "unsupportedBrowser": "Este experimento necesita un navegador basado en Chromium (Chrome o Edge).",
+    "routeNotFound": "Página no encontrada"
   }
 }

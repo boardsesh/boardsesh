@@ -816,5 +816,13 @@
         "hint": "Balayez vers le haut ou le bas pour agrandir ou réduire la zone depuis ce coin."
       }
     }
+  },
+  "spa": {
+    "backToList": "Retour à la liste",
+    "notFound": "Bloc introuvable",
+    "connectAndLightUp": "Connecter et allumer",
+    "lightUpClimb": "Allumer ce bloc",
+    "unsupportedBrowser": "Cette expérimentation nécessite un navigateur basé sur Chromium (Chrome ou Edge).",
+    "routeNotFound": "Page introuvable"
   }
 }
