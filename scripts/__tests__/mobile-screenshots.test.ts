@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,8 +10,6 @@ import {
   iosSourceFlowFile,
   ipadSidebarTapPoint,
   isIpadScreenshotDevice,
-  METRO_LOG_PATH,
-  metroBundleFinished,
   metroDevClientUrl,
   parseArgs,
   renderMaestroFlowForIosDevice,
@@ -350,23 +348,6 @@ describe('renderMaestroFlowForIosDevice', () => {
     expect(ipadFlow).toContain('point: ${TAP_WALL}');
     // No literal "N%,M%" tap points — those wouldn't transfer between iPad sizes.
     expect(ipadFlow).not.toMatch(/point:\s*'?\d/);
-  });
-});
-
-describe('metroBundleFinished', () => {
-  afterEach(() => {
-    rmSync(METRO_LOG_PATH, { force: true });
-  });
-
-  it('is false without a log and true once Metro logs a completed bundle', () => {
-    rmSync(METRO_LOG_PATH, { force: true });
-    expect(metroBundleFinished()).toBe(false);
-
-    writeFileSync(METRO_LOG_PATH, 'Starting Metro Bundler\nWaiting on http://localhost:8081\n');
-    expect(metroBundleFinished()).toBe(false);
-
-    writeFileSync(METRO_LOG_PATH, 'iOS Bundled 31912ms node_modules/.../entry.js (4662 modules)\n');
-    expect(metroBundleFinished()).toBe(true);
   });
 });
 
