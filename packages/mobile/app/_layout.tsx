@@ -65,6 +65,7 @@ import { spacing } from '../src/theme/tokens';
 import { glassStackScreenOptions } from '../src/theme/navigation';
 import { reportError } from '../src/lib/error-reporting';
 import { loadRequiredFonts } from '../src/lib/required-fonts';
+import { useImageCacheMemoryManagement } from '../src/hooks/use-image-cache-memory-management';
 import { AnalyticsProvider } from '../src/components/analytics/AnalyticsProvider';
 import { AnalyticsScreenTracker } from '../src/components/analytics/AnalyticsScreenTracker';
 import { AnalyticsPersonProperties } from '../src/components/analytics/AnalyticsPersonProperties';
@@ -284,6 +285,9 @@ function ThemedNavigation({ children }: { children: ReactNode }) {
 function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const [fontsReady, setFontsReady] = useState(false);
+
+  // Flush decoded board-art bitmaps on background / memory warning (#3479).
+  useImageCacheMemoryManagement();
 
   useEffect(() => {
     let cancelled = false;

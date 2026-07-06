@@ -71,9 +71,19 @@ type NativeClimbRenderParams = {
    * <Image> never has to downscale a large source on the main thread (the
    * cause of the iOS app hang). Omit for the full-size play view, which
    * renders at native board width. Clamped to the board width (never
-   * upscales). Also selects the bundled `thumb` background variant.
+   * upscales). Selects the bundled `thumb` background variant by default
+   * (override with `backgroundVariant`).
    */
   renderWidth?: number;
+  /**
+   * Force the bundled board-photo resolution independently of `renderWidth`.
+   * The board photo is shared per board-config (one decode across every climb
+   * on the wall), so the play-drawer carousel renders the per-climb overlay at
+   * display size (a small `renderWidth`) while keeping the photo crisp
+   * (`backgroundVariant="full"`). Defaults to `thumb` when `renderWidth` is set,
+   * `full` otherwise.
+   */
+  backgroundVariant?: BackgroundVariant;
 };
 
 type NativeClimbRenderResult = {
@@ -480,7 +490,7 @@ function getNativeModule() {
  * and the component shows backgrounds alone.
  */
 export function useNativeClimbRender(params: NativeClimbRenderParams): NativeClimbRenderResult {
-  const { frames, boardName, layoutId, sizeId, setIds, filledStyle = false, renderWidth } = params;
+  const { frames, boardName, layoutId, sizeId, setIds, filledStyle = false, renderWidth, backgroundVariant } = params;
   const {
     overrides: holdColorOverrides,
     shapes: holdShapeOverrides,
@@ -490,9 +500,11 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   } = useHoldColorOverrides();
 
   // Small surfaces that pass a renderWidth want the bundled thumb-sized
-  // background too, so neither the overlay nor the photo is a large source
-  // the main thread has to downscale.
-  const variant: BackgroundVariant = renderWidth != null ? 'thumb' : 'full';
+  // background too, so neither the overlay nor the photo is a large source the
+  // main thread has to downscale. The play-drawer carousel overrides this to
+  // 'full' so it can shrink the per-climb overlay while keeping the shared photo
+  // crisp on the full-screen board.
+  const variant: BackgroundVariant = backgroundVariant ?? (renderWidth != null ? 'thumb' : 'full');
 
   // Run the disk-cache scan once per JS context. Safe to call on every
   // render — the function self-guards via `warmupRun`.

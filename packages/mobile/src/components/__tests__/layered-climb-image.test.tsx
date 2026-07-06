@@ -11,13 +11,28 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('expo-image', () => ({
-  Image: ({ source, testID, transition }: { source: { uri: string }; testID?: string; transition?: number }) =>
+  Image: ({
+    source,
+    testID,
+    transition,
+    recyclingKey,
+  }: {
+    source: { uri: string };
+    testID?: string;
+    transition?: number;
+    recyclingKey?: string;
+  }) =>
     createElement('img', {
       src: source.uri,
       'data-testid': testID ?? 'expo-image',
       'data-transition': transition,
+      'data-recycling-key': recyclingKey,
     }),
 }));
+
+// These tests exercise the foregrounded render path; the backgrounded blank is
+// covered in layered-climb-image-backgrounded.test.tsx.
+vi.mock('../../lib/app-visibility', () => ({ useIsAppBackgrounded: () => false }));
 
 import { LayeredClimbImage } from '../LayeredClimbImage';
 
@@ -75,5 +90,18 @@ describe('LayeredClimbImage', () => {
     );
 
     expect(container.querySelector('img[src="file:///overlay.png"]')?.getAttribute('data-transition')).toBe('0');
+  });
+
+  it('forwards recyclingKey to the holds-overlay <Image> so the carousel recycles on climb change', () => {
+    const { container } = render(
+      createElement(LayeredClimbImage, {
+        overlayUri: 'file:///overlay.png',
+        backgroundPaths: ['/bundled/kilter.webp'],
+        recyclingKey: 'climb-frames-abc',
+      }),
+    );
+
+    const overlay = container.querySelector('img[src="file:///overlay.png"]');
+    expect(overlay?.getAttribute('data-recycling-key')).toBe('climb-frames-abc');
   });
 });

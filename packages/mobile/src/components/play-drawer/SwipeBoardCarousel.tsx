@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   useWindowDimensions,
+  PixelRatio,
   type LayoutChangeEvent,
   type ViewStyle,
 } from 'react-native';
@@ -114,6 +115,15 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
   );
   const boardStyle = useMemo<ViewStyle | undefined>(
     () => (boardBox ? { width: boardBox.width, height: boardBox.height } : undefined),
+    [boardBox],
+  );
+  // Render the per-climb holds overlay at the displayed pixel size, not the
+  // board's native ~1080px. The board photo stays full-res (backgroundVariant
+  // "full"); only the overlay shrinks. Without this, swiping through climbs
+  // piles a native-res (~7 MB RGBA) overlay per climb into expo-image's memory
+  // cache. Clamped to native width inside useNativeClimbRender (never upscales).
+  const overlayRenderWidth = useMemo(
+    () => (boardBox ? Math.round(boardBox.width * PixelRatio.get()) : undefined),
     [boardBox],
   );
   // The carousel works in board-width units: a letterboxed (narrower) board
@@ -268,6 +278,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
+              renderWidth={overlayRenderWidth}
+              backgroundVariant="full"
+              recyclingKey={currentFrames}
               style={boardStyle}
               overlayTestID="play-drawer-board-overlay"
             />
@@ -284,6 +297,11 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
                 boardWidth={boardWidth}
                 boardHeight={boardHeight}
                 mirrored={mirrored}
+                renderWidth={overlayRenderWidth}
+                backgroundVariant="full"
+                // Climb identity (not the per-frame override) so the overlay
+                // recycles on swipe-to-new-climb, not on every playback frame.
+                recyclingKey={currentFrames}
                 style={boardStyle}
                 // During a swipe commit the current board's frames swap to the
                 // climb the peek was showing; that overlay is already cached, so an
@@ -308,6 +326,9 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               boardWidth={boardWidth}
               boardHeight={boardHeight}
               mirrored={mirrored}
+              renderWidth={overlayRenderWidth}
+              backgroundVariant="full"
+              recyclingKey={peekFrames}
               style={boardStyle}
             />
           )}

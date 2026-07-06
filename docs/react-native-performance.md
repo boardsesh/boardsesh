@@ -263,6 +263,43 @@ surface the previous size's bundled background paths.
 
 ---
 
+## 7. Board-art image memory: render at display size, recycle, release on background
+
+**Rule:** Board-art surfaces are the app's largest memory consumer (decoded bitmaps live in native
+heap + as GPU textures, not the JS heap) — on iOS a 4 GB device can hit the OS watchdog OOM kill in
+the foreground while browsing (#3479). Three contracts keep them in check:
+
+- **Size the overlay to the display, keep the photo full-res.** The play-drawer board passes
+  `renderWidth` (display px × `PixelRatio.get()`) so the per-climb holds overlay rasterizes at the
+  shown size instead of the board's native ~1080px, plus `backgroundVariant="full"` so the _shared_
+  board photo (one decode per board-config, reused across every climb) stays crisp. `renderWidth`
+  alone would downgrade the photo to the 416px `thumb` — only the overlay should shrink.
+- **`recyclingKey` on always-mounted board surfaces that swap climbs.** The carousel boards key on the
+  climb's `frames` so swapping releases the previous overlay instead of holding both.
+- **Release board-art on background + memory pressure.** `LayeredClimbImage` blanks its `<Image>`
+  layers when `useIsAppBackgrounded()` is true, and `useImageCacheMemoryManagement` (mounted at the
+  app root) sweeps expo-image's memory cache on background and on the OS `memoryWarning` event. The
+  `memoryWarning` path is the direct foreground lever against the iOS OOM kill. Re-decodes from disk
+  on foreground (no network).
+
+**Why:** On-device profiling (Pixel 8 Pro, Android 16) showed ~248 MB native heap idle on the feed
+and the play-drawer carousel piling a native-res (~7 MB RGBA) overlay per swiped climb into the
+cache. Display-sizing + recycling cut carousel browse-growth ~19%; background-blanking cut the
+worst case (board left open on app-switch) ~96 MB. **Ceiling:** expo-image on Android is Glide,
+whose cache/pool are sized to device RAM and resist JS `clearMemoryCache()` (the native allocator
+retains freed pages), so the common feed-backgrounded footprint is unmoved by JS — the next lever is
+native (`onTrimMemory(UI_HIDDEN) → Glide.clearMemory()`). The high MB on a 12 GB device overstates
+real risk; the OOM actually reproduces on 4 GB iPhones.
+
+**Examples in this repo:**
+
+- `packages/mobile/src/lib/app-visibility.ts` (`useIsAppBackgrounded`, one ref-counted AppState
+  listener) + `packages/mobile/src/hooks/use-image-cache-memory-management.ts` (root cache sweep).
+- `renderWidth` + `backgroundVariant` threaded through `BoardImageNative.tsx` →
+  `use-native-climb-render.ts`; applied in `play-drawer/SwipeBoardCarousel.tsx`.
+
+---
+
 ## Profiling workflow
 
 Required evidence for any list / provider / theme PR: a **before/after recording on the climbs list
