@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act, cleanup } from '@testing-library/react';
 
 // Capture the 'change' handler the store installs, and let `remove()` clear it
 // so the ref-counted teardown is observable. `currentState` seeds the flag on
@@ -41,6 +41,10 @@ describe('app-visibility store', () => {
     appState.addEventListener.mockClear();
     appState.ref.currentState = 'active';
   });
+
+  // Unmount any hook a test left mounted (even if it threw before its own
+  // unmount()) so the store's ref-counted listener drains between tests.
+  afterEach(cleanup);
 
   it('installs a single AppState change listener on the first subscriber', () => {
     const { unmount } = renderHook(() => useIsAppBackgrounded());

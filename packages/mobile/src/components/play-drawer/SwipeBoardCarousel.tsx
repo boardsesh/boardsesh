@@ -328,6 +328,8 @@ export const SwipeBoardCarousel = React.memo(function SwipeBoardCarousel({
               mirrored={mirrored}
               renderWidth={overlayRenderWidth}
               backgroundVariant="full"
+              // Climb identity (peekFrames is the neighbour's frames, not a
+              // per-frame override) so the peek overlay recycles per climb.
               recyclingKey={peekFrames}
               style={boardStyle}
             />
