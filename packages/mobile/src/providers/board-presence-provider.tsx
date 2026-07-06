@@ -34,6 +34,10 @@ import {
   createMobileBoardPresenceClient,
   type MobileBoardPresenceClient,
 } from '../lib/board-presence/board-presence-client';
+import {
+  createScreenshotBoardPresenceClient,
+  SCREENSHOT_SEED_BOARD_ID,
+} from '../lib/board-presence/screenshot-wall-seed';
 import { getWsClient } from '../lib/graphql/ws-client';
 import { track } from '../lib/analytics';
 import { BoardDisambiguationSheet } from '../components/board-discovery/BoardDisambiguationSheet';
@@ -103,7 +107,14 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   // kept (constant true here) so consumers and the outside-provider fallback can
   // still branch on provider availability.
   const enabled = true;
-  const [boardId, setBoardId] = useState<number | null>(null);
+  // Screenshot mode: bind a sentinel board on boot so the iPad "On the Wall"
+  // kiosk renders live (its `isWallLive` gate is `boardId !== null`) with the
+  // seeded feed below, instead of the empty "Connect a board" state. The simulator
+  // has no Bluetooth to set a real boardId. Dead-strips in normal builds (inlined
+  // gate), which keep the null start.
+  const [boardId, setBoardId] = useState<number | null>(
+    process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1' ? SCREENSHOT_SEED_BOARD_ID : null,
+  );
   // When a serial maps to several boards the user must pick which wall they're
   // at. We hold the candidates + serial here and surface a picker; binding waits
   // for the choice.
@@ -113,8 +124,16 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
   } | null>(null);
 
   // The injected transport, built once. Presence is always-on, so the shared
-  // hook always has a client to attach its subscription to.
-  const client = useMemo<MobileBoardPresenceClient | null>(() => createMobileBoardPresenceClient(getWsClient), []);
+  // hook always has a client to attach its subscription to. Screenshot builds
+  // swap in a seed client that serves canned real climbs (no graphql-ws), so the
+  // kiosk lights up in the simulator; the branch dead-strips in normal builds.
+  const client = useMemo<MobileBoardPresenceClient | null>(
+    () =>
+      process.env.EXPO_PUBLIC_SCREENSHOT_MODE === '1'
+        ? createScreenshotBoardPresenceClient()
+        : createMobileBoardPresenceClient(getWsClient),
+    [],
+  );
   const clientRef = useRef(client);
   clientRef.current = client;
 

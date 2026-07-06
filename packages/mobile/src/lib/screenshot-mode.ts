@@ -14,6 +14,14 @@ import { isSupportedLocale, type Locale } from '@boardsesh/i18n';
  * `boardsesh:e2e-suppress-install-card`): a presentation-stability switch, not a
  * data-mocking layer — the seeded backend stays the source of truth.
  *
+ * The ONE deliberate exception is the iPad "On the Wall" kiosk (see
+ * `lib/board-presence/screenshot-wall-seed.ts`): the wall feed is a live
+ * graphql-ws subscription keyed on a `boardId` only a BLE bind can set, and the
+ * simulator has no Bluetooth, so there is no seeded-backend path to a lit wall.
+ * That seed reuses the active board's REAL climbs (real frames), and — like every
+ * flag here — is reached only from inlined `EXPO_PUBLIC_SCREENSHOT_MODE === '1'`
+ * branches, so it dead-strips from normal builds.
+ *
  * The boolean is intentionally NOT exported from here. Each consumer inlines the
  * raw comparison directly in its guard / ternary condition:
  *

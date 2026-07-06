@@ -64,6 +64,12 @@ const LOG = '[mobile:screenshots]';
 const APP_ID = 'com.boardsesh.app';
 const DEV_CLIENT_URL_SCHEME = 'exp+boardsesh';
 const MAESTRO_DEVICE_ORIENTATION_PLACEHOLDER = '${MAESTRO_DEVICE_ORIENTATION}';
+// Substituted to the literal `true`/`false` per device, inside a flow `${…}`
+// condition, so an iPad-only capture step (`when: { true: ${__MAESTRO_IS_IPAD__} }`)
+// runs on iPads and is skipped on iPhones — same render-time substitution the
+// orientation placeholder uses (Maestro `test` reads `${VAR}` only from `-e`, not
+// a flow's own text, so substitution is the reliable path).
+const MAESTRO_IS_IPAD_PLACEHOLDER = '__MAESTRO_IS_IPAD__';
 const DEFAULT_ANDROID_DEVICE = 'Pixel 2';
 const DEFAULT_ANDROID_APK = resolve(
   MOBILE_DIR,
@@ -605,8 +611,14 @@ function flowFileForPlatform(options: ScreenshotOptions, platform: 'ios' | 'andr
   return join(MAESTRO_DIR, `${options.flow}.yaml`);
 }
 
+export function isIpadScreenshotDevice(screenshotDevice: IosScreenshotDevice): boolean {
+  return screenshotDevice.typeId.includes('iPad');
+}
+
 export function renderMaestroFlowForIosDevice(flowSource: string, screenshotDevice: IosScreenshotDevice): string {
-  return flowSource.replaceAll(MAESTRO_DEVICE_ORIENTATION_PLACEHOLDER, screenshotDevice.orientation);
+  return flowSource
+    .replaceAll(MAESTRO_DEVICE_ORIENTATION_PLACEHOLDER, screenshotDevice.orientation)
+    .replaceAll(MAESTRO_IS_IPAD_PLACEHOLDER, isIpadScreenshotDevice(screenshotDevice) ? 'true' : 'false');
 }
 
 export function rotationDegreesForIosOrientation(orientation: IosDeviceOrientation): number | null {

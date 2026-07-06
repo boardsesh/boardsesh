@@ -1,17 +1,16 @@
-The full MoonBoard catalog is in, hold colours are yours to tune, and boards light up more reliably on iPhone.
+This update is all about steadier Bluetooth, plus a new way to show off your wall on iPad.
 
-New:
-- The full MoonBoard catalog landed: thousands more problems with real grades, star ratings and send counts, plus the Mini 2025 and original 2010 boards. Original MoonBoard LED hardware lights up over Bluetooth too.
-- See who's on the wall at a glance: when a crewmate lights up a different climb, their face and that climb show in a capsule up top, while the bottom bar stays your own queue.
-- Tap any climb in a circuit or playlist and the whole list drops into your queue in order. Swipe back to revisit the boulders above, not just jump to the next.
-- Mix your own hold colours with a real colour picker, preview them through red-green and blue-yellow colour blindness, and pick a new octagon marker shape. MoonBoard hold circles are bigger and easier to read, too.
-- Sort your logbook by Hardest top to bottom, with the community consensus grade shown next to the one you logged.
+Steadier on the wall:
+- iOS 26.5: fixed Kilter and Tension boards not lighting up, so no more blank board mid-session or connect-then-disconnect churn.
+- Queued a climb from a different board? Your wall no longer flashes dark. Boardsesh skips it and lights the next one that fits your setup.
+- Clear a MoonBoard's lights straight from the app over Bluetooth.
 
-Fixed:
-- Kilter and Tension light up reliably on iPhone: climbs send to the wall instead of the board connecting but staying dark.
-- MoonBoard lights up on iPhone, recovers after a flaky Bluetooth moment, and now drives from the Dynamic Island.
-- Fixed an iOS freeze where the app could stop responding to taps after opening and closing sheets.
-- Filter by setter, hold type or board region again. The pickers open full screen and the whole sheet scrolls.
-- Live sessions reconnect after your login refreshes, and pause then refetch when you drop offline and come back.
+New, On the Wall on iPad:
+- Mount an iPad by the wall for a full-screen view of what's lit right now, who's on it, and the session's hardest send, readable from across the room. Step back and forth through the wall's history and tap to relight a climb someone bumped. The screen stays awake for the whole session.
+
+Also:
+- Hide MoonBoard climbs set on holds you don't own: deselect a set and those problems drop out of your results.
+- MoonBoard sends now add to a climb's community repeat count instead of wiping it, so benchmarks show their real numbers and sort back to the top.
+- Add a climb to a playlist by pressing and holding it, and spin up a new playlist right there without the sheet vanishing mid-name.
 
 Free, no ads, open source.

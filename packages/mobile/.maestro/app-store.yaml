@@ -147,6 +147,27 @@ name: app-store screenshots
 - waitForAnimationToEnd
 - takeScreenshot: 07-playlist-detail
 
+# On the Wall (iPad only) — the wall-mounted kiosk: the current climb big and readable
+# from across the gym, who's on it, the session's hardest send, and the history reel. In
+# screenshot mode the board-presence feed is seeded from the active board's REAL climbs
+# (see src/lib/board-presence/screenshot-wall-seed.ts), so the holds light up instead of
+# the empty "Connect a board" state. `/wall` is an iPad-ONLY route (hidden on iPhone), so
+# this whole block is gated on the device class the orchestrator bakes in
+# (${__MAESTRO_IS_IPAD__} → true on iPads, false on iPhones) — an iPhone run skips it and
+# never writes a junk shot into the iPhone folder. Runs BEFORE the board-view shots below
+# because those open the play drawer, which overlays the whole app.
+- runFlow:
+    when:
+      true: ${__MAESTRO_IS_IPAD__}
+    commands:
+      - openLink: com.boardsesh.app://wall
+      - tapOn:
+          text: 'Open'
+          optional: true
+      - waitForAnimationToEnd
+      - waitForAnimationToEnd
+      - takeScreenshot: 00-wall
+
 # Board view — the signature feature: the wall with holds lit. The screenshot-mode param
 # auto-opens the first climb's play drawer (no coordinate tap). LAST, because the play
 # drawer overlays the app and would bleed into later shots.

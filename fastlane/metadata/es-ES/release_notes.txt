@@ -1,17 +1,16 @@
-Está el catálogo completo de MoonBoard, puedes ajustar a tu gusto los colores de las presas y los plafones se encienden de forma más fiable en el iPhone.
+Esta actualización va de Bluetooth más estable, y de una forma nueva de lucir tu muro en el iPad.
 
-Nuevo:
-- Ya está el catálogo completo de MoonBoard: miles de bloques más con grados reales, valoraciones por estrellas y número de encadenes, además del Mini 2025 y el original de 2010. El hardware LED del MoonBoard original también se enciende por Bluetooth.
-- Mira de un vistazo quién está en el muro: cuando alguien de tu peña enciende otra vía, su cara y esa vía aparecen en una cápsula arriba, mientras la barra de abajo sigue siendo tu propia cola.
-- Toca cualquier vía de un circuito o una playlist y la lista entera entra en tu cola en orden. Desliza hacia atrás para volver a los bloques anteriores, no solo saltar al siguiente.
-- Crea tus propios colores de presa con un selector de color de verdad, previsualízalos con daltonismo rojo-verde y azul-amarillo y elige una nueva forma de marcador octogonal. Además, los círculos de las presas del MoonBoard son más grandes y fáciles de ver.
-- Ordena tu logbook por Más difícil de arriba abajo, con el grado de consenso de la comunidad junto al que tú apuntaste.
+Más estable en el muro:
+- iOS 26.5: arreglado que los plafones Kilter y Tension no se encendieran, sin pantallas en blanco a media sesión ni el baile de conectar y desconectar.
+- ¿Metiste en la cola una vía de otro plafón? Tu muro ya no parpadea a oscuras: Boardsesh la salta y enciende la siguiente que encaje con tu montaje.
+- Apaga las luces de tu MoonBoard directamente desde la app por Bluetooth.
 
-Arreglado:
-- Kilter y Tension se encienden de forma fiable en el iPhone: las vías se envían al muro en vez de que el plafón conecte y se quede apagado.
-- El MoonBoard se enciende en el iPhone, se recupera tras un fallo puntual de Bluetooth y ahora se controla desde el Dynamic Island.
-- Arreglado un bloqueo en iOS en el que la app podía dejar de responder a los toques tras abrir y cerrar paneles.
-- Vuelve a filtrar por setter, tipo de presa o región del plafón. Los selectores se abren a pantalla completa y todo el panel se desplaza.
-- Las sesiones en vivo se reconectan cuando se refresca tu sesión, y se pausan y recargan cuando te quedas sin conexión y vuelves.
+Nuevo, En el muro en iPad:
+- Monta un iPad junto al muro para ver a pantalla completa lo que está encendido ahora mismo, quién lo está haciendo y el encadene más duro de la sesión, legible desde el otro lado de la sala. Avanza y retrocede por el historial del muro y toca para volver a encender una vía que alguien haya cambiado. La pantalla no se apaga en toda la sesión.
+
+Además:
+- Oculta las vías de MoonBoard montadas sobre presas que no tienes: deselecciona un set y esos bloques desaparecen de tus resultados.
+- Los encadenes de MoonBoard ahora suman al número de repeticiones de la comunidad en vez de borrarlo, así los benchmarks muestran sus cifras reales y vuelven a lo más alto.
+- Añade una vía a una playlist manteniéndola pulsada, y crea una playlist nueva ahí mismo sin que el panel desaparezca a medias.
 
 Gratis, sin anuncios, código abierto.

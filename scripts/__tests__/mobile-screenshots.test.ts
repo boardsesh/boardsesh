@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import {
   buildScreenshotEnv,
   deviceSlug,
+  isIpadScreenshotDevice,
   metroDevClientUrl,
   parseArgs,
   renderMaestroFlowForIosDevice,
@@ -300,6 +301,74 @@ describe('renderMaestroFlowForIosDevice', () => {
       expect(flowSource).toContain('${MAESTRO_DEVICE_ORIENTATION}');
       expect(renderMaestroFlowForIosDevice(flowSource, ipadDevice)).toContain('- setOrientation: LANDSCAPE_LEFT');
     }
+  });
+
+  it('renders the iPad-class gate to true on iPad and false on iPhone', () => {
+    const ipadDevice: IosScreenshotDevice = {
+      name: 'iPad Pro 13-inch (M5)',
+      typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB',
+      orientation: 'LANDSCAPE_LEFT',
+    };
+    const phoneDevice: IosScreenshotDevice = {
+      name: 'iPhone 16 Pro Max',
+      typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max',
+      orientation: 'PORTRAIT',
+    };
+    const flowSource =
+      '- runFlow:\n    when:\n      true: ${__MAESTRO_IS_IPAD__}\n    commands:\n      - takeScreenshot: 00-wall\n';
+
+    const ipadRendered = renderMaestroFlowForIosDevice(flowSource, ipadDevice);
+    expect(ipadRendered).toContain('true: ${true}');
+    expect(ipadRendered).not.toContain('__MAESTRO_IS_IPAD__');
+
+    const phoneRendered = renderMaestroFlowForIosDevice(flowSource, phoneDevice);
+    expect(phoneRendered).toContain('true: ${false}');
+    expect(phoneRendered).not.toContain('__MAESTRO_IS_IPAD__');
+  });
+
+  it('gates the real app-store wall shot on the iPad device class', () => {
+    const ipadDevice: IosScreenshotDevice = {
+      name: 'iPad Pro 13-inch (M5)',
+      typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB',
+      orientation: 'LANDSCAPE_LEFT',
+    };
+    const phoneDevice: IosScreenshotDevice = {
+      name: 'iPhone 16 Pro Max',
+      typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max',
+      orientation: 'PORTRAIT',
+    };
+    const flowSource = readFileSync('packages/mobile/.maestro/app-store.yaml', 'utf8');
+    // The flow ships the placeholder and the iPad-only wall capture.
+    expect(flowSource).toContain('__MAESTRO_IS_IPAD__');
+    expect(flowSource).toContain('takeScreenshot: 00-wall');
+    expect(flowSource).toContain('com.boardsesh.app://wall');
+
+    // Rendered per device, the wall gate resolves to a concrete boolean and the
+    // placeholder is gone (so neither run leaves an unresolved token).
+    expect(renderMaestroFlowForIosDevice(flowSource, ipadDevice)).toContain('true: ${true}');
+    expect(renderMaestroFlowForIosDevice(flowSource, phoneDevice)).toContain('true: ${false}');
+    for (const device of [ipadDevice, phoneDevice]) {
+      expect(renderMaestroFlowForIosDevice(flowSource, device)).not.toContain('__MAESTRO_IS_IPAD__');
+    }
+  });
+});
+
+describe('isIpadScreenshotDevice', () => {
+  it('is true for iPad simulator types and false for iPhone', () => {
+    expect(
+      isIpadScreenshotDevice({
+        name: 'iPad Pro 11-inch (M5)',
+        typeId: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB',
+        orientation: 'LANDSCAPE_LEFT',
+      }),
+    ).toBe(true);
+    expect(
+      isIpadScreenshotDevice({
+        name: 'iPhone 16 Pro Max',
+        typeId: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro-Max',
+        orientation: 'PORTRAIT',
+      }),
+    ).toBe(false);
   });
 });
 

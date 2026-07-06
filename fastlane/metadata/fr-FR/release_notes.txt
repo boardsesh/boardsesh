@@ -1,17 +1,16 @@
-Le catalogue MoonBoard complet est là, tu règles les couleurs de prises à ta main, et les boards s'allument plus fiablement sur iPhone.
+Cette mise à jour, c'est surtout du Bluetooth plus stable, et une nouvelle façon de mettre ton mur en valeur sur iPad.
 
-Nouveau :
-- Le catalogue MoonBoard complet est arrivé : des milliers de blocs en plus avec de vraies cotations, des notes en étoiles et le nombre de sends, plus le Mini 2025 et l'original de 2010. Le matériel LED du MoonBoard d'origine s'allume aussi en Bluetooth.
-- Vois d'un coup d'œil qui est sur le mur : quand un pote allume une autre voie, son visage et cette voie s'affichent dans une capsule en haut, pendant que la barre du bas reste ta propre file.
-- Touche n'importe quelle voie d'un circuit ou d'une playlist et toute la liste passe dans ta file dans l'ordre. Reviens en arrière d'un glissement pour repasser sur les blocs précédents, pas seulement sauter au suivant.
-- Compose tes propres couleurs de prise avec un vrai sélecteur de couleur, prévisualise-les en daltonisme rouge-vert et bleu-jaune, et choisis une nouvelle forme de marqueur octogonale. Les cercles des prises MoonBoard sont aussi plus gros et plus lisibles.
-- Trie ton logbook par Plus dur de haut en bas, avec la cotation consensus de la communauté à côté de celle que tu as notée.
+Plus stable sur le mur :
+- iOS 26.5 : corrigé les boards Kilter et Tension qui ne s'allumaient plus, fini le mur vide en pleine séance et le yo-yo connexion-déconnexion.
+- Une voie d'une autre board dans ta file ? Ton mur ne clignote plus dans le noir : Boardsesh la saute et allume la suivante qui correspond à ton install.
+- Éteins les lumières de ton MoonBoard directement depuis l'appli en Bluetooth.
 
-Corrigé :
-- Kilter et Tension s'allument de façon fiable sur iPhone : les voies partent au mur au lieu de rester éteintes une fois connecté.
-- Le MoonBoard s'allume sur iPhone, récupère après un accroc Bluetooth, et se pilote maintenant depuis la Dynamic Island.
-- Corrigé un gel sur iOS où l'appli pouvait ne plus répondre aux touchers après l'ouverture et la fermeture de panneaux.
-- Filtre à nouveau par ouvreur, type de prise ou région du mur. Les sélecteurs s'ouvrent en plein écran et tout le panneau défile.
-- Les sessions live se reconnectent après le rafraîchissement de ta connexion, et se mettent en pause puis se rechargent quand tu perds le réseau puis reviens.
+Nouveau, Sur le mur sur iPad :
+- Pose un iPad près du mur pour voir en plein écran ce qui est allumé en ce moment, qui est dessus et la plus grosse croix de la séance, lisible depuis l'autre bout de la salle. Reviens en arrière et en avant dans l'historique du mur et touche pour rallumer une voie que quelqu'un a changée. L'écran reste allumé toute la séance.
+
+Aussi :
+- Masque les voies MoonBoard montées sur des prises que tu n'as pas : désélectionne un set et ces blocs disparaissent de tes résultats.
+- Les croix sur MoonBoard s'ajoutent maintenant au nombre de répétitions de la communauté au lieu de l'effacer, donc les benchmarks affichent leurs vrais chiffres et remontent en haut.
+- Ajoute une voie à une playlist en appuyant longuement dessus, et crée une nouvelle playlist ici même sans que le panneau disparaisse en plein milieu.
 
 Gratuit, sans pub, open source.
