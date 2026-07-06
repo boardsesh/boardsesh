@@ -787,24 +787,31 @@ function captureIosDevice(
     // there before Maestro runs — this is what login.yaml's readiness wait used to
     // do (now deleted; there's no login screen to gate on).
     console.log(`${LOG} Waiting for the app to auto-sign-in and reach home...`);
-    // iPad cold-boots + first-bundle-loads slower, so give the plain launch more time
-    // before the retry.
+    // The dev-client's auto-connect to Metro is intermittently flaky in CI — the app
+    // lands on the "Searching for development servers" launcher (or the "Failed to
+    // load app" error) instead of loading the JS. When that happens, re-launch and try
+    // again; each fresh launch re-attempts the connect, and a shard that never recovers
+    // fails hard (rather than capturing the launcher) so it can be re-run.
+    // iPad cold-boots slower, so give the first launch more time.
     const isIpad = isIpadScreenshotDevice(screenshotDevice);
-    if (!waitForHomeReady(homeReadyBaseline, isIpad ? 90 : 45)) {
+    let reachedHome = waitForHomeReady(homeReadyBaseline, isIpad ? 90 : 45);
+    for (let attempt = 1; attempt <= 3 && !reachedHome; attempt += 1) {
       if (isIpad) {
         // iPad: re-launch PLAINLY — never `openurl`. The "Open in 'Boardsesh'?" confirm
-        // that an openurl raises is never dismissed on iPad (the URL isn't delivered to
-        // the app), and it then blocks the entire sidebar-tap flow. A fresh launch just
-        // re-triggers the dev-client's auto-connect + auto-sign-in, no dialog.
-        console.log(`${LOG} Plain launch did not reach home; terminating and re-launching (iPad, no openurl)...`);
+        // an openurl raises is never delivered/dismissed on iPad and then blocks the
+        // whole sidebar-tap flow. A fresh launch re-triggers auto-connect, no dialog.
+        console.log(`${LOG} Not home yet; terminating and re-launching (iPad attempt ${attempt}/3)...`);
         runCapture('xcrun', ['simctl', 'terminate', device.udid, APP_ID]);
         runCapture('xcrun', ['simctl', 'launch', device.udid, APP_ID]);
       } else {
-        console.log(`${LOG} Plain launch did not reach home; retrying with the explicit dev-client URL...`);
+        // iPhone: force the connect with the explicit dev-client URL (its deep-link
+        // confirm is dismissed + remembered on iPhone, so it's safe and more reliable).
+        console.log(`${LOG} Not home yet; forcing the dev-client URL (iPhone attempt ${attempt}/3)...`);
         runCapture('xcrun', ['simctl', 'openurl', device.udid, metroDevClientUrl()]);
       }
+      reachedHome = waitForHomeReady(homeReadyBaseline, 75);
     }
-    if (!waitForHomeReady(homeReadyBaseline)) {
+    if (!reachedHome) {
       console.error(`${LOG} FAILED: app did not reach the home screen (auto sign-in / bundle load).`);
       dumpMetroLogTail();
       return 1;
