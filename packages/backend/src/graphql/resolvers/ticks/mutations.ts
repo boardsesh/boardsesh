@@ -381,10 +381,10 @@ export const tickMutations = {
       .limit(1);
 
     if (!tick) {
-      throw new Error('Tick not found');
+      throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
     }
     if (tick.userId !== userId) {
-      throw new Error('You can only delete your own ticks');
+      throw new GraphQLError('You can only delete your own ticks', { extensions: { code: 'FORBIDDEN' } });
     }
 
     logger.info(
@@ -829,10 +829,10 @@ export const tickMutations = {
       .limit(1);
 
     if (existing.length === 0) {
-      throw new Error('Tick not found');
+      throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
     }
     if (existing[0].userId !== userId) {
-      throw new Error('Not authorized to update this tick');
+      throw new GraphQLError('Not authorized to update this tick', { extensions: { code: 'FORBIDDEN' } });
     }
 
     const changedFields = Object.keys(validatedInput);

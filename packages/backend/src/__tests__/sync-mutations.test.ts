@@ -91,6 +91,101 @@ describe('addFavorite / removeFavorite idempotency', () => {
   });
 });
 
+describe('toggleFavorite insert-first upsert', () => {
+  const fav = { boardName: 'kilter', climbUuid: 'toggle-climb-1', angle: 40 };
+
+  async function favoriteCount(): Promise<number> {
+    const rows = await db.execute(sql`
+      SELECT count(*)::int AS count FROM user_favorites
+      WHERE user_id = ${USER_ID} AND board_name = ${fav.boardName}
+        AND climb_uuid = ${fav.climbUuid} AND angle = ${fav.angle}
+    `);
+    return Number((rows as unknown as Array<{ count: number }>)[0].count);
+  }
+
+  it('toggles on then off: true with one row, then false with zero rows', async () => {
+    const on = await favoriteMutations.toggleFavorite(undefined, { input: fav }, ctx());
+    expect(on).toEqual({ favorited: true });
+    expect(await favoriteCount()).toBe(1);
+
+    const off = await favoriteMutations.toggleFavorite(undefined, { input: fav }, ctx());
+    expect(off).toEqual({ favorited: false });
+    expect(await favoriteCount()).toBe(0);
+  });
+
+  it('removes a favorite created via addFavorite (conflict path, not a unique violation)', async () => {
+    await favoriteMutations.addFavorite(undefined, { input: fav }, ctx());
+
+    const result = await favoriteMutations.toggleFavorite(undefined, { input: fav }, ctx());
+    expect(result).toEqual({ favorited: false });
+    expect(await favoriteCount()).toBe(0);
+  });
+});
+
+describe('deleteTick / updateTick typed errors', () => {
+  const missingUuid = '99999999-9999-4999-8999-999999999999';
+  const OTHER_USER = 'sync-mut-other-user';
+
+  async function expectGraphQLCode(promise: Promise<unknown>, code: string): Promise<void> {
+    let caught: unknown;
+    try {
+      await promise;
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught, `expected a GraphQLError with code ${code}`).toBeDefined();
+    const extensions = (caught as { extensions?: { code?: string } }).extensions;
+    expect(extensions?.code).toBe(code);
+  }
+
+  async function saveTickAs(userId: string): Promise<string> {
+    const saved = (await tickMutations.saveTick(
+      undefined,
+      {
+        input: {
+          boardType: 'kilter',
+          climbUuid: 'typed-error-climb',
+          angle: 40,
+          isMirror: false,
+          status: 'flash' as const,
+          attemptCount: 1,
+          isBenchmark: false,
+          comment: 'typed-error fixture',
+          climbedAt: new Date('2026-05-01T10:00:00Z').toISOString(),
+        },
+      },
+      ctx(userId),
+    )) as TickRow;
+    return saved.uuid;
+  }
+
+  it('deleteTick on a missing uuid throws TICK_NOT_FOUND', async () => {
+    await expectGraphQLCode(tickMutations.deleteTick(undefined, { uuid: missingUuid }, ctx()), 'TICK_NOT_FOUND');
+  });
+
+  it("deleteTick on another user's tick throws FORBIDDEN", async () => {
+    await insertUser(OTHER_USER);
+    const uuid = await saveTickAs(OTHER_USER);
+    await expectGraphQLCode(tickMutations.deleteTick(undefined, { uuid }, ctx()), 'FORBIDDEN');
+  });
+
+  it('updateTick on a missing uuid throws TICK_NOT_FOUND', async () => {
+    await expectGraphQLCode(
+      tickMutations.updateTick(undefined, { uuid: missingUuid, input: { comment: 'nope' } }, ctx()),
+      'TICK_NOT_FOUND',
+    );
+  });
+
+  it("updateTick on another user's tick throws FORBIDDEN", async () => {
+    await insertUser(OTHER_USER);
+    const uuid = await saveTickAs(OTHER_USER);
+    await expectGraphQLCode(
+      tickMutations.updateTick(undefined, { uuid, input: { comment: 'nope' } }, ctx()),
+      'FORBIDDEN',
+    );
+  });
+});
+
 describe('saveTick idempotent replay', () => {
   const baseInput = {
     boardType: 'kilter',
@@ -217,6 +312,37 @@ describe('deletePlaylist with climbs (cascade deletion trigger)', () => {
 
     // Per-climb tombstones are skipped in the whole-playlist cascade (guard on NULL parent),
     // so the child trigger neither errors nor emits redundant records.
+    const climbTombstones = (await db.execute(sql`
+      SELECT count(*)::int AS count FROM sync_deletions WHERE table_name = 'playlist_climbs'
+    `)) as unknown as Array<{ count: number }>;
+    expect(Number(climbTombstones[0].count)).toBe(0);
+  });
+
+  it('skips the tombstone when playlist_ownership is orphaned (never emits a global NULL-scope row)', async () => {
+    const orphanUuid = '55555555-5555-4555-8555-555555555555';
+    await playlistMutations.createPlaylist(
+      undefined,
+      { input: { uuid: orphanUuid, boardType: 'kilter', layoutId: 1, name: 'Orphaned' } },
+      ctx(),
+    );
+
+    const playlistIdRows = (await db.execute(sql`
+      SELECT id FROM playlists WHERE uuid = ${orphanUuid}
+    `)) as unknown as Array<{ id: string | number }>;
+    const playlistId = playlistIdRows[0].id;
+
+    await db.execute(sql`
+      INSERT INTO playlist_climbs (playlist_id, climb_uuid, angle, position)
+      VALUES (${playlistId}, ${'climb-orphan'}, 40, 0)
+    `);
+
+    // Orphan the playlist, then delete the climb row directly (the only path
+    // that reaches the owner lookup with no ownership row).
+    await db.execute(sql`DELETE FROM playlist_ownership WHERE playlist_id = ${playlistId}`);
+    await db.execute(sql`DELETE FROM playlist_climbs WHERE playlist_id = ${playlistId}`);
+
+    // sync_deletions.user_id = NULL means "visible to ALL clients"; an orphaned
+    // ownership must skip the tombstone entirely rather than emit a global one.
     const climbTombstones = (await db.execute(sql`
       SELECT count(*)::int AS count FROM sync_deletions WHERE table_name = 'playlist_climbs'
     `)) as unknown as Array<{ count: number }>;

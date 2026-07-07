@@ -41,6 +41,9 @@ export const syncDeletions = pgTable(
     nullScopeIdx: index('sync_deletions_null_scope_idx')
       .on(table.deletedAt, table.id)
       .where(sql`${table.userId} IS NULL`),
+    // Prune path (sync-deletions-prune.ts): DELETE WHERE deleted_at < cutoff
+    // can't use the user-scoped composite or the NULL-scope partial index.
+    pruneIdx: index('sync_deletions_deleted_at_idx').on(table.deletedAt),
   }),
 );
 

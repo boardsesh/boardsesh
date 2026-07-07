@@ -355,7 +355,9 @@ export const boardClimbs = pgTable(
   },
   (table) => ({
     boardTypeIdx: index('board_climbs_board_type_idx').on(table.boardType),
-    syncCursorIdx: index('board_climbs_sync_cursor_idx').on(table.updatedAt, table.syncSeq),
+    // Leading board_type: every syncClimbs pull filters on it before walking
+    // the (updated_at, sync_seq) cursor, so a per-board pull is one range scan.
+    syncCursorIdx: index('board_climbs_sync_cursor_idx').on(table.boardType, table.updatedAt, table.syncSeq),
     // Dedup hot path: look up an existing canonical row for an incoming climb
     // by (board_type, layout_id, fingerprint) before deciding whether to
     // insert as canonical or upsert as an alias.
@@ -604,7 +606,9 @@ export const boardClimbStats = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.angle] }),
-    syncCursorIdx: index('board_climb_stats_sync_cursor_idx').on(table.updatedAt, table.syncSeq),
+    // Leading board_type: every syncClimbStats pull filters on it before walking
+    // the (updated_at, sync_seq) cursor, so a per-board pull is one range scan.
+    syncCursorIdx: index('board_climb_stats_sync_cursor_idx').on(table.boardType, table.updatedAt, table.syncSeq),
     // Note: the ascents/quality covering indexes are created in custom migrations
     // (0068/0121, and the v2 climb_uuid-as-key variants in 0122) with DESC NULLS LAST
     // + INCLUDE columns that Drizzle can't express.

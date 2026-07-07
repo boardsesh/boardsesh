@@ -781,6 +781,11 @@ export const schemaSQL = `
     FROM playlist_ownership po
     WHERE po.playlist_id = OLD.playlist_id AND po.role = 'owner'
     LIMIT 1;
+    -- Mirrors 0146: an orphaned playlist_ownership must not emit a
+    -- user_id=NULL (global) tombstone.
+    IF owner_id IS NULL THEN
+      RETURN OLD;
+    END IF;
     INSERT INTO sync_deletions (table_name, record_id, user_id)
     VALUES (TG_TABLE_NAME, v_playlist_uuid || ':' || OLD.climb_uuid, owner_id);
     RETURN OLD;
@@ -847,4 +852,56 @@ export const schemaSQL = `
   DROP TRIGGER IF EXISTS trg_board_climbs_delete ON board_climbs;
   CREATE TRIGGER trg_board_climbs_delete AFTER DELETE ON board_climbs
     FOR EACH ROW EXECUTE FUNCTION log_deletion_board_climbs();
+
+  -- Sync-field maintenance on UPDATE, mirroring 0144 + the 0146 WHEN guards:
+  -- internal-only (synced/sync_error) and no-op writes must not advance the
+  -- sync cursors, and bookkeeping-only tick writes must not bump updated_at.
+  CREATE OR REPLACE FUNCTION set_board_climbs_sync_fields() RETURNS TRIGGER AS $$
+  BEGIN
+    NEW.updated_at = NOW();
+    NEW.sync_seq = nextval('board_climbs_sync_seq_seq');
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS trg_board_climbs_set_sync_fields ON board_climbs;
+  CREATE TRIGGER trg_board_climbs_set_sync_fields BEFORE UPDATE ON board_climbs
+    FOR EACH ROW
+    WHEN ((to_jsonb(OLD) - ARRAY['synced','sync_error','updated_at','sync_seq'])
+          IS DISTINCT FROM
+          (to_jsonb(NEW) - ARRAY['synced','sync_error','updated_at','sync_seq']))
+    EXECUTE FUNCTION set_board_climbs_sync_fields();
+
+  CREATE OR REPLACE FUNCTION set_board_climb_stats_sync_fields() RETURNS TRIGGER AS $$
+  BEGIN
+    NEW.updated_at = NOW();
+    NEW.sync_seq = nextval('board_climb_stats_sync_seq_seq');
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS trg_board_climb_stats_set_sync_fields ON board_climb_stats;
+  CREATE TRIGGER trg_board_climb_stats_set_sync_fields BEFORE UPDATE ON board_climb_stats
+    FOR EACH ROW
+    WHEN (OLD.* IS DISTINCT FROM NEW.*)
+    EXECUTE FUNCTION set_board_climb_stats_sync_fields();
+
+  CREATE OR REPLACE FUNCTION set_updated_at() RETURNS TRIGGER AS $$
+  BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  DROP TRIGGER IF EXISTS trg_boardsesh_ticks_set_updated_at ON boardsesh_ticks;
+  CREATE TRIGGER trg_boardsesh_ticks_set_updated_at BEFORE UPDATE ON boardsesh_ticks
+    FOR EACH ROW
+    WHEN ((to_jsonb(OLD) - ARRAY['id','board_id','updated_at',
+            'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
+            'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error'])
+          IS DISTINCT FROM
+          (to_jsonb(NEW) - ARRAY['id','board_id','updated_at',
+            'aurora_type','aurora_id','aurora_synced_at','aurora_sync_error',
+            'kilter_type','kilter_id','kilter_synced_at','kilter_sync_error']))
+    EXECUTE FUNCTION set_updated_at();
 `;

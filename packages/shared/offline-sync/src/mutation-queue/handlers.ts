@@ -28,6 +28,18 @@ type MutationDispatch = {
   variables: Record<string, unknown>;
 };
 
+// UpdateTickInput's exact field set (shared-schema ticks.ts). Queued payloads
+// carry the camelCase GraphQL input shape, so no case mapping is needed.
+const UPDATE_TICK_INPUT_FIELDS = [
+  'status',
+  'attemptCount',
+  'quality',
+  'difficulty',
+  'isBenchmark',
+  'comment',
+  'climbedAt',
+] as const;
+
 function buildDispatch(mutation: PendingMutation): MutationDispatch {
   let payload: Record<string, unknown>;
   try {
@@ -51,13 +63,19 @@ function buildDispatch(mutation: PendingMutation): MutationDispatch {
           };
         case 'update': {
           // UpdateTickInput has no `uuid` field — it rides as a separate
-          // variable. Spreading the raw payload (which naturally carries the
-          // uuid) into `input` would fail GraphQL validation and dead-letter
-          // the mutation.
-          const { uuid, ...updateInput } = payload;
+          // variable — and GraphQL rejects unknown input fields, dead-lettering
+          // the mutation. Copy only UpdateTickInput's exact field set instead
+          // of spreading the payload, so stray keys (uuid, local timestamps)
+          // never reach the server.
+          const updateInput: Record<string, unknown> = {};
+          for (const field of UPDATE_TICK_INPUT_FIELDS) {
+            if (payload[field] !== undefined) {
+              updateInput[field] = payload[field];
+            }
+          }
           return {
             mutationName: 'UpdateTick',
-            variables: { uuid, input: updateInput },
+            variables: { uuid: payload.uuid, input: updateInput },
           };
         }
         case 'delete':

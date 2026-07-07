@@ -18,7 +18,10 @@ import {
 export const favoriteMutations = {
   /**
    * Toggle favorite status for a climb
-   * If favorited, removes the favorite; if not favorited, adds it
+   * If favorited, removes the favorite; if not favorited, adds it.
+   * The insert-first upsert keeps concurrent toggles race-free: exactly one of
+   * two racing calls wins the INSERT (unique_user_favorite), the other falls
+   * through to the DELETE branch instead of hitting a unique violation.
    */
   toggleFavorite: async (
     _: unknown,
@@ -30,10 +33,30 @@ export const favoriteMutations = {
 
     const userId = ctx.userId!;
 
-    // Check if favorite exists
-    const existing = await db
-      .select()
-      .from(dbSchema.userFavorites)
+    const inserted = await db
+      .insert(dbSchema.userFavorites)
+      .values({
+        userId,
+        boardName: input.boardName,
+        climbUuid: input.climbUuid,
+        angle: input.angle,
+      })
+      .onConflictDoNothing({
+        target: [
+          dbSchema.userFavorites.userId,
+          dbSchema.userFavorites.boardName,
+          dbSchema.userFavorites.climbUuid,
+          dbSchema.userFavorites.angle,
+        ],
+      })
+      .returning({ id: dbSchema.userFavorites.id });
+
+    if (inserted.length > 0) {
+      return { favorited: true };
+    }
+
+    await db
+      .delete(dbSchema.userFavorites)
       .where(
         and(
           eq(dbSchema.userFavorites.userId, userId),
@@ -41,32 +64,8 @@ export const favoriteMutations = {
           eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
           eq(dbSchema.userFavorites.angle, input.angle),
         ),
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
-      // Remove favorite
-      await db
-        .delete(dbSchema.userFavorites)
-        .where(
-          and(
-            eq(dbSchema.userFavorites.userId, userId),
-            eq(dbSchema.userFavorites.boardName, input.boardName),
-            eq(dbSchema.userFavorites.climbUuid, input.climbUuid),
-            eq(dbSchema.userFavorites.angle, input.angle),
-          ),
-        );
-      return { favorited: false };
-    } else {
-      // Add favorite
-      await db.insert(dbSchema.userFavorites).values({
-        userId,
-        boardName: input.boardName,
-        climbUuid: input.climbUuid,
-        angle: input.angle,
-      });
-      return { favorited: true };
-    }
+      );
+    return { favorited: false };
   },
 
   /**

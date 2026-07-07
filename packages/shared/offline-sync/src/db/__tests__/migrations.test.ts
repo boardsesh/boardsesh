@@ -119,6 +119,26 @@ describe('runMigrations', () => {
     expect(tables).not.toContain('user_favorites');
   });
 
+  it('v3 adds the per-board recency index on ticks, on fresh and on v2-stamped databases', async () => {
+    const indexQuery = "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_ticks_board_climbed_at'";
+
+    // Fresh install: the full migration chain lands the index.
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    const freshIndex = await freshDb.getFirstAsync<{ name: string }>(indexQuery);
+    expect(freshIndex?.name).toBe('idx_ticks_board_climbed_at');
+
+    // Existing install stamped at v2 (index dropped to simulate the pre-v3
+    // state): only the pending v3 migration applies and creates it.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await upgradedDb.execAsync('DROP INDEX idx_ticks_board_climbed_at');
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 2 WHERE id = 1');
+    await runMigrations(upgradedDb);
+    const upgradedIndex = await upgradedDb.getFirstAsync<{ name: string }>(indexQuery);
+    expect(upgradedIndex?.name).toBe('idx_ticks_board_climbed_at');
+  });
+
   it('applies a newly appended migration on top of an older version', async () => {
     const db = createTestDatabase();
 

@@ -34,6 +34,13 @@ export const MIGRATIONS: Migration[] = [
     version: 2,
     statements: ['ALTER TABLE board_climbs ADD COLUMN characteristics TEXT;'],
   },
+  {
+    // Logbook read path: per-board tick list ordered by recency.
+    version: 3,
+    statements: [
+      'CREATE INDEX IF NOT EXISTS idx_ticks_board_climbed_at ON boardsesh_ticks (board_type, climbed_at DESC);',
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `
