@@ -187,12 +187,11 @@ async function main(): Promise<number> {
     const appConfigPath = join(scriptDir, '..', 'packages', 'mobile', 'app.config.ts');
     const content = readFileSync(appConfigPath, 'utf-8');
 
-    const versionMatch = content.match(/version:\s*'(\d+)\.(\d+)\.(\d+)'/);
+    const versionMatch = content.match(/version:\s*'(\d+\.\d+\.\d+)'/);
     if (!versionMatch) {
       throw new Error(`Could not find version field in ${appConfigPath}`);
     }
-    const [, major, minor, patch] = versionMatch;
-    const currentVersion = `${major}.${minor}.${patch}`;
+    const currentVersion = versionMatch[1];
     console.log(`Current marketing version: ${currentVersion}`);
 
     const appId = await resolveAppId(token);
