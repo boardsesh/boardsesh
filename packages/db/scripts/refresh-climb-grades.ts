@@ -634,16 +634,27 @@ async function main(): Promise<void> {
     }
 
     // Honesty report (never blocks): boards whose grade is just the label.
-    const honesty = rowsOf<{
-      board_type: string;
-      correlation: number | null;
-      mean_abs_delta: number | null;
-      rows: number;
-    }>(await db.execute(buildHonestyCheckSql()));
-    for (const row of honesty) {
-      console.log(
-        `[grades]   honesty ${row.board_type}: corr(display)=${row.correlation === null ? 'n/a' : Number(row.correlation).toFixed(3)}, mean|Δ|=${row.mean_abs_delta === null ? 'n/a' : Number(row.mean_abs_delta).toFixed(3)} over ${row.rows} rows`,
-      );
+    // Run it inside a transaction with parallel workers off — the 589k×900k
+    // hash join's parallel workers exhausted prod's /dev/shm (SQLSTATE 53100)
+    // on the first prod run; serial execution spills to disk instead. And a
+    // report-only failure must never fail the run after grades published.
+    try {
+      const honesty = await db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
+        return rowsOf<{
+          board_type: string;
+          correlation: number | null;
+          mean_abs_delta: number | null;
+          rows: number;
+        }>(await tx.execute(buildHonestyCheckSql()));
+      });
+      for (const row of honesty) {
+        console.log(
+          `[grades]   honesty ${row.board_type}: corr(display)=${row.correlation === null ? 'n/a' : Number(row.correlation).toFixed(3)}, mean|Δ|=${row.mean_abs_delta === null ? 'n/a' : Number(row.mean_abs_delta).toFixed(3)} over ${row.rows} rows`,
+        );
+      }
+    } catch (honestyError) {
+      console.warn('[grades] honesty report failed (grades already published, run continues):', honestyError);
     }
     console.log('[grades] done.');
   } finally {
