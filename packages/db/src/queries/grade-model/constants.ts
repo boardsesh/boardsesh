@@ -8,7 +8,7 @@
  */
 
 /** Blend/tier/hysteresis logic version, stored on every published row. */
-export const GRADE_MODEL_VERSION = 'v1.0';
+export const GRADE_MODEL_VERSION = 'v1.1'; // v1.1: per-climb isotonic angle constraint
 
 /**
  * Boards whose upstream `difficulty_average` is a live crowd mean (fractional,

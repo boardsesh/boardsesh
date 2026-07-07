@@ -29,6 +29,8 @@ import {
   CROWD_MEAN_BOARDS,
   GRADE_MODEL_VERSION,
   OFFSET_LOO_MAX_DELTA,
+  applyIsotonicAngleConstraint,
+  type AngleGradeRow,
   buildAngleSurfaceSql,
   buildBacktestSampleSql,
   buildBoardOffsetSampleSql,
@@ -284,9 +286,14 @@ async function loadPooledFingerprintEvidence(db: Db, boardType: string): Promise
 }
 
 /** Stream one board's listed, non-draft climb+angle stats, grouped by climb. */
-async function computeBoard(db: Db, boardType: string, coefficients: GradeCoefficients): Promise<ComputedRow[]> {
+async function computeBoard(
+  db: Db,
+  boardType: string,
+  coefficients: GradeCoefficients,
+): Promise<{ computed: ComputedRow[]; isotonicStats: { movedRows: number; residualInversions: number } }> {
   const pooledEvidence = await loadPooledFingerprintEvidence(db, boardType);
   const computed: ComputedRow[] = [];
+  const isotonicStats = { movedRows: 0, residualInversions: 0 };
   let lastClimbUuid = '';
   for (;;) {
     const rows = rowsOf<StatsRow>(
@@ -336,23 +343,36 @@ async function computeBoard(db: Db, boardType: string, coefficients: GradeCoeffi
             displayDifficulty: row.display_difficulty === null ? null : Number(row.display_difficulty),
             ascensionistCount: Number(row.ascensionist_count),
           }));
-      // Emit one output row per angle THIS climb actually has (the pooled
-      // angle set may be wider than this member's own angles).
+      // Posteriors for the full angle set first (pooled set may be wider than
+      // this member's own angles), then the per-climb isotonic projection —
+      // grades may not decrease as the wall gets steeper (see isotonic.ts;
+      // The Enchiridion @30° > @35° was the motivating inversion).
+      const angleRows: AngleGradeRow[] = observations.map((target) => ({
+        angle: target.angle,
+        posterior: computePosteriorGrade(target, observations, coefficients),
+        observedMean: target.difficultyAverage,
+        ascensionistCount: target.ascensionistCount,
+      }));
+      const { adjusted, residualInversions, movedRows } = applyIsotonicAngleConstraint(angleRows);
+      isotonicStats.movedRows += movedRows;
+      isotonicStats.residualInversions += residualInversions;
+
+      // Emit one output row per angle THIS climb actually has.
       const ownAngles = new Set(group.map((row) => row.angle));
-      for (const target of observations) {
-        if (!ownAngles.has(target.angle)) continue;
-        const posterior = computePosteriorGrade(target, observations, coefficients);
+      for (let i = 0; i < angleRows.length; i++) {
+        if (!ownAngles.has(angleRows[i].angle)) continue;
+        const posterior = adjusted[i];
         computed.push({
           climbUuid: group[0].climb_uuid,
-          angle: target.angle,
+          angle: angleRows[i].angle,
           localGrade: posterior.localGrade,
           universalGrade: posterior.universalGrade,
           gradeLow: posterior.gradeLow,
           gradeHigh: posterior.gradeHigh,
           confidence: posterior.confidence,
-          ascensionistCount: target.ascensionistCount,
+          ascensionistCount: angleRows[i].ascensionistCount,
           postSd: posterior.postSd,
-          rawAverage: target.difficultyAverage,
+          rawAverage: angleRows[i].observedMean,
           holdFingerprint: group[0].hold_fingerprint,
         });
       }
@@ -367,7 +387,7 @@ async function computeBoard(db: Db, boardType: string, coefficients: GradeCoeffi
     lastClimbUuid = effective[effective.length - 1].climb_uuid;
     if (isFinalPage) break;
   }
-  return computed;
+  return { computed, isotonicStats };
 }
 
 /** No-shock gate evaluated in memory on the freshly computed rows. */
@@ -378,7 +398,9 @@ function evaluateNoShock(computed: ComputedRow[]): GateResult {
     if (row.ascensionistCount < GATE_NO_SHOCK_MIN_ASCENTS || row.rawAverage === null || row.localGrade === null)
       continue;
     checked += 1;
-    if (Math.abs(row.localGrade - row.rawAverage) > GATE_NO_SHOCK_MAX_MOVE) violations += 1;
+    // 1e-6 tolerance: the blend/isotonic clamps place grades exactly ON the
+    // bound, and (x + 1.0) - x can exceed 1.0 by float noise.
+    if (Math.abs(row.localGrade - row.rawAverage) > GATE_NO_SHOCK_MAX_MOVE + 1e-6) violations += 1;
   }
   return {
     gate: 'no_shock',
@@ -463,7 +485,14 @@ async function upsertGrades(
     batch = [];
   };
 
+  // Hysteresis is CLIMB-scoped, not row-scoped: the isotonic projection keeps a
+  // climb's angles mutually consistent, and holding back one angle's small
+  // correction while publishing its neighbour's would put the inversion right
+  // back in the published table. If ANY angle of a climb crosses the publish
+  // threshold, all of that climb's angles publish together.
+  const publishClimb = new Map<string, boolean>();
   for (const row of computed) {
+    if (publishClimb.get(row.climbUuid)) continue;
     const posteriorLike = {
       localGrade: row.localGrade,
       universalGrade: row.universalGrade,
@@ -472,7 +501,15 @@ async function upsertGrades(
       confidence: row.confidence as never,
       postSd: row.postSd,
     };
-    if (!shouldPublish(previous.get(`${row.climbUuid}:${row.angle}`), posteriorLike)) {
+    if (shouldPublish(previous.get(`${row.climbUuid}:${row.angle}`), posteriorLike)) {
+      publishClimb.set(row.climbUuid, true);
+    } else if (!publishClimb.has(row.climbUuid)) {
+      publishClimb.set(row.climbUuid, false);
+    }
+  }
+
+  for (const row of computed) {
+    if (!publishClimb.get(row.climbUuid)) {
       held += 1;
       continue;
     }
@@ -528,7 +565,7 @@ async function validateOnly(db: Db): Promise<void> {
     );
   }
   for (const boardType of CROWD_MEAN_BOARDS) {
-    const computed = await computeBoard(db, boardType, coefficients);
+    const { computed, isotonicStats } = await computeBoard(db, boardType, coefficients);
     const noShock = evaluateNoShock(computed);
     const fingerprint = evaluateFingerprintConsistency(computed);
     const tiers = computed.reduce<Record<string, number>>((acc, row) => {
@@ -536,7 +573,7 @@ async function validateOnly(db: Db): Promise<void> {
       return acc;
     }, {});
     console.log(
-      `[grades]   ${boardType}: ${computed.length} rows, tiers=${JSON.stringify(tiers)}; no_shock ${noShock.passed ? 'PASS' : 'FAIL'} (${noShock.detail}); fingerprint ${fingerprint.passed ? 'PASS' : 'FAIL'} (${fingerprint.detail})`,
+      `[grades]   ${boardType}: ${computed.length} rows, tiers=${JSON.stringify(tiers)}; isotonic moved ${isotonicStats.movedRows} rows (${isotonicStats.residualInversions} residual inversions); no_shock ${noShock.passed ? 'PASS' : 'FAIL'} (${noShock.detail}); fingerprint ${fingerprint.passed ? 'PASS' : 'FAIL'} (${fingerprint.detail})`,
     );
   }
   console.log('[grades] validate-only done (nothing written).');
@@ -600,9 +637,11 @@ async function main(): Promise<void> {
     const computedByBoard = new Map<string, ComputedRow[]>();
     for (const boardType of CROWD_MEAN_BOARDS) {
       console.log(`[grades] computing ${boardType}…`);
-      const computed = await computeBoard(db, boardType, coefficients);
+      const { computed, isotonicStats } = await computeBoard(db, boardType, coefficients);
       computedByBoard.set(boardType, computed);
-      console.log(`[grades]   ${computed.length} climb+angle rows`);
+      console.log(
+        `[grades]   ${computed.length} climb+angle rows (isotonic moved ${isotonicStats.movedRows}, ${isotonicStats.residualInversions} residual inversions)`,
+      );
     }
     const allComputed = [...computedByBoard.values()].flat();
     const noShockGate = evaluateNoShock(allComputed);

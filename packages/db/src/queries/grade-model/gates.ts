@@ -19,7 +19,9 @@ export function buildNoShockCheckSql(): SQL {
   return sql`
     SELECT COUNT(*) FILTER (
              WHERE g.local_grade IS NOT NULL
-               AND ABS(g.local_grade - s.difficulty_average) > ${GATE_NO_SHOCK_MAX_MOVE}
+               -- 1e-6 tolerance: clamps place grades exactly ON the bound and
+               -- float noise can push the difference a hair past it.
+               AND ABS(g.local_grade - s.difficulty_average) > ${GATE_NO_SHOCK_MAX_MOVE} + 1e-6
            )::int AS violations,
            COUNT(*)::int AS checked
     FROM board_climb_grades g

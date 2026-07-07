@@ -178,6 +178,22 @@ fake a tighter CI. This is why the middle regime below leaves the mean alone.
 3. **No crowd mean** → the cross-angle prior if one exists (SD √V0), else the
    display grade passed through **with no CI**, always tiered `setter_only`.
 
+### Per-climb isotonic angle constraint (v1.1)
+
+Each angle's crowd herds independently, so raw per-angle grades can invert —
+The Enchiridion (Kilter Homewall) was crowd-graded a full point *harder* at 30°
+(n=55) than at 35° (n=33), display grades included. The blend can't fix that:
+with real evidence at both angles, own-angle data rightly dominates the
+cross-angle prior. But the same holds at a steeper wall cannot be easier, so
+after blending, each climb's grades are projected onto "non-decreasing with
+angle" via weighted isotonic regression (pool-adjacent-violators, weights =
+posterior precision 1/post_sd²) — violating neighbours merge to their
+precision-weighted mean, monotone climbs are untouched. Established rows keep
+the no-shock promise (never moved more than 1 grade from their own crowd mean;
+a binding cap can leave a residual inversion, which the run counts and logs).
+Display-only pass-through rows carry no evidence and don't participate.
+Implementation: `isotonic.ts`.
+
 ### Duplicate climbs share one identity
 
 Climbs with the same `hold_fingerprint` are the same physical problem listed
