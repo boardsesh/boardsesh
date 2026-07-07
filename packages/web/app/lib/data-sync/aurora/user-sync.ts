@@ -10,6 +10,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { UNIFIED_TABLES } from '../../db/queries/util/table-select';
 import { boardseshTicks, auroraCredentials, playlists, playlistClimbs, playlistOwnership } from '../../db/schema';
+import { recomputeClimbStatsBulk, type ClimbStatsKey } from '@boardsesh/db/queries';
 import { randomUUID } from 'crypto';
 import { convertQuality } from '@boardsesh/shared-schema';
 
@@ -150,9 +151,12 @@ async function upsertTableData(
 
     case 'ascents': {
       // Write directly to boardsesh_ticks (requires NextAuth user ID)
+      const recomputeKeys = new Map<string, ClimbStatsKey>();
       for (const item of data) {
         const status = Number(item.attempt_id) === 1 ? 'flash' : 'send';
         const convertedQuality = convertQuality(item.quality ? Number(item.quality) : null);
+        const angle = Number(item.angle);
+        recomputeKeys.set(`${item.climb_uuid} ${angle}`, { boardType: boardName, climbUuid: item.climb_uuid, angle });
 
         await db
           .insert(boardseshTicks)
@@ -161,8 +165,10 @@ async function upsertTableData(
             userId: nextAuthUserId,
             boardType: boardName,
             climbUuid: item.climb_uuid,
-            angle: Number(item.angle),
+            angle,
             isMirror: Boolean(item.is_mirror),
+            // Pulled from the user's Aurora logbook — already inside upstream.
+            origin: 'aurora_pull',
             status: status,
             attemptCount: Number(item.bid_count || 1),
             quality: convertedQuality,
@@ -179,8 +185,12 @@ async function upsertTableData(
           .onConflictDoUpdate({
             target: boardseshTicks.auroraId,
             set: {
+              // `origin` is intentionally absent: it records where the row was
+              // FIRST created, so a native tick that later matches an upstream
+              // ascent keeps origin='native' on re-sync (else the recompute
+              // would stop counting it).
               climbUuid: item.climb_uuid,
-              angle: Number(item.angle),
+              angle,
               isMirror: Boolean(item.is_mirror),
               status: status,
               attemptCount: Number(item.bid_count || 1),
@@ -194,6 +204,8 @@ async function upsertTableData(
             },
           });
       }
+      // Keep board_climb_stats consistent with the freshly-pulled ascents.
+      await recomputeClimbStatsBulk(db, [...recomputeKeys.values()]);
       break;
     }
 
@@ -218,6 +230,7 @@ async function upsertTableData(
             climbedAt: new Date(item.climbed_at).toISOString(),
             createdAt: new Date(item.created_at).toISOString(),
             updatedAt: new Date().toISOString(),
+            origin: 'aurora_pull',
             auroraType: 'bids',
             auroraId: item.uuid,
             auroraSyncedAt: new Date().toISOString(),

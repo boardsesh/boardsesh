@@ -25,6 +25,25 @@ import { userBoards } from './boards';
 export const tickStatusEnum = pgEnum('tick_status', ['flash', 'send', 'attempt']);
 
 /**
+ * Provenance of a boardsesh_ticks row — WHERE the tick came from.
+ * - native: created inside Boardsesh (saveTick). Counts toward the
+ *   boardsesh_ascensionist_count. A native tick that later has kilter_id
+ *   stamped by push-back keeps origin='native' and keeps counting.
+ * - aurora_pull: pulled down from the user's Aurora logbook (Kilter/Tension
+ *   API sync ascents/bids). Already inside upstream_ascensionist_count.
+ * - kilter_pull: pulled down from the user's Kilter PowerSync logs.
+ *   Already inside upstream_ascensionist_count.
+ * - json_import: imported from an Aurora account export JSON. Already inside
+ *   upstream_ascensionist_count.
+ *
+ * The tick recompute counts a user toward boardsesh_ascensionist_count only
+ * when ALL their ticks at a (board, climb, angle) key are 'native' — a user
+ * with any imported tick is already represented in the upstream count, so
+ * counting them again would double-count the ascent.
+ */
+export const tickOriginEnum = pgEnum('tick_origin', ['native', 'aurora_pull', 'kilter_pull', 'json_import']);
+
+/**
  * Aurora table type for sync
  * - ascents: Successful climbs (flash/send) sync to Aurora ascents table
  * - bids: Failed attempts sync to Aurora bids table
@@ -55,6 +74,11 @@ export const boardseshTicks = pgTable(
     climbUuid: text('climb_uuid').notNull(),
     angle: integer('angle').notNull(),
     isMirror: boolean('is_mirror').default(false),
+
+    // Provenance — WHERE this tick came from. Defaults to 'native' (saveTick).
+    // Every sync/import writer stamps its own value. Drives the ascensionist
+    // double-count guard in recomputeClimbStats (see tickOriginEnum docs).
+    origin: tickOriginEnum('origin').notNull().default('native'),
 
     // Tick details
     status: tickStatusEnum('status').notNull(), // flash, send, or attempt
@@ -126,6 +150,12 @@ export const boardseshTicks = pgTable(
     // range at the DB so a bad conversion (raw Aurora 0-3 stars, an old
     // proportional formula, etc.) can never re-poison the column. Backfills that
     // clear existing out-of-range values run earlier (migrations 0139/0140/0152).
+    //
+    // ⚠️ drizzle-kit 0.31 does NOT parse this object-form check(): every
+    // `drizzle-kit generate` emits a destructive DROP CONSTRAINT for it and
+    // omits it from the new snapshot. Strip the DROP from the generated SQL and
+    // re-add the checkConstraints block to the snapshot (see the 0155 header;
+    // same manually-managed pattern as the board_beta_links FKs).
     qualityRangeCheck: check(
       'boardsesh_ticks_quality_range',
       sql`${table.quality} IS NULL OR (${table.quality} >= 1 AND ${table.quality} <= 5)`,
@@ -137,5 +167,6 @@ export const boardseshTicks = pgTable(
 export type BoardseshTick = typeof boardseshTicks.$inferSelect;
 export type NewBoardseshTick = typeof boardseshTicks.$inferInsert;
 export type TickStatus = 'flash' | 'send' | 'attempt';
+export type TickOrigin = 'native' | 'aurora_pull' | 'kilter_pull' | 'json_import';
 export type AuroraTableType = 'ascents' | 'bids';
 export type KilterTableType = 'logs' | 'attempts';

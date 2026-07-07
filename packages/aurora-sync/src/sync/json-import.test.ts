@@ -46,6 +46,9 @@ describe('buildJsonImportAscentTickRow', () => {
     const row = buildJsonImportAscentTickRow(USER_ID, 'kilter', ascent, CLIMB_UUID, CLIMBED_AT, NOW);
     expect(row.auroraId).toBe(generateJsonImportAuroraId(USER_ID, CLIMB_UUID, ascent.angle, CLIMBED_AT, 'ascents'));
     expect(row.auroraType).toBe('ascents');
+    // Imported from an Aurora export — already inside upstream, so origin
+    // excludes it from the Boardsesh double-count guard.
+    expect(row.origin).toBe('json_import');
     expect(row.status).toBe('send');
     expect(row.attemptCount).toBe(ascent.count);
     // The backfill migration's idempotency guard relies on freshly imported

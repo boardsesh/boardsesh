@@ -1,4 +1,5 @@
 export * from './climbs/index';
+export * from './climb-stats/index';
 export * from './aliases';
 export * from './gyms/index';
 export * from './recommendations/index';

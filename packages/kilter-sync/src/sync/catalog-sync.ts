@@ -486,6 +486,8 @@ async function syncBoardLayoutGroup(
     faAt: accum.faAt,
     upstreamAscensionistCount: accum.kilterCount,
     ascensionistCount: accum.kilterCount,
+    // Record that a Kilter Grips catalog sync last touched this row.
+    upstreamSyncedAt: new Date().toISOString(),
   }));
   if (statValues.length > 0) {
     await processBatches(statValues, async (chunk) => {
@@ -511,6 +513,7 @@ async function syncBoardLayoutGroup(
             qualityNormalized: sql`true`,
             faUsername: sql`COALESCE(excluded.fa_username, ${boardClimbStats.faUsername})`,
             faAt: sql`COALESCE(excluded.fa_at, ${boardClimbStats.faAt})`,
+            upstreamSyncedAt: sql`excluded.upstream_synced_at`,
           },
         });
     });

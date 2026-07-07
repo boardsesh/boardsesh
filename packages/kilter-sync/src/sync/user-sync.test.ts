@@ -1,7 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { boardseshTicks } from '@boardsesh/db/schema';
 import type { PowerSyncOp } from '../api/powersync-client';
+
+// Stub the shared stats recompute so it doesn't run its own tx.execute()s —
+// that keeps the execute-count assertions below about applyLogs's own writes.
+// resolveCanonicalClimbUuid stays real (pre-seeded alias cache → no DB hit).
+vi.mock('@boardsesh/db/queries', async (importActual) => {
+  const actual = await importActual<typeof import('@boardsesh/db/queries')>();
+  return { ...actual, recomputeClimbStatsBulk: vi.fn() };
+});
+
+import { recomputeClimbStatsBulk, type ClimbStatsKey } from '@boardsesh/db/queries';
 import { applyLogs } from './user-sync';
+
+const recomputeMock = vi.mocked(recomputeClimbStatsBulk);
+
+// Distinct (climbUuid, angle) keys the recompute was asked to refresh.
+function recomputedKeys(): Array<{ climbUuid: string; angle: number }> {
+  const keys = (recomputeMock.mock.calls.at(-1)?.[1] ?? []) as ClimbStatsKey[];
+  return keys.map((key) => ({ climbUuid: key.climbUuid, angle: key.angle }));
+}
 
 /**
  * Tests for the natural-key adoption path in applyLogs — the highest-risk
@@ -51,10 +69,15 @@ type SelectResult = Array<Record<string, unknown>>;
 // the bulk-upsert SQL is structurally simple enough that a typo is
 // caught at typecheck time via the Drizzle column references. Promote
 // to an integration test if the SQL grows another conditional.
-function createTx(opts: { selectResults?: SelectResult[] } = {}) {
+function createTx(
+  opts: { selectResults?: SelectResult[]; removeResult?: SelectResult; executeResults?: unknown[] } = {},
+) {
   const calls: CallRecord[] = [];
   const selectResults = opts.selectResults ?? [];
+  const removeResult = opts.removeResult ?? [];
+  const executeResults = opts.executeResults ?? [];
   let selectIdx = 0;
+  let executeIdx = 0;
   const insertValues: Array<Array<Record<string, unknown>>> = [];
 
   const tx = {
@@ -83,7 +106,9 @@ function createTx(opts: { selectResults?: SelectResult[] } = {}) {
         set: (setValues: Record<string, unknown>) => ({
           where: (_cond: unknown) => {
             calls.push({ kind: 'update', args: [setValues, _cond] });
-            return Promise.resolve();
+            // applyLogs's soft-detach REMOVE path chains .returning(...) to
+            // collect the detached rows' keys for the stats recompute.
+            return { returning: (_cols: unknown) => Promise.resolve(removeResult) };
           },
         }),
       };
@@ -99,7 +124,7 @@ function createTx(opts: { selectResults?: SelectResult[] } = {}) {
     },
     execute(query: unknown) {
       calls.push({ kind: 'execute', args: [query] });
-      return Promise.resolve();
+      return Promise.resolve(executeResults[executeIdx++]);
     },
   };
 
@@ -158,6 +183,7 @@ describe('applyLogs — natural-key adoption', () => {
 
   beforeEach(() => {
     logSpy = vi.fn<(msg: string) => void>();
+    recomputeMock.mockClear();
   });
 
   it('returns early on empty ops without touching tx', async () => {
@@ -190,8 +216,14 @@ describe('applyLogs — natural-key adoption', () => {
       status: 'send',
       userId: 'user-1',
       boardType: 'kilter',
+      // Freshly pulled from Kilter — stamped so the double-count guard
+      // excludes it from the Boardsesh count.
+      origin: 'kilter_pull',
     });
     expect(logSpy).not.toHaveBeenCalled();
+    // The written (climb, angle) key is handed to the stats recompute.
+    expect(recomputeMock).toHaveBeenCalledTimes(1);
+    expect(recomputedKeys()).toEqual([{ climbUuid: 'climb-1', angle: 40 }]);
   });
 
   it('updates an existing tick when matched by kilter_id (idempotent re-sync)', async () => {
@@ -213,9 +245,34 @@ describe('applyLogs — natural-key adoption', () => {
     // Only the kilter_id SELECT runs — the natural-key SELECT is gated on
     // there being any unmatched candidates.
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
     expect(insertValues).toHaveLength(0);
+  });
+
+  it('recomputes the PRIOR key too when a Kilter edit moves a log to another climb/angle', async () => {
+    // The tick currently sits on climb-old/45; the incoming snapshot moved the
+    // same log to climb-1/40. Both keys must be recomputed: the old one loses
+    // the ascent, the new one gains it.
+    const { tx } = createTx({
+      selectResults: [[{ uuid: 'tick-uuid-1', kilterId: 'log-A', ownerUserId: 'user-1' }]],
+      executeResults: [[{ climb_uuid: 'climb-old', angle: 45 }]],
+    });
+
+    const op = makeLogPutOp({
+      log_uuid: 'log-A',
+      climb_uuid: 'climb-1',
+      angle: 40,
+      created_at: '2026-05-01T12:00:00.000Z',
+    });
+
+    await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
+
+    expect(recomputeMock).toHaveBeenCalledTimes(1);
+    expect(recomputedKeys()).toEqual([
+      { climbUuid: 'climb-old', angle: 45 },
+      { climbUuid: 'climb-1', angle: 40 },
+    ]);
   });
 
   it('re-sync by kilter_id applies an incoming attempt that downgrades a send (Kilter is source of truth — no status guard here)', async () => {
@@ -241,7 +298,7 @@ describe('applyLogs — natural-key adoption', () => {
     await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
 
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
     expect(insertValues).toHaveLength(0);
   });
@@ -275,7 +332,7 @@ describe('applyLogs — natural-key adoption', () => {
     await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
 
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(2);
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
     expect(insertValues).toHaveLength(0);
     expect(logSpy).not.toHaveBeenCalled();
@@ -319,7 +376,10 @@ describe('applyLogs — natural-key adoption', () => {
   });
 
   it('soft-detaches via a single bulk UPDATE on REMOVE ops and skips SELECTs when there are no PUTs', async () => {
-    const { tx, calls } = createTx();
+    const { tx, calls } = createTx({
+      // The soft-detach returns the detached rows' keys for the recompute.
+      removeResult: [{ climbUuid: 'climb-1', angle: 40 }],
+    });
 
     const removeOp: PowerSyncOp = {
       op_id: '1',
@@ -346,6 +406,10 @@ describe('applyLogs — natural-key adoption', () => {
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(0);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
     expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
+    // A detach changes what board_climb_stats should show, so the detached
+    // row's key is recomputed even though there were no PUTs.
+    expect(recomputeMock).toHaveBeenCalledTimes(1);
+    expect(recomputedKeys()).toEqual([{ climbUuid: 'climb-1', angle: 40 }]);
   });
 
   it('respects the ±60s tolerance window (no match for a >60s gap)', async () => {
@@ -412,7 +476,7 @@ describe('applyLogs — natural-key adoption', () => {
 
     await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
 
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
     expect(insertValues).toHaveLength(0);
   });
@@ -459,7 +523,7 @@ describe('applyLogs — natural-key adoption', () => {
     await applyLogs(tx as unknown as TxArg, 'user-1', ops, aliasCacheFor(['climb-1']), logSpy);
 
     // One adoption (bulk UPDATE) and one INSERT — the second log is NOT lost.
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
     expect(insertValues[0]).toHaveLength(1);
     // The shared tick was claimed by the first log, so the second is the
@@ -540,7 +604,7 @@ describe('applyLogs — natural-key adoption', () => {
     // Exactly the documented 3 round trips: kilter-id SELECT, natural-key
     // SELECT, single bulk UPDATE + single bulk INSERT (2 writes).
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(2);
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(1);
     expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
 
@@ -583,7 +647,7 @@ describe('applyLogs — natural-key adoption', () => {
     await applyLogs(tx as unknown as TxArg, 'user-1', ops, aliasCacheFor(['climb-1', 'climb-2']), logSpy);
 
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
   });
 
@@ -758,7 +822,7 @@ describe('applyLogs — natural-key adoption', () => {
     await applyLogs(tx as unknown as TxArg, 'user-1', [op], aliasCacheFor(['climb-1']), logSpy);
 
     // Adoption UPDATE, no insert.
-    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(1);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(2);
     expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
     expect(insertValues).toHaveLength(0);
   });

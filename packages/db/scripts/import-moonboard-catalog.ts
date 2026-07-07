@@ -256,6 +256,8 @@ async function importMoonBoardCatalog() {
             qualityNormalized: true,
             faUsername: null,
             faAt: null,
+            // MoonBoard catalog import is this board's upstream stats source.
+            upstreamSyncedAt: new Date().toISOString(),
           });
 
           for (const hold of mapped.holds) {
@@ -321,6 +323,7 @@ async function importMoonBoardCatalog() {
                 ascensionistCount: sql`greatest(coalesce(excluded.upstream_ascensionist_count, 0), coalesce(${boardClimbStats.upstreamAscensionistCount}, 0)) + coalesce(${boardClimbStats.boardseshAscensionistCount}, 0)`,
                 qualityAverage: sql`coalesce(excluded.quality_average, ${boardClimbStats.qualityAverage})`,
                 qualityNormalized: sql`true`,
+                upstreamSyncedAt: sql`excluded.upstream_synced_at`,
               },
             });
         }

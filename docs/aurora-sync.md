@@ -110,7 +110,7 @@ each written by a single class of writer:
 | Column                         | Owner                            | Updated by                                                                                                                                                                                                                                  |
 | ------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `upstream_ascensionist_count`  | The board's single upstream sync | Tension via the Aurora API sync (`upsertClimbStats`, this file's daemon); Kilter via the Kilter Grips catalog sync (`packages/kilter-sync`); MoonBoard via the app-catalog repeat count (`packages/db/scripts/import-moonboard-catalog.ts`) |
-| `boardsesh_ascensionist_count` | Boardsesh `recomputeClimbStats`  | `packages/backend/src/graphql/resolvers/ticks/recompute-climb-stats.ts` — `COUNT(DISTINCT user_id)` over flash/send ticks                                                                                                                   |
+| `boardsesh_ascensionist_count` | Boardsesh `recomputeClimbStats`  | `packages/db/src/queries/climb-stats/recompute.ts` (shared by the backend resolver and the sync daemons) — distinct users with ≥1 flash/send tick at the key and **no upstream-represented tick** (`boardsesh_ticks.origin != 'native'`)     |
 | `ascensionist_count`           | All writers, kept in lockstep    | recomputed as `COALESCE(upstream_ascensionist_count, 0) + COALESCE(boardsesh_ascensionist_count, 0)`                                                                                                                                        |
 
 `upstream_ascensionist_count` is the board's single manufacturer/upstream count,
@@ -123,6 +123,17 @@ syncs only via Kilter Grips); it serves Tension and the other direct-Aurora
 boards. Boardsesh ticks add on top of upstream. Migration 0141 folded the old
 per-source `aurora_`/`kilter_` columns into this single `upstream_` column.
 
+Provenance: `boardsesh_ticks.origin` (`native | aurora_pull | kilter_pull |
+json_import`) records where a tick row was FIRST created — sync/import writers
+stamp it at insert and never overwrite it on conflict. A user whose ticks at a
+(climb, angle) were pulled/imported is already inside the upstream count and
+contributes 0 to the Boardsesh term; a user with only native ticks counts, and
+keeps counting after push-back (immediate-tally requirement). Every import
+path (this daemon's user-sync, the web duplicate, kilter `applyLogs`,
+json-import) bulk-recomputes affected keys after each batch. Upstream stats
+writers also stamp `board_climb_stats.upstream_synced_at` on every upsert
+(freshness watermark; the tick recompute never touches it).
+
 The search hot path reads `ascensionist_count` through the covering index from
 migration 0067, so it stays a regular column (not `GENERATED`) — every writer
 must update it whenever they touch their own share.
@@ -130,10 +141,11 @@ must update it whenever they touch their own share.
 `fa_username` / `fa_at` follow a related but asymmetric rule. Aurora's upsert
 writes them verbatim (including `null`, which is how Aurora signals an FA
 correction). `recomputeClimbStats` only re-derives FA for
-Boardsesh-originated climbs (`board_climbs.user_id IS NOT NULL`); on Aurora
-climbs it does `COALESCE(existing, agg.first_user)` so Aurora's authority is
-never disturbed. Boardsesh-created climbs aren't synced from Aurora, so the
-two paths can't collide.
+Boardsesh-originated climbs (`board_climbs.user_id IS NOT NULL`); on non-owned
+(manufacturer) climbs it NEVER derives FA from ticks — any existing value is
+preserved verbatim, and boards whose upstream supplies no FA (MoonBoard)
+correctly stay `NULL`. Boardsesh-created climbs aren't synced from Aurora, so
+the two paths can't collide.
 
 `quality_average`, `difficulty_average`, and `display_difficulty` follow the
 same Boardsesh-owned rule. Aurora's upsert clobbers them on every sync from
@@ -145,9 +157,11 @@ writers (Aurora: `Number(item.display_difficulty || item.difficulty_average)`;
 Boardsesh: the same `AVG(bt.difficulty)` value used for `difficulty_average`).
 
 Aurora reports `quality_average` on a 1–3 scale, but Kilter Grips / MoonBoard
-use 1–5. Aurora's upsert normalises to 1–5 (`normalizeQualityTo5`, `×5/3`) so
-`board_climb_stats.quality_average` is one scale across every board. Existing
-Aurora-board rows need a one-time `×5/3` backfill (see kilter-sync.md).
+use 1–5. Aurora's upsert normalises to 1–5 (`normalizeQualityTo5`, affine
+`2q−1` — the same map as the per-tick `convertQuality`) so
+`board_climb_stats.quality_average` is one scale across every board. The
+one-time re-backfill of previously `×5/3`-scaled rows ships with the
+star-scale repair (migration 0149; see kilter-sync.md).
 
 If you add a new writer to `board_climb_stats`, decide which side it owns and
 recompute `ascensionist_count` in the same statement that updates that side.

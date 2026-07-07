@@ -10,7 +10,7 @@ import {
   boardClimbRatings,
   boardClimbAliases,
 } from '@boardsesh/db/schema';
-import { resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
+import { resolveCanonicalClimbUuid, recomputeClimbStatsBulk, type ClimbStatsKey } from '@boardsesh/db/queries';
 
 import { KILTER_BOARD_TYPE } from '../api/types';
 import { KilterApiError } from '../api/errors';
@@ -456,6 +456,14 @@ export async function applyLogs(
 ): Promise<void> {
   if (ops.length === 0) return;
 
+  // Distinct (climb, angle) keys touched this flush — inserts, updates,
+  // adoptions, and soft-detached removes can all change what
+  // board_climb_stats should show, so recompute every one at the end.
+  const touchedKeys = new Map<string, ClimbStatsKey>();
+  const addTouchedKey = (climbUuid: string, angle: number) => {
+    touchedKeys.set(`${climbUuid} ${angle}`, { boardType: KILTER_BOARD_TYPE, climbUuid, angle });
+  };
+
   const removeIds: string[] = [];
   const puts: PowerSyncOp[] = [];
   for (const op of ops) {
@@ -491,7 +499,7 @@ export async function applyLogs(
     // detached but visible in Boardsesh, which is the safer default
     // until we have a separate "user explicitly deleted on Kilter"
     // signal we can trust.
-    await tx
+    const removed = await tx
       .update(boardseshTicks)
       .set({
         kilterId: null,
@@ -503,10 +511,15 @@ export async function applyLogs(
         // not a Date.
         updatedAt: new Date().toISOString(),
       })
-      .where(and(eq(boardseshTicks.userId, userId), inArray(boardseshTicks.kilterId, removeIds)));
+      .where(and(eq(boardseshTicks.userId, userId), inArray(boardseshTicks.kilterId, removeIds)))
+      .returning({ climbUuid: boardseshTicks.climbUuid, angle: boardseshTicks.angle });
+    for (const row of removed) addTouchedKey(row.climbUuid, row.angle);
   }
 
-  if (puts.length === 0) return;
+  if (puts.length === 0) {
+    await recomputeClimbStatsBulk(tx, [...touchedKeys.values()]);
+    return;
+  }
 
   // PowerSync's oplog can carry MORE THAN ONE op for the same row
   // (object_id = log_uuid) within a single snapshot — an edited or
@@ -750,6 +763,19 @@ export async function applyLogs(
         updated_at: u.fields.updatedAt,
       })),
     );
+    // A Kilter-side edit can MOVE a log to a different climb/angle. The new
+    // key is collected below from `normalised`, but the row's PRIOR key also
+    // changes count — capture it before the UPDATE so both get recomputed.
+    const priorKeyResult = await tx.execute(sql`
+      SELECT DISTINCT t.climb_uuid, t.angle
+        FROM boardsesh_ticks t
+        JOIN jsonb_to_recordset(${payload}::jsonb) AS u(uuid text) ON t.uuid = u.uuid
+    `);
+    const priorKeys = (Array.isArray(priorKeyResult) ? priorKeyResult : []) as Array<{
+      climb_uuid: string;
+      angle: number;
+    }>;
+    for (const row of priorKeys) addTouchedKey(row.climb_uuid, Number(row.angle));
     await tx.execute(sql`
       UPDATE boardsesh_ticks AS t SET
         climb_uuid = u.climb_uuid,
@@ -786,6 +812,11 @@ export async function applyLogs(
         userId,
         boardType: KILTER_BOARD_TYPE,
         isMirror: false,
+        // Freshly pulled from the user's Kilter logbook — already inside
+        // upstream_ascensionist_count. (Adoptions/updates keep the existing
+        // row's origin, so a native tick that adopts a kilter_id stays
+        // native and keeps counting.)
+        origin: 'kilter_pull' as const,
         quality: null,
         difficulty: null,
         isBenchmark: false,
@@ -794,6 +825,11 @@ export async function applyLogs(
       })),
     );
   }
+
+  // Recompute board_climb_stats for every (climb, angle) this flush touched —
+  // new pulls, status changes on updates/adoptions, and removed rows.
+  for (const n of normalised) addTouchedKey(n.canonical, n.raw.angle);
+  await recomputeClimbStatsBulk(tx, [...touchedKeys.values()]);
 }
 
 /**

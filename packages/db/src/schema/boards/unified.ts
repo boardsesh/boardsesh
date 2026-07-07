@@ -601,6 +601,14 @@ export const boardClimbStats = pgTable(
     qualityNormalized: boolean('quality_normalized').notNull().default(false),
     faUsername: text('fa_username'),
     faAt: timestamp('fa_at', { mode: 'string' }),
+    // Last time an UPSTREAM stats writer (Aurora API sync, Kilter Grips catalog
+    // sync / stats-repair, MoonBoard catalog import) touched this row. Nullable:
+    // null means no upstream source has ever populated this row (it exists only
+    // because of Boardsesh ticks / the seed insert). Deliberately NOT stamped by
+    // the tick recompute — it records manufacturer-count provenance, not
+    // Boardsesh activity. Lets downstream reasoning tell "upstream owns this
+    // row's FA/difficulty" from "these fields were only ever tick-derived".
+    upstreamSyncedAt: timestamp('upstream_synced_at', { mode: 'string' }),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },

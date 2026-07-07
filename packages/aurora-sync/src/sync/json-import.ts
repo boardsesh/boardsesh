@@ -14,7 +14,7 @@ import { fontGradeToDifficultyId } from '@boardsesh/board-config';
 import { LAYOUTS, HOLE_PLACEMENTS } from '@boardsesh/board-constants/product-sizes';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { isNoMatchClimb, CLIMB_CHARACTERISTICS, convertQuality } from '@boardsesh/shared-schema';
-import { populateDenormalizedColumns } from '@boardsesh/db/queries';
+import { populateDenormalizedColumns, recomputeClimbStatsBulk, type ClimbStatsKey } from '@boardsesh/db/queries';
 
 const BATCH_SIZE = 100;
 const FALLBACK_NAME_CHUNK_SIZE = 50;
@@ -217,6 +217,10 @@ export function buildJsonImportAscentTickRow(
     climbedAt,
     createdAt: ascent.created_at ? normalizeTimestamp(ascent.created_at) : now,
     updatedAt: now,
+    // Imported from an Aurora account export — already inside
+    // upstream_ascensionist_count, so origin excludes it from the Boardsesh
+    // double-count guard.
+    origin: 'json_import' as const,
     auroraType: 'ascents' as const,
     auroraId: generateJsonImportAuroraId(userId, climbUuid, ascent.angle, climbedAt, 'ascents'),
     auroraSyncedAt: now,
@@ -1026,6 +1030,7 @@ export async function importJsonExportData(
       climbedAt,
       createdAt: attempt.created_at ? normalizeTimestamp(attempt.created_at) : now,
       updatedAt: now,
+      origin: 'json_import' as const,
       auroraType: 'bids' as const,
       auroraId: generateJsonImportAuroraId(userId, climbUuid, attempt.angle, climbedAt, 'bids'),
       auroraSyncedAt: now,
@@ -1038,6 +1043,10 @@ export async function importJsonExportData(
     result.ascents.imported = await batchInsertTicks(
       tx,
       ascentRows,
+      // `origin` is intentionally absent from both conflict sets below: it
+      // records where the row was FIRST created, so a native tick matched by a
+      // later re-import keeps origin='native' (else the recompute would stop
+      // counting it).
       {
         climbUuid: sql`excluded.climb_uuid`,
         angle: sql`excluded.angle`,
@@ -1070,6 +1079,21 @@ export async function importJsonExportData(
       onProgress,
     );
   });
+
+  // Fold this chunk's imported ascents into board_climb_stats. json_import
+  // ticks don't add to the Boardsesh count (they're already upstream), but the
+  // recompute keeps the materialized row consistent and demotes any stale
+  // Boardsesh crown. Distinct (climb, angle) keys of the ascents we wrote.
+  const importedAscentKeys = new Map<string, ClimbStatsKey>();
+  for (const row of ascentRows) {
+    importedAscentKeys.set(`${row.climbUuid} ${row.angle}`, {
+      boardType,
+      climbUuid: row.climbUuid,
+      angle: row.angle,
+    });
+  }
+  const importedAscentKeyList = [...importedAscentKeys.values()];
+  await recomputeClimbStatsBulk(db, importedAscentKeyList);
 
   // Step 8: Import circuits as playlists (separate transaction per circuit
   // so one failure doesn't roll back others or abort the tick transaction)
@@ -1168,6 +1192,12 @@ export async function importJsonExportData(
   if (!options?.skipFinalization) {
     try {
       await correctFlashStatusForUser(db, userId);
+      // correctFlashStatusForUser only flips flash<->send (both ascents), so it
+      // never changes the ascensionist count — but re-run the recompute for this
+      // import's keys so FA/first-ascent derivation reflects the final statuses.
+      // (No-op when the import had no ascents: the bulk helper early-returns on
+      // an empty key list.)
+      await recomputeClimbStatsBulk(db, importedAscentKeyList);
     } catch (error) {
       console.error('Error correcting flash status after JSON import:', error);
       const msg = error instanceof Error ? error.message : 'Flash status correction failed';

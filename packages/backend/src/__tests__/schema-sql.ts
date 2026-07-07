@@ -208,6 +208,7 @@ export const schemaSQL = `
     "quality_normalized" boolean DEFAULT false NOT NULL,
     "fa_username" text,
     "fa_at" timestamp,
+    "upstream_synced_at" timestamp,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "sync_seq" bigserial NOT NULL,
     PRIMARY KEY ("board_type", "climb_uuid", "angle")
@@ -236,6 +237,11 @@ export const schemaSQL = `
   END $$;
 
   DO $$ BEGIN
+    CREATE TYPE tick_origin AS ENUM ('native', 'aurora_pull', 'kilter_pull', 'json_import');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
+  DO $$ BEGIN
     CREATE TYPE kilter_table_type AS ENUM ('logs', 'attempts');
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$;
@@ -249,6 +255,7 @@ export const schemaSQL = `
     "climb_uuid" text NOT NULL,
     "angle" integer NOT NULL,
     "is_mirror" boolean DEFAULT false,
+    "origin" tick_origin NOT NULL DEFAULT 'native',
     "status" tick_status NOT NULL,
     "attempt_count" integer NOT NULL DEFAULT 1,
     "quality" integer,

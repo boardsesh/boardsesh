@@ -150,6 +150,8 @@ async function importMoonBoard2024() {
         qualityNormalized: true,
         faUsername: null,
         faAt: null,
+        // MoonBoard 2024 catalog import is this board's upstream stats source.
+        upstreamSyncedAt: new Date().toISOString(),
       });
 
       for (const hold of mapped.holds) {
@@ -211,6 +213,7 @@ async function importMoonBoard2024() {
               benchmarkDifficulty: sql`excluded.benchmark_difficulty`,
               difficultyAverage: sql`excluded.difficulty_average`,
               qualityNormalized: sql`true`,
+              upstreamSyncedAt: sql`excluded.upstream_synced_at`,
             },
           });
       }

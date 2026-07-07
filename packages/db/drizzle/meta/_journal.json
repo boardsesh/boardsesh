@@ -1086,6 +1086,27 @@
       "when": 1783456746336,
       "tag": "0154_rescale_climb_stats_history_quality",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1783466812343,
+      "tag": "0155_regular_rafael_vega",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1783466926783,
+      "tag": "0156_backfill_tick_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1783466928325,
+      "tag": "0157_recompute_ascensionist_backfill",
+      "breakpoints": true
     }
   ]
 }

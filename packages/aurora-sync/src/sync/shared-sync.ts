@@ -471,9 +471,15 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
       };
     });
 
+    // Stamp upstream_synced_at only on the stats row — board_climb_stats_history
+    // has no such column, so keep it off the shared `values` used for the
+    // history insert below.
+    const nowIso = new Date().toISOString();
+    const statsValues = values.map((value) => ({ ...value, upstreamSyncedAt: nowIso }));
+
     await db
       .insert(climbStatsSchema)
-      .values(values)
+      .values(statsValues)
       .onConflictDoUpdate({
         target: [climbStatsSchema.boardType, climbStatsSchema.climbUuid, climbStatsSchema.angle],
         set: {
@@ -490,6 +496,8 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
           qualityNormalized: sql`true`,
           faUsername: sql`excluded.fa_username`,
           faAt: sql`excluded.fa_at`,
+          // Record that an upstream (manufacturer) sync last touched this row.
+          upstreamSyncedAt: sql`excluded.upstream_synced_at`,
         },
       });
 

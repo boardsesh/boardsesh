@@ -64,6 +64,7 @@ type RepairStatValue = {
   faAt: string | null;
   upstreamAscensionistCount: number;
   ascensionistCount: number;
+  upstreamSyncedAt: string;
 };
 
 type CompareRow = {
@@ -198,6 +199,8 @@ function statValueFromAccum(accum: StatAccum): RepairStatValue {
     faAt: accum.faAt,
     upstreamAscensionistCount: accum.kilterCount,
     ascensionistCount: accum.kilterCount,
+    // Record that the Kilter Grips stats-repair last touched this row.
+    upstreamSyncedAt: new Date().toISOString(),
   };
 }
 
@@ -281,6 +284,7 @@ async function upsertRepairedStats(db: DrizzleDb, statValues: RepairStatValue[])
           qualityNormalized: sql`true`,
           faUsername: sql`COALESCE(excluded.fa_username, ${boardClimbStats.faUsername})`,
           faAt: sql`COALESCE(excluded.fa_at, ${boardClimbStats.faAt})`,
+          upstreamSyncedAt: sql`excluded.upstream_synced_at`,
         },
       });
   });

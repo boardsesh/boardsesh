@@ -231,6 +231,8 @@ async function importMoonBoardProblems() {
           qualityNormalized: true,
           faUsername: null,
           faAt: null,
+          // MoonBoard catalog import is this board's upstream stats source.
+          upstreamSyncedAt: new Date().toISOString(),
         });
 
         for (const move of problem.moves) {
@@ -288,6 +290,7 @@ async function importMoonBoardProblems() {
               difficultyAverage: sql`excluded.difficulty_average`,
               qualityAverage: sql`excluded.quality_average`,
               qualityNormalized: sql`true`,
+              upstreamSyncedAt: sql`excluded.upstream_synced_at`,
             },
           });
         if ((i + BATCH_SIZE) % 5000 === 0 || i + BATCH_SIZE >= statsRecords.length) {
