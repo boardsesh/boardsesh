@@ -348,6 +348,31 @@ describe('deletePlaylist with climbs (cascade deletion trigger)', () => {
     `)) as unknown as Array<{ count: number }>;
     expect(Number(climbTombstones[0].count)).toBe(0);
   });
+
+  it('skips the playlist-level tombstone too when ownership is orphaned (0147 parity guard)', async () => {
+    const orphanUuid = '66666666-6666-4666-8666-666666666666';
+    await playlistMutations.createPlaylist(
+      undefined,
+      { input: { uuid: orphanUuid, boardType: 'kilter', layoutId: 1, name: 'Orphaned Parent' } },
+      ctx(),
+    );
+
+    const playlistIdRows = (await db.execute(sql`
+      SELECT id FROM playlists WHERE uuid = ${orphanUuid}
+    `)) as unknown as Array<{ id: string | number }>;
+    const playlistId = playlistIdRows[0].id;
+
+    // Orphan the playlist, then delete it directly — deletePlaylist requires an
+    // owner, so raw SQL is the only path that reaches the trigger ownerless.
+    await db.execute(sql`DELETE FROM playlist_ownership WHERE playlist_id = ${playlistId}`);
+    await db.execute(sql`DELETE FROM playlists WHERE id = ${playlistId}`);
+
+    const playlistTombstones = (await db.execute(sql`
+      SELECT count(*)::int AS count FROM sync_deletions
+      WHERE table_name = 'playlists' AND record_id = ${orphanUuid}
+    `)) as unknown as Array<{ count: number }>;
+    expect(Number(playlistTombstones[0].count)).toBe(0);
+  });
 });
 
 describe('board_climbs deletion tombstone (reference data)', () => {

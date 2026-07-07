@@ -755,6 +755,11 @@ export const schemaSQL = `
     FROM playlist_ownership po
     WHERE po.playlist_id = OLD.id AND po.role = 'owner'
     LIMIT 1;
+    -- Mirrors 0147: an orphaned playlist must not emit a user_id=NULL
+    -- (global) tombstone.
+    IF owner_id IS NULL THEN
+      RETURN OLD;
+    END IF;
     INSERT INTO sync_deletions (table_name, record_id, user_id)
     VALUES (TG_TABLE_NAME, OLD.uuid, owner_id);
     RETURN OLD;
