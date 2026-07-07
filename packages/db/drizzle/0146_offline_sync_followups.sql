@@ -69,6 +69,8 @@ CREATE TRIGGER trg_board_climb_stats_set_sync_fields BEFORE UPDATE ON "board_cli
 -- the sync cursor skips forever. Guarded so a bookkeeping-only stamper
 -- (aurora_*/kilter_* columns — none of which syncTicks ships) never re-ships
 -- a user's whole logbook after an external sync pass.
+DROP TRIGGER IF EXISTS trg_boardsesh_ticks_set_updated_at ON "boardsesh_ticks";
+--> statement-breakpoint
 CREATE TRIGGER trg_boardsesh_ticks_set_updated_at BEFORE UPDATE ON "boardsesh_ticks"
   FOR EACH ROW
   WHEN ((to_jsonb(OLD) - ARRAY['id','board_id','updated_at',

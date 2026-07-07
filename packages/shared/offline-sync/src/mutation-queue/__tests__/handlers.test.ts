@@ -1,7 +1,18 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { UpdateTickInput } from '@boardsesh/shared-schema/generated';
 
-import { processMutation } from '../handlers';
+import { processMutation, UPDATE_TICK_INPUT_FIELDS } from '../handlers';
 import type { PendingMutation } from '../queue';
+
+// Compile-time drift guard: the whitelist must name exactly UpdateTickInput's
+// fields. A field added to the GraphQL input without updating the whitelist
+// (silently dropped from offline edits) or a whitelist entry the schema
+// doesn't know (GraphQL validation failure → dead-letter) fails typecheck.
+type WhitelistKey = (typeof UPDATE_TICK_INPUT_FIELDS)[number];
+const _noMissingFields: [Exclude<keyof UpdateTickInput, WhitelistKey>] extends [never] ? true : never = true;
+const _noExtraFields: [Exclude<WhitelistKey, keyof UpdateTickInput>] extends [never] ? true : never = true;
+void _noMissingFields;
+void _noExtraFields;
 
 function pendingMutation(overrides: Partial<PendingMutation>): PendingMutation {
   return {

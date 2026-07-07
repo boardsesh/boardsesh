@@ -546,6 +546,7 @@
       "name": "@boardsesh/offline-sync",
       "version": "1.0.0",
       "devDependencies": {
+        "@boardsesh/shared-schema": "workspace:*",
         "@types/node": "^25.3.3",
         "typescript": "~6.0.3",
       },

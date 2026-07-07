@@ -747,6 +747,12 @@ export const schemaSQL = `
     "deleted_at" timestamp DEFAULT now() NOT NULL
   );
 
+  -- Mirrors 0146: sync cursor indexes lead with board_type; deleted_at serves
+  -- the daily prune's DELETE WHERE deleted_at < cutoff.
+  CREATE INDEX IF NOT EXISTS "sync_deletions_deleted_at_idx" ON "sync_deletions" ("deleted_at");
+  CREATE INDEX IF NOT EXISTS "board_climbs_sync_cursor_idx" ON "board_climbs" ("board_type", "updated_at", "sync_seq");
+  CREATE INDEX IF NOT EXISTS "board_climb_stats_sync_cursor_idx" ON "board_climb_stats" ("board_type", "updated_at", "sync_seq");
+
   CREATE OR REPLACE FUNCTION log_deletion_playlists() RETURNS TRIGGER AS $$
   DECLARE
     owner_id text;

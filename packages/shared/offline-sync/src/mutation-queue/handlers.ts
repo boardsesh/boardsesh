@@ -30,7 +30,10 @@ type MutationDispatch = {
 
 // UpdateTickInput's exact field set (shared-schema ticks.ts). Queued payloads
 // carry the camelCase GraphQL input shape, so no case mapping is needed.
-const UPDATE_TICK_INPUT_FIELDS = [
+// Drift is caught at typecheck time by the assertion in handlers.test.ts
+// (this runtime package deliberately has no dependencies, so the type-only
+// check lives with the tests).
+export const UPDATE_TICK_INPUT_FIELDS = [
   'status',
   'attemptCount',
   'quality',
