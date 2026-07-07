@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { createSign } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -8,9 +8,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const APP_STORE_CONNECT_API_BASE = 'https://api.appstoreconnect.apple.com';
 const BUNDLE_ID = 'com.boardsesh.app';
 
-// App Store states that indicate Apple has accepted the submission.
-// Once the current version in app.config.ts appears in any of these states,
-// we bump the patch so the next build gets a fresh marketing version.
+// App Store states that indicate Apple has accepted the submission. A version in
+// any of these states is anchored (release/* tag) so a JS fix can be backported to
+// it. We do NOT bump the marketing version on acceptance — that busts the fingerprint
+// of the binary already in the field and strands its OTAs (see main() below).
 const ACCEPTED_APP_STORE_STATES = [
   'PENDING_DEVELOPER_RELEASE',
   'PENDING_APPLE_RELEASE',
@@ -176,8 +177,6 @@ function emitOutput(name: string, value: string): void {
 
 async function main(): Promise<number> {
   try {
-    const dryRun = process.env['DRY_RUN'] === 'true';
-
     const token = createAppStoreConnectJwt({
       keyId: getRequiredEnv('APP_STORE_CONNECT_API_KEY_ID'),
       issuerId: getRequiredEnv('APP_STORE_CONNECT_ISSUER_ID'),
@@ -212,28 +211,13 @@ async function main(): Promise<number> {
     // still need anchoring). One-line JSON so it fits a single GITHUB_OUTPUT value.
     emitOutput('accepted_builds', JSON.stringify(accepted));
 
-    const acceptedStrings = accepted.map((version) => version.versionString);
-    if (!acceptedStrings.includes(currentVersion)) {
-      console.log(`${currentVersion} is not yet in an accepted state — nothing to bump.`);
-      emitOutput('bumped', 'false');
-      return 0;
-    }
-
-    const newVersion = `${major}.${minor}.${parseInt(patch, 10) + 1}`;
-    console.log(`${currentVersion} is accepted → ${dryRun ? 'would bump' : 'bumping'} to ${newVersion}`);
-
-    if (dryRun) {
-      emitOutput('bumped', 'false');
-      emitOutput('new_version', newVersion);
-      return 0;
-    }
-
-    const updated = content.replace(/version:\s*'(\d+\.\d+\.\d+)'/, `version: '${newVersion}'`);
-    writeFileSync(appConfigPath, updated, 'utf-8');
-    console.log(`Wrote ${newVersion} to ${appConfigPath}`);
-
-    emitOutput('bumped', 'true');
-    emitOutput('new_version', newVersion);
+    // NO marketing-version bump. We used to bump the patch here the moment the current
+    // version was accepted, but bumping the version on main busts the fingerprint of
+    // the binary already in the field — and "accepted" is not "adopted", so every
+    // install still on the previous store binary stopped receiving OTAs (production
+    // publishes resolved a fingerprint no shipped binary embeds). Version bumps are a
+    // manual decision made alongside the native build that ships them. This script only
+    // reports accepted versions for anchoring; it never writes app.config.ts.
     return 0;
   } catch (err) {
     console.error(`[mobile-auto-version-bump] ${err instanceof Error ? err.message : String(err)}`);

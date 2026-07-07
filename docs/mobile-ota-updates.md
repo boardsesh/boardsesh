@@ -240,11 +240,19 @@ Two tag families do this:
   the approved binary was built from; its `<shortfp>` records the fingerprint an OTA must resolve to
   reach that release. This is the frozen **backport anchor**.
 
-`mobile-auto-version-bump.yml` runs on a schedule (every 6h) and, per accepted version: looks up the
+`mobile-auto-version-bump.yml` runs on a schedule (every 6h) and, per accepted version, looks up the
 approved build's `build-*` tag (iOS by the approved build number, Android by the latest build of the
-same marketing version), cuts the `release/*` anchor at that commit, and — once per version — bumps
-the patch on `main` (`[skip ci]`). All idempotent, so the second platform's approval and any re-run
-are safe.
+same marketing version) and cuts the `release/*` anchor at that commit. It is idempotent, so the
+second platform's approval and any re-run are safe.
+
+**It does not bump the marketing version.** An earlier revision auto-bumped the patch on `main` the
+moment App Store Connect reported a version accepted, on the theory that anchoring only approved
+fingerprints made the churn safe. That was wrong and broke production OTAs: bumping the version on
+`main` busts the fingerprint of the binary **already in the field**, and "accepted" is not "adopted" —
+almost every install is still on the previous store binary until it updates, so those installs stop
+receiving OTAs (the publish resolves a fingerprint no shipped binary embeds). Marketing-version bumps
+are a manual decision, made alongside the native build that ships them. The workflow name (`Mobile
+Release Anchor`) and file name are kept; only the bump was removed.
 
 **iOS anchoring is strict:** it uses App Store Connect's exact approved build number, and if no
 `build-ios-v<version>-<buildNumber>-*` tag matches it, it skips (rather than anchoring a different

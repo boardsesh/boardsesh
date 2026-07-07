@@ -1,53 +1,50 @@
-name: Mobile Release Anchor & Version Bump
+name: Mobile Release Anchor
 
-# Runs on a schedule (and on demand) to react to App Store approvals. Two jobs of
-# work, both keyed on "which versions has Apple accepted?" (PENDING_DEVELOPER_RELEASE,
-# PENDING_APPLE_RELEASE, PROCESSING_FOR_APP_STORE, READY_FOR_SALE):
+# Runs on a schedule (and on demand) to react to App Store approvals. For each
+# version Apple has accepted (PENDING_DEVELOPER_RELEASE, PENDING_APPLE_RELEASE,
+# PROCESSING_FOR_APP_STORE, READY_FOR_SALE) it anchors the approved release: it cuts a
+# release/<platform>-v<version>-<shortfp> tag at the commit the approved binary was
+# built from (located via the build-<platform>-v<version>-<buildNumber>-<shortfp> tags
+# the native builds push). Because an approved store binary is frozen forever, this tag
+# permanently records the fingerprint an OTA must resolve to reach that release — the
+# backport anchor. See docs/mobile-ota-updates.md and scripts/mobile-cut-release-tags.ts.
 #
-#   1. Anchor the approved release. For each accepted version it cuts a
-#      release/<platform>-v<version>-<shortfp> tag at the commit the approved binary
-#      was built from (located via the build-<platform>-v<version>-<buildNumber>-<shortfp>
-#      tags the native builds push). Because an approved store binary is frozen
-#      forever, this tag permanently records the fingerprint an OTA must resolve to
-#      reach that release — the backport anchor. See docs/mobile-ota-updates.md and
-#      scripts/mobile-cut-release-tags.ts.
-#   2. Bump the marketing version. When the CURRENT app.config version is accepted,
-#      bump the patch and push to main via the OTA push-back app token (bypassing the
-#      PR rule). The commit carries [skip ci].
-#
-# The version bump DOES change the fingerprint, and that's fine by design: we anchor
-# only APPROVED (immutable) fingerprints, so intermediate fingerprint churn between
-# approvals never needs to stay OTA-compatible. This is why the schedule — disabled
-# under the old model precisely because a bump busts the fingerprint — is safe to run
-# now. Minor version bumps stay a manual decision.
+# NO automatic marketing-version bump. We tried auto-bumping the patch on main the
+# moment App Store Connect reported a version accepted, on the theory that anchoring
+# only APPROVED (immutable) fingerprints made the resulting fingerprint churn safe.
+# That was wrong: bumping the version on main busts the fingerprint of the binary
+# ALREADY in the field, and "accepted" is not "adopted" — the vast majority of installs
+# are still on the previous store binary until they update. So the bump stranded every
+# current install's OTA (production publishes resolved a fingerprint no shipped binary
+# embeds). Version bumps are a manual decision, made alongside the native build that
+# ships them. This workflow only anchors; it never writes to app.config or pushes to main.
 
 on:
   schedule:
-    # Every 6h so an approval is anchored + bumped without waiting for a manual run.
+    # Every 6h so an approval is anchored without waiting for a manual run.
     - cron: '0 */6 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Log what would change without writing, tagging, or pushing'
+        description: 'Log which release anchor tags would be cut, without tagging or pushing'
         type: boolean
         default: true
 
 concurrency:
-  group: mobile-auto-version-bump
+  group: mobile-release-anchor
   cancel-in-progress: false
 
 jobs:
-  check-and-bump:
+  anchor-release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: Production
     permissions:
-      contents: write # needed for push-back; the app token is what actually bypasses branch protection
+      contents: write # needed to push the release/* anchor tags
     steps:
-      # Mint a token for the GitHub App that is in main's PR-bypass list.
+      # Mint a token for the GitHub App that is in main's tag-push allowlist.
       # The checkout action persists this in git's credential store so the
-      # later push authenticates as the app, not github-actions[bot] (which
-      # would be rejected by the branch protection rule).
+      # anchor step's tag push authenticates as the app.
       - name: Mint push token
         id: push_token
         if: vars.OTA_PUSH_APP_ID != ''
@@ -69,31 +66,30 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       # No bun install needed — both scripts use only built-in node modules + git.
-      - name: Check ASC for accepted versions and bump if current is accepted
-        id: bump
+      - name: Check ASC for accepted versions
+        id: accepted
         env:
           APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: bun scripts/mobile-auto-version-bump.ts
 
       # Cut release/<platform>-v<version>-<shortfp> anchors for every accepted
       # version (independent of whether the CURRENT version is accepted — an older
       # accepted version may still be unanchored). Idempotent, so the sibling
       # platform's approval and any re-run are safe. Uses the checkout's persisted
-      # token to push the tags. dry_run mirrors the bump step.
+      # token to push the tags. dry_run gates the tag push.
       #
       # continue-on-error: a transient tag-push failure for an old release must not
-      # block the (independent) version bump below — accepted versions are re-anchored
-      # on the next scheduled run. Skipped when there are no accepted versions
-      # (accepted_builds is '[]' or unset), so it doesn't run for nothing.
+      # fail the run — accepted versions are re-anchored on the next scheduled run.
+      # Skipped when there are no accepted versions (accepted_builds is '[]' or unset),
+      # so it doesn't run for nothing.
       - name: Cut release anchor tags for accepted versions
         id: anchor
-        if: steps.bump.outputs.accepted_builds != '' && steps.bump.outputs.accepted_builds != '[]'
+        if: steps.accepted.outputs.accepted_builds != '' && steps.accepted.outputs.accepted_builds != '[]'
         continue-on-error: true
         env:
-          ACCEPTED_BUILDS: ${{ steps.bump.outputs.accepted_builds }}
+          ACCEPTED_BUILDS: ${{ steps.accepted.outputs.accepted_builds }}
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
           git config user.name "boardsesh-repo-bot[bot]"
@@ -101,46 +97,9 @@ jobs:
           bun scripts/mobile-cut-release-tags.ts
 
       # Surface an anchor-cut failure loudly. continue-on-error keeps it from
-      # blocking the bump, but a persistent failure (e.g. a tag-push permission
+      # blocking the run, but a persistent failure (e.g. a tag-push permission
       # error) would otherwise be easy to miss — accepted versions are re-anchored
       # next run, so this is a signal to investigate, not a hard failure.
       - name: Warn if anchoring failed
         if: steps.anchor.outcome == 'failure'
-        run: echo "::warning::Cutting release anchor tags failed (see the step above). The version bump still proceeds and accepted versions are re-anchored on the next scheduled run; investigate if this persists."
-
-      - name: Commit and push version bump to main
-        if: steps.bump.outputs.bumped == 'true' && vars.OTA_PUSH_APP_ID != ''
-        run: |
-          set -euo pipefail
-          git config user.name "boardsesh-repo-bot[bot]"
-          git config user.email "boardsesh-repo-bot[bot]@users.noreply.github.com"
-          git add packages/mobile/app.config.ts
-          git commit -m "chore(mobile): auto-bump version to ${{ steps.bump.outputs.new_version }} [skip ci]"
-
-          # Rebase-and-retry in case another commit landed on main since checkout.
-          # Hard-reset to main then re-apply our file, same pattern as the OTA
-          # changelog push-back — avoids merge conflicts on unrelated changes.
-          saved_version="${{ steps.bump.outputs.new_version }}"
-          for attempt in 1 2 3; do
-            git fetch origin main
-
-            # Idempotent: skip if main already has our version (shouldn't happen, but safe).
-            main_version="$(git show origin/main:packages/mobile/app.config.ts | grep -oP "version: '\\K[^']+")"
-            if [ "$main_version" = "$saved_version" ]; then
-              echo "main already has version $saved_version — nothing to push."
-              exit 0
-            fi
-
-            git reset --hard origin/main
-            sed -i "s/version: '[0-9]*\.[0-9]*\.[0-9]*'/version: '$saved_version'/" packages/mobile/app.config.ts
-            git add packages/mobile/app.config.ts
-            git commit -m "chore(mobile): auto-bump version to $saved_version [skip ci]"
-
-            if git push origin HEAD:main; then
-              echo "Pushed version bump to main."
-              exit 0
-            fi
-            echo "Push rejected (main advanced); retry ${attempt}/3…"
-          done
-          echo "::error::Could not push version bump to main after 3 attempts."
-          exit 1
+        run: echo "::warning::Cutting release anchor tags failed (see the step above). Accepted versions are re-anchored on the next scheduled run; investigate if this persists."
