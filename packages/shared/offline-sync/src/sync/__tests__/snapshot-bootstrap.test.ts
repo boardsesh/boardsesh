@@ -467,6 +467,41 @@ describe('bootstrapScopeFromSnapshot', () => {
     expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
     expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toBeNull();
   });
+
+  it('aborts when a full wipe cycle completes during the pre-transaction integrity checks', async () => {
+    const filePath = join(workDir, 'wipe-preflight.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+
+    // Flip the wipe epoch during the quick_check read — BEFORE the import
+    // transaction opens. The epoch captured before the first await must catch a
+    // wipe cycle that starts AND finishes inside the integrity checks; nothing
+    // may be imported into the freshly wiped DB.
+    const realGetAllAsync = db.getAllAsync.bind(db);
+    let wiped = false;
+    vi.spyOn(db, 'getAllAsync').mockImplementation((async (source: string, ...rest: unknown[]) => {
+      if (!wiped && source.includes('quick_check')) {
+        wiped = true;
+        setSigningOut(true);
+        setSigningOut(false); // epoch stays bumped; isSigningOut back to false
+      }
+      return realGetAllAsync(source, ...(rest as never[]));
+    }) as typeof db.getAllAsync);
+
+    await expect(
+      bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
+    ).rejects.toThrow();
+
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(await countRows('board_climb_stats')).toBe(0);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

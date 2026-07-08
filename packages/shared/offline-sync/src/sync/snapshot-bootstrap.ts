@@ -328,6 +328,14 @@ export async function bootstrapScopeFromSnapshot(params: {
 }): Promise<SnapshotBootstrapResult> {
   const { db, scope, scopeKey, filePath, onSchemaDrift } = params;
 
+  // The whole import + checkpoint stamping is all-or-nothing. A wipe that runs
+  // (or starts AND finishes) across ANY await below — including the ATTACH,
+  // quick_check, and snapshot_meta reads — would otherwise resurrect the
+  // artifact's rows into a wiped DB and write checkpoints past the next
+  // account's data. Capture the monotonic epoch before the FIRST await so even
+  // a wipe cycle that completes during the integrity checks is caught.
+  const startEpoch = getWipeEpoch();
+
   let attached = false;
   try {
     await db.execAsync(`ATTACH DATABASE '${filePath.replace(/'/g, "''")}' AS ${SNAPSHOT_ALIAS}`);
@@ -340,11 +348,6 @@ export async function bootstrapScopeFromSnapshot(params: {
 
     const watermarks = await verifySnapshotMeta(db);
 
-    // The whole import + checkpoint stamping is all-or-nothing. A wipe that runs
-    // (or starts AND finishes) across an await inside would otherwise resurrect
-    // the artifact's rows into a wiped DB and write checkpoints past the next
-    // account's data — the monotonic epoch catches even a complete cycle.
-    const startEpoch = getWipeEpoch();
     if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
 
     await db.withExclusiveTransactionAsync(async (txn) => {

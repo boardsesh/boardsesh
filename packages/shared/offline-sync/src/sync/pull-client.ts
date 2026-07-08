@@ -405,7 +405,10 @@ async function processDeletions(
 // exported must not disqualify bootstrap two cycles from now). `error` = a
 // transport failure reaching the manifest → a counted attempt, retried next
 // cycle. `ok` carries the parsed manifest.
-type ManifestResolution = { status: 'ok'; manifest: SnapshotManifest } | { status: 'absent' } | { status: 'error' };
+type ManifestResolution =
+  | { status: 'ok'; manifest: SnapshotManifest }
+  | { status: 'absent' }
+  | { status: 'error'; cause: unknown };
 
 async function resolveManifestOnce(
   source: SnapshotSource,
@@ -415,8 +418,8 @@ async function resolveManifestOnce(
   let raw: unknown;
   try {
     raw = await source.fetchManifest();
-  } catch {
-    cache.value = { status: 'error' };
+  } catch (error) {
+    cache.value = { status: 'error', cause: error };
     return cache.value;
   }
   if (raw == null) {
@@ -485,7 +488,7 @@ async function runBootstrapPhase(
       if (resolution.status === 'absent') continue; // permanent miss, no attempt
       if (resolution.status === 'error') {
         const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
-        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'manifest', attempt, cause: null });
+        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'manifest', attempt, cause: resolution.cause });
         skipPagedPull.add(scope.scopeKey);
         continue;
       }
@@ -497,18 +500,20 @@ async function runBootstrapPhase(
 
       const layoutKey = `${scope.boardType}:${scope.layoutId}`;
       let download = downloadByLayout.get(layoutKey);
+      let downloadCause: unknown = null;
       if (!downloadByLayout.has(layoutKey)) {
         try {
           download = (await source.downloadArtifact(entry)) ?? null;
-        } catch {
+        } catch (error) {
           download = null;
+          downloadCause = error;
         }
         downloadByLayout.set(layoutKey, download ?? null);
         if (download) downloadedPaths.add(download.filePath);
       }
       if (!download) {
         const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
-        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'download', attempt, cause: null });
+        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'download', attempt, cause: downloadCause });
         skipPagedPull.add(scope.scopeKey);
         continue;
       }
