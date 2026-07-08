@@ -30,6 +30,7 @@ import {
   type SyncCheckpoint,
 } from './checkpoints';
 import { getWipeEpoch, isSigningOut } from '../mutation-queue/drainer';
+import { LATEST_SCHEMA_VERSION } from '../db/migrations';
 import type { SchemaDriftReporter } from './pull-client';
 
 /** The two reference tables a snapshot carries; import order is climbs → stats. */
@@ -274,20 +275,38 @@ type SnapshotMetaRow = {
   watermark_updated_at: string;
   watermark_sync_seq: string;
   row_count: number;
+  schema_version: number;
   format_version: number;
 };
 
 /**
+ * Thrown when the artifact was built at an older client schema version than this
+ * app runs. Importing it would NULL-fill columns the newer schema added and then
+ * stamp the cursor PAST those rows — the strict-`>` delta pull would never
+ * backfill them, silently degrading data a paged crawl would have delivered.
+ * The caller treats this as a permanent miss for this run (no attempt burned):
+ * the nightly export rebuilds artifacts at the new schema within a day, but a
+ * fresh scope enabled TODAY falls back to the always-correct paged crawl.
+ */
+export class SnapshotSchemaStaleError extends Error {
+  constructor(artifactVersion: number) {
+    super(`snapshot bootstrap: artifact schema_version ${artifactVersion} < client ${LATEST_SCHEMA_VERSION}`);
+    this.name = 'SnapshotSchemaStaleError';
+  }
+}
+
+/**
  * Read + validate the artifact's `snapshot_meta`: every snapshot table present,
- * `format_version` matching this client, and each recorded `row_count` equal to
- * the artifact's ACTUAL table count (a truncated/partial download is caught here
- * before any row is imported). Returns the per-table watermarks.
+ * `format_version` matching this client, `schema_version` not older than this
+ * client's schema, and each recorded `row_count` equal to the artifact's ACTUAL
+ * table count (a truncated/partial download is caught here before any row is
+ * imported). Returns the per-table watermarks.
  */
 async function verifySnapshotMeta(db: SqlExecutor): Promise<Record<(typeof SNAPSHOT_TABLES)[number], SyncCheckpoint>> {
   const watermarks: Partial<Record<string, SyncCheckpoint>> = {};
   for (const tableName of SNAPSHOT_TABLES) {
     const meta = await db.getFirstAsync<SnapshotMetaRow>(
-      `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, format_version
+      `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, schema_version, format_version
        FROM ${SNAPSHOT_ALIAS}.snapshot_meta WHERE table_name = ?`,
       [tableName],
     );
@@ -296,6 +315,11 @@ async function verifySnapshotMeta(db: SqlExecutor): Promise<Record<(typeof SNAPS
       throw new Error(
         `snapshot bootstrap: format_version ${meta.format_version} != ${SNAPSHOT_MANIFEST_FORMAT_VERSION} for ${tableName}`,
       );
+    }
+    // A NEWER artifact schema is fine (extra columns are dropped by the shared-
+    // column intersection); an OLDER one is not — see SnapshotSchemaStaleError.
+    if (meta.schema_version < LATEST_SCHEMA_VERSION) {
+      throw new SnapshotSchemaStaleError(meta.schema_version);
     }
     const actual = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${SNAPSHOT_ALIAS}.${tableName}`);
     const actualCount = actual?.n ?? 0;

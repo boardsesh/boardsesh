@@ -14,9 +14,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { QueryInvalidator } from '../../database';
 import { pullSync } from '../pull-client';
-import { bootstrapScopeFromSnapshot, type SnapshotSource } from '../snapshot-bootstrap';
+import { bootstrapScopeFromSnapshot, SnapshotSchemaStaleError, type SnapshotSource } from '../snapshot-bootstrap';
 import { getCheckpoint, setCheckpoint, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
-import { runMigrations } from '../../db/migrations';
+import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { setSigningOut, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
@@ -63,6 +63,7 @@ type ArtifactSpec = {
   climbsWatermark: Cursor;
   statsWatermark: Cursor;
   formatVersion?: number;
+  schemaVersion?: number;
   climbsRowCountOverride?: number;
   statsRowCountOverride?: number;
   climbsDdl?: string;
@@ -118,13 +119,14 @@ function buildArtifact(spec: ArtifactSpec): void {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     const formatVersion = spec.formatVersion ?? 1;
+    const schemaVersion = spec.schemaVersion ?? LATEST_SCHEMA_VERSION;
     meta.run(
       'board_climbs',
       spec.climbsWatermark.updatedAt,
       spec.climbsWatermark.syncSeq,
       spec.climbsRowCountOverride ?? spec.climbs.length,
       '2026-06-01T00:00:00.000Z',
-      1,
+      schemaVersion,
       formatVersion,
     );
     meta.run(
@@ -133,7 +135,7 @@ function buildArtifact(spec: ArtifactSpec): void {
       spec.statsWatermark.syncSeq,
       spec.statsRowCountOverride ?? spec.stats.length,
       '2026-06-01T00:00:00.000Z',
-      1,
+      schemaVersion,
       formatVersion,
     );
   } finally {
@@ -593,6 +595,92 @@ describe('pullSync snapshot bootstrap', () => {
       'after-wm',
     ]);
     expect(afterWm?.name).toBe('delta'); // the strictly-after row landed
+  });
+
+  it('rejects a stale-schema artifact and falls straight through to the paged pull without burning an attempt', async () => {
+    const filePath = join(workDir, 'stale-schema.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-artifact', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+
+    // The server carries a row the paged crawl must deliver THIS cycle.
+    const { fetch, capturedClimbCursors } = makeGraphqlFetch({
+      climbServerRows: [
+        {
+          doc: { uuid: 'c-paged', name: 'paged', compatible_size_ids: JSON.stringify([5]) },
+          cursor: { updatedAt: '2026-05-03T00:00:00Z', syncSeq: '30' },
+        },
+      ],
+    });
+    const errors: Array<{ stage: string; attempt: number }> = [];
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError: (report) => errors.push({ stage: report.stage, attempt: report.attempt }),
+    });
+
+    // Nothing imported from the artifact; the paged crawl ran from scratch and
+    // delivered the server row in the SAME cycle.
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
+    expect(climbs.map((row) => row.uuid)).toEqual(['c-paged']);
+    expect(capturedClimbCursors[0]).toBeUndefined(); // from-scratch, not from a watermark
+
+    // No attempt burned: a stale artifact is tonight's-export's problem, not a
+    // transient failure to retry.
+    expect(
+      await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
+    ).toBeNull();
+    expect(errors).toEqual([{ stage: 'import', attempt: 0 }]);
+  });
+
+  it('rejects a stale-schema artifact directly with SnapshotSchemaStaleError', async () => {
+    const filePath = join(workDir, 'stale-direct.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+    });
+    await expect(
+      bootstrapScopeFromSnapshot({ db, scope: SCOPE_KILTER_5, scopeKey: 'kilter:1:5', filePath }),
+    ).rejects.toThrow(SnapshotSchemaStaleError);
+    expect(await db.getFirstAsync('SELECT 1 AS n FROM board_climbs LIMIT 1')).toBeNull();
+  });
+
+  it('invalidates board-table query caches after a bootstrap even when the delta pull is empty', async () => {
+    const filePath = join(workDir, 'invalidate.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-in', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c-in', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch(); // delta returns zero documents everywhere
+    const invalidated: unknown[] = [];
+    const queryClient = {
+      invalidateQueries: vi.fn((filter: { queryKey: unknown }) => {
+        invalidated.push(filter.queryKey);
+      }),
+    } as unknown as QueryInvalidator;
+
+    await pullSync(db, queryClient, fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    // syncTable's arrivals-only invalidation never fires (0 delta documents), so
+    // the bootstrap itself must have busted the board-table caches.
+    expect(invalidated.length).toBeGreaterThan(0);
+    const flattened = JSON.stringify(invalidated);
+    expect(flattened).toContain('climb');
   });
 
   it('downloads one artifact for two sizes of the same layout', async () => {

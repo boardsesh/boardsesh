@@ -15,6 +15,7 @@ import {
   markBootstrapDone,
   MAX_BOOTSTRAP_ATTEMPTS,
   SnapshotWipedError,
+  SnapshotSchemaStaleError,
   type SnapshotSource,
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
@@ -459,6 +460,7 @@ async function resolveManifestOnce(
  */
 async function runBootstrapPhase(
   db: OfflineDatabase,
+  queryClient: QueryInvalidator,
   source: SnapshotSource,
   scopes: BoardScope[],
   onProgress: ((progress: SyncProgress) => void) | undefined,
@@ -531,12 +533,30 @@ async function runBootstrapPhase(
           onSchemaDrift,
         });
         await markBootstrapDone(db, scope.scopeKey);
+        // Bust the board-table query caches now: if the snapshot fully satisfies
+        // the scope, the delta pull returns zero documents and syncTable's
+        // arrivals-only invalidation never fires — an active search/detail query
+        // would keep serving the pre-import (empty) result set.
+        for (const tableName of ['board_climbs', 'board_climb_stats'] as const) {
+          for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
+            queryClient.invalidateQueries({ queryKey: key });
+          }
+        }
         // Not skipped: the board-data phase delta-pulls from the watermark
         // checkpoints and fires markScopeDownloadComplete through the tail logic.
       } catch (error) {
         // A wipe mid-import rolls the transaction back and bails the phase — no
         // attempt (the pull is being torn down, not failing).
         if (error instanceof SnapshotWipedError || isSigningOut() || getWipeEpoch() !== startEpoch) break;
+        if (error instanceof SnapshotSchemaStaleError) {
+          // The artifact predates this client's schema — importing it would
+          // NULL-fill newer columns and stamp the cursor past them forever.
+          // Permanent miss for this run: no attempt burned, and the scope's
+          // paged pull runs NOW (always correct); tonight's export rebuilds the
+          // artifact at the new schema for future fresh scopes.
+          onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt: 0, cause: error });
+          continue;
+        }
         const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
         onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt, cause: error });
         skipPagedPull.add(scope.scopeKey);
@@ -577,6 +597,7 @@ export async function pullSync(
     onProgress?.({ phase: 'bootstrap', currentTable: null, documentsProcessed: 0 });
     skipBootstrapPagedPull = await runBootstrapPhase(
       db,
+      queryClient,
       options.snapshotSource,
       boardScopes,
       onProgress,
