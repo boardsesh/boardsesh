@@ -86,6 +86,15 @@ export function createDb() {
   return cache.db;
 }
 
+/**
+ * Raw postgres.js pool for the primary. GUARANTEE: the drizzle wrapper is always
+ * constructed before the pool is handed out (createDb runs first), so drizzle's
+ * transparent timestamp/date parsers (OIDs 1114/1184/…) are installed on
+ * `client.options.parsers` and raw queries return pg-text timestamps, not JS
+ * Dates. Consumers that stream raw rows and expect resolver-shaped values (e.g.
+ * the board-snapshot export) rely on this — never return a pool from here
+ * without constructing drizzle over it first.
+ */
 export function createPool() {
   if (!cache.client) {
     createDb();
@@ -125,6 +134,13 @@ export function createReadDb() {
   return ensureReadConnection(readReplicaUrl).readDb;
 }
 
+/**
+ * Raw postgres.js pool for reads. Same parser GUARANTEE as createPool: both
+ * branches construct the drizzle wrapper before returning the raw pool (no
+ * replica → createPool → createDb; replica → ensureReadConnection creates
+ * readClient and readDb together), so callers get drizzle's transparent
+ * timestamp parsers without having to call createReadDb() themselves.
+ */
 export function createReadPool() {
   const { readReplicaUrl } = getConnectionConfig();
   if (!readReplicaUrl) {

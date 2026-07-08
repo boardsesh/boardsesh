@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   type ObjectCannedACL,
   type PutObjectCommandInput,
 } from '@aws-sdk/client-s3';
@@ -197,6 +198,41 @@ export async function getS3ObjectMetadata(key: string): Promise<{
   } catch {
     return null;
   }
+}
+
+export type S3ObjectSummary = {
+  key: string;
+  size: number | undefined;
+  lastModified: Date | undefined;
+};
+
+/**
+ * List every object under a key prefix (paginates ListObjectsV2 until done).
+ * Errors propagate — callers decide whether a listing failure is fatal.
+ */
+export async function listS3Objects(prefix: string): Promise<S3ObjectSummary[]> {
+  const client = getS3Client();
+  const bucket = getBucketName();
+
+  const objects: S3ObjectSummary[] = [];
+  let continuationToken: string | undefined;
+  do {
+    const response = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      }),
+    );
+    for (const object of response.Contents ?? []) {
+      if (object.Key) {
+        objects.push({ key: object.Key, size: object.Size, lastModified: object.LastModified });
+      }
+    }
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return objects;
 }
 
 /**

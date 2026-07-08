@@ -25,6 +25,10 @@ import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schem
 import type { QueryInvalidator } from '@boardsesh/offline-sync';
 import { pullSync, runMigrations, TABLE_CONFIGS } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
+// createReadPool GUARANTEES the drizzle wrapper is constructed before the raw
+// pool is returned (both branches in packages/db/src/client/postgres.ts), so
+// the pool used here carries drizzle's transparent timestamp parsers exactly
+// like production — calling createReadDb() first is not required.
 import { createReadPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';

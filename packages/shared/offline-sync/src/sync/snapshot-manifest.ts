@@ -60,8 +60,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+// layoutId / bytes / schemaVersion / rowCount are all integral by construction
+// (a DB id, an object size, a migration version, a count) — a fractional value
+// can only mean a corrupted or hand-edited manifest, so reject it outright.
+function isInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value);
 }
 
 function isDecimalString(value: unknown): value is string {
@@ -71,9 +74,7 @@ function isDecimalString(value: unknown): value is string {
 function isTableStats(value: unknown): value is SnapshotTableStats {
   if (!isRecord(value)) return false;
   return (
-    typeof value.watermarkUpdatedAt === 'string' &&
-    isDecimalString(value.watermarkSyncSeq) &&
-    isFiniteNumber(value.rowCount)
+    typeof value.watermarkUpdatedAt === 'string' && isDecimalString(value.watermarkSyncSeq) && isInteger(value.rowCount)
   );
 }
 
@@ -81,13 +82,13 @@ function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
   if (!isRecord(value)) return false;
   if (
     typeof value.boardType !== 'string' ||
-    !isFiniteNumber(value.layoutId) ||
+    !isInteger(value.layoutId) ||
     typeof value.key !== 'string' ||
     typeof value.url !== 'string' ||
-    !isFiniteNumber(value.bytes) ||
+    !isInteger(value.bytes) ||
     (value.contentEncoding !== 'gzip' && value.contentEncoding !== 'identity') ||
     typeof value.builtAt !== 'string' ||
-    !isFiniteNumber(value.schemaVersion)
+    !isInteger(value.schemaVersion)
   ) {
     return false;
   }

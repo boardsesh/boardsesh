@@ -34,14 +34,15 @@ import {
   TABLE_CONFIGS,
   toSqliteValue,
   multiRowChunkSize,
+  parseSnapshotManifest,
   SNAPSHOT_MANIFEST_FORMAT_VERSION,
   type SnapshotManifest,
   type SnapshotManifestEntry,
   type SnapshotTableName,
 } from '@boardsesh/offline-sync';
-import { createReadDb, createReadPool, closeReadPool } from '@boardsesh/db/client';
+import { createReadPool, closeReadPool } from '@boardsesh/db/client';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
-import { uploadToS3, isS3Configured, getPublicUrl } from '../storage/s3';
+import { uploadToS3, isS3Configured, getPublicUrl, getFromS3, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
 
 // --- Constants ----------------------------------------------------------------
@@ -50,6 +51,12 @@ const SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1';
 const MANIFEST_KEY = `${SNAPSHOT_KEY_PREFIX}/manifest.json`;
 const MANIFEST_CACHE_CONTROL = 'public, max-age=300';
 const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
+
+// How long a superseded (manifest-unreferenced) artifact survives before the
+// unfiltered nightly run prunes it. The manifest is CDN-cached for max-age=300,
+// but a client may hold a fetched manifest much longer before starting the
+// download — 14 days is a generous grace window.
+const PRUNE_GRACE_MS = 14 * 24 * 60 * 60 * 1000;
 
 // Matches the resolvers' stability window: rows younger than this are left for a
 // live incremental pull so the watermark never covers a still-in-flight write.
@@ -133,15 +140,15 @@ export function boardSnapshotDdlStatements(): string[] {
 
 /** Every (board_type, layout_id) pair that has at least one climb. */
 export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<LayoutPair>): Promise<LayoutPair[]> {
+  const boardCondition = filter?.boardType ? sqlClient`board_type = ${filter.boardType}` : sqlClient`TRUE`;
+  const layoutCondition = filter?.layoutId != null ? sqlClient`layout_id = ${filter.layoutId}` : sqlClient`TRUE`;
   const rows = await sqlClient<{ board_type: string; layout_id: number }[]>`
     SELECT DISTINCT board_type, layout_id
     FROM board_climbs
+    WHERE ${boardCondition} AND ${layoutCondition}
     ORDER BY board_type, layout_id
   `;
-  return rows
-    .map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }))
-    .filter((pair) => (filter?.boardType ? pair.boardType === filter.boardType : true))
-    .filter((pair) => (filter?.layoutId != null ? pair.layoutId === filter.layoutId : true));
+  return rows.map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }));
 }
 
 function assertSafeColumns(columns: readonly string[]): void {
@@ -155,18 +162,14 @@ function assertSafeColumns(columns: readonly string[]): void {
 // Scope predicates matching the resolvers exactly. `now()` is transaction-start
 // time and constant across the whole export transaction, so the streamed rows and
 // the watermark query below apply the identical stability boundary.
-function climbsWhere(): string {
-  return `board_type = $1 AND layout_id = $2 AND updated_at < now() - make_interval(secs => $3)`;
-}
+const CLIMBS_WHERE = `board_type = $1 AND layout_id = $2 AND updated_at < now() - make_interval(secs => $3)`;
 
-function statsWhere(): string {
-  return `board_type = $1
+const STATS_WHERE = `board_type = $1
     AND EXISTS (
       SELECT 1 FROM board_climbs bc
       WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
     )
     AND updated_at < now() - make_interval(secs => $3)`;
-}
 
 /**
  * Stream one table's scoped rows from Postgres through the shared row shaping into
@@ -291,22 +294,22 @@ export async function exportLayoutSnapshot(params: {
         sqliteDb,
         'board_climbs',
         climbColumns,
-        climbsWhere(),
+        CLIMBS_WHERE,
         scopeParams,
         streamBatchSize,
       );
-      const climbWatermark = await tableWatermark(tx, 'board_climbs', climbsWhere(), scopeParams);
+      const climbWatermark = await tableWatermark(tx, 'board_climbs', CLIMBS_WHERE, scopeParams);
 
       const statsRowCount = await streamTableIntoSqlite(
         tx,
         sqliteDb,
         'board_climb_stats',
         statsColumns,
-        statsWhere(),
+        STATS_WHERE,
         scopeParams,
         streamBatchSize,
       );
-      const statsWatermark = await tableWatermark(tx, 'board_climb_stats', statsWhere(), scopeParams);
+      const statsWatermark = await tableWatermark(tx, 'board_climb_stats', STATS_WHERE, scopeParams);
 
       return {
         board_climbs: { rowCount: climbRowCount, ...climbWatermark },
@@ -410,9 +413,116 @@ function buildManifestEntry(
   };
 }
 
+/**
+ * Merge this run's freshly-built entries over the previous manifest's, keyed by
+ * (boardType, layoutId). A filtered run (`--board`/`--layout`) rebuilds only a
+ * subset, so every previous entry it did not rebuild is preserved verbatim —
+ * without this, a filtered run would silently drop every other board from the
+ * manifest. Only an unfiltered run has the full picture, so only it may drop
+ * entries whose layout no longer has climbs in the database: it passes the
+ * discovered pairs as `livePairs`; filtered runs pass null and keep everything.
+ */
+export function mergeManifestEntries(params: {
+  previousEntries: SnapshotManifestEntry[];
+  newEntries: SnapshotManifestEntry[];
+  livePairs: LayoutPair[] | null;
+}): SnapshotManifestEntry[] {
+  const pairKey = (boardType: string, layoutId: number): string => `${boardType}:${layoutId}`;
+  const liveKeys = params.livePairs
+    ? new Set(params.livePairs.map((pair) => pairKey(pair.boardType, pair.layoutId)))
+    : null;
+
+  const merged = new Map<string, SnapshotManifestEntry>();
+  for (const previousEntry of params.previousEntries) {
+    const entryKey = pairKey(previousEntry.boardType, previousEntry.layoutId);
+    // Layout vanished from the DB — drop its entry (unfiltered runs only). A
+    // failed layout is still discovered, so its previous entry survives here.
+    if (liveKeys && !liveKeys.has(entryKey)) continue;
+    merged.set(entryKey, previousEntry);
+  }
+  for (const newEntry of params.newEntries) {
+    merged.set(pairKey(newEntry.boardType, newEntry.layoutId), newEntry);
+  }
+  return [...merged.values()].sort(
+    (left, right) => left.boardType.localeCompare(right.boardType) || left.layoutId - right.layoutId,
+  );
+}
+
+/**
+ * Fetch + validate the currently-published manifest. Returns null when there is
+ * none (first run) or it is unreadable/unparseable — the caller merges against
+ * empty. Missing-vs-error is not distinguishable through getFromS3, so both are
+ * logged loudly; a filtered run that hits this writes a manifest containing only
+ * its own entries, which the next unfiltered nightly run heals.
+ */
+async function fetchPreviousManifest(): Promise<SnapshotManifest | null> {
+  const manifestObject = await getFromS3(MANIFEST_KEY);
+  if (!manifestObject) {
+    logger.warn('[export-snapshots] no previous manifest readable (first run?) — merging against empty');
+    return null;
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of manifestObject.stream as AsyncIterable<Buffer | string>) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  try {
+    const parsed = parseSnapshotManifest(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    if (!parsed) {
+      logger.warn('[export-snapshots] previous manifest failed validation — merging against empty');
+    }
+    return parsed;
+  } catch (error) {
+    logger.warn('[export-snapshots] previous manifest is not valid JSON — merging against empty', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * Delete superseded artifacts under the snapshot prefix: objects that are (a)
+ * not referenced by the manifest just written and (b) older than the grace
+ * window (a CDN-cached manifest, max-age=300, or a client holding a fetched
+ * manifest may still point at a previous run's artifacts for a while). Only a
+ * fully-successful UNFILTERED run calls this — it is the only run whose merged
+ * manifest provably references every artifact that must survive. Defensive by
+ * design: any prune failure is logged and swallowed, never failing the run.
+ */
+async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number): Promise<void> {
+  try {
+    const referencedKeys = new Set<string>(manifest.entries.map((entry) => entry.key));
+    referencedKeys.add(MANIFEST_KEY);
+    const cutoffMs = nowMs - PRUNE_GRACE_MS;
+
+    const objects = await listS3Objects(`${SNAPSHOT_KEY_PREFIX}/`);
+    let prunedCount = 0;
+    for (const object of objects) {
+      if (referencedKeys.has(object.key)) continue;
+      if (!object.lastModified || object.lastModified.getTime() >= cutoffMs) continue;
+      try {
+        await deleteFromS3(object.key);
+        prunedCount += 1;
+      } catch (error) {
+        logger.warn('[export-snapshots] failed to prune stale artifact — continuing', {
+          key: object.key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    logger.info('[export-snapshots] prune complete', { scanned: objects.length, pruned: prunedCount });
+  } catch (error) {
+    logger.warn('[export-snapshots] artifact prune failed — continuing (prune is never fatal)', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+type LayoutFailure = LayoutPair & { error: string };
+
 export async function runExport(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
   const builtAt = new Date().toISOString();
+  const isFilteredRun = options.boardFilter !== undefined || options.layoutFilter !== undefined;
 
   if (!options.dryRun && !isS3Configured()) {
     throw new Error(
@@ -420,12 +530,14 @@ export async function runExport(argv: string[]): Promise<void> {
     );
   }
 
-  // createReadPool installs drizzle's transparent timestamp parsers on the
-  // postgres.js client, so streamed timestamps match the resolver shaping.
-  createReadDb();
+  // createReadPool GUARANTEES the drizzle wrapper is constructed before the raw
+  // pool is returned (see packages/db/src/client/postgres.ts), so the pool
+  // already carries drizzle's transparent timestamp parsers and streamed rows
+  // match the resolver shaping.
   const sqlClient = createReadPool();
   const workDir = mkdtempSync(join(tmpdir(), 'board-snapshots-'));
-  const entries: SnapshotManifestEntry[] = [];
+  const newEntries: SnapshotManifestEntry[] = [];
+  const failures: LayoutFailure[] = [];
 
   try {
     const pairs = await discoverLayoutPairs(sqlClient, {
@@ -434,6 +546,7 @@ export async function runExport(argv: string[]): Promise<void> {
     });
     logger.info('[export-snapshots] starting run', {
       dryRun: options.dryRun,
+      filtered: isFilteredRun,
       pairs: pairs.length,
       builtAt,
       stabilityWindowSeconds: DEFAULT_STABILITY_WINDOW_SECONDS,
@@ -442,86 +555,120 @@ export async function runExport(argv: string[]): Promise<void> {
     for (const pair of pairs) {
       const startedAt = Date.now();
       const filePath = join(workDir, `${pair.boardType}-${pair.layoutId}.db`);
-      const result = await exportLayoutSnapshot({
-        sqlClient,
-        boardType: pair.boardType,
-        layoutId: pair.layoutId,
-        filePath,
-        builtAt,
-      });
-
-      const rawBuffer = readFileSync(filePath);
-      const gzipped = gzipSync(rawBuffer);
-      // Colon-free key stamp: ISO colons are legal in S3 keys but historically
-      // trip CDNs/URL parsers, and getPublicUrl does no percent-encoding.
-      const keyStamp = builtAt.replace(/[:.]/g, '-');
-      const key = `${SNAPSHOT_KEY_PREFIX}/${pair.boardType}/${pair.layoutId}/${keyStamp}.db`;
-
-      if (options.dryRun) {
-        logger.info('[export-snapshots] built (dry-run, not uploaded)', {
+      try {
+        const result = await exportLayoutSnapshot({
+          sqlClient,
           boardType: pair.boardType,
           layoutId: pair.layoutId,
-          climbs: result.tables.board_climbs.rowCount,
-          stats: result.tables.board_climb_stats.rowCount,
-          rawBytes: rawBuffer.length,
-          gzipBytes: gzipped.length,
-          durationMs: Date.now() - startedAt,
+          filePath,
+          builtAt,
         });
-        entries.push(
-          buildManifestEntry(result, {
-            // getPublicUrl instantiates the S3 client, so only call it when S3 is
-            // configured — a dry-run must work with no AWS credentials at all.
-            url: isS3Configured() ? getPublicUrl(key) : `dry-run:${key}`,
-            key,
-            bytes: gzipped.length,
-            contentEncoding: 'gzip',
-          }),
-        );
-      } else {
-        const uploaded = await uploadToS3(gzipped, key, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' });
-        logger.info('[export-snapshots] uploaded', {
-          boardType: pair.boardType,
-          layoutId: pair.layoutId,
-          climbs: result.tables.board_climbs.rowCount,
-          stats: result.tables.board_climb_stats.rowCount,
-          gzipBytes: gzipped.length,
-          key: uploaded.key,
-          durationMs: Date.now() - startedAt,
-        });
-        entries.push(
-          buildManifestEntry(result, {
-            url: uploaded.url,
+
+        const rawBuffer = readFileSync(filePath);
+        const gzipped = gzipSync(rawBuffer);
+        // Colon-free key stamp: ISO colons are legal in S3 keys but historically
+        // trip CDNs/URL parsers, and getPublicUrl does no percent-encoding.
+        const keyStamp = builtAt.replace(/[:.]/g, '-');
+        const key = `${SNAPSHOT_KEY_PREFIX}/${pair.boardType}/${pair.layoutId}/${keyStamp}.db`;
+
+        if (options.dryRun) {
+          logger.info('[export-snapshots] built (dry-run, not uploaded)', {
+            boardType: pair.boardType,
+            layoutId: pair.layoutId,
+            climbs: result.tables.board_climbs.rowCount,
+            stats: result.tables.board_climb_stats.rowCount,
+            rawBytes: rawBuffer.length,
+            gzipBytes: gzipped.length,
+            durationMs: Date.now() - startedAt,
+          });
+          newEntries.push(
+            buildManifestEntry(result, {
+              // getPublicUrl instantiates the S3 client, so only call it when S3 is
+              // configured — a dry-run must work with no AWS credentials at all.
+              url: isS3Configured() ? getPublicUrl(key) : `dry-run:${key}`,
+              key,
+              bytes: gzipped.length,
+              contentEncoding: 'gzip',
+            }),
+          );
+        } else {
+          const uploaded = await uploadToS3(gzipped, key, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' });
+          logger.info('[export-snapshots] uploaded', {
+            boardType: pair.boardType,
+            layoutId: pair.layoutId,
+            climbs: result.tables.board_climbs.rowCount,
+            stats: result.tables.board_climb_stats.rowCount,
+            gzipBytes: gzipped.length,
             key: uploaded.key,
-            bytes: gzipped.length,
-            contentEncoding: 'gzip',
-          }),
-        );
+            durationMs: Date.now() - startedAt,
+          });
+          newEntries.push(
+            buildManifestEntry(result, {
+              url: uploaded.url,
+              key: uploaded.key,
+              bytes: gzipped.length,
+              contentEncoding: 'gzip',
+            }),
+          );
+        }
+      } catch (error) {
+        // One bad layout must not block every other board's nightly refresh:
+        // record the failure, keep exporting, and fail the run at the very end.
+        // The merge below preserves the failed layout's previous manifest entry
+        // (its old artifact is immutable, so it stays valid).
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ boardType: pair.boardType, layoutId: pair.layoutId, error: message });
+        logger.error('[export-snapshots] layout export failed — continuing with remaining layouts', {
+          boardType: pair.boardType,
+          layoutId: pair.layoutId,
+          error: message,
+        });
+      } finally {
+        rmSync(filePath, { force: true });
       }
-
-      rmSync(filePath, { force: true });
     }
-
-    const manifest: SnapshotManifest = {
-      formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
-      generatedAt: new Date().toISOString(),
-      entries,
-    };
 
     if (options.dryRun) {
       logger.info('[export-snapshots] dry-run complete — manifest NOT uploaded', {
-        entries: entries.length,
-        totalGzipBytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
+        entries: newEntries.length,
+        failedLayouts: failures.length,
+        totalGzipBytes: newEntries.reduce((sum, entry) => sum + entry.bytes, 0),
       });
     } else {
-      // Manifest LAST: readers see an atomic old-or-new manifest, never a
-      // manifest pointing at artifacts that failed to upload.
+      // MERGE the previous manifest, never overwrite: a filtered run rebuilds
+      // only its own pairs and must not drop everyone else's entries. Written
+      // LAST so readers see an atomic old-or-new manifest.
+      const previousManifest = await fetchPreviousManifest();
+      const mergedEntries = mergeManifestEntries({
+        previousEntries: previousManifest?.entries ?? [],
+        newEntries,
+        livePairs: isFilteredRun ? null : pairs,
+      });
+      const manifest: SnapshotManifest = {
+        formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
+        generatedAt: new Date().toISOString(),
+        entries: mergedEntries,
+      };
       await uploadToS3(Buffer.from(JSON.stringify(manifest)), MANIFEST_KEY, 'application/json', {
         cacheControl: MANIFEST_CACHE_CONTROL,
       });
-      logger.info('[export-snapshots] manifest uploaded — run complete', {
-        entries: entries.length,
+      logger.info('[export-snapshots] manifest uploaded', {
+        entries: mergedEntries.length,
+        refreshed: newEntries.length,
         key: MANIFEST_KEY,
       });
+
+      // Prune superseded artifacts only after a fully-successful unfiltered
+      // run: filtered runs lack the full picture, and skipping on failure
+      // nights just defers pruning to the next green nightly.
+      if (!isFilteredRun && failures.length === 0) {
+        await pruneStaleArtifacts(manifest, Date.now());
+      }
+    }
+
+    if (failures.length > 0) {
+      const failedPairs = failures.map((failure) => `${failure.boardType}:${failure.layoutId}`).join(', ');
+      throw new Error(`Export failed for ${failures.length} layout(s): ${failedPairs}`);
     }
   } finally {
     rmSync(workDir, { recursive: true, force: true });
