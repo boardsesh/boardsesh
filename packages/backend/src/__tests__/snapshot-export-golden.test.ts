@@ -315,14 +315,14 @@ describe('board-snapshot export ↔ live pull parity', () => {
     const climbMeta = readArtifactMeta(filePath, 'board_climbs')!;
     expect(climbMeta.row_count).toBe(2);
     expect(climbMeta.watermark_updated_at).toBe(toIso(climbWatermarkRow.updated_at));
-    expect(climbMeta.watermark_sync_seq).toBe(Number(climbWatermarkRow.sync_seq));
+    expect(climbMeta.watermark_sync_seq).toBe(String(climbWatermarkRow.sync_seq));
     expect(climbMeta.schema_version).toBeGreaterThanOrEqual(1);
     expect(climbMeta.format_version).toBe(1);
 
     const statsMeta = readArtifactMeta(filePath, 'board_climb_stats')!;
     expect(statsMeta.row_count).toBe(2);
     expect(statsMeta.watermark_updated_at).toBe(toIso(statsWatermarkRow.updated_at));
-    expect(statsMeta.watermark_sync_seq).toBe(Number(statsWatermarkRow.sync_seq));
+    expect(statsMeta.watermark_sync_seq).toBe(String(statsWatermarkRow.sync_seq));
   });
 
   it('excludes a row inside the stability window from both the artifact and its watermark', async () => {
@@ -363,7 +363,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
 
     const climbMeta = readArtifactMeta(filePath, 'board_climbs')!;
     expect(climbMeta.row_count).toBe(2);
-    expect(climbMeta.watermark_sync_seq).toBe(Number(stableWatermarkRow.sync_seq));
+    expect(climbMeta.watermark_sync_seq).toBe(String(stableWatermarkRow.sync_seq));
     expect(Number(climbMeta.watermark_sync_seq)).toBeLessThan(Number(recentRow.sync_seq));
   });
 });

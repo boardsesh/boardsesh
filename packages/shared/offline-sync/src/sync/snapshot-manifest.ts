@@ -18,8 +18,10 @@ export type SnapshotTableStats = {
   // ISO-8601 UTC. The max `updated_at` across the rows actually exported.
   watermarkUpdatedAt: string;
   // The `sync_seq` paired with `watermarkUpdatedAt` (the composite keyset cursor
-  // the sync resolvers page on: `(updated_at, sync_seq)`).
-  watermarkSyncSeq: number;
+  // the sync resolvers page on: `(updated_at, sync_seq)`). Carried as a decimal
+  // string, like every seq in the sync protocol, so a Postgres bigint can never
+  // lose precision in a JS number.
+  watermarkSyncSeq: string;
   rowCount: number;
 };
 
@@ -33,7 +35,8 @@ export type SnapshotManifestEntry = {
   // Stored (gzip-compressed) object size in bytes.
   bytes: number;
   contentEncoding: 'gzip' | 'identity';
-  // ISO-8601 UTC build timestamp; also the artifact key's basename.
+  // ISO-8601 UTC build timestamp (the key's basename is this stamp with
+  // colons/dots replaced by dashes).
   builtAt: string;
   // The offline-sync client schema version the artifact's SQLite DDL was built
   // at (LATEST_SCHEMA_VERSION). A client older than this must migrate the file
@@ -61,11 +64,15 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isDecimalString(value: unknown): value is string {
+  return typeof value === 'string' && /^\d+$/.test(value);
+}
+
 function isTableStats(value: unknown): value is SnapshotTableStats {
   if (!isRecord(value)) return false;
   return (
     typeof value.watermarkUpdatedAt === 'string' &&
-    isFiniteNumber(value.watermarkSyncSeq) &&
+    isDecimalString(value.watermarkSyncSeq) &&
     isFiniteNumber(value.rowCount)
   );
 }

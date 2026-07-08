@@ -53,14 +53,17 @@ const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
 
 // Matches the resolvers' stability window: rows younger than this are left for a
 // live incremental pull so the watermark never covers a still-in-flight write.
-// Reads the SAME env var the sync resolvers read so both stay in lockstep.
-const parsedStabilityWindow = Number(process.env.SYNC_STABILITY_WINDOW_SECONDS ?? 30);
+// Reads the SAME env var the sync resolvers read so both stay in lockstep. A
+// blank value (e.g. an unset GitHub Actions `vars.*` passthrough) means unset —
+// Number('') would otherwise silently zero the window.
+const rawStabilityWindow = process.env.SYNC_STABILITY_WINDOW_SECONDS?.trim();
+const parsedStabilityWindow = rawStabilityWindow ? Number(rawStabilityWindow) : 30;
 const DEFAULT_STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsedStabilityWindow : 30;
 
 // The keyset epoch a client resumes from when a table's snapshot is empty — the
 // same sentinel the resolvers echo on a first (cursorless) pull.
 const EPOCH_WATERMARK_UPDATED_AT = '1970-01-01T00:00:00.000Z';
-const EPOCH_WATERMARK_SYNC_SEQ = 0;
+const EPOCH_WATERMARK_SYNC_SEQ = '0';
 
 const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_climb_stats'];
 
@@ -68,7 +71,9 @@ const SNAPSHOT_META_DDL = `
 CREATE TABLE IF NOT EXISTS snapshot_meta (
   table_name TEXT PRIMARY KEY,
   watermark_updated_at TEXT,
-  watermark_sync_seq INTEGER,
+  -- Decimal string, like every seq in the sync protocol: a Postgres bigint must
+  -- never round-trip through a JS number.
+  watermark_sync_seq TEXT,
   row_count INTEGER,
   built_at TEXT,
   schema_version INTEGER,
@@ -86,7 +91,7 @@ const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 export type SnapshotTableExportResult = {
   rowCount: number;
   watermarkUpdatedAt: string;
-  watermarkSyncSeq: number;
+  watermarkSyncSeq: string;
 };
 
 export type LayoutSnapshotResult = {
@@ -228,7 +233,7 @@ async function tableWatermark(
   tableName: SnapshotTableName,
   whereClause: string,
   params: (string | number)[],
-): Promise<{ watermarkUpdatedAt: string; watermarkSyncSeq: number }> {
+): Promise<{ watermarkUpdatedAt: string; watermarkSyncSeq: string }> {
   const rows = await tx.unsafe(
     `SELECT updated_at, sync_seq
      FROM ${tableName}
@@ -243,7 +248,7 @@ async function tableWatermark(
   }
   return {
     watermarkUpdatedAt: toIso(watermarkRow.updated_at),
-    watermarkSyncSeq: Number(watermarkRow.sync_seq),
+    watermarkSyncSeq: String(watermarkRow.sync_seq),
   };
 }
 
@@ -368,12 +373,21 @@ function parseArgs(argv: string[]): ExportOptions {
     } else if (arg.startsWith('--board=')) {
       options.boardFilter = arg.slice('--board='.length);
     } else if (arg === '--layout') {
-      options.layoutFilter = Number(argv[(index += 1)]);
+      options.layoutFilter = parseLayoutFilter(argv[(index += 1)]);
     } else if (arg.startsWith('--layout=')) {
-      options.layoutFilter = Number(arg.slice('--layout='.length));
+      options.layoutFilter = parseLayoutFilter(arg.slice('--layout='.length));
     }
   }
   return options;
+}
+
+function parseLayoutFilter(raw: string | undefined): number {
+  const layoutId = Number(raw);
+  if (!Number.isInteger(layoutId)) {
+    // A NaN filter would silently match nothing and export zero layouts.
+    throw new Error(`--layout expects an integer layout id, got ${JSON.stringify(raw)}`);
+  }
+  return layoutId;
 }
 
 function buildManifestEntry(
@@ -438,7 +452,10 @@ export async function runExport(argv: string[]): Promise<void> {
 
       const rawBuffer = readFileSync(filePath);
       const gzipped = gzipSync(rawBuffer);
-      const key = `${SNAPSHOT_KEY_PREFIX}/${pair.boardType}/${pair.layoutId}/${builtAt}.db`;
+      // Colon-free key stamp: ISO colons are legal in S3 keys but historically
+      // trip CDNs/URL parsers, and getPublicUrl does no percent-encoding.
+      const keyStamp = builtAt.replace(/[:.]/g, '-');
+      const key = `${SNAPSHOT_KEY_PREFIX}/${pair.boardType}/${pair.layoutId}/${keyStamp}.db`;
 
       if (options.dryRun) {
         logger.info('[export-snapshots] built (dry-run, not uploaded)', {
