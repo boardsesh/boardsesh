@@ -362,6 +362,11 @@ export async function bootstrapScopeFromSnapshot(params: {
 
   let attached = false;
   try {
+    // Defensive detach first: a failed DETACH from a previous scope in this run
+    // (swallowed in the finally below) would leave the alias attached and make
+    // this ATTACH fail for every remaining scope. Clearing it here confines a
+    // DETACH failure to its own scope.
+    await db.execAsync(`DETACH DATABASE ${SNAPSHOT_ALIAS}`).catch(() => {});
     await db.execAsync(`ATTACH DATABASE '${filePath.replace(/'/g, "''")}' AS ${SNAPSHOT_ALIAS}`);
     attached = true;
 

@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS snapshot_meta (
   schema_version INTEGER,
   format_version INTEGER
 );`;
+const SNAPSHOT_ALIAS = 'bs_snapshot';
 
 type Cursor = { updatedAt: string; syncSeq: string };
 
@@ -343,6 +344,37 @@ describe('bootstrapScopeFromSnapshot', () => {
     const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
     expect(climbs.map((row) => row.uuid)).toEqual(['m1', 'm2']); // NULL-size row included
     expect(await countRows('board_climb_stats')).toBe(1);
+  });
+
+  it('clears a leftover attached snapshot alias before attaching the next artifact', async () => {
+    const staleFilePath = join(workDir, 'stale-attached.db');
+    buildArtifact({
+      filePath: staleFilePath,
+      climbs: [{ uuid: 'stale-row', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '1' },
+      statsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '1' },
+    });
+    const freshFilePath = join(workDir, 'fresh-after-leftover-attach.db');
+    buildArtifact({
+      filePath: freshFilePath,
+      climbs: [{ uuid: 'fresh-row', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+
+    await db.execAsync(`ATTACH DATABASE '${staleFilePath.replace(/'/g, "''")}' AS ${SNAPSHOT_ALIAS}`);
+
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: SCOPE_KILTER_5,
+      scopeKey: 'kilter:1:5',
+      filePath: freshFilePath,
+    });
+
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
+    expect(climbs.map((row) => row.uuid)).toEqual(['fresh-row']);
   });
 
   it('tolerates schema drift in both directions and reports it to telemetry', async () => {
