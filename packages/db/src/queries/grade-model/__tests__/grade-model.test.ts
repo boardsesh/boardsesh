@@ -1,5 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   assignTier,
   computePosteriorGrade,
@@ -9,6 +11,8 @@ import {
   shouldPublish,
 } from '../blend';
 import {
+  buildEchoRatesSql,
+  buildSigmaWithinSql,
   estimateAngleSurface,
   estimateBoardOffsets,
   estimateEchoFractions,
@@ -263,6 +267,28 @@ void describe('estimateEchoFractions', () => {
     // tension uses pooled a = 1509/2010
     const pooled = 1509 / 2010;
     assert.ok(Math.abs(result.tension - (0.9 - pooled) / (1 - pooled)) < 1e-9);
+  });
+});
+
+void describe('tick provenance in coefficient SQL', () => {
+  // A native tick pushed back upstream keeps origin='native' but gets
+  // aurora_id/kilter_id stamped (tickOriginEnum in schema/app/ascents.ts), so
+  // classifying by ID-nullness would silently reclassify opt-in opinions as
+  // synced once push-back runs. Both builders must classify by origin.
+  const renderedSql = (query: SQL): string => new PgDialect().sqlToQuery(query).sql;
+
+  void test('buildEchoRatesSql classifies native by origin, not upstream-ID nullness', () => {
+    const query = renderedSql(buildEchoRatesSql());
+    assert.ok(query.includes("t.origin = 'native'"));
+    assert.ok(!query.includes('aurora_id'));
+    assert.ok(!query.includes('kilter_id'));
+  });
+
+  void test('buildSigmaWithinSql classifies native by origin, not upstream-ID nullness', () => {
+    const query = renderedSql(buildSigmaWithinSql());
+    assert.ok(query.includes("t.origin = 'native'"));
+    assert.ok(!query.includes('aurora_id'));
+    assert.ok(!query.includes('kilter_id'));
   });
 });
 
