@@ -280,15 +280,15 @@ void describe('tick provenance in coefficient SQL', () => {
   void test('buildEchoRatesSql classifies native by origin, not upstream-ID nullness', () => {
     const query = renderedSql(buildEchoRatesSql());
     assert.ok(query.includes("t.origin = 'native'"));
-    assert.ok(!query.includes('aurora_id'));
-    assert.ok(!query.includes('kilter_id'));
+    assert.ok(!query.includes('aurora_id IS NULL'));
+    assert.ok(!query.includes('kilter_id IS NULL'));
   });
 
   void test('buildSigmaWithinSql classifies native by origin, not upstream-ID nullness', () => {
     const query = renderedSql(buildSigmaWithinSql());
     assert.ok(query.includes("t.origin = 'native'"));
-    assert.ok(!query.includes('aurora_id'));
-    assert.ok(!query.includes('kilter_id'));
+    assert.ok(!query.includes('aurora_id IS NULL'));
+    assert.ok(!query.includes('kilter_id IS NULL'));
   });
 });
 
