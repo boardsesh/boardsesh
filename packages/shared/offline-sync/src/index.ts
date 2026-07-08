@@ -73,9 +73,8 @@ export {
   markScopeDownloadComplete,
   isScopeDownloadComplete,
   getDownloadedScopeKeys,
-  rewindDeletionsCheckpoint,
-  compareCheckpoints,
-  DELETIONS_CHECKPOINT_KEY,
+  // rewindDeletionsCheckpoint / compareCheckpoints / DELETIONS_CHECKPOINT_KEY
+  // stay package-internal (only the bootstrap engine consumes them).
 } from './sync/checkpoints';
 export type { SyncCheckpoint } from './sync/checkpoints';
 export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './sync/table-config';

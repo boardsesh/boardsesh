@@ -27,7 +27,9 @@ export const DELETIONS_CHECKPOINT_KEY = 'checkpoint:deletions';
  * is a decimal string that can exceed Number's safe range, so it is compared via
  * BigInt (a raw string compare would rank `'9'` above `'10'`). Returns <0 when
  * `a` precedes `b`, 0 when equal, >0 when `a` follows `b`. An unparseable
- * `updatedAt` sorts as equal-timestamp so the seq tiebreak still applies.
+ * `updatedAt` sorts as equal-timestamp so the seq tiebreak still applies; an
+ * unparseable `syncSeq` (a corrupt sync_meta row — every server cursor is
+ * Zod-validated) sorts as seq 0 rather than crashing the sync cycle.
  */
 export function compareCheckpoints(a: SyncCheckpoint, b: SyncCheckpoint): number {
   const aTime = Date.parse(a.updatedAt);
@@ -35,9 +37,17 @@ export function compareCheckpoints(a: SyncCheckpoint, b: SyncCheckpoint): number
   if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
     return aTime < bTime ? -1 : 1;
   }
-  const aSeq = BigInt(a.syncSeq);
-  const bSeq = BigInt(b.syncSeq);
+  const aSeq = toSeqBigInt(a.syncSeq);
+  const bSeq = toSeqBigInt(b.syncSeq);
   return aSeq < bSeq ? -1 : aSeq > bSeq ? 1 : 0;
+}
+
+function toSeqBigInt(rawSeq: string): bigint {
+  try {
+    return BigInt(rawSeq);
+  } catch {
+    return 0n;
+  }
 }
 
 /**
