@@ -1,7 +1,7 @@
 name: Export Board Snapshots
 
 # Nightly: build a per-(board, layout) SQLite snapshot of board_climbs +
-# board_climb_stats, gzip it, and upload to Tigris/S3 under board-snapshots/v1/.
+# board_climb_stats and upload it to Tigris/S3 under board-snapshots/v1/.
 # A freshly downloaded board on mobile warms from these artifacts instead of
 # paging the whole catalog over GraphQL, then resumes an incremental pull from
 # the watermarks the manifest records. Idempotent — each run mints new

@@ -2,7 +2,7 @@
 // writes it (packages/backend/scripts/export-board-snapshots.ts) and the client
 // bootstrap that reads it (Phase 3, pull-client). One JSON object published at
 // `board-snapshots/v1/manifest.json`; each entry points a downloaded board at a
-// pre-built, gzipped SQLite artifact plus the watermarks a client resumes its
+// pre-built SQLite artifact plus the watermarks a client resumes its
 // incremental pull from.
 //
 // Pure types + a hand-rolled validator (this package intentionally ships zero
@@ -32,9 +32,9 @@ export type SnapshotManifestEntry = {
   key: string;
   // Public URL of the artifact.
   url: string;
-  // Stored (gzip-compressed) object size in bytes.
+  // Stored object size in bytes.
   bytes: number;
-  // The S3 OBJECT's Content-Encoding — how the bytes are stored at rest, NOT
+  // The S3 object's Content-Encoding — how the bytes are stored at rest, NOT
   // necessarily what a client receives: an HTTP stack that honours
   // Content-Encoding (browser/RN fetch) hands back decompressed bytes, while a
   // straight-to-disk downloader (e.g. expo-file-system) typically writes the

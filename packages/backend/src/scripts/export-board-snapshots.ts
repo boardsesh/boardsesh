@@ -625,8 +625,7 @@ export async function runExport(argv: string[]): Promise<void> {
         // downloaders (expo-file-system) may write the raw gzip stream, and the
         // client treats a gzip-on-disk artifact as a failed download (it has no
         // JS gunzip). The manifest's contentEncoding field keeps the client
-        // agnostic, so flipping to --gzip later needs no app update. See
-        // docs/board-snapshots.md.
+        // agnostic, so flipping to --gzip later needs no app update.
         const uploadBody = options.gzip ? gzipSync(rawBuffer) : rawBuffer;
         const contentEncoding = options.gzip ? ('gzip' as const) : ('identity' as const);
         // Colon-free key stamp: ISO colons are legal in S3 keys but historically
