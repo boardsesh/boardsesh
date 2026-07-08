@@ -91,6 +91,9 @@ export async function uploadToS3(
   options: {
     cacheControl?: string;
     acl?: ObjectCannedACL | null;
+    // Sets the object's Content-Encoding (e.g. 'gzip' for a pre-compressed body
+    // so a browser/CDN decompresses transparently). Omit for uncompressed bodies.
+    contentEncoding?: string;
   } = {},
 ): Promise<{ url: string; key: string }> {
   const client = getS3Client();
@@ -103,6 +106,10 @@ export async function uploadToS3(
     ContentType: contentType,
     CacheControl: options.cacheControl ?? 'public, max-age=31536000, immutable',
   };
+
+  if (options.contentEncoding) {
+    input.ContentEncoding = options.contentEncoding;
+  }
 
   if (options.acl !== null) {
     input.ACL = options.acl ?? 'public-read';

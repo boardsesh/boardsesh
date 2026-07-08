@@ -1,0 +1,525 @@
+// Nightly board-snapshot export (offline-sync Phase 2).
+//
+// For every (board_type, layout_id) that has climbs, builds a small SQLite file
+// carrying ONLY `board_climbs` + `board_climb_stats` (plus a `snapshot_meta`
+// watermark table), gzips it, and uploads it to Tigris/S3 under
+// `board-snapshots/v1/<boardType>/<layoutId>/<builtAt>.db`. After every artifact
+// lands, writes `board-snapshots/v1/manifest.json` LAST so a reader always sees
+// a consistent old-or-new manifest. Phase 3 (pull-client) reads that manifest to
+// warm a freshly-downloaded board from the artifact instead of paging the whole
+// catalog over GraphQL, then resumes an incremental pull from the per-table
+// watermarks recorded here.
+//
+// The row shaping is the SAME code the live sync resolvers use (row-normalize.ts
+// + toSqliteValue), read through the SAME drizzle-constructed postgres.js client
+// (transparent timestamp parsers), so an artifact row is byte-identical to what a
+// live `syncClimbs`/`syncClimbStats` pull would have written. The
+// snapshot-export-golden test pins that equivalence.
+//
+// Structure: a testable core (`exportLayoutSnapshot`, `boardSnapshotDdlStatements`,
+// `discoverLayoutPairs`) under a thin CLI (`runExport`). The CLI is only invoked
+// when this module is the process entry, so importing it in a test has no side
+// effects.
+
+import { pathToFileURL } from 'node:url';
+import { DatabaseSync } from 'node:sqlite';
+import { gzipSync } from 'node:zlib';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { Sql, TransactionSql } from 'postgres';
+import {
+  MIGRATIONS,
+  LATEST_SCHEMA_VERSION,
+  TABLE_CONFIGS,
+  toSqliteValue,
+  multiRowChunkSize,
+  SNAPSHOT_MANIFEST_FORMAT_VERSION,
+  type SnapshotManifest,
+  type SnapshotManifestEntry,
+  type SnapshotTableName,
+} from '@boardsesh/offline-sync';
+import { createReadDb, createReadPool, closeReadPool } from '@boardsesh/db/client';
+import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
+import { uploadToS3, isS3Configured, getPublicUrl } from '../storage/s3';
+import { logger } from '../utils/logger';
+
+// --- Constants ----------------------------------------------------------------
+
+const SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1';
+const MANIFEST_KEY = `${SNAPSHOT_KEY_PREFIX}/manifest.json`;
+const MANIFEST_CACHE_CONTROL = 'public, max-age=300';
+const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
+
+// Matches the resolvers' stability window: rows younger than this are left for a
+// live incremental pull so the watermark never covers a still-in-flight write.
+// Reads the SAME env var the sync resolvers read so both stay in lockstep.
+const parsedStabilityWindow = Number(process.env.SYNC_STABILITY_WINDOW_SECONDS ?? 30);
+const DEFAULT_STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsedStabilityWindow : 30;
+
+// The keyset epoch a client resumes from when a table's snapshot is empty — the
+// same sentinel the resolvers echo on a first (cursorless) pull.
+const EPOCH_WATERMARK_UPDATED_AT = '1970-01-01T00:00:00.000Z';
+const EPOCH_WATERMARK_SYNC_SEQ = 0;
+
+const SNAPSHOT_TABLES: readonly SnapshotTableName[] = ['board_climbs', 'board_climb_stats'];
+
+const SNAPSHOT_META_DDL = `
+CREATE TABLE IF NOT EXISTS snapshot_meta (
+  table_name TEXT PRIMARY KEY,
+  watermark_updated_at TEXT,
+  watermark_sync_seq INTEGER,
+  row_count INTEGER,
+  built_at TEXT,
+  schema_version INTEGER,
+  format_version INTEGER
+);
+`.trim();
+
+// Only snake_case identifiers may be spliced into the SELECT column list. The
+// column names come from TABLE_CONFIGS (a trusted allowlist), but validating
+// keeps the string-built SQL provably injection-free.
+const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
+
+// --- Types --------------------------------------------------------------------
+
+export type SnapshotTableExportResult = {
+  rowCount: number;
+  watermarkUpdatedAt: string;
+  watermarkSyncSeq: number;
+};
+
+export type LayoutSnapshotResult = {
+  boardType: string;
+  layoutId: number;
+  filePath: string;
+  builtAt: string;
+  schemaVersion: number;
+  tables: Record<SnapshotTableName, SnapshotTableExportResult>;
+};
+
+export type LayoutPair = { boardType: string; layoutId: number };
+
+// --- DDL ----------------------------------------------------------------------
+
+/**
+ * The DDL for a snapshot file: every statement in the client migrations that
+ * targets `board_climbs` or `board_climb_stats` (in migration/version order, so a
+ * CREATE precedes its ALTERs and indexes), plus `snapshot_meta`. Derived from the
+ * shared MIGRATIONS — the single source of truth — so a future column added on the
+ * client (e.g. the v2 `characteristics` ALTER) flows into the snapshot with no
+ * duplicated DDL here.
+ */
+export function boardSnapshotDdlStatements(): string[] {
+  const referencesSnapshotTable = (statement: string): boolean =>
+    SNAPSHOT_TABLES.some((table) => new RegExp(`\\b${table}\\b`).test(statement));
+
+  const statements: string[] = [];
+  for (const migration of [...MIGRATIONS].sort((left, right) => left.version - right.version)) {
+    for (const statement of migration.statements) {
+      if (referencesSnapshotTable(statement)) statements.push(statement.trim());
+    }
+  }
+  statements.push(SNAPSHOT_META_DDL);
+  return statements;
+}
+
+// --- Postgres discovery + streaming ------------------------------------------
+
+/** Every (board_type, layout_id) pair that has at least one climb. */
+export async function discoverLayoutPairs(sqlClient: Sql, filter?: Partial<LayoutPair>): Promise<LayoutPair[]> {
+  const rows = await sqlClient<{ board_type: string; layout_id: number }[]>`
+    SELECT DISTINCT board_type, layout_id
+    FROM board_climbs
+    ORDER BY board_type, layout_id
+  `;
+  return rows
+    .map((row) => ({ boardType: String(row.board_type), layoutId: Number(row.layout_id) }))
+    .filter((pair) => (filter?.boardType ? pair.boardType === filter.boardType : true))
+    .filter((pair) => (filter?.layoutId != null ? pair.layoutId === filter.layoutId : true));
+}
+
+function assertSafeColumns(columns: readonly string[]): void {
+  for (const column of columns) {
+    if (!SAFE_IDENTIFIER.test(column)) {
+      throw new Error(`Refusing to build snapshot SELECT with unsafe column identifier: ${column}`);
+    }
+  }
+}
+
+// Scope predicates matching the resolvers exactly. `now()` is transaction-start
+// time and constant across the whole export transaction, so the streamed rows and
+// the watermark query below apply the identical stability boundary.
+function climbsWhere(): string {
+  return `board_type = $1 AND layout_id = $2 AND updated_at < now() - make_interval(secs => $3)`;
+}
+
+function statsWhere(): string {
+  return `board_type = $1
+    AND EXISTS (
+      SELECT 1 FROM board_climbs bc
+      WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = $1 AND bc.layout_id = $2
+    )
+    AND updated_at < now() - make_interval(secs => $3)`;
+}
+
+/**
+ * Stream one table's scoped rows from Postgres through the shared row shaping into
+ * the SQLite artifact, batched into multi-row INSERTs. Returns the number of rows
+ * written; the watermark is computed separately (see `tableWatermark`) from the
+ * same repeatable-read snapshot.
+ */
+async function streamTableIntoSqlite(
+  tx: TransactionSql,
+  sqliteDb: DatabaseSync,
+  tableName: SnapshotTableName,
+  columns: readonly string[],
+  whereClause: string,
+  params: (string | number)[],
+  streamBatchSize: number,
+): Promise<number> {
+  assertSafeColumns(columns);
+  const selectSql = `SELECT ${columns.join(', ')} FROM ${tableName} WHERE ${whereClause}`;
+  const chunkSize = multiRowChunkSize(columns.length);
+  const insertSqlByRowCount = new Map<number, string>();
+  const insertSqlFor = (rowCount: number): string => {
+    let cached = insertSqlByRowCount.get(rowCount);
+    if (!cached) {
+      const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
+      const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
+      cached = `INSERT OR REPLACE INTO ${tableName} (${columns.join(', ')}) VALUES ${valuesClause}`;
+      insertSqlByRowCount.set(rowCount, cached);
+    }
+    return cached;
+  };
+
+  let rowCount = 0;
+  const pending: RawRow[] = [];
+  const flush = (): void => {
+    if (pending.length === 0) return;
+    for (let chunkStart = 0; chunkStart < pending.length; chunkStart += chunkSize) {
+      const chunk = pending.slice(chunkStart, chunkStart + chunkSize);
+      const values = chunk.flatMap((row) => columns.map((column) => toSqliteValue(row[column])));
+      sqliteDb.prepare(insertSqlFor(chunk.length)).run(...values);
+    }
+    pending.length = 0;
+  };
+
+  for await (const batch of tx.unsafe(selectSql, params).cursor(streamBatchSize)) {
+    for (const rawRow of batch) {
+      pending.push(normalizeRow(rawRow as RawRow));
+      rowCount += 1;
+    }
+    flush();
+  }
+  flush();
+  return rowCount;
+}
+
+/**
+ * Compute a table's watermark (the greatest `(updated_at, sync_seq)` keyset over
+ * the scoped rows) inside the same transaction/snapshot as the row stream, so it
+ * never covers a row the artifact omitted. Postgres orders the timestamps as real
+ * timestamps — never string-compared in JS, which would misorder mixed sub-second
+ * precision. Empty scope → the epoch sentinel, so a client resumes from the start.
+ */
+async function tableWatermark(
+  tx: TransactionSql,
+  tableName: SnapshotTableName,
+  whereClause: string,
+  params: (string | number)[],
+): Promise<{ watermarkUpdatedAt: string; watermarkSyncSeq: number }> {
+  const rows = await tx.unsafe(
+    `SELECT updated_at, sync_seq
+     FROM ${tableName}
+     WHERE ${whereClause}
+     ORDER BY updated_at DESC, sync_seq DESC
+     LIMIT 1`,
+    params,
+  );
+  const watermarkRow = rows[0] as unknown as { updated_at: unknown; sync_seq: unknown } | undefined;
+  if (!watermarkRow) {
+    return { watermarkUpdatedAt: EPOCH_WATERMARK_UPDATED_AT, watermarkSyncSeq: EPOCH_WATERMARK_SYNC_SEQ };
+  }
+  return {
+    watermarkUpdatedAt: toIso(watermarkRow.updated_at),
+    watermarkSyncSeq: Number(watermarkRow.sync_seq),
+  };
+}
+
+// --- Layout snapshot build ----------------------------------------------------
+
+/**
+ * Build ONE (boardType, layoutId) SQLite snapshot at `filePath`. Both tables and
+ * every watermark are read inside a single REPEATABLE READ transaction so climbs,
+ * stats, and their watermarks come from one consistent database snapshot.
+ */
+export async function exportLayoutSnapshot(params: {
+  sqlClient: Sql;
+  boardType: string;
+  layoutId: number;
+  filePath: string;
+  builtAt: string;
+  stabilityWindowSeconds?: number;
+  streamBatchSize?: number;
+}): Promise<LayoutSnapshotResult> {
+  const { sqlClient, boardType, layoutId, filePath, builtAt } = params;
+  const stabilityWindowSeconds = params.stabilityWindowSeconds ?? DEFAULT_STABILITY_WINDOW_SECONDS;
+  const streamBatchSize = params.streamBatchSize ?? 5000;
+  const scopeParams: (string | number)[] = [boardType, layoutId, stabilityWindowSeconds];
+
+  const sqliteDb = new DatabaseSync(filePath);
+  try {
+    for (const statement of boardSnapshotDdlStatements()) {
+      sqliteDb.exec(statement);
+    }
+
+    sqliteDb.exec('BEGIN');
+    const tables = await sqlClient.begin(async (tx) => {
+      await tx.unsafe('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+
+      const climbColumns = TABLE_CONFIGS.board_climbs.localColumns;
+      const statsColumns = TABLE_CONFIGS.board_climb_stats.localColumns;
+
+      const climbRowCount = await streamTableIntoSqlite(
+        tx,
+        sqliteDb,
+        'board_climbs',
+        climbColumns,
+        climbsWhere(),
+        scopeParams,
+        streamBatchSize,
+      );
+      const climbWatermark = await tableWatermark(tx, 'board_climbs', climbsWhere(), scopeParams);
+
+      const statsRowCount = await streamTableIntoSqlite(
+        tx,
+        sqliteDb,
+        'board_climb_stats',
+        statsColumns,
+        statsWhere(),
+        scopeParams,
+        streamBatchSize,
+      );
+      const statsWatermark = await tableWatermark(tx, 'board_climb_stats', statsWhere(), scopeParams);
+
+      return {
+        board_climbs: { rowCount: climbRowCount, ...climbWatermark },
+        board_climb_stats: { rowCount: statsRowCount, ...statsWatermark },
+      } satisfies Record<SnapshotTableName, SnapshotTableExportResult>;
+    });
+
+    const insertMeta = sqliteDb.prepare(
+      `INSERT OR REPLACE INTO snapshot_meta
+        (table_name, watermark_updated_at, watermark_sync_seq, row_count, built_at, schema_version, format_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const tableName of SNAPSHOT_TABLES) {
+      const tableResult = tables[tableName];
+      insertMeta.run(
+        tableName,
+        tableResult.watermarkUpdatedAt,
+        tableResult.watermarkSyncSeq,
+        tableResult.rowCount,
+        builtAt,
+        LATEST_SCHEMA_VERSION,
+        SNAPSHOT_MANIFEST_FORMAT_VERSION,
+      );
+    }
+    sqliteDb.exec('COMMIT');
+
+    return {
+      boardType,
+      layoutId,
+      filePath,
+      builtAt,
+      schemaVersion: LATEST_SCHEMA_VERSION,
+      tables,
+    };
+  } catch (error) {
+    try {
+      sqliteDb.exec('ROLLBACK');
+    } catch {
+      // No open transaction to roll back — ignore.
+    }
+    throw error;
+  } finally {
+    sqliteDb.close();
+  }
+}
+
+// --- CLI ----------------------------------------------------------------------
+
+type ExportOptions = {
+  dryRun: boolean;
+  boardFilter?: string;
+  layoutFilter?: number;
+};
+
+function parseArgs(argv: string[]): ExportOptions {
+  const options: ExportOptions = { dryRun: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--') continue; // vp forwards a literal `--` into argv
+    if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--board') {
+      options.boardFilter = argv[(index += 1)];
+    } else if (arg.startsWith('--board=')) {
+      options.boardFilter = arg.slice('--board='.length);
+    } else if (arg === '--layout') {
+      options.layoutFilter = Number(argv[(index += 1)]);
+    } else if (arg.startsWith('--layout=')) {
+      options.layoutFilter = Number(arg.slice('--layout='.length));
+    }
+  }
+  return options;
+}
+
+function buildManifestEntry(
+  result: LayoutSnapshotResult,
+  upload: { url: string; key: string; bytes: number; contentEncoding: 'gzip' | 'identity' },
+): SnapshotManifestEntry {
+  return {
+    boardType: result.boardType,
+    layoutId: result.layoutId,
+    key: upload.key,
+    url: upload.url,
+    bytes: upload.bytes,
+    contentEncoding: upload.contentEncoding,
+    builtAt: result.builtAt,
+    schemaVersion: result.schemaVersion,
+    tables: {
+      board_climbs: result.tables.board_climbs,
+      board_climb_stats: result.tables.board_climb_stats,
+    },
+  };
+}
+
+export async function runExport(argv: string[]): Promise<void> {
+  const options = parseArgs(argv);
+  const builtAt = new Date().toISOString();
+
+  if (!options.dryRun && !isS3Configured()) {
+    throw new Error(
+      'S3 is not configured (AWS_S3_BUCKET_NAME / AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY). Use --dry-run to build locally.',
+    );
+  }
+
+  // createReadPool installs drizzle's transparent timestamp parsers on the
+  // postgres.js client, so streamed timestamps match the resolver shaping.
+  createReadDb();
+  const sqlClient = createReadPool();
+  const workDir = mkdtempSync(join(tmpdir(), 'board-snapshots-'));
+  const entries: SnapshotManifestEntry[] = [];
+
+  try {
+    const pairs = await discoverLayoutPairs(sqlClient, {
+      boardType: options.boardFilter,
+      layoutId: options.layoutFilter,
+    });
+    logger.info('[export-snapshots] starting run', {
+      dryRun: options.dryRun,
+      pairs: pairs.length,
+      builtAt,
+      stabilityWindowSeconds: DEFAULT_STABILITY_WINDOW_SECONDS,
+    });
+
+    for (const pair of pairs) {
+      const startedAt = Date.now();
+      const filePath = join(workDir, `${pair.boardType}-${pair.layoutId}.db`);
+      const result = await exportLayoutSnapshot({
+        sqlClient,
+        boardType: pair.boardType,
+        layoutId: pair.layoutId,
+        filePath,
+        builtAt,
+      });
+
+      const rawBuffer = readFileSync(filePath);
+      const gzipped = gzipSync(rawBuffer);
+      const key = `${SNAPSHOT_KEY_PREFIX}/${pair.boardType}/${pair.layoutId}/${builtAt}.db`;
+
+      if (options.dryRun) {
+        logger.info('[export-snapshots] built (dry-run, not uploaded)', {
+          boardType: pair.boardType,
+          layoutId: pair.layoutId,
+          climbs: result.tables.board_climbs.rowCount,
+          stats: result.tables.board_climb_stats.rowCount,
+          rawBytes: rawBuffer.length,
+          gzipBytes: gzipped.length,
+          durationMs: Date.now() - startedAt,
+        });
+        entries.push(
+          buildManifestEntry(result, {
+            // getPublicUrl instantiates the S3 client, so only call it when S3 is
+            // configured — a dry-run must work with no AWS credentials at all.
+            url: isS3Configured() ? getPublicUrl(key) : `dry-run:${key}`,
+            key,
+            bytes: gzipped.length,
+            contentEncoding: 'gzip',
+          }),
+        );
+      } else {
+        const uploaded = await uploadToS3(gzipped, key, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' });
+        logger.info('[export-snapshots] uploaded', {
+          boardType: pair.boardType,
+          layoutId: pair.layoutId,
+          climbs: result.tables.board_climbs.rowCount,
+          stats: result.tables.board_climb_stats.rowCount,
+          gzipBytes: gzipped.length,
+          key: uploaded.key,
+          durationMs: Date.now() - startedAt,
+        });
+        entries.push(
+          buildManifestEntry(result, {
+            url: uploaded.url,
+            key: uploaded.key,
+            bytes: gzipped.length,
+            contentEncoding: 'gzip',
+          }),
+        );
+      }
+
+      rmSync(filePath, { force: true });
+    }
+
+    const manifest: SnapshotManifest = {
+      formatVersion: SNAPSHOT_MANIFEST_FORMAT_VERSION,
+      generatedAt: new Date().toISOString(),
+      entries,
+    };
+
+    if (options.dryRun) {
+      logger.info('[export-snapshots] dry-run complete — manifest NOT uploaded', {
+        entries: entries.length,
+        totalGzipBytes: entries.reduce((sum, entry) => sum + entry.bytes, 0),
+      });
+    } else {
+      // Manifest LAST: readers see an atomic old-or-new manifest, never a
+      // manifest pointing at artifacts that failed to upload.
+      await uploadToS3(Buffer.from(JSON.stringify(manifest)), MANIFEST_KEY, 'application/json', {
+        cacheControl: MANIFEST_CACHE_CONTROL,
+      });
+      logger.info('[export-snapshots] manifest uploaded — run complete', {
+        entries: entries.length,
+        key: MANIFEST_KEY,
+      });
+    }
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+    await closeReadPool();
+  }
+}
+
+// Only run when executed directly (`node --import tsx .../export-board-snapshots.ts`),
+// never when imported by a test.
+const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
+if (invokedPath === import.meta.url) {
+  runExport(process.argv.slice(2)).catch((error) => {
+    logger.error('[export-snapshots] run failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    process.exitCode = 1;
+  });
+}

@@ -4,6 +4,7 @@ import { isSizeScopedBoard } from '@boardsesh/board-config';
 import { db } from '../../../db/client';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated } from '../shared/helpers';
+import { normalizeRow, toIso, type RawRow } from './row-normalize';
 import {
   validateInput,
   SyncCursorInputSchema,
@@ -46,49 +47,6 @@ const EPOCH_SEQ = '0';
 // every sync query with a NaN interval.
 const parsedStabilityWindow = Number(process.env.SYNC_STABILITY_WINDOW_SECONDS ?? 30);
 const STABILITY_WINDOW_SECONDS = Number.isFinite(parsedStabilityWindow) ? parsedStabilityWindow : 30;
-
-const PG_TIMESTAMP_TEXT = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/;
-
-type RawRow = Record<string, unknown>;
-
-/**
- * Convert a raw postgres-js row into a sync document. The manifest pins every
- * timestamp to ISO-8601 TEXT on the client, but drizzle's postgres-js driver
- * returns `timestamp` columns as 'YYYY-MM-DD HH:MM:SS[.ffffff]' STRINGS (it
- * registers passthrough parsers for OIDs 1114/1184), so both shapes are
- * normalized here — a Date via toISOString, a pg-text timestamp via toIso.
- * Without the string branch, pulled rows and offline-written local rows would
- * mix formats in the same SQLite TEXT column, breaking ordering and the
- * tombstone resurrection guard. int[] columns stay as JS arrays (the mobile
- * upsert JSON-stringifies them); bigint columns stay as-is.
- */
-function normalizeRow(row: RawRow): RawRow {
-  const out: RawRow = {};
-  for (const [key, value] of Object.entries(row)) {
-    if (value instanceof Date) {
-      out[key] = value.toISOString();
-    } else if (typeof value === 'string' && PG_TIMESTAMP_TEXT.test(value)) {
-      out[key] = toIso(value);
-    } else {
-      out[key] = value;
-    }
-  }
-  return out;
-}
-
-function toIso(value: unknown): string {
-  if (value instanceof Date) return value.toISOString();
-  // postgres.js returns `timestamp` (without time zone) columns as
-  // 'YYYY-MM-DD HH:MM:SS[.ffffff]' strings. Normalize textually to ISO-8601
-  // UTC ('T' separator, trailing 'Z') — these columns are written by now() in
-  // UTC — instead of round-tripping through Date, which would apply the
-  // process timezone and clamp microsecond precision. The `::timestamp` cast
-  // on cursor replay ignores the 'Z', so the value round-trips losslessly.
-  const stringValue = String(value);
-  const timestampMatch = PG_TIMESTAMP_TEXT.exec(stringValue);
-  if (timestampMatch) return `${timestampMatch[1]}T${timestampMatch[2]}Z`;
-  return stringValue;
-}
 
 /**
  * Resolve the incoming cursor into the two bound comparison values. Null/absent

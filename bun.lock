@@ -67,6 +67,7 @@
         "@boardsesh/graphql": "*",
         "@boardsesh/gym-claim": "*",
         "@boardsesh/kilter-sync": "*",
+        "@boardsesh/offline-sync": "*",
         "@boardsesh/queue": "*",
         "@boardsesh/shared-schema": "*",
         "@escape.tech/graphql-armor-cost-limit": "^2.4.3",

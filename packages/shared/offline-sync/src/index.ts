@@ -63,6 +63,15 @@ export type { SyncCheckpoint } from './sync/checkpoints';
 export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './sync/table-config';
 export type { TableSyncConfig } from './sync/table-config';
 
+// --- Board-snapshot manifest (Phase 2 export ↔ Phase 3 bootstrap) ----------------
+export { parseSnapshotManifest, SNAPSHOT_MANIFEST_FORMAT_VERSION } from './sync/snapshot-manifest';
+export type {
+  SnapshotManifest,
+  SnapshotManifestEntry,
+  SnapshotTableStats,
+  SnapshotTableName,
+} from './sync/snapshot-manifest';
+
 // --- On-device schema ------------------------------------------------------------
 export { SCHEMA_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
