@@ -34,6 +34,12 @@ export type SnapshotManifestEntry = {
   url: string;
   // Stored (gzip-compressed) object size in bytes.
   bytes: number;
+  // The S3 OBJECT's Content-Encoding — how the bytes are stored at rest, NOT
+  // necessarily what a client receives: an HTTP stack that honours
+  // Content-Encoding (browser/RN fetch) hands back decompressed bytes, while a
+  // straight-to-disk downloader (e.g. expo-file-system) typically writes the
+  // raw gzip stream. Downloaders must sniff the result (gzip magic 0x1f 0x8b)
+  // rather than trust this field for the local file's shape.
   contentEncoding: 'gzip' | 'identity';
   // ISO-8601 UTC build timestamp (the key's basename is this stamp with
   // colons/dots replaced by dashes).

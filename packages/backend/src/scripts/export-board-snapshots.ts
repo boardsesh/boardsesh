@@ -544,6 +544,15 @@ export async function runExport(argv: string[]): Promise<void> {
       boardType: options.boardFilter,
       layoutId: options.layoutFilter,
     });
+    if (pairs.length === 0 && isFilteredRun) {
+      // A filter that matches nothing is an operator error (e.g. --board=kilterr).
+      // Exiting zero here would silently leave the filtered board's artifacts
+      // stale, so fail loudly instead.
+      throw new Error(
+        `--board/--layout filter matched no (board_type, layout_id) pairs with climbs ` +
+          `(board=${options.boardFilter ?? '*'}, layout=${options.layoutFilter ?? '*'})`,
+      );
+    }
     logger.info('[export-snapshots] starting run', {
       dryRun: options.dryRun,
       filtered: isFilteredRun,
