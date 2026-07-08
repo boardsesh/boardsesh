@@ -298,6 +298,54 @@ describe('sync layer — real-DDL integration', () => {
       expect(await readCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(cursor);
     });
 
+    it('board_climb_grades: per-board pull lands composite-PK rows with the synced grade columns', async () => {
+      // Per-board table. queries.ts:syncClimbGrades selects board_type, climb_uuid,
+      // angle, local_grade, universal_grade, grade_low, grade_high, confidence,
+      // ascensionist_count, computed_at, sync_seq (model_version/coeff_version are
+      // NOT synced). universal_grade null exercises the local-only board case
+      // (COALESCE(universal, local) falls back to local_grade on read).
+      const gradeDocument = {
+        board_type: 'kilter',
+        climb_uuid: 'climb-grade-1',
+        angle: 40,
+        local_grade: 21.4,
+        universal_grade: 20.2,
+        grade_low: 19.8,
+        grade_high: 20.6,
+        confidence: 'confirmed',
+        ascensionist_count: 812,
+        computed_at: '2024-05-26T00:00:00Z',
+        sync_seq: 4242,
+      };
+      const cursor = { updatedAt: '2024-05-26T00:00:00Z', syncSeq: '4242' };
+
+      await pullSync(
+        db,
+        queryClient,
+        makeSingleTableFetch({ queryName: 'syncClimbGrades', documents: [gradeDocument], cursor }),
+        { enabledBoards: ['kilter:1:5'] },
+      );
+
+      const row = await db.getFirstAsync<Record<string, unknown>>(
+        'SELECT * FROM board_climb_grades WHERE board_type = ? AND climb_uuid = ? AND angle = ?',
+        ['kilter', 'climb-grade-1', 40],
+      );
+      expect(row).toMatchObject({
+        board_type: 'kilter',
+        climb_uuid: 'climb-grade-1',
+        angle: 40,
+        local_grade: 21.4,
+        universal_grade: 20.2,
+        grade_low: 19.8,
+        grade_high: 20.6,
+        confidence: 'confirmed',
+        ascensionist_count: 812,
+        computed_at: '2024-05-26T00:00:00Z',
+        sync_seq: 4242,
+      });
+      expect(await readCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).toEqual(cursor);
+    });
+
     it('skips an unknown server column (forward compat), lands the row, and reports the drift once', async () => {
       // A backend deploy can add a column before an OTA client update lands, so
       // an unknown key must never brick the sync loop. It is dropped from the

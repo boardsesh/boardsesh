@@ -102,6 +102,39 @@ async function insertStat(db: TestSqliteDb, fixture: StatFixture): Promise<void>
   );
 }
 
+type GradeFixture = {
+  climbUuid: string;
+  boardType?: string;
+  angle?: number;
+  localGrade?: number | null;
+  universalGrade?: number | null;
+  gradeLow?: number | null;
+  gradeHigh?: number | null;
+  confidence?: string | null;
+  ascensionistCount?: number | null;
+};
+
+async function insertGrade(db: TestSqliteDb, fixture: GradeFixture): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO board_climb_grades
+      (board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high, confidence, ascensionist_count, computed_at, sync_seq)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fixture.boardType ?? 'kilter',
+      fixture.climbUuid,
+      fixture.angle ?? 40,
+      fixture.localGrade ?? null,
+      fixture.universalGrade ?? null,
+      fixture.gradeLow ?? null,
+      fixture.gradeHigh ?? null,
+      fixture.confidence ?? 'confirmed',
+      fixture.ascensionistCount ?? null,
+      '2026-01-01T00:00:00Z',
+      1,
+    ],
+  );
+}
+
 async function insertTick(
   db: TestSqliteDb,
   opts: { uuid: string; climbUuid: string; boardType?: string; angle?: number; status: string },
@@ -255,6 +288,58 @@ describe('searchClimbsLocal', () => {
     expect(climb.is_no_match).toBe(true);
     expect(climb.boardType).toBe('kilter');
     expect(climb.angle).toBe(40);
+  });
+
+  it('joins the Boardsesh grade + confidence, preferring universal over local', async () => {
+    await insertClimb(db, { uuid: 'graded' });
+    await insertStat(db, { climbUuid: 'graded', ascensionistCount: 30 });
+    await insertGrade(db, {
+      climbUuid: 'graded',
+      localGrade: 21.4,
+      universalGrade: 20.2,
+      confidence: 'confirmed',
+    });
+
+    const [climb] = (await searchClimbsLocal(db, makeInput())).climbs;
+    // COALESCE(universal, local) → universal wins when present.
+    expect(climb.boardseshDifficulty).toBe(20.2);
+    expect(climb.boardseshConfidence).toBe('confirmed');
+  });
+
+  it('falls back to local_grade when universal_grade is null (unanchored board)', async () => {
+    await insertClimb(db, { uuid: 'local-only' });
+    await insertStat(db, { climbUuid: 'local-only', ascensionistCount: 30 });
+    await insertGrade(db, {
+      climbUuid: 'local-only',
+      localGrade: 18.7,
+      universalGrade: null,
+      confidence: 'provisional',
+    });
+
+    const [climb] = (await searchClimbsLocal(db, makeInput())).climbs;
+    expect(climb.boardseshDifficulty).toBe(18.7);
+    expect(climb.boardseshConfidence).toBe('provisional');
+  });
+
+  it('reads null grade + confidence when no board_climb_grades row is joined', async () => {
+    await insertClimb(db, { uuid: 'ungraded' });
+    await insertStat(db, { climbUuid: 'ungraded', ascensionistCount: 30 });
+    // No insertGrade — the LEFT JOIN misses.
+
+    const [climb] = (await searchClimbsLocal(db, makeInput())).climbs;
+    expect(climb.boardseshDifficulty).toBeNull();
+    expect(climb.boardseshConfidence).toBeNull();
+  });
+
+  it('joins the grade for the requested angle only (a different-angle grade does not leak)', async () => {
+    await insertClimb(db, { uuid: 'multi' });
+    await insertStat(db, { climbUuid: 'multi', ascensionistCount: 30 });
+    // Grade exists only at angle 25; the search runs at angle 40.
+    await insertGrade(db, { climbUuid: 'multi', angle: 25, universalGrade: 15.0 });
+
+    const [climb] = (await searchClimbsLocal(db, makeInput({ angle: 40 }))).climbs;
+    expect(climb.boardseshDifficulty).toBeNull();
+    expect(climb.boardseshConfidence).toBeNull();
   });
 });
 

@@ -26,10 +26,8 @@ import {
   type ClimbStatsHistoryResponse,
   BOARDSESH_GRADE,
   type BoardseshGradeResponse,
-  type BoardseshGradeVariables,
   BOARDSESH_GRADES_FOR_ANGLES,
   type BoardseshGradesForAnglesResponse,
-  type BoardseshGradesForAnglesVariables,
 } from '@boardsesh/graphql/operations';
 import {
   GET_FAVORITES,
@@ -1102,9 +1100,12 @@ export function useBoardseshGrade(
   options?: { enabled?: boolean },
 ) {
   return useQuery({
+    // offlineAwareRequest serves this from local board_climb_grades when the
+    // board type is downloaded (offline, and local-first while online); a
+    // completed board sync invalidates ['boardseshGrade'] to refresh it.
     queryKey: ['boardseshGrade', boardName, climbUuid, angle],
     queryFn: () =>
-      getHttpClient().request<BoardseshGradeResponse, BoardseshGradeVariables>(BOARDSESH_GRADE, {
+      offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, {
         boardName,
         climbUuid: climbUuid!,
         angle,
@@ -1127,15 +1128,14 @@ export function useBoardseshGradesForAngles(
   options?: { enabled?: boolean },
 ) {
   return useQuery({
+    // Local-first via offlineAwareRequest (reads all synced angles from
+    // board_climb_grades when the board type is downloaded).
     queryKey: ['boardseshGradesForAngles', boardName, climbUuid],
     queryFn: () =>
-      getHttpClient().request<BoardseshGradesForAnglesResponse, BoardseshGradesForAnglesVariables>(
-        BOARDSESH_GRADES_FOR_ANGLES,
-        {
-          boardName,
-          climbUuid: climbUuid!,
-        },
-      ),
+      offlineAwareRequest<BoardseshGradesForAnglesResponse>(BOARDSESH_GRADES_FOR_ANGLES, {
+        boardName,
+        climbUuid: climbUuid!,
+      }),
     select: (data) => data.boardseshGradesForAngles,
     enabled: (options?.enabled ?? true) && !!climbUuid,
     staleTime: 5 * 60 * 1000,

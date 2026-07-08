@@ -394,3 +394,16 @@ node --import tsx packages/db/scripts/refresh-climb-grades.ts --refit-coefficien
   `board_climb_grades` row exists (MoonBoard, or too few ascents) — and
   clients fall back to the legacy consensus/Aurora grade in that case (and
   when `boardseshConfidence` is `setter_only`).
+- **On-device (mobile offline).** When a board is downloaded for offline
+  browsing (the `offline-board-downloads` flag), `board_climb_grades` is synced
+  to on-device SQLite alongside `board_climbs`/`board_climb_stats`. The pull is
+  the per-board `syncClimbGrades` resolver + the `board_climb_grades`
+  `table-config`/DDL (v4 migration) entries — see `docs/sync-table-manifest.md`
+  for the resolver ↔ DDL ↔ table-config contract. Only the surfaced columns are
+  synced (`local_grade`, `universal_grade`, `grade_low`/`grade_high`,
+  `confidence`, `ascensionist_count`, `computed_at`) — **not** `model_version`,
+  `coeff_version`, or `content_prior`. Offline climb search + detail LEFT JOIN
+  the table and expose the same `boardseshDifficulty`/`boardseshConfidence`
+  fields the server does, and the play-drawer grade section + by-angle chart
+  read the `boardseshGrade`/`boardseshGradesForAngles` ops local-first from it,
+  so the grade works with no network.

@@ -392,9 +392,10 @@ export async function pullSync(
       );
       if (!reachedTail) allTablesReachedTail = false;
     }
-    // Gate for local-first reads: only a scope whose climbs AND stats have both
-    // pulled to the tail may serve searches — a first-page checkpoint would
-    // otherwise serve a sliver of the catalog as if it were everything.
+    // Gate for local-first reads: only a scope whose climbs, stats AND grades
+    // (every BOARD_DATA_TABLES entry) have all pulled to the tail may serve
+    // searches — a first-page checkpoint would otherwise serve a sliver of the
+    // catalog as if it were everything.
     if (allTablesReachedTail) {
       await markScopeDownloadComplete(db, scopeKey);
     }

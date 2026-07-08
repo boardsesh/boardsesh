@@ -5,8 +5,17 @@ import { getDatabaseHandle } from '../../db';
 import { isOfflineEngineEnabled } from '../offline-engine';
 import { searchClimbsLocal, countClimbsLocal, isOfflineSearchSupported } from '../../db/queries/search-climbs-local';
 import { getClimbLocal } from '../../db/queries/get-climb-local';
-import { isBoardDownloadedLocally } from '../../db/queries/board-download-status';
+import { getBoardseshGradeLocal, getBoardseshGradesForAnglesLocal } from '../../db/queries/get-boardsesh-grade-local';
+import { isBoardDownloadedLocally, isBoardTypeDownloadedLocally } from '../../db/queries/board-download-status';
 import { getHttpClient } from './client';
+import {
+  BOARDSESH_GRADE,
+  BOARDSESH_GRADES_FOR_ANGLES,
+  type BoardseshGradeVariables,
+  type BoardseshGradeResponse,
+  type BoardseshGradesForAnglesVariables,
+  type BoardseshGradesForAnglesResponse,
+} from '@boardsesh/graphql/operations';
 import {
   SEARCH_CLIMBS,
   SEARCH_CLIMBS_COUNT,
@@ -97,6 +106,32 @@ registerOfflineOperation<GetClimbQueryVariables, GetClimbQueryResponse>({
   }),
   offlineFallback: () => ({ climb: null }),
   isLocalMiss: (response) => response.climb === null,
+});
+
+// Boardsesh grade reads. These carry only boardName (+ climbUuid + angle), no
+// layout/size, so they gate on the board TYPE being downloaded and then read
+// board_climb_grades by the exact key. A single-row null is a local miss (the
+// row may just not have synced, or the climb is from a non-downloaded scope of
+// the same board type) → retried over the network while online. The by-angle
+// list treats an empty result as a real answer (a MoonBoard / no-grade climb),
+// exactly like an empty search — no needless network retry.
+registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
+  document: BOARDSESH_GRADE,
+  canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
+  resolveLocal: async (db, { boardName, climbUuid, angle }) => ({
+    boardseshGrade: await getBoardseshGradeLocal(db, { boardName, climbUuid, angle }),
+  }),
+  offlineFallback: () => ({ boardseshGrade: null }),
+  isLocalMiss: (response) => response.boardseshGrade === null,
+});
+
+registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAnglesResponse>({
+  document: BOARDSESH_GRADES_FOR_ANGLES,
+  canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),
+  resolveLocal: async (db, { boardName, climbUuid }) => ({
+    boardseshGradesForAngles: await getBoardseshGradesForAnglesLocal(db, { boardName, climbUuid }),
+  }),
+  offlineFallback: () => ({ boardseshGradesForAngles: [] }),
 });
 
 /**

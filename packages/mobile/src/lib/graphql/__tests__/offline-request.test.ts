@@ -13,29 +13,42 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 const {
   getDatabaseHandle,
   isBoardDownloadedLocally,
+  isBoardTypeDownloadedLocally,
   searchClimbsLocal,
   countClimbsLocal,
   isOfflineSearchSupported,
   getClimbLocal,
+  getBoardseshGradeLocal,
+  getBoardseshGradesForAnglesLocal,
   request,
 } = vi.hoisted(() => ({
   getDatabaseHandle: vi.fn(),
   isBoardDownloadedLocally: vi.fn(),
+  isBoardTypeDownloadedLocally: vi.fn(),
   searchClimbsLocal: vi.fn(),
   countClimbsLocal: vi.fn(),
   isOfflineSearchSupported: vi.fn(),
   getClimbLocal: vi.fn(),
+  getBoardseshGradeLocal: vi.fn(),
+  getBoardseshGradesForAnglesLocal: vi.fn(),
   request: vi.fn(),
 }));
 
 vi.mock('../../../db', () => ({ getDatabaseHandle }));
-vi.mock('../../../db/queries/board-download-status', () => ({ isBoardDownloadedLocally }));
+vi.mock('../../../db/queries/board-download-status', () => ({
+  isBoardDownloadedLocally,
+  isBoardTypeDownloadedLocally,
+}));
 vi.mock('../../../db/queries/search-climbs-local', () => ({
   searchClimbsLocal,
   countClimbsLocal,
   isOfflineSearchSupported,
 }));
 vi.mock('../../../db/queries/get-climb-local', () => ({ getClimbLocal }));
+vi.mock('../../../db/queries/get-boardsesh-grade-local', () => ({
+  getBoardseshGradeLocal,
+  getBoardseshGradesForAnglesLocal,
+}));
 vi.mock('../client', () => ({ getHttpClient: () => ({ request }) }));
 
 const fakeDb = { tag: 'db' };
@@ -51,6 +64,12 @@ import {
   type GetClimbQueryResponse,
   type GetClimbQueryVariables,
 } from '../operations';
+import {
+  BOARDSESH_GRADE,
+  BOARDSESH_GRADES_FOR_ANGLES,
+  type BoardseshGradeResponse,
+  type BoardseshGradesForAnglesResponse,
+} from '@boardsesh/graphql/operations';
 
 const searchInput: ClimbSearchInput = { boardName: 'kilter', layoutId: 1, sizeId: 5, setIds: '', angle: 40 };
 const climbVars: GetClimbQueryVariables = {
@@ -60,6 +79,18 @@ const climbVars: GetClimbQueryVariables = {
   setIds: '',
   angle: 40,
   climbUuid: 'c1',
+};
+const gradeVars = { boardName: 'kilter', climbUuid: 'c1', angle: 40 };
+const gradesForAnglesVars = { boardName: 'kilter', climbUuid: 'c1' };
+const localGrade = {
+  localGrade: 20,
+  universalGrade: 19,
+  gradeLow: 18,
+  gradeHigh: 20,
+  confidence: 'confirmed',
+  ascensionistCount: 30,
+  modelVersion: 'offline',
+  computedAt: '2026-01-01T00:00:00Z',
 };
 
 function setOnline(online: boolean) {
@@ -78,9 +109,14 @@ beforeEach(() => {
   searchClimbsLocal.mockResolvedValue({ climbs: [{ uuid: 'local' }], hasMore: false });
   countClimbsLocal.mockResolvedValue(7);
   getClimbLocal.mockResolvedValue({ uuid: 'local-detail' });
+  isBoardTypeDownloadedLocally.mockResolvedValue(true);
+  getBoardseshGradeLocal.mockResolvedValue(localGrade);
+  getBoardseshGradesForAnglesLocal.mockResolvedValue([{ angle: 40, ...localGrade }]);
   request.mockResolvedValue({
     searchClimbs: { climbs: [{ uuid: 'net' }], hasMore: true, totalCount: 99 },
     climb: { uuid: 'net-detail' },
+    boardseshGrade: { ...localGrade, modelVersion: 'v1', localGrade: 99 },
+    boardseshGradesForAngles: [{ angle: 40, ...localGrade, modelVersion: 'v1', localGrade: 99 }],
   });
 });
 
@@ -281,6 +317,105 @@ describe('offlineAwareRequest — empty search results are answers, not misses',
     const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
     expect(result).toEqual({ searchClimbs: { climbs: [], hasMore: false } });
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('offlineAwareRequest — BOARDSESH_GRADE', () => {
+  it('reads the grade locally when the board type is downloaded (online, local-first)', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, gradeVars);
+    expect(result).toEqual({ boardseshGrade: localGrade });
+    expect(getBoardseshGradeLocal).toHaveBeenCalledWith(fakeDb, gradeVars);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('serves the grade from local SQLite while offline', async () => {
+    setOnline(false);
+    const result = await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, gradeVars);
+    expect(result.boardseshGrade?.confidence).toBe('confirmed');
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the network when the board type is not downloaded (online)', async () => {
+    setOnline(true);
+    isBoardTypeDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, gradeVars);
+    expect(result.boardseshGrade?.modelVersion).toBe('v1');
+    expect(getBoardseshGradeLocal).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(BOARDSESH_GRADE, gradeVars);
+  });
+
+  it('retries a local miss over the network while online (row not synced / wrong scope)', async () => {
+    setOnline(true);
+    getBoardseshGradeLocal.mockResolvedValue(null);
+    const result = await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, gradeVars);
+    expect(result.boardseshGrade?.modelVersion).toBe('v1');
+    expect(getBoardseshGradeLocal).toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(BOARDSESH_GRADE, gradeVars);
+  });
+
+  it('lets a local miss stand while offline — { boardseshGrade: null }, no doomed network call', async () => {
+    setOnline(false);
+    getBoardseshGradeLocal.mockResolvedValue(null);
+    const result = await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, gradeVars);
+    expect(result).toEqual({ boardseshGrade: null });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('returns { boardseshGrade: null } when offline with no local data', async () => {
+    setOnline(false);
+    isBoardTypeDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<BoardseshGradeResponse>(BOARDSESH_GRADE, gradeVars);
+    expect(result).toEqual({ boardseshGrade: null });
+    expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('offlineAwareRequest — BOARDSESH_GRADES_FOR_ANGLES', () => {
+  it('reads all angles locally when the board type is downloaded (online)', async () => {
+    setOnline(true);
+    const result = await offlineAwareRequest<BoardseshGradesForAnglesResponse>(
+      BOARDSESH_GRADES_FOR_ANGLES,
+      gradesForAnglesVars,
+    );
+    expect(result.boardseshGradesForAngles).toHaveLength(1);
+    expect(result.boardseshGradesForAngles[0].angle).toBe(40);
+    expect(getBoardseshGradesForAnglesLocal).toHaveBeenCalledWith(fakeDb, gradesForAnglesVars);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('does not retry an empty local list over the network — an empty result is an answer (no grades)', async () => {
+    setOnline(true);
+    getBoardseshGradesForAnglesLocal.mockResolvedValue([]);
+    const result = await offlineAwareRequest<BoardseshGradesForAnglesResponse>(
+      BOARDSESH_GRADES_FOR_ANGLES,
+      gradesForAnglesVars,
+    );
+    expect(result).toEqual({ boardseshGradesForAngles: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('returns the empty list when offline with no local data', async () => {
+    setOnline(false);
+    isBoardTypeDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<BoardseshGradesForAnglesResponse>(
+      BOARDSESH_GRADES_FOR_ANGLES,
+      gradesForAnglesVars,
+    );
+    expect(result).toEqual({ boardseshGradesForAngles: [] });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the network when the board type is not downloaded (online)', async () => {
+    setOnline(true);
+    isBoardTypeDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<BoardseshGradesForAnglesResponse>(
+      BOARDSESH_GRADES_FOR_ANGLES,
+      gradesForAnglesVars,
+    );
+    expect(result.boardseshGradesForAngles[0].modelVersion).toBe('v1');
+    expect(getBoardseshGradesForAnglesLocal).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith(BOARDSESH_GRADES_FOR_ANGLES, gradesForAnglesVars);
   });
 });
 

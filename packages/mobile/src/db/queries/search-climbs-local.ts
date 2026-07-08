@@ -124,9 +124,15 @@ function buildJoinAndWhere(input: ClimbSearchInput): JoinAndWhere {
   const setIds = parseSetIds(input.setIds);
   const isMoonboard = boardType === 'moonboard';
 
-  const joinBinds: Bind[] = [boardType, angle];
+  // Stats drive grade/quality/ascents; grades add the Boardsesh grade + confidence
+  // for the requested angle (mirrors the server's board_climb_grades LEFT JOIN). Both
+  // are LEFT JOINs on (climb_uuid, board_type, angle) — one row each via their PK — so
+  // they never multiply the result set, and a climb with no grade row reads null.
+  const joinBinds: Bind[] = [boardType, angle, boardType, angle];
   const joinSql = `LEFT JOIN board_climb_stats s
-    ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?`;
+    ON s.climb_uuid = c.uuid AND s.board_type = ? AND s.angle = ?
+    LEFT JOIN board_climb_grades g
+    ON g.climb_uuid = c.uuid AND g.board_type = ? AND g.angle = ?`;
 
   const conditions: string[] = [];
   const whereBinds: Bind[] = [];
@@ -315,6 +321,10 @@ export type LocalClimbRow = {
   benchmark_difficulty: number | null;
   user_ascents: number | null;
   user_attempts: number | null;
+  /** COALESCE(universal_grade, local_grade) from board_climb_grades; null when unjoined. */
+  boardsesh_difficulty: number | null;
+  /** Boardsesh grade confidence tier from board_climb_grades; null when unjoined. */
+  boardsesh_confidence: string | null;
   /** Selected by the detail read; absent (undefined) for search rows. */
   description?: string | null;
 };
@@ -361,6 +371,11 @@ export function mapRowToClimb(row: LocalClimbRow, boardType: string, layoutId: n
     userAttempts: Number(row.user_attempts ?? 0),
     framesCount: row.frames_count ?? null,
     framesPace: row.frames_pace ?? null,
+    // Boardsesh grade (COALESCE(universal, local)) + confidence tier for this
+    // angle. Null when no board_climb_grades row is joined (MoonBoard, too few
+    // ascents); the UI keeps the Aurora grade then, exactly like the server.
+    boardseshDifficulty: row.boardsesh_difficulty ?? null,
+    boardseshConfidence: row.boardsesh_confidence ?? null,
   };
 }
 
@@ -397,6 +412,8 @@ export async function searchClimbsLocal(db: OfflineDatabase, input: ClimbSearchI
       c.created_at, c.published_at, c.frames_count, c.frames_pace,
       s.ascensionist_count, s.display_difficulty, s.difficulty_average, s.quality_average,
       s.benchmark_difficulty,
+      COALESCE(g.universal_grade, g.local_grade) AS boardsesh_difficulty,
+      g.confidence AS boardsesh_confidence,
       ${userAscentsSelect},
       ${userAttemptsSelect}${popularSelect}
     FROM board_climbs c

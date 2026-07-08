@@ -139,6 +139,43 @@ describe('runMigrations', () => {
     expect(upgradedIndex?.name).toBe('idx_ticks_board_climbed_at');
   });
 
+  it('v4 creates board_climb_grades with its manifest PK + columns, on fresh and on v3-stamped databases', async () => {
+    const pkQuery = async (database: ReturnType<typeof createTestDatabase>) =>
+      primaryKeyColumns(database, 'board_climb_grades');
+
+    // Fresh install: the full migration chain lands the grade table.
+    const freshDb = createTestDatabase();
+    await runMigrations(freshDb);
+    expect(await listTables(freshDb)).toContain('board_climb_grades');
+    expect(await pkQuery(freshDb)).toEqual(['board_type', 'climb_uuid', 'angle']);
+    const columns = await tableColumns(freshDb, 'board_climb_grades');
+    for (const column of [
+      'board_type',
+      'climb_uuid',
+      'angle',
+      'local_grade',
+      'universal_grade',
+      'grade_low',
+      'grade_high',
+      'confidence',
+      'ascensionist_count',
+      'computed_at',
+      'sync_seq',
+    ]) {
+      expect(columns, `board_climb_grades.${column}`).toContain(column);
+    }
+
+    // Existing install stamped at v3 (grade table dropped to simulate the pre-v4
+    // state): only the pending v4 migration applies and re-creates it.
+    const upgradedDb = createTestDatabase();
+    await runMigrations(upgradedDb);
+    await upgradedDb.execAsync('DROP TABLE board_climb_grades');
+    await upgradedDb.runAsync('UPDATE schema_version SET version = 3 WHERE id = 1');
+    await runMigrations(upgradedDb);
+    expect(await listTables(upgradedDb)).toContain('board_climb_grades');
+    expect(await pkQuery(upgradedDb)).toEqual(['board_type', 'climb_uuid', 'angle']);
+  });
+
   it('applies a newly appended migration on top of an older version', async () => {
     const db = createTestDatabase();
 

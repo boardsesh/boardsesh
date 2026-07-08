@@ -1,6 +1,7 @@
 import { isSizeScopedBoard } from '@boardsesh/board-config';
 import {
   offlineBoardKey,
+  parseOfflineBoardKey,
   isScopeDownloadComplete,
   type OfflineBoardScope,
   type OfflineDatabase,
@@ -40,4 +41,26 @@ export async function isBoardDownloadedLocally(db: OfflineDatabase, scope: Offli
     params,
   );
   return (row?.has_rows ?? 0) === 1;
+}
+
+/**
+ * Whether ANY (layout, size) scope of a board TYPE has a completed download.
+ * The Boardsesh-grade queries (`boardseshGrade` / `boardseshGradesForAngles`)
+ * carry only `boardName` + `climbUuid` (+ angle) — no layout/size — so they gate
+ * on the board type, then read `board_climb_grades` by the exact (board_type,
+ * climb_uuid, angle) key. A viewed climb from a non-downloaded scope of the same
+ * board type simply misses (null row), and the single-row miss retries over the
+ * network while online (see offline-request's isLocalMiss).
+ *
+ * `getSetting` (react-native-mmkv) is imported lazily for the same reason as
+ * `isBoardDownloadedLocally` above — keep the MMKV/Flow entry out of the test
+ * collection-time module scan.
+ */
+export async function isBoardTypeDownloadedLocally(db: OfflineDatabase, boardType: string): Promise<boolean> {
+  const { getSetting } = await import('../../settings/hooks');
+  for (const scopeKey of getSetting('syncEnabledBoards')) {
+    if (parseOfflineBoardKey(scopeKey)?.boardType !== boardType) continue;
+    if (await isScopeDownloadComplete(db, scopeKey)) return true;
+  }
+  return false;
 }

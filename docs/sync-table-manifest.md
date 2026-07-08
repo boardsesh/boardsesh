@@ -80,6 +80,13 @@ type Query {
     cursor: SyncCursorInput
     limit: Int! = 500
   ): SyncResult!
+  syncClimbGrades(
+    boardType: String!
+    layoutId: Int
+    sizeId: Int
+    cursor: SyncCursorInput
+    limit: Int! = 500
+  ): SyncResult!
   syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
 }
 
@@ -110,7 +117,9 @@ ORDER BY updated_at ASC, <seq> ASC
 LIMIT $limit
 ```
 
-`<seq>` is `id` (bigserial) for user tables, `sync_seq` (new bigserial) for `board_climbs`/`board_climb_stats`.
+`<seq>` is `id` (bigserial) for user tables, `sync_seq` (new bigserial) for
+`board_climbs`/`board_climb_stats`/`board_climb_grades`. `board_climb_grades` uses `computed_at`
+(not `updated_at`) as the cursor timestamp.
 Returned `cursor.syncSeq` is that value **stringified**. First call: `cursor` is null → start from
 `('1970-01-01T00:00:00.000Z', 0)` (a value the cursor validator accepts back — `'epoch'` would be rejected on replay).
 `hasMore = (rows.length === limit)`. The cursor `updatedAt` is the last row's `updated_at` ISO string.
@@ -251,6 +260,29 @@ AND bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the stats table h
 - Del: trigger emits `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs) — matches the doc. `user_id = NULL`.
 - Columns: `board_type`, `climb_uuid`, `angle`, `display_difficulty`, `benchmark_difficulty`, `ascensionist_count`,
   `difficulty_average`, `quality_average`, `fa_username`, `fa_at`, `updated_at`, `sync_seq`.
+
+### `board_climb_grades` — `syncClimbGrades(boardType, layoutId?, sizeId?)` (board data, per-board)
+
+- The nightly data-science Boardsesh grade (docs/boardsesh-grade.md). Scope: `board_type = $boardType`
+  [`AND EXISTS (board_climbs bc WHERE bc.uuid = climb_uuid AND bc.layout_id = $layoutId AND
+bc.compatible_size_ids @> ARRAY[$sizeId])` when scoped — the grades table has no `layout_id`, so it correlates
+  back to `board_climbs`, identical to `board_climb_stats`]. Seq: **`sync_seq`**. **Cursor timestamp: `computed_at`**
+  (this table has no `updated_at`). Hook: no.
+- Local PK: **`(board_type, climb_uuid, angle)`**. table-config: `['board_type','climb_uuid','angle']`.
+- Del: no deletion trigger today — grades are bulk-refreshed reference data (a full nightly recompute), not user
+  writes. Because `localColumns` omits `updated_at`, the client's tombstone resurrection guard is a no-op for this
+  table (a future grade tombstone would delete unconditionally — safe for reference data). If per-row grade
+  deletions are ever added, encode `record_id = OLD.board_type:OLD.climb_uuid:OLD.angle` (3 segs), `user_id = NULL`.
+- Columns: `board_type`, `climb_uuid`, `angle`, `local_grade` (REAL), `universal_grade` (REAL, NULL when
+  unanchorable), `grade_low`, `grade_high` (REAL), `confidence` (TEXT tier), `ascensionist_count` (INTEGER snapshot),
+  `computed_at` (ISO cursor timestamp), `sync_seq`. **`model_version`/`coeff_version`/`content_prior` are NOT synced**
+  — the device only needs the surfaced grade + band.
+- Local reads: the SQLite DDL adds this table in **migration v4** (a new-table CREATE, kept in migrations.ts like the
+  v2 ALTER / v3 index, NOT in v1's SCHEMA_STATEMENTS). `search-climbs-local.ts` / `get-climb-local.ts` LEFT JOIN it on
+  `(board_type, climb_uuid, angle)` and surface `boardsesh_difficulty = COALESCE(universal_grade, local_grade)` +
+  `boardsesh_confidence`. The `boardseshGrade` / `boardseshGradesForAngles` GraphQL ops are served local-first from
+  it (mobile `get-boardsesh-grade-local.ts` + the `offline-request.ts` registrations); those ops carry no
+  layout/size, so they gate on the board TYPE being downloaded and treat a single-row miss as a network-retry.
 
 ### `user_playlist_pins` — NOT synced
 

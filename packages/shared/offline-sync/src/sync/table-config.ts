@@ -153,6 +153,44 @@ export const TABLE_CONFIGS: Record<string, TableSyncConfig> = {
       'sync_seq',
     ],
   },
+  board_climb_grades: {
+    queryName: 'syncClimbGrades',
+    // operationKey is a label only — the pull client builds the query from
+    // queryName (buildSyncQuery), so no separate registered SYNC_CLIMB_GRADES
+    // document is needed, exactly like SYNC_CLIMB_STATS.
+    operationKey: 'SYNC_CLIMB_GRADES',
+    isPerBoard: true,
+    // The stats keys (so a grade pull refreshes the same list/detail readers)
+    // PLUS the two grade-specific query keys the play-drawer grade section and
+    // by-angle chart read (['boardseshGrade'] / ['boardseshGradesForAngles']).
+    invalidateKeys: [
+      ['searchClimbs'],
+      ['infiniteSearchClimbs'],
+      ['searchClimbsCount'],
+      ['climb'],
+      ['boardseshGrade'],
+      ['boardseshGradesForAngles'],
+    ],
+    primaryKeyColumns: ['board_type', 'climb_uuid', 'angle'],
+    // Matches the syncClimbGrades selectList (packages/backend/.../sync/queries.ts):
+    // model_version/coeff_version/content_prior are NOT pulled — the device only
+    // needs the surfaced grade + band. The timestamp column is computed_at, not
+    // updated_at (so the deletion resurrection guard is a no-op for grades — grades
+    // are bulk-refreshed reference data, not user writes).
+    localColumns: [
+      'board_type',
+      'climb_uuid',
+      'angle',
+      'local_grade',
+      'universal_grade',
+      'grade_low',
+      'grade_high',
+      'confidence',
+      'ascensionist_count',
+      'computed_at',
+      'sync_seq',
+    ],
+  },
 };
 
 export const USER_DATA_TABLES = Object.entries(TABLE_CONFIGS)

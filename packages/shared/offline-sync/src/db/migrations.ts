@@ -41,6 +41,34 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_ticks_board_climbed_at ON boardsesh_ticks (board_type, climbed_at DESC);',
     ],
   },
+  {
+    // Boardsesh grade (the nightly data-science per-climb+angle grade). A new
+    // per-board reference table, so it's a v4 CREATE rather than an edit to v1's
+    // SCHEMA_STATEMENTS (which would be editing a shipped migration). Columns +
+    // types mirror board_climb_stats' declaration in schema.ts and the syncClimbGrades
+    // resolver's selectList (docs/sync-table-manifest.md): grades are floats (REAL),
+    // ascensionist_count an INTEGER snapshot, computed_at the ISO cursor timestamp,
+    // sync_seq the bigserial cursor. PK (board_type, climb_uuid, angle) matches the
+    // table-config primaryKeyColumns so INSERT OR REPLACE dedupes on re-sync. Kept
+    // inline (not added to SCHEMA_STATEMENTS) exactly like the v2 ALTER and v3 index.
+    version: 4,
+    statements: [
+      `CREATE TABLE IF NOT EXISTS board_climb_grades (
+  board_type TEXT NOT NULL,
+  climb_uuid TEXT NOT NULL,
+  angle INTEGER NOT NULL,
+  local_grade REAL,
+  universal_grade REAL,
+  grade_low REAL,
+  grade_high REAL,
+  confidence TEXT,
+  ascensionist_count INTEGER,
+  computed_at TEXT,
+  sync_seq INTEGER,
+  PRIMARY KEY (board_type, climb_uuid, angle)
+);`,
+    ],
+  },
 ];
 
 const SCHEMA_VERSION_TABLE = `
