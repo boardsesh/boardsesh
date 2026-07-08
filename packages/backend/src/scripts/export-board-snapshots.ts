@@ -365,17 +365,23 @@ export async function exportLayoutSnapshot(params: {
 
 type ExportOptions = {
   dryRun: boolean;
+  // Off by default: upload artifacts uncompressed until transparent
+  // Content-Encoding: gzip decode is verified on-device (see the encoding
+  // comment in the pair loop).
+  gzip: boolean;
   boardFilter?: string;
   layoutFilter?: number;
 };
 
 function parseArgs(argv: string[]): ExportOptions {
-  const options: ExportOptions = { dryRun: false };
+  const options: ExportOptions = { dryRun: false, gzip: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue; // vp forwards a literal `--` into argv
     if (arg === '--dry-run') {
       options.dryRun = true;
+    } else if (arg === '--gzip') {
+      options.gzip = true;
     } else if (arg === '--board') {
       options.boardFilter = argv[(index += 1)];
     } else if (arg.startsWith('--board=')) {
@@ -614,7 +620,15 @@ export async function runExport(argv: string[]): Promise<void> {
         });
 
         const rawBuffer = readFileSync(filePath);
-        const gzipped = gzipSync(rawBuffer);
+        // Encoding default is IDENTITY until transparent Content-Encoding: gzip
+        // decode is verified on-device for both platforms: straight-to-disk
+        // downloaders (expo-file-system) may write the raw gzip stream, and the
+        // client treats a gzip-on-disk artifact as a failed download (it has no
+        // JS gunzip). The manifest's contentEncoding field keeps the client
+        // agnostic, so flipping to --gzip later needs no app update. See
+        // docs/board-snapshots.md.
+        const uploadBody = options.gzip ? gzipSync(rawBuffer) : rawBuffer;
+        const contentEncoding = options.gzip ? ('gzip' as const) : ('identity' as const);
         // Colon-free key stamp: ISO colons are legal in S3 keys but historically
         // trip CDNs/URL parsers, and getPublicUrl does no percent-encoding.
         const keyStamp = builtAt.replace(/[:.]/g, '-');
@@ -627,7 +641,8 @@ export async function runExport(argv: string[]): Promise<void> {
             climbs: result.tables.board_climbs.rowCount,
             stats: result.tables.board_climb_stats.rowCount,
             rawBytes: rawBuffer.length,
-            gzipBytes: gzipped.length,
+            uploadBytes: uploadBody.length,
+            contentEncoding,
             durationMs: Date.now() - startedAt,
           });
           newEntries.push(
@@ -636,18 +651,24 @@ export async function runExport(argv: string[]): Promise<void> {
               // configured — a dry-run must work with no AWS credentials at all.
               url: isS3Configured() ? getPublicUrl(key) : `dry-run:${key}`,
               key,
-              bytes: gzipped.length,
-              contentEncoding: 'gzip',
+              bytes: uploadBody.length,
+              contentEncoding,
             }),
           );
         } else {
-          const uploaded = await uploadToS3(gzipped, key, ARTIFACT_CONTENT_TYPE, { contentEncoding: 'gzip' });
+          const uploaded = await uploadToS3(
+            uploadBody,
+            key,
+            ARTIFACT_CONTENT_TYPE,
+            options.gzip ? { contentEncoding: 'gzip' } : undefined,
+          );
           logger.info('[export-snapshots] uploaded', {
             boardType: pair.boardType,
             layoutId: pair.layoutId,
             climbs: result.tables.board_climbs.rowCount,
             stats: result.tables.board_climb_stats.rowCount,
-            gzipBytes: gzipped.length,
+            uploadBytes: uploadBody.length,
+            contentEncoding,
             key: uploaded.key,
             durationMs: Date.now() - startedAt,
           });
@@ -655,8 +676,8 @@ export async function runExport(argv: string[]): Promise<void> {
             buildManifestEntry(result, {
               url: uploaded.url,
               key: uploaded.key,
-              bytes: gzipped.length,
-              contentEncoding: 'gzip',
+              bytes: uploadBody.length,
+              contentEncoding,
             }),
           );
         }
