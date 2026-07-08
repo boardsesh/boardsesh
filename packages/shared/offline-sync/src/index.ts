@@ -46,6 +46,20 @@ export { isRetryable, isNetworkError, getErrorStatus } from './mutation-queue/er
 // --- Pull sync -----------------------------------------------------------------
 export { pullSync, toSqliteValue, multiRowChunkSize } from './sync/pull-client';
 export type { SyncProgress, SyncOptions, SchemaDriftReporter } from './sync/pull-client';
+export {
+  bootstrapScopeFromSnapshot,
+  getBootstrapAttempts,
+  recordBootstrapAttempt,
+  markBootstrapDone,
+  isBootstrapDone,
+  MAX_BOOTSTRAP_ATTEMPTS,
+  SnapshotWipedError,
+} from './sync/snapshot-bootstrap';
+export type {
+  SnapshotSource,
+  SnapshotBootstrapResult,
+  SnapshotBootstrapErrorReporter,
+} from './sync/snapshot-bootstrap';
 export { startSyncScheduler, triggerSync } from './sync/sync-scheduler';
 export type { SyncProgressSink, SchedulerTriggers, SchedulerOptions, DrainQueue } from './sync/sync-scheduler';
 export {
@@ -58,6 +72,9 @@ export {
   markScopeDownloadComplete,
   isScopeDownloadComplete,
   getDownloadedScopeKeys,
+  rewindDeletionsCheckpoint,
+  compareCheckpoints,
+  DELETIONS_CHECKPOINT_KEY,
 } from './sync/checkpoints';
 export type { SyncCheckpoint } from './sync/checkpoints';
 export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './sync/table-config';

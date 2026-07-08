@@ -1,7 +1,24 @@
 import type { OfflineDatabase, QueryInvalidator, SqlValue } from '../database';
 import type { SyncCursorInput, SyncResult, SyncDeletionsResult } from '../types';
 import { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './table-config';
-import { getCheckpoint, setCheckpoint, getCheckpointKey, markScopeDownloadComplete } from './checkpoints';
+import {
+  getCheckpoint,
+  setCheckpoint,
+  getCheckpointKey,
+  markScopeDownloadComplete,
+  DELETIONS_CHECKPOINT_KEY,
+} from './checkpoints';
+import {
+  bootstrapScopeFromSnapshot,
+  getBootstrapAttempts,
+  recordBootstrapAttempt,
+  markBootstrapDone,
+  MAX_BOOTSTRAP_ATTEMPTS,
+  SnapshotWipedError,
+  type SnapshotSource,
+  type SnapshotBootstrapErrorReporter,
+} from './snapshot-bootstrap';
+import { parseSnapshotManifest, type SnapshotManifest } from './snapshot-manifest';
 import { isSigningOut, getWipeEpoch } from '../mutation-queue/drainer';
 import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 
@@ -13,7 +30,7 @@ import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-k
 export type SchemaDriftReporter = (drift: { tableName: string; column: string }) => void;
 
 export type SyncProgress = {
-  phase: 'user_data' | 'board_data' | 'deletions' | 'idle';
+  phase: 'bootstrap' | 'user_data' | 'board_data' | 'deletions' | 'idle';
   currentTable: string | null;
   documentsProcessed: number;
   /**
@@ -34,6 +51,14 @@ export type SyncOptions = {
   enabledBoards?: string[];
   onProgress?: (progress: SyncProgress) => void;
   onSchemaDrift?: SchemaDriftReporter;
+  /**
+   * Injected snapshot I/O. When present, an eligible fresh board scope is warmed
+   * from a pre-built artifact before the paged crawl (see the bootstrap phase in
+   * pullSync). Omitted → behaviour is identical to a pure paged pull.
+   */
+  snapshotSource?: SnapshotSource;
+  /** Telemetry for a counted bootstrap failure (manifest/download/import). */
+  onSnapshotBootstrapError?: SnapshotBootstrapErrorReporter;
 };
 
 /** A per-board download target: the parsed scope plus its encoded key. */
@@ -277,7 +302,7 @@ async function processDeletions(
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
   onProgress?: (documentsProcessed: number) => void,
 ): Promise<void> {
-  const checkpointKey = 'checkpoint:deletions';
+  const checkpointKey = DELETIONS_CHECKPOINT_KEY;
   const checkpoint = await getCheckpoint(db, checkpointKey);
 
   let cursor: SyncCursorInput | undefined = checkpoint
@@ -374,6 +399,153 @@ async function processDeletions(
   }
 }
 
+// The manifest is fetched at most once per pullSync run and its outcome cached
+// across scopes. `absent` = no usable manifest THIS cycle (missing 404 or
+// unparseable) → a permanent miss that burns NO attempt (a layout not yet
+// exported must not disqualify bootstrap two cycles from now). `error` = a
+// transport failure reaching the manifest → a counted attempt, retried next
+// cycle. `ok` carries the parsed manifest.
+type ManifestResolution = { status: 'ok'; manifest: SnapshotManifest } | { status: 'absent' } | { status: 'error' };
+
+async function resolveManifestOnce(
+  source: SnapshotSource,
+  cache: { value?: ManifestResolution },
+): Promise<ManifestResolution> {
+  if (cache.value) return cache.value;
+  let raw: unknown;
+  try {
+    raw = await source.fetchManifest();
+  } catch {
+    cache.value = { status: 'error' };
+    return cache.value;
+  }
+  if (raw == null) {
+    cache.value = { status: 'absent' };
+    return cache.value;
+  }
+  const manifest = parseSnapshotManifest(raw);
+  cache.value = manifest ? { status: 'ok', manifest } : { status: 'absent' };
+  return cache.value;
+}
+
+/**
+ * Snapshot-bootstrap phase (runs BEFORE deletions). For each enabled scope that
+ * is FRESH (no checkpoint on either board table) and still under the attempt cap,
+ * warm it from a pre-built artifact instead of paging the whole catalog. Returns
+ * the set of scope keys whose paged board-table pull must be SKIPPED this cycle —
+ * a scope whose bootstrap failed (and still has attempts left): letting its paged
+ * pull run would write a first-page checkpoint and permanently disqualify the
+ * snapshot path, so it is skipped so the NEXT cycle retries the snapshot.
+ *
+ * Eligibility + failure matrix (per scope):
+ *   - checkpoint exists on either board table → NOT eligible → normal paged pull.
+ *   - attempts ≥ MAX → gave up → normal paged pull.
+ *   - manifest `absent` (missing/unparseable) → permanent miss, NO attempt →
+ *     normal paged pull.
+ *   - manifest `error` (network) → counted attempt → SKIP paged pull this cycle.
+ *   - manifest `ok` but no entry for (boardType, layoutId) → permanent miss, NO
+ *     attempt → normal paged pull (layout not exported yet).
+ *   - download fails/returns null → counted attempt → SKIP paged pull this cycle.
+ *   - import throws (corrupt/short artifact, row-count/format mismatch) → counted
+ *     attempt → SKIP paged pull this cycle.
+ *   - success → mark done, rewind deletions to min(watermarks); paged pull runs
+ *     normally, now a ~1-day delta from the watermark checkpoints.
+ * A wipe detected mid-phase bails the whole phase with no attempt (mirrors
+ * syncTable). One artifact is downloaded per (boardType, layoutId) and reused
+ * across that layout's sizes; all downloads are deleted in a finally.
+ */
+async function runBootstrapPhase(
+  db: OfflineDatabase,
+  source: SnapshotSource,
+  scopes: BoardScope[],
+  onProgress: ((progress: SyncProgress) => void) | undefined,
+  onSchemaDrift: SchemaDriftReporter | undefined,
+  onSnapshotBootstrapError: SnapshotBootstrapErrorReporter | undefined,
+): Promise<Set<string>> {
+  const skipPagedPull = new Set<string>();
+  const manifestCache: { value?: ManifestResolution } = {};
+  // `undefined` = not yet attempted; `null` = download failed; else the file.
+  const downloadByLayout = new Map<string, { filePath: string } | null>();
+  const downloadedPaths = new Set<string>();
+  const startEpoch = getWipeEpoch();
+
+  try {
+    for (const scope of scopes) {
+      if (isSigningOut() || getWipeEpoch() !== startEpoch) break;
+
+      // Eligibility: FRESH on BOTH board tables and under the attempt cap.
+      const climbsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climbs', scope.scopeKey));
+      const statsCheckpoint = await getCheckpoint(db, getCheckpointKey('board_climb_stats', scope.scopeKey));
+      if (climbsCheckpoint || statsCheckpoint) continue;
+      if ((await getBootstrapAttempts(db, scope.scopeKey)) >= MAX_BOOTSTRAP_ATTEMPTS) continue;
+
+      onProgress?.({ phase: 'bootstrap', currentTable: scope.scopeKey, documentsProcessed: 0 });
+
+      const resolution = await resolveManifestOnce(source, manifestCache);
+      if (resolution.status === 'absent') continue; // permanent miss, no attempt
+      if (resolution.status === 'error') {
+        const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
+        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'manifest', attempt, cause: null });
+        skipPagedPull.add(scope.scopeKey);
+        continue;
+      }
+
+      const entry = resolution.manifest.entries.find(
+        (candidate) => candidate.boardType === scope.boardType && candidate.layoutId === scope.layoutId,
+      );
+      if (!entry) continue; // layout not exported yet — permanent miss, no attempt
+
+      const layoutKey = `${scope.boardType}:${scope.layoutId}`;
+      let download = downloadByLayout.get(layoutKey);
+      if (!downloadByLayout.has(layoutKey)) {
+        try {
+          download = (await source.downloadArtifact(entry)) ?? null;
+        } catch {
+          download = null;
+        }
+        downloadByLayout.set(layoutKey, download ?? null);
+        if (download) downloadedPaths.add(download.filePath);
+      }
+      if (!download) {
+        const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
+        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'download', attempt, cause: null });
+        skipPagedPull.add(scope.scopeKey);
+        continue;
+      }
+
+      try {
+        // Imports the scope's rows, stamps both table checkpoints, and rewinds
+        // the global deletions cursor to the older table watermark — all in one
+        // transaction, so no crash point can separate the imported rows from
+        // the tombstone-replay window that must cover them.
+        await bootstrapScopeFromSnapshot({
+          db,
+          scope,
+          scopeKey: scope.scopeKey,
+          filePath: download.filePath,
+          onSchemaDrift,
+        });
+        await markBootstrapDone(db, scope.scopeKey);
+        // Not skipped: the board-data phase delta-pulls from the watermark
+        // checkpoints and fires markScopeDownloadComplete through the tail logic.
+      } catch (error) {
+        // A wipe mid-import rolls the transaction back and bails the phase — no
+        // attempt (the pull is being torn down, not failing).
+        if (error instanceof SnapshotWipedError || isSigningOut() || getWipeEpoch() !== startEpoch) break;
+        const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
+        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'import', attempt, cause: error });
+        skipPagedPull.add(scope.scopeKey);
+      }
+    }
+  } finally {
+    for (const filePath of downloadedPaths) {
+      await source.deleteArtifact(filePath).catch(() => {});
+    }
+  }
+
+  return skipPagedPull;
+}
+
 export async function pullSync(
   db: OfflineDatabase,
   queryClient: QueryInvalidator,
@@ -383,6 +555,30 @@ export async function pullSync(
   const enabledBoards = options?.enabledBoards ?? [];
   const onProgress = options?.onProgress;
   let totalDocuments = 0;
+
+  // Parse the enabled scope keys once; malformed keys are dropped (a stray value
+  // can't crash the pull) so both the bootstrap phase and the paged board loop
+  // iterate the same validated set.
+  const boardScopes: BoardScope[] = [];
+  for (const scopeKey of enabledBoards) {
+    const scope = parseOfflineBoardKey(scopeKey);
+    if (scope) boardScopes.push({ ...scope, scopeKey });
+  }
+
+  // Phase 0: snapshot bootstrap (BEFORE deletions). Only when an adapter injected
+  // snapshot I/O; otherwise this is a pure paged pull, byte-identical to before.
+  let skipBootstrapPagedPull: Set<string> = new Set();
+  if (options?.snapshotSource && boardScopes.length > 0) {
+    onProgress?.({ phase: 'bootstrap', currentTable: null, documentsProcessed: 0 });
+    skipBootstrapPagedPull = await runBootstrapPhase(
+      db,
+      options.snapshotSource,
+      boardScopes,
+      onProgress,
+      options.onSchemaDrift,
+      options.onSnapshotBootstrapError,
+    );
+  }
 
   // Deletions FIRST, table pulls second. This ordering is what makes a
   // delete-then-recreate on the server converge: the tombstone removes the old
@@ -413,13 +609,15 @@ export async function pullSync(
     );
   }
 
-  // Each enabled board is a "boardType:layoutId:sizeId" scope key. Malformed keys
-  // are skipped (parseOfflineBoardKey returns null) so a stray value can't crash the
-  // pull. currentTable carries the full scope key so a per-board UI can match itself.
-  for (const scopeKey of enabledBoards) {
-    const scope = parseOfflineBoardKey(scopeKey);
-    if (!scope) continue;
-    const boardScope: BoardScope = { ...scope, scopeKey };
+  // Each enabled board is a "boardType:layoutId:sizeId" scope key (already parsed
+  // into boardScopes). currentTable carries the full scope key so a per-board UI
+  // can match itself.
+  for (const boardScope of boardScopes) {
+    const scopeKey = boardScope.scopeKey;
+    // A scope whose bootstrap failed this cycle (with attempts still left) skips
+    // its paged pull: a first-page checkpoint would permanently disqualify the
+    // snapshot path, so the next cycle retries the snapshot instead.
+    if (skipBootstrapPagedPull.has(scopeKey)) continue;
     let allTablesReachedTail = true;
     for (const tableName of BOARD_DATA_TABLES) {
       const tableLabel = `${tableName}:${scopeKey}`;

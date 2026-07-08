@@ -16,6 +16,9 @@ vi.mock('../checkpoints', () => ({
     boardType ? `checkpoint:${tableName}:${boardType}` : `checkpoint:${tableName}`,
   ),
   markScopeDownloadComplete: vi.fn().mockResolvedValue(undefined),
+  rewindDeletionsCheckpoint: vi.fn().mockResolvedValue(undefined),
+  compareCheckpoints: vi.fn().mockReturnValue(0),
+  DELETIONS_CHECKPOINT_KEY: 'checkpoint:deletions',
 }));
 
 import { pullSync, toSqliteValue, multiRowChunkSize } from '../pull-client';
