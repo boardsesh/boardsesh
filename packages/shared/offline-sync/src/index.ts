@@ -45,7 +45,13 @@ export { isRetryable, isNetworkError, getErrorStatus } from './mutation-queue/er
 
 // --- Pull sync -----------------------------------------------------------------
 export { pullSync, toSqliteValue, multiRowChunkSize } from './sync/pull-client';
-export type { SyncProgress, SyncOptions, SchemaDriftReporter } from './sync/pull-client';
+export type {
+  SyncProgress,
+  SyncOptions,
+  SchemaDriftReporter,
+  ScopeDownloadCompleteInfo,
+  ScopeDownloadCompleteReporter,
+} from './sync/pull-client';
 export {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,

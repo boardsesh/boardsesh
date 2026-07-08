@@ -1,5 +1,11 @@
 import type { OfflineDatabase, QueryInvalidator } from '../database';
-import { pullSync, type SyncProgress, type SchemaDriftReporter } from './pull-client';
+import {
+  pullSync,
+  type SyncProgress,
+  type SchemaDriftReporter,
+  type ScopeDownloadCompleteReporter,
+} from './pull-client';
+import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
 
 /**
  * Optional progress sink for the pull phase. The bridge passes the sync-status
@@ -46,6 +52,12 @@ export type SchedulerOptions = {
   onCycleError?: (error: unknown) => void;
   /** Threaded through to pullSync — see SchemaDriftReporter. */
   onSchemaDrift?: SchemaDriftReporter;
+  /** Threaded through to pullSync's SyncOptions — see snapshot-bootstrap.ts. */
+  snapshotSource?: SnapshotSource;
+  /** Threaded through to pullSync's SyncOptions. */
+  onSnapshotBootstrapError?: SnapshotBootstrapErrorReporter;
+  /** Threaded through to pullSync's SyncOptions — see ScopeDownloadCompleteInfo. */
+  onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
 };
 
 let isSyncing = false;
@@ -81,6 +93,9 @@ async function runSync(
       enabledBoards: getEnabledBoards(),
       onProgress: options?.onProgress,
       onSchemaDrift: options?.onSchemaDrift,
+      snapshotSource: options?.snapshotSource,
+      onSnapshotBootstrapError: options?.onSnapshotBootstrapError,
+      onScopeDownloadComplete: options?.onScopeDownloadComplete,
     });
   } catch (error) {
     options?.onCycleError?.(error);

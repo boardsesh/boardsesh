@@ -108,4 +108,18 @@ describe('BoardManageRow offline toggle gating', () => {
     expect(queryByText('mobile.offline.available')).not.toBeNull();
     expect(offlineToggleProps.last?.state).toBe('downloaded');
   });
+
+  it('shows the bootstrapping caption (not the climb count) during the snapshot warm-up', () => {
+    const { queryByText } = render(
+      <BoardManageRow {...rowProps} downloadState="downloading" isBootstrapping downloadCount={0} />,
+    );
+    expect(queryByText('mobile.offline.bootstrapping')).not.toBeNull();
+    expect(queryByText('mobile.offline.downloadingCount')).toBeNull();
+  });
+
+  it('shows the live climb count caption during the paged crawl (not bootstrapping)', () => {
+    const { queryByText } = render(<BoardManageRow {...rowProps} downloadState="downloading" downloadCount={42} />);
+    expect(queryByText('mobile.offline.downloadingCount')).not.toBeNull();
+    expect(queryByText('mobile.offline.bootstrapping')).toBeNull();
+  });
 });

@@ -201,6 +201,13 @@ export const SHARED_EVENTS = {
   IntegrationDisconnected: 'Integration Disconnected',
   IntegrationAutoSyncToggled: 'Integration Auto Sync Toggled',
   SessionExportedToIntegration: 'Session Exported to Integration',
+  // Offline sync — fired once per board scope when its INITIAL download
+  // completes (offline-sync's onScopeDownloadComplete, both tables reached the
+  // tail), so the snapshot-bootstrap warm-up (Phase 3/4) can be compared
+  // against the plain paged crawl in the field. Props: { scopeKey,
+  // method: 'snapshot' | 'paged', durationMs }. Mobile-only today (the engine
+  // is shared, so a future web offline consumer would fire this too).
+  OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

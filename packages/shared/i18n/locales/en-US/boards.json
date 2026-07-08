@@ -241,6 +241,7 @@
     "offline": {
       "available": "Available offline",
       "pending": "Waiting to download",
+      "bootstrapping": "Downloading board…",
       "downloadingCount_one": "Downloading {{count}} climb",
       "downloadingCount_other": "Downloading {{count}} climbs",
       "makeAvailableAria": "Make {{name}} available offline",

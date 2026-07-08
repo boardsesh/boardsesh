@@ -50,12 +50,17 @@ vi.mock('../../lib/error-reporting', () => ({
   reportHandledError: (...args: unknown[]) => reportHandledError(...args),
 }));
 
+const trackMock = vi.fn();
+vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
+
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { drainMutationQueue, startSyncScheduler, triggerSync, pullSync } from '../offline-sync-adapter';
 import type {
   OfflineDatabase,
   DrainOptions,
   SchedulerTriggers,
   SchedulerOptions,
+  SnapshotSource,
   SyncOptions,
 } from '@boardsesh/offline-sync';
 
@@ -145,6 +150,119 @@ describe('scheduler trigger bindings', () => {
         extra: { tableName: 'boardsesh_ticks', column: 'shiny_new_column' },
       }),
     );
+  });
+});
+
+describe('snapshot-bootstrap bindings', () => {
+  const fakeSnapshotSource = {} as SnapshotSource;
+
+  it('startSyncScheduler passes snapshotSource through only when the caller supplies one', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+      undefined,
+      fakeSnapshotSource,
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    expect(options.snapshotSource).toBe(fakeSnapshotSource);
+
+    vi.clearAllMocks();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const optionsWithoutSource = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    expect(optionsWithoutSource.snapshotSource).toBeUndefined();
+  });
+
+  it('startSyncScheduler always wires the snapshot-bootstrap telemetry handlers', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    expect(options.onSnapshotBootstrapError).toBeTypeOf('function');
+    expect(options.onScopeDownloadComplete).toBeTypeOf('function');
+  });
+
+  it('triggerSync passes snapshotSource through and wires the telemetry handlers', () => {
+    triggerSync(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+      undefined,
+      fakeSnapshotSource,
+    );
+    const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
+    expect(options.snapshotSource).toBe(fakeSnapshotSource);
+    expect(options.onSnapshotBootstrapError).toBeTypeOf('function');
+    expect(options.onScopeDownloadComplete).toBeTypeOf('function');
+  });
+
+  it('reports a bootstrap failure to Sentry with the snapshot-bootstrap tags', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    options.onSnapshotBootstrapError?.({ scopeKey: 'kilter:1:5', stage: 'download', attempt: 1, cause: null });
+
+    expect(reportHandledError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('kilter:1:5') }),
+      expect.objectContaining({
+        tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
+        extra: expect.objectContaining({ scopeKey: 'kilter:1:5', stage: 'download', attempt: 1 }),
+      }),
+    );
+  });
+
+  it('captures a PostHog event on scope-download completion with the method + duration', () => {
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'snapshot', durationMs: 1234 });
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
+      scopeKey: 'kilter:1:5',
+      method: 'snapshot',
+      durationMs: 1234,
+    });
+  });
+
+  it('pullSync binds the snapshot-bootstrap telemetry defaults but lets caller options win', async () => {
+    const customBootstrapError = vi.fn();
+    await pullSync(db, queryClient, graphqlFetch, { onSnapshotBootstrapError: customBootstrapError });
+
+    const options = pullSyncCore.mock.calls[0][3] as SyncOptions;
+    options.onSnapshotBootstrapError?.({ scopeKey: 'kilter:1:5', stage: 'manifest', attempt: 1, cause: null });
+    expect(customBootstrapError).toHaveBeenCalled();
+    expect(reportHandledError).not.toHaveBeenCalled();
+
+    options.onScopeDownloadComplete?.({ scopeKey: 'kilter:1:5', method: 'paged', durationMs: 500 });
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, {
+      scopeKey: 'kilter:1:5',
+      method: 'paged',
+      durationMs: 500,
+    });
   });
 });
 

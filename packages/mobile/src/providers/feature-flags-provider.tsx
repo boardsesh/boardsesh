@@ -59,6 +59,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'The whole offline engine: board downloads, local-first climb reads, queued offline ticks/favorites, background sync. Off fully disables it (previously-queued writes still flush).',
   },
   {
+    key: 'offline-snapshot-bootstrap',
+    label: 'Offline snapshot bootstrap',
+    description:
+      'Warm a freshly-enabled board from the nightly pre-built SQLite snapshot instead of paging the whole catalog over GraphQL. Requires offline-board-downloads to also be on; off falls back to the plain paged crawl.',
+  },
+  {
     key: 'boardsesh-grade',
     label: 'Boardsesh grade',
     description:
@@ -131,6 +137,18 @@ export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFla
  */
 export function useOfflineDownloadsEnabled(): boolean {
   return useFeatureFlag('offline-board-downloads') === true;
+}
+
+/**
+ * Gate for the snapshot-bootstrap warm-up (offline-sync Phase 3/4): whether a
+ * freshly-enabled board scope should warm from the nightly pre-built SQLite
+ * artifact instead of paging the whole catalog. Missing/undefined reads as
+ * OFF — the paged crawl (today's only behaviour) is the safe default while
+ * this rolls out. Independent of `useOfflineDownloadsEnabled`; the bridge only
+ * consults this when the offline engine itself is already on.
+ */
+export function useSnapshotBootstrapEnabled(): boolean {
+  return useFeatureFlag('offline-snapshot-bootstrap') === true;
 }
 
 /**

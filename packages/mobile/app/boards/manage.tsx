@@ -30,7 +30,7 @@ import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { BoardManageRow } from '../../src/components/board-discovery/BoardManageRow';
-import { boardDownloadState } from '../../src/components/board-discovery/board-offline-state';
+import { boardDownloadState, boardIsBootstrapping } from '../../src/components/board-discovery/board-offline-state';
 import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
 import { iosSystemColors } from '../../src/theme/ios-colors';
 import { spacing } from '../../src/theme/tokens';
@@ -92,6 +92,7 @@ export default function ManageBoards() {
   const isSyncing = syncStatus.isSyncing;
   const currentTable = syncStatus.progress?.currentTable ?? null;
   const currentTableProcessed = syncStatus.progress?.currentTableProcessed;
+  const currentPhase = syncStatus.progress?.phase ?? null;
 
   // Per-scope "downloaded" signal: which scopes actually have a board_climbs
   // checkpoint. Refetched whenever a cycle finishes (isSyncing → false), so a
@@ -216,18 +217,20 @@ export default function ManageBoards() {
         (unfollowBoard.isPending && unfollowBoard.variables === item.board.uuid);
       const scopeKey = offlineBoardKeyForBoard(item.board);
       // undefined (flag off) hides the row's toggle + caption entirely.
-      const downloadState = offlineDownloadsEnabled
-        ? boardDownloadState({
-            scopeKey,
-            enabled: enabledSet.has(scopeKey),
-            isSyncing,
-            downloaded: downloadedSet.has(scopeKey),
-            currentTable,
-          })
-        : undefined;
-      // Only the board actually downloading gets the live count; every other row
-      // gets undefined (a stable prop), so its memo skips the per-frame churn.
+      const downloadStateInput = {
+        scopeKey,
+        enabled: enabledSet.has(scopeKey),
+        isSyncing,
+        downloaded: downloadedSet.has(scopeKey),
+        currentTable,
+        phase: currentPhase,
+      };
+      const downloadState = offlineDownloadsEnabled ? boardDownloadState(downloadStateInput) : undefined;
+      // Only the board actually downloading gets the live count / bootstrap
+      // flag; every other row gets undefined/false (stable props), so its
+      // memo skips the per-frame churn.
       const downloadCount = downloadState === 'downloading' ? currentTableProcessed : undefined;
+      const isBootstrapping = downloadState === 'downloading' && boardIsBootstrapping(downloadStateInput);
       return (
         <BoardManageRow
           board={item.board}
@@ -236,6 +239,7 @@ export default function ManageBoards() {
           isMutating={isMutating}
           downloadState={downloadState}
           downloadCount={downloadCount}
+          isBootstrapping={isBootstrapping}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onUnfollow={handleUnfollow}
@@ -254,6 +258,7 @@ export default function ManageBoards() {
       downloadedSet,
       currentTable,
       currentTableProcessed,
+      currentPhase,
       handleEdit,
       handleDelete,
       handleUnfollow,

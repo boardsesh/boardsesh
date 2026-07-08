@@ -982,6 +982,138 @@ describe('pullSync snapshot bootstrap', () => {
 });
 
 // ---------------------------------------------------------------------------
+// onScopeDownloadComplete — snapshot vs paged telemetry
+// ---------------------------------------------------------------------------
+
+describe('pullSync onScopeDownloadComplete', () => {
+  it('reports method "snapshot" when the scope bootstrapped successfully this run', async () => {
+    const filePath = join(workDir, 'complete-snapshot.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+    const info = onScopeDownloadComplete.mock.calls[0][0] as {
+      scopeKey: string;
+      method: string;
+      durationMs: number;
+    };
+    expect(info.scopeKey).toBe('kilter:1:5');
+    expect(info.method).toBe('snapshot');
+    expect(info.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reports method "paged" when no snapshotSource is configured (pure paged crawl)', async () => {
+    const { fetch } = makeGraphqlFetch();
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+    const info = onScopeDownloadComplete.mock.calls[0][0] as { scopeKey: string; method: string };
+    expect(info.scopeKey).toBe('kilter:1:5');
+    expect(info.method).toBe('paged');
+  });
+
+  it('reports method "paged" when a snapshotSource is configured but the scope is not bootstrap-eligible (mid-crawl)', async () => {
+    // Pre-existing checkpoint makes the scope ineligible for bootstrap, so its
+    // completion this cycle is a resumed paged crawl even though a snapshotSource
+    // is present.
+    await setCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5', {
+      updatedAt: '2026-01-01T00:00:00Z',
+      syncSeq: '1',
+    });
+    await setCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5', {
+      updatedAt: '2026-01-01T00:00:00Z',
+      syncSeq: '1',
+    });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry()]),
+      fileForEntry: () => join(workDir, 'never.db'),
+    });
+    const { fetch } = makeGraphqlFetch();
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    expect(source.downloadArtifact).not.toHaveBeenCalled();
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+    const info = onScopeDownloadComplete.mock.calls[0][0] as { scopeKey: string; method: string };
+    expect(info.method).toBe('paged');
+  });
+
+  it('reports method "paged" for a scope whose artifact was rejected as schema-stale (same-cycle paged fallback)', async () => {
+    // A stale-schema artifact is a permanent miss: the bootstrap never marks
+    // the scope, the paged crawl runs the SAME cycle, and completion must
+    // therefore report 'paged' — not 'snapshot'.
+    const filePath = join(workDir, 'stale-method.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+      schemaVersion: LATEST_SCHEMA_VERSION - 1,
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+    const info = onScopeDownloadComplete.mock.calls[0][0] as { scopeKey: string; method: string };
+    expect(info.scopeKey).toBe('kilter:1:5');
+    expect(info.method).toBe('paged');
+  });
+
+  it('does not fire when a table bails early (sign-out mid-cycle) and the scope never reaches its tail', async () => {
+    const { fetch } = makeGraphqlFetch();
+    const onScopeDownloadComplete = vi.fn();
+
+    // syncTable's very first guard (`isSigningOut() || ...`) returns
+    // `{ reachedTail: false }` before any page fetch, so every table in this
+    // cycle bails immediately and allTablesReachedTail stays false —
+    // markScopeDownloadComplete (and thus onScopeDownloadComplete) must not fire.
+    setSigningOut(true);
+    try {
+      await pullSync(db, noopQueryClient(), fetch, {
+        enabledBoards: ['kilter:1:5'],
+        onScopeDownloadComplete,
+      });
+    } finally {
+      setSigningOut(false);
+    }
+
+    expect(onScopeDownloadComplete).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // deletions rewind
 // ---------------------------------------------------------------------------
 

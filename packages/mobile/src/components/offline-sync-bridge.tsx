@@ -10,7 +10,8 @@ import { setupNotificationHandlers } from '../notifications';
 import { getHttpClient } from '../lib/graphql/client';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
 import { useAuth } from '../providers/auth-provider';
-import { useOfflineDownloadsEnabled } from '../providers/feature-flags-provider';
+import { useOfflineDownloadsEnabled, useSnapshotBootstrapEnabled } from '../providers/feature-flags-provider';
+import { mobileSnapshotSource } from '../offline/snapshot-source';
 
 /**
  * Publishes the offline-engine flag decision to the module-level store that
@@ -50,6 +51,7 @@ export function OfflineSyncBridge() {
   const queryClient = useQueryClient();
   const { isAuthenticated } = useAuth();
   const offlineEnabled = useOfflineDownloadsEnabled();
+  const snapshotBootstrapEnabled = useSnapshotBootstrapEnabled();
 
   // getHttpClient() already carries auth + endpoint; binding .request keeps the
   // GraphQLFetch shape the scheduler and drainer expect.
@@ -86,6 +88,10 @@ export function OfflineSyncBridge() {
           // Publish pull progress to the module-level store so the Settings screen
           // can render "last synced" + live progress without prop-drilling.
           setSyncProgress,
+          // Snapshot bootstrap is its own flag, nested under offline-board-downloads
+          // — a freshly-enabled board still downloads with the flag off, just via
+          // the (today's default) paged crawl.
+          snapshotBootstrapEnabled ? mobileSnapshotSource : undefined,
         );
         return stop;
       } catch (error) {
@@ -116,7 +122,7 @@ export function OfflineSyncBridge() {
     return () => {
       cancelled = true;
     };
-  }, [db, queryClient, graphqlFetch, offlineEnabled, isAuthenticated]);
+  }, [db, queryClient, graphqlFetch, offlineEnabled, snapshotBootstrapEnabled, isAuthenticated]);
 
   // Deep-link routing for tapped push notifications. Deliberately independent
   // of the offline flag — notifications ship inert for everyone today.

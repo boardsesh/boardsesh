@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boardDownloadState } from '../board-offline-state';
+import { boardDownloadState, boardIsBootstrapping } from '../board-offline-state';
 
 const base = {
   scopeKey: 'kilter:1:5',
@@ -68,5 +68,69 @@ describe('boardDownloadState', () => {
         currentTable: 'board_climbs:tension:8:10',
       }),
     ).toBe('downloaded');
+  });
+
+  it('is downloading while the snapshot-bootstrap phase is warming this exact scope', () => {
+    expect(boardDownloadState({ ...base, isSyncing: true, currentTable: 'kilter:1:5', phase: 'bootstrap' })).toBe(
+      'downloading',
+    );
+  });
+
+  it('does not cross-trigger bootstrap on a sibling scope with a shared prefix', () => {
+    expect(
+      boardDownloadState({
+        scopeKey: 'kilter:1:50',
+        enabled: true,
+        isSyncing: true,
+        downloaded: false,
+        currentTable: 'kilter:1:5',
+        phase: 'bootstrap',
+      }),
+    ).toBe('pending');
+  });
+
+  it('does not read as downloading when currentTable matches but the phase is not bootstrap', () => {
+    // A bare scope key matching currentTable only means "bootstrapping" when
+    // phase is actually 'bootstrap' — this guards against a stale/undefined
+    // phase accidentally matching.
+    expect(boardDownloadState({ ...base, isSyncing: true, currentTable: 'kilter:1:5', phase: null })).toBe('pending');
+  });
+});
+
+describe('boardIsBootstrapping', () => {
+  it('is true only during the bootstrap phase for this exact scope while syncing', () => {
+    expect(boardIsBootstrapping({ ...base, isSyncing: true, currentTable: 'kilter:1:5', phase: 'bootstrap' })).toBe(
+      true,
+    );
+  });
+
+  it('is false during the paged board_data phase, even for this scope', () => {
+    expect(
+      boardIsBootstrapping({
+        ...base,
+        isSyncing: true,
+        currentTable: 'board_climbs:kilter:1:5',
+        phase: 'board_data',
+      }),
+    ).toBe(false);
+  });
+
+  it('is false when not syncing at all', () => {
+    expect(boardIsBootstrapping({ ...base, isSyncing: false, currentTable: 'kilter:1:5', phase: 'bootstrap' })).toBe(
+      false,
+    );
+  });
+
+  it('is false for a sibling scope sharing the bootstrap phase', () => {
+    expect(
+      boardIsBootstrapping({
+        scopeKey: 'kilter:1:50',
+        enabled: true,
+        isSyncing: true,
+        downloaded: false,
+        currentTable: 'kilter:1:5',
+        phase: 'bootstrap',
+      }),
+    ).toBe(false);
   });
 });

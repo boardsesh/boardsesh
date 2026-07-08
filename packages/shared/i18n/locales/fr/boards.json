@@ -241,6 +241,7 @@
     "offline": {
       "available": "Disponible hors ligne",
       "pending": "En attente de téléchargement",
+      "bootstrapping": "Téléchargement de la board…",
       "downloadingCount_one": "Téléchargement de {{count}} voie",
       "downloadingCount_other": "Téléchargement de {{count}} voies",
       "makeAvailableAria": "Rendre {{name}} disponible hors ligne",

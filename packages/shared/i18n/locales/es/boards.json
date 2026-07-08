@@ -241,6 +241,7 @@
     "offline": {
       "available": "Disponible sin conexión",
       "pending": "Esperando para descargar",
+      "bootstrapping": "Descargando el plafón…",
       "downloadingCount_one": "Descargando {{count}} vía",
       "downloadingCount_other": "Descargando {{count}} vías",
       "makeAvailableAria": "Hacer que {{name}} esté disponible sin conexión",

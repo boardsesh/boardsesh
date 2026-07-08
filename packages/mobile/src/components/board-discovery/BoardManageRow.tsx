@@ -31,8 +31,15 @@ type BoardManageRowProps = {
    * the toggle and status caption are not rendered at all.
    */
   downloadState: BoardDownloadState | undefined;
-  /** Climbs pulled so far while this board is the one downloading. */
+  /** Climbs pulled so far while this board is the one downloading (paged crawl only). */
   downloadCount?: number;
+  /**
+   * True while `downloadState === 'downloading'` is the snapshot-bootstrap
+   * warm-up rather than the paged crawl — shows a distinct "Downloading
+   * board…" caption instead of a live climb count (the bootstrap phase has
+   * no per-row count to show).
+   */
+  isBootstrapping?: boolean;
   onEdit: (board: UserBoard) => void;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
@@ -53,6 +60,7 @@ function BoardManageRowComponent({
   isMutating,
   downloadState,
   downloadCount,
+  isBootstrapping,
   onEdit,
   onDelete,
   onUnfollow,
@@ -90,7 +98,9 @@ function BoardManageRowComponent({
   // downloaded rows stay two lines and the extra line appears transiently.
   const offlineStatus =
     downloadState === 'downloading'
-      ? t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
+      ? isBootstrapping
+        ? t('mobile.offline.bootstrapping')
+        : t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
       : downloadState === 'downloaded'
         ? t('mobile.offline.available')
         : downloadState === 'pending'

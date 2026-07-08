@@ -49,6 +49,26 @@ export type SyncProgress = {
   failed?: boolean;
 };
 
+/**
+ * Fired once a board scope's initial download completes this cycle (both
+ * board_climbs and board_climb_stats reached their tail — the same gate as
+ * `markScopeDownloadComplete`). Lets the app compare the two download paths in
+ * the field: `method` is `'snapshot'` when a bootstrap warm-up succeeded for
+ * this scope THIS run (see `runBootstrapPhase`), `'paged'` otherwise (fresh
+ * paged crawl, a resumed mid-crawl scope, or bootstrap unavailable/exhausted).
+ * `durationMs` is measured from when this pullSync cycle started working on the
+ * scope (before the bootstrap eligibility check), so a `'snapshot'` scope's
+ * duration includes its manifest/download/import time, not just the trailing
+ * delta pull — an apples-to-apples comparison against a `'paged'` scope's full
+ * crawl time.
+ */
+export type ScopeDownloadCompleteInfo = {
+  scopeKey: string;
+  method: 'snapshot' | 'paged';
+  durationMs: number;
+};
+export type ScopeDownloadCompleteReporter = (info: ScopeDownloadCompleteInfo) => void;
+
 export type SyncOptions = {
   /** Encoded board scope keys ("boardType:layoutId:sizeId") to download offline. */
   enabledBoards?: string[];
@@ -62,6 +82,8 @@ export type SyncOptions = {
   snapshotSource?: SnapshotSource;
   /** Telemetry for a counted bootstrap failure (manifest/download/import). */
   onSnapshotBootstrapError?: SnapshotBootstrapErrorReporter;
+  /** Telemetry for comparing the snapshot vs paged download paths. See ScopeDownloadCompleteInfo. */
+  onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
 };
 
 /** A per-board download target: the parsed scope plus its encoded key. */
@@ -460,6 +482,10 @@ async function resolveManifestOnce(
  * A wipe detected mid-phase bails the whole phase with no attempt (mirrors
  * syncTable). One artifact is downloaded per (boardType, layoutId) and reused
  * across that layout's sizes; all downloads are deleted in a finally.
+ *
+ * Returns both the skip-set (above) and `bootstrappedScopeKeys` — the scopes
+ * whose bootstrap actually succeeded THIS run (markBootstrapDone was called) —
+ * so pullSync can report ScopeDownloadCompleteInfo.method accurately.
  */
 async function runBootstrapPhase(
   db: OfflineDatabase,
@@ -469,8 +495,9 @@ async function runBootstrapPhase(
   onProgress: ((progress: SyncProgress) => void) | undefined,
   onSchemaDrift: SchemaDriftReporter | undefined,
   onSnapshotBootstrapError: SnapshotBootstrapErrorReporter | undefined,
-): Promise<Set<string>> {
+): Promise<{ skipPagedPull: Set<string>; bootstrappedScopeKeys: Set<string> }> {
   const skipPagedPull = new Set<string>();
+  const bootstrappedScopeKeys = new Set<string>();
   const manifestCache: { value?: ManifestResolution } = {};
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
   const downloadByLayout = new Map<
@@ -563,6 +590,7 @@ async function runBootstrapPhase(
           onSchemaDrift,
         });
         await markBootstrapDone(db, scope.scopeKey);
+        bootstrappedScopeKeys.add(scope.scopeKey);
         // Bust the board-table query caches now: if the snapshot fully satisfies
         // the scope, the delta pull returns zero documents and syncTable's
         // arrivals-only invalidation never fires — an active search/detail query
@@ -598,7 +626,7 @@ async function runBootstrapPhase(
     }
   }
 
-  return skipPagedPull;
+  return { skipPagedPull, bootstrappedScopeKeys };
 }
 
 export async function pullSync(
@@ -620,12 +648,21 @@ export async function pullSync(
     if (scope) boardScopes.push({ ...scope, scopeKey });
   }
 
+  // Start-of-cycle timestamp per scope, captured before the bootstrap eligibility
+  // check runs — so a 'snapshot' scope's ScopeDownloadCompleteInfo.durationMs
+  // includes its manifest/download/import time, not just the trailing delta pull.
+  const scopeStartedAt = new Map<string, number>();
+  for (const boardScope of boardScopes) {
+    scopeStartedAt.set(boardScope.scopeKey, Date.now());
+  }
+
   // Phase 0: snapshot bootstrap (BEFORE deletions). Only when an adapter injected
   // snapshot I/O; otherwise this is a pure paged pull, byte-identical to before.
   let skipBootstrapPagedPull: Set<string> = new Set();
+  let bootstrappedScopeKeys: Set<string> = new Set();
   if (options?.snapshotSource && boardScopes.length > 0) {
     onProgress?.({ phase: 'bootstrap', currentTable: null, documentsProcessed: 0 });
-    skipBootstrapPagedPull = await runBootstrapPhase(
+    const bootstrapResult = await runBootstrapPhase(
       db,
       queryClient,
       options.snapshotSource,
@@ -634,6 +671,8 @@ export async function pullSync(
       options.onSchemaDrift,
       options.onSnapshotBootstrapError,
     );
+    skipBootstrapPagedPull = bootstrapResult.skipPagedPull;
+    bootstrappedScopeKeys = bootstrapResult.bootstrappedScopeKeys;
   }
 
   // Deletions FIRST, table pulls second. This ordering is what makes a
@@ -708,6 +747,12 @@ export async function pullSync(
     // otherwise serve a sliver of the catalog as if it were everything.
     if (allTablesReachedTail) {
       await markScopeDownloadComplete(db, scopeKey);
+      const startedAt = scopeStartedAt.get(scopeKey);
+      options?.onScopeDownloadComplete?.({
+        scopeKey,
+        method: bootstrappedScopeKeys.has(scopeKey) ? 'snapshot' : 'paged',
+        durationMs: startedAt !== undefined ? Date.now() - startedAt : 0,
+      });
     }
   }
 

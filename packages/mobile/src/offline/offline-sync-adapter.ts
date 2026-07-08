@@ -26,12 +26,17 @@ import {
   type DrainQueue,
   type GraphQLFetch,
   type OfflineDatabase,
+  type ScopeDownloadCompleteReporter,
   type SchedulerTriggers,
   type SchemaDriftReporter,
+  type SnapshotBootstrapErrorReporter,
+  type SnapshotSource,
   type SyncOptions,
   type SyncProgressSink,
 } from '@boardsesh/offline-sync';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { reportHandledError } from '../lib/error-reporting';
+import { track } from '../lib/analytics';
 
 const isOnline = () => onlineManager.isOnline();
 
@@ -40,6 +45,24 @@ const reportSchemaDrift: SchemaDriftReporter = ({ tableName, column }) => {
     tags: { source: 'offline-sync', kind: 'schema-drift' },
     extra: { tableName, column },
   });
+};
+
+// Snapshot-bootstrap telemetry. Both handlers are wired unconditionally (like
+// reportSchemaDrift above) — they're inert when no `snapshotSource` is passed
+// in, since the engine only ever calls them from the bootstrap phase, which it
+// skips entirely without one.
+const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({ scopeKey, stage, attempt, cause }) => {
+  reportHandledError(new Error(`Snapshot bootstrap failed for ${scopeKey} at stage "${stage}" (attempt ${attempt})`), {
+    tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' },
+    extra: { scopeKey, stage, attempt, cause: cause instanceof Error ? cause.message : cause },
+  });
+};
+
+// Fired once per board scope's initial download so the snapshot-bootstrap
+// warm-up can be compared against the plain paged crawl in the field (which
+// path actually got used, and how long it took).
+const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({ scopeKey, method, durationMs }) => {
+  track(SHARED_EVENTS.OfflineBoardDownloadCompleted, { scopeKey, method, durationMs });
 };
 
 // A failed cycle is routine for offline users (the reconnect trigger retries),
@@ -84,11 +107,18 @@ export function startSyncScheduler(
   getEnabledBoards: () => string[],
   drainQueue: DrainQueue,
   onProgress?: SyncProgressSink,
+  // Injected only when the offline-snapshot-bootstrap flag is on (see
+  // OfflineSyncBridge) — undefined here reproduces the pure paged-crawl
+  // behaviour exactly, byte-identical to before this seam existed.
+  snapshotSource?: SnapshotSource,
 ): () => void {
   return startSyncSchedulerCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, schedulerTriggers, {
     onProgress,
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
+    snapshotSource,
+    onSnapshotBootstrapError: reportSnapshotBootstrapError,
+    onScopeDownloadComplete: reportScopeDownloadComplete,
   });
 }
 
@@ -99,11 +129,15 @@ export function triggerSync(
   getEnabledBoards: () => string[],
   drainQueue: DrainQueue,
   onProgress?: SyncProgressSink,
+  snapshotSource?: SnapshotSource,
 ): void {
   triggerSyncCore(db, queryClient, graphqlFetch, getEnabledBoards, drainQueue, {
     onProgress,
     onCycleError: warnCycleError,
     onSchemaDrift: reportSchemaDrift,
+    snapshotSource,
+    onSnapshotBootstrapError: reportSnapshotBootstrapError,
+    onScopeDownloadComplete: reportScopeDownloadComplete,
   });
 }
 
@@ -113,5 +147,10 @@ export function pullSync(
   graphqlFetch: GraphQLFetch,
   options?: SyncOptions,
 ): Promise<void> {
-  return pullSyncCore(db, queryClient, graphqlFetch, { onSchemaDrift: reportSchemaDrift, ...options });
+  return pullSyncCore(db, queryClient, graphqlFetch, {
+    onSchemaDrift: reportSchemaDrift,
+    onSnapshotBootstrapError: reportSnapshotBootstrapError,
+    onScopeDownloadComplete: reportScopeDownloadComplete,
+    ...options,
+  });
 }
