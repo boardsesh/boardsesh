@@ -469,8 +469,8 @@ async function runBootstrapPhase(
 ): Promise<Set<string>> {
   const skipPagedPull = new Set<string>();
   const manifestCache: { value?: ManifestResolution } = {};
-  // `undefined` = not yet attempted; `null` = download failed; else the file.
-  const downloadByLayout = new Map<string, { filePath: string } | null>();
+  // Absent = not yet attempted; `file: null` = download failed (with its cause).
+  const downloadByLayout = new Map<string, { file: { filePath: string } | null; cause: unknown }>();
   const downloadedPaths = new Set<string>();
   const startEpoch = getWipeEpoch();
 
@@ -501,21 +501,29 @@ async function runBootstrapPhase(
       if (!entry) continue; // layout not exported yet — permanent miss, no attempt
 
       const layoutKey = `${scope.boardType}:${scope.layoutId}`;
-      let download = downloadByLayout.get(layoutKey);
-      let downloadCause: unknown = null;
-      if (!downloadByLayout.has(layoutKey)) {
+      // The failure cause is cached alongside the result so a second size of the
+      // same layout (which reuses this entry instead of re-downloading) still
+      // reports the real error, not null.
+      let cachedDownload = downloadByLayout.get(layoutKey);
+      if (!cachedDownload) {
+        cachedDownload = { file: null, cause: null };
         try {
-          download = (await source.downloadArtifact(entry)) ?? null;
+          cachedDownload.file = (await source.downloadArtifact(entry)) ?? null;
         } catch (error) {
-          download = null;
-          downloadCause = error;
+          cachedDownload.cause = error;
         }
-        downloadByLayout.set(layoutKey, download ?? null);
-        if (download) downloadedPaths.add(download.filePath);
+        downloadByLayout.set(layoutKey, cachedDownload);
+        if (cachedDownload.file) downloadedPaths.add(cachedDownload.file.filePath);
       }
+      const download = cachedDownload.file;
       if (!download) {
         const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
-        onSnapshotBootstrapError?.({ scopeKey: scope.scopeKey, stage: 'download', attempt, cause: downloadCause });
+        onSnapshotBootstrapError?.({
+          scopeKey: scope.scopeKey,
+          stage: 'download',
+          attempt,
+          cause: cachedDownload.cause,
+        });
         skipPagedPull.add(scope.scopeKey);
         continue;
       }
