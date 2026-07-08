@@ -32,6 +32,7 @@ import { processMutation, type GraphQLFetch } from '../../mutation-queue/handler
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
+import { TABLE_CONFIGS } from '../table-config';
 
 // The non-null fields of the backend's `input SaveTickInput`
 // (packages/shared-schema/src/schema/ticks.ts) — i.e. every `Field!` minus the
@@ -296,6 +297,67 @@ describe('sync layer — real-DDL integration', () => {
       });
       // Per-board checkpoint is namespaced by the full scope key.
       expect(await readCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(cursor);
+    });
+
+    it('board_climbs: a page larger than one bind-variable chunk (100 rows × 27 columns) round-trips every row', async () => {
+      // board_climbs' allowlist is 27 columns, so the batched upsert's chunk
+      // size is floor(999/27) = 37 rows/statement — a 100-row page must split
+      // into 3 multi-row INSERT OR REPLACE statements (37 + 37 + 26) inside
+      // ONE exclusive transaction. This proves that split round-trips cleanly
+      // against the real DDL: every row lands, with the right values, and
+      // none are dropped or duplicated at a chunk boundary.
+      const climbsColumns = TABLE_CONFIGS.board_climbs.localColumns;
+      const documents = Array.from({ length: 100 }, (_, index) =>
+        Object.fromEntries(
+          climbsColumns.map((column) => {
+            if (column === 'uuid') return [column, `climb-batch-${index}`];
+            if (column === 'board_type') return [column, 'kilter'];
+            if (column === 'layout_id') return [column, 1];
+            if (column === 'angle') return [column, 40];
+            if (column === 'is_draft' || column === 'is_listed') return [column, index % 2 === 0];
+            if (column === 'frames') return [column, { p: index }];
+            return [column, `${column}-${index}`];
+          }),
+        ),
+      );
+      const cursor = { updatedAt: '2024-06-05T00:00:00Z', syncSeq: '5000' };
+
+      await pullSync(db, queryClient, makeSingleTableFetch({ queryName: 'syncClimbs', documents, cursor }), {
+        enabledBoards: ['kilter:1:5'],
+      });
+
+      const rows = await db.getAllAsync<Record<string, unknown>>(
+        'SELECT * FROM board_climbs WHERE board_type = ? ORDER BY uuid',
+        ['kilter'],
+      );
+      // Every row landed exactly once — no chunk-boundary drops or dupes.
+      expect(rows).toHaveLength(100);
+      const uuidSet = new Set(rows.map((row) => row.uuid));
+      const expectedUuidSet = new Set(Array.from({ length: 100 }, (_, index) => `climb-batch-${index}`));
+      expect(uuidSet).toEqual(expectedUuidSet);
+
+      // Spot-check the first row of chunk 2 (index 37, given chunk size 37)
+      // and the last row, to prove params never drift between rows/columns
+      // across a chunk split; the uuidSet equality above covers the rest.
+      const boundaryRow = rows.find((row) => row.uuid === 'climb-batch-37');
+      expect(boundaryRow).toMatchObject({
+        uuid: 'climb-batch-37',
+        board_type: 'kilter',
+        layout_id: 1,
+        angle: 40,
+        is_draft: 0, // index 37 is odd → index % 2 === 0 is false → 0
+        frames: JSON.stringify({ p: 37 }),
+        name: 'name-37',
+      });
+      const lastRow = rows.find((row) => row.uuid === 'climb-batch-99');
+      expect(lastRow).toMatchObject({
+        uuid: 'climb-batch-99',
+        frames: JSON.stringify({ p: 99 }),
+        is_draft: 0, // index 99 is odd → index % 2 === 0 is false → 0
+        name: 'name-99',
+      });
+
+      expect(await readCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(cursor);
     });
 
     it('skips an unknown server column (forward compat), lands the row, and reports the drift once', async () => {

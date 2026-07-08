@@ -82,6 +82,45 @@ const SYNC_DELETIONS_QUERY = `
   }
 `;
 
+// SQLite's default compile-time limit on bound parameters per statement
+// (SQLITE_MAX_VARIABLE_NUMBER's pre-3.32 default, still the safe floor across
+// the SQLite builds we run on — bundled iOS/Android sqlite3, node:sqlite).
+// Batching must never bind more than this per INSERT.
+const SQLITE_MAX_BIND_VARIABLES = 999;
+
+/**
+ * Coerces a synced document value to what the SQLite bridge accepts:
+ * booleans as 0/1 (SQLite has no BOOLEAN type), objects/arrays as their JSON
+ * string (frames, characteristics, etc. are stored as TEXT), null/undefined
+ * as NULL (undefined means "document omitted this column" — same bind as an
+ * explicit null), everything else passed through unchanged. Exported so a
+ * future Node export script can reuse the exact same coercion off the same
+ * synced documents without re-deriving it.
+ */
+export function toSqliteValue(value: unknown): SqlValue {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return value as SqlValue;
+}
+
+/**
+ * How many rows fit in one multi-row `INSERT OR REPLACE ... VALUES (...),(...)`
+ * statement without exceeding SQLite's bound-parameter ceiling. Always at
+ * least 1 (a table wider than the ceiling still gets one row per statement —
+ * it just can't batch).
+ */
+export function multiRowChunkSize(columnCount: number): number {
+  return Math.max(1, Math.floor(SQLITE_MAX_BIND_VARIABLES / columnCount));
+}
+
+function buildMultiRowInsertSql(tableName: string, columns: readonly string[], rowCount: number): string {
+  const columnList = columns.join(', ');
+  const rowPlaceholder = `(${columns.map(() => '?').join(', ')})`;
+  const valuesClause = Array.from({ length: rowCount }, () => rowPlaceholder).join(', ');
+  return `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES ${valuesClause}`;
+}
+
 async function upsertDocuments(
   db: OfflineDatabase,
   tableName: string,
@@ -108,6 +147,13 @@ async function upsertDocuments(
     }
   }
 
+  // Columns are the union of allowed columns present anywhere in the page (not
+  // per-document) — this was already true before batching, since this filter
+  // ran once over the whole `documents` array. Batching depends on it: every
+  // row in a multi-row VALUES clause must bind the same column list. A
+  // document missing a page-wide column binds NULL for it below, same as the
+  // single-row INSERT OR REPLACE did (INSERT OR REPLACE still does a whole-row
+  // replace, so this matches today's semantics, not just today's SQL shape).
   const columns = allowedColumns.filter((column) =>
     documents.some((document) => Object.prototype.hasOwnProperty.call(document, column)),
   );
@@ -115,24 +161,34 @@ async function upsertDocuments(
     throw new Error(`Sync document for ${tableName} did not contain any allowed columns`);
   }
 
-  const placeholders = columns.map(() => '?').join(', ');
-  const columnList = columns.join(', ');
-  const sql = `INSERT OR REPLACE INTO ${tableName} (${columnList}) VALUES (${placeholders})`;
+  const chunkSize = multiRowChunkSize(columns.length);
+  // At most two distinct row counts occur in a page (full chunks + a smaller
+  // final chunk), so caching the built SQL by row count avoids rebuilding the
+  // same multi-row VALUES string for every full chunk.
+  const sqlByRowCount = new Map<number, string>();
+  const sqlForRowCount = (rowCount: number): string => {
+    let sql = sqlByRowCount.get(rowCount);
+    if (!sql) {
+      sql = buildMultiRowInsertSql(tableName, columns, rowCount);
+      sqlByRowCount.set(rowCount, sql);
+    }
+    return sql;
+  };
 
   // One exclusive transaction per page (≤ PAGE_LIMIT rows): a big board pull is
   // thousands of pages, and a per-50-row transaction multiplied every page's
   // commit overhead by 10 while giving the drainer no meaningful extra window —
   // it can interleave between pages either way.
   await db.withExclusiveTransactionAsync(async (transaction) => {
-    for (const document of documents) {
-      const values = columns.map((col) => {
-        const value = document[col];
-        if (value === null || value === undefined) return null;
-        if (typeof value === 'boolean') return value ? 1 : 0;
-        if (typeof value === 'object') return JSON.stringify(value);
-        return value;
-      });
-      await transaction.runAsync(sql, values as SqlValue[]);
+    for (let chunkStart = 0; chunkStart < documents.length; chunkStart += chunkSize) {
+      const chunk = documents.slice(chunkStart, chunkStart + chunkSize);
+      const values: SqlValue[] = [];
+      for (const document of chunk) {
+        for (const column of columns) {
+          values.push(toSqliteValue(document[column]));
+        }
+      }
+      await transaction.runAsync(sqlForRowCount(chunk.length), values);
     }
   });
 }

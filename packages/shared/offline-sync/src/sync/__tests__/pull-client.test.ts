@@ -169,7 +169,7 @@ describe('pullSync', () => {
     );
   });
 
-  it('upserts a whole page inside one exclusive transaction', async () => {
+  it('upserts a whole page inside one exclusive transaction, batched into multi-row statements', async () => {
     const documents = Array.from({ length: 120 }, (_, index) => ({
       uuid: `tick-${index}`,
       attempt_count: index,
@@ -192,14 +192,64 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
+    // Only 2 columns are present across the page (uuid, attempt_count), so the
+    // chunk size (floor(999/2) = 499) comfortably covers all 120 rows in one
+    // multi-row INSERT OR REPLACE statement — one runAsync call, not 120.
     const ticksInsertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE INTO boardsesh_ticks'));
-    expect(ticksInsertCalls).toHaveLength(120);
+    expect(ticksInsertCalls).toHaveLength(1);
+    expect(ticksInsertCalls[0].params).toHaveLength(120 * 2);
 
     // One transaction for the 120-row page — per-batch transactions multiplied
     // commit overhead ~10× across a big board download.
     const transactionCalls = (db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls;
     expect(transactionCalls.length).toBe(1);
-    expect(mockTxn.runAsync).toHaveBeenCalledTimes(120);
+    expect(mockTxn.runAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('splits a page into multiple multi-row statements when it exceeds the bind-variable chunk size', async () => {
+    // board_climbs' real allowlist is 27 columns → chunkSize = floor(999/27) =
+    // 37 rows/statement. Supplying all 27 keys on every document makes the
+    // page-wide column union the full 27, so 100 rows must split into
+    // 37 + 37 + 26 = 3 statements inside the one transaction.
+    const climbsConfig = TABLE_CONFIGS.board_climbs;
+    const documents = Array.from({ length: 100 }, (_, index) =>
+      Object.fromEntries(
+        climbsConfig.localColumns.map((column) => [column, column === 'uuid' ? `climb-${index}` : `${column}-value`]),
+      ),
+    );
+
+    graphqlFetch.mockImplementation(async (query: string) => {
+      if (query.includes('syncDeletions')) {
+        return makeDeletionsResult([], false);
+      }
+      if (query.includes('syncClimbs')) {
+        return makeSyncResult('syncClimbs', documents, false);
+      }
+      for (const config of Object.values(TABLE_CONFIGS)) {
+        if (query.includes(config.queryName)) {
+          return makeSyncResult(config.queryName, [], false);
+        }
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+
+    await pullSync(db, queryClient, graphqlFetch, { enabledBoards: ['kilter:1:5'] });
+
+    const insertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE INTO board_climbs'));
+    expect(insertCalls).toHaveLength(3);
+    expect(insertCalls[0].params).toHaveLength(37 * climbsConfig.localColumns.length);
+    expect(insertCalls[1].params).toHaveLength(37 * climbsConfig.localColumns.length);
+    expect(insertCalls[2].params).toHaveLength(26 * climbsConfig.localColumns.length);
+
+    // Total row count across the chunked statements still matches the page.
+    const totalRowsInserted = insertCalls.reduce(
+      (sum, call) => sum + call.params.length / climbsConfig.localColumns.length,
+      0,
+    );
+    expect(totalRowsInserted).toBe(100);
+
+    // Still one exclusive transaction for the whole page, batching or not.
+    expect((db.withExclusiveTransactionAsync as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
   });
 
   it('updates checkpoint after each page', async () => {

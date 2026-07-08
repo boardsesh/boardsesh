@@ -44,7 +44,7 @@ export type { GraphQLFetch } from './mutation-queue/handlers';
 export { isRetryable, isNetworkError, getErrorStatus } from './mutation-queue/error-classification';
 
 // --- Pull sync -----------------------------------------------------------------
-export { pullSync } from './sync/pull-client';
+export { pullSync, toSqliteValue, multiRowChunkSize } from './sync/pull-client';
 export type { SyncProgress, SyncOptions, SchemaDriftReporter } from './sync/pull-client';
 export { startSyncScheduler, triggerSync } from './sync/sync-scheduler';
 export type { SyncProgressSink, SchedulerTriggers, SchedulerOptions, DrainQueue } from './sync/sync-scheduler';
