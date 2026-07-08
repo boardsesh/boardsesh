@@ -20,6 +20,7 @@ import {
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
 import { parseSnapshotManifest, type SnapshotManifest } from './snapshot-manifest';
+import { LATEST_SCHEMA_VERSION } from '../db/migrations';
 import { isSigningOut, getWipeEpoch } from '../mutation-queue/drainer';
 import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 
@@ -499,6 +500,12 @@ async function runBootstrapPhase(
         (candidate) => candidate.boardType === scope.boardType && candidate.layoutId === scope.layoutId,
       );
       if (!entry) continue; // layout not exported yet — permanent miss, no attempt
+      // Pre-check the manifest's schemaVersion so a schema-stale artifact is
+      // skipped BEFORE the multi-MB download; verifySnapshotMeta re-checks the
+      // authoritative value inside the file. Same permanent-miss semantics as
+      // SnapshotSchemaStaleError: no attempt, paged crawl runs this cycle, and
+      // tonight's export rebuilds at the new schema.
+      if (entry.schemaVersion < LATEST_SCHEMA_VERSION) continue;
 
       const layoutKey = `${scope.boardType}:${scope.layoutId}`;
       // The failure cause is cached alongside the result so a second size of the

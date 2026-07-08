@@ -152,7 +152,9 @@ function makeEntry(overrides: Partial<SnapshotManifestEntry> = {}): SnapshotMani
     bytes: 1024,
     contentEncoding: 'gzip',
     builtAt: '2026-06-01T00:00:00.000Z',
-    schemaVersion: 1,
+    // Default to the client's current schema so the manifest-level staleness
+    // pre-check in runBootstrapPhase doesn't skip fixture entries.
+    schemaVersion: LATEST_SCHEMA_VERSION,
     tables: {
       board_climbs: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 1 },
       board_climb_stats: { watermarkUpdatedAt: '2026-05-01T00:00:00Z', watermarkSyncSeq: '10', rowCount: 1 },
@@ -638,6 +640,41 @@ describe('pullSync snapshot bootstrap', () => {
       await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
     ).toBeNull();
     expect(errors).toEqual([{ stage: 'import', attempt: 0 }]);
+  });
+
+  it('skips the download entirely when the MANIFEST already reports a stale schemaVersion', async () => {
+    // The artifact itself is current — only the manifest entry is stale. The
+    // pre-check must skip before the (multi-MB) download, not after.
+    const filePath = join(workDir, 'stale-manifest.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c-artifact', compatibleSizeIds: [5] }],
+      stats: [],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+    const source = makeSnapshotSource({
+      manifest: makeManifest([makeEntry({ schemaVersion: LATEST_SCHEMA_VERSION - 1 })]),
+      fileForEntry: () => filePath,
+    });
+    const { fetch } = makeGraphqlFetch({
+      climbServerRows: [
+        {
+          doc: { uuid: 'c-paged', name: 'paged', compatible_size_ids: JSON.stringify([5]) },
+          cursor: { updatedAt: '2026-05-03T00:00:00Z', syncSeq: '30' },
+        },
+      ],
+    });
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    expect(source.downloadArtifact).not.toHaveBeenCalled();
+    // Paged crawl ran this cycle and no attempt was burned.
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
+    expect(climbs.map((row) => row.uuid)).toEqual(['c-paged']);
+    expect(
+      await db.getFirstAsync('SELECT value FROM sync_meta WHERE key = ?', ['bootstrap-attempts:kilter:1:5']),
+    ).toBeNull();
   });
 
   it('rejects a stale-schema artifact directly with SnapshotSchemaStaleError', async () => {
