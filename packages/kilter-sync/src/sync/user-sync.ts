@@ -963,6 +963,20 @@ export async function applyLogs(
  * board_climb_ratings.comment) — Kilter sending `comment: null` must
  * not clobber a non-empty Boardsesh-originated comment.
  */
+/**
+ * Kilter's per-user climb rating is a 1-5 star value; it also sends 0 to mean
+ * "cleared / no opinion". board_climb_ratings has a CHECK (rating IS NULL OR
+ * 1..5), so a raw 0 (or any out-of-range value) aborts the whole ratings batch
+ * insert and permanently fails that user's sync. Map anything outside 1-5 to
+ * NULL ("unrated") so the row is accepted. Exported for unit testing.
+ */
+export function sanitizeKilterRating(rating: number | null | undefined): number | null {
+  if (rating == null) return null;
+  const value = Number(rating);
+  if (!Number.isFinite(value) || value < 1 || value > 5) return null;
+  return value;
+}
+
 export async function applyClimbRatings(
   tx: DrizzleDb,
   userId: string,
@@ -1020,7 +1034,10 @@ export async function applyClimbRatings(
       climbUuid: canonical,
       angle: raw.angle,
       userId,
-      rating: raw.rating,
+      // Kilter sends 0 for "cleared"; the DB CHECK only allows NULL or 1-5, so
+      // a raw 0 would abort the whole batch. sanitizeKilterRating maps it (and
+      // any other out-of-range value) to NULL.
+      rating: sanitizeKilterRating(raw.rating),
       difficultyGradeId: raw.difficulty_grade_id,
       comment: raw.comment ?? '',
       // Kilter's per-rating payload doesn't carry a `weight`; the field

@@ -1037,7 +1037,21 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
 // hand-fed select results, assert exact statement counts.
 // ---------------------------------------------------------------------------
 
-import { applyCircuits, applyClimbRatings } from './user-sync';
+import { applyCircuits, applyClimbRatings, sanitizeKilterRating } from './user-sync';
+
+describe('sanitizeKilterRating', () => {
+  it('keeps valid 1-5 ratings', () => {
+    for (const r of [1, 2, 3, 4, 5]) expect(sanitizeKilterRating(r)).toBe(r);
+  });
+  it('maps 0 (Kilter "cleared") and out-of-range / non-finite to NULL so the CHECK accepts the row', () => {
+    expect(sanitizeKilterRating(0)).toBeNull();
+    expect(sanitizeKilterRating(-1)).toBeNull();
+    expect(sanitizeKilterRating(6)).toBeNull();
+    expect(sanitizeKilterRating(null)).toBeNull();
+    expect(sanitizeKilterRating(undefined)).toBeNull();
+    expect(sanitizeKilterRating(Number.NaN)).toBeNull();
+  });
+});
 import { boardClimbRatings, playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema';
 
 type ChainTx = {
@@ -1184,6 +1198,17 @@ describe('applyClimbRatings — bulk upsert with COALESCE comment', () => {
     expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
     // boardClimbRatings is the schema target — used by the bulk insert.
     expect(boardClimbRatings).toBeDefined();
+  });
+
+  it('sanitizes a Kilter rating=0 to NULL so the batch does not violate the CHECK', () => {
+    const { tx, insertValues } = createRichTx();
+    const ops = [makeRatingPutOp({ climb_rating_uuid: 'r-0', climb_uuid: 'climb-A', angle: 40, rating: 0 })];
+    return applyClimbRatings(tx as unknown as ApplyClimbRatingsTx, 'user-1', ops, aliasCacheFor(['climb-A'])).then(
+      () => {
+        expect(insertValues[0]).toHaveLength(1);
+        expect(insertValues[0][0]).toMatchObject({ kilterId: 'r-0', rating: null });
+      },
+    );
   });
 
   it('issues exactly one bulk DELETE for N REMOVE ops, no INSERT', async () => {
