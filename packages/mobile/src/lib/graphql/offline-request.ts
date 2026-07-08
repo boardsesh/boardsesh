@@ -125,6 +125,25 @@ registerOfflineOperation<BoardseshGradeVariables, BoardseshGradeResponse>({
   isLocalMiss: (response) => response.boardseshGrade === null,
 });
 
+// Deliberately NO `isLocalMiss` here, unlike the BOARDSESH_GRADE op above — this is
+// a collapsed-vs-expanded divergence, not an oversight. The single-angle op treats a
+// null row as a miss and retries over the network (see its isLocalMiss above); this
+// by-angle op treats an empty list as a real answer and never retries. Two reasons:
+//   1. An empty by-angle list is frequently CORRECT (MoonBoard / too-few-ascents
+//      climbs are never graded), so retrying it would be a needless network round
+//      trip on every chart open for those climbs — the same reasoning search results
+//      use (see the class doc above `OfflineOperation.isLocalMiss`).
+//   2. Neither grade op carries layout/size, only boardName — so there's no way to
+//      tell "genuinely ungraded" apart from "this exact climb scope never synced to
+//      this device" (e.g. viewed cross-scope via party queue / deep link / similar
+//      climbs). Adding isLocalMiss here would retry on every miss including the
+//      common ungraded case, which is the exact overhead skipping it is meant to
+//      avoid.
+// Net effect: for a climb whose grades never synced to THIS device, the collapsed
+// single-grade view (BOARDSESH_GRADE) falls back to the network and shows a grade,
+// while the expanded by-angle chart (this op) shows empty until the board's next
+// background sync catches the row up. This is accepted, not a bug — see
+// offline-request.test.ts's "does not retry an empty local list" case.
 registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAnglesResponse>({
   document: BOARDSESH_GRADES_FOR_ANGLES,
   canServeLocal: (db, { boardName }) => isBoardTypeDownloadedLocally(db, boardName),

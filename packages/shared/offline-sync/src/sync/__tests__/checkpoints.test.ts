@@ -1,8 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { OfflineDatabase } from '../../database';
 
-import { getCheckpointKey, getCheckpoint, setCheckpoint, deleteCheckpoint, deleteAllCheckpoints } from '../checkpoints';
+import {
+  getCheckpointKey,
+  getCheckpoint,
+  setCheckpoint,
+  deleteCheckpoint,
+  deleteAllCheckpoints,
+  deleteUserCheckpoints,
+} from '../checkpoints';
 import type { SyncCheckpoint } from '../checkpoints';
+import { BOARD_DATA_TABLES } from '../table-config';
+import { runMigrations } from '../../db/migrations';
+import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
 
 function createMockDb() {
   return {
@@ -96,5 +106,54 @@ describe('deleteAllCheckpoints', () => {
     await deleteAllCheckpoints(db);
 
     expect(db.runAsync).toHaveBeenCalledWith("DELETE FROM sync_meta WHERE key LIKE 'checkpoint:%'");
+  });
+});
+
+// Regression coverage for the sign-out checkpoint wipe (reviewer-flagged MAJOR:
+// board_climb_grades' checkpoint fell through the old hardcoded NOT-LIKE list — its
+// rows are board reference data that survives sign-out, per USER_DATA_TABLES_TO_CLEAR
+// in packages/mobile/src/db/connection.ts, but its checkpoint was still deleted,
+// forcing a full re-crawl on the next sign-in). Runs against real node:sqlite (not the
+// call-recording mock above) because the bug lives in whether SQLite's LIKE matching
+// actually preserves the right rows, not just in what SQL string gets built.
+describe('deleteUserCheckpoints', () => {
+  let db: TestSqliteDb;
+
+  beforeEach(async () => {
+    db = createTestDatabase();
+    await runMigrations(db);
+  });
+
+  it('preserves a board_climb_grades checkpoint while deleting a user-data checkpoint', async () => {
+    await setCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5', {
+      updatedAt: '2026-01-01T00:00:00Z',
+      syncSeq: '1',
+    });
+    await setCheckpoint(db, 'checkpoint:boardsesh_ticks', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '7' });
+
+    await deleteUserCheckpoints(db);
+
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).not.toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:boardsesh_ticks')).toBeNull();
+  });
+
+  it('preserves every BOARD_DATA_TABLES checkpoint, so a future per-board table cannot silently regress', async () => {
+    // Derived from BOARD_DATA_TABLES (not hardcoded to today's three tables) so this
+    // test keeps proving the guarantee even as isPerBoard entries in table-config.ts
+    // change — the whole point of making deleteUserCheckpoints dynamic.
+    for (const tableName of BOARD_DATA_TABLES) {
+      await setCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`, {
+        updatedAt: '2026-01-01T00:00:00Z',
+        syncSeq: '1',
+      });
+    }
+    await setCheckpoint(db, 'checkpoint:playlists', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '1' });
+
+    await deleteUserCheckpoints(db);
+
+    for (const tableName of BOARD_DATA_TABLES) {
+      expect(await getCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`)).not.toBeNull();
+    }
+    expect(await getCheckpoint(db, 'checkpoint:playlists')).toBeNull();
   });
 });

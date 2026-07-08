@@ -1,4 +1,5 @@
 import type { SqlExecutor } from '../database';
+import { BOARD_DATA_TABLES } from './table-config';
 
 export type SyncCheckpoint = {
   updatedAt: string;
@@ -76,16 +77,29 @@ export async function deleteAllCheckpoints(db: SqlExecutor): Promise<void> {
 }
 
 /**
- * Reset only the user-scoped checkpoints (user tables + deletions), preserving the
- * board reference checkpoints (`checkpoint:board_climbs:*` / `board_climb_stats:*`).
- * Used on sign-out: the board rows survive as the shared cache, so their checkpoints
- * must survive too — otherwise the next sign-in re-crawls 200k+ rows from epoch.
+ * Reset only the user-scoped checkpoints (user tables + deletions), preserving every
+ * board reference table's checkpoint — currently `checkpoint:board_climbs:*`,
+ * `checkpoint:board_climb_stats:*`, and `checkpoint:board_climb_grades:*` (see
+ * BOARD_DATA_TABLES in table-config.ts, derived from each TABLE_CONFIGS entry's
+ * `isPerBoard` flag). Used on sign-out: the board rows survive as the shared cache
+ * (connection.ts's USER_DATA_TABLES_TO_CLEAR excludes them), so their checkpoints
+ * must survive too — otherwise the next sign-in re-crawls hundreds of thousands of
+ * rows from epoch for every board table.
+ *
+ * The exclusion list is built FROM BOARD_DATA_TABLES rather than hardcoded per table,
+ * so adding a new per-board reference table (isPerBoard: true in TABLE_CONFIGS)
+ * automatically preserves its checkpoint here too — no second place to remember to
+ * update. board_climb_grades previously fell through this exact gap (its rows are
+ * board reference data and are never cleared, but its checkpoint wasn't on the
+ * hardcoded NOT-LIKE list, so it was wiped on every sign-out).
  */
 export async function deleteUserCheckpoints(db: SqlExecutor): Promise<void> {
+  const preserveBoardTableClauses = BOARD_DATA_TABLES.map(() => 'AND key NOT LIKE ?').join('\n       ');
+  const preserveBoardTableParams = BOARD_DATA_TABLES.map((tableName) => `checkpoint:${tableName}:%`);
   await db.runAsync(
     `DELETE FROM sync_meta
      WHERE key LIKE 'checkpoint:%'
-       AND key NOT LIKE 'checkpoint:board_climbs:%'
-       AND key NOT LIKE 'checkpoint:board_climb_stats:%'`,
+       ${preserveBoardTableClauses}`,
+    preserveBoardTableParams,
   );
 }
