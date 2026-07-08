@@ -488,6 +488,64 @@ export const syncQueries = {
   },
 
   /**
+   * Pull Boardsesh grades for a board type (reference data, per-board). Local PK =
+   * (board_type, climb_uuid, angle). Seq = sync_seq, cursor timestamp = computed_at.
+   * Optional layoutId/sizeId scope the grades to the climbs of that (layout, size)
+   * via a correlated EXISTS on board_climbs (board_climb_grades has no layout_id
+   * column, exactly like board_climb_stats). Cursor columns are fully qualified to
+   * stay unambiguous alongside the subquery. model_version/coeff_version/
+   * content_prior are dropped — the device only needs the surfaced grade + band.
+   */
+  syncClimbGrades: async (
+    _: unknown,
+    {
+      boardType,
+      layoutId,
+      sizeId,
+      cursor,
+      limit,
+    }: {
+      boardType: string;
+      layoutId?: number | null;
+      sizeId?: number | null;
+      cursor?: SyncCursorInput | null;
+      limit: number;
+    },
+    ctx: ConnectionContext,
+  ): Promise<SyncResult> => {
+    const {
+      limit: lim,
+      boardType: validBoardType,
+      layoutId: lid,
+      sizeId: sid,
+    } = prepareBoardSync(ctx, cursor, limit, boardType, layoutId, sizeId);
+
+    // Grades have no layout_id, so scope them to the climbs of that (layout, size)
+    // via a correlated EXISTS on board_climbs, reusing the same shared conditions
+    // syncClimbs uses (bc.-qualified here). No scope → plain board_type filter.
+    const scopeConditions = boardClimbsLayoutSizeConditions(validBoardType, lid, sid, sql`bc.`);
+    let scope: SQL = sql`board_type = ${validBoardType}`;
+    if (scopeConditions.length > 0) {
+      const sub = sql.join(
+        [sql`bc.uuid = board_climb_grades.climb_uuid`, sql`bc.board_type = ${validBoardType}`, ...scopeConditions],
+        sql` AND `,
+      );
+      scope = sql`board_type = ${validBoardType} AND EXISTS (SELECT 1 FROM board_climbs bc WHERE ${sub})`;
+    }
+
+    return runSyncPage({
+      selectList: sql`board_type, climb_uuid, angle, local_grade, universal_grade, grade_low, grade_high,
+        confidence, ascensionist_count, computed_at, sync_seq`,
+      fromClause: sql`board_climb_grades`,
+      scope,
+      updatedAtColumn: sql`board_climb_grades.computed_at`,
+      seqColumn: sql`board_climb_grades.sync_seq`,
+      cursor,
+      limit: lim,
+    });
+  },
+
+  /**
    * Pull hard deletions for the client to apply locally. Scoped to the user's own
    * deletions plus reference-data deletions (user_id IS NULL). Cursor on
    * (deleted_at, id).

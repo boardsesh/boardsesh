@@ -4083,6 +4083,11 @@ export type Query = {
    */
   smartPlaylist: SmartPlaylistResult;
   /**
+   * Pull Boardsesh grades for a board type, changed since the cursor (reference data).
+   * Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
+   */
+  syncClimbGrades: SyncResult;
+  /**
    * Pull board climb stats for a board type, changed since the cursor (reference data).
    * Optional layoutId/sizeId scope stats to the climbs of that layout/size via board_climbs.
    */
@@ -4601,6 +4606,15 @@ export type QuerySimilarClimbsArgs = {
 /** Root query type for all read operations. */
 export type QuerySmartPlaylistArgs = {
   input: GetSmartPlaylistInput;
+};
+
+/** Root query type for all read operations. */
+export type QuerySyncClimbGradesArgs = {
+  boardType: Scalars['String']['input'];
+  cursor?: InputMaybe<SyncCursorInput>;
+  layoutId?: InputMaybe<Scalars['Int']['input']>;
+  limit?: Scalars['Int']['input'];
+  sizeId?: InputMaybe<Scalars['Int']['input']>;
 };
 
 /** Root query type for all read operations. */
@@ -9853,6 +9867,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QuerySmartPlaylistArgs, 'input'>
+  >;
+  syncClimbGrades?: Resolver<
+    ResolversTypes['SyncResult'],
+    ParentType,
+    ContextType,
+    RequireFields<QuerySyncClimbGradesArgs, 'boardType' | 'limit'>
   >;
   syncClimbStats?: Resolver<
     ResolversTypes['SyncResult'],

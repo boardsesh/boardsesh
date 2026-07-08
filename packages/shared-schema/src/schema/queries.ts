@@ -749,6 +749,18 @@ export const queriesTypeDefs = /* GraphQL */ `
       limit: Int! = 500
     ): SyncResult!
 
+    """
+    Pull Boardsesh grades for a board type, changed since the cursor (reference data).
+    Optional layoutId/sizeId scope grades to the climbs of that layout/size via board_climbs.
+    """
+    syncClimbGrades(
+      boardType: String!
+      layoutId: Int
+      sizeId: Int
+      cursor: SyncCursorInput
+      limit: Int! = 500
+    ): SyncResult!
+
     "Pull hard deletions (user-scoped + reference data) since the cursor."
     syncDeletions(cursor: SyncCursorInput, limit: Int! = 500): SyncDeletionsResult!
   }

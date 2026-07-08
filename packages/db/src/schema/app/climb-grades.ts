@@ -3,6 +3,7 @@ import {
   text,
   integer,
   bigint,
+  bigserial,
   doublePrecision,
   timestamp,
   primaryKey,
@@ -48,10 +49,18 @@ export const boardClimbGrades = pgTable(
     modelVersion: text('model_version').notNull(),
     coeffVersion: text('coeff_version').notNull(),
     computedAt: timestamp('computed_at', { mode: 'string' }).defaultNow().notNull(),
+    // Monotonic per-row sequence for the offline sync cursor tiebreaker, mirroring
+    // board_climb_stats.sync_seq. The nightly refresh stamps computed_at, so the
+    // (computed_at, sync_seq) cursor pages every recompute without skips even when
+    // a batch stamps many rows at the same computed_at.
+    syncSeq: bigserial('sync_seq', { mode: 'number' }).notNull(),
   },
   (table) => ({
     pk: primaryKey({ columns: [table.boardType, table.climbUuid, table.angle] }),
     confidenceIdx: index('board_climb_grades_confidence_idx').on(table.boardType, table.confidence),
+    // Leading board_type: syncClimbGrades filters on it before walking the
+    // (computed_at, sync_seq) cursor, so a per-board pull is one range scan.
+    syncCursorIdx: index('board_climb_grades_sync_cursor_idx').on(table.boardType, table.computedAt, table.syncSeq),
   }),
 );
 

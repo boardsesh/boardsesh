@@ -228,6 +228,7 @@ export const schemaSQL = `
     "model_version" text NOT NULL,
     "coeff_version" text NOT NULL,
     "computed_at" timestamp DEFAULT now() NOT NULL,
+    "sync_seq" bigserial NOT NULL,
     PRIMARY KEY ("board_type", "climb_uuid", "angle")
   );
 
@@ -776,6 +777,7 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "sync_deletions_deleted_at_idx" ON "sync_deletions" ("deleted_at");
   CREATE INDEX IF NOT EXISTS "board_climbs_sync_cursor_idx" ON "board_climbs" ("board_type", "updated_at", "sync_seq");
   CREATE INDEX IF NOT EXISTS "board_climb_stats_sync_cursor_idx" ON "board_climb_stats" ("board_type", "updated_at", "sync_seq");
+  CREATE INDEX IF NOT EXISTS "board_climb_grades_sync_cursor_idx" ON "board_climb_grades" ("board_type", "computed_at", "sync_seq");
 
   CREATE OR REPLACE FUNCTION log_deletion_playlists() RETURNS TRIGGER AS $$
   DECLARE
