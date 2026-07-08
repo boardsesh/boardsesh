@@ -120,7 +120,9 @@ label is right" vote. A synced exact-echo is treated as "no opinion expressed"
   Tension's top user is 33% of expressed opinions and tick-weighting would cut
   `σ_within` from 1.74 to 1.38 — one person's tight personal dispersion faking
   ~26% more confidence in every Tension crowd mean. On Kilter (top user 5.7%)
-  the choice barely matters (1.55 vs 1.52).
+  the choice barely matters (1.55 vs 1.52). Reproduce all three checks with
+  `node --import tsx packages/db/scripts/analyze-grader-concentration.ts`
+  (read-only).
 - Drafts and unlisted climbs are excluded from the pipeline.
 
 ## 3. The model
