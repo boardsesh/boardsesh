@@ -748,10 +748,14 @@ export async function pullSync(
     if (allTablesReachedTail) {
       await markScopeDownloadComplete(db, scopeKey);
       const startedAt = scopeStartedAt.get(scopeKey);
+      // Should be unreachable because scopeStartedAt is seeded from the same
+      // parsed boardScopes list this loop iterates. If that invariant breaks,
+      // skip telemetry rather than emit a misleading 0ms duration.
+      if (startedAt === undefined) continue;
       options?.onScopeDownloadComplete?.({
         scopeKey,
         method: bootstrappedScopeKeys.has(scopeKey) ? 'snapshot' : 'paged',
-        durationMs: startedAt !== undefined ? Date.now() - startedAt : 0,
+        durationMs: Date.now() - startedAt,
       });
     }
   }

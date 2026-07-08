@@ -9,6 +9,7 @@ import { getSetting } from '../settings';
 import { setupNotificationHandlers } from '../notifications';
 import { getHttpClient } from '../lib/graphql/client';
 import { setOfflineEngineEnabled } from '../lib/offline-engine';
+import { isSnapshotBaseUrlConfigured } from '../lib/env';
 import { useAuth } from '../providers/auth-provider';
 import { useOfflineDownloadsEnabled, useSnapshotBootstrapEnabled } from '../providers/feature-flags-provider';
 import { mobileSnapshotSource } from '../offline/snapshot-source';
@@ -52,6 +53,7 @@ export function OfflineSyncBridge() {
   const { isAuthenticated } = useAuth();
   const offlineEnabled = useOfflineDownloadsEnabled();
   const snapshotBootstrapEnabled = useSnapshotBootstrapEnabled();
+  const snapshotSource = snapshotBootstrapEnabled && isSnapshotBaseUrlConfigured() ? mobileSnapshotSource : undefined;
 
   // getHttpClient() already carries auth + endpoint; binding .request keeps the
   // GraphQLFetch shape the scheduler and drainer expect.
@@ -89,9 +91,9 @@ export function OfflineSyncBridge() {
           // can render "last synced" + live progress without prop-drilling.
           setSyncProgress,
           // Snapshot bootstrap is its own flag, nested under offline-board-downloads
-          // — a freshly-enabled board still downloads with the flag off, just via
-          // the (today's default) paged crawl.
-          snapshotBootstrapEnabled ? mobileSnapshotSource : undefined,
+          // and a real build-time manifest URL — otherwise a freshly-enabled
+          // board still downloads through the paged crawl.
+          snapshotSource,
         );
         return stop;
       } catch (error) {
@@ -122,7 +124,7 @@ export function OfflineSyncBridge() {
     return () => {
       cancelled = true;
     };
-  }, [db, queryClient, graphqlFetch, offlineEnabled, snapshotBootstrapEnabled, isAuthenticated]);
+  }, [db, queryClient, graphqlFetch, offlineEnabled, snapshotSource, isAuthenticated]);
 
   // Deep-link routing for tapped push notifications. Deliberately independent
   // of the offline flag — notifications ship inert for everyone today.

@@ -3,11 +3,11 @@
 // injects to warm a freshly-enabled board scope from a pre-built artifact
 // instead of paging the whole catalog over GraphQL. See
 // packages/backend/src/scripts/export-board-snapshots.ts for what this
-// downloads: a per-(boardType, layoutId) SQLite file gzipped and uploaded to
-// Tigris/S3 under `board-snapshots/v1/`, served with `Content-Encoding: gzip`
-// (so a compliant HTTP stack decompresses it transparently while downloading)
-// plus `manifest.json` listing every artifact's URL, size, and resume
-// watermarks.
+// downloads: a per-(boardType, layoutId) SQLite file uploaded to Tigris/S3
+// under `board-snapshots/v1/`, plus `manifest.json` listing every artifact's
+// URL, stored size, content encoding, and resume watermarks. Artifacts default
+// to identity encoding; gzip is opt-in and verified by this adapter before the
+// file is handed to SQLite.
 //
 // The engine only consumes what this returns — it never fetches, downloads, or
 // gunzips anything itself (see snapshot-bootstrap.ts's `SnapshotSource`
@@ -30,15 +30,12 @@ const MANIFEST_URL = `${SNAPSHOT_BASE_URL}/manifest.json`;
 // not Paths.document).
 const SNAPSHOT_DIR_NAME = 'board-snapshots';
 
-// The space a download could occupy is bounded by whichever is larger: the
-// gzip-on-the-wire size (if the platform does NOT auto-decompress and we end
-// up deleting it) or the decompressed SQLite file (if it does — board_climbs +
-// board_climb_stats are text-heavy, so gzip commonly gets 4-8x on this data).
-// This multiplier is a deliberately conservative ceiling on top of
-// `entry.bytes` (the gzip size) so a marginal device never gets walked into
-// running out of disk mid-download — a `null` here just falls back to the
-// paged crawl, so there is no cost to erring generous.
-const FREE_SPACE_SAFETY_MULTIPLIER = 6;
+// Identity artifacts are already stored as SQLite files, so they only need room
+// for the download plus write overhead. Gzip artifacts may temporarily require
+// the compressed object and the decompressed SQLite file; board_climbs +
+// board_climb_stats are text-heavy, so keep that path deliberately conservative.
+const IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER = 2;
+const GZIP_FREE_SPACE_SAFETY_MULTIPLIER = 6;
 
 const GZIP_MAGIC_BYTE_0 = 0x1f;
 const GZIP_MAGIC_BYTE_1 = 0x8b;
@@ -104,7 +101,9 @@ async function fetchManifest(): Promise<unknown> {
 }
 
 async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePath: string } | null> {
-  const requiredBytes = entry.bytes * FREE_SPACE_SAFETY_MULTIPLIER;
+  const freeSpaceSafetyMultiplier =
+    entry.contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
+  const requiredBytes = entry.bytes * freeSpaceSafetyMultiplier;
   if (Paths.availableDiskSpace < requiredBytes) return null;
 
   const directory = snapshotDirectory();
@@ -141,9 +140,8 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
       // Expected behaviour is that the native HTTP stack (NSURLSession /
       // OkHttp) auto-decodes a gzip Content-Encoding while downloading — this
       // path should be rare-to-never. Report it as a handled error (not just a
-      // dev warning) so a real pattern shows up in Sentry; if it turns out to
-      // be common on some platform/OS combo, the fix is to flip the export job
-      // to `contentEncoding: 'identity'` rather than trying to gunzip client-side.
+      // dev warning) so a real pattern shows up in Sentry before gzip is enabled
+      // for mobile artifacts.
       reportHandledError(
         new Error('snapshot artifact arrived still gzip-compressed (Content-Encoding was not auto-decoded)'),
         {

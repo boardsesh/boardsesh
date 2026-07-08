@@ -8,7 +8,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const state = vi.hoisted(() => ({
   availableDiskSpace: 10_000_000_000, // 10 GB — plenty of headroom by default
-  createdDirectories: [] as string[],
+  createdDirectories: [] as Array<{
+    path: string;
+    options?: { intermediates?: boolean; idempotent?: boolean; overwrite?: boolean };
+  }>,
   downloadCalls: [] as Array<{ url: string; idempotent?: boolean }>,
   downloadError: null as Error | null,
   downloadBytes: new Uint8Array([9, 9, 9, 9]), // non-gzip payload by default
@@ -21,8 +24,8 @@ vi.mock('expo-file-system', () => {
     constructor(...parts: unknown[]) {
       this.path = parts.map((part) => (part instanceof FakeDirectory ? part.path : String(part))).join('/');
     }
-    create() {
-      state.createdDirectories.push(this.path);
+    create(options?: { intermediates?: boolean; idempotent?: boolean; overwrite?: boolean }) {
+      state.createdDirectories.push({ path: this.path, options });
     }
   }
 
@@ -166,7 +169,7 @@ describe('fetchManifest', () => {
 });
 
 describe('downloadArtifact', () => {
-  it('returns null without downloading when free disk space is below the safety multiple of entry.bytes', async () => {
+  it('returns null without downloading when free disk space is below the gzip safety multiple of entry.bytes', async () => {
     state.availableDiskSpace = ENTRY.bytes * 2; // well under the 6x safety multiplier
 
     const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
@@ -175,9 +178,22 @@ describe('downloadArtifact', () => {
     expect(state.downloadCalls).toHaveLength(0);
   });
 
+  it('allows identity artifacts with the lower identity safety multiple', async () => {
+    state.availableDiskSpace = ENTRY.bytes * 3;
+    const identityEntry: SnapshotManifestEntry = { ...ENTRY, contentEncoding: 'identity' };
+
+    const result = await mobileSnapshotSource.downloadArtifact(identityEntry);
+
+    expect(result).not.toBeNull();
+    expect(state.downloadCalls).toHaveLength(1);
+  });
+
   it('downloads to the cache directory idempotently and returns a plain filesystem path (no file:// scheme)', async () => {
     const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
 
+    expect(state.createdDirectories).toEqual([
+      { path: 'cache-root/board-snapshots', options: { intermediates: true, idempotent: true } },
+    ]);
     expect(state.downloadCalls).toEqual([{ url: ENTRY.url, idempotent: true }]);
     expect(result).not.toBeNull();
     expect(result?.filePath.startsWith('file://')).toBe(false);
