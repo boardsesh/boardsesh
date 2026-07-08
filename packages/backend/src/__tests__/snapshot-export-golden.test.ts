@@ -25,11 +25,12 @@ import type { ConnectionContext, SyncCursorInput } from '@boardsesh/shared-schem
 import type { QueryInvalidator } from '@boardsesh/offline-sync';
 import { pullSync, runMigrations, TABLE_CONFIGS } from '@boardsesh/offline-sync';
 import { createTestDatabase } from '@boardsesh/offline-sync/testing';
-// createReadPool GUARANTEES the drizzle wrapper is constructed before the raw
-// pool is returned (both branches in packages/db/src/client/postgres.ts), so
-// the pool used here carries drizzle's transparent timestamp parsers exactly
-// like production — calling createReadDb() first is not required.
-import { createReadPool } from '@boardsesh/db/client';
+// createPool is the SAME accessor runExport uses (primary-only: replica
+// commit-order snapshots can omit lower-cursor rows, so the export never reads
+// a replica). It GUARANTEES the drizzle wrapper is constructed before the raw
+// pool is returned (packages/db/src/client/postgres.ts), so the pool used here
+// carries drizzle's transparent timestamp parsers exactly like production.
+import { createPool } from '@boardsesh/db/client';
 import { db } from '../db/client';
 import { syncQueries } from '../graphql/resolvers/sync/queries';
 import { toIso } from '../graphql/resolvers/sync/row-normalize';
@@ -243,7 +244,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
     // --- Path A: export core → SQLite artifact ---
     const filePath = join(workDir, 'artifact.db');
     await exportLayoutSnapshot({
-      sqlClient: createReadPool(),
+      sqlClient: createPool(),
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
@@ -291,7 +292,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
 
     const filePath = join(workDir, 'artifact.db');
     await exportLayoutSnapshot({
-      sqlClient: createReadPool(),
+      sqlClient: createPool(),
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,
@@ -341,7 +342,7 @@ describe('board-snapshot export ↔ live pull parity', () => {
 
     const filePath = join(workDir, 'artifact.db');
     await exportLayoutSnapshot({
-      sqlClient: createReadPool(),
+      sqlClient: createPool(),
       boardType: BOARD_TYPE,
       layoutId: LAYOUT_ID,
       filePath,

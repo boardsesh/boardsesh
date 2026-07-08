@@ -139,4 +139,27 @@ describe('s3 storage', () => {
     awsMocks.send.mockRejectedValueOnce(new Error('not found'));
     await expect(getFromS3('missing.json')).resolves.toBeNull();
   });
+
+  it('getFromS3Strict distinguishes a missing object (null) from a read failure (throws)', async () => {
+    const { getFromS3Strict } = await import('./s3');
+
+    // NoSuchKey / 404 shapes → null (the object genuinely does not exist).
+    const noSuchKey = Object.assign(new Error('no such key'), { name: 'NoSuchKey' });
+    awsMocks.send.mockRejectedValueOnce(noSuchKey);
+    await expect(getFromS3Strict('missing.json')).resolves.toBeNull();
+
+    const http404 = Object.assign(new Error('not found'), { $metadata: { httpStatusCode: 404 } });
+    awsMocks.send.mockRejectedValueOnce(http404);
+    await expect(getFromS3Strict('missing.json')).resolves.toBeNull();
+
+    // Anything else (network/auth/throttle) must PROPAGATE — callers like the
+    // snapshot manifest merge treat "missing" and "unreadable" very differently.
+    awsMocks.send.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(getFromS3Strict('broken.json')).rejects.toThrow('connection reset');
+
+    // The lenient getFromS3 still maps that same failure to null (caller contract).
+    const { getFromS3 } = await import('./s3');
+    awsMocks.send.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(getFromS3('broken.json')).resolves.toBeNull();
+  });
 });

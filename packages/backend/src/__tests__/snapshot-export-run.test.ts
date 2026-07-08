@@ -13,7 +13,9 @@ vi.mock('../storage/s3', () => ({
   isS3Configured: vi.fn(() => true),
   getPublicUrl: vi.fn((key: string) => `https://cdn.example/${key}`),
   uploadToS3: vi.fn(async (_buffer: Buffer, key: string) => ({ url: `https://cdn.example/${key}`, key })),
-  getFromS3: vi.fn(async () => null),
+  // The script reads the previous manifest through the STRICT variant (null =
+  // genuinely missing; read errors throw).
+  getFromS3Strict: vi.fn(async () => null),
   deleteFromS3: vi.fn(async () => {}),
   listS3Objects: vi.fn(async () => []),
 }));
@@ -22,7 +24,7 @@ import { Readable } from 'node:stream';
 import { sql } from 'drizzle-orm';
 import type { SnapshotManifest, SnapshotManifestEntry } from '@boardsesh/offline-sync';
 import { db } from '../db/client';
-import { uploadToS3, getFromS3, deleteFromS3, listS3Objects } from '../storage/s3';
+import { uploadToS3, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { runExport, mergeManifestEntries } from '../scripts/export-board-snapshots';
 
 const MANIFEST_KEY = 'board-snapshots/v1/manifest.json';
@@ -48,10 +50,15 @@ function manifestFixture(entries: SnapshotManifestEntry[]): SnapshotManifest {
   return { formatVersion: 1, generatedAt: '2026-06-01T00:00:00.000Z', entries };
 }
 
-/** Serves `manifest` as the previous manifest through the getFromS3 mock. */
+/** Serves `manifest` as the previous manifest through the getFromS3Strict mock. */
 function serveExistingManifest(manifest: SnapshotManifest): void {
-  vi.mocked(getFromS3).mockResolvedValue({
-    stream: Readable.from([Buffer.from(JSON.stringify(manifest))]),
+  serveManifestBody(JSON.stringify(manifest));
+}
+
+/** Serves an arbitrary (possibly invalid) previous-manifest body. */
+function serveManifestBody(body: string): void {
+  vi.mocked(getFromS3Strict).mockResolvedValue({
+    stream: Readable.from([Buffer.from(body)]),
     contentType: 'application/json',
     contentLength: undefined,
   });
@@ -81,7 +88,7 @@ beforeEach(async () => {
     url: `https://cdn.example/${key}`,
     key,
   }));
-  vi.mocked(getFromS3).mockResolvedValue(null);
+  vi.mocked(getFromS3Strict).mockResolvedValue(null);
   vi.mocked(listS3Objects).mockResolvedValue([]);
   vi.mocked(deleteFromS3).mockResolvedValue(undefined);
   await db.execute(sql`TRUNCATE TABLE board_climbs, board_climb_stats RESTART IDENTITY CASCADE`);
@@ -148,6 +155,62 @@ describe('runExport — manifest merge on filtered runs', () => {
     serveExistingManifest(manifestFixture([vanishedEntry]));
 
     await runExport([]);
+
+    const manifest = uploadedManifest();
+    expect(manifest.entries.map((entry) => `${entry.boardType}:${entry.layoutId}`)).toEqual(['kilter:1']);
+  });
+});
+
+describe('runExport — previous-manifest failure matrix', () => {
+  it('S3 read error on a filtered run aborts BEFORE anything is uploaded', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    vi.mocked(getFromS3Strict).mockRejectedValue(new Error('S3 connection reset'));
+
+    await expect(runExport(['--board', 'kilter'])).rejects.toThrow(/S3 connection reset/);
+
+    // Nothing was uploaded: no artifacts, no manifest.
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('S3 read error on an unfiltered run also aborts before anything is uploaded (failed layouts need previous entries too)', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    vi.mocked(getFromS3Strict).mockRejectedValue(new Error('S3 connection reset'));
+
+    await expect(runExport([])).rejects.toThrow(/S3 connection reset/);
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('manifest genuinely missing (strict null) on a filtered run proceeds against an empty previous manifest', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    // beforeEach default: getFromS3Strict resolves null (NoSuchKey — first run).
+
+    await runExport(['--board', 'kilter']);
+
+    const manifest = uploadedManifest();
+    expect(manifest.entries.map((entry) => `${entry.boardType}:${entry.layoutId}`)).toEqual(['kilter:1']);
+  });
+
+  it('unparseable previous manifest is FATAL on a filtered run (it cannot reconstruct what it would drop)', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    serveManifestBody('{{{ not json');
+
+    await expect(runExport(['--board', 'kilter'])).rejects.toThrow(/filtered run cannot merge safely/);
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('schema-invalid previous manifest is FATAL on a filtered run too', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    serveManifestBody(JSON.stringify({ formatVersion: 999, generatedAt: 'x', entries: [] }));
+
+    await expect(runExport(['--board', 'kilter'])).rejects.toThrow(/filtered run cannot merge safely/);
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('unparseable previous manifest on an UNFILTERED run warns and continues (it rebuilds everything anyway)', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    serveManifestBody('{{{ not json');
+
+    await expect(runExport([])).resolves.toBeUndefined();
 
     const manifest = uploadedManifest();
     expect(manifest.entries.map((entry) => `${entry.boardType}:${entry.layoutId}`)).toEqual(['kilter:1']);

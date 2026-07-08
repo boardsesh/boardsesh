@@ -137,10 +137,27 @@ export async function deleteFromS3(key: string): Promise<void> {
   );
 }
 
+/** True for the S3 shapes of "the object does not exist" (vs a read failure). */
+function isS3NotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: string; Code?: string; $metadata?: { httpStatusCode?: number } };
+  return (
+    candidate.name === 'NoSuchKey' ||
+    candidate.name === 'NotFound' ||
+    candidate.Code === 'NoSuchKey' ||
+    candidate.$metadata?.httpStatusCode === 404
+  );
+}
+
 /**
- * Get a file from S3 and return the stream along with metadata
+ * Get a file from S3, distinguishing MISSING from BROKEN: returns null only
+ * when the object genuinely does not exist (NoSuchKey / NotFound / 404); any
+ * other failure (network, auth, throttling) throws. Use this when acting on
+ * "no object" is destructive — e.g. the board-snapshot manifest merge, where
+ * treating a transient read error as "no previous manifest" would drop every
+ * other board's entries from the published manifest.
  */
-export async function getFromS3(key: string): Promise<{
+export async function getFromS3Strict(key: string): Promise<{
   stream: Readable;
   contentType: string | undefined;
   contentLength: number | undefined;
@@ -165,8 +182,28 @@ export async function getFromS3(key: string): Promise<{
       contentType: response.ContentType,
       contentLength: response.ContentLength,
     };
+  } catch (error) {
+    if (isS3NotFoundError(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get a file from S3 and return the stream along with metadata. Lenient
+ * variant of getFromS3Strict: returns null for not-found AND for any read
+ * error — the existing caller contract (static asset serving, user-data
+ * export) treats both as a cache/object miss and falls back.
+ */
+export async function getFromS3(key: string): Promise<{
+  stream: Readable;
+  contentType: string | undefined;
+  contentLength: number | undefined;
+} | null> {
+  try {
+    return await getFromS3Strict(key);
   } catch {
-    // Return null for not found or other errors
     return null;
   }
 }

@@ -16,6 +16,11 @@
 // live `syncClimbs`/`syncClimbStats` pull would have written. The
 // snapshot-export-golden test pins that equivalence.
 //
+// Reads the PRIMARY database, never a replica: the sync cursor (updated_at,
+// sync_seq) is write-time ordered, but a replica snapshot is commit-order
+// consistent, so a lagging replica can omit a lower-cursor row while containing
+// higher-cursor ones — see the pool call-site comment in runExport.
+//
 // Structure: a testable core (`exportLayoutSnapshot`, `boardSnapshotDdlStatements`,
 // `discoverLayoutPairs`) under a thin CLI (`runExport`). The CLI is only invoked
 // when this module is the process entry, so importing it in a test has no side
@@ -40,9 +45,9 @@ import {
   type SnapshotManifestEntry,
   type SnapshotTableName,
 } from '@boardsesh/offline-sync';
-import { createReadPool, closeReadPool } from '@boardsesh/db/client';
+import { createPool, closePool } from '@boardsesh/db/client';
 import { normalizeRow, toIso, type RawRow } from '../graphql/resolvers/sync/row-normalize';
-import { uploadToS3, isS3Configured, getPublicUrl, getFromS3, deleteFromS3, listS3Objects } from '../storage/s3';
+import { uploadToS3, isS3Configured, getPublicUrl, getFromS3Strict, deleteFromS3, listS3Objects } from '../storage/s3';
 import { logger } from '../utils/logger';
 
 // --- Constants ----------------------------------------------------------------
@@ -449,34 +454,55 @@ export function mergeManifestEntries(params: {
 }
 
 /**
- * Fetch + validate the currently-published manifest. Returns null when there is
- * none (first run) or it is unreadable/unparseable — the caller merges against
- * empty. Missing-vs-error is not distinguishable through getFromS3, so both are
- * logged loudly; a filtered run that hits this writes a manifest containing only
- * its own entries, which the next unfiltered nightly run heals.
+ * Fetch + validate the currently-published manifest. Called BEFORE any artifact
+ * upload, so a fatal outcome aborts the run with S3 completely untouched.
+ *
+ * Failure matrix (the merge needs the previous entries — a filtered run to
+ * preserve every other board, an unfiltered run to preserve failed layouts —
+ * so guessing "empty" on a broken read could drop them from the manifest):
+ *
+ *   object missing (NoSuchKey/404)   → null, proceed (legitimately a first run)
+ *   S3 read error (anything else)    → THROW — fatal on filtered AND unfiltered
+ *   present but invalid JSON/shape   → filtered: THROW (the run cannot
+ *                                      reconstruct the entries it would drop);
+ *                                      unfiltered: warn + merge against empty
+ *                                      (it rebuilds every live layout anyway —
+ *                                      only vanished layouts' entries are lost,
+ *                                      and those drop regardless)
  */
-async function fetchPreviousManifest(): Promise<SnapshotManifest | null> {
-  const manifestObject = await getFromS3(MANIFEST_KEY);
+async function fetchPreviousManifest(options: { isFilteredRun: boolean }): Promise<SnapshotManifest | null> {
+  const manifestObject = await getFromS3Strict(MANIFEST_KEY);
   if (!manifestObject) {
-    logger.warn('[export-snapshots] no previous manifest readable (first run?) — merging against empty');
+    logger.warn('[export-snapshots] no previous manifest on S3 (first run?) — merging against empty');
     return null;
   }
   const chunks: Buffer[] = [];
   for await (const chunk of manifestObject.stream as AsyncIterable<Buffer | string>) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
+
+  let parsed: SnapshotManifest | null = null;
+  let invalidReason: string | null = null;
   try {
-    const parsed = parseSnapshotManifest(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-    if (!parsed) {
-      logger.warn('[export-snapshots] previous manifest failed validation — merging against empty');
-    }
-    return parsed;
+    parsed = parseSnapshotManifest(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    if (!parsed) invalidReason = 'failed schema validation';
   } catch (error) {
-    logger.warn('[export-snapshots] previous manifest is not valid JSON — merging against empty', {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return null;
+    invalidReason = error instanceof Error ? error.message : String(error);
   }
+  if (invalidReason) {
+    if (options.isFilteredRun) {
+      throw new Error(
+        `previous manifest at ${MANIFEST_KEY} is invalid (${invalidReason}); a filtered run cannot merge safely — aborting before any upload`,
+      );
+    }
+    logger.warn(
+      '[export-snapshots] previous manifest invalid — unfiltered run rebuilds everything, merging against empty',
+      {
+        reason: invalidReason,
+      },
+    );
+  }
+  return parsed;
 }
 
 /**
@@ -530,11 +556,21 @@ export async function runExport(argv: string[]): Promise<void> {
     );
   }
 
-  // createReadPool GUARANTEES the drizzle wrapper is constructed before the raw
-  // pool is returned (see packages/db/src/client/postgres.ts), so the pool
-  // already carries drizzle's transparent timestamp parsers and streamed rows
-  // match the resolver shaping.
-  const sqlClient = createReadPool();
+  // PRIMARY pool, deliberately NOT the read-replica seam: the sync cursor
+  // (updated_at, sync_seq) is assigned at WRITE time, but an async replica's
+  // snapshot is consistent by COMMIT order — a lower-cursor row that commits
+  // late (or replays late through replication lag) can be absent from the
+  // replica while higher-cursor rows are present. The 30s stability window only
+  // absorbs write→commit delay measured on the primary; replica lag stacks on
+  // top, and once (commit delay + lag) exceeds the window the exported
+  // watermark covers a row the artifact doesn't contain — every bootstrapped
+  // client resumes strictly past it and loses it FOREVER. The sync resolvers
+  // serve from the primary for the same reason. createPool GUARANTEES the
+  // drizzle wrapper is constructed before the raw pool is returned (see
+  // packages/db/src/client/postgres.ts), so the pool carries drizzle's
+  // transparent timestamp parsers and streamed rows match the resolver shaping.
+  // Closed by the CLI entry below, not here — tests share the cached pool.
+  const sqlClient = createPool();
   const workDir = mkdtempSync(join(tmpdir(), 'board-snapshots-'));
   const newEntries: SnapshotManifestEntry[] = [];
   const failures: LayoutFailure[] = [];
@@ -560,6 +596,10 @@ export async function runExport(argv: string[]): Promise<void> {
       builtAt,
       stabilityWindowSeconds: DEFAULT_STABILITY_WINDOW_SECONDS,
     });
+
+    // Fetch the previous manifest BEFORE any upload: if it is unreadable the
+    // run aborts with S3 completely untouched (matrix in fetchPreviousManifest).
+    const previousManifest = options.dryRun ? null : await fetchPreviousManifest({ isFilteredRun });
 
     for (const pair of pairs) {
       const startedAt = Date.now();
@@ -644,10 +684,10 @@ export async function runExport(argv: string[]): Promise<void> {
         totalGzipBytes: newEntries.reduce((sum, entry) => sum + entry.bytes, 0),
       });
     } else {
-      // MERGE the previous manifest, never overwrite: a filtered run rebuilds
-      // only its own pairs and must not drop everyone else's entries. Written
-      // LAST so readers see an atomic old-or-new manifest.
-      const previousManifest = await fetchPreviousManifest();
+      // MERGE the previous manifest (fetched up front), never overwrite: a
+      // filtered run rebuilds only its own pairs and must not drop everyone
+      // else's entries. Written LAST so readers see an atomic old-or-new
+      // manifest.
       const mergedEntries = mergeManifestEntries({
         previousEntries: previousManifest?.entries ?? [],
         newEntries,
@@ -681,18 +721,24 @@ export async function runExport(argv: string[]): Promise<void> {
     }
   } finally {
     rmSync(workDir, { recursive: true, force: true });
-    await closeReadPool();
   }
 }
 
 // Only run when executed directly (`node --import tsx .../export-board-snapshots.ts`),
-// never when imported by a test.
+// never when imported by a test. The pool is closed HERE, not inside runExport:
+// tests invoke runExport against the process-wide cached primary pool, and
+// closing it there would kill the connection every other test in the worker
+// shares.
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
 if (invokedPath === import.meta.url) {
-  runExport(process.argv.slice(2)).catch((error) => {
-    logger.error('[export-snapshots] run failed', {
-      error: error instanceof Error ? error.message : String(error),
+  runExport(process.argv.slice(2))
+    .catch((error) => {
+      logger.error('[export-snapshots] run failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await closePool();
     });
-    process.exitCode = 1;
-  });
 }
