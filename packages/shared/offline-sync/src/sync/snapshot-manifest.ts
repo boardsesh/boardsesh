@@ -77,10 +77,20 @@ function isDecimalString(value: unknown): value is string {
   return typeof value === 'string' && /^\d+$/.test(value);
 }
 
+// generatedAt / builtAt / watermarkUpdatedAt become resume watermarks and cache
+// keys, so a corrupted manifest carrying a non-ISO string must be rejected here
+// rather than stored and pulled-from later. Zulu-suffixed ISO-8601 with optional
+// fractional seconds — the only shape toIso() ever emits.
+const ISO_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+
+function isIsoUtcTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && ISO_UTC_TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
+}
+
 function isTableStats(value: unknown): value is SnapshotTableStats {
   if (!isRecord(value)) return false;
   return (
-    typeof value.watermarkUpdatedAt === 'string' && isDecimalString(value.watermarkSyncSeq) && isInteger(value.rowCount)
+    isIsoUtcTimestamp(value.watermarkUpdatedAt) && isDecimalString(value.watermarkSyncSeq) && isInteger(value.rowCount)
   );
 }
 
@@ -93,7 +103,7 @@ function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
     typeof value.url !== 'string' ||
     !isInteger(value.bytes) ||
     (value.contentEncoding !== 'gzip' && value.contentEncoding !== 'identity') ||
-    typeof value.builtAt !== 'string' ||
+    !isIsoUtcTimestamp(value.builtAt) ||
     !isInteger(value.schemaVersion)
   ) {
     return false;
@@ -111,7 +121,7 @@ function isManifestEntry(value: unknown): value is SnapshotManifestEntry {
 export function parseSnapshotManifest(value: unknown): SnapshotManifest | null {
   if (!isRecord(value)) return null;
   if (value.formatVersion !== SNAPSHOT_MANIFEST_FORMAT_VERSION) return null;
-  if (typeof value.generatedAt !== 'string') return null;
+  if (!isIsoUtcTimestamp(value.generatedAt)) return null;
   if (!Array.isArray(value.entries)) return null;
   if (!value.entries.every(isManifestEntry)) return null;
   return value as SnapshotManifest;

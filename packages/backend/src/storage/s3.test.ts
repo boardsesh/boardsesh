@@ -29,6 +29,7 @@ vi.mock('@aws-sdk/client-s3', () => {
     DeleteObjectCommand: class DeleteObjectCommand extends MockCommand {},
     GetObjectCommand: class GetObjectCommand extends MockCommand {},
     HeadObjectCommand: class HeadObjectCommand extends MockCommand {},
+    ListObjectsV2Command: class ListObjectsV2Command extends MockCommand {},
   };
 });
 
@@ -161,5 +162,36 @@ describe('s3 storage', () => {
     const { getFromS3 } = await import('./s3');
     awsMocks.send.mockRejectedValueOnce(new Error('connection reset'));
     await expect(getFromS3('broken.json')).resolves.toBeNull();
+  });
+
+  it('listS3Objects follows continuation tokens across pages and skips keyless entries', async () => {
+    const { listS3Objects } = await import('./s3');
+
+    const firstModified = new Date('2026-06-01T00:00:00Z');
+    const secondModified = new Date('2026-06-02T00:00:00Z');
+    awsMocks.send
+      .mockResolvedValueOnce({
+        Contents: [
+          { Key: 'board-snapshots/v1/kilter/1/a.db', Size: 10, LastModified: firstModified },
+          { Size: 5 }, // keyless entry must be skipped, not crash
+        ],
+        IsTruncated: true,
+        NextContinuationToken: 'token-2',
+      })
+      .mockResolvedValueOnce({
+        Contents: [{ Key: 'board-snapshots/v1/kilter/1/b.db', Size: 20, LastModified: secondModified }],
+        IsTruncated: false,
+      });
+
+    const objects = await listS3Objects('board-snapshots/v1/');
+
+    expect(objects).toEqual([
+      { key: 'board-snapshots/v1/kilter/1/a.db', size: 10, lastModified: firstModified },
+      { key: 'board-snapshots/v1/kilter/1/b.db', size: 20, lastModified: secondModified },
+    ]);
+    expect(awsMocks.send).toHaveBeenCalledTimes(2);
+    const secondCall = awsMocks.send.mock.calls[1][0] as { input: Record<string, unknown> };
+    expect(secondCall.input.ContinuationToken).toBe('token-2');
+    expect(secondCall.input.Prefix).toBe('board-snapshots/v1/');
   });
 });

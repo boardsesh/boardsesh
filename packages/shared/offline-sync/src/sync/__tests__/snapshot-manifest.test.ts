@@ -43,7 +43,28 @@ describe('parseSnapshotManifest', () => {
   });
 
   it('accepts an empty entries array', () => {
-    expect(parseSnapshotManifest({ formatVersion: 1, generatedAt: 'now-ish', entries: [] })).not.toBeNull();
+    expect(
+      parseSnapshotManifest({ formatVersion: 1, generatedAt: '2026-06-01T00:05:00.000Z', entries: [] }),
+    ).not.toBeNull();
+  });
+
+  it('rejects non-ISO timestamps in generatedAt, builtAt, and watermarkUpdatedAt', () => {
+    // A corrupted timestamp would otherwise be stored as the resume watermark
+    // and pulled from later — reject the whole manifest instead.
+    expect(parseSnapshotManifest({ formatVersion: 1, generatedAt: 'now-ish', entries: [] })).toBeNull();
+    expect(parseSnapshotManifest(withEntry({ builtAt: 'yesterday' }))).toBeNull();
+    expect(parseSnapshotManifest(withEntry({ builtAt: '2026-06-01T00:00:00' }))).toBeNull(); // no Z
+    const validTables = validEntry().tables;
+    expect(
+      parseSnapshotManifest(
+        withEntry({
+          tables: {
+            ...validTables,
+            board_climbs: { ...validTables.board_climbs, watermarkUpdatedAt: '01/06/2026' },
+          },
+        }),
+      ),
+    ).toBeNull();
   });
 
   it('rejects non-objects and wrong format versions', () => {
