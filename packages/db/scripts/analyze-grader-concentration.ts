@@ -52,7 +52,9 @@ interface OffsetSpreadRow {
  * Expressed opinions, mirroring buildSigmaWithinSql: latest tick per
  * user/climb/angle on ≥20-ascent climbs; native graded ticks count (opt-in ⇒
  * intentional, echo included) plus synced non-echo ticks (synced echoes are
- * probable auto-fills, not opinions).
+ * probable auto-fills, not opinions). Provenance comes from `origin` — a
+ * native tick keeps origin='native' even after push-back stamps its
+ * aurora_id/kilter_id (see tickOriginEnum in schema/app/ascents.ts).
  */
 const expressedOpinionsCte = sql`
   SELECT DISTINCT ON (t.user_id, t.board_type, t.climb_uuid, t.angle)
@@ -68,7 +70,7 @@ const expressedOpinionsCte = sql`
     AND s.display_difficulty IS NOT NULL
     AND s.ascensionist_count >= 20
     AND (
-      (t.aurora_id IS NULL AND t.kilter_id IS NULL)
+      t.origin = 'native'
       OR t.difficulty <> round(s.display_difficulty)
     )
   ORDER BY t.user_id, t.board_type, t.climb_uuid, t.angle, t.climbed_at DESC

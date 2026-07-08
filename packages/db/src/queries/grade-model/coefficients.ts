@@ -24,13 +24,17 @@ function gradeBandCase(column: SQL): SQL {
  * the climb's displayed grade, split by provenance. Restricted to established
  * climbs (≥20 ascents) so "the displayed grade" is a stable reference, and to
  * one row per user/climb/angle (latest) so re-logs don't double count.
+ *
+ * Provenance comes from `origin`, not the upstream IDs: push-back stamps
+ * aurora_id/kilter_id on a native tick while origin stays 'native'
+ * (see tickOriginEnum in schema/app/ascents.ts).
  */
 export function buildEchoRatesSql(): SQL {
   return sql`
     WITH graded AS (
       SELECT DISTINCT ON (t.user_id, t.board_type, t.climb_uuid, t.angle)
              t.board_type,
-             (t.aurora_id IS NULL AND t.kilter_id IS NULL) AS is_native,
+             (t.origin = 'native') AS is_native,
              (t.difficulty = round(s.display_difficulty)) AS is_echo
       FROM boardsesh_ticks t
       JOIN board_climb_stats s
@@ -120,7 +124,7 @@ export function buildSigmaWithinSql(): SQL {
         AND s.display_difficulty IS NOT NULL
         AND s.ascensionist_count >= 20
         AND (
-          (t.aurora_id IS NULL AND t.kilter_id IS NULL)
+          t.origin = 'native'
           OR t.difficulty <> round(s.display_difficulty)
         )
       ORDER BY t.user_id, t.board_type, t.climb_uuid, t.angle, t.climbed_at DESC
