@@ -1,12 +1,23 @@
 # Sync Table Manifest — the cross-package contract
 
-This is the **single source of truth** binding three implementations together:
+This is the **single source of truth** binding four implementations together:
 
 1. **Backend** sync-pull resolvers (`packages/backend`) — emit JSON documents whose keys
    are listed here, and deletion triggers that emit `record_id` strings encoded as listed here.
 2. **Client SQLite DDL** (`packages/shared/offline-sync/src/db/schema.ts`) — column names + types + PKs match exactly.
 3. **Client `table-config.ts`** (`packages/shared/offline-sync/src/sync/table-config.ts`) `primaryKeyColumns` — match the
    **Local PK** column order here.
+4. **Board-snapshot export artifacts** (`packages/backend/src/scripts/export-board-snapshots.ts`) — the
+   `board_climbs`/`board_climb_stats` columns baked into the nightly SQLite artifacts (see
+   [`board-snapshots.md`](board-snapshots.md)). This one needs no manual upkeep: the export's DDL is derived
+   from the shared client `MIGRATIONS`, and its SELECT column lists come from each table's `localColumns` in
+   `table-config.ts` — the same source this manifest's **Local PK**/**Columns** entries below describe. A
+   `localColumns` change here flows into the next artifact automatically. The one thing that does NOT
+   auto-verify is row _shaping_ — that the export's Postgres → SQLite coercion actually matches the live
+   resolver → client-upsert coercion byte-for-byte. That's enforced by
+   `packages/backend/src/__tests__/snapshot-export-golden.test.ts`, which runs both paths against the same
+   seeded rows and diffs the result; treat it as this manifest's enforcement for the snapshot artifact the
+   same way this doc is the source of truth for the other three.
 
 It exists because `pull-client.ts:upsertDocuments` does `INSERT OR REPLACE INTO <table> (<Object.keys(doc)>)`:
 the resolver's JSON keys **are** the local column names. And `processDeletions` splits `record_id` on `:`
