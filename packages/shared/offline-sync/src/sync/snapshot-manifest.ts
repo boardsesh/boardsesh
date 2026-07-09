@@ -2,8 +2,9 @@
 // writes it (packages/backend/scripts/export-board-snapshots.ts) and the client
 // bootstrap that reads it (Phase 3, pull-client). One JSON object published at
 // `board-snapshots/v1/manifest.json`; each entry points a downloaded board at a
-// pre-built SQLite artifact plus the watermarks a client resumes its
-// incremental pull from.
+// pre-built SQLite artifact plus artifact-level table stats. Clients importing a
+// narrower size scope compute their own scoped resume watermarks from the
+// artifact rows they actually import.
 //
 // Pure types + a hand-rolled validator (this package intentionally ships zero
 // runtime dependencies, so no zod). Bump `formatVersion` on any breaking shape
@@ -13,7 +14,7 @@
 /** The two reference-data tables a snapshot carries. */
 export type SnapshotTableName = 'board_climbs' | 'board_climb_stats';
 
-/** Per-table watermark + row count, the resume point for an incremental pull. */
+/** Artifact-level per-table watermark + row count. */
 export type SnapshotTableStats = {
   // ISO-8601 UTC. The max `updated_at` across the rows actually exported.
   watermarkUpdatedAt: string;
