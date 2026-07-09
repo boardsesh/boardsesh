@@ -74,14 +74,17 @@ COPY packages/db/tsconfig.json /app/tsconfig.json
 # straight into node_modules. The scripts import only the dependency-free
 # `@boardsesh/shared-schema/characteristics` subpath, so graphql is never loaded.
 #
-# @boardsesh/board-config (used by the runtime required_set_ids helpers) and
-# sharp (used only by the cell-set generator) are stripped too — neither is
-# loaded by the scripts this build runs (import-moonboard-problems + migrate),
-# and the workspace "*" / native sharp dep would otherwise break the standalone
-# install. MoonBoard required_set_ids are populated by the backfill, run from the
-# full monorepo against the live DB, not in this image.
+# @boardsesh/board-config (used by the runtime required_set_ids helpers),
+# @boardsesh/board-constants (grade/size helpers used by create-climb-filters
+# and recommendations) and sharp (used only by the cell-set generator) are
+# stripped too — none is loaded by the scripts this build runs
+# (import-aurora-board-unified + import-moonboard-problems + create-test-user +
+# seed-social + migrate), and the workspace "*" / native sharp dep would
+# otherwise break the standalone install. MoonBoard required_set_ids are
+# populated by the backfill, run from the full monorepo against the live DB,
+# not in this image.
 RUN cd /app && \
-    sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"sharp"/d' package.json && \
+    sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"@boardsesh\/board-constants"/d' -e '/"sharp"/d' package.json && \
     curl -fsSL https://bun.sh/install | bash && \
     ln -s /root/.bun/bin/bun /usr/local/bin/bun && \
     ln -s /root/.bun/bin/bunx /usr/local/bin/bunx && \
