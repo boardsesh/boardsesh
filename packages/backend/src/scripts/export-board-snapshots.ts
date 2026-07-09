@@ -2,7 +2,7 @@
 //
 // For every (board_type, layout_id) that has climbs, builds a small SQLite file
 // carrying ONLY `board_climbs` + `board_climb_stats` (plus a `snapshot_meta`
-// watermark table), gzips it, and uploads it to Tigris/S3 under
+// watermark table), optionally gzips it, and uploads it to Tigris/S3 under
 // `board-snapshots/v1/<boardType>/<layoutId>/<builtAt>.db`. After every artifact
 // lands, writes `board-snapshots/v1/manifest.json` LAST so a reader always sees
 // a consistent old-or-new manifest. Phase 3 (pull-client) reads that manifest to
@@ -383,9 +383,9 @@ function parseArgs(argv: string[]): ExportOptions {
     } else if (arg === '--gzip') {
       options.gzip = true;
     } else if (arg === '--board') {
-      options.boardFilter = argv[(index += 1)];
+      options.boardFilter = parseBoardFilter(argv[(index += 1)]);
     } else if (arg.startsWith('--board=')) {
-      options.boardFilter = arg.slice('--board='.length);
+      options.boardFilter = parseBoardFilter(arg.slice('--board='.length));
     } else if (arg === '--layout') {
       options.layoutFilter = parseLayoutFilter(argv[(index += 1)]);
     } else if (arg.startsWith('--layout=')) {
@@ -393,6 +393,13 @@ function parseArgs(argv: string[]): ExportOptions {
     }
   }
   return options;
+}
+
+function parseBoardFilter(raw: string | undefined): string {
+  if (!raw || raw.startsWith('--')) {
+    throw new Error(`--board expects a board type, got ${JSON.stringify(raw)}`);
+  }
+  return raw;
 }
 
 function parseLayoutFilter(raw: string | undefined): number {

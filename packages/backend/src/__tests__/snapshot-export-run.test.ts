@@ -131,6 +131,12 @@ describe('mergeManifestEntries', () => {
 });
 
 describe('runExport — manifest merge on filtered runs', () => {
+  it('fails fast when --board is missing its value', async () => {
+    await expect(runExport(['--board'])).rejects.toThrow('--board expects a board type');
+    await expect(runExport(['--board', '--layout', '1'])).rejects.toThrow('--board expects a board type');
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
   it('a --board run preserves other boards’ manifest entries instead of clobbering them', async () => {
     await seedClimb('kilter', 1, 'k1-a');
     const foreignEntry = manifestEntryFixture('tension', 9, 'board-snapshots/v1/tension/9/old.db');
