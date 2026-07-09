@@ -452,10 +452,11 @@ async function resolveManifestOnce(
  *   - manifest `ok` but no entry for (boardType, layoutId) → permanent miss, NO
  *     attempt → normal paged pull (layout not exported yet).
  *   - download fails/returns null → counted attempt → SKIP paged pull this cycle.
+ *   - download throws SnapshotPermanentMissError → NO attempt → normal paged pull.
  *   - import throws (corrupt/short artifact, row-count/format mismatch) → counted
  *     attempt → SKIP paged pull this cycle.
  *   - success → mark done, rewind deletions to min(watermarks); paged pull runs
- *     normally, now a ~1-day delta from the watermark checkpoints.
+ *     normally, now a ~1-day delta from the scoped watermark checkpoints.
  * A wipe detected mid-phase bails the whole phase with no attempt (mirrors
  * syncTable). One artifact is downloaded per (boardType, layoutId) and reused
  * across that layout's sizes; all downloads are deleted in a finally.
@@ -472,7 +473,10 @@ async function runBootstrapPhase(
   const skipPagedPull = new Set<string>();
   const manifestCache: { value?: ManifestResolution } = {};
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
-  const downloadByLayout = new Map<string, { file: { filePath: string } | null; cause: unknown; permanentMiss: boolean }>();
+  const downloadByLayout = new Map<
+    string,
+    { file: { filePath: string } | null; cause: unknown; permanentMiss: boolean }
+  >();
   const downloadedPaths = new Set<string>();
   const startEpoch = getWipeEpoch();
 

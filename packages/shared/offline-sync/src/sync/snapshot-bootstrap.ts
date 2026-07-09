@@ -4,8 +4,8 @@
 // (200k+ climbs) over GraphQL before it is browsable offline. Instead, this
 // warms the scope from a pre-built SQLite artifact (the nightly export job in
 // packages/backend/src/scripts/export-board-snapshots.ts), then lets the normal
-// paged pull resume from the artifact's watermark — a ~1-day delta rather than
-// the full crawl. The two paths are byte-identical by construction (the export
+// paged pull resume from the imported scope's watermarks — a ~1-day delta rather
+// than the full crawl. The two paths are byte-identical by construction (the export
 // reuses the client's `toSqliteValue` shaping); the backend snapshot-export-golden
 // test pins that equivalence.
 //
@@ -79,8 +79,9 @@ export interface SnapshotSource {
   fetchManifest(): Promise<unknown>;
   /**
    * Download (and decompress) one artifact to a local path ready to ATTACH as a
-   * plain SQLite file. Return `null` or throw on failure — both count as a
-   * bootstrap attempt.
+   * plain SQLite file. Return `null` or throw on retryable failure — both count
+   * as a bootstrap attempt. Throw SnapshotPermanentMissError for a known
+   * unusable artifact that should fall through to the paged pull immediately.
    */
   downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePath: string } | null>;
   /** Delete a downloaded artifact once the run is done with it. Best-effort. */
@@ -225,8 +226,7 @@ function climbsScopeFilter(scope: OfflineBoardScope, qualifier = ''): { sql: str
   const params: (string | number)[] = [scope.boardType, scope.layoutId];
   let sql = `${qualifier}board_type = ? AND ${qualifier}layout_id = ?`;
   if (isSizeScopedBoard(scope.boardType)) {
-    sql +=
-      ` AND ${qualifier}compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(${qualifier}compatible_size_ids) WHERE value = ?)`;
+    sql += ` AND ${qualifier}compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(${qualifier}compatible_size_ids) WHERE value = ?)`;
     params.push(scope.sizeId);
   }
   return { sql, params };
@@ -345,11 +345,7 @@ async function reconcileScope(
          WHERE snapshot_climb.uuid = main_climb.uuid
            AND ${snapshotClimbScope.sql}
        )`,
-    [
-      ...mainClimbScope.params,
-      ...checkpointLeqParams(watermarks.board_climbs),
-      ...snapshotClimbScope.params,
-    ],
+    [...mainClimbScope.params, ...checkpointLeqParams(watermarks.board_climbs), ...snapshotClimbScope.params],
   );
 }
 
@@ -434,7 +430,8 @@ export class SnapshotSchemaStaleError extends Error {
  * `format_version` matching this client, `schema_version` not older than this
  * client's schema, and each recorded `row_count` equal to the artifact's ACTUAL
  * table count (a truncated/partial download is caught here before any row is
- * imported). Returns the per-table watermarks.
+ * imported). Artifact-level watermarks are validation/export metadata; the
+ * imported scope's checkpoints are computed from scoped artifact rows.
  */
 async function verifySnapshotMeta(db: SqlExecutor): Promise<void> {
   for (const tableName of SNAPSHOT_TABLES) {
@@ -469,7 +466,8 @@ async function verifySnapshotMeta(db: SqlExecutor): Promise<void> {
 /**
  * Warm one board scope from a downloaded artifact. ATTACHes the file, integrity-
  * checks it, verifies the meta, then in ONE exclusive transaction imports the
- * scoped climbs + stats and stamps both resume checkpoints at their watermarks.
+ * scoped climbs + stats, reconciles stale scoped rows absent from the artifact,
+ * and stamps both resume checkpoints at the scoped imported-row watermarks.
  * ATTACH/DETACH bracket the transaction (SQLite forbids ATTACH inside one).
  * A wipe that starts (or completes) mid-import rolls the transaction back and
  * throws SnapshotWipedError — no rows, no checkpoints.
