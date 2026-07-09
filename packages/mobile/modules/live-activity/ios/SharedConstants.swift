@@ -61,6 +61,9 @@ enum SharedConstants {
     /// the same board without a fresh device pick. Left intact on an unexpected
     /// drop precisely so that reconnect path stays available.
     static let bleLastPeripheralUuidKey = "bs_ble_last_peripheral_uuid"
+    /// Learned Aurora write-with-response fallbacks keyed by board serial when
+    /// available, otherwise by CoreBluetooth's app-install-scoped peripheral UUID.
+    static let bleWriteWithResponseBoardsKey = "bs_ble_write_with_response_boards"
     /// Legacy key — auth token now lives in `SharedKeychain` under
     /// `SharedKeychain.authTokenKey`. Kept here only so upgrade paths can
     /// `removeObject` any leftover plaintext value from earlier installs.

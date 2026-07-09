@@ -11,47 +11,84 @@ export {
 } from '@boardsesh/ble-protocol/transport';
 
 import {
+  MAX_BLUETOOTH_MESSAGE_SIZE,
   UART_SERVICE_UUID,
   UART_WRITE_CHARACTERISTIC_UUID,
   REDBEARLAB_SERVICE_UUID,
   REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
   INTER_CHUNK_DELAY_MS,
+  splitMessages,
 } from '@boardsesh/ble-protocol/transport';
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 // --- Web-specific BLE helpers (use Web Bluetooth DOM types) ---
 
+const isWithoutResponseUnsupportedError = (error: unknown) => {
+  if (typeof error !== 'object' || error === null || !('name' in error)) {
+    return false;
+  }
+  const namedError = error as { name?: unknown };
+  return namedError.name === 'NotSupportedError';
+};
+
+const concatenateMessages = (messages: Uint8Array[]) => {
+  const totalLength = messages.reduce((sum, message) => sum + message.byteLength, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const message of messages) {
+    combined.set(message, offset);
+    offset += message.byteLength;
+  }
+  return combined;
+};
+
 export const writeCharacteristicSeries = async (
   characteristic: BluetoothRemoteGATTCharacteristic,
   messages: Uint8Array[],
   signal?: AbortSignal,
-  options?: { allowWithResponseFallback?: boolean },
+  options?: { allowWithResponseFallback?: boolean; allowUnsupportedWithResponseRetry?: boolean },
 ) => {
-  // Aurora (Kilter/Tension) MUST always use write-without-response: it is the
-  // proven path, and routing it to write-with-response stalls boards whose ATT
-  // ack never arrives (the iOS-26 regression that #3228 fixed). Only the
-  // MoonBoard family may fall back to write-with-response, and only for the
-  // original RedBearLab box whose characteristic advertises `.write` only (Web
-  // Bluetooth throws NotSupportedError if you call writeValueWithoutResponse on
-  // it). This mirrors the RN adapter's scanFamily gate and the native
-  // preferredWriteType. Default (no fallback allowed) preserves the proven
-  // Aurora path exactly.
+  // Default to the proven write-without-response path. MoonBoard may choose
+  // write-with-response up front for the original RedBearLab box. Aurora keeps
+  // the live decision behavior-driven: it tries without-response first and only
+  // retries with-response when Web Bluetooth explicitly rejects the operation
+  // with NotSupportedError on a write-only characteristic.
   const useWithResponse =
     (options?.allowWithResponseFallback ?? false) && characteristic.properties?.writeWithoutResponse === false;
-  for (let i = 0; i < messages.length; i++) {
-    if (signal?.aborted) {
-      throw new DOMException('Write aborted', 'AbortError');
+  const writeChunks = async (chunks: Uint8Array[], writeWithResponse: boolean) => {
+    for (let messageIndex = 0; messageIndex < chunks.length; messageIndex++) {
+      if (signal?.aborted) {
+        throw new DOMException('Write aborted', 'AbortError');
+      }
+      if (messageIndex > 0) {
+        await delay(INTER_CHUNK_DELAY_MS);
+        if (signal?.aborted) {
+          throw new DOMException('Write aborted', 'AbortError');
+        }
+      }
+      const chunk = new Uint8Array(chunks[messageIndex]);
+      if (writeWithResponse) {
+        await characteristic.writeValueWithResponse(chunk);
+      } else {
+        await characteristic.writeValueWithoutResponse(chunk);
+      }
     }
-    if (i > 0) {
-      await delay(INTER_CHUNK_DELAY_MS);
+  };
+
+  try {
+    await writeChunks(messages, useWithResponse);
+  } catch (error) {
+    if (
+      !useWithResponse &&
+      (options?.allowUnsupportedWithResponseRetry ?? false) &&
+      isWithoutResponseUnsupportedError(error)
+    ) {
+      const retryMessages = splitMessages(concatenateMessages(messages), MAX_BLUETOOTH_MESSAGE_SIZE);
+      await writeChunks(retryMessages, true);
+      return;
     }
-    const chunk = new Uint8Array(messages[i]);
-    if (useWithResponse) {
-      await characteristic.writeValueWithResponse(chunk);
-    } else {
-      await characteristic.writeValueWithoutResponse(chunk);
-    }
+    throw error;
   }
 };
 

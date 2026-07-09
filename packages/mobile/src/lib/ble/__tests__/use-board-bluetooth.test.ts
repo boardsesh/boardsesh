@@ -1611,6 +1611,9 @@ describe('bleWriteDiagnosticsProperties', () => {
     const diagnostics: BleWriteDiagnostics = {
       origin: 'native',
       writeType: 'withoutResponse',
+      initialWriteType: 'withoutResponse',
+      finalWriteType: 'withResponse',
+      writeTypeSource: 'watchdogFallback',
       chunkSize: 244,
       chunkCount: 3,
       negotiatedMaxWriteWithoutResponse: 244,
@@ -1627,7 +1630,10 @@ describe('bleWriteDiagnosticsProperties', () => {
 
     expect(bleWriteDiagnosticsProperties(diagnostics)).toEqual({
       bleWriteOrigin: 'native',
-      bleWriteType: 'withoutResponse',
+      bleWriteType: 'withResponse',
+      bleInitialWriteType: 'withoutResponse',
+      bleFinalWriteType: 'withResponse',
+      bleWriteTypeSource: 'watchdogFallback',
       bleChunkSize: 244,
       bleChunkCount: 3,
       bleMaxWriteWithoutResponse: 244,

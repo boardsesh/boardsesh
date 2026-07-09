@@ -68,7 +68,10 @@ export function bleWriteDiagnosticsProperties(
   if (!diagnostics) return {};
   const mappedProperties = {
     bleWriteOrigin: diagnostics.origin,
-    bleWriteType: diagnostics.writeType,
+    bleWriteType: diagnostics.finalWriteType ?? diagnostics.writeType,
+    bleInitialWriteType: diagnostics.initialWriteType,
+    bleFinalWriteType: diagnostics.finalWriteType,
+    bleWriteTypeSource: diagnostics.writeTypeSource,
     bleChunkSize: diagnostics.chunkSize,
     bleChunkCount: diagnostics.chunkCount,
     bleMaxWriteWithoutResponse: diagnostics.negotiatedMaxWriteWithoutResponse,

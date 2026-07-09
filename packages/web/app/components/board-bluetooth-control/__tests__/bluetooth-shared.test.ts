@@ -101,6 +101,37 @@ describe('writeCharacteristicSeries (family-gated write-type)', () => {
     expect(characteristic.writeValueWithResponse).not.toHaveBeenCalled();
   });
 
+  it('retries Aurora with write-with-response when Web Bluetooth rejects without-response as unsupported', async () => {
+    const characteristic = makeWritableCharacteristic(false);
+    characteristic.writeValueWithoutResponse.mockRejectedValueOnce(
+      new DOMException('writeValueWithoutResponse is not supported', 'NotSupportedError'),
+    );
+    const payload = new Uint8Array(25).fill(1);
+
+    await writeCharacteristicSeries(characteristic, [payload], undefined, {
+      allowUnsupportedWithResponseRetry: true,
+    });
+
+    expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    expect(characteristic.writeValueWithResponse).toHaveBeenCalledTimes(2);
+    expect(characteristic.writeValueWithResponse.mock.calls[0]?.[0]).toHaveLength(20);
+    expect(characteristic.writeValueWithResponse.mock.calls[1]?.[0]).toHaveLength(5);
+  });
+
+  it('does not retry Aurora write failures that are not unsupported-write-type errors', async () => {
+    const characteristic = makeWritableCharacteristic(false);
+    characteristic.writeValueWithoutResponse.mockRejectedValueOnce(new DOMException('Link lost', 'NetworkError'));
+
+    await expect(
+      writeCharacteristicSeries(characteristic, [new Uint8Array([1])], undefined, {
+        allowUnsupportedWithResponseRetry: true,
+      }),
+    ).rejects.toThrow('Link lost');
+
+    expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    expect(characteristic.writeValueWithResponse).not.toHaveBeenCalled();
+  });
+
   it('uses write-without-response for a Moonboard Nordic-UART characteristic', async () => {
     const characteristic = makeWritableCharacteristic(true);
     await writeCharacteristicSeries(characteristic, [new Uint8Array([1, 2, 3])], undefined, moonboard);
@@ -135,5 +166,30 @@ describe('writeCharacteristicSeries (family-gated write-type)', () => {
       'Write aborted',
     );
     expect(characteristic.writeValueWithoutResponse).not.toHaveBeenCalled();
+  });
+
+  it('throws AbortError without writing the next chunk when aborted during inter-chunk delay', async () => {
+    vi.useFakeTimers();
+    try {
+      const characteristic = makeWritableCharacteristic(true);
+      const controller = new AbortController();
+      const writePromise = writeCharacteristicSeries(
+        characteristic,
+        [new Uint8Array([1]), new Uint8Array([2])],
+        controller.signal,
+      );
+
+      await Promise.resolve();
+      expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+
+      const writeExpectation = expect(writePromise).rejects.toThrow('Write aborted');
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      await writeExpectation;
+      expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

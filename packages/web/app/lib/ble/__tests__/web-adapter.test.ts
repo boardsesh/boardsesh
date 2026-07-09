@@ -16,6 +16,12 @@ const mockGetMoonboardCharacteristic = vi.fn();
 const mockSplitMessages = vi.fn((data: Uint8Array) => [data]);
 const mockWriteCharacteristicSeries = vi.fn();
 
+type MockBluetoothDevice = BluetoothDevice & {
+  addEventListenerSpy: ReturnType<typeof vi.fn>;
+  removeEventListenerSpy: ReturnType<typeof vi.fn>;
+  disconnectSpy: ReturnType<typeof vi.fn>;
+};
+
 vi.mock('@/app/components/board-bluetooth-control/bluetooth-shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
@@ -30,18 +36,24 @@ vi.mock('@/app/components/board-bluetooth-control/bluetooth-shared', async (impo
   };
 });
 
-function createMockDevice(overrides?: Partial<BluetoothDevice>) {
+function createMockDevice(overrides?: Partial<BluetoothDevice>): MockBluetoothDevice {
+  const addEventListenerSpy = vi.fn();
+  const removeEventListenerSpy = vi.fn();
+  const disconnectSpy = vi.fn();
   return {
     id: 'web-dev-1',
     name: 'Test Board',
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
+    addEventListener: addEventListenerSpy,
+    removeEventListener: removeEventListenerSpy,
     gatt: {
       connected: true,
-      disconnect: vi.fn(),
+      disconnect: disconnectSpy,
     },
+    addEventListenerSpy,
+    removeEventListenerSpy,
+    disconnectSpy,
     ...overrides,
-  } as unknown as BluetoothDevice;
+  } as unknown as MockBluetoothDevice;
 }
 
 function createMockCharacteristic() {
@@ -127,7 +139,7 @@ describe('WebBluetoothAdapter', () => {
 
       await adapter.requestAndConnect();
 
-      expect(mockDevice.addEventListener).toHaveBeenCalledWith('gattserverdisconnected', expect.any(Function));
+      expect(mockDevice.addEventListenerSpy).toHaveBeenCalledWith('gattserverdisconnected', expect.any(Function));
     });
 
     it('throws when getCharacteristic returns undefined', async () => {
@@ -148,7 +160,7 @@ describe('WebBluetoothAdapter', () => {
       mockRequestDevice.mockResolvedValueOnce(secondDevice);
       await adapter.requestAndConnect();
 
-      expect(firstDevice.removeEventListener).toHaveBeenCalledWith('gattserverdisconnected', expect.any(Function));
+      expect(firstDevice.removeEventListenerSpy).toHaveBeenCalledWith('gattserverdisconnected', expect.any(Function));
     });
 
     it('handles undefined device name', async () => {
@@ -171,7 +183,7 @@ describe('WebBluetoothAdapter', () => {
       await adapter.requestAndConnect();
       await adapter.disconnect();
 
-      expect(mockDevice.gatt!.disconnect).toHaveBeenCalled();
+      expect(mockDevice.disconnectSpy).toHaveBeenCalled();
     });
 
     it('removes event listener on disconnect', async () => {
@@ -182,7 +194,7 @@ describe('WebBluetoothAdapter', () => {
       await adapter.requestAndConnect();
       await adapter.disconnect();
 
-      expect(mockDevice.removeEventListener).toHaveBeenCalledWith('gattserverdisconnected', expect.any(Function));
+      expect(mockDevice.removeEventListenerSpy).toHaveBeenCalledWith('gattserverdisconnected', expect.any(Function));
     });
 
     it('does nothing when not connected', async () => {
@@ -211,9 +223,11 @@ describe('WebBluetoothAdapter', () => {
       await adapter.write(data);
 
       expect(mockSplitMessages).toHaveBeenCalledWith(data);
-      // Aurora (default board) never allows the write-with-response fallback.
+      // Aurora starts without-response but may behavior-retry when Web Bluetooth
+      // reports that no-response writes are unsupported.
       expect(mockWriteCharacteristicSeries).toHaveBeenCalledWith(mockCharacteristic, [chunk1, chunk2], undefined, {
         allowWithResponseFallback: false,
+        allowUnsupportedWithResponseRetry: true,
       });
     });
 
@@ -230,6 +244,7 @@ describe('WebBluetoothAdapter', () => {
 
       expect(mockWriteCharacteristicSeries).toHaveBeenCalledWith(mockCharacteristic, [data], undefined, {
         allowWithResponseFallback: true,
+        allowUnsupportedWithResponseRetry: false,
       });
     });
   });

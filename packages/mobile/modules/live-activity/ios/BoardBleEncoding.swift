@@ -189,6 +189,16 @@ enum BoardBleEncoding {
         return 2
     }
 
+    static func parseSerialNumber(deviceName: String?) -> String? {
+        guard let deviceName,
+              let hashRange = deviceName.range(of: "#")
+        else {
+            return nil
+        }
+        let serial = deviceName[hashRange.upperBound...].prefix { $0 != "@" }
+        return serial.isEmpty ? nil : String(serial)
+    }
+
     static func checksum(_ payload: [UInt8]) -> UInt8 {
         let sum = payload.reduce(0) { partial, byte in
             (partial + Int(byte)) & 255

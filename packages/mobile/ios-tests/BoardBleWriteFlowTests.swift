@@ -250,6 +250,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertEqual(completionTelemetry?.chunkCount, 3)
         XCTAssertEqual(completionTelemetry?.parkCount, 0)
         XCTAssertEqual(completionTelemetry?.writeType, "withoutResponse")
+        XCTAssertEqual(completionTelemetry?.writeTypeSource, BoardBleWriteTypeSource.defaultWithoutResponse.rawValue)
     }
 
     // 2
@@ -442,6 +443,11 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertEqual(completionTelemetry?.watchdogTripped, true)
         XCTAssertEqual(completionTelemetry?.canSendAtTrip, false)
         XCTAssertEqual(completionTelemetry?.lastResumeSource, "bypass")
+        XCTAssertEqual(completionTelemetry?.finalWriteType, "withoutResponse")
+        XCTAssertEqual(completionTelemetry?.writeTypeSource, BoardBleWriteTypeSource.defaultWithoutResponse.rawValue)
+        XCTAssertFalse(hooks.sync {
+            hooks.hasLearnedWriteWithResponseEntry(identity: "peripheral:\(peripheral.identifier.uuidString)")
+        })
     }
 
     // 5b
@@ -512,9 +518,9 @@ final class BoardBleWriteFlowTests: XCTestCase {
     // and remember the board so a reconnect skips the stall.
     func testWatchdogTripOnWriteOnlyCharacteristicSwitchesToWriteWithResponse() {
         let hooks = manager.testHooks
-        let peripheral = FakeWritablePeripheral(canSendDefault: false, maxWriteValueLength: 20)
+        let peripheral = FakeWritablePeripheral(canSendDefault: false, maxWriteValueLength: 244)
         let characteristic = makeCharacteristic(properties: .write)
-        let payload = Data((0 ..< 10).map { UInt8($0) })
+        let payload = Data((0 ..< 50).map { UInt8($0) })
 
         var completionError: Error?
         var completionTelemetry: BoardBleWriteTelemetry?
@@ -534,6 +540,9 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertTrue(peripheral.writtenChunks.isEmpty)
         XCTAssertFalse(hooks.sync { hooks.forceWriteWithResponse })
         XCTAssertFalse(hooks.sync { hooks.bypassCanSendWriteWithoutResponse })
+        XCTAssertFalse(hooks.sync {
+            hooks.hasLearnedWriteWithResponseEntry(identity: "peripheral:\(peripheral.identifier.uuidString)")
+        })
 
         // Watchdog trips with canSend STILL false -> `.write`-only characteristic
         // -> switch to write-with-response and fire the chunk on that path.
@@ -544,22 +553,48 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertFalse(hooks.sync { hooks.bypassCanSendWriteWithoutResponse })
         // The board is remembered for next time.
         XCTAssertTrue(hooks.sync { hooks.writeWithResponsePeripheralIds.contains(peripheral.identifier) })
-        // The chunk went out WITH response, paced on the ack watchdog (no chunkDelay).
+        XCTAssertFalse(hooks.sync {
+            hooks.hasLearnedWriteWithResponseEntry(identity: "peripheral:\(peripheral.identifier.uuidString)")
+        })
+        // The fallback request is rebuilt into 20-byte with-response chunks
+        // before the parked write resumes. The original without-response request
+        // would have been one 50-byte chunk at this negotiated MTU.
         XCTAssertEqual(peripheral.writtenChunks.count, 1)
         XCTAssertEqual(peripheral.writtenChunks[0].type, .withResponse)
+        XCTAssertEqual(peripheral.writtenChunks[0].data, payload.subdata(in: 0 ..< 20))
         XCTAssertNotNil(scheduler.lastOneShot(label: "writeAckWatchdog"))
         XCTAssertEqual(completionCount, 0)
         // No link cycle: not disconnected, recovery budget untouched.
         XCTAssertTrue(cancelledPeripheralIds.isEmpty)
         XCTAssertEqual(hooks.sync { hooks.writeStallRecoveries }, 0)
 
-        // The board's ack completes the write.
+        // The board's acks complete all fallback chunks.
+        hooks.fireWriteAck(error: nil)
+        XCTAssertEqual(peripheral.writtenChunks.count, 2)
+        XCTAssertEqual(peripheral.writtenChunks[1].type, .withResponse)
+        XCTAssertEqual(peripheral.writtenChunks[1].data, payload.subdata(in: 20 ..< 40))
+        XCTAssertEqual(completionCount, 0)
+
+        hooks.fireWriteAck(error: nil)
+        XCTAssertEqual(peripheral.writtenChunks.count, 3)
+        XCTAssertEqual(peripheral.writtenChunks[2].type, .withResponse)
+        XCTAssertEqual(peripheral.writtenChunks[2].data, payload.subdata(in: 40 ..< 50))
+        XCTAssertEqual(completionCount, 0)
+
         hooks.fireWriteAck(error: nil)
         XCTAssertEqual(completionCount, 1)
         XCTAssertNil(completionError)
         XCTAssertEqual(completionTelemetry?.watchdogTripped, true)
         XCTAssertEqual(completionTelemetry?.canSendAtTrip, false)
         XCTAssertEqual(completionTelemetry?.lastResumeSource, "withResponse")
+        XCTAssertEqual(completionTelemetry?.initialWriteType, "withoutResponse")
+        XCTAssertEqual(completionTelemetry?.finalWriteType, "withResponse")
+        XCTAssertEqual(completionTelemetry?.writeTypeSource, BoardBleWriteTypeSource.watchdogFallback.rawValue)
+        XCTAssertEqual(completionTelemetry?.chunkSize, 20)
+        XCTAssertEqual(completionTelemetry?.chunkCount, 3)
+        XCTAssertTrue(hooks.sync {
+            hooks.hasLearnedWriteWithResponseEntry(identity: "peripheral:\(peripheral.identifier.uuidString)")
+        })
     }
 
     // 5e
@@ -594,6 +629,98 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertEqual(peripheral.writtenChunks.count, writtenBefore + 1)
         XCTAssertEqual(peripheral.writtenChunks.last?.type, .withResponse)
         XCTAssertFalse(hooks.sync { hooks.hasPendingWriteResume })
+    }
+
+    // 5f
+    func testWriteOnlyFallbackDoesNotPersistWhenWithResponseAckFails() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: false, maxWriteValueLength: 20)
+        let characteristic = makeCharacteristic(properties: .write)
+
+        var completionError: Error?
+        var secondCompletionError: Error?
+        var secondCompletionCount = 0
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+            manager.write(data: Data((0 ..< 10).map { UInt8($0) })) { error, _ in
+                completionError = error
+            }
+        }
+        fireLatestOneShot(label: "writeResumeWatchdog")
+        hooks.fireWriteAck(error: NSError(domain: "BoardBleWriteFlowTests", code: 1))
+
+        XCTAssertNotNil(completionError)
+        XCTAssertFalse(hooks.sync {
+            hooks.hasLearnedWriteWithResponseEntry(identity: "peripheral:\(peripheral.identifier.uuidString)")
+        })
+
+        hooks.sync {
+            manager.write(data: Data((100 ..< 110).map { UInt8($0) })) { error, _ in
+                secondCompletionError = error
+                secondCompletionCount += 1
+            }
+        }
+        XCTAssertEqual(peripheral.writtenChunks.last?.type, .withResponse)
+        hooks.fireWriteAck(error: nil)
+
+        XCTAssertEqual(secondCompletionCount, 1)
+        XCTAssertNil(secondCompletionError)
+        XCTAssertFalse(hooks.sync {
+            hooks.hasLearnedWriteWithResponseEntry(identity: "peripheral:\(peripheral.identifier.uuidString)")
+        })
+    }
+
+    // 5g
+    func testPersistedSerialIdentitySeedsWriteWithResponseOnReconnect() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(
+            name: "Kilter Board#751737@2",
+            canSendDefault: false,
+            maxWriteValueLength: 20
+        )
+        let characteristic = makeCharacteristic(properties: .write)
+        let learnedAt = Date().timeIntervalSince1970
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setLearnedWriteWithResponseEntry(identity: "aurora:751737", learnedAt: learnedAt)
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        XCTAssertTrue(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertEqual(hooks.sync { hooks.forceWriteWithResponseSource }, .learnedPersistentFallback)
+
+        let writtenBefore = peripheral.writtenChunks.count
+        hooks.sync {
+            manager.write(data: Data((100 ..< 110).map { UInt8($0) })) { _, _ in }
+        }
+
+        XCTAssertEqual(peripheral.writtenChunks.count, writtenBefore + 1)
+        XCTAssertEqual(peripheral.writtenChunks.last?.type, .withResponse)
+        XCTAssertFalse(hooks.sync { hooks.hasPendingWriteResume })
+    }
+
+    // 5h
+    func testExpiredPersistedWriteWithResponseIdentityIsIgnored() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(
+            name: "Kilter Board#751737@2",
+            canSendDefault: false,
+            maxWriteValueLength: 20
+        )
+        let characteristic = makeCharacteristic(properties: .write)
+        let expiredLearnedAt = Date().addingTimeInterval(-(91 * 24 * 60 * 60)).timeIntervalSince1970
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setLearnedWriteWithResponseEntry(identity: "aurora:751737", learnedAt: expiredLearnedAt)
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        XCTAssertFalse(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertFalse(hooks.sync { hooks.hasLearnedWriteWithResponseEntry(identity: "aurora:751737") })
     }
 
     // 6
@@ -854,5 +981,6 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertEqual(completionCount, 1)
         XCTAssertNil(completionError)
         XCTAssertEqual(completionTelemetry?.writeType, "withResponse")
+        XCTAssertEqual(completionTelemetry?.writeTypeSource, BoardBleWriteTypeSource.moonboardCharacteristic.rawValue)
     }
 }

@@ -59,6 +59,13 @@ export type NativeBleConnectedDevice = {
 export type NativeBleWriteDiagnostics = {
   origin: 'js' | 'native';
   writeType: 'withoutResponse' | 'withResponse';
+  initialWriteType?: 'withoutResponse' | 'withResponse';
+  finalWriteType?: 'withoutResponse' | 'withResponse';
+  writeTypeSource?:
+    | 'defaultWithoutResponse'
+    | 'watchdogFallback'
+    | 'learnedPersistentFallback'
+    | 'moonboardCharacteristic';
   chunkSize: number;
   /** Planned chunks for the write (stamped at enqueue), not progress. */
   chunkCount: number;
@@ -67,8 +74,8 @@ export type NativeBleWriteDiagnostics = {
   parkCount: number;
   /** Whether iOS delivered the `peripheralIsReady` delegate during this write. */
   peripheralIsReadyFired: boolean;
-  /** What woke the last parked chunk: the delegate, or the #3230 poller. */
-  lastResumeSource?: 'callback' | 'poll';
+  /** What woke the last parked chunk: the delegate, poller, bypass, or fallback switch. */
+  lastResumeSource?: 'callback' | 'poll' | 'bypass' | 'withResponse';
   maxParkMs: number;
   totalParkMs: number;
   /** The 5 s stall watchdog fired (the write then failed as write_timeout). */

@@ -34,16 +34,25 @@ enum BoardBleWriteOrigin: String {
     case native
 }
 
+enum BoardBleWriteTypeSource: String {
+    case defaultWithoutResponse
+    case watchdogFallback
+    case learnedPersistentFallback
+    case moonboardCharacteristic
+}
+
 /// Per-write transport telemetry (#3230): how a single queued write moved
 /// through the without-response flow-control machinery. Attached to the JS
 /// write promise (success) or stashed for `getLastWriteDiagnostics` (failure)
 /// so `Climb Sent to Board` events carry a measurable before/after for the
 /// iOS 26.5 `peripheralIsReady` stall.
 struct BoardBleWriteTelemetry {
-    let origin: String              // BoardBleWriteOrigin.rawValue
-    let writeType: String           // "withoutResponse" | "withResponse"
-    let chunkSize: Int
-    let chunkCount: Int
+    let origin: String
+    let initialWriteType: String
+    var finalWriteType: String
+    var writeTypeSource: String
+    var chunkSize: Int
+    var chunkCount: Int
     let negotiatedMaxWriteWithoutResponse: Int
     let startedAt: DispatchTime     // internal timing anchor; not surfaced
     var parkCount = 0               // times a chunk parked on canSendWriteWithoutResponse
@@ -55,10 +64,15 @@ struct BoardBleWriteTelemetry {
     var canSendAtTrip: Bool?        // canSendWriteWithoutResponse when the watchdog fired
     var durationMs = 0
 
+    var writeType: String { finalWriteType }
+
     var analyticsDictionary: [String: Any] {
         var dictionary: [String: Any] = [
             "origin": origin,
-            "writeType": writeType,
+            "writeType": finalWriteType,
+            "initialWriteType": initialWriteType,
+            "finalWriteType": finalWriteType,
+            "writeTypeSource": writeTypeSource,
             "chunkSize": chunkSize,
             "chunkCount": chunkCount,
             "negotiatedMaxWriteWithoutResponse": negotiatedMaxWriteWithoutResponse,
@@ -77,6 +91,15 @@ struct BoardBleWriteTelemetry {
         }
         return dictionary
     }
+}
+
+private struct BoardBleWriteTypeResolution {
+    let writeType: CBCharacteristicWriteType
+    let source: BoardBleWriteTypeSource
+}
+
+private struct LearnedWriteWithResponseEntry: Codable {
+    var learnedAt: TimeInterval
 }
 
 enum BoardBleError: LocalizedError {
@@ -139,6 +162,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // internally consistent: a configureBoard landing mid-request must not
         // flip the write type (or pacing) between chunks of a single frame.
         let writeType: CBCharacteristicWriteType
+        let writeTypeSource: BoardBleWriteTypeSource
         let chunkSize: Int
         let negotiatedMaxWriteWithoutResponse: Int
         let origin: BoardBleWriteOrigin
@@ -171,6 +195,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // 50 ms ≈ 100 chances inside the 5 s watchdog; healthy parks last tens of
     // milliseconds.
     private let writeResumePollInterval: TimeInterval = 0.05
+    private let learnedWriteWithResponseTtl: TimeInterval = 90 * 24 * 60 * 60
     // How many CONSECUTIVE write stalls (with no successful write between them)
     // we recover from by cycling the connection before giving up and surfacing
     // the disconnect to JS. A fresh GATT link clears CoreBluetooth's wedged
@@ -261,10 +286,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // it just never trips the stall. This is what makes re-enabling with-response
     // for Aurora safe after the #3228 property-driven attempt regressed the fleet.
     private var forceWriteWithResponse = false
+    private var forceWriteWithResponseSource: BoardBleWriteTypeSource?
+    private var pendingWriteWithResponsePersistenceIdentity: String?
     // Boards (by peripheral identifier) proven this session to need
     // write-with-response. In-memory only: a re-learn on the next launch is cheap
     // and avoids a stale decision sticking after a firmware update or box swap.
     private var writeWithResponsePeripheralIds: Set<UUID> = []
+    private var learnedWriteWithResponseEntries = BoardBleManager.loadLearnedWriteWithResponseEntries()
     // Telemetry for the request currently being written (#3230). Requests are
     // strictly serial (`isWriting`), so one slot suffices: seeded when a request
     // starts, finalized at whichever settle point delivers its completion.
@@ -761,10 +789,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
-        let writeType = resolvedWriteType(for: characteristic)
+        let writeResolution = resolvedWriteType(for: characteristic)
         let chunkSize = BoardBleEncoding.effectiveChunkSize(
-            negotiatedMaxWriteLength: peripheral.maximumWriteValueLength(for: writeType),
-            writeType: writeType,
+            negotiatedMaxWriteLength: peripheral.maximumWriteValueLength(for: writeResolution.writeType),
+            writeType: writeResolution.writeType,
             boardName: configuration?.boardName
         )
         let chunks = stride(from: 0, to: data.count, by: chunkSize).map { offset in
@@ -774,7 +802,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         writeQueue.append(
             WriteRequest(
                 chunks: chunks,
-                writeType: writeType,
+                writeType: writeResolution.writeType,
+                writeTypeSource: writeResolution.source,
                 chunkSize: chunkSize,
                 negotiatedMaxWriteWithoutResponse: peripheral.maximumWriteValueLength(for: .withoutResponse),
                 origin: origin,
@@ -1264,12 +1293,21 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // A fresh link re-earns normal backpressure: drop any stuck-false gate
         // bypass so a healthy connection isn't permanently ungated.
         bypassCanSendWriteWithoutResponse = false
-        // Re-seed the with-response latch from what we've learned this session: a
-        // board previously proven to accept only write-with-response starts on that
-        // path immediately (no repeat of the one-time without-response stall);
-        // every other board starts on without-response and only switches if it
-        // actually stalls, so this never wrongly forces a healthy board.
-        forceWriteWithResponse = writeWithResponsePeripheralIds.contains(peripheral.identifier)
+        let learnedIdentity = auroraWriteWithResponseIdentity(peripheral: peripheral, characteristic: characteristic)
+        let learnedEntry = learnedIdentity.flatMap { learnedWriteWithResponseEntry(for: $0) }
+        let learnedThisSession = writeWithResponsePeripheralIds.contains(peripheral.identifier)
+        // Re-seed the with-response latch from what we've learned. Persistent
+        // entries were written only after a behavior failure on a `.write`-only
+        // characteristic AND a successful with-response ack, so this still avoids
+        // trusting a stale property bit as the live trigger.
+        forceWriteWithResponse = learnedEntry != nil || learnedThisSession
+        if learnedEntry != nil {
+            forceWriteWithResponseSource = .learnedPersistentFallback
+        } else if learnedThisSession {
+            forceWriteWithResponseSource = .watchdogFallback
+        } else {
+            forceWriteWithResponseSource = nil
+        }
         // Remember the board so the Live Activity lightbulb can reconnect to it
         // by identifier later, no device pick required.
         persistLastConnectedPeripheral(peripheral)
@@ -1400,6 +1438,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // failQueuedWrites + onDisconnect); a transient ATT error shouldn't
             // tear down the link. Mirrors the mid-write `notConnected` handling.
             logger.error("BLE write-with-response failed: \(error.localizedDescription, privacy: .public)")
+            pendingWriteWithResponsePersistenceIdentity = nil
             guard !writeQueue.isEmpty else {
                 isWriting = false
                 processWriteQueue()
@@ -1467,14 +1506,19 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// (or a prior connection to this board already learned that) — Aurora also
     /// takes write-with-response. Guarded on `.write` so a characteristic that
     /// advertises neither write flavour can't be pushed onto a path it can't take.
-    private func resolvedWriteType(for characteristic: CBCharacteristic) -> CBCharacteristicWriteType {
+    private func resolvedWriteType(for characteristic: CBCharacteristic) -> BoardBleWriteTypeResolution {
         if forceWriteWithResponse, characteristic.properties.contains(.write) {
-            return .withResponse
+            return BoardBleWriteTypeResolution(
+                writeType: .withResponse,
+                source: forceWriteWithResponseSource ?? .watchdogFallback
+            )
         }
-        return BoardBleEncoding.preferredWriteType(
+        let writeType = BoardBleEncoding.preferredWriteType(
             for: characteristic.properties,
             boardName: configuration?.boardName
         )
+        let source: BoardBleWriteTypeSource = writeType == .withResponse ? .moonboardCharacteristic : .defaultWithoutResponse
+        return BoardBleWriteTypeResolution(writeType: writeType, source: source)
     }
 
     private func connectionDiagnosticsOnBleQueue(
@@ -1482,7 +1526,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         characteristic: CBCharacteristic
     ) -> BoardBleConnectionDiagnostics {
         let properties = characteristic.properties
-        let writeType = resolvedWriteType(for: characteristic)
+        let writeType = resolvedWriteType(for: characteristic).writeType
         return BoardBleConnectionDiagnostics(
             characteristicProperties: Int(properties.rawValue),
             supportsWriteWithoutResponse: properties.contains(.writeWithoutResponse),
@@ -1530,7 +1574,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // settle point finalizes it (#3230).
         currentWriteTelemetry = BoardBleWriteTelemetry(
             origin: request.origin.rawValue,
-            writeType: request.writeType == .withoutResponse ? "withoutResponse" : "withResponse",
+            initialWriteType: request.writeType == .withoutResponse ? "withoutResponse" : "withResponse",
+            finalWriteType: request.writeType == .withoutResponse ? "withoutResponse" : "withResponse",
+            writeTypeSource: request.writeTypeSource.rawValue,
             chunkSize: request.chunkSize,
             chunkCount: request.chunks.count,
             negotiatedMaxWriteWithoutResponse: request.negotiatedMaxWriteWithoutResponse,
@@ -1560,6 +1606,50 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         parkStartedAt = nil
         telemetry.durationMs = Int((DispatchTime.now().uptimeNanoseconds - telemetry.startedAt.uptimeNanoseconds) / 1_000_000)
         return telemetry
+    }
+
+    private func switchQueuedWriteToWithResponseFallback(
+        requestIndex: Int,
+        connectionGeneration: UInt64,
+        writeGeneration: UInt64
+    ) -> Bool {
+        guard requestIndex < writeQueue.count else { return false }
+        let request = writeQueue[requestIndex]
+        guard request.connectionGeneration == connectionGeneration,
+              request.writeGeneration == writeGeneration
+        else {
+            return false
+        }
+        let payload = request.chunks.reduce(into: Data()) { combinedPayload, chunk in
+            combinedPayload.append(chunk)
+        }
+        let fallbackChunks = stride(from: 0, to: payload.count, by: BoardBleEncoding.classicChunkSize).map { offset in
+            payload.subdata(in: offset..<min(offset + BoardBleEncoding.classicChunkSize, payload.count))
+        }
+        writeQueue[requestIndex] = WriteRequest(
+            chunks: fallbackChunks,
+            writeType: .withResponse,
+            writeTypeSource: .watchdogFallback,
+            chunkSize: BoardBleEncoding.classicChunkSize,
+            negotiatedMaxWriteWithoutResponse: request.negotiatedMaxWriteWithoutResponse,
+            origin: request.origin,
+            connectionGeneration: request.connectionGeneration,
+            writeGeneration: request.writeGeneration,
+            completion: request.completion
+        )
+        currentWriteTelemetry?.finalWriteType = "withResponse"
+        currentWriteTelemetry?.writeTypeSource = BoardBleWriteTypeSource.watchdogFallback.rawValue
+        currentWriteTelemetry?.chunkSize = BoardBleEncoding.classicChunkSize
+        currentWriteTelemetry?.chunkCount = fallbackChunks.count
+        pendingWriteResume = { [weak self] in
+            self?.writeChunk(
+                requestIndex: requestIndex,
+                chunkIndex: 0,
+                connectionGeneration: connectionGeneration,
+                writeGeneration: writeGeneration
+            )
+        }
+        return true
     }
 
     private func writeChunk(
@@ -1605,6 +1695,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // A write got through end-to-end: the link is healthy, so refresh the
             // write-stall recovery budget (#3181).
             writeStallRecoveries = 0
+            persistPendingWriteWithResponseIdentityIfNeeded()
             request.completion(nil, finalizeCurrentWriteTelemetry())
             isWriting = false
             processWriteQueue()
@@ -1680,8 +1771,27 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                            !characteristic.properties.contains(.writeWithoutResponse) {
                             if let peripheral = self.connectedPeripheral {
                                 self.writeWithResponsePeripheralIds.insert(peripheral.identifier)
+                                self.pendingWriteWithResponsePersistenceIdentity = self.auroraWriteWithResponseIdentity(
+                                    peripheral: peripheral,
+                                    characteristic: characteristic
+                                )
                             }
                             self.forceWriteWithResponse = true
+                            self.forceWriteWithResponseSource = .watchdogFallback
+                            guard self.switchQueuedWriteToWithResponseFallback(
+                                requestIndex: requestIndex,
+                                connectionGeneration: connectionGeneration,
+                                writeGeneration: writeGeneration
+                            ) else {
+                                self.forceWriteWithResponse = false
+                                self.forceWriteWithResponseSource = nil
+                                if let peripheral = self.connectedPeripheral {
+                                    self.writeWithResponsePeripheralIds.remove(peripheral.identifier)
+                                }
+                                self.pendingWriteWithResponsePersistenceIdentity = nil
+                                self.handleWriteStall()
+                                return
+                            }
                             self.logger.error("BLE write stalled: RX characteristic advertises only .write; switching this connection to write-with-response")
                             self.resumeParkedWrite(source: "withResponse")
                             return
@@ -1757,6 +1867,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         pendingWriteAck = nil
         pendingWriteAckWatchdog?.cancel()
         pendingWriteAckWatchdog = nil
+        pendingWriteWithResponsePersistenceIdentity = nil
         // Only the in-flight head request has meaningful telemetry; requests
         // that never started get nil. Finalizing folds any still-open park into
         // the totals and clears the slot (and parkStartedAt), so a later
@@ -1774,6 +1885,59 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             request.completion(error, requestIndex == 0 ? headTelemetry : nil)
         }
         notifyDrainWaitersIfDrainedOnBleQueue()
+    }
+
+    private static func loadLearnedWriteWithResponseEntries() -> [String: LearnedWriteWithResponseEntry] {
+        guard let data = SharedConstants.sharedDefaults?.data(forKey: SharedConstants.bleWriteWithResponseBoardsKey),
+              let entries = try? JSONDecoder().decode([String: LearnedWriteWithResponseEntry].self, from: data)
+        else {
+            return [:]
+        }
+        return entries
+    }
+
+    private func saveLearnedWriteWithResponseEntries() {
+        guard let data = try? JSONEncoder().encode(learnedWriteWithResponseEntries) else { return }
+        SharedConstants.sharedDefaults?.set(data, forKey: SharedConstants.bleWriteWithResponseBoardsKey)
+    }
+
+    private func learnedWriteWithResponseEntry(
+        for identity: String,
+        now: Date = Date()
+    ) -> LearnedWriteWithResponseEntry? {
+        guard let entry = learnedWriteWithResponseEntries[identity] else { return nil }
+        if now.timeIntervalSince1970 - entry.learnedAt > learnedWriteWithResponseTtl {
+            learnedWriteWithResponseEntries.removeValue(forKey: identity)
+            saveLearnedWriteWithResponseEntries()
+            return nil
+        }
+        return entry
+    }
+
+    private func auroraWriteWithResponseIdentity(
+        peripheral: WritableBlePeripheral,
+        characteristic: CBCharacteristic
+    ) -> String? {
+        guard characteristic.uuid != redBearLabWriteCharacteristicUuid,
+              configuration?.boardName != "moonboard"
+        else {
+            return nil
+        }
+        let deviceId = peripheral.identifier.uuidString
+        let deviceName = discoveredNames[deviceId] ?? peripheral.name ?? configuration?.deviceName
+        if let serial = BoardBleEncoding.parseSerialNumber(deviceName: deviceName) {
+            return "aurora:\(serial)"
+        }
+        return "peripheral:\(deviceId)"
+    }
+
+    private func persistPendingWriteWithResponseIdentityIfNeeded(now: Date = Date()) {
+        guard let identity = pendingWriteWithResponsePersistenceIdentity else { return }
+        pendingWriteWithResponsePersistenceIdentity = nil
+        learnedWriteWithResponseEntries[identity] = LearnedWriteWithResponseEntry(
+            learnedAt: now.timeIntervalSince1970
+        )
+        saveLearnedWriteWithResponseEntries()
     }
 
     /// Recovery for a write that parked on `canSendWriteWithoutResponse` and
@@ -1960,10 +2124,24 @@ extension BoardBleManager {
             // reconnect in a test starts with the gate re-armed and the
             // with-response latch re-seeded from what the session has learned.
             manager.bypassCanSendWriteWithoutResponse = false
-            if let identifier = peripheral?.identifier {
-                manager.forceWriteWithResponse = manager.writeWithResponsePeripheralIds.contains(identifier)
+            if let peripheral, let characteristic {
+                let learnedIdentity = manager.auroraWriteWithResponseIdentity(
+                    peripheral: peripheral,
+                    characteristic: characteristic
+                )
+                let learnedEntry = learnedIdentity.flatMap { manager.learnedWriteWithResponseEntry(for: $0) }
+                let learnedThisSession = manager.writeWithResponsePeripheralIds.contains(peripheral.identifier)
+                manager.forceWriteWithResponse = learnedEntry != nil || learnedThisSession
+                if learnedEntry != nil {
+                    manager.forceWriteWithResponseSource = .learnedPersistentFallback
+                } else if learnedThisSession {
+                    manager.forceWriteWithResponseSource = .watchdogFallback
+                } else {
+                    manager.forceWriteWithResponseSource = nil
+                }
             } else {
                 manager.forceWriteWithResponse = false
+                manager.forceWriteWithResponseSource = nil
             }
         }
 
@@ -2021,7 +2199,25 @@ extension BoardBleManager {
         var writeStallRecoveringPeripheralId: UUID? { manager.writeStallRecoveringPeripheralId }
         var bypassCanSendWriteWithoutResponse: Bool { manager.bypassCanSendWriteWithoutResponse }
         var forceWriteWithResponse: Bool { manager.forceWriteWithResponse }
+        var forceWriteWithResponseSource: BoardBleWriteTypeSource? { manager.forceWriteWithResponseSource }
         var writeWithResponsePeripheralIds: Set<UUID> { manager.writeWithResponsePeripheralIds }
+
+        func setLearnedWriteWithResponseEntry(
+            identity: String,
+            learnedAt: TimeInterval
+        ) {
+            manager.learnedWriteWithResponseEntries[identity] = LearnedWriteWithResponseEntry(
+                learnedAt: learnedAt
+            )
+        }
+
+        func removeLearnedWriteWithResponseEntry(identity: String) {
+            manager.learnedWriteWithResponseEntries.removeValue(forKey: identity)
+        }
+
+        func hasLearnedWriteWithResponseEntry(identity: String) -> Bool {
+            manager.learnedWriteWithResponseEntries[identity] != nil
+        }
     }
 
     var testHooks: TestHooks { TestHooks(manager: self) }

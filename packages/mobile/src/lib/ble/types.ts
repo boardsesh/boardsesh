@@ -48,6 +48,13 @@ export type DevicePickerFn = (
 export type BleWriteDiagnostics = {
   origin?: 'js' | 'native';
   writeType?: 'withoutResponse' | 'withResponse';
+  initialWriteType?: 'withoutResponse' | 'withResponse';
+  finalWriteType?: 'withoutResponse' | 'withResponse';
+  writeTypeSource?:
+    | 'defaultWithoutResponse'
+    | 'watchdogFallback'
+    | 'learnedPersistentFallback'
+    | 'moonboardCharacteristic';
   chunkSize?: number;
   // PLANNED chunks for the write on both platforms (stamped at enqueue), not
   // progress — a write that fails mid-stream still reports the full plan.
@@ -56,7 +63,7 @@ export type BleWriteDiagnostics = {
   negotiatedMtu?: number;
   parkCount?: number;
   peripheralIsReadyFired?: boolean;
-  lastResumeSource?: 'callback' | 'poll';
+  lastResumeSource?: 'callback' | 'poll' | 'bypass' | 'withResponse';
   maxParkMs?: number;
   totalParkMs?: number;
   watchdogTripped?: boolean;

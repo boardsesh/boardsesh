@@ -282,11 +282,11 @@ Estimator: `estimateBoardOffsets`.
 
 ### Confidence tiers
 
-| Tier          | Condition                                                                                           | UI                                 |
-| ------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `confirmed`   | n ≥ 20 and `post_sd` ≤ 0.35, unless Kilter display-delta hygiene downgrades the row                  | grade, "confirmed by N sends"      |
-| `provisional` | 3 ≤ n < 20, or a confirmed Kilter row tripped the v1.2 display-delta hygiene rule                    | grade with a visible ± band        |
-| `setter_only` | n < 3                                                                                               | no Boardsesh number, setter's call |
+| Tier          | Condition                                                                           | UI                                 |
+| ------------- | ----------------------------------------------------------------------------------- | ---------------------------------- |
+| `confirmed`   | n ≥ 20 and `post_sd` ≤ 0.35, unless Kilter display-delta hygiene downgrades the row | grade, "confirmed by N sends"      |
+| `provisional` | 3 ≤ n < 20, or a confirmed Kilter row tripped the v1.2 display-delta hygiene rule   | grade with a visible ± band        |
+| `setter_only` | n < 3                                                                               | no Boardsesh number, setter's call |
 
 ### Publish hysteresis
 

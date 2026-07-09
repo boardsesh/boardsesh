@@ -50,13 +50,13 @@ The protocol is built on top of the **Nordic UART Service (NUS)**, a widely-used
 
 ## 2. BLE Service & Characteristic UUIDs
 
-| Name                     | UUID                                   | Purpose                                                             |
-| ------------------------ | -------------------------------------- | ------------------------------------------------------------------- |
-| **Aurora Board Service** | `4488B571-7806-4DF6-BCFF-A2897E4953FF` | Primary advertisement service UUID; used to filter BLE scan results |
-| **Nordic UART Service**  | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | Data transport service (NUS)                                        |
+| Name                     | UUID                                   | Purpose                                                               |
+| ------------------------ | -------------------------------------- | --------------------------------------------------------------------- |
+| **Aurora Board Service** | `4488B571-7806-4DF6-BCFF-A2897E4953FF` | Primary advertisement service UUID; used to filter BLE scan results   |
+| **Nordic UART Service**  | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | Data transport service (NUS)                                          |
 | **RX Characteristic**    | `6E400002-B5A3-F393-E0A9-E50E24DCCA9E` | App writes LED commands here (write type per characteristic — see §9) |
-| **TX Characteristic**    | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` | Board sends data to app (Notify)                                    |
-| **CCCD**                 | `00002902-0000-1000-8000-00805f9b34fb` | Client Characteristic Configuration Descriptor                      |
+| **TX Characteristic**    | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` | Board sends data to app (Notify)                                      |
+| **CCCD**                 | `00002902-0000-1000-8000-00805f9b34fb` | Client Characteristic Configuration Descriptor                        |
 
 **Note:** The app scans using the Aurora Board Service UUID (`4488B571...`) as a filter, but communicates over the Nordic UART Service (`6E400001...`). The board advertises both services.
 
@@ -463,8 +463,9 @@ Each 20-byte chunk is written to the RX characteristic as a separate GATT write 
 
 - **Write type depends on the controller-box generation** — it is a property of the box's advertised characteristic, not a protocol invariant. Two generations exist in the field:
   - The common box (field telemetry `bleCharProperties=12`, API level 3) advertises **both** `.write` (bit 8) and `.writeWithoutResponse` (bit 4), and is driven with **Write Without Response**.
-  - A mid-2025 Kilter-built box (field telemetry `bleCharProperties=8`, API level 2) advertises **only** `.write` — the `.writeWithoutResponse` bit is absent. On iOS, CoreBluetooth **silently drops** a write-without-response to a characteristic that lacks the no-response property, so this box stays dark on a client that hardcodes without-response. An interoperable iOS client must fall back to **write-with-response** (pacing on the GATT write ack) whenever the RX characteristic doesn't advertise `.writeWithoutResponse`. Android's GATT stack issues no-response writes regardless of the advertised property, so the same write call works on both generations there — which is why this defect is iOS-only.
-  - The `bleCharProperties` / API-level correlation is clean and stable per-connect (8↔v2, 12↔v3), distinguishing a genuine hardware generation from a stale iOS GATT cache (which flickers between the two). This is the same characteristic-capability gating the MoonBoard spec already documents for the RedBearLab box (`MOONBOARD_BLUETOOTH_PROTOCOL_SPEC.md` §5.4).
+  - A mid-2025 Kilter-built box (field telemetry `bleCharProperties=8`, API level 2) advertises **only** `.write` — the `.writeWithoutResponse` bit is absent. On iOS, CoreBluetooth **silently drops** a write-without-response to a characteristic that lacks the no-response property, so this box stays dark on a client that hardcodes without-response. Android's GATT stack issues no-response writes regardless of the advertised property, so the same write call works on both generations there — which is why this defect is iOS-only.
+  - The official Kilter app can follow the characteristic capability directly because its Flutter stack defaults to write-with-response unless the Dart layer opts into without-response. Boardsesh's iOS client is more defensive: Aurora writes still start on without-response, then switch this connection to write-with-response only after a without-response write demonstrably stalls on a `.write`-only characteristic and a with-response retry drains. That behavior gate avoids treating a stale CoreBluetooth property read as the live decision.
+  - Boardsesh persists that learned with-response path for a board identity only when the behavior failure is corroborated by a write-only characteristic and the with-response drain succeeds. The property bit is corroborating evidence for persistence, never the live trigger. A persisted entry expires after 90 days; the client does not clear it early from a no-response probe because that write type has no ack to prove the board accepted it.
 - Each chunk is enqueued as a separate `writeCharacteristic()` command
 - The command queue ensures serial execution with GATT write completion callbacks
 
