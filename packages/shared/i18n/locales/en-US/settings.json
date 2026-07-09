@@ -396,6 +396,8 @@
     "remainingChars": "{{count}} more characters to go",
     "sessionRecordingLabel": "Turn on session recording",
     "sessionRecordingDescription": "Help us fix your bug faster by turning on session recording and reproducing the bug. You can turn it off after.",
+    "bluetoothBugLabel": "I'm having Bluetooth trouble",
+    "bluetoothBugDescription": "Scans for nearby boards and sends us what they broadcast, so we can figure out why yours won't connect. No board is controlled — we just listen.",
     "starRating_one": "{{count}} star",
     "starRating_other": "{{count}} stars",
     "nextAria": "Next"

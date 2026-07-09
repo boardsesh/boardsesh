@@ -1,12 +1,27 @@
 export type BleConnection = {
   deviceId: string;
   deviceName?: string;
+  // Advertisement recon payload of the connected device, threaded through so the
+  // `Bluetooth Connection Success` event can carry it. See `AdvertisementRecon`.
+  manufacturerData?: string;
+  serviceData?: Record<string, string>;
 };
 
 export type DiscoveredDevice = {
   deviceId: string;
   name?: string;
   rssi: number;
+} & AdvertisementRecon;
+
+// Undocumented advertisement payload captured for PostHog reconnaissance. Newer
+// Kilter-built boxes advertise a bare name with no `#serial@apiLevel` suffix, so
+// the serial / LED generation may ride in manufacturer data or per-UUID service
+// data instead. Canonical encoding is lowercase hex (both native iOS and the
+// ble-plx base64→hex path normalize to it) so the field is comparable across
+// platforms. Parsed nowhere yet — capture + telemetry only.
+export type AdvertisementRecon = {
+  manufacturerData?: string;
+  serviceData?: Record<string, string>;
 };
 
 export type BoardScanFamily = 'aurora' | 'moonboard';

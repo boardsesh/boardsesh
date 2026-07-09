@@ -13,6 +13,18 @@ export type NativeBleScanEvent = {
    * omit the field.
    */
   serviceUuids?: string[];
+  /**
+   * Advertisement manufacturer-specific data, lowercase hex. Recon-only
+   * (parsed nowhere yet): newer bare-name boxes may carry their serial / LED
+   * generation here. Optional — omitted when the packet has none, and absent
+   * on binaries older than this field.
+   */
+  manufacturerData?: string;
+  /**
+   * Advertisement service-data, `{ uuid: hexBytes }`. Where the undocumented
+   * custom GATT UUIDs would surface if advertised. Optional/omitted as above.
+   */
+  serviceData?: Record<string, string>;
 };
 
 export type NativeBleDisconnectEvent = {

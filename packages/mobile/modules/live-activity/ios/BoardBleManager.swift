@@ -11,6 +11,16 @@ struct BoardBleScanResult {
     /// unfiltered — a native service-UUID filter would hide MoonBoard
     /// controllers, which don't reliably advertise the UART service UUID.
     let serviceUuids: [String]
+    /// Advertisement manufacturer-specific data, lowercase hex. Captured for
+    /// PostHog reconnaissance: newer Kilter-built boxes advertise a bare name
+    /// with no `#serial@apiLevel` suffix, so the serial / LED generation may
+    /// ride here (or in `serviceData`) instead. `nil` when the packet carries
+    /// none. We parse nothing from it yet — this is recon only.
+    let manufacturerData: String?
+    /// Advertisement service-data, `{ uuid: hexBytes }`. The undocumented custom
+    /// GATT UUIDs (d9b1fad4…/191b6169…/73a2a497…) would surface here if the box
+    /// advertises them. `nil`/empty when the packet carries none.
+    let serviceData: [String: String]?
 }
 
 /// Connect-time BLE write diagnostics, surfaced to JS (Sentry tags + analytics)
@@ -1018,13 +1028,33 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let advertisedServiceUuids = ((advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? [])
             + (advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID] ?? []))
             .map { $0.uuidString }
+        // Undocumented advertisement payload (recon only — parsed nowhere yet):
+        // manufacturer-specific data and per-UUID service data, hex-encoded.
+        let manufacturerData = (advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data)
+            .map { $0.hexEncodedString() }
+        let serviceData = (advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data])
+            .flatMap { rawServiceData -> [String: String]? in
+                guard !rawServiceData.isEmpty else { return nil }
+                var mapped: [String: String] = [:]
+                for (uuid, bytes) in rawServiceData {
+                    mapped[uuid.uuidString] = bytes.hexEncodedString()
+                }
+                return mapped
+            }
         // Only cross the bridge when something material changed for this
-        // device (first sighting, name arriving in a later scan response, or
-        // a different advertised UUID set).
-        let emissionKey = "\(name ?? "")|\(advertisedServiceUuids.joined(separator: ","))"
+        // device (first sighting, name arriving in a later scan response, a
+        // different advertised UUID set, or manufacturer data appearing/changing).
+        let emissionKey = "\(name ?? "")|\(advertisedServiceUuids.joined(separator: ","))|\(manufacturerData ?? "")"
         if emittedScanResults[deviceId] != emissionKey {
             emittedScanResults[deviceId] = emissionKey
-            onScanResult?(BoardBleScanResult(deviceId: deviceId, name: name, rssi: RSSI.intValue, serviceUuids: advertisedServiceUuids))
+            onScanResult?(BoardBleScanResult(
+                deviceId: deviceId,
+                name: name,
+                rssi: RSSI.intValue,
+                serviceUuids: advertisedServiceUuids,
+                manufacturerData: manufacturerData,
+                serviceData: serviceData
+            ))
         }
 
         // Reconnect-by-last-known-board scan fallback: the stored board just
@@ -1931,6 +1961,13 @@ private extension Data {
         }
 
         self = Data(bytes)
+    }
+
+    /// Lowercase hex, matching the JS `uint8ArrayToHex` / ble-plx base64→hex
+    /// normalization so the `bleManufacturerData` PostHog field is comparable
+    /// across platforms.
+    func hexEncodedString() -> String {
+        map { String(format: "%02x", $0) }.joined()
     }
 }
 

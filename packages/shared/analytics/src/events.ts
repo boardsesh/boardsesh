@@ -112,6 +112,12 @@ export const SHARED_EVENTS = {
   // config, current-board fallback, or no preview at all. Measures how often
   // the serial→board resolution actually pays off in the picker UI.
   BlePickerDevicesResolved: 'BLE Picker Devices Resolved',
+  // Consent-driven scan recon: fired once per discovered board when a user
+  // submits a bug report with the "Bluetooth trouble" toggle on. Carries the raw
+  // advertisement payload (manufacturerData/serviceData hex, service UUIDs, name)
+  // so we can find where newer bare-name boxes stash their serial / LED
+  // generation. Batched by reconCorrelationId. Not fired on normal connects.
+  BleAdvertisementRecon: 'BLE Advertisement Recon',
   ClimbSentToBoardSuccess: 'Climb Sent to Board Success',
   ClimbSentToBoardFailure: 'Climb Sent to Board Failure',
   // Fired on a successful USER-INITIATED clear-all write (sendSource 'clear';

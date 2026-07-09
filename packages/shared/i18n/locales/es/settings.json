@@ -398,6 +398,8 @@
     "starRating_other": "{{count}} estrellas",
     "sessionRecordingLabel": "Activar grabación de sesión",
     "sessionRecordingDescription": "Ayúdanos a corregir tu error más rápido activando la grabación de sesión y reproduciendo el problema. Puedes desactivarla después.",
+    "bluetoothBugLabel": "Tengo problemas con el Bluetooth",
+    "bluetoothBugDescription": "Busca plafones cercanos y nos envía lo que emiten, para entender por qué el tuyo no se conecta. No se controla ningún plafón: solo escuchamos.",
     "nextAria": "Siguiente"
   },
   "feedbackBanner": {

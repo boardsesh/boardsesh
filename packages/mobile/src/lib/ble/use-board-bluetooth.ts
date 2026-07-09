@@ -30,6 +30,7 @@ import {
   subscribeNativeBleConnected,
 } from './adapter-factory';
 import { requestBleRuntimePermissions } from './use-ble-permissions';
+import { manufacturerCompanyId } from './advertisement';
 import type {
   BleDisconnectInfo,
   BleWriteDiagnostics,
@@ -884,6 +885,13 @@ export function useBoardBluetooth({
           // write-type one) is visible in PostHog (see #3230).
           bleMaxWriteWithResponse: connectionDiagnostics?.maxWriteWithResponse,
           bleMaxWriteWithoutResponse: connectionDiagnostics?.maxWriteWithoutResponse,
+          // Advertisement recon (parsed nowhere yet): newer bare-name boxes may
+          // carry their serial / LED generation here instead of in the name.
+          // Captured so we can find the layout across the fleet, then teach
+          // parseSerialNumber/parseApiLevel to read it. Absent → fields dropped.
+          bleManufacturerData: connection.manufacturerData ?? undefined,
+          bleManufacturerCompanyId: manufacturerCompanyId(connection.manufacturerData),
+          bleServiceData: connection.serviceData ? JSON.stringify(connection.serviceData) : undefined,
         });
         return true;
       } catch (error) {

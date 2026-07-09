@@ -8,10 +8,12 @@ import { Icon } from '../Icon';
 import { Button } from '../Button';
 import { PressableSurface } from '../PressableSurface';
 import { SessionRecordingSwitchRow } from '../settings/SessionRecordingSwitchRow';
+import { SwitchRow } from '../SwitchRow';
 import { useTheme } from '../../providers/theme-provider';
 import { useToast } from '../../providers/toast-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
+import { runBleAdvertisementRecon } from '../../lib/ble/advertisement-recon';
 import { openDiscordInvite } from '../../lib/discord';
 
 export type FeedbackSheetMode = 'rating' | 'bug';
@@ -38,6 +40,7 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
   const { mutateAsync, isPending, reset } = useSubmitMobileAppFeedback();
   const [selectedRating, setSelectedRating] = useState<number | null>(null);
   const [comment, setComment] = useState('');
+  const [captureBleDiag, setCaptureBleDiag] = useState(false);
 
   const isBugReport = mode === 'bug';
   const trimmedComment = comment.trim();
@@ -50,6 +53,7 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
   useEffect(() => {
     setSelectedRating(null);
     setComment('');
+    setCaptureBleDiag(false);
     reset();
   }, [mode, reset]);
 
@@ -63,6 +67,15 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
     if (!canSubmit || isPending) return;
 
     try {
+      // Fire the opt-in Bluetooth scan-recon alongside the report. It scans
+      // (no connect) and ships each in-range board's raw advertisement payload
+      // to PostHog under a shared correlation id, so we can find where bare-name
+      // boxes stash their serial. Runs independently of the sheet lifecycle;
+      // never blocks the submit or surfaces its own errors.
+      if (isBugReport && captureBleDiag) {
+        const reconCorrelationId = `bug-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+        void runBleAdvertisementRecon(reconCorrelationId).catch(() => {});
+      }
       await mutateAsync({
         source: isBugReport ? 'drawer-bug' : 'drawer-feedback',
         rating: isBugReport ? null : selectedRating,
@@ -146,6 +159,12 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
           <SessionRecordingSwitchRow
             label={t('feedbackForm.sessionRecordingLabel')}
             description={t('feedbackForm.sessionRecordingDescription')}
+          />
+          <SwitchRow
+            label={t('feedbackForm.bluetoothBugLabel')}
+            description={t('feedbackForm.bluetoothBugDescription')}
+            value={captureBleDiag}
+            onValueChange={setCaptureBleDiag}
           />
         </View>
       ) : null}

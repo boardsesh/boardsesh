@@ -153,6 +153,9 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
         deviceId: payload.device.deviceId,
         name: deviceName,
         rssi: payload.rssi,
+        // Native already hex-encodes; pass through as-is (omitted when absent).
+        manufacturerData: payload.manufacturerData,
+        serviceData: payload.serviceData,
       };
       if (upsertDiscoveredDevice(devices, device)) {
         pushDevices();
@@ -225,9 +228,13 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     }
 
     let selectedDeviceName: string | undefined;
+    let selectedManufacturerData: string | undefined;
+    let selectedServiceData: Record<string, string> | undefined;
     for (const device of devices.values()) {
       if (device.deviceId === selectedDeviceId) {
         selectedDeviceName = device.name;
+        selectedManufacturerData = device.manufacturerData;
+        selectedServiceData = device.serviceData;
         break;
       }
     }
@@ -253,6 +260,8 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     return {
       deviceId: selectedDeviceId,
       deviceName: selectedDeviceName,
+      manufacturerData: selectedManufacturerData,
+      serviceData: selectedServiceData,
     };
   }
 

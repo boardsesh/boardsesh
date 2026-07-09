@@ -398,6 +398,8 @@
     "starRating_other": "{{count}} étoiles",
     "sessionRecordingLabel": "Activer l'enregistrement de session",
     "sessionRecordingDescription": "Aidez-nous à corriger votre bug plus vite en activant l'enregistrement de session et en reproduisant le problème. Vous pourrez le désactiver ensuite.",
+    "bluetoothBugLabel": "J'ai des problèmes de Bluetooth",
+    "bluetoothBugDescription": "Recherche les boards à proximité et nous envoie ce qu'elles diffusent, pour comprendre pourquoi la tienne ne se connecte pas. Aucune board n'est commandée : on se contente d'écouter.",
     "nextAria": "Suivant"
   },
   "feedbackBanner": {

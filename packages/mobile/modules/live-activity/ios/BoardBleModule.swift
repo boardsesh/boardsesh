@@ -43,7 +43,7 @@ public class BoardBleModule: Module {
         OnCreate {
             BoardBleManager.shared.setEventHandlers(
                 onScanResult: { [weak self] result in
-                    self?.emitOrBuffer(name: "scanResult", body: [
+                    var body: [String: Any] = [
                         "device": [
                             "deviceId": result.deviceId,
                             "name": result.name ?? ""
@@ -51,7 +51,16 @@ public class BoardBleModule: Module {
                         "localName": result.name ?? "",
                         "rssi": result.rssi,
                         "serviceUuids": result.serviceUuids
-                    ])
+                    ]
+                    // Recon-only advertisement payload; omitted when absent so
+                    // older JS/sanitize sees no empty fields.
+                    if let manufacturerData = result.manufacturerData {
+                        body["manufacturerData"] = manufacturerData
+                    }
+                    if let serviceData = result.serviceData {
+                        body["serviceData"] = serviceData
+                    }
+                    self?.emitOrBuffer(name: "scanResult", body: body)
                 },
                 onDisconnect: { [weak self] deviceId, reason in
                     var body: [String: Any] = ["deviceId": deviceId]

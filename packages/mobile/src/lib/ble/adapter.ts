@@ -12,7 +12,7 @@ import {
   parseSerialNumber,
 } from '@boardsesh/ble-protocol';
 import { bleManager } from './ble-manager';
-import { uint8ArrayToBase64 } from './base64';
+import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
 import { waitForBlePoweredOn } from './availability';
 import { isLikelyBoardDevice } from './board-device-filter';
 import { upsertDiscoveredDevice } from './scan-device-cache';
@@ -156,6 +156,10 @@ export class RNBleAdapter implements BluetoothAdapter {
           deviceId: scannedDevice.id,
           name: deviceName,
           rssi: scannedDevice.rssi ?? -100,
+          // ble-plx surfaces these as base64; normalize to hex so the recon
+          // payload matches the native iOS path (omitted when absent/empty).
+          manufacturerData: base64ToHex(scannedDevice.manufacturerData),
+          serviceData: serviceDataToHex(scannedDevice.serviceData),
         };
         if (upsertDiscoveredDevice(devices, device)) {
           pushDevices();
@@ -205,9 +209,13 @@ export class RNBleAdapter implements BluetoothAdapter {
     }
 
     let selectedDeviceName: string | undefined;
+    let selectedManufacturerData: string | undefined;
+    let selectedServiceData: Record<string, string> | undefined;
     for (const device of devices.values()) {
       if (device.deviceId === selectedDeviceId) {
         selectedDeviceName = device.name;
+        selectedManufacturerData = device.manufacturerData;
+        selectedServiceData = device.serviceData;
         break;
       }
     }
@@ -283,6 +291,8 @@ export class RNBleAdapter implements BluetoothAdapter {
     return {
       deviceId: selectedDeviceId,
       deviceName: selectedDeviceName,
+      manufacturerData: selectedManufacturerData,
+      serviceData: selectedServiceData,
     };
   }
 
