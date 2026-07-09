@@ -338,16 +338,15 @@ export function deherdCrowdMean(input: DeherdCrowdInput, options?: Partial<Deher
   }
 
   const rawDeherdedGrade = input.displayGrade + (input.observedMean - input.displayGrade) / (1 - echoFraction);
-  const cappedByObserved = clampNumber(
-    rawDeherdedGrade,
-    input.observedMean - resolvedOptions.maxMoveFromObserved,
-    input.observedMean + resolvedOptions.maxMoveFromObserved,
-  );
-  const cappedGrade = clampNumber(
-    cappedByObserved,
-    input.displayGrade - resolvedOptions.maxMoveFromDisplay,
-    input.displayGrade + resolvedOptions.maxMoveFromDisplay,
-  );
+  const observedMin = input.observedMean - resolvedOptions.maxMoveFromObserved;
+  const observedMax = input.observedMean + resolvedOptions.maxMoveFromObserved;
+  const displayMin = input.displayGrade - resolvedOptions.maxMoveFromDisplay;
+  const displayMax = input.displayGrade + resolvedOptions.maxMoveFromDisplay;
+  const cappedByObserved = clampNumber(rawDeherdedGrade, observedMin, observedMax);
+  const intersectedMin = Math.max(observedMin, displayMin);
+  const intersectedMax = Math.min(observedMax, displayMax);
+  const cappedGrade =
+    intersectedMin <= intersectedMax ? clampNumber(rawDeherdedGrade, intersectedMin, intersectedMax) : cappedByObserved;
 
   return {
     grade: cappedGrade,

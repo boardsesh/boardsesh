@@ -1,9 +1,10 @@
 name: Refresh Climb Grades
 
-# Nightly: recompute the Boardsesh grade (empirical-Bayes blend of upstream
-# crowd means, angle surface, cross-board offset) into board_climb_grades.
-# Validation gates run first and abort the run — no grades are written on a
-# gate failure. Coefficients refit weekly, frozen in between. Idempotent.
+# Nightly: recompute the Boardsesh v2 grade (empirical-Bayes crowd mean plus
+# capped Stage 2 de-herding, rater, behavior, angle, and cross-board evidence)
+# into board_climb_grades. Validation gates run first and abort the run — no
+# coefficients, gate results, or grades are written on a gate failure.
+# Coefficients refit weekly, frozen in between. Idempotent.
 # Model spec: docs/boardsesh-grade.md.
 on:
   schedule:
@@ -15,7 +16,7 @@ on:
         type: boolean
         default: false
       dry_run:
-        description: 'Gates only, write no grades'
+        description: 'Gates only, write no coefficients, gate results, or grades'
         type: boolean
         default: false
 

@@ -430,11 +430,24 @@ Unit tests:
 vp run test:db
 ```
 
-The pipeline locally, against the dev DB (or a read-only prod `DB_URL`):
+Read-only validation against the dev DB or a read-only prod `DB_URL`:
 
 ```
 vp run db:refresh-climb-grades -- --validate-only
+vp run db:refresh-climb-grades -- --validate-only --allow-empty-backtest
+```
+
+Publish-path validation is also read-only, but requires the grade tables because
+it exercises hysteresis against existing rows:
+
+```
 vp run db:refresh-climb-grades -- --dry-run
+```
+
+Writable publish paths require a writable `DB_URL`:
+
+```
+vp run db:refresh-climb-grades --
 vp run db:refresh-climb-grades -- --refit-coefficients
 ```
 
@@ -446,6 +459,8 @@ vp run db:refresh-climb-grades -- --refit-coefficients
   coefficients, gate results, or grade rows.
 - `--refit-coefficients` forces a weekly refit instead of reusing the frozen set.
 - A bare run reuses frozen coefficients if they're under a week old, else refits.
+- `--allow-empty-backtest` is only for dev-style databases without stats history;
+  production validation should not use it.
 
 ### Where things are stored
 

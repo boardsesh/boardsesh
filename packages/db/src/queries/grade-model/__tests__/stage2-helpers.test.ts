@@ -27,6 +27,7 @@ import {
   estimateRaterBiases,
   estimateRaterModels,
   raterOpinionWeight,
+  stage2LeaveoutKey,
   type RaterBiasEstimate,
   type RaterOpinion,
   type RaterSampleRow,
@@ -42,6 +43,33 @@ void describe('Stage 2 rater helpers', () => {
     assert.ok(trainingQuery.includes('md5(s.climb_uuid'));
     assert.ok(trainingQuery.includes('NOT'));
     assert.ok(!predictionQuery.includes('md5(s.climb_uuid'));
+  });
+
+  void test('uses physical fingerprint keys for Stage 2 leave-out where available', () => {
+    const firstKey = stage2LeaveoutKey({
+      board_type: 'kilter',
+      climb_uuid: 'uuid-a',
+      layout_id: 1,
+      hold_fingerprint: 'same-problem',
+      angle: 40,
+    });
+    const siblingKey = stage2LeaveoutKey({
+      board_type: 'kilter',
+      climb_uuid: 'uuid-b',
+      layout_id: 1,
+      hold_fingerprint: 'same-problem',
+      angle: 40,
+    });
+    const otherAngleKey = stage2LeaveoutKey({
+      board_type: 'kilter',
+      climb_uuid: 'uuid-b',
+      layout_id: 1,
+      hold_fingerprint: 'same-problem',
+      angle: 50,
+    });
+
+    assert.equal(firstKey, siblingKey);
+    assert.notEqual(firstKey, otherAngleKey);
   });
 
   void test('does not subtract held-out benchmark rows from fitted rater bias', () => {
@@ -177,7 +205,7 @@ void describe('Stage 2 behavior helpers', () => {
     assert.equal(model.eligible, false);
   });
 
-  void test('leaves target rows out of behavior bucket offsets', () => {
+  void test('uses frozen behavior offsets and leaves target rows out of behavior user ability', () => {
     const trainingRows: BehaviorSampleRow[] = [];
     for (let userIndex = 0; userIndex < 11; userIndex++) {
       for (let outcomeIndex = 0; outcomeIndex < 3; outcomeIndex++) {
@@ -210,7 +238,7 @@ void describe('Stage 2 behavior helpers', () => {
         kilter: {
           boardType: 'kilter',
           boardMean: 20,
-          outcomeOffset: { send_2_3: 999 },
+          outcomeOffset: { send_2_3: 7 },
           eligible: true,
           summary: {
             users: 11,
@@ -229,7 +257,7 @@ void describe('Stage 2 behavior helpers', () => {
     const targetEvidence = evidence.get('kilter\u0000target\u000040');
     assert.ok(targetEvidence);
     assert.ok(targetEvidence.behaviorMean !== null);
-    assert.ok(Math.abs(targetEvidence.behaviorMean - 20) < 1e-9, `behavior mean was ${targetEvidence.behaviorMean}`);
+    assert.ok(Math.abs(targetEvidence.behaviorMean - 27) < 1e-9, `behavior mean was ${targetEvidence.behaviorMean}`);
   });
 
   void test('orders outcome probabilities from flash to repeated-send to attempt', () => {
@@ -376,6 +404,19 @@ void describe('Stage 2 de-herded helpers', () => {
     assert.equal(thin.eligible, false);
     assert.equal(thin.reason, 'thin_evidence');
     assert.equal(thin.grade, 21);
+  });
+
+  void test('keeps the observed-mean cap authoritative when display and observed caps do not overlap', () => {
+    const capped = deherdCrowdMean({
+      observedMean: 25,
+      displayGrade: 20,
+      echoFraction: 0.5,
+      independentWeight: 10,
+    });
+
+    assert.equal(capped.capped, true);
+    assert.equal(capped.grade, 25.75);
+    assert.ok(capped.grade !== null && Math.abs(capped.grade - 25) <= 0.75);
   });
 
   void test('combines grade signals by precision or explicit weight', () => {

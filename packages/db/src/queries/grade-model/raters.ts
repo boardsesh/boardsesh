@@ -12,6 +12,8 @@ export interface RaterSampleRow {
   board_type: string;
   user_id: string;
   climb_uuid: string;
+  layout_id?: number | null;
+  hold_fingerprint?: string | null;
   angle: number;
   origin: string;
   difficulty: number;
@@ -25,6 +27,15 @@ export type Stage2EvidenceMap = Map<string, Stage2Evidence>;
 
 export function stage2EvidenceKey(boardType: string, climbUuid: string, angle: number): string {
   return `${boardType}\u0000${climbUuid}\u0000${angle}`;
+}
+
+export function stage2LeaveoutKey(
+  sample: Pick<RaterSampleRow, 'board_type' | 'climb_uuid' | 'layout_id' | 'hold_fingerprint' | 'angle'>,
+): string {
+  if (sample.layout_id !== null && sample.layout_id !== undefined && sample.hold_fingerprint) {
+    return `${sample.board_type}\u0000${sample.layout_id}\u0000${sample.hold_fingerprint}\u0000${numeric(sample.angle)}`;
+  }
+  return stage2EvidenceKey(sample.board_type, sample.climb_uuid, numeric(sample.angle));
 }
 
 interface Stage2SampleSqlOptions {
@@ -43,6 +54,8 @@ export function buildRaterSampleSql(options: Stage2SampleSqlOptions = { excludeT
            t.board_type,
            t.user_id,
            COALESCE(a.canonical_uuid, t.climb_uuid) AS climb_uuid,
+           bc.layout_id,
+           bc.hold_fingerprint,
            t.angle,
            t.origin,
            t.difficulty,
@@ -182,9 +195,9 @@ export function buildRaterEvidence(
   for (const sample of biasTrainingSamples) {
     const weight = raterWeight(sample);
     if (weight <= 0) continue;
-    const evidenceKey = stage2EvidenceKey(sample.board_type, sample.climb_uuid, numeric(sample.angle));
+    const leaveoutKey = stage2LeaveoutKey(sample);
     const locationKey = raterLocationKey(sample);
-    const heldOutKey = `${evidenceKey}\u0000${locationKey}`;
+    const heldOutKey = `${leaveoutKey}\u0000${locationKey}`;
     const accumulator = heldOutByEvidenceLocation.get(heldOutKey) ?? { weightedResidual: 0, effectiveN: 0 };
     accumulator.weightedResidual += (numeric(sample.difficulty) - numeric(sample.difficulty_average)) * weight;
     accumulator.effectiveN += weight;
@@ -200,9 +213,10 @@ export function buildRaterEvidence(
     if (!model) continue;
     const locationKey = raterLocationKey(sample);
     const evidenceKey = stage2EvidenceKey(sample.board_type, sample.climb_uuid, numeric(sample.angle));
+    const leaveoutKey = stage2LeaveoutKey(sample);
     const bias = biasExcludingTarget(
       model.biases[locationKey],
-      heldOutByEvidenceLocation.get(`${evidenceKey}\u0000${locationKey}`),
+      heldOutByEvidenceLocation.get(`${leaveoutKey}\u0000${locationKey}`),
     );
     const adjustedDifficulty = numeric(sample.difficulty) - bias;
     const accumulator = evidenceAccumulator.get(evidenceKey) ?? { weightedDifficulty: 0, effectiveN: 0, rawVotes: 0 };

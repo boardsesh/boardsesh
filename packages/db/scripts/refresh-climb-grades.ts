@@ -78,6 +78,7 @@ import {
   type BacktestSampleRow,
   type BehaviorSampleRow,
   type BoardOffsetSampleRow,
+  type ConfidenceTier,
   type ClimbAngleObservation,
   type EchoRateRow,
   type DisplayDeltaHygieneStats,
@@ -98,14 +99,85 @@ const COEFF_MAX_AGE_DAYS = 7;
 const BACKTEST_SAMPLE_LIMIT = 20000;
 const READ_PAGE_ROWS = 20000;
 const UPSERT_BATCH = 500;
+const REFRESH_KEY_BATCH = 5000;
 
 type Db = ReturnType<typeof createScriptDb>['db'];
+type DbTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbWriter = Pick<Db, 'execute' | 'insert'> | Pick<DbTransaction, 'execute' | 'insert'>;
 
 interface CoefficientRow {
   coeff_version: string;
   kind: string;
   key: string;
   payload: unknown;
+}
+
+interface PendingCoefficientRow {
+  kind: string;
+  key: string;
+  payload: unknown;
+}
+
+function buildCoefficientRows(coefficients: GradeCoefficients): PendingCoefficientRow[] {
+  return [
+    ...Object.entries(coefficients.echoFraction).map(([board, lambda]) => ({
+      kind: 'echo_fraction',
+      key: board,
+      payload: { lambda },
+    })),
+    ...Object.entries(coefficients.sigmaWithin).map(([board, payload]) => ({
+      kind: 'sigma_within',
+      key: board,
+      payload,
+    })),
+    ...Object.entries(coefficients.tauSquared).map(([board, payload]) => ({
+      kind: 'tau_squared',
+      key: board,
+      payload,
+    })),
+    ...Object.entries(coefficients.angleOffset).map(([board, payload]) => ({
+      kind: 'angle_offset',
+      key: board,
+      payload,
+    })),
+    ...Object.entries(coefficients.boardOffset).map(([board, payload]) => ({
+      kind: 'board_offset',
+      key: board,
+      payload,
+    })),
+    ...Object.entries(coefficients.raterModel).map(([board, payload]) => ({
+      kind: 'rater_model',
+      key: board,
+      payload,
+    })),
+    ...Object.entries(coefficients.behaviorModel).map(([board, payload]) => ({
+      kind: 'behavior_model',
+      key: board,
+      payload,
+    })),
+    ...Object.entries(coefficients.bridgeReadiness).map(([board, payload]) => ({
+      kind: 'bridge_readiness',
+      key: board,
+      payload,
+    })),
+  ];
+}
+
+async function persistCoefficients(db: DbWriter, coefficients: GradeCoefficients): Promise<void> {
+  for (const row of buildCoefficientRows(coefficients)) {
+    await db
+      .insert(boardGradeCoefficients)
+      .values({
+        coeffVersion: coefficients.coeffVersion,
+        kind: row.kind,
+        key: row.key,
+        payload: row.payload,
+      })
+      .onConflictDoUpdate({
+        target: [boardGradeCoefficients.coeffVersion, boardGradeCoefficients.kind, boardGradeCoefficients.key],
+        set: { payload: row.payload },
+      });
+  }
 }
 
 async function loadFrozenCoefficients(db: Db): Promise<GradeCoefficients | null> {
@@ -221,42 +293,12 @@ async function refitCoefficients(
     console.warn('[grades] too few shared Kilter/Tension users — universal grades for Kilter withheld.');
   }
 
-  const rows = [
-    ...Object.entries(echoFraction).map(([board, lambda]) => ({
-      kind: 'echo_fraction',
-      key: board,
-      payload: { lambda },
-    })),
-    ...Object.entries(sigmaWithin).map(([board, payload]) => ({ kind: 'sigma_within', key: board, payload })),
-    ...Object.entries(tauSquared).map(([board, payload]) => ({ kind: 'tau_squared', key: board, payload })),
-    ...Object.entries(angleOffset).map(([board, payload]) => ({ kind: 'angle_offset', key: board, payload })),
-    ...Object.entries(coefficients.boardOffset).map(([board, payload]) => ({
-      kind: 'board_offset',
-      key: board,
-      payload,
-    })),
-    ...Object.entries(raterModel).map(([board, payload]) => ({ kind: 'rater_model', key: board, payload })),
-    ...Object.entries(behaviorModel).map(([board, payload]) => ({ kind: 'behavior_model', key: board, payload })),
-    ...Object.entries(coefficients.bridgeReadiness).map(([board, payload]) => ({
-      kind: 'bridge_readiness',
-      key: board,
-      payload,
-    })),
-  ];
   if (!options.persist) {
     console.log(`[grades] coefficients ${coeffVersion} (in-memory only): λ=${JSON.stringify(echoFraction)}`);
     return coefficients;
   }
   await db.transaction(async (tx) => {
-    for (const row of rows) {
-      await tx
-        .insert(boardGradeCoefficients)
-        .values({ coeffVersion, kind: row.kind, key: row.key, payload: row.payload })
-        .onConflictDoUpdate({
-          target: [boardGradeCoefficients.coeffVersion, boardGradeCoefficients.kind, boardGradeCoefficients.key],
-          set: { payload: row.payload },
-        });
-    }
+    await persistCoefficients(tx, coefficients);
   });
   console.log(
     `[grades] coefficients ${coeffVersion}: λ=${JSON.stringify(echoFraction)}, boards with angle surface: ${Object.keys(angleOffset).join(', ') || 'none'}`,
@@ -283,7 +325,7 @@ interface ComputedRow {
   universalGrade: number | null;
   gradeLow: number | null;
   gradeHigh: number | null;
-  confidence: string;
+  confidence: ConfidenceTier;
   ascensionistCount: number;
   postSd: number | null;
   rawAverage: number | null;
@@ -736,7 +778,7 @@ function evaluateBehaviorEligibility(coefficients: GradeCoefficients): GateResul
 }
 
 async function upsertGrades(
-  db: Db,
+  db: DbWriter,
   boardType: string,
   computed: ComputedRow[],
   coefficients: GradeCoefficients,
@@ -801,7 +843,7 @@ async function upsertGrades(
       universalGrade: row.universalGrade,
       gradeLow: row.gradeLow,
       gradeHigh: row.gradeHigh,
-      confidence: row.confidence as never,
+      confidence: row.confidence,
       postSd: row.postSd,
     };
     if (shouldPublish(previous.get(`${row.climbUuid}:${row.angle}`), posteriorLike)) {
@@ -835,7 +877,86 @@ async function upsertGrades(
   return { written, held };
 }
 
-async function recordGateResults(db: Db, coefficients: GradeCoefficients, gates: GateResult[]): Promise<void> {
+async function createRefreshKeyTable(db: DbWriter): Promise<void> {
+  await db.execute(sql`
+    CREATE TEMP TABLE IF NOT EXISTS boardsesh_grade_refresh_keys (
+      board_type text NOT NULL,
+      climb_uuid text NOT NULL,
+      angle integer NOT NULL,
+      PRIMARY KEY (board_type, climb_uuid, angle)
+    ) ON COMMIT DROP
+  `);
+  await db.execute(sql`TRUNCATE TABLE pg_temp.boardsesh_grade_refresh_keys`);
+}
+
+async function insertRefreshKeys(db: DbWriter, boardType: string, computed: ComputedRow[]): Promise<void> {
+  for (let start = 0; start < computed.length; start += REFRESH_KEY_BATCH) {
+    const batch = computed.slice(start, start + REFRESH_KEY_BATCH);
+    const valueRows = batch.map((row) => sql`(${boardType}, ${row.climbUuid}, ${row.angle})`);
+    await db.execute(sql`
+      INSERT INTO pg_temp.boardsesh_grade_refresh_keys (board_type, climb_uuid, angle)
+      VALUES ${sql.join(valueRows, sql`, `)}
+      ON CONFLICT DO NOTHING
+    `);
+  }
+}
+
+async function deleteStaleGrades(db: DbWriter, boardType: string): Promise<number> {
+  const rows = rowsOf<{ deleted: number }>(
+    await db.execute(sql`
+      WITH deleted AS (
+        DELETE FROM board_climb_grades g
+        WHERE g.board_type = ${boardType}
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pg_temp.boardsesh_grade_refresh_keys k
+            WHERE k.board_type = g.board_type
+              AND k.climb_uuid = g.climb_uuid
+              AND k.angle = g.angle
+          )
+        RETURNING 1
+      )
+      SELECT COUNT(*)::int AS deleted FROM deleted
+    `),
+  );
+  return rows[0]?.deleted ?? 0;
+}
+
+interface PublishedBoardResult {
+  boardType: string;
+  written: number;
+  held: number;
+  deleted: number;
+}
+
+async function publishPassedRun(
+  db: Db,
+  coefficients: GradeCoefficients,
+  gates: GateResult[],
+  computedByBoard: Map<string, ComputedRow[]>,
+  persistCoefficientSet: boolean,
+): Promise<PublishedBoardResult[]> {
+  return db.transaction(async (tx) => {
+    if (persistCoefficientSet) {
+      await persistCoefficients(tx, coefficients);
+    }
+    await recordGateResults(tx, coefficients, gates);
+    await createRefreshKeyTable(tx);
+    for (const [boardType, computed] of computedByBoard) {
+      await insertRefreshKeys(tx, boardType, computed);
+    }
+
+    const published: PublishedBoardResult[] = [];
+    for (const [boardType, computed] of computedByBoard) {
+      const { written, held } = await upsertGrades(tx, boardType, computed, coefficients);
+      const deleted = await deleteStaleGrades(tx, boardType);
+      published.push({ boardType, written, held, deleted });
+    }
+    return published;
+  });
+}
+
+async function recordGateResults(db: DbWriter, coefficients: GradeCoefficients, gates: GateResult[]): Promise<void> {
   const runKey = new Date().toISOString();
   await db.insert(boardGradeCoefficients).values({
     coeffVersion: coefficients.coeffVersion,
@@ -855,17 +976,37 @@ function blockingGates(gates: GateResult[]): GateResult[] {
  * run the input-side gates, compute every board, evaluate the in-memory gates,
  * and print the report. Writes nothing.
  */
-async function validateOnly(db: Db): Promise<void> {
+async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> {
   const coefficients = await refitCoefficients(db, { persist: false });
   const baselineCoefficients = withoutStage2Coefficients(coefficients);
   const stage2Evidence = await loadStage2Evidence(db, coefficients);
   const gates: GateResult[] = [];
   console.log('[grades] validate-only: running gates against live data…');
   const backtestRows = rowsOf<BacktestSampleRow>(await db.execute(buildBacktestSampleSql(BACKTEST_SAMPLE_LIMIT)));
-  const backtest = evaluateBacktest(backtestRows, coefficients);
-  gates.push(backtest.tailGate, backtest.headGate);
-  console.log(`[grades]   tail_backtest: ${backtest.tailGate.passed ? 'PASS' : 'FAIL'} — ${backtest.tailGate.detail}`);
-  console.log(`[grades]   head_holdout: ${backtest.headGate.passed ? 'PASS' : 'FAIL'} — ${backtest.headGate.detail}`);
+  if (backtestRows.length === 0 && allowEmptyBacktest) {
+    console.warn('[grades]   backtest SKIPPED — no stats-history sample (--allow-empty-backtest).');
+    gates.push(
+      {
+        gate: 'tail_backtest',
+        passed: true,
+        detail: 'skipped: empty history sample (--allow-empty-backtest)',
+        metrics: { multiN: 0 },
+      },
+      {
+        gate: 'head_holdout',
+        passed: true,
+        detail: 'skipped: empty history sample (--allow-empty-backtest)',
+        metrics: { singleN: 0 },
+      },
+    );
+  } else {
+    const backtest = evaluateBacktest(backtestRows, coefficients);
+    gates.push(backtest.tailGate, backtest.headGate);
+    console.log(
+      `[grades]   tail_backtest: ${backtest.tailGate.passed ? 'PASS' : 'FAIL'} — ${backtest.tailGate.detail}`,
+    );
+    console.log(`[grades]   head_holdout: ${backtest.headGate.passed ? 'PASS' : 'FAIL'} — ${backtest.headGate.detail}`);
+  }
   const behaviorGate = evaluateBehaviorEligibility(coefficients);
   gates.push(behaviorGate);
   console.log(`[grades]   behavior_eligibility: ${behaviorGate.passed ? 'PASS' : 'FAIL'} — ${behaviorGate.detail}`);
@@ -933,14 +1074,19 @@ async function main(): Promise<void> {
   const { db, close } = createScriptDb();
   try {
     if (process.argv.includes('--validate-only')) {
-      await validateOnly(db);
+      await validateOnly(db, allowEmptyBacktest);
       return;
     }
-    let coefficients =
-      (!forceRefit && (await loadFrozenCoefficients(db))) || (await refitCoefficients(db, { persist: !dryRun }));
+    let coefficients = forceRefit ? null : await loadFrozenCoefficients(db);
+    let persistCoefficientSet = false;
+    if (!coefficients) {
+      coefficients = await refitCoefficients(db, { persist: false });
+      persistCoefficientSet = true;
+    }
     if (!forceRefit && Object.keys(coefficients.raterModel).length === 0) {
       console.log('[grades] latest frozen coefficients do not include Stage 2 models; refitting.');
-      coefficients = await refitCoefficients(db, { persist: !dryRun });
+      coefficients = await refitCoefficients(db, { persist: false });
+      persistCoefficientSet = true;
     }
     const baselineCoefficients = withoutStage2Coefficients(coefficients);
     const stage2Evidence = await loadStage2Evidence(db, coefficients);
@@ -966,12 +1112,20 @@ async function main(): Promise<void> {
       // Prod keeps the strict behavior: an empty sample there means a broken
       // query and must block.
       console.warn('[grades]   backtest SKIPPED — no stats-history sample (--allow-empty-backtest).');
-      gates.push({
-        gate: 'tail_backtest',
-        passed: true,
-        detail: 'skipped: empty history sample (--allow-empty-backtest)',
-        metrics: { multiN: 0 },
-      });
+      gates.push(
+        {
+          gate: 'tail_backtest',
+          passed: true,
+          detail: 'skipped: empty history sample (--allow-empty-backtest)',
+          metrics: { multiN: 0 },
+        },
+        {
+          gate: 'head_holdout',
+          passed: true,
+          detail: 'skipped: empty history sample (--allow-empty-backtest)',
+          metrics: { singleN: 0 },
+        },
+      );
     } else {
       const backtest = evaluateBacktest(backtestRows, coefficients);
       gates.push(backtest.tailGate, backtest.headGate);
@@ -1049,18 +1203,19 @@ async function main(): Promise<void> {
       return;
     }
 
-    await recordGateResults(db, coefficients, gates);
     if (blocking.length > 0) {
       console.error(
-        `[grades] blocking gate(s) failed: ${blocking.map((gate) => gate.gate).join(', ')} — no grades written.`,
+        `[grades] blocking gate(s) failed: ${blocking.map((gate) => gate.gate).join(', ')} — no coefficients, gates, or grade rows written.`,
       );
       process.exitCode = 1;
       return;
     }
 
-    for (const [boardType, computed] of computedByBoard) {
-      const { written, held } = await upsertGrades(db, boardType, computed, coefficients);
-      console.log(`[grades]   ${boardType}: ${written} published, ${held} held by hysteresis`);
+    const publishedBoards = await publishPassedRun(db, coefficients, gates, computedByBoard, persistCoefficientSet);
+    for (const { boardType, written, held, deleted } of publishedBoards) {
+      console.log(
+        `[grades]   ${boardType}: ${written} published, ${held} held by hysteresis, ${deleted} stale deleted`,
+      );
     }
 
     // Honesty report (never blocks): boards whose grade is just the label.

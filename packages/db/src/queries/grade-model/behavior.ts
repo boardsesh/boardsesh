@@ -7,7 +7,7 @@ import {
   BEHAVIOR_MIN_USERS,
 } from './constants';
 import type { BehaviorModelCoefficient, BehaviorOutcomeBucket, Stage2Evidence } from './types';
-import { type Stage2EvidenceMap, stage2EvidenceKey } from './raters';
+import { type Stage2EvidenceMap, stage2EvidenceKey, stage2LeaveoutKey } from './raters';
 import { buildTensionBenchmarkHoldoutPredicate } from './deherded';
 
 const BEHAVIOR_SUCCESS_WEIGHT = 0.25;
@@ -20,6 +20,8 @@ export interface BehaviorSampleRow {
   board_type: string;
   user_id: string;
   climb_uuid: string;
+  layout_id?: number | null;
+  hold_fingerprint?: string | null;
   angle: number;
   status: 'flash' | 'send' | 'attempt';
   attempt_count: number;
@@ -45,6 +47,8 @@ export function buildBehaviorSampleSql(
            t.board_type,
            t.user_id,
            COALESCE(a.canonical_uuid, t.climb_uuid) AS climb_uuid,
+           bc.layout_id,
+           bc.hold_fingerprint,
            t.angle,
            t.status,
            t.attempt_count,
@@ -164,16 +168,8 @@ interface BehaviorOffsetAccumulator {
   userOutcomes: Map<string, number>;
 }
 
-interface BehaviorUserBucketAccumulator {
-  residualSum: number;
-  outcomes: number;
-}
-
 interface BehaviorOffsetAccumulators {
   bucketAccumulator: Map<string, BehaviorOffsetAccumulator>;
-  userAbilityAccumulatorByKey: Map<string, UserAbilityAccumulator>;
-  userAbilityByKey: Map<string, UserAbility>;
-  userBucketAccumulator: Map<string, BehaviorUserBucketAccumulator>;
   usedUserOutcomesByBoard: Map<string, Map<string, number>>;
 }
 
@@ -190,14 +186,8 @@ function buildBehaviorOffsetAccumulators(
   samples: BehaviorSampleRow[],
   boardMeanByBoard: Map<string, number>,
 ): BehaviorOffsetAccumulators {
-  const userAbilityAccumulatorByKey = buildUserAbilityAccumulators(samples);
-  const userAbilityByKey = new Map<string, UserAbility>();
-  for (const [accumulatorKey, accumulator] of userAbilityAccumulatorByKey) {
-    const ability = userAbilityFromAccumulator(accumulator, boardMeanByBoard);
-    if (ability) userAbilityByKey.set(accumulatorKey, ability);
-  }
+  const userAbilityByKey = buildUserAbilities(samples, boardMeanByBoard);
   const bucketAccumulator = new Map<string, BehaviorOffsetAccumulator>();
-  const userBucketAccumulator = new Map<string, BehaviorUserBucketAccumulator>();
   const usedUserOutcomesByBoard = new Map<string, Map<string, number>>();
 
   for (const sample of samples) {
@@ -216,24 +206,12 @@ function buildBehaviorOffsetAccumulators(
     addUserOutcome(accumulator.userOutcomes, sample.user_id, 1);
     bucketAccumulator.set(accumulatorKey, accumulator);
 
-    const userBucketKey = `${sample.board_type}\u0000${sample.user_id}\u0000${bucket}`;
-    const userBucket = userBucketAccumulator.get(userBucketKey) ?? { residualSum: 0, outcomes: 0 };
-    userBucket.residualSum += numeric(sample.difficulty_average) - ability.ability;
-    userBucket.outcomes += 1;
-    userBucketAccumulator.set(userBucketKey, userBucket);
-
     const usedBoardOutcomes = usedUserOutcomesByBoard.get(sample.board_type) ?? new Map<string, number>();
     addUserOutcome(usedBoardOutcomes, sample.user_id, 1);
     usedUserOutcomesByBoard.set(sample.board_type, usedBoardOutcomes);
   }
 
-  return {
-    bucketAccumulator,
-    userAbilityAccumulatorByKey,
-    userAbilityByKey,
-    userBucketAccumulator,
-    usedUserOutcomesByBoard,
-  };
+  return { bucketAccumulator, usedUserOutcomesByBoard };
 }
 
 function behaviorOffsetFromAccumulator(
@@ -257,74 +235,6 @@ function behaviorOffsetFromAccumulator(
     return null;
   }
   const residualSum = accumulator.residualSum - (heldOut?.residualSum ?? 0);
-  return residualSum / outcomes;
-}
-
-function behaviorOffsetForEvidence(
-  boardType: string,
-  bucket: BehaviorOutcomeBucket,
-  evidenceKey: string,
-  offsetAccumulatorByBucket: Map<string, BehaviorOffsetAccumulator>,
-  heldOutOffsetByEvidenceBucket: Map<string, BehaviorOffsetAccumulator>,
-  userAbilityAccumulatorByKey: Map<string, UserAbilityAccumulator>,
-  userAbilityByKey: Map<string, UserAbility>,
-  userBucketAccumulator: Map<string, BehaviorUserBucketAccumulator>,
-  heldOutUserBucketByEvidence: Map<string, BehaviorUserBucketAccumulator>,
-  heldOutSuccessByEvidenceBoard: Map<string, Map<string, { difficultySum: number; successes: number }>>,
-  boardMeanByBoard: Map<string, number>,
-): number | null {
-  const fullBucket = offsetAccumulatorByBucket.get(`${boardType}\u0000${bucket}`);
-  if (!fullBucket) return null;
-  const heldOutBucket = heldOutOffsetByEvidenceBucket.get(`${evidenceKey}\u0000${boardType}\u0000${bucket}`);
-  let outcomes = fullBucket.outcomes - (heldOutBucket?.outcomes ?? 0);
-  let residualSum = fullBucket.residualSum - (heldOutBucket?.residualSum ?? 0);
-  const userOutcomes = new Map(fullBucket.userOutcomes);
-  if (heldOutBucket) {
-    for (const [userId, heldOutcomes] of heldOutBucket.userOutcomes) {
-      addUserOutcome(userOutcomes, userId, -heldOutcomes);
-    }
-  }
-
-  const heldOutSuccesses = heldOutSuccessByEvidenceBoard.get(`${evidenceKey}\u0000${boardType}`);
-  if (heldOutSuccesses) {
-    for (const [userId, heldOutAbility] of heldOutSuccesses) {
-      const fullAbility = userAbilityByKey.get(`${boardType}\u0000${userId}`);
-      const fullAbilityAccumulator = userAbilityAccumulatorByKey.get(`${boardType}\u0000${userId}`);
-      const fullUserBucket = userBucketAccumulator.get(`${boardType}\u0000${userId}\u0000${bucket}`);
-      if (!fullAbility || !fullAbilityAccumulator || !fullUserBucket) continue;
-
-      const heldOutUserBucket = heldOutUserBucketByEvidence.get(
-        `${evidenceKey}\u0000${boardType}\u0000${userId}\u0000${bucket}`,
-      );
-      const nonTargetOutcomes = fullUserBucket.outcomes - (heldOutUserBucket?.outcomes ?? 0);
-      if (nonTargetOutcomes <= 0) continue;
-      const nonTargetResidualSum = fullUserBucket.residualSum - (heldOutUserBucket?.residualSum ?? 0);
-      const leaveTargetOutAbility = userAbilityFromAccumulator(
-        {
-          ...fullAbilityAccumulator,
-          difficultySum: fullAbilityAccumulator.difficultySum - heldOutAbility.difficultySum,
-          successes: fullAbilityAccumulator.successes - heldOutAbility.successes,
-        },
-        boardMeanByBoard,
-      );
-      if (!leaveTargetOutAbility) {
-        outcomes -= nonTargetOutcomes;
-        residualSum -= nonTargetResidualSum;
-        addUserOutcome(userOutcomes, userId, -nonTargetOutcomes);
-      } else {
-        residualSum += nonTargetOutcomes * (fullAbility.ability - leaveTargetOutAbility.ability);
-      }
-    }
-  }
-
-  if (outcomes < MIN_OUTCOME_BUCKET_SUPPORT) return null;
-  const bucketCoverage = summarizeUserOutcomes(userOutcomes);
-  if (
-    bucketCoverage.users < BEHAVIOR_MIN_BUCKET_USERS ||
-    bucketCoverage.topUserShare > BEHAVIOR_MAX_BUCKET_TOP_USER_SHARE
-  ) {
-    return null;
-  }
   return residualSum / outcomes;
 }
 
@@ -388,32 +298,16 @@ export function buildBehaviorEvidence(
   samples: BehaviorSampleRow[],
   models: Record<string, BehaviorModelCoefficient>,
   existingEvidence: Stage2EvidenceMap,
-  offsetTrainingSamples: BehaviorSampleRow[] = samples,
+  abilityTrainingSamples: BehaviorSampleRow[] = samples,
 ): Stage2EvidenceMap {
   const boardMeanByBoard = new Map<string, number>();
   for (const model of Object.values(models)) boardMeanByBoard.set(model.boardType, model.boardMean);
-  const {
-    bucketAccumulator: offsetAccumulatorByBucket,
-    userAbilityAccumulatorByKey,
-    userAbilityByKey,
-    userBucketAccumulator,
-  } = buildBehaviorOffsetAccumulators(offsetTrainingSamples, boardMeanByBoard);
-  const heldOutOffsetByEvidenceBucket = new Map<string, BehaviorOffsetAccumulator>();
-  const heldOutUserBucketByEvidence = new Map<string, BehaviorUserBucketAccumulator>();
-  const heldOutSuccessByEvidenceBoard = new Map<string, Map<string, { difficultySum: number; successes: number }>>();
+  const userAbilityAccumulatorByKey = buildUserAbilityAccumulators(abilityTrainingSamples);
   const heldOutSuccessByEvidenceUser = new Map<string, { difficultySum: number; successes: number }>();
-  for (const sample of offsetTrainingSamples) {
-    const evidenceKey = stage2EvidenceKey(sample.board_type, sample.climb_uuid, numeric(sample.angle));
+  for (const sample of abilityTrainingSamples) {
+    const leaveoutKey = stage2LeaveoutKey(sample);
     if (sample.status === 'flash' || sample.status === 'send') {
-      const boardSuccessKey = `${evidenceKey}\u0000${sample.board_type}`;
-      const boardSuccesses = heldOutSuccessByEvidenceBoard.get(boardSuccessKey) ?? new Map();
-      const userSuccesses = boardSuccesses.get(sample.user_id) ?? { difficultySum: 0, successes: 0 };
-      userSuccesses.difficultySum += numeric(sample.difficulty_average);
-      userSuccesses.successes += 1;
-      boardSuccesses.set(sample.user_id, userSuccesses);
-      heldOutSuccessByEvidenceBoard.set(boardSuccessKey, boardSuccesses);
-
-      const userSuccessKey = `${evidenceKey}\u0000${sample.board_type}\u0000${sample.user_id}`;
+      const userSuccessKey = `${leaveoutKey}\u0000${sample.board_type}\u0000${sample.user_id}`;
       const evidenceUserSuccesses = heldOutSuccessByEvidenceUser.get(userSuccessKey) ?? {
         difficultySum: 0,
         successes: 0,
@@ -422,28 +316,6 @@ export function buildBehaviorEvidence(
       evidenceUserSuccesses.successes += 1;
       heldOutSuccessByEvidenceUser.set(userSuccessKey, evidenceUserSuccesses);
     }
-
-    if (numeric(sample.ascensionist_count) < 20) continue;
-    const ability = userAbilityByKey.get(`${sample.board_type}\u0000${sample.user_id}`);
-    if (!ability) continue;
-    const bucket = behaviorOutcomeBucket(sample);
-    const residual = numeric(sample.difficulty_average) - ability.ability;
-    const accumulatorKey = `${evidenceKey}\u0000${sample.board_type}\u0000${bucket}`;
-    const accumulator = heldOutOffsetByEvidenceBucket.get(accumulatorKey) ?? {
-      residualSum: 0,
-      outcomes: 0,
-      userOutcomes: new Map<string, number>(),
-    };
-    accumulator.residualSum += residual;
-    accumulator.outcomes += 1;
-    addUserOutcome(accumulator.userOutcomes, sample.user_id, 1);
-    heldOutOffsetByEvidenceBucket.set(accumulatorKey, accumulator);
-
-    const userBucketKey = `${evidenceKey}\u0000${sample.board_type}\u0000${sample.user_id}\u0000${bucket}`;
-    const userBucket = heldOutUserBucketByEvidence.get(userBucketKey) ?? { residualSum: 0, outcomes: 0 };
-    userBucket.residualSum += residual;
-    userBucket.outcomes += 1;
-    heldOutUserBucketByEvidence.set(userBucketKey, userBucket);
   }
   const evidenceAccumulator = new Map<string, { weightedDifficulty: number; effectiveN: number }>();
 
@@ -452,24 +324,12 @@ export function buildBehaviorEvidence(
     if (!model?.eligible) continue;
     const bucket = behaviorOutcomeBucket(sample);
     const evidenceKey = stage2EvidenceKey(sample.board_type, sample.climb_uuid, numeric(sample.angle));
-    const offset = behaviorOffsetForEvidence(
-      sample.board_type,
-      bucket,
-      evidenceKey,
-      offsetAccumulatorByBucket,
-      heldOutOffsetByEvidenceBucket,
-      userAbilityAccumulatorByKey,
-      userAbilityByKey,
-      userBucketAccumulator,
-      heldOutUserBucketByEvidence,
-      heldOutSuccessByEvidenceBoard,
-      boardMeanByBoard,
-    );
-    if (offset === null) continue;
+    const offset = model.outcomeOffset[bucket];
+    if (offset === undefined) continue;
     const fullAbilityAccumulator = userAbilityAccumulatorByKey.get(`${sample.board_type}\u0000${sample.user_id}`);
     if (!fullAbilityAccumulator) continue;
     const heldOutAbility = heldOutSuccessByEvidenceUser.get(
-      `${evidenceKey}\u0000${sample.board_type}\u0000${sample.user_id}`,
+      `${stage2LeaveoutKey(sample)}\u0000${sample.board_type}\u0000${sample.user_id}`,
     );
     const ability = userAbilityFromAccumulator(
       {
