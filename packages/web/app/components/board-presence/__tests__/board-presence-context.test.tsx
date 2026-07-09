@@ -332,4 +332,23 @@ describe('WebBoardPresenceProvider', () => {
       recoveredThroughSeqDelta: 2,
     });
   });
+
+  it('does not track catch-up telemetry when no wall events were recovered', async () => {
+    renderProvider();
+    await act(async () => {
+      await capturedControls?.resolveAndBindBoard({
+        serial: 'SERIAL-1',
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 10,
+        setIds: '1,2',
+      });
+    });
+    await waitFor(() => expect(sharedProvider.lastBoardId).toBe(42));
+
+    trackMock.mockClear();
+    act(() => sharedProvider.lastOnCatchUp?.({ reason: 'foreground', recoveredThroughSeqDelta: 0 }));
+
+    expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.BoardHistoryCatchUp, expect.anything());
+  });
 });

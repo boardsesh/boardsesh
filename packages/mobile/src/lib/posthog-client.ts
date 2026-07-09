@@ -14,7 +14,9 @@ export const MOBILE_USER_AGENT = 'Boardsesh Mobile';
 // Best-effort: a failure must never block analytics init.
 export function registerMobileUserAgent(client: Pick<PostHog, 'register'>): void {
   try {
-    client.register({ $raw_user_agent: MOBILE_USER_AGENT });
+    void Promise.resolve(client.register({ $raw_user_agent: MOBILE_USER_AGENT })).catch((error: unknown) => {
+      if (__DEV__) console.warn('[analytics] failed to register $raw_user_agent super property', error);
+    });
   } catch (error) {
     if (__DEV__) console.warn('[analytics] failed to register $raw_user_agent super property', error);
   }
@@ -47,6 +49,10 @@ export function buildPostHogOptions(postHogHost: string, bootstrapDistinctId: st
   return {
     host: postHogHost,
     bootstrap: bootstrapDistinctId ? { distinctId: bootstrapDistinctId, isIdentifiedId: false } : undefined,
+    // The app already emits explicit $screen events plus reviewed product
+    // events. SDK lifecycle autocapture adds high-volume foreground/background
+    // noise and does not help answer product or BLE reliability questions.
+    captureAppLifecycleEvents: false,
     // `enableSessionReplay` defaults false, so the SDK never auto-records.
     // Capture only begins when setSessionRecordingEnabled() calls
     // startSessionRecording(), which lazily initialises the native replay SDK.
@@ -66,21 +72,11 @@ export function getPostHogClient(): PostHog | null {
   if (client) return client;
   if (initAttempted) return null;
   initAttempted = true;
-  // captureAppLifecycleEvents defaults on (Application Opened/Backgrounded etc.);
-  // expo-device + expo-application (installed) enrich events with $device_model,
-  // $os_version, $app_version. Screen autocapture is handled in AnalyticsProvider.
-  //
-  // This client is constructed at AnalyticsProvider mount (top of the tree),
-  // before PartyProfileProvider has loaded the party-profile UUID and run
-  // identify()/alias() with it — so captureAppLifecycleEvents would otherwise
-  // fire Application Installed/Opened under PostHog's own transient anonymous
-  // id, an id the later alias-to-user step never reliably reconnects.
   // getAnalyticsBootstrapId() reads a slot that analytics-bootstrap.ts (wired
   // up in app/_layout.tsx, ahead of anything that imports this module)
-  // resolves synchronously via expo-secure-store's JSI sync API — passing it
-  // as `bootstrap` seeds the SDK's anonymous id with it before
-  // captureAppLifecycleEvents runs, so those events land on the same id
-  // PartyProfileProvider later identifies/aliases.
+  // resolves synchronously via expo-secure-store's JSI sync API. We still pass
+  // it as `bootstrap` so the SDK's anonymous id is stable before explicit
+  // screen/action events start flowing.
   const bootstrapDistinctId = getAnalyticsBootstrapId();
   client = new PostHog(apiKey, buildPostHogOptions(host, bootstrapDistinctId));
   registerMobileUserAgent(client);

@@ -222,7 +222,7 @@ Buttons are laid out in a horizontal `Stack` with 4px spacing. Visibility depend
 | Attempt        | Hidden          | Hidden                                | Visible              |
 | Tick           | Visible         | Visible                               | Visible (saves tick) |
 
-**Mirror button:** `SyncOutlined` icon. When mirrored state is active: purple background (`themeTokens.colors.purple`), white icon, primary color. Calls `mirrorClimb()` and tracks `'Mirror Climb Toggled'`.
+**Mirror button:** `SyncOutlined` icon. When mirrored state is active: purple background (`themeTokens.colors.purple`), white icon, primary color. Calls `mirrorClimb()`.
 
 **Play mode link:** `OpenInFullOutlined` icon wrapped in `LocaleLink` to the play URL. Tracks `'Play Mode Entered'`.
 

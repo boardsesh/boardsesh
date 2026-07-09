@@ -8,7 +8,6 @@ import AlertTitle from '@mui/material/AlertTitle';
 import AppsOutlined from '@mui/icons-material/AppsOutlined';
 import FormatListBulletedOutlined from '@mui/icons-material/FormatListBulletedOutlined';
 import { usePathname } from 'next/navigation';
-import { track } from '@/app/lib/analytics';
 import dynamic from 'next/dynamic';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import { useDrawerDragResize } from '@/app/hooks/use-drawer-drag-resize';
@@ -393,19 +392,14 @@ const ClimbsList = ({
   const handleViewModeChange = useCallback((mode: ViewMode) => {
     setViewMode(mode);
     setPreference(VIEW_MODE_PREFERENCE_KEY, mode).catch(() => {});
-    track('View Mode Changed', { mode });
   }, []);
 
   const handleListView = useCallback(() => handleViewModeChange('list'), [handleViewModeChange]);
   const handleGridView = useCallback(() => handleViewModeChange('grid'), [handleViewModeChange]);
 
   const handleLoadMore = useCallback(() => {
-    track('Infinite Scroll Load More', {
-      currentCount: climbs.length,
-      hasMore,
-    });
     onLoadMore();
-  }, [climbs.length, hasMore, onLoadMore]);
+  }, [onLoadMore]);
 
   const { sentinelRef } = useInfiniteScroll({
     onLoadMore: handleLoadMore,
@@ -430,7 +424,6 @@ const ClimbsList = ({
       // the tour can advance, not fall into the play view.
       if (tourStepRef.current === 'climb-list') {
         dispatchTourClimbListPick();
-        track('Climb List Row Clicked', { climbUuid: climb.uuid });
         return;
       }
       if (onClimbSelectRef.current) {
@@ -445,7 +438,6 @@ const ClimbsList = ({
         // listening to PLAY_DRAWER_EVENT may handle it).
         dispatchOpenPlayDrawer(climb);
       }
-      track('Climb List Row Clicked', { climbUuid: climb.uuid });
     },
     [climbs, unsupportedClimbs],
   );

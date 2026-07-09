@@ -473,11 +473,7 @@ const ClimbSearchForm: React.FC<ClimbSearchFormProps> = ({ boardDetails }) => {
             <IconButton
               size="small"
               onClick={() => {
-                const nextShowHeatmap = !showHeatmap;
-                setShowHeatmap(nextShowHeatmap);
-                track(`Heatmap ${nextShowHeatmap ? 'Shown' : 'Hidden'}`, {
-                  boardLayout: boardDetails.layout_name || '',
-                });
+                setShowHeatmap((currentShowHeatmap) => !currentShowHeatmap);
               }}
               aria-label={showHeatmap ? t('search.holds.hideHeatmap') : t('search.holds.showHeatmap')}
             >

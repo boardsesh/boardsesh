@@ -140,7 +140,6 @@ const AttachBetaLinkForm: React.FC<AttachBetaLinkFormProps> = ({
 
   const handleCopyAndOpenInstagram = async () => {
     if (!instagramCaption || isLaunchingInstagram) return;
-    track('Beta Caption Copy Clicked', { boardType, climbUuid, surface });
     setIsLaunchingInstagram(true);
     let result: { copied: boolean; opened: boolean };
     try {

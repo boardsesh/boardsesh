@@ -260,14 +260,9 @@ export default function StartSeshDrawer({ open, onClose, onTransitionEnd, boardC
 
   const handleClearGenerated = useCallback(() => {
     if (generatedQueue.length === 0) return;
-    track('Session Queue Generated Cleared', {
-      workoutType: generatedWorkoutType,
-      savedCount: generatedQueue.length,
-      boardName: generatorBoardDetails?.board_name ?? '',
-    });
     setGeneratedQueue([]);
     setGeneratedWorkoutType(null);
-  }, [generatedQueue.length, generatedWorkoutType, generatorBoardDetails]);
+  }, [generatedQueue.length]);
 
   const handleSubmit = async (formData: SessionCreationFormData) => {
     let boardPath: string | undefined;

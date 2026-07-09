@@ -648,11 +648,6 @@ export function BluetoothProvider({
       lastAcceptedWallSignatureRef.current = presenceClimbReportSignature(wallCurrentClimbRef.current);
       undoWallChangeTargetRef.current = undoTarget;
       const showUndoToast = consumeUndoWallChangeToastArm(undoToastArmId);
-      track(SHARED_EVENTS.BoardClimbReported, {
-        boardId,
-        climbUuid: item.climb.uuid,
-        inSession: sessionIdRef.current != null,
-      });
       if (showUndoToast && undoTarget?.frames) {
         showUndoWallChangeSnackbarRef.current();
       }
@@ -1068,11 +1063,6 @@ export function BluetoothProvider({
 
     lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget);
     undoWallChangeTargetRef.current = null;
-    track(SHARED_EVENTS.BoardClimbReported, {
-      boardId,
-      climbUuid: undoTarget.climbUuid,
-      inSession: sessionIdRef.current != null,
-    });
     return true;
   }, [sendFramesToBoard]);
 
@@ -1118,11 +1108,6 @@ export function BluetoothProvider({
       }
 
       lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb);
-      track(SHARED_EVENTS.BoardClimbReported, {
-        boardId,
-        climbUuid: climb.climbUuid,
-        inSession: sessionIdRef.current != null,
-      });
       return true;
     },
     [sendFramesToBoard],

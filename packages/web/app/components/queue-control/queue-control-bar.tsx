@@ -1167,10 +1167,6 @@ const QueueControlBar: React.FC<QueueControlBarProps> = ({ boardDetails, angle }
                           id="button-mirror"
                           onClick={() => {
                             mirrorClimb();
-                            track('Mirror Climb Toggled', {
-                              boardLayout: boardDetails.layout_name || '',
-                              mirrored: !displayedClimb?.mirrored,
-                            });
                           }}
                           color={displayedClimb?.mirrored ? 'primary' : 'default'}
                           sx={

@@ -152,7 +152,7 @@ _Goal:_ browsing stops mutating active state. The drawer lightbulb becomes the o
 - Add a lightbulb action to the Play View Drawer's bottom action row. Pressing it triggers what used to be `setCurrentClimb` — claims driver, sends to board (solo), or broadcasts to party.
 - _The bar no longer carries a lightbulb._ Its job is to mirror the wall (climb name + driver avatar) and expose prev/next. The driver indicator on the bar lives on the driver's avatar (lit-bulb badge in the `AvatarGroup`) — not on a separate bar lightbulb.
 - Change `setCurrentClimb` in `QueueContext.tsx:383` so it no longer fires on tap. The implicit append-to-queue side effect (`shouldAddToQueue: true, insertAfterCurrent: true`) fires from the lightbulb path only.
-- List-row clicks (`Climb List Row Clicked`, `Climb List Cover Clicked`) continue to open the drawer; they no longer call `setCurrentClimb`.
+- List-row and cover taps continue to open the drawer; they no longer call `setCurrentClimb`.
 - Solo default: lightbulb auto-engages once BLE is connected (so quickstart-from-home → first tap → first lightbulb press feels like the old tap-to-send flow).
 - Party default: lightbulb is in "take wall" state on join; user presses to take a turn.
 - Yank-on-press in party: pressing lightbulb sends a `TakeControl` message; server broadcasts new driver to all members. Previous driver's lightbulb releases.

@@ -636,7 +636,6 @@ export function BluetoothProvider({
         return;
       }
       const previousWallClimb = currentWallClimbRef.current;
-      const boardIdAtReport = presenceBoardIdRef.current;
       pendingReportSignatureRef.current = sendSignature;
       const climbInput = toClimbQueueItemInput(item);
       const angle = item.climb.angle ?? null;
@@ -651,11 +650,6 @@ export function BluetoothProvider({
             return;
           }
           lastAcceptedReportSignatureRef.current = sendSignature;
-          track(SHARED_EVENTS.BoardClimbReported, {
-            boardId: boardIdAtReport,
-            climbUuid,
-            inSession: sessionIdRef.current != null,
-          });
           // Offer a one-tap Undo of the wall change YOU just caused — the
           // deliberate replacement for the dropped pre-send confirm step. The
           // action re-sends the climb that was on the wall before this report,

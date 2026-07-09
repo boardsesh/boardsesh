@@ -25,7 +25,6 @@ import { AppState } from 'react-native';
 import {
   BoardPresenceProvider,
   useBoardPresenceActions,
-  useBoardPresenceCurrent,
   type BoardPresenceCatchUpInfo,
 } from '@boardsesh/board-presence-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -325,11 +324,12 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     setPendingDisambiguation(null);
   }, []);
 
-  // Telemetry for every catch-up. `recoveredThroughSeqDelta > 0` means the live
-  // feed silently dropped pushes (Redis pub/sub has no replay) and we just
-  // recovered them — the measurable "history was slow to update" signal. Stable
-  // identity (reads boardIdRef) so it never re-binds the presence subscription.
+  // Telemetry only when a catch-up recovered missed wall events. Foreground and
+  // reconnect catch-ups with a zero delta happen often and add no product signal.
+  // Stable identity (reads boardIdRef) so it never re-binds the presence
+  // subscription.
   const handleCatchUp = useCallback((info: BoardPresenceCatchUpInfo) => {
+    if (info.recoveredThroughSeqDelta <= 0) return;
     track(SHARED_EVENTS.BoardHistoryCatchUp, {
       boardId: boardIdRef.current ?? undefined,
       reason: info.reason,
@@ -364,7 +364,6 @@ export function MobileBoardPresenceProvider({ children }: { children: ReactNode 
     <BoardPresenceControlsContext.Provider value={controls}>
       <BoardPresenceProvider boardId={boardId} client={client} onCatchUp={handleCatchUp}>
         <BoardPresenceForegroundSync />
-        <BoardPresenceInstrument boardId={boardId} />
         {children}
       </BoardPresenceProvider>
       <BoardDisambiguationSheet
@@ -396,41 +395,6 @@ function BoardPresenceForegroundSync(): null {
     });
     return () => subscription.remove();
   }, [refresh]);
-  return null;
-}
-
-/**
- * Fires `BoardNowPlayingReceived` once per distinct wall climb received from
- * the live feed — instrumenting the "viewed the wall" signal. Lives as a
- * null-rendering child of `BoardPresenceProvider` (mirroring web's
- * `BoardNowPlayingInstrument`) rather than inside `BoardSheet`, so it keeps
- * firing regardless of whether the sheet is presented — `BoardSheet` now
- * unmounts its presence-consuming content while dismissed (see
- * `BoardSheetContent` there), and this telemetry must NOT depend on that.
- */
-function BoardPresenceInstrument({ boardId }: { boardId: number | null }) {
-  const { currentClimb } = useBoardPresenceCurrent();
-  const boardIdRef = useRef(boardId);
-  boardIdRef.current = boardId;
-  const lastReceivedWallClimbRef = useRef<string | null>(null);
-  // `seq` rides along in the telemetry payload but must NOT trigger the effect
-  // — a same-uuid seq bump (e.g. a backfill merge) shouldn't re-evaluate the
-  // "new climb on the wall" event. Read it from a ref so the effect keys only
-  // on the climb uuid (matching `boardId` being read via a ref too).
-  const currentClimbSeqRef = useRef(currentClimb?.seq);
-  currentClimbSeqRef.current = currentClimb?.seq;
-  useEffect(() => {
-    const currentClimbUuid = currentClimb?.climbUuid;
-    if (!currentClimbUuid) return;
-    if (lastReceivedWallClimbRef.current === currentClimbUuid) return;
-    lastReceivedWallClimbRef.current = currentClimbUuid;
-    track(SHARED_EVENTS.BoardNowPlayingReceived, {
-      boardId: boardIdRef.current ?? undefined,
-      climbUuid: currentClimbUuid,
-      // `seq` lets PostHog spot gaps in the live stream (a jump = dropped pushes).
-      seq: currentClimbSeqRef.current ?? undefined,
-    });
-  }, [currentClimb?.climbUuid]);
   return null;
 }
 

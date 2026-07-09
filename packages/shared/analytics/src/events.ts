@@ -182,10 +182,9 @@ export const SHARED_EVENTS = {
   BetaVideoAdded: 'Beta Video Added',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
-  // event PROPERTY at the call sites — never the raw serial. These self-instrument
-  // the previously-invisible "viewed the wall" / "reported to the wall" behaviour.
-  BoardClimbReported: 'Board Climb Reported',
-  BoardNowPlayingReceived: 'Board Now Playing Received',
+  // event PROPERTY at the call sites — never the raw serial. Keep these to user
+  // intent and explicit history actions; per-climb send/receive echoes are too
+  // noisy for PostHog's event budget.
   BoardSheetOpened: 'Board Sheet Opened',
   BoardHistoryViewed: 'Board History Viewed',
   BoardSwapInvokedFromSheet: 'Board Swap Invoked From Sheet',

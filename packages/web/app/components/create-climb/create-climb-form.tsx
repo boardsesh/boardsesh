@@ -1387,12 +1387,7 @@ export default function CreateClimbForm({
 
   const handleToggleHeatmap = useCallback(() => {
     if (boardType !== 'aurora' || !boardDetails) return;
-    setShowHeatmap((prev) => {
-      track(`Create Climb Heatmap ${!prev ? 'Shown' : 'Hidden'}`, {
-        boardLayout: boardDetails.layout_name || '',
-      });
-      return !prev;
-    });
+    setShowHeatmap((prev) => !prev);
   }, [boardType, boardDetails]);
 
   // Rightmost save icon button. Collapses every state (saving, just-saved,

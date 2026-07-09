@@ -119,16 +119,16 @@ const boardDetails = {
   set_ids: [1, 2],
 } as unknown as BoardDetails;
 
-function findCancelledCall() {
-  return trackMock.mock.calls.find(([event]) => event === 'Workout Generator Cancelled');
+function findEventCall(eventName: string) {
+  return trackMock.mock.calls.find(([event]) => event === eventName);
 }
 
-describe('PlaylistGeneratorDrawer cancellation analytics', () => {
+describe('PlaylistGeneratorDrawer analytics', () => {
   beforeEach(() => {
     trackMock.mockClear();
   });
 
-  it('fires Cancelled (stage=select, no workoutType) when dismissed from the type-select screen', async () => {
+  it('fires Opened when the drawer opens', () => {
     render(
       <PlaylistGeneratorDrawer
         open
@@ -140,19 +140,27 @@ describe('PlaylistGeneratorDrawer cancellation analytics', () => {
       />,
     );
 
-    // Drawer mounts in 'select' state and emits Opened. Close immediately.
-    fireEvent.click(screen.getByTestId('drawer-close'));
-
-    const call = findCancelledCall();
-    expect(call).toBeDefined();
-    const [, payload] = call!;
-    expect(payload).toMatchObject({ targetType: 'session', stage: 'select' });
-    // `workoutType` must be ABSENT (not null) so downstream dashboards
-    // don't widen the property's type from WorkoutType to WorkoutType|null.
-    expect(payload).not.toHaveProperty('workoutType');
+    expect(findEventCall('Workout Generator Opened')).toBeDefined();
   });
 
-  it('fires Cancelled (stage=configure, workoutType=volume) when dismissed from the configure screen', async () => {
+  it('does not fire cancellation telemetry when dismissed from the type-select screen', () => {
+    render(
+      <PlaylistGeneratorDrawer
+        open
+        onClose={vi.fn()}
+        boardDetails={boardDetails}
+        defaultAngle={40}
+        onAddClimb={vi.fn(async () => {})}
+        targetType="session"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('drawer-close'));
+
+    expect(findEventCall('Workout Generator Cancelled')).toBeUndefined();
+  });
+
+  it('does not fire cancellation telemetry when dismissed from the configure screen', () => {
     render(
       <PlaylistGeneratorDrawer
         open
@@ -170,17 +178,10 @@ describe('PlaylistGeneratorDrawer cancellation analytics', () => {
     // Dismiss.
     fireEvent.click(screen.getByTestId('drawer-close'));
 
-    const call = findCancelledCall();
-    expect(call).toBeDefined();
-    const [, payload] = call!;
-    expect(payload).toMatchObject({
-      targetType: 'playlist',
-      workoutType: 'volume',
-      stage: 'configure',
-    });
+    expect(findEventCall('Workout Generator Cancelled')).toBeUndefined();
   });
 
-  it('does NOT fire Cancelled after a generation run completes (even with 0 climbs saved)', async () => {
+  it('fires Generated after a generation run completes even with 0 climbs saved', async () => {
     render(
       <PlaylistGeneratorDrawer
         open
@@ -203,11 +204,9 @@ describe('PlaylistGeneratorDrawer cancellation analytics', () => {
     });
 
     await waitFor(() => {
-      expect(trackMock.mock.calls.some(([event]) => event === 'Workout Generated')).toBe(true);
+      expect(findEventCall('Workout Generated')).toBeDefined();
     });
 
-    // No Cancelled event should ever fire on this path — neither during
-    // handleGenerate's raw onClose, nor on any subsequent dismissal.
-    expect(findCancelledCall()).toBeUndefined();
+    expect(findEventCall('Workout Generator Cancelled')).toBeUndefined();
   });
 });

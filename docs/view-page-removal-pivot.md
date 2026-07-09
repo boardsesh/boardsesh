@@ -20,7 +20,7 @@ Both surfaces compose the _same_ underlying pieces (`ClimbCard` for the board im
 
 - **Two layouts to maintain.** `ClimbDetailPageServer` (full page) and `PlayViewDrawer` (drawer) drift independently. The drawer has `SwipeBoardCarousel`, prev/next, swipe-as-preview, tick FAB, mirror, favorite, share, angle selector, queue badge, climb actions menu, playlist selector, and nested queue drawer. The full page has none of that and would have to grow each one separately if we kept it.
 - **Two interaction models.** Tapping a list row opens the drawer (party-safe, browse-doesn't-yank). Following an external link opens the full page (no drawer chrome, no swipe, no in-context navigation). A user who lands from a share link cannot prev/next through suggestions without going back to the list first.
-- **Two analytics surfaces, one event.** `Climb List Row Clicked` fires from the list. The full page is silently entered without an equivalent event. `Set Active Climb` semantics differ between surfaces (the drawer just opens; the page does not auto-set).
+- **Two analytics surfaces, different semantics.** Drawer opens, shared search-result selections, and `Set Active Climb` mean different things depending on the route. The drawer just opens; the full page does not auto-set a climb.
 
 ## The pivot
 
@@ -186,7 +186,7 @@ Files: both `view/[climb_uuid]/page.tsx` files, `board-page-climbs-list.tsx`, po
 
 - In `useDrawerUrlSync`, when the climb changes (effect on `displayedClimbUuid`), call `history.replaceState` with the new view URL.
 - Make sure the URL helper used here matches `constructClimbViewUrlWithSlugs` (slug form) when board names are available, and falls back to numeric otherwise.
-- Confirm that the existing `Climb List Row Clicked` analytics event continues to fire correctly when row-tap also pushes a URL. No double-fire.
+- Confirm that row-tap still opens the drawer without adding duplicate click telemetry.
 - Add a small `Climb View URL Sync` analytics event (or extend `Queue Navigation` properties) so we can measure how often users actually use the shareable URL vs how often it just decorates.
 
 Files: `use-drawer-url-sync.ts`, possibly `packages/web/app/lib/analytics.ts` for the new event signature.

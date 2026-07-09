@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useTranslation } from 'react-i18next';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -72,14 +72,6 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
-  // Tracks whether the user reached the end of a generation run during this
-  // open session. Lets us distinguish "closed before running anything"
-  // (cancellation) from "closed after the run finished" (no extra event).
-  // A 0-climbs run still counts as completed — we already fired a
-  // `Workout Generated` event for that path; firing `Cancelled` on top
-  // would double-count the same outcome.
-  const runCompletedRef = useRef(false);
-
   useEffect(() => {
     if (open) {
       setDrawerState('select');
@@ -88,7 +80,6 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
       setTargetAngle(defaultAngle);
       setGenerating(false);
       setProgress({ current: 0, total: 0 });
-      runCompletedRef.current = false;
       track(SHARED_EVENTS.WorkoutGeneratorOpened, {
         targetType,
         boardName: boardDetails.board_name,
@@ -107,48 +98,21 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
       setSelectedType(type);
       setOptions(getDefaultOptions(type, defaultTargetGrade));
       setDrawerState('configure');
-      track('Workout Type Selected', {
-        targetType,
-        workoutType: type,
-        boardName: boardDetails.board_name,
-      });
     },
-    [defaultTargetGrade, targetType, boardDetails.board_name],
+    [defaultTargetGrade],
   );
 
   const handleBack = useCallback(() => {
     if (drawerState === 'configure') {
-      track('Workout Generator Back Clicked', {
-        targetType,
-        workoutType: selectedType,
-        boardName: boardDetails.board_name,
-      });
       setDrawerState('select');
       setSelectedType(null);
       setOptions(null);
     }
-  }, [drawerState, targetType, selectedType, boardDetails.board_name]);
+  }, [drawerState]);
 
-  // Wrap onClose so dismissals before any generation run fire a cancellation
-  // event. The generating phase blocks dismissal via the
-  // `onClose={generating ? undefined : ...}` guard below — but both the
-  // workout-type-select screen and the configure screen are dismissable.
-  //
-  // `workoutType` is omitted when the user dismisses from the select screen
-  // (no type picked yet). Emitting `null` would widen the event's property
-  // type and trip downstream dashboards that assume the property is always
-  // a valid `WorkoutType`. Treat absence as absence.
   const handleClose = useCallback(() => {
-    if (!generating && !runCompletedRef.current) {
-      track('Workout Generator Cancelled', {
-        targetType,
-        ...(selectedType ? { workoutType: selectedType } : {}),
-        stage: drawerState,
-        boardName: boardDetails.board_name,
-      });
-    }
     onClose();
-  }, [drawerState, generating, targetType, selectedType, boardDetails.board_name, onClose]);
+  }, [onClose]);
 
   const handleReset = useCallback(() => {
     if (selectedType) {
@@ -234,13 +198,6 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
         break;
     }
 
-    track('Workout Generator Generate Clicked', {
-      targetType,
-      boardName: boardDetails.board_name,
-      plannedCount: plannedSlots.length,
-      ...optionsSnapshot,
-    });
-
     const startedAt = performance.now();
 
     setGenerating(true);
@@ -294,10 +251,8 @@ const PlaylistGeneratorDrawer: React.FC<PlaylistGeneratorDrawerProps> = ({
 
     const added = plannedSlots.length - failedSlots.length;
     // Any reached-the-end-of-loop counts as a completed run, even when 0
-    // climbs were saved. We fire `Workout Generated` (below) with
-    // savedCount=0 for that outcome; firing `Cancelled` from the
-    // subsequent onClose would double-count it.
-    runCompletedRef.current = true;
+    // climbs were saved. We fire `Workout Generated` below with savedCount=0
+    // for that outcome.
     const durationMs = Math.round(performance.now() - startedAt);
 
     track(SHARED_EVENTS.WorkoutGenerated, {

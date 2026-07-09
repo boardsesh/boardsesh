@@ -12,19 +12,19 @@
 // State comes from `@boardsesh/board-presence-react`'s split current/feed
 // contexts, which are inert when the `board-presence` flag is off — so this sheet
 // is only ever opened from the board glyph when the flag is on. This wrapper keeps
-// current/feed reads ONLY for the now-playing + history-view analytics; the panel
-// owns the volatile action state so the always-mounted wrapper doesn't re-render
-// in ways that interfere with the native present()/dismiss() coordination.
+// current/feed reads only for visible-history filtering and history-view
+// analytics; the panel owns the volatile action state so the always-mounted
+// wrapper doesn't re-render in ways that interfere with the native
+// present()/dismiss() coordination.
 //
 // `NowOnTheWallPanel` (the presence-consuming hero/stats/history list) is gated on
 // `isPresented` so a dismissed sheet mounts none of it and does zero list/hero
 // work. `isPresented` flips true SYNCHRONOUSLY in `present()` (before the sheet's
 // own animation starts) and false once the dismiss has fully SETTLED (see
 // `handleFullyDismissed`); `handleSheetChange` re-arms it as a backstop for a
-// re-present queued inside the dismiss settle window. `BoardNowPlayingReceived`
-// telemetry stays unconditional (fires while dismissed); `BoardHistoryViewed`
-// fires once per presentation, keyed on `isPresented` — kept in this sheet-only
-// wrapper so the inline iPad column never double-fires it.
+// re-present queued inside the dismiss settle window. `BoardHistoryViewed` fires
+// once per presentation, keyed on `isPresented` — kept in this sheet-only wrapper
+// so the inline iPad column never double-fires it.
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
@@ -101,9 +101,10 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
   // animation has fully settled — see `handleFullyDismissed`.
   const [isPresented, setIsPresented] = useState(false);
 
-  // Current/feed reads kept here ONLY for the now-playing + history-view
-  // analytics; the panel owns the wall-feed content and the volatile action
-  // state, so those re-renders don't reach this always-mounted wrapper.
+  // Current/feed reads kept here only for visible-history filtering and
+  // history-view analytics; the panel owns the wall-feed content and the
+  // volatile action state, so those re-renders don't reach this always-mounted
+  // wrapper.
   const { currentClimb } = useBoardPresenceCurrent();
   const { history } = useBoardPresenceFeed();
   const { boardId: boardPresenceBoardId } = useBoardPresenceControls();
@@ -134,26 +135,6 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       itemCount: visibleHistory.length,
     });
   }, [isPresented, visibleHistory.length]);
-
-  const lastReceivedWallClimbRef = useRef<string | null>(null);
-  // `seq` rides along in the telemetry payload but must NOT trigger the effect —
-  // a same-uuid seq bump (e.g. a backfill merge) shouldn't re-evaluate the
-  // "new climb on the wall" event. Read it from a ref so the effect keys only on
-  // the climb uuid.
-  const currentClimbSeqRef = useRef(currentClimb?.seq);
-  currentClimbSeqRef.current = currentClimb?.seq;
-  useEffect(() => {
-    const currentClimbUuid = currentClimb?.climbUuid;
-    if (!currentClimbUuid) return;
-    if (lastReceivedWallClimbRef.current === currentClimbUuid) return;
-    lastReceivedWallClimbRef.current = currentClimbUuid;
-    track(SHARED_EVENTS.BoardNowPlayingReceived, {
-      boardId: boardPresenceBoardIdRef.current ?? undefined,
-      climbUuid: currentClimbUuid,
-      // `seq` lets PostHog spot gaps in the live stream (a jump = dropped pushes).
-      seq: currentClimbSeqRef.current ?? undefined,
-    });
-  }, [currentClimb?.climbUuid]);
 
   const snapPoints = useMemo(() => ['55%', '92%'], []);
 
@@ -210,6 +191,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
     },
     [managedOnChange],
   );
+  const sheetDismissProps = useMemo(() => ({ onFullyDismissed: managed.onFullyDismissed }), [managed.onFullyDismissed]);
 
   return (
     <BottomSheetModal
@@ -222,7 +204,7 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       enableDynamicSizing={false}
       enablePanDownToClose
       onChange={handleSheetChange}
-      onFullyDismissed={managed.onFullyDismissed}
+      {...sheetDismissProps}
       handleIndicatorStyle={sheet.handleStyle}
       style={styles.sheet}
     >

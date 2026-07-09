@@ -72,25 +72,23 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 | Login Succeeded (Party)  | party-profile-context.tsx:104                      | `auth_method`, `flow` (OAuth provider)     | OAuth flow completed (server-side redirect) |
 | Logout                   | user-drawer.tsx:221, delete-account-section.tsx:99 | `method`                                   | User clicked logout                         |
 
-### 2.2 Climb Management (15 events)
+### 2.2 Climb Management (13 events)
 
-| Event Name                        | File:Line                                                          | Properties                                                                                                            | Context                                                                                                                                     |
-| --------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| Climb Created                     | create-climb-form.tsx:900                                          | `boardLayout`, `isDraft`, `holdCount`                                                                                 | User saved new climb                                                                                                                        |
-| Climb Updated                     | create-climb-form.tsx:863                                          | `boardLayout`, `isDraft`, `holdCount`                                                                                 | User edited existing climb                                                                                                                  |
-| Climb Create Failed               | create-climb-form.tsx:932                                          | `error_message`, `boardLayout`                                                                                        | Save attempt failed                                                                                                                         |
-| Climb Forked                      | use-climb-actions.ts:100                                           | `fromClimbUuid`, `boardLayout`                                                                                        | User created copy of climb                                                                                                                  |
-| Draft Edited                      | fork-action.tsx:58                                                 | (same as Fork)                                                                                                        | User edited draft version                                                                                                                   |
-| Climb Info Viewed                 | use-climb-actions.ts:88                                            | `climbUuid`, `boardLayout`                                                                                            | User opened climb details. WEB-ONLY now — mobile retired this; mobile climb-view opens fire `Play Drawer Opened` with `source: climb_view`. |
-| Climb Shared                      | use-climb-actions.ts:196,204                                       | `climbUuid`, `boardLayout`, `method` (native/clipboard)                                                               | User shared via web share or copy                                                                                                           |
-| Mirror Climb                      | use-climb-actions.ts:174                                           | `climbUuid`, `boardLayout`                                                                                            | User flipped climb horizontally                                                                                                             |
-| Set Active Climb                  | QueueContext.tsx:598,740,862; queue-bridge-context.tsx:270,389,536 | `climbUuid`, `boardType`, `layoutId`, `source` (setCurrentClimb / setCurrentClimbQueueItem / takeControl / bridge.\*) | User activated a climb (any UI path — button, queue nav, list tap, swipe, playlist, browse). Fired centrally from queue context mutators.   |
-| Climb List Row Clicked            | climbs-list.tsx:419                                                | `climbUuid`                                                                                                           | User tapped climb in list view                                                                                                              |
-| Open in Aurora App                | use-climb-actions.ts:160                                           | `climbUuid`, `boardLayout`                                                                                            | User clicked "open in app"                                                                                                                  |
-| Create Climb Set Active           | create-climb-form.tsx:747                                          | `boardLayout`                                                                                                         | User toggled active during create                                                                                                           |
-| Create Climb Heatmap Shown/Hidden | create-climb-form.tsx:1346                                         | `boardLayout`                                                                                                         | User toggled heatmap overlay                                                                                                                |
-| Beta Video Added                  | attach-beta-link-form.tsx:137                                      | `boardType`, `climbUuid`, `platform` (youtube/vimeo)                                                                  | User attached beta video link                                                                                                               |
-| Beta Video Link Clicked           | boardsesh-beta-card.tsx:56                                         | `boardType`, `climbUuid`, `platform`                                                                                  | User clicked embedded video                                                                                                                 |
+| Event Name              | File:Line                                                          | Properties                                                                                                            | Context                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Climb Created           | create-climb-form.tsx:900                                          | `boardLayout`, `isDraft`, `holdCount`                                                                                 | User saved new climb                                                                                                                        |
+| Climb Updated           | create-climb-form.tsx:863                                          | `boardLayout`, `isDraft`, `holdCount`                                                                                 | User edited existing climb                                                                                                                  |
+| Climb Create Failed     | create-climb-form.tsx:932                                          | `error_message`, `boardLayout`                                                                                        | Save attempt failed                                                                                                                         |
+| Climb Forked            | use-climb-actions.ts:100                                           | `fromClimbUuid`, `boardLayout`                                                                                        | User created copy of climb                                                                                                                  |
+| Draft Edited            | fork-action.tsx:58                                                 | (same as Fork)                                                                                                        | User edited draft version                                                                                                                   |
+| Climb Info Viewed       | use-climb-actions.ts:88                                            | `climbUuid`, `boardLayout`                                                                                            | User opened climb details. WEB-ONLY now — mobile retired this; mobile climb-view opens fire `Play Drawer Opened` with `source: climb_view`. |
+| Climb Shared            | use-climb-actions.ts:196,204                                       | `climbUuid`, `boardLayout`, `method` (native/clipboard)                                                               | User shared via web share or copy                                                                                                           |
+| Mirror Climb            | use-climb-actions.ts:174                                           | `climbUuid`, `boardLayout`                                                                                            | User flipped climb horizontally                                                                                                             |
+| Set Active Climb        | QueueContext.tsx:598,740,862; queue-bridge-context.tsx:270,389,536 | `climbUuid`, `boardType`, `layoutId`, `source` (setCurrentClimb / setCurrentClimbQueueItem / takeControl / bridge.\*) | User activated a climb (any UI path — button, queue nav, list tap, swipe, playlist, browse). Fired centrally from queue context mutators.   |
+| Open in Aurora App      | use-climb-actions.ts:160                                           | `climbUuid`, `boardLayout`                                                                                            | User clicked "open in app"                                                                                                                  |
+| Create Climb Set Active | create-climb-form.tsx:747                                          | `boardLayout`                                                                                                         | User toggled active during create                                                                                                           |
+| Beta Video Added        | attach-beta-link-form.tsx:137                                      | `boardType`, `climbUuid`, `platform` (youtube/vimeo)                                                                  | User attached beta video link                                                                                                               |
+| Beta Video Link Clicked | boardsesh-beta-card.tsx:56                                         | `boardType`, `climbUuid`, `platform`                                                                                  | User clicked embedded video                                                                                                                 |
 
 ### 2.3 Logbook / Ticks / Ascents (6 events)
 
@@ -119,7 +117,7 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 | Play Drawer Opened      | queue-control-bar.tsx:802                     | `climbUuid`, `boardName`, `layoutId`, `source` (`climb_view` / `current_queue_item` / `mobile`) | User opened the play drawer (`climb_view` = real climb-view; `current_queue_item` = queue-nav/accessory tap; `mobile` = default) |
 | Session Queue Generated | start-sesh-drawer.tsx:613                     | `count` (queue items generated)                                                                 | Workout generator produced queue                                                                                                 |
 
-### 2.5 Board Search / Filtering (9 events)
+### 2.5 Board Search / Filtering (7 events)
 
 | Event Name                 | File:Line                       | Properties                             | Context                         |
 | -------------------------- | ------------------------------- | -------------------------------------- | ------------------------------- |
@@ -130,65 +128,52 @@ Boardsesh has comprehensive PostHog instrumentation across both web (Next.js) an
 | Search Zone Cleared        | climb-search-form.tsx:291       | `boardLayout`                          | User cleared zone selection     |
 | Search Zone Mode Changed   | climb-search-form.tsx:304       | `boardLayout`, `mode`                  | User toggled between zone types |
 | Search Zone Updated        | climb-search-form.tsx:355       | `boardLayout`, `zoneName`              | User edited zone bounds         |
-| Heatmap Shown/Hidden       | climb-search-form.tsx:484       | `boardLayout`                          | User toggled heatmap in search  |
-| View Mode Changed          | climbs-list.tsx:385             | `mode` (grid/list)                     | User switched list view type    |
 
-### 2.6 Playlist / Workout Generator (8 events)
+### 2.6 Playlist / Workout Generator (4 events)
 
-| Event Name                         | File:Line                         | Properties                                 | Context                           |
-| ---------------------------------- | --------------------------------- | ------------------------------------------ | --------------------------------- |
-| Workout Generator Opened           | playlist-generator-drawer.tsx:88  | `boardLayout`                              | User clicked AI generator button  |
-| Workout Type Selected              | playlist-generator-drawer.tsx:106 | `workoutType` (endurance/strength/etc)     | User chose workout profile        |
-| Workout Generator Back Clicked     | playlist-generator-drawer.tsx:117 | `fromStep`                                 | User clicked back in generator    |
-| Workout Generator Cancelled        | playlist-generator-drawer.tsx:133 | (no properties)                            | User closed generator             |
-| Workout Generator Generate Clicked | playlist-generator-drawer.tsx:225 | `boardLayout`, `workoutType`               | User clicked generate button      |
-| Workout Generated                  | playlist-generator-drawer.tsx:287 | `boardLayout`, `workoutType`, `climbCount` | AI playlist generated             |
-| Create Playlist (via drawer)       | create-playlist-drawer.tsx:122    | `playlistName`, `boardLayout`              | User created playlist from drawer |
-| Liked Climbs Add All To Queue      | liked-climbs-view-content.tsx:102 | `count`                                    | User bulk-added liked climbs      |
+| Event Name                    | File:Line                         | Properties                                 | Context                           |
+| ----------------------------- | --------------------------------- | ------------------------------------------ | --------------------------------- |
+| Workout Generator Opened      | playlist-generator-drawer.tsx:88  | `boardLayout`                              | User clicked AI generator button  |
+| Workout Generated             | playlist-generator-drawer.tsx:287 | `boardLayout`, `workoutType`, `climbCount` | AI playlist generated             |
+| Create Playlist (via drawer)  | create-playlist-drawer.tsx:122    | `playlistName`, `boardLayout`              | User created playlist from drawer |
+| Liked Climbs Add All To Queue | liked-climbs-view-content.tsx:102 | `count`                                    | User bulk-added liked climbs      |
 
-### 2.7 Navigation / UI (15 events)
+### 2.7 Navigation / UI (10 events)
 
-| Event Name                             | File:Line                                         | Properties                                                                     | Context                            |
-| -------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------- |
-| Bottom Tab Bar                         | bottom-tab-bar.tsx:182+                           | `tab` (home/climbs/library/feed/create/you), `action` (open_selector optional) | User tapped tab                    |
-| View Mode Changed (Liked)              | liked-climbs-list.tsx:190                         | `mode`                                                                         | User switched liked climbs view    |
-| Infinite Scroll Load More              | climbs-list.tsx:392                               | `boardLayout`, `offset`                                                        | User scrolled down to load more    |
-| Liked Climbs Infinite Scroll Load More | liked-climbs-list.tsx:239                         | `boardLayout`, `offset`                                                        | Liked climbs pagination            |
-| Liked Climb Card Clicked               | liked-climbs-list.tsx:268                         | `climbUuid`                                                                    | User tapped liked climb            |
-| Logbook Thumbnail Clicked              | logbook-feed-item.tsx:473                         | `climbUuid`                                                                    | User tapped logbook photo          |
-| Angle Changed                          | angle-selector.tsx:80                             | `angle` (degrees), `boardLayout`                                               | User rotated board view            |
-| App Install Click                      | home-page-content.tsx:208,230                     | `platform` (ios/android), `source` (app-store/google-play)                     | User clicked app store link        |
-| Favorite Toggle                        | use-climb-actions.ts:122, favorite-action.tsx:45+ | `climbUuid`, `boardLayout`, `isFavorited` (true/false)                         | User liked/unliked climb           |
-| Onboarding Tour Started                | onboarding-tour-provider.tsx:188                  | `durationSeconds`                                                              | User started first-time experience |
-| Onboarding Tour Step Viewed            | onboarding-tour-provider.tsx:167                  | `stepName`, `stepIndex`                                                        | User saw step in tour              |
-| Onboarding Tour Step Advanced          | onboarding-tour-provider.tsx:153                  | `stepName`, `stepIndex`                                                        | User progressed to next step       |
-| Onboarding Tour Completed              | onboarding-tour-provider.tsx:233                  | `durationSeconds`, `totalSteps`                                                | User finished tour                 |
-| Onboarding Tour Skipped                | onboarding-tour-provider.tsx:260                  | `skippedAtStep`, `durationSeconds`                                             | User closed tour early             |
-| Favorite Toggle (via button)           | favorite-button.tsx:59,83                         | `climbUuid`, `isFavorited`                                                     | Quick favorite button              |
+| Event Name                    | File:Line                                         | Properties                                                 | Context                            |
+| ----------------------------- | ------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------- |
+| Logbook Thumbnail Clicked     | logbook-feed-item.tsx:473                         | `climbUuid`                                                | User tapped logbook photo          |
+| Angle Changed                 | angle-selector.tsx:80                             | `angle` (degrees), `boardLayout`                           | User rotated board view            |
+| App Install Click             | home-page-content.tsx:208,230                     | `platform` (ios/android), `source` (app-store/google-play) | User clicked app store link        |
+| Favorite Toggle               | use-climb-actions.ts:122, favorite-action.tsx:45+ | `climbUuid`, `boardLayout`, `isFavorited` (true/false)     | User liked/unliked climb           |
+| Onboarding Tour Started       | onboarding-tour-provider.tsx:188                  | `durationSeconds`                                          | User started first-time experience |
+| Onboarding Tour Step Viewed   | onboarding-tour-provider.tsx:167                  | `stepName`, `stepIndex`                                    | User saw step in tour              |
+| Onboarding Tour Step Advanced | onboarding-tour-provider.tsx:153                  | `stepName`, `stepIndex`                                    | User progressed to next step       |
+| Onboarding Tour Completed     | onboarding-tour-provider.tsx:233                  | `durationSeconds`, `totalSteps`                            | User finished tour                 |
+| Onboarding Tour Skipped       | onboarding-tour-provider.tsx:260                  | `skippedAtStep`, `durationSeconds`                         | User closed tour early             |
+| Favorite Toggle (via button)  | favorite-button.tsx:59,83                         | `climbUuid`, `isFavorited`                                 | Quick favorite button              |
 
 ### 2.8 Bluetooth / Hardware (10 events)
 
-| Event Name                              | File:Line                              | Properties                                                        | Context                                             |
-| --------------------------------------- | -------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------- |
-| Bluetooth Connection Success            | use-board-bluetooth.ts:390             | `boardLayout`                                                     | Device paired and connected                         |
-| Bluetooth Connection Failed             | use-board-bluetooth.ts:415             | `boardLayout`                                                     | BLE connection attempt failed                       |
-| Bluetooth Disconnected                  | use-board-bluetooth.ts:181,371,455,480 | `boardLayout`, `reason`                                           | Device lost connection                              |
-| Climb Sent to Board Success             | bluetooth-context.tsx:106              | `climbUuid`, `boardLayout`                                        | LED frames transmitted                              |
-| Climb Sent to Board Failure             | bluetooth-context.tsx:111,119          | `climbUuid`, `boardLayout`, `error_reason`                        | Frame transmission failed                           |
-| Mirror Climb Toggled                    | queue-control-bar.tsx:1340             | `isMirrored` (true/false)                                         | User toggled board mirroring                        |
-| Play Mode Entered                       | queue-control-bar.tsx:1367             | `boardLayout`                                                     | User entered play/send mode                         |
-| Board Render Error                      | rendering-metrics.ts:11                | `context` (thumbnail/card/full-board/feed), `renderer` (svg/wasm) | SVG/WebAssembly render failed (max 5 per session)   |
-| Board Worker Rendering Disabled         | rendering-metrics.ts:22                | `reason` (load-failed/construct-failed)                           | Web Worker initialization failed (once per session) |
-| Beta Caption Copy Clicked/Copied/Failed | attach-beta-link-form.tsx:157+         | `boardType`, `climbUuid`, `surface` (card/drawer)                 | User copied beta share caption                      |
+| Event Name                      | File:Line                              | Properties                                                        | Context                                             |
+| ------------------------------- | -------------------------------------- | ----------------------------------------------------------------- | --------------------------------------------------- |
+| Bluetooth Connection Success    | use-board-bluetooth.ts:390             | `boardLayout`                                                     | Device paired and connected                         |
+| Bluetooth Connection Failed     | use-board-bluetooth.ts:415             | `boardLayout`                                                     | BLE connection attempt failed                       |
+| Bluetooth Disconnected          | use-board-bluetooth.ts:181,371,455,480 | `boardLayout`, `reason`                                           | Device lost connection                              |
+| Climb Sent to Board Success     | bluetooth-context.tsx:106              | `climbUuid`, `boardLayout`                                        | LED frames transmitted                              |
+| Climb Sent to Board Failure     | bluetooth-context.tsx:111,119          | `climbUuid`, `boardLayout`, `error_reason`                        | Frame transmission failed                           |
+| Play Mode Entered               | queue-control-bar.tsx:1367             | `boardLayout`                                                     | User entered play/send mode                         |
+| Board Render Error              | rendering-metrics.ts:11                | `context` (thumbnail/card/full-board/feed), `renderer` (svg/wasm) | SVG/WebAssembly render failed (max 5 per session)   |
+| Board Worker Rendering Disabled | rendering-metrics.ts:22                | `reason` (load-failed/construct-failed)                           | Web Worker initialization failed (once per session) |
+| Beta Caption Copied/Failed      | attach-beta-link-form.tsx:157+         | `boardType`, `climbUuid`, `surface` (card/drawer)                 | User copied beta share caption                      |
 
-### 2.9 Sessions / Collab (4 events)
+### 2.9 Sessions / Collab (3 events)
 
-| Event Name                      | File:Line                   | Properties                                                                              | Context                               |
-| ------------------------------- | --------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
-| Session Started                 | start-sesh-drawer.tsx:356   | `boardName`, `hasGoal`, `isDiscoverable`, `generatedQueueCount`, `generatedWorkoutType` | Host created session                  |
-| Session Joined                  | board-session-bridge.tsx:59 | `session_id`, `board_name`, `layout_id`                                                 | Guest joined via link/QR              |
-| Session Queue Generated Cleared | start-sesh-drawer.tsx:270   | (no properties)                                                                         | Host dismissed generated queue        |
-| Mirror Climb (in sessions)      | use-climb-actions.ts:174    | `climbUuid`, `boardLayout`                                                              | User mirrored climb in shared session |
+| Event Name                 | File:Line                   | Properties                                                                              | Context                               |
+| -------------------------- | --------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------- |
+| Session Started            | start-sesh-drawer.tsx:356   | `boardName`, `hasGoal`, `isDiscoverable`, `generatedQueueCount`, `generatedWorkoutType` | Host created session                  |
+| Session Joined             | board-session-bridge.tsx:59 | `session_id`, `board_name`, `layout_id`                                                 | Guest joined via link/QR              |
+| Mirror Climb (in sessions) | use-climb-actions.ts:174    | `climbUuid`, `boardLayout`                                                              | User mirrored climb in shared session |
 
 ### 2.10 Server-Side Cache (1 event)
 

@@ -196,12 +196,12 @@ export function WebBoardPresenceProvider({ children }: { children: ReactNode }) 
     [boardId, resolveAndBindBoard, reportDisconnect],
   );
 
-  // Telemetry for every catch-up. `recoveredThroughSeqDelta > 0` means the live
-  // feed silently dropped pushes (Redis pub/sub has no replay) and we just
-  // recovered them — the measurable "history was slow to update" signal.
+  // Telemetry only when a catch-up recovered missed wall events. Foreground and
+  // reconnect catch-ups with a zero delta happen often and add no product signal.
   // Mirrors the mobile provider's `handleCatchUp`. Stable identity (reads
   // boardIdRef) so it never re-binds the presence subscription.
   const handleCatchUp = useCallback((info: BoardPresenceCatchUpInfo) => {
+    if (info.recoveredThroughSeqDelta <= 0) return;
     track(SHARED_EVENTS.BoardHistoryCatchUp, {
       boardId: boardIdRef.current ?? undefined,
       reason: info.reason,
@@ -212,7 +212,6 @@ export function WebBoardPresenceProvider({ children }: { children: ReactNode }) 
   return (
     <BoardPresenceControlsContext.Provider value={controls}>
       <BoardPresenceProvider boardId={boardId} client={presenceClient} onCatchUp={handleCatchUp}>
-        <BoardNowPlayingInstrument boardId={boardId} />
         <WebBoardPresenceForegroundSync />
         {children}
       </BoardPresenceProvider>
@@ -243,30 +242,6 @@ function WebBoardPresenceForegroundSync(): null {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [refresh]);
-  return null;
-}
-
-/**
- * Fires `BoardNowPlayingReceived` once per distinct wall climb received from the
- * live feed — instrumenting the "viewed the wall" signal that's invisible
- * today. Lives as a child of `BoardPresenceProvider` so it can read the wall's
- * current climb without the host provider subscribing to it (and re-rendering
- * the whole tree on every wall change). `boardId` is attached as a property,
- * never the raw serial.
- */
-function BoardNowPlayingInstrument({ boardId }: { boardId: number | null }) {
-  const context = useContext(BoardPresenceCurrentContext);
-  const currentClimb = context?.currentClimb ?? null;
-  const lastReceivedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!currentClimb) return;
-    if (lastReceivedRef.current === currentClimb.climbUuid) return;
-    lastReceivedRef.current = currentClimb.climbUuid;
-    track(SHARED_EVENTS.BoardNowPlayingReceived, {
-      boardId: boardId ?? undefined,
-      climbUuid: currentClimb.climbUuid,
-    });
-  }, [currentClimb, boardId]);
   return null;
 }
 

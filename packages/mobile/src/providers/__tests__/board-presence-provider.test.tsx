@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, act, waitFor } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
-import type { BoardPresenceClimb, ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
+import type { ClimbQueueItemInput, ResolvedBoard } from '@boardsesh/shared-schema';
 
 const transport = vi.hoisted(() => ({
   resolveBoardForSerial: vi.fn(
@@ -24,12 +24,6 @@ const transport = vi.hoisted(() => ({
 const sharedProvider = vi.hoisted(() => ({
   lastBoardId: undefined as number | null | undefined,
   lastOnCatchUp: undefined as ((info: { reason: string; recoveredThroughSeqDelta: number }) => void) | undefined,
-}));
-// Drives the mocked `useBoardPresenceCurrent` — controls what
-// `BoardPresenceInstrument` (rendered inside the provider, independent of any
-// sheet UI) sees as the wall's current climb.
-const presence = vi.hoisted(() => ({
-  currentClimb: null as BoardPresenceClimb | null,
 }));
 // The refresh action exposed by the (mocked) shared actions context, and a track
 // spy — so we can assert the foreground sync and catch-up telemetry wiring.
@@ -100,8 +94,6 @@ vi.mock('@boardsesh/board-presence-react', () => ({
   },
   // BoardPresenceForegroundSync (rendered inside the provider) reads this.
   useBoardPresenceActions: () => ({ refresh: refreshMock }),
-  // BoardPresenceInstrument (rendered inside the provider) reads this.
-  useBoardPresenceCurrent: () => ({ currentClimb: presence.currentClimb }),
 }));
 
 import { MobileBoardPresenceProvider, useBoardPresenceControls } from '../board-presence-provider';
@@ -150,7 +142,6 @@ describe('MobileBoardPresenceProvider', () => {
     transport.reportClimb.mockResolvedValue(true);
     sharedProvider.lastBoardId = undefined;
     sharedProvider.lastOnCatchUp = undefined;
-    presence.currentClimb = null;
     refreshMock.mockClear();
     trackMock.mockClear();
     appState.addEventListener.mockClear();
@@ -531,11 +522,8 @@ describe('MobileBoardPresenceProvider', () => {
     });
   });
 
-  it('tracks BoardNowPlayingReceived from the provider-level instrument, independent of any sheet UI', async () => {
-    // No BoardSheet is mounted anywhere in this tree — `BoardPresenceInstrument`
-    // lives inside `MobileBoardPresenceProvider` itself (see the provider), so
-    // this telemetry fires whether or not a sheet happens to be presented.
-    const rendered = renderProvider();
+  it('does not track catch-up telemetry when no wall events were recovered', async () => {
+    renderProvider();
     await act(async () => {
       await capturedControls?.resolveAndBindBoard({
         serial: 'SERIAL-1',
@@ -548,48 +536,8 @@ describe('MobileBoardPresenceProvider', () => {
     await waitFor(() => expect(sharedProvider.lastBoardId).toBe(42));
 
     trackMock.mockClear();
-    presence.currentClimb = {
-      climbUuid: 'wall-climb-1',
-      seq: 7,
-      sentAt: '2026-06-09T00:00:00.000Z',
-      name: 'Wall Climb',
-      angle: 40,
-    } as BoardPresenceClimb;
-    act(() => {
-      rendered.rerender(createElement(MobileBoardPresenceProvider, null, createElement(Probe)));
-    });
+    act(() => sharedProvider.lastOnCatchUp?.({ reason: 'foreground', recoveredThroughSeqDelta: 0 }));
 
-    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.BoardNowPlayingReceived, {
-      boardId: 42,
-      climbUuid: 'wall-climb-1',
-      seq: 7,
-    });
-  });
-
-  it('does not re-track the same wall climb on a re-render (dedup by climbUuid)', async () => {
-    const rendered = renderProvider();
-    presence.currentClimb = {
-      climbUuid: 'wall-climb-1',
-      seq: 7,
-      sentAt: '2026-06-09T00:00:00.000Z',
-      name: 'Wall Climb',
-      angle: 40,
-    } as BoardPresenceClimb;
-    act(() => {
-      rendered.rerender(createElement(MobileBoardPresenceProvider, null, createElement(Probe)));
-    });
-    expect(trackMock).toHaveBeenCalledWith(
-      SHARED_EVENTS.BoardNowPlayingReceived,
-      expect.objectContaining({ climbUuid: 'wall-climb-1' }),
-    );
-
-    trackMock.mockClear();
-    // A same-uuid seq bump (e.g. a backfill merge) must not re-fire.
-    presence.currentClimb = { ...presence.currentClimb, seq: 8 };
-    act(() => {
-      rendered.rerender(createElement(MobileBoardPresenceProvider, null, createElement(Probe)));
-    });
-
-    expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.BoardNowPlayingReceived, expect.anything());
+    expect(trackMock).not.toHaveBeenCalledWith(SHARED_EVENTS.BoardHistoryCatchUp, expect.anything());
   });
 });

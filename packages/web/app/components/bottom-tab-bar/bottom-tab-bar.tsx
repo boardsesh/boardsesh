@@ -12,7 +12,6 @@ import LocalOfferOutlined from '@mui/icons-material/LocalOfferOutlined';
 import DynamicFeedOutlined from '@mui/icons-material/DynamicFeedOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import { useLocaleRouter, usePathnameWithoutLocale } from '@/app/lib/i18n/use-locale-router';
-import { track } from '@/app/lib/analytics';
 import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/types';
 import {
   constructClimbListWithSlugs,
@@ -219,12 +218,10 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
         url = `${url}${separator}session=${activeSession.sessionId}`;
       }
       router.push(url);
-      track('Bottom Tab Bar', { tab: 'climbs' });
       return;
     }
     setIsBoardSelectorRendered(true);
     setIsBoardSelectorOpen(true);
-    track('Bottom Tab Bar', { tab: 'climbs', action: 'open_selector' });
   }, [activeSession?.sessionId, router]);
 
   const handleCreateFallback = useCallback(() => {
@@ -344,7 +341,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           value="home"
           component={LocaleLink}
           href="/"
-          onClick={() => track('Bottom Tab Bar', { tab: 'home' })}
           sx={actionSx}
         />
         {climbsHref ? (
@@ -354,7 +350,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
             value="climbs"
             component={LocaleLink}
             href={climbsHref}
-            onClick={() => track('Bottom Tab Bar', { tab: 'climbs' })}
             sx={actionSx}
           />
         ) : (
@@ -374,7 +369,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           value="library"
           component={LocaleLink}
           href={playlistsUrl}
-          onClick={() => track('Bottom Tab Bar', { tab: 'library' })}
           sx={actionSx}
         />
         <BottomNavigationAction
@@ -383,7 +377,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
           value="feed"
           component={LocaleLink}
           href="/feed"
-          onClick={() => track('Bottom Tab Bar', { tab: 'feed' })}
           sx={actionSx}
         />
         {createClimbHref ? (
@@ -393,7 +386,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
             value="create"
             component={LocaleLink}
             href={createClimbHref}
-            onClick={() => track('Bottom Tab Bar', { tab: 'create' })}
             sx={actionSx}
           />
         ) : (
@@ -402,7 +394,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
             icon={<AddOutlined sx={{ fontSize: 20 }} />}
             value="create"
             onClick={() => {
-              track('Bottom Tab Bar', { tab: 'create', action: 'open_selector' });
               handleCreateFallback();
             }}
             sx={actionSx}
@@ -429,7 +420,6 @@ function BottomTabBar({ boardDetails, angle, boardConfigs }: BottomTabBarProps) 
               });
               return;
             }
-            track('Bottom Tab Bar', { tab: 'you' });
           }}
           sx={actionSx}
         />

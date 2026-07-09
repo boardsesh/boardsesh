@@ -36,11 +36,7 @@ describe('registerMobileUserAgent', () => {
   });
 });
 
-// Guards the fix for the install/open identity race: the party-profile UUID
-// must reach the PostHog constructor as `bootstrap.distinctId` so
-// captureAppLifecycleEvents (which fires during construction) lands on the
-// same id PartyProfileProvider later identifies/aliases, instead of a
-// transient SDK-generated anonymous id that never reliably reconnects.
+// Guards the stable anonymous identity used by explicit screen/action events.
 describe('buildPostHogOptions', () => {
   it('bootstraps the anonymous distinct_id from a resolved party-profile UUID', () => {
     const options = buildPostHogOptions('https://us.i.posthog.com', 'party-profile-uuid');
@@ -60,5 +56,10 @@ describe('buildPostHogOptions', () => {
       maskAllImages: true,
       captureLog: true,
     });
+  });
+
+  it('disables native lifecycle autocapture', () => {
+    const options = buildPostHogOptions('https://us.i.posthog.com', null);
+    expect(options.captureAppLifecycleEvents).toBe(false);
   });
 });
