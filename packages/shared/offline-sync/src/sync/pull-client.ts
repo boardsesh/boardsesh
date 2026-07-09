@@ -90,16 +90,17 @@ const SQLITE_MAX_BIND_VARIABLES = 999;
 
 /**
  * Coerces a synced document value to what the SQLite bridge accepts:
- * booleans as 0/1 (SQLite has no BOOLEAN type), objects/arrays as their JSON
- * string (frames, characteristics, etc. are stored as TEXT), null/undefined
- * as NULL (undefined means "document omitted this column" — same bind as an
- * explicit null), everything else passed through unchanged. Exported so a
- * future Node export script can reuse the exact same coercion off the same
- * synced documents without re-deriving it.
+ * booleans as 0/1 (SQLite has no BOOLEAN type), Date values as ISO strings,
+ * objects/arrays as their JSON string (frames, characteristics, etc. are stored
+ * as TEXT), null/undefined as NULL (undefined means "document omitted this
+ * column" — same bind as an explicit null), everything else passed through
+ * unchanged. Exported so the snapshot export job can reuse the exact same
+ * coercion off the same synced documents without re-deriving it.
  */
 export function toSqliteValue(value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
   if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value instanceof Date) return value.toISOString();
   if (typeof value === 'object') return JSON.stringify(value);
   return value as SqlValue;
 }

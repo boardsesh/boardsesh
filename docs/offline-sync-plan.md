@@ -468,7 +468,8 @@ async function syncTable(
     // bind-variable limit (see upsertDocuments in pull-client.ts).
     await db.withExclusiveTransactionAsync(async (tx) => {
       for (const rows of chunk(documents, multiRowChunkSize(columns.length))) {
-        await tx.runAsync(buildMultiRowInsertSql(tableName, columns, rows.length), flattenRowValues(rows, columns));
+        const values = rows.flatMap((row) => columns.map((column) => toSqliteValue(row[column])));
+        await tx.runAsync(buildMultiRowInsertSql(tableName, columns, rows.length), values);
       }
     });
 

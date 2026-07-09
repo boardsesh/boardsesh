@@ -72,6 +72,10 @@ describe('toSqliteValue', () => {
     expect(toSqliteValue([1, 2, 3])).toBe(JSON.stringify([1, 2, 3]));
     expect(toSqliteValue(['a', 'b'])).toBe(JSON.stringify(['a', 'b']));
   });
+
+  it('stores Date values as ISO strings without JSON quotes', () => {
+    expect(toSqliteValue(new Date('2026-07-08T12:34:56.789Z'))).toBe('2026-07-08T12:34:56.789Z');
+  });
 });
 
 // --- Batched upsert mechanics (driven through pullSync, mirroring the
@@ -166,7 +170,7 @@ describe('upsertDocuments batching (via pullSync)', () => {
     expect(insertCalls[0].params).toEqual(['tick-1', 1, 5, 'tick-2', 2, null]);
   });
 
-  it('preserves per-row column ordering across a multi-row chunk (values land in the right row/column)', async () => {
+  it('preserves per-row column ordering within a multi-row chunk (values land in the right row/column)', async () => {
     const documents = [
       { uuid: 'tick-a', attempt_count: 10, comment: 'first' },
       { uuid: 'tick-b', attempt_count: 20, comment: 'second' },
