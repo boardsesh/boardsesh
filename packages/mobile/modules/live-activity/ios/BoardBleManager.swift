@@ -1030,6 +1030,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             .map { $0.uuidString }
         // Undocumented advertisement payload (recon only — parsed nowhere yet):
         // manufacturer-specific data and per-UUID service data, hex-encoded.
+        // Service-data keys are normalized to lowercase full-128-bit UUIDs so
+        // they match the ble-plx (Android) form and group cleanly in PostHog.
         let manufacturerData = (advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data)
             .map { $0.hexEncodedString() }
         let serviceData = (advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data])
@@ -1037,14 +1039,20 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 guard !rawServiceData.isEmpty else { return nil }
                 var mapped: [String: String] = [:]
                 for (uuid, bytes) in rawServiceData {
-                    mapped[uuid.uuidString] = bytes.hexEncodedString()
+                    mapped[Self.normalizedUuidString(uuid)] = bytes.hexEncodedString()
                 }
                 return mapped
             }
-        // Only cross the bridge when something material changed for this
-        // device (first sighting, name arriving in a later scan response, a
-        // different advertised UUID set, or manufacturer data appearing/changing).
-        let emissionKey = "\(name ?? "")|\(advertisedServiceUuids.joined(separator: ","))|\(manufacturerData ?? "")"
+        // Only cross the bridge when something material changed for this device
+        // (first sighting, name arriving in a later scan response, a different
+        // advertised UUID set, or manufacturer data first *appearing*). Use a
+        // presence flag, not the payload itself: Apple Continuity devices rotate
+        // their manufacturer data every advertisement, and folding the bytes into
+        // the key would re-cross the bridge on every rotation for every nearby
+        // iPhone/AirPod. A board's payload is static, so the JS side merges
+        // whatever arrives (see upsertDiscoveredDevice).
+        let manufacturerDataPresence = manufacturerData != nil ? "m" : ""
+        let emissionKey = "\(name ?? "")|\(advertisedServiceUuids.joined(separator: ","))|\(manufacturerDataPresence)"
         if emittedScanResults[deviceId] != emissionKey {
             emittedScanResults[deviceId] = emissionKey
             onScanResult?(BoardBleScanResult(
@@ -1167,6 +1175,18 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// and writeCharacteristicUuid(for:) keys on the discovered service.
     private func writeServiceUuids() -> [CBUUID] {
         [uartServiceUuid, redBearLabServiceUuid]
+    }
+
+    /// Canonical lowercase full-128-bit UUID string. `CBUUID.uuidString` returns
+    /// the short 4-char form (uppercase) for 16-bit UUIDs and uppercase for
+    /// 128-bit — ble-plx reports lowercase full-128-bit. Normalize so a board's
+    /// service-data key is identical across platforms and groups in PostHog.
+    static func normalizedUuidString(_ uuid: CBUUID) -> String {
+        let raw = uuid.uuidString.lowercased()
+        if raw.count == 4 {
+            return "0000\(raw)-0000-1000-8000-00805f9b34fb"
+        }
+        return raw
     }
 
     /// Outcome of a `didDiscoverServices` callback.

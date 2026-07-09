@@ -69,9 +69,11 @@ export function FeedbackSheet({ sheetRef, mode, showDiscordLink = false }: Feedb
     try {
       // Fire the opt-in Bluetooth scan-recon alongside the report. It scans
       // (no connect) and ships each in-range board's raw advertisement payload
-      // to PostHog under a shared correlation id, so we can find where bare-name
-      // boxes stash their serial. Runs independently of the sheet lifecycle;
-      // never blocks the submit or surfaces its own errors.
+      // to PostHog so we can find where bare-name boxes stash their serial. The
+      // correlation id groups this one scan's events; joining to the specific bug
+      // report is by person + timestamp (the report goes to the backend, not
+      // PostHog). Runs independently of the sheet lifecycle; never blocks the
+      // submit or surfaces its own errors.
       if (isBugReport && captureBleDiag) {
         const reconCorrelationId = `bug-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
         void runBleAdvertisementRecon(reconCorrelationId).catch(() => {});

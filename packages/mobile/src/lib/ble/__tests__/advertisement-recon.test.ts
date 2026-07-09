@@ -92,18 +92,25 @@ describe('runBleAdvertisementRecon', () => {
     expect(mockBleManager.startDeviceScan.mock.calls[0][0]).toBeNull();
 
     const emit = scanCallback();
+    // Name arrives first (SCAN_RSP), manufacturer/service data in a later packet
+    // (ADV_IND) — the recon must accumulate across both, not first-packet-win.
+    emit(null, { id: 'k1', name: 'Kilter Board', serviceUUIDs: ['aurora-uuid'], rssi: -55 });
     emit(null, {
       id: 'k1',
-      name: 'Kilter Board',
-      serviceUUIDs: ['aurora-uuid'],
-      manufacturerData: 'TAACFQ==', // 4c000215
       serviceData: { 'd9b1fad4-0d22-4d20-8521-04166b28cd24': 'AQI=' }, // 0102
-      rssi: -55,
+      manufacturerData: 'TAACFQ==', // 4c000215
     });
-    emit(null, { id: 'k1', name: 'Kilter Board', serviceUUIDs: ['aurora-uuid'] }); // duplicate id
     emit(null, { id: 'buds', name: 'AirPods', manufacturerData: 'TAAP' }); // not a board
     emit(null, { id: 'm1', name: 'MoonBoard A', rssi: -70 });
 
+    // Nothing emitted until the scan window closes.
+    expect(trackMock).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(8_000);
+    const count = await promise;
+
+    expect(count).toBe(2);
+    expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledTimes(2);
     expect(trackMock).toHaveBeenCalledWith(
       'BLE Advertisement Recon',
@@ -113,6 +120,7 @@ describe('runBleAdvertisementRecon', () => {
         deviceName: 'Kilter Board',
         deviceNamePresent: true,
         parsedSerial: undefined,
+        // Merged from the second packet even though the name came in the first.
         bleManufacturerData: '4c000215',
         bleManufacturerCompanyId: 0x004c,
         bleServiceData: JSON.stringify({ 'd9b1fad4-0d22-4d20-8521-04166b28cd24': '0102' }),
@@ -122,10 +130,5 @@ describe('runBleAdvertisementRecon', () => {
       'BLE Advertisement Recon',
       expect.objectContaining({ family: 'moonboard', deviceName: 'MoonBoard A' }),
     );
-
-    vi.advanceTimersByTime(8_000);
-    const count = await promise;
-    expect(count).toBe(2);
-    expect(mockBleManager.stopDeviceScan).toHaveBeenCalled();
   });
 });

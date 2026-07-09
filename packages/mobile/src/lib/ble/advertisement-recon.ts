@@ -42,7 +42,19 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
   const poweredOn = await waitForBlePoweredOn();
   if (!poweredOn) return 0;
 
-  const seen = new Set<string>();
+  // Accumulate per device across the whole window and emit once at the end. BLE
+  // splits the advertisement across packets (ADV_IND vs SCAN_RSP), so the name,
+  // manufacturer data, and service data can land in separate callbacks — emitting
+  // on the first board-matching packet would miss whatever arrives later.
+  type ReconEntry = {
+    name?: string;
+    serviceUuids: Set<string>;
+    manufacturerData?: string;
+    serviceData?: Record<string, string>;
+    rssi?: number;
+  };
+  const entries = new Map<string, ReconEntry>();
+
   return new Promise<number>((resolve) => {
     let settled = false;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -50,40 +62,50 @@ export async function runBleAdvertisementRecon(reconCorrelationId: string): Prom
       if (settled) return;
       settled = true;
       if (timeoutId) clearTimeout(timeoutId);
-      bleManager.stopDeviceScan();
-      resolve(seen.size);
+      void bleManager.stopDeviceScan();
+      for (const entry of entries.values()) {
+        track(SHARED_EVENTS.BleAdvertisementRecon, {
+          reconCorrelationId,
+          family: classifyFamily(entry.name, [...entry.serviceUuids]),
+          deviceName: entry.name ?? undefined,
+          deviceNamePresent: !!entry.name,
+          parsedSerial: parseSerialNumber(entry.name) ?? undefined,
+          apiLevelFromName: parseApiLevel(entry.name),
+          rssi: entry.rssi ?? undefined,
+          serviceUuids: entry.serviceUuids.size > 0 ? JSON.stringify([...entry.serviceUuids]) : undefined,
+          bleManufacturerData: entry.manufacturerData,
+          bleManufacturerCompanyId: manufacturerCompanyId(entry.manufacturerData),
+          bleServiceData: entry.serviceData ? JSON.stringify(entry.serviceData) : undefined,
+        });
+      }
+      resolve(entries.size);
     };
 
-    bleManager.startDeviceScan(null, null, (error, device) => {
+    void bleManager.startDeviceScan(null, null, (error, device) => {
       if (error || settled) {
         finish();
         return;
       }
-      if (!device || seen.has(device.id)) return;
+      if (!device) return;
 
       const name = device.localName ?? device.name ?? undefined;
       const serviceUuids = [...(device.serviceUUIDs ?? []), ...(device.overflowServiceUUIDs ?? [])];
-      const family = classifyFamily(name, serviceUuids);
-      if (!family) return;
+      // Only keep board-like peripherals so unrelated BLE devices never reach
+      // analytics. Classify on this packet's fields plus anything already merged.
+      const existing = entries.get(device.id);
+      if (!existing && entries.size >= MAX_RECON_DEVICES) return;
+      const mergedName = name ?? existing?.name;
+      const mergedServiceUuids = new Set([...(existing?.serviceUuids ?? []), ...serviceUuids]);
+      if (!classifyFamily(mergedName, [...mergedServiceUuids])) return;
 
-      seen.add(device.id);
+      const entry: ReconEntry = existing ?? { serviceUuids: new Set() };
+      entry.name = mergedName;
+      entry.serviceUuids = mergedServiceUuids;
+      entry.manufacturerData = base64ToHex(device.manufacturerData) ?? entry.manufacturerData;
       const serviceData = serviceDataToHex(device.serviceData);
-      const manufacturerData = base64ToHex(device.manufacturerData);
-      track(SHARED_EVENTS.BleAdvertisementRecon, {
-        reconCorrelationId,
-        family,
-        deviceName: name ?? undefined,
-        deviceNamePresent: !!name,
-        parsedSerial: parseSerialNumber(name) ?? undefined,
-        apiLevelFromName: parseApiLevel(name),
-        rssi: device.rssi ?? undefined,
-        serviceUuids: serviceUuids.length > 0 ? JSON.stringify(serviceUuids) : undefined,
-        bleManufacturerData: manufacturerData,
-        bleManufacturerCompanyId: manufacturerCompanyId(manufacturerData),
-        bleServiceData: serviceData ? JSON.stringify(serviceData) : undefined,
-      });
-
-      if (seen.size >= MAX_RECON_DEVICES) finish();
+      if (serviceData) entry.serviceData = { ...entry.serviceData, ...serviceData };
+      if (device.rssi != null) entry.rssi = device.rssi;
+      entries.set(device.id, entry);
     });
 
     timeoutId = setTimeout(finish, RECON_SCAN_MS);
