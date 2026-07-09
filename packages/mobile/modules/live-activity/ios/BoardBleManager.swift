@@ -49,6 +49,11 @@ enum BoardBleWriteTypeSource: String {
     case watchdogFallback
     case learnedPersistentFallback
     case moonboardCharacteristic
+    // Proactive: the box advertises a bare Aurora name with no `#serial@apiLevel`
+    // suffix (a mid-2025+ Kilter-built, write-with-response-only box). We start
+    // this connection on with-response instead of eating the without-response
+    // stall first. Name-driven, so a healthy serial'd box never trips it.
+    case bareNameHint
 }
 
 /// Per-write transport telemetry (#3230): how a single queued write moved
@@ -1346,15 +1351,25 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let learnedIdentity = auroraWriteWithResponseIdentity(peripheral: peripheral, characteristic: characteristic)
         let learnedEntry = learnedIdentity.flatMap { learnedWriteWithResponseEntry(for: $0) }
         let learnedThisSession = writeWithResponsePeripheralIds.contains(peripheral.identifier)
+        // A bare-name Aurora box (no `#serial@apiLevel` suffix) is a mid-2025+
+        // Kilter-built, write-with-response-only box: start it on with-response
+        // proactively so the first light doesn't have to stall first. Name-driven,
+        // not property-driven — a healthy serial'd box never matches, so this
+        // can't re-introduce the #3228 stale-property regression.
+        let bareNameBox = BoardBleEncoding.isKilterBuiltBox(
+            deviceName: discoveredNames[peripheral.identifier.uuidString] ?? peripheral.name ?? configuration?.deviceName
+        )
         // Re-seed the with-response latch from what we've learned. Persistent
         // entries were written only after a behavior failure on a `.write`-only
         // characteristic AND a successful with-response ack, so this still avoids
         // trusting a stale property bit as the live trigger.
-        forceWriteWithResponse = learnedEntry != nil || learnedThisSession
+        forceWriteWithResponse = learnedEntry != nil || learnedThisSession || bareNameBox
         if learnedEntry != nil {
             forceWriteWithResponseSource = .learnedPersistentFallback
         } else if learnedThisSession {
             forceWriteWithResponseSource = .watchdogFallback
+        } else if bareNameBox {
+            forceWriteWithResponseSource = .bareNameHint
         } else {
             forceWriteWithResponseSource = nil
         }

@@ -93,6 +93,25 @@ export const parseBoardTypeFromDeviceName = (deviceName?: string): AuroraBoardNa
   return AURORA_BOARDS.find((board) => normalized.startsWith(board));
 };
 
+/**
+ * True for a "Kilter-built" (manufacturer-built) LED box: an Aurora-family board
+ * that advertises WITHOUT the `#serial@apiLevel` suffix (a bare name like
+ * "Kilter Board"). These mid-2025+ boxes expose a UART RX characteristic with
+ * only the `.write` property — the official Kilter app drives every box with
+ * write-WITH-response, and iOS/CoreBluetooth silently drops a no-response write
+ * to such a characteristic, so the wall stays dark. Detecting the box by its
+ * bare name lets the client start on write-with-response from the first connect
+ * instead of eating a stall first.
+ *
+ * This is a NAME signal, not the GATT property bit: a healthy box that carries a
+ * serial (`Kilter Board#751737@3`) never matches, so it keeps the faster
+ * without-response path — this cannot re-introduce the #3228 stale-property
+ * regression, which was driven by the characteristic's `.writeWithoutResponse`
+ * bit, not the advertised name.
+ */
+export const isKilterBuiltBox = (deviceName?: string): boolean =>
+  parseBoardTypeFromDeviceName(deviceName) !== undefined && parseSerialNumber(deviceName) === undefined;
+
 // --- v3 encoding (API level >= 3) ---
 
 export const encodePositionV3 = (position: number) => [position & 255, (position >> 8) & 255];

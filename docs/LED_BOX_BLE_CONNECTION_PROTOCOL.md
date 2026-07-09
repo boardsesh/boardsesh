@@ -32,16 +32,16 @@ Each claim is tagged so you can tell evidence from inheritance:
 
 ## TL;DR
 
-| Question                                      | Answer                                                                                           | Tag     |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------- |
-| Same protocol as Aurora app?                  | **Yes.** Identical service/characteristic UUIDs and advertised-service scan filter.              | ✅      |
-| BLE library                                   | `flutter_blue_plus`                                                                              | ✅      |
-| Writes LED data to                            | RX char `6E400002-…` (Nordic UART RX); write type derived from the characteristic (see §6.5)     | 🔁      |
-| Subscribes to board notifications?            | **No.** TX char `6E400003-…` does **not** appear anywhere in the binary — the app is write-only. | ✅      |
-| Negotiates MTU?                               | **Yes** (`requestMtu` / `BmMtuChangeRequest`) — new vs. the Aurora-app spec.                     | ✅      |
-| Picks which board?                            | Ranks scan results, reads RSSI per device (`BmReadRssiResult`) to surface the nearest.           | ✅ / ❓ |
-| Frame framing / checksum / v2-v3 LED encoding | SOH·LEN·CHK·STX·payload·ETX, `~sum` checksum, 2-byte (v2) / 3-byte (v3) LED records.             | 🔁      |
-| Extra UUIDs                                   | Three 128-bit UUIDs present that are **not** part of the LED write path; role unconfirmed.       | ❓      |
+| Question                                      | Answer                                                                                                                                                       | Tag     |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| Same protocol as Aurora app?                  | **Yes.** Identical service/characteristic UUIDs and advertised-service scan filter.                                                                          | ✅      |
+| BLE library                                   | `flutter_blue_plus`                                                                                                                                          | ✅      |
+| Writes LED data to                            | RX char `6E400002-…` (Nordic UART RX); **write-with-response, unconditionally** (see §6.5)                                                                   | ✅      |
+| Subscribes to board notifications?            | **No.** TX char `6E400003-…` does **not** appear anywhere in the binary — the app is write-only.                                                             | ✅      |
+| Negotiates MTU?                               | **No.** `flutter_blue_plus` exposes the MTU API (`BmMtuChangeRequest`) but the app never calls `requestMtu`; it uses fixed **20-byte** chunks, 100 ms apart. | ✅      |
+| Picks which board?                            | Ranks scan results, reads RSSI per device (`BmReadRssiResult`) to surface the nearest.                                                                       | ✅ / ❓ |
+| Frame framing / checksum / v2-v3 LED encoding | SOH·LEN·CHK·STX·payload·ETX, `~sum` checksum, 2-byte (v2) / 3-byte (v3) LED records.                                                                         | ✅      |
+| Extra UUIDs                                   | Three 128-bit UUIDs present that are **not** part of the LED write path; role unconfirmed.                                                                   | ❓      |
 
 ---
 
@@ -153,10 +153,7 @@ user picks a board → connect by name  (_connectToBoardByName)
 discover services → Nordic UART (6E400001…)
         │
         ▼
-request MTU                            (requestMtu / BmMtuChangeRequest)  ← new
-        │
-        ▼
-locate RX characteristic (6E400002…)
+locate RX characteristic (6E400002…)   (no MTU request — fixed 20-byte writes)
         │
         ▼
 READY → write LED frames               (_displayClimb / _displayClimbFrame)
@@ -167,13 +164,13 @@ disconnect                             ("[FBP] disconnect: enforcing")
 
 ✅ Notable `[FBP]` log lines in the binary: `[FBP] connection timeout`, `[FBP] [AutoConnect] connection failed:`, `[FBP] disconnect: enforcing`, `[FBP] stopScan: already stopped`.
 
-> **Difference vs. the Aurora-app spec:** this app performs an explicit **MTU negotiation** after connecting. The Aurora-app spec describes fixed **20-byte** GATT writes with no MTU request. A larger negotiated MTU lets each `writeWithoutResponse` carry more than 20 payload bytes, but the **framing is unchanged** (see §6.5) — chunking is a transport detail, not part of the message format.
+> **Same as the Aurora-app spec here:** this app does **not** negotiate MTU — the arm64 method bodies show no `requestMtu` call, and it writes fixed **20-byte** chunks (100 ms apart), matching the Aurora Android app (`com.auroraclimbing.tensionboard2` v5.0.6, independently decompiled: 20-byte hardcoded chunks, no `requestMtu()`, same UUIDs). The earlier "explicit MTU negotiation" reading was inferred from the presence of `flutter_blue_plus`'s `BmMtuChangeRequest` symbol, which the app never actually calls. Boardsesh is the outlier that negotiates MTU (see §6.5).
 
 ---
 
 ## 6. Wire protocol (LED command format)
 
-🔁 The byte format below is the shared Aurora wire format. It is **not** re-derived from this app's ARM machine code (see [limitations](#methodology--limitations)); it is the protocol this app must speak to the same controller boxes, and it is cross-checked against the Aurora spec and the shipped `aurora.ts`. Symbols that corroborate it in this app: `_checkSum`, `_colorFromHex`, `_brightnessFor`, `_displayClimb`, `_displayClimbFrame`.
+✅ The byte format below is now confirmed from this app's **arm64 method bodies** (`convertMessage` / `addBoilerPlate` / `encodePositionV2` / `encodePositionV3` / `encodeColorV3`; see [Methodology](#methodology--limitations)) and matches the shared Aurora wire format in the Aurora spec and the shipped `aurora.ts`. Corroborating symbols: `_checkSum`, `_colorFromHex`, `_brightnessFor`, `_displayClimb`, `_displayClimbFrame`. (The v2 power-budget scaling in §6.6 is the one part not located as explicit constants in the snapshot — it stays 🔁, inherited from `aurora.ts`.)
 
 ### 6.1 Frame structure
 
@@ -244,10 +241,12 @@ Colour comes from the placement role's 6-hex LED colour (`_colorFromHex`); unkno
 ### 6.5 Multi-part + transport chunking
 
 - LED records are packed into frames; when a frame would exceed 255 payload bytes a new frame is started. One frame → `Single`; many → `First` / `Middle…` / `Last`.
-- All frames are concatenated, then the byte stream is split into BLE writes. The classic transport size is **20 bytes/write**; with this app's negotiated MTU each write can be larger.
-- 🔁 **Write type is derived from the characteristic, not hardcoded.** The `, writeWithoutResponse: …` string in the binary is `flutter_blue_plus`'s `CharacteristicProperties.toString()` field — it reports the RX characteristic's advertised _capability_, not the write mode the app actually issues. `flutter_blue_plus`'s `write()` **defaults to write-with-response**; a caller opts into without-response explicitly. So this single cross-platform stack follows whatever the box advertises: without-response on the common `bleCharProperties=12` box, and with-response on the write-only `bleCharProperties=8` box (whose `.writeWithoutResponse` bit is absent). That is why the official app lights **both** box generations on iOS. See the two-generation split and the iOS silent-drop consequence in `AURORA_BLUETOOTH_PROTOCOL_SPEC.md` §9 (Write Properties).
+- All frames are concatenated, then the byte stream is split into BLE writes of **20 bytes each**. The app **never negotiates a larger MTU** — there is no `requestMtu` call anywhere in the snapshot — and it waits **100 ms between chunks** (a `Duration` of 100000 µs in `writeData`). Each chunk is awaited before the next, so a large climb lights slowly but reliably.
+- ✅ **Write type is write-WITH-response, unconditionally, for every box.** Confirmed from the arm64 method bodies (see §10): `BluetoothProvider.writeData` calls `flutter_blue_plus`'s `write(chunk)` with **no** `withoutResponse` argument, so it takes the library default `BmWriteType.withResponse`, and awaits each write. The compiled snapshot's object pool contains **only** the `withResponse` enum instance — the `withoutResponse` variant is tree-shaken out, which happens only if no code path ever constructs it. The `, writeWithoutResponse: …` string in the binary is just `CharacteristicProperties.toString()` (a capability label), not a write-mode selection. So the app does **not** adapt to what the box advertises: it drives the common `bleCharProperties=12` box and the write-only `bleCharProperties=8` box identically, with-response. That is why it lights **both** generations on iOS. See the two-generation split and the iOS silent-drop consequence in `AURORA_BLUETOOTH_PROTOCOL_SPEC.md` §9 (Write Properties).
 
-> **Boardsesh implementation note (#3230):** Boardsesh follows this app's MTU-negotiated chunking, but clamps the without-response chunk to **[20, 244]** (ATT 247) — iOS-26.5 field telemetry showed write failures clustering at the full ATT 512. Android requests ATT 247 explicitly (`requestMTU(247)`); iOS clamps whatever CoreBluetooth auto-negotiated. For Aurora write type, Boardsesh keeps the live iOS decision behavior-driven: start with without-response, switch only after a stalled no-response write on a `.write`-only characteristic, then persist that learned path only after a with-response drain succeeds. See `effectiveChunkSizeForMtu` in `packages/shared/ble-protocol/src/transport.ts` and its Swift twin `BoardBleEncoding.effectiveChunkSize`.
+> **Boardsesh implementation note (#3230):** Boardsesh deliberately does **not** copy this app's uniform with-response transport, because without-response is much faster on the common healthy box and this app's 100 ms-per-20-byte pacing is slow for a large climb. Instead Boardsesh negotiates MTU and clamps the without-response chunk to **[20, 244]** (ATT 247) — iOS-26.5 field telemetry showed write failures clustering at the full ATT 512. Android requests ATT 247 explicitly (`requestMTU(247)`); iOS clamps whatever CoreBluetooth auto-negotiated. For Aurora write type, Boardsesh keeps the live iOS decision behavior-driven: start with without-response, switch to with-response only after a stalled no-response write on a `.write`-only characteristic, then persist that learned path only after a with-response drain succeeds.
+>
+> As a proactive shortcut, Boardsesh **also** starts on with-response from the first connect when the box advertises a **bare Aurora name with no `#serial@apiLevel` suffix** (`isKilterBuiltBox` in `packages/shared/ble-protocol/src/aurora.ts`, mirrored in `BoardBleEncoding.isKilterBuiltBox`). A bare name is the signature of the write-only Kilter-built box, so it lights on the first attempt instead of eating a stall first. This is a **name** signal, not the GATT property bit: a healthy box that carries a serial never matches, so it keeps the faster without-response path and cannot re-introduce the stale-property regression (#3228). See `effectiveChunkSizeForMtu` in `packages/shared/ble-protocol/src/transport.ts` and its Swift twin `BoardBleEncoding.effectiveChunkSize`; the with-response chunk collapses to 20 bytes automatically.
 
 ### 6.6 Power budget (API v2 only)
 
@@ -292,16 +291,16 @@ Unlike a single static "light the holds" push, this app has a per-frame animatio
 
 ## 9. Differences from the Aurora-app spec — summary
 
-| Aspect                                      | Aurora app (v3.6.4 spec)                                       | This app (Kilter Grips v2.5.2)                              |
-| ------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
-| Stack                                       | Native Android (Kotlin/Java)                                   | Flutter / Dart + `flutter_blue_plus`                        |
-| Scan filter                                 | Product **name** substring (`"Kilter"`)                        | Advertised **service UUID** `4488B571…`                     |
-| Board selection                             | First match                                                    | **RSSI-ranked**, nearest-first                              |
-| MTU                                         | Implicit 20-byte writes                                        | **Explicit `requestMtu`** negotiation                       |
-| TX `6E400003` notify                        | Documented (no-op handler)                                     | **Not referenced at all** — write-only                      |
-| Connection tolerance/auto-disconnect timers | App-managed timers (8 s connect, configurable auto-disconnect) | `flutter_blue_plus` timeouts; auto-disconnect not evidenced |
-| Wire format (framing, checksum, v2/v3)      | —                                                              | **Same** 🔁                                                 |
-| Extra UUIDs                                 | —                                                              | Three present, role unconfirmed ❓                          |
+| Aspect                                      | Aurora app (v3.6.4 spec)                                       | This app (Kilter Grips v2.5.2)                            |
+| ------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
+| Stack                                       | Native Android (Kotlin/Java)                                   | Flutter / Dart + `flutter_blue_plus`                      |
+| Scan filter                                 | Product **name** substring (`"Kilter"`)                        | Advertised **service UUID** `4488B571…`                   |
+| Board selection                             | First match                                                    | **RSSI-ranked**, nearest-first                            |
+| MTU                                         | Implicit 20-byte writes                                        | **Also 20-byte** — no `requestMtu`; 100 ms between chunks |
+| TX `6E400003` notify                        | Documented (no-op handler)                                     | **Not referenced at all** — write-only                    |
+| Connection tolerance/auto-disconnect timers | App-managed timers (8 s connect, configurable auto-disconnect) | 5 s connect timeout; `flutter_blue_plus` timeouts         |
+| Wire format (framing, checksum, v2/v3)      | —                                                              | **Same** ✅                                               |
+| Extra UUIDs                                 | —                                                              | Three present, role unconfirmed ❓                        |
 
 **Bottom line for interop:** Boardsesh's existing `ble-protocol` implementation is correct against this app too. Nothing here requires a change to the wire format. The only genuinely new, unexplained artifacts are the three UUIDs in §2.1.
 
@@ -309,14 +308,11 @@ Unlike a single static "light the holds" push, this app has a per-frame animatio
 
 ## 10. Methodology & limitations
 
-**How this was produced.** The XAPK was pulled from APKPure (`apkeep`), the base + `armeabi-v7a` split unpacked, and `libapp.so` (the Dart AOT snapshot) analysed with `strings` + `rabin2` (radare2). The snapshot is **not obfuscated** — full Dart class/method names and string literals are intact — which is what makes §1–§3, §5, §7–§8 directly verifiable.
+**How this was produced.** First pass: the XAPK was pulled from APKPure (`apkeep`), the base + `armeabi-v7a` split unpacked, and `libapp.so` (the Dart AOT snapshot) analysed with `strings` + `rabin2` (radare2). The snapshot is **not obfuscated** — full Dart class/method names and string literals are intact — which is what makes §1–§3, §5, §7–§8 directly verifiable. Second pass (the one that upgraded §6 to ✅): the **arm64-v8a** `libapp.so` was pulled from a device (`adb pull split_config.arm64_v8a.apk`) and decompiled with `blutter` (Dart 3.10.4) to recover the BLE method bodies.
 
-**Why the byte-level encoding is tagged 🔁, not ✅.** The APKPure distribution for this app bundles **only 32-bit `armeabi-v7a`** native libraries; there is no `arm64-v8a` split, and the standalone APK contains no native code. The standard Dart-AOT decompiler, [`blutter`](https://github.com/worawit/blutter), is **ARM64-only** (`Disassembler_arm64.cpp`, `#ifdef TARGET_ARCH_ARM64`), so it cannot recover **method bodies** from the 32-bit snapshot. Static string/symbol analysis confirms _that_ the app does framing, checksums, colour encoding and v2/v3 selection (`_checkSum`, `_colorFromHex`, `_displayClimb`, the `@2`/`@3` name suffix), but the exact bit layout is taken from the corroborating sources (the Aurora spec + the shipped `aurora.ts`), which the shared UUIDs prove this app must match.
+**Byte-level encoding is now ✅ — confirmed from the arm64 method bodies.** The APKPure/apkcombo distributions bundle **only 32-bit `armeabi-v7a`** libraries (their crawlers report a 32-bit ABI to Play, so Play only ever hands them that split), and [`blutter`](https://github.com/worawit/blutter) is **ARM64-only** (`Disassembler_arm64.cpp`, `#ifdef TARGET_ARCH_ARM64`), so the 32-bit snapshot yields symbols/strings but not method bodies. The **arm64-v8a `libapp.so` was obtained by installing the app from Google Play on an arm64 device and `adb pull`-ing `split_config.arm64_v8a.apk`**, then decompiled with `blutter` (Dart 3.10.4). That recovered the BLE method bodies, which directly confirm §6: `BluetoothService.convertMessage` / `addBoilerPlate` build the `[SOH(1), len, checksum, STX(2), cmd, …, ETX(3)]` frame (integers appear Smi-tagged in the asm, i.e. ×2), with command byte `0x50` (`'P'`, v2 Single) / `0x54` (`'T'`, v3 Single); `encodePositionV2` (2-byte) / `encodePositionV3` (16-bit LE) + `encodeColorV3`; and the `"v3"` vs `"v2"` selection keyed on the advertised name containing `"@3"` (default `"v2"`). It also settled the write-type question (§6.5): uniformly write-with-response, 20-byte chunks, 100 ms apart.
 
-**To upgrade 🔁 → ✅ and resolve the §2.1 UUIDs:**
-
-1. Obtain the **arm64-v8a** `libapp.so` (Google Play split, or an arm64 APK mirror) and run `blutter` to dump the BLE provider's method bodies.
-2. Or capture a **live BLE session** (Android HCI snoop log / nRF Connect) and diff the on-wire bytes against §6, and watch for any GATT activity on the three §2.1 UUIDs.
+**Still open:** the three §2.1 UUIDs (`d9b1fad4…` / `191b6169…` / `73a2a497…`). The arm64 decompile shows **no LED writes** to them — they appear only as object-pool string constants, consistent with non-LED use (dynamic-link / analytics identifiers). A **live BLE session** (Android HCI snoop log / nRF Connect) would confirm there is no GATT activity on them.
 
 ---
 

@@ -199,6 +199,26 @@ enum BoardBleEncoding {
         return serial.isEmpty ? nil : String(serial)
     }
 
+    // Mirror of the TS `AURORA_BOARDS` in ble-protocol/aurora.ts. Keep in sync.
+    static let auroraBoardNames = ["kilter", "tension", "decoy", "touchstone", "grasshopper", "soill"]
+
+    /// Mirror of the TS `parseBoardTypeFromDeviceName`: lowercase, strip whitespace
+    /// and hyphens, then prefix-match against the Aurora board list.
+    static func parseBoardTypeFromDeviceName(deviceName: String?) -> String? {
+        guard let deviceName else { return nil }
+        let normalized = deviceName.lowercased().filter { !$0.isWhitespace && $0 != "-" }
+        return auroraBoardNames.first { normalized.hasPrefix($0) }
+    }
+
+    /// Mirror of the TS `isKilterBuiltBox`: an Aurora-family board advertising a
+    /// bare name with NO `#serial` suffix — a mid-2025+ "Kilter-built" box whose
+    /// RX characteristic is write-with-response only. See the TS helper for the
+    /// #3228-safety rationale (this is a name signal, not the GATT property bit).
+    static func isKilterBuiltBox(deviceName: String?) -> Bool {
+        parseBoardTypeFromDeviceName(deviceName: deviceName) != nil
+            && parseSerialNumber(deviceName: deviceName) == nil
+    }
+
     static func checksum(_ payload: [UInt8]) -> UInt8 {
         let sum = payload.reduce(0) { partial, byte in
             (partial + Int(byte)) & 255

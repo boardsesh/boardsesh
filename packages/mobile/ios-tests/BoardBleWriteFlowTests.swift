@@ -702,6 +702,57 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertFalse(hooks.sync { hooks.hasPendingWriteResume })
     }
 
+    // 5i — A bare-name Aurora box (no `#serial@apiLevel` suffix) is a mid-2025+
+    // Kilter-built, write-with-response-only box. Start it on write-with-response
+    // from the FIRST connect (no stall first), driven by the advertised name. A
+    // healthy serial'd box never matches, so this can't regress the fleet (#3228).
+    func testBareNameAuroraBoxStartsWriteWithResponseFromFirstConnect() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(
+            name: "Kilter Board",
+            canSendDefault: false,
+            maxWriteValueLength: 20
+        )
+        let characteristic = makeCharacteristic(properties: .write)
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        XCTAssertTrue(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertEqual(hooks.sync { hooks.forceWriteWithResponseSource }, .bareNameHint)
+
+        let writtenBefore = peripheral.writtenChunks.count
+        hooks.sync {
+            manager.write(data: Data((0 ..< 10).map { UInt8($0) })) { _, _ in }
+        }
+
+        // First write goes out with-response immediately — no without-response stall.
+        XCTAssertEqual(peripheral.writtenChunks.count, writtenBefore + 1)
+        XCTAssertEqual(peripheral.writtenChunks.last?.type, .withResponse)
+    }
+
+    // 5j — A healthy box that carries a serial in its name keeps the faster
+    // without-response path: the bare-name hint must NOT fire for it.
+    func testSerialNamedBoxDoesNotGetBareNameHint() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(
+            name: "Kilter Board#751737@3",
+            canSendDefault: true,
+            maxWriteValueLength: 20
+        )
+        let characteristic = makeCharacteristic(properties: .writeWithoutResponse)
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        XCTAssertFalse(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertNil(hooks.sync { hooks.forceWriteWithResponseSource })
+    }
+
     // 5h
     func testExpiredPersistedWriteWithResponseIdentityIsIgnored() {
         let hooks = manager.testHooks

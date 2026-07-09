@@ -7,6 +7,7 @@ import {
   parseApiLevel,
   parseSerialNumber,
   parseBoardTypeFromDeviceName,
+  isKilterBuiltBox,
   getAuroraBluetoothPacket,
 } from '../aurora';
 import { MESSAGE_BODY_MAX_LENGTH } from '../transport';
@@ -178,6 +179,29 @@ describe('parseBoardTypeFromDeviceName', () => {
 
   it('parses grasshopper from device name', () => {
     expect(parseBoardTypeFromDeviceName('Grasshopper Board#202@3')).toBe('grasshopper');
+  });
+});
+
+describe('isKilterBuiltBox', () => {
+  it('is true for a bare Aurora-family name with no serial/apiLevel suffix', () => {
+    expect(isKilterBuiltBox('Kilter Board')).toBe(true);
+    expect(isKilterBuiltBox('Tension Board')).toBe(true);
+  });
+
+  it('is false for a normal Aurora name that carries a serial', () => {
+    expect(isKilterBuiltBox('Kilter Board#751737@3')).toBe(false);
+    // Serial present, apiLevel absent — still an Aurora-built box, not bare.
+    expect(isKilterBuiltBox('Kilter Board#751737')).toBe(false);
+  });
+
+  it('is false for a non-Aurora / MoonBoard name', () => {
+    expect(isKilterBuiltBox('MoonBoard A')).toBe(false);
+    expect(isKilterBuiltBox('Unknown Board')).toBe(false);
+  });
+
+  it('is false for empty/undefined names', () => {
+    expect(isKilterBuiltBox(undefined)).toBe(false);
+    expect(isKilterBuiltBox('')).toBe(false);
   });
 });
 
