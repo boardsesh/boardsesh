@@ -199,6 +199,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private let redBearLabServiceUuid = CBUUID(string: "713D0000-503E-4C75-BA94-3148F18D941E")
     private let redBearLabWriteCharacteristicUuid = CBUUID(string: "713D0003-503E-4C75-BA94-3148F18D941E")
     private let chunkDelay: TimeInterval = 0.005
+    // Bare-name Kilter-built boxes are driven like their own app: each
+    // with-response chunk is paced 100 ms apart ON TOP of the `didWriteValueFor`
+    // ack (the app awaits the ack AND then waits 100 ms). Aurora boxes that reach
+    // with-response via the stall fallback stay ack-only (no fixed delay).
+    private let kilterBoxChunkDelay: TimeInterval = 0.100
     private let connectTimeout: TimeInterval = 8
     // How long a write parked on `canSendWriteWithoutResponse` may wait for
     // peripheralIsReady before the queue is failed. Generous: a healthy link
@@ -302,6 +307,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // for Aurora safe after the #3228 property-driven attempt regressed the fleet.
     private var forceWriteWithResponse = false
     private var forceWriteWithResponseSource: BoardBleWriteTypeSource?
+    // True when the connected box advertises a bare Aurora name with no
+    // `#serial@apiLevel` suffix — a Kilter-built box. Re-derived on every connect.
+    // Gates the 100 ms inter-chunk pacing on the with-response path (Kilter only).
+    private var connectedBoxIsKilterBuilt = false
     private var pendingWriteWithResponsePersistenceIdentity: String?
     // Boards (by peripheral identifier) proven this session to need
     // write-with-response. In-memory only: a re-learn on the next launch is cheap
@@ -1348,31 +1357,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // A fresh link re-earns normal backpressure: drop any stuck-false gate
         // bypass so a healthy connection isn't permanently ungated.
         bypassCanSendWriteWithoutResponse = false
-        let learnedIdentity = auroraWriteWithResponseIdentity(peripheral: peripheral, characteristic: characteristic)
-        let learnedEntry = learnedIdentity.flatMap { learnedWriteWithResponseEntry(for: $0) }
-        let learnedThisSession = writeWithResponsePeripheralIds.contains(peripheral.identifier)
-        // A bare-name Aurora box (no `#serial@apiLevel` suffix) is a mid-2025+
-        // Kilter-built, write-with-response-only box: start it on with-response
-        // proactively so the first light doesn't have to stall first. Name-driven,
-        // not property-driven — a healthy serial'd box never matches, so this
-        // can't re-introduce the #3228 stale-property regression.
-        let bareNameBox = BoardBleEncoding.isKilterBuiltBox(
-            deviceName: discoveredNames[peripheral.identifier.uuidString] ?? peripheral.name ?? configuration?.deviceName
-        )
-        // Re-seed the with-response latch from what we've learned. Persistent
-        // entries were written only after a behavior failure on a `.write`-only
-        // characteristic AND a successful with-response ack, so this still avoids
-        // trusting a stale property bit as the live trigger.
-        forceWriteWithResponse = learnedEntry != nil || learnedThisSession || bareNameBox
-        if learnedEntry != nil {
-            forceWriteWithResponseSource = .learnedPersistentFallback
-        } else if learnedThisSession {
-            forceWriteWithResponseSource = .watchdogFallback
-        } else if bareNameBox {
-            forceWriteWithResponseSource = .bareNameHint
-        } else {
-            forceWriteWithResponseSource = nil
-        }
+        // Re-seed the with-response latch from what this connection knows — a
+        // persisted learned entry, a this-session learning, or a bare-name Kilter
+        // box. Persistent entries were written only after a behavior failure on a
+        // `.write`-only characteristic AND a successful with-response ack, so this
+        // still avoids trusting a stale property bit as the live trigger. Shared
+        // with the `setConnection` test seam so the two paths can't drift.
+        reseedForceWriteWithResponse(peripheral: peripheral, characteristic: characteristic)
         // Remember the board so the Live Activity lightbulb can reconnect to it
         // by identifier later, no device pick required.
         persistLastConnectedPeripheral(peripheral)
@@ -1896,15 +1887,27 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // `.write`-only signature. CoreBluetooth would silently drop a
         // `.withoutResponse` write to such a characteristic — so pace on the
         // `didWriteValueFor` ack instead of `canSendWriteWithoutResponse` /
-        // `peripheralIsReady`. The ack is itself the backpressure signal, so the
-        // fixed `chunkDelay` isn't needed here.
+        // `peripheralIsReady`. The ack is itself the backpressure signal, so no
+        // fixed delay is needed for an Aurora box that fell back to with-response.
+        // A bare-name Kilter box is driven like its own app, though: pace 100 ms
+        // apart ON TOP of the ack (`connectedBoxIsKilterBuilt`).
         pendingWriteAck = { [weak self] in
-            self?.writeChunk(
-                requestIndex: requestIndex,
-                chunkIndex: chunkIndex + 1,
-                connectionGeneration: connectionGeneration,
-                writeGeneration: writeGeneration
-            )
+            guard let self else { return }
+            let advanceToNextChunk = {
+                self.writeChunk(
+                    requestIndex: requestIndex,
+                    chunkIndex: chunkIndex + 1,
+                    connectionGeneration: connectionGeneration,
+                    writeGeneration: writeGeneration
+                )
+            }
+            if self.connectedBoxIsKilterBuilt {
+                _ = self.timerScheduler.scheduleOneShot(after: self.kilterBoxChunkDelay, label: "kilterChunkDelay") {
+                    advanceToNextChunk()
+                }
+            } else {
+                advanceToNextChunk()
+            }
         }
         // Watchdog mirrors the without-response stall path: if the board never
         // acks within writeResumeTimeout, recover by cycling the link (#3181).
@@ -1977,6 +1980,33 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return nil
         }
         return entry
+    }
+
+    /// Seed `forceWriteWithResponse` / `forceWriteWithResponseSource` /
+    /// `connectedBoxIsKilterBuilt` from what this connection knows: a persisted
+    /// learned entry, a this-session learning, or a bare Aurora name (Kilter-built
+    /// box). Shared by the real connect path and the `setConnection` test seam so
+    /// the two can't drift. A bare-name box is a NAME signal, not the GATT property
+    /// bit — a healthy serial'd box never matches, so proactively forcing
+    /// with-response here can't re-introduce the #3228 stale-property regression.
+    private func reseedForceWriteWithResponse(peripheral: WritableBlePeripheral, characteristic: CBCharacteristic) {
+        let learnedIdentity = auroraWriteWithResponseIdentity(peripheral: peripheral, characteristic: characteristic)
+        let learnedEntry = learnedIdentity.flatMap { learnedWriteWithResponseEntry(for: $0) }
+        let learnedThisSession = writeWithResponsePeripheralIds.contains(peripheral.identifier)
+        let bareNameBox = BoardBleEncoding.isKilterBuiltBox(
+            deviceName: discoveredNames[peripheral.identifier.uuidString] ?? peripheral.name ?? configuration?.deviceName
+        )
+        connectedBoxIsKilterBuilt = bareNameBox
+        forceWriteWithResponse = learnedEntry != nil || learnedThisSession || bareNameBox
+        if learnedEntry != nil {
+            forceWriteWithResponseSource = .learnedPersistentFallback
+        } else if learnedThisSession {
+            forceWriteWithResponseSource = .watchdogFallback
+        } else if bareNameBox {
+            forceWriteWithResponseSource = .bareNameHint
+        } else {
+            forceWriteWithResponseSource = nil
+        }
     }
 
     private func auroraWriteWithResponseIdentity(
@@ -2197,23 +2227,11 @@ extension BoardBleManager {
             // with-response latch re-seeded from what the session has learned.
             manager.bypassCanSendWriteWithoutResponse = false
             if let peripheral, let characteristic {
-                let learnedIdentity = manager.auroraWriteWithResponseIdentity(
-                    peripheral: peripheral,
-                    characteristic: characteristic
-                )
-                let learnedEntry = learnedIdentity.flatMap { manager.learnedWriteWithResponseEntry(for: $0) }
-                let learnedThisSession = manager.writeWithResponsePeripheralIds.contains(peripheral.identifier)
-                manager.forceWriteWithResponse = learnedEntry != nil || learnedThisSession
-                if learnedEntry != nil {
-                    manager.forceWriteWithResponseSource = .learnedPersistentFallback
-                } else if learnedThisSession {
-                    manager.forceWriteWithResponseSource = .watchdogFallback
-                } else {
-                    manager.forceWriteWithResponseSource = nil
-                }
+                manager.reseedForceWriteWithResponse(peripheral: peripheral, characteristic: characteristic)
             } else {
                 manager.forceWriteWithResponse = false
                 manager.forceWriteWithResponseSource = nil
+                manager.connectedBoxIsKilterBuilt = false
             }
         }
 

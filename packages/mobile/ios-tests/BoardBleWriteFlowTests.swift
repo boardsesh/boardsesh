@@ -753,6 +753,68 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertNil(hooks.sync { hooks.forceWriteWithResponseSource })
     }
 
+    // 5k — A Kilter-built (bare-name) box paces each with-response chunk 100 ms
+    // apart ON TOP of the ack, matching its own app. The ack alone does not
+    // advance; the next chunk waits on a `kilterChunkDelay` one-shot.
+    func testBareNameKilterBoxPacesWithResponseChunksWith100msDelay() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(
+            name: "Kilter Board",
+            canSendDefault: false,
+            maxWriteValueLength: 20
+        )
+        let characteristic = makeCharacteristic(properties: .write)
+        let payload = Data((0 ..< 40).map { UInt8($0) }) // 2 chunks
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+            manager.write(data: payload) { _, _ in }
+        }
+
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        XCTAssertEqual(peripheral.writtenChunks[0].type, .withResponse)
+
+        // Ack alone does NOT advance — the next chunk waits on the 100 ms delay.
+        hooks.fireWriteAck(error: nil)
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        XCTAssertNotNil(scheduler.lastOneShot(label: "kilterChunkDelay"))
+
+        // Firing the delay sends chunk 2.
+        fireLatestOneShot(label: "kilterChunkDelay")
+        XCTAssertEqual(peripheral.writtenChunks.count, 2)
+        XCTAssertTrue(peripheral.writtenChunks.allSatisfy { $0.type == .withResponse })
+    }
+
+    // 5l — A serial'd Aurora box that reached with-response via the learned
+    // fallback is NOT a bare-name Kilter box: it stays ack-only (the fast path),
+    // so the ack advances the next chunk immediately with no `kilterChunkDelay`.
+    func testAuroraWithResponseFallbackDoesNotAdd100msDelay() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(
+            name: "Kilter Board#751737@2",
+            canSendDefault: false,
+            maxWriteValueLength: 20
+        )
+        let characteristic = makeCharacteristic(properties: .write)
+        let payload = Data((0 ..< 40).map { UInt8($0) }) // 2 chunks
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setLearnedWriteWithResponseEntry(identity: "aurora:751737", learnedAt: Date().timeIntervalSince1970)
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+            manager.write(data: payload) { _, _ in }
+        }
+
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        XCTAssertEqual(hooks.sync { hooks.forceWriteWithResponseSource }, .learnedPersistentFallback)
+
+        // Ack advances immediately — no delay timer for a serial'd Aurora box.
+        hooks.fireWriteAck(error: nil)
+        XCTAssertEqual(peripheral.writtenChunks.count, 2)
+        XCTAssertTrue(peripheral.writtenChunks.allSatisfy { $0.type == .withResponse })
+    }
+
     // 5h
     func testExpiredPersistedWriteWithResponseIdentityIsIgnored() {
         let hooks = manager.testHooks
