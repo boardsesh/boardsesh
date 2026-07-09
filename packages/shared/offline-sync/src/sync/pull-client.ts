@@ -6,6 +6,7 @@ import {
   setCheckpoint,
   getCheckpointKey,
   markScopeDownloadComplete,
+  isScopeDownloadComplete,
   DELETIONS_CHECKPOINT_KEY,
 } from './checkpoints';
 import {
@@ -746,7 +747,9 @@ export async function pullSync(
     // pulled to the tail may serve searches — a first-page checkpoint would
     // otherwise serve a sliver of the catalog as if it were everything.
     if (allTablesReachedTail) {
+      const wasScopeComplete = await isScopeDownloadComplete(db, scopeKey);
       await markScopeDownloadComplete(db, scopeKey);
+      if (wasScopeComplete) continue;
       const startedAt = scopeStartedAt.get(scopeKey);
       // Should be unreachable because scopeStartedAt is seeded from the same
       // parsed boardScopes list this loop iterates. If that invariant breaks,

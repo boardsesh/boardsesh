@@ -96,7 +96,7 @@ vi.mock('../../lib/error-reporting', () => ({
 }));
 
 import { mobileSnapshotSource } from '../snapshot-source';
-import type { SnapshotManifestEntry } from '@boardsesh/offline-sync';
+import { SnapshotPermanentMissError, type SnapshotManifestEntry } from '@boardsesh/offline-sync';
 
 const ENTRY: SnapshotManifestEntry = {
   boardType: 'kilter',
@@ -118,6 +118,16 @@ const PLAIN_SQLITE_BYTES = new Uint8Array([0x53, 0x51, 0x4c, 0x69]); // "SQLi" â
 
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
+}
+
+function brokenJsonResponse(status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => {
+      throw new Error('bad json');
+    },
+  } as unknown as Response;
 }
 
 beforeEach(() => {
@@ -145,10 +155,30 @@ describe('fetchManifest', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns null on a non-200 response (treated as "not published yet")', async () => {
+  it('returns null on a 404 response (treated as "not published yet")', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse({}, 404)),
+    );
+
+    await expect(mobileSnapshotSource.fetchManifest()).resolves.toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('throws on non-404 HTTP failures so the engine retries the manifest path', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({}, 500)),
+    );
+
+    await expect(mobileSnapshotSource.fetchManifest()).rejects.toThrow('HTTP 500');
+    vi.unstubAllGlobals();
+  });
+
+  it('returns null for unparseable JSON so the engine falls back to paged sync', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => brokenJsonResponse()),
     );
 
     await expect(mobileSnapshotSource.fetchManifest()).resolves.toBeNull();
@@ -216,12 +246,11 @@ describe('downloadArtifact', () => {
     expect(reportHandledError).not.toHaveBeenCalled();
   });
 
-  it('deletes the file, returns null, and reports a handled error when the body is STILL gzip-compressed', async () => {
+  it('deletes the file, reports, and permanently misses when the body is STILL gzip-compressed', async () => {
     state.downloadBytes = GZIP_BYTES;
 
-    const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(SnapshotPermanentMissError);
 
-    expect(result).toBeNull();
     expect(state.deletedUris).toHaveLength(1);
     expect(reportHandledError).toHaveBeenCalledWith(
       expect.objectContaining({ message: expect.stringContaining('still gzip-compressed') }),

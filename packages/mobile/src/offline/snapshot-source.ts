@@ -17,7 +17,7 @@
 // caps it at two tries before giving up on the snapshot path for that scope).
 
 import { Directory, File, Paths } from 'expo-file-system';
-import type { SnapshotManifestEntry, SnapshotSource } from '@boardsesh/offline-sync';
+import { SnapshotPermanentMissError, type SnapshotManifestEntry, type SnapshotSource } from '@boardsesh/offline-sync';
 import { SNAPSHOT_BASE_URL } from '../lib/env';
 import { reportHandledError } from '../lib/error-reporting';
 
@@ -89,15 +89,19 @@ function safeDeleteFile(file: File): void {
 }
 
 /**
- * Fetch the manifest JSON. Returns `null` on a non-200 response (the engine
- * treats that as "not published yet this cycle" — a permanent miss that burns
- * no bootstrap attempt). Network/transport errors are left to throw, which the
- * engine DOES count as an attempt (see `resolveManifestOnce` in pull-client.ts).
+ * Fetch the manifest JSON. Returns `null` only when the manifest is genuinely
+ * absent or unparseable (permanent miss this cycle, no attempt). HTTP outages
+ * throw so the engine treats them as retryable manifest errors.
  */
 async function fetchManifest(): Promise<unknown> {
   const response = await fetch(MANIFEST_URL, { cache: 'no-store' });
-  if (!response.ok) return null;
-  return response.json();
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`snapshot manifest fetch failed with HTTP ${response.status}`);
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePath: string } | null> {
@@ -149,7 +153,7 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
           extra: { boardType: entry.boardType, layoutId: entry.layoutId, url: entry.url },
         },
       );
-      return null;
+      throw new SnapshotPermanentMissError('snapshot artifact arrived still gzip-compressed');
     }
   }
 

@@ -1031,6 +1031,26 @@ describe('pullSync onScopeDownloadComplete', () => {
     expect(info.method).toBe('paged');
   });
 
+  it('reports scope-download completion only once for an already complete scope', async () => {
+    const firstRun = makeGraphqlFetch();
+    const onScopeDownloadComplete = vi.fn();
+
+    await pullSync(db, noopQueryClient(), firstRun.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+    expect(onScopeDownloadComplete).toHaveBeenCalledTimes(1);
+
+    onScopeDownloadComplete.mockClear();
+    const secondRun = makeGraphqlFetch();
+    await pullSync(db, noopQueryClient(), secondRun.fetch, {
+      enabledBoards: ['kilter:1:5'],
+      onScopeDownloadComplete,
+    });
+
+    expect(onScopeDownloadComplete).not.toHaveBeenCalled();
+  });
+
   it('reports method "paged" when a snapshotSource is configured but the scope is not bootstrap-eligible (mid-crawl)', async () => {
     // Pre-existing checkpoint makes the scope ineligible for bootstrap, so its
     // completion this cycle is a resumed paged crawl even though a snapshotSource
