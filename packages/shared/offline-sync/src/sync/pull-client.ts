@@ -16,6 +16,7 @@ import {
   MAX_BOOTSTRAP_ATTEMPTS,
   SnapshotWipedError,
   SnapshotSchemaStaleError,
+  SnapshotPermanentMissError,
   type SnapshotSource,
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
@@ -471,7 +472,7 @@ async function runBootstrapPhase(
   const skipPagedPull = new Set<string>();
   const manifestCache: { value?: ManifestResolution } = {};
   // Absent = not yet attempted; `file: null` = download failed (with its cause).
-  const downloadByLayout = new Map<string, { file: { filePath: string } | null; cause: unknown }>();
+  const downloadByLayout = new Map<string, { file: { filePath: string } | null; cause: unknown; permanentMiss: boolean }>();
   const downloadedPaths = new Set<string>();
   const startEpoch = getWipeEpoch();
 
@@ -513,17 +514,27 @@ async function runBootstrapPhase(
       // reports the real error, not null.
       let cachedDownload = downloadByLayout.get(layoutKey);
       if (!cachedDownload) {
-        cachedDownload = { file: null, cause: null };
+        cachedDownload = { file: null, cause: null, permanentMiss: false };
         try {
           cachedDownload.file = (await source.downloadArtifact(entry)) ?? null;
         } catch (error) {
           cachedDownload.cause = error;
+          cachedDownload.permanentMiss = error instanceof SnapshotPermanentMissError;
         }
         downloadByLayout.set(layoutKey, cachedDownload);
         if (cachedDownload.file) downloadedPaths.add(cachedDownload.file.filePath);
       }
       const download = cachedDownload.file;
       if (!download) {
+        if (cachedDownload.permanentMiss) {
+          onSnapshotBootstrapError?.({
+            scopeKey: scope.scopeKey,
+            stage: 'download',
+            attempt: 0,
+            cause: cachedDownload.cause,
+          });
+          continue;
+        }
         const attempt = await recordBootstrapAttempt(db, scope.scopeKey);
         onSnapshotBootstrapError?.({
           scopeKey: scope.scopeKey,

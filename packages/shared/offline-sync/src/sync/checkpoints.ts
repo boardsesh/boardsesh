@@ -51,7 +51,7 @@ function toSeqBigInt(rawSeq: string): bigint {
 }
 
 /**
- * Lower the deletions checkpoint to `watermark` when it currently sits AHEAD of
+ * Lower the deletions checkpoint to `watermark.updatedAt` when it currently sits AHEAD of
  * it, leaving it untouched otherwise. A scope warmed from a snapshot re-introduces
  * board rows as of the snapshot's (older) watermark; if the global deletions
  * cursor had already advanced past that point in an earlier cycle, any board-row
@@ -60,12 +60,17 @@ function toSeqBigInt(rawSeq: string): bigint {
  * stale, already-deleted climb would linger. Rewinding makes the next deletions
  * pull re-scan that window against the imported rows. A missing (fresh) deletions
  * checkpoint is already at the epoch, behind any watermark, so it is left alone.
+ *
+ * Deletions page on `(deleted_at, sync_deletions.id)`, not board-table
+ * `sync_seq`, so the rewind target uses sequence `0` to include every tombstone
+ * at the exact snapshot timestamp.
  */
 export async function rewindDeletionsCheckpoint(db: SqlExecutor, watermark: SyncCheckpoint): Promise<void> {
   const current = await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY);
+  const deletionCursorWatermark = { updatedAt: watermark.updatedAt, syncSeq: '0' };
   if (!current) return;
-  if (compareCheckpoints(current, watermark) > 0) {
-    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, watermark);
+  if (compareCheckpoints(current, deletionCursorWatermark) > 0) {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, deletionCursorWatermark);
   }
 }
 

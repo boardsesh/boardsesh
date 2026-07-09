@@ -20,7 +20,7 @@
 
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import type { OfflineBoardScope } from '../offline-board-key';
-import type { SnapshotManifestEntry } from './snapshot-manifest';
+import type { SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
 import {
   compareCheckpoints,
@@ -44,6 +44,7 @@ export const MAX_BOOTSTRAP_ATTEMPTS = 2;
 
 const BOOTSTRAP_ATTEMPTS_PREFIX = 'bootstrap-attempts:';
 const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
+const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
 // Only snake_case identifiers may be spliced into the INSERT/SELECT column list.
 // The names come from PRAGMA table_info over our own DDL (trusted), but validating
@@ -108,6 +109,18 @@ export class SnapshotWipedError extends Error {
   constructor() {
     super('snapshot bootstrap aborted: local data wipe in progress');
     this.name = 'SnapshotWipedError';
+  }
+}
+
+/**
+ * Thrown by a SnapshotSource when an artifact is known unusable for this client
+ * but the normal paged crawl should run in the same cycle. Example: a mobile
+ * downloader persisted a raw gzip stream and the shared engine has no gunzipper.
+ */
+export class SnapshotPermanentMissError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SnapshotPermanentMissError';
   }
 }
 
@@ -208,15 +221,136 @@ async function sharedColumns(
  * (queries.ts:173-175). Unqualified column names resolve against the single FROM
  * table (the artifact's board_climbs). Params returned alongside.
  */
-function climbsScopeFilter(scope: OfflineBoardScope): { sql: string; params: (string | number)[] } {
+function climbsScopeFilter(scope: OfflineBoardScope, qualifier = ''): { sql: string; params: (string | number)[] } {
   const params: (string | number)[] = [scope.boardType, scope.layoutId];
-  let sql = 'board_type = ? AND layout_id = ?';
+  let sql = `${qualifier}board_type = ? AND ${qualifier}layout_id = ?`;
   if (isSizeScopedBoard(scope.boardType)) {
     sql +=
-      ' AND compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(compatible_size_ids) WHERE value = ?)';
+      ` AND ${qualifier}compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(${qualifier}compatible_size_ids) WHERE value = ?)`;
     params.push(scope.sizeId);
   }
   return { sql, params };
+}
+
+function checkpointLeqSql(columnPrefix: string): string {
+  return `(${columnPrefix}updated_at < ? OR (${columnPrefix}updated_at = ? AND ${columnPrefix}sync_seq <= ?))`;
+}
+
+function checkpointLeqParams(checkpoint: SyncCheckpoint): (string | number)[] {
+  return [checkpoint.updatedAt, checkpoint.updatedAt, checkpoint.syncSeq];
+}
+
+async function tableWatermark(
+  db: SqlExecutor,
+  tableName: SnapshotTableName,
+  whereClause: string,
+  params: (string | number)[],
+): Promise<SyncCheckpoint> {
+  const row = await db.getFirstAsync<{ updated_at: string; sync_seq: number | string }>(
+    `SELECT updated_at, sync_seq
+     FROM ${SNAPSHOT_ALIAS}.${tableName}
+     WHERE ${whereClause}
+     ORDER BY updated_at DESC, sync_seq DESC
+     LIMIT 1`,
+    params,
+  );
+  if (!row) return EPOCH_WATERMARK;
+  return { updatedAt: String(row.updated_at), syncSeq: String(row.sync_seq) };
+}
+
+async function scopedWatermarks(
+  db: SqlExecutor,
+  scope: OfflineBoardScope,
+): Promise<Record<SnapshotTableName, SyncCheckpoint>> {
+  const climbScope = climbsScopeFilter(scope);
+  const climbWatermark = await tableWatermark(db, 'board_climbs', climbScope.sql, climbScope.params);
+
+  const sizeScoped = isSizeScopedBoard(scope.boardType);
+  const innerSize = sizeScoped
+    ? ' AND bc.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(bc.compatible_size_ids) WHERE value = ?)'
+    : '';
+  const statsParams: (string | number)[] = [scope.boardType, scope.boardType, scope.layoutId];
+  if (sizeScoped) statsParams.push(scope.sizeId);
+  const statsWatermark = await tableWatermark(
+    db,
+    'board_climb_stats',
+    `board_type = ?
+       AND EXISTS (
+         SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climbs bc
+         WHERE bc.uuid = board_climb_stats.climb_uuid AND bc.board_type = ? AND bc.layout_id = ?${innerSize}
+       )`,
+    statsParams,
+  );
+
+  return { board_climbs: climbWatermark, board_climb_stats: statsWatermark };
+}
+
+async function reconcileScope(
+  txn: SqlExecutor,
+  scope: OfflineBoardScope,
+  watermarks: Record<SnapshotTableName, SyncCheckpoint>,
+): Promise<void> {
+  const mainClimbScope = climbsScopeFilter(scope, 'main_climb.');
+  const snapshotClimbScope = climbsScopeFilter(scope, 'snapshot_climb.');
+
+  const sizeScoped = isSizeScopedBoard(scope.boardType);
+  const localStatsSize = sizeScoped
+    ? ' AND main_climb.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(main_climb.compatible_size_ids) WHERE value = ?)'
+    : '';
+  const snapshotStatsSize = sizeScoped
+    ? ' AND snapshot_climb.compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(snapshot_climb.compatible_size_ids) WHERE value = ?)'
+    : '';
+
+  const statsParams: (string | number)[] = [
+    scope.boardType,
+    ...checkpointLeqParams(watermarks.board_climb_stats),
+    scope.boardType,
+    scope.layoutId,
+  ];
+  if (sizeScoped) statsParams.push(scope.sizeId);
+  statsParams.push(scope.boardType, scope.layoutId);
+  if (sizeScoped) statsParams.push(scope.sizeId);
+
+  await txn.runAsync(
+    `DELETE FROM main.board_climb_stats AS main_stats
+     WHERE main_stats.board_type = ?
+       AND ${checkpointLeqSql('main_stats.')}
+       AND EXISTS (
+         SELECT 1 FROM main.board_climbs main_climb
+         WHERE main_climb.uuid = main_stats.climb_uuid
+           AND main_climb.board_type = ?
+           AND main_climb.layout_id = ?${localStatsSize}
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climb_stats snapshot_stats
+         WHERE snapshot_stats.board_type = main_stats.board_type
+           AND snapshot_stats.climb_uuid = main_stats.climb_uuid
+           AND snapshot_stats.angle = main_stats.angle
+           AND EXISTS (
+             SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climbs snapshot_climb
+             WHERE snapshot_climb.uuid = snapshot_stats.climb_uuid
+               AND snapshot_climb.board_type = ?
+               AND snapshot_climb.layout_id = ?${snapshotStatsSize}
+           )
+       )`,
+    statsParams,
+  );
+
+  await txn.runAsync(
+    `DELETE FROM main.board_climbs AS main_climb
+     WHERE ${mainClimbScope.sql}
+       AND ${checkpointLeqSql('main_climb.')}
+       AND NOT EXISTS (
+         SELECT 1 FROM ${SNAPSHOT_ALIAS}.board_climbs snapshot_climb
+         WHERE snapshot_climb.uuid = main_climb.uuid
+           AND ${snapshotClimbScope.sql}
+       )`,
+    [
+      ...mainClimbScope.params,
+      ...checkpointLeqParams(watermarks.board_climbs),
+      ...snapshotClimbScope.params,
+    ],
+  );
 }
 
 /**
@@ -302,8 +436,7 @@ export class SnapshotSchemaStaleError extends Error {
  * table count (a truncated/partial download is caught here before any row is
  * imported). Returns the per-table watermarks.
  */
-async function verifySnapshotMeta(db: SqlExecutor): Promise<Record<(typeof SNAPSHOT_TABLES)[number], SyncCheckpoint>> {
-  const watermarks: Partial<Record<string, SyncCheckpoint>> = {};
+async function verifySnapshotMeta(db: SqlExecutor): Promise<void> {
   for (const tableName of SNAPSHOT_TABLES) {
     const meta = await db.getFirstAsync<SnapshotMetaRow>(
       `SELECT table_name, watermark_updated_at, watermark_sync_seq, row_count, schema_version, format_version
@@ -328,9 +461,7 @@ async function verifySnapshotMeta(db: SqlExecutor): Promise<Record<(typeof SNAPS
         `snapshot bootstrap: ${tableName} row_count ${meta.row_count} != actual ${actualCount} (truncated artifact?)`,
       );
     }
-    watermarks[tableName] = { updatedAt: meta.watermark_updated_at, syncSeq: meta.watermark_sync_seq };
   }
-  return watermarks as Record<(typeof SNAPSHOT_TABLES)[number], SyncCheckpoint>;
 }
 
 // --- Bootstrap ----------------------------------------------------------------
@@ -375,13 +506,15 @@ export async function bootstrapScopeFromSnapshot(params: {
       throw new Error(`snapshot bootstrap: quick_check failed: ${integrity.map((row) => row.quick_check).join('; ')}`);
     }
 
-    const watermarks = await verifySnapshotMeta(db);
+    await verifySnapshotMeta(db);
+    const watermarks = await scopedWatermarks(db, scope);
 
     if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
 
     await db.withExclusiveTransactionAsync(async (txn) => {
       if (isSigningOut() || getWipeEpoch() !== startEpoch) throw new SnapshotWipedError();
 
+      await reconcileScope(txn, scope, watermarks);
       await importScope(txn, scope, onSchemaDrift);
 
       // Re-check after the (awaited) imports: abort before committing any rows or

@@ -14,7 +14,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { QueryInvalidator } from '../../database';
 import { pullSync } from '../pull-client';
-import { bootstrapScopeFromSnapshot, SnapshotSchemaStaleError, type SnapshotSource } from '../snapshot-bootstrap';
+import {
+  bootstrapScopeFromSnapshot,
+  getBootstrapAttempts,
+  SnapshotPermanentMissError,
+  SnapshotSchemaStaleError,
+  type SnapshotSource,
+} from '../snapshot-bootstrap';
 import { getCheckpoint, setCheckpoint, DELETIONS_CHECKPOINT_KEY } from '../checkpoints';
 import { runMigrations, LATEST_SCHEMA_VERSION } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
@@ -95,8 +101,8 @@ function buildArtifact(spec: ArtifactSpec): void {
         climb.layoutId ?? 1,
         climb.name ?? `name-${climb.uuid}`,
         climb.compatibleSizeIds === null ? null : JSON.stringify(climb.compatibleSizeIds),
-        climb.updatedAt ?? '2026-05-01T00:00:00Z',
-        climb.syncSeq ?? 1,
+        climb.updatedAt ?? spec.climbsWatermark.updatedAt,
+        climb.syncSeq ?? Number(spec.climbsWatermark.syncSeq),
       );
     }
     for (const stat of spec.stats) {
@@ -109,8 +115,8 @@ function buildArtifact(spec: ArtifactSpec): void {
         stat.climbUuid,
         stat.angle ?? 40,
         stat.displayDifficulty ?? 20.0,
-        stat.updatedAt ?? '2026-05-01T00:00:00Z',
-        stat.syncSeq ?? 1,
+        stat.updatedAt ?? spec.statsWatermark.updatedAt,
+        stat.syncSeq ?? Number(spec.statsWatermark.syncSeq),
       );
     }
 
@@ -319,6 +325,81 @@ describe('bootstrapScopeFromSnapshot', () => {
     expect(result.climbsWatermark).toEqual(CLIMBS_WATERMARK);
     expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(CLIMBS_WATERMARK);
     expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(STATS_WATERMARK);
+  });
+
+  it('stamps checkpoints from the exact scoped rows, not the wider layout artifact meta', async () => {
+    const filePath = join(workDir, 'scoped-watermark.db');
+    const scopedClimbWatermark = { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '5' };
+    const scopedStatsWatermark = { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '6' };
+    buildArtifact({
+      filePath,
+      climbs: [
+        { uuid: 'size-5', compatibleSizeIds: [5], updatedAt: scopedClimbWatermark.updatedAt, syncSeq: 5 },
+        { uuid: 'size-7-later', compatibleSizeIds: [7], updatedAt: '2026-05-03T00:00:00Z', syncSeq: 30 },
+      ],
+      stats: [
+        { climbUuid: 'size-5', updatedAt: scopedStatsWatermark.updatedAt, syncSeq: 6 },
+        { climbUuid: 'size-7-later', updatedAt: '2026-05-03T00:00:00Z', syncSeq: 31 },
+      ],
+      climbsWatermark: { updatedAt: '2026-05-03T00:00:00Z', syncSeq: '30' },
+      statsWatermark: { updatedAt: '2026-05-03T00:00:00Z', syncSeq: '31' },
+    });
+
+    const result = await bootstrapScopeFromSnapshot({
+      db,
+      scope: SCOPE_KILTER_5,
+      scopeKey: 'kilter:1:5',
+      filePath,
+    });
+
+    expect(result.climbsWatermark).toEqual(scopedClimbWatermark);
+    expect(result.statsWatermark).toEqual(scopedStatsWatermark);
+    expect(await getCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).toEqual(scopedClimbWatermark);
+    expect(await getCheckpoint(db, 'checkpoint:board_climb_stats:kilter:1:5')).toEqual(scopedStatsWatermark);
+  });
+
+  it('removes stale scoped rows absent from the artifact before importing replacements', async () => {
+    await db.runAsync(
+      `INSERT INTO board_climbs
+        (uuid, board_type, layout_id, name, is_draft, is_listed, compatible_size_ids, updated_at, sync_seq)
+       VALUES (?, 'kilter', 1, ?, 0, 1, ?, ?, ?)`,
+      ['deleted-before-snapshot', 'deleted-before-snapshot', JSON.stringify([5]), '2026-04-01T00:00:00Z', 1],
+    );
+    await db.runAsync(
+      `INSERT INTO board_climb_stats
+        (board_type, climb_uuid, angle, display_difficulty, updated_at, sync_seq)
+       VALUES ('kilter', ?, 40, 15, ?, ?)`,
+      ['deleted-before-snapshot', '2026-04-01T00:00:00Z', 1],
+    );
+    await db.runAsync(
+      `INSERT INTO board_climbs
+        (uuid, board_type, layout_id, name, is_draft, is_listed, compatible_size_ids, updated_at, sync_seq)
+       VALUES (?, 'kilter', 1, ?, 0, 1, ?, ?, ?)`,
+      ['newer-local', 'newer-local', JSON.stringify([5]), '2026-06-01T00:00:00Z', 100],
+    );
+
+    const filePath = join(workDir, 'reconcile.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'artifact-row', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'artifact-row', angle: 40 }],
+      climbsWatermark: CLIMBS_WATERMARK,
+      statsWatermark: STATS_WATERMARK,
+    });
+
+    await bootstrapScopeFromSnapshot({
+      db,
+      scope: SCOPE_KILTER_5,
+      scopeKey: 'kilter:1:5',
+      filePath,
+    });
+
+    const climbs = await db.getAllAsync<{ uuid: string }>('SELECT uuid FROM board_climbs ORDER BY uuid');
+    expect(climbs.map((row) => row.uuid)).toEqual(['artifact-row', 'newer-local']);
+    const stats = await db.getAllAsync<{ climb_uuid: string }>(
+      'SELECT climb_uuid FROM board_climb_stats ORDER BY climb_uuid',
+    );
+    expect(stats.map((row) => row.climb_uuid)).toEqual(['artifact-row']);
   });
 
   it('imports ALL climbs for a non-size-scoped board (moonboard), ignoring compatible_size_ids', async () => {
@@ -827,6 +908,25 @@ describe('pullSync snapshot bootstrap', () => {
     ).toBeNull();
   });
 
+  it('falls straight to the paged crawl when the source marks a download as a permanent miss', async () => {
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => null });
+    source.downloadArtifact.mockImplementation(async () => {
+      throw new SnapshotPermanentMissError('unsupported content encoding');
+    });
+    const onSnapshotBootstrapError = vi.fn();
+    const { fetch, capturedClimbCursors } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, {
+      enabledBoards: ['kilter:1:5'],
+      snapshotSource: source,
+      onSnapshotBootstrapError,
+    });
+
+    expect(capturedClimbCursors[0]).toBeUndefined();
+    expect(await getBootstrapAttempts(db, 'kilter:1:5')).toBe(0);
+    expect(onSnapshotBootstrapError).toHaveBeenCalledWith(expect.objectContaining({ stage: 'download', attempt: 0 }));
+  });
+
   it('counts an attempt AND skips the paged pull when the manifest fetch fails (network)', async () => {
     const source = makeSnapshotSource({ manifestThrows: true });
     const onSnapshotBootstrapError = vi.fn();
@@ -904,18 +1004,40 @@ describe('deletions checkpoint rewind on bootstrap', () => {
 
     await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
 
-    // Rewound to the OLDER (climbs) watermark so no board deletion in the imported
-    // window is skipped.
+    // Rewound to the OLDER (climbs) timestamp, with deletion-domain seq 0 so
+    // tombstones at exactly that timestamp are replayed too.
     expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
       updatedAt: '2026-05-01T00:00:00Z',
-      syncSeq: '10',
+      syncSeq: '0',
     });
   });
 
-  it('leaves the deletions checkpoint untouched when it is already behind the watermark (BigInt seq compare)', async () => {
-    // Same timestamp, seq '9' — behind the watermark's seq '10' (a raw string
-    // compare would wrongly rank '9' > '10' and rewind).
+  it('rewinds same-timestamp deletion cursors to seq 0 because deletion ids are independent of board sync_seq', async () => {
     await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '9' });
+
+    const filePath = join(workDir, 'same-timestamp.db');
+    buildArtifact({
+      filePath,
+      climbs: [{ uuid: 'c1', compatibleSizeIds: [5] }],
+      stats: [{ climbUuid: 'c1', angle: 40 }],
+      climbsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+      statsWatermark: { updatedAt: '2026-05-01T00:00:00Z', syncSeq: '10' },
+    });
+    const source = makeSnapshotSource({ manifest: makeManifest([makeEntry()]), fileForEntry: () => filePath });
+    const { fetch } = makeGraphqlFetch();
+
+    await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
+
+    // Board sync_seq 10 is not a deletion id. Rewinding to deletion seq 0 makes
+    // `(deleted_at, id) > (watermark, 0)` replay every tombstone at the timestamp.
+    expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
+      updatedAt: '2026-05-01T00:00:00Z',
+      syncSeq: '0',
+    });
+  });
+
+  it('leaves the deletions checkpoint untouched when it is already behind the watermark timestamp', async () => {
+    await setCheckpoint(db, DELETIONS_CHECKPOINT_KEY, { updatedAt: '2026-04-30T23:59:59Z', syncSeq: '5000' });
 
     const filePath = join(workDir, 'behind.db');
     buildArtifact({
@@ -930,10 +1052,9 @@ describe('deletions checkpoint rewind on bootstrap', () => {
 
     await pullSync(db, noopQueryClient(), fetch, { enabledBoards: ['kilter:1:5'], snapshotSource: source });
 
-    // Untouched — the deletions cursor was already behind, so nothing to rewind.
     expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual({
-      updatedAt: '2026-05-01T00:00:00Z',
-      syncSeq: '9',
+      updatedAt: '2026-04-30T23:59:59Z',
+      syncSeq: '5000',
     });
   });
 });

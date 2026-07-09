@@ -55,6 +55,7 @@ export {
   MAX_BOOTSTRAP_ATTEMPTS,
   SnapshotWipedError,
   SnapshotSchemaStaleError,
+  SnapshotPermanentMissError,
 } from './sync/snapshot-bootstrap';
 export type {
   SnapshotSource,
