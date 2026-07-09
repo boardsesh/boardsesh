@@ -129,6 +129,11 @@ CREATE TABLE snapshot_meta (
 
 One row per data table (`board_climbs`, `board_climb_stats`).
 
+These rows are artifact-level metadata for the whole `(boardType, layoutId)` artifact. A client importing
+one narrower size scope uses them to validate the file, then computes its checkpoint watermarks from the
+exact scoped rows it imports. This avoids stamping a size-scoped cursor past rows that were present in the
+layout artifact but intentionally outside the enabled size.
+
 - **`format_version`** — the shape of the manifest/artifact contract itself (currently `1`,
   `SNAPSHOT_MANIFEST_FORMAT_VERSION` in `snapshot-manifest.ts`). Bump this only on a breaking shape change
   (new required manifest field, changed meaning of an existing one) — see the runbook procedure below. It
@@ -157,18 +162,19 @@ across every size of the same `(boardType, layoutId)` within a cycle.
 Failure/attempt matrix, copied from the `runBootstrapPhase` doc comment (the source of truth — keep this in
 sync if the code comment changes):
 
-| Condition                                                         | Attempt burned? | Result this cycle                                                                   |
-| ----------------------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------- |
-| checkpoint exists on either board table                           | —               | not eligible → normal paged pull                                                    |
-| attempts ≥ `MAX_BOOTSTRAP_ATTEMPTS`                               | —               | gave up → normal paged pull                                                         |
-| manifest `absent` (missing/unparseable)                           | **no**          | permanent miss → normal paged pull                                                  |
-| manifest `error` (network/transport failure)                      | **yes**         | skip paged pull this cycle (retry next cycle)                                       |
-| manifest `ok` but no entry for `(boardType, layoutId)`            | **no**          | permanent miss (not exported yet) → normal paged pull                               |
-| download fails or returns `null`                                  | **yes**         | skip paged pull this cycle                                                          |
-| import throws — corrupt/short artifact, row-count/format mismatch | **yes**         | skip paged pull this cycle                                                          |
-| import throws `SnapshotSchemaStaleError`                          | **no**          | permanent miss this run → normal paged pull                                         |
-| a sign-out wipe is detected mid-phase                             | **no**          | whole phase bails, mirrors `syncTable`'s wipe guard                                 |
-| success                                                           | —               | marked done; deletions rewound; paged pull runs as a small delta from the watermark |
+| Condition                                                         | Attempt burned? | Result this cycle                                                                       |
+| ----------------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------------- |
+| checkpoint exists on either board table                           | —               | not eligible → normal paged pull                                                        |
+| attempts ≥ `MAX_BOOTSTRAP_ATTEMPTS`                               | —               | gave up → normal paged pull                                                             |
+| manifest `absent` (404/missing or invalid JSON/shape)             | **no**          | permanent miss → normal paged pull                                                      |
+| manifest `error` (HTTP non-2xx except 404, network/transport)     | **yes**         | skip paged pull this cycle (retry next cycle)                                           |
+| manifest `ok` but no entry for `(boardType, layoutId)`            | **no**          | permanent miss (not exported yet) → normal paged pull                                   |
+| download fails or returns `null`                                  | **yes**         | skip paged pull this cycle                                                              |
+| download throws `SnapshotPermanentMissError`                      | **no**          | permanent miss → normal paged pull                                                      |
+| import throws — corrupt/short artifact, row-count/format mismatch | **yes**         | skip paged pull this cycle                                                              |
+| import throws `SnapshotSchemaStaleError`                          | **no**          | permanent miss this run → normal paged pull                                             |
+| a sign-out wipe is detected mid-phase                             | **no**          | whole phase bails, mirrors `syncTable`'s wipe guard                                     |
+| success                                                           | —               | marked done; deletions rewound; paged pull runs as a small delta from scoped watermarks |
 
 "Skip paged pull this cycle" matters because a scope whose bootstrap failed but still has attempts left
 must **not** run its ordinary paged pull this cycle either — a first-page checkpoint from that pull would
@@ -178,19 +184,24 @@ all), so the next cycle retries the snapshot path instead of falling through to 
 **Import mechanics** (`bootstrapScopeFromSnapshot`): `ATTACH`es the downloaded file as `bs_snapshot`, runs
 `PRAGMA quick_check` (rejects a truncated/corrupt file before touching any row), verifies `snapshot_meta`
 (format version, schema version, and that `row_count` matches the artifact's actual row count — catches a
-truncated download the integrity check alone might miss), then in **one exclusive transaction**:
+truncated download the integrity check alone might miss), computes watermarks from the exact scoped rows
+inside the artifact, then in **one exclusive transaction**:
 
+- Deletes stale local `board_climbs`/`board_climb_stats` rows for this scope whose cursors are at or
+  before the scoped watermarks but absent from the artifact. This keeps a later bootstrap from overlaying a
+  newer artifact on top of rows that vanished from the exported scope.
 - Imports `board_climbs` filtered by the scope — `board_type = ? AND layout_id = ?`, plus (for
   size-scoped boards; MoonBoard is the one exception, `isSizeScopedBoard`) a `json_each` membership check
   against `compatible_size_ids`, mirroring the resolver's `boardClimbsScope` exactly.
 - Imports `board_climb_stats` via a correlated `EXISTS` against the just-scoped `board_climbs`, mirroring
   the resolver's semi-join.
-- Stamps both table checkpoints at the artifact's watermarks.
-- **Rewinds the deletions checkpoint** to the older of the two table watermarks, in the _same_ transaction
-  as the import. Once a scope has board checkpoints it's never bootstrap-eligible again, so a crash between
-  the import commit and a separate rewind step would permanently strand any board-row deletions that fell
-  in `(watermark, deletions-head]` — they'd never replay against the freshly-imported rows. Doing it in the
-  same transaction closes that gap.
+- Stamps both table checkpoints at the scoped imported-row watermarks.
+- **Rewinds the deletions checkpoint** to the older scoped table watermark timestamp with deletion cursor
+  `syncSeq = '0'`, in the _same_ transaction as the import. Deletion cursors page over deletion-row ids, not
+  board table `sync_seq` values. Once a scope has board checkpoints it's never bootstrap-eligible again, so
+  a crash between the import commit and a separate rewind step would permanently strand any board-row
+  deletions that fell in `(watermark, deletions-head]` — they'd never replay against the freshly-imported
+  rows. Doing it in the same transaction closes that gap.
 
 **Wipe-epoch guard**: a sign-out wipe can start (or fully complete) across any of the `await`s above. The
 bootstrap captures the monotonic wipe epoch before its first `await` and re-checks it (and the
@@ -228,8 +239,9 @@ pre-import empty result set.
   native HTTP stack (`NSURLSession` / OkHttp via `expo-file-system`'s `File.downloadFileAsync`)
   transparently decompresses the object while downloading. `looksGzipCompressed` reads just the first two
   bytes of the downloaded file and checks for the gzip magic number (`0x1f 0x8b`). If they're still present
-  — the stack did **not** auto-decode — the file is deleted, the download is treated as failed (returns
-  `null`, counts as a bootstrap attempt), and a handled error is reported to Sentry with
+  — the stack did **not** auto-decode — the file is deleted, the download throws
+  `SnapshotPermanentMissError` (no attempt burned, same-cycle paged fallback), and a handled error is
+  reported to Sentry with
   `tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' }`. This client does not attempt to gunzip
   the file itself; keep the export job identity-encoded until gzip has been verified on both mobile
   platforms.
@@ -283,12 +295,14 @@ so the two stay in lockstep).
 - **Fastest, no deploy**: flip the `offline-snapshot-bootstrap` PostHog flag off. Every client falls back
   to the paged crawl for newly-enabled boards; nothing already bootstrapped is affected (it's already past
   the eligibility check).
-- **Nuclear, affects every client regardless of flag state**: delete the `board-snapshots/v1/manifest.json`
-  object from the bucket. Every client's `fetchManifest` returns a 404 → `absent` → permanent miss, no
-  attempt burned, straight to the paged crawl. The nightly export writes a fresh manifest the following
-  night (or on the next manual `workflow_dispatch`) — deleting the manifest does **not** delete the
-  artifacts underneath it, so the next run's merge just needs artifacts newer than the deleted manifest, or
-  a rebuild.
+- **Nuclear, affects every client regardless of flag state after cache expiry**: delete the
+  `board-snapshots/v1/manifest.json` object from the bucket. The manifest is cached for up to 5 minutes
+  (`Cache-Control: public, max-age=300`), so clients that already fetched it may keep bootstrapping until
+  that cache entry expires. After that, `fetchManifest` returns a 404 → `absent` → permanent miss, no
+  attempt burned, straight to the paged crawl. Restoring after a manifest delete must use an unfiltered
+  export/workflow run first: a filtered export merges against the now-empty manifest and publishes only the
+  filtered entries, temporarily hiding every untouched layout until an unfiltered run restores the full
+  index.
 
 ### Format-version bump procedure
 

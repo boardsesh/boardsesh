@@ -2,7 +2,7 @@
 
 Offline data layer for the React Native mobile app. Uses `expo-sqlite` for the local database with a custom GraphQL mutation queue for offline writes.
 
-> **Shipped design supersedes the "pre-warmed, ships with the app" plan below.** This document is the original architecture evaluation (four approaches compared, one recommended) plus a first-cut design for warming boards on-device. What actually shipped downloads reference data **per board scope, on demand**, warmed by a nightly-built, CDN-hosted SQLite snapshot per `(boardType, layoutId)` rather than a single all-boards database bundled into the app binary. See **[`board-snapshots.md`](board-snapshots.md)** for the shipped export job, artifact format, client bootstrap flow, and ops runbook. The rest of this document (alternatives evaluation, mutation queue, sync pull protocol, table manifest) still describes the shipped system accurately; only the "Pre-warmed SQLite database" section below and any "first sync" / "pre-warmed timestamp" references describe the superseded design.
+> **Shipped design supersedes the "pre-warmed, ships with the app" plan below.** This document is the original architecture evaluation (four approaches compared, one recommended) plus a first-cut design for warming boards on-device. What actually shipped downloads reference data **per board scope, on demand**, warmed by a nightly-built, CDN-hosted SQLite snapshot per `(boardType, layoutId)` rather than a single all-boards database bundled into the app binary. See **[`board-snapshots.md`](board-snapshots.md)** for the shipped export job, artifact format, client bootstrap flow, and ops runbook. The alternatives evaluation, mutation queue, sync pull protocol, and table manifest still describe the shipped system accurately; the "Pre-warmed SQLite database" section, app-size/QA notes, and any "first sync" / "pre-warmed timestamp" references describe the superseded all-boards-in-binary design.
 
 > **Where the code lives.** The engine (mutation queue + drainer, pull client, checkpoints, table config, SQLite DDL/migrations) is the platform-free package **`@boardsesh/offline-sync`** (`packages/shared/offline-sync`). The mobile app binds its platform seams — expo-sqlite handle, NetInfo/AppState triggers, `onlineManager` connectivity, Sentry telemetry — in `packages/mobile/src/offline/offline-sync-adapter.ts`; mobile code calls `drainMutationQueue`/`startSyncScheduler`/`triggerSync`/`pullSync` via that adapter only, never from the package directly. Expo-specific pieces (DB lifecycle/`connection.ts`, seed ATTACH, local read queries, the sync-status store, hooks, the bridge component) stay in `packages/mobile`.
 
@@ -47,7 +47,7 @@ The original plan from [mobile-app-plan.md](mobile-app-plan.md) Phase 5. After e
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Climb search        | Full SQL with JOINs, proper column indexes, < 100ms                                                                                                 |
 | Infrastructure cost | $0 — client-only, uses existing GraphQL API                                                                                                         |
-| Pre-warmed database | Just a SQLite file. No internal metadata, no LSN alignment, no RxDB format. Copy to disk and open.                                                  |
+| Snapshot bootstrap  | Plain SQLite artifacts. No internal metadata, no LSN alignment, no RxDB format. Download, ATTACH, import scoped rows.                               |
 | Backend changes     | Sync pull queries (10 resolvers) + `sync_deletions` table + idempotent mutations                                                                    |
 | Delete handling     | `sync_deletions` table + triggers. Existing queries untouched.                                                                                      |
 | Maintenance risk    | `expo-sqlite` is a first-party Expo module. Guaranteed New Architecture support.                                                                    |
@@ -57,11 +57,11 @@ The original plan from [mobile-app-plan.md](mobile-app-plan.md) Phase 5. After e
 
 ```
 React Native App
-  ├── Pre-warmed SQLite (ships with app, all boards, ~150-200MB)
+  ├── On-demand board snapshots (CDN SQLite artifacts, per enabled board scope)
   ├── expo-sqlite manages the database
   ├── TanStack Query for reactive data + cache (staleTime: Infinity for local queries)
   ├── Mutation queue for offline writes
-  └── Sync pull client for incremental updates
+  └── Sync pull client for snapshot bootstrap + incremental updates
         │
         │ GraphQL mutations (push) + sync queries (pull)
         ▼
