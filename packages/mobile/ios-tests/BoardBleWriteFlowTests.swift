@@ -673,6 +673,65 @@ final class BoardBleWriteFlowTests: XCTestCase {
     }
 
     // 5g
+    // Issue #3235 reversible fallback. A `.write`-only-reading box that ALSO never
+    // acks a with-response write (a marginal box, or a stale GATT cache that
+    // dropped `.writeWithoutResponse` from a box that really wants without-response)
+    // must not get link-cycled/disconnected. After the switch to with-response
+    // stalls too, revert THIS connection to the without-response gate bypass and
+    // re-fire the same chunk — identical to the pre-fix behaviour.
+    func testForcedWithResponseAlsoStallsRevertsToWithoutResponseBypass() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: false, maxWriteValueLength: 20)
+        let characteristic = makeCharacteristic(properties: .write)
+        let payload = Data((0 ..< 10).map { UInt8($0) })
+
+        var completionError: Error?
+        var completionTelemetry: BoardBleWriteTelemetry?
+        var completionCount = 0
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+            manager.write(data: payload) { error, telemetry in
+                completionError = error
+                completionTelemetry = telemetry
+                completionCount += 1
+            }
+        }
+
+        // Without-response stalls -> switch to with-response (chunk out with-response).
+        fireLatestOneShot(label: "writeResumeWatchdog")
+        XCTAssertTrue(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        XCTAssertEqual(peripheral.writtenChunks[0].type, .withResponse)
+
+        // With-response ALSO never acks -> revert to without-response bypass and
+        // re-fire the SAME chunk without-response. No link cycle, board learned-set
+        // cleared, gate now bypassed.
+        fireLatestOneShot(label: "writeAckWatchdog")
+        XCTAssertFalse(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertTrue(hooks.sync { hooks.bypassCanSendWriteWithoutResponse })
+        XCTAssertTrue(hooks.sync { hooks.writeWithResponsePeripheralIds.isEmpty })
+        XCTAssertFalse(hooks.sync {
+            hooks.hasLearnedWriteWithResponseEntry(identity: "peripheral:\(peripheral.identifier.uuidString)")
+        })
+        XCTAssertEqual(peripheral.writtenChunks.count, 2)
+        XCTAssertEqual(peripheral.writtenChunks[1].type, .withoutResponse)
+        // Crucially NOT cycled/disconnected — that is the whole point vs today.
+        XCTAssertTrue(cancelledPeripheralIds.isEmpty)
+        XCTAssertEqual(hooks.sync { hooks.writeStallRecoveries }, 0)
+        XCTAssertEqual(completionCount, 0)
+
+        // The trailing chunkDelay completes the (now without-response) write.
+        fireLatestOneShot(label: "chunkDelay")
+        XCTAssertEqual(completionCount, 1)
+        XCTAssertNil(completionError)
+        XCTAssertEqual(completionTelemetry?.lastResumeSource, "withResponseRevert")
+        XCTAssertEqual(completionTelemetry?.writeType, "withoutResponse")
+        XCTAssertEqual(completionTelemetry?.writeTypeSource, BoardBleWriteTypeSource.defaultWithoutResponse.rawValue)
+    }
+
+    // 5h
     func testPersistedSerialIdentitySeedsWriteWithResponseOnReconnect() {
         let hooks = manager.testHooks
         let peripheral = FakeWritablePeripheral(
@@ -702,7 +761,28 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertFalse(hooks.sync { hooks.hasPendingWriteResume })
     }
 
-    // 5i — A bare-name Aurora box (no `#serial@apiLevel` suffix) is a mid-2025+
+    // 5i
+    func testExpiredPersistedWriteWithResponseIdentityIsIgnored() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(
+            name: "Kilter Board#751737@2",
+            canSendDefault: false,
+            maxWriteValueLength: 20
+        )
+        let characteristic = makeCharacteristic(properties: .write)
+        let expiredLearnedAt = Date().addingTimeInterval(-(91 * 24 * 60 * 60)).timeIntervalSince1970
+
+        hooks.sync {
+            hooks.setConfiguration(kilterConfiguration())
+            hooks.setLearnedWriteWithResponseEntry(identity: "aurora:751737", learnedAt: expiredLearnedAt)
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        XCTAssertFalse(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertFalse(hooks.sync { hooks.hasLearnedWriteWithResponseEntry(identity: "aurora:751737") })
+    }
+
+    // 5j — A bare-name Aurora box (no `#serial@apiLevel` suffix) is a mid-2025+
     // Kilter-built, write-with-response-only box. Start it on write-with-response
     // from the FIRST connect (no stall first), driven by the advertised name. A
     // healthy serial'd box never matches, so this can't regress the fleet (#3228).
@@ -733,7 +813,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertEqual(peripheral.writtenChunks.last?.type, .withResponse)
     }
 
-    // 5j — A healthy box that carries a serial in its name keeps the faster
+    // 5k — A healthy box that carries a serial in its name keeps the faster
     // without-response path: the bare-name hint must NOT fire for it.
     func testSerialNamedBoxDoesNotGetBareNameHint() {
         let hooks = manager.testHooks
@@ -753,7 +833,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertNil(hooks.sync { hooks.forceWriteWithResponseSource })
     }
 
-    // 5k — A Kilter-built (bare-name) box paces each with-response chunk 100 ms
+    // 5l — A Kilter-built (bare-name) box paces each with-response chunk 100 ms
     // apart ON TOP of the ack, matching its own app. The ack alone does not
     // advance; the next chunk waits on a `kilterChunkDelay` one-shot.
     func testBareNameKilterBoxPacesWithResponseChunksWith100msDelay() {
@@ -786,7 +866,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertTrue(peripheral.writtenChunks.allSatisfy { $0.type == .withResponse })
     }
 
-    // 5l — A serial'd Aurora box that reached with-response via the learned
+    // 5m — A serial'd Aurora box that reached with-response via the learned
     // fallback is NOT a bare-name Kilter box: it stays ack-only (the fast path),
     // so the ack advances the next chunk immediately with no `kilterChunkDelay`.
     func testAuroraWithResponseFallbackDoesNotAdd100msDelay() {
@@ -813,27 +893,6 @@ final class BoardBleWriteFlowTests: XCTestCase {
         hooks.fireWriteAck(error: nil)
         XCTAssertEqual(peripheral.writtenChunks.count, 2)
         XCTAssertTrue(peripheral.writtenChunks.allSatisfy { $0.type == .withResponse })
-    }
-
-    // 5h
-    func testExpiredPersistedWriteWithResponseIdentityIsIgnored() {
-        let hooks = manager.testHooks
-        let peripheral = FakeWritablePeripheral(
-            name: "Kilter Board#751737@2",
-            canSendDefault: false,
-            maxWriteValueLength: 20
-        )
-        let characteristic = makeCharacteristic(properties: .write)
-        let expiredLearnedAt = Date().addingTimeInterval(-(91 * 24 * 60 * 60)).timeIntervalSince1970
-
-        hooks.sync {
-            hooks.setConfiguration(kilterConfiguration())
-            hooks.setLearnedWriteWithResponseEntry(identity: "aurora:751737", learnedAt: expiredLearnedAt)
-            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
-        }
-
-        XCTAssertFalse(hooks.sync { hooks.forceWriteWithResponse })
-        XCTAssertFalse(hooks.sync { hooks.hasLearnedWriteWithResponseEntry(identity: "aurora:751737") })
     }
 
     // 6

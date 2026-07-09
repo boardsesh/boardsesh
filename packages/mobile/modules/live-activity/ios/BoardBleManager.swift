@@ -173,11 +173,17 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private struct WriteRequest {
         let chunks: [Data]
-        // Write type and chunk size are snapshotted at enqueue so one request is
-        // internally consistent: a configureBoard landing mid-request must not
-        // flip the write type (or pacing) between chunks of a single frame.
+        // Static preferred write type and chunk size are snapshotted at enqueue
+        // so a configureBoard landing mid-request cannot re-chunk a frame. The
+        // connection-level forceWriteWithResponse latch may still override the
+        // actual per-chunk send type, which is what makes the fallback reversible.
         let writeType: CBCharacteristicWriteType
         let writeTypeSource: BoardBleWriteTypeSource
+        // What the connection resolved to when the request was enqueued. This is
+        // used for telemetry and chunk sizing only; the live latch still decides
+        // each actual send in writeChunk.
+        let initialWriteType: CBCharacteristicWriteType
+        let initialWriteTypeSource: BoardBleWriteTypeSource
         let chunkSize: Int
         let negotiatedMaxWriteWithoutResponse: Int
         let origin: BoardBleWriteOrigin
@@ -813,10 +819,22 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
-        let writeResolution = resolvedWriteType(for: characteristic)
+        // Keep the request's reversible write type on the STATIC preferred path
+        // (Aurora → without-response, MoonBoard → property-driven). The live
+        // `forceWriteWithResponse` latch is applied per-chunk in `writeChunk`, so
+        // clearing the latch mid-write is honoured immediately instead of being
+        // frozen into `request.writeType`. Chunk sizing follows the initially
+        // resolved transport, so boxes that start forced with-response still get
+        // the proven classic 20-byte chunks.
+        let writeType = BoardBleEncoding.preferredWriteType(
+            for: characteristic.properties,
+            boardName: configuration?.boardName
+        )
+        let writeTypeSource: BoardBleWriteTypeSource = writeType == .withResponse ? .moonboardCharacteristic : .defaultWithoutResponse
+        let initialWriteResolution = resolvedWriteType(for: characteristic)
         let chunkSize = BoardBleEncoding.effectiveChunkSize(
-            negotiatedMaxWriteLength: peripheral.maximumWriteValueLength(for: writeResolution.writeType),
-            writeType: writeResolution.writeType,
+            negotiatedMaxWriteLength: peripheral.maximumWriteValueLength(for: initialWriteResolution.writeType),
+            writeType: initialWriteResolution.writeType,
             boardName: configuration?.boardName
         )
         let chunks = stride(from: 0, to: data.count, by: chunkSize).map { offset in
@@ -826,8 +844,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         writeQueue.append(
             WriteRequest(
                 chunks: chunks,
-                writeType: writeResolution.writeType,
-                writeTypeSource: writeResolution.source,
+                writeType: writeType,
+                writeTypeSource: writeTypeSource,
+                initialWriteType: initialWriteResolution.writeType,
+                initialWriteTypeSource: initialWriteResolution.source,
                 chunkSize: chunkSize,
                 negotiatedMaxWriteWithoutResponse: peripheral.maximumWriteValueLength(for: .withoutResponse),
                 origin: origin,
@@ -1555,13 +1575,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         drainWaiters.signalAll()
     }
 
-    /// The write type for THIS connection. Defaults to
+    /// The write type this connection will ACTUALLY use for a send — reported in
+    /// connection diagnostics so `bleChosenWriteType` is honest. Defaults to
     /// `BoardBleEncoding.preferredWriteType` (Aurora → without-response, MoonBoard
     /// → property-driven), but once `forceWriteWithResponse` is latched — because a
     /// without-response write demonstrably stalled on a `.write`-only characteristic
     /// (or a prior connection to this board already learned that) — Aurora also
     /// takes write-with-response. Guarded on `.write` so a characteristic that
     /// advertises neither write flavour can't be pushed onto a path it can't take.
+    /// The per-chunk send decision in `writeChunk` mirrors this expression directly
+    /// (it does not read this method) so a mid-write latch change is honoured.
     private func resolvedWriteType(for characteristic: CBCharacteristic) -> BoardBleWriteTypeResolution {
         if forceWriteWithResponse, characteristic.properties.contains(.write) {
             return BoardBleWriteTypeResolution(
@@ -1630,9 +1653,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // settle point finalizes it (#3230).
         currentWriteTelemetry = BoardBleWriteTelemetry(
             origin: request.origin.rawValue,
-            initialWriteType: request.writeType == .withoutResponse ? "withoutResponse" : "withResponse",
-            finalWriteType: request.writeType == .withoutResponse ? "withoutResponse" : "withResponse",
-            writeTypeSource: request.writeTypeSource.rawValue,
+            initialWriteType: request.initialWriteType == .withoutResponse ? "withoutResponse" : "withResponse",
+            finalWriteType: request.initialWriteType == .withoutResponse ? "withoutResponse" : "withResponse",
+            writeTypeSource: request.initialWriteTypeSource.rawValue,
             chunkSize: request.chunkSize,
             chunkCount: request.chunks.count,
             negotiatedMaxWriteWithoutResponse: request.negotiatedMaxWriteWithoutResponse,
@@ -1664,7 +1687,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         return telemetry
     }
 
-    private func switchQueuedWriteToWithResponseFallback(
+    private func rechunkQueuedWriteForForcedWithResponseFallback(
         requestIndex: Int,
         connectionGeneration: UInt64,
         writeGeneration: UInt64
@@ -1684,8 +1707,10 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
         writeQueue[requestIndex] = WriteRequest(
             chunks: fallbackChunks,
-            writeType: .withResponse,
-            writeTypeSource: .watchdogFallback,
+            writeType: request.writeType,
+            writeTypeSource: request.writeTypeSource,
+            initialWriteType: request.initialWriteType,
+            initialWriteTypeSource: request.initialWriteTypeSource,
             chunkSize: BoardBleEncoding.classicChunkSize,
             negotiatedMaxWriteWithoutResponse: request.negotiatedMaxWriteWithoutResponse,
             origin: request.origin,
@@ -1697,14 +1722,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         currentWriteTelemetry?.writeTypeSource = BoardBleWriteTypeSource.watchdogFallback.rawValue
         currentWriteTelemetry?.chunkSize = BoardBleEncoding.classicChunkSize
         currentWriteTelemetry?.chunkCount = fallbackChunks.count
-        pendingWriteResume = { [weak self] in
-            self?.writeChunk(
-                requestIndex: requestIndex,
-                chunkIndex: 0,
-                connectionGeneration: connectionGeneration,
-                writeGeneration: writeGeneration
-            )
-        }
         return true
     }
 
@@ -1764,6 +1781,19 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // the stall watchdog below switches mid-flight without re-queuing.
         let sendWithResponse = request.writeType == .withResponse
             || (forceWriteWithResponse && characteristic.properties.contains(.write))
+        if sendWithResponse {
+            let actualWriteTypeSource: BoardBleWriteTypeSource
+            if request.writeType == .withResponse {
+                actualWriteTypeSource = request.writeTypeSource
+            } else {
+                actualWriteTypeSource = forceWriteWithResponseSource ?? .watchdogFallback
+            }
+            currentWriteTelemetry?.finalWriteType = "withResponse"
+            currentWriteTelemetry?.writeTypeSource = actualWriteTypeSource.rawValue
+        } else {
+            currentWriteTelemetry?.finalWriteType = "withoutResponse"
+            currentWriteTelemetry?.writeTypeSource = request.writeTypeSource.rawValue
+        }
         if !sendWithResponse {
             // `bypassCanSendWriteWithoutResponse` short-circuits the gate on a
             // connection we've already proven reports the property stuck false
@@ -1834,7 +1864,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                             }
                             self.forceWriteWithResponse = true
                             self.forceWriteWithResponseSource = .watchdogFallback
-                            guard self.switchQueuedWriteToWithResponseFallback(
+                            guard self.rechunkQueuedWriteForForcedWithResponseFallback(
                                 requestIndex: requestIndex,
                                 connectionGeneration: connectionGeneration,
                                 writeGeneration: writeGeneration
@@ -1915,6 +1945,48 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         pendingWriteAckWatchdog = timerScheduler.scheduleOneShot(after: writeResumeTimeout, label: "writeAckWatchdog") { [weak self] in
             guard let self, self.pendingWriteAck != nil else { return }
             self.currentWriteTelemetry?.watchdogTripped = true
+            // Reversible-fallback guard for issue #3235. If this connection was
+            // FORCED onto write-with-response (a without-response write had stalled
+            // on a `.write`-only characteristic) and the with-response write ALSO
+            // never acks, the box can complete neither flavour. That is exactly the
+            // #3235 marginal-box / stale-GATT-cache case: a box that really wants
+            // without-response reads as `.write`-only (a stale cache dropped the
+            // `.writeWithoutResponse` bit) and can't deliver the per-write ATT ack.
+            // Cycling the link would just disconnect the user, and re-forcing
+            // with-response on reconnect would loop. Instead revert THIS connection
+            // to the without-response gate bypass (the pre-fix #3563 behaviour) and
+            // re-fire the SAME chunk: such a box is then no worse off than before
+            // the with-response fix (#3181 still owns any genuine drop), while a
+            // real `.write`-only box that DOES ack keeps working. Forget the learned
+            // decision so reconnects don't immediately force it again.
+            if self.forceWriteWithResponse {
+                if let peripheral = self.connectedPeripheral {
+                    self.writeWithResponsePeripheralIds.remove(peripheral.identifier)
+                    if let characteristic = self.writeCharacteristic,
+                       let identity = self.auroraWriteWithResponseIdentity(
+                           peripheral: peripheral,
+                           characteristic: characteristic
+                       ),
+                       self.learnedWriteWithResponseEntries.removeValue(forKey: identity) != nil {
+                        self.saveLearnedWriteWithResponseEntries()
+                    }
+                }
+                self.forceWriteWithResponse = false
+                self.forceWriteWithResponseSource = nil
+                self.bypassCanSendWriteWithoutResponse = true
+                self.pendingWriteWithResponsePersistenceIdentity = nil
+                self.currentWriteTelemetry?.lastResumeSource = "withResponseRevert"
+                self.pendingWriteAck = nil
+                self.pendingWriteAckWatchdog = nil
+                self.logger.error("BLE write stalled: forced write-with-response never acked; reverting this connection to the without-response gate bypass (#3235)")
+                self.writeChunk(
+                    requestIndex: requestIndex,
+                    chunkIndex: chunkIndex,
+                    connectionGeneration: connectionGeneration,
+                    writeGeneration: writeGeneration
+                )
+                return
+            }
             self.logger.error("BLE write stalled: peripheral never acked write-with-response; attempting recovery")
             self.handleWriteStall()
         }
