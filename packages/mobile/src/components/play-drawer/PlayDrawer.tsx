@@ -708,13 +708,9 @@ export function PlayDrawer({
     setIsTickBarActive(true);
   }, [trackTickOpened]);
 
-  // Long-press now opens the same QuickTickBar as a short press; LogAscentSheet
+  // Long-press opens the same QuickTickBar as a short press; LogAscentSheet
   // has been retired in favour of a single ticking surface (see PR #2366).
-  const handleTickFabLongPress = useCallback(() => {
-    resetZoomRef.current?.();
-    trackTickOpened();
-    setIsTickBarActive(true);
-  }, [trackTickOpened]);
+  const handleTickFabLongPress = handleTickFabPress;
 
   const handleTickBarDismiss = useCallback(() => {
     setIsTickBarActive(false);

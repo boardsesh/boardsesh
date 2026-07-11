@@ -549,13 +549,12 @@ describe('BluetoothProvider wall-confirm integration', () => {
     queue.currentClimbQueueItem = firstItem;
     const { rerender } = renderProvider();
 
+    // Wait on the report itself (like the pending-report test above) — the
+    // BoardClimbReported track call this used to wait on was removed in the
+    // PostHog noise cleanup (054be4d55).
     await waitFor(() => {
-      expect(analytics.track).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ climbUuid: 'climb-1' }),
-      );
+      expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
     });
-    expect(presence.reportClimbForBoard).toHaveBeenCalledTimes(1);
 
     queue.currentClimbQueueItem = { ...firstItem };
     rerender(

@@ -215,7 +215,11 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         // the inFlight guard is already up so a re-entrant pump from the parent
         // can't start a second transition for this group. Re-resolve the
         // registration inside the task: if the sheet unmounted meanwhile, the
-        // notification is correctly a no-op.
+        // notification is correctly a no-op. A parent that responds to
+        // onDisplaced/onClose by re-opening (setDesiredOpen true) queues a
+        // legitimate re-present after the displacer closes — that's the
+        // deliberate escape hatch for a sheet that truly must resume; nothing
+        // uses it today.
         if (displaced) {
           const displacedId = have;
           queueMicrotask(() => registrations.current.get(displacedId)?.onDisplaced?.());
