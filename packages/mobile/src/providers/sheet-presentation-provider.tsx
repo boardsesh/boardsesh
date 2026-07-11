@@ -209,11 +209,17 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           desired.current.set(have, { open: false, seq: haveDesired.seq });
         }
         startTransition(group, 'dismiss', have);
-        // Notify AFTER the dismiss is in flight: onDisplaced runs parent code
-        // that may synchronously re-enter the coordinator (setDesiredOpen /
-        // handle.dismiss), and the inFlight guard must already be up so a
-        // re-entrant pump can't start a second transition for this group.
-        if (displaced) registrations.current.get(have)?.onDisplaced?.();
+        // Notify via microtask, AFTER the dismiss is in flight. Deferring keeps
+        // the parent's setState (onDisplaced → onClose) out of whatever context
+        // pump() ran in (an event handler or another component's effect), and
+        // the inFlight guard is already up so a re-entrant pump from the parent
+        // can't start a second transition for this group. Re-resolve the
+        // registration inside the task: if the sheet unmounted meanwhile, the
+        // notification is correctly a no-op.
+        if (displaced) {
+          const displacedId = have;
+          queueMicrotask(() => registrations.current.get(displacedId)?.onDisplaced?.());
+        }
       } else {
         startTransition(group, 'present', want as string);
       }

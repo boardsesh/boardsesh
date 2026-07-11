@@ -690,27 +690,31 @@ export function PlayDrawer({
     setActiveSubDrawer('none');
   }, []);
 
-  const handleTickFabPress = useCallback(() => {
-    resetZoomRef.current?.();
+  // Track only when a climb is displayed: the sheet itself is gated on
+  // `displayedClimb`, and a null climbUuid would pollute the
+  // Dismissed + Saved <= Opened watchdog this event exists to power.
+  const trackTickOpened = useCallback(() => {
+    if (!displayedClimb) return;
     track(SHARED_EVENTS.QuickTickOpened, {
-      climbUuid: displayedClimb?.uuid ?? null,
+      climbUuid: displayedClimb.uuid,
       layoutId: layoutId ?? null,
       source: 'play_fab',
     });
+  }, [displayedClimb, layoutId]);
+
+  const handleTickFabPress = useCallback(() => {
+    resetZoomRef.current?.();
+    trackTickOpened();
     setIsTickBarActive(true);
-  }, [displayedClimb?.uuid, layoutId]);
+  }, [trackTickOpened]);
 
   // Long-press now opens the same QuickTickBar as a short press; LogAscentSheet
   // has been retired in favour of a single ticking surface (see PR #2366).
   const handleTickFabLongPress = useCallback(() => {
     resetZoomRef.current?.();
-    track(SHARED_EVENTS.QuickTickOpened, {
-      climbUuid: displayedClimb?.uuid ?? null,
-      layoutId: layoutId ?? null,
-      source: 'play_fab',
-    });
+    trackTickOpened();
     setIsTickBarActive(true);
-  }, [displayedClimb?.uuid, layoutId]);
+  }, [trackTickOpened]);
 
   const handleTickBarDismiss = useCallback(() => {
     setIsTickBarActive(false);

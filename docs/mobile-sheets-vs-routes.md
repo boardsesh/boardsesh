@@ -30,9 +30,10 @@ Examples: `QueueSheet`, `BoardSheet`, `LogAscentSheet`, `AngleSelectorSheet`,
 (declarative `Sheet`s).
 
 Prefer the controlled `visible` prop over an imperative ref + a local `isPresentedRef`: the
-coordinator reconciles present/dismiss from `visible`, and `onClose` fires only on a genuine user
-pan-down / backdrop (not on coordinator-driven closes), so parent state can't be cleared behind
-your back. `AddToPlaylistSheet` is the reference.
+coordinator reconciles present/dismiss from `visible`, and `onClose` fires only when the sheet is
+genuinely going away out from under the parent — a user pan-down / backdrop, or a displacement by
+another sheet in the group — never for a close the parent itself drove, so parent state can't be
+cleared behind your back. `AddToPlaylistSheet` is the reference.
 
 **Stacking above everything:** a **custom, non-sheet** overlay (Reanimated + plain views) can
 render in a higher iOS window via react-native-screens' `FullWindowOverlay` — that's how
@@ -75,7 +76,12 @@ custom chrome that renders the raw `BottomSheetModal`/`BottomSheet` directly mus
 drive present/dismiss with `useManagedSheet` (see `QueueSheet`, `BoardSheet`,
 `LogAscentSheet`). The coordinator serializes transitions per **presenter group**
 (default `'root'`) and auto-sequences a sheet-over-sheet open as
-dismiss(A) → settle → present(B). Two exceptions, both documented in-file:
+dismiss(A) → settle → present(B). **A displaced sheet is closed, not suspended**:
+the coordinator clears its desired-open flag and fires `onDisplaced`, which
+`useManagedSheet` delivers as the sheet's `onClose` (same contract as a user
+pan-down), so the parent clears the state that drove `open`. Never design a flow
+that expects a displaced sheet to come back by itself when the displacer closes —
+that implicit resume was the phantom-tick-sheet bug (PR #3595). Two exceptions, both documented in-file:
 `CreateDrawer` (a route-primary drawer that renders the raw `BottomSheet` without the
 coordinator — it opens once as the create-climb route's primary sheet, and its only sub-sheet,
 `HoldRoleSheet`, presents from its own sibling SwiftUI host, so the two never contend for the same

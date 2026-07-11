@@ -242,7 +242,7 @@ describe('SheetPresentationProvider coordinator', () => {
   // The phantom-sheet bug: a sheet displaced by a handoff used to keep its
   // desired-open flag, so it re-presented "at random" when the displacing sheet
   // closed (tick sheet reopening after the BLE device picker went away).
-  it('closes a displaced sheet: onDisplaced fires and it never re-presents after the displacer closes', () => {
+  it('closes a displaced sheet: onDisplaced fires and it never re-presents after the displacer closes', async () => {
     const a = { ...makeSheet(), onDisplaced: vi.fn() };
     const b = makeSheet();
     coordinator.register({ id: 'a', group: 'root', ...a });
@@ -253,6 +253,7 @@ describe('SheetPresentationProvider coordinator', () => {
 
     coordinator.setDesiredOpen('b', true); // displaces a
     expect(a.dismiss).toHaveBeenCalledTimes(1);
+    await Promise.resolve(); // onDisplaced is delivered via microtask
     expect(a.onDisplaced).toHaveBeenCalledTimes(1);
 
     vi.advanceTimersByTime(SETTLE_MS); // a's dismiss settles → b presents
@@ -268,7 +269,31 @@ describe('SheetPresentationProvider coordinator', () => {
     expect(coordinator.isBusy('root')).toBe(false);
   });
 
-  it('does not fire onDisplaced for a handoff whose first sheet already closed itself', () => {
+  it('displaces a sheet whose present is still in flight when the displacer wins the group', async () => {
+    const a = { ...makeSheet(), onDisplaced: vi.fn() };
+    const b = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.register({ id: 'b', group: 'root', ...b });
+
+    coordinator.setDesiredOpen('a', true);
+    coordinator.setDesiredOpen('b', true); // while a's present is in flight
+    await Promise.resolve();
+    expect(a.onDisplaced).not.toHaveBeenCalled(); // nothing until a's present settles
+
+    vi.advanceTimersByTime(SETTLE_MS); // a's present settles → pump displaces it
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(a.onDisplaced).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(SETTLE_MS); // a's dismiss settles → b presents
+    vi.advanceTimersByTime(SETTLE_MS); // b's present settles
+    coordinator.setDesiredOpen('b', false);
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(a.present).toHaveBeenCalledTimes(1); // no resurrection here either
+    expect(coordinator.isBusy('root')).toBe(false);
+  });
+
+  it('does not fire onDisplaced for a handoff whose first sheet already closed itself', async () => {
     const a = { ...makeSheet(), onDisplaced: vi.fn() };
     const b = makeSheet();
     coordinator.register({ id: 'a', group: 'root', ...a });
@@ -281,6 +306,7 @@ describe('SheetPresentationProvider coordinator', () => {
     // next one. The parent drove the close — no displacement notification.
     coordinator.setDesiredOpen('a', false);
     coordinator.setDesiredOpen('b', true);
+    await Promise.resolve();
     expect(a.onDisplaced).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(SETTLE_MS); // a's dismiss settles
@@ -357,7 +383,7 @@ describe('useManagedSheet bridge', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('a displacement fires onClose exactly once so the controlled parent clears its open state', () => {
+  it('a displacement fires onClose exactly once so the controlled parent clears its open state', async () => {
     const onCloseA = vi.fn();
     let managedA: ReturnType<typeof useManagedSheet> | null = null;
     let managedB: ReturnType<typeof useManagedSheet> | null = null;
@@ -391,6 +417,7 @@ describe('useManagedSheet bridge', () => {
     vi.advanceTimersByTime(SETTLE_MS); // A presented
 
     rerender(createElement(Harness, { openB: true })); // B displaces A
+    await act(async () => {}); // flush the onDisplaced microtask
     // The parent is told A is closed (this is what clears e.g. isTickBarActive)...
     expect(onCloseA).toHaveBeenCalledTimes(1);
     expect(sheetApiA.dismiss).toHaveBeenCalledTimes(1);
