@@ -79,6 +79,11 @@ export type LogAscentInput = {
   // without being preselected. Optional — callers that don't have a
   // freshly fetched climb can omit it.
   consensusGradeName?: string;
+  /** Runs once the sheet has FULLY dismissed (saved or abandoned) and wasn't
+   *  re-opened mid-animation. The queue-sheet history flow uses it to bring
+   *  the queue back — sheets can't stack and a displaced sheet stays closed,
+   *  so any return trip must be explicit. */
+  onDidDismiss?: () => void;
 };
 
 export function boardConfigsMatch(left: BoardConfig | null, right: BoardConfig | null): boolean {
@@ -308,6 +313,17 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     close: closeLogAscentSheet,
     clearIfClosed: clearLogAscentSheet,
   } = useDeferredSheetData<LogAscentInput>();
+  // Fully-dismissed handler reads the CURRENT data/visible through refs so the
+  // callback stays stable. Same re-open guard as clearIfClosed: if a new tick
+  // opened mid-dismiss-animation, neither resume the opener's surface nor clear.
+  const logAscentDataRef = useRef(logAscentData);
+  logAscentDataRef.current = logAscentData;
+  const logAscentVisibleRef = useRef(logAscentVisible);
+  logAscentVisibleRef.current = logAscentVisible;
+  const handleLogAscentFullyDismissed = useCallback(() => {
+    if (!logAscentVisibleRef.current) logAscentDataRef.current?.onDidDismiss?.();
+    clearLogAscentSheet();
+  }, [clearLogAscentSheet]);
   const {
     data: playlistData,
     visible: playlistVisible,
@@ -608,6 +624,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     storedBoardConfig: storedActiveBoardConfig,
     sessionId,
     requestCloseQueueSheet,
+    reopenQueueSheet: openQueueSheet,
   });
 
   // Switch-board control inside the board sheet: dismiss the sheet, then open
@@ -834,7 +851,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           <LogAscentSheet
             visible={logAscentVisible}
             onClose={closeLogAscentSheet}
-            onFullyDismissed={clearLogAscentSheet}
+            onFullyDismissed={handleLogAscentFullyDismissed}
             climbUuid={logAscentData.climbUuid}
             boardName={logAscentData.boardName}
             angle={logAscentData.angle}

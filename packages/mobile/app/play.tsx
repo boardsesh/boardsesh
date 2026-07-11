@@ -92,6 +92,7 @@ export default function PlayScreen() {
     storedBoardConfig,
     sessionId,
     requestCloseQueueSheet: requestCloseQueue,
+    reopenQueueSheet: presentQueue,
   });
 
   return (
