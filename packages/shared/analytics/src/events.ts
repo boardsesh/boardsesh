@@ -84,6 +84,11 @@ export const SHARED_EVENTS = {
   LogbookEntryEdited: 'Logbook Entry Edited',
   LogbookEntryDeleted: 'Logbook Entry Deleted',
   // Ticks / logbook
+  // Mobile-only: fired at every explicit tick-sheet open (play-drawer FAB,
+  // climb-actions menu, queue bar), with a `source` prop. Gives the invariant
+  // Dismissed + Saved <= Opened; a violation means the sheet presented without
+  // user intent (the phantom-reopen bug this event was added to watchdog).
+  QuickTickOpened: 'Quick Tick Opened',
   TickButtonClicked: 'Tick Button Clicked',
   QuickTickSaved: 'Quick Tick Saved',
   QuickTickFailed: 'Quick Tick Failed',

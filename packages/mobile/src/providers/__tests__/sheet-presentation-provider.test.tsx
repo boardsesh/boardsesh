@@ -238,6 +238,54 @@ describe('SheetPresentationProvider coordinator', () => {
     vi.advanceTimersByTime(SETTLE_MS);
     expect(b.present).toHaveBeenCalledTimes(1);
   });
+
+  // The phantom-sheet bug: a sheet displaced by a handoff used to keep its
+  // desired-open flag, so it re-presented "at random" when the displacing sheet
+  // closed (tick sheet reopening after the BLE device picker went away).
+  it('closes a displaced sheet: onDisplaced fires and it never re-presents after the displacer closes', () => {
+    const a = { ...makeSheet(), onDisplaced: vi.fn() };
+    const b = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.register({ id: 'b', group: 'root', ...b });
+
+    coordinator.setDesiredOpen('a', true);
+    vi.advanceTimersByTime(SETTLE_MS); // a presented
+
+    coordinator.setDesiredOpen('b', true); // displaces a
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+    expect(a.onDisplaced).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(SETTLE_MS); // a's dismiss settles → b presents
+    vi.advanceTimersByTime(SETTLE_MS); // b's present settles
+    expect(coordinator.isPresented('b')).toBe(true);
+
+    coordinator.setDesiredOpen('b', false); // displacer goes away
+    vi.advanceTimersByTime(SETTLE_MS);
+
+    // The displaced sheet was closed, not suspended: no resurrection.
+    expect(a.present).toHaveBeenCalledTimes(1);
+    expect(coordinator.isPresented('a')).toBe(false);
+    expect(coordinator.isBusy('root')).toBe(false);
+  });
+
+  it('does not fire onDisplaced for a handoff whose first sheet already closed itself', () => {
+    const a = { ...makeSheet(), onDisplaced: vi.fn() };
+    const b = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.register({ id: 'b', group: 'root', ...b });
+
+    coordinator.setDesiredOpen('a', true);
+    vi.advanceTimersByTime(SETTLE_MS); // a presented
+
+    // The climb-actions pattern: the action closes its own sheet and opens the
+    // next one. The parent drove the close — no displacement notification.
+    coordinator.setDesiredOpen('a', false);
+    coordinator.setDesiredOpen('b', true);
+    expect(a.onDisplaced).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(SETTLE_MS); // a's dismiss settles
+    expect(b.present).toHaveBeenCalledTimes(1);
+  });
 });
 
 // The bridge consumers actually use. The selfDismissRef gate here is what tells a
@@ -307,5 +355,62 @@ describe('useManagedSheet bridge', () => {
       managed?.onChange(-1); // the synchronous native callback that dismiss() triggers
     });
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('a displacement fires onClose exactly once so the controlled parent clears its open state', () => {
+    const onCloseA = vi.fn();
+    let managedA: ReturnType<typeof useManagedSheet> | null = null;
+    let managedB: ReturnType<typeof useManagedSheet> | null = null;
+    const sheetApiA = makeSheetApi();
+    const sheetApiB = makeSheetApi();
+
+    function SheetA({ open }: { open: boolean }) {
+      const sheetRef = useRef(sheetApiA as unknown as BottomSheetMethods);
+      managedA = useManagedSheet({
+        open,
+        sheetRef: sheetRef as RefObject<BottomSheetMethods | null>,
+        onClose: onCloseA,
+      });
+      return null;
+    }
+    function SheetB({ open }: { open: boolean }) {
+      const sheetRef = useRef(sheetApiB as unknown as BottomSheetMethods);
+      managedB = useManagedSheet({ open, sheetRef: sheetRef as RefObject<BottomSheetMethods | null> });
+      return null;
+    }
+    function Harness({ openB }: { openB: boolean }) {
+      return createElement(
+        SheetPresentationProvider,
+        null,
+        createElement(SheetA, { open: true }),
+        createElement(SheetB, { open: openB }),
+      );
+    }
+
+    const { rerender } = render(createElement(Harness, { openB: false }));
+    vi.advanceTimersByTime(SETTLE_MS); // A presented
+
+    rerender(createElement(Harness, { openB: true })); // B displaces A
+    // The parent is told A is closed (this is what clears e.g. isTickBarActive)...
+    expect(onCloseA).toHaveBeenCalledTimes(1);
+    expect(sheetApiA.dismiss).toHaveBeenCalledTimes(1);
+
+    // ...and the native close callback the dismiss triggers is still classified
+    // as coordinator-driven, so onClose does not fire a second time.
+    act(() => {
+      managedA?.onChange(-1);
+    });
+    expect(onCloseA).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(SETTLE_MS); // A dismiss settles
+    expect(sheetApiB.snapToIndex).toHaveBeenCalledWith(0); // B presents
+    vi.advanceTimersByTime(SETTLE_MS); // B present settles
+
+    // B closes → A must NOT come back.
+    act(() => {
+      managedB?.handle.dismiss();
+    });
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(sheetApiA.snapToIndex).toHaveBeenCalledTimes(1); // only the original present
   });
 });

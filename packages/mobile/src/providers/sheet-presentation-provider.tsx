@@ -18,7 +18,10 @@
  *      not merely "JS asked it to close."
  *   3. One active sheet per exclusive group: presenting B while A is open
  *      auto-sequences dismiss(A) → settle → present(B). This makes sheet-over-
- *      sheet handoffs safe and enforces docs hard-rule 1 at runtime.
+ *      sheet handoffs safe and enforces docs hard-rule 1 at runtime. A sheet
+ *      displaced this way is CLOSED, not suspended — its parent is notified
+ *      (onDisplaced → onClose) and its desired-open flag cleared, so it never
+ *      re-presents by itself when B later closes.
  *
  * "Settled" is detected two ways. On iOS the real post-animation signal arrives
  * via `notifyFullyDismissed`: our `@expo/ui` patch forwards SwiftUI's
@@ -61,6 +64,13 @@ type Registration = {
   present: () => void;
   dismiss: () => void;
   onFullyDismissed?: () => void;
+  /** The coordinator displaced this sheet to present another one in the same
+   * group. A displaced sheet is CLOSED, not suspended: the parent must clear
+   * whatever state drove `open`, exactly as it does for a user pan-down.
+   * Without this, the parent's stale open-state left the sheet flagged as
+   * desired-open, and it re-presented "at random" when the displacing sheet
+   * closed (the phantom tick-sheet bug). */
+  onDisplaced?: () => void;
 };
 
 type InFlight = {
@@ -187,7 +197,23 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       if (have !== null) {
         // Must clear the currently-presented sheet first (plain close OR the
         // dismiss half of a handoff). present(want) runs after this settles.
+        const haveDesired = desired.current.get(have);
+        const displaced = want !== null && haveDesired?.open === true;
+        if (displaced) {
+          // Displacement: `have` is still flagged open but a different sheet won
+          // the group. Treat the displaced sheet as closed — clear its desired
+          // flag so computeWant can never resurrect it once `want` goes away,
+          // and tell its parent so the state that drove `open` is cleared too.
+          // (A plain close, want === null, or a handoff whose first sheet already
+          // closed itself needs neither: the parent drove those.)
+          desired.current.set(have, { open: false, seq: haveDesired.seq });
+        }
         startTransition(group, 'dismiss', have);
+        // Notify AFTER the dismiss is in flight: onDisplaced runs parent code
+        // that may synchronously re-enter the coordinator (setDesiredOpen /
+        // handle.dismiss), and the inFlight guard must already be up so a
+        // re-entrant pump can't start a second transition for this group.
+        if (displaced) registrations.current.get(have)?.onDisplaced?.();
       } else {
         startTransition(group, 'present', want as string);
       }
@@ -200,6 +226,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
           present: reg.present,
           dismiss: reg.dismiss,
           onFullyDismissed: reg.onFullyDismissed,
+          onDisplaced: reg.onDisplaced,
         });
         groupState(reg.group);
         return () => {
@@ -349,10 +376,25 @@ export function useManagedSheet({
   const fireFullyDismissed = useCallback(() => {
     onFullyDismissedRef.current?.();
   }, []);
+  // Displaced by another sheet in the group: closed, not suspended. Fire the
+  // same onClose a user pan-down fires so the parent clears the state that
+  // drove `open` — otherwise the sheet re-presents when the displacer closes.
+  // No notifyClosed here: the coordinator is driving this dismiss itself.
+  const fireDisplaced = useCallback(() => {
+    onCloseRef.current?.();
+  }, []);
 
   useEffect(
-    () => coordinator.register({ id, group, present, dismiss, onFullyDismissed: fireFullyDismissed }),
-    [coordinator, id, group, present, dismiss, fireFullyDismissed],
+    () =>
+      coordinator.register({
+        id,
+        group,
+        present,
+        dismiss,
+        onFullyDismissed: fireFullyDismissed,
+        onDisplaced: fireDisplaced,
+      }),
+    [coordinator, id, group, present, dismiss, fireFullyDismissed, fireDisplaced],
   );
 
   // Controlled mode only: an imperative consumer leaves `open` undefined so this

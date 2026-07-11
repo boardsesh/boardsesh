@@ -692,15 +692,25 @@ export function PlayDrawer({
 
   const handleTickFabPress = useCallback(() => {
     resetZoomRef.current?.();
+    track(SHARED_EVENTS.QuickTickOpened, {
+      climbUuid: displayedClimb?.uuid ?? null,
+      layoutId: layoutId ?? null,
+      source: 'play_fab',
+    });
     setIsTickBarActive(true);
-  }, []);
+  }, [displayedClimb?.uuid, layoutId]);
 
   // Long-press now opens the same QuickTickBar as a short press; LogAscentSheet
   // has been retired in favour of a single ticking surface (see PR #2366).
   const handleTickFabLongPress = useCallback(() => {
     resetZoomRef.current?.();
+    track(SHARED_EVENTS.QuickTickOpened, {
+      climbUuid: displayedClimb?.uuid ?? null,
+      layoutId: layoutId ?? null,
+      source: 'play_fab',
+    });
     setIsTickBarActive(true);
-  }, []);
+  }, [displayedClimb?.uuid, layoutId]);
 
   const handleTickBarDismiss = useCallback(() => {
     setIsTickBarActive(false);

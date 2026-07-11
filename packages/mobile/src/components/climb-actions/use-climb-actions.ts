@@ -230,6 +230,7 @@ export function useClimbActions({
       icon: 'tick',
       color: successColor,
       run: () => {
+        track(SHARED_EVENTS.QuickTickOpened, { climbUuid: climb.uuid, layoutId, source: 'climb_actions' });
         openLogAscent({
           climbUuid: climb.uuid,
           boardName,

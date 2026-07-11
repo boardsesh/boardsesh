@@ -3,6 +3,8 @@ import { useAnimatedStyle, useSharedValue, withSequence, withSpring } from 'reac
 import type { Climb } from '@boardsesh/queue';
 import { useOptionalBoardActions, useOptionalBoardLogbook } from '@boardsesh/board-react';
 import { useTranslation } from 'react-i18next';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '../../lib/analytics';
 import { useTheme } from '../../providers/theme-provider';
 import { useQueueSessionId } from '../../providers/queue-provider';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -68,6 +70,11 @@ export function useLogAscentAction(climb: Climb) {
     if (!boardConfig) return;
     pendingRef.current = true;
     hapticSelection();
+    track(SHARED_EVENTS.QuickTickOpened, {
+      climbUuid: climb.uuid,
+      layoutId: boardConfig.layoutId ?? null,
+      source: 'queue_bar',
+    });
     openLogAscent({
       climbUuid: climb.uuid,
       boardName: boardConfig.boardName,
