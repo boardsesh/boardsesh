@@ -43,7 +43,7 @@ import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
-import { useSheetColumnStyle } from './use-sheet-column-style';
+import { SHEET_COLUMN_STYLE } from './sheet-column-style';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { buildFilterLabels, formatSettersLabel } from '../lib/filter-labels';
@@ -234,8 +234,8 @@ export function ClimbFilterSheet({
   // A single flex:1 column — @expo/ui 57.0.3 bounds the sheet content to the native
   // detent (RNHostView fills it and reports the real height back to Yoga), so the
   // column fills the detent, the body scrolls, and the Apply footer pins to the
-  // real bottom on every device (see useSheetColumnStyle).
-  const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
+  // real bottom on every device (see sheet-column-style).
+  const sheetColumnStyle = SHEET_COLUMN_STYLE;
   const isKilter = boardName === 'kilter';
 
   // Live "Show N" preview for the in-progress edits (matches what Apply yields).

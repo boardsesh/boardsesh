@@ -44,6 +44,7 @@ import {
 } from '@expo/ui/jetpack-compose/modifiers';
 import { StyleSheet } from 'react-native';
 import { spacing } from '../theme/tokens';
+import { useTheme } from '../providers/theme-provider';
 import { makeRadioSelectHandler } from './RadioGroup.logic';
 import type { RadioGroupProps } from './RadioGroup.types';
 
@@ -111,6 +112,7 @@ function MenuRadioGroup<T extends string>({
   value: T;
   onSelect: (option: RadioGroupProps<T>['options'][number]) => void;
 }) {
+  const { systemColors } = useTheme();
   const [expanded, setExpanded] = useState(false);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? '';
 
@@ -129,7 +131,9 @@ function MenuRadioGroup<T extends string>({
           <Text modifiers={[weight(1)]} style={{ typography: 'bodyLarge' }}>
             {selectedLabel}
           </Text>
-          <Icon source={ARROW_DROP_DOWN_ICON} />
+          {/* Tint from the theme, not the XML's baked-in white — otherwise the
+              arrow is invisible against a light row background in light mode. */}
+          <Icon source={ARROW_DROP_DOWN_ICON} tint={systemColors.secondaryLabel} />
         </Row>
         <ExposedDropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
           {options.map((option) => (
