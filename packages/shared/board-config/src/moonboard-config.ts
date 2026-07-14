@@ -124,7 +124,7 @@ export const MOONBOARD_SIZE = {
   id: 1,
   name: 'Standard',
   description: '11x18 Grid',
-  // Image dimensions from decompiled assets
+  // Standard board-art image dimensions
   width: 650,
   height: 1000,
 };

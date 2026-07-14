@@ -19,14 +19,13 @@ import { getScriptDatabaseUrl } from './db-connection.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // =============================================================================
-// MoonBoard app-API catalog import (all 7 boards)
+// MoonBoard catalog import (all 7 boards)
 // =============================================================================
-// Imports the full MoonBoard catalog scraped from the app's REST API
-// (boardsesh/moonboard-scraper app-catalog/). One file per board, each
+// Imports the full MoonBoard catalog dataset. One file per board, each
 // { count, holdsetup, problems[] }. We write one climb row per (problem, graded
 // angle) across all 7 boards and both 25°/40° angles.
 //
-// MERGE IN PLACE (non-destructive): the new scrape re-keys identities (stable
+// MERGE IN PLACE (non-destructive): the dataset re-keys identities (stable
 // problem id) vs the rows already in prod (keyed on apiId / name+setter). To
 // avoid duplicating ~163k existing MoonBoard climbs — and to keep their UUIDs,
 // URLs, ticks and favourites intact — we match each incoming climb to an

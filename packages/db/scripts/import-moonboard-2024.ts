@@ -17,11 +17,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // MoonBoard 2024 authoritative import
 // =============================================================================
 // DEPRECATED: superseded by import-moonboard-catalog.ts, which imports all 7
-// boards (both angles) from the app-API scrape with real quality + ascensionist
-// data and merges in place. Kept for reference / the older single-file format.
+// boards (both angles) from the full catalog dataset with real quality +
+// ascensionist data and merges in place. Kept for reference / the older
+// single-file format.
 // =============================================================================
 // Imports the full MoonBoard 2024 catalog (~35k problems) at angle 40 from the
-// boardsesh/moonboard-scraper "Problems Moonboard 2024 40.json" file. The format
+// "Problems Moonboard 2024 40.json" catalog file. The format
 // has no apiId/repeats/userRating and usually no date fields, so we derive a
 // deterministic UUID from name+setter+holds, compute the hold fingerprint, and
 // leave ascensionist_count/quality_average empty. Ungraded "PROJECT" problems
@@ -31,9 +32,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // OCR-created climbs (synced=false) the cleanup migration removes.
 //
 // The export is NOT committed to the repo (it's ~60MB raw data; see .gitignore).
-// Download it from
-//   https://raw.githubusercontent.com/boardsesh/moonboard-scraper/master/Problems%20Moonboard%202024%2040.json
-// and run against your local copy:
+// Run it against your local copy of the catalog file:
 //   vp run db:import-moonboard-2024 "/path/to/Problems Moonboard 2024 40.json"
 // With no argument it falls back to packages/db/data/moonboard/ (a gitignored
 // local drop spot). The dev DB image does not auto-load 2024 problems.

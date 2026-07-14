@@ -11,9 +11,9 @@ import {
 } from './moonboard-helpers.js';
 
 // =============================================================================
-// MoonBoard 2024 catalog export (boardsesh/moonboard-scraper)
+// MoonBoard 2024 catalog export
 // =============================================================================
-// The scraper ships two files: "Benchmark Problems Moonboard 2024 40.json"
+// The dataset ships two files: "Benchmark Problems Moonboard 2024 40.json"
 // (412 benchmarks) and "Problems Moonboard 2024 40.json" (the full ~35k-problem
 // catalog). We import the full catalog. The format has no stable problem id,
 // no repeats/userRating, and — in the full file — usually no date fields, so

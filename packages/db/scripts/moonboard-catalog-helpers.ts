@@ -9,9 +9,9 @@ import { fingerprintFromHolds, methodDescription } from './moonboard-2024-helper
 import { moonBoardMethodToCharacteristic } from '@boardsesh/shared-schema/characteristics';
 
 // =============================================================================
-// MoonBoard app-API catalog (boardsesh/moonboard-scraper app-catalog/)
+// MoonBoard catalog dataset
 // =============================================================================
-// The MoonBoard iOS app's REST API (rest-v1.moonclimbing.com) returns one file
+// The catalog provides one file
 // per board ({ count, holdsetup, problems[] }), covering all 7 boards. Unlike
 // the older community dump and the degraded 2024 export, every problem carries a
 // stable `id`, per-angle `configurations` (grade + userRating + repeats +

@@ -124,7 +124,7 @@
         "p2": "The licensing position varies by manufacturer, but in no case does a manufacturer own the community's climb data:",
         "aurora": "<strong>Aurora Climbing</strong> (Kilter Board, Tension Board, and others): Aurora's Terms of Use grant them a \"perpetual, unrestricted, unlimited, non-exclusive, irrevocable license\" over user-submitted content. Crucially, this license is <strong>non-exclusive</strong> — it does not transfer ownership to Aurora, nor does it prevent the original creator (or third parties) from independently using, collecting, or presenting the same factual data.",
         "moonLabel": "Moon Climbing (MoonBoard):",
-        "moonBody": "As of the last review of Moon Climbing's public-facing legal documents (February 2026), Moon Climbing has no app-specific Terms of Service, no End User License Agreement, and no contributed content license governing the MoonBoard app or its climb database. In the absence of any such agreement, Moon Climbing has no contractual claim over climbs created and submitted by its users."
+        "moonBody": "As of the last review of Moon Climbing's public-facing legal documents (February 2026), we did not find app-specific Terms of Service, an End User License Agreement, or a contributed-content license governing the MoonBoard app or its climb database. As with every board here, our position rests on the principle above: climb definitions are factual, functional data, and the databases are community-created."
       },
       "compilation": {
         "title": "Comprehensive databases have weak compilation protection",
