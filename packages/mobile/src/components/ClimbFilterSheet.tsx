@@ -94,8 +94,8 @@ const STATUS_OPTIONS_UI = ['any', 'drafts', 'projects'] as const;
 const POPULARITY_BUCKETS: ReadonlyArray<number | undefined> = [undefined, 2, 10, 100, 1000];
 const PREWARM_BOARD_HOLDS_AFTER_REFINE_EXPAND_MS = 150;
 
-// The sheet's single native detent. The iOS JS-side height bound derived from it
-// lives in the shared useSheetColumnStyle hook (see the sheetColumnStyle below).
+// The sheet's single native detent (90% of the screen), passed to the native
+// BottomSheetModal as its snap point.
 const SHEET_DETENT_FRACTION = 0.9;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -231,10 +231,10 @@ export function ClimbFilterSheet({
 
   const detentSnapPoints = useMemo(() => [`${SHEET_DETENT_FRACTION * 100}%`], []);
   const snapPoints = useMemo(() => androidSafeSnapPoints(detentSnapPoints), [detentSnapPoints]);
-  // On iOS the SwiftUI sheet host can propose an unbounded height, so a flex:1
-  // column sizes to its CONTENT and the pinned Apply footer lands off-screen
-  // (#3330). The shared hook pins the column to this single detent's height;
-  // Android bounds the column natively, so it keeps flex:1.
+  // A single flex:1 column — @expo/ui 57.0.3 bounds the sheet content to the native
+  // detent (RNHostView fills it and reports the real height back to Yoga), so the
+  // column fills the detent, the body scrolls, and the Apply footer pins to the
+  // real bottom on every device (see useSheetColumnStyle).
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
   const isKilter = boardName === 'kilter';
 
@@ -688,7 +688,7 @@ export function ClimbFilterSheet({
       onFullyDismissed={managed.onFullyDismissed}
       handleIndicatorStyle={[styles.indicator, { backgroundColor: systemColors.separator }]}
     >
-      {/* One column child bounded to the detent height (JS-computed on iOS, see
+      {/* One flex:1 column child that fills the native detent (see
           sheetColumnStyle) — the scroll body then actually scrolls and the
           footer pins. Handed multiple direct children, the native sheet sizes
           to content and the flex:1 ScrollView collapses (no scrolling). */}
@@ -878,7 +878,7 @@ export function ClimbFilterSheet({
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.accuracy.label')}
               </Text>
-              <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} />
+              <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} variant="menu" />
 
               {isKilter ? (
                 <>
@@ -910,7 +910,7 @@ export function ClimbFilterSheet({
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.section.status')}
               </Text>
-              <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} />
+              <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} variant="menu" />
               {!isAuthenticated ? (
                 <Text variant="footnote" style={styles.statusHint}>
                   {t('mobile.filter.signInForDrafts')}

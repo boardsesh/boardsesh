@@ -25,4 +25,14 @@ export type RadioGroupProps<T extends string> = {
   options: ReadonlyArray<RadioOption<T>>;
   value: T;
   onChange: (value: T) => void;
+  /**
+   * `'inline'` (default) renders every option as a visible row — the classic
+   * radio list. `'menu'` collapses to a single row showing the current label and
+   * opens a native dropdown (iOS `pickerStyle('menu')`, Android
+   * `ExposedDropdownMenuBox`) on press — the compact "only expand when tapped"
+   * control. The `menu` variant can't show per-option `description`/`disabled`
+   * (same limitation as the iOS inline Picker), so use `inline` when you need
+   * those.
+   */
+  variant?: 'inline' | 'menu';
 };
