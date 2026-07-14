@@ -878,7 +878,12 @@ export function ClimbFilterSheet({
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.accuracy.label')}
               </Text>
-              <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} variant="menu" />
+              <RadioGroup
+                options={accuracyOptions}
+                value={accuracyValue}
+                onChange={handleAccuracyChange}
+                variant="menu"
+              />
 
               {isKilter ? (
                 <>
@@ -910,7 +915,12 @@ export function ClimbFilterSheet({
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.section.status')}
               </Text>
-              <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} variant="menu" />
+              <RadioGroup
+                options={statusOptions}
+                value={localFilters.status}
+                onChange={handleStatusChange}
+                variant="menu"
+              />
               {!isAuthenticated ? (
                 <Text variant="footnote" style={styles.statusHint}>
                   {t('mobile.filter.signInForDrafts')}

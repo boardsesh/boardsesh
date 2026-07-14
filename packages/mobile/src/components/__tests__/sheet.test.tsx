@@ -151,18 +151,18 @@ describe('Sheet', () => {
     expect(captures.kavBehavior).toBe('padding');
   });
 
-  it('bounds a footerless scrollable body to the detent height on iOS (#3330)', () => {
-    // Without a footer the body itself is the sheet's single child, so it must
-    // carry the iOS detent bound directly — a flex:1 body sizes to content under
-    // SwiftUI's unbounded proposal and clips anything past the detent. Default
-    // snap points ['50%','90%'] at index 0 on an 844pt window with a 0 top inset:
-    // round((844 − 24pt card gap) * 0.5) − 20pt top chrome = 390.
+  it('fills the detent with a flex column for a footerless scrollable body (#3330)', () => {
+    // @expo/ui 57.0.3 bounds the sheet content to the native detent itself
+    // (RNHostView fills it and reports the real height back to Yoga), so the body
+    // no longer needs a JS-computed detent height — a plain flex:1 column fills the
+    // real detent on every device and the scroll body scrolls within it. Previously
+    // this carried a per-device height estimate that came out short on some screens.
     render(
       <Sheet scrollable>
         <div>body</div>
       </Sheet>,
     );
-    expect(captures.scrollStyle).toEqual({ height: 390 });
+    expect(captures.scrollStyle).toEqual({ flex: 1 });
   });
 
   it('fires a haptic and onChange only when the sheet opens (index >= 0)', () => {
