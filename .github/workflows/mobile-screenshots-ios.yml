@@ -276,7 +276,7 @@ jobs:
         # shut down all sims between attempts and re-run once. --shutdown keeps a
         # failed attempt from leaving a booted sim behind.
         run: |
-          set -uo pipefail
+          set -euo pipefail
           attempts=2
           for attempt in $(seq 1 "$attempts"); do
             echo "::group::Capture attempt $attempt/$attempts (${{ matrix.locale }} · ${{ matrix.device.slug }})"
