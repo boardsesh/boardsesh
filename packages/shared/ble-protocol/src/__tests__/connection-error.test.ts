@@ -342,18 +342,31 @@ describe('classifyBleFailure — ble-plx BleErrorCode (#3608)', () => {
       error: bleErrorWithCode(300, 'Services discovery failed for device 5C:F8'),
       expected: 'service_missing',
     },
+    {
+      name: 'IncludedServicesDiscoveryFailed (301)',
+      error: bleErrorWithCode(301, 'opaque'),
+      expected: 'service_missing',
+    },
     { name: 'ServiceNotFound (302)', error: bleErrorWithCode(302, 'opaque'), expected: 'service_missing' },
+    { name: 'ServicesNotDiscovered (303)', error: bleErrorWithCode(303, 'opaque'), expected: 'service_missing' },
     {
       name: 'CharacteristicsDiscoveryFailed (400)',
       error: bleErrorWithCode(400, 'Characteristics discovery failed'),
       expected: 'service_missing',
     },
     { name: 'CharacteristicNotFound (404)', error: bleErrorWithCode(404, 'opaque'), expected: 'service_missing' },
+    {
+      name: 'CharacteristicsNotDiscovered (405)',
+      error: bleErrorWithCode(405, 'opaque'),
+      expected: 'service_missing',
+    },
     // Radio / permission / OS state.
     { name: 'BluetoothPoweredOff (102)', error: bleErrorWithCode(102, 'opaque'), expected: 'unavailable' },
     { name: 'BluetoothUnauthorized (101)', error: bleErrorWithCode(101, 'opaque'), expected: 'unavailable' },
     { name: 'BluetoothUnsupported (100)', error: bleErrorWithCode(100, 'opaque'), expected: 'unavailable' },
+    { name: 'BluetoothInUnknownState (103)', error: bleErrorWithCode(103, 'opaque'), expected: 'unavailable' },
     { name: 'BluetoothResetting (104)', error: bleErrorWithCode(104, 'opaque'), expected: 'unavailable' },
+    { name: 'BluetoothStateChangeFailed (105)', error: bleErrorWithCode(105, 'opaque'), expected: 'unavailable' },
     {
       name: 'LocationServicesDisabled (601)',
       error: bleErrorWithCode(601, 'Location services are disabled'),
