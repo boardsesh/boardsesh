@@ -12,6 +12,7 @@ export const eventsTypeDefs = /* GraphQL */ `
     | WallDisconnected
     | SessionBoardSerialChanged
     | SessionBoardPathChanged
+    | SessionNameChanged
     | SessionEnded
     | SessionStatsUpdated
 
@@ -124,6 +125,20 @@ export const eventsTypeDefs = /* GraphQL */ `
     "New full boardPath for the session"
     boardPath: String!
     "Participant id of the member who triggered the change, or null for system-initiated updates"
+    changedByParticipantId: ID
+  }
+
+  """
+  Event when the session's title changes (via updateSession). Recipients update
+  their local session name so all members see the same title. \`name\` is null
+  when the title was cleared. Clients echo-suppress on \`changedByParticipantId\`
+  when it matches their own participant id (their optimistic update already
+  happened locally).
+  """
+  type SessionNameChanged {
+    "New session title, or null when cleared"
+    name: String
+    "Participant id of the member who triggered the change, or null for HTTP/system updates"
     changedByParticipantId: ID
   }
 

@@ -2425,7 +2425,11 @@ export type Mutation = {
    * Requires authentication.
    */
   disconnectIntegration: Scalars['Boolean']['output'];
-  /** End a session (active participant only). */
+  /**
+   * End a session (active participant only). The optional `notes` is a
+   * free-text end-of-session recap persisted on the session and echoed back on
+   * the returned SessionSummary.
+   */
   endSession?: Maybe<SessionSummary>;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
@@ -2711,6 +2715,12 @@ export type Mutation = {
    * Requires authentication.
    */
   updateProfile: UserProfile;
+  /**
+   * Update a session's title and/or recap notes. Creator only. Works on both
+   * active and ended sessions. Publishes SessionNameChanged to live
+   * participants when the title changes.
+   */
+  updateSession: UpdateSessionResult;
   /** Update an existing tick. Only the owner can update their own ticks. */
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
@@ -2863,6 +2873,7 @@ export type MutationDisconnectIntegrationArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationEndSessionArgs = {
+  notes?: InputMaybe<Scalars['String']['input']>;
   sessionId: Scalars['ID']['input'];
   timezone?: InputMaybe<Scalars['String']['input']>;
 };
@@ -3253,6 +3264,11 @@ export type MutationUpdatePlaylistLastAccessedArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateProfileArgs = {
   input: UpdateProfileInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateSessionArgs = {
+  input: UpdateSessionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5243,6 +5259,8 @@ export type Session = {
   lastConnectedBoardSerial?: Maybe<Scalars['String']['output']>;
   /** Optional name for the session */
   name?: Maybe<Scalars['String']['output']>;
+  /** Optional free-text end-of-session recap (Strava-style description) */
+  notes?: Maybe<Scalars['String']['output']>;
   /** Backend-resolved participant id for the requesting client. For authenticated users this is the user UUID; for anonymous users it equals clientId. Use this (not the locally generated activeSession.participantId) for self-checks against broadcast participant ids — the backend always ignores client-supplied participantIds for security and uses this resolved value as the broadcast identity. */
   participantId: Scalars['ID']['output'];
   /** Current queue state. Null for a non-member preview payload (see the session query resolver) or the HTTP path of createSession, which returns before the creator has joined via WebSocket. */
@@ -5298,6 +5316,7 @@ export type SessionDetail = {
   hardestGrade?: Maybe<Scalars['String']['output']>;
   healthKitWorkoutId?: Maybe<Scalars['String']['output']>;
   lastTickAt: Scalars['String']['output'];
+  notes?: Maybe<Scalars['String']['output']>;
   ownerUserId?: Maybe<Scalars['ID']['output']>;
   participants: Array<SessionFeedParticipant>;
   sessionId: Scalars['ID']['output'];
@@ -5361,6 +5380,7 @@ export type SessionEvent =
   | SessionBoardPathChanged
   | SessionBoardSerialChanged
   | SessionEnded
+  | SessionNameChanged
   | SessionStatsUpdated
   | UserJoined
   | UserLeft
@@ -5389,6 +5409,7 @@ export type SessionFeedItem = {
   hardestGrade?: Maybe<Scalars['String']['output']>;
   hardestSend?: Maybe<SessionFeedTickHighlight>;
   lastTickAt: Scalars['String']['output'];
+  notes?: Maybe<Scalars['String']['output']>;
   ownerUserId?: Maybe<Scalars['ID']['output']>;
   participants: Array<SessionFeedParticipant>;
   sessionId: Scalars['ID']['output'];
@@ -5548,6 +5569,21 @@ export type SessionHealthExportLap = {
   tickUuid: Scalars['ID']['output'];
 };
 
+/**
+ * Event when the session's title changes (via updateSession). Recipients update
+ * their local session name so all members see the same title. `name` is null
+ * when the title was cleared. Clients echo-suppress on `changedByParticipantId`
+ * when it matches their own participant id (their optimistic update already
+ * happened locally).
+ */
+export type SessionNameChanged = {
+  __typename?: 'SessionNameChanged';
+  /** Participant id of the member who triggered the change, or null for HTTP/system updates */
+  changedByParticipantId?: Maybe<Scalars['ID']['output']>;
+  /** New session title, or null when cleared */
+  name?: Maybe<Scalars['String']['output']>;
+};
+
 /** Participant stats in a session summary. */
 export type SessionParticipant = {
   __typename?: 'SessionParticipant';
@@ -5620,6 +5656,8 @@ export type SessionSummary = {
   gradeDistribution: Array<SessionGradeCount>;
   /** Hardest climb sent during the session */
   hardestClimb?: Maybe<SessionHardestClimb>;
+  /** Free-text end-of-session recap (Strava-style description) */
+  notes?: Maybe<Scalars['String']['output']>;
   /** Participants with their stats */
   participants: Array<SessionParticipant>;
   /** Session ID */
@@ -6338,6 +6376,31 @@ export type UpdateProfileInput = {
 };
 
 /**
+ * Input for updating a session's editable metadata. Used both by the
+ * end-of-session recap flow and by title editing. Omitting a field leaves it
+ * unchanged; passing null or an empty string clears it.
+ */
+export type UpdateSessionInput = {
+  /** New session title. Omit to leave unchanged; null or empty string clears it. */
+  name?: InputMaybe<Scalars['String']['input']>;
+  /** New end-of-session recap. Omit to leave unchanged; null or empty string clears it. */
+  notes?: InputMaybe<Scalars['String']['input']>;
+  /** Session to update */
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Result of an updateSession mutation, echoing the canonical post-update values. */
+export type UpdateSessionResult = {
+  __typename?: 'UpdateSessionResult';
+  /** Canonical session title after the update (null when cleared) */
+  name?: Maybe<Scalars['String']['output']>;
+  /** Canonical session recap after the update (null when cleared) */
+  notes?: Maybe<Scalars['String']['output']>;
+  /** Session that was updated */
+  sessionId: Scalars['ID']['output'];
+};
+
+/**
  * Input for updating an existing tick.
  * All fields are optional — only provided fields are updated.
  */
@@ -6716,6 +6779,7 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = Reso
     | SessionBoardPathChanged
     | SessionBoardSerialChanged
     | SessionEnded
+    | SessionNameChanged
     | SessionStatsUpdated
     | UserJoined
     | UserLeft
@@ -6972,6 +7036,7 @@ export type ResolversTypes = ResolversObject<{
   SessionHardestClimb: ResolverTypeWrapper<SessionHardestClimb>;
   SessionHealthExport: ResolverTypeWrapper<SessionHealthExport>;
   SessionHealthExportLap: ResolverTypeWrapper<SessionHealthExportLap>;
+  SessionNameChanged: ResolverTypeWrapper<SessionNameChanged>;
   SessionParticipant: ResolverTypeWrapper<SessionParticipant>;
   SessionStatsUpdated: ResolverTypeWrapper<SessionStatsUpdated>;
   SessionStatus: SessionStatus;
@@ -7018,6 +7083,8 @@ export type ResolversTypes = ResolversObject<{
   UpdateGymInput: UpdateGymInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdateProfileInput: UpdateProfileInput;
+  UpdateSessionInput: UpdateSessionInput;
+  UpdateSessionResult: ResolverTypeWrapper<UpdateSessionResult>;
   UpdateTickInput: UpdateTickInput;
   UserBoard: ResolverTypeWrapper<UserBoard>;
   UserBoardConnection: ResolverTypeWrapper<UserBoardConnection>;
@@ -7271,6 +7338,7 @@ export type ResolversParentTypes = ResolversObject<{
   SessionHardestClimb: SessionHardestClimb;
   SessionHealthExport: SessionHealthExport;
   SessionHealthExportLap: SessionHealthExportLap;
+  SessionNameChanged: SessionNameChanged;
   SessionParticipant: SessionParticipant;
   SessionStatsUpdated: SessionStatsUpdated;
   SessionSummary: SessionSummary;
@@ -7311,6 +7379,8 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateGymInput: UpdateGymInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
   UpdateProfileInput: UpdateProfileInput;
+  UpdateSessionInput: UpdateSessionInput;
+  UpdateSessionResult: UpdateSessionResult;
   UpdateTickInput: UpdateTickInput;
   UserBoard: UserBoard;
   UserBoardConnection: UserBoardConnection;
@@ -9094,6 +9164,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUpdateProfileArgs, 'input'>
   >;
+  updateSession?: Resolver<
+    ResolversTypes['UpdateSessionResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateSessionArgs, 'input'>
+  >;
   updateTick?: Resolver<
     ResolversTypes['Tick'],
     ParentType,
@@ -10209,6 +10285,7 @@ export type SessionResolvers<
   isPublic?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
   lastConnectedBoardSerial?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   participantId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   queueState?: Resolver<Maybe<ResolversTypes['QueueState']>, ParentType, ContextType>;
   startedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -10248,6 +10325,7 @@ export type SessionDetailResolvers<
   hardestGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   healthKitWorkoutId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   lastTickAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   ownerUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   participants?: Resolver<Array<ResolversTypes['SessionFeedParticipant']>, ParentType, ContextType>;
   sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -10313,6 +10391,7 @@ export type SessionEventResolvers<
     | 'SessionBoardPathChanged'
     | 'SessionBoardSerialChanged'
     | 'SessionEnded'
+    | 'SessionNameChanged'
     | 'SessionStatsUpdated'
     | 'UserJoined'
     | 'UserLeft'
@@ -10349,6 +10428,7 @@ export type SessionFeedItemResolvers<
   hardestGrade?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   hardestSend?: Resolver<Maybe<ResolversTypes['SessionFeedTickHighlight']>, ParentType, ContextType>;
   lastTickAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   ownerUserId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   participants?: Resolver<Array<ResolversTypes['SessionFeedParticipant']>, ParentType, ContextType>;
   sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
@@ -10488,6 +10568,15 @@ export type SessionHealthExportLapResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type SessionNameChangedResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionNameChanged'] = ResolversParentTypes['SessionNameChanged'],
+> = ResolversObject<{
+  changedByParticipantId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type SessionParticipantResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['SessionParticipant'] = ResolversParentTypes['SessionParticipant'],
@@ -10529,6 +10618,7 @@ export type SessionSummaryResolvers<
   goal?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   gradeDistribution?: Resolver<Array<ResolversTypes['SessionGradeCount']>, ParentType, ContextType>;
   hardestClimb?: Resolver<Maybe<ResolversTypes['SessionHardestClimb']>, ParentType, ContextType>;
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
   participants?: Resolver<Array<ResolversTypes['SessionParticipant']>, ParentType, ContextType>;
   sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   startedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
@@ -10833,6 +10923,16 @@ export type UpdateClimbResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type UpdateSessionResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['UpdateSessionResult'] = ResolversParentTypes['UpdateSessionResult'],
+> = ResolversObject<{
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  notes?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sessionId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type UserBoardResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['UserBoard'] = ResolversParentTypes['UserBoard'],
@@ -11131,6 +11231,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SessionHardestClimb?: SessionHardestClimbResolvers<ContextType>;
   SessionHealthExport?: SessionHealthExportResolvers<ContextType>;
   SessionHealthExportLap?: SessionHealthExportLapResolvers<ContextType>;
+  SessionNameChanged?: SessionNameChangedResolvers<ContextType>;
   SessionParticipant?: SessionParticipantResolvers<ContextType>;
   SessionStatsUpdated?: SessionStatsUpdatedResolvers<ContextType>;
   SessionSummary?: SessionSummaryResolvers<ContextType>;
@@ -11154,6 +11255,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   UnifiedSearchConnection?: UnifiedSearchConnectionResolvers<ContextType>;
   UnifiedSearchResult?: UnifiedSearchResultResolvers<ContextType>;
   UpdateClimbResult?: UpdateClimbResultResolvers<ContextType>;
+  UpdateSessionResult?: UpdateSessionResultResolvers<ContextType>;
   UserBoard?: UserBoardResolvers<ContextType>;
   UserBoardConnection?: UserBoardConnectionResolvers<ContextType>;
   UserClimbPercentile?: UserClimbPercentileResolvers<ContextType>;

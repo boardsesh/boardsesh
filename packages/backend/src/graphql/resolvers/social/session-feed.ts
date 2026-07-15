@@ -448,6 +448,7 @@ export const sessionFeedQueries = {
             : String(row.session_last_tick),
         durationMinutes,
         goal: isDailyHighlight ? null : sessionMeta?.goal || null,
+        notes: isDailyHighlight ? null : sessionMeta?.notes || null,
         upvotes: Number(row.vote_up),
         downvotes: Number(row.vote_down),
         voteScore: Number(row.vote_score),
@@ -768,6 +769,7 @@ export const sessionFeedQueries = {
     // Session metadata
     const sessionName = dailySession ? null : partySession?.name || null;
     const goal = dailySession ? null : partySession?.goal || null;
+    const notes = dailySession ? null : partySession?.notes || null;
     const ownerUserId = dailySession ? dailySession.userId : partySession?.createdByUserId || null;
     const viewerUserId = ctx?.isAuthenticated ? (ctx.userId ?? null) : null;
     const [healthKitWorkout] =
@@ -801,6 +803,7 @@ export const sessionFeedQueries = {
       lastTickAt,
       durationMinutes,
       goal,
+      notes,
       ticks,
       upvotes: voteData ? Number(voteData.upvotes) : 0,
       downvotes: voteData ? Number(voteData.downvotes) : 0,
@@ -1014,23 +1017,29 @@ async function fetchGradeDistributionBatch(
  */
 async function fetchSessionMetaBatch(
   sessionIds: string[],
-): Promise<Map<string, { name: string | null; goal: string | null; ownerUserId: string | null }>> {
+): Promise<
+  Map<string, { name: string | null; goal: string | null; notes: string | null; ownerUserId: string | null }>
+> {
   if (sessionIds.length === 0) return new Map();
 
-  const map = new Map<string, { name: string | null; goal: string | null; ownerUserId: string | null }>();
+  const map = new Map<
+    string,
+    { name: string | null; goal: string | null; notes: string | null; ownerUserId: string | null }
+  >();
 
   const partyRows = await dbRead
     .select({
       id: dbSchema.boardSessions.id,
       name: dbSchema.boardSessions.name,
       goal: dbSchema.boardSessions.goal,
+      notes: dbSchema.boardSessions.notes,
       createdByUserId: dbSchema.boardSessions.createdByUserId,
     })
     .from(dbSchema.boardSessions)
     .where(inArray(dbSchema.boardSessions.id, sessionIds));
 
   for (const r of partyRows) {
-    map.set(r.id, { name: r.name, goal: r.goal, ownerUserId: r.createdByUserId });
+    map.set(r.id, { name: r.name, goal: r.goal, notes: r.notes, ownerUserId: r.createdByUserId });
   }
 
   return map;

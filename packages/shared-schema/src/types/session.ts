@@ -56,7 +56,21 @@ export type SessionSummary = {
   endedAt?: string | null;
   durationMinutes?: number | null;
   goal?: string | null;
+  notes?: string | null;
 };
+
+/** Canonical post-update values returned by the updateSession mutation. */
+export type UpdateSessionResult = {
+  sessionId: string;
+  name?: string | null;
+  notes?: string | null;
+};
+
+/** Max length of a session title (name), enforced by validation on write. */
+export const SESSION_NAME_MAX_LENGTH = 100;
+
+/** Max length of a session's free-text recap notes, enforced on write. */
+export const SESSION_NOTES_MAX_LENGTH = 2000;
 
 export type SessionHealthExportLap = {
   tickUuid: string;

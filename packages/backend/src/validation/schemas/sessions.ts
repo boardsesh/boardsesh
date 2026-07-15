@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { BoardPathSchema, SessionIdSchema, SessionNameSchema, LatitudeSchema, LongitudeSchema } from './primitives';
+import { SESSION_NAME_MAX_LENGTH } from '@boardsesh/shared-schema';
+import {
+  BoardPathSchema,
+  SessionIdSchema,
+  SessionNameSchema,
+  SessionNotesSchema,
+  LatitudeSchema,
+  LongitudeSchema,
+} from './primitives';
 
 /**
  * Create session input validation schema
@@ -31,4 +39,16 @@ export const EndSessionInputSchema = z.object({
  */
 export const SessionSummaryInputSchema = z.object({
   sessionId: SessionIdSchema,
+});
+
+/**
+ * Update session input validation schema. `name` and `notes` use
+ * `.nullable().optional()` — update semantics distinguish an absent field
+ * (leave unchanged) from an explicit null (clear it). Deliberately does NOT
+ * reuse `SessionNameSchema`, which is `.optional()` without `.nullable()`.
+ */
+export const UpdateSessionInputSchema = z.object({
+  sessionId: SessionIdSchema,
+  name: z.string().max(SESSION_NAME_MAX_LENGTH, 'Session name too long').nullable().optional(),
+  notes: SessionNotesSchema.nullable().optional(),
 });

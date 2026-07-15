@@ -116,6 +116,7 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
       clientId: 'conn-1',
       participantId: 'participant-1',
       goal: 'project the V6',
+      notes: null,
       isPublic: false,
       startedAt: '2026-05-18T12:00:00.000Z',
       endedAt: null,

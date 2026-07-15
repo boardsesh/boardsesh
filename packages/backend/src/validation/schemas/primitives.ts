@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SUPPORTED_BOARDS } from '@boardsesh/shared-schema';
+import { SUPPORTED_BOARDS, SESSION_NOTES_MAX_LENGTH } from '@boardsesh/shared-schema';
 
 /**
  * UUID validation schema
@@ -52,6 +52,12 @@ export const BoardPathSchema = z.string().min(1, 'Board path cannot be empty').m
  * Session name validation schema
  */
 export const SessionNameSchema = z.string().max(100, 'Session name too long').optional();
+
+/**
+ * Session notes (end-of-session recap) validation schema. Max length mirrors
+ * the shared SESSION_NOTES_MAX_LENGTH constant.
+ */
+export const SessionNotesSchema = z.string().max(SESSION_NOTES_MAX_LENGTH, 'Session notes too long');
 
 /**
  * Avatar URL validation schema

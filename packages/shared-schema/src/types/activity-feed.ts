@@ -240,6 +240,7 @@ export type SessionFeedItem = {
   lastTickAt: string;
   durationMinutes?: number | null;
   goal?: string | null;
+  notes?: string | null;
   upvotes: number;
   downvotes: number;
   voteScore: number;
@@ -301,6 +302,7 @@ export type SessionDetail = {
   lastTickAt: string;
   durationMinutes?: number | null;
   goal?: string | null;
+  notes?: string | null;
   ticks: SessionDetailTick[];
   upvotes: number;
   downvotes: number;

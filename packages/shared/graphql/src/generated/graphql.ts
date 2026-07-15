@@ -2422,7 +2422,11 @@ export type Mutation = {
    * Requires authentication.
    */
   disconnectIntegration: Scalars['Boolean']['output'];
-  /** End a session (active participant only). */
+  /**
+   * End a session (active participant only). The optional `notes` is a
+   * free-text end-of-session recap persisted on the session and echoed back on
+   * the returned SessionSummary.
+   */
   endSession?: Maybe<SessionSummary>;
   /** Follow a board. */
   followBoard: Scalars['Boolean']['output'];
@@ -2708,6 +2712,12 @@ export type Mutation = {
    * Requires authentication.
    */
   updateProfile: UserProfile;
+  /**
+   * Update a session's title and/or recap notes. Creator only. Works on both
+   * active and ended sessions. Publishes SessionNameChanged to live
+   * participants when the title changes.
+   */
+  updateSession: UpdateSessionResult;
   /** Update an existing tick. Only the owner can update their own ticks. */
   updateTick: Tick;
   /** Update display name and avatar in the current session. */
@@ -2860,6 +2870,7 @@ export type MutationDisconnectIntegrationArgs = {
 
 /** Root mutation type for all write operations. */
 export type MutationEndSessionArgs = {
+  notes?: InputMaybe<Scalars['String']['input']>;
   sessionId: Scalars['ID']['input'];
   timezone?: InputMaybe<Scalars['String']['input']>;
 };
@@ -3250,6 +3261,11 @@ export type MutationUpdatePlaylistLastAccessedArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateProfileArgs = {
   input: UpdateProfileInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateSessionArgs = {
+  input: UpdateSessionInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5240,6 +5256,8 @@ export type Session = {
   lastConnectedBoardSerial?: Maybe<Scalars['String']['output']>;
   /** Optional name for the session */
   name?: Maybe<Scalars['String']['output']>;
+  /** Optional free-text end-of-session recap (Strava-style description) */
+  notes?: Maybe<Scalars['String']['output']>;
   /** Backend-resolved participant id for the requesting client. For authenticated users this is the user UUID; for anonymous users it equals clientId. Use this (not the locally generated activeSession.participantId) for self-checks against broadcast participant ids — the backend always ignores client-supplied participantIds for security and uses this resolved value as the broadcast identity. */
   participantId: Scalars['ID']['output'];
   /** Current queue state. Null for a non-member preview payload (see the session query resolver) or the HTTP path of createSession, which returns before the creator has joined via WebSocket. */
@@ -5295,6 +5313,7 @@ export type SessionDetail = {
   hardestGrade?: Maybe<Scalars['String']['output']>;
   healthKitWorkoutId?: Maybe<Scalars['String']['output']>;
   lastTickAt: Scalars['String']['output'];
+  notes?: Maybe<Scalars['String']['output']>;
   ownerUserId?: Maybe<Scalars['ID']['output']>;
   participants: Array<SessionFeedParticipant>;
   sessionId: Scalars['ID']['output'];
@@ -5358,6 +5377,7 @@ export type SessionEvent =
   | SessionBoardPathChanged
   | SessionBoardSerialChanged
   | SessionEnded
+  | SessionNameChanged
   | SessionStatsUpdated
   | UserJoined
   | UserLeft
@@ -5386,6 +5406,7 @@ export type SessionFeedItem = {
   hardestGrade?: Maybe<Scalars['String']['output']>;
   hardestSend?: Maybe<SessionFeedTickHighlight>;
   lastTickAt: Scalars['String']['output'];
+  notes?: Maybe<Scalars['String']['output']>;
   ownerUserId?: Maybe<Scalars['ID']['output']>;
   participants: Array<SessionFeedParticipant>;
   sessionId: Scalars['ID']['output'];
@@ -5545,6 +5566,21 @@ export type SessionHealthExportLap = {
   tickUuid: Scalars['ID']['output'];
 };
 
+/**
+ * Event when the session's title changes (via updateSession). Recipients update
+ * their local session name so all members see the same title. `name` is null
+ * when the title was cleared. Clients echo-suppress on `changedByParticipantId`
+ * when it matches their own participant id (their optimistic update already
+ * happened locally).
+ */
+export type SessionNameChanged = {
+  __typename?: 'SessionNameChanged';
+  /** Participant id of the member who triggered the change, or null for HTTP/system updates */
+  changedByParticipantId?: Maybe<Scalars['ID']['output']>;
+  /** New session title, or null when cleared */
+  name?: Maybe<Scalars['String']['output']>;
+};
+
 /** Participant stats in a session summary. */
 export type SessionParticipant = {
   __typename?: 'SessionParticipant';
@@ -5617,6 +5653,8 @@ export type SessionSummary = {
   gradeDistribution: Array<SessionGradeCount>;
   /** Hardest climb sent during the session */
   hardestClimb?: Maybe<SessionHardestClimb>;
+  /** Free-text end-of-session recap (Strava-style description) */
+  notes?: Maybe<Scalars['String']['output']>;
   /** Participants with their stats */
   participants: Array<SessionParticipant>;
   /** Session ID */
@@ -6332,6 +6370,31 @@ export type UpdateProfileInput = {
   avatarUrl?: InputMaybe<Scalars['String']['input']>;
   /** New display name */
   displayName?: InputMaybe<Scalars['String']['input']>;
+};
+
+/**
+ * Input for updating a session's editable metadata. Used both by the
+ * end-of-session recap flow and by title editing. Omitting a field leaves it
+ * unchanged; passing null or an empty string clears it.
+ */
+export type UpdateSessionInput = {
+  /** New session title. Omit to leave unchanged; null or empty string clears it. */
+  name?: InputMaybe<Scalars['String']['input']>;
+  /** New end-of-session recap. Omit to leave unchanged; null or empty string clears it. */
+  notes?: InputMaybe<Scalars['String']['input']>;
+  /** Session to update */
+  sessionId: Scalars['ID']['input'];
+};
+
+/** Result of an updateSession mutation, echoing the canonical post-update values. */
+export type UpdateSessionResult = {
+  __typename?: 'UpdateSessionResult';
+  /** Canonical session title after the update (null when cleared) */
+  name?: Maybe<Scalars['String']['output']>;
+  /** Canonical session recap after the update (null when cleared) */
+  notes?: Maybe<Scalars['String']['output']>;
+  /** Session that was updated */
+  sessionId: Scalars['ID']['output'];
 };
 
 /**
@@ -8232,6 +8295,7 @@ export type SessionSummaryFieldsFragment = {
   endedAt?: string | null;
   durationMinutes?: number | null;
   goal?: string | null;
+  notes?: string | null;
   gradeDistribution: Array<{
     __typename?: 'SessionGradeCount';
     grade: string;
@@ -8263,6 +8327,7 @@ export type SessionSummaryFieldsFragment = {
 export type EndSessionMutationVariables = Exact<{
   sessionId: Scalars['ID']['input'];
   timezone?: InputMaybe<Scalars['String']['input']>;
+  notes?: InputMaybe<Scalars['String']['input']>;
 }>;
 
 export type EndSessionMutation = {
@@ -8277,6 +8342,7 @@ export type EndSessionMutation = {
     endedAt?: string | null;
     durationMinutes?: number | null;
     goal?: string | null;
+    notes?: string | null;
     gradeDistribution: Array<{
       __typename?: 'SessionGradeCount';
       grade: string;
@@ -8306,6 +8372,15 @@ export type EndSessionMutation = {
   } | null;
 };
 
+export type UpdateSessionMutationVariables = Exact<{
+  input: UpdateSessionInput;
+}>;
+
+export type UpdateSessionMutation = {
+  __typename?: 'Mutation';
+  updateSession: { __typename?: 'UpdateSessionResult'; sessionId: string; name?: string | null; notes?: string | null };
+};
+
 export type GetSessionSummaryQueryVariables = Exact<{
   sessionId: Scalars['ID']['input'];
 }>;
@@ -8322,6 +8397,7 @@ export type GetSessionSummaryQuery = {
     endedAt?: string | null;
     durationMinutes?: number | null;
     goal?: string | null;
+    notes?: string | null;
     gradeDistribution: Array<{
       __typename?: 'SessionGradeCount';
       grade: string;
@@ -9068,6 +9144,7 @@ export const SessionSummaryFieldsFragmentDoc = {
           { kind: 'Field', name: { kind: 'Name', value: 'endedAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
           { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
         ],
       },
     },
@@ -13393,6 +13470,11 @@ export const EndSessionDocument = {
           variable: { kind: 'Variable', name: { kind: 'Name', value: 'timezone' } },
           type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
         },
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'notes' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'String' } },
+        },
       ],
       selectionSet: {
         kind: 'SelectionSet',
@@ -13410,6 +13492,11 @@ export const EndSessionDocument = {
                 kind: 'Argument',
                 name: { kind: 'Name', value: 'timezone' },
                 value: { kind: 'Variable', name: { kind: 'Name', value: 'timezone' } },
+              },
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'notes' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'notes' } },
               },
             ],
             selectionSet: {
@@ -13479,11 +13566,56 @@ export const EndSessionDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'endedAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
           { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
         ],
       },
     },
   ],
 } as unknown as DocumentNode<EndSessionMutation, EndSessionMutationVariables>;
+export const UpdateSessionDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateSession' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateSessionInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateSession' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'sessionId' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'name' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateSessionMutation, UpdateSessionMutationVariables>;
 export const GetSessionSummaryDocument = {
   kind: 'Document',
   definitions: [
@@ -13578,6 +13710,7 @@ export const GetSessionSummaryDocument = {
           { kind: 'Field', name: { kind: 'Name', value: 'endedAt' } },
           { kind: 'Field', name: { kind: 'Name', value: 'durationMinutes' } },
           { kind: 'Field', name: { kind: 'Name', value: 'goal' } },
+          { kind: 'Field', name: { kind: 'Name', value: 'notes' } },
         ],
       },
     },

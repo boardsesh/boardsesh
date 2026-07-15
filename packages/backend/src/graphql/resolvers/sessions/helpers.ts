@@ -105,6 +105,7 @@ export async function buildSessionPayload(
     clientId: inputs.clientId !== undefined ? inputs.clientId : ctx.connectionId,
     participantId: inputs.participantId ?? ctx.participantId ?? ctx.connectionId ?? '',
     goal: sessionData?.goal || null,
+    notes: sessionData?.notes || null,
     // `isPublic` defaults to `true` when `sessionData` is null. The null path
     // is a brief race during session cleanup (the in-memory session still
     // exists but the DB row has just been deleted) — defaulting open here

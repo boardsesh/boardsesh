@@ -54,6 +54,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     participantId: ID!
     "Optional session goal text"
     goal: String
+    "Optional free-text end-of-session recap (Strava-style description)"
+    notes: String
     "Whether session is publicly discoverable"
     isPublic: Boolean!
     "When the session was started (ISO 8601)"
@@ -225,6 +227,34 @@ export const sessionTypeDefs = /* GraphQL */ `
     durationMinutes: Int
     "Session goal text"
     goal: String
+    "Free-text end-of-session recap (Strava-style description)"
+    notes: String
+  }
+
+  """
+  Input for updating a session's editable metadata. Used both by the
+  end-of-session recap flow and by title editing. Omitting a field leaves it
+  unchanged; passing null or an empty string clears it.
+  """
+  input UpdateSessionInput {
+    "Session to update"
+    sessionId: ID!
+    "New session title. Omit to leave unchanged; null or empty string clears it."
+    name: String
+    "New end-of-session recap. Omit to leave unchanged; null or empty string clears it."
+    notes: String
+  }
+
+  """
+  Result of an updateSession mutation, echoing the canonical post-update values.
+  """
+  type UpdateSessionResult {
+    "Session that was updated"
+    sessionId: ID!
+    "Canonical session title after the update (null when cleared)"
+    name: String
+    "Canonical session recap after the update (null when cleared)"
+    notes: String
   }
 
   """

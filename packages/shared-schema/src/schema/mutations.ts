@@ -29,9 +29,18 @@ export const mutationsTypeDefs = /* GraphQL */ `
     leaveSession: Boolean!
 
     """
-    End a session (active participant only).
+    End a session (active participant only). The optional \`notes\` is a
+    free-text end-of-session recap persisted on the session and echoed back on
+    the returned SessionSummary.
     """
-    endSession(sessionId: ID!, timezone: String): SessionSummary
+    endSession(sessionId: ID!, timezone: String, notes: String): SessionSummary
+
+    """
+    Update a session's title and/or recap notes. Creator only. Works on both
+    active and ended sessions. Publishes SessionNameChanged to live
+    participants when the title changes.
+    """
+    updateSession(input: UpdateSessionInput!): UpdateSessionResult!
 
     """
     Update display name and avatar in the current session.

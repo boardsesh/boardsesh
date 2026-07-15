@@ -99,8 +99,9 @@ type Documents = {
   '\n  mutation RevokeRole($input: RevokeRoleInput!) {\n    revokeRole(input: $input)\n  }\n': typeof types.RevokeRoleDocument;
   '\n  query GetCommunitySettings($scope: String!, $scopeKey: String!) {\n    communitySettings(scope: $scope, scopeKey: $scopeKey) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n': typeof types.GetCommunitySettingsDocument;
   '\n  mutation SetCommunitySettings($input: SetCommunitySettingInput!) {\n    setCommunitySettings(input: $input) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n': typeof types.SetCommunitySettingsDocument;
-  '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n  }\n': typeof types.SessionSummaryFieldsFragmentDoc;
-  '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.EndSessionDocument;
+  '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n': typeof types.SessionSummaryFieldsFragmentDoc;
+  '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.EndSessionDocument;
+  '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n    }\n  }\n': typeof types.UpdateSessionDocument;
   '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n': typeof types.GetSessionSummaryDocument;
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': typeof types.FollowUserDocument;
   '\n  mutation UnfollowUser($input: FollowInput!) {\n    unfollowUser(input: $input)\n  }\n': typeof types.UnfollowUserDocument;
@@ -298,10 +299,12 @@ const documents: Documents = {
     types.GetCommunitySettingsDocument,
   '\n  mutation SetCommunitySettings($input: SetCommunitySettingInput!) {\n    setCommunitySettings(input: $input) {\n      id\n      scope\n      scopeKey\n      key\n      value\n      setBy\n      createdAt\n      updatedAt\n    }\n  }\n':
     types.SetCommunitySettingsDocument,
-  '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n  }\n':
+  '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n':
     types.SessionSummaryFieldsFragmentDoc,
-  '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone) {\n      ...SessionSummaryFields\n    }\n  }\n':
+  '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n':
     types.EndSessionDocument,
+  '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n    }\n  }\n':
+    types.UpdateSessionDocument,
   '\n  \n  query GetSessionSummary($sessionId: ID!) {\n    sessionSummary(sessionId: $sessionId) {\n      ...SessionSummaryFields\n    }\n  }\n':
     types.GetSessionSummaryDocument,
   '\n  mutation FollowUser($input: FollowInput!) {\n    followUser(input: $input)\n  }\n': types.FollowUserDocument,
@@ -883,14 +886,20 @@ export function graphql(
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n  }\n',
-): (typeof documents)['\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n  }\n'];
+  source: '\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n',
+): (typeof documents)['\n  fragment SessionSummaryFields on SessionSummary {\n    sessionId\n    totalSends\n    totalFlashes\n    totalAttempts\n    gradeDistribution {\n      grade\n      flash\n      send\n      attempt\n    }\n    hardestClimb {\n      climbUuid\n      climbName\n      grade\n      frames\n      layoutId\n      boardType\n      isMirror\n    }\n    participants {\n      userId\n      displayName\n      avatarUrl\n      sends\n      flashes\n      attempts\n    }\n    startedAt\n    endedAt\n    durationMinutes\n    goal\n    notes\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */
 export function graphql(
-  source: '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone) {\n      ...SessionSummaryFields\n    }\n  }\n',
-): (typeof documents)['\n  \n  mutation EndSession($sessionId: ID!, $timezone: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone) {\n      ...SessionSummaryFields\n    }\n  }\n'];
+  source: '\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n',
+): (typeof documents)['\n  \n  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {\n    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {\n      ...SessionSummaryFields\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateSession($input: UpdateSessionInput!) {\n    updateSession(input: $input) {\n      sessionId\n      name\n      notes\n    }\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

@@ -36,6 +36,7 @@ export const SHARED_EVENTS = {
   PlayDrawerOpened: 'Play Drawer Opened',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
+  SessionCommentAdded: 'Session Comment Added',
   AngleChanged: 'Angle Changed',
   // Queue sync-gate telemetry (createQueueSyncGate in @boardsesh/queue-runtime)
   // — observability for the sequence-gap / stale-event / hash-drift guards so

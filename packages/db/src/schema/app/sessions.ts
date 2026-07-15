@@ -45,6 +45,10 @@ export const boardSessions = pgTable(
     }),
     // Session goal text (e.g., "Send V5 today")
     goal: text('goal'),
+    // Free-text end-of-session recap (Strava-style description). Named `notes`
+    // rather than `comment` because the polymorphic social comments table
+    // already targets sessions and ticks carry their own `comment` column.
+    notes: text('notes'),
     // Whether session appears in public discovery
     isPublic: boolean('is_public').default(true).notNull(),
     // Explicit start time

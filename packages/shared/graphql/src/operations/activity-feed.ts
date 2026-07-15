@@ -77,6 +77,7 @@ const SESSION_SUMMARY_FIELDS = `
   lastTickAt
   durationMinutes
   goal
+  notes
   upvotes
   downvotes
   voteScore

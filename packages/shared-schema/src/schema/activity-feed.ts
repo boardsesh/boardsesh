@@ -488,6 +488,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     lastTickAt: String!
     durationMinutes: Int
     goal: String
+    notes: String
     upvotes: Int!
     downvotes: Int!
     voteScore: Int!
@@ -557,6 +558,7 @@ export const activityFeedTypeDefs = /* GraphQL */ `
     lastTickAt: String!
     durationMinutes: Int
     goal: String
+    notes: String
     ticks: [SessionDetailTick!]!
     upvotes: Int!
     downvotes: Int!

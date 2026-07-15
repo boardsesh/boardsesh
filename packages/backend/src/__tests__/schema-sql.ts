@@ -42,6 +42,7 @@ export const schemaSQL = `
     "name" text,
     "board_id" bigint,
     "goal" text,
+    "notes" text,
     "is_public" boolean DEFAULT true NOT NULL,
     "started_at" timestamp,
     "ended_at" timestamp,

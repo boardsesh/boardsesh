@@ -38,6 +38,7 @@ export const SESSION_SUMMARY_FIELDS = gql`
     endedAt
     durationMinutes
     goal
+    notes
   }
 `;
 
@@ -47,9 +48,19 @@ export const SESSION_SUMMARY_FIELDS = gql`
 
 export const END_SESSION = gql`
   ${SESSION_SUMMARY_FIELDS}
-  mutation EndSession($sessionId: ID!, $timezone: String) {
-    endSession(sessionId: $sessionId, timezone: $timezone) {
+  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {
+    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {
       ...SessionSummaryFields
+    }
+  }
+`;
+
+export const UPDATE_SESSION = gql`
+  mutation UpdateSession($input: UpdateSessionInput!) {
+    updateSession(input: $input) {
+      sessionId
+      name
+      notes
     }
   }
 `;
@@ -75,10 +86,24 @@ export type EndSessionVariables = {
   sessionId: string;
   /** IANA timezone of the ending device, for local-time export to platforms like Strava. */
   timezone?: string;
+  /** Optional free-text end-of-session recap persisted on the session. */
+  notes?: string;
 };
 
 export type EndSessionResponse = {
   endSession: SessionSummary | null;
+};
+
+export type UpdateSessionVariables = {
+  input: {
+    sessionId: string;
+    name?: string | null;
+    notes?: string | null;
+  };
+};
+
+export type UpdateSessionResponse = {
+  updateSession: { sessionId: string; name: string | null; notes: string | null };
 };
 
 export type GetSessionSummaryVariables = {

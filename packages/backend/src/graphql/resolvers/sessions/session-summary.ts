@@ -199,6 +199,7 @@ export async function generateSessionSummary(sessionId: string): Promise<Session
     endedAt: session.endedAt?.toISOString() || null,
     durationMinutes,
     goal: session.goal || null,
+    notes: session.notes || null,
   };
 }
 

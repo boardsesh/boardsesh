@@ -28,6 +28,7 @@ import {
   UsernameSchema,
   AvatarUrlSchema,
   SessionNameSchema,
+  SessionNotesSchema,
   CreateSessionInputSchema,
   ClimbQueueItemSchema,
   ClimbUuidSchema,
@@ -625,6 +626,7 @@ export const sessionMutations = {
       clientId: ctx.connectionId,
       participantId,
       goal: sessionData.goal || null,
+      notes: sessionData.notes || null,
       isPublic: sessionData.isPublic ?? true,
       startedAt: sessionData.startedAt?.toISOString() || null,
       endedAt: sessionData.endedAt?.toISOString() || null,
@@ -640,11 +642,13 @@ export const sessionMutations = {
    */
   endSession: async (
     _: unknown,
-    { sessionId, timezone }: { sessionId: string; timezone?: string | null },
+    { sessionId, timezone, notes }: { sessionId: string; timezone?: string | null; notes?: string | null },
     ctx: ConnectionContext,
   ) => {
     await applyRateLimit(ctx, RATE_LIMIT_END_SESSION, RATE_LIMIT_END_SESSION_OP);
     validateInput(SessionIdSchema, sessionId, 'sessionId');
+    // Fail fast on an over-long recap before doing any session teardown work.
+    if (notes != null) validateInput(SessionNotesSchema, notes, 'notes');
     // Ending a session is destructive (terminates every subscriber, generates
     // a summary row, marks the session ended in Postgres). The pre-#2128 code
     // required authentication unconditionally; the reland accidentally
@@ -695,16 +699,26 @@ export const sessionMutations = {
       }
     }
 
-    // Record the ending device's timezone before the session is closed out —
-    // exports to platforms like Strava need wall-clock local time, and UTC
-    // timestamps alone can't provide it. Best-effort: a bad zone string never
-    // fails the end.
+    // Persist the ending device's timezone and the optional recap before the
+    // session is closed out. Timezone: exports to platforms like Strava need
+    // wall-clock local time, and UTC timestamps alone can't provide it. Notes:
+    // written here (before generateSessionSummary) so the returned summary
+    // echoes the recap. Best-effort: a bad zone string or a failed write never
+    // fails the end. A single update guarded on a non-empty payload.
     const normalizedTimezone = normalizeIanaTimezone(timezone);
+    const sessionUpdates: Partial<typeof sessions.$inferInsert> = {};
     if (normalizedTimezone) {
+      sessionUpdates.timezone = normalizedTimezone;
+    }
+    if (notes !== undefined) {
+      const trimmedNotes = notes?.trim();
+      sessionUpdates.notes = trimmedNotes ? trimmedNotes : null;
+    }
+    if (Object.keys(sessionUpdates).length > 0) {
       try {
-        await db.update(sessions).set({ timezone: normalizedTimezone }).where(eq(sessions.id, sessionId));
+        await db.update(sessions).set(sessionUpdates).where(eq(sessions.id, sessionId));
       } catch (error) {
-        logger.warn(`[endSession] failed to persist timezone for session ${sessionId}:`, error);
+        logger.warn(`[endSession] failed to persist session metadata for session ${sessionId}:`, error);
       }
     }
 

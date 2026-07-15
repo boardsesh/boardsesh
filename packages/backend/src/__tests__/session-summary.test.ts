@@ -291,6 +291,30 @@ describe('generateSessionSummary', () => {
     expect(result!.goal).toBeNull();
   });
 
+  it('echoes the session recap notes when present', async () => {
+    mockState.sessionRows = [
+      { id: 'session-1', startedAt: null, endedAt: null, goal: null, notes: 'Great session today' },
+    ];
+    mockState.gradeDistRows = [];
+    mockState.hardestRows = [];
+    mockState.participantRows = [];
+
+    const result = await generateSessionSummary('session-1');
+
+    expect(result!.notes).toBe('Great session today');
+  });
+
+  it('returns null notes when the session has none', async () => {
+    mockState.sessionRows = [{ id: 'session-1', startedAt: null, endedAt: null, goal: null, notes: null }];
+    mockState.gradeDistRows = [];
+    mockState.hardestRows = [];
+    mockState.participantRows = [];
+
+    const result = await generateSessionSummary('session-1');
+
+    expect(result!.notes).toBeNull();
+  });
+
   it('rounds duration to nearest minute', async () => {
     const startedAt = new Date('2024-01-15T10:00:00Z');
     const endedAt = new Date('2024-01-15T10:45:30Z'); // 45 min 30 sec

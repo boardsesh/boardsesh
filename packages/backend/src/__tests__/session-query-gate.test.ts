@@ -293,6 +293,7 @@ describe('session query — membership gate compat matrix', () => {
       clientId: '',
       participantId: expect.any(String),
       goal: 'project the V6',
+      notes: null,
       isPublic: true,
       startedAt: '2026-05-18T12:00:00.000Z',
       endedAt: null,
