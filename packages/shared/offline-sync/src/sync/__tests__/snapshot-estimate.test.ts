@@ -132,8 +132,9 @@ describe('estimateScopeDownload', () => {
   });
 
   it('reports a zero-byte artifact as a real estimate, not a falsy miss', () => {
-    // Guards against a truthiness check creeping in: kilter layout 3 exports 2
-    // climbs, and "0 MB" is a legitimate answer worth showing.
+    // Guards against a truthiness check creeping in: `bytes: 0` must stay a
+    // 'snapshot' answer (the dialog renders it as "0 B") rather than collapsing
+    // into 'unknown' and silently dropping the size line.
     expect(eligible({ manifest: manifest([entry({ bytes: 0 })]) })).toMatchObject({ kind: 'snapshot', bytes: 0 });
   });
 });

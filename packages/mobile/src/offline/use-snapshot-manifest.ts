@@ -25,7 +25,13 @@ export function useSnapshotManifest(): SnapshotManifest | null {
 
   const { data } = useQuery({
     queryKey: ['snapshotManifest'],
-    queryFn: async () => parseSnapshotManifest(await snapshotSource?.fetchManifest()),
+    queryFn: async () => {
+      // `enabled` below already gates this, but an early return keeps the type
+      // honest rather than relying on an optional chain to feed `undefined` into
+      // the parser.
+      if (!snapshotSource) return null;
+      return parseSnapshotManifest(await snapshotSource.fetchManifest());
+    },
     enabled: !!snapshotSource,
     // Mirrors the object's own `Cache-Control: public, max-age=300`. The manifest
     // is rewritten once a night, so anything shorter just re-fetches a 12 KB file

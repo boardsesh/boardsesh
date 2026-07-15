@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation, useRouter } from 'expo-router';
@@ -101,7 +101,14 @@ export default function ManageBoards() {
   const { enableBoardsOffline } = useBoardDownloads();
   // Warmed here on mount so the download-size estimate is already in cache when a
   // row's toggle is tapped — the confirm dialog must never wait on a fetch.
+  //
+  // Mirrored into a ref because the toggle handler only reads it at tap time:
+  // keeping it out of that handler's deps means a manifest refresh can't churn the
+  // callback identity and re-render every memoised row. The ref also always reads
+  // the freshest manifest, which is exactly what the tap wants.
   const snapshotManifest = useSnapshotManifest();
+  const snapshotManifestRef = useRef(snapshotManifest);
+  snapshotManifestRef.current = snapshotManifest;
   const db = useSQLiteContext();
   const syncStatus = useSyncStatus();
   const [enabledBoards] = useSetting('syncEnabledBoards');
@@ -151,7 +158,7 @@ export default function ManageBoards() {
         getBootstrapAttempts(db, key),
       ]);
       const estimate = estimateScopeDownload({
-        manifest: snapshotManifest,
+        manifest: snapshotManifestRef.current,
         boardType: scope.boardType,
         layoutId: scope.layoutId,
         hasExistingCheckpoint: !!climbsCheckpoint || !!statsCheckpoint,
@@ -171,7 +178,7 @@ export default function ManageBoards() {
       // latest syncEnabledBoards setting).
       enableBoardsOffline(board);
     },
-    [confirm, t, i18n.language, db, enableBoardsOffline, snapshotManifest],
+    [confirm, t, i18n.language, db, enableBoardsOffline],
   );
 
   // See boards/index.tsx: a hard 401 clears tokens without flipping
