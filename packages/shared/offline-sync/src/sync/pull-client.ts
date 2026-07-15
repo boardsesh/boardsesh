@@ -255,6 +255,8 @@ async function syncTable(
   queryClient: QueryInvalidator,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
   tableName: string,
+  /** The epoch pullSync captured at CYCLE start — see `cycleAborted` there. */
+  cycleEpoch: number,
   boardScope?: BoardScope,
   onProgress?: (documentsProcessed: number) => void,
   onSchemaDrift?: SchemaDriftReporter,
@@ -277,13 +279,17 @@ async function syncTable(
   // — a cross-account leak, plus checkpoints past the new user's data. The
   // epoch is monotonic, so comparing it catches a wipe that started AND
   // finished while we were awaiting the network.
-  const startEpoch = getWipeEpoch();
+  //
+  // The epoch compared against is the CYCLE's, passed in — never one captured
+  // here. Capturing locally would make each table re-baseline against the
+  // post-wipe value and carry on, so a purge would only ever abort whichever
+  // table happened to be mid-flight (see `cycleAborted` in pullSync).
 
   let hasMore = true;
   while (hasMore) {
     // Sign-out is wiping local data: stop before this page writes the old
     // user's rows back (mirrors the drainer's guard).
-    if (isSigningOut() || getWipeEpoch() !== startEpoch) return { reachedTail: false };
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch) return { reachedTail: false };
     const variables: Record<string, unknown> = { cursor, limit: PAGE_LIMIT };
     if (config.isPerBoard && boardScope) {
       variables.boardType = boardScope.boardType;
@@ -296,7 +302,7 @@ async function syncTable(
 
     // Re-check after the await: the wipe may have started (or fully completed)
     // while this page was on the wire.
-    if (isSigningOut() || getWipeEpoch() !== startEpoch) return { reachedTail: false };
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch) return { reachedTail: false };
 
     // An empty page would not advance the cursor; if the backend ever returns
     // documents:[] with hasMore:true we'd spin forever. Stop here (I2).
@@ -331,6 +337,8 @@ async function processDeletions(
   db: OfflineDatabase,
   queryClient: QueryInvalidator,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
+  /** The epoch pullSync captured at CYCLE start — see `cycleAborted` there. */
+  cycleEpoch: number,
   onProgress?: (documentsProcessed: number) => void,
 ): Promise<void> {
   const checkpointKey = DELETIONS_CHECKPOINT_KEY;
@@ -342,21 +350,21 @@ async function processDeletions(
   let totalProcessed = 0;
   const invalidatedKeys = new Set<string>();
 
-  // See syncTable: catch a wipe that ran while a page was on the wire.
-  const startEpoch = getWipeEpoch();
+  // See syncTable: catch a wipe that ran while a page was on the wire, and why the
+  // epoch is the cycle's rather than one captured here.
 
   let hasMore = true;
   while (hasMore) {
     // Sign-out is wiping local data: stop before this page writes the old
     // user's rows back (mirrors the drainer's guard).
-    if (isSigningOut() || getWipeEpoch() !== startEpoch) return;
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch) return;
     const response = await graphqlFetch<{ syncDeletions: SyncDeletionsResult }>(SYNC_DELETIONS_QUERY, {
       cursor,
       limit: PAGE_LIMIT,
     });
     const result = response.syncDeletions;
 
-    if (isSigningOut() || getWipeEpoch() !== startEpoch) return;
+    if (isSigningOut() || getWipeEpoch() !== cycleEpoch) return;
 
     // Empty page can't advance the cursor; break to avoid an infinite loop if
     // the backend returns deletions:[] with hasMore:true (I2).
@@ -499,6 +507,8 @@ async function runBootstrapPhase(
   queryClient: QueryInvalidator,
   source: SnapshotSource,
   scopes: BoardScope[],
+  /** The epoch pullSync captured at CYCLE start — see `cycleAborted` there. */
+  cycleEpoch: number,
   stampScopeStart: (scopeKey: string) => void,
   onProgress: ((progress: SyncProgress) => void) | undefined,
   onSchemaDrift: SchemaDriftReporter | undefined,
@@ -512,11 +522,10 @@ async function runBootstrapPhase(
     { file: { filePath: string } | null; cause: unknown; permanentMiss: boolean }
   >();
   const downloadedPaths = new Set<string>();
-  const startEpoch = getWipeEpoch();
 
   try {
     for (const scope of scopes) {
-      if (isSigningOut() || getWipeEpoch() !== startEpoch) break;
+      if (isSigningOut() || getWipeEpoch() !== cycleEpoch) break;
 
       // Duration telemetry starts here — before the eligibility check — so a
       // snapshot scope's durationMs covers its manifest/download/import work.
@@ -615,7 +624,7 @@ async function runBootstrapPhase(
       } catch (error) {
         // A wipe mid-import rolls the transaction back and bails the phase — no
         // attempt (the pull is being torn down, not failing).
-        if (error instanceof SnapshotWipedError || isSigningOut() || getWipeEpoch() !== startEpoch) break;
+        if (error instanceof SnapshotWipedError || isSigningOut() || getWipeEpoch() !== cycleEpoch) break;
         if (error instanceof SnapshotSchemaStaleError) {
           // The artifact predates this client's schema — importing it would
           // NULL-fill newer columns and stamp the cursor past them forever.
@@ -649,6 +658,22 @@ export async function pullSync(
   const onProgress = options?.onProgress;
   let totalDocuments = 0;
 
+  // Captured ONCE for the whole cycle and threaded into every phase, so a wipe or a
+  // local purge aborts the entire pull rather than just whichever table is mid-flight.
+  //
+  // This matters because `enabledBoards` is a snapshot taken before the cycle began.
+  // Removing a board (see removeBoardScopeData) drops it from that setting and bumps
+  // the epoch — but this cycle is still iterating the STALE list. If each table
+  // re-baselined its own epoch, every table after the one that aborted would capture
+  // the post-bump value, sail through its guard, and happily re-download the scope
+  // whose rows are being deleted right now, writing checkpoints past them. The user
+  // taps Remove and the catalog comes back.
+  //
+  // Sign-out never hit this because `isSigningOut()` is a persistent flag that stays
+  // true for every subsequent table; the epoch alone is not a substitute for it.
+  const cycleEpoch = getWipeEpoch();
+  const cycleAborted = (): boolean => isSigningOut() || getWipeEpoch() !== cycleEpoch;
+
   // Parse the enabled scope keys once; malformed keys are dropped (a stray value
   // can't crash the pull) so both the bootstrap phase and the paged board loop
   // iterate the same validated set.
@@ -678,6 +703,7 @@ export async function pullSync(
       queryClient,
       options.snapshotSource,
       boardScopes,
+      cycleEpoch,
       stampScopeStart,
       onProgress,
       options.onSchemaDrift,
@@ -691,13 +717,15 @@ export async function pullSync(
   // Applied after the pulls, a tombstone sharing the recreated row's timestamp
   // would delete data this cycle just wrote, and the strict > cursor would
   // never fetch it again.
+  if (cycleAborted()) return;
   onProgress?.({ phase: 'deletions', currentTable: null, documentsProcessed: 0 });
-  await processDeletions(db, queryClient, graphqlFetch, (deletionsProcessed) => {
+  await processDeletions(db, queryClient, graphqlFetch, cycleEpoch, (deletionsProcessed) => {
     totalDocuments = deletionsProcessed;
     onProgress?.({ phase: 'deletions', currentTable: null, documentsProcessed: totalDocuments });
   });
 
   for (const tableName of USER_DATA_TABLES) {
+    if (cycleAborted()) return;
     onProgress?.({ phase: 'user_data', currentTable: tableName, documentsProcessed: totalDocuments });
     const baseCount = totalDocuments;
     await syncTable(
@@ -705,6 +733,7 @@ export async function pullSync(
       queryClient,
       graphqlFetch,
       tableName,
+      cycleEpoch,
       undefined,
       (tableProcessed) => {
         totalDocuments = baseCount + tableProcessed;
@@ -718,6 +747,10 @@ export async function pullSync(
   // into boardScopes). currentTable carries the full scope key so a per-board UI
   // can match itself.
   for (const boardScope of boardScopes) {
+    // boardScopes is the pre-cycle snapshot of the enabled set. Once a purge has
+    // fired, every remaining entry is suspect — the scope being deleted right now is
+    // still in this list — so stop the cycle rather than pulling any of them.
+    if (cycleAborted()) return;
     const scopeKey = boardScope.scopeKey;
     // No-op when the bootstrap phase already stamped this scope; the paged-only
     // path (no snapshotSource) starts its duration clock here.
@@ -728,6 +761,7 @@ export async function pullSync(
     if (skipBootstrapPagedPull.has(scopeKey)) continue;
     let allTablesReachedTail = true;
     for (const tableName of BOARD_DATA_TABLES) {
+      if (cycleAborted()) return;
       const tableLabel = `${tableName}:${scopeKey}`;
       onProgress?.({
         phase: 'board_data',
@@ -741,6 +775,7 @@ export async function pullSync(
         queryClient,
         graphqlFetch,
         tableName,
+        cycleEpoch,
         boardScope,
         (tableProcessed) => {
           totalDocuments = baseCount + tableProcessed;

@@ -156,6 +156,48 @@ describe('re-downloading a removed board', () => {
 });
 
 describe('beginLocalPurge', () => {
+  // The bug this guards: a purge must abort the WHOLE cycle, not just the table that
+  // happens to be mid-flight. pullSync iterates `enabledBoards` as captured BEFORE the
+  // cycle began, so the scope being removed is still in that list. If each table
+  // re-baselined its own epoch, every table after the aborted one would sail through
+  // and re-download the scope whose rows removeBoardScopeData is deleting right now —
+  // the user taps Remove and the catalog comes back.
+  it('stops the whole cycle, not just the table that was mid-flight', async () => {
+    const purgeAfter = 'boardsesh_ticks';
+    const queriedTables: string[] = [];
+
+    const graphqlFetch = vi.fn(async (query: string) => {
+      if (query.includes('syncDeletions')) {
+        return { syncDeletions: { deletions: [], cursor: null, hasMore: false } };
+      }
+      for (const [tableName, config] of Object.entries(TABLE_CONFIGS)) {
+        if (!query.includes(config.queryName)) continue;
+        queriedTables.push(tableName);
+        // A removal fires while this early user table is on the wire.
+        if (tableName === purgeAfter) beginLocalPurge();
+        if (tableName === 'board_climbs') {
+          return {
+            syncClimbs: {
+              documents: [CLIMB_DOC],
+              cursor: { updatedAt: CLIMB_DOC.updated_at, syncSeq: '10' },
+              hasMore: false,
+            },
+          };
+        }
+        return { [config.queryName]: { documents: [], cursor: null, hasMore: false } };
+      }
+      throw new Error(`Unexpected query: ${query}`);
+    });
+
+    await pullSync(db, queryClient, graphqlFetch as unknown as GraphqlFetchMock, { enabledBoards: [SCOPE_KEY] });
+
+    // Nothing may be pulled after the purge — above all not the board tables, which
+    // is where the removed scope's catalog would come back from.
+    expect(queriedTables).toEqual([purgeAfter]);
+    expect(await climbCount()).toBe(0);
+    expect(await getCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toBeNull();
+  });
+
   // The resurrection window: a page already on the wire when the delete runs would
   // otherwise land afterwards, restoring rows AND stamping a checkpoint past them.
   it('makes an in-flight pull discard the page it was fetching', async () => {

@@ -39,7 +39,12 @@ import { useToast } from '../../providers/toast-provider';
 import { useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useSetting } from '../../settings';
-import { measureDatabaseBytes, measureFreeDiskSpace } from '../../db/storage-usage';
+import {
+  measureDatabaseBytes,
+  measureFreeDiskSpace,
+  isStorageScreenEmpty,
+  RECLAIMABLE_VISIBLE_BYTES,
+} from '../../db/storage-usage';
 import { removeOfflineBoard, compactOfflineDatabase } from '../../offline/remove-offline-board';
 import { formatStorageSize } from '../../lib/format-storage-size';
 import { reportError } from '../../lib/error-reporting';
@@ -66,6 +71,7 @@ export function StorageSettingsScreen() {
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const [removingScopeKey, setRemovingScopeKey] = useState<string | null>(null);
   const [isRemovingAll, setIsRemovingAll] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
 
   const {
     data: measurement,
@@ -203,7 +209,24 @@ export function StorageSettingsScreen() {
     }
   }, [confirm, t, rows, runRemoval]);
 
-  const isBusy = removingScopeKey !== null || isRemovingAll;
+  // A compaction that didn't land leaves the rows gone but the pages still reserved,
+  // so the user's storage figure never moved. That's the one case worth offering a
+  // manual retry for — see RECLAIMABLE_VISIBLE_BYTES for why it isn't `> 0`.
+  const hasReclaimable = (measurement?.reclaimableBytes ?? 0) >= RECLAIMABLE_VISIBLE_BYTES;
+
+  const handleCompact = useCallback(async () => {
+    hapticLight();
+    setIsCompacting(true);
+    try {
+      const compacted = await compactOfflineDatabase(db);
+      if (!compacted) showToast(t('mobile.more.storage.compactFailed'), 'error');
+      await refetch();
+    } finally {
+      setIsCompacting(false);
+    }
+  }, [db, showToast, t, refetch]);
+
+  const isBusy = removingScopeKey !== null || isRemovingAll || isCompacting;
 
   // Also spin while re-measuring over an empty cached result: a board downloaded
   // while this screen was unmounted would otherwise flash "Nothing downloaded yet"
@@ -237,7 +260,11 @@ export function StorageSettingsScreen() {
     );
   }
 
-  if (rows.length === 0) {
+  // Nothing downloaded AND nothing held back: the plain empty state. When there IS
+  // reserved space, fall through to the full screen instead — that's the case where
+  // a compaction failed after the last board was removed, and a bare empty state
+  // would hide the total, the free-space figure, and the only way to retry.
+  if (isStorageScreenEmpty({ boardCount: rows.length, reclaimableBytes: measurement.reclaimableBytes })) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <Icon name="boards" size={48} color={systemColors.tertiaryLabel} />
@@ -291,39 +318,75 @@ export function StorageSettingsScreen() {
         ) : null}
       </Card>
 
-      <SectionHeader title={t('mobile.more.storage.boardsHeader')} />
-      <Card style={styles.card}>
-        {rows.map((row, index) => (
-          <StorageBoardRow
-            key={row.scopeKey}
-            scopeKey={row.scopeKey}
-            title={row.title}
-            subtitle={row.subtitle}
-            caption={row.caption}
-            statusLabel={row.statusLabel}
-            removeLabel={t('mobile.more.storage.remove')}
-            removeAccessibilityLabel={t('mobile.more.storage.removeAria', { name: row.title })}
-            isRemoving={removingScopeKey === row.scopeKey}
-            isDisabled={isBusy}
-            showSeparator={index < rows.length - 1}
-            onRemove={handleRemove}
+      {/* Only when a compaction hasn't landed. Rendered ABOVE the boards so the one
+          actionable thing on the screen isn't below the fold on a long list. */}
+      {hasReclaimable ? (
+        <>
+          <SectionHeader title={t('mobile.more.storage.reservedHeader')} />
+          <Card style={styles.card}>
+            <View style={styles.reserved}>
+              <Text variant="subheadline">
+                {t('mobile.more.storage.reservedNote', {
+                  size: formatStorageSize(measurement.reclaimableBytes),
+                })}
+              </Text>
+              <Button
+                title={t('mobile.more.storage.compact', {
+                  size: formatStorageSize(measurement.reclaimableBytes),
+                })}
+                variant="outlined"
+                loading={isCompacting}
+                disabled={removingScopeKey !== null || isRemovingAll}
+                onPress={() => void handleCompact()}
+              />
+            </View>
+          </Card>
+        </>
+      ) : null}
+
+      {/* Reachable with no boards left: a failed compaction is exactly the state where
+          the list is empty but there's still something to do. */}
+      {rows.length === 0 ? (
+        <Text variant="footnote" style={[styles.note, { color: systemColors.secondaryLabel }]}>
+          {t('mobile.more.storage.emptySubtitle')}
+        </Text>
+      ) : (
+        <>
+          <SectionHeader title={t('mobile.more.storage.boardsHeader')} />
+          <Card style={styles.card}>
+            {rows.map((row, index) => (
+              <StorageBoardRow
+                key={row.scopeKey}
+                scopeKey={row.scopeKey}
+                title={row.title}
+                subtitle={row.subtitle}
+                caption={row.caption}
+                statusLabel={row.statusLabel}
+                removeLabel={t('mobile.more.storage.remove')}
+                removeAccessibilityLabel={t('mobile.more.storage.removeAria', { name: row.title })}
+                isRemoving={removingScopeKey === row.scopeKey}
+                isDisabled={isBusy}
+                showSeparator={index < rows.length - 1}
+                onRemove={handleRemove}
+              />
+            ))}
+          </Card>
+
+          <Text variant="caption1" style={[styles.note, { color: systemColors.tertiaryLabel }]}>
+            {t('mobile.more.storage.estimateNote')}
+          </Text>
+
+          <Button
+            title={t('mobile.more.storage.removeAll')}
+            variant="text"
+            role="destructive"
+            loading={isRemovingAll}
+            disabled={removingScopeKey !== null || isCompacting}
+            onPress={() => void handleRemoveAll()}
+            style={styles.removeAll}
           />
-        ))}
-      </Card>
-
-      <Text variant="caption1" style={[styles.note, { color: systemColors.tertiaryLabel }]}>
-        {t('mobile.more.storage.estimateNote')}
-      </Text>
-
-      <Button
-        title={t('mobile.more.storage.removeAll')}
-        variant="text"
-        role="destructive"
-        loading={isRemovingAll}
-        disabled={removingScopeKey !== null}
-        onPress={() => void handleRemoveAll()}
-        style={styles.removeAll}
-      />
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -365,5 +428,9 @@ const styles = StyleSheet.create({
   removeAll: {
     marginTop: spacing[4],
     marginHorizontal: spacing[4],
+  },
+  reserved: {
+    padding: spacing[4],
+    gap: spacing[3],
   },
 });

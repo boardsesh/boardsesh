@@ -9,6 +9,29 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { DATABASE_NAME } from './connection';
 
 /**
+ * How much reclaimable space is worth telling the user about.
+ *
+ * SQLite's freelist is almost never empty — ordinary sync churn leaves a few pages on
+ * it — so "greater than zero" would park a Reserved-space row on every device forever.
+ * This is the bar for "a VACUUM would visibly move your storage number", which in
+ * practice means a removal happened and its compaction didn't land.
+ */
+export const RECLAIMABLE_VISIBLE_BYTES = 5_000_000;
+
+/**
+ * Whether the Storage screen has genuinely nothing to show or do.
+ *
+ * Deliberately NOT just "no boards downloaded". Removing the last board and then
+ * failing to compact leaves zero boards but a database still full of freelist pages:
+ * the rows are gone, the user's storage figure hasn't moved, and a bare empty state
+ * would hide the total, the free-space figure, and the only button that can finish the
+ * job — on the one screen whose entire purpose is reclaiming that space.
+ */
+export function isStorageScreenEmpty(params: { boardCount: number; reclaimableBytes: number }): boolean {
+  return params.boardCount === 0 && params.reclaimableBytes < RECLAIMABLE_VISIBLE_BYTES;
+}
+
+/**
  * Real bytes on disk for the offline database, including its WAL and shared-memory
  * sidecars.
  *
