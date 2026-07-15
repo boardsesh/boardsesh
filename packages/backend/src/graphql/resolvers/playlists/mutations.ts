@@ -458,8 +458,10 @@ export const playlistMutations = {
       // unique constraint, so the intermediate state never collides.
       if (writes.length > 0) {
         const idColumn = dbSchema.playlistClimbs.id;
+        // Cast each THEN so the CASE is typed `integer`: untyped params make
+        // Postgres resolve the CASE to `text`, which the integer column rejects (42804).
         const positionCase = sql`case ${idColumn} ${sql.join(
-          writes.map((write) => sql`when ${write.id} then ${write.position}`),
+          writes.map((write) => sql`when ${write.id} then ${write.position}::integer`),
           sql` `,
         )} end`;
         await tx
