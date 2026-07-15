@@ -31,7 +31,7 @@ const removeBoardScopeData = vi.fn(async () => ({
   removedAnyRows: true,
 }));
 const beginLocalPurge = vi.fn();
-const vacuumDatabase = vi.fn(async () => {});
+const vacuumDatabase = vi.fn(async () => true);
 
 vi.mock('@boardsesh/offline-sync', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/offline-sync')>();
@@ -49,7 +49,7 @@ vi.mock('../../lib/error-reporting', () => ({
 }));
 
 import type { QueryClient } from '@tanstack/react-query';
-import { removeOfflineBoard, removeAllOfflineBoards, compactOfflineDatabase } from '../remove-offline-board';
+import { removeOfflineBoard, compactOfflineDatabase } from '../remove-offline-board';
 import { getSetting, setSetting, resetAllSettings } from '../../settings/hooks';
 import type { OfflineBoardScope, OfflineDatabase } from '@boardsesh/offline-sync';
 
@@ -139,28 +139,19 @@ describe('removeOfflineBoard', () => {
   });
 });
 
-describe('removeAllOfflineBoards', () => {
-  it('tears down every scope and empties the setting', async () => {
-    setSetting('syncEnabledBoards', ['kilter:1:7', 'kilter:1:8']);
-
-    await removeAllOfflineBoards({ db, queryClient, scopeKeys: ['kilter:1:7', 'kilter:1:8'] });
-
-    expect(removeBoardScopeData).toHaveBeenCalledTimes(2);
-    expect(getSetting('syncEnabledBoards')).toEqual([]);
-  });
-
-  it('skips a malformed scope key rather than throwing', async () => {
-    await removeAllOfflineBoards({ db, queryClient, scopeKeys: ['not-a-scope'] });
-
-    expect(removeBoardScopeData).not.toHaveBeenCalled();
-  });
-});
-
 describe('compactOfflineDatabase', () => {
   // The teardown already committed, so a failed VACUUM means "the data is gone but
   // the file didn't shrink" — reportable, never an error that implies data loss.
   it('reports false instead of throwing when the vacuum fails', async () => {
     vacuumDatabase.mockRejectedValueOnce(new Error('SQLITE_FULL'));
+
+    await expect(compactOfflineDatabase(db)).resolves.toBe(false);
+  });
+
+  // The rebuild landed but a reader blocked the WAL truncation, so the -wal stayed
+  // large and the user's number won't have moved. Silent otherwise — pragma, not throw.
+  it('reports false when the WAL truncation was blocked', async () => {
+    vacuumDatabase.mockResolvedValueOnce(false);
 
     await expect(compactOfflineDatabase(db)).resolves.toBe(false);
   });

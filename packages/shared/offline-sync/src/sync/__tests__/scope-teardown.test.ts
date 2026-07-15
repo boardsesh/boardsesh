@@ -277,14 +277,25 @@ describe('removeBoardScopeData — markers', () => {
     expect(await getCheckpoint(db, DELETIONS_CHECKPOINT_KEY)).toEqual(deletionsCursor);
   });
 
-  // Derived from BOARD_DATA_TABLES, so a future per-board table can't silently leave
-  // its checkpoint behind — the gap board_climb_grades already fell through once.
-  it('covers one checkpoint key per per-board table', async () => {
+  // The checkpoint keys are derived from BOARD_DATA_TABLES, so a future per-board
+  // table can't silently leave its checkpoint behind — the gap board_climb_grades
+  // already fell through once.
+  //
+  // Spelled out as an exact set rather than a count: this is the specification of
+  // what "a scope's downloaded state" consists of. Adding a marker here should mean
+  // deliberately updating this list (and `seedMarkers` above, which proves the
+  // teardown actually clears each one), not nudging a magic number.
+  it('is exactly the scope’s checkpoints plus its three markers', async () => {
     const keys = scopeSyncMetaKeys('kilter:1:5');
-    for (const table of BOARD_DATA_TABLES) {
-      expect(keys).toContain(`checkpoint:${table}:kilter:1:5`);
-    }
-    expect(keys).toHaveLength(BOARD_DATA_TABLES.length + 3);
+
+    expect(new Set(keys)).toEqual(
+      new Set([
+        ...BOARD_DATA_TABLES.map((table) => `checkpoint:${table}:kilter:1:5`),
+        'scope-complete:kilter:1:5',
+        'bootstrap-attempts:kilter:1:5',
+        'bootstrap-done:kilter:1:5',
+      ]),
+    );
   });
 
   // The caller removes the MMKV setting before calling this, so a crash in between

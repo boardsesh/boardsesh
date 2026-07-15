@@ -89,27 +89,6 @@ export async function removeOfflineBoard(params: {
 }
 
 /**
- * Remove every downloaded board. Each scope is torn down in turn (so a failure part
- * way through still leaves a consistent device), with `retainedScopes: []` falling
- * out naturally because each iteration re-reads the setting after the previous one
- * emptied it further.
- */
-export async function removeAllOfflineBoards(params: {
-  db: OfflineDatabase;
-  queryClient: QueryClient;
-  scopeKeys: readonly string[];
-}): Promise<void> {
-  const { db, queryClient, scopeKeys } = params;
-  for (const scopeKey of scopeKeys) {
-    const scope = parseOfflineBoardKey(scopeKey);
-    // A malformed legacy entry has no scope to delete rows for; drop the setting
-    // entry so it stops showing up, and move on.
-    if (!scope) continue;
-    await removeOfflineBoard({ db, queryClient, scope });
-  }
-}
-
-/**
  * Hand the freed pages back to the filesystem.
  *
  * Kept separate from the teardowns above, and best-effort by design: the teardown
@@ -121,8 +100,16 @@ export async function removeAllOfflineBoards(params: {
  */
 export async function compactOfflineDatabase(db: OfflineDatabase): Promise<boolean> {
   try {
-    await vacuumDatabase(db);
-    return true;
+    // False = the rebuild landed but a reader blocked the WAL truncation, so the file
+    // may not have shrunk as far as it should. Same user-facing story as a throw
+    // (the data is gone, the number may not have moved), so it's reported the same way.
+    const truncated = await vacuumDatabase(db);
+    if (!truncated) {
+      reportHandledError(new Error('wal_checkpoint(TRUNCATE) was busy after VACUUM; -wal not truncated'), {
+        tags: { source: 'offline-sync', kind: 'vacuum' },
+      });
+    }
+    return truncated;
   } catch (error) {
     reportHandledError(error, { tags: { source: 'offline-sync', kind: 'vacuum' } });
     return false;

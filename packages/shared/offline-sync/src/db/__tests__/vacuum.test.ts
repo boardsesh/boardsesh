@@ -57,7 +57,7 @@ describe('vacuumDatabase', () => {
     expect(fileSize(), 'deleting rows must not shrink the file on its own').toBe(sizeWhenFull);
     expect(await measureReclaimableBytes(db)).toBeGreaterThan(0);
 
-    await vacuumDatabase(db);
+    await expect(vacuumDatabase(db)).resolves.toBe(true);
 
     expect(fileSize()).toBeLessThan(sizeWhenFull);
     expect(await measureReclaimableBytes(db)).toBe(0);

@@ -34,7 +34,9 @@ export async function measureReclaimableBytes(db: OfflineDatabase): Promise<numb
 }
 
 /**
- * Rebuild the database file, returning freelist pages to the filesystem.
+ * Rebuild the database file, returning freelist pages to the filesystem. Resolves
+ * false when the rebuild landed but the WAL truncation was blocked (see below) — the
+ * data is still gone, the file just may not have shrunk as far as it should.
  *
  * MUST NOT run inside a transaction — SQLite rejects it outright, and note that
  * `withExclusiveTransactionAsync` opens a deferred BEGIN before its task body runs,
@@ -55,11 +57,19 @@ export async function measureReclaimableBytes(db: OfflineDatabase): Promise<numb
  * (SQLITE_FULL, SQLITE_BUSY, app killed) still leaves a valid database with the rows
  * deleted and the space merely still on the freelist.
  */
-export async function vacuumDatabase(db: OfflineDatabase): Promise<void> {
+export async function vacuumDatabase(db: OfflineDatabase): Promise<boolean> {
   await db.execAsync('VACUUM');
   // In WAL mode VACUUM writes the whole rebuilt database through the WAL, leaving a
   // -wal file at roughly the database's size — which would eat the reclaimed bytes
   // straight back, since the user's storage figure counts the sidecars. TRUNCATE (not
   // PASSIVE/FULL) is the checkpoint mode that actually shrinks the -wal file.
-  await db.execAsync('PRAGMA wal_checkpoint(TRUNCATE)');
+  //
+  // The pragma returns (busy, log, checkpointed) and does NOT throw when it can't
+  // finish: `busy = 1` means a reader held it off, the -wal stayed large, and the
+  // user's storage figure won't have improved despite a clean VACUUM. Silent, so
+  // report it rather than claiming success. Not fatal either way — the rows are gone
+  // and the next checkpoint truncates.
+  const checkpoint = await db.getFirstAsync<{ busy: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
+  // A non-WAL database returns no row; nothing was blocked, so that's a success.
+  return (checkpoint?.busy ?? 0) === 0;
 }
