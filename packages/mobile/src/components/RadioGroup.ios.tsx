@@ -1,42 +1,38 @@
 // RadioGroup — iOS implementation, real SwiftUI via @expo/ui/swift-ui.
 //
-// A single SwiftUI `Picker` inside its own `Host`. Each option is a `Text` child
-// carrying a `tag` modifier so SwiftUI maps selection to the option value; the row
-// styling, tap targets, single-choice picker a11y (announced as a picker, not a
-// pile of hand-rolled `radio` Pressables), and selection animation come from the
-// platform. We bridge the brand tint and wrap the Host in the grouped-inset card
-// the old hand-rolled control had.
+// `variant='inline'` (default): a single SwiftUI `Picker` in `inline` style — a
+// vertical list of options with a checkmark on the selected row (every option
+// visible), wrapped in the grouped-inset card the old hand-rolled control had.
 //
-// `variant='inline'` (default) uses `pickerStyle('inline')` — a vertical list of
-// options with a checkmark on the selected row (every option visible). `'menu'`
-// uses `pickerStyle('menu')` — a single compact button showing the current label
-// that pops the options in a native menu on tap, so the control only expands when
-// pressed.
+// `variant='menu'`: a SwiftUI `Menu` whose trigger is a full-width row (the current
+// value on the left, a chevron on the right, matching the sheet's other tappable
+// rows) that opens the options in a native dropdown on a single tap — an inline
+// `Picker` inside the menu renders the checkmarked option list. This keeps the
+// control collapsed to one row until pressed, instead of the tall always-open list.
 //
-// iOS limitation: the Picker can't express a per-option `disabled` or a per-option
-// `description` — both are dropped here (honoured on Android). The one call site
-// that used them (the status filter's signed-out "drafts" gating) now handles that
-// at the call site, so this is a graceful degrade, not a regression.
+// Both share `makeRadioSelectHandler` for selection. iOS limitation: the Picker
+// can't express a per-option `disabled`/`description` — dropped here (honoured on
+// Android). The one call site that used them (the status filter's signed-out
+// "drafts" gating) handles that at the call site, so this is a graceful degrade.
 
 import { useMemo } from 'react';
 import { Host } from '@expo/ui';
-import { Picker, Text } from '@expo/ui/swift-ui';
-import { pickerStyle, tint, tag } from '@expo/ui/swift-ui/modifiers';
+import { Picker, Text, Menu, HStack, Spacer, Image } from '@expo/ui/swift-ui';
+import { pickerStyle, tint, tag, padding } from '@expo/ui/swift-ui/modifiers';
 import { StyleSheet } from 'react-native';
 import { useTheme } from '../providers/theme-provider';
 import { brandAccentColor } from '../theme/expo-ui-modifiers';
+import { spacing } from '../theme/tokens';
 import { makeRadioSelectHandler } from './RadioGroup.logic';
 import type { RadioGroupProps } from './RadioGroup.types';
 
-// `matchContents={{ vertical: true }}` lets the Host track the Picker's real
-// height, so the rows grow with Dynamic Type instead of being clipped by a hard
-// frame (the proven AngleSlider / SwitchRow pattern for a content-sized control —
-// unlike SegmentedControl, whose intrinsic height is fixed). The `minHeight` floor
-// only guards against the native Host under-reporting at the default text size, so
-// the card can't collapse: `inline` needs room for every row (row-count ×
-// ROW_HEIGHT); `menu` is a single button, so one row is enough. Each row is ~44pt
-// at the default size; under-report risk under very large Dynamic Type is a known
-// limitation to confirm on device.
+// `matchContents={{ vertical: true }}` lets the Host track the Picker's real height,
+// so the rows grow with Dynamic Type instead of being clipped by a hard frame (the
+// proven AngleSlider / SwitchRow pattern for a content-sized control). The
+// `minHeight` floor only guards against the native Host under-reporting at the
+// default text size, so the card can't collapse. Each inline row is ~44pt at the
+// default size; under-report risk under very large Dynamic Type is a known limit to
+// confirm on device.
 const ROW_HEIGHT = 44;
 
 export function RadioGroup<T extends string>({ options, value, onChange, variant = 'inline' }: RadioGroupProps<T>) {
@@ -45,35 +41,70 @@ export function RadioGroup<T extends string>({ options, value, onChange, variant
   // (and re-render the SwiftUI tree) on every parent render.
   const handleSelect = useMemo(() => makeRadioSelectHandler(onChange), [onChange]);
 
-  const isMenu = variant === 'menu';
-  const minHeight = isMenu ? ROW_HEIGHT : options.length * ROW_HEIGHT;
+  const onSelectionChange = (selected: string | number | null) => {
+    // @expo/ui types the selection as the untyped Picker tag; our tags are always
+    // the string option values, so guard rather than blind-cast.
+    if (typeof selected !== 'string') return;
+    const option = options.find((candidate) => candidate.value === selected);
+    if (option) handleSelect(option);
+  };
+
+  const optionItems = options.map((option) => (
+    <Text key={option.value} modifiers={[tag(option.value)]}>
+      {option.label}
+    </Text>
+  ));
+
+  if (variant === 'menu') {
+    const selectedLabel = options.find((option) => option.value === value)?.label ?? '';
+    return (
+      <Host
+        matchContents={{ vertical: true }}
+        style={[styles.host, { backgroundColor: systemColors.tertiaryBackground }]}
+      >
+        <Menu
+          label={
+            // A full-width row (value left, chevron right) matching the sheet's
+            // other tappable rows — the Spacer stretches the HStack to fill. No tint
+            // here so the value/chevron read neutral like the sibling "None" rows;
+            // the brand tint lives on the inner Picker's selected checkmark.
+            <HStack alignment="center" modifiers={[padding({ horizontal: spacing[4], vertical: spacing[3] })]}>
+              <Text>{selectedLabel}</Text>
+              <Spacer />
+              <Image systemName="chevron.up.chevron.down" size={13} color={systemColors.secondaryLabel as string} />
+            </HStack>
+          }
+        >
+          <Picker
+            selection={value}
+            onSelectionChange={onSelectionChange}
+            modifiers={[pickerStyle('inline'), tint(brandAccentColor(brandColors))]}
+          >
+            {optionItems}
+          </Picker>
+        </Menu>
+      </Host>
+    );
+  }
 
   return (
     <Host
       matchContents={{ vertical: true }}
-      style={[styles.host, { backgroundColor: systemColors.secondaryBackground, minHeight }]}
+      style={[
+        styles.host,
+        { backgroundColor: systemColors.secondaryBackground, minHeight: options.length * ROW_HEIGHT },
+      ]}
     >
       <Picker
         selection={value}
-        onSelectionChange={(selected) => {
-          // @expo/ui types the selection as the untyped Picker tag; our tags are
-          // always the string option values, so guard rather than blind-cast.
-          if (typeof selected !== 'string') return;
-          const option = options.find((candidate) => candidate.value === selected);
-          if (option) handleSelect(option);
-        }}
+        onSelectionChange={onSelectionChange}
         modifiers={[
-          pickerStyle(isMenu ? 'menu' : 'inline'),
-          // Brand tint — checkmark on the selected inline row, or the menu
-          // button's label/chevron. Sourced once via the theming bridge.
+          pickerStyle('inline'),
+          // Brand checkmark on the selected row, sourced once via the theming bridge.
           tint(brandAccentColor(brandColors)),
         ]}
       >
-        {options.map((option) => (
-          <Text key={option.value} modifiers={[tag(option.value)]}>
-            {option.label}
-          </Text>
-        ))}
+        {optionItems}
       </Picker>
     </Host>
   );

@@ -43,7 +43,7 @@ import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
-import { SHEET_COLUMN_STYLE } from './sheet-column-style';
+import { useSheetColumnStyle } from './sheet-column-style';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
 import { buildFilterLabels, formatSettersLabel } from '../lib/filter-labels';
@@ -231,11 +231,11 @@ export function ClimbFilterSheet({
 
   const detentSnapPoints = useMemo(() => [`${SHEET_DETENT_FRACTION * 100}%`], []);
   const snapPoints = useMemo(() => androidSafeSnapPoints(detentSnapPoints), [detentSnapPoints]);
-  // A single flex:1 column — @expo/ui 57.0.3 bounds the sheet content to the native
-  // detent (RNHostView fills it and reports the real height back to Yoga), so the
-  // column fills the detent, the body scrolls, and the Apply footer pins to the
-  // real bottom on every device (see sheet-column-style).
-  const sheetColumnStyle = SHEET_COLUMN_STYLE;
+  // On iOS the SwiftUI sheet host proposes an unbounded height, so a flex:1 column
+  // sizes to its CONTENT and the pinned Apply footer floats above the sheet's real
+  // bottom (#3330). The shared hook pins the column to this single detent's height;
+  // Android bounds the column natively, so it keeps flex:1.
+  const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
   const isKilter = boardName === 'kilter';
 
   // Live "Show N" preview for the in-progress edits (matches what Apply yields).
