@@ -12,6 +12,7 @@ import {
 import { getMoonboardBluetoothPacket, isMoonboardDeviceName } from '@boardsesh/ble-protocol/moonboard';
 import { getMoonBoardGeometryByLayoutId } from '@boardsesh/board-config';
 import {
+  blePlxErrorCodes,
   classifyBleFailure,
   classifyBleFailureReason,
   isDisconnectionError,
@@ -974,6 +975,10 @@ export function useBoardBluetooth({
           layoutId,
           sizeId,
           failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
+          // Raw ble-plx codes (Android) so the real connect-failure cause and the
+          // low-level GATT status are visible for re-measurement (#3608). Empty on
+          // web / native iOS.
+          ...blePlxErrorCodes(error),
         });
       } finally {
         connectInFlightRef.current = false;

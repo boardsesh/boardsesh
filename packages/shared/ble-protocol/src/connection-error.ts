@@ -55,6 +55,66 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+// The three numeric codes `react-native-ble-plx` puts on every thrown `BleError`.
+// Read structurally (this package is platform-agnostic pure TS and must not depend
+// on react-native-ble-plx) after gating on the error name below.
+type BlePlxErrorShape = {
+  errorCode?: unknown;
+  androidErrorCode?: unknown;
+  iosErrorCode?: unknown;
+};
+
+// ble-plx's `BleError extends Error` sets `name = 'BleError'` — the reliable
+// discriminator. Gating on it stops a foreign numeric `errorCode` (e.g. an iOS
+// CBError surfaced by the native adapter) from being read against the ble-plx enum.
+const BLE_PLX_ERROR_NAME = 'BleError';
+
+function isBlePlxError(error: unknown): error is BlePlxErrorShape {
+  return errorName(error) === BLE_PLX_ERROR_NAME;
+}
+
+/**
+ * Maps a ble-plx (`react-native-ble-plx`) numeric `BleErrorCode` to a connect
+ * failure category. The code is a far more reliable signal than ble-plx's English
+ * message, which matches none of the Web-Bluetooth / CoreBluetooth patterns below
+ * and so used to fall through to `unknown` — then get re-bucketed as the write-path
+ * `disconnected` reason, hiding the real Android connect-failure cause (#3608).
+ *
+ * SOURCE OF TRUTH: `react-native-ble-plx@3.5.x` `src/BleError.js` `BleErrorCode`.
+ * Mirrored as literals because this package can't depend on react-native-ble-plx.
+ * Codes we can't confidently attribute to a connect-side category are deliberately
+ * omitted so they fall through to the message ladder, preserving existing
+ * behaviour: `0` UnknownError, `2` OperationCancelled (can be our own connect-
+ * timeout `cancelDeviceConnection`, not a user cancel), and the write / read /
+ * descriptor / scan-start codes (not connect-side).
+ */
+const BLE_PLX_CODE_TO_CATEGORY: Record<number, BleFailureCategory> = {
+  // Radio / permission / OS state — the board can't be reached at all.
+  100: 'unavailable', // BluetoothUnsupported
+  101: 'unavailable', // BluetoothUnauthorized
+  102: 'unavailable', // BluetoothPoweredOff
+  103: 'unavailable', // BluetoothInUnknownState
+  104: 'unavailable', // BluetoothResetting
+  105: 'unavailable', // BluetoothStateChangeFailed
+  601: 'unavailable', // LocationServicesDisabled (Android scan needs location on)
+  // The target board never showed up during the scan.
+  204: 'board_not_found', // DeviceNotFound
+  // The GATT link couldn't be established / dropped mid-connect / timed out.
+  3: 'connect_failed', // OperationTimedOut
+  200: 'connect_failed', // DeviceConnectionFailed
+  201: 'connect_failed', // DeviceDisconnected — the dominant Android mis-bucket
+  205: 'connect_failed', // DeviceNotConnected
+  206: 'connect_failed', // DeviceMTUChangeFailed
+  // Connected, but the UART service / write characteristic wasn't discovered.
+  300: 'service_missing', // ServicesDiscoveryFailed
+  301: 'service_missing', // IncludedServicesDiscoveryFailed
+  302: 'service_missing', // ServiceNotFound
+  303: 'service_missing', // ServicesNotDiscovered
+  400: 'service_missing', // CharacteristicsDiscoveryFailed
+  404: 'service_missing', // CharacteristicNotFound
+  405: 'service_missing', // CharacteristicsNotDiscovered
+};
+
 /**
  * Classify a thrown error from a connect attempt. `pairingStage` is the stage
  * tag the hook tracks; we use `gatt_connect` as a fallback signal for
@@ -66,6 +126,15 @@ function errorMessage(error: unknown): string {
 export function classifyBleFailure(error: unknown, pairingStage?: string): BleFailureCategory {
   const name = errorName(error);
   const message = errorMessage(error);
+
+  // ble-plx (Android) carries a numeric BleErrorCode that's far more reliable than
+  // its English message. Consume it before the message ladder; an unmapped code
+  // (incl. UnknownError) falls straight through, so web / native-iOS classification
+  // — which has no ble-plx numeric errorCode — is unchanged.
+  if (isBlePlxError(error) && typeof error.errorCode === 'number') {
+    const codeCategory = BLE_PLX_CODE_TO_CATEGORY[error.errorCode];
+    if (codeCategory) return codeCategory;
+  }
 
   // User dismissed the picker. Match only explicit user-cancel signals — a bare
   // "cancel" would also swallow real failures like CoreBluetooth's
@@ -112,6 +181,30 @@ export function classifyBleFailure(error: unknown, pairingStage?: string): BleFa
   }
 
   return 'unknown';
+}
+
+/** Raw ble-plx numeric codes, attached to a connect-failure analytics event. */
+export type BlePlxErrorCodes = {
+  bleErrorCode?: number; // react-native-ble-plx BleErrorCode enum value
+  androidErrorCode?: number; // low-level Android GATT status (e.g. 133 / 8 / 19)
+  iosErrorCode?: number; // iOS CBError code (present only on the ble-plx iOS path)
+};
+
+/**
+ * Pull the raw numeric codes off a thrown ble-plx `BleError` for analytics, so a
+ * connect failure's real cause — the `BleErrorCode` and the low-level Android GATT
+ * status — is visible in PostHog and the Android connect-failure distribution can
+ * be re-measured (#3608). Returns `{}` for any non-ble-plx error (web / native
+ * iOS), and omits any platform code that isn't a number. Mirrors the field-reading
+ * `RNBleAdapter` already does on its disconnect path (`bleErrorToDisconnectInfo`).
+ */
+export function blePlxErrorCodes(error: unknown): BlePlxErrorCodes {
+  if (!isBlePlxError(error)) return {};
+  const codes: BlePlxErrorCodes = {};
+  if (typeof error.errorCode === 'number') codes.bleErrorCode = error.errorCode;
+  if (typeof error.androidErrorCode === 'number') codes.androidErrorCode = error.androidErrorCode;
+  if (typeof error.iosErrorCode === 'number') codes.iosErrorCode = error.iosErrorCode;
+  return codes;
 }
 
 /**
