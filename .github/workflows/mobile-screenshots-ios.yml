@@ -266,16 +266,41 @@ jobs:
         # and es-MX for this device, so the 9 shards together produce all four App
         # Store locales × 3 devices. --shutdown is belt-and-suspenders (a shard only
         # boots this one sim, so there's nothing to accumulate).
+        #
+        # Bounded shard-level retry: the simulator/Maestro capture is flaky — a leg
+        # intermittently never reaches the home screen ("app did not reach the home
+        # screen") and one failed leg reds the whole nightly (it leaves a locale
+        # short, failing ios-finalize's dimension gate). The script already relaunches
+        # the app 3× within one boot; when that isn't enough the fix is a *fresh* boot.
+        # Each `vp run mobile:screenshots` invocation boots its own sim + Metro, so we
+        # shut down all sims between attempts and re-run once. --shutdown keeps a
+        # failed attempt from leaving a booted sim behind.
         run: |
-          set -euo pipefail
-          vp run mobile:screenshots -- \
-            --platform ios \
-            --flow "${{ inputs.flow || 'app-store' }}" \
-            --backend prod \
-            --device "${{ matrix.device.name }}" \
-            --locales "${{ matrix.locale }}" \
-            --shutdown \
-            --app-path packages/mobile/.app-cache/Boardsesh.app
+          set -uo pipefail
+          attempts=2
+          for attempt in $(seq 1 "$attempts"); do
+            echo "::group::Capture attempt $attempt/$attempts (${{ matrix.locale }} · ${{ matrix.device.slug }})"
+            if vp run mobile:screenshots -- \
+              --platform ios \
+              --flow "${{ inputs.flow || 'app-store' }}" \
+              --backend prod \
+              --device "${{ matrix.device.name }}" \
+              --locales "${{ matrix.locale }}" \
+              --shutdown \
+              --app-path packages/mobile/.app-cache/Boardsesh.app; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "Capture attempt $attempt/$attempts failed."
+            if [ "$attempt" -lt "$attempts" ]; then
+              echo "Shutting down all simulators before a fresh-boot retry..."
+              xcrun simctl shutdown all 2>/dev/null || true
+              sleep 5
+            fi
+          done
+          echo "All $attempts capture attempts failed for ${{ matrix.locale }} · ${{ matrix.device.slug }}."
+          exit 1
 
       # On a capture failure, save Maestro's debug output (the failure screenshot +
       # view hierarchy) and the simulator's Boardsesh logs, so we can see what was
