@@ -92,11 +92,14 @@ function SwipeableRowComponent({
     () =>
       Gesture.Pan()
         .enabled(enabled)
-        // Activate on a small horizontal move, and only bail when the drag is
-        // clearly vertical — the old [-5,5] failed on the tiniest vertical drift,
-        // so the swipe almost never engaged over a scrolling list.
-        .activeOffsetX([-8, 8])
-        .failOffsetY([-20, 20])
+        // Activate once the drag is clearly horizontal (10px), and bail once it's
+        // clearly vertical (14px). The old [-5,5] vertical bail was so tight that
+        // the normal wobble of a horizontal swipe tripped it, so the swipe almost
+        // never engaged; 14px tolerates that wobble while still ceding to a real
+        // vertical scroll (which crosses 14px in Y well before 10px in X). The
+        // Edit button is the guaranteed-reliable path regardless of this feel.
+        .activeOffsetX([-10, 10])
+        .failOffsetY([-14, 14])
         .onUpdate((event: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
           // Only allow swiping left.
           if (event.translationX > 0) {

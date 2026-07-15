@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -88,16 +88,22 @@ export default function MoreScreen() {
   // offline effect below depends on this array and shouldn't re-run every render.
   const myBoards = useMemo(() => myBoardsConnection?.boards ?? [], [myBoardsConnection]);
 
+  // Boards in My Boards not yet opted into offline (single source of truth for both
+  // the effect that enables them and the toast that reports the count).
+  const missingOfflineBoards = useCallback(() => {
+    const enabled = new Set(getSetting('syncEnabledBoards'));
+    return myBoards.filter((board) => !enabled.has(offlineBoardKeyForBoard(board)));
+  }, [myBoards]);
+
   // With the default on, keep every board offline. Runs on mount and once My Boards
   // resolves, so flipping the toggle before the list loaded still downloads
   // everything. Only enables boards not already opted in, so once they're all in
   // it's a no-op — no repeated sync kicks.
   useEffect(() => {
     if (!offlineEnabled || !autoOfflineBoards || myBoards.length === 0) return;
-    const enabled = new Set(getSetting('syncEnabledBoards'));
-    const missing = myBoards.filter((board) => !enabled.has(offlineBoardKeyForBoard(board)));
+    const missing = missingOfflineBoards();
     if (missing.length > 0) enableBoardsOffline(missing);
-  }, [offlineEnabled, autoOfflineBoards, myBoards, enableBoardsOffline]);
+  }, [offlineEnabled, autoOfflineBoards, myBoards, missingOfflineBoards, enableBoardsOffline]);
 
   // Offline sync-issues surface. Poll the dead-letter count only while online (the
   // section is hidden offline — a pending write offline is expected, not a "stuck"
@@ -436,8 +442,7 @@ export default function MoreScreen() {
             // loaded list); here we just persist and surface how many will pull down.
             setSetting('autoOfflineBoards', next);
             if (next) {
-              const enabled = new Set(getSetting('syncEnabledBoards'));
-              const missing = myBoards.filter((board) => !enabled.has(offlineBoardKeyForBoard(board)));
+              const missing = missingOfflineBoards();
               if (missing.length > 0) {
                 showToast(t('mobile.more.offline.downloadingAll', { count: missing.length }), 'info');
               }
