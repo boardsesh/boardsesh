@@ -84,7 +84,9 @@ export async function rewindDeletionsCheckpoint(db: SqlExecutor, watermark: Sync
 // deliberately NOT under the `checkpoint:` prefix so the sign-out checkpoint
 // wipe (deleteUserCheckpoints/deleteAllCheckpoints) leaves it alone, matching
 // the board rows it describes, which also survive as the shared cache.
-const SCOPE_COMPLETE_PREFIX = 'scope-complete:';
+// Package-internal (deliberately NOT re-exported from index.ts): scope-teardown.ts
+// must clear this marker in the same transaction as the rows it describes.
+export const SCOPE_COMPLETE_PREFIX = 'scope-complete:';
 
 export async function markScopeDownloadComplete(db: SqlExecutor, scopeKey: string): Promise<void> {
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [

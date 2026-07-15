@@ -31,6 +31,33 @@ export function setSigningOut(value: boolean): void {
   _isSigningOut = value;
 }
 
+/**
+ * Bump the wipe epoch WITHOUT asserting sign-out.
+ *
+ * A local purge — removing one board scope's downloaded catalog (issue #3617) — has
+ * the same hazard sign-out does: a pull page already on the wire lands after the
+ * delete and resurrects part of the catalog, complete with a checkpoint past it,
+ * which the strict `>` delta pull then never revisits. Every long-running pull path
+ * already re-checks getWipeEpoch() across its awaits (syncTable checks at each page
+ * top AND again right after the fetch await, before upsertDocuments — that second
+ * check is the one that discards the in-flight page), so bumping the epoch reuses
+ * those guards verbatim rather than inventing a second mechanism for one hazard.
+ *
+ * Deliberately not setSigningOut(true): that also flips _isSigningOut, which halts
+ * drainMutationQueue (the user's unsynced ticks have nothing to do with a board
+ * catalog) and would need a paired setSigningOut(false) that races a real concurrent
+ * sign-out and clears ITS flag.
+ *
+ * There is no endLocalPurge: the epoch is monotonic, so there's no flag to unset,
+ * nothing to leak, and no cleanup that a throw could skip. In-flight cycles captured
+ * the old value and bail; the next cycle captures the new one and proceeds normally.
+ * It does abort other scopes' pulls too — they resume from intact checkpoints on the
+ * next trigger, so the cost is one cycle.
+ */
+export function beginLocalPurge(): void {
+  _wipeEpoch += 1;
+}
+
 // Read by the pull client too: an in-flight pullSync page must stop writing the
 // old user's rows once sign-out starts wiping — otherwise a page landing after
 // clearUserData resurrects data the next signed-in account could briefly see.

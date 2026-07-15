@@ -22,6 +22,7 @@ import type { OfflineDatabase, SqlExecutor } from '../database';
 import type { OfflineBoardScope } from '../offline-board-key';
 import type { SnapshotManifestEntry, SnapshotTableName } from './snapshot-manifest';
 import { SNAPSHOT_MANIFEST_FORMAT_VERSION } from './snapshot-manifest';
+import { climbsScopeFilter, isSizeScopedBoard } from './board-scope-sql';
 import {
   compareCheckpoints,
   getCheckpointKey,
@@ -42,26 +43,17 @@ const SNAPSHOT_ALIAS = 'bs_snapshot';
 /** Two bootstrap attempts, then a scope falls through to the normal paged crawl. */
 export const MAX_BOOTSTRAP_ATTEMPTS = 2;
 
-const BOOTSTRAP_ATTEMPTS_PREFIX = 'bootstrap-attempts:';
-const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
+// Package-internal (deliberately NOT re-exported from index.ts, same posture as
+// checkpoints.ts's DELETIONS_CHECKPOINT_KEY): scope-teardown.ts must clear these
+// alongside the rows they describe, so it needs the exact key spelling.
+export const BOOTSTRAP_ATTEMPTS_PREFIX = 'bootstrap-attempts:';
+export const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
 const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
 // Only snake_case identifiers may be spliced into the INSERT/SELECT column list.
 // The names come from PRAGMA table_info over our own DDL (trusted), but validating
 // keeps the string-built SQL provably injection-free — same guard the export uses.
 const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
-
-/**
- * Mirror of `@boardsesh/board-config`'s `isSizeScopedBoard`, inlined so this
- * zero-runtime-dependency package stays free of the board-config → board-constants
- * → shared-schema chain. MoonBoard has one fixed size, so its climbs are never
- * size-filtered; every other board scopes by `compatible_size_ids`. This one fact
- * must track the resolver's `isSizeScopedBoard` guard
- * (queries.ts:boardClimbsLayoutSizeConditions) exactly.
- */
-function isSizeScopedBoard(boardType: string): boolean {
-  return boardType !== 'moonboard';
-}
 
 /**
  * Platform-injected snapshot I/O. The adapter (mobile: Phase 4) owns the network
@@ -212,25 +204,6 @@ async function sharedColumns(
 }
 
 // --- Import SQL ---------------------------------------------------------------
-
-/**
- * The board_climbs import filter for one scope, mirroring `syncClimbs`'
- * `boardClimbsScope` (queries.ts:183-188): `board_type = ? AND layout_id = ?`,
- * plus — only for size-scoped boards — a `compatible_size_ids` containment check.
- * SQLite has no `@>`, so containment is `json_each` membership; a NULL
- * `compatible_size_ids` is excluded exactly as Postgres `NULL @> ARRAY[x]` is
- * (queries.ts:173-175). Unqualified column names resolve against the single FROM
- * table (the artifact's board_climbs). Params returned alongside.
- */
-function climbsScopeFilter(scope: OfflineBoardScope, qualifier = ''): { sql: string; params: (string | number)[] } {
-  const params: (string | number)[] = [scope.boardType, scope.layoutId];
-  let sql = `${qualifier}board_type = ? AND ${qualifier}layout_id = ?`;
-  if (isSizeScopedBoard(scope.boardType)) {
-    sql += ` AND ${qualifier}compatible_size_ids IS NOT NULL AND EXISTS (SELECT 1 FROM json_each(${qualifier}compatible_size_ids) WHERE value = ?)`;
-    params.push(scope.sizeId);
-  }
-  return { sql, params };
-}
 
 function checkpointLeqSql(columnPrefix: string): string {
   return `(${columnPrefix}updated_at < ? OR (${columnPrefix}updated_at = ? AND ${columnPrefix}sync_seq <= ?))`;

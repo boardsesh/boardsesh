@@ -28,6 +28,7 @@ export type MoreIconName =
   | 'integrations'
   | 'watch'
   | 'accessibility'
+  | 'storage'
   | 'translate'
   | 'replay'
   | 'changelog'

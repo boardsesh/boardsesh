@@ -162,6 +162,14 @@ checkpoint on either `board_climbs` or `board_climb_stats`** (i.e. genuinely fre
 and its bootstrap attempt count is under `MAX_BOOTSTRAP_ATTEMPTS` (2). One artifact download is shared
 across every size of the same `(boardType, layoutId)` within a cycle.
 
+A scope torn down from **More → Storage** becomes eligible again: `removeBoardScopeData`
+(`sync/scope-teardown.ts`) clears the scope's checkpoints **and** its `bootstrap-attempts:` /
+`bootstrap-done:` markers in the same transaction as the rows, so a re-download takes the snapshot fast
+path rather than a paged crawl — and `onScopeDownloadComplete` attributes it honestly instead of
+reporting a stale `method: 'snapshot'` for a run that actually paged. Both marker prefixes are exported
+from `snapshot-bootstrap.ts` for that teardown alone; they stay package-internal (not re-exported from
+`index.ts`).
+
 Failure/attempt matrix, copied from the `runBootstrapPhase` doc comment (the source of truth — keep this in
 sync if the code comment changes):
 

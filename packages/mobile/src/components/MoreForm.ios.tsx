@@ -55,6 +55,8 @@ const IOS_SF_SYMBOL: Record<MoreIconName, string> = {
   integrations: 'heart',
   watch: 'applewatch',
   accessibility: 'accessibility',
+  // What iOS Settings itself uses for on-device storage. SF Symbols 2 (iOS 14+).
+  storage: 'internaldrive',
   translate: 'character.bubble',
   replay: 'play.circle',
   changelog: 'sparkles',

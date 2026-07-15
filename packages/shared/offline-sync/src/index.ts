@@ -36,7 +36,14 @@ export {
   clearAll,
 } from './mutation-queue/queue';
 export type { PendingMutation } from './mutation-queue/queue';
-export { drainMutationQueue, isDraining, setSigningOut, isSigningOut, getWipeEpoch } from './mutation-queue/drainer';
+export {
+  drainMutationQueue,
+  isDraining,
+  setSigningOut,
+  isSigningOut,
+  getWipeEpoch,
+  beginLocalPurge,
+} from './mutation-queue/drainer';
 export type { DrainOptions } from './mutation-queue/drainer';
 export { ensureMutationQueueTable, MUTATION_QUEUE_SCHEMA } from './mutation-queue/schema';
 export { processMutation } from './mutation-queue/handlers';
@@ -87,6 +94,10 @@ export type { SyncCheckpoint } from './sync/checkpoints';
 export { TABLE_CONFIGS, USER_DATA_TABLES, BOARD_DATA_TABLES } from './sync/table-config';
 export type { TableSyncConfig } from './sync/table-config';
 
+// --- Reclaiming a downloaded board's disk space ----------------------------------
+export { removeBoardScopeData, getScopeUsage, scopeSyncMetaKeys } from './sync/scope-teardown';
+export type { ScopeTeardownResult, ScopeUsage } from './sync/scope-teardown';
+
 // --- Board-snapshot manifest (Phase 2 export ↔ Phase 3 bootstrap) ----------------
 export { parseSnapshotManifest, SNAPSHOT_MANIFEST_FORMAT_VERSION } from './sync/snapshot-manifest';
 export type {
@@ -97,6 +108,7 @@ export type {
 } from './sync/snapshot-manifest';
 
 // --- On-device schema ------------------------------------------------------------
+export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
 export { SCHEMA_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export type { Migration } from './db/migrations';
