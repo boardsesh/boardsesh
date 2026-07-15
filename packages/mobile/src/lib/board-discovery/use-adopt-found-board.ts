@@ -18,13 +18,17 @@ import { decideAdoptFoundBoard } from './adopt-found-board-decision';
  * dismiss that navigating away from the picker triggers.
  */
 export function useAdoptFoundBoard() {
-  const followBoard = useFollowBoard();
+  const { showToast } = useToast();
+  const { t } = useTranslation('boards');
+  // The toast rides useFollowBoard's config-level onSuccess (it fires after this
+  // screen unmounts on navigation); a per-call mutate callback would be dropped.
+  const followBoard = useFollowBoard({
+    onFollowed: (board) => showToast(t('mobile.discovery.followed', { name: board.name }), 'success'),
+  });
   const { enableBoardsOffline } = useBoardDownloads();
   const confirm = useConfirm();
-  const { showToast } = useToast();
   const offlineEnabled = useOfflineDownloadsEnabled();
   const [autoOffline] = useSetting('autoOfflineBoards');
-  const { t } = useTranslation('boards');
 
   return useCallback(
     async (board: UserBoard) => {
@@ -37,9 +41,7 @@ export function useAdoptFoundBoard() {
       });
 
       if (decision.follow) {
-        followBoard.mutate(board.uuid, {
-          onSuccess: () => showToast(t('mobile.discovery.followed', { name: board.name }), 'success'),
-        });
+        followBoard.mutate(board);
       }
 
       if (decision.offline === 'auto') {
@@ -56,6 +58,8 @@ export function useAdoptFoundBoard() {
         if (confirmed) enableBoardsOffline(board);
       }
     },
-    [followBoard, enableBoardsOffline, confirm, showToast, offlineEnabled, autoOffline, t],
+    // followBoard.mutate is stable; depending on the whole `followBoard` object
+    // (fresh each render) would churn this callback and every onSelect built on it.
+    [followBoard.mutate, enableBoardsOffline, confirm, offlineEnabled, autoOffline, t],
   );
 }

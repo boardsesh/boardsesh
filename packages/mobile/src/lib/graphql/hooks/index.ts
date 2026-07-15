@@ -561,22 +561,29 @@ export function useDeleteBoard() {
 
 /**
  * Follow someone else's public board so it lands in the user's My Boards list.
- * Wraps the uuid in `{ input: { boardUuid } }` like `unfollowBoard`. Idempotent
- * on the server (`onConflictDoNothing`), so callers can fire it without first
- * checking whether the board is already followed. Invalidates `myBoards` so the
- * newly-followed board shows up.
+ * Takes the board (uuid + name) rather than a bare uuid so `onFollowed` can name
+ * it. Idempotent on the server (`onConflictDoNothing`), so callers can fire it
+ * without first checking whether the board is already followed. Invalidates
+ * `myBoards` so the newly-followed board shows up.
+ *
+ * `onFollowed` runs from the config-level `onSuccess` — which the mutation itself
+ * invokes, so it still fires after the calling screen unmounts. The adopt flow
+ * navigates away before the follow resolves, so a per-call `mutate(_, {onSuccess})`
+ * callback (gated on the observer still having listeners) would be dropped. UI
+ * concerns (toast copy) stay with the caller via this injected callback.
  */
-export function useFollowBoard() {
+export function useFollowBoard(options?: { onFollowed?: (board: Pick<UserBoard, 'uuid' | 'name'>) => void }) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (boardUuid: string) => {
+    mutationFn: async (board: Pick<UserBoard, 'uuid' | 'name'>) => {
       const response = await getHttpClient().request<FollowBoardMutationResponse>(FOLLOW_BOARD, {
-        input: { boardUuid },
+        input: { boardUuid: board.uuid },
       });
       return response.followBoard;
     },
-    onSuccess: () => {
+    onSuccess: (_followed, board) => {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      options?.onFollowed?.(board);
     },
   });
 }

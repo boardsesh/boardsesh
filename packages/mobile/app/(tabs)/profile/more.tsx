@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -14,7 +14,7 @@ import { openExternalUrl } from '../../../src/lib/open-url';
 import { useAuth } from '../../../src/providers/auth-provider';
 import { useProfile, useMyBoards } from '../../../src/lib/graphql/hooks';
 import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
-import { useSetting, setSetting } from '../../../src/settings';
+import { useSetting, setSetting, getSetting, offlineBoardKeyForBoard } from '../../../src/settings';
 import { useConfirm } from '../../../src/providers/dialog-provider';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
 import {
@@ -85,6 +85,17 @@ export default function MoreScreen() {
   const { enableBoardsOffline } = useBoardDownloads();
   const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
   const myBoards = myBoardsConnection?.boards ?? [];
+
+  // With the default on, keep every board offline. Runs on mount and once My Boards
+  // resolves, so flipping the toggle before the list loaded still downloads
+  // everything. Only enables boards not already opted in, so once they're all in
+  // it's a no-op — no repeated sync kicks.
+  useEffect(() => {
+    if (!offlineEnabled || !autoOfflineBoards || myBoards.length === 0) return;
+    const enabled = new Set(getSetting('syncEnabledBoards'));
+    const missing = myBoards.filter((board) => !enabled.has(offlineBoardKeyForBoard(board)));
+    if (missing.length > 0) enableBoardsOffline(missing);
+  }, [offlineEnabled, autoOfflineBoards, myBoards, enableBoardsOffline]);
 
   // Offline sync-issues surface. Poll the dead-letter count only while online (the
   // section is hidden offline — a pending write offline is expected, not a "stuck"
@@ -419,10 +430,15 @@ export default function MoreScreen() {
           value: autoOfflineBoards,
           onValueChange: (next) => {
             hapticSelection();
+            // The effect above does the enabling + download (robust to a not-yet-
+            // loaded list); here we just persist and surface how many will pull down.
             setSetting('autoOfflineBoards', next);
-            if (next && myBoards.length > 0) {
-              enableBoardsOffline(myBoards);
-              showToast(t('mobile.more.offline.downloadingAll', { count: myBoards.length }), 'info');
+            if (next) {
+              const enabled = new Set(getSetting('syncEnabledBoards'));
+              const missing = myBoards.filter((board) => !enabled.has(offlineBoardKeyForBoard(board)));
+              if (missing.length > 0) {
+                showToast(t('mobile.more.offline.downloadingAll', { count: missing.length }), 'info');
+              }
             }
           },
         },
