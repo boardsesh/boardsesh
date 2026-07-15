@@ -17,21 +17,23 @@ const KB = 1_000;
 const MB = 1_000_000;
 const GB = 1_000_000_000;
 
-/**
- * Pass the **app's** i18n language (`i18n.language`), not the device locale: this
- * string is interpolated into a translated sentence, so "1,2 GB" belongs next to
- * Spanish copy even on an en-US device. Omitting it falls back to the runtime
- * default, which also makes a caller's output host-dependent — so callers in
- * user-facing code should always pass one.
- */
-function localized(value: number, maximumFractionDigits: number, locale: string | undefined): string {
+function localized(value: number, maximumFractionDigits: number, locale: string): string {
   return value.toLocaleString(locale, { maximumFractionDigits });
 }
 
-export function formatBytes(bytes: number, locale?: string): string {
+/**
+ * `locale` is required, not optional: it must be the **app's** i18n language
+ * (`i18n.language`), never the device's. The result is interpolated into a
+ * translated sentence, so "1,2 GB" belongs next to Spanish copy even on an en-US
+ * device — and an omitted locale would silently format against the host instead.
+ */
+export function formatBytes(bytes: number, locale: string): string {
   // A negative or non-finite size can only mean a corrupt manifest; clamp rather
-  // than render "-1 B" into a dialog.
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  // than render "-1 B" into a dialog. Zero is NOT clamped here — it's a legitimate
+  // (if odd) artifact size and falls through to the "0 B" branch on its own, which
+  // keeps this in step with estimateScopeDownload treating `bytes: 0` as a real
+  // estimate rather than a miss.
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   // Whole units below GB: sub-MB precision is noise next to a "download this?"
   // decision, and it keeps the decimal separator out of the common case.
   if (bytes >= GB) return `${localized(bytes / GB, 1, locale)} GB`;
