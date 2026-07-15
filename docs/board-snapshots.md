@@ -240,8 +240,8 @@ pre-import empty result set.
 - **PostHog flags** (`packages/mobile/src/providers/feature-flags-provider.tsx`):
   - `offline-board-downloads` — the whole offline engine (downloads, local-first reads, queued
     offline writes, background sync). Missing/undefined reads as **off**.
-  - `offline-snapshot-bootstrap` — nested under the flag above: whether a freshly-enabled scope warms
-    from the snapshot at all. With `offline-board-downloads` on and `offline-snapshot-bootstrap` off, a
+  - `offline-snapshot-bootstrap-v2` — nested under the flag above: whether a freshly-enabled scope warms
+    from the snapshot at all. With `offline-board-downloads` on and `offline-snapshot-bootstrap-v2` off, a
     fresh board still downloads — just via the paged crawl. `OfflineSyncBridge`
     (`packages/mobile/src/components/offline-sync-bridge.tsx`) only passes `mobileSnapshotSource` to the
     sync scheduler when `useSnapshotBootstrapEnabled()` is true **and** `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is
@@ -319,7 +319,7 @@ manifest) and the export re-bases entry URLs onto it. Keep it consistent with
 
 ### Kill switches
 
-- **Fastest, no deploy**: flip the `offline-snapshot-bootstrap` PostHog flag off. Every client falls back
+- **Fastest, no deploy**: flip the `offline-snapshot-bootstrap-v2` PostHog flag off. Every client falls back
   to the paged crawl for newly-enabled boards; nothing already bootstrapped is affected (it's already past
   the eligibility check).
 - **Nuclear, affects every client regardless of flag state after cache expiry**: delete the
@@ -388,7 +388,7 @@ page — that's the trigger to prioritize the fix.
 
 ## Rollout plan
 
-1. **Internal testers**: flip `offline-snapshot-bootstrap` on for the `tester` PostHog cohort only.
+1. **Internal testers**: flip `offline-snapshot-bootstrap-v2` on for the `tester` PostHog cohort only.
 2. **Two pre-ramp manual verifications** (do both before any percentage ramp):
    - Confirm `EXPO_PUBLIC_SNAPSHOT_BASE_URL` is set to the real Tigris bucket URL in the build that will
      ship to testers. With the env var missing, the flag is inert and the app intentionally uses the paged

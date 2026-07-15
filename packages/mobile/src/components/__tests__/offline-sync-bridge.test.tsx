@@ -111,7 +111,10 @@ function makeQueryClient() {
 
 const FLAG_ON: FeatureFlags = { 'offline-board-downloads': true };
 const FLAG_OFF: FeatureFlags = { 'offline-board-downloads': false };
-const FLAG_ON_WITH_SNAPSHOT: FeatureFlags = { 'offline-board-downloads': true, 'offline-snapshot-bootstrap': true };
+const FLAG_ON_WITH_SNAPSHOT: FeatureFlags = {
+  'offline-board-downloads': true,
+  'offline-snapshot-bootstrap-v2': true,
+};
 function getStartSyncSchedulerSnapshotSource(): unknown {
   const call = startSyncSchedulerMock.mock.calls[0] as unknown[] | undefined;
   expect(call).toBeDefined();

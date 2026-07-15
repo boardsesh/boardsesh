@@ -59,7 +59,12 @@ export const FEATURE_FLAG_DEFINITIONS = [
       'The whole offline engine: board downloads, local-first climb reads, queued offline ticks/favorites, background sync. Off fully disables it (previously-queued writes still flush).',
   },
   {
-    key: 'offline-snapshot-bootstrap',
+    // v2, deliberately a NEW PostHog key: bundles published before the
+    // BOARDSESH-AA connection fix (739d92a3c) read `offline-snapshot-bootstrap`,
+    // where bootstrap always failed and burned two artifact downloads per fresh
+    // board. That key stays at 0% forever so broken bundles can never re-enter
+    // the snapshot path; only fixed bundles know this key.
+    key: 'offline-snapshot-bootstrap-v2',
     label: 'Offline snapshot bootstrap',
     description:
       'Warm a freshly-enabled board from the nightly pre-built SQLite snapshot instead of paging the whole catalog over GraphQL. Requires offline-board-downloads to also be on; off falls back to the plain paged crawl.',
@@ -148,7 +153,7 @@ export function useOfflineDownloadsEnabled(): boolean {
  * consults this when the offline engine itself is already on.
  */
 export function useSnapshotBootstrapEnabled(): boolean {
-  return useFeatureFlag('offline-snapshot-bootstrap') === true;
+  return useFeatureFlag('offline-snapshot-bootstrap-v2') === true;
 }
 
 /**

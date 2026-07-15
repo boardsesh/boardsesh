@@ -5,7 +5,7 @@ import { mobileSnapshotSource } from './snapshot-source';
 
 /**
  * The one gate for handing the engine snapshot I/O: the
- * `offline-snapshot-bootstrap` flag (nested under `offline-board-downloads`)
+ * `offline-snapshot-bootstrap-v2` flag (nested under `offline-board-downloads`)
  * AND a real build-time manifest URL. `undefined` otherwise, which makes
  * `pullSync` skip the bootstrap phase entirely — a freshly-enabled board still
  * downloads, just through the paged crawl. Every caller that starts or
