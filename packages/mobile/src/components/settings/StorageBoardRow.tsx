@@ -1,13 +1,17 @@
 import { memo, useCallback } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '../Text';
 import { Button } from '../Button';
-import { ListRow } from '../ListRow';
+import { useTheme } from '../../providers/theme-provider';
+import { spacing } from '../../theme/tokens';
 
 export type StorageBoardRowProps = {
   scopeKey: string;
+  /** The layout, e.g. "Kilter Board Original". */
   title: string;
   /** Board + size, e.g. "Kilter · 12 x 14". */
   subtitle: string;
-  /** Size + climb count, e.g. "About 180 MB · 41,000 climbs". */
+  /** Footprint, e.g. "About 180 MB · 41,000 climbs". */
   caption: string;
   /** Whether this scope is still kept offline, or is leftover data. */
   statusLabel: string;
@@ -20,8 +24,14 @@ export type StorageBoardRowProps = {
 };
 
 /**
- * One downloaded board scope. Memoized and fed only primitives plus a stable
- * `onRemove`, so removing one board doesn't re-render the others.
+ * One downloaded board scope.
+ *
+ * Deliberately NOT built on ListRow: that renders one `numberOfLines={1}` subtitle,
+ * which silently truncates away the footprint and the offline status — i.e. exactly
+ * the two facts this screen exists to show.
+ *
+ * Memoized and fed only primitives plus a stable `onRemove`, so removing one board
+ * doesn't re-render the others.
  */
 function StorageBoardRowComponent({
   scopeKey,
@@ -36,17 +46,26 @@ function StorageBoardRowComponent({
   showSeparator,
   onRemove,
 }: StorageBoardRowProps) {
+  const { systemColors } = useTheme();
   const handleRemove = useCallback(() => onRemove(scopeKey), [onRemove, scopeKey]);
 
   return (
-    <ListRow
-      title={title}
-      // ListRow renders a single subtitle line, so the board/size, the footprint, and
-      // the offline status are composed into it rather than fighting the component.
-      subtitle={`${subtitle}\n${caption}\n${statusLabel}`}
-      haptic={false}
-      showSeparator={showSeparator}
-      trailing={
+    <View>
+      <View style={styles.row}>
+        <View style={styles.text}>
+          <Text variant="body" numberOfLines={1}>
+            {title}
+          </Text>
+          <Text variant="subheadline" style={{ color: systemColors.secondaryLabel }} numberOfLines={1}>
+            {subtitle}
+          </Text>
+          <Text variant="subheadline" numberOfLines={1}>
+            {caption}
+          </Text>
+          <Text variant="caption1" style={{ color: systemColors.tertiaryLabel }} numberOfLines={2}>
+            {statusLabel}
+          </Text>
+        </View>
         <Button
           title={removeLabel}
           accessibilityLabel={removeAccessibilityLabel}
@@ -57,9 +76,28 @@ function StorageBoardRowComponent({
           loading={isRemoving}
           disabled={isDisabled}
         />
-      }
-    />
+      </View>
+      {showSeparator ? <View style={[styles.separator, { backgroundColor: systemColors.separator }]} /> : null}
+    </View>
   );
 }
 
 export const StorageBoardRow = memo(StorageBoardRowComponent);
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+  },
+  text: {
+    flex: 1,
+    gap: spacing[1],
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: spacing[4],
+  },
+});

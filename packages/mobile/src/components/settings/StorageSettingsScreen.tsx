@@ -14,6 +14,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -74,9 +75,7 @@ export function StorageSettingsScreen() {
     refetch,
   } = useQuery<StorageMeasurement>({
     queryKey: ['offlineStorage'],
-    // Not a poll: this walks 200k+ rows per scope in the worst case. It refetches on
-    // mount and after a removal, which is every moment the number can change while
-    // the user is looking at it.
+    // Not a poll: this walks 200k+ rows per scope in the worst case.
     refetchOnWindowFocus: false,
     queryFn: async () => {
       // Scopes with rows, unioned with the enabled set so a scope whose download was
@@ -98,6 +97,18 @@ export function StorageSettingsScreen() {
       };
     },
   });
+
+  // Re-measure whenever the screen comes back into view, NOT just on mount: the
+  // router keeps this screen mounted while you nav to My Boards, download a board,
+  // and come back — so a mount-only refetch never fires and the stale (empty)
+  // measurement renders "Nothing downloaded yet" over a board that just landed.
+  // A download completing elsewhere has no reason to invalidate this query, so focus
+  // is the only reliable signal that the number might have moved.
+  useFocusEffect(
+    useCallback(() => {
+      void refetch();
+    }, [refetch]),
+  );
 
   const unknownScopeLabel = useCallback(
     (parts: { layoutId: number; sizeId: number }) => t('mobile.more.storage.unknownScope', parts),
@@ -194,7 +205,10 @@ export function StorageSettingsScreen() {
 
   const isBusy = removingScopeKey !== null || isRemovingAll;
 
-  if (isLoading) {
+  // Also spin while re-measuring over an empty cached result: a board downloaded
+  // while this screen was unmounted would otherwise flash "Nothing downloaded yet"
+  // until the refetch lands, which reads as "your download is gone".
+  if (isLoading || (isRefetching && (measurement?.boards.length ?? 0) === 0)) {
     return (
       <View style={[styles.centered, { backgroundColor: systemColors.background }]}>
         <ActivityIndicator size="large" />
