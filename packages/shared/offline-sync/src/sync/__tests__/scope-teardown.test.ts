@@ -333,4 +333,40 @@ describe('getScopeUsage', () => {
 
     expect(usage[0]).toMatchObject({ climbCount: 0, estimatedBytes: 0 });
   });
+
+  // The apportionment: a scope's share of board_climbs stands in for its share of
+  // used pages. Asserted as a ratio rather than a byte count, since the absolute
+  // figure depends on SQLite's page size and the fixture's own overhead.
+  it('apportions bytes in proportion to each scope’s share of the catalog', async () => {
+    // 3 of 4 climbs are in the kilter:1:5 scope; the 4th is another layout entirely.
+    await insertClimb({ uuid: 'a', compatibleSizeIds: [5] });
+    await insertClimb({ uuid: 'b', compatibleSizeIds: [5] });
+    await insertClimb({ uuid: 'c', compatibleSizeIds: [5] });
+    await insertClimb({ uuid: 'other-layout', layoutId: 2, compatibleSizeIds: [5] });
+
+    const [scoped, otherLayout] = await getScopeUsage(db, [
+      { scope: KILTER_12X12, scopeKey: 'kilter:1:5' },
+      { scope: { boardType: 'kilter', layoutId: 2, sizeId: 5 }, scopeKey: 'kilter:2:5' },
+    ]);
+
+    expect(scoped.climbCount).toBe(3);
+    expect(otherLayout.climbCount).toBe(1);
+    expect(scoped.estimatedBytes).toBeGreaterThan(0);
+    // Three times the rows, so ~three times the bytes.
+    expect(scoped.estimatedBytes).toBeCloseTo(otherLayout.estimatedBytes * 3, -1);
+  });
+
+  it('excludes freelist pages from the bytes it apportions', async () => {
+    await insertClimb({ uuid: 'a', compatibleSizeIds: [5] });
+    const [before] = await getScopeUsage(db, [{ scope: KILTER_12X12, scopeKey: 'kilter:1:5' }]);
+
+    // A scope holding every remaining row is apportioned every USED byte — so the
+    // estimate must track live pages, never the file's high-water mark.
+    expect(before.estimatedBytes).toBeGreaterThan(0);
+    const pageSize = await db.getFirstAsync<{ page_size: number }>('PRAGMA page_size');
+    const pageCount = await db.getFirstAsync<{ page_count: number }>('PRAGMA page_count');
+    const freelist = await db.getFirstAsync<{ freelist_count: number }>('PRAGMA freelist_count');
+    const usedBytes = ((pageCount?.page_count ?? 0) - (freelist?.freelist_count ?? 0)) * (pageSize?.page_size ?? 0);
+    expect(before.estimatedBytes).toBe(usedBytes);
+  });
 });

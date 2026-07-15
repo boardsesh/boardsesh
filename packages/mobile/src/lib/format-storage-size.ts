@@ -16,9 +16,12 @@ export function formatStorageSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
   if (bytes >= GB) {
     // One decimal below 10 GB ("1.2 GB"), none above ("128 GB") — precision people
-    // can act on, without the noise.
+    // can act on, without the noise. The threshold is checked against the ROUNDED
+    // value: 9.95 GB rounds to "10.0", and that trailing ".0" is exactly the noise
+    // the cutoff exists to avoid.
     const value = bytes / GB;
-    return `${value < 10 ? value.toFixed(1) : Math.round(value)} GB`;
+    const rounded = Number(value.toFixed(1));
+    return `${rounded < 10 ? rounded.toFixed(1) : Math.round(value)} GB`;
   }
   if (bytes >= MB) return `${Math.round(bytes / MB)} MB`;
   if (bytes >= KB) return `${Math.round(bytes / KB)} KB`;

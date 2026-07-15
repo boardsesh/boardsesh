@@ -16,6 +16,15 @@ describe('formatStorageSize', () => {
     expect(formatStorageSize(128_000_000_000)).toBe('128 GB');
   });
 
+  // 9.96 GB rounds to "10.0" — that trailing .0 is the noise the 10 GB cutoff exists
+  // to avoid, so the threshold has to be checked against the ROUNDED value, not the
+  // raw one. (9.95 isn't the boundary case it looks like: it's 9.9499… in binary
+  // floating point, so it legitimately renders 9.9.)
+  it('does not render a trailing .0 at the 10 GB boundary', () => {
+    expect(formatStorageSize(9_960_000_000)).toBe('10 GB');
+    expect(formatStorageSize(9_940_000_000)).toBe('9.9 GB');
+  });
+
   it('formats kilobytes', () => {
     expect(formatStorageSize(4_000)).toBe('4 KB');
   });
