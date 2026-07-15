@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo } from 'react';
-import { RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, useProfile, useDeleteBoard, useUnfollowBoard } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useClearActiveBoard } from '../../src/lib/graphql/use-active-board';
@@ -14,10 +14,9 @@ import { useConfirm } from '../../src/providers/dialog-provider';
 import { useTheme } from '../../src/providers/theme-provider';
 import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
-import { useSyncStatus, setSyncProgress } from '../../src/sync';
-import { getDownloadedScopeKeys, type GraphQLFetch } from '@boardsesh/offline-sync';
-import { triggerSync, drainMutationQueue } from '../../src/offline/offline-sync-adapter';
-import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
+import { useSyncStatus } from '../../src/sync';
+import { getDownloadedScopeKeys } from '@boardsesh/offline-sync';
+import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import {
   getSetting,
   useSetting,
@@ -25,7 +24,7 @@ import {
   offlineBoardKeyForBoard,
   offlineBoardScopeForBoard,
 } from '../../src/settings';
-import { getHttpClient } from '../../src/lib/graphql/client';
+import { hapticSelection } from '../../src/lib/haptics';
 import { Text } from '../../src/components/Text';
 import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
@@ -43,6 +42,7 @@ const getItemType = (item: ManageItem) => item.type;
 
 export default function ManageBoards() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { t } = useTranslation('boards');
   const { isAuthenticated, refreshAuthState } = useAuth();
   const { systemColors, brandColors } = useTheme();
@@ -50,6 +50,11 @@ export default function ManageBoards() {
   const confirm = useConfirm();
   const bottomChrome = useBottomChromeMetrics();
   const paddingBottom = bottomChrome.scrollBottomPadding + spacing[4];
+
+  // Traditional iOS-style edit mode: an "Edit"/"Done" header button reveals a
+  // persistent per-row remove control, so unfollow/delete never depend on the
+  // (hard-to-hit) swipe alone.
+  const [isEditing, setIsEditing] = useState(false);
 
   const {
     data: profile,
@@ -85,9 +90,8 @@ export default function ManageBoards() {
   // flush (see OfflineSyncBridge). This screen stays the only writer of
   // syncEnabledBoards.
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
-  const snapshotSource = useSnapshotSource();
+  const { enableBoardsOffline } = useBoardDownloads();
   const db = useSQLiteContext();
-  const queryClient = useQueryClient();
   const syncStatus = useSyncStatus();
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const enabledSet = useMemo(() => new Set(enabledBoards), [enabledBoards]);
@@ -109,12 +113,6 @@ export default function ManageBoards() {
     if (offlineDownloadsEnabled && !isSyncing) void refetchDownloaded();
   }, [offlineDownloadsEnabled, isSyncing, refetchDownloaded]);
 
-  const graphqlFetch = useMemo<GraphQLFetch>(() => (query, variables) => getHttpClient().request(query, variables), []);
-  const drainQueue = useCallback(
-    () => drainMutationQueue(db, queryClient, graphqlFetch),
-    [db, queryClient, graphqlFetch],
-  );
-
   const handleToggleOffline = useCallback(
     async (board: UserBoard) => {
       const scope = offlineBoardScopeForBoard(board);
@@ -133,17 +131,11 @@ export default function ManageBoards() {
         cancelLabel: t('mobile.manage.cancel'),
       });
       if (!confirmed) return;
-      setOfflineBoardEnabled(scope, true);
-      // Kick a sync now so the download starts immediately rather than waiting for
-      // the next foreground/reconnect trigger. triggerSync → runSync is single-flight
-      // (one in-flight run + at most one queued follow-up), so enabling several boards
-      // in quick succession collapses into one cycle that reads the latest setting.
-      triggerSync(db, queryClient, graphqlFetch, () => getSetting('syncEnabledBoards'), drainQueue, {
-        onProgress: setSyncProgress,
-        snapshotSource,
-      });
+      // Enable + kick a download now via the shared hook (single-flight, reads the
+      // latest syncEnabledBoards setting).
+      enableBoardsOffline(board);
     },
-    [confirm, t, db, queryClient, graphqlFetch, drainQueue, snapshotSource],
+    [confirm, t, enableBoardsOffline],
   );
 
   // See boards/index.tsx: a hard 401 clears tokens without flipping
@@ -241,6 +233,7 @@ export default function ManageBoards() {
           board={item.board}
           isOwned={item.isOwned}
           isActive={item.isActive}
+          isEditing={isEditing}
           isMutating={isMutating}
           downloadState={downloadState}
           downloadCount={downloadCount}
@@ -257,6 +250,7 @@ export default function ManageBoards() {
       deleteBoard.variables,
       unfollowBoard.isPending,
       unfollowBoard.variables,
+      isEditing,
       offlineDownloadsEnabled,
       enabledSet,
       isSyncing,
@@ -270,6 +264,33 @@ export default function ManageBoards() {
       handleToggleOffline,
     ],
   );
+
+  // Edit / Done lives in the native header. Only offered when there are boards to
+  // manage; collapse edit mode if the list empties out (last board removed).
+  const hasBoards = myBoards.length > 0;
+  useEffect(() => {
+    if (!hasBoards && isEditing) setIsEditing(false);
+  }, [hasBoards, isEditing]);
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: hasBoards
+        ? () => (
+            <Pressable
+              onPress={() => {
+                hapticSelection();
+                setIsEditing((prev) => !prev);
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+            >
+              <Text variant="body" color={brandColors.primary}>
+                {isEditing ? t('mobile.manage.done') : t('mobile.manage.edit')}
+              </Text>
+            </Pressable>
+          )
+        : undefined,
+    });
+  }, [navigation, hasBoards, isEditing, t, brandColors.primary]);
 
   if (!isAuthenticated) {
     return (

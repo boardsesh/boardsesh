@@ -6,6 +6,7 @@ import type BottomSheet from '@expo/ui/community/bottom-sheet';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { useMyBoards, usePopularBoardConfigs, useNearbyBoards } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import { useAdoptFoundBoard } from '../../src/lib/board-discovery/use-adopt-found-board';
 import { useDeviceLocation } from '../../src/lib/use-device-location';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useToast } from '../../src/providers/toast-provider';
@@ -43,6 +44,7 @@ export default function BoardSelection() {
   const scrollBottomPadding = bottomChrome.scrollBottomPadding;
 
   const setActiveBoard = useSetActiveBoard();
+  const adoptFoundBoard = useAdoptFoundBoard();
   const { data: activeBoard } = useActiveBoard();
 
   const {
@@ -92,11 +94,15 @@ export default function BoardSelection() {
         // there opened it (replaces with that tab if it isn't already underneath,
         // e.g. opened from a deep link).
         router.dismissTo(boardReturnTo);
+        // Follow the board if it's new to the user (so it lands in My Boards) and
+        // offer/auto-run its offline download. The isNew guard makes re-selecting a
+        // board already in My Boards a no-op for follow.
+        void adoptFoundBoard(board);
       } catch {
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },
-    [setActiveBoard, router, boardReturnTo, showToast, t, fromOnboarding],
+    [setActiveBoard, adoptFoundBoard, router, boardReturnTo, showToast, t, fromOnboarding],
   );
 
   const myBoardItems = useMemo(

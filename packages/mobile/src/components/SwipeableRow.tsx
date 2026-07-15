@@ -12,7 +12,9 @@ import type { IconName } from './icon-map';
 import { iosSystemColors } from '../theme/ios-colors';
 import { hapticMedium } from '../lib/haptics';
 
-const SWIPE_OPEN_THRESHOLD = -80;
+// A short deliberate drag opens the action (was -80, which felt stiff inside a
+// scrolling FlashList).
+const SWIPE_OPEN_THRESHOLD = -56;
 const ACTION_BUTTON_WIDTH = 80;
 const CLOSE_SPRING = { damping: 20, stiffness: 200 };
 
@@ -90,8 +92,11 @@ function SwipeableRowComponent({
     () =>
       Gesture.Pan()
         .enabled(enabled)
-        .activeOffsetX([-10, 10])
-        .failOffsetY([-5, 5])
+        // Activate on a small horizontal move, and only bail when the drag is
+        // clearly vertical — the old [-5,5] failed on the tiniest vertical drift,
+        // so the swipe almost never engaged over a scrolling list.
+        .activeOffsetX([-8, 8])
+        .failOffsetY([-20, 20])
         .onUpdate((event: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
           // Only allow swiping left.
           if (event.translationX > 0) {

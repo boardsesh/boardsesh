@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { toBoardName } from '@boardsesh/board-config';
@@ -23,6 +23,12 @@ type BoardManageRowProps = {
   /** True when the user owns this board (edit/delete); false for followed boards (unfollow). */
   isOwned: boolean;
   isActive: boolean;
+  /**
+   * Edit mode (from the header "Edit" button): show a persistent leading remove
+   * control (Delete for owned, Unfollow for followed) and disable the swipe, so the
+   * destructive action never depends on the hard-to-hit swipe gesture.
+   */
+  isEditing?: boolean;
   /** A mutation targeting this row is in flight — show a spinner and disable the swipe. */
   isMutating: boolean;
   /**
@@ -57,6 +63,7 @@ function BoardManageRowComponent({
   board,
   isOwned,
   isActive,
+  isEditing = false,
   isMutating,
   downloadState,
   downloadCount,
@@ -114,6 +121,22 @@ function BoardManageRowComponent({
 
   const content = (
     <View style={[styles.row, { backgroundColor: systemColors.background, borderBottomColor: systemColors.separator }]}>
+      {isEditing ? (
+        <Pressable
+          onPress={isOwned ? () => onDelete(board) : () => onUnfollow(board)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={
+            isOwned
+              ? t('mobile.manage.deleteAria', { name: board.name })
+              : t('mobile.manage.unfollowAria', { name: board.name })
+          }
+          style={({ pressed }) => [styles.removeControl, pressed && styles.pressed]}
+        >
+          <Icon name="minus.circle" size={24} color={iosSystemColors.systemRed} />
+        </Pressable>
+      ) : null}
+
       <View
         style={[
           styles.thumb,
@@ -180,7 +203,7 @@ function BoardManageRowComponent({
 
       {isMutating ? (
         <ActivityIndicator size="small" />
-      ) : isOwned ? (
+      ) : !isEditing && isOwned ? (
         <Icon name="chevron.right" size={14} color={iosSystemColors.systemGray4} />
       ) : null}
     </View>
@@ -188,8 +211,8 @@ function BoardManageRowComponent({
 
   return (
     <SwipeableRow
-      onPress={isOwned ? () => onEdit(board) : undefined}
-      pressAccessibilityLabel={isOwned ? t('mobile.manage.editAria', { name: board.name }) : undefined}
+      onPress={isOwned && !isEditing ? () => onEdit(board) : undefined}
+      pressAccessibilityLabel={isOwned && !isEditing ? t('mobile.manage.editAria', { name: board.name }) : undefined}
       onAction={isOwned ? () => onDelete(board) : () => onUnfollow(board)}
       actionLabel={
         isOwned
@@ -198,7 +221,7 @@ function BoardManageRowComponent({
       }
       actionIcon={isOwned ? 'delete' : 'minus.circle'}
       actionColor={isOwned ? iosSystemColors.systemRed : iosSystemColors.systemOrange}
-      enabled={!isMutating}
+      enabled={!isMutating && !isEditing}
       resetKey={board.uuid}
     >
       {content}
@@ -216,6 +239,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[2],
     paddingHorizontal: spacing[4],
     borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  removeControl: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 28,
+  },
+  pressed: {
+    opacity: 0.5,
   },
   thumb: {
     width: THUMB_SIZE,

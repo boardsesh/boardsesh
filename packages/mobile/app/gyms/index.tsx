@@ -7,6 +7,7 @@ import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import type { BoardName, Gym, UserBoard } from '@boardsesh/shared-schema';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
 import { useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import { useAdoptFoundBoard } from '../../src/lib/board-discovery/use-adopt-found-board';
 import { useDeviceLocation, type Coords } from '../../src/lib/use-device-location';
 import { useGeocodePlace } from '../../src/lib/use-place-search';
 import { useToast } from '../../src/providers/toast-provider';
@@ -72,6 +73,7 @@ export default function GymDiscovery() {
   const location = useDeviceLocation();
   const { geocode, isGeocoding } = useGeocodePlace();
   const setActiveBoard = useSetActiveBoard();
+  const adoptFoundBoard = useAdoptFoundBoard();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const boardReturnTo = resolveBoardReturnTo(returnTo);
   const [expandedGymUuid, setExpandedGymUuid] = useState<string | null>(null);
@@ -255,11 +257,15 @@ export default function GymDiscovery() {
       try {
         await setActiveBoard(board);
         router.dismissTo(boardReturnTo);
+        // Follow the board (so it lands in My Boards) and offer to make it available
+        // offline. Fire-and-forget after navigating — the follow is idempotent and the
+        // offline confirm rides the root dialog, which survives the dismiss.
+        void adoptFoundBoard(board);
       } catch {
         showToast(t('mobile.boardSwitchError'), 'error');
       }
     },
-    [setActiveBoard, router, boardReturnTo, showToast, t],
+    [setActiveBoard, adoptFoundBoard, router, boardReturnTo, showToast, t],
   );
 
   // Edit a board / gym the viewer can edit (the row only renders the pencil when

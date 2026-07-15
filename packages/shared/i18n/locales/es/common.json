@@ -306,6 +306,13 @@
         "boardseshGrades": "Mostrar grados Boardsesh",
         "boardseshGradesDescription": "Grados calculados a partir de encadenes reales en varios plafones. El grado del setter se mantiene hasta que haya suficientes encadenes."
       },
+      "offline": {
+        "title": "Sin conexión",
+        "autoDownload": "Mantener los plafones sin conexión",
+        "autoDownloadDescription": "Descarga todos los plafones que usas para explorarlos y registrar tus ascensos sin conexión. Los plafones nuevos se descargan automáticamente.",
+        "downloadingAll_one": "Descargando 1 plafón para usarlo sin conexión",
+        "downloadingAll_other": "Descargando {{count}} plafones para usarlos sin conexión"
+      },
       "language": {
         "title": "Idioma",
         "system": "Sistema",

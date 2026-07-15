@@ -12,6 +12,15 @@ const offlineToggleProps = vi.hoisted(() => ({ last: null as Record<string, unkn
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Pressable: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -121,5 +130,30 @@ describe('BoardManageRow offline toggle gating', () => {
     const { queryByText } = render(<BoardManageRow {...rowProps} downloadState="downloading" downloadCount={42} />);
     expect(queryByText('mobile.offline.downloadingCount')).not.toBeNull();
     expect(queryByText('mobile.offline.bootstrapping')).toBeNull();
+  });
+});
+
+describe('BoardManageRow edit mode', () => {
+  it('renders no persistent remove control outside edit mode', () => {
+    const { queryByLabelText } = render(<BoardManageRow {...rowProps} isOwned={false} downloadState={undefined} />);
+    expect(queryByLabelText('mobile.manage.unfollowAria')).toBeNull();
+  });
+
+  it('unfollows a followed board via the persistent remove control in edit mode', () => {
+    const onUnfollow = vi.fn();
+    const { getByLabelText } = render(
+      <BoardManageRow {...rowProps} isOwned={false} isEditing onUnfollow={onUnfollow} downloadState={undefined} />,
+    );
+    getByLabelText('mobile.manage.unfollowAria').click();
+    expect(onUnfollow).toHaveBeenCalledWith(board);
+  });
+
+  it('deletes an owned board via the persistent remove control in edit mode', () => {
+    const onDelete = vi.fn();
+    const { getByLabelText } = render(
+      <BoardManageRow {...rowProps} isOwned isEditing onDelete={onDelete} downloadState={undefined} />,
+    );
+    getByLabelText('mobile.manage.deleteAria').click();
+    expect(onDelete).toHaveBeenCalledWith(board);
   });
 });

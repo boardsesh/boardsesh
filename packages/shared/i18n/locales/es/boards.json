@@ -78,7 +78,9 @@
       "unfollowError": "No se pudo dejar de seguir ese plafón. Inténtalo de nuevo.",
       "editAria": "Editar {{name}}",
       "deleteAria": "Eliminar {{name}}",
-      "unfollowAria": "Dejar de seguir {{name}}"
+      "unfollowAria": "Dejar de seguir {{name}}",
+      "edit": "Editar",
+      "done": "Listo"
     },
     "emptyTitle": "Aún no tienes plafones",
     "emptySubtitle": "Busca un plafón para empezar",
@@ -98,7 +100,8 @@
       "yourBoardsTitle": "Tus plafones",
       "popularTitle": "Configuraciones populares",
       "findGym": "Buscar gimnasio",
-      "create": "Crear plafón"
+      "create": "Crear plafón",
+      "followed": "{{name}} añadido a tus plafones"
     },
     "create": {
       "screenTitle": "Configura tu plafón",

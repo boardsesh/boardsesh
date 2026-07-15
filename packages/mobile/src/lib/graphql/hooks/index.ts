@@ -65,10 +65,12 @@ import {
 import {
   UPDATE_BOARD,
   DELETE_BOARD,
+  FOLLOW_BOARD,
   UNFOLLOW_BOARD,
   GET_BOARD_BY_SLUG,
   type UpdateBoardMutationResponse,
   type DeleteBoardMutationResponse,
+  type FollowBoardMutationResponse,
   type UnfollowBoardMutationResponse,
   type GetBoardBySlugQueryResponse,
 } from '@boardsesh/graphql/operations/boards';
@@ -553,6 +555,28 @@ export function useDeleteBoard() {
     onSuccess: (_deleted, boardUuid) => {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['board', boardUuid] });
+    },
+  });
+}
+
+/**
+ * Follow someone else's public board so it lands in the user's My Boards list.
+ * Wraps the uuid in `{ input: { boardUuid } }` like `unfollowBoard`. Idempotent
+ * on the server (`onConflictDoNothing`), so callers can fire it without first
+ * checking whether the board is already followed. Invalidates `myBoards` so the
+ * newly-followed board shows up.
+ */
+export function useFollowBoard() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (boardUuid: string) => {
+      const response = await getHttpClient().request<FollowBoardMutationResponse>(FOLLOW_BOARD, {
+        input: { boardUuid },
+      });
+      return response.followBoard;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
     },
   });
 }

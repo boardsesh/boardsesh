@@ -12,7 +12,9 @@ import { useLocalePreference } from '../../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../../src/lib/open-url';
 import { useAuth } from '../../../src/providers/auth-provider';
-import { useProfile } from '../../../src/lib/graphql/hooks';
+import { useProfile, useMyBoards } from '../../../src/lib/graphql/hooks';
+import { useBoardDownloads } from '../../../src/offline/use-board-downloads';
+import { useSetting, setSetting } from '../../../src/settings';
 import { useConfirm } from '../../../src/providers/dialog-provider';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
 import {
@@ -75,6 +77,14 @@ export default function MoreScreen() {
   const garminWatchEnabled = useFeatureFlag('garmin-watch') === true;
   const offlineEnabled = useOfflineDownloadsEnabled();
   const confirm = useConfirm();
+
+  // "Keep boards offline by default" toggle. Turning it on downloads every board
+  // already in My Boards now (user chose this over a future-only default), and the
+  // adopt-on-select flow auto-downloads new boards from then on.
+  const [autoOfflineBoards] = useSetting('autoOfflineBoards');
+  const { enableBoardsOffline } = useBoardDownloads();
+  const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
+  const myBoards = myBoardsConnection?.boards ?? [];
 
   // Offline sync-issues surface. Poll the dead-letter count only while online (the
   // section is hidden offline — a pending write offline is expected, not a "stuck"
@@ -392,6 +402,33 @@ export default function MoreScreen() {
         : []),
     ],
   });
+
+  // Offline — keep boards available with no signal. Gated by the offline feature
+  // flag (the whole offline surface is flag-gated). Turning it on downloads every
+  // current board now; future boards auto-download via the adopt-on-select flow.
+  if (offlineEnabled) {
+    sections.push({
+      key: 'offline',
+      title: t('mobile.more.offline.title'),
+      rows: [
+        {
+          kind: 'toggle',
+          key: 'autoOfflineBoards',
+          label: t('mobile.more.offline.autoDownload'),
+          subtitle: t('mobile.more.offline.autoDownloadDescription'),
+          value: autoOfflineBoards,
+          onValueChange: (next) => {
+            hapticSelection();
+            setSetting('autoOfflineBoards', next);
+            if (next && myBoards.length > 0) {
+              enableBoardsOffline(myBoards);
+              showToast(t('mobile.more.offline.downloadingAll', { count: myBoards.length }), 'info');
+            }
+          },
+        },
+      ],
+    });
+  }
 
   // Accessibility (nav).
   sections.push({

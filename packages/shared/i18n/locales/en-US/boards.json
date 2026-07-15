@@ -78,7 +78,9 @@
       "unfollowError": "Couldn't unfollow that board. Try again.",
       "editAria": "Edit {{name}}",
       "deleteAria": "Delete {{name}}",
-      "unfollowAria": "Unfollow {{name}}"
+      "unfollowAria": "Unfollow {{name}}",
+      "edit": "Edit",
+      "done": "Done"
     },
     "emptyTitle": "No boards yet",
     "emptySubtitle": "Search for a board to get started",
@@ -98,7 +100,8 @@
       "yourBoardsTitle": "Your boards",
       "popularTitle": "Popular setups",
       "findGym": "Find gym",
-      "create": "Create board"
+      "create": "Create board",
+      "followed": "Added {{name}} to your boards"
     },
     "create": {
       "screenTitle": "Set up your board",

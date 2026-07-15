@@ -78,7 +78,9 @@
       "unfollowError": "Impossible de te désabonner de cette board. Réessaie.",
       "editAria": "Modifier {{name}}",
       "deleteAria": "Supprimer {{name}}",
-      "unfollowAria": "Se désabonner de {{name}}"
+      "unfollowAria": "Se désabonner de {{name}}",
+      "edit": "Modifier",
+      "done": "Terminé"
     },
     "emptyTitle": "Aucune board pour le moment",
     "emptySubtitle": "Cherche une board pour commencer",
@@ -98,7 +100,8 @@
       "yourBoardsTitle": "Tes boards",
       "popularTitle": "Configurations populaires",
       "findGym": "Trouver une salle",
-      "create": "Créer une board"
+      "create": "Créer une board",
+      "followed": "{{name}} ajoutée à tes boards"
     },
     "create": {
       "screenTitle": "Configure ta board",

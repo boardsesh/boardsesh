@@ -105,6 +105,13 @@
         "boardseshGrades": "Afficher les grades Boardsesh",
         "boardseshGradesDescription": "Des grades calculés à partir de vraies croix sur plusieurs boards. Le grade de l'ouvreur reste affiché tant qu'il n'y a pas assez de croix."
       },
+      "offline": {
+        "title": "Hors ligne",
+        "autoDownload": "Garder les boards hors ligne",
+        "autoDownloadDescription": "Télécharge toutes les boards que tu utilises pour les parcourir et enregistrer tes croix hors ligne. Les nouvelles boards se téléchargent automatiquement.",
+        "downloadingAll_one": "Téléchargement d'1 board pour le hors ligne",
+        "downloadingAll_other": "Téléchargement de {{count}} boards pour le hors ligne"
+      },
       "language": {
         "title": "Langue",
         "system": "Système",
