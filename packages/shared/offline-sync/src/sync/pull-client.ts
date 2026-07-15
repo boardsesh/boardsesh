@@ -23,7 +23,7 @@ import {
   type SnapshotBootstrapErrorReporter,
 } from './snapshot-bootstrap';
 import { parseSnapshotManifest, type SnapshotManifest } from './snapshot-manifest';
-import { LATEST_SCHEMA_VERSION } from '../db/migrations';
+import { findSnapshotEntry, isSnapshotEntryUsable } from './snapshot-estimate';
 import { isSigningOut, getWipeEpoch } from '../mutation-queue/drainer';
 import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 
@@ -539,16 +539,16 @@ async function runBootstrapPhase(
         continue;
       }
 
-      const entry = resolution.manifest.entries.find(
-        (candidate) => candidate.boardType === scope.boardType && candidate.layoutId === scope.layoutId,
-      );
+      // Shared with the pre-download size estimate (snapshot-estimate.ts) so the
+      // UI can never quote a number for an artifact this phase would skip.
+      const entry = findSnapshotEntry(resolution.manifest, scope.boardType, scope.layoutId);
       if (!entry) continue; // layout not exported yet — permanent miss, no attempt
       // Pre-check the manifest's schemaVersion so a schema-stale artifact is
       // skipped BEFORE the multi-MB download; verifySnapshotMeta re-checks the
       // authoritative value inside the file. Same permanent-miss semantics as
       // SnapshotSchemaStaleError: no attempt, paged crawl runs this cycle, and
       // tonight's export rebuilds at the new schema.
-      if (entry.schemaVersion < LATEST_SCHEMA_VERSION) continue;
+      if (!isSnapshotEntryUsable(entry)) continue;
 
       const layoutKey = `${scope.boardType}:${scope.layoutId}`;
       // The failure cause is cached alongside the result so a second size of the

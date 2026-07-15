@@ -252,6 +252,7 @@
       "removeAria": "Quitar {{name}} del modo sin conexión",
       "enableTitle": "¿Descargar {{name}}?",
       "enableMessage": "Descarga todas las vías de este plafón para explorarlas y registrar tus ascensos sin conexión.",
+      "enableMessageWithSize": "Unos {{size}}. Descarga todas las vías de este plafón para explorarlas y registrar tus ascensos sin conexión.",
       "enableConfirm": "Descargar"
     }
   },

@@ -96,6 +96,13 @@ export type {
   SnapshotTableName,
 } from './sync/snapshot-manifest';
 
+// --- Pre-download size estimate (issue #3616) ------------------------------------
+// Answers "how big is this download?" before the user commits. Shares its entry
+// lookup + schema gate with runBootstrapPhase so the number can't contradict the
+// engine.
+export { estimateScopeDownload, findSnapshotEntry, isSnapshotEntryUsable } from './sync/snapshot-estimate';
+export type { SnapshotDownloadEstimate } from './sync/snapshot-estimate';
+
 // --- On-device schema ------------------------------------------------------------
 export { SCHEMA_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';

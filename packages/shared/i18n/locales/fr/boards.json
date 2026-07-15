@@ -252,6 +252,7 @@
       "removeAria": "Retirer {{name}} du mode hors ligne",
       "enableTitle": "Télécharger {{name}} ?",
       "enableMessage": "Télécharge toutes les voies de cette board pour les parcourir et enregistrer tes croix hors ligne.",
+      "enableMessageWithSize": "Environ {{size}}. Télécharge toutes les voies de cette board pour les parcourir et enregistrer tes croix hors ligne.",
       "enableConfirm": "Télécharger"
     }
   },

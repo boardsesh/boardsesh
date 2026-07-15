@@ -220,6 +220,22 @@ pre-import empty result set.
 
 ## Mobile wiring
 
+- **Pre-download size estimate (the manifest's second consumer)**: the My Boards confirm dialog
+  ("Download {board}?") quotes the artifact size before the user commits —
+  `entry.bytes` for the layout, formatted by `packages/mobile/src/lib/format-bytes.ts`. The manifest
+  comes from `useSnapshotManifest()` (`packages/mobile/src/offline/use-snapshot-manifest.ts`), a React
+  Query wrapper around the **same** `SnapshotSource.fetchManifest` the engine is handed (`staleTime`
+  5 min, mirroring the object's `max-age=300`), warmed on screen mount so the dialog never awaits a
+  fetch. The decision of _whether a number can be quoted at all_ lives in
+  `estimateScopeDownload` (`snapshot-estimate.ts`), which mirrors `runBootstrapPhase`'s eligibility
+  rules and returns `unknown` — falling back to sizeless copy — whenever the paged crawl would run
+  instead: no manifest, an existing checkpoint on either board table (a re-enabled board resumes as a
+  small delta, so the full artifact size would be a lie), attempts at `MAX_BOOTSTRAP_ATTEMPTS`, no
+  entry for the layout, or a schema-stale entry. `findSnapshotEntry`/`isSnapshotEntryUsable` are
+  shared with `runBootstrapPhase` so the UI can never disagree with the engine about which artifact a
+  scope would download. Note `bytes` is the **stored** object size: correct as a download figure while
+  artifacts stay identity-encoded, and an undercount of the on-disk file the day `--gzip` ships.
+
 - **Per-connection ATTACH invariant (BOARDSESH-AA)**: expo-sqlite's
   `withExclusiveTransactionAsync` runs its task on a **new native connection**
   (`useNewConnection: true`), and SQLite `ATTACH`es are per-connection — anything attached on the

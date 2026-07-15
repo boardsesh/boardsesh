@@ -30,6 +30,21 @@ function collectKeys(node: unknown, prefix = ''): string[] {
   return keys;
 }
 
+function collectStrings(node: unknown, prefix = ''): Array<[string, string]> {
+  if (typeof node === 'string') return [[prefix, node]];
+  if (node === null || typeof node !== 'object') return [];
+  const entries: Array<[string, string]> = [];
+  for (const [key, value] of Object.entries(node)) {
+    entries.push(...collectStrings(value, prefix ? `${prefix}.${key}` : key));
+  }
+  return entries;
+}
+
+// The ICU placeholders a string interpolates, e.g. "Hello {{name}}" -> {"name"}.
+function placeholders(value: string): string[] {
+  return [...new Set([...value.matchAll(/{{\s*([A-Za-z0-9_]+)/g)].map((match) => match[1]))].sort();
+}
+
 const namespaces = readdirSync(join(LOCALES_DIR, DEFAULT_LOCALE)).filter((file) => file.endsWith('.json'));
 
 describe('i18n catalog completeness', () => {
@@ -42,6 +57,23 @@ describe('i18n catalog completeness', () => {
           const missing = [...expected].filter((key) => !actual.has(key));
           const extra = [...actual].filter((key) => !expected.has(key));
           expect({ namespace, missing, extra }).toEqual({ namespace, missing: [], extra: [] });
+        });
+
+        // Key parity alone lets a translation silently drop an interpolation:
+        // the key exists, the sentence reads fine, and the value the placeholder
+        // carried (a board name, a download size) just never renders. Catch it
+        // here rather than in a screenshot.
+        it(`${namespace} interpolates the same placeholders as en-US`, () => {
+          const translated = new Map(collectStrings(loadCatalog(locale, namespace)));
+          const mismatched = collectStrings(loadCatalog(DEFAULT_LOCALE, namespace))
+            .filter(([key]) => translated.has(key))
+            .map(([key, source]) => ({
+              key,
+              expected: placeholders(source),
+              actual: placeholders(translated.get(key)!),
+            }))
+            .filter(({ expected, actual }) => expected.join() !== actual.join());
+          expect({ namespace, mismatched }).toEqual({ namespace, mismatched: [] });
         });
       }
     });

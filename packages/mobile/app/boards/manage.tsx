@@ -15,8 +15,16 @@ import { useTheme } from '../../src/providers/theme-provider';
 import { useOfflineDownloadsEnabled } from '../../src/providers/feature-flags-provider';
 import { useBottomChromeMetrics } from '../../src/hooks/use-bottom-chrome-metrics';
 import { useSyncStatus } from '../../src/sync';
-import { getDownloadedScopeKeys } from '@boardsesh/offline-sync';
+import {
+  getDownloadedScopeKeys,
+  getCheckpoint,
+  getCheckpointKey,
+  getBootstrapAttempts,
+  estimateScopeDownload,
+} from '@boardsesh/offline-sync';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
+import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
+import { formatBytes } from '../../src/lib/format-bytes';
 import {
   getSetting,
   useSetting,
@@ -43,7 +51,7 @@ const getItemType = (item: ManageItem) => item.type;
 export default function ManageBoards() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { t } = useTranslation('boards');
+  const { t, i18n } = useTranslation('boards');
   const { isAuthenticated, refreshAuthState } = useAuth();
   const { systemColors, brandColors } = useTheme();
   const { showToast } = useToast();
@@ -91,6 +99,9 @@ export default function ManageBoards() {
   // syncEnabledBoards.
   const offlineDownloadsEnabled = useOfflineDownloadsEnabled();
   const { enableBoardsOffline } = useBoardDownloads();
+  // Warmed here on mount so the download-size estimate is already in cache when a
+  // row's toggle is tapped — the confirm dialog must never wait on a fetch.
+  const snapshotManifest = useSnapshotManifest();
   const db = useSQLiteContext();
   const syncStatus = useSyncStatus();
   const [enabledBoards] = useSetting('syncEnabledBoards');
@@ -124,9 +135,34 @@ export default function ManageBoards() {
         setOfflineBoardEnabled(scope, false);
         return;
       }
+      // How big is this download? Only the snapshot path can answer honestly, and
+      // only for a scope that would actually bootstrap — a board toggled off and
+      // back on keeps its rows + checkpoint and resumes as a small delta, so
+      // quoting the full artifact size there would be wrong. estimateScopeDownload
+      // owns those rules (shared with the engine's own eligibility check); anything
+      // it can't vouch for falls back to the sizeless copy.
+      //
+      // Concurrent, not sequential: these are three independent reads and the
+      // dialog opens behind them, so serialising them would show up as a stall on
+      // slow storage.
+      const [climbsCheckpoint, statsCheckpoint, bootstrapAttempts] = await Promise.all([
+        getCheckpoint(db, getCheckpointKey('board_climbs', key)),
+        getCheckpoint(db, getCheckpointKey('board_climb_stats', key)),
+        getBootstrapAttempts(db, key),
+      ]);
+      const estimate = estimateScopeDownload({
+        manifest: snapshotManifest,
+        boardType: scope.boardType,
+        layoutId: scope.layoutId,
+        hasExistingCheckpoint: !!climbsCheckpoint || !!statsCheckpoint,
+        bootstrapAttempts,
+      });
       const confirmed = await confirm({
         title: t('mobile.offline.enableTitle', { name: board.name }),
-        message: t('mobile.offline.enableMessage'),
+        message:
+          estimate.kind === 'snapshot'
+            ? t('mobile.offline.enableMessageWithSize', { size: formatBytes(estimate.bytes, i18n.language) })
+            : t('mobile.offline.enableMessage'),
         confirmLabel: t('mobile.offline.enableConfirm'),
         cancelLabel: t('mobile.manage.cancel'),
       });
@@ -135,7 +171,7 @@ export default function ManageBoards() {
       // latest syncEnabledBoards setting).
       enableBoardsOffline(board);
     },
-    [confirm, t, enableBoardsOffline],
+    [confirm, t, i18n.language, db, enableBoardsOffline, snapshotManifest],
   );
 
   // See boards/index.tsx: a hard 401 clears tokens without flipping
