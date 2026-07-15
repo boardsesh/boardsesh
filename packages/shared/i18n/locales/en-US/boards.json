@@ -101,7 +101,8 @@
       "popularTitle": "Popular setups",
       "findGym": "Find gym",
       "create": "Create board",
-      "followed": "Added {{name}} to your boards"
+      "followed": "Added {{name}} to your boards",
+      "followError": "Couldn't add {{name}} to your boards"
     },
     "create": {
       "screenTitle": "Set up your board",

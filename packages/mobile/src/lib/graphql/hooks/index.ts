@@ -572,7 +572,10 @@ export function useDeleteBoard() {
  * callback (gated on the observer still having listeners) would be dropped. UI
  * concerns (toast copy) stay with the caller via this injected callback.
  */
-export function useFollowBoard(options?: { onFollowed?: (board: Pick<UserBoard, 'uuid' | 'name'>) => void }) {
+export function useFollowBoard(options?: {
+  onFollowed?: (board: Pick<UserBoard, 'uuid' | 'name'>) => void;
+  onFollowError?: (board: Pick<UserBoard, 'uuid' | 'name'>, error: unknown) => void;
+}) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (board: Pick<UserBoard, 'uuid' | 'name'>) => {
@@ -584,6 +587,11 @@ export function useFollowBoard(options?: { onFollowed?: (board: Pick<UserBoard, 
     onSuccess: (_followed, board) => {
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       options?.onFollowed?.(board);
+    },
+    // Config-level (survives unmount, like onSuccess). A rejected follow otherwise
+    // fails silently after we've navigated away — surface it to the caller.
+    onError: (error, board) => {
+      options?.onFollowError?.(board, error);
     },
   });
 }

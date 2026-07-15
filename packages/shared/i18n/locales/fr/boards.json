@@ -101,7 +101,8 @@
       "popularTitle": "Configurations populaires",
       "findGym": "Trouver une salle",
       "create": "Créer une board",
-      "followed": "{{name}} ajoutée à tes boards"
+      "followed": "{{name}} ajoutée à tes boards",
+      "followError": "Impossible d'ajouter {{name}} à tes boards"
     },
     "create": {
       "screenTitle": "Configure ta board",

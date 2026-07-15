@@ -259,7 +259,9 @@ export default function GymDiscovery() {
         router.dismissTo(boardReturnTo);
         // Follow the board (so it lands in My Boards) and offer to make it available
         // offline. Fire-and-forget after navigating — the follow is idempotent and the
-        // offline confirm rides the root dialog, which survives the dismiss.
+        // offline confirm rides the root dialog, which survives the dismiss. Its own
+        // errors are handled inside (follow onError toast); they intentionally don't
+        // reach this catch, which is only for the board-switch write above.
         void adoptFoundBoard(board);
       } catch {
         showToast(t('mobile.boardSwitchError'), 'error');

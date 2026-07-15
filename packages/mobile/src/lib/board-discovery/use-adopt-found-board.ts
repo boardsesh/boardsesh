@@ -7,6 +7,7 @@ import { useConfirm } from '../../providers/dialog-provider';
 import { useToast } from '../../providers/toast-provider';
 import { useOfflineDownloadsEnabled } from '../../providers/feature-flags-provider';
 import { getSetting, useSetting, offlineBoardKeyForBoard } from '../../settings';
+import { reportError } from '../error-reporting';
 import { decideAdoptFoundBoard } from './adopt-found-board-decision';
 
 /**
@@ -24,6 +25,10 @@ export function useAdoptFoundBoard() {
   // screen unmounts on navigation); a per-call mutate callback would be dropped.
   const followBoard = useFollowBoard({
     onFollowed: (board) => showToast(t('mobile.discovery.followed', { name: board.name }), 'success'),
+    onFollowError: (board, error) => {
+      reportError(error);
+      showToast(t('mobile.discovery.followError', { name: board.name }), 'error');
+    },
   });
   const { enableBoardsOffline } = useBoardDownloads();
   const confirm = useConfirm();

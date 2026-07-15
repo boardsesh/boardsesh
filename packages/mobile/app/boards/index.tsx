@@ -96,7 +96,9 @@ export default function BoardSelection() {
         router.dismissTo(boardReturnTo);
         // Follow the board if it's new to the user (so it lands in My Boards) and
         // offer/auto-run its offline download. The isNew guard makes re-selecting a
-        // board already in My Boards a no-op for follow.
+        // board already in My Boards a no-op for follow. Fire-and-forget: its own
+        // errors are handled inside and intentionally don't reach the catch below
+        // (which only guards the board-switch write above).
         void adoptFoundBoard(board);
       } catch {
         showToast(t('mobile.boardSwitchError'), 'error');

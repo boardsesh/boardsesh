@@ -101,7 +101,8 @@
       "popularTitle": "Configuraciones populares",
       "findGym": "Buscar gimnasio",
       "create": "Crear plafón",
-      "followed": "{{name}} añadido a tus plafones"
+      "followed": "{{name}} añadido a tus plafones",
+      "followError": "No se pudo añadir {{name}} a tus plafones"
     },
     "create": {
       "screenTitle": "Configura tu plafón",

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -84,7 +84,9 @@ export default function MoreScreen() {
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
   const { enableBoardsOffline } = useBoardDownloads();
   const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
-  const myBoards = myBoardsConnection?.boards ?? [];
+  // Memoized so the empty-while-loading fallback keeps a stable identity — the
+  // offline effect below depends on this array and shouldn't re-run every render.
+  const myBoards = useMemo(() => myBoardsConnection?.boards ?? [], [myBoardsConnection]);
 
   // With the default on, keep every board offline. Runs on mount and once My Boards
   // resolves, so flipping the toggle before the list loaded still downloads
