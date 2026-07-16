@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { normalizeEmail } from '@boardsesh/db/utils';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
 
@@ -24,8 +24,11 @@ export async function GET(request: NextRequest) {
   }
 
   // Canonicalise so the identifier match and user lookup align with the
-  // normalized values written at register/resend time.
+  // normalized values written at register/resend time. Also match the raw
+  // link email so verification links minted before the normalization deploy
+  // (identifier stored as the original-cased email) still resolve.
   const normalizedEmail = normalizeEmail(email);
+  const candidateIdentifiers = normalizedEmail === email ? [normalizedEmail] : [normalizedEmail, email];
 
   const db = getDb();
 
@@ -33,7 +36,12 @@ export async function GET(request: NextRequest) {
   const verificationToken = await db
     .select()
     .from(schema.verificationTokens)
-    .where(and(eq(schema.verificationTokens.identifier, normalizedEmail), eq(schema.verificationTokens.token, token)))
+    .where(
+      and(
+        inArray(schema.verificationTokens.identifier, candidateIdentifiers),
+        eq(schema.verificationTokens.token, token),
+      ),
+    )
     .limit(1);
 
   if (verificationToken.length === 0) {
@@ -48,7 +56,10 @@ export async function GET(request: NextRequest) {
     await db
       .delete(schema.verificationTokens)
       .where(
-        and(eq(schema.verificationTokens.identifier, normalizedEmail), eq(schema.verificationTokens.token, token)),
+        and(
+          inArray(schema.verificationTokens.identifier, candidateIdentifiers),
+          eq(schema.verificationTokens.token, token),
+        ),
       );
 
     return NextResponse.redirect(new URL('/auth/verify-request?error=TokenExpired', request.url));
@@ -66,7 +77,10 @@ export async function GET(request: NextRequest) {
     await db
       .delete(schema.verificationTokens)
       .where(
-        and(eq(schema.verificationTokens.identifier, normalizedEmail), eq(schema.verificationTokens.token, token)),
+        and(
+          inArray(schema.verificationTokens.identifier, candidateIdentifiers),
+          eq(schema.verificationTokens.token, token),
+        ),
       );
 
     return NextResponse.redirect(new URL('/auth/verify-request?error=InvalidToken', request.url));
@@ -74,15 +88,15 @@ export async function GET(request: NextRequest) {
 
   // Update user and delete token atomically
   await db.transaction(async (tx) => {
-    await tx
-      .update(schema.users)
-      .set({ emailVerified: new Date() })
-      .where(sql`lower(${schema.users.email}) = ${normalizedEmail}`);
+    await tx.update(schema.users).set({ emailVerified: new Date() }).where(eq(schema.users.id, user[0].id));
 
     await tx
       .delete(schema.verificationTokens)
       .where(
-        and(eq(schema.verificationTokens.identifier, normalizedEmail), eq(schema.verificationTokens.token, token)),
+        and(
+          inArray(schema.verificationTokens.identifier, candidateIdentifiers),
+          eq(schema.verificationTokens.token, token),
+        ),
       );
   });
 
