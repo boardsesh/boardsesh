@@ -20,8 +20,14 @@
  * --validate-only (read-only gates report, works without the grade tables),
  * --allow-empty-backtest (dev DBs without stats history: skip the backtest
  * instead of blocking — never use in prod), --publish-cross-angle-estimates
- * (rollout switch; enable only after compatible mobile clients are required).
+ * (rollout switch; enable only after compatible mobile clients are required),
+ * --content-prior-file=<path> (score CANDIDATE content priors from an offline
+ * JSONL file instead of board_climb_embeddings — pair with --validate-only or
+ * --dry-run to keep it read-only; adds the report-only content_prior_backtest
+ * gate per board present in the file).
  */
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { sql } from 'drizzle-orm';
 import { ANGLES } from '@boardsesh/board-config';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -53,6 +59,7 @@ import {
   buildTensionBenchmarkHoldoutSql,
   buildZeroEvidenceSampleSql,
   computePosteriorGrade,
+  contentPriorKey,
   createDisplayDeltaHygieneStats,
   deherdCrowdMean,
   estimateAngleSurface,
@@ -64,8 +71,10 @@ import {
   estimateSigmaWithin,
   estimateTauSquared,
   evaluateBacktest,
+  evaluateContentPriorBacktest,
   evaluateDisplayDeltaHygiene,
   evaluateFingerprintGate,
+  parseContentPriorLine,
   evaluateTensionBenchmarkHoldout,
   evaluateZeroEvidenceProjectionByBoard,
   echoFractionFor,
@@ -91,6 +100,7 @@ import {
   type BoardOffsetSampleRow,
   type ConfidenceTier,
   type ClimbAngleObservation,
+  type ContentPriorEntry,
   type EchoRateRow,
   type DisplayDeltaHygieneStats,
   type GateResult,
@@ -323,15 +333,6 @@ interface ComputedRow {
   holdFingerprint: string | null;
 }
 
-interface ContentPriorEntry {
-  contentPrior: number;
-  contentSd: number | null;
-}
-
-function contentPriorKey(climbUuid: string, angle: number): string {
-  return `${climbUuid}\u0000${angle}`;
-}
-
 /** Load the Climb2Vec content-model estimates (board_climb_embeddings) for a board. */
 async function loadContentPriors(db: Db, boardType: string): Promise<Map<string, ContentPriorEntry>> {
   const rows = rowsOf<{ climb_uuid: string; angle: number; content_prior: number | null; content_sd: number | null }>(
@@ -348,6 +349,43 @@ async function loadContentPriors(db: Db, boardType: string): Promise<Map<string,
       contentSd: row.content_sd === null ? null : Number(row.content_sd),
     });
   }
+  return map;
+}
+
+/**
+ * Load CANDIDATE content priors for a board from an offline JSONL file (records
+ * `{climbUuid, angle, contentPrior, contentSd?, board?}`), instead of the DB
+ * embeddings table. Records tagged with a different `board` are skipped;
+ * malformed lines are counted and skipped rather than crashing the run. Read-only
+ * — this never touches board_climb_embeddings.
+ */
+async function loadContentPriorsFromFile(filePath: string, boardType: string): Promise<Map<string, ContentPriorEntry>> {
+  const reader = createInterface({ input: createReadStream(filePath, { encoding: 'utf8' }), crlfDelay: Infinity });
+  const map = new Map<string, ContentPriorEntry>();
+  let total = 0;
+  let malformed = 0;
+  try {
+    for await (const line of reader) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      total += 1;
+      const parsed = parseContentPriorLine(trimmed, boardType);
+      if (parsed.status === 'malformed') {
+        malformed += 1;
+        continue;
+      }
+      if (parsed.status === 'skip') continue;
+      map.set(parsed.key, parsed.entry);
+    }
+  } finally {
+    reader.close();
+  }
+  if (malformed > 0) {
+    console.warn(`[grades]   content-prior file ${filePath}: skipped ${malformed} malformed line(s) of ${total}`);
+  }
+  console.log(
+    `[grades]   content-prior file ${filePath}: loaded ${map.size} ${boardType} candidate(s) from ${total} line(s)`,
+  );
   return map;
 }
 
@@ -1133,7 +1171,7 @@ function eligibleProjectionBoards(gates: GateResult[]): Set<string> {
  * run the input-side gates, compute every board, evaluate the in-memory gates,
  * and print the report. Writes nothing.
  */
-async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> {
+async function validateOnly(db: Db, allowEmptyBacktest: boolean, contentPriorFile: string | undefined): Promise<void> {
   const coefficients = await refitCoefficients(db, { persist: false });
   const baselineCoefficients = withoutStage2Coefficients(coefficients);
   const stage2Evidence = await loadStage2Evidence(db, coefficients);
@@ -1191,7 +1229,9 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> 
   }
   const computedByBoard = new Map<string, ComputedRow[]>();
   for (const boardType of CROWD_MEAN_BOARDS) {
-    const contentPriors = await loadContentPriors(db, boardType);
+    const contentPriors = contentPriorFile
+      ? await loadContentPriorsFromFile(contentPriorFile, boardType)
+      : await loadContentPriors(db, boardType);
     const { computed, isotonicStats, displayDeltaHygieneStats, projectedRows } = await computeBoard(
       db,
       boardType,
@@ -1214,6 +1254,17 @@ async function validateOnly(db: Db, allowEmptyBacktest: boolean): Promise<void> 
     console.log(
       `[grades]   ${boardType}: ${computed.length} rows (${projectedRows} projected), tiers=${JSON.stringify(tiers)}; isotonic moved ${isotonicStats.movedRows} rows (${isotonicStats.residualInversions} residual inversions); no_shock ${noShock.passed ? 'PASS' : 'FAIL'} (${noShock.detail}); fingerprint ${fingerprint.passed ? 'PASS' : 'FAIL'} (${fingerprint.detail}); display_delta_hygiene ${displayDeltaHygiene.passed ? 'PASS' : 'FAIL'} (${displayDeltaHygiene.detail})`,
     );
+    if (contentPriorFile && backtestRows.length > 0 && contentPriors.size > 0) {
+      const contentBacktest = evaluateContentPriorBacktest(
+        backtestRows.filter((row) => row.board_type === boardType),
+        contentPriors,
+        coefficients,
+      );
+      gates.push(contentBacktest.gate);
+      console.log(
+        `[grades]   content_prior_backtest: ${contentBacktest.gate.passed ? 'PASS' : 'FAIL'} — ${contentBacktest.gate.detail}`,
+      );
+    }
   }
   const baselineTension = await computeBoard(db, 'tension', baselineCoefficients, new Map(), {
     applyStage2: false,
@@ -1246,10 +1297,20 @@ async function main(): Promise<void> {
   // the nightly writer exposes it to older installed clients. Enable this in
   // the scheduled job only after the compatible mobile build is the minimum.
   const publishCrossAngleEstimates = process.argv.includes('--publish-cross-angle-estimates');
+  const contentPriorFile = process.argv
+    .find((arg) => arg.startsWith('--content-prior-file='))
+    ?.slice('--content-prior-file='.length);
+  // A candidate file is a diagnostic input — never let it flow into a real
+  // publish run, where it would persist un-vetted priors to board_climb_grades.
+  if (contentPriorFile && !dryRun && !process.argv.includes('--validate-only')) {
+    console.error('[grades] --content-prior-file requires --validate-only or --dry-run; refusing a write run with candidate priors.');
+    process.exitCode = 1;
+    return;
+  }
   const { db, close } = createScriptDb();
   try {
     if (process.argv.includes('--validate-only')) {
-      await validateOnly(db, allowEmptyBacktest);
+      await validateOnly(db, allowEmptyBacktest, contentPriorFile);
       return;
     }
     let coefficients = forceRefit ? null : await loadFrozenCoefficients(db);
@@ -1339,7 +1400,9 @@ async function main(): Promise<void> {
     const displayDeltaHygieneStats = createDisplayDeltaHygieneStats();
     for (const boardType of CROWD_MEAN_BOARDS) {
       console.log(`[grades] computing ${boardType}…`);
-      const contentPriors = await loadContentPriors(db, boardType);
+      const contentPriors = contentPriorFile
+        ? await loadContentPriorsFromFile(contentPriorFile, boardType)
+        : await loadContentPriors(db, boardType);
       const {
         computed,
         isotonicStats,
@@ -1354,6 +1417,17 @@ async function main(): Promise<void> {
       console.log(
         `[grades]   ${computed.length} climb+angle rows (${projectedRows} projected onto unclimbed angles; isotonic moved ${isotonicStats.movedRows}, ${isotonicStats.residualInversions} residual inversions; display-delta hygiene downgraded ${boardDisplayDeltaHygieneStats.downgradedRows})`,
       );
+      if (contentPriorFile && backtestRows.length > 0 && contentPriors.size > 0) {
+        const contentBacktest = evaluateContentPriorBacktest(
+          backtestRows.filter((row) => row.board_type === boardType),
+          contentPriors,
+          coefficients,
+        );
+        gates.push(contentBacktest.gate);
+        console.log(
+          `[grades]   content_prior_backtest: ${contentBacktest.gate.passed ? 'PASS' : 'FAIL'} — ${contentBacktest.gate.detail}`,
+        );
+      }
     }
     const allComputed = [...computedByBoard.values()].flat();
     const noShockGate = evaluateNoShock(allComputed);
