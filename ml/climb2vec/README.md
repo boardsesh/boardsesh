@@ -69,10 +69,28 @@ embedding (grade **and** similarity **and** style from one vector), which the GB
 can't give. (Duplicate-holdset retrieval is trivially perfect but uninformative on
 the dev extract — only 3 duplicate groups; prod has ~16k fingerprint duplicates.)
 
+## v2 tuning (2026-07, prod 36,652 obs, held-out by climb)
+
+Two levers were tried against the diagnosis "grade is roughly additive in per-hold
+difficulty, and the GBM wins via the summed per-hold coefficient":
+
+- **Wide & deep (kept, shipped as `wide_deep=True`).** Add the sum of the train-fit
+  per-hold ridge coefficient (already a node feature), scaled by ONE learned weight,
+  to the Deep Sets head. Deep Sets MAE **1.49 → 1.43**, within-±1 **58.5% → 60.6%**
+  (now ≈ the GBM's 1.38 / 61.3%), and the embedding grade-agreement improved to
+  **2.67** (vs 3.72 raw geometry, 3.82 random). Note: a *naive* full per-placement
+  additive (~3k free params) OVERFIT to 1.81 — the single-weight version is the fix.
+- **De-herded training label (tried, reverted).** Training on
+  `board_climb_grades.local_grade` instead of the raw crowd mean did NOT help
+  (1.49 → 1.52). That column is the *full* Stage-2 blend (cross-angle prior +
+  isotonic + no-shock clamp) — crowd-specific adjustments geometry can't learn — so
+  it's a noisier target, not a cleaner one. We train on the crowd mean.
+
 ## Phase-1b (next)
 
-Close the grade gap and strengthen the embedding: an ordinal (CORAL) head, an
+Close the remaining gap and strengthen the embedding: an ordinal (CORAL) head, an
 explicit contrastive objective (hold_fingerprint duplicates as positives),
-hyperparameter tuning, and training on the full prod catalog + all boards (board
-embedding). Then export `content_prior` + embeddings for the Phase-2 blend and the
-Phase-3 similarity table.
+hyperparameter tuning (LR schedule, early stopping, capacity), and training on all
+boards (board embedding). A *proper* de-herded label — the raw `deherdCrowdMean`
+output, NOT `local_grade` — is still worth one test. Then re-export `content_prior`
++ embeddings for the Phase-2 blend and the Phase-3 similarity table.

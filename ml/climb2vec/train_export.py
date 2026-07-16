@@ -23,7 +23,7 @@ import dataset as ds
 from evaluate import NODE_DIM, SEED, build_incidence, build_tensors, index_map
 from model import DeepSetsGrader
 
-MODEL_VERSION = "climb2vec-v1"
+MODEL_VERSION = "climb2vec-v2-widedeep"
 
 
 def train_deepsets(train, val, pid_vocab, hand_coef, foot_coef, epochs):
@@ -35,7 +35,7 @@ def train_deepsets(train, val, pid_vocab, hand_coef, foot_coef, epochs):
     ty = torch.from_numpy(labels - y_mean)
     tw = torch.from_numpy(weights / weights.mean())
 
-    model = DeepSetsGrader(n_pids=len(pid_vocab), geom_dim=NODE_DIM)
+    model = DeepSetsGrader(n_pids=len(pid_vocab), geom_dim=NODE_DIM, wide_deep=True)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
     n = tn.shape[0]
     batch = 512

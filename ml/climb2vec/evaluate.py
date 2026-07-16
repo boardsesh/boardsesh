@@ -41,7 +41,7 @@ def index_map(pids):
     return {pid: i for i, pid in enumerate(sorted(pids))}
 
 
-def build_incidence(rows, hand_index, foot_index):
+def build_incidence(rows, hand_index, foot_index, label_field="label"):
     n_hand, n_foot = len(hand_index), len(foot_index)
     ncol = n_hand + n_foot + 1  # + angle column
     data, indices, indptr = [], [], [0]
@@ -62,7 +62,7 @@ def build_incidence(rows, hand_index, foot_index):
             indices.append(col)
             data.append(val)
         indptr.append(len(indices))
-        labels.append(row["label"])
+        labels.append(row[label_field])
         weights.append(ds.weight(row))
     matrix = csr_matrix((data, indices, indptr), shape=(len(rows), ncol))
     return matrix, np.array(labels), np.array(weights)
@@ -89,7 +89,7 @@ def agg_features(rows, hand_coef, foot_coef):
 NODE_DIM = ds.GEOM_DIM + 1
 
 
-def build_tensors(rows, pid_vocab, max_holds, hand_coef, foot_coef):
+def build_tensors(rows, pid_vocab, max_holds, hand_coef, foot_coef, label_field="label"):
     n = len(rows)
     node = np.zeros((n, max_holds, NODE_DIM), dtype=np.float32)
     pids = np.zeros((n, max_holds), dtype=np.int64)
@@ -105,19 +105,19 @@ def build_tensors(rows, pid_vocab, max_holds, hand_coef, foot_coef):
             pids[i, k] = pid_vocab.get(hold["pid"], 0)
             mask[i, k] = 1.0
         angle[i, 0] = (row["angle"] - 40) / 20.0
-        labels[i] = row["label"]
+        labels[i] = row[label_field]
         weights[i] = ds.weight(row)
     return node, pids, mask, angle, labels, weights
 
 
-def run_deepsets(train, val, pid_vocab, epochs, hand_coef, foot_coef):
+def run_deepsets(train, val, pid_vocab, epochs, hand_coef, foot_coef, train_label="label", eval_label="label", wide_deep=False):
     import torch
     from model import DeepSetsGrader
 
     torch.manual_seed(0)
     max_holds = min(40, max(len(r["holds"]) for r in train + val))
-    ntr = build_tensors(train, pid_vocab, max_holds, hand_coef, foot_coef)
-    nva = build_tensors(val, pid_vocab, max_holds, hand_coef, foot_coef)
+    ntr = build_tensors(train, pid_vocab, max_holds, hand_coef, foot_coef, label_field=train_label)
+    nva = build_tensors(val, pid_vocab, max_holds, hand_coef, foot_coef, label_field=eval_label)
     y_mean = float(ntr[4].mean())
 
     def tensors(pack):
@@ -133,7 +133,7 @@ def run_deepsets(train, val, pid_vocab, epochs, hand_coef, foot_coef):
 
     tr = tensors(ntr)
     va = tensors(nva)
-    model = DeepSetsGrader(n_pids=len(pid_vocab), geom_dim=NODE_DIM)
+    model = DeepSetsGrader(n_pids=len(pid_vocab), geom_dim=NODE_DIM, wide_deep=wide_deep)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-5)
 
     n = tr[0].shape[0]
@@ -259,9 +259,16 @@ def main():
     print(f"[eval] gbm     {gbm_metrics}")
 
     # --- Deep Sets encoder (Climb2Vec) ---
+    # Two Deep Sets configs on the crowd-mean label: the plain encoder, and the
+    # wide&deep variant that adds the summed per-hold ridge coefficient as a
+    # single-weight additive term (matches the additive structure the GBM exploits).
     pid_vocab = ds.build_pid_vocab(train)
-    model, deep_metrics, max_holds, _ = run_deepsets(train, val, pid_vocab, args.epochs, hand_coef, foot_coef)
-    print(f"[eval] deepsets{deep_metrics}")
+    _, plain_metrics, _, _ = run_deepsets(train, val, pid_vocab, args.epochs, hand_coef, foot_coef)
+    print(f"[eval] deepsets (plain)     {plain_metrics}")
+    model, deep_metrics, max_holds, _ = run_deepsets(
+        train, val, pid_vocab, args.epochs, hand_coef, foot_coef, wide_deep=True
+    )
+    print(f"[eval] deepsets (wide&deep) {deep_metrics}")
 
     # --- Similarity: duplicate retrieval + neighbour grade agreement (val climbs) ---
     val_unique = ds.unique_climbs(val)
@@ -292,7 +299,12 @@ def main():
         "n_obs": len(rows),
         "n_train": len(train),
         "n_val": len(val),
-        "grade": {"ridge": ridge_metrics, "gbm": gbm_metrics, "deepsets": deep_metrics},
+        "grade": {
+            "ridge": ridge_metrics,
+            "gbm": gbm_metrics,
+            "deepsets_plain": plain_metrics,
+            "deepsets_wide_deep": deep_metrics,
+        },
         "similarity": similarity,
         "reference": {"moonboardrnn_exact": 0.467, "moonboardrnn_within1": 0.847},
     }

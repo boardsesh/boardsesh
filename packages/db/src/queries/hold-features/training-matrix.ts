@@ -23,6 +23,7 @@ export interface HoldFeatureLite {
 export interface ClimbStatLite {
   climb_uuid: string;
   angle: number;
+  /** Training target: the crowd mean (board_climb_stats.difficulty_average). */
   label: number;
   n: number;
   layout_id: number | null;
@@ -54,6 +55,7 @@ export interface TrainingHold {
 export interface TrainingRow {
   climbUuid: string;
   angle: number;
+  /** Training target: the crowd mean. */
   label: number;
   ascents: number;
   layoutId: number | null;

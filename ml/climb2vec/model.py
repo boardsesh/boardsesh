@@ -14,7 +14,7 @@ import torch.nn as nn
 
 
 class DeepSetsGrader(nn.Module):
-    def __init__(self, n_pids, geom_dim=10, pid_dim=16, hidden=64, emb_dim=64):
+    def __init__(self, n_pids, geom_dim=10, pid_dim=16, hidden=64, emb_dim=64, wide_deep=False):
         super().__init__()
         # padding_idx=0 → UNK/padded holds contribute a zero embedding.
         self.pid_emb = nn.Embedding(n_pids + 1, pid_dim, padding_idx=0)
@@ -32,6 +32,14 @@ class DeepSetsGrader(nn.Module):
             nn.ReLU(),
         )
         self.head = nn.Linear(emb_dim, 1)
+        self.wide_deep = wide_deep
+        if wide_deep:
+            # Wide additive term: the sum over the climb's holds of the train-fit
+            # per-hold ridge coefficient (already carried as the LAST node feature),
+            # scaled by ONE learned weight. This injects the additive structure the
+            # GBM exploits (grade ≈ Σ hold difficulty) without adding per-hold
+            # parameters that overfit; the Deep Sets branch learns only the residual.
+            self.wide_weight = nn.Parameter(torch.ones(1))
 
     def embed(self, node_feats, pids, mask, angle):
         # node_feats [B,H,geom]; pids [B,H]; mask [B,H] in {0,1}; angle [B,1]
@@ -51,4 +59,8 @@ class DeepSetsGrader(nn.Module):
     def forward(self, node_feats, pids, mask, angle):
         embedding = self.embed(node_feats, pids, mask, angle)
         grade = self.head(embedding).squeeze(-1)
+        if self.wide_deep:
+            # node_feats[..., -1] is the per-hold train-fit ridge coefficient.
+            additive = self.wide_weight * (node_feats[:, :, -1] * mask).sum(dim=1)
+            grade = grade + additive
         return grade, embedding
