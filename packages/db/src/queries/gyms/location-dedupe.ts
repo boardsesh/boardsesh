@@ -180,3 +180,51 @@ export function groupPhysicalGymCandidates<T extends CanonicalGymCandidate>(
     firstCluster.normalizedName.localeCompare(secondCluster.normalizedName),
   );
 }
+
+/**
+ * Guarded second match tier for the location-sync importer.
+ *
+ * The unconditional tier (`PHYSICAL_GYM_MATCH_DISTANCE_METERS`, 20 m) only
+ * catches cross-provider pins that land almost on top of each other. Prod data
+ * shows the same physical gym drifts 40–90 m between providers, so a wider tier
+ * is needed to stop every new provider minting a twin. To avoid false merges in
+ * dense urban areas, the wider tier only fires for a specific, non-generic
+ * normalized name — generic names (`home wall`, `garage`, bare board brands, …)
+ * are far too likely to collide across genuinely distinct walls, so they only
+ * ever match at the 20 m tier.
+ */
+export const GYM_MATCH_GUARDED_DISTANCE_METERS = 150;
+
+/**
+ * Normalized names that are too generic to safely match at the guarded (150 m)
+ * tier. Built from prod reality: home walls, garages, cellars, and bare board
+ * brand names show up on unrelated gyms all over a city. Compared
+ * case-insensitively against the already-normalized gym name (see
+ * `isGenericGymName`), so entries here are lowercase and single-spaced.
+ *
+ * Kept as an append-only exported constant so it can be shared with the gym
+ * dedup admin tooling without a rebase conflict.
+ */
+export const GENERIC_GYM_NAMES: readonly string[] = [
+  'home wall',
+  'homewall',
+  'home',
+  'garage',
+  'cellar',
+  'basement',
+  'kilter',
+  'kilter board',
+  'tension',
+  'moonboard',
+  'moon',
+];
+
+const GENERIC_GYM_NAME_SET = new Set<string>(GENERIC_GYM_NAMES);
+
+/**
+ * True when a gym name is too generic to match at the guarded (150 m) tier.
+ * Normalizes first, so casing and repeated whitespace never matter.
+ */
+export function isGenericGymName(name: string): boolean {
+  return GENERIC_GYM_NAME_SET.has(normalizeGymName(name));
+}

@@ -1,6 +1,7 @@
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   getMoonBoardLocationConfigs,
+  toLocationSyncLogger,
   upsertPublicBoardLocations,
   type LocationSyncSummary,
   type PublicBoardLocationInput,
@@ -76,7 +77,9 @@ export async function syncMoonBoardLocations(args: {
   await client.authenticate(args.username, args.password);
   const markers = await client.getMapMarkers();
   const records = buildMoonBoardLocationRecords(markers);
-  const summary = await upsertPublicBoardLocations(args.db, records);
+  const summary = await upsertPublicBoardLocations(args.db, records, {
+    logger: toLocationSyncLogger(args.log),
+  });
   args.log?.(
     `[moonboard-locations] upserted ${summary.boardsUpserted}/${summary.boardsSeen} board(s), ${summary.gymsUpserted} gym(s), skipped ${summary.boardsSkipped}`,
   );

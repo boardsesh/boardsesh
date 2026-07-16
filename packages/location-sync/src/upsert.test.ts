@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { gyms, locationSyncGymSources, userBoards, users } from '@boardsesh/db/schema';
 import type { CanonicalGymCandidate } from '@boardsesh/db/queries';
 import type { PublicBoardLocationInput } from './types';
+import { SYSTEM_USER_ID } from './ids';
+import type { LocationSyncLogger, LocationSyncLogFields } from './logger';
 import {
   buildBoardWriteIdentifiers,
   buildGymWriteIdentifiers,
@@ -12,6 +14,45 @@ import {
 } from './upsert';
 
 type UpsertDb = Parameters<typeof upsertPublicBoardLocations>[0];
+
+const USER_OWNER_ID = '11111111-1111-1111-1111-111111111111';
+
+/**
+ * A physical-match candidate row as {@link upsertPublicBoardLocations} reads it
+ * back from the match query: the canonical fields plus the guarded-tier / alias
+ * facts (distance, owner, approved-claim, existing provider aliases).
+ */
+type MatchCandidateRow = CanonicalGymCandidate & {
+  ownerId: string;
+  distanceMeters: number;
+  hasApprovedClaim: boolean;
+  aliasSourceKeys: string[];
+};
+
+type AliasedGymRow = {
+  id: number;
+  ownerId: string;
+  hasApprovedClaim: boolean;
+};
+
+type CapturedLog = { message: string; fields?: LocationSyncLogFields };
+
+function createFakeLogger(): {
+  logger: LocationSyncLogger;
+  infoCalls: CapturedLog[];
+  warnCalls: CapturedLog[];
+} {
+  const infoCalls: CapturedLog[] = [];
+  const warnCalls: CapturedLog[] = [];
+  return {
+    logger: {
+      info: (message, fields) => infoCalls.push({ message, fields }),
+      warn: (message, fields) => warnCalls.push({ message, fields }),
+    },
+    infoCalls,
+    warnCalls,
+  };
+}
 
 const baseLocationRecord: PublicBoardLocationInput = {
   boardType: 'tension',
@@ -87,11 +128,12 @@ function rowValues(row: unknown): Record<string, unknown> {
   return row as Record<string, unknown>;
 }
 
-function candidate(overrides: Partial<CanonicalGymCandidate>): CanonicalGymCandidate {
+function candidate(overrides: Partial<MatchCandidateRow>): MatchCandidateRow {
   return {
     id: 500,
     uuid: 'physical-gym',
     name: 'Board House',
+    ownerId: SYSTEM_USER_ID,
     address: null,
     contactEmail: null,
     contactPhone: null,
@@ -100,6 +142,10 @@ function candidate(overrides: Partial<CanonicalGymCandidate>): CanonicalGymCandi
     latitude: -33.86,
     longitude: 151.2,
     createdAt: '2026-01-01T00:00:00Z',
+    // Default to a dead-on tier-1 candidate; guarded-tier tests override.
+    distanceMeters: 0,
+    hasApprovedClaim: false,
+    aliasSourceKeys: [],
     boardCount: 0,
     memberCount: 0,
     followerCount: 0,
@@ -190,8 +236,8 @@ class FakeSelectBuilder {
     return this;
   }
 
-  limit(_limit: number): Array<{ id: number }> {
-    return this.fakeDb.aliasedGymId === null ? [] : [{ id: this.fakeDb.aliasedGymId }];
+  limit(_limit: number): AliasedGymRow[] {
+    return this.fakeDb.aliasedGym === null ? [] : [this.fakeDb.aliasedGym];
   }
 }
 
@@ -203,18 +249,18 @@ class FakeLocationSyncDb {
   readonly boardWrites: Array<Record<string, unknown>> = [];
   readonly executeSqlTexts: string[] = [];
 
-  readonly aliasedGymId: number | null;
-  readonly physicalCandidates: CanonicalGymCandidate[];
+  readonly aliasedGym: AliasedGymRow | null;
+  readonly physicalCandidates: MatchCandidateRow[];
   readonly createdGymId: number;
   readonly createdBoardId: number;
 
   constructor(options: {
-    aliasedGymId?: number | null;
-    physicalCandidates?: CanonicalGymCandidate[];
+    aliasedGym?: AliasedGymRow | null;
+    physicalCandidates?: MatchCandidateRow[];
     createdGymId?: number;
     createdBoardId?: number;
   }) {
-    this.aliasedGymId = options.aliasedGymId ?? null;
+    this.aliasedGym = options.aliasedGym ?? null;
     this.physicalCandidates = options.physicalCandidates ?? [];
     this.createdGymId = options.createdGymId ?? 900;
     this.createdBoardId = options.createdBoardId ?? 901;
@@ -325,8 +371,10 @@ describe('location upsert planning', () => {
 });
 
 describe('public board location upsert gym resolution', () => {
-  it('refreshes an existing source alias before physical matching or source upsert', async () => {
-    const fakeDb = new FakeLocationSyncDb({ aliasedGymId: 42 });
+  it('refreshes an existing SYSTEM-owned source alias before physical matching or source upsert', async () => {
+    const fakeDb = new FakeLocationSyncDb({
+      aliasedGym: { id: 42, ownerId: SYSTEM_USER_ID, hasApprovedClaim: false },
+    });
 
     const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
       locationRecord({
@@ -400,5 +448,266 @@ describe('public board location upsert gym resolution', () => {
     expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'tension:gym-new', gymId: 123 }]);
     expect(fakeDb.gymMetadataWrites).toEqual([]);
     expect(fakeDb.boardWrites[0]?.gymId).toBe(123);
+  });
+});
+
+describe('guarded second-tier gym matching', () => {
+  it('prefers a tier-1 (<=20 m) candidate over a farther tier-2 candidate without a tier-2 log', async () => {
+    const { logger, infoCalls, warnCalls } = createFakeLogger();
+    const fakeDb = new FakeLocationSyncDb({
+      physicalCandidates: [
+        candidate({ id: 71, uuid: 'tier-two-gym', distanceMeters: 120, boardCount: 9 }),
+        candidate({ id: 70, uuid: 'tier-one-gym', distanceMeters: 15, boardCount: 1 }),
+      ],
+    });
+
+    const summary = await upsertPublicBoardLocations(
+      fakeDb as unknown as UpsertDb,
+      [locationRecord({ sourceKey: 'tension:board-t1', gymSourceKey: 'tension:gym-t1' })],
+      { logger },
+    );
+
+    expect(summary.gymsUpserted).toBe(1);
+    // Tier-1 wins even though the tier-2 candidate is more complete (higher board count).
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'tension:gym-t1', gymId: 70 }]);
+    expect(fakeDb.gymMetadataWrites).toHaveLength(1);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    // Tier-1 matches stay quiet (today's behavior); only tier-2 events are logged.
+    expect(infoCalls).toEqual([]);
+    expect(warnCalls).toEqual([]);
+  });
+
+  it('matches an exact-name SYSTEM candidate at the 150 m tier and refreshes it', async () => {
+    const { logger, infoCalls } = createFakeLogger();
+    const fakeDb = new FakeLocationSyncDb({
+      physicalCandidates: [candidate({ id: 88, uuid: 'guarded-gym', distanceMeters: 140 })],
+    });
+
+    const summary = await upsertPublicBoardLocations(
+      fakeDb as unknown as UpsertDb,
+      [
+        locationRecord({
+          sourceKey: 'kilter:board-guarded',
+          gymSourceKey: 'kilter:gym-guarded',
+          gymName: 'Board House',
+        }),
+      ],
+      { logger },
+    );
+
+    expect(summary.gymsUpserted).toBe(1);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-guarded', gymId: 88 }]);
+    // SYSTEM-owned match still refreshes metadata.
+    expect(fakeDb.gymMetadataWrites).toHaveLength(1);
+    expect(fakeDb.boardWrites[0]?.gymId).toBe(88);
+    expect(infoCalls).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('guarded-tier'),
+        fields: expect.objectContaining({ gymId: 88, distanceMeters: 140 }),
+      }),
+    );
+  });
+
+  it('does NOT match a generic-named candidate at 150 m and logs the rejection', async () => {
+    const { logger, infoCalls } = createFakeLogger();
+    const fakeDb = new FakeLocationSyncDb({
+      createdGymId: 321,
+      physicalCandidates: [candidate({ id: 90, uuid: 'generic-gym', name: 'Home Wall', distanceMeters: 130 })],
+    });
+
+    const summary = await upsertPublicBoardLocations(
+      fakeDb as unknown as UpsertDb,
+      [
+        locationRecord({
+          sourceKey: 'kilter:board-generic',
+          gymSourceKey: 'kilter:gym-generic',
+          gymName: 'Home Wall',
+        }),
+      ],
+      { logger },
+    );
+
+    expect(summary.gymsUpserted).toBe(1);
+    // Falls through to a fresh gym; the generic candidate is never aliased.
+    expect(fakeDb.createdGymWrites).toMatchObject([{ name: 'Home Wall' }]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-generic', gymId: 321 }]);
+    expect(fakeDb.boardWrites[0]?.gymId).toBe(321);
+    expect(infoCalls).toContainEqual(expect.objectContaining({ message: expect.stringContaining('generic gym name') }));
+  });
+
+  it('still matches a generic name at tier-1 (<=20 m)', async () => {
+    const fakeDb = new FakeLocationSyncDb({
+      physicalCandidates: [candidate({ id: 91, uuid: 'generic-close', name: 'Garage', distanceMeters: 12 })],
+    });
+
+    const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
+      locationRecord({ sourceKey: 'kilter:board-garage', gymSourceKey: 'kilter:gym-garage', gymName: 'Garage' }),
+    ]);
+
+    expect(summary.gymsUpserted).toBe(1);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-garage', gymId: 91 }]);
+  });
+
+  it('does NOT match at 150 m when a same-provider source is already aliased, and logs the rejection', async () => {
+    const { logger, warnCalls } = createFakeLogger();
+    const fakeDb = new FakeLocationSyncDb({
+      createdGymId: 654,
+      physicalCandidates: [
+        candidate({
+          id: 92,
+          uuid: 'same-provider-gym',
+          distanceMeters: 145,
+          aliasSourceKeys: ['tension:gym-existing'],
+        }),
+      ],
+    });
+
+    const summary = await upsertPublicBoardLocations(
+      fakeDb as unknown as UpsertDb,
+      [
+        locationRecord({
+          sourceKey: 'tension:board-conflict',
+          gymSourceKey: 'tension:gym-conflict',
+          gymName: 'Board House',
+        }),
+      ],
+      { logger },
+    );
+
+    expect(summary.gymsUpserted).toBe(1);
+    // Same-provider twin 150 m away is treated as distinct: a new gym is minted.
+    expect(fakeDb.createdGymWrites).toMatchObject([{ name: 'Board House' }]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'tension:gym-conflict', gymId: 654 }]);
+    expect(warnCalls).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('same-provider'),
+        fields: expect.objectContaining({
+          candidateGymId: 92,
+          conflictingSourceKeys: ['tension:gym-existing'],
+        }),
+      }),
+    );
+  });
+
+  it('still matches at 150 m when the only alias is the same source key (no conflict)', async () => {
+    const fakeDb = new FakeLocationSyncDb({
+      physicalCandidates: [
+        candidate({ id: 93, uuid: 'resync-gym', distanceMeters: 140, aliasSourceKeys: ['tension:gym-resync'] }),
+      ],
+    });
+
+    const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
+      locationRecord({
+        sourceKey: 'tension:board-resync',
+        gymSourceKey: 'tension:gym-resync',
+        gymName: 'Board House',
+      }),
+    ]);
+
+    expect(summary.gymsUpserted).toBe(1);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'tension:gym-resync', gymId: 93 }]);
+  });
+
+  it('aliases into a user-owned gym without touching its metadata', async () => {
+    const { logger, infoCalls } = createFakeLogger();
+    const fakeDb = new FakeLocationSyncDb({
+      physicalCandidates: [candidate({ id: 94, uuid: 'user-owned-gym', ownerId: USER_OWNER_ID, distanceMeters: 60 })],
+    });
+
+    const summary = await upsertPublicBoardLocations(
+      fakeDb as unknown as UpsertDb,
+      [
+        locationRecord({
+          sourceKey: 'kilter:board-user',
+          gymSourceKey: 'kilter:gym-user',
+          gymName: 'Board House',
+          gymAddress: '9 Sync Street',
+        }),
+      ],
+      { logger },
+    );
+
+    expect(summary.gymsUpserted).toBe(1);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-user', gymId: 94 }]);
+    // Owner-curated fields are sacrosanct: alias written, NO metadata write.
+    expect(fakeDb.gymMetadataWrites).toEqual([]);
+    expect(fakeDb.boardWrites[0]?.gymId).toBe(94);
+    expect(infoCalls).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('user-owned gym'),
+        fields: expect.objectContaining({ gymId: 94, ownerId: USER_OWNER_ID }),
+      }),
+    );
+  });
+
+  it('treats a SYSTEM gym with an approved claim as owner-curated (alias, no refresh)', async () => {
+    const fakeDb = new FakeLocationSyncDb({
+      physicalCandidates: [candidate({ id: 95, uuid: 'claimed-gym', hasApprovedClaim: true, distanceMeters: 10 })],
+    });
+
+    const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
+      locationRecord({ sourceKey: 'kilter:board-claimed', gymSourceKey: 'kilter:gym-claimed', gymName: 'Board House' }),
+    ]);
+
+    expect(summary.gymsUpserted).toBe(1);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-claimed', gymId: 95 }]);
+    expect(fakeDb.gymMetadataWrites).toEqual([]);
+  });
+
+  it('never refreshes metadata when an existing alias points at a user-owned gym (squat protection)', async () => {
+    const fakeDb = new FakeLocationSyncDb({
+      aliasedGym: { id: 96, ownerId: USER_OWNER_ID, hasApprovedClaim: false },
+    });
+
+    const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
+      locationRecord({
+        sourceKey: 'kilter:board-aliased-user',
+        gymSourceKey: 'kilter:gym-aliased-user',
+        gymName: 'Renamed By Owner',
+      }),
+    ]);
+
+    expect(summary.gymsUpserted).toBe(1);
+    // The alias resolves to the user's gym but the owner's fields are left alone.
+    expect(fakeDb.gymMetadataWrites).toEqual([]);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    expect(fakeDb.boardWrites[0]?.gymId).toBe(96);
+  });
+
+  it('does NOT match a candidate just past the 150 m boundary (151 m)', async () => {
+    const fakeDb = new FakeLocationSyncDb({
+      createdGymId: 777,
+      physicalCandidates: [candidate({ id: 97, uuid: 'too-far-gym', distanceMeters: 151 })],
+    });
+
+    const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
+      locationRecord({ sourceKey: 'kilter:board-far', gymSourceKey: 'kilter:gym-far', gymName: 'Board House' }),
+    ]);
+
+    expect(summary.gymsUpserted).toBe(1);
+    // Beyond the guarded radius: a fresh gym is minted, the far candidate untouched.
+    expect(fakeDb.createdGymWrites).toMatchObject([{ name: 'Board House' }]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-far', gymId: 777 }]);
+    expect(fakeDb.boardWrites[0]?.gymId).toBe(777);
+  });
+
+  it('widens the match query to include user-owned gyms and select owner + distance', async () => {
+    const fakeDb = new FakeLocationSyncDb({ createdGymId: 555 });
+
+    await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
+      locationRecord({ sourceKey: 'kilter:board-q', gymSourceKey: 'kilter:gym-q', gymName: 'Board House' }),
+    ]);
+
+    const matchQueryText = fakeDb.executeSqlTexts.find((queryText) => queryText.includes('WITH candidate_gyms'));
+    expect(matchQueryText).toBeDefined();
+    // The old owner_id = SYSTEM filter is gone; owner + distance are selected.
+    expect(matchQueryText).not.toMatch(/g\.owner_id = /);
+    expect(matchQueryText).toContain('ST_Distance');
+    expect(matchQueryText).toContain('hasApprovedClaim');
+    expect(matchQueryText).toContain('aliasSourceKeys');
   });
 });

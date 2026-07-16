@@ -1,6 +1,7 @@
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   resolveKilterInstallConfig,
+  toLocationSyncLogger,
   type LocationSyncSummary,
   type PublicBoardLocationInput,
   type SizeEdgesInput,
@@ -167,7 +168,9 @@ export async function syncKilterLocations(args: {
   log?: (message: string) => void;
 }): Promise<LocationSyncSummary> {
   const { records, skipped } = buildKilterLocationRecords(args.reference, args.resolver);
-  const summary = await upsertPublicBoardLocations(args.db, records);
+  const summary = await upsertPublicBoardLocations(args.db, records, {
+    logger: toLocationSyncLogger(args.log),
+  });
   // Merge the upsert-side skips (e.g. invalid coordinates) with the kilter-side
   // skips (unlisted / unmapped / unsupported) and dedupe — boardsSkipped tracks
   // the deduped length so the count and the array stay in step.

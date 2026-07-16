@@ -2,6 +2,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   formatLocationBoardName,
   resolveDefaultAuroraLocationConfig,
+  toLocationSyncLogger,
   upsertPublicBoardLocations,
   type LocationSyncSummary,
   type PublicBoardLocationInput,
@@ -59,7 +60,9 @@ export async function syncAuroraBoardLocations(args: {
 }): Promise<LocationSyncSummary> {
   const pins = await fetchAuroraPins(args.board);
   const { records, skipped } = buildAuroraLocationRecords(args.board, pins.gyms);
-  const summary = await upsertPublicBoardLocations(args.db, records);
+  const summary = await upsertPublicBoardLocations(args.db, records, {
+    logger: toLocationSyncLogger(args.log),
+  });
   const mergedSummary = {
     ...summary,
     boardsSkipped: summary.boardsSkipped + skipped.length,

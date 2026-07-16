@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 import {
   chooseCanonicalGymCandidate,
   distanceMeters,
+  GENERIC_GYM_NAMES,
   groupPhysicalGymCandidates,
+  GYM_MATCH_GUARDED_DISTANCE_METERS,
   gymCompletenessScore,
+  isGenericGymName,
   normalizeGymName,
+  PHYSICAL_GYM_MATCH_DISTANCE_METERS,
   type CanonicalGymCandidate,
 } from '../location-dedupe';
 
@@ -39,6 +43,34 @@ void describe('normalizeGymName', () => {
 void describe('distanceMeters', () => {
   void it('returns small distances for near-identical coordinates', () => {
     assert.ok(distanceMeters(candidate({}), candidate({ latitude: -33.83542, longitude: 151.0531 })) < 2);
+  });
+});
+
+void describe('guarded second match tier', () => {
+  void it('sits above the unconditional 20 m tier', () => {
+    assert.equal(GYM_MATCH_GUARDED_DISTANCE_METERS, 150);
+    assert.ok(GYM_MATCH_GUARDED_DISTANCE_METERS > PHYSICAL_GYM_MATCH_DISTANCE_METERS);
+  });
+
+  void it('flags generic names case- and whitespace-insensitively', () => {
+    assert.equal(isGenericGymName('Home Wall'), true);
+    assert.equal(isGenericGymName('  HOME   WALL '), true);
+    assert.equal(isGenericGymName('garage'), true);
+    assert.equal(isGenericGymName('Kilter Board'), true);
+    assert.equal(isGenericGymName('MoonBoard'), true);
+  });
+
+  void it('does not flag a real gym name', () => {
+    assert.equal(isGenericGymName('Sandbox Bouldering'), false);
+    assert.equal(isGenericGymName('Board House'), false);
+  });
+
+  void it('exposes an all-normalized denylist', () => {
+    for (const name of GENERIC_GYM_NAMES) {
+      assert.equal(normalizeGymName(name), name);
+    }
+    assert.ok(GENERIC_GYM_NAMES.includes('home wall'));
+    assert.ok(GENERIC_GYM_NAMES.includes('kilter board'));
   });
 });
 
