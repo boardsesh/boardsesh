@@ -209,6 +209,24 @@ void describe('createClimbFilters: zone modes', () => {
     assert.match(rendered, /12 - \(FLOOR/);
   });
 
+  void it('uses calibrated placement containment for MoonBoard allHolds zones', () => {
+    const filters = createClimbFilters(
+      { board_name: 'moonboard', layout_id: 1, size_id: 1, set_ids: [], angle: 40 },
+      { zoneBox },
+    );
+
+    assert.equal(filters.zoneConditions.length, 2);
+    const rendered = filters.zoneConditions.map(sqlToString).join(' AND ');
+    assert.match(rendered, /EXISTS/);
+    assert.match(rendered, /NOT EXISTS/);
+    assert.match(rendered, /contained_bp\.hole_id\s*=\s*contained_ch\.hold_id/);
+    assert.match(rendered, /MOD\(\(contained_bp\.hole_id - 1\), 11\)/);
+    assert.doesNotMatch(rendered, /edge_left/);
+    assert.doesNotMatch(rendered, /edge_right/);
+    assert.doesNotMatch(rendered, /edge_bottom/);
+    assert.doesNotMatch(rendered, /edge_top/);
+  });
+
   void it('omits the set membership predicate for anyHold when non-MoonBoard set_ids are empty', () => {
     const filters = createClimbFilters({ ...params, set_ids: [] }, { zoneBox, zoneMode: 'anyHold' });
 
@@ -234,6 +252,37 @@ void describe('createClimbFilters: zone modes', () => {
   void it('adds no zone predicate when no zone box is requested', () => {
     const filters = createClimbFilters(params, { zoneMode: 'anyHold' });
     assert.equal(filters.zoneConditions.length, 0);
+  });
+});
+
+void describe('createClimbFilters: MoonBoard hold search', () => {
+  const moonBoardParams: BoardRouteParams = {
+    board_name: 'moonboard',
+    layout_id: 2,
+    size_id: 1,
+    set_ids: [],
+    angle: 40,
+  };
+
+  void it('matches ANY hold filters against the MoonBoard frame cell id', () => {
+    const filters = createClimbFilters(moonBoardParams, {
+      holdsFilter: { hold_56: { ANY: 'include' } },
+    });
+
+    assert.equal(filters.holdConditions.length, 1);
+    assert.match(sqlToString(filters.holdConditions[0]), /frames LIKE %p56r%/);
+  });
+
+  void it('matches role-specific filters against MoonBoard climb-hold cell ids', () => {
+    const filters = createClimbFilters(moonBoardParams, {
+      holdsFilter: { hold_56: { STARTING: 'include' } },
+    });
+
+    assert.equal(filters.holdStateConditions.length, 1);
+    const rendered = sqlToString(filters.holdStateConditions[0]);
+    assert.match(rendered, /ch\.board_type = moonboard/);
+    assert.match(rendered, /ch\.hold_id = 56/);
+    assert.match(rendered, /ch\.hold_state IN \(STARTING\)/);
   });
 });
 

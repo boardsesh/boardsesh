@@ -33,13 +33,6 @@ export async function GET(
   try {
     const parsedParams = await parseBoardRouteParamsWithSlugs(params);
 
-    // MoonBoard doesn't have database tables for heatmap - return empty results
-    if (parsedParams.board_name === 'moonboard') {
-      return NextResponse.json({
-        holdStats: [],
-      });
-    }
-
     const searchParams: SearchRequestPagination = urlParamsToSearchParams(query);
 
     // Get NextAuth session for user-specific data

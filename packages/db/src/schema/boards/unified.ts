@@ -228,6 +228,11 @@ export const boardPlacements = pgTable(
       table.setId,
       table.holeId,
     ),
+    layoutHoleIdx: index('board_placements_board_type_layout_id_hole_id_idx').on(
+      table.boardType,
+      table.layoutId,
+      table.holeId,
+    ),
     layoutFk: foreignKey({
       columns: [table.boardType, table.layoutId],
       foreignColumns: [boardLayouts.boardType, boardLayouts.id],
