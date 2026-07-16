@@ -352,6 +352,10 @@ type GymMatchClassification = {
   // Guarded-tier candidates that are user-owned WITHOUT an approved claim: never
   // auto-captured — a human resolves them in the admin duplicates queue.
   unclaimedUserOwnedSkips: CandidateReference[];
+  // Tier-1 (<= 20 m) user-owned candidates dropped by the generic-name guard.
+  // They can't reach tier 2 (distance too small), so without surfacing them the
+  // near-miss would vanish silently before a fresh gym is minted.
+  tierOneGenericUserOwnedSkips: CandidateReference[];
   // More than one candidate cleared the guarded tier: ambiguous, so we refuse to
   // auto-match (two same-name gyms inside one 150 m circle is itself a signal the
   // name is generic-ish).
@@ -397,9 +401,21 @@ function classifyGymMatch(
       genericNameBlocked: false,
       sameProviderConflicts: [],
       unclaimedUserOwnedSkips: [],
+      tierOneGenericUserOwnedSkips: [],
       ambiguousCandidates: [],
     };
   }
+
+  // Tier 1 produced no eligible match. Capture the user-owned generic candidates
+  // the guard dropped at <= 20 m: they can't reach tier 2 (distance too small)
+  // and would otherwise fall through to a fresh gym with no signal at all. The
+  // caller logs these so a human can review the near-miss / possible squat.
+  const tierOneGenericUserOwnedSkips = candidates
+    .filter(
+      (candidate) =>
+        candidate.distanceMeters <= PHYSICAL_GYM_MATCH_DISTANCE_METERS && isUserOwned(candidate) && nameIsGeneric,
+    )
+    .map(toCandidateReference);
 
   // Tier 2. Distances are strictly in the 21–150 m band; the DB query already
   // caps at the guarded radius, but re-deriving the band here keeps the tier
@@ -416,6 +432,7 @@ function classifyGymMatch(
       genericNameBlocked: false,
       sameProviderConflicts: [],
       unclaimedUserOwnedSkips: [],
+      tierOneGenericUserOwnedSkips,
       ambiguousCandidates: [],
     };
   }
@@ -425,6 +442,7 @@ function classifyGymMatch(
       genericNameBlocked: true,
       sameProviderConflicts: [],
       unclaimedUserOwnedSkips: [],
+      tierOneGenericUserOwnedSkips,
       ambiguousCandidates: [],
     };
   }
@@ -465,6 +483,8 @@ function classifyGymMatch(
       genericNameBlocked: false,
       sameProviderConflicts,
       unclaimedUserOwnedSkips,
+      // Empty here: this branch is only reached for a non-generic name.
+      tierOneGenericUserOwnedSkips,
       ambiguousCandidates: eligibleCandidates.map(toCandidateReference),
     };
   }
@@ -475,6 +495,8 @@ function classifyGymMatch(
     genericNameBlocked: false,
     sameProviderConflicts,
     unclaimedUserOwnedSkips,
+    // Empty here: this branch is only reached for a non-generic name.
+    tierOneGenericUserOwnedSkips,
     ambiguousCandidates: [],
   };
 }
@@ -569,6 +591,21 @@ async function resolveGymIdForSource(
   for (const skipped of classification.unclaimedUserOwnedSkips) {
     logger.info(
       'location-sync guarded-tier match skipped: unclaimed user-owned gym (surfaces in admin duplicates queue)',
+      {
+        sourceKey,
+        gymName: record.gymName,
+        candidateGymId: skipped.gymId,
+        ownerId: skipped.ownerId,
+        distanceMeters: skipped.distanceMeters,
+      },
+    );
+  }
+  for (const skipped of classification.tierOneGenericUserOwnedSkips) {
+    // A generic-named user-owned gym sat within 20 m of the pin but the guard
+    // refused to let it capture the pin. Surface it (same admin-queue signal as
+    // the unclaimed tier-2 skip) so the near-miss / possible squat isn't silent.
+    logger.info(
+      'location-sync tier-1 match skipped: generic-named user-owned gym (surfaces in admin duplicates queue)',
       {
         sourceKey,
         gymName: record.gymName,

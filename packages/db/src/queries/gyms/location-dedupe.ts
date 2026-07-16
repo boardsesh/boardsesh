@@ -43,19 +43,29 @@ export function normalizeGymName(name: string): string {
 
 /**
  * Normalized names too generic to safely match at the guarded (150 m) tier.
- * Built from prod reality: home walls, garages, cellars, and bare board-brand
- * names show up on unrelated gyms all over a city. Entries are already
- * normalized (lowercase, single-spaced) and matched EXACTLY on the whole name
- * (see {@link isGenericGymName}) — never as a substring, so `Kilter Kingpin` or
- * `Tension Climbing Co` are NOT generic and still dedupe at 150 m.
+ * Entries are already normalized (lowercase, single-spaced) and matched EXACTLY
+ * on the whole name (see {@link isGenericGymName}) — never as a substring, so
+ * `Kilter Kingpin` or `Tension Climbing Co` are NOT generic and still dedupe at
+ * 150 m.
+ *
+ * INCLUSION CRITERION — board-brand names and homewall genericisms, NOT
+ * gym-chain names. A home wall gets named after the board on it (`kilter`,
+ * `moonboard`, `moon board`, `grasshopper`, `decoy`, `soill`) or after where it
+ * lives (`garage`, `cellar`, `home wall`), so those collide across unrelated
+ * setups all over a city — denylisting them is safe. A real gym CHAIN
+ * (Touchstone, etc.) is the opposite case: its provider pins DO drift 40–90 m
+ * and MUST auto-merge, so a chain name must never go in this set even though it
+ * "looks brand-y". When adding an entry, ask: is this a board brand / homewall
+ * word, or the name of a real gym business? Only the former belongs here.
  *
  * Trade-off: a commercial gym named exactly `Tension` or `Moon` won't auto-merge
  * across providers at the guarded tier; it still merges at the 20 m tier, and
- * the admin dedup queue catches the rest. A standalone board-brand name collides
- * across unrelated home setups far more often than it names a real gym.
+ * the admin dedup queue catches the rest.
  *
  * NOTE (cross-PR): #3701 declares this same `GENERIC_GYM_NAMES` set here too.
- * Whoever merges second reconciles the two to the union of both lists.
+ * Whoever merges second reconciles the two to the union of both lists — but the
+ * union must still exclude gym-chain names (e.g. `touchstone`) per the criterion
+ * above.
  */
 export const GENERIC_GYM_NAMES: ReadonlySet<string> = new Set<string>([
   'home wall',
@@ -74,7 +84,6 @@ export const GENERIC_GYM_NAMES: ReadonlySet<string> = new Set<string>([
   'grasshopper',
   'decoy',
   'soill',
-  'touchstone',
 ]);
 
 /**

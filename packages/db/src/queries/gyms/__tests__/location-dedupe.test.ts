@@ -65,6 +65,13 @@ void describe('guarded second match tier', () => {
     assert.equal(isGenericGymName('Board House'), false);
   });
 
+  void it('never denylists a real gym-chain name', () => {
+    // Touchstone is a real chain whose provider pins drift 40-90 m: it MUST be
+    // allowed to auto-merge at the guarded tier, so it stays out of the set.
+    assert.equal(isGenericGymName('Touchstone'), false);
+    assert.equal(GENERIC_GYM_NAMES.has('touchstone'), false);
+  });
+
   void it('exposes an all-normalized denylist set', () => {
     for (const name of GENERIC_GYM_NAMES) {
       assert.equal(normalizeGymName(name), name);
@@ -73,7 +80,7 @@ void describe('guarded second match tier', () => {
     assert.ok(GENERIC_GYM_NAMES.has('kilter board'));
     assert.ok(GENERIC_GYM_NAMES.has('tension board'));
     assert.ok(GENERIC_GYM_NAMES.has('moon board'));
-    assert.ok(GENERIC_GYM_NAMES.has('touchstone'));
+    assert.ok(GENERIC_GYM_NAMES.has('soill'));
   });
 });
 

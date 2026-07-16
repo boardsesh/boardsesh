@@ -729,7 +729,7 @@ describe('guarded second-tier gym matching', () => {
     );
   });
 
-  it('does NOT let a generic-named user-owned gym capture a stranger pin at tier-1', async () => {
+  it('does NOT let a generic-named user-owned gym capture a stranger pin at tier-1, and logs the near-miss', async () => {
     const { logger, infoCalls, warnCalls } = createFakeLogger();
     const fakeDb = new FakeLocationSyncDb({
       createdGymId: 981,
@@ -748,8 +748,13 @@ describe('guarded second-tier gym matching', () => {
     // A public "Home Wall" 15 m away is NOT captured; a fresh gym is minted.
     expect(fakeDb.createdGymWrites).toMatchObject([{ name: 'Home Wall' }]);
     expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-hw', gymId: 981 }]);
-    // Distance is inside tier-1, so it never reaches the tier-2 generic-block log.
-    expect(infoCalls).toEqual([]);
+    // The dead-zone near-miss surfaces to humans instead of vanishing silently.
+    expect(infoCalls).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('generic-named user-owned gym'),
+        fields: expect.objectContaining({ candidateGymId: 99, ownerId: USER_OWNER_ID, distanceMeters: 15 }),
+      }),
+    );
     expect(warnCalls).toEqual([]);
   });
 
