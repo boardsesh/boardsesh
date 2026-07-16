@@ -182,6 +182,26 @@ void describe('merge-accounts apply path', () => {
             VALUES (${loserId}, 'tension', 999001, 'loserboard')
           `);
 
+          // Gym ownership claims (partial unique WHERE status='pending'): winner
+          // and loser both have a PENDING claim on gym A (collides — loser's
+          // dropped); loser also has an APPROVED claim on gym B (historical —
+          // always moves). Gyms owned by the third user to stay out of the merge.
+          const claimGymA = `${tag}-claimgym-a`;
+          const claimGymB = `${tag}-claimgym-b`;
+          await tx.execute(sql`
+            INSERT INTO gyms (uuid, name, owner_id, is_public, created_at, updated_at)
+            VALUES
+              (${claimGymA}, 'Claim Gym A', ${thirdId}, true, NOW(), NOW()),
+              (${claimGymB}, 'Claim Gym B', ${thirdId}, true, NOW(), NOW())
+          `);
+          await tx.execute(sql`
+            INSERT INTO gym_claims (gym_id, claimant_user_id, method, status)
+            VALUES
+              ((SELECT id FROM gyms WHERE uuid = ${claimGymA}), ${winnerId}, 'admin'::gym_claim_method, 'pending'::gym_claim_status),
+              ((SELECT id FROM gyms WHERE uuid = ${claimGymA}), ${loserId}, 'admin'::gym_claim_method, 'pending'::gym_claim_status),
+              ((SELECT id FROM gyms WHERE uuid = ${claimGymB}), ${loserId}, 'admin'::gym_claim_method, 'approved'::gym_claim_status)
+          `);
+
           // Ratings: climbA collides (winner rating 3 kept), climbB moves.
           await tx.execute(sql`
             INSERT INTO board_climb_ratings (board_type, climb_uuid, angle, user_id, rating)
@@ -342,6 +362,25 @@ void describe('merge-accounts apply path', () => {
             ),
             1,
             'beta-link attribution repointed to winner, not nulled',
+          );
+
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count FROM gym_claims WHERE claimant_user_id = ${winnerId}`,
+            ),
+            2,
+            'colliding pending claim dropped, historical approved claim moved',
+          );
+          assert.equal(
+            await countRows(
+              tx,
+              sql`SELECT count(*)::int AS count
+                    FROM gym_claims gc JOIN gyms g ON g.id = gc.gym_id
+                   WHERE g.uuid = ${claimGymA} AND gc.status = 'pending'`,
+            ),
+            1,
+            'exactly one pending claim remains on the shared gym (no partial-unique violation)',
           );
 
           throw rollbackMarker;
