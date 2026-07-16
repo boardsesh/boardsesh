@@ -132,21 +132,11 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
     );
   }, [sessionId, name, recap, currentName, currentNotes, updateSession, onClose, clearCloseTimer]);
 
-  const footer = (
-    <View style={styles.actions}>
-      <Button title={t('detail.editCancel')} variant="text" onPress={onClose} />
-      <Button
-        title={t('detail.editSave')}
-        variant="filled"
-        loading={updateSession.isPending}
-        disabled={!sessionId || justSaved}
-        onPress={handleSave}
-      />
-    </View>
-  );
-
+  // Buttons live in the BODY, not the Sheet footer slot: on Android's M3 sheet
+  // the pinned footer lays out against the expanded height and lands off-screen
+  // below the partial sheet (emulator-verified; see SessionTitleSheet).
   return (
-    <Sheet visible={visible} snapPoints={['70%']} scrollable onClose={onClose} footer={footer}>
+    <Sheet visible={visible} snapPoints={['70%']} scrollable onClose={onClose}>
       <View style={styles.body}>
         <Text variant="title3" style={styles.title}>
           {t('detail.editSession')}
@@ -187,6 +177,17 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
             {t('detail.editSaveFailed')}
           </Text>
         ) : null}
+
+        <View style={styles.actions}>
+          <Button title={t('detail.editCancel')} variant="text" onPress={onClose} />
+          <Button
+            title={t('detail.editSave')}
+            variant="filled"
+            loading={updateSession.isPending}
+            disabled={!sessionId || justSaved}
+            onPress={handleSave}
+          />
+        </View>
       </View>
     </Sheet>
   );

@@ -17,6 +17,7 @@ type ChildrenProps = { children?: ReactNode };
 
 vi.mock('react-native', () => ({
   View: ({ children }: ChildrenProps) => createElement('div', {}, children),
+  KeyboardAvoidingView: ({ children }: ChildrenProps) => createElement('div', { 'data-kav': 'true' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
 

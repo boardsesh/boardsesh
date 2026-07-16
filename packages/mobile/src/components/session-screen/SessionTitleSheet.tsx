@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
@@ -82,46 +82,47 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
     );
   }, [sessionId, name, updateSession, queryClient, onClose]);
 
-  const footer = (
-    <View style={styles.actions}>
-      <Button title={tCommon('comment.cancel')} variant="text" onPress={onClose} />
-      <Button
-        title={t('mobile.session.renameSave')}
-        variant="filled"
-        loading={updateSession.isPending}
-        disabled={!sessionId}
-        onPress={handleSave}
-      />
-    </View>
-  );
-
-  // `scrollable` is part of the Sheet footer contract: every working footer
-  // sheet (CommentSheet, PlaylistFormSheet) pairs them — without it the Android
-  // footer renders past the sheet's clip and the buttons never show
-  // (emulator-verified).
+  // Buttons live in the BODY (EndSessionSheet's pattern), not the Sheet footer
+  // slot: on Android's M3 sheet a small single detent gets a second expanded
+  // state (androidSafeSnapPoints) and the pinned footer lays out against the
+  // expanded height — off-screen below the partial sheet (emulator-verified).
+  // The KeyboardAvoidingView mirrors EndSessionSheet: the Android dialog window
+  // doesn't resize for the keyboard.
   return (
-    <Sheet visible={visible} snapPoints={['45%']} scrollable onClose={onClose} footer={footer}>
-      <View style={styles.body}>
-        <Text variant="title3" style={styles.title}>
-          {t('mobile.session.renameTitle')}
-        </Text>
-        <BottomSheetTextInput
-          value={name}
-          onChangeText={handleChange}
-          placeholder={t('creation.form.sessionNamePlaceholder')}
-          placeholderTextColor={systemColors.tertiaryLabel}
-          maxLength={SESSION_NAME_MAX_LENGTH}
-          style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-          returnKeyType="done"
-          autoFocus
-          onSubmitEditing={handleSave}
-        />
-        {updateSession.isError ? (
-          <Text variant="footnote" color={brandColors.error} style={styles.error}>
-            {t('mobile.session.renameError')}
+    <Sheet visible={visible} snapPoints={['45%']} onClose={onClose}>
+      <KeyboardAvoidingView behavior="padding">
+        <View style={styles.body}>
+          <Text variant="title3" style={styles.title}>
+            {t('mobile.session.renameTitle')}
           </Text>
-        ) : null}
-      </View>
+          <BottomSheetTextInput
+            value={name}
+            onChangeText={handleChange}
+            placeholder={t('creation.form.sessionNamePlaceholder')}
+            placeholderTextColor={systemColors.tertiaryLabel}
+            maxLength={SESSION_NAME_MAX_LENGTH}
+            style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
+            returnKeyType="done"
+            autoFocus
+            onSubmitEditing={handleSave}
+          />
+          {updateSession.isError ? (
+            <Text variant="footnote" color={brandColors.error} style={styles.error}>
+              {t('mobile.session.renameError')}
+            </Text>
+          ) : null}
+          <View style={styles.actions}>
+            <Button title={tCommon('comment.cancel')} variant="text" onPress={onClose} />
+            <Button
+              title={t('mobile.session.renameSave')}
+              variant="filled"
+              loading={updateSession.isPending}
+              disabled={!sessionId}
+              onPress={handleSave}
+            />
+          </View>
+        </View>
+      </KeyboardAvoidingView>
     </Sheet>
   );
 }
