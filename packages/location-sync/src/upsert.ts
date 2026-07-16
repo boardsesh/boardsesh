@@ -300,100 +300,182 @@ async function findGymMatchCandidates(db: DrizzleDb, record: ValidBoardLocation)
     LEFT JOIN alias_source_keys ON alias_source_keys.gym_id = g.id
   `);
 
-  return rowsFromResult<GymMatchCandidate>(result).map((candidate) => ({
-    ...candidate,
-    id: Number(candidate.id),
-    latitude: Number(candidate.latitude),
-    longitude: Number(candidate.longitude),
-    distanceMeters: Number(candidate.distanceMeters),
-    hasApprovedClaim: Boolean(candidate.hasApprovedClaim),
-    aliasSourceKeys: Array.isArray(candidate.aliasSourceKeys) ? candidate.aliasSourceKeys : [],
-    boardCount: Number(candidate.boardCount),
-    memberCount: Number(candidate.memberCount),
-    followerCount: Number(candidate.followerCount),
-    commentCount: Number(candidate.commentCount),
-  }));
+  return rowsFromResult<GymMatchCandidate>(result).map((candidate) => {
+    if (!Array.isArray(candidate.aliasSourceKeys)) {
+      // Fail loud: a silent `[]` would disable the same-provider false-merge
+      // guard for this candidate and let a twin auto-merge. The COALESCE in the
+      // query guarantees a text[]; a non-array here means the driver/query
+      // contract broke, so stop rather than mask it.
+      throw new TypeError(
+        `location-sync: expected aliasSourceKeys to be an array for gym ${String(candidate.id)}, got ${typeof candidate.aliasSourceKeys}`,
+      );
+    }
+    return {
+      ...candidate,
+      id: Number(candidate.id),
+      latitude: Number(candidate.latitude),
+      longitude: Number(candidate.longitude),
+      distanceMeters: Number(candidate.distanceMeters),
+      hasApprovedClaim: Boolean(candidate.hasApprovedClaim),
+      aliasSourceKeys: candidate.aliasSourceKeys,
+      boardCount: Number(candidate.boardCount),
+      memberCount: Number(candidate.memberCount),
+      followerCount: Number(candidate.followerCount),
+      commentCount: Number(candidate.commentCount),
+    };
+  });
 }
 
 type GymMatchTier = 1 | 2;
 
-/** A tier-2 candidate rejected because a same-provider alias already exists. */
+/** A guarded-tier candidate rejected because a same-provider alias already exists. */
 type SameProviderConflict = {
   candidateGymId: number;
   conflictingSourceKeys: string[];
 };
 
+/** A guarded-tier candidate captured for a structured skip / ambiguity log. */
+type CandidateReference = {
+  gymId: number;
+  ownerId: string;
+  distanceMeters: number;
+};
+
 type GymMatchClassification = {
   match: { candidate: GymMatchCandidate; tier: GymMatchTier } | null;
-  // A generic name blocked the guarded tier (there were 150 m candidates that a
-  // non-generic name would have matched).
+  // A generic name blocked the whole guarded tier (there were 21–150 m
+  // candidates that a non-generic name would have considered).
   genericNameBlocked: boolean;
   // Guarded-tier candidates rejected because a same-provider source already
   // points at them (likely genuinely distinct walls 150 m apart).
   sameProviderConflicts: SameProviderConflict[];
+  // Guarded-tier candidates that are user-owned WITHOUT an approved claim: never
+  // auto-captured — a human resolves them in the admin duplicates queue.
+  unclaimedUserOwnedSkips: CandidateReference[];
+  // More than one candidate cleared the guarded tier: ambiguous, so we refuse to
+  // auto-match (two same-name gyms inside one 150 m circle is itself a signal the
+  // name is generic-ish).
+  ambiguousCandidates: CandidateReference[];
 };
+
+function isUserOwned(gym: { ownerId: string }): boolean {
+  return gym.ownerId !== SYSTEM_USER_ID;
+}
+
+function toCandidateReference(candidate: GymMatchCandidate): CandidateReference {
+  return { gymId: candidate.id, ownerId: candidate.ownerId, distanceMeters: candidate.distanceMeters };
+}
 
 /**
  * Turns the raw candidate list into a match decision.
  *
- * - Tier 1 (<= 20 m) always wins, even for generic names — an exact-name pin
- *   almost on top of a gym is the same gym.
- * - Tier 2 (<= 150 m) only fires for a non-generic name AND only for candidates
- *   that don't already carry a same-provider alias. Same-provider twins 150 m
- *   apart are reported, not merged.
+ * - Tier 1 (<= 20 m): a pin almost on top of a gym is the same gym. SYSTEM-owned
+ *   candidates always match here; a user-owned candidate only matches when the
+ *   name is NOT generic (a public "Home Wall" 15 m from a stranger's pin must
+ *   not capture it). Multiple tier-1 candidates pick the canonical one.
+ * - Tier 2 (20 m < d <= 150 m): only for a non-generic name, only for candidates
+ *   with no same-provider alias, and only into SYSTEM-owned gyms or user-owned
+ *   gyms that carry an approved claim. Unclaimed user-owned candidates skip to
+ *   the admin queue. If more than one candidate qualifies, it's ambiguous — no
+ *   auto-match.
  */
 function classifyGymMatch(
   sourceKey: string,
   record: ValidBoardLocation,
   candidates: GymMatchCandidate[],
 ): GymMatchClassification {
-  const tierOneCandidates = candidates.filter(
-    (candidate) => candidate.distanceMeters <= PHYSICAL_GYM_MATCH_DISTANCE_METERS,
+  const nameIsGeneric = isGenericGymName(record.gymName);
+
+  const tierOneEligible = candidates.filter(
+    (candidate) =>
+      candidate.distanceMeters <= PHYSICAL_GYM_MATCH_DISTANCE_METERS && (!isUserOwned(candidate) || !nameIsGeneric),
   );
-  if (tierOneCandidates.length > 0) {
-    const winner = chooseCanonicalGymCandidate(tierOneCandidates);
+  if (tierOneEligible.length > 0) {
+    const winner = chooseCanonicalGymCandidate(tierOneEligible);
     return {
       match: winner ? { candidate: winner, tier: 1 } : null,
       genericNameBlocked: false,
       sameProviderConflicts: [],
+      unclaimedUserOwnedSkips: [],
+      ambiguousCandidates: [],
     };
   }
 
-  // No tier-1 candidate. The DB query already caps distance at the guarded
-  // radius, so this filter is a no-op in production — but it keeps the tier
-  // boundary owned here (not split across the query and the classifier) and lets
-  // this function be unit-tested against raw candidate lists without a DB to
-  // enforce the cap.
+  // Tier 2. Distances are strictly in the 21–150 m band; the DB query already
+  // caps at the guarded radius, but re-deriving the band here keeps the tier
+  // boundary owned in one place and lets this function be unit-tested against raw
+  // candidate lists without a DB to enforce the cap.
   const guardedCandidates = candidates.filter(
-    (candidate) => candidate.distanceMeters <= GYM_MATCH_GUARDED_DISTANCE_METERS,
+    (candidate) =>
+      candidate.distanceMeters > PHYSICAL_GYM_MATCH_DISTANCE_METERS &&
+      candidate.distanceMeters <= GYM_MATCH_GUARDED_DISTANCE_METERS,
   );
   if (guardedCandidates.length === 0) {
-    return { match: null, genericNameBlocked: false, sameProviderConflicts: [] };
+    return {
+      match: null,
+      genericNameBlocked: false,
+      sameProviderConflicts: [],
+      unclaimedUserOwnedSkips: [],
+      ambiguousCandidates: [],
+    };
   }
-
-  if (isGenericGymName(record.gymName)) {
-    return { match: null, genericNameBlocked: true, sameProviderConflicts: [] };
+  if (nameIsGeneric) {
+    return {
+      match: null,
+      genericNameBlocked: true,
+      sameProviderConflicts: [],
+      unclaimedUserOwnedSkips: [],
+      ambiguousCandidates: [],
+    };
   }
 
   const providerPrefix = providerPrefixOf(sourceKey);
   const sameProviderConflicts: SameProviderConflict[] = [];
+  const unclaimedUserOwnedSkips: CandidateReference[] = [];
   const eligibleCandidates: GymMatchCandidate[] = [];
   for (const candidate of guardedCandidates) {
+    // NOTE: moonboard embeds the pin's coordinates in its source key
+    // (`moonboard:<name>:<lat>:<lng>`), so a pin that moves > 20 m mints a new
+    // source key. The same-provider guard then sees that key as a different
+    // moonboard source on the old gym and refuses to re-merge — the moved pin
+    // warns here, then mints a permanent twin. Tracked for a key-scheme redesign
+    // (follow-up issue); see docs and the same-provider log below.
     const conflictingSourceKeys = candidate.aliasSourceKeys.filter(
       (aliasSourceKey) => aliasSourceKey !== sourceKey && providerPrefixOf(aliasSourceKey) === providerPrefix,
     );
     if (conflictingSourceKeys.length > 0) {
       sameProviderConflicts.push({ candidateGymId: candidate.id, conflictingSourceKeys });
-    } else {
-      eligibleCandidates.push(candidate);
+      continue;
     }
+    // Squat protection: at the guarded tier we only ever bind into a user-owned
+    // gym that carries an approved claim. An unclaimed user-owned candidate is
+    // never auto-captured — it surfaces for a human in the admin queue.
+    if (isUserOwned(candidate) && !candidate.hasApprovedClaim) {
+      unclaimedUserOwnedSkips.push(toCandidateReference(candidate));
+      continue;
+    }
+    eligibleCandidates.push(candidate);
   }
 
-  const winner = chooseCanonicalGymCandidate(eligibleCandidates);
+  // Ambiguity policy: more than one eligible candidate inside the 150 m circle
+  // means we can't tell which is the real gym — refuse to auto-match.
+  if (eligibleCandidates.length > 1) {
+    return {
+      match: null,
+      genericNameBlocked: false,
+      sameProviderConflicts,
+      unclaimedUserOwnedSkips,
+      ambiguousCandidates: eligibleCandidates.map(toCandidateReference),
+    };
+  }
+
+  const [soleEligible] = eligibleCandidates;
   return {
-    match: winner ? { candidate: winner, tier: 2 } : null,
+    match: soleEligible ? { candidate: soleEligible, tier: 2 } : null,
     genericNameBlocked: false,
     sameProviderConflicts,
+    unclaimedUserOwnedSkips,
+    ambiguousCandidates: [],
   };
 }
 
@@ -449,7 +531,11 @@ async function resolveGymIdForSource(
     // an owner-curated gym. Only SYSTEM-owned, unclaimed gyms keep today's
     // refresh-on-every-sync behavior.
     if (isOwnerCurated(aliasedGym)) {
-      logger.info('location-sync alias resolved into owner-curated gym; metadata left untouched', {
+      // debug, not info: this fires every sync cycle (~48×/day) for every gym the
+      // importer has ever aliased into an owner-curated row — it would drown the
+      // tier-2 signal. The security-relevant event is the INITIAL alias write
+      // below (logged at warn), not the steady-state resolution.
+      logger.debug('location-sync alias resolved into owner-curated gym; metadata left untouched', {
         sourceKey,
         gymId: aliasedGym.id,
         ownerId: aliasedGym.ownerId,
@@ -480,6 +566,26 @@ async function resolveGymIdForSource(
       guardedDistanceMeters: GYM_MATCH_GUARDED_DISTANCE_METERS,
     });
   }
+  for (const skipped of classification.unclaimedUserOwnedSkips) {
+    logger.info(
+      'location-sync guarded-tier match skipped: unclaimed user-owned gym (surfaces in admin duplicates queue)',
+      {
+        sourceKey,
+        gymName: record.gymName,
+        candidateGymId: skipped.gymId,
+        ownerId: skipped.ownerId,
+        distanceMeters: skipped.distanceMeters,
+      },
+    );
+  }
+  if (classification.ambiguousCandidates.length > 0) {
+    logger.warn('location-sync guarded-tier match skipped: multiple candidates within the guarded radius', {
+      sourceKey,
+      gymName: record.gymName,
+      guardedDistanceMeters: GYM_MATCH_GUARDED_DISTANCE_METERS,
+      candidates: classification.ambiguousCandidates,
+    });
+  }
 
   const { match } = classification;
   if (match) {
@@ -488,8 +594,10 @@ async function resolveGymIdForSource(
 
     if (isOwnerCurated(candidate)) {
       // Alias-and-leave-alone: bind the source so future syncs resolve here, but
-      // never overwrite the owner's curated name / coords / metadata.
-      logger.info('location-sync aliased source into user-owned gym; metadata left untouched', {
+      // never overwrite the owner's curated name / coords / metadata. warn, not
+      // info: this initial write binds a provider source into a gym a human
+      // controls — a security-relevant event worth surfacing on the first sync.
+      logger.warn('location-sync bound source into owner-curated gym; metadata left untouched', {
         sourceKey,
         gymId: candidate.id,
         ownerId: candidate.ownerId,

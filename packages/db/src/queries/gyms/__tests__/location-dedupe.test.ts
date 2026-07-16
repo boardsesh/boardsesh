@@ -65,12 +65,15 @@ void describe('guarded second match tier', () => {
     assert.equal(isGenericGymName('Board House'), false);
   });
 
-  void it('exposes an all-normalized denylist', () => {
+  void it('exposes an all-normalized denylist set', () => {
     for (const name of GENERIC_GYM_NAMES) {
       assert.equal(normalizeGymName(name), name);
     }
-    assert.ok(GENERIC_GYM_NAMES.includes('home wall'));
-    assert.ok(GENERIC_GYM_NAMES.includes('kilter board'));
+    assert.ok(GENERIC_GYM_NAMES.has('home wall'));
+    assert.ok(GENERIC_GYM_NAMES.has('kilter board'));
+    assert.ok(GENERIC_GYM_NAMES.has('tension board'));
+    assert.ok(GENERIC_GYM_NAMES.has('moon board'));
+    assert.ok(GENERIC_GYM_NAMES.has('touchstone'));
   });
 });
 

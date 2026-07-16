@@ -10,13 +10,17 @@
  */
 export type LocationSyncLogFields = Record<string, unknown>;
 
+export type LocationSyncLogLevel = 'debug' | 'info' | 'warn';
+
 export type LocationSyncLogger = {
+  debug(message: string, fields?: LocationSyncLogFields): void;
   info(message: string, fields?: LocationSyncLogFields): void;
   warn(message: string, fields?: LocationSyncLogFields): void;
 };
 
 /** Swallows every log line — the default when no logger is injected. */
 export const noopLocationSyncLogger: LocationSyncLogger = {
+  debug() {},
   info() {},
   warn() {},
 };
@@ -32,12 +36,13 @@ export function toLocationSyncLogger(log?: (message: string) => void): LocationS
     return noopLocationSyncLogger;
   }
 
-  const emit = (level: 'info' | 'warn', message: string, fields?: LocationSyncLogFields): void => {
+  const emit = (level: LocationSyncLogLevel, message: string, fields?: LocationSyncLogFields): void => {
     const suffix = fields && Object.keys(fields).length > 0 ? ` ${JSON.stringify(fields)}` : '';
     log(`[location-sync] [${level}] ${message}${suffix}`);
   };
 
   return {
+    debug: (message, fields) => emit('debug', message, fields),
     info: (message, fields) => emit('info', message, fields),
     warn: (message, fields) => emit('warn', message, fields),
   };
