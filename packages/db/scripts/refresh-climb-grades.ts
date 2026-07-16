@@ -1172,7 +1172,9 @@ async function main(): Promise<void> {
   // A candidate file is a diagnostic input — never let it flow into a real
   // publish run, where it would persist un-vetted priors to board_climb_grades.
   if (contentPriorFile && !dryRun && !process.argv.includes('--validate-only')) {
-    console.error('[grades] --content-prior-file requires --validate-only or --dry-run; refusing a write run with candidate priors.');
+    console.error(
+      '[grades] --content-prior-file requires --validate-only or --dry-run; refusing a write run with candidate priors.',
+    );
     process.exitCode = 1;
     return;
   }
