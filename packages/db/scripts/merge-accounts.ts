@@ -29,6 +29,7 @@ import { sql, type SQLWrapper, type SQL } from 'drizzle-orm';
 import { pathToFileURL } from 'node:url';
 import { createScriptDb } from './db-connection.js';
 import { executeRows } from '../src/client/index.js';
+import { normalizeEmail } from '../src/utils/index.js';
 
 const APPLY_FLAG = '--apply';
 const LIMIT_FLAG = '--limit';
@@ -240,7 +241,7 @@ export function parseArgs(args: string[]): ScriptArgs {
       continue;
     }
     if (currentArg === ONLY_EMAIL_FLAG) {
-      parsedArgs.onlyEmail = readRequiredOptionValue(args, index, ONLY_EMAIL_FLAG).trim().toLowerCase();
+      parsedArgs.onlyEmail = normalizeEmail(readRequiredOptionValue(args, index, ONLY_EMAIL_FLAG));
       index += 1;
       continue;
     }
@@ -302,7 +303,7 @@ function compareForWinner(first: Member, second: Member): number {
 export function buildDuplicateSets(members: Member[]): DuplicateSet[] {
   const byEmail = new Map<string, Member[]>();
   for (const member of members) {
-    const key = member.email.trim().toLowerCase();
+    const key = normalizeEmail(member.email);
     const bucket = byEmail.get(key);
     if (bucket) {
       bucket.push(member);
