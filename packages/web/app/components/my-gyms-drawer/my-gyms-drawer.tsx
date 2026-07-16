@@ -16,6 +16,8 @@ import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
 import UnifiedSearchDrawer from '../search-drawer/unified-search-drawer';
 import LocaleLink from '@/app/components/i18n/locale-link';
+import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
+import { GYM_KIOSK_FLAG } from '@/app/flags';
 import { useMyGyms } from '@/app/hooks/use-my-gyms';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
 import type { Gym } from '@boardsesh/shared-schema';
@@ -42,6 +44,8 @@ const ROLE_CHIP_COLOR: Record<GymRoleKind, ChipColor> = {
  * Resolve the viewer's standing at a gym. The owner outranks the `myRole`
  * field (owners are reported as gym admins by the backend), so the owner check
  * comes first. Returns null for a gym the viewer only follows.
+ * Admin/editor rows only become reachable once `myGyms` includes gym_members
+ * (staff-roles PR); until then every listed gym resolves to `owner`.
  */
 function resolveGymRole(gym: Gym, currentUserId: string | null): GymRoleKind | null {
   if (currentUserId && gym.ownerId === currentUserId) return 'owner';
@@ -55,6 +59,10 @@ export default function MyGymsDrawer({ open, onClose, onTransitionEnd }: MyGymsD
   const { t } = useTranslation('common');
   const { data: session } = useSession();
   const currentUserId = session?.user?.id ?? null;
+  // Kill switch for the manage surface — mirrors gym-detail.tsx and the public
+  // gym page's Manage button, which both hide manage entry points until the
+  // gym-kiosk feature ships broadly. The drawer and View action stay ungated.
+  const kioskFlag = useFeatureFlag(GYM_KIOSK_FLAG);
   const { gyms, isLoading, isFetchingMore, hasMore, loadMore, error } = useMyGyms(open);
   const { sentinelRef } = useInfiniteScroll({ onLoadMore: loadMore, hasMore, isFetching: isFetchingMore });
   const [showSearch, setShowSearch] = useState(false);
@@ -143,7 +151,7 @@ export default function MyGymsDrawer({ open, onClose, onTransitionEnd }: MyGymsD
                 {gym.address && <div className={styles.gymItemMeta}>{gym.address}</div>}
               </div>
               <div className={styles.gymItemActions}>
-                {gym.canEdit && (
+                {gym.canEdit && kioskFlag && (
                   <MuiButton
                     component={LocaleLink}
                     href={manageHref}

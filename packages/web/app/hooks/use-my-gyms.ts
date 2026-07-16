@@ -5,7 +5,11 @@ import { GET_MY_GYMS, type GetMyGymsQueryResponse, type GetMyGymsQueryVariables 
 import type { Gym } from '@boardsesh/shared-schema';
 
 /**
- * Fetches the gyms the current user runs (owner/admin/editor) via GraphQL.
+ * Fetches the gyms the current user owns via GraphQL. Membership-based listing
+ * (admin/editor) arrives with the staff-roles PR — today the `myGyms` resolver
+ * only returns gyms where `ownerId = userId` (no gym_members join). The role-chip
+ * logic already handles admin/editor rows; they become reachable once `myGyms`
+ * includes gym_members.
  * Gyms are fetched when `enabled` becomes true and the user is authenticated.
  *
  * Call `loadMore` to fetch the next page; `hasMore` indicates whether more pages exist.

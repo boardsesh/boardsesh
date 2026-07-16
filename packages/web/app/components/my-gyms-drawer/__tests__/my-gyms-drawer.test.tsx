@@ -30,6 +30,7 @@ let mockGyms: Array<Record<string, unknown>> = [];
 let mockIsLoading = false;
 let mockError: string | null = null;
 let mockUserId: string | null = 'user-1';
+let mockKioskFlag = true;
 
 vi.mock('@/app/hooks/use-my-gyms', () => ({
   useMyGyms: () => ({
@@ -40,6 +41,10 @@ vi.mock('@/app/hooks/use-my-gyms', () => ({
     loadMore: vi.fn(),
     error: mockError,
   }),
+}));
+
+vi.mock('@/app/components/providers/feature-flags-provider', () => ({
+  useFeatureFlag: () => mockKioskFlag,
 }));
 
 vi.mock('next-auth/react', () => ({
@@ -128,6 +133,7 @@ describe('MyGymsDrawer', () => {
     mockIsLoading = false;
     mockError = null;
     mockUserId = 'user-1';
+    mockKioskFlag = true;
   });
 
   it('does not render when closed', () => {
@@ -188,6 +194,27 @@ describe('MyGymsDrawer', () => {
     render(<MyGymsDrawer open onClose={mockOnClose} />);
     expect(screen.queryByTestId('gym-manage-gym-1')).toBeNull();
     expect(screen.getByTestId('gym-view-gym-1')).toBeDefined();
+  });
+
+  it('hides Manage behind the gym-kiosk kill switch but keeps View', () => {
+    mockKioskFlag = false;
+    mockGyms = [makeGym({ slug: 'boulder-project', canEdit: true })];
+    render(<MyGymsDrawer open onClose={mockOnClose} />);
+    expect(screen.queryByTestId('gym-manage-gym-1')).toBeNull();
+    expect(screen.getByTestId('gym-view-gym-1')).toBeDefined();
+  });
+
+  it('still renders the row (name + role chip) when the flag is off and the gym is slug-less', () => {
+    // Kiosk flag off + no slug: Manage is gated away and View has no slug to link
+    // to, so the row carries zero actions — it stays as an informational entry.
+    mockKioskFlag = false;
+    mockGyms = [makeGym({ slug: null, canEdit: true, ownerId: 'user-1' })];
+    render(<MyGymsDrawer open onClose={mockOnClose} />);
+    expect(screen.getByTestId('gym-item-gym-1')).toBeDefined();
+    expect(screen.getByText('Boulder Project')).toBeDefined();
+    expect(screen.getByText('Owner')).toBeDefined();
+    expect(screen.queryByTestId('gym-manage-gym-1')).toBeNull();
+    expect(screen.queryByTestId('gym-view-gym-1')).toBeNull();
   });
 
   it('addresses the manage route by uuid but hides View when the slug is null', () => {
