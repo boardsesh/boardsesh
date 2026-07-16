@@ -1,5 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { createRecordValidator, type RecordValidator } from '../src/queries/content-model/runtime-validation.js';
 
 export interface ContentArtifactIdentity {
   boardType: string;
@@ -64,29 +65,6 @@ function recordError(lineNumber: number, message: string): Error {
   return new Error(`content artifact line ${lineNumber}: ${message}`);
 }
 
-function requireObject(value: unknown, lineNumber: number): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw recordError(lineNumber, 'expected a JSON object');
-  }
-  return value as Record<string, unknown>;
-}
-
-function requireString(record: Record<string, unknown>, field: string, lineNumber: number): string {
-  const value = record[field];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw recordError(lineNumber, `${field} must be a non-empty string`);
-  }
-  return value;
-}
-
-function requireFiniteNumber(record: Record<string, unknown>, field: string, lineNumber: number): number {
-  const value = record[field];
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw recordError(lineNumber, `${field} must be a finite number`);
-  }
-  return value;
-}
-
 function requireNull(record: Record<string, unknown>, field: string, lineNumber: number): null {
   if (record[field] !== null) {
     throw recordError(lineNumber, `${field} must be null when supported=false`);
@@ -98,9 +76,10 @@ function parseSupportedContentRecord(
   record: Record<string, unknown>,
   lineNumber: number,
   identity: ContentRecordBase,
+  validation: RecordValidator,
 ): SupportedContentRecord {
-  const contentPrior = requireFiniteNumber(record, 'contentPrior', lineNumber);
-  const contentSd = requireFiniteNumber(record, 'contentSd', lineNumber);
+  const contentPrior = validation.finiteNumber(record, 'contentPrior');
+  const contentSd = validation.finiteNumber(record, 'contentSd');
   if (contentSd <= 0) {
     throw recordError(lineNumber, 'contentSd must be greater than zero');
   }
@@ -136,7 +115,8 @@ function parseContentArtifactEntry(
     throw recordError(lineNumber, `invalid JSON (${detail})`);
   }
 
-  const record = requireObject(parsed, lineNumber);
+  const validation = createRecordValidator((message) => recordError(lineNumber, message));
+  const record = validation.record(parsed);
   const identityFields = ['boardType', 'modelVersion', 'supported'] as const;
   const identityFieldCount = identityFields.filter((field) =>
     Object.prototype.hasOwnProperty.call(record, field),
@@ -162,17 +142,17 @@ function parseContentArtifactEntry(
     );
   }
 
-  const boardType = mode === 'identified' ? requireString(record, 'boardType', lineNumber) : expected.boardType;
+  const boardType = mode === 'identified' ? validation.nonEmptyString(record, 'boardType') : expected.boardType;
   const modelVersion =
-    mode === 'identified' ? requireString(record, 'modelVersion', lineNumber) : expected.modelVersion;
+    mode === 'identified' ? validation.nonEmptyString(record, 'modelVersion') : expected.modelVersion;
   if (modelVersion !== expected.modelVersion) {
     throw recordError(
       lineNumber,
       `modelVersion ${JSON.stringify(modelVersion)} does not match --model=${expected.modelVersion}`,
     );
   }
-  const climbUuid = requireString(record, 'climbUuid', lineNumber);
-  const angle = requireFiniteNumber(record, 'angle', lineNumber);
+  const climbUuid = validation.nonEmptyString(record, 'climbUuid');
+  const angle = validation.finiteNumber(record, 'angle');
   if (!Number.isInteger(angle)) {
     throw recordError(lineNumber, 'angle must be an integer');
   }
@@ -181,7 +161,7 @@ function parseContentArtifactEntry(
   if (mode === 'legacy') {
     return {
       mode,
-      record: parseSupportedContentRecord(record, lineNumber, identity),
+      record: parseSupportedContentRecord(record, lineNumber, identity, validation),
     };
   }
 
@@ -203,7 +183,7 @@ function parseContentArtifactEntry(
 
   return {
     mode,
-    record: parseSupportedContentRecord(record, lineNumber, identity),
+    record: parseSupportedContentRecord(record, lineNumber, identity, validation),
   };
 }
 

@@ -42,6 +42,7 @@ RELATIONAL_MIN_IMPROVEMENT = 0.05
 FINAL_KILTER_MIN_IMPROVEMENT = 0.05
 TENSION_MAX_REGRESSION = 0.01
 RELATIONAL_SEEDS = (13, 29)
+SUPPORTED_THROUGH_RUNS = (4, 6, 7)
 MODEL_VERSION = "climb2vec-relational-morphology-v1"
 MIN_CONTENT_SD = 1e-4
 
@@ -543,6 +544,11 @@ def _log_metrics(label: str, metrics: GradeMetrics) -> None:
 
 
 def run_experiment(args) -> dict:
+    if args.through_run not in SUPPORTED_THROUGH_RUNS:
+        raise ValueError(
+            "through_run must be one of "
+            f"{', '.join(str(run) for run in SUPPORTED_THROUGH_RUNS)}"
+        )
     rows = [
         row
         for path in args.data
@@ -1017,7 +1023,7 @@ def main():
     parser.add_argument(
         "--through-run",
         type=int,
-        choices=(4, 6, 7),
+        choices=SUPPORTED_THROUGH_RUNS,
         default=7,
         help="explicitly open only the requested top-level compute budget",
     )

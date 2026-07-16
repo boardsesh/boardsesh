@@ -139,6 +139,17 @@ void describe('content-model artifact validation', () => {
     );
   });
 
+  void test('rejects an empty artifact before a board can be cleared', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'content-artifact-'));
+    const path = join(directory, 'empty.jsonl');
+    await writeFile(path, ' \n\t\n');
+
+    await assert.rejects(
+      inspectContentArtifact(path, expected),
+      /contains no records; refusing to clear the selected board/,
+    );
+  });
+
   void test('requires exact eligible-catalog coverage, not only the same row count', () => {
     assert.doesNotThrow(() =>
       assertCompleteArtifactCoverage(new Set([contentArtifactKey('climb-a', 40), contentArtifactKey('climb-b', 50)]), [

@@ -78,6 +78,23 @@ class Stage3SplitTest(unittest.TestCase):
                 membership.setdefault(split_row["physicalKey"], set()).add(name)
         self.assertEqual(membership["same"], {next(iter(membership["same"]))})
 
+    def test_rejects_unsupported_compute_checkpoints_before_file_io(self):
+        for through_run in (2, 3, 5, 8):
+            with self.subTest(through_run=through_run):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "through_run must be one of 4, 6, 7",
+                ):
+                    run_experiment(
+                        SimpleNamespace(
+                            data=["does-not-exist.jsonl"],
+                            through_run=through_run,
+                            epochs=1,
+                            score=None,
+                            predictions_out=None,
+                        )
+                    )
+
     def test_tension_benchmark_seals_every_angle_for_physical_problem(self):
         rows = [
             row(

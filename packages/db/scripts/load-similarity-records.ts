@@ -1,5 +1,6 @@
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { createRecordValidator } from '../src/queries/content-model/runtime-validation.js';
 
 export interface SimilarityArtifactIdentity {
   boardType: string;
@@ -39,29 +40,6 @@ function recordError(lineNumber: number, message: string): Error {
   return new Error(`similarity artifact line ${lineNumber}: ${message}`);
 }
 
-function requireObject(value: unknown, lineNumber: number): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw recordError(lineNumber, 'expected a JSON object');
-  }
-  return value as Record<string, unknown>;
-}
-
-function requireString(record: Record<string, unknown>, field: string, lineNumber: number): string {
-  const value = record[field];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw recordError(lineNumber, `${field} must be a non-empty string`);
-  }
-  return value;
-}
-
-function requireInteger(record: Record<string, unknown>, field: string, lineNumber: number): number {
-  const value = record[field];
-  if (typeof value !== 'number' || !Number.isInteger(value)) {
-    throw recordError(lineNumber, `${field} must be an integer`);
-  }
-  return value;
-}
-
 function parseSimilarityArtifactEntry(
   line: string,
   lineNumber: number,
@@ -75,7 +53,8 @@ function parseSimilarityArtifactEntry(
     const detail = error instanceof Error ? error.message : String(error);
     throw recordError(lineNumber, `invalid JSON (${detail})`);
   }
-  const record = requireObject(parsed, lineNumber);
+  const validation = createRecordValidator((message) => recordError(lineNumber, message));
+  const record = validation.record(parsed);
   const identityFields = ['boardType', 'modelVersion', 'layoutId'] as const;
   const identityFieldCount = identityFields.filter((field) =>
     Object.prototype.hasOwnProperty.call(record, field),
@@ -97,18 +76,18 @@ function parseSimilarityArtifactEntry(
       `legacy similarity records require explicit --board and --model=${LEGACY_SIMILARITY_MODEL_VERSION}`,
     );
   }
-  const boardType = mode === 'identified' ? requireString(record, 'boardType', lineNumber) : expected.boardType;
+  const boardType = mode === 'identified' ? validation.nonEmptyString(record, 'boardType') : expected.boardType;
   const modelVersion =
-    mode === 'identified' ? requireString(record, 'modelVersion', lineNumber) : expected.modelVersion;
+    mode === 'identified' ? validation.nonEmptyString(record, 'modelVersion') : expected.modelVersion;
   if (modelVersion !== expected.modelVersion) {
     throw recordError(
       lineNumber,
       `modelVersion ${JSON.stringify(modelVersion)} does not match --model=${expected.modelVersion}`,
     );
   }
-  const climbUuid = requireString(record, 'climbUuid', lineNumber);
-  const layoutId = mode === 'identified' ? requireInteger(record, 'layoutId', lineNumber) : null;
-  const angle = requireInteger(record, 'angle', lineNumber);
+  const climbUuid = validation.nonEmptyString(record, 'climbUuid');
+  const layoutId = mode === 'identified' ? validation.integer(record, 'layoutId') : null;
+  const angle = validation.integer(record, 'angle');
   if (!Array.isArray(record.neighbours)) {
     throw recordError(lineNumber, 'neighbours must be an array');
   }

@@ -12,6 +12,7 @@ import {
   type DeherdedGradeSignal,
   type GradeCoefficients,
 } from '../grade-model/index';
+import { createRecordValidator } from './runtime-validation';
 
 export const CONTENT_SIGNAL_MAX_MOVE = 0.5;
 export const CONTENT_SIGNAL_MAX_EFFECTIVE_N = 2;
@@ -125,62 +126,14 @@ export function contentCandidateKey(boardType: string, climbUuid: string, angle:
   return `${boardType}\u0000${climbUuid}\u0000${angle}`;
 }
 
-function artifactObject(parsed: unknown, lineNumber: number): Record<string, unknown> {
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`Candidate line ${lineNumber} must be a JSON object.`);
-  }
-  return parsed as Record<string, unknown>;
-}
-
-function artifactString(record: Record<string, unknown>, key: string, lineNumber: number): string {
-  const field = record[key];
-  if (typeof field !== 'string' || field.length === 0) {
-    throw new Error(`Candidate line ${lineNumber} has invalid ${key}.`);
-  }
-  return field;
-}
-
-function artifactFiniteNumber(record: Record<string, unknown>, key: string, lineNumber: number): number {
-  const field = record[key];
-  if (typeof field !== 'number' || !Number.isFinite(field)) {
-    throw new Error(`Candidate line ${lineNumber} has invalid ${key}.`);
-  }
-  return field;
-}
-
-function artifactOptionalFiniteNumber(
-  record: Record<string, unknown>,
-  key: string,
-  lineNumber: number,
-): number | null | undefined {
-  const field = record[key];
-  if (field === undefined) return undefined;
-  if (field === null) return null;
-  if (typeof field !== 'number' || !Number.isFinite(field)) {
-    throw new Error(`Candidate line ${lineNumber} has invalid ${key}.`);
-  }
-  return field;
-}
-
-function artifactOptionalString(
-  record: Record<string, unknown>,
-  key: string,
-  lineNumber: number,
-): string | null | undefined {
-  const field = record[key];
-  if (field === undefined) return undefined;
-  if (field === null) return null;
-  if (typeof field !== 'string') throw new Error(`Candidate line ${lineNumber} has invalid ${key}.`);
-  return field;
-}
-
 /** Parse one Stage-3 artifact row; explicit unsupported tombstones carry no signal. */
 export function parseContentPriorArtifactRecord(parsed: unknown, lineNumber: number): ParsedContentPriorArtifactRecord {
-  const record = artifactObject(parsed, lineNumber);
-  const boardType = artifactString(record, 'boardType', lineNumber);
-  const climbUuid = artifactString(record, 'climbUuid', lineNumber);
-  const angle = artifactFiniteNumber(record, 'angle', lineNumber);
-  const modelVersion = artifactString(record, 'modelVersion', lineNumber);
+  const validation = createRecordValidator((message) => new Error(`Candidate line ${lineNumber}: ${message}.`));
+  const record = validation.record(parsed, 'must be a JSON object');
+  const boardType = validation.nonEmptyString(record, 'boardType');
+  const climbUuid = validation.nonEmptyString(record, 'climbUuid');
+  const angle = validation.finiteNumber(record, 'angle');
+  const modelVersion = validation.nonEmptyString(record, 'modelVersion');
   if (modelVersion !== CLIMB2VEC_STAGE3_MODEL_VERSION) {
     throw new Error(
       `Candidate line ${lineNumber} has modelVersion=${modelVersion}; expected ${CLIMB2VEC_STAGE3_MODEL_VERSION}.`,
@@ -197,7 +150,7 @@ export function parseContentPriorArtifactRecord(parsed: unknown, lineNumber: num
     return { key, candidate: null };
   }
 
-  const contentSd = artifactFiniteNumber(record, 'contentSd', lineNumber);
+  const contentSd = validation.finiteNumber(record, 'contentSd');
   if (contentSd <= 0) throw new Error(`Candidate line ${lineNumber} has non-positive contentSd.`);
   return {
     key,
@@ -205,14 +158,14 @@ export function parseContentPriorArtifactRecord(parsed: unknown, lineNumber: num
       boardType,
       climbUuid,
       angle,
-      contentPrior: artifactFiniteNumber(record, 'contentPrior', lineNumber),
+      contentPrior: validation.finiteNumber(record, 'contentPrior'),
       contentSd,
-      ascents: artifactOptionalFiniteNumber(record, 'ascents', lineNumber),
-      difficultyAverage: artifactOptionalFiniteNumber(record, 'difficultyAverage', lineNumber),
-      displayDifficulty: artifactOptionalFiniteNumber(record, 'displayDifficulty', lineNumber),
-      layoutId: artifactOptionalFiniteNumber(record, 'layoutId', lineNumber),
-      fingerprint: artifactOptionalString(record, 'fingerprint', lineNumber),
-      physicalKey: artifactOptionalString(record, 'physicalKey', lineNumber),
+      ascents: validation.optionalFiniteNumber(record, 'ascents'),
+      difficultyAverage: validation.optionalFiniteNumber(record, 'difficultyAverage'),
+      displayDifficulty: validation.optionalFiniteNumber(record, 'displayDifficulty'),
+      layoutId: validation.optionalFiniteNumber(record, 'layoutId'),
+      fingerprint: validation.optionalString(record, 'fingerprint'),
+      physicalKey: validation.optionalString(record, 'physicalKey'),
     },
   };
 }
