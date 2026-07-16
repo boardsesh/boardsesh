@@ -25,7 +25,7 @@ import { type IconName } from '../../icon-map';
 import { useTheme } from '../../../providers/theme-provider';
 import { useQueueSessionControls, useQueueActions, useQueueLiveStats } from '../../../providers/queue-provider';
 import { useDrawerHost } from '../../../providers/drawer-host-provider';
-import { useSessionDetail, useSessionSummary } from '../../../lib/graphql/hooks';
+import { useSessionDetail, useSessionPreview, useSessionSummary } from '../../../lib/graphql/hooks';
 import { runSessionEndExports } from '../../../lib/integrations';
 import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } from '../../../lib/store-review';
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
@@ -265,12 +265,16 @@ export function InSessionView({
   // polling.
   const detailQuery = useSessionDetail(sessionId ?? undefined);
   const detail = detailQuery.data;
+  // The session preview (GET_SESSION) is the primary title source: unlike
+  // sessionDetail — which is null until the first tick — it resolves for a
+  // freshly started session, which is exactly when climbers name it.
+  const { data: sessionPreview } = useSessionPreview(sessionId ?? undefined);
 
   // The live session title: the creator-set name, or the default "Session" label.
   // Drives both the in-body glass large title and the Material app-bar title.
   // Truthy guard (not ??): an empty-string name must still fall back to the
   // localized default title, matching SessionDetailScreen's guard.
-  const sessionTitle = detail?.sessionName || t('mobile.session.headerActive');
+  const sessionTitle = sessionPreview?.name || detail?.sessionName || t('mobile.session.headerActive');
 
   // The rename sheet (opened from the title's edit affordance on either variant).
   const [titleSheetVisible, setTitleSheetVisible] = useState(false);

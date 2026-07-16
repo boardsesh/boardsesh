@@ -400,9 +400,12 @@ export function useSessionRealtime({
             if (event.__typename === 'SessionNameChanged') {
               // A member (or an HTTP updateSession) renamed the session. Our own
               // renames go over HTTP, so changedByParticipantId is null and we
-              // can't echo-suppress by participant id — just invalidate the detail
-              // cache. Our optimistic write already updated it locally; the extra
-              // refetch is cheap and self-consistent.
+              // can't echo-suppress by participant id — just invalidate both
+              // title sources. The preview matters for zero-tick sessions, where
+              // sessionDetail is null; our own optimistic write already updated
+              // the caches locally, so the extra refetch is cheap and
+              // self-consistent.
+              void queryClient?.invalidateQueries({ queryKey: ['sessionPreview', sessionId] });
               void queryClient?.invalidateQueries({ queryKey: ['sessionDetail', sessionId] });
               return;
             }

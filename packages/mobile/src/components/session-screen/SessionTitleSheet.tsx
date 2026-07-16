@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { SESSION_NAME_MAX_LENGTH, type SessionDetail } from '@boardsesh/shared-schema';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Sheet } from '../Sheet';
+import type { SessionPreview } from '../../lib/graphql/operations';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { useTheme } from '../../providers/theme-provider';
@@ -68,9 +69,13 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
       { input: { sessionId, name: trimmed.length > 0 ? trimmed : null } },
       {
         onSuccess: (updated) => {
-          // The chrome reads `sessionName` off the sessionDetail cache, whose 30s
-          // staleTime would otherwise show the old title until a refetch. Patch it
-          // in place so the header flips immediately.
+          // The chrome reads the title from the sessionPreview cache first
+          // (sessionDetail is null until the first tick), falling back to
+          // sessionDetail. Patch both in place so the header flips immediately
+          // instead of waiting out their staleTimes.
+          queryClient.setQueryData<SessionPreview | null>(['sessionPreview', sessionId], (prev) =>
+            prev ? { ...prev, name: updated.name ?? null } : prev,
+          );
           queryClient.setQueryData<SessionDetail>(['sessionDetail', sessionId], (prev) =>
             prev ? { ...prev, sessionName: updated.name } : prev,
           );

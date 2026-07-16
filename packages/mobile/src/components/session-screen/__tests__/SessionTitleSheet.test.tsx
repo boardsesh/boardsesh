@@ -155,16 +155,25 @@ describe('SessionTitleSheet', () => {
     const [, options] = updateSession.mutate.mock.calls[0];
     (options as { onSuccess: (updated: { name: string | null }) => void }).onSuccess({ name: 'Named' });
 
-    expect(queryClient.setQueryData).toHaveBeenCalledTimes(1);
-    const [key, updater] = queryClient.setQueryData.mock.calls[0];
-    expect(key).toEqual(['sessionDetail', 's1']);
+    // Both title sources get patched: the preview (works for zero-tick
+    // sessions, where sessionDetail is null) and the detail.
+    expect(queryClient.setQueryData).toHaveBeenCalledTimes(2);
+    const [previewKey, previewUpdater] = queryClient.setQueryData.mock.calls[0];
+    expect(previewKey).toEqual(['sessionPreview', 's1']);
+    expect((previewUpdater as (p: unknown) => unknown)({ id: 's1', name: 'old' })).toEqual({
+      id: 's1',
+      name: 'Named',
+    });
+    expect((previewUpdater as (p: unknown) => unknown)(null)).toBeNull();
+    const [detailKey, detailUpdater] = queryClient.setQueryData.mock.calls[1];
+    expect(detailKey).toEqual(['sessionDetail', 's1']);
     // The updater merges the new name into the cached detail.
-    expect((updater as (p: unknown) => unknown)({ sessionId: 's1', sessionName: 'old' })).toEqual({
+    expect((detailUpdater as (p: unknown) => unknown)({ sessionId: 's1', sessionName: 'old' })).toEqual({
       sessionId: 's1',
       sessionName: 'Named',
     });
     // ...and leaves a missing cache entry untouched.
-    expect((updater as (p: unknown) => unknown)(undefined)).toBeUndefined();
+    expect((detailUpdater as (p: unknown) => unknown)(undefined)).toBeUndefined();
 
     expect(haptics.hapticSuccess).toHaveBeenCalledTimes(1);
     expect(analytics.track).toHaveBeenCalledWith('Session Renamed', { source: 'record_chrome', nameLength: 5 });
