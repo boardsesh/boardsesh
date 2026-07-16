@@ -68,4 +68,115 @@ export const feedbackTypeDefs = /* GraphQL */ `
     """
     contactConsent: Boolean
   }
+
+  """
+  Admin triage state of a feedback row. \`new\` is the untouched default;
+  \`resolved\` and \`wont_fix\` are the terminal ("done") states.
+  """
+  enum AppFeedbackStatus {
+    new
+    in_progress
+    resolved
+    wont_fix
+  }
+
+  """
+  Type filter for the admin feedback list. \`bugs\` = shake-bug/drawer-bug
+  sources, \`ratings\` = prompt/drawer-feedback sources, \`all\` = everything.
+  """
+  enum AppFeedbackTypeFilter {
+    bugs
+    ratings
+    all
+  }
+
+  """
+  The person who submitted a feedback row, resolved from \`user_id\`. All fields
+  are null for anonymous submissions (no signed-in user at submit time).
+  """
+  type AppFeedbackReporter {
+    userId: ID
+    email: String
+    name: String
+  }
+
+  """
+  Debug context captured with a feedback row (the jsonb \`context\` column).
+  """
+  type AppFeedbackContext {
+    climbUuid: String
+    climbName: String
+    difficulty: String
+    sessionId: String
+    sessionName: String
+    url: String
+    userAgent: String
+  }
+
+  """
+  A single feedback row as seen by the admin dashboard, enriched with the
+  reporter's identity and triage state.
+  """
+  type AppFeedbackReport {
+    id: ID!
+    source: String!
+    rating: Int
+    comment: String
+    platform: String!
+    appVersion: String
+    boardName: String
+    angle: Int
+    contactConsent: Boolean
+    createdAt: String!
+    status: AppFeedbackStatus!
+    resolvedAt: String
+    resolvedBy: String
+    githubIssueNumber: Int
+    githubIssueUrl: String
+    reporter: AppFeedbackReporter
+    context: AppFeedbackContext
+  }
+
+  """
+  Filters for the admin feedback list. All fields optional; omitted filters
+  match everything. \`limit\`/\`offset\` drive offset pagination.
+  """
+  input AdminAppFeedbackInput {
+    type: AppFeedbackTypeFilter
+    status: AppFeedbackStatus
+    platform: String
+    search: String
+    limit: Int
+    offset: Int
+  }
+
+  """
+  Per-status row counts for the current type filter, so the dashboard can show
+  totals on the status tabs independent of the active status filter.
+  """
+  type AppFeedbackStatusCounts {
+    new: Int!
+    inProgress: Int!
+    resolved: Int!
+    wontFix: Int!
+  }
+
+  """
+  A page of admin feedback rows plus counts for the dashboard.
+  """
+  type AdminAppFeedbackResult {
+    reports: [AppFeedbackReport!]!
+    totalCount: Int!
+    hasMore: Boolean!
+    statusCounts: AppFeedbackStatusCounts!
+  }
+
+  """
+  Input for updateAppFeedbackStatus. Moving to \`resolved\`/\`wont_fix\` stamps
+  the resolver + timestamp; moving back to \`new\`/\`in_progress\` clears them.
+  """
+  input UpdateAppFeedbackStatusInput {
+    id: ID!
+    status: AppFeedbackStatus!
+  }
 `;

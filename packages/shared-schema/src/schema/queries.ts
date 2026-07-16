@@ -594,6 +594,14 @@ export const queriesTypeDefs = /* GraphQL */ `
     pendingGymClaims(input: PendingGymClaimsInput): GymClaimConnection!
 
     """
+    List submitted app feedback (bug reports + ratings) for the admin feedback
+    dashboard, enriched with the reporter's identity and triage state. Admin
+    only. Supports filtering by type/status/platform and free-text search over
+    the comment, with offset pagination.
+    """
+    adminAppFeedback(input: AdminAppFeedbackInput): AdminAppFeedbackResult!
+
+    """
     A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
     busiest weekdays for the current window plus the equally-long window before
     it (for week-over-week deltas). Requires gym edit access (owner, gym

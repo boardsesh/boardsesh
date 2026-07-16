@@ -867,6 +867,38 @@ export const schemaSQL = `
     "deleted_at" timestamp
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "gym_kiosks_unique_gym_slug" ON "gym_kiosks" ("gym_id", "slug") WHERE "deleted_at" IS NULL;
+
+  -- In-app feedback (bug reports + ratings) and its admin triage state. Mirrors
+  -- packages/db/src/schema/app/feedback.ts. status/resolved_* + github_issue_*
+  -- were added in migration 0183. status is plain text here (prod uses the
+  -- app_feedback_status enum); the resolvers only read the string value.
+  DROP TABLE IF EXISTS "app_feedback" CASCADE;
+  CREATE TABLE IF NOT EXISTS "app_feedback" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "user_id" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "rating" integer,
+    "comment" text,
+    "platform" text NOT NULL,
+    "app_version" text,
+    "source" text NOT NULL,
+    "board_name" text,
+    "layout_id" integer,
+    "size_id" integer,
+    "set_ids" jsonb,
+    "angle" integer,
+    "contact_consent" boolean,
+    "context" jsonb,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "status" text DEFAULT 'new' NOT NULL,
+    "resolved_at" timestamp,
+    "resolved_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "github_issue_number" integer,
+    "github_issue_url" text
+  );
+  CREATE INDEX IF NOT EXISTS "app_feedback_created_at_idx" ON "app_feedback" ("created_at");
+  CREATE INDEX IF NOT EXISTS "app_feedback_user_idx" ON "app_feedback" ("user_id");
+  CREATE INDEX IF NOT EXISTS "app_feedback_board_idx" ON "app_feedback" ("board_name");
+  CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
   CREATE INDEX IF NOT EXISTS "gym_kiosks_gym_idx" ON "gym_kiosks" ("gym_id") WHERE "deleted_at" IS NULL;
 
   -- Board followers (enrichBoard counts these per board).

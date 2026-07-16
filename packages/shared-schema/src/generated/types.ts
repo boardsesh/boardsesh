@@ -155,6 +155,28 @@ export type AddGymMemberInput = {
   userId: Scalars['ID']['input'];
 };
 
+/**
+ * Filters for the admin feedback list. All fields optional; omitted filters
+ * match everything. `limit`/`offset` drive offset pagination.
+ */
+export type AdminAppFeedbackInput = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  platform?: InputMaybe<Scalars['String']['input']>;
+  search?: InputMaybe<Scalars['String']['input']>;
+  status?: InputMaybe<AppFeedbackStatus>;
+  type?: InputMaybe<AppFeedbackTypeFilter>;
+};
+
+/** A page of admin feedback rows plus counts for the dashboard. */
+export type AdminAppFeedbackResult = {
+  __typename?: 'AdminAppFeedbackResult';
+  hasMore: Scalars['Boolean']['output'];
+  reports: Array<AppFeedbackReport>;
+  statusCounts: AppFeedbackStatusCounts;
+  totalCount: Scalars['Int']['output'];
+};
+
 /** Result of fetching the authenticated user's playlists, paginated. */
 export type AllUserPlaylistsResult = {
   __typename?: 'AllUserPlaylistsResult';
@@ -172,6 +194,78 @@ export type Angle = {
   /** Angle in degrees */
   angle: Scalars['Int']['output'];
 };
+
+/** Debug context captured with a feedback row (the jsonb `context` column). */
+export type AppFeedbackContext = {
+  __typename?: 'AppFeedbackContext';
+  climbName?: Maybe<Scalars['String']['output']>;
+  climbUuid?: Maybe<Scalars['String']['output']>;
+  difficulty?: Maybe<Scalars['String']['output']>;
+  sessionId?: Maybe<Scalars['String']['output']>;
+  sessionName?: Maybe<Scalars['String']['output']>;
+  url?: Maybe<Scalars['String']['output']>;
+  userAgent?: Maybe<Scalars['String']['output']>;
+};
+
+/**
+ * A single feedback row as seen by the admin dashboard, enriched with the
+ * reporter's identity and triage state.
+ */
+export type AppFeedbackReport = {
+  __typename?: 'AppFeedbackReport';
+  angle?: Maybe<Scalars['Int']['output']>;
+  appVersion?: Maybe<Scalars['String']['output']>;
+  boardName?: Maybe<Scalars['String']['output']>;
+  comment?: Maybe<Scalars['String']['output']>;
+  contactConsent?: Maybe<Scalars['Boolean']['output']>;
+  context?: Maybe<AppFeedbackContext>;
+  createdAt: Scalars['String']['output'];
+  githubIssueNumber?: Maybe<Scalars['Int']['output']>;
+  githubIssueUrl?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  platform: Scalars['String']['output'];
+  rating?: Maybe<Scalars['Int']['output']>;
+  reporter?: Maybe<AppFeedbackReporter>;
+  resolvedAt?: Maybe<Scalars['String']['output']>;
+  resolvedBy?: Maybe<Scalars['String']['output']>;
+  source: Scalars['String']['output'];
+  status: AppFeedbackStatus;
+};
+
+/**
+ * The person who submitted a feedback row, resolved from `user_id`. All fields
+ * are null for anonymous submissions (no signed-in user at submit time).
+ */
+export type AppFeedbackReporter = {
+  __typename?: 'AppFeedbackReporter';
+  email?: Maybe<Scalars['String']['output']>;
+  name?: Maybe<Scalars['String']['output']>;
+  userId?: Maybe<Scalars['ID']['output']>;
+};
+
+/**
+ * Admin triage state of a feedback row. `new` is the untouched default;
+ * `resolved` and `wont_fix` are the terminal ("done") states.
+ */
+export type AppFeedbackStatus = 'in_progress' | 'new' | 'resolved' | 'wont_fix';
+
+/**
+ * Per-status row counts for the current type filter, so the dashboard can show
+ * totals on the status tabs independent of the active status filter.
+ */
+export type AppFeedbackStatusCounts = {
+  __typename?: 'AppFeedbackStatusCounts';
+  inProgress: Scalars['Int']['output'];
+  new: Scalars['Int']['output'];
+  resolved: Scalars['Int']['output'];
+  wontFix: Scalars['Int']['output'];
+};
+
+/**
+ * Type filter for the admin feedback list. `bugs` = shake-bug/drawer-bug
+ * sources, `ratings` = prompt/drawer-feedback sources, `all` = everything.
+ */
+export type AppFeedbackTypeFilter = 'all' | 'bugs' | 'ratings';
 
 /** Pagination input for ascent feeds. */
 export type AscentFeedInput = {
@@ -2955,6 +3049,12 @@ export type Mutation = {
   unregisterActivityPushToken: Scalars['Boolean']['output'];
   /** Unsubscribe from new climbs for a board type and layout. */
   unsubscribeNewClimbs: Scalars['Boolean']['output'];
+  /**
+   * Update the triage status of a feedback row from the admin dashboard. Admin
+   * only. Moving to `resolved`/`wont_fix` stamps the resolver + timestamp;
+   * moving back to `new`/`in_progress` clears them. Returns the updated row.
+   */
+  updateAppFeedbackStatus: AppFeedbackReport;
   /** Update a board's metadata. */
   updateBoard: UserBoard;
   /**
@@ -3511,6 +3611,11 @@ export type MutationUnsubscribeNewClimbsArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationUpdateAppFeedbackStatusArgs = {
+  input: UpdateAppFeedbackStatusInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationUpdateBoardArgs = {
   input: UpdateBoardInput;
 };
@@ -4029,6 +4134,13 @@ export type Query = {
    * Requires authentication.
    */
   activityFeed: ActivityFeedResult;
+  /**
+   * List submitted app feedback (bug reports + ratings) for the admin feedback
+   * dashboard, enriched with the reporter's identity and triage state. Admin
+   * only. Supports filtering by type/status/platform and free-text search over
+   * the comment, with offset pagination.
+   */
+  adminAppFeedback: AdminAppFeedbackResult;
   /**
    * Get all current user's playlists across boards/layouts, paginated.
    * Optional boardType/layoutId filter. Requires authentication.
@@ -4567,6 +4679,11 @@ export type Query = {
 /** Root query type for all read operations. */
 export type QueryActivityFeedArgs = {
   input?: InputMaybe<ActivityFeedInput>;
+};
+
+/** Root query type for all read operations. */
+export type QueryAdminAppFeedbackArgs = {
+  input?: InputMaybe<AdminAppFeedbackInput>;
 };
 
 /** Root query type for all read operations. */
@@ -6660,6 +6777,15 @@ export type UnifiedSearchResult = {
   user?: Maybe<PublicUserProfile>;
 };
 
+/**
+ * Input for updateAppFeedbackStatus. Moving to `resolved`/`wont_fix` stamps
+ * the resolver + timestamp; moving back to `new`/`in_progress` clears them.
+ */
+export type UpdateAppFeedbackStatusInput = {
+  id: Scalars['ID']['input'];
+  status: AppFeedbackStatus;
+};
+
 /** Input for updating a board. */
 export type UpdateBoardInput = {
   /** New default angle */
@@ -7236,8 +7362,16 @@ export type ResolversTypes = ResolversObject<{
   AddCommentInput: AddCommentInput;
   AddFavoriteInput: AddFavoriteInput;
   AddGymMemberInput: AddGymMemberInput;
+  AdminAppFeedbackInput: AdminAppFeedbackInput;
+  AdminAppFeedbackResult: ResolverTypeWrapper<AdminAppFeedbackResult>;
   AllUserPlaylistsResult: ResolverTypeWrapper<AllUserPlaylistsResult>;
   Angle: ResolverTypeWrapper<Angle>;
+  AppFeedbackContext: ResolverTypeWrapper<AppFeedbackContext>;
+  AppFeedbackReport: ResolverTypeWrapper<AppFeedbackReport>;
+  AppFeedbackReporter: ResolverTypeWrapper<AppFeedbackReporter>;
+  AppFeedbackStatus: AppFeedbackStatus;
+  AppFeedbackStatusCounts: ResolverTypeWrapper<AppFeedbackStatusCounts>;
+  AppFeedbackTypeFilter: AppFeedbackTypeFilter;
   AscentFeedInput: AscentFeedInput;
   AscentFeedItem: ResolverTypeWrapper<AscentFeedItem>;
   AscentFeedResult: ResolverTypeWrapper<AscentFeedResult>;
@@ -7525,6 +7659,7 @@ export type ResolversTypes = ResolversObject<{
   ToggleFavoriteResult: ResolverTypeWrapper<ToggleFavoriteResult>;
   UnifiedSearchConnection: ResolverTypeWrapper<UnifiedSearchConnection>;
   UnifiedSearchResult: ResolverTypeWrapper<UnifiedSearchResult>;
+  UpdateAppFeedbackStatusInput: UpdateAppFeedbackStatusInput;
   UpdateBoardInput: UpdateBoardInput;
   UpdateClimbInput: UpdateClimbInput;
   UpdateClimbResult: ResolverTypeWrapper<UpdateClimbResult>;
@@ -7564,8 +7699,14 @@ export type ResolversParentTypes = ResolversObject<{
   AddCommentInput: AddCommentInput;
   AddFavoriteInput: AddFavoriteInput;
   AddGymMemberInput: AddGymMemberInput;
+  AdminAppFeedbackInput: AdminAppFeedbackInput;
+  AdminAppFeedbackResult: AdminAppFeedbackResult;
   AllUserPlaylistsResult: AllUserPlaylistsResult;
   Angle: Angle;
+  AppFeedbackContext: AppFeedbackContext;
+  AppFeedbackReport: AppFeedbackReport;
+  AppFeedbackReporter: AppFeedbackReporter;
+  AppFeedbackStatusCounts: AppFeedbackStatusCounts;
   AscentFeedInput: AscentFeedInput;
   AscentFeedItem: AscentFeedItem;
   AscentFeedResult: AscentFeedResult;
@@ -7832,6 +7973,7 @@ export type ResolversParentTypes = ResolversObject<{
   ToggleFavoriteResult: ToggleFavoriteResult;
   UnifiedSearchConnection: UnifiedSearchConnection;
   UnifiedSearchResult: UnifiedSearchResult;
+  UpdateAppFeedbackStatusInput: UpdateAppFeedbackStatusInput;
   UpdateBoardInput: UpdateBoardInput;
   UpdateClimbInput: UpdateClimbInput;
   UpdateClimbResult: UpdateClimbResult;
@@ -7907,6 +8049,17 @@ export type ActivityFeedResultResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type AdminAppFeedbackResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AdminAppFeedbackResult'] = ResolversParentTypes['AdminAppFeedbackResult'],
+> = ResolversObject<{
+  hasMore?: Resolver<ResolversTypes['Boolean'], ParentType, ContextType>;
+  reports?: Resolver<Array<ResolversTypes['AppFeedbackReport']>, ParentType, ContextType>;
+  statusCounts?: Resolver<ResolversTypes['AppFeedbackStatusCounts'], ParentType, ContextType>;
+  totalCount?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type AllUserPlaylistsResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['AllUserPlaylistsResult'] = ResolversParentTypes['AllUserPlaylistsResult'],
@@ -7922,6 +8075,65 @@ export type AngleResolvers<
   ParentType extends ResolversParentTypes['Angle'] = ResolversParentTypes['Angle'],
 > = ResolversObject<{
   angle?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppFeedbackContextResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppFeedbackContext'] = ResolversParentTypes['AppFeedbackContext'],
+> = ResolversObject<{
+  climbName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  climbUuid?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  difficulty?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sessionId?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  sessionName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  url?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userAgent?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppFeedbackReportResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppFeedbackReport'] = ResolversParentTypes['AppFeedbackReport'],
+> = ResolversObject<{
+  angle?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  appVersion?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  boardName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  comment?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  contactConsent?: Resolver<Maybe<ResolversTypes['Boolean']>, ParentType, ContextType>;
+  context?: Resolver<Maybe<ResolversTypes['AppFeedbackContext']>, ParentType, ContextType>;
+  createdAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  githubIssueNumber?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  githubIssueUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  platform?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  rating?: Resolver<Maybe<ResolversTypes['Int']>, ParentType, ContextType>;
+  reporter?: Resolver<Maybe<ResolversTypes['AppFeedbackReporter']>, ParentType, ContextType>;
+  resolvedAt?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  resolvedBy?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  source?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  status?: Resolver<ResolversTypes['AppFeedbackStatus'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppFeedbackReporterResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppFeedbackReporter'] = ResolversParentTypes['AppFeedbackReporter'],
+> = ResolversObject<{
+  email?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  name?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  userId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type AppFeedbackStatusCountsResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['AppFeedbackStatusCounts'] = ResolversParentTypes['AppFeedbackStatusCounts'],
+> = ResolversObject<{
+  inProgress?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  new?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  resolved?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  wontFix?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -9707,6 +9919,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationUnsubscribeNewClimbsArgs, 'input'>
   >;
+  updateAppFeedbackStatus?: Resolver<
+    ResolversTypes['AppFeedbackReport'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateAppFeedbackStatusArgs, 'input'>
+  >;
   updateBoard?: Resolver<
     ResolversTypes['UserBoard'],
     ParentType,
@@ -10079,6 +10297,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     Partial<QueryActivityFeedArgs>
+  >;
+  adminAppFeedback?: Resolver<
+    ResolversTypes['AdminAppFeedbackResult'],
+    ParentType,
+    ContextType,
+    Partial<QueryAdminAppFeedbackArgs>
   >;
   allUserPlaylists?: Resolver<
     ResolversTypes['AllUserPlaylistsResult'],
@@ -11710,8 +11934,13 @@ export type WallDisconnectedResolvers<
 export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ActivityFeedItem?: ActivityFeedItemResolvers<ContextType>;
   ActivityFeedResult?: ActivityFeedResultResolvers<ContextType>;
+  AdminAppFeedbackResult?: AdminAppFeedbackResultResolvers<ContextType>;
   AllUserPlaylistsResult?: AllUserPlaylistsResultResolvers<ContextType>;
   Angle?: AngleResolvers<ContextType>;
+  AppFeedbackContext?: AppFeedbackContextResolvers<ContextType>;
+  AppFeedbackReport?: AppFeedbackReportResolvers<ContextType>;
+  AppFeedbackReporter?: AppFeedbackReporterResolvers<ContextType>;
+  AppFeedbackStatusCounts?: AppFeedbackStatusCountsResolvers<ContextType>;
   AscentFeedItem?: AscentFeedItemResolvers<ContextType>;
   AscentFeedResult?: AscentFeedResultResolvers<ContextType>;
   AuroraCredential?: AuroraCredentialResolvers<ContextType>;

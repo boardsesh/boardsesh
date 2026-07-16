@@ -1,12 +1,14 @@
-import type { ConnectionContext, FeedbackContextInput } from '@boardsesh/shared-schema';
+import type { AppFeedbackReport, ConnectionContext, FeedbackContextInput } from '@boardsesh/shared-schema';
 import { eq } from 'drizzle-orm';
 import { sendBugReportIssueEmail } from '@boardsesh/email';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { FeedbackContext } from '@boardsesh/db/schema';
 import { applyRateLimit, validateInput } from '../shared/helpers';
-import { SubmitAppFeedbackInputSchema } from '../../../validation/schemas';
+import { requireAdmin } from '../social/roles';
+import { SubmitAppFeedbackInputSchema, UpdateAppFeedbackStatusInputSchema } from '../../../validation/schemas';
 import { createFeedbackGithubIssue } from '../../../services/github-feedback';
+import { loadFeedbackReport } from './queries';
 import { logger } from '../../../utils/logger';
 
 export const feedbackMutations = {
@@ -72,18 +74,28 @@ export const feedbackMutations = {
             contactConsent,
           });
 
-          if (issue && contactConsent && userId) {
-            const [reporter] = await db
-              .select({ email: dbSchema.users.email })
-              .from(dbSchema.users)
-              .where(eq(dbSchema.users.id, userId))
-              .limit(1);
-            if (reporter?.email) {
-              await sendBugReportIssueEmail({
-                to: reporter.email,
-                issueUrl: issue.htmlUrl,
-                issueNumber: issue.number,
-              });
+          if (issue) {
+            // Persist the issue link so the admin dashboard can jump straight
+            // to it. Kept inside the fire-and-forget block: a failure here must
+            // not affect the already-committed feedback row.
+            await db
+              .update(dbSchema.appFeedback)
+              .set({ githubIssueNumber: issue.number, githubIssueUrl: issue.htmlUrl })
+              .where(eq(dbSchema.appFeedback.id, row.id));
+
+            if (contactConsent && userId) {
+              const [reporter] = await db
+                .select({ email: dbSchema.users.email })
+                .from(dbSchema.users)
+                .where(eq(dbSchema.users.id, userId))
+                .limit(1);
+              if (reporter?.email) {
+                await sendBugReportIssueEmail({
+                  to: reporter.email,
+                  issueUrl: issue.htmlUrl,
+                  issueNumber: issue.number,
+                });
+              }
             }
           }
         } catch (error) {
@@ -93,6 +105,40 @@ export const feedbackMutations = {
     }
 
     return true;
+  },
+
+  updateAppFeedbackStatus: async (
+    _: unknown,
+    { input }: { input: unknown },
+    ctx: ConnectionContext,
+  ): Promise<AppFeedbackReport> => {
+    await requireAdmin(ctx);
+    await applyRateLimit(ctx, 20, 'updateAppFeedbackStatus');
+
+    const validated = validateInput(UpdateAppFeedbackStatusInputSchema, input, 'input');
+    const feedbackId = BigInt(validated.id);
+    // Terminal states stamp who closed it and when; reopening clears both.
+    const isDone = validated.status === 'resolved' || validated.status === 'wont_fix';
+
+    const updated = await db
+      .update(dbSchema.appFeedback)
+      .set({
+        status: validated.status,
+        resolvedAt: isDone ? new Date().toISOString() : null,
+        resolvedBy: isDone ? (ctx.userId ?? null) : null,
+      })
+      .where(eq(dbSchema.appFeedback.id, feedbackId))
+      .returning({ id: dbSchema.appFeedback.id });
+
+    if (updated.length === 0) {
+      throw new Error('Feedback report not found');
+    }
+
+    const report = await loadFeedbackReport(feedbackId);
+    if (!report) {
+      throw new Error('Feedback report not found');
+    }
+    return report;
   },
 };
 

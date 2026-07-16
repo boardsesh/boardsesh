@@ -41,3 +41,30 @@ export const SubmitAppFeedbackInputSchema = z
 
 export type SubmitAppFeedbackInput = z.infer<typeof SubmitAppFeedbackInputSchema>;
 export type FeedbackContextInput = z.infer<typeof FeedbackContextInputSchema>;
+
+// --- Admin feedback dashboard ---------------------------------------------
+
+const FEEDBACK_STATUSES = ['new', 'in_progress', 'resolved', 'wont_fix'] as const;
+const FEEDBACK_TYPE_FILTERS = ['bugs', 'ratings', 'all'] as const;
+
+export const AdminAppFeedbackInputSchema = z
+  .object({
+    type: z.enum(FEEDBACK_TYPE_FILTERS).optional().nullable(),
+    status: z.enum(FEEDBACK_STATUSES).optional().nullable(),
+    platform: z.string().trim().max(32).optional().nullable(),
+    search: z.string().trim().max(200).optional().nullable(),
+    limit: z.number().int().min(1).max(100).optional().nullable(),
+    offset: z.number().int().min(0).optional().nullable(),
+  })
+  .strict();
+
+export const UpdateAppFeedbackStatusInputSchema = z
+  .object({
+    // GraphQL ID of the app_feedback row (bigserial serialized as a string).
+    id: z.string().regex(/^\d+$/, 'id must be a numeric feedback row id').max(20),
+    status: z.enum(FEEDBACK_STATUSES),
+  })
+  .strict();
+
+export type AdminAppFeedbackInput = z.infer<typeof AdminAppFeedbackInputSchema>;
+export type UpdateAppFeedbackStatusInput = z.infer<typeof UpdateAppFeedbackStatusInputSchema>;

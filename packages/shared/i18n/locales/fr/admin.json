@@ -20,7 +20,79 @@
   },
   "nav": {
     "retention": "Tableau de rétention",
-    "gymClaims": "Revendications de salles"
+    "gymClaims": "Revendications de salles",
+    "feedback": "Rapports de bugs"
+  },
+
+  "feedback": {
+    "title": "Bugs et retours",
+    "subtitle": "Bugs et évaluations depuis l'app. Filtrez, trouvez l'e-mail de l'auteur et marquez-les comme résolus.",
+    "backToAdmin": "Retour à l'admin",
+    "type": {
+      "bugs": "Bugs",
+      "ratings": "Notes",
+      "all": "Tous",
+      "bug": "Bug",
+      "rating": "Note"
+    },
+    "status": {
+      "new": "Nouveau",
+      "in_progress": "En cours",
+      "resolved": "Résolu",
+      "wont_fix": "Non corrigé"
+    },
+    "statusFilter": {
+      "all": "Tous"
+    },
+    "search": {
+      "placeholder": "Rechercher dans les commentaires"
+    },
+    "table": {
+      "date": "Date",
+      "type": "Type",
+      "platform": "Plateforme",
+      "comment": "Commentaire",
+      "reporter": "Auteur",
+      "status": "Statut",
+      "github": "GitHub",
+      "actions": "Actions"
+    },
+    "reporter": {
+      "anonymous": "Anonyme",
+      "copyEmail": "Copier l'e-mail",
+      "consentYes": "Contact autorisé",
+      "consentNo": "Pas de consentement"
+    },
+    "rating": {
+      "value": "{{rating}}/5"
+    },
+    "github": {
+      "view": "Ticket #{{number}}"
+    },
+    "actions": {
+      "markDone": "Marquer comme résolu"
+    },
+    "detail": {
+      "toggle": "Afficher les détails",
+      "comment": "Commentaire",
+      "board": "Board",
+      "climb": "Bloc",
+      "session": "Session",
+      "url": "URL",
+      "userAgent": "Agent utilisateur",
+      "resolvedBy": "Résolu par"
+    },
+    "empty": "Aucun retour ne correspond à ces filtres.",
+    "error": "Impossible de charger les retours.",
+    "retry": "Réessayer",
+    "loadMore": "Charger plus",
+    "showing": "Affichage de {{shown}} sur {{total}}",
+    "snackbar": {
+      "statusUpdated": "Statut mis à jour",
+      "updateFailed": "Impossible de mettre à jour le statut",
+      "emailCopied": "E-mail copié",
+      "copyFailed": "Impossible de copier"
+    }
   },
   "retention": {
     "heading": "Rétention utilisateur",

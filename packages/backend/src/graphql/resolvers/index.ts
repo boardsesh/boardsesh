@@ -53,6 +53,7 @@ import { newClimbSubscriptionResolvers } from './social/new-climb-subscriptions'
 import { newClimbFeedSubscription } from './social/new-climb-feed-subscription';
 import { boardPresenceResolvers } from './board-presence';
 import { feedbackMutations } from './feedback/mutations';
+import { feedbackQueries } from './feedback/queries';
 import { integrationQueries } from './integrations/queries';
 import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
@@ -100,6 +101,7 @@ export const resolvers = {
     ...integrationQueries,
     ...otaQueries,
     ...syncQueries,
+    ...feedbackQueries,
   },
 
   Mutation: {

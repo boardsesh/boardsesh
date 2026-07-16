@@ -709,6 +709,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     submitAppFeedback(input: SubmitAppFeedbackInput!): Boolean!
 
+    """
+    Update the triage status of a feedback row from the admin dashboard. Admin
+    only. Moving to \`resolved\`/\`wont_fix\` stamps the resolver + timestamp;
+    moving back to \`new\`/\`in_progress\` clears them. Returns the updated row.
+    """
+    updateAppFeedbackStatus(input: UpdateAppFeedbackStatusInput!): AppFeedbackReport!
+
     # ============================================
     # External Platform Integration Mutations
     # ============================================

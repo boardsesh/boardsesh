@@ -119,7 +119,79 @@
   },
   "nav": {
     "retention": "Panel de retención",
-    "gymClaims": "Reclamaciones de gimnasios"
+    "gymClaims": "Reclamaciones de gimnasios",
+    "feedback": "Reportes de errores"
+  },
+
+  "feedback": {
+    "title": "Errores y comentarios",
+    "subtitle": "Errores y valoraciones desde la app. Filtra, encuentra el correo de quien lo reportó y márcalos como resueltos.",
+    "backToAdmin": "Volver al panel",
+    "type": {
+      "bugs": "Errores",
+      "ratings": "Valoraciones",
+      "all": "Todos",
+      "bug": "Error",
+      "rating": "Valoración"
+    },
+    "status": {
+      "new": "Nuevo",
+      "in_progress": "En progreso",
+      "resolved": "Resuelto",
+      "wont_fix": "No se corregirá"
+    },
+    "statusFilter": {
+      "all": "Todos"
+    },
+    "search": {
+      "placeholder": "Buscar comentarios"
+    },
+    "table": {
+      "date": "Fecha",
+      "type": "Tipo",
+      "platform": "Plataforma",
+      "comment": "Comentario",
+      "reporter": "Informante",
+      "status": "Estado",
+      "github": "GitHub",
+      "actions": "Acciones"
+    },
+    "reporter": {
+      "anonymous": "Anónimo",
+      "copyEmail": "Copiar correo",
+      "consentYes": "Contacto permitido",
+      "consentNo": "Sin consentimiento"
+    },
+    "rating": {
+      "value": "{{rating}}/5"
+    },
+    "github": {
+      "view": "Incidencia #{{number}}"
+    },
+    "actions": {
+      "markDone": "Marcar como resuelto"
+    },
+    "detail": {
+      "toggle": "Mostrar detalles",
+      "comment": "Comentario",
+      "board": "Plafón",
+      "climb": "Bloque",
+      "session": "Sesión",
+      "url": "URL",
+      "userAgent": "Agente de usuario",
+      "resolvedBy": "Resuelto por"
+    },
+    "empty": "Ningún comentario coincide con estos filtros.",
+    "error": "No se pudieron cargar los comentarios.",
+    "retry": "Reintentar",
+    "loadMore": "Cargar más",
+    "showing": "Mostrando {{shown}} de {{total}}",
+    "snackbar": {
+      "statusUpdated": "Estado actualizado",
+      "updateFailed": "No se pudo actualizar el estado",
+      "emailCopied": "Correo copiado",
+      "copyFailed": "No se pudo copiar"
+    }
   },
   "retention": {
     "heading": "Retención de usuarios",

@@ -45,3 +45,83 @@ export type SubmitAppFeedbackInput = {
    */
   contactConsent?: boolean | null;
 };
+
+// ---------------------------------------------------------------------------
+// Admin feedback dashboard (adminAppFeedback query + updateAppFeedbackStatus
+// mutation). Hand-written to mirror the SDL in `schema/feedback.ts` — the
+// shared-schema public API re-exports these types (not the codegen output), so
+// web/mobile import them from `@boardsesh/shared-schema`.
+// ---------------------------------------------------------------------------
+
+/** Admin triage state. `new` is the default; `resolved`/`wont_fix` are done. */
+export type AppFeedbackStatus = 'new' | 'in_progress' | 'resolved' | 'wont_fix';
+
+/** Type filter for the admin list. */
+export type AppFeedbackTypeFilter = 'bugs' | 'ratings' | 'all';
+
+/** The reporter, resolved from `user_id`. All null for anonymous rows. */
+export type AppFeedbackReporter = {
+  userId?: string | null;
+  email?: string | null;
+  name?: string | null;
+};
+
+/** Debug context (jsonb) as returned to the admin dashboard. */
+export type AppFeedbackContext = {
+  climbUuid?: string | null;
+  climbName?: string | null;
+  difficulty?: string | null;
+  sessionId?: string | null;
+  sessionName?: string | null;
+  url?: string | null;
+  userAgent?: string | null;
+};
+
+/** A feedback row enriched for the admin dashboard. */
+export type AppFeedbackReport = {
+  id: string;
+  source: AppFeedbackSource;
+  rating?: number | null;
+  comment?: string | null;
+  platform: AppFeedbackPlatform;
+  appVersion?: string | null;
+  boardName?: AppFeedbackBoardName | null;
+  angle?: number | null;
+  contactConsent?: boolean | null;
+  createdAt: string;
+  status: AppFeedbackStatus;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  githubIssueNumber?: number | null;
+  githubIssueUrl?: string | null;
+  reporter?: AppFeedbackReporter | null;
+  context?: AppFeedbackContext | null;
+};
+
+export type AdminAppFeedbackInput = {
+  type?: AppFeedbackTypeFilter | null;
+  status?: AppFeedbackStatus | null;
+  platform?: string | null;
+  search?: string | null;
+  limit?: number | null;
+  offset?: number | null;
+};
+
+export type AppFeedbackStatusCounts = {
+  new: number;
+  inProgress: number;
+  resolved: number;
+  wontFix: number;
+};
+
+export type AdminAppFeedbackResult = {
+  reports: AppFeedbackReport[];
+  totalCount: number;
+  hasMore: boolean;
+  statusCounts: AppFeedbackStatusCounts;
+};
+
+export type UpdateAppFeedbackStatusInput = {
+  id: string;
+  status: AppFeedbackStatus;
+};

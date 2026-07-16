@@ -20,7 +20,79 @@
   },
   "nav": {
     "retention": "Retention dashboard",
-    "gymClaims": "Gym claims"
+    "gymClaims": "Gym claims",
+    "feedback": "Bug reports"
+  },
+
+  "feedback": {
+    "title": "Bug reports & feedback",
+    "subtitle": "Bug reports and ratings from the app. Filter, find the reporter's email, and mark them done.",
+    "backToAdmin": "Back to admin",
+    "type": {
+      "bugs": "Bugs",
+      "ratings": "Ratings",
+      "all": "All",
+      "bug": "Bug",
+      "rating": "Rating"
+    },
+    "status": {
+      "new": "New",
+      "in_progress": "In progress",
+      "resolved": "Resolved",
+      "wont_fix": "Won't fix"
+    },
+    "statusFilter": {
+      "all": "All"
+    },
+    "search": {
+      "placeholder": "Search comments"
+    },
+    "table": {
+      "date": "Date",
+      "type": "Type",
+      "platform": "Platform",
+      "comment": "Comment",
+      "reporter": "Reporter",
+      "status": "Status",
+      "github": "GitHub",
+      "actions": "Actions"
+    },
+    "reporter": {
+      "anonymous": "Anonymous",
+      "copyEmail": "Copy email",
+      "consentYes": "Contact OK",
+      "consentNo": "No consent"
+    },
+    "rating": {
+      "value": "{{rating}}/5"
+    },
+    "github": {
+      "view": "Issue #{{number}}"
+    },
+    "actions": {
+      "markDone": "Mark done"
+    },
+    "detail": {
+      "toggle": "Toggle details",
+      "comment": "Comment",
+      "board": "Board",
+      "climb": "Climb",
+      "session": "Session",
+      "url": "URL",
+      "userAgent": "User agent",
+      "resolvedBy": "Resolved by"
+    },
+    "empty": "No feedback matches these filters.",
+    "error": "Couldn't load feedback.",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "showing": "Showing {{shown}} of {{total}}",
+    "snackbar": {
+      "statusUpdated": "Status updated",
+      "updateFailed": "Couldn't update status",
+      "emailCopied": "Email copied",
+      "copyFailed": "Couldn't copy"
+    }
   },
   "retention": {
     "heading": "User retention",
