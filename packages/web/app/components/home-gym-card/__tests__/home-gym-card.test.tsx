@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
+import { GYM_KIOSK_FLAG } from '@/app/flags';
 import HomeGymCard from '../home-gym-card';
 
 vi.mock('react-i18next', () => ({
@@ -35,7 +36,9 @@ vi.mock('@/app/hooks/use-my-gyms', () => ({
 }));
 
 vi.mock('@/app/components/providers/feature-flags-provider', () => ({
-  useFeatureFlag: () => mockKioskFlag,
+  // Only the gym-kiosk flag is toggled by the card; assert on the exact key so a
+  // second useFeatureFlag call can't silently piggyback on the same mock value.
+  useFeatureFlag: (flag: string) => (flag === GYM_KIOSK_FLAG ? mockKioskFlag : false),
 }));
 
 vi.mock('next-auth/react', () => ({

@@ -129,6 +129,9 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
     track('Homepage Gym Card Click', { action: 'find-gym' });
   }, []);
 
+  const closeMyGyms = useCallback(() => setMyGymsOpen(false), []);
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+
   const handleDismiss = useCallback(() => {
     setDismissed(true);
     void setPreference(DISMISS_PREFERENCE_KEY, true);
@@ -154,7 +157,7 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
           viewLabel={t('home.gymCard.viewPage')}
           moreLabel={t('home.gymCard.andMore', { count: gyms.length - 1 })}
         />
-        {myGymsRendered && <MyGymsDrawer open={myGymsOpen} onClose={() => setMyGymsOpen(false)} />}
+        {myGymsRendered && <MyGymsDrawer open={myGymsOpen} onClose={closeMyGyms} />}
       </>
     );
   }
@@ -207,7 +210,7 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
       {searchRendered && (
         <UnifiedSearchDrawer
           open={searchOpen}
-          onClose={() => setSearchOpen(false)}
+          onClose={closeSearch}
           defaultCategory="gyms"
           allowedCategories={['gyms']}
           showCloseButton
