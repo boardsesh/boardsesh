@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { View, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, ScrollView, StyleSheet, ActivityIndicator, Keyboard, Platform } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -125,12 +125,29 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
   const router = useRouter();
   const { formatGrade } = useGradeFormat();
   const scrollViewRef = useRef<ScrollView>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // automaticallyAdjustKeyboardInsets is iOS-only, so on Android the recap
-  // editor's Save/Cancel row stays hidden behind the keyboard. Scroll it into
-  // view once the keyboard has animated in.
+  // This screen is a modal route: on Android the dialog window ignores
+  // adjustResize, so the keyboard overlays the recap editor's Save/Cancel row
+  // and automaticallyAdjustKeyboardInsets is an iOS-only no-op. Track the
+  // keyboard height ourselves (same listener pattern as ClimbReactionMenu),
+  // pad the scroll content by it, and scroll the editor into view on focus.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const onShow = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(event.endCoordinates?.height ?? 0);
+      // Scroll after the padding from the state update has been laid out.
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 50);
+    });
+    const onHide = Keyboard.addListener('keyboardDidHide', () => setKeyboardHeight(0));
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, []);
+
   const handleRecapEditorFocus = useCallback(() => {
-    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 300);
   }, []);
 
   const participants = summary.participants;
@@ -192,7 +209,7 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
     <ScrollView
       ref={scrollViewRef}
       style={styles.container}
-      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] }]}
+      contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] + keyboardHeight }]}
       // Keep the inline recap editor visible above the keyboard on iOS (no-op on
       // Android). The recap card lives near the bottom of a scroll surface.
       automaticallyAdjustKeyboardInsets
