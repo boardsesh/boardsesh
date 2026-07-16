@@ -390,6 +390,19 @@
     "ariaCreateBoard": "Créer une board",
     "empty": "Aucune board pour le moment. Créez-en une depuis le sélecteur."
   },
+  "myGyms": {
+    "title": "Mes salles",
+    "empty": "Ta salle est peut-être déjà sur Boardsesh. Trouve-la pour gérer tes boards et ta crew.",
+    "findGym": "Trouve ta salle",
+    "ariaFindGym": "Trouve ta salle",
+    "roleOwner": "Propriétaire",
+    "roleAdmin": "Admin",
+    "roleEditor": "Éditeur",
+    "roleMember": "Membre",
+    "manage": "Gérer",
+    "view": "Voir",
+    "loadError": "Impossible de charger tes salles. Réessaie."
+  },
   "userDrawer": {
     "signIn": "Se connecter",
     "signInModalTitle": "Se connecter à Boardsesh",

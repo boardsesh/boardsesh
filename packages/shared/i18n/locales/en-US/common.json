@@ -390,6 +390,19 @@
     "ariaCreateBoard": "Create a board",
     "empty": "No boards yet. Create one from the board selector to get started."
   },
+  "myGyms": {
+    "title": "My Gyms",
+    "empty": "Your gym might already be on Boardsesh. Find it to manage your boards and crew.",
+    "findGym": "Find your gym",
+    "ariaFindGym": "Find your gym",
+    "roleOwner": "Owner",
+    "roleAdmin": "Admin",
+    "roleEditor": "Editor",
+    "roleMember": "Member",
+    "manage": "Manage",
+    "view": "View",
+    "loadError": "We couldn't load your gyms. Give it another go."
+  },
   "userDrawer": {
     "signIn": "Sign in",
     "signInModalTitle": "Sign in to Boardsesh",

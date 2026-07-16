@@ -63,6 +63,19 @@
     "ariaCreateBoard": "Crear plafón",
     "empty": "Aún no tienes plafones. Crea uno desde el selector de plafones."
   },
+  "myGyms": {
+    "title": "Mis gimnasios",
+    "empty": "Puede que tu gimnasio ya esté en Boardsesh. Encuéntralo para gestionar tus plafones y tu grupo.",
+    "findGym": "Encuentra tu gimnasio",
+    "ariaFindGym": "Encuentra tu gimnasio",
+    "roleOwner": "Propietario",
+    "roleAdmin": "Administrador",
+    "roleEditor": "Editor",
+    "roleMember": "Miembro",
+    "manage": "Gestionar",
+    "view": "Ver",
+    "loadError": "No pudimos cargar tus gimnasios. Inténtalo de nuevo."
+  },
   "userDrawer": {
     "signIn": "Iniciar sesión",
     "signInModalTitle": "Inicia sesión en Boardsesh",

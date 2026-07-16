@@ -1,0 +1,83 @@
+.gymList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gymItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 8px;
+}
+
+.gymItemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--neutral-200);
+  flex-shrink: 0;
+  color: var(--neutral-600);
+}
+
+.gymItemInfo {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.gymItemHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gymItemName {
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gymItemMeta {
+  font-size: 13px;
+  color: var(--neutral-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gymItemActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.loadingState {
+  display: flex;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.loadingMore {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}

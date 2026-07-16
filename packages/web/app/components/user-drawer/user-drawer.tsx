@@ -38,6 +38,7 @@ import {
 } from '@/app/lib/url-utils';
 import { getDefaultAngleForBoard } from '@/app/lib/board-config-for-playlist';
 import DashboardOutlined from '@mui/icons-material/DashboardOutlined';
+import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import BuildOutlined from '@mui/icons-material/BuildOutlined';
 import DeveloperBoardOutlined from '@mui/icons-material/DeveloperBoardOutlined';
 import SwipeableDrawer from '../swipeable-drawer/swipeable-drawer';
@@ -52,6 +53,7 @@ import { StoreReviewPromptDialog } from '../feedback/store-review-prompt-dialog'
 import BoardDiscoveryScroll from '../board-scroll/board-discovery-scroll';
 import BoardSelectorDrawer from '../board-selector-drawer/board-selector-drawer';
 import MyBoardsDrawer from '../my-boards-drawer/my-boards-drawer';
+import MyGymsDrawer from '../my-gyms-drawer/my-gyms-drawer';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { BoardDetails, BoardName, BoardRouteIdentity } from '@/app/lib/types';
 import { SUPPORTED_BOARDS } from '@/app/lib/board-data';
@@ -97,6 +99,8 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
   const [customBoardRendered, setCustomBoardRendered] = useState(false);
   const [showMyBoards, setShowMyBoards] = useState(false);
   const [myBoardsRendered, setMyBoardsRendered] = useState(false);
+  const [showMyGyms, setShowMyGyms] = useState(false);
+  const [myGymsRendered, setMyGymsRendered] = useState(false);
   const [recentSessions, setRecentSessions] = useState<StoredSession[]>([]);
   const [showDevUrl, setShowDevUrl] = useState(false);
   const { isAvailable: devUrlAvailable } = useDevUrl();
@@ -153,6 +157,9 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
   }, []);
   const handleMyBoardsTransitionEnd = useCallback((open: boolean) => {
     if (!open) setMyBoardsRendered(false);
+  }, []);
+  const handleMyGymsTransitionEnd = useCallback((open: boolean) => {
+    if (!open) setMyGymsRendered(false);
   }, []);
 
   const handleChangeBoardClick = useCallback(
@@ -342,6 +349,23 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
                     <DashboardOutlined />
                   </span>
                   <span className={styles.menuItemLabel}>{t('myBoards.title')}</span>
+                </button>
+              )}
+
+              {session?.user && (
+                <button
+                  type="button"
+                  className={styles.menuItem}
+                  onClick={() => {
+                    handleClose();
+                    setMyGymsRendered(true);
+                    setShowMyGyms(true);
+                  }}
+                >
+                  <span className={styles.menuItemIcon}>
+                    <FitnessCenterOutlined />
+                  </span>
+                  <span className={styles.menuItemLabel}>{t('myGyms.title')}</span>
                 </button>
               )}
 
@@ -617,6 +641,14 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
             setCustomBoardRendered(true);
             setShowCustomBoard(true);
           }}
+        />
+      )}
+
+      {myGymsRendered && (
+        <MyGymsDrawer
+          open={showMyGyms}
+          onClose={() => setShowMyGyms(false)}
+          onTransitionEnd={handleMyGymsTransitionEnd}
         />
       )}
 
