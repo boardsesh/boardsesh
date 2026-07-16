@@ -202,7 +202,10 @@ describe('kioskHeartbeat rate limiting', () => {
 
   it('trips the per-client rate limit past the ceiling', async () => {
     // A single fixed connection so the in-memory bucket accumulates. The
-    // heartbeat ceiling is 60/min; the 61st call must be throttled.
+    // heartbeat ceiling is 60/min; the 61st call must be throttled. `connectionId`
+    // is unique to this test (no other test reuses 'kh-rate-limit-conn'), so the
+    // in-memory bucket starting non-empty on a re-run isn't a real hazard —
+    // beforeEach only resets the DB, not the rate limiter, on purpose.
     const ctx: ConnectionContext = {
       connectionId: 'kh-rate-limit-conn',
       isAuthenticated: false,
@@ -215,5 +218,30 @@ describe('kioskHeartbeat rate limiting', () => {
     await expect(
       socialGymKioskMutations.kioskHeartbeat(null, { input: { kioskUuid: kioskA.uuid, gymUuid: gym.uuid } }, ctx),
     ).rejects.toThrow(/Rate limit exceeded/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Input validation (Redis-independent — rejected before any store lookup)
+// ---------------------------------------------------------------------------
+
+describe('kioskHeartbeat viewport validation', () => {
+  beforeEach(async () => {
+    await resetAndSeed();
+  });
+
+  it.each([
+    ['zero width', { viewportWidth: 0, viewportHeight: 1080 }],
+    ['negative height', { viewportWidth: 1920, viewportHeight: -1 }],
+    ['width over the 20000 ceiling', { viewportWidth: 20001, viewportHeight: 1080 }],
+    ['height over the 20000 ceiling', { viewportWidth: 1920, viewportHeight: 20001 }],
+  ])('rejects a %s viewport dimension', async (_description, viewport) => {
+    await expect(
+      socialGymKioskMutations.kioskHeartbeat(
+        null,
+        { input: { kioskUuid: kioskA.uuid, gymUuid: gym.uuid, ...viewport } },
+        anonCtx(),
+      ),
+    ).rejects.toThrow(/Invalid input/);
   });
 });

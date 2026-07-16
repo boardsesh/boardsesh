@@ -74,7 +74,9 @@ export default function KioskLivenessChip({ lastSeenAt, kioskName, tvPath }: Kio
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-      {lastSeenAt === null ? chip : <Tooltip title={new Date(lastSeenAt).toLocaleString()}>{chip}</Tooltip>}
+      {/* liveness.status === 'never' covers both null and unparseable lastSeenAt
+          (see bucketKioskLiveness), so the tooltip never formats an invalid date. */}
+      {liveness.status === 'never' ? chip : <Tooltip title={new Date(lastSeenAt!).toLocaleString()}>{chip}</Tooltip>}
       {liveness.status === 'stale' && (
         <>
           <Button
