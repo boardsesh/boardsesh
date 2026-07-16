@@ -384,6 +384,12 @@ export function InSessionView({
     [sessionUsers, participantId],
   );
 
+  // Renaming is creator-only server-side. Hide the affordance only when we
+  // POSITIVELY know the viewer isn't the owner — ownership is unknown for a
+  // fresh zero-tick session (sessionDetail is null), and that is overwhelmingly
+  // the creator's own session, so unknown keeps the affordance.
+  const canEditTitle = !detail?.ownerUserId || !selfUserId || detail.ownerUserId === selfUserId;
+
   const participantByUserId = useMemo(() => {
     const entries = new Map<string, SessionFeedParticipant>();
     for (const participant of participants) {
@@ -545,18 +551,21 @@ export function InSessionView({
           off there too. */}
       {showChrome && features.inBodyLargeTitle ? (
         <PressableSurface
-          onPress={openTitleSheet}
+          onPress={canEditTitle ? openTitleSheet : undefined}
           feedback="opacity"
           opacityTo={0.6}
           hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={t('mobile.session.editTitleAria')}
+          accessibilityRole={canEditTitle ? 'button' : undefined}
+          // The label carries the session name; the rename action is the hint so
+          // screen readers never lose the title itself.
+          accessibilityLabel={sessionTitle}
+          accessibilityHint={canEditTitle ? t('mobile.session.editTitleAria') : undefined}
           style={styles.titleRow}
         >
           <ScreenTitle style={styles.screenTitle} numberOfLines={1}>
             {sessionTitle}
           </ScreenTitle>
-          <Icon name="edit" size={20} color={systemColors.tertiaryLabel} />
+          {canEditTitle ? <Icon name="edit" size={20} color={systemColors.secondaryLabel} /> : null}
         </PressableSurface>
       ) : null}
 
@@ -654,7 +663,7 @@ export function InSessionView({
       {showChrome ? (
         <RecordTopChrome
           title={sessionTitle}
-          onEditTitle={openTitleSheet}
+          onEditTitle={canEditTitle ? openTitleSheet : undefined}
           onOpenBoardSwitcher={handleOpenBoardSwitcher}
           onHeightChange={setChromeHeight}
           onShare={onShare}

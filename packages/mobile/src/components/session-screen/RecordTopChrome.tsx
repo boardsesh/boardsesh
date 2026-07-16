@@ -108,8 +108,21 @@ export function RecordTopChrome({
             title={title}
             color={systemColors.label as string}
             onPress={onEditTitle}
-            accessibilityLabel={onEditTitle ? t('mobile.session.editTitleAria') : undefined}
+            // The label must carry the session name (the bar's only rendering of
+            // it); the rename action rides the hint + the pencil action below.
+            accessibilityLabel={title}
+            accessibilityHint={onEditTitle ? t('mobile.session.editTitleAria') : undefined}
           />
+          {onEditTitle ? (
+            // Visible rename cue: the title's own tap target has no affordance,
+            // and unlike glass there is no in-body pencil on Material.
+            <Appbar.Action
+              icon={iconMap['edit'].android}
+              color={systemColors.secondaryLabel as string}
+              onPress={onEditTitle}
+              accessibilityLabel={t('mobile.session.editTitleAria')}
+            />
+          ) : null}
           {onEndSession ? (
             <Appbar.Action
               icon={iconMap['flag'].android}

@@ -15,7 +15,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 
 // After a successful save the sheet shows the "Session updated" line briefly, then
 // closes — long enough to register, short enough not to stall the flow.
-const SAVED_CLOSE_DELAY_MS = 700;
+const SAVED_CLOSE_DELAY_MS = 1200;
 
 type SessionEditSheetProps = {
   /** Controlled visibility. */
@@ -138,9 +138,7 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
   return (
     <Sheet visible={visible} snapPoints={['70%']} scrollable onClose={onClose}>
       <View style={styles.body}>
-        <Text variant="title3" style={styles.title}>
-          {t('detail.editSession')}
-        </Text>
+        <Text variant="title2">{t('detail.editSession')}</Text>
 
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.label}>
           {t('detail.editNameLabel')}
@@ -152,7 +150,7 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
           placeholderTextColor={systemColors.tertiaryLabel}
           maxLength={SESSION_NAME_MAX_LENGTH}
           style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-          returnKeyType="next"
+          returnKeyType="done"
         />
 
         <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.label}>
@@ -167,6 +165,9 @@ export function SessionEditSheet({ visible, sessionId, currentName, currentNotes
           multiline
           style={[styles.input, styles.multiline, { backgroundColor: systemColors.fill, color: systemColors.label }]}
         />
+        <Text variant="caption2" color={systemColors.tertiaryLabel} style={styles.counter}>
+          {t('summary.commentHelper', { count: recap.length, max: SESSION_NOTES_MAX_LENGTH })}
+        </Text>
 
         {justSaved ? (
           <Text variant="footnote" color={brandColors.success} style={styles.feedback}>
@@ -200,10 +201,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[4],
     gap: spacing[2],
   },
-  title: {
-    fontWeight: '700',
-    marginBottom: spacing[1],
-  },
   label: {
     fontWeight: '600',
     marginTop: spacing[2],
@@ -217,6 +214,10 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 96,
     textAlignVertical: 'top',
+  },
+  counter: {
+    textAlign: 'right',
+    marginTop: -spacing[1],
   },
   feedback: {
     marginTop: spacing[2],

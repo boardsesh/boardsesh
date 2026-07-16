@@ -94,12 +94,10 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
   // The KeyboardAvoidingView mirrors EndSessionSheet: the Android dialog window
   // doesn't resize for the keyboard.
   return (
-    <Sheet visible={visible} snapPoints={['45%']} onClose={onClose}>
+    <Sheet visible={visible} enableDynamicSizing onClose={onClose}>
       <KeyboardAvoidingView behavior="padding">
         <View style={styles.body}>
-          <Text variant="title3" style={styles.title}>
-            {t('mobile.session.renameTitle')}
-          </Text>
+          <Text variant="title2">{t('mobile.session.renameTitle')}</Text>
           <BottomSheetTextInput
             value={name}
             onChangeText={handleChange}
@@ -113,7 +111,10 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
           />
           {updateSession.isError ? (
             <Text variant="footnote" color={brandColors.error} style={styles.error}>
-              {t('mobile.session.renameError')}
+              {/* The server rejects non-creators; "try again" would mislead them. */}
+              {updateSession.error instanceof Error && updateSession.error.message.includes('creator')
+                ? t('mobile.session.renameNotAllowed')
+                : t('mobile.session.renameError')}
             </Text>
           ) : null}
           <View style={styles.actions}>
@@ -137,9 +138,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing[4],
     paddingTop: spacing[2],
     gap: spacing[3],
-  },
-  title: {
-    fontWeight: '700',
   },
   input: {
     borderRadius: borderRadius.lg,

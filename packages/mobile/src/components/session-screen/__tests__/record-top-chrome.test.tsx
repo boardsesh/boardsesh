@@ -29,6 +29,7 @@ const appbar = vi.hoisted(() => ({
   actions: [] as string[],
   contentPress: null as (() => void) | null,
   contentAria: null as string | null,
+  contentHint: null as string | null,
 }));
 
 vi.mock('react-native', () => ({
@@ -56,14 +57,17 @@ vi.mock('react-native-paper', () => ({
       title,
       onPress,
       accessibilityLabel,
+      accessibilityHint,
     }: {
       title?: string;
       onPress?: () => void;
       accessibilityLabel?: string;
+      accessibilityHint?: string;
     }) => {
       appbar.title = title ?? null;
       appbar.contentPress = onPress ?? null;
       appbar.contentAria = accessibilityLabel ?? null;
+      appbar.contentHint = accessibilityHint ?? null;
       return createElement('div', { 'data-appbar-title': title ?? '', onClick: onPress });
     },
     Action: ({ accessibilityLabel }: { accessibilityLabel?: string }) => {
@@ -76,6 +80,7 @@ vi.mock('../../icon-map', () => ({
   iconMap: {
     'person.badge.plus': { ios: 'person.badge.plus', android: 'account-plus-outline' },
     flag: { ios: 'flag', android: 'flag-outline' },
+    edit: { ios: 'pencil', android: 'pencil-outline' },
   },
 }));
 vi.mock('../../Icon', () => ({
@@ -145,6 +150,7 @@ describe('RecordTopChrome', () => {
     appbar.actions = [];
     appbar.contentPress = null;
     appbar.contentAria = null;
+    appbar.contentHint = null;
   });
 
   it('gates the create island off (canCreate=false)', () => {
@@ -238,19 +244,24 @@ describe('RecordTopChrome', () => {
       expect(appbar.actions).toContain('mobile.session.invite');
     });
 
-    it('wires onEditTitle to the app-bar title press with the edit accessibility label', () => {
+    it('wires onEditTitle to the title press, keeps the name as the label, and adds a pencil action', () => {
       const onEditTitle = vi.fn();
       render(<RecordTopChrome {...makeProps({ title: 'Active session', onEditTitle })} />);
       expect(typeof appbar.contentPress).toBe('function');
-      expect(appbar.contentAria).toBe('mobile.session.editTitleAria');
+      // The label must carry the session name; the rename action rides the hint.
+      expect(appbar.contentAria).toBe('Active session');
+      expect(appbar.contentHint).toBe('mobile.session.editTitleAria');
+      // A visible pencil action accompanies the invisible title tap target.
+      expect(appbar.actions).toContain('mobile.session.editTitleAria');
       appbar.contentPress?.();
       expect(onEditTitle).toHaveBeenCalledTimes(1);
     });
 
-    it('leaves the title non-interactive (no edit aria) when onEditTitle is absent', () => {
+    it('leaves the title non-interactive (no edit hint or pencil) when onEditTitle is absent', () => {
       render(<RecordTopChrome {...makeProps({ title: 'Active session' })} />);
       expect(appbar.contentPress).toBeNull();
-      expect(appbar.contentAria).toBeNull();
+      expect(appbar.contentHint).toBeNull();
+      expect(appbar.actions).not.toContain('mobile.session.editTitleAria');
     });
 
     it('shows the End app-bar action only while a session is live (onEndSession set)', () => {

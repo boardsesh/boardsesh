@@ -488,9 +488,10 @@
     "session": {
       "headerStart": "Start a session",
       "headerActive": "Session",
-      "renameTitle": "Name this session",
+      "renameTitle": "Session name",
       "renameSave": "Save",
       "renameError": "Couldn't save the name. Try again.",
+      "renameNotAllowed": "Only the session creator can rename it.",
       "editTitleAria": "Edit session name",
       "minimize": "Minimize session",
       "recordTab": "Record",

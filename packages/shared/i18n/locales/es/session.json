@@ -488,9 +488,10 @@
     "session": {
       "headerStart": "Empezar sesión",
       "headerActive": "Sesión",
-      "renameTitle": "Ponle nombre a la sesión",
+      "renameTitle": "Nombre de la sesión",
       "renameSave": "Guardar",
       "renameError": "No se pudo guardar el nombre. Inténtalo de nuevo.",
+      "renameNotAllowed": "Solo quien creó la sesión puede cambiarle el nombre.",
       "editTitleAria": "Editar el nombre de la sesión",
       "minimize": "Minimizar sesión",
       "recordTab": "Grabar",

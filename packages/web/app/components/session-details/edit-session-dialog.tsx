@@ -95,7 +95,9 @@ export default function EditSessionDialog({
           onChange={(event) => setName(event.target.value.slice(0, SESSION_NAME_MAX_LENGTH))}
           fullWidth
           size="small"
+          autoFocus
           slotProps={{ htmlInput: { maxLength: SESSION_NAME_MAX_LENGTH } }}
+          helperText={t('summary.commentHelper', { count: name.length, max: SESSION_NAME_MAX_LENGTH })}
           sx={{ mt: 2 }}
         />
         <TextField
@@ -113,7 +115,7 @@ export default function EditSessionDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>{t('detail.editCancel')}</Button>
-        <Button onClick={handleSave} variant="contained" disabled={updateSession.isPending}>
+        <Button onClick={handleSave} variant="contained" loading={updateSession.isPending}>
           {t('detail.editSave')}
         </Button>
       </DialogActions>
