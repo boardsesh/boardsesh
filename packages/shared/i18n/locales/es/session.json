@@ -224,7 +224,7 @@
     "recapTitle": "Resumen",
     "addRecap": "Añadir un resumen",
     "recapSaveError": "No se pudo guardar tu resumen. Inténtalo de nuevo.",
-    "commentLabel": "Notas de la sesión",
+    "commentLabel": "Resumen",
     "commentPlaceholder": "¿Qué tal la sesión? Añade unas palabras…",
     "commentHelper": "{{count}}/{{max}}",
     "commentSaveFailed": "No se pudieron guardar tus notas. Inténtalo de nuevo."
@@ -394,7 +394,8 @@
       "alreadyLogged": "Registrado",
       "dragHandleAria": "Arrastra para reordenar {{name}}",
       "endSessionCommentPlaceholder": "Añade un resumen: ¿qué tal ha ido?",
-      "endSessionCommentAria": "Resumen de la sesión"
+      "endSessionCommentAria": "Resumen de la sesión",
+      "endSessionCancel": "Sigue escalando"
     },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",

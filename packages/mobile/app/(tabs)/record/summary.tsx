@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -124,6 +124,14 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { formatGrade } = useGradeFormat();
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  // automaticallyAdjustKeyboardInsets is iOS-only, so on Android the recap
+  // editor's Save/Cancel row stays hidden behind the keyboard. Scroll it into
+  // view once the keyboard has animated in.
+  const handleRecapEditorFocus = useCallback(() => {
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 250);
+  }, []);
 
   const participants = summary.participants;
   const isParty = participants.length > 1;
@@ -182,6 +190,7 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
 
   return (
     <ScrollView
+      ref={scrollViewRef}
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] }]}
       // Keep the inline recap editor visible above the keyboard on iOS (no-op on
@@ -305,7 +314,12 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
       ) : null}
 
       {/* Recap — the ender is the session creator, so the notes are editable here. */}
-      <SessionRecapCard sessionId={summary.sessionId} notes={summary.notes} editable />
+      <SessionRecapCard
+        sessionId={summary.sessionId}
+        notes={summary.notes}
+        editable
+        onEditorFocus={handleRecapEditorFocus}
+      />
 
       {/* External integration actions: save this session to Apple Health / share
           to Strava. Each renders only when applicable (iOS / connected account). */}

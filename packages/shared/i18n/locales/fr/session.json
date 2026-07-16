@@ -224,8 +224,8 @@
     "recapTitle": "Récap",
     "addRecap": "Ajouter un récap",
     "recapSaveError": "Impossible d'enregistrer ton récap. Réessaie.",
-    "commentLabel": "Notes de session",
-    "commentPlaceholder": "Alors, cette séance ? Ajoute quelques mots…",
+    "commentLabel": "Récap",
+    "commentPlaceholder": "Alors, cette session ? Ajoute quelques mots…",
     "commentHelper": "{{count}}/{{max}}",
     "commentSaveFailed": "Impossible d'enregistrer tes notes. Réessaie."
   },
@@ -394,7 +394,8 @@
       "alreadyLogged": "Enregistré",
       "dragHandleAria": "Glisser pour réorganiser {{name}}",
       "endSessionCommentPlaceholder": "Ajoute un récap — ça a donné quoi ?",
-      "endSessionCommentAria": "Récap de la séance"
+      "endSessionCommentAria": "Récap de la session",
+      "endSessionCancel": "Continue à grimper"
     },
     "queueSheet": {
       "emptyQueue": "Votre file est vide",

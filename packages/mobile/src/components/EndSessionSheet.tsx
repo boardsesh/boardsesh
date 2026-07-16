@@ -97,7 +97,12 @@ export function EndSessionSheet({
           />
 
           <View style={styles.buttonRow}>
-            <Button title={t('summary.done')} variant="outlined" onPress={onDismiss} style={styles.button} />
+            <Button
+              title={t('mobile.queue.endSessionCancel')}
+              variant="outlined"
+              onPress={onDismiss}
+              style={styles.button}
+            />
             <Button title={t('mobile.queue.endSession')} onPress={onConfirm} loading={isEnding} style={styles.button} />
           </View>
         </KeyboardAvoidingView>

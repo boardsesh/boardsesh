@@ -6,6 +6,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Text } from '../Text';
 import { Button } from '../Button';
 import { Card } from '../Card';
+import { Icon } from '../Icon';
 import { useTheme } from '../../providers/theme-provider';
 import { useUpdateSession } from '../../lib/graphql/hooks';
 import { getDraftComment, clearDraftComment } from '../../lib/session-comment-draft-store';
@@ -18,6 +19,12 @@ type SessionRecapCardProps = {
   notes?: string | null;
   /** Whether the viewer can edit the recap (the session creator). Read-only otherwise. */
   editable?: boolean;
+  /**
+   * Fired when the inline editor's input gains focus. The summary screen uses
+   * it to scroll the editor (and its Save/Cancel row) above the keyboard —
+   * automaticallyAdjustKeyboardInsets is an iOS-only no-op.
+   */
+  onEditorFocus?: () => void;
 };
 
 /**
@@ -26,7 +33,7 @@ type SessionRecapCardProps = {
  * sheet), so it uses a plain RN TextInput and shows inline save feedback — a
  * toast would render behind the modal route.
  */
-export function SessionRecapCard({ sessionId, notes, editable = false }: SessionRecapCardProps) {
+export function SessionRecapCard({ sessionId, notes, editable = false, onEditorFocus }: SessionRecapCardProps) {
   const { t } = useTranslation('session');
   const { t: tCommon } = useTranslation('common');
   const { systemColors, brandColors } = useTheme();
@@ -98,6 +105,7 @@ export function SessionRecapCard({ sessionId, notes, editable = false }: Session
           multiline
           autoFocus
           textAlignVertical="top"
+          onFocus={onEditorFocus}
         />
         <Text variant="caption2" color={systemColors.tertiaryLabel} style={styles.helper}>
           {t('summary.commentHelper', { count: draft.length, max: SESSION_NOTES_MAX_LENGTH })}
@@ -124,9 +132,12 @@ export function SessionRecapCard({ sessionId, notes, editable = false }: Session
   if (hasNotes) {
     return (
       <Card style={styles.card} onPress={editable ? startEditing : undefined}>
-        <Text variant="caption1" color={systemColors.secondaryLabel}>
-          {t('summary.recapTitle')}
-        </Text>
+        <View style={styles.captionRow}>
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {t('summary.recapTitle')}
+          </Text>
+          {editable ? <Icon name="edit" size={14} color={systemColors.secondaryLabel} /> : null}
+        </View>
         <Text variant="body">{displayedNotes}</Text>
       </Card>
     );
@@ -169,5 +180,13 @@ const styles = StyleSheet.create({
   },
   addRow: {
     alignItems: 'flex-start',
+    // Cancel the text Button's internal content padding so the + icon lines up
+    // with the left content edge of the sibling cards and stat tiles.
+    marginLeft: -spacing[4],
+  },
+  captionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[1],
   },
 });

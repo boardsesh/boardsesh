@@ -184,7 +184,7 @@ describe('EndSessionSheet', () => {
     expect(container.querySelector('[data-icon="end.session"]')).not.toBeNull();
     // climbCount flows through the interpolated count key.
     expect(container.textContent).toContain('mobile.queue.climbCount:5');
-    expect(button(container, 'summary.done')).not.toBeNull();
+    expect(button(container, 'mobile.queue.endSessionCancel')).not.toBeNull();
     expect(button(container, 'mobile.queue.endSession')).not.toBeNull();
   });
 
@@ -211,7 +211,7 @@ describe('EndSessionSheet', () => {
   it('fires onDismiss when Done is pressed', () => {
     const onDismiss = vi.fn();
     const { container } = render(<EndSessionSheet {...makeProps({ onDismiss })} />);
-    fireEvent.click(button(container, 'summary.done')!);
+    fireEvent.click(button(container, 'mobile.queue.endSessionCancel')!);
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 

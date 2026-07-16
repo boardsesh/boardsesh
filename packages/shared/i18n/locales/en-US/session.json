@@ -224,7 +224,7 @@
     "recapTitle": "Recap",
     "addRecap": "Add a recap",
     "recapSaveError": "Couldn't save your recap. Try again.",
-    "commentLabel": "Session notes",
+    "commentLabel": "Recap",
     "commentPlaceholder": "How was the sesh? Add a few words…",
     "commentHelper": "{{count}}/{{max}}",
     "commentSaveFailed": "Couldn't save your notes. Try again."
@@ -394,7 +394,8 @@
       "alreadyLogged": "Logged",
       "dragHandleAria": "Drag to reorder {{name}}",
       "endSessionCommentPlaceholder": "Add a recap — how did it go?",
-      "endSessionCommentAria": "Session recap"
+      "endSessionCommentAria": "Session recap",
+      "endSessionCancel": "Keep climbing"
     },
     "queueSheet": {
       "emptyQueue": "Your queue is empty",

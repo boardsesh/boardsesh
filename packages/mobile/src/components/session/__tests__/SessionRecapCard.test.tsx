@@ -45,6 +45,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('@boardsesh/shared-schema', () => ({ SESSION_NOTES_MAX_LENGTH: 2000 }));
+vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
 vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: { SessionCommentAdded: 'Session Comment Added' } }));
 
 vi.mock('react-i18next', () => ({

@@ -104,9 +104,12 @@ export function SessionSummaryCard({
       ) : null}
 
       {session.notes && session.notes.trim().length > 0 ? (
-        <Text variant="subheadline" style={styles.notes}>
-          {session.notes}
-        </Text>
+        <View style={styles.notes}>
+          <Text variant="caption1" color={systemColors.secondaryLabel}>
+            {tSession('summary.recapTitle')}
+          </Text>
+          <Text variant="body">{session.notes}</Text>
+        </View>
       ) : null}
 
       <View style={styles.tiles}>
@@ -137,7 +140,7 @@ const styles = StyleSheet.create({
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: spacing[1] },
   goal: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing[2], marginTop: spacing[2] },
   goalText: { flex: 1 },
-  notes: { marginTop: spacing[2] },
+  notes: { marginTop: spacing[2], gap: spacing[1] },
   tiles: { flexDirection: 'row', gap: spacing[2], marginTop: spacing[3] },
   social: { marginTop: spacing[3] },
 });
