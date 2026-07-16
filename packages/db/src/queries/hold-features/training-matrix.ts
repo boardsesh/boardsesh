@@ -141,6 +141,8 @@ export function buildTrainingRow(
       echoFraction,
       independentWeight: rawEffectiveN,
     },
+    // Same value as the option's default — spelled out only to mirror the
+    // applyCappedStage2Evidence call site verbatim; every other option is default.
     { maxMoveFromObserved: STAGE2_DEECHO_MAX_MOVE },
   );
 

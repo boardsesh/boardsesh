@@ -96,9 +96,9 @@ async function loadStats(db: Db, options: Options): Promise<ClimbStatLite[]> {
  * COEFF_MAX_AGE_DAYS staleness guard — the extract runs right after the nightly
  * refresh, and a slightly stale λ beats refitting from ticks here.
  */
-async function loadEchoFraction(db: Db, board: string): Promise<number> {
+async function loadEchoFraction(db: Db, board: string): Promise<{ lambda: number; ageDays: number | null }> {
   const rows = (await db.execute(sql`
-    SELECT payload
+    SELECT payload, created_at
     FROM board_grade_coefficients
     WHERE kind = 'echo_fraction'
       AND key = ${board}
@@ -111,9 +111,17 @@ async function loadEchoFraction(db: Db, board: string): Promise<number> {
         LIMIT 1
       )
     LIMIT 1
-  `)) as unknown as Array<{ payload: { lambda?: number } | null }>;
+  `)) as unknown as Array<{ payload: { lambda?: number } | null; created_at: string | Date | null }>;
   const lambda = rows[0]?.payload?.lambda;
-  return typeof lambda === 'number' && Number.isFinite(lambda) ? lambda : DEFAULT_ECHO_FRACTION;
+  if (typeof lambda !== 'number' || !Number.isFinite(lambda)) {
+    return { lambda: DEFAULT_ECHO_FRACTION, ageDays: null };
+  }
+  const createdAt = rows[0]?.created_at ? new Date(rows[0].created_at) : null;
+  const ageDays =
+    createdAt && Number.isFinite(createdAt.getTime())
+      ? Math.round((Date.now() - createdAt.getTime()) / 86_400_000)
+      : null;
+  return { lambda, ageDays };
 }
 
 async function loadHoldsByClimb(db: Db, options: Options): Promise<Map<string, HoldLite[]>> {
@@ -186,7 +194,7 @@ async function main(): Promise<void> {
     // segments so a big sort can't exhaust the server's /dev/shm (matches the
     // grade pipeline's guard). Session-scoped on the single script connection.
     await db.execute(sql`SET max_parallel_workers_per_gather = 0`);
-    const [features, stats, holdsByClimb, echoFraction] = await Promise.all([
+    const [features, stats, holdsByClimb, echo] = await Promise.all([
       loadFeatures(db, options.board),
       loadStats(db, options),
       loadHoldsByClimb(db, options),
@@ -195,7 +203,9 @@ async function main(): Promise<void> {
     if (features.size === 0) {
       throw new Error(`board_hold_features is empty for ${options.board} — run refresh-hold-features.ts first.`);
     }
-    console.log(`[extract] echo fraction λ=${echoFraction.toFixed(3)} for ${options.board}`);
+    const echoFraction = echo.lambda;
+    const echoAge = echo.ageDays === null ? 'model default (no frozen row)' : `${echo.ageDays}d old`;
+    console.log(`[extract] echo fraction λ=${echoFraction.toFixed(3)} for ${options.board} (${echoAge})`);
 
     mkdirSync(dirname(options.out), { recursive: true });
     const stream = createWriteStream(options.out, { encoding: 'utf8' });
