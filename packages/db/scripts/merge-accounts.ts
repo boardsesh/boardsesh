@@ -118,6 +118,9 @@ const PLAIN_REPOINTS: Array<{ table: string; column: string }> = [
   // the loser's beta-link attribution moves to the winner instead of nulling.
   { table: 'board_beta_links', column: 'created_by_user_id' },
   { table: 'gyms', column: 'owner_id' },
+  // Admin who reviewed a gym ownership claim (SET NULL, no unique) — repoint so
+  // the reviewer attribution follows the merged account.
+  { table: 'gym_claims', column: 'reviewed_by' },
 ];
 
 /**
@@ -130,7 +133,15 @@ const PLAIN_REPOINTS: Array<{ table: string; column: string }> = [
  * `IS NOT DISTINCT FROM` covers the nullable, NULLS-NOT-DISTINCT cases
  * (community_roles.board_type) and is equivalent to `=` for NOT NULL columns.
  */
-const DEDUPE_REPOINTS: Array<{ table: string; column: string; otherCols: string[] }> = [
+const DEDUPE_REPOINTS: Array<{
+  table: string;
+  column: string;
+  otherCols: string[];
+  // Extra SQL ANDed into the collision check for a PARTIAL unique index — only
+  // rows matching it can collide (references `winner_row` and `target`). Loser
+  // rows outside the predicate always move.
+  collisionPredicate?: string;
+}> = [
   { table: 'user_board_mappings', column: 'user_id', otherCols: ['board_type'] },
   { table: 'aurora_credentials', column: 'user_id', otherCols: ['board_type'] },
   { table: 'integration_credentials', column: 'user_id', otherCols: ['provider'] },
@@ -157,6 +168,15 @@ const DEDUPE_REPOINTS: Array<{ table: string; column: string; otherCols: string[
   // user-scoped unique only — the aurora_id/kilter_id partial uniques are global,
   // so a given surrogate exists on at most one rating and can never collide here.
   { table: 'board_climb_ratings', column: 'user_id', otherCols: ['board_type', 'climb_uuid', 'angle'] },
+  // Partial unique (gym_id, claimant_user_id) WHERE status = 'pending' — only two
+  // pending claims on the same gym collide; historical (approved/denied) claims
+  // always move so the merged account keeps the full claim history.
+  {
+    table: 'gym_claims',
+    column: 'claimant_user_id',
+    otherCols: ['gym_id'],
+    collisionPredicate: `winner_row.status = 'pending' AND target.status = 'pending'`,
+  },
 ];
 
 // Columns repointed by the hand-coded specials in mergeLoserIntoWinner / mergeSet
@@ -428,11 +448,14 @@ async function mergeLoserIntoWinner(commandDb: ExecuteDb, winnerId: string, lose
     );
   }
 
-  for (const { table, column, otherCols } of DEDUPE_REPOINTS) {
-    const matchClause = sql.join(
-      otherCols.map((otherCol) => sql.raw(`winner_row.${otherCol} IS NOT DISTINCT FROM target.${otherCol}`)),
-      sql` AND `,
+  for (const { table, column, otherCols, collisionPredicate } of DEDUPE_REPOINTS) {
+    const matchParts = otherCols.map((otherCol) =>
+      sql.raw(`winner_row.${otherCol} IS NOT DISTINCT FROM target.${otherCol}`),
     );
+    if (collisionPredicate) {
+      matchParts.push(sql.raw(`(${collisionPredicate})`));
+    }
+    const matchClause = sql.join(matchParts, sql` AND `);
     await execute(
       commandDb,
       sql`
