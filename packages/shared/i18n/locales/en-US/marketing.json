@@ -55,6 +55,16 @@
       "discordTitle": "Join the crew on Discord",
       "discordDescription": "Share beta, report bugs, and help shape what's next"
     },
+    "gymCard": {
+      "ownerSubtitle": "Your crew's gym, one tap away",
+      "manage": "Manage",
+      "viewPage": "View page",
+      "andMore": "and {{count}} more",
+      "findTitle": "Climb at a gym with boards?",
+      "findDescription": "Find it on Boardsesh — pull up its boards and log with your crew.",
+      "findCta": "Find your gym",
+      "dismiss": "Dismiss"
+    },
     "feed": {
       "callout": "Your friends are climbing.",
       "cta": "See the feed"

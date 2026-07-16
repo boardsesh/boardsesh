@@ -33,6 +33,7 @@ import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
+import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
 import { track } from '@/app/lib/analytics';
 import { useOnboardingTourOptional } from '@/app/components/onboarding/onboarding-tour-provider';
 import { TOUR_OPEN_START_SESH_EVENT } from '@/app/components/onboarding/onboarding-tour-events';
@@ -511,6 +512,11 @@ export default function HomePageContent({
           </Typography>
 
           <InstallAppCard platform={installPlatform} />
+
+          {/* Signed-in only: owner's gym (Manage / View) or a low-key
+              dismissible "Find your gym" nudge. Self-gates to null for
+              signed-out visitors. */}
+          <HomeGymCard />
 
           <OnboardingCard
             icon={<PlayCircleOutlineOutlined />}

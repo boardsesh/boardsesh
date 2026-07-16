@@ -55,6 +55,16 @@
       "discordTitle": "Rejoignez le crew sur Discord",
       "discordDescription": "Partagez la beta, signalez des bugs et donnez votre avis sur la suite"
     },
+    "gymCard": {
+      "ownerSubtitle": "La salle de votre crew, à portée de main",
+      "manage": "Gérer",
+      "viewPage": "Voir la page",
+      "andMore": "et {{count}} de plus",
+      "findTitle": "Vous grimpez dans une salle avec des boards ?",
+      "findDescription": "Trouvez-la sur Boardsesh : ouvrez ses boards et notez vos croix avec votre crew.",
+      "findCta": "Trouvez votre salle",
+      "dismiss": "Masquer"
+    },
     "feed": {
       "callout": "Vos potes sont en train de grimper.",
       "cta": "Voir le feed"

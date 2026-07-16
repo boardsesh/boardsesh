@@ -51,6 +51,12 @@ export type UserPreferenceKeyMap = {
   'swipeHint:partyPreviewSeen': boolean;
   tickBarExpanded: boolean;
   'shakeToReport:dismissed': boolean;
+  /**
+   * One-shot dismissal for the signed-in "Find your gym" nudge on the homepage.
+   * Set once a non-owner taps the card's dismiss control so it stays hidden on
+   * future visits. The owner variant of the card is not dismissible.
+   */
+  'homeGymCard:dismissed': boolean;
   esp32Connections: Esp32Connection[];
   lastUsedGrade: number;
 };

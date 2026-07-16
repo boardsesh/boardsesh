@@ -20,7 +20,7 @@ import { useFeatureFlag } from '@/app/components/providers/feature-flags-provide
 import { GYM_KIOSK_FLAG } from '@/app/flags';
 import { useMyGyms } from '@/app/hooks/use-my-gyms';
 import { useInfiniteScroll } from '@/app/hooks/use-infinite-scroll';
-import type { Gym } from '@boardsesh/shared-schema';
+import { resolveGymRole, type GymRoleKind } from '@/app/lib/gym-role';
 import styles from './my-gyms-drawer.module.css';
 
 type MyGymsDrawerProps = {
@@ -28,8 +28,6 @@ type MyGymsDrawerProps = {
   onClose: () => void;
   onTransitionEnd?: (open: boolean) => void;
 };
-
-type GymRoleKind = 'owner' | 'admin' | 'editor' | 'member';
 
 type ChipColor = 'primary' | 'secondary' | 'default';
 
@@ -39,21 +37,6 @@ const ROLE_CHIP_COLOR: Record<GymRoleKind, ChipColor> = {
   editor: 'default',
   member: 'default',
 };
-
-/**
- * Resolve the viewer's standing at a gym. The owner outranks the `myRole`
- * field (owners are reported as gym admins by the backend), so the owner check
- * comes first. Returns null for a gym the viewer only follows.
- * Admin/editor rows only become reachable once `myGyms` includes gym_members
- * (staff-roles PR); until then every listed gym resolves to `owner`.
- */
-function resolveGymRole(gym: Gym, currentUserId: string | null): GymRoleKind | null {
-  if (currentUserId && gym.ownerId === currentUserId) return 'owner';
-  if (gym.myRole === 'admin') return 'admin';
-  if (gym.myRole === 'editor') return 'editor';
-  if (gym.myRole === 'member') return 'member';
-  return null;
-}
 
 export default function MyGymsDrawer({ open, onClose, onTransitionEnd }: MyGymsDrawerProps) {
   const { t } = useTranslation('common');

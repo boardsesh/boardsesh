@@ -55,6 +55,16 @@
       "discordTitle": "Únete al grupo en Discord",
       "discordDescription": "Comparte beta, reporta fallos y ayuda a decidir qué viene"
     },
+    "gymCard": {
+      "ownerSubtitle": "El gimnasio de tu equipo, a un toque",
+      "manage": "Gestionar",
+      "viewPage": "Ver página",
+      "andMore": "y {{count}} más",
+      "findTitle": "¿Escalas en un gimnasio con plafones?",
+      "findDescription": "Encuéntralo en Boardsesh: abre sus plafones y registra con tu equipo.",
+      "findCta": "Encuentra tu gimnasio",
+      "dismiss": "Descartar"
+    },
     "feed": {
       "callout": "Tus amigos están escalando.",
       "cta": "Ver el feed"
