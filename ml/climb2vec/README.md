@@ -176,9 +176,9 @@ outputs. The identified loader verifies exact catalog coverage, validates the
 record board/model, and atomically replaces one selected board, so a newly
 unsupported cell cannot retain a stale prior. The incumbent `climb2vec-v1`
 single-board schema remains an explicit legacy upsert mode for the existing
-weekly workflow. That workflow retains each scored JSONL as a private Actions
-artifact for seven days before loading it, so a transient DB failure does not
-discard the completed training run.
+weekly workflow. That workflow retains each scored JSONL as an Actions artifact
+for seven days before loading it, so a transient DB failure does not discard the
+completed training run.
 
 ## Phase-1 feasibility result (Kilter, dev-DB extract: 29,748 obs, 80/20 by climb)
 

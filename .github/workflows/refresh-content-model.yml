@@ -70,7 +70,7 @@ jobs:
       - name: Preserve scored model artifact
         uses: actions/upload-artifact@v4
         with:
-          name: climb2vec-${{ env.BOARD }}-${{ github.run_id }}
+          name: climb2vec-${{ env.BOARD }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ml/climb2vec/data/${{ env.BOARD }}-content.jsonl
           if-no-files-found: error
           retention-days: 7
