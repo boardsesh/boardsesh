@@ -4,7 +4,7 @@ import { getPendingCount } from '@boardsesh/offline-sync';
 import { useAuth } from '../providers/auth-provider';
 import { useConfirm } from '../providers/dialog-provider';
 import { getDatabaseHandle } from '../db';
-import { getSetting } from '../settings/hooks';
+import { hasDownloadedBoardData } from '../db/queries/board-download-status';
 import { reportError } from '../lib/error-reporting';
 
 /**
@@ -29,8 +29,9 @@ export function useConfirmSignOut(): () => Promise<void> {
   const { t } = useTranslation('common');
   // A double-tap must not stack two dialogs or two sign-outs. DialogProvider already
   // queues confirms and settles each once by id, but that would still mean two
-  // dialogs; this is the guard that keeps it to one. Never reset — a confirmed
-  // sign-out unmounts this tree, and a cancel resets it explicitly below.
+  // dialogs; this is the guard that keeps it to one. Held only for the duration of
+  // one flow (see the finally) so a cancel — or a sign-out that resolves without
+  // navigating away — leaves the button usable for a retry.
   const inFlightRef = useRef(false);
 
   return useCallback(async () => {
@@ -39,22 +40,23 @@ export function useConfirmSignOut(): () => Promise<void> {
     try {
       const localDb = getDatabaseHandle();
       let pendingCount = 0;
+      let hasDownloads = false;
       try {
         // No handle means offline storage failed to initialise this session, so
-        // there is no queue to lose. A read failure is not a reason to skip the
-        // warning — fall back to "nothing pending" and still confirm.
-        pendingCount = localDb ? await getPendingCount(localDb) : 0;
+        // there is nothing local to lose. A read failure is not a reason to skip the
+        // warning — fall back to "nothing to report" and still confirm.
+        if (localDb) {
+          pendingCount = await getPendingCount(localDb);
+          // The honest signal for the boards sentence is whether a catalog is
+          // actually on disk (what the wipe deletes), NOT the syncEnabledBoards
+          // toggle list: a feature-flag rollback clears the list while the rows
+          // remain, and those users lose the most. See hasDownloadedBoardData.
+          hasDownloads = await hasDownloadedBoardData(localDb);
+        }
       } catch {
         pendingCount = 0;
+        hasDownloads = false;
       }
-
-      // The enabled list is the ground truth for "this user set up downloads", and
-      // the wipe is deliberately not flag-gated, so this isn't gated on
-      // useOfflineDownloadsEnabled either: a user whose flag was rolled back can
-      // still be holding downloaded boards, and they lose them just the same. An
-      // empty list means there's nothing to warn about, so the sentence stays off
-      // and no flag-off user is told about a feature they don't have.
-      const hasDownloads = getSetting('syncEnabledBoards').length > 0;
 
       const message = [
         hasDownloads ? t('mobile.signOut.messageOffline') : t('mobile.signOut.message'),
@@ -68,15 +70,13 @@ export function useConfirmSignOut(): () => Promise<void> {
         cancelLabel: t('mobile.signOut.cancel'),
         destructive: true,
       });
-      if (!confirmed) {
-        inFlightRef.current = false;
-        return;
-      }
+      if (!confirmed) return;
 
       await signOut('manual');
     } catch (error) {
-      inFlightRef.current = false;
       reportError(error);
+    } finally {
+      inFlightRef.current = false;
     }
   }, [confirm, signOut, t]);
 }

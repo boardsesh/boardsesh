@@ -10,17 +10,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { createElement } from 'react';
 
-const mockStorage = new Map<string, string>();
-vi.mock('react-native-mmkv', () => {
-  const createMockInstance = () => ({
-    getString: (key: string) => mockStorage.get(key),
-    set: (key: string, value: string) => void mockStorage.set(key, value),
-    remove: (key: string) => void mockStorage.delete(key),
-    clearAll: () => mockStorage.clear(),
-  });
-  return { createMMKV: vi.fn(() => createMockInstance()) };
-});
-
 const confirmMock = vi.fn(async (_options: unknown) => true);
 vi.mock('../../providers/dialog-provider', () => ({
   useConfirm: () => confirmMock,
@@ -34,6 +23,11 @@ vi.mock('../../providers/auth-provider', () => ({
 const databaseHandle = { current: {} as unknown };
 vi.mock('../../db', () => ({
   getDatabaseHandle: () => databaseHandle.current,
+}));
+
+const hasDownloadedBoardDataMock = vi.fn(async (..._args: unknown[]) => false);
+vi.mock('../../db/queries/board-download-status', () => ({
+  hasDownloadedBoardData: (...args: unknown[]) => hasDownloadedBoardDataMock(...args),
 }));
 
 const getPendingCountMock = vi.fn(async (..._args: unknown[]) => 0);
@@ -55,7 +49,6 @@ vi.mock('react-i18next', () => ({
 }));
 
 import { useConfirmSignOut } from '../use-confirm-sign-out';
-import { setSetting } from '../../settings/hooks';
 
 // The hook needs a render tree (it holds a ref); this drives it as a real component.
 // `press` awaits the whole flow inside act(); `tap` fires it without awaiting, for the
@@ -85,12 +78,13 @@ function messageOf(call: number = 0): string {
 }
 
 beforeEach(() => {
-  mockStorage.clear();
   confirmMock.mockClear();
   confirmMock.mockResolvedValue(true);
   signOutMock.mockClear();
   getPendingCountMock.mockClear();
   getPendingCountMock.mockResolvedValue(0);
+  hasDownloadedBoardDataMock.mockClear();
+  hasDownloadedBoardDataMock.mockResolvedValue(false);
   reportErrorMock.mockClear();
   databaseHandle.current = {};
 });
@@ -120,18 +114,18 @@ describe('useConfirmSignOut', () => {
     expect(signOutMock).not.toHaveBeenCalled();
   });
 
-  // Whether the offline sentence appears keys off the downloaded-boards list, NOT the
-  // feature flag: the wipe isn't flag-gated, so a user whose flag was rolled back can
-  // still be holding boards and still loses them.
-  it('warns about downloaded boards only when the user has some', async () => {
-    setSetting('syncEnabledBoards', ['kilter:1:1']);
+  // The offline sentence keys off whether a catalog is actually on disk
+  // (hasDownloadedBoardData), NOT the syncEnabledBoards toggle list — a flag rollback
+  // clears the list while the rows remain, and those users lose the most.
+  it('warns about downloaded boards only when a catalog is on disk', async () => {
+    hasDownloadedBoardDataMock.mockResolvedValue(true);
     const withDownloads = renderConfirmSignOut();
     await withDownloads.press();
     expect(messageOf()).toContain('mobile.signOut.messageOffline');
     expect(messageOf()).not.toContain('mobile.signOut.message\n');
 
     confirmMock.mockClear();
-    setSetting('syncEnabledBoards', []);
+    hasDownloadedBoardDataMock.mockResolvedValue(false);
     const withoutDownloads = renderConfirmSignOut();
     await withoutDownloads.press();
     expect(messageOf()).toBe('mobile.signOut.message');

@@ -64,3 +64,21 @@ export async function isBoardTypeDownloadedLocally(db: OfflineDatabase, boardTyp
   }
   return false;
 }
+
+/**
+ * Whether the device holds any downloaded board catalog at all — one O(1) EXISTS
+ * probe over board_climbs.
+ *
+ * The sign-out warning uses this rather than the syncEnabledBoards toggle list or the
+ * scope-complete markers, because it must answer "will the wipe delete a catalog?",
+ * and only the rows themselves answer that honestly. The toggle list is intent, not
+ * disk state — a feature-flag rollback clears it while the rows stay — and a
+ * scope-complete marker is absent for a partial mid-download that nonetheless has rows
+ * to lose. board_climbs having any row is exactly what clearLocalData removes.
+ */
+export async function hasDownloadedBoardData(db: OfflineDatabase): Promise<boolean> {
+  const row = await db.getFirstAsync<{ has_rows: number }>(
+    'SELECT EXISTS(SELECT 1 FROM board_climbs LIMIT 1) AS has_rows',
+  );
+  return (row?.has_rows ?? 0) === 1;
+}

@@ -238,8 +238,12 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
  */
 export async function clearLocalData(db: SQLiteDatabase): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
-    // The board deletes take seconds on a large layout; don't lose the BEGIN
-    // EXCLUSIVE to a straggling write on the main connection.
+    // withExclusiveTransactionAsync issues a bare `BEGIN` (deferred — its own
+    // connection is what makes it "exclusive", not BEGIN EXCLUSIVE), so the write
+    // lock is taken on the first DELETE below, not here. Setting busy_timeout first
+    // makes that acquisition wait up to 5s for a straggling write on the main
+    // connection instead of failing straight away with SQLITE_BUSY. Same guard
+    // scope-teardown and the snapshot bootstrap use.
     await txn.execAsync('PRAGMA busy_timeout = 5000');
     for (const table of TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
