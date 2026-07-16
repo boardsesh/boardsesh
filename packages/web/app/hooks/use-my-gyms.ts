@@ -57,7 +57,6 @@ export function useMyGyms(enabled: boolean, limit = 50) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, isAuthenticated, token, limit]);
 
   const loadMore = useCallback(() => {
