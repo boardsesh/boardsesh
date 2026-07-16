@@ -220,7 +220,14 @@
     "effortTitle": "À retenter",
     "effortBody": "Ce projet ne bouge pas. Tu l'auras.",
     "crew": "L'équipe",
-    "crewStatLine": "{{sends}} croix · {{flashes}} flashs · {{attempts}} essais"
+    "crewStatLine": "{{sends}} croix · {{flashes}} flashs · {{attempts}} essais",
+    "recapTitle": "Récap",
+    "addRecap": "Ajouter un récap",
+    "recapSaveError": "Impossible d'enregistrer ton récap. Réessaie.",
+    "commentLabel": "Notes de session",
+    "commentPlaceholder": "Alors, cette séance ? Ajoute quelques mots…",
+    "commentHelper": "{{count}}/{{max}}",
+    "commentSaveFailed": "Impossible d'enregistrer tes notes. Réessaie."
   },
   "overview": {
     "goal": "Objectif : {{goal}}"
@@ -385,7 +392,9 @@
       "climbCount_other": "{{count}} blocs",
       "logAscent": "Enregistrer l'ascension",
       "alreadyLogged": "Enregistré",
-      "dragHandleAria": "Glisser pour réorganiser {{name}}"
+      "dragHandleAria": "Glisser pour réorganiser {{name}}",
+      "endSessionCommentPlaceholder": "Ajoute un récap — ça a donné quoi ?",
+      "endSessionCommentAria": "Récap de la séance"
     },
     "queueSheet": {
       "emptyQueue": "Votre file est vide",

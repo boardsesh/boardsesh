@@ -116,6 +116,11 @@ vi.mock('../../../../src/components/session/session-stat-tiles', () => ({
   StatTile: () => createElement('div', null),
   GradeTile: () => createElement('div', null),
 }));
+// Stubbed so the recap card's useUpdateSession / draft-store dependencies don't
+// load in this store-review-focused test env.
+vi.mock('../../../../src/components/session/SessionRecapCard', () => ({
+  SessionRecapCard: () => createElement('div', { 'data-testid': 'session-recap-card' }),
+}));
 vi.mock('../../../../src/lib/playlists/board-details-for-playlist', () => ({ getBoardConfigForPlaylist: () => null }));
 vi.mock('../../../../src/lib/format-session-when', () => ({ formatSessionWhen: () => 'Sunday morning' }));
 vi.mock('../../../../src/theme/animations', () => ({ springs: {}, timing: { fast: 150, normal: 250 } }));

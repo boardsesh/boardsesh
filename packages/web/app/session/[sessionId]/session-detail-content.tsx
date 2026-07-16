@@ -322,6 +322,7 @@ export default function SessionDetailContent({
   const firstTickAt = session?.firstTickAt ?? '';
   const durationMinutes = session?.durationMinutes;
   const goal = session?.goal;
+  const notes = session?.notes;
   const ticks = session?.ticks ?? [];
   const upvotes = session?.upvotes ?? 0;
   const downvotes = session?.downvotes ?? 0;
@@ -716,6 +717,7 @@ export default function SessionDetailContent({
           hardestGrade={hardestGrade}
           durationMinutes={durationMinutes}
           goal={goal}
+          notes={notes}
           afterParticipants={!embedded ? afterParticipants : undefined}
           compact={embedded}
         />

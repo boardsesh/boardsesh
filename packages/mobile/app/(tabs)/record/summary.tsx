@@ -15,6 +15,7 @@ import { SectionHeader } from '../../../src/components/SectionHeader';
 import { Separator } from '../../../src/components/Separator';
 import { ClimbListThumbnail } from '../../../src/components/ClimbListThumbnail';
 import { StatTile, GradeTile } from '../../../src/components/session/session-stat-tiles';
+import { SessionRecapCard } from '../../../src/components/session/SessionRecapCard';
 import { StackedBarChart } from '../../../src/components/you/YouCharts';
 import { buildSessionGradeBars, gradeBadgeColor } from '../../../src/components/you/profile-chart-colors';
 import { useTheme } from '../../../src/providers/theme-provider';
@@ -183,6 +184,12 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
     <ScrollView
       style={styles.container}
       contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing[6] }]}
+      // Keep the inline recap editor visible above the keyboard on iOS (no-op on
+      // Android). The recap card lives near the bottom of a scroll surface.
+      automaticallyAdjustKeyboardInsets
+      // Let the recap editor's Save/Cancel receive their first tap while the
+      // keyboard is open instead of only dismissing it.
+      keyboardShouldPersistTaps="handled"
     >
       {/* Hero — the payoff moment */}
       <View style={styles.hero}>
@@ -296,6 +303,9 @@ function SessionSummaryContent({ summary }: { summary: SessionSummary }) {
           <Text variant="body">{summary.goal}</Text>
         </Card>
       ) : null}
+
+      {/* Recap — the ender is the session creator, so the notes are editable here. */}
+      <SessionRecapCard sessionId={summary.sessionId} notes={summary.notes} editable />
 
       {/* External integration actions: save this session to Apple Health / share
           to Strava. Each renders only when applicable (iOS / connected account). */}

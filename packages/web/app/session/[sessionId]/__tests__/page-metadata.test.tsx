@@ -112,4 +112,37 @@ describe('session page metadata', () => {
 
     expect(metadata.title).toBe('Session Not Found | Boardsesh');
   });
+
+  it('never leaks the private session recap notes into title/description/OG', async () => {
+    const secretRecap = 'PRIVATE_RECAP_wrecked_my_fingers_on_the_crimps';
+    getSessionOgSummaryMock.mockResolvedValue({
+      sessionType: 'party',
+      sessionName: 'Board Session',
+      leaderName: 'Alex',
+      participantNames: ['Alex'],
+      participantCount: 1,
+      totalSends: 3,
+      gradeRows: [{ difficulty: 10, count: 3 }],
+      boardLabel: null,
+      boardAngle: null,
+      boardPreviewPath: null,
+      version: 'abc123',
+      found: true,
+      // Notes are not part of the OG summary contract; this extra field guards
+      // against a future leak of the free-text recap into crawlable metadata.
+      notes: secretRecap,
+    } as Awaited<ReturnType<typeof getSessionOgSummary>>);
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({ sessionId: 'session-1' }),
+    });
+
+    const image = Array.isArray(metadata.openGraph?.images) ? metadata.openGraph.images[0] : metadata.openGraph?.images;
+
+    const serialized = JSON.stringify(metadata);
+    expect(serialized).not.toContain(secretRecap);
+    expect(metadata.title).not.toContain(secretRecap);
+    expect(metadata.description).not.toContain(secretRecap);
+    expect(getOpenGraphImageUrl(image) ?? '').not.toContain(secretRecap);
+  });
 });

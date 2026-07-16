@@ -191,6 +191,8 @@ import {
   useQueueSessionId,
 } from '../queue-provider';
 import { clearStoredSessionId } from '../../lib/session-store';
+import { track } from '../../lib/analytics';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
@@ -206,7 +208,7 @@ type Snapshot = {
   nextClimb: ReturnType<typeof useQueue>['nextClimb'];
   setPlaylistSuggestionSource: ReturnType<typeof useQueue>['setPlaylistSuggestionSource'];
   joinSession: (sessionId: string, opts: Parameters<ReturnType<typeof useQueue>['joinSession']>[1]) => Promise<void>;
-  endSession: () => Promise<unknown>;
+  endSession: (options?: { notes?: string }) => Promise<unknown>;
   confirmClimbOnWall: ReturnType<typeof useQueue>['confirmClimbOnWall'];
   reportWallDisconnect: ReturnType<typeof useQueue>['reportWallDisconnect'];
   setSessionBoardSerial: ReturnType<typeof useQueue>['setSessionBoardSerial'];
@@ -1327,6 +1329,65 @@ describe('QueueProvider session update subscription', () => {
     expect(clearStoredSessionId).toHaveBeenCalledTimes(1);
     expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.toast.sessionEnded', 'success');
+  });
+
+  it('forwards a trimmed recap and the device timezone to END_SESSION, and tracks note counts', async () => {
+    vi.mocked(track).mockClear();
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    await act(async () => {
+      await snapshots.at(-1)?.endSession({ notes: '  crushed it  ' });
+    });
+
+    const endCall = http.request.mock.calls.find(
+      ([operation]) => typeof operation === 'string' && operation.includes('EndSession'),
+    );
+    expect(endCall).toBeDefined();
+    const variables = endCall?.[1] as { sessionId: string; timezone?: string; notes?: string };
+    expect(variables.sessionId).toBe('session-1');
+    // Trimmed before send.
+    expect(variables.notes).toBe('crushed it');
+    // Timezone still travels alongside notes (it was silently dropped before).
+    expect(typeof variables.timezone).toBe('string');
+    expect(variables.timezone).toBeTruthy();
+
+    // Counts only — never the recap text.
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      SHARED_EVENTS.SessionEnded,
+      expect.objectContaining({ hasNotes: true, notesLength: 'crushed it'.length }),
+    );
+  });
+
+  it('omits notes and reports hasNotes:false when the recap is blank', async () => {
+    vi.mocked(track).mockClear();
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    await act(async () => {
+      await snapshots.at(-1)?.endSession({ notes: '   ' });
+    });
+
+    const endCall = http.request.mock.calls.find(
+      ([operation]) => typeof operation === 'string' && operation.includes('EndSession'),
+    );
+    const variables = endCall?.[1] as { sessionId: string; timezone?: string; notes?: string };
+    expect(variables.sessionId).toBe('session-1');
+    // A whitespace-only recap is not sent (server-side "clear" semantics aren't
+    // triggered on end).
+    expect('notes' in variables).toBe(false);
+    expect(typeof variables.timezone).toBe('string');
+
+    expect(vi.mocked(track)).toHaveBeenCalledWith(
+      SHARED_EVENTS.SessionEnded,
+      expect.objectContaining({ hasNotes: false, notesLength: 0 }),
+    );
   });
 });
 

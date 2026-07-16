@@ -103,6 +103,12 @@ export function SessionSummaryCard({
         </View>
       ) : null}
 
+      {session.notes && session.notes.trim().length > 0 ? (
+        <Text variant="subheadline" style={styles.notes}>
+          {session.notes}
+        </Text>
+      ) : null}
+
       <View style={styles.tiles}>
         <StatTile value={session.totalSends} label={t('mobile.sessions.weekly.sends')} icon="tick" />
         <StatTile value={session.totalFlashes} label={t('mobile.sessions.weekly.flashes')} icon="flash" />
@@ -131,6 +137,7 @@ const styles = StyleSheet.create({
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: spacing[1] },
   goal: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing[2], marginTop: spacing[2] },
   goalText: { flex: 1 },
+  notes: { marginTop: spacing[2] },
   tiles: { flexDirection: 'row', gap: spacing[2], marginTop: spacing[3] },
   social: { marginTop: spacing[3] },
 });

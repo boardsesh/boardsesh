@@ -502,6 +502,7 @@ const SESSION_SUMMARY_FIELDS = `
   endedAt
   durationMinutes
   goal
+  notes
 `;
 
 const SESSION_HEALTH_EXPORT_FIELDS = `
@@ -576,8 +577,8 @@ export type CreateSessionMutationResponse = {
 };
 
 export const END_SESSION = gql`
-  mutation EndSession($sessionId: ID!) {
-    endSession(sessionId: $sessionId) {
+  mutation EndSession($sessionId: ID!, $timezone: String, $notes: String) {
+    endSession(sessionId: $sessionId, timezone: $timezone, notes: $notes) {
       ${SESSION_SUMMARY_FIELDS}
     }
   }
@@ -585,6 +586,10 @@ export const END_SESSION = gql`
 
 export type EndSessionMutationVariables = {
   sessionId: string;
+  /** IANA timezone of the ending device, for local-time export to platforms like Strava. */
+  timezone?: string;
+  /** Optional free-text end-of-session recap persisted on the session. */
+  notes?: string;
 };
 
 export type EndSessionMutationResponse = {

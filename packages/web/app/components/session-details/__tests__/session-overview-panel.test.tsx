@@ -138,6 +138,30 @@ describe('SessionOverviewPanel', () => {
     expect(screen.getByText('Goal: Send V7')).toBeTruthy();
   });
 
+  it('renders notes text in full mode', () => {
+    render(<SessionOverviewPanel {...makeProps({ notes: 'Great flow day, felt strong on crimps.' })} />);
+
+    expect(screen.getByText('Great flow day, felt strong on crimps.')).toBeTruthy();
+  });
+
+  it('renders notes text in compact mode', () => {
+    render(<SessionOverviewPanel {...makeProps({ notes: 'Short recap.', compact: true })} />);
+
+    expect(screen.getByText('Short recap.')).toBeTruthy();
+  });
+
+  it('does not render a notes row when notes is null', () => {
+    render(<SessionOverviewPanel {...makeProps({ notes: null })} />);
+
+    expect(screen.queryByText(/recap/i)).toBeNull();
+  });
+
+  it('does not render a notes row when notes is empty', () => {
+    const { container } = render(<SessionOverviewPanel {...makeProps({ notes: '' })} />);
+    // An empty-string recap should be treated as absent (no NotesOutlined icon row).
+    expect(container.querySelector('[data-testid="NotesOutlinedIcon"]')).toBeNull();
+  });
+
   describe('formatDuration', () => {
     it('shows minutes for durations under 60', () => {
       render(<SessionOverviewPanel {...makeProps({ durationMinutes: 45 })} />);

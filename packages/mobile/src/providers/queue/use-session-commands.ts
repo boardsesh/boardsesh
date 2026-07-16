@@ -47,7 +47,7 @@ type UseSessionCommandsParams = {
 type SessionCommands = {
   createSessionWithConfig: (config?: StartSessionConfig) => Promise<string | null>;
   joinSession: (sessionId: string, opts: { boardPath: string; userBoard: UserBoard }) => Promise<void>;
-  endSession: () => Promise<SessionSummary | null>;
+  endSession: (options?: { notes?: string }) => Promise<SessionSummary | null>;
   clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
 };
 
@@ -215,44 +215,56 @@ export function useSessionCommands({
     await clearStoredSessionId();
   }, []);
 
-  const endSession = useCallback(async (): Promise<SessionSummary | null> => {
-    const currentSessionId = sessionIdRef.current;
-    if (!currentSessionId) return null;
+  const endSession = useCallback(
+    async (options?: { notes?: string }): Promise<SessionSummary | null> => {
+      const currentSessionId = sessionIdRef.current;
+      if (!currentSessionId) return null;
 
-    try {
-      locallyEndingSessionIdRef.current = currentSessionId;
-      const response = await getHttpClient().request<EndSessionMutationResponse>(END_SESSION, {
-        sessionId: currentSessionId,
-        // Device IANA zone so the backend can export wall-clock local times
-        // to platforms like Strava.
-        timezone: getDeviceTimezone(),
-      });
-      await clearSession();
-      locallyEndingSessionIdRef.current = null;
-      suppressedRemoteEndSessionIdRef.current = null;
-      track(SHARED_EVENTS.SessionEnded, {
-        sessionId: currentSessionId,
-        // Seconds (not minutes) to match web's Session Ended property/unit
-        // (session-lifecycle-tracking.ts) so both platforms land on one
-        // PostHog dimension.
-        durationSec:
-          response.endSession?.durationMinutes != null ? Math.round(response.endSession.durationMinutes * 60) : null,
-      });
-      showToast(t('mobile.toast.sessionEnded'), 'success');
-      return response.endSession;
-    } catch {
-      const remoteEndAlreadyApplied = suppressedRemoteEndSessionIdRef.current === currentSessionId;
-      locallyEndingSessionIdRef.current = null;
-      suppressedRemoteEndSessionIdRef.current = null;
-      await clearSession();
-      if (remoteEndAlreadyApplied) {
+      // Trim the optional recap and send it only when there's something left — an
+      // empty field must behave exactly like ending without a recap.
+      const trimmedNotes = options?.notes?.trim() ?? '';
+
+      try {
+        locallyEndingSessionIdRef.current = currentSessionId;
+        const response = await getHttpClient().request<EndSessionMutationResponse>(END_SESSION, {
+          sessionId: currentSessionId,
+          // Device IANA zone so the backend can export wall-clock local times
+          // to platforms like Strava.
+          timezone: getDeviceTimezone(),
+          ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+        });
+        await clearSession();
+        locallyEndingSessionIdRef.current = null;
+        suppressedRemoteEndSessionIdRef.current = null;
+        track(SHARED_EVENTS.SessionEnded, {
+          sessionId: currentSessionId,
+          // Seconds (not minutes) to match web's Session Ended property/unit
+          // (session-lifecycle-tracking.ts) so both platforms land on one
+          // PostHog dimension.
+          durationSec:
+            response.endSession?.durationMinutes != null ? Math.round(response.endSession.durationMinutes * 60) : null,
+          // Counts only — never the recap text — so PostHog carries whether a
+          // recap was written and its length without leaking user copy.
+          hasNotes: trimmedNotes.length > 0,
+          notesLength: trimmedNotes.length,
+        });
         showToast(t('mobile.toast.sessionEnded'), 'success');
-      } else {
-        showToast(t('mobile.queue.actionFailed'), 'error');
+        return response.endSession;
+      } catch {
+        const remoteEndAlreadyApplied = suppressedRemoteEndSessionIdRef.current === currentSessionId;
+        locallyEndingSessionIdRef.current = null;
+        suppressedRemoteEndSessionIdRef.current = null;
+        await clearSession();
+        if (remoteEndAlreadyApplied) {
+          showToast(t('mobile.toast.sessionEnded'), 'success');
+        } else {
+          showToast(t('mobile.queue.actionFailed'), 'error');
+        }
+        return null;
       }
-      return null;
-    }
-  }, [clearSession, showToast, t]);
+    },
+    [clearSession, showToast, t],
+  );
 
   const joinSession = useCallback(
     async (sessionToJoin: string, opts: { boardPath: string; userBoard: UserBoard }) => {

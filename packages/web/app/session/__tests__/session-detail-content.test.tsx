@@ -459,6 +459,16 @@ describe('SessionDetailContent', () => {
     expect(screen.getByText(/Send V7/)).toBeTruthy();
   });
 
+  it('passes the session notes through to the overview panel', () => {
+    render(<SessionDetailContent session={makeSession({ notes: 'Fingers wrecked, but sent the project.' })} />);
+    expect(screen.getByText('Fingers wrecked, but sent the project.')).toBeTruthy();
+  });
+
+  it('renders no notes text when notes is null', () => {
+    render(<SessionDetailContent session={makeSession({ notes: null })} />);
+    expect(screen.queryByText(/wrecked/)).toBeNull();
+  });
+
   it('renders grade distribution chart', () => {
     render(<SessionDetailContent session={makeSession()} />);
     expect(screen.getByTestId('css-bar-chart')).toBeTruthy();

@@ -220,7 +220,14 @@
     "effortTitle": "Para volver a por ello",
     "effortBody": "Ese proyecto no se va a ningún lado. Caerá.",
     "crew": "El equipo",
-    "crewStatLine": "{{sends}} encadenes · {{flashes}} flashes · {{attempts}} intentos"
+    "crewStatLine": "{{sends}} encadenes · {{flashes}} flashes · {{attempts}} intentos",
+    "recapTitle": "Resumen",
+    "addRecap": "Añadir un resumen",
+    "recapSaveError": "No se pudo guardar tu resumen. Inténtalo de nuevo.",
+    "commentLabel": "Notas de la sesión",
+    "commentPlaceholder": "¿Qué tal la sesión? Añade unas palabras…",
+    "commentHelper": "{{count}}/{{max}}",
+    "commentSaveFailed": "No se pudieron guardar tus notas. Inténtalo de nuevo."
   },
   "overview": {
     "goal": "Objetivo: {{goal}}"
@@ -385,7 +392,9 @@
       "climbCount_other": "{{count}} bloques",
       "logAscent": "Registrar ascenso",
       "alreadyLogged": "Registrado",
-      "dragHandleAria": "Arrastra para reordenar {{name}}"
+      "dragHandleAria": "Arrastra para reordenar {{name}}",
+      "endSessionCommentPlaceholder": "Añade un resumen: ¿qué tal ha ido?",
+      "endSessionCommentAria": "Resumen de la sesión"
     },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",

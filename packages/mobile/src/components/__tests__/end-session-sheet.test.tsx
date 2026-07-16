@@ -20,8 +20,13 @@ const sheet = vi.hoisted(() => ({ expand: vi.fn() }));
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
   View: ({ children }: ViewMockProps) => createElement('div', {}, children),
+  KeyboardAvoidingView: ({ children }: ViewMockProps) => createElement('div', { 'data-kav': 'true' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
+
+// SESSION_NOTES_MAX_LENGTH flows onto the input's maxLength; mock the shared
+// constant so this jsdom test doesn't pull the whole schema package.
+vi.mock('@boardsesh/shared-schema', () => ({ SESSION_NOTES_MAX_LENGTH: 2000 }));
 
 // BottomSheet → div exposing the dynamic-sizing / snap-point props so a test can
 // assert the sheet is content-sized, with an imperative `expand` for the effect.
@@ -48,7 +53,24 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
   }),
   BottomSheetView: ({ children, style }: SheetViewMockProps) =>
     createElement('div', { 'data-sheet-view': 'true', 'data-pb': String(readPaddingBottom(style) ?? '') }, children),
+  BottomSheetTextInput: ({ placeholder, value, onChangeText, accessibilityLabel, maxLength }: TextInputMockProps) =>
+    createElement('input', {
+      'data-textinput': 'true',
+      'data-placeholder': placeholder ?? '',
+      'data-aria': accessibilityLabel ?? '',
+      'data-maxlength': maxLength === undefined ? '' : String(maxLength),
+      value: value ?? '',
+      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+    }),
 }));
+
+type TextInputMockProps = {
+  placeholder?: string;
+  value?: string;
+  onChangeText?: (text: string) => void;
+  accessibilityLabel?: string;
+  maxLength?: number;
+};
 
 // Isolate the sheet from the presentation coordinator (its serialization is
 // covered by sheet-presentation-provider.test.tsx). The sheet is always mounted
@@ -86,7 +108,15 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../providers/theme-provider', () => ({
-  useTheme: () => ({ systemColors: { secondaryBackground: '#fff', secondaryLabel: '#888' } }),
+  useTheme: () => ({
+    systemColors: {
+      secondaryBackground: '#fff',
+      secondaryLabel: '#888',
+      fill: '#eee',
+      label: '#000',
+      tertiaryLabel: '#aaa',
+    },
+  }),
 }));
 
 type TextMockProps = { children?: ReactNode };
@@ -110,7 +140,8 @@ vi.mock('../Icon', () => ({
 }));
 
 vi.mock('../../theme/tokens', () => ({
-  spacing: { 3: 12, 4: 16, 6: 24 },
+  spacing: { 2: 8, 3: 12, 4: 16, 6: 24 },
+  borderRadius: { lg: 12 },
   sheetStyles: { indicator: {} },
 }));
 
@@ -123,12 +154,16 @@ function makeProps(over: Partial<Parameters<typeof EndSessionSheet>[0]> = {}) {
     onConfirm: vi.fn(),
     isEnding: false,
     climbCount: 3,
+    notes: '',
+    onNotesChange: vi.fn(),
     ...over,
   };
 }
 
 const button = (root: HTMLElement, title: string) =>
   root.querySelector(`[data-button="${title}"]`) as HTMLButtonElement | null;
+
+const textInput = (root: HTMLElement) => root.querySelector('[data-textinput]') as HTMLInputElement | null;
 
 describe('EndSessionSheet', () => {
   beforeEach(() => {
@@ -183,5 +218,31 @@ describe('EndSessionSheet', () => {
   it('reflects the ending state on the confirm button', () => {
     const { container } = render(<EndSessionSheet {...makeProps({ isEnding: true })} />);
     expect(button(container, 'mobile.queue.endSession')?.getAttribute('data-loading')).toBe('true');
+  });
+
+  it('renders the optional recap input with its placeholder, aria label, and max length', () => {
+    const { container } = render(<EndSessionSheet {...makeProps()} />);
+    const input = textInput(container);
+    expect(input).not.toBeNull();
+    expect(input?.getAttribute('data-placeholder')).toBe('mobile.queue.endSessionCommentPlaceholder');
+    expect(input?.getAttribute('data-aria')).toBe('mobile.queue.endSessionCommentAria');
+    expect(input?.getAttribute('data-maxlength')).toBe('2000');
+  });
+
+  it('fires onNotesChange as the recap is typed', () => {
+    const onNotesChange = vi.fn();
+    const { container } = render(<EndSessionSheet {...makeProps({ onNotesChange })} />);
+    fireEvent.change(textInput(container)!, { target: { value: 'great sesh' } });
+    expect(onNotesChange).toHaveBeenCalledWith('great sesh');
+  });
+
+  it('lets End fire with an empty recap — typing never blocks or validates', () => {
+    const onConfirm = vi.fn();
+    const { container } = render(<EndSessionSheet {...makeProps({ notes: '', onConfirm })} />);
+    const endButton = button(container, 'mobile.queue.endSession');
+    // The button is never disabled by an empty field (no disabled attr wired).
+    expect(endButton?.getAttribute('data-loading')).toBe('false');
+    fireEvent.click(endButton!);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 });

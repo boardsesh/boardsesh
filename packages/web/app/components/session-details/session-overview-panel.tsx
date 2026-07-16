@@ -8,6 +8,7 @@ import CardContent from '@mui/material/CardContent';
 import Chip from '@mui/material/Chip';
 import Skeleton from '@mui/material/Skeleton';
 import FlagOutlined from '@mui/icons-material/FlagOutlined';
+import NotesOutlined from '@mui/icons-material/NotesOutlined';
 import TimerOutlined from '@mui/icons-material/TimerOutlined';
 import FlashOnOutlined from '@mui/icons-material/FlashOnOutlined';
 import CheckCircleOutlineOutlined from '@mui/icons-material/CheckCircleOutlineOutlined';
@@ -61,6 +62,8 @@ type SessionOverviewPanelProps = {
   hardestGrade?: string | null;
   durationMinutes?: number | null;
   goal?: string | null;
+  /** Optional free-text end-of-session recap saved by the session creator. */
+  notes?: string | null;
   afterParticipants?: React.ReactNode;
   /** When true, only render board preview + goal (no chips/chart). */
   compact?: boolean;
@@ -91,6 +94,7 @@ export default function SessionOverviewPanel({
   hardestGrade,
   durationMinutes,
   goal,
+  notes,
   afterParticipants,
   compact = false,
   boardDetails = null,
@@ -147,6 +151,15 @@ export default function SessionOverviewPanel({
           <FlagOutlined sx={{ fontSize: 16 }} color="action" />
           <Typography variant="body2" color="text.secondary">
             {t('overview.goal', { goal })}
+          </Typography>
+        </Box>
+      ) : null}
+
+      {notes ? (
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+          <NotesOutlined sx={{ fontSize: 16, mt: 0.25 }} color="action" />
+          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', minWidth: 0 }}>
+            {notes}
           </Typography>
         </Box>
       ) : null}

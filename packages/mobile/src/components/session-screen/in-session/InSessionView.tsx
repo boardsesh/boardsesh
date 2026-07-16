@@ -29,6 +29,7 @@ import { useSessionDetail, useSessionSummary } from '../../../lib/graphql/hooks'
 import { runSessionEndExports } from '../../../lib/integrations';
 import { SESSION_STORE_REVIEW_CANDIDATE_PARAM, isSessionStoreReviewEligible } from '../../../lib/store-review';
 import { climbToQueueItem } from '../../../lib/climb-to-queue-item';
+import { setDraftComment, clearDraftComment } from '../../../lib/session-comment-draft-store';
 import { getBoardConfigForPlaylist } from '../../../lib/playlists/board-details-for-playlist';
 import { tickToClimb } from '../../../lib/tick-to-climb';
 import { openClimbInPlayDrawer } from '../../../lib/open-climb-in-play-drawer';
@@ -432,6 +433,12 @@ export function InSessionView({
   }, [translateY, screenHeight, scrollOffset, startedAtTop]);
 
   const [isEnding, setIsEnding] = useState(false);
+  // Optional end-of-session recap. Cleared whenever the active session changes
+  // (start / join / end) so a new session never inherits the previous draft.
+  const [endNotes, setEndNotes] = useState('');
+  useEffect(() => {
+    setEndNotes('');
+  }, [sessionId]);
   // End moved to the top chrome's trailing slot, so the bottom edge keeps only the
   // global current-climb chrome + tab bar (no third glass band). The Material-vs-glass
   // arbitration — and the tab-bar double-count it avoids — lives in
@@ -440,10 +447,23 @@ export function InSessionView({
 
   const handleConfirmEnd = useCallback(async () => {
     setIsEnding(true);
+    const trimmedNotes = endNotes.trim();
+    // Captured before endSession(), which clears the active session id.
+    const endingSessionId = sessionId;
     try {
-      const summary = await endSession();
+      // Persist the recap BEFORE the mutation so a dropped network write is
+      // recoverable — the summary screen seeds its editor from this draft when
+      // the server notes come back empty.
+      if (trimmedNotes && endingSessionId) {
+        await setDraftComment(endingSessionId, trimmedNotes);
+      }
+      const summary = await endSession({ notes: trimmedNotes });
       onEndDismiss?.();
       if (summary) {
+        // The recap landed with the session — drop the local draft and clear the
+        // field so a re-open starts empty.
+        if (endingSessionId) void clearDraftComment(endingSessionId);
+        setEndNotes('');
         // Fire the device-local integration exports (Apple Health) before we
         // navigate. Fire-and-forget — the export is async + best-effort and must
         // never block or derail the summary navigation; the registry swallows any
@@ -464,7 +484,7 @@ export function InSessionView({
       // confirm button spinning forever and the sheet undismissable.
       setIsEnding(false);
     }
-  }, [endSession, router, onEndDismiss]);
+  }, [endSession, router, onEndDismiss, endNotes, sessionId]);
 
   // Stable dismiss handler so the always-mounted EndSessionSheet doesn't get a fresh
   // onDismiss ref every render (onEndDismiss is optional, hence the wrapper).
@@ -613,6 +633,8 @@ export function InSessionView({
         onConfirm={() => void handleConfirmEnd()}
         isEnding={isEnding}
         climbCount={sessionHistoryTicks.length}
+        notes={endNotes}
+        onNotesChange={setEndNotes}
       />
     </View>
   );

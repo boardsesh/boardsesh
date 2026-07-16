@@ -190,6 +190,7 @@ export default function SeshSettingsDrawer({
       lastTickAt: stableNow,
       durationMinutes: fallbackDurationMinutes,
       goal: session?.goal ?? null,
+      notes: null,
       ticks: [],
       upvotes: 0,
       downvotes: 0,

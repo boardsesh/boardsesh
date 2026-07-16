@@ -28,6 +28,9 @@ import {
   type BoardseshGradeResponse,
   BOARDSESH_GRADES_FOR_ANGLES,
   type BoardseshGradesForAnglesResponse,
+  UPDATE_SESSION,
+  type UpdateSessionVariables,
+  type UpdateSessionResponse,
 } from '@boardsesh/graphql/operations';
 import {
   GET_FAVORITES,
@@ -768,6 +771,33 @@ export function useEndSession() {
     mutationFn: async (variables: EndSessionMutationVariables) => {
       const response = await getHttpClient().request<EndSessionMutationResponse>(END_SESSION, variables);
       return response.endSession;
+    },
+  });
+}
+
+/**
+ * Edit a session's name and/or notes (the creator-only `updateSession`
+ * mutation). Omitting a field leaves it unchanged; an empty/whitespace value
+ * clears it — the server enforces both. Works on active and ended sessions.
+ *
+ * Invalidation lives on the config-level `onSuccess` (not a per-call callback):
+ * the summary route can navigate away before the mutation resolves, and an
+ * observer-gated `mutate(_, { onSuccess })` would be dropped after unmount.
+ * Refreshes this session's detail + summary caches plus the grouped/activity
+ * feeds, whose rows carry the session's notes.
+ */
+export function useUpdateSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (variables: UpdateSessionVariables) => {
+      const response = await getHttpClient().request<UpdateSessionResponse>(UPDATE_SESSION, variables);
+      return response.updateSession;
+    },
+    onSuccess: (updated) => {
+      void queryClient.invalidateQueries({ queryKey: ['sessionDetail', updated.sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['sessionSummary', updated.sessionId] });
+      void queryClient.invalidateQueries({ queryKey: ['sessionGroupedFeed'] });
+      void queryClient.invalidateQueries({ queryKey: ['activityFeed'] });
     },
   });
 }

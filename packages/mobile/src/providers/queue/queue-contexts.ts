@@ -71,7 +71,12 @@ type QueueContextValue = {
    * see the departure immediately instead of after the disconnect grace timer.
    */
   clearSession: (options?: { notifyServer?: boolean }) => Promise<void>;
-  endSession: () => Promise<SessionSummary | null>;
+  /**
+   * End the active session. An optional recap (`notes`) is trimmed and sent only
+   * when non-empty; the returned SessionSummary echoes it back for the summary
+   * screen. Resolves null when there's no active session or the mutation failed.
+   */
+  endSession: (options?: { notes?: string }) => Promise<SessionSummary | null>;
   /**
    * Explicitly create a session with optional config (name, goal, etc.).
    * Returns the new sessionId, or null if there is no active board or the

@@ -220,7 +220,14 @@
     "effortTitle": "Worth coming back to",
     "effortBody": "That project's not going anywhere. You'll get it.",
     "crew": "The crew",
-    "crewStatLine": "{{sends}} sends · {{flashes}} flashes · {{attempts}} attempts"
+    "crewStatLine": "{{sends}} sends · {{flashes}} flashes · {{attempts}} attempts",
+    "recapTitle": "Recap",
+    "addRecap": "Add a recap",
+    "recapSaveError": "Couldn't save your recap. Try again.",
+    "commentLabel": "Session notes",
+    "commentPlaceholder": "How was the sesh? Add a few words…",
+    "commentHelper": "{{count}}/{{max}}",
+    "commentSaveFailed": "Couldn't save your notes. Try again."
   },
   "overview": {
     "goal": "Goal: {{goal}}"
@@ -385,7 +392,9 @@
       "climbCount_other": "{{count}} climbs",
       "logAscent": "Log ascent",
       "alreadyLogged": "Logged",
-      "dragHandleAria": "Drag to reorder {{name}}"
+      "dragHandleAria": "Drag to reorder {{name}}",
+      "endSessionCommentPlaceholder": "Add a recap — how did it go?",
+      "endSessionCommentAria": "Session recap"
     },
     "queueSheet": {
       "emptyQueue": "Your queue is empty",

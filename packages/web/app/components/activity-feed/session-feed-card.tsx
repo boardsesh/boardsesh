@@ -76,6 +76,7 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
     lastTickAt,
     durationMinutes,
     goal,
+    notes,
     upvotes,
     downvotes,
     commentCount,
@@ -190,6 +191,23 @@ export default function SessionFeedCard({ session }: SessionFeedCardProps) {
                 {goal}
               </Typography>
             </Box>
+          )}
+
+          {/* Recap notes (clamped to two lines) */}
+          {notes && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{
+                mb: 1,
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 2,
+                overflow: 'hidden',
+              }}
+            >
+              {notes}
+            </Typography>
           )}
 
           {/* Stats row */}
