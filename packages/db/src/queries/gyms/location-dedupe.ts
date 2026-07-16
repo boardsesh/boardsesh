@@ -204,6 +204,14 @@ export const GYM_MATCH_GUARDED_DISTANCE_METERS = 150;
  *
  * Kept as an append-only exported constant so it can be shared with the gym
  * dedup admin tooling without a rebase conflict.
+ *
+ * Matching is exact on the whole normalized name, never a substring — so
+ * `Kilter Kingpin` or `Tension Climbing Co` are NOT generic and still dedupe at
+ * 150 m. The trade-off is that a commercial gym named exactly `Tension` or
+ * `Moon` won't auto-merge across providers at the guarded tier; it still merges
+ * at the 20 m tier, and the admin dedup queue catches the rest. Board-brand
+ * names used as a standalone gym name collide across unrelated home setups far
+ * more often than they name a real gym, so this is the safe default.
  */
 export const GENERIC_GYM_NAMES: readonly string[] = [
   'home wall',

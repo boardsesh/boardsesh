@@ -360,7 +360,10 @@ function classifyGymMatch(
   }
 
   // No tier-1 candidate. The DB query already caps distance at the guarded
-  // radius, but re-filter defensively so the tier boundary is enforced here too.
+  // radius, so this filter is a no-op in production — but it keeps the tier
+  // boundary owned here (not split across the query and the classifier) and lets
+  // this function be unit-tested against raw candidate lists without a DB to
+  // enforce the cap.
   const guardedCandidates = candidates.filter(
     (candidate) => candidate.distanceMeters <= GYM_MATCH_GUARDED_DISTANCE_METERS,
   );

@@ -644,6 +644,37 @@ describe('guarded second-tier gym matching', () => {
     );
   });
 
+  it('aliases into a user-owned gym at tier-1 (<=20 m) without touching its metadata', async () => {
+    const { logger, infoCalls } = createFakeLogger();
+    const fakeDb = new FakeLocationSyncDb({
+      physicalCandidates: [candidate({ id: 98, uuid: 'user-owned-close', ownerId: USER_OWNER_ID, distanceMeters: 12 })],
+    });
+
+    const summary = await upsertPublicBoardLocations(
+      fakeDb as unknown as UpsertDb,
+      [
+        locationRecord({
+          sourceKey: 'kilter:board-user-close',
+          gymSourceKey: 'kilter:gym-user-close',
+          gymName: 'Board House',
+        }),
+      ],
+      { logger },
+    );
+
+    expect(summary.gymsUpserted).toBe(1);
+    expect(fakeDb.createdGymWrites).toEqual([]);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'kilter:gym-user-close', gymId: 98 }]);
+    // Owner-curated at any tier: alias written, NO metadata write.
+    expect(fakeDb.gymMetadataWrites).toEqual([]);
+    expect(infoCalls).toContainEqual(
+      expect.objectContaining({
+        message: expect.stringContaining('user-owned gym'),
+        fields: expect.objectContaining({ gymId: 98, ownerId: USER_OWNER_ID, tier: 1 }),
+      }),
+    );
+  });
+
   it('treats a SYSTEM gym with an approved claim as owner-curated (alias, no refresh)', async () => {
     const fakeDb = new FakeLocationSyncDb({
       physicalCandidates: [candidate({ id: 95, uuid: 'claimed-gym', hasApprovedClaim: true, distanceMeters: 10 })],
@@ -704,10 +735,12 @@ describe('guarded second-tier gym matching', () => {
 
     const matchQueryText = fakeDb.executeSqlTexts.find((queryText) => queryText.includes('WITH candidate_gyms'));
     expect(matchQueryText).toBeDefined();
-    // The old owner_id = SYSTEM filter is gone; owner + distance are selected.
+    // The old `owner_id = SYSTEM` filter is gone (user-owned gyms now participate)
+    // and distance is computed for the tier split. The approved-claim and
+    // alias-source-key columns are covered behaviorally by the owner-curated and
+    // same-provider tests above, so this only asserts the two shape changes that
+    // aren't otherwise observable from behavior.
     expect(matchQueryText).not.toMatch(/g\.owner_id = /);
     expect(matchQueryText).toContain('ST_Distance');
-    expect(matchQueryText).toContain('hasApprovedClaim');
-    expect(matchQueryText).toContain('aliasSourceKeys');
   });
 });
