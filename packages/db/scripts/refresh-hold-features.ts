@@ -24,6 +24,7 @@ import { createScriptDb } from './db-connection.js';
 import { users } from '../src/schema/auth/users.js';
 import { boardHoldFeatures } from '../src/schema/app/hold-features.js';
 import { userHoldClassifications } from '../src/schema/app/hold-classifications.js';
+import { climbHoldPlacementMatchSql, moonBoardPlacementCoverageSql } from '../src/queries/climbs/placement-match.js';
 import {
   computeGeometryFeatures,
   estimateHoldDifficulty,
@@ -101,6 +102,11 @@ async function loadPlacements(db: Db, board: string, layout: number): Promise<Pl
 
 /** One graded observation per (climb, angle); the climb's holds are shared across its angles. */
 async function loadStats(db: Db, board: string, layout: number): Promise<StatRow[]> {
+  const placementCoverage = moonBoardPlacementCoverageSql({
+    boardType: sql.raw('c.board_type'),
+    climbUuid: sql.raw('c.uuid'),
+    layoutId: sql.raw('c.layout_id'),
+  });
   return (await db.execute(sql`
     SELECT st.climb_uuid AS climb_uuid, st.difficulty_average AS label, st.ascensionist_count AS n
     FROM board_climb_stats st
@@ -111,14 +117,33 @@ async function loadStats(db: Db, board: string, layout: number): Promise<StatRow
       AND COALESCE(c.is_draft, false) = false
       AND st.ascensionist_count >= ${MIN_ASCENTS}
       AND st.difficulty_average IS NOT NULL
+      AND ${placementCoverage}
   `)) as unknown as StatRow[];
 }
 
 async function loadHolds(db: Db, board: string, layout: number): Promise<HoldRow[]> {
+  const placementMatch = climbHoldPlacementMatchSql({
+    boardType: sql.raw('ch.board_type'),
+    climbHoldId: sql.raw('ch.hold_id'),
+    placementId: sql.raw('p.id'),
+    placementHoleId: sql.raw('p.hole_id'),
+  });
+  const placementCoverage = moonBoardPlacementCoverageSql({
+    boardType: sql.raw('c.board_type'),
+    climbUuid: sql.raw('c.uuid'),
+    layoutId: sql.raw('c.layout_id'),
+  });
   return (await db.execute(sql`
-    SELECT ch.climb_uuid AS climb_uuid, ch.hold_id AS placement_id, ch.hold_state AS hold_state
+    SELECT ch.climb_uuid AS climb_uuid, p.id AS placement_id, ch.hold_state AS hold_state
     FROM board_climb_holds ch
+    JOIN board_climbs c
+      ON c.board_type = ch.board_type AND c.uuid = ch.climb_uuid
+    JOIN board_placements p
+      ON p.board_type = ch.board_type
+      AND p.layout_id = c.layout_id
+      AND ${placementMatch}
     WHERE ch.board_type = ${board}
+      AND c.layout_id = ${layout}
       AND ch.climb_uuid IN (
         SELECT st.climb_uuid
         FROM board_climb_stats st
@@ -129,6 +154,7 @@ async function loadHolds(db: Db, board: string, layout: number): Promise<HoldRow
           AND COALESCE(c.is_draft, false) = false
           AND st.ascensionist_count >= ${MIN_ASCENTS}
           AND st.difficulty_average IS NOT NULL
+          AND ${placementCoverage}
       )
   `)) as unknown as HoldRow[];
 }

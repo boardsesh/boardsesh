@@ -238,6 +238,12 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/db db:backfill-moonboard-set-ids',
         cache: false,
       },
+      // Seeds the relational MoonBoard product/layout/set/hole/placement catalog.
+      // Dry-run by default; pass `-- --apply` for the locked, validated write path.
+      'db:backfill-moonboard-hardware': {
+        command: 'bun run --filter=@boardsesh/db db:backfill-moonboard-hardware',
+        cache: false,
+      },
 
       // --- Codegen (GraphQL types for client + backend resolvers) ---
       // Direct binary invocation — no `bunx` (won't touch the lockfile).

@@ -171,6 +171,7 @@ void describe('createClimbFilters: zone modes', () => {
     assert.match(rendered, /EXISTS/);
     assert.match(rendered, /FROM\s+zone_ch/);
     assert.match(rendered, /JOIN\s+zone_bp/);
+    assert.match(rendered, /zone_bp\.id\s*=\s*zone_ch\.hold_id/);
     assert.match(rendered, /JOIN\s+.*zone_bh/);
     assert.match(rendered, /zone_bp\.set_id IN \(1, 20\)/);
     assert.match(rendered, /zone_bh\.x\s*>?=/);
@@ -187,7 +188,25 @@ void describe('createClimbFilters: zone modes', () => {
     const rendered = sqlToString(filters.zoneConditions[0]);
     assert.match(rendered, /EXISTS/);
     assert.match(rendered, /JOIN\s+zone_bp/);
+    assert.match(rendered, /zone_bp\.hole_id\s*=\s*zone_ch\.hold_id/);
+    assert.match(rendered, /MOD\(\(zone_bp\.hole_id - 1\), 11\)/);
+    assert.match(rendered, /1\.1 \+/);
+    assert.match(rendered, /16\.92 -/);
+    assert.doesNotMatch(rendered, /zone_bh\.x\s*>?=/);
+    assert.doesNotMatch(rendered, /zone_bh\.y\s*>?=/);
     assert.doesNotMatch(rendered, /zone_bp\.set_id IN/);
+  });
+
+  void it('uses Mini MoonBoard calibration for Mini anyHold zones', () => {
+    const filters = createClimbFilters(
+      { board_name: 'moonboard', layout_id: 6, size_id: 1, set_ids: [], angle: 40 },
+      { zoneBox, zoneMode: 'anyHold' },
+    );
+
+    const rendered = sqlToString(filters.zoneConditions[0]);
+    assert.match(rendered, /1\.1517 \+/);
+    assert.match(rendered, /11\.0484 -/);
+    assert.match(rendered, /12 - \(FLOOR/);
   });
 
   void it('omits the set membership predicate for anyHold when non-MoonBoard set_ids are empty', () => {

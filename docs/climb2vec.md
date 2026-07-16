@@ -112,6 +112,16 @@ The job shadow-writes `user_hold_classifications` (hand/foot rating quintiles +
 pull direction) under a reserved `system-hold-classifier` user, reviving the
 dormant per-hold layer with generated data instead of user input.
 
+MoonBoard uses layout-independent grid-cell IDs (`p1` through `p198`) in frames,
+while `board_hold_features` is keyed by physical placement. Its reference data
+therefore assigns each covered layout/cell pair a stable synthetic placement ID
+(`layout_id * 1000 + cell_id`) and keeps `hole_id` as the shared cell ID. Hold
+feature and training queries resolve MoonBoard cells through `(layout_id,
+hole_id)`; Aurora-family boards continue to resolve `hold_id` directly to a
+placement ID. A MoonBoard climb with any cell absent from the authoritative map
+is excluded as a whole instead of being reduced to a partial frame. MoonBoard
+shadow classifications remain disabled until its product-size relations exist.
+
 Run it: `node --import tsx packages/db/scripts/refresh-hold-features.ts --dry-run`
 (`--board=<name>`, `--no-shadow`). Tests:
 `node --import tsx --test packages/db/src/queries/hold-features/__tests__/hold-features.test.ts`.

@@ -466,43 +466,24 @@ export const boardProductSizesLayoutsSets = pgTable(
 
 #### MoonBoard Product Data
 
-Seed data from `packages/web/app/lib/moonboard-config.ts`:
+MoonBoard reference data is derived from `MOONBOARD_LAYOUTS`,
+`MOONBOARD_SETS`, and the generated `MOONBOARD_CELL_SETS` map in
+`@boardsesh/board-config`. Run `vp run db:backfill-moonboard-hardware` for a
+read-only report, then pass `-- --apply` to insert missing exact rows.
 
-```sql
--- MoonBoard product
-INSERT INTO board_products (board_type, id, name, is_listed, min_count_in_frame, max_count_in_frame)
-VALUES ('moonboard', 1, 'MoonBoard', true, 1, 1);
-
--- MoonBoard layouts
-INSERT INTO board_layouts (board_type, id, product_id, name, is_mirrored, is_listed) VALUES
-  ('moonboard', 1, 1, 'MoonBoard 2016', false, true),
-  ('moonboard', 2, 1, 'MoonBoard 2017', false, true),
-  ('moonboard', 3, 1, 'MoonBoard 2019', false, true),
-  ('moonboard', 4, 1, 'MoonBoard 2024', false, true),
-  ('moonboard', 5, 1, 'MoonBoard Masters 2017', false, true),
-  ('moonboard', 6, 1, 'MoonBoard Masters 2019', false, true);
-
--- MoonBoard sets
-INSERT INTO board_sets (board_type, id, name) VALUES
-  ('moonboard', 1, 'MoonBoard Holds A'),
-  ('moonboard', 2, 'MoonBoard Holds B'),
-  ('moonboard', 3, 'MoonBoard Holds C');
-
--- MoonBoard product size (standard 40-degree)
-INSERT INTO board_product_sizes (board_type, id, product_id, name, is_listed)
-VALUES ('moonboard', 1, 1, 'Standard 40', true);
-
--- MoonBoard holes (grid A1-K18, 11 columns x 18 rows = 198 holes)
--- Generated programmatically: id = (row-1)*11 + col
--- See moonboard-config.ts coordinateToHoldId function
-```
+The backfill creates one shared 11 by 18 hole grid (`A1` through `K18`) and one
+placement for every covered layout/cell pair. MoonBoard frame IDs are shared
+cell IDs, so placements use the stable synthetic ID
+`layout_id * 1000 + cell_id`, retain `hole_id = cell_id`, and carry the real
+layout and hold-set IDs. The command is transactional and refuses conflicting
+existing MoonBoard reference rows.
 
 #### Acceptance Criteria
 
 - [x] All 9 tables created with proper foreign keys
 - [x] All kilter and tension data migrated
-- [ ] MoonBoard product/layout/set data seeded (TODO: add in future migration)
-- [ ] MoonBoard holes generated (198 positions) (TODO: add in future migration)
+- [x] MoonBoard product/layout/set data has a repeatable backfill
+- [x] MoonBoard holes and layout-specific placements have a repeatable backfill
 - [x] Foreign key constraints validated
 
 **Status**: ✅ Tables created and kilter/tension data migrated in `0025_shocking_clint_barton.sql`

@@ -29,7 +29,7 @@ export interface ClimbStatLite {
   fingerprint: string | null;
 }
 
-/** A hold on a climb: placement id + the role state from board_climb_holds. */
+/** A hold on a climb after resolving its board-specific storage id to a placement id. */
 export interface HoldLite {
   placement_id: number;
   hold_state: string;

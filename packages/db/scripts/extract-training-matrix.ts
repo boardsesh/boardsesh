@@ -16,6 +16,7 @@ import { mkdirSync, createWriteStream } from 'node:fs';
 import { dirname } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
+import { climbHoldPlacementMatchSql, moonBoardPlacementCoverageSql } from '../src/queries/climbs/placement-match.js';
 import {
   buildTrainingRow,
   type HoldFeatureLite,
@@ -63,6 +64,11 @@ async function loadFeatures(db: Db, board: string): Promise<Map<number, HoldFeat
 async function loadStats(db: Db, options: Options): Promise<ClimbStatLite[]> {
   const angleFilter = options.angle === null ? sql`` : sql`AND st.angle = ${options.angle}`;
   const limitClause = options.limit === null ? sql`` : sql`LIMIT ${options.limit}`;
+  const placementCoverage = moonBoardPlacementCoverageSql({
+    boardType: sql.raw('c.board_type'),
+    climbUuid: sql.raw('c.uuid'),
+    layoutId: sql.raw('c.layout_id'),
+  });
   return (await db.execute(sql`
     SELECT st.climb_uuid AS climb_uuid, st.angle AS angle, COALESCE(st.difficulty_average, 0) AS label,
            COALESCE(st.ascensionist_count, 0) AS n, c.layout_id AS layout_id, c.hold_fingerprint AS fingerprint
@@ -73,15 +79,33 @@ async function loadStats(db: Db, options: Options): Promise<ClimbStatLite[]> {
       AND COALESCE(c.is_draft, false) = false
       ${gradeGate(options)}
       ${angleFilter}
+      AND ${placementCoverage}
     ORDER BY st.climb_uuid, st.angle
     ${limitClause}
   `)) as unknown as ClimbStatLite[];
 }
 
 async function loadHoldsByClimb(db: Db, options: Options): Promise<Map<string, HoldLite[]>> {
+  const placementMatch = climbHoldPlacementMatchSql({
+    boardType: sql.raw('ch.board_type'),
+    climbHoldId: sql.raw('ch.hold_id'),
+    placementId: sql.raw('p.id'),
+    placementHoleId: sql.raw('p.hole_id'),
+  });
+  const placementCoverage = moonBoardPlacementCoverageSql({
+    boardType: sql.raw('c.board_type'),
+    climbUuid: sql.raw('c.uuid'),
+    layoutId: sql.raw('c.layout_id'),
+  });
   const rows = (await db.execute(sql`
-    SELECT ch.climb_uuid AS climb_uuid, ch.hold_id AS placement_id, ch.hold_state AS hold_state
+    SELECT ch.climb_uuid AS climb_uuid, p.id AS placement_id, ch.hold_state AS hold_state
     FROM board_climb_holds ch
+    JOIN board_climbs c
+      ON c.board_type = ch.board_type AND c.uuid = ch.climb_uuid
+    JOIN board_placements p
+      ON p.board_type = ch.board_type
+      AND p.layout_id = c.layout_id
+      AND ${placementMatch}
     WHERE ch.board_type = ${options.board}
       AND ch.climb_uuid IN (
         SELECT st.climb_uuid FROM board_climb_stats st
@@ -90,6 +114,7 @@ async function loadHoldsByClimb(db: Db, options: Options): Promise<Map<string, H
           AND c.is_listed = true
           AND COALESCE(c.is_draft, false) = false
           ${gradeGate(options)}
+          AND ${placementCoverage}
       )
   `)) as unknown as Array<{ climb_uuid: string; placement_id: number; hold_state: string }>;
   const byClimb = new Map<string, HoldLite[]>();

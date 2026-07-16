@@ -20,9 +20,10 @@ import { pgTable, text, integer, doublePrecision, boolean, timestamp, primaryKey
  *      Ons → foot chip). There is NO physical hold shape/size data anywhere in the
  *      DB, so true jug/crimp/sloper is left NULL — a documented ceiling, not a gap.
  *
- * Keyed by PLACEMENT id (the frames `p<id>` value = `board_placements.id`), which
- * is the join spine to climbs: `board_climb_holds.hold_id → board_placements.id`.
- * Placement ids are globally unique within a `board_type`. NOTE this is a
+ * Keyed by PLACEMENT id, which is globally unique within a `board_type`.
+ * Aurora-family frames store that id directly. MoonBoard frames store a shared
+ * grid-cell id, so they resolve to a layout-specific placement through
+ * `(layout_id, board_placements.hole_id)` instead. NOTE this is a
  * different key convention than the dormant `user_hold_classifications.hold_id`
  * (documented there as `board_holes.id`); the shadow-write into that table
  * translates placement → hole via `board_placements`.

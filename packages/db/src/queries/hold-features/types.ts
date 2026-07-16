@@ -7,7 +7,7 @@
 
 /** One placement's identity + raw geometry, as loaded from board_placements ⋈ board_holes. */
 export interface PlacementGeom {
-  /** board_placements.id — the frames `p<id>` value; the join key to climbs. */
+  /** board_placements.id; MoonBoard resolves its frame cell through layout + hole first. */
   placementId: number;
   /** board_placements.hole_id — the physical hole. */
   holeId: number | null;
