@@ -21,7 +21,9 @@ const ROOT_DIR = resolve(__dirname, '..');
 
 const DEFAULT_BACKEND_PORT = 8080;
 const DEFAULT_WEB_PORT = 3000;
-const HEALTH_CHECK_TIMEOUT_MS = 5000;
+// 5s was not enough for a cold tsx boot on a loaded box — the backend came up
+// healthy moments after the orchestrator had already given up and exited.
+const HEALTH_CHECK_TIMEOUT_MS = 60_000;
 const HEALTH_CHECK_INTERVAL_MS = 500;
 const HEALTH_CHECK_MAX_ATTEMPTS = HEALTH_CHECK_TIMEOUT_MS / HEALTH_CHECK_INTERVAL_MS;
 
