@@ -200,6 +200,8 @@ function createAuthAdapter(): Adapter {
 
   return {
     ...base,
+    // DrizzleAdapter always defines createUser (it's a required Adapter method);
+    // the assertion documents that invariant so we can delegate to it.
     createUser: (data: AdapterUser) => base.createUser!({ ...data, email: normalizeEmail(data.email) }),
     getUserByEmail: async (email): Promise<AdapterUser | null> => {
       const db = getDb();

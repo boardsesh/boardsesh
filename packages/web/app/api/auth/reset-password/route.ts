@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql, inArray } from 'drizzle-orm';
 import { normalizeEmail } from '@boardsesh/db/utils';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { getDb } from '@/app/lib/db/db';
 import * as schema from '@/app/lib/db/schema';
 import { checkRateLimit, getClientIp } from '@/app/lib/auth/rate-limiter';
-import { getPasswordResetIdentifier, hashResetToken, consistentDelay } from '@/app/lib/auth/password-reset';
+import {
+  getPasswordResetIdentifier,
+  hashResetToken,
+  consistentDelay,
+  PASSWORD_RESET_IDENTIFIER_PREFIX,
+} from '@/app/lib/auth/password-reset';
 
 const resetPasswordSchema = z
   .object({
@@ -59,6 +64,10 @@ export async function POST(request: NextRequest) {
     const email = normalizeEmail(validationResult.data.email);
     const db = getDb();
     const identifier = getPasswordResetIdentifier(email);
+    // Also match the raw-cased identifier so reset links minted before the
+    // normalization deploy (identifier `password-reset:<original-case>`) still work.
+    const legacyIdentifier = `${PASSWORD_RESET_IDENTIFIER_PREFIX}${validationResult.data.email}`;
+    const candidateIdentifiers = legacyIdentifier === identifier ? [identifier] : [identifier, legacyIdentifier];
     const tokenHash = hashResetToken(token);
 
     const now = new Date();
@@ -67,7 +76,7 @@ export async function POST(request: NextRequest) {
       .from(schema.verificationTokens)
       .where(
         and(
-          eq(schema.verificationTokens.identifier, identifier),
+          inArray(schema.verificationTokens.identifier, candidateIdentifiers),
           eq(schema.verificationTokens.token, tokenHash),
           gt(schema.verificationTokens.expires, now),
         ),
@@ -127,7 +136,9 @@ export async function POST(request: NextRequest) {
         .set({ emailVerified: new Date(), updatedAt: new Date() })
         .where(and(eq(schema.users.id, user[0].id), isNull(schema.users.emailVerified)));
 
-      await tx.delete(schema.verificationTokens).where(eq(schema.verificationTokens.identifier, identifier));
+      await tx
+        .delete(schema.verificationTokens)
+        .where(inArray(schema.verificationTokens.identifier, candidateIdentifiers));
     });
 
     await consistentDelay(startTime, MIN_RESPONSE_TIME_MS);

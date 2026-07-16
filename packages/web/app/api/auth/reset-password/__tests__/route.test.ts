@@ -11,6 +11,7 @@ vi.mock('@/app/lib/auth/rate-limiter', () => ({
 }));
 
 vi.mock('@/app/lib/auth/password-reset', () => ({
+  PASSWORD_RESET_IDENTIFIER_PREFIX: 'password-reset:',
   getPasswordResetIdentifier: (email: string) => `password-reset:${email}`,
   hashResetToken: (token: string) => `sha256:${token}`,
   consistentDelay: async () => {},
