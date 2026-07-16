@@ -19,6 +19,7 @@ import CloseOutlined from '@mui/icons-material/CloseOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useFeatureFlag } from '@/app/components/providers/feature-flags-provider';
 import { GYM_KIOSK_FLAG } from '@/app/flags';
+import type { SearchCategory } from '@/app/components/search-drawer/unified-search-drawer';
 import { useMyGyms } from '@/app/hooks/use-my-gyms';
 import { resolveGymRole, type GymRoleKind } from '@/app/lib/gym-role';
 import { getPreference, setPreference } from '@/app/lib/user-preferences-db';
@@ -32,6 +33,9 @@ const UnifiedSearchDrawer = dynamic(() => import('@/app/components/search-drawer
 });
 
 const DISMISS_PREFERENCE_KEY = 'homeGymCard:dismissed';
+
+// Hoisted so the search drawer gets a stable array reference across renders.
+const GYM_SEARCH_CATEGORIES: SearchCategory[] = ['gyms'];
 
 // Same outlined-card language as the homepage OnboardingCard so the gym card
 // slots into the stack without extra visual weight.
@@ -93,9 +97,16 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
 
   useEffect(() => {
     let cancelled = false;
-    void getPreference<boolean>(DISMISS_PREFERENCE_KEY).then((value) => {
-      if (!cancelled) setDismissed(Boolean(value));
-    });
+    // getPreference already swallows IndexedDB errors and resolves null, but
+    // guard the promise anyway so a rejection can never strand `dismissed` at
+    // null (which would keep the non-owner nudge permanently hidden).
+    void getPreference<boolean>(DISMISS_PREFERENCE_KEY)
+      .then((value) => {
+        if (!cancelled) setDismissed(Boolean(value));
+      })
+      .catch(() => {
+        if (!cancelled) setDismissed(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -212,7 +223,7 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
           open={searchOpen}
           onClose={closeSearch}
           defaultCategory="gyms"
-          allowedCategories={['gyms']}
+          allowedCategories={GYM_SEARCH_CATEGORIES}
           showCloseButton
         />
       )}
