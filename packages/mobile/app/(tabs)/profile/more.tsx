@@ -129,10 +129,6 @@ export default function MoreScreen() {
     }
   };
 
-  const handleSignOut = () => {
-    void confirmSignOut();
-  };
-
   // Live Metro dev-server switching needs expo-dev-client's native launcher, which
   // is only linked into dev-client / Debug builds — never the App Store / TestFlight
   // binary (where it would throw "Dev launcher unavailable"). Show the row only where
@@ -212,9 +208,7 @@ export default function MoreScreen() {
       label: tProfile('mobile.signOut'),
       role: 'destructive',
       emphasis: 'primary',
-      onPress: () => {
-        handleSignOut();
-      },
+      onPress: () => void confirmSignOut(),
     },
     {
       kind: 'button',
