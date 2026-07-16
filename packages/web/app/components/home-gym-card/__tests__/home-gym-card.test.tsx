@@ -123,10 +123,9 @@ describe('HomeGymCard', () => {
     it('renders nothing while the gyms request is still loading', () => {
       mockIsLoading = true;
       mockGyms = [];
-      const { container } = render(<HomeGymCard />);
+      render(<HomeGymCard />);
       expect(screen.queryByTestId('home-gym-card-owner')).toBeNull();
       expect(screen.queryByTestId('home-gym-card-find')).toBeNull();
-      expect(container.querySelector('[data-testid="home-gym-card-owner"]')).toBeNull();
     });
 
     it('renders nothing when the gyms request errored', () => {

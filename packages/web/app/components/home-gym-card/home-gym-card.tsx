@@ -123,6 +123,11 @@ function AuthedHomeGymCard({ currentUserId }: { currentUserId: string | null }) 
           return tCommon('myGyms.roleEditor');
         case 'member':
           return tCommon('myGyms.roleMember');
+        default:
+          // Exhaustiveness guard: a new GymRoleKind fails to type-check here
+          // rather than silently rendering a blank chip.
+          role satisfies never;
+          return '';
       }
     },
     [tCommon],
