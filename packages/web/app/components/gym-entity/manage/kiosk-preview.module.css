@@ -16,7 +16,7 @@
   overflow: hidden;
   border-radius: var(--border-radius-md);
   /* Matches KIOSK_DARK_SURFACE so the frame never flashes a light backdrop. */
-  background: #0e0e0e;
+  background: #110a20;
 }
 
 .stage {

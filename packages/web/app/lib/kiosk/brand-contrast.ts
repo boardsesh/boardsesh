@@ -13,13 +13,13 @@ import { contrastRatio, readableTextColor } from '@boardsesh/board-constants';
  * token in `app/components/index.css` — kept as a literal here because the
  * contrast math needs a concrete hex at render time, not a CSS var reference.
  */
-export const KIOSK_DARK_SURFACE = '#0e0e0e';
+export const KIOSK_DARK_SURFACE = '#110a20';
 
 /**
- * Accent when the gym set no brand colours (or only invalid ones): the warm
- * cream brand-primary from the dark theme (`--bs-text-brand-primary`).
+ * Accent when the gym set no brand colours (or only invalid ones): the cool
+ * near-white brand-primary from the dark theme (`--bs-text-brand-primary`).
  */
-export const KIOSK_DEFAULT_ACCENT = '#f4f1ea';
+export const KIOSK_DEFAULT_ACCENT = '#f5f2fb';
 
 /**
  * WCAG-ish floor for the accent against the dark surface. 3:1 is the

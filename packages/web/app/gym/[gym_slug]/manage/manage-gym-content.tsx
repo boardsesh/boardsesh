@@ -109,7 +109,7 @@ export default function ManageGymContent({ initialGym }: { initialGym: Gym }) {
                 setPendingNavigation(decision.pending);
               }
             }}
-            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: themeTokens.colors.primary }}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'var(--color-primary)' }}
           >
             <ArrowBackOutlined sx={{ fontSize: 16 }} />
             {t('manage.backToGym')}

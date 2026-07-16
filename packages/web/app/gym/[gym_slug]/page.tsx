@@ -141,7 +141,7 @@ export default async function GymPage(props: GymRouteProps) {
       )}
       <Container maxWidth="md" sx={{ py: 4, pt: 'calc(var(--global-header-height) + 32px)' }}>
         <Box sx={{ mb: 2 }}>
-          <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: themeTokens.colors.primary }}>
+          <MuiLink component={LocaleLink} href="/" underline="hover" sx={{ color: 'var(--color-primary)' }}>
             {t('gymPage.breadcrumbHome')}
           </MuiLink>
         </Box>
@@ -194,7 +194,7 @@ export default async function GymPage(props: GymRouteProps) {
               target="_blank"
               rel="noopener noreferrer"
               underline="hover"
-              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: themeTokens.colors.primary }}
+              sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, color: 'var(--color-primary)' }}
             >
               <LanguageOutlined sx={{ fontSize: 18 }} />
               {t('gymPage.visitWebsite')}
@@ -231,7 +231,7 @@ export default async function GymPage(props: GymRouteProps) {
                   component={LocaleLink}
                   href={`/b/${board.slug}`}
                   underline="hover"
-                  sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: themeTokens.colors.primary }}
+                  sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 1, color: 'var(--color-primary)' }}
                 >
                   <Typography component="span" sx={{ fontWeight: themeTokens.typography.fontWeight.semibold }}>
                     {board.name}
@@ -246,7 +246,7 @@ export default async function GymPage(props: GymRouteProps) {
         )}
 
         <Box sx={{ mt: 4 }}>
-          <MuiLink component={LocaleLink} href="/feed" underline="hover" sx={{ color: themeTokens.colors.primary }}>
+          <MuiLink component={LocaleLink} href="/feed" underline="hover" sx={{ color: 'var(--color-primary)' }}>
             {t('gymPage.exploreFeed')}
           </MuiLink>
         </Box>

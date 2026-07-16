@@ -10,7 +10,7 @@ import {
 
 describe('ensureReadableOnSurface', () => {
   it('returns an already-readable colour unchanged (normalised to #rrggbb)', () => {
-    expect(ensureReadableOnSurface('#F4F1EA', KIOSK_DARK_SURFACE, KIOSK_MIN_ACCENT_CONTRAST)).toBe('#f4f1ea');
+    expect(ensureReadableOnSurface('#F5F2FB', KIOSK_DARK_SURFACE, KIOSK_MIN_ACCENT_CONTRAST)).toBe('#f5f2fb');
   });
 
   it('expands 3-digit hex', () => {
@@ -42,8 +42,8 @@ describe('ensureReadableOnSurface', () => {
 
 describe('resolveKioskBrand', () => {
   it('prefers the accent colour over the primary colour', () => {
-    const brand = resolveKioskBrand({ brandAccentColor: '#f4f1ea', brandPrimaryColor: '#ffffff' });
-    expect(brand.accent).toBe('#f4f1ea');
+    const brand = resolveKioskBrand({ brandAccentColor: '#7cd6c4', brandPrimaryColor: '#ffffff' });
+    expect(brand.accent).toBe('#7cd6c4');
   });
 
   it('falls back to the primary colour when no accent is set', () => {
@@ -67,10 +67,10 @@ describe('resolveKioskBrand', () => {
   });
 
   it('derives a readable on-accent text colour', () => {
-    const lightAccent = resolveKioskBrand({ brandAccentColor: '#f4f1ea' });
+    const lightAccent = resolveKioskBrand({ brandAccentColor: KIOSK_DEFAULT_ACCENT });
     expect(lightAccent.onAccent).toBe(readableDarkText);
 
-    const midAccent = resolveKioskBrand({ brandAccentColor: '#b8524c' });
+    const midAccent = resolveKioskBrand({ brandAccentColor: '#3d6b8c' });
     expect([readableDarkText, readableLightText]).toContain(midAccent.onAccent);
     expect(contrastRatio(midAccent.onAccent, midAccent.accent)!).toBeGreaterThan(1);
   });

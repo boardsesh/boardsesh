@@ -49,7 +49,7 @@ export default async function AdminGymClaimsPage() {
           {t('gymClaims.title')}
         </Typography>
         <Box sx={{ mb: 3 }}>
-          <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: themeTokens.colors.primary }}>
+          <MuiLink component={LocaleLink} href="/admin" underline="hover" sx={{ color: 'var(--color-primary)' }}>
             {t('gymClaims.backToAdmin')}
           </MuiLink>
         </Box>
