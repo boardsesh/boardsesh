@@ -21,9 +21,9 @@
   "nav": {
     "retention": "Tableau de rétention",
     "gymClaims": "Revendications de salles",
-    "feedback": "Rapports de bugs"
+    "feedback": "Rapports de bugs",
+    "gymDuplicates": "Salles en double"
   },
-
   "feedback": {
     "title": "Bugs et retours",
     "subtitle": "Bugs et évaluations depuis l'app. Filtrez, trouvez l'e-mail de l'auteur et marquez-les comme résolus.",
@@ -244,5 +244,58 @@
       "actions": "Actions"
     },
     "loadMore": "Charger plus"
+  },
+  "gymDuplicates": {
+    "title": "Salles en double",
+    "backToAdmin": "Retour à l’administration",
+    "heading": "File de révision des doublons",
+    "tabs": {
+      "duplicates": "Doublons",
+      "orphans": "Audit des orphelines"
+    },
+    "tier": {
+      "a": "Correspondance exacte",
+      "b": "Correspondance proche"
+    },
+    "maxDistance": "Jusqu’à {{meters}} m d’écart",
+    "owner": {
+      "system": "Système",
+      "user": "D’un utilisateur"
+    },
+    "claim": {
+      "pending": "Revendication en attente",
+      "approved": "Revendication approuvée"
+    },
+    "counts": "{{boards}} boards · {{follows}} abonnés · {{members}} membres · {{kiosks}} kiosques · {{claims}} revendications",
+    "orphanCounts": "{{boards}} boards · {{follows}} abonnés · {{members}} membres · {{kiosks}} kiosques",
+    "distance": "à {{meters}} m de la salle conservée",
+    "merge": "Fusionner",
+    "dismiss": "Pas un doublon",
+    "confirm": {
+      "title": "Fusionner ces salles ?",
+      "body": "Cela regroupe {{count}} salles en double dans {{canonical}} et lui rattache {{boards}} boards, {{follows}} abonnés, {{members}} membres, {{kiosks}} kiosques et {{claims}} revendications. Action irréversible.",
+      "cancel": "Annuler",
+      "confirm": "Fusionner",
+      "overrideWarning": "Attention : vous gardez une fiche système comme survivante face à une salle détenue ou revendiquée par quelqu'un. Sa salle sera fusionnée dans celle du système. Ne le faites que si la fiche système est vraiment la bonne.",
+      "confirmOverride": "Fusionner quand même"
+    },
+    "kioskWarning": "Le kiosque « {{name}} » est passé de /{{previous}} à /{{next}}",
+    "snackbar": {
+      "merged": "Salles fusionnées",
+      "mergeFailed": "Impossible de fusionner les salles",
+      "dismissed": "Marqué comme non-doublon",
+      "dismissFailed": "Impossible d’écarter le groupe"
+    },
+    "empty": "Aucun doublon à réviser",
+    "error": "Impossible de charger les doublons. Réessaie.",
+    "retry": "Réessayer",
+    "loadMore": "Charger plus",
+    "orphans": {
+      "summary": "{{count}} salles gérées par le système sans source de synchronisation de localisation",
+      "empty": "Aucune salle orpheline",
+      "name": "Salle",
+      "address": "Adresse",
+      "counts": "Totaux"
+    }
   }
 }

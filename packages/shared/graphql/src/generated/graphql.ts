@@ -1616,6 +1616,14 @@ export type DiscoverableSession = {
   participantCount: Scalars['Int']['output'];
 };
 
+/** Input for dismissing a candidate cluster (marks it not-a-duplicate; hides it from the queue). */
+export type DismissGymClusterInput = {
+  /** The suggested canonical member, recorded on the dismissal audit row. */
+  canonicalGymUuid: Scalars['ID']['input'];
+  /** All member gym UUIDs of the cluster (order-independent; used to compute the signature). */
+  gymUuids: Array<Scalars['ID']['input']>;
+};
+
 /**
  * DEPRECATED. Sessions are always-live; there is no wall driver. This type and its
  * SessionEvent union membership are kept purely so stale clients (cached web bundles,
@@ -1636,6 +1644,93 @@ export type DriverChanged = {
   driverParticipantId?: Maybe<Scalars['ID']['output']>;
   previousDriverParticipantId?: Maybe<Scalars['ID']['output']>;
 };
+
+/** How tightly a candidate duplicate cluster's members sit together. */
+export type DuplicateClusterTier =
+  /** Every member within 20 m — almost certainly the same wall. */
+  | 'A'
+  /** Members within 150 m — the observed cross-provider coordinate-drift band. */
+  | 'B';
+
+/** A candidate cluster of live gym rows that look like the same physical location. */
+export type DuplicateGymCluster = {
+  __typename?: 'DuplicateGymCluster';
+  /** Largest pairwise distance in metres between any two members. */
+  maxDistanceMeters: Scalars['Float']['output'];
+  /** The cluster's member rows. */
+  members: Array<DuplicateGymMember>;
+  /** The shared normalized name. */
+  normalizedName: Scalars['String']['output'];
+  /** Stable identity (hash of the sorted member gym ids). Dismissals key on this. */
+  signature: Scalars['String']['output'];
+  /** The rule's suggested canonical survivor (an admin may override). */
+  suggestedCanonicalGymUuid: Scalars['ID']['output'];
+  /** How tightly the members sit together. */
+  tier: DuplicateClusterTier;
+};
+
+/** Paginated list of candidate duplicate clusters. */
+export type DuplicateGymClusterConnection = {
+  __typename?: 'DuplicateGymClusterConnection';
+  /** The clusters. */
+  clusters: Array<DuplicateGymCluster>;
+  /** Whether more clusters are available. */
+  hasMore: Scalars['Boolean']['output'];
+  /** Total number of clusters (after dismissals are excluded). */
+  totalCount: Scalars['Int']['output'];
+};
+
+/** Input for listing candidate duplicate clusters (admin only). */
+export type DuplicateGymClustersInput = {
+  /** Max clusters to return. */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Offset for pagination. */
+  offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** One gym row inside a candidate duplicate cluster, with the signals an admin needs to pick the survivor. */
+export type DuplicateGymMember = {
+  __typename?: 'DuplicateGymMember';
+  /** Physical address (if known). */
+  address?: Maybe<Scalars['String']['output']>;
+  /** Linked, non-deleted boards. */
+  boardCount: Scalars['Int']['output'];
+  /** Ownership claims on file (any status). */
+  claimCount: Scalars['Int']['output'];
+  /** Strongest ownership-claim state on this row. */
+  claimStatus: GymClusterClaimStatus;
+  /** When created. */
+  createdAt: Scalars['String']['output'];
+  /** Distance in metres from this row to the cluster's suggested canonical survivor. */
+  distanceToCanonicalMeters: Scalars['Float']['output'];
+  /** Followers. */
+  followerCount: Scalars['Int']['output'];
+  /** Gym UUID (always a live, canonical row). */
+  gymUuid: Scalars['ID']['output'];
+  /** Whether the rule pre-selects this row as the canonical survivor (claimed/user-owned over system, then completeness/oldest). */
+  isSuggestedCanonical: Scalars['Boolean']['output'];
+  /** Live kiosks. */
+  kioskCount: Scalars['Int']['output'];
+  /** GPS latitude. */
+  latitude: Scalars['Float']['output'];
+  /** GPS longitude. */
+  longitude: Scalars['Float']['output'];
+  /** Members. */
+  memberCount: Scalars['Int']['output'];
+  /** Gym name. */
+  name: Scalars['String']['output'];
+  /** Whether the system import user or a real user owns this row. */
+  ownerType: DuplicateGymOwnerType;
+  /** Distinct location-sync provider origins (source_key prefixes: kilter, tension, ...). */
+  providerOrigins: Array<Scalars['String']['output']>;
+};
+
+/** Who owns a gym row in the duplicate queue: the system import user, or a real person. (Distinct from GymOwnerType, which the similar-gyms search uses with SYSTEM/USER casing.) */
+export type DuplicateGymOwnerType =
+  /** Owned by the system import user (a synced public listing). */
+  | 'system'
+  /** Owned by a real Boardsesh user. */
+  | 'user';
 
 /**
  * Response containing events since a given sequence number.
@@ -2263,6 +2358,15 @@ export type GymClaimRequestStatus =
 
 export type GymClaimStatus = 'approved' | 'denied' | 'expired' | 'pending';
 
+/** The strongest ownership-claim state on a gym row. */
+export type GymClusterClaimStatus =
+  /** A claim was approved (ownership transferred). */
+  | 'approved'
+  /** No claim on file. */
+  | 'none'
+  /** A claim is awaiting review or verification. */
+  | 'pending';
+
 /** Paginated list of gyms. */
 export type GymConnection = {
   __typename?: 'GymConnection';
@@ -2408,6 +2512,34 @@ export type GymMembersInput = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   /** Offset for pagination */
   offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** What one duplicate merge re-pointed onto the canonical gym. */
+export type GymMergeCounts = {
+  __typename?: 'GymMergeCounts';
+  /** Boards moved. */
+  boards: Scalars['Int']['output'];
+  /** Claims moved onto the canonical. */
+  claims: Scalars['Int']['output'];
+  /** Comments moved. */
+  comments: Scalars['Int']['output'];
+  /** Follows moved (deduped). */
+  follows: Scalars['Int']['output'];
+  /** Kiosks moved. */
+  kiosks: Scalars['Int']['output'];
+  /** Members moved (deduped). */
+  members: Scalars['Int']['output'];
+};
+
+/** The result of folding one duplicate into the canonical. */
+export type GymMergeDuplicateResult = {
+  __typename?: 'GymMergeDuplicateResult';
+  /** What moved. */
+  counts: GymMergeCounts;
+  /** The duplicate that was merged. */
+  duplicateGymUuid: Scalars['ID']['output'];
+  /** Kiosk slug changes the admin must surface. */
+  warnings: Array<KioskSlugWarning>;
 };
 
 /** Where a gym came from: an upstream provider sync or a Boardsesh user. */
@@ -2618,6 +2750,19 @@ export type KioskHeartbeatInput = {
   viewportWidth?: InputMaybe<Scalars['Int']['input']>;
 };
 
+/** A kiosk whose slug had to change during a merge — its printed install QR must be reprinted. */
+export type KioskSlugWarning = {
+  __typename?: 'KioskSlugWarning';
+  /** Kiosk name. */
+  kioskName: Scalars['String']['output'];
+  /** Kiosk UUID. */
+  kioskUuid: Scalars['ID']['output'];
+  /** Slug after the merge (suffixed to avoid a collision on the canonical gym). */
+  newSlug: Scalars['String']['output'];
+  /** Slug before the merge. */
+  previousSlug: Scalars['String']['output'];
+};
+
 /** Statistics for a specific board layout. */
 export type LayoutStats = {
   __typename?: 'LayoutStats';
@@ -2687,6 +2832,25 @@ export type LinkBoardToGymInput = {
   boardUuid: Scalars['ID']['input'];
   /** Gym UUID (null to unlink) */
   gymUuid?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Input for merging duplicate gyms into a canonical survivor (admin only). */
+export type MergeGymsInput = {
+  /** Explicit acknowledgement required to keep a SYSTEM listing as the survivor over a user-owned or claim-approved duplicate. Rejected without it. */
+  allowSystemCanonicalOverride?: InputMaybe<Scalars['Boolean']['input']>;
+  /** The survivor gym UUID. */
+  canonicalGymUuid: Scalars['ID']['input'];
+  /** The gym UUIDs to fold into the survivor. */
+  duplicateGymUuids: Array<Scalars['ID']['input']>;
+};
+
+/** The result of a mergeGyms call — one entry per merged duplicate. */
+export type MergeGymsResult = {
+  __typename?: 'MergeGymsResult';
+  /** The survivor gym UUID. */
+  canonicalGymUuid: Scalars['ID']['output'];
+  /** Per-duplicate outcomes. */
+  results: Array<GymMergeDuplicateResult>;
 };
 
 export type MoonBoardClimbDuplicateCandidateInput = {
@@ -2826,6 +2990,11 @@ export type Mutation = {
    */
   disconnectIntegration: Scalars['Boolean']['output'];
   /**
+   * Dismiss a candidate duplicate cluster (admin only). Records that the cluster is
+   * not a duplicate so the review queue hides it. Touches no gym row.
+   */
+  dismissGymCluster: Scalars['Boolean']['output'];
+  /**
    * End a session (active participant only). The optional `notes` is a
    * free-text end-of-session recap persisted on the session and echoed back on
    * the returned SessionSummary.
@@ -2877,6 +3046,14 @@ export type Mutation = {
   markGroupNotificationsRead: Scalars['Int']['output'];
   /** Mark a notification as read. */
   markNotificationRead: Scalars['Boolean']['output'];
+  /**
+   * Fold one or more duplicate gyms into a canonical survivor (admin only). Every
+   * duplicate's boards, follows, members, claims, kiosks, comments, feed items,
+   * notifications, and votes re-point to the survivor, then each duplicate is
+   * soft-deleted with a pointer to it. Returns per-duplicate moved counts and any
+   * kiosk-slug-change warnings.
+   */
+  mergeGyms: MergeGymsResult;
   /** Toggle mirrored display for the current climb. */
   mirrorCurrentClimb?: Maybe<ClimbQueueItem>;
   navigateQueue?: Maybe<ClimbQueueItem>;
@@ -3303,6 +3480,11 @@ export type MutationDisconnectIntegrationArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationDismissGymClusterArgs = {
+  input: DismissGymClusterInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationEndSessionArgs = {
   notes?: InputMaybe<Scalars['String']['input']>;
   sessionId: Scalars['ID']['input'];
@@ -3381,6 +3563,11 @@ export type MutationMarkGroupNotificationsReadArgs = {
 /** Root mutation type for all write operations. */
 export type MutationMarkNotificationReadArgs = {
   notificationUuid: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationMergeGymsArgs = {
+  input: MergeGymsInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -3876,6 +4063,48 @@ export type NotificationType =
   | 'vote_on_comment'
   | 'vote_on_tick';
 
+/** An alias-less, system-owned live gym with no location-sync source — an orphan for the audit list. */
+export type OrphanGym = {
+  __typename?: 'OrphanGym';
+  /** Physical address (if known). */
+  address?: Maybe<Scalars['String']['output']>;
+  /** Linked, non-deleted boards. */
+  boardCount: Scalars['Int']['output'];
+  /** When created. */
+  createdAt: Scalars['String']['output'];
+  /** Followers. */
+  followerCount: Scalars['Int']['output'];
+  /** Gym UUID. */
+  gymUuid: Scalars['ID']['output'];
+  /** Live kiosks. */
+  kioskCount: Scalars['Int']['output'];
+  /** Members. */
+  memberCount: Scalars['Int']['output'];
+  /** Gym name. */
+  name: Scalars['String']['output'];
+  /** URL slug (null when unset — link via the uuid instead). */
+  slug?: Maybe<Scalars['String']['output']>;
+};
+
+/** Paginated list of orphan gyms (list-only, no actions). */
+export type OrphanGymConnection = {
+  __typename?: 'OrphanGymConnection';
+  /** The orphan gyms. */
+  gyms: Array<OrphanGym>;
+  /** Whether more orphan gyms are available. */
+  hasMore: Scalars['Boolean']['output'];
+  /** Total number of orphan gyms. */
+  totalCount: Scalars['Int']['output'];
+};
+
+/** Input for the orphan-gym audit list (admin only). */
+export type OrphanGymsInput = {
+  /** Max gyms to return. */
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  /** Offset for pagination. */
+  offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
 /**
  * A live per-PR OTA preview channel. Switching a store/TestFlight build onto one
  * loads that pull request's JS bundle before it ships, with no new build. The
@@ -4363,6 +4592,12 @@ export type Query = {
   /** Discover public playlists with at least 1 climb. */
   discoverPlaylists: DiscoverPlaylistsResult;
   /**
+   * Candidate duplicate-gym clusters for the /admin/gym-duplicates review queue
+   * (admin only). Tiered by how tightly members sit together (A: within 20 m,
+   * B: within 150 m). Clusters an admin has dismissed are excluded. Paginated.
+   */
+  duplicateGymClusters: DuplicateGymClusterConnection;
+  /**
    * Get buffered events since a sequence number for delta sync.
    * Used to catch up after reconnection without full state transfer.
    */
@@ -4523,6 +4758,11 @@ export type Query = {
   newClimbFeed: NewClimbFeedResult;
   /** Get notifications for the current user. */
   notifications: NotificationConnection;
+  /**
+   * Alias-less, system-owned live gyms with no location-sync source — the orphan
+   * audit list (admin only). List-only; no bulk action.
+   */
+  orphanGyms: OrphanGymConnection;
   /**
    * Live per-PR OTA preview channels a user can switch a store/TestFlight build
    * onto to try a pull request before it ships. Public — no authentication.
@@ -4922,6 +5162,11 @@ export type QueryDiscoverPlaylistsArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryDuplicateGymClustersArgs = {
+  input?: InputMaybe<DuplicateGymClustersInput>;
+};
+
+/** Root query type for all read operations. */
 export type QueryEventsReplayArgs = {
   sessionId: Scalars['ID']['input'];
   sinceSequence: Scalars['Int']['input'];
@@ -5063,6 +5308,11 @@ export type QueryNotificationsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   offset?: InputMaybe<Scalars['Int']['input']>;
   unreadOnly?: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+/** Root query type for all read operations. */
+export type QueryOrphanGymsArgs = {
+  input?: InputMaybe<OrphanGymsInput>;
 };
 
 /** Root query type for all read operations. */

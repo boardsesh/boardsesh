@@ -262,3 +262,115 @@ export type GymStatsInput = {
   gymUuid: string;
   period?: GymStatsPeriod;
 };
+
+// ============================================
+// Gym duplicate review (admin)
+// ============================================
+
+// Distinct from the similar-gyms search's GymOwnerType ('SYSTEM' | 'USER').
+export type DuplicateGymOwnerType = 'system' | 'user';
+
+export type GymClusterClaimStatus = 'none' | 'pending' | 'approved';
+
+export type DuplicateClusterTier = 'A' | 'B';
+
+export type DuplicateGymMember = {
+  gymUuid: string;
+  name: string;
+  address?: string | null;
+  ownerType: DuplicateGymOwnerType;
+  claimStatus: GymClusterClaimStatus;
+  providerOrigins: string[];
+  boardCount: number;
+  followerCount: number;
+  memberCount: number;
+  kioskCount: number;
+  claimCount: number;
+  createdAt: string;
+  latitude: number;
+  longitude: number;
+  distanceToCanonicalMeters: number;
+  isSuggestedCanonical: boolean;
+};
+
+export type DuplicateGymCluster = {
+  signature: string;
+  tier: DuplicateClusterTier;
+  normalizedName: string;
+  suggestedCanonicalGymUuid: string;
+  maxDistanceMeters: number;
+  members: DuplicateGymMember[];
+};
+
+export type DuplicateGymClusterConnection = {
+  clusters: DuplicateGymCluster[];
+  totalCount: number;
+  hasMore: boolean;
+};
+
+export type DuplicateGymClustersInput = {
+  limit?: number;
+  offset?: number;
+};
+
+export type OrphanGym = {
+  gymUuid: string;
+  slug?: string | null;
+  name: string;
+  address?: string | null;
+  boardCount: number;
+  followerCount: number;
+  memberCount: number;
+  kioskCount: number;
+  createdAt: string;
+};
+
+export type OrphanGymConnection = {
+  gyms: OrphanGym[];
+  totalCount: number;
+  hasMore: boolean;
+};
+
+export type OrphanGymsInput = {
+  limit?: number;
+  offset?: number;
+};
+
+export type MergeGymsInput = {
+  canonicalGymUuid: string;
+  duplicateGymUuids: string[];
+  /** Explicit acknowledgement to keep a SYSTEM listing as the survivor over a user-owned/claim-approved duplicate. */
+  allowSystemCanonicalOverride?: boolean;
+};
+
+export type KioskSlugWarning = {
+  kioskUuid: string;
+  kioskName: string;
+  previousSlug: string;
+  newSlug: string;
+};
+
+export type GymMergeCounts = {
+  boards: number;
+  follows: number;
+  members: number;
+  claims: number;
+  kiosks: number;
+  comments: number;
+};
+
+export type GymMergeDuplicateResult = {
+  duplicateGymUuid: string;
+  counts: GymMergeCounts;
+  warnings: KioskSlugWarning[];
+};
+
+export type MergeGymsResult = {
+  canonicalGymUuid: string;
+  results: GymMergeDuplicateResult[];
+};
+
+export type DismissGymClusterInput = {
+  gymUuids: string[];
+  canonicalGymUuid: string;
+};

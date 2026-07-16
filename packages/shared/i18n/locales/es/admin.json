@@ -120,9 +120,9 @@
   "nav": {
     "retention": "Panel de retención",
     "gymClaims": "Reclamaciones de gimnasios",
-    "feedback": "Reportes de errores"
+    "feedback": "Reportes de errores",
+    "gymDuplicates": "Gimnasios duplicados"
   },
-
   "feedback": {
     "title": "Errores y comentarios",
     "subtitle": "Errores y valoraciones desde la app. Filtra, encuentra el correo de quien lo reportó y márcalos como resueltos.",
@@ -244,5 +244,58 @@
       "actions": "Acciones"
     },
     "loadMore": "Cargar más"
+  },
+  "gymDuplicates": {
+    "title": "Gimnasios duplicados",
+    "backToAdmin": "Volver al panel",
+    "heading": "Cola de revisión de duplicados",
+    "tabs": {
+      "duplicates": "Duplicados",
+      "orphans": "Auditoría de huérfanos"
+    },
+    "tier": {
+      "a": "Coincidencia exacta",
+      "b": "Coincidencia aproximada"
+    },
+    "maxDistance": "Hasta {{meters}} m de distancia",
+    "owner": {
+      "system": "Sistema",
+      "user": "De un usuario"
+    },
+    "claim": {
+      "pending": "Reclamación pendiente",
+      "approved": "Reclamación aprobada"
+    },
+    "counts": "{{boards}} plafones · {{follows}} seguidores · {{members}} miembros · {{kiosks}} kioscos · {{claims}} reclamaciones",
+    "orphanCounts": "{{boards}} plafones · {{follows}} seguidores · {{members}} miembros · {{kiosks}} kioscos",
+    "distance": "a {{meters}} m del superviviente",
+    "merge": "Fusionar",
+    "dismiss": "No es un duplicado",
+    "confirm": {
+      "title": "¿Fusionar estos gimnasios?",
+      "body": "Esto une {{count}} gimnasios duplicados en {{canonical}} y le mueve {{boards}} plafones, {{follows}} seguidores, {{members}} miembros, {{kiosks}} kioscos y {{claims}} reclamaciones. No se puede deshacer.",
+      "cancel": "Cancelar",
+      "confirm": "Fusionar",
+      "overrideWarning": "Atención: vas a conservar una ficha del sistema como superviviente frente a un gimnasio que alguien posee o ha reclamado. Su gimnasio se fusionará con el del sistema. Hazlo solo si la ficha del sistema es realmente la correcta.",
+      "confirmOverride": "Fusionar de todos modos"
+    },
+    "kioskWarning": "El kiosco «{{name}}» pasó de /{{previous}} a /{{next}}",
+    "snackbar": {
+      "merged": "Gimnasios fusionados",
+      "mergeFailed": "No se pudieron fusionar los gimnasios",
+      "dismissed": "Marcado como no duplicado",
+      "dismissFailed": "No se pudo descartar el grupo"
+    },
+    "empty": "No hay duplicados para revisar",
+    "error": "No se pudieron cargar los duplicados. Inténtalo de nuevo.",
+    "retry": "Reintentar",
+    "loadMore": "Cargar más",
+    "orphans": {
+      "summary": "{{count}} gimnasios del sistema sin fuente de sincronización de ubicación",
+      "empty": "No hay gimnasios huérfanos",
+      "name": "Gimnasio",
+      "address": "Dirección",
+      "counts": "Totales"
+    }
   }
 }

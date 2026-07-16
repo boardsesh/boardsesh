@@ -24,4 +24,22 @@ test('no args is a dry-run (apply stays false)', () => {
   assert.equal(parsed.apply, false);
   assert.equal(parsed.limit, null);
   assert.equal(parsed.onlyName, null);
+  assert.equal(parsed.backfillPointers, false);
+});
+
+test('--backfill-pointers selects the pointer-backfill mode (dry-run by default)', () => {
+  const parsed = parseArgs(['--backfill-pointers']);
+  assert.equal(parsed.backfillPointers, true);
+  assert.equal(parsed.apply, false);
+});
+
+test('--backfill-pointers --apply enables the backfill write path', () => {
+  const parsed = parseArgs(['--backfill-pointers', '--apply']);
+  assert.equal(parsed.backfillPointers, true);
+  assert.equal(parsed.apply, true);
+});
+
+test('backfill defaults to SYSTEM-owned twins unless --include-non-system-twins is passed', () => {
+  assert.equal(parseArgs(['--backfill-pointers']).includeNonSystemTwins, false);
+  assert.equal(parseArgs(['--backfill-pointers', '--include-non-system-twins']).includeNonSystemTwins, true);
 });

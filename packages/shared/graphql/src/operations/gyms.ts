@@ -24,6 +24,13 @@ import type {
   UserBoard,
   GymStats,
   GymStatsInput,
+  DuplicateGymClustersInput,
+  DuplicateGymClusterConnection,
+  OrphanGymsInput,
+  OrphanGymConnection,
+  MergeGymsInput,
+  MergeGymsResult,
+  DismissGymClusterInput,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -312,6 +319,99 @@ export const PENDING_GYM_CLAIMS = gql`
 `;
 
 // ============================================
+// Gym Duplicate Review Admin Queue
+// ============================================
+
+const DUPLICATE_GYM_CLUSTER_FIELDS = `
+  signature
+  tier
+  normalizedName
+  suggestedCanonicalGymUuid
+  maxDistanceMeters
+  members {
+    gymUuid
+    name
+    address
+    ownerType
+    claimStatus
+    providerOrigins
+    boardCount
+    followerCount
+    memberCount
+    kioskCount
+    claimCount
+    createdAt
+    latitude
+    longitude
+    distanceToCanonicalMeters
+    isSuggestedCanonical
+  }
+`;
+
+export const DUPLICATE_GYM_CLUSTERS = gql`
+  query DuplicateGymClusters($input: DuplicateGymClustersInput) {
+    duplicateGymClusters(input: $input) {
+      clusters {
+        ${DUPLICATE_GYM_CLUSTER_FIELDS}
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
+export const ORPHAN_GYMS = gql`
+  query OrphanGyms($input: OrphanGymsInput) {
+    orphanGyms(input: $input) {
+      gyms {
+        gymUuid
+        slug
+        name
+        address
+        boardCount
+        followerCount
+        memberCount
+        kioskCount
+        createdAt
+      }
+      totalCount
+      hasMore
+    }
+  }
+`;
+
+export const MERGE_GYMS = gql`
+  mutation MergeGyms($input: MergeGymsInput!) {
+    mergeGyms(input: $input) {
+      canonicalGymUuid
+      results {
+        duplicateGymUuid
+        counts {
+          boards
+          follows
+          members
+          claims
+          kiosks
+          comments
+        }
+        warnings {
+          kioskUuid
+          kioskName
+          previousSlug
+          newSlug
+        }
+      }
+    }
+  }
+`;
+
+export const DISMISS_GYM_CLUSTER = gql`
+  mutation DismissGymCluster($input: DismissGymClusterInput!) {
+    dismissGymCluster(input: $input)
+  }
+`;
+
+// ============================================
 // Query/Mutation Variable Types
 // ============================================
 
@@ -481,4 +581,36 @@ export type PendingGymClaimsQueryVariables = {
 
 export type PendingGymClaimsQueryResponse = {
   pendingGymClaims: GymClaimConnection;
+};
+
+export type DuplicateGymClustersQueryVariables = {
+  input?: DuplicateGymClustersInput;
+};
+
+export type DuplicateGymClustersQueryResponse = {
+  duplicateGymClusters: DuplicateGymClusterConnection;
+};
+
+export type OrphanGymsQueryVariables = {
+  input?: OrphanGymsInput;
+};
+
+export type OrphanGymsQueryResponse = {
+  orphanGyms: OrphanGymConnection;
+};
+
+export type MergeGymsMutationVariables = {
+  input: MergeGymsInput;
+};
+
+export type MergeGymsMutationResponse = {
+  mergeGyms: MergeGymsResult;
+};
+
+export type DismissGymClusterMutationVariables = {
+  input: DismissGymClusterInput;
+};
+
+export type DismissGymClusterMutationResponse = {
+  dismissGymCluster: boolean;
 };

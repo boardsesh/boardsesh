@@ -301,6 +301,14 @@ export const schemaSQL = `
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$;
 
+  -- gym_members.role is a real enum in prod. The merge's member-collapse upsert
+  -- builds an enum-typed CASE value (not just a string-equality read), so the
+  -- test schema needs the actual type, not a text column.
+  DO $$ BEGIN
+    CREATE TYPE gym_member_role AS ENUM ('admin', 'editor', 'member');
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+
   DO $$ BEGIN
     CREATE TYPE kilter_table_type AS ENUM ('logs', 'attempts');
   EXCEPTION WHEN duplicate_object THEN NULL;
@@ -588,7 +596,7 @@ export const schemaSQL = `
     "id" bigserial PRIMARY KEY NOT NULL,
     "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
     "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-    "role" text NOT NULL,
+    "role" gym_member_role NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL
   );
   CREATE UNIQUE INDEX IF NOT EXISTS "gym_members_unique_gym_user" ON "gym_members" ("gym_id", "user_id");
@@ -816,17 +824,8 @@ export const schemaSQL = `
   );
   CREATE INDEX IF NOT EXISTS "community_roles_board_type_idx" ON "community_roles" ("board_type");
 
-  -- Gym membership (owner/admin can manage; admin members can edit the gym +
-  -- its boards). viewerCanAdminGym / requireGymOwnerOrAdmin read this.
-  DROP TABLE IF EXISTS "gym_members" CASCADE;
-  CREATE TABLE IF NOT EXISTS "gym_members" (
-    "id" bigserial PRIMARY KEY NOT NULL,
-    "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
-    "user_id" text NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-    "role" text NOT NULL,
-    "created_at" timestamp DEFAULT now() NOT NULL
-  );
-  CREATE UNIQUE INDEX IF NOT EXISTS "gym_members_unique_gym_user" ON "gym_members" ("gym_id", "user_id");
+  -- gym_members is created once, earlier (alongside the follow/member enrichment
+  -- tables). The duplicate DROP+CREATE that used to sit here has been removed.
 
   DROP TABLE IF EXISTS "gym_follows" CASCADE;
   CREATE TABLE IF NOT EXISTS "gym_follows" (
@@ -910,6 +909,39 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "app_feedback_board_idx" ON "app_feedback" ("board_name");
   CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
   CREATE INDEX IF NOT EXISTS "gym_kiosks_gym_idx" ON "gym_kiosks" ("gym_id") WHERE "deleted_at" IS NULL;
+
+  -- Maps upstream location-provider source keys (kilter:..., tension:...) to the
+  -- canonical gym. The duplicate-review candidate query reads provider prefixes
+  -- from here, the merge re-points aliases, and the orphan audit flags gyms with
+  -- no source row.
+  DROP TABLE IF EXISTS "location_sync_gym_sources" CASCADE;
+  CREATE TABLE IF NOT EXISTS "location_sync_gym_sources" (
+    "source_key" text PRIMARY KEY NOT NULL,
+    "gym_id" bigint NOT NULL REFERENCES "gyms"("id") ON DELETE CASCADE,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "location_sync_gym_sources_gym_idx" ON "location_sync_gym_sources" ("gym_id");
+
+  -- Audit trail for the /admin/gym-duplicates review queue. entity_type is not
+  -- involved here; action is a plain text column (prod uses a gym_merge_audit_action
+  -- enum) with a CHECK — string-equality is all the queue does with it.
+  DROP TABLE IF EXISTS "gym_merge_audit" CASCADE;
+  CREATE TABLE IF NOT EXISTS "gym_merge_audit" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "action" text NOT NULL,
+    "canonical_gym_id" bigint REFERENCES "gyms"("id") ON DELETE SET NULL,
+    "duplicate_gym_id" bigint REFERENCES "gyms"("id") ON DELETE SET NULL,
+    "cluster_signature" text NOT NULL,
+    "moved_counts" jsonb,
+    "moved_rows" jsonb,
+    "warnings" jsonb,
+    "performed_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    CONSTRAINT "gym_merge_audit_action_check" CHECK (action IN ('merged', 'dismissed'))
+  );
+  CREATE INDEX IF NOT EXISTS "gym_merge_audit_signature_action_idx" ON "gym_merge_audit" ("cluster_signature", "action");
+  CREATE INDEX IF NOT EXISTS "gym_merge_audit_canonical_idx" ON "gym_merge_audit" ("canonical_gym_id");
 
   -- Board followers (enrichBoard counts these per board).
   DROP TABLE IF EXISTS "board_follows" CASCADE;

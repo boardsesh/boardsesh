@@ -619,6 +619,19 @@ export const queriesTypeDefs = /* GraphQL */ `
     """
     gymStats(input: GymStatsInput!): GymStats!
 
+    """
+    Candidate duplicate-gym clusters for the /admin/gym-duplicates review queue
+    (admin only). Tiered by how tightly members sit together (A: within 20 m,
+    B: within 150 m). Clusters an admin has dismissed are excluded. Paginated.
+    """
+    duplicateGymClusters(input: DuplicateGymClustersInput): DuplicateGymClusterConnection!
+
+    """
+    Alias-less, system-owned live gyms with no location-sync source — the orphan
+    audit list (admin only). List-only; no bulk action.
+    """
+    orphanGyms(input: OrphanGymsInput): OrphanGymConnection!
+
     # ============================================
     # Gym Kiosk Queries
     # ============================================

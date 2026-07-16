@@ -21,9 +21,9 @@
   "nav": {
     "retention": "Retention dashboard",
     "gymClaims": "Gym claims",
-    "feedback": "Bug reports"
+    "feedback": "Bug reports",
+    "gymDuplicates": "Duplicate gyms"
   },
-
   "feedback": {
     "title": "Bug reports & feedback",
     "subtitle": "Bug reports and ratings from the app. Filter, find the reporter's email, and mark them done.",
@@ -244,5 +244,58 @@
       "actions": "Actions"
     },
     "loadMore": "Load more"
+  },
+  "gymDuplicates": {
+    "title": "Duplicate gyms",
+    "backToAdmin": "Back to admin",
+    "heading": "Duplicate review queue",
+    "tabs": {
+      "duplicates": "Duplicates",
+      "orphans": "Orphan audit"
+    },
+    "tier": {
+      "a": "Exact match",
+      "b": "Close match"
+    },
+    "maxDistance": "Up to {{meters}} m apart",
+    "owner": {
+      "system": "System",
+      "user": "User-owned"
+    },
+    "claim": {
+      "pending": "Claim pending",
+      "approved": "Claim approved"
+    },
+    "counts": "{{boards}} boards · {{follows}} follows · {{members}} members · {{kiosks}} kiosks · {{claims}} claims",
+    "orphanCounts": "{{boards}} boards · {{follows}} follows · {{members}} members · {{kiosks}} kiosks",
+    "distance": "{{meters}} m from survivor",
+    "merge": "Merge",
+    "dismiss": "Not a duplicate",
+    "confirm": {
+      "title": "Merge these gyms?",
+      "body": "This folds {{count}} duplicate gyms into {{canonical}} and moves {{boards}} boards, {{follows}} follows, {{members}} members, {{kiosks}} kiosks, and {{claims}} claims onto it. This can't be undone.",
+      "cancel": "Cancel",
+      "confirm": "Merge",
+      "overrideWarning": "Heads up: you're keeping a system listing as the survivor over a gym someone owns or has claimed. Their gym gets folded into the system one. Only do this if the system row is genuinely the right home.",
+      "confirmOverride": "Merge anyway"
+    },
+    "kioskWarning": "Kiosk \"{{name}}\" moved from /{{previous}} to /{{next}}",
+    "snackbar": {
+      "merged": "Gyms merged",
+      "mergeFailed": "Couldn't merge the gyms",
+      "dismissed": "Marked as not a duplicate",
+      "dismissFailed": "Couldn't dismiss the group"
+    },
+    "empty": "No duplicates to review",
+    "error": "Couldn't load duplicates. Try again.",
+    "retry": "Retry",
+    "loadMore": "Load more",
+    "orphans": {
+      "summary": "{{count}} system-owned gyms with no location-sync source",
+      "empty": "No orphan gyms",
+      "name": "Gym",
+      "address": "Address",
+      "counts": "Counts"
+    }
   }
 }

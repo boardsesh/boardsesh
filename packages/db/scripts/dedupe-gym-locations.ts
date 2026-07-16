@@ -9,6 +9,14 @@
  *   vp run db:dedupe-gyms --only-name "Sandbox Bouldering"
  *   vp run db:dedupe-gyms --apply --limit 10
  *
+ * Backfill mode (--backfill-pointers): re-cluster ALREADY soft-deleted twins that
+ * predate the merged_into_gym_id pointer (the ~46–60 pre-M1 merged rows) against
+ * live gyms and set each one's missing merged_into_gym_id so its old uuid/slug
+ * resolves to the survivor. Report-only by default; add --apply to write.
+ *
+ *   vp run db:dedupe-gyms --backfill-pointers
+ *   vp run db:dedupe-gyms --backfill-pointers --apply
+ *
  * (A `--` separator before the flags also works — `vp` forwards it to the script
  * verbatim and parseArgs skips it — but it isn't needed.)
  */
@@ -18,25 +26,39 @@ import { pathToFileURL } from 'node:url';
 import { createScriptDb } from './db-connection.js';
 import { executeRows } from '../src/client/index.js';
 import {
-  chooseCanonicalGymCandidate,
-  compareCanonicalGymCandidates,
+  distanceMeters,
   groupPhysicalGymCandidates,
-  hasText,
+  normalizeGymName,
   PHYSICAL_GYM_MATCH_DISTANCE_METERS,
   type CanonicalGymCandidate,
   type PhysicalGymCluster,
 } from '../src/queries/gyms/location-dedupe.js';
+import {
+  addMergeCounts,
+  emptyMergeCounts,
+  mergeGymCluster,
+  selectClusterCandidates,
+  type MergeCounts,
+  type MergeWarning,
+} from '../src/queries/gyms/merge-gyms.js';
 
 const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000';
+// Backfill re-clusters against the observed cross-provider drift band (tier B).
+const BACKFILL_MATCH_DISTANCE_METERS = 150;
 const APPLY_FLAG = '--apply';
 const LIMIT_FLAG = '--limit';
 const ONLY_NAME_FLAG = '--only-name';
+const BACKFILL_POINTERS_FLAG = '--backfill-pointers';
+const INCLUDE_NON_SYSTEM_TWINS_FLAG = '--include-non-system-twins';
 const HELP_FLAG = '--help';
 const ARG_SEPARATOR = '--';
 
 type ExecuteDb = {
   execute(query: SQLWrapper | string): PromiseLike<unknown>;
 };
+
+// The script's Drizzle connection — has both `execute` and `transaction`.
+type ScriptDbInstance = ReturnType<typeof createScriptDb>['db'];
 
 type CandidateDatabaseRow = Omit<
   CanonicalGymCandidate,
@@ -55,26 +77,36 @@ type ScriptArgs = {
   apply: boolean;
   limit: number | null;
   onlyName: string | null;
+  backfillPointers: boolean;
+  includeNonSystemTwins: boolean;
   help: boolean;
-};
-
-type MergeCounts = {
-  boardRowsMoved: number;
-  sourceAliasesMoved: number;
-  followsInserted: number;
-  followsDeleted: number;
-  membersInsertedOrUpdated: number;
-  membersDeleted: number;
-  commentsMoved: number;
-  feedItemsMoved: number;
-  notificationsMoved: number;
-  votesUpserted: number;
-  votesDeleted: number;
-  duplicateGymsSoftDeleted: number;
 };
 
 type CountRow = {
   count: number | string | null;
+};
+
+// A gym reduced to what the pointer backfill needs to match twins to survivors.
+type GymLocationRow = {
+  id: number | string;
+  uuid: string;
+  name: string;
+  latitude: number | string;
+  longitude: number | string;
+};
+
+type GymLocation = {
+  id: number;
+  uuid: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
+type PointerBackfillMatch = {
+  twin: GymLocation;
+  survivor: GymLocation;
+  distance: number;
 };
 
 function parsePositiveInteger(rawValue: string | undefined, flagName: string): number {
@@ -100,6 +132,8 @@ export function parseArgs(args: string[]): ScriptArgs {
     apply: false,
     limit: null,
     onlyName: null,
+    backfillPointers: false,
+    includeNonSystemTwins: false,
     help: false,
   };
 
@@ -113,6 +147,14 @@ export function parseArgs(args: string[]): ScriptArgs {
     }
     if (currentArg === APPLY_FLAG) {
       parsedArgs.apply = true;
+      continue;
+    }
+    if (currentArg === BACKFILL_POINTERS_FLAG) {
+      parsedArgs.backfillPointers = true;
+      continue;
+    }
+    if (currentArg === INCLUDE_NON_SYSTEM_TWINS_FLAG) {
+      parsedArgs.includeNonSystemTwins = true;
       continue;
     }
     if (currentArg === HELP_FLAG) {
@@ -142,12 +184,20 @@ function printHelp(): void {
   vp run db:dedupe-gyms
   vp run db:dedupe-gyms --only-name "Sandbox Bouldering"
   vp run db:dedupe-gyms --apply --limit 10
+  vp run db:dedupe-gyms --backfill-pointers
+  vp run db:dedupe-gyms --backfill-pointers --apply
 
 Options:
-  --apply              Merge candidates. Omit for dry-run.
-  --limit <n>          Limit the number of duplicate clusters processed.
-  --only-name <name>   Restrict candidates to one normalized gym name.
-  --help               Show this help text.`);
+  --apply               Write changes. Omit for dry-run.
+  --limit <n>           Limit the number of clusters (merge) / twins (backfill) processed.
+  --only-name <name>    Restrict candidates to one normalized gym name.
+  --backfill-pointers   Set missing merged_into_gym_id on pre-pointer soft-deleted
+                        twins by re-clustering them against live gyms. SYSTEM-owned
+                        twins only, and only when exactly one live survivor sits in
+                        the match band (ambiguous twins are reported, never pointed).
+  --include-non-system-twins
+                        Also consider user-owned soft-deleted twins for the backfill.
+  --help                Show this help text.`);
 }
 
 function coerceCandidate(row: CandidateDatabaseRow): CanonicalGymCandidate {
@@ -163,25 +213,18 @@ function coerceCandidate(row: CandidateDatabaseRow): CanonicalGymCandidate {
   };
 }
 
-function pickTextField(
-  candidates: CanonicalGymCandidate[],
-  fieldName: 'address' | 'contactEmail' | 'contactPhone' | 'description' | 'imageUrl',
-): string | null {
-  for (const candidate of candidates) {
-    const candidateValue = candidate[fieldName];
-    if (hasText(candidateValue)) {
-      return candidateValue;
-    }
-  }
-  return null;
+function coerceGymLocation(row: GymLocationRow): GymLocation {
+  return {
+    id: Number(row.id),
+    uuid: row.uuid,
+    name: row.name,
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+  };
 }
 
 function idsFromCandidates(candidates: CanonicalGymCandidate[]): number[] {
   return candidates.map((candidate) => candidate.id);
-}
-
-function uuidsFromCandidates(candidates: CanonicalGymCandidate[]): string[] {
-  return candidates.map((candidate) => candidate.uuid);
 }
 
 function candidateIdsKey(candidates: CanonicalGymCandidate[]): string {
@@ -195,29 +238,6 @@ function sqlNumberList(values: number[]): SQLWrapper {
     values.map((value) => sql`${value}`),
     sql`, `,
   );
-}
-
-function sqlTextList(values: string[]): SQLWrapper {
-  return sql.join(
-    values.map((value) => sql`${value}`),
-    sql`, `,
-  );
-}
-
-function selectClusterCandidates(cluster: PhysicalGymCluster<CanonicalGymCandidate>): {
-  canonicalGym: CanonicalGymCandidate;
-  duplicateGyms: CanonicalGymCandidate[];
-} {
-  const canonicalGym = chooseCanonicalGymCandidate(cluster.gyms);
-  if (!canonicalGym) {
-    throw new Error(`Duplicate cluster for ${cluster.normalizedName} has no canonical gym candidate.`);
-  }
-
-  const duplicateGyms = cluster.gyms
-    .filter((candidate) => candidate.id !== canonicalGym.id)
-    .sort(compareCanonicalGymCandidates);
-
-  return { canonicalGym, duplicateGyms };
 }
 
 function formatGymLabel(candidate: CanonicalGymCandidate): string {
@@ -427,340 +447,7 @@ async function refetchClusterForApply(
   return matchingCluster;
 }
 
-async function setVoteCountMaintenanceSkipped(commandDb: ExecuteDb, skipped: boolean): Promise<void> {
-  await commandDb.execute(sql`SELECT set_config('boardsesh.skip_vote_counts', ${skipped ? 'on' : 'off'}, true)`);
-}
-
-async function rebuildGymVoteCounts(commandDb: ExecuteDb, gymUuids: string[]): Promise<void> {
-  const gymUuidList = sqlTextList(gymUuids);
-  await commandDb.execute(sql`
-    DELETE FROM vote_counts
-     WHERE entity_type = 'gym'::social_entity_type
-       AND entity_id IN (${gymUuidList})
-  `);
-
-  await commandDb.execute(sql`
-    INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at)
-    SELECT
-      vote_totals.entity_type,
-      vote_totals.entity_id,
-      vote_totals.upvotes,
-      vote_totals.downvotes,
-      vote_totals.score,
-      SIGN(vote_totals.score) * LN(GREATEST(ABS(vote_totals.score), 1))
-        + EXTRACT(EPOCH FROM COALESCE(feed_created_at.created_at, vote_totals.first_vote_created_at, NOW())) / 45000.0,
-      COALESCE(feed_created_at.created_at, vote_totals.first_vote_created_at, NOW())
-    FROM (
-      SELECT
-        votes.entity_type,
-        votes.entity_id,
-        SUM(CASE WHEN votes.value = 1 THEN 1 ELSE 0 END)::int AS upvotes,
-        SUM(CASE WHEN votes.value = -1 THEN 1 ELSE 0 END)::int AS downvotes,
-        SUM(votes.value)::int AS score,
-        MIN(votes.created_at) AS first_vote_created_at
-      FROM votes
-      WHERE votes.entity_type = 'gym'::social_entity_type
-        AND votes.entity_id IN (${gymUuidList})
-      GROUP BY votes.entity_type, votes.entity_id
-    ) vote_totals
-    LEFT JOIN LATERAL (
-      SELECT feed_items.created_at
-      FROM feed_items
-      WHERE feed_items.entity_type = vote_totals.entity_type
-        AND feed_items.entity_id = vote_totals.entity_id
-      ORDER BY feed_items.created_at ASC, feed_items.id ASC
-      LIMIT 1
-    ) feed_created_at ON true
-    ON CONFLICT (entity_type, entity_id) DO UPDATE SET
-      upvotes = excluded.upvotes,
-      downvotes = excluded.downvotes,
-      score = excluded.score,
-      hot_score = excluded.hot_score,
-      created_at = excluded.created_at
-  `);
-}
-
-export async function mergeGymCluster(
-  commandDb: ExecuteDb,
-  cluster: PhysicalGymCluster<CanonicalGymCandidate>,
-): Promise<MergeCounts> {
-  const { canonicalGym, duplicateGyms } = selectClusterCandidates(cluster);
-  const allCandidatesForMetadata = [canonicalGym, ...duplicateGyms].sort(compareCanonicalGymCandidates);
-  const duplicateGymIds = idsFromCandidates(duplicateGyms);
-  const duplicateGymUuids = uuidsFromCandidates(duplicateGyms);
-  const duplicateGymIdList = sqlNumberList(duplicateGymIds);
-  const duplicateGymUuidList = sqlTextList(duplicateGymUuids);
-  const allGymUuidList = sqlTextList([canonicalGym.uuid, ...duplicateGymUuids]);
-
-  await commandDb.execute(sql`
-    UPDATE gyms
-       SET address = COALESCE(NULLIF(address, ''), ${pickTextField(allCandidatesForMetadata, 'address')}),
-           contact_email = COALESCE(NULLIF(contact_email, ''), ${pickTextField(allCandidatesForMetadata, 'contactEmail')}),
-           contact_phone = COALESCE(NULLIF(contact_phone, ''), ${pickTextField(allCandidatesForMetadata, 'contactPhone')}),
-           description = COALESCE(NULLIF(description, ''), ${pickTextField(allCandidatesForMetadata, 'description')}),
-           image_url = COALESCE(NULLIF(image_url, ''), ${pickTextField(allCandidatesForMetadata, 'imageUrl')}),
-           is_public = true,
-           deleted_at = NULL,
-           updated_at = NOW()
-     WHERE id = ${canonicalGym.id}
-  `);
-
-  const boardRowsMoved = await executeCount(
-    commandDb,
-    sql`
-      WITH moved AS (
-        UPDATE user_boards
-           SET gym_id = ${canonicalGym.id},
-               updated_at = NOW()
-         WHERE gym_id IN (${duplicateGymIdList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM moved
-    `,
-  );
-
-  const sourceAliasesMoved = await executeCount(
-    commandDb,
-    sql`
-      WITH moved AS (
-        UPDATE location_sync_gym_sources
-           SET gym_id = ${canonicalGym.id},
-               updated_at = NOW()
-         WHERE gym_id IN (${duplicateGymIdList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM moved
-    `,
-  );
-
-  const followsInserted = await executeCount(
-    commandDb,
-    sql`
-      WITH inserted AS (
-        INSERT INTO gym_follows (gym_id, user_id, created_at)
-        SELECT ${canonicalGym.id}, user_id, MIN(created_at)
-          FROM gym_follows
-         WHERE gym_id IN (${duplicateGymIdList})
-         GROUP BY user_id
-        ON CONFLICT (gym_id, user_id) DO NOTHING
-        RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM inserted
-    `,
-  );
-
-  const followsDeleted = await executeCount(
-    commandDb,
-    sql`
-      WITH deleted AS (
-        DELETE FROM gym_follows
-         WHERE gym_id IN (${duplicateGymIdList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM deleted
-    `,
-  );
-
-  const membersInsertedOrUpdated = await executeCount(
-    commandDb,
-    sql`
-      WITH upserted AS (
-        INSERT INTO gym_members (gym_id, user_id, role, created_at)
-        SELECT ${canonicalGym.id},
-               user_id,
-               CASE
-                 WHEN bool_or(role = 'admin'::gym_member_role) THEN 'admin'::gym_member_role
-                 ELSE 'member'::gym_member_role
-               END,
-               MIN(created_at)
-          FROM gym_members
-         WHERE gym_id IN (${duplicateGymIdList})
-         GROUP BY user_id
-        ON CONFLICT (gym_id, user_id) DO UPDATE
-          SET role = CASE
-            WHEN gym_members.role = 'admin'::gym_member_role OR excluded.role = 'admin'::gym_member_role
-              THEN 'admin'::gym_member_role
-            ELSE 'member'::gym_member_role
-          END
-        RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM upserted
-    `,
-  );
-
-  const membersDeleted = await executeCount(
-    commandDb,
-    sql`
-      WITH deleted AS (
-        DELETE FROM gym_members
-         WHERE gym_id IN (${duplicateGymIdList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM deleted
-    `,
-  );
-
-  const commentsMoved = await executeCount(
-    commandDb,
-    sql`
-      WITH moved AS (
-        UPDATE comments
-           SET entity_id = ${canonicalGym.uuid},
-               updated_at = NOW()
-         WHERE entity_type = 'gym'::social_entity_type
-           AND entity_id IN (${duplicateGymUuidList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM moved
-    `,
-  );
-
-  const feedItemsMoved = await executeCount(
-    commandDb,
-    sql`
-      WITH moved AS (
-        UPDATE feed_items
-           SET entity_id = ${canonicalGym.uuid}
-         WHERE entity_type = 'gym'::social_entity_type
-           AND entity_id IN (${duplicateGymUuidList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM moved
-    `,
-  );
-
-  const notificationsMoved = await executeCount(
-    commandDb,
-    sql`
-      WITH moved AS (
-        UPDATE notifications
-           SET entity_id = ${canonicalGym.uuid}
-         WHERE entity_type = 'gym'::social_entity_type
-           AND entity_id IN (${duplicateGymUuidList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM moved
-    `,
-  );
-
-  let votesUpserted = 0;
-  let votesDeleted = 0;
-  await setVoteCountMaintenanceSkipped(commandDb, true);
-  votesUpserted = await executeCount(
-    commandDb,
-    sql`
-      WITH latest_votes AS (
-        SELECT DISTINCT ON (user_id)
-               user_id,
-               value,
-               created_at
-          FROM votes
-         WHERE entity_type = 'gym'::social_entity_type
-           AND entity_id IN (${allGymUuidList})
-         ORDER BY user_id, created_at DESC, id DESC
-      ),
-      upserted AS (
-        INSERT INTO votes (user_id, entity_type, entity_id, value, created_at)
-        SELECT user_id,
-               'gym'::social_entity_type,
-               ${canonicalGym.uuid},
-               value,
-               created_at
-          FROM latest_votes
-        ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE
-          SET value = excluded.value,
-              created_at = excluded.created_at
-        RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM upserted
-    `,
-  );
-
-  votesDeleted = await executeCount(
-    commandDb,
-    sql`
-      WITH deleted AS (
-        DELETE FROM votes
-         WHERE entity_type = 'gym'::social_entity_type
-           AND entity_id IN (${duplicateGymUuidList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM deleted
-    `,
-  );
-  await rebuildGymVoteCounts(commandDb, [canonicalGym.uuid, ...duplicateGymUuids]);
-  await setVoteCountMaintenanceSkipped(commandDb, false);
-
-  // Point each soft-deleted twin at the survivor so the backend's canonical
-  // resolution can follow the pointer — a deduped gym's old uuid/slug (printed
-  // kiosk QRs) then redirects to the canonical gym instead of 404ing.
-  const duplicateGymsSoftDeleted = await executeCount(
-    commandDb,
-    sql`
-      WITH soft_deleted AS (
-        UPDATE gyms
-           SET is_public = false,
-               deleted_at = NOW(),
-               merged_into_gym_id = ${canonicalGym.id},
-               updated_at = NOW()
-         WHERE id IN (${duplicateGymIdList})
-         RETURNING 1
-      )
-      SELECT count(*)::int AS count FROM soft_deleted
-    `,
-  );
-
-  return {
-    boardRowsMoved,
-    sourceAliasesMoved,
-    followsInserted,
-    followsDeleted,
-    membersInsertedOrUpdated,
-    membersDeleted,
-    commentsMoved,
-    feedItemsMoved,
-    notificationsMoved,
-    votesUpserted,
-    votesDeleted,
-    duplicateGymsSoftDeleted,
-  };
-}
-
-function emptyMergeCounts(): MergeCounts {
-  return {
-    boardRowsMoved: 0,
-    sourceAliasesMoved: 0,
-    followsInserted: 0,
-    followsDeleted: 0,
-    membersInsertedOrUpdated: 0,
-    membersDeleted: 0,
-    commentsMoved: 0,
-    feedItemsMoved: 0,
-    notificationsMoved: 0,
-    votesUpserted: 0,
-    votesDeleted: 0,
-    duplicateGymsSoftDeleted: 0,
-  };
-}
-
-function addMergeCounts(firstCounts: MergeCounts, secondCounts: MergeCounts): MergeCounts {
-  return {
-    boardRowsMoved: firstCounts.boardRowsMoved + secondCounts.boardRowsMoved,
-    sourceAliasesMoved: firstCounts.sourceAliasesMoved + secondCounts.sourceAliasesMoved,
-    followsInserted: firstCounts.followsInserted + secondCounts.followsInserted,
-    followsDeleted: firstCounts.followsDeleted + secondCounts.followsDeleted,
-    membersInsertedOrUpdated: firstCounts.membersInsertedOrUpdated + secondCounts.membersInsertedOrUpdated,
-    membersDeleted: firstCounts.membersDeleted + secondCounts.membersDeleted,
-    commentsMoved: firstCounts.commentsMoved + secondCounts.commentsMoved,
-    feedItemsMoved: firstCounts.feedItemsMoved + secondCounts.feedItemsMoved,
-    notificationsMoved: firstCounts.notificationsMoved + secondCounts.notificationsMoved,
-    votesUpserted: firstCounts.votesUpserted + secondCounts.votesUpserted,
-    votesDeleted: firstCounts.votesDeleted + secondCounts.votesDeleted,
-    duplicateGymsSoftDeleted: firstCounts.duplicateGymsSoftDeleted + secondCounts.duplicateGymsSoftDeleted,
-  };
-}
-
-function printMergeCounts(totalCounts: MergeCounts): void {
+function printMergeSummary(totalCounts: MergeCounts, warnings: MergeWarning[]): void {
   console.info('');
   console.info('[dedupe-gyms] Merge complete:');
   console.info(`  board rows moved: ${totalCounts.boardRowsMoved}`);
@@ -769,11 +456,180 @@ function printMergeCounts(totalCounts: MergeCounts): void {
   console.info(
     `  members inserted-or-updated/deleted: ${totalCounts.membersInsertedOrUpdated}/${totalCounts.membersDeleted}`,
   );
+  console.info(`  claims moved/expired: ${totalCounts.claimsMoved}/${totalCounts.claimsExpired}`);
+  console.info(`  kiosks moved: ${totalCounts.kiosksMoved}`);
   console.info(`  comments moved: ${totalCounts.commentsMoved}`);
   console.info(`  feed items moved: ${totalCounts.feedItemsMoved}`);
   console.info(`  notifications moved: ${totalCounts.notificationsMoved}`);
   console.info(`  votes upserted/deleted: ${totalCounts.votesUpserted}/${totalCounts.votesDeleted}`);
   console.info(`  duplicate gyms soft-deleted: ${totalCounts.duplicateGymsSoftDeleted}`);
+
+  if (warnings.length > 0) {
+    console.info('');
+    console.info(`[dedupe-gyms] ${warnings.length} warning(s):`);
+    for (const warning of warnings) {
+      console.info(
+        `  kiosk "${warning.kioskName}" (${warning.kioskUuid}) re-slugged ${warning.previousSlug} -> ${warning.newSlug}; its printed install QR must be reprinted.`,
+      );
+    }
+  }
+}
+
+/**
+ * Load every live gym with coordinates as a potential merge survivor for the
+ * pointer backfill, and every soft-deleted gym that lacks a merged_into pointer
+ * as a candidate twin.
+ */
+async function fetchBackfillGyms(
+  commandDb: ExecuteDb,
+  onlyName: string | null,
+  includeNonSystemTwins: boolean,
+): Promise<{ liveGyms: GymLocation[]; orphanTwins: GymLocation[] }> {
+  const nameClause = onlyName
+    ? sql`AND lower(regexp_replace(trim(name), '[[:space:]]+', ' ', 'g')) = lower(regexp_replace(trim(${onlyName}), '[[:space:]]+', ' ', 'g'))`
+    : sql``;
+  // The pre-M1 dedupe only ever merged SYSTEM-owned listings, so default to those.
+  // A false pointer redirects printed QRs to the wrong gym — worse than a 404.
+  const twinOwnerClause = includeNonSystemTwins ? sql`` : sql`AND owner_id = ${SYSTEM_USER_ID}`;
+
+  const liveRows = await executeRows<GymLocationRow>(
+    commandDb,
+    sql`
+      SELECT id AS "id", uuid AS "uuid", name AS "name", latitude AS "latitude", longitude AS "longitude"
+      FROM gyms
+      WHERE deleted_at IS NULL
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        ${nameClause}
+      ORDER BY id
+    `,
+  );
+
+  const orphanRows = await executeRows<GymLocationRow>(
+    commandDb,
+    sql`
+      SELECT id AS "id", uuid AS "uuid", name AS "name", latitude AS "latitude", longitude AS "longitude"
+      FROM gyms
+      WHERE deleted_at IS NOT NULL
+        AND merged_into_gym_id IS NULL
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        ${twinOwnerClause}
+        ${nameClause}
+      ORDER BY id
+    `,
+  );
+
+  return {
+    liveGyms: liveRows.map(coerceGymLocation),
+    orphanTwins: orphanRows.map(coerceGymLocation),
+  };
+}
+
+/**
+ * Match each pre-pointer soft-deleted twin to a live survivor sharing its
+ * normalized name within the drift band — but only when the survivor is
+ * UNAMBIGUOUS. If a second live gym also sits in the band, the twin is reported
+ * and left un-pointed: a wrong pointer would redirect printed QRs to the wrong
+ * gym, worse than the current 404.
+ */
+function matchTwinsToSurvivors(
+  liveGyms: GymLocation[],
+  orphanTwins: GymLocation[],
+): { matches: PointerBackfillMatch[]; ambiguousTwins: Array<{ twin: GymLocation; candidateCount: number }> } {
+  const liveByName = new Map<string, GymLocation[]>();
+  for (const liveGym of liveGyms) {
+    const normalizedName = normalizeGymName(liveGym.name);
+    const matches = liveByName.get(normalizedName) ?? [];
+    matches.push(liveGym);
+    liveByName.set(normalizedName, matches);
+  }
+
+  const backfillMatches: PointerBackfillMatch[] = [];
+  const ambiguousTwins: Array<{ twin: GymLocation; candidateCount: number }> = [];
+  for (const twin of orphanTwins) {
+    const candidates = liveByName.get(normalizeGymName(twin.name)) ?? [];
+    const inBand = candidates
+      .map((survivor) => ({ survivor, distance: distanceMeters(twin, survivor) }))
+      .filter((entry) => entry.distance <= BACKFILL_MATCH_DISTANCE_METERS)
+      .sort((first, second) => first.distance - second.distance);
+
+    if (inBand.length === 0) {
+      continue;
+    }
+    if (inBand.length > 1) {
+      ambiguousTwins.push({ twin, candidateCount: inBand.length });
+      continue;
+    }
+    backfillMatches.push({ twin, survivor: inBand[0].survivor, distance: inBand[0].distance });
+  }
+
+  return { matches: backfillMatches, ambiguousTwins };
+}
+
+async function runPointerBackfill(commandDb: ScriptDbInstance, scriptArgs: ScriptArgs): Promise<void> {
+  const { liveGyms, orphanTwins } = await fetchBackfillGyms(
+    commandDb,
+    scriptArgs.onlyName,
+    scriptArgs.includeNonSystemTwins,
+  );
+  const { matches: allMatches, ambiguousTwins } = matchTwinsToSurvivors(liveGyms, orphanTwins);
+  const matches = scriptArgs.limit ? allMatches.slice(0, scriptArgs.limit) : allMatches;
+
+  console.info(
+    `[dedupe-gyms] Pointer backfill: ${orphanTwins.length} soft-deleted ${scriptArgs.includeNonSystemTwins ? '' : 'SYSTEM-owned '}twin(s) without a pointer, ` +
+      `${matches.length} unambiguous survivor match(es) within ${BACKFILL_MATCH_DISTANCE_METERS} m, ${ambiguousTwins.length} skipped as ambiguous.`,
+  );
+
+  for (const match of matches) {
+    const tier = match.distance <= PHYSICAL_GYM_MATCH_DISTANCE_METERS ? 'A' : 'B';
+    console.info(
+      `  twin #${match.twin.id} (${match.twin.uuid}) -> survivor #${match.survivor.id} (${match.survivor.uuid}) ` +
+        `[${match.twin.name}] ${match.distance.toFixed(1)} m, tier ${tier}`,
+    );
+  }
+
+  for (const ambiguous of ambiguousTwins) {
+    console.info(
+      `  SKIP (ambiguous) twin #${ambiguous.twin.id} (${ambiguous.twin.uuid}) [${ambiguous.twin.name}] — ` +
+        `${ambiguous.candidateCount} live gyms within ${BACKFILL_MATCH_DISTANCE_METERS} m; not pointing.`,
+    );
+  }
+
+  if (!scriptArgs.apply || matches.length === 0) {
+    if (!scriptArgs.apply) {
+      console.info('');
+      console.info('[dedupe-gyms] Dry-run only. Re-run with --backfill-pointers --apply to set these pointers.');
+    }
+    return;
+  }
+
+  const pointersSet = await commandDb.transaction(async (transaction) => {
+    let updated = 0;
+    for (const match of matches) {
+      // Only write the pointer when it is still unset (guards against a
+      // concurrent merge having claimed the twin in the meantime).
+      updated += await executeCount(
+        transaction,
+        sql`
+          WITH pointed AS (
+            UPDATE gyms
+               SET merged_into_gym_id = ${match.survivor.id},
+                   updated_at = NOW()
+             WHERE id = ${match.twin.id}
+               AND merged_into_gym_id IS NULL
+               AND deleted_at IS NOT NULL
+             RETURNING 1
+          )
+          SELECT count(*)::int AS count FROM pointed
+        `,
+      );
+    }
+    return updated;
+  });
+
+  console.info('');
+  console.info(`[dedupe-gyms] Pointer backfill complete: ${pointersSet} pointer(s) set.`);
 }
 
 async function main(): Promise<void> {
@@ -786,6 +642,11 @@ async function main(): Promise<void> {
   const { db, close } = createScriptDb();
 
   try {
+    if (scriptArgs.backfillPointers) {
+      await runPointerBackfill(db, scriptArgs);
+      return;
+    }
+
     const candidates = await fetchCandidates(db, scriptArgs.onlyName);
     const allClusters = groupPhysicalGymCandidates(candidates, PHYSICAL_GYM_MATCH_DISTANCE_METERS);
     const selectedClusters = scriptArgs.limit ? allClusters.slice(0, scriptArgs.limit) : allClusters;
@@ -796,19 +657,21 @@ async function main(): Promise<void> {
       return;
     }
 
-    const totalCounts = await db.transaction(async (transaction) => {
+    const { totalCounts, warnings } = await db.transaction(async (transaction) => {
       await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:gym-location-dedupe'))`);
 
       let aggregateCounts = emptyMergeCounts();
+      const aggregateWarnings: MergeWarning[] = [];
       for (const cluster of selectedClusters) {
         const lockedCluster = await refetchClusterForApply(transaction, cluster);
-        const clusterCounts = await mergeGymCluster(transaction, lockedCluster);
-        aggregateCounts = addMergeCounts(aggregateCounts, clusterCounts);
+        const clusterResult = await mergeGymCluster(transaction, lockedCluster);
+        aggregateCounts = addMergeCounts(aggregateCounts, clusterResult.counts);
+        aggregateWarnings.push(...clusterResult.warnings);
       }
-      return aggregateCounts;
+      return { totalCounts: aggregateCounts, warnings: aggregateWarnings };
     });
 
-    printMergeCounts(totalCounts);
+    printMergeSummary(totalCounts, warnings);
   } finally {
     await close();
   }

@@ -536,6 +536,21 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     reviewGymClaim(input: ReviewGymClaimInput!): Boolean!
 
+    """
+    Fold one or more duplicate gyms into a canonical survivor (admin only). Every
+    duplicate's boards, follows, members, claims, kiosks, comments, feed items,
+    notifications, and votes re-point to the survivor, then each duplicate is
+    soft-deleted with a pointer to it. Returns per-duplicate moved counts and any
+    kiosk-slug-change warnings.
+    """
+    mergeGyms(input: MergeGymsInput!): MergeGymsResult!
+
+    """
+    Dismiss a candidate duplicate cluster (admin only). Records that the cluster is
+    not a duplicate so the review queue hides it. Touches no gym row.
+    """
+    dismissGymCluster(input: DismissGymClusterInput!): Boolean!
+
     # ============================================
     # Gym Kiosk Mutations (require gym edit access)
     # ============================================

@@ -88,6 +88,14 @@ export default function AdminPage() {
         <MuiLink component={LocaleLink} href="/admin/feedback" underline="hover" sx={{ color: 'var(--color-primary)' }}>
           {t('nav.feedback')}
         </MuiLink>
+        <MuiLink
+          component={LocaleLink}
+          href="/admin/gym-duplicates"
+          underline="hover"
+          sx={{ color: themeTokens.colors.primary }}
+        >
+          {t('nav.gymDuplicates')}
+        </MuiLink>
       </Box>
 
       <Box sx={{ borderBottom: 1, borderColor: themeTokens.neutral[200], mb: 3 }}>

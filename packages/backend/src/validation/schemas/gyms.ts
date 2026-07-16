@@ -224,3 +224,41 @@ export const GymStatsInputSchema = z.object({
   gymUuid: UUIDSchema,
   period: z.enum(['week', 'month']).optional().default('week'),
 });
+
+/**
+ * Duplicate-gym cluster list input validation schema (admin)
+ */
+export const DuplicateGymClustersInputSchema = z.object({
+  limit: z.number().int().min(1).max(50).optional().default(20),
+  offset: z.number().int().min(0).optional().default(0),
+});
+
+/**
+ * Orphan-gym audit list input validation schema (admin)
+ */
+export const OrphanGymsInputSchema = z.object({
+  limit: z.number().int().min(1).max(50).optional().default(20),
+  offset: z.number().int().min(0).optional().default(0),
+});
+
+/**
+ * Merge gyms input validation schema (admin). Fold 1–50 duplicates into one
+ * canonical survivor. The resolver additionally checks every uuid is a live,
+ * un-merged gym and that the canonical is not among the duplicates.
+ */
+export const MergeGymsInputSchema = z.object({
+  canonicalGymUuid: UUIDSchema,
+  duplicateGymUuids: z.array(UUIDSchema).min(1, 'Pick at least one duplicate').max(50),
+  // Explicit acknowledgement required to keep a SYSTEM listing as the survivor
+  // over a user-owned or claim-approved duplicate (an inverted pre-selection).
+  allowSystemCanonicalOverride: z.boolean().optional().default(false),
+});
+
+/**
+ * Dismiss gym cluster input validation schema (admin). The full member set is
+ * needed to compute the stable cluster signature the dismissal is keyed on.
+ */
+export const DismissGymClusterInputSchema = z.object({
+  gymUuids: z.array(UUIDSchema).min(2, 'A cluster has at least two members').max(50),
+  canonicalGymUuid: UUIDSchema,
+});

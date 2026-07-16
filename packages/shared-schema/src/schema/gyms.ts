@@ -555,4 +555,208 @@ export const gymsTypeDefs = /* GraphQL */ `
     "Rolling last 30 days."
     month
   }
+
+  # ============================================
+  # Gym Duplicate Review (admin only)
+  # ============================================
+
+  "Who owns a gym row in the duplicate queue: the system import user, or a real person. (Distinct from GymOwnerType, which the similar-gyms search uses with SYSTEM/USER casing.)"
+  enum DuplicateGymOwnerType {
+    "Owned by the system import user (a synced public listing)."
+    system
+    "Owned by a real Boardsesh user."
+    user
+  }
+
+  "The strongest ownership-claim state on a gym row."
+  enum GymClusterClaimStatus {
+    "No claim on file."
+    none
+    "A claim is awaiting review or verification."
+    pending
+    "A claim was approved (ownership transferred)."
+    approved
+  }
+
+  "How tightly a candidate duplicate cluster's members sit together."
+  enum DuplicateClusterTier {
+    "Every member within 20 m — almost certainly the same wall."
+    A
+    "Members within 150 m — the observed cross-provider coordinate-drift band."
+    B
+  }
+
+  "One gym row inside a candidate duplicate cluster, with the signals an admin needs to pick the survivor."
+  type DuplicateGymMember {
+    "Gym UUID (always a live, canonical row)."
+    gymUuid: ID!
+    "Gym name."
+    name: String!
+    "Physical address (if known)."
+    address: String
+    "Whether the system import user or a real user owns this row."
+    ownerType: DuplicateGymOwnerType!
+    "Strongest ownership-claim state on this row."
+    claimStatus: GymClusterClaimStatus!
+    "Distinct location-sync provider origins (source_key prefixes: kilter, tension, ...)."
+    providerOrigins: [String!]!
+    "Linked, non-deleted boards."
+    boardCount: Int!
+    "Followers."
+    followerCount: Int!
+    "Members."
+    memberCount: Int!
+    "Live kiosks."
+    kioskCount: Int!
+    "Ownership claims on file (any status)."
+    claimCount: Int!
+    "When created."
+    createdAt: String!
+    "GPS latitude."
+    latitude: Float!
+    "GPS longitude."
+    longitude: Float!
+    "Distance in metres from this row to the cluster's suggested canonical survivor."
+    distanceToCanonicalMeters: Float!
+    "Whether the rule pre-selects this row as the canonical survivor (claimed/user-owned over system, then completeness/oldest)."
+    isSuggestedCanonical: Boolean!
+  }
+
+  "A candidate cluster of live gym rows that look like the same physical location."
+  type DuplicateGymCluster {
+    "Stable identity (hash of the sorted member gym ids). Dismissals key on this."
+    signature: String!
+    "How tightly the members sit together."
+    tier: DuplicateClusterTier!
+    "The shared normalized name."
+    normalizedName: String!
+    "The rule's suggested canonical survivor (an admin may override)."
+    suggestedCanonicalGymUuid: ID!
+    "Largest pairwise distance in metres between any two members."
+    maxDistanceMeters: Float!
+    "The cluster's member rows."
+    members: [DuplicateGymMember!]!
+  }
+
+  "Paginated list of candidate duplicate clusters."
+  type DuplicateGymClusterConnection {
+    "The clusters."
+    clusters: [DuplicateGymCluster!]!
+    "Total number of clusters (after dismissals are excluded)."
+    totalCount: Int!
+    "Whether more clusters are available."
+    hasMore: Boolean!
+  }
+
+  "Input for listing candidate duplicate clusters (admin only)."
+  input DuplicateGymClustersInput {
+    "Max clusters to return."
+    limit: Int
+    "Offset for pagination."
+    offset: Int
+  }
+
+  "An alias-less, system-owned live gym with no location-sync source — an orphan for the audit list."
+  type OrphanGym {
+    "Gym UUID."
+    gymUuid: ID!
+    "URL slug (null when unset — link via the uuid instead)."
+    slug: String
+    "Gym name."
+    name: String!
+    "Physical address (if known)."
+    address: String
+    "Linked, non-deleted boards."
+    boardCount: Int!
+    "Followers."
+    followerCount: Int!
+    "Members."
+    memberCount: Int!
+    "Live kiosks."
+    kioskCount: Int!
+    "When created."
+    createdAt: String!
+  }
+
+  "Paginated list of orphan gyms (list-only, no actions)."
+  type OrphanGymConnection {
+    "The orphan gyms."
+    gyms: [OrphanGym!]!
+    "Total number of orphan gyms."
+    totalCount: Int!
+    "Whether more orphan gyms are available."
+    hasMore: Boolean!
+  }
+
+  "Input for the orphan-gym audit list (admin only)."
+  input OrphanGymsInput {
+    "Max gyms to return."
+    limit: Int
+    "Offset for pagination."
+    offset: Int
+  }
+
+  "Input for merging duplicate gyms into a canonical survivor (admin only)."
+  input MergeGymsInput {
+    "The survivor gym UUID."
+    canonicalGymUuid: ID!
+    "The gym UUIDs to fold into the survivor."
+    duplicateGymUuids: [ID!]!
+    "Explicit acknowledgement required to keep a SYSTEM listing as the survivor over a user-owned or claim-approved duplicate. Rejected without it."
+    allowSystemCanonicalOverride: Boolean
+  }
+
+  "A kiosk whose slug had to change during a merge — its printed install QR must be reprinted."
+  type KioskSlugWarning {
+    "Kiosk UUID."
+    kioskUuid: ID!
+    "Kiosk name."
+    kioskName: String!
+    "Slug before the merge."
+    previousSlug: String!
+    "Slug after the merge (suffixed to avoid a collision on the canonical gym)."
+    newSlug: String!
+  }
+
+  "What one duplicate merge re-pointed onto the canonical gym."
+  type GymMergeCounts {
+    "Boards moved."
+    boards: Int!
+    "Follows moved (deduped)."
+    follows: Int!
+    "Members moved (deduped)."
+    members: Int!
+    "Claims moved onto the canonical."
+    claims: Int!
+    "Kiosks moved."
+    kiosks: Int!
+    "Comments moved."
+    comments: Int!
+  }
+
+  "The result of folding one duplicate into the canonical."
+  type GymMergeDuplicateResult {
+    "The duplicate that was merged."
+    duplicateGymUuid: ID!
+    "What moved."
+    counts: GymMergeCounts!
+    "Kiosk slug changes the admin must surface."
+    warnings: [KioskSlugWarning!]!
+  }
+
+  "The result of a mergeGyms call — one entry per merged duplicate."
+  type MergeGymsResult {
+    "The survivor gym UUID."
+    canonicalGymUuid: ID!
+    "Per-duplicate outcomes."
+    results: [GymMergeDuplicateResult!]!
+  }
+
+  "Input for dismissing a candidate cluster (marks it not-a-duplicate; hides it from the queue)."
+  input DismissGymClusterInput {
+    "All member gym UUIDs of the cluster (order-independent; used to compute the signature)."
+    gymUuids: [ID!]!
+    "The suggested canonical member, recorded on the dismissal audit row."
+    canonicalGymUuid: ID!
+  }
 `;
