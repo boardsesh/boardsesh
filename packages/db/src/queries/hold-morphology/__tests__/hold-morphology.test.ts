@@ -107,6 +107,26 @@ void describe('hold morphology extraction', () => {
     assert.ok(left.vector[1] <= 1);
     assert.ok(right.vector[1] <= 1);
   });
+
+  void test('fails explicitly when a shared-component cell contains too few pixels', () => {
+    const image = blankImage(40, 20);
+    paintRectangle(image, 5, 5, 30, 10, 180);
+    const prepared = prepareMorphologyImage(image);
+
+    assert.deepEqual(
+      extractHoldMorphology(prepared, {
+        centerX: 34.5,
+        centerY: 9.5,
+        cellWidth: 1,
+        cellHeight: 1,
+        clipToCell: true,
+      }),
+      {
+        ok: false,
+        reason: 'insufficient-cell-pixels',
+      },
+    );
+  });
 });
 
 void describe('hold morphology artifact serialization', () => {

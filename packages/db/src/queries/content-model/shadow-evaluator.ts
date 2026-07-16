@@ -448,6 +448,8 @@ export function evaluateShadowNoShock(
 
   return {
     gate: 'content_shadow_no_shock',
+    // This is a required safety gate, not an informational metric. If the
+    // artifact cannot exercise it on an established climb, fail closed.
     passed: checked > 0 && violations === 0,
     checked,
     violations,
@@ -483,6 +485,8 @@ export function evaluateShadowFingerprintConsistency(
   const violationRatio = checkedGroups > 0 ? violations / checkedGroups : 0;
   return {
     gate: 'content_shadow_fingerprint_consistency',
+    // Duplicate consistency is a registered ship gate. An artifact with no
+    // checkable alias group has not supplied evidence for it, so fail closed.
     passed: checkedGroups > 0 && violationRatio <= SHADOW_FINGERPRINT_MAX_BAD_RATIO,
     groups: checkedGroups,
     violations,

@@ -241,8 +241,10 @@ function clipComponentToCell(
   image: RawRgbaImage,
   location: HoldPixelLocation,
   minimumComponentPixels: number,
-): { component: PreparedMorphologyComponent; clipped: boolean } {
-  if (!location.clipToCell) return { component, clipped: false };
+):
+  | { ok: true; component: PreparedMorphologyComponent; clipped: boolean }
+  | { ok: false; reason: 'insufficient-cell-pixels' } {
+  if (!location.clipToCell) return { ok: true, component, clipped: false };
 
   const minX = location.centerX - location.cellWidth / 2;
   const maxX = location.centerX + location.cellWidth / 2;
@@ -253,7 +255,9 @@ function clipComponentToCell(
     const y = Math.floor(pixelIndex / image.width);
     return x + 0.5 >= minX && x + 0.5 < maxX && y + 0.5 >= minY && y + 0.5 < maxY;
   });
-  if (pixelIndices.length < minimumComponentPixels) return { component, clipped: false };
+  if (pixelIndices.length < minimumComponentPixels) {
+    return { ok: false, reason: 'insufficient-cell-pixels' };
+  }
 
   let clippedMinX = image.width;
   let clippedMinY = image.height;
@@ -269,6 +273,7 @@ function clipComponentToCell(
   }
 
   return {
+    ok: true,
     component: {
       id: component.id,
       pixelIndices,
@@ -405,12 +410,14 @@ export function extractHoldMorphology(
   if (!located.ok) return located;
   const nearestComponent = prepared.components[located.componentId];
   if (!nearestComponent) return { ok: false, reason: 'missing-hold' };
-  const { component, clipped } = clipComponentToCell(
+  const clippedComponent = clipComponentToCell(
     nearestComponent,
     prepared.image,
     location,
     prepared.options.minimumComponentPixels,
   );
+  if (!clippedComponent.ok) return clippedComponent;
+  const { component, clipped } = clippedComponent;
   return {
     ok: true,
     componentId: component.id,

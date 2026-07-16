@@ -110,7 +110,7 @@ export type HoldMorphologyExtraction =
     }
   | {
       ok: false;
-      reason: 'empty-image' | 'missing-hold';
+      reason: 'empty-image' | 'missing-hold' | 'insufficient-cell-pixels';
     };
 
 type HoldMorphologyRecordBase = {

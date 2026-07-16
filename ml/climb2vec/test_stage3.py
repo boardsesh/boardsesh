@@ -327,6 +327,32 @@ class Stage3ArtifactTest(unittest.TestCase):
         )
         self.assertEqual({record["supported"] for record in records}, {True})
 
+    def test_export_zeroes_a_degenerate_pooled_alias_embedding(self):
+        first = row("same", climb="alias-a")
+        second = row("same", climb="alias-b")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "predictions.jsonl"
+            export_predictions(
+                str(output),
+                [first, second],
+                np.asarray([19.0, 21.0]),
+                np.asarray(
+                    [[1.0, 0.0], [-1.0 + 1e-10, 0.0]],
+                    dtype=np.float64,
+                ),
+                {"kilter": {"all": 1.0}},
+                board_offsets([first, second]),
+            )
+            records = [
+                json.loads(line)
+                for line in output.read_text().splitlines()
+            ]
+
+        self.assertEqual(
+            {tuple(record["embedding"]) for record in records},
+            {(0.0, 0.0)},
+        )
+
     def test_similarity_diagnostic_stays_within_board_layout_and_angle(self):
         query = row("query", climb="query", label=10)
         valid_neighbor = row("valid", climb="valid", label=11)

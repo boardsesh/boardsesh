@@ -469,7 +469,11 @@ def export_predictions(
             continue
         shared_prediction = float(np.mean(pooled_prediction[indices]))
         shared_embedding = np.mean(pooled_embeddings[indices], axis=0)
-        shared_embedding /= np.linalg.norm(shared_embedding) + 1e-12
+        shared_norm = float(np.linalg.norm(shared_embedding))
+        if shared_norm >= 1e-8:
+            shared_embedding /= shared_norm
+        else:
+            shared_embedding = np.zeros_like(shared_embedding)
         pooled_prediction[indices] = shared_prediction
         pooled_embeddings[indices] = shared_embedding
 

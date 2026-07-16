@@ -164,15 +164,21 @@ currently has at least 50 ascents. The unchanged `--validate-only` and
 `--dry-run` publish-path sanity checks follow. Those unchanged commands do not
 measure content improvement because the protected production blend still uses
 content only in its existing cold-tail branch.
+No-shock and physical-problem consistency fail closed when the artifact has no
+established row or checkable alias group; missing evidence cannot pass a ship
+gate.
 
 The Stage-3 score artifact contains one row for every eligible catalog
-climb-angle. Supported rows carry the prior/uncertainty/embedding;
+climb-angle. Supported rows carry the prior, uncertainty, and fixed-width
+64-value embedding;
 zero- or over-40-hold physical problems carry `supported:false` with null model
 outputs. The identified loader verifies exact catalog coverage, validates the
 record board/model, and atomically replaces one selected board, so a newly
 unsupported cell cannot retain a stale prior. The incumbent `climb2vec-v1`
 single-board schema remains an explicit legacy upsert mode for the existing
-weekly workflow.
+weekly workflow. That workflow retains each scored JSONL as a private Actions
+artifact for seven days before loading it, so a transient DB failure does not
+discard the completed training run.
 
 ## Phase-1 feasibility result (Kilter, dev-DB extract: 29,748 obs, 80/20 by climb)
 

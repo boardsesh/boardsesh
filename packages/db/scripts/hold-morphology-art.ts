@@ -38,6 +38,7 @@ export type HoldMorphologyFailureReason =
   | 'missing-source'
   | 'empty-image'
   | 'missing-hold'
+  | 'insufficient-cell-pixels'
   | 'shared-component'
   | 'duplicate-record-key';
 

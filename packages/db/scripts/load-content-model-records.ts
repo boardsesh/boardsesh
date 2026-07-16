@@ -9,6 +9,7 @@ export interface ContentArtifactIdentity {
 }
 
 export const LEGACY_CONTENT_MODEL_VERSION = 'climb2vec-v1';
+export const CONTENT_EMBEDDING_DIMENSION = 64;
 export type ContentArtifactMode = 'identified' | 'legacy';
 
 interface ContentRecordBase {
@@ -83,8 +84,14 @@ function parseSupportedContentRecord(
   if (contentSd <= 0) {
     throw recordError(lineNumber, 'contentSd must be greater than zero');
   }
-  if (!Array.isArray(record.embedding) || record.embedding.length === 0) {
-    throw recordError(lineNumber, 'embedding must be a non-empty number array');
+  if (!Array.isArray(record.embedding)) {
+    throw recordError(lineNumber, 'embedding must be a number array');
+  }
+  if (record.embedding.length !== CONTENT_EMBEDDING_DIMENSION) {
+    throw recordError(
+      lineNumber,
+      `embedding must contain exactly ${CONTENT_EMBEDDING_DIMENSION} numbers; received ${record.embedding.length}`,
+    );
   }
   const embedding = record.embedding.map((component, index) => {
     if (typeof component !== 'number' || !Number.isFinite(component)) {
@@ -199,8 +206,9 @@ export async function* readContentArtifact(
   path: string,
   expected: ContentArtifactIdentity,
 ): AsyncGenerator<ContentArtifactEntry> {
+  const input = createReadStream(path, { encoding: 'utf8' });
   const reader = createInterface({
-    input: createReadStream(path, { encoding: 'utf8' }),
+    input,
     crlfDelay: Infinity,
   });
   const keys = new Set<string>();
@@ -208,20 +216,28 @@ export async function* readContentArtifact(
   let lineNumber = 0;
   let recordCount = 0;
 
-  for await (const line of reader) {
-    lineNumber += 1;
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const entry = parseContentArtifactEntry(trimmed, lineNumber, expected, artifactMode);
-    artifactMode = entry.mode;
-    const { record } = entry;
-    const key = contentArtifactGlobalKey(record.boardType, record.climbUuid, record.angle);
-    if (keys.has(key)) {
-      throw recordError(lineNumber, `duplicate climbUuid+angle ${JSON.stringify(record.climbUuid)} at ${record.angle}`);
+  try {
+    for await (const line of reader) {
+      lineNumber += 1;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const entry = parseContentArtifactEntry(trimmed, lineNumber, expected, artifactMode);
+      artifactMode = entry.mode;
+      const { record } = entry;
+      const key = contentArtifactGlobalKey(record.boardType, record.climbUuid, record.angle);
+      if (keys.has(key)) {
+        throw recordError(
+          lineNumber,
+          `duplicate climbUuid+angle ${JSON.stringify(record.climbUuid)} at ${record.angle}`,
+        );
+      }
+      keys.add(key);
+      recordCount += 1;
+      yield entry;
     }
-    keys.add(key);
-    recordCount += 1;
-    yield entry;
+  } finally {
+    reader.close();
+    input.destroy();
   }
 
   if (recordCount === 0) {

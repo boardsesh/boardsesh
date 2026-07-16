@@ -15,6 +15,7 @@ const expected: ContentArtifactIdentity = {
   boardType: 'kilter',
   modelVersion: 'climb2vec-relational-morphology-v1',
 };
+const embedding = Array.from({ length: 64 }, (_, index) => (index === 0 ? 1 : 0));
 
 const supportedRecord = {
   boardType: expected.boardType,
@@ -24,12 +25,19 @@ const supportedRecord = {
   supported: true,
   contentPrior: 20.25,
   contentSd: 1.4,
-  embedding: [0.6, 0.8],
+  embedding,
 };
 
 void describe('content-model artifact validation', () => {
   void test('accepts an identified supported record without stamping CLI identity over it', () => {
     assert.deepEqual(parseContentArtifactRecord(JSON.stringify(supportedRecord), 1, expected), supportedRecord);
+  });
+
+  void test('rejects an embedding with the wrong model width', () => {
+    assert.throws(
+      () => parseContentArtifactRecord(JSON.stringify({ ...supportedRecord, embedding: [0.6, 0.8] }), 1, expected),
+      /embedding must contain exactly 64 numbers; received 2/,
+    );
   });
 
   void test('preserves a different board identity so a combined artifact can be filtered safely', () => {
@@ -98,7 +106,7 @@ void describe('content-model artifact validation', () => {
       layoutId: 1,
       contentPrior: 19.75,
       contentSd: 1.55,
-      embedding: [0.6, 0.8],
+      embedding,
     });
     assert.deepEqual(
       parseContentArtifactRecord(legacyLine, 1, {
@@ -114,7 +122,7 @@ void describe('content-model artifact validation', () => {
         supported: true,
         contentPrior: 19.75,
         contentSd: 1.55,
-        embedding: [0.6, 0.8],
+        embedding,
       },
     );
   });

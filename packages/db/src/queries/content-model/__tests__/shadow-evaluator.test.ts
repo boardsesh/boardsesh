@@ -101,6 +101,33 @@ void describe('content-prior shadow blend', () => {
     assert.deepEqual(result, sibling);
   });
 
+  void test('ignores a candidate with non-positive uncertainty', () => {
+    const observation = {
+      boardType: 'kilter',
+      climbUuid: 'climb',
+      angle: 40,
+      difficultyAverage: 20,
+      displayDifficulty: 20,
+      ascensionistCount: 2,
+    };
+    for (const contentSd of [0, -1]) {
+      assert.deepEqual(
+        applyContentSignalToObservation(
+          observation,
+          {
+            boardType: 'kilter',
+            climbUuid: 'climb',
+            angle: 40,
+            contentPrior: 30,
+            contentSd,
+          },
+          coefficients,
+        ),
+        observation,
+      );
+    }
+  });
+
   void test('requires 100 matched rows in each overall gate and applies segment tolerances', () => {
     const rows = [
       ...Array.from({ length: 100 }, (_, index) => backtestRow(index, true, index < 50 ? 'kilter' : 'tension')),
@@ -246,6 +273,26 @@ void describe('content-prior direct invariants', () => {
     assert.equal(parsed.candidate, null);
   });
 
+  void test('rejects a shadow artifact from a different model version', () => {
+    assert.throws(
+      () =>
+        parseContentPriorArtifactRecord(
+          {
+            boardType: 'kilter',
+            climbUuid: 'wrong-model',
+            angle: 40,
+            contentPrior: null,
+            contentSd: null,
+            embedding: null,
+            modelVersion: 'climb2vec-v1',
+            supported: false,
+          },
+          2,
+        ),
+      /modelVersion=climb2vec-v1; expected climb2vec-relational-morphology-v1/,
+    );
+  });
+
   void test('checks no-shock on established candidate rows', () => {
     const result = evaluateShadowNoShock(
       [
@@ -269,6 +316,26 @@ void describe('content-prior direct invariants', () => {
 
   void test('does not pass no-shock vacuously', () => {
     const result = evaluateShadowNoShock([], coefficients);
+    assert.equal(result.checked, 0);
+    assert.equal(result.passed, false);
+  });
+
+  void test('does not pass no-shock when candidates exist but none meet the ascent threshold', () => {
+    const result = evaluateShadowNoShock(
+      [
+        {
+          boardType: 'kilter',
+          climbUuid: 'too-cold',
+          angle: 40,
+          contentPrior: 20,
+          contentSd: 1,
+          ascents: 0,
+          difficultyAverage: 20,
+          displayDifficulty: 20,
+        },
+      ],
+      coefficients,
+    );
     assert.equal(result.checked, 0);
     assert.equal(result.passed, false);
   });

@@ -139,8 +139,9 @@ export async function* readSimilarityArtifact(
   path: string,
   expected: SimilarityArtifactIdentity,
 ): AsyncGenerator<SimilarityArtifactEntry> {
+  const input = createReadStream(path, { encoding: 'utf8' });
   const reader = createInterface({
-    input: createReadStream(path, { encoding: 'utf8' }),
+    input,
     crlfDelay: Infinity,
   });
   const keys = new Set<string>();
@@ -148,23 +149,28 @@ export async function* readSimilarityArtifact(
   let lineNumber = 0;
   let recordCount = 0;
 
-  for await (const line of reader) {
-    lineNumber += 1;
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const entry = parseSimilarityArtifactEntry(trimmed, lineNumber, expected, artifactMode);
-    artifactMode = entry.mode;
-    const { record } = entry;
-    const key = `${record.boardType}\0${record.climbUuid}\0${record.angle}`;
-    if (keys.has(key)) {
-      throw recordError(
-        lineNumber,
-        `duplicate boardType+climbUuid+angle for ${record.boardType}:${record.climbUuid}@${record.angle}`,
-      );
+  try {
+    for await (const line of reader) {
+      lineNumber += 1;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const entry = parseSimilarityArtifactEntry(trimmed, lineNumber, expected, artifactMode);
+      artifactMode = entry.mode;
+      const { record } = entry;
+      const key = `${record.boardType}\0${record.climbUuid}\0${record.angle}`;
+      if (keys.has(key)) {
+        throw recordError(
+          lineNumber,
+          `duplicate boardType+climbUuid+angle for ${record.boardType}:${record.climbUuid}@${record.angle}`,
+        );
+      }
+      keys.add(key);
+      recordCount += 1;
+      yield entry;
     }
-    keys.add(key);
-    recordCount += 1;
-    yield entry;
+  } finally {
+    reader.close();
+    input.destroy();
   }
 
   if (recordCount === 0) {

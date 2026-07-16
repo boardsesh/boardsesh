@@ -179,6 +179,10 @@ crowd observation, and caps it at 2 effective opinions. It blocks when:
   more than `0.05`;
 - the no-shock or fingerprint invariant fails.
 
+The last two invariants fail closed when there are no established rows or
+checkable physical-alias groups. Absence of evidence does not satisfy a ship
+gate.
+
 Traffic is not reported as a cold-tail stratum here: the history backtest truth
 population is selected from climbs that currently have at least 50 ascents, so
 its current-traffic buckets cannot validate zero-ascent behavior.
