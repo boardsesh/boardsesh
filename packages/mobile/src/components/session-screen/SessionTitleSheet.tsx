@@ -95,8 +95,12 @@ export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: 
     </View>
   );
 
+  // `scrollable` is part of the Sheet footer contract: every working footer
+  // sheet (CommentSheet, PlaylistFormSheet) pairs them — without it the Android
+  // footer renders past the sheet's clip and the buttons never show
+  // (emulator-verified).
   return (
-    <Sheet visible={visible} snapPoints={['45%']} onClose={onClose} footer={footer}>
+    <Sheet visible={visible} snapPoints={['45%']} scrollable onClose={onClose} footer={footer}>
       <View style={styles.body}>
         <Text variant="title3" style={styles.title}>
           {t('mobile.session.renameTitle')}
