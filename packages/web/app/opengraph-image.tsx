@@ -11,13 +11,13 @@ export const alt = 'Boardsesh - Train smarter on your climbing board';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-// Resolve icon.svg via import.meta.url so @vercel/nft traces it into the
+// Resolve icon.png via import.meta.url so @vercel/nft traces it into the
 // standalone container build. dirname+join yields a plain string, which
 // avoids a Turbopack URL-prototype mismatch we saw when passing the URL
 // straight into readFileSync.
-const iconPath = join(dirname(fileURLToPath(import.meta.url)), 'icon.svg');
-const iconSvg = readFileSync(iconPath);
-const iconDataUrl = `data:image/svg+xml;base64,${iconSvg.toString('base64')}`;
+const iconPath = join(dirname(fileURLToPath(import.meta.url)), 'icon.png');
+const iconPng = readFileSync(iconPath);
+const iconDataUrl = `data:image/png;base64,${iconPng.toString('base64')}`;
 
 export default function Image() {
   return new ImageResponse(

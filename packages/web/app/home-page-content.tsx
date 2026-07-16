@@ -215,7 +215,7 @@ function InstallAppCard({ platform }: { platform: InstallPlatform }) {
     <OnboardingCard
       icon={
         <Image
-          src="/icon.svg"
+          src="/brand/boardsesh-mark.png"
           width={44}
           height={44}
           alt=""
@@ -423,7 +423,7 @@ export default function HomePageContent({
           }}
         >
           {/* i18n-ignore-next-line -- brand name, not translated */}
-          <Image src="/brand/icon-transparent.svg" width={130} height={130} alt="Boardsesh" priority />
+          <Image src="/brand/boardsesh-mark.png" width={130} height={130} alt="Boardsesh" priority />
           <Typography
             variant="h5"
             fontWeight={themeTokens.typography.fontWeight.bold}

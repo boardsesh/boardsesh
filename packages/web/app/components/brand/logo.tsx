@@ -31,7 +31,7 @@ const Logo = ({ size = 'md', showText = true, linkToHome = true }: LogoProps) =>
       }}
     >
       {/* i18n-ignore-next-line -- brand name, not translated */}
-      <Image src="/icon.svg" width={icon} height={icon} alt="Boardsesh logo" priority />
+      <Image src="/brand/boardsesh-mark.png" width={icon} height={icon} alt="Boardsesh logo" priority />
       {showText && (
         <span
           style={{
