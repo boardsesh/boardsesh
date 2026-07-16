@@ -180,7 +180,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
     classic: themeTokens.colors.amber,
     benchmark: themeTokens.colors.purple,
   };
-  const typeColor = typeColorByType[localProposal.type] || themeTokens.neutral[500];
+  const typeColor = typeColorByType[localProposal.type] || 'var(--neutral-500)';
 
   return (
     <>
@@ -190,9 +190,9 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
         data-testid="proposal-card"
         sx={{
           mb: 1.5,
-          borderColor: highlight ? 'var(--color-primary)' : themeTokens.neutral[200],
+          borderColor: highlight ? 'var(--color-primary)' : 'var(--neutral-200)',
           boxShadow: highlight ? '0 0 0 1px var(--color-primary)' : undefined,
-          '&:hover': { borderColor: themeTokens.neutral[300] },
+          '&:hover': { borderColor: 'var(--neutral-300)' },
         }}
       >
         <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
@@ -230,7 +230,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           {/* Value change */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5, flexWrap: 'wrap' }}>
             <Chip label={localProposal.currentValue} size="small" variant="outlined" sx={{ fontSize: 13 }} />
-            <ArrowForwardIcon sx={{ fontSize: 16, color: themeTokens.neutral[400] }} />
+            <ArrowForwardIcon sx={{ fontSize: 16, color: 'var(--neutral-400)' }} />
             <Chip
               label={localProposal.proposedValue}
               size="small"
@@ -245,7 +245,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
 
           {/* Reason */}
           {localProposal.reason && (
-            <Typography variant="body2" sx={{ color: themeTokens.neutral[600], mb: 1.5, fontStyle: 'italic' }}>
+            <Typography variant="body2" sx={{ color: 'var(--neutral-600)', mb: 1.5, fontStyle: 'italic' }}>
               {t('feed:proposalCard.quotedReason', { reason: localProposal.reason })}
             </Typography>
           )}
@@ -267,7 +267,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
                   disabled={loading}
                   onClick={() => handleVote(1)}
                   sx={{
-                    color: localProposal.userVote === 1 ? 'var(--color-success)' : themeTokens.neutral[400],
+                    color: localProposal.userVote === 1 ? 'var(--color-success)' : 'var(--neutral-400)',
                   }}
                 >
                   {localProposal.userVote === 1 ? (
@@ -283,7 +283,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
                   disabled={loading}
                   onClick={() => handleVote(-1)}
                   sx={{
-                    color: localProposal.userVote === -1 ? 'var(--color-error)' : themeTokens.neutral[400],
+                    color: localProposal.userVote === -1 ? 'var(--color-error)' : 'var(--neutral-400)',
                   }}
                 >
                   {localProposal.userVote === -1 ? (
@@ -358,7 +358,7 @@ export default function ProposalCard({ proposal, isAdminOrLeader, onUpdate, onDe
           </Box>
 
           {/* Timestamp */}
-          <Typography variant="caption" sx={{ color: themeTokens.neutral[400], mt: 1, display: 'block' }}>
+          <Typography variant="caption" sx={{ color: 'var(--neutral-400)', mt: 1, display: 'block' }}>
             {new Date(localProposal.createdAt).toLocaleDateString()}
           </Typography>
         </CardContent>

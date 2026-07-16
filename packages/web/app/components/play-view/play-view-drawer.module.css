@@ -76,12 +76,12 @@
 
 /* Success state - climb has been sent */
 .tickFabSuccess {
-  background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success-dark, #036b4d) 100%);
+  background: var(--color-success);
 }
 
 /* Attempt state - climb attempted but not sent */
 .tickFabAttempt {
-  background: linear-gradient(135deg, var(--color-warning, #b45309) 0%, var(--color-warning-dark, #a04a08) 100%);
+  background: var(--color-warning);
 }
 
 /* FAB hiding animation when tick bar is active */
