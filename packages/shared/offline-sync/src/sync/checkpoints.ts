@@ -1,5 +1,4 @@
 import type { SqlExecutor } from '../database';
-import { BOARD_DATA_TABLES } from './table-config';
 
 export type SyncCheckpoint = {
   updatedAt: string;
@@ -80,10 +79,7 @@ export async function rewindDeletionsCheckpoint(db: SqlExecutor, watermark: Sync
 // local-first reads from a fraction of the catalog (with stats still empty)
 // silently truncates search results while fully online. The marker is written
 // once a scope's board_climbs AND board_climb_stats pulls have both reached
-// their tail; incremental re-syncs keep the data fresh from then on. It is
-// deliberately NOT under the `checkpoint:` prefix so the sign-out checkpoint
-// wipe (deleteUserCheckpoints/deleteAllCheckpoints) leaves it alone, matching
-// the board rows it describes, which also survive as the shared cache.
+// their tail; incremental re-syncs keep the data fresh from then on.
 // Package-internal (deliberately NOT re-exported from index.ts): scope-teardown.ts
 // must clear this marker in the same transaction as the rows it describes.
 export const SCOPE_COMPLETE_PREFIX = 'scope-complete:';
@@ -134,34 +130,28 @@ export async function deleteCheckpoint(db: SqlExecutor, key: string): Promise<vo
   await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [key]);
 }
 
-export async function deleteAllCheckpoints(db: SqlExecutor): Promise<void> {
-  await db.runAsync("DELETE FROM sync_meta WHERE key LIKE 'checkpoint:%'");
-}
-
 /**
- * Reset only the user-scoped checkpoints (user tables + deletions), preserving every
- * board reference table's checkpoint — currently `checkpoint:board_climbs:*`,
- * `checkpoint:board_climb_stats:*`, and `checkpoint:board_climb_grades:*` (see
- * BOARD_DATA_TABLES in table-config.ts, derived from each TABLE_CONFIGS entry's
- * `isPerBoard` flag). Used on sign-out: the board rows survive as the shared cache
- * (connection.ts's USER_DATA_TABLES_TO_CLEAR excludes them), so their checkpoints
- * must survive too — otherwise the next sign-in re-crawls hundreds of thousands of
- * rows from epoch for every board table.
+ * Drop every row of sync_meta — checkpoints, `scope-complete:`, and the snapshot
+ * `bootstrap-done:` / `bootstrap-attempts:` markers alike.
  *
- * The exclusion list is built FROM BOARD_DATA_TABLES rather than hardcoded per table,
- * so adding a new per-board reference table (isPerBoard: true in TABLE_CONFIGS)
- * automatically preserves its checkpoint here too — no second place to remember to
- * update. board_climb_grades previously fell through this exact gap (its rows are
- * board reference data and are never cleared, but its checkpoint wasn't on the
- * hardcoded NOT-LIKE list, so it was wiped on every sign-out).
+ * Sign-out's wipe (connection.ts's clearLocalData) deletes every table sync_meta
+ * describes, board reference rows included, so this is the matching reset: a marker
+ * outlasting its rows is the unrecoverable direction. A surviving `scope-complete:`
+ * makes isBoardDownloadedLocally serve an empty catalog to local-first search as if
+ * it were the whole board, and a surviving checkpoint makes the strict `>` delta pull
+ * resume past rows that are gone and never revisit them.
+ *
+ * A blunt `DELETE FROM sync_meta` rather than a prefix sweep for exactly that reason:
+ * the marker families are deliberately spread across three modules and two prefix
+ * conventions (see SCOPE_COMPLETE_PREFIX above and snapshot-bootstrap.ts's), so any
+ * pattern here is a list someone must remember to extend. `board_climb_grades` fell
+ * through precisely that kind of hardcoded list once already. Whole-table is the one
+ * form that cannot go stale.
+ *
+ * Removing ONE scope while others stay is the opposite problem — see
+ * scope-teardown.ts's exact-key clearScopeSyncMeta, which must not touch a retained
+ * scope's markers or the global `checkpoint:deletions` cursor.
  */
-export async function deleteUserCheckpoints(db: SqlExecutor): Promise<void> {
-  const preserveBoardTableClauses = BOARD_DATA_TABLES.map(() => 'AND key NOT LIKE ?').join('\n       ');
-  const preserveBoardTableParams = BOARD_DATA_TABLES.map((tableName) => `checkpoint:${tableName}:%`);
-  await db.runAsync(
-    `DELETE FROM sync_meta
-     WHERE key LIKE 'checkpoint:%'
-       ${preserveBoardTableClauses}`,
-    preserveBoardTableParams,
-  );
+export async function deleteAllSyncMeta(db: SqlExecutor): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta');
 }

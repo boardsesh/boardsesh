@@ -11,15 +11,13 @@ import { useTheme } from '../../../src/providers/theme-provider';
 import { useLocalePreference } from '../../../src/providers/i18n-provider';
 import { resolveLanguage, type LocaleOverride } from '../../../src/lib/i18n/locale-preference';
 import { openExternalUrl } from '../../../src/lib/open-url';
-import { useAuth } from '../../../src/providers/auth-provider';
 import { useProfile } from '../../../src/lib/graphql/hooks';
-import { useConfirm } from '../../../src/providers/dialog-provider';
+import { useConfirmSignOut } from '../../../src/hooks/use-confirm-sign-out';
 import { useIsOffline } from '../../../src/hooks/use-is-offline';
 import {
   getDeadLetterCount,
   getDeadLetters,
   retryDeadLetter,
-  getPendingCount,
   getDownloadedScopeKeys,
   type GraphQLFetch,
 } from '@boardsesh/offline-sync';
@@ -61,7 +59,7 @@ export default function MoreScreen() {
   const { t: tProfile } = useTranslation('profile');
   const { t: tPlaylists } = useTranslation('playlists');
   const { t: tSettings } = useTranslation('settings');
-  const { signOut } = useAuth();
+  const confirmSignOut = useConfirmSignOut();
   const { data: profile } = useProfile();
   const { gradeFormat, setGradeFormat } = useGradeFormat();
   const { localePreference, setLocalePreference } = useLocalePreference();
@@ -75,7 +73,6 @@ export default function MoreScreen() {
   // Off until the Connect IQ watch app ships — nothing to pair to before then.
   const garminWatchEnabled = useFeatureFlag('garmin-watch') === true;
   const offlineEnabled = useOfflineDownloadsEnabled();
-  const confirm = useConfirm();
 
   // Offline sync-issues surface. Poll the dead-letter count only while online (the
   // section is hidden offline — a pending write offline is expected, not a "stuck"
@@ -96,9 +93,8 @@ export default function MoreScreen() {
   });
 
   // Whether to offer the Storage screen: the offline engine is on, OR this device is
-  // still holding downloaded boards from before (a kill-switch rollback, or a
-  // sign-out — which clears syncEnabledBoards but deliberately keeps the rows as the
-  // shared cache). One cheap indexed read, same cost shape as the dead-letter count.
+  // still holding downloaded boards from before (a kill-switch rollback leaves the
+  // rows in place). One cheap indexed read, same cost shape as the dead-letter count.
   // Shares the ['downloadedScopeKeys'] cache entry with My Boards, so this warms it.
   const { data: downloadedScopeKeys } = useQuery({
     queryKey: ['downloadedScopeKeys'],
@@ -133,30 +129,8 @@ export default function MoreScreen() {
     }
   };
 
-  // Sign-out wipes the local queue, so warn before dropping any not-yet-synced
-  // writes. No pending writes → sign out straight away (pre-offline behaviour
-  // for everyone whose queue is empty, i.e. every normal flag-off user).
-  // Deliberately NOT gated on the offline flag: after a kill-switch rollback a
-  // flag-off user can still hold queued writes, and those deserve the same
-  // warning — the count is one local SQLite read.
-  const handleSignOut = async () => {
-    let pending = 0;
-    try {
-      pending = await getPendingCount(db);
-    } catch {
-      pending = 0;
-    }
-    if (pending > 0) {
-      const confirmed = await confirm({
-        title: t('mobile.more.signOut.pendingTitle'),
-        message: t('mobile.more.signOut.pendingMessage', { count: pending }),
-        confirmLabel: t('mobile.more.signOut.confirm'),
-        cancelLabel: t('mobile.more.signOut.cancel'),
-        destructive: true,
-      });
-      if (!confirmed) return;
-    }
-    void signOut();
+  const handleSignOut = () => {
+    void confirmSignOut();
   };
 
   // Live Metro dev-server switching needs expo-dev-client's native launcher, which
@@ -239,7 +213,7 @@ export default function MoreScreen() {
       role: 'destructive',
       emphasis: 'primary',
       onPress: () => {
-        void handleSignOut();
+        handleSignOut();
       },
     },
     {

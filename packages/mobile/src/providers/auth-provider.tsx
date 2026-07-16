@@ -24,7 +24,7 @@ import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredActiveBoard } from '../lib/active-board-store';
 import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
-import { clearUserData, getDatabaseHandle } from '../db';
+import { purgeLocalDataForSignOut, getDatabaseHandle } from '../db';
 import { setSetting } from '../settings';
 import { getPendingCount, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
@@ -121,7 +121,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
     setSigningOut(true);
     try {
-      await clearUserData(localDb);
+      await purgeLocalDataForSignOut(localDb);
     } catch (error) {
       if (__DEV__) {
         console.warn('[Auth] local offline data cleanup during sign-out failed:', error);
@@ -142,10 +142,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     await stopTokenManagement(async () => {});
     await clearPersistedUserStores();
     await clearLocalOfflineUserData();
-    // Reset the per-user "downloaded boards" list so the next account on a shared
-    // device doesn't inherit the previous user's offline selection. The cached board
-    // rows + checkpoints survive (clearUserData preserves them), so if the next user
-    // enables the same board the download resumes instantly.
+    // Reset the "downloaded boards" list so the next account on a shared device
+    // doesn't inherit the previous user's offline selection. purgeLocalDataForSignOut
+    // has already deleted the rows those keys point at, so leaving the list populated
+    // would show boards as available offline over an empty catalog.
     setSetting('syncEnabledBoards', []);
     // Drop the in-memory active-board cache too. It's `staleTime: Infinity`, so
     // without this the next user to sign in on a shared device would inherit the

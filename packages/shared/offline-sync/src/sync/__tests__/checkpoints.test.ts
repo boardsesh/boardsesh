@@ -6,8 +6,9 @@ import {
   getCheckpoint,
   setCheckpoint,
   deleteCheckpoint,
-  deleteAllCheckpoints,
-  deleteUserCheckpoints,
+  deleteAllSyncMeta,
+  markScopeDownloadComplete,
+  isScopeDownloadComplete,
 } from '../checkpoints';
 import type { SyncCheckpoint } from '../checkpoints';
 import { BOARD_DATA_TABLES } from '../table-config';
@@ -99,24 +100,10 @@ describe('deleteCheckpoint', () => {
   });
 });
 
-describe('deleteAllCheckpoints', () => {
-  it('deletes all entries with checkpoint: prefix', async () => {
-    const db = createMockDb();
-
-    await deleteAllCheckpoints(db);
-
-    expect(db.runAsync).toHaveBeenCalledWith("DELETE FROM sync_meta WHERE key LIKE 'checkpoint:%'");
-  });
-});
-
-// Regression coverage for the sign-out checkpoint wipe (reviewer-flagged MAJOR:
-// board_climb_grades' checkpoint fell through the old hardcoded NOT-LIKE list — its
-// rows are board reference data that survives sign-out, per USER_DATA_TABLES_TO_CLEAR
-// in packages/mobile/src/db/connection.ts, but its checkpoint was still deleted,
-// forcing a full re-crawl on the next sign-in). Runs against real node:sqlite (not the
-// call-recording mock above) because the bug lives in whether SQLite's LIKE matching
-// actually preserves the right rows, not just in what SQL string gets built.
-describe('deleteUserCheckpoints', () => {
+// Sign-out's reset. Runs against real node:sqlite (not the call-recording mock
+// above) because the guarantee is about which rows actually survive, not about what
+// SQL string gets built.
+describe('deleteAllSyncMeta', () => {
   let db: TestSqliteDb;
 
   beforeEach(async () => {
@@ -124,36 +111,39 @@ describe('deleteUserCheckpoints', () => {
     await runMigrations(db);
   });
 
-  it('preserves a board_climb_grades checkpoint while deleting a user-data checkpoint', async () => {
-    await setCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5', {
-      updatedAt: '2026-01-01T00:00:00Z',
-      syncSeq: '1',
-    });
-    await setCheckpoint(db, 'checkpoint:boardsesh_ticks', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '7' });
-
-    await deleteUserCheckpoints(db);
-
-    expect(await getCheckpoint(db, 'checkpoint:board_climb_grades:kilter:1:5')).not.toBeNull();
-    expect(await getCheckpoint(db, 'checkpoint:boardsesh_ticks')).toBeNull();
-  });
-
-  it('preserves every BOARD_DATA_TABLES checkpoint, so a future per-board table cannot silently regress', async () => {
-    // Derived from BOARD_DATA_TABLES (not hardcoded to today's three tables) so this
-    // test keeps proving the guarantee even as isPerBoard entries in table-config.ts
-    // change — the whole point of making deleteUserCheckpoints dynamic.
+  it('leaves nothing behind — no checkpoint of any table, user or per-board', async () => {
+    // Derived from BOARD_DATA_TABLES rather than hardcoded to today's three tables,
+    // so a future isPerBoard entry in table-config.ts is covered automatically.
     for (const tableName of BOARD_DATA_TABLES) {
       await setCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`, {
         updatedAt: '2026-01-01T00:00:00Z',
         syncSeq: '1',
       });
     }
-    await setCheckpoint(db, 'checkpoint:playlists', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '1' });
+    await setCheckpoint(db, 'checkpoint:boardsesh_ticks', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '7' });
+    await setCheckpoint(db, 'checkpoint:deletions', { updatedAt: '2026-01-01T00:00:00Z', syncSeq: '3' });
 
-    await deleteUserCheckpoints(db);
+    await deleteAllSyncMeta(db);
 
     for (const tableName of BOARD_DATA_TABLES) {
-      expect(await getCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`)).not.toBeNull();
+      expect(await getCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`)).toBeNull();
     }
-    expect(await getCheckpoint(db, 'checkpoint:playlists')).toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:boardsesh_ticks')).toBeNull();
+    expect(await getCheckpoint(db, 'checkpoint:deletions')).toBeNull();
+  });
+
+  // The reason this is a whole-table DELETE and not a `checkpoint:%` sweep: these
+  // markers deliberately live outside that prefix, so a prefix wipe would strand
+  // them past the rows they describe.
+  it('takes the scope-complete and bootstrap markers a prefix sweep would strand', async () => {
+    await markScopeDownloadComplete(db, 'kilter:1:5');
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-done:kilter:1:5', '1']);
+    await db.runAsync('INSERT INTO sync_meta (key, value) VALUES (?, ?)', ['bootstrap-attempts:kilter:1:5', '2']);
+
+    await deleteAllSyncMeta(db);
+
+    expect(await isScopeDownloadComplete(db, 'kilter:1:5')).toBe(false);
+    const remaining = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) AS count FROM sync_meta');
+    expect(remaining?.count).toBe(0);
   });
 });

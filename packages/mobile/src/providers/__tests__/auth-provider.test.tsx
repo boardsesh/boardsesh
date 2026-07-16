@@ -70,7 +70,7 @@ vi.mock('../../lib/graphql/use-active-board', () => ({
 const getDatabaseHandleMock = vi.fn((): unknown => null);
 vi.mock('../../db', () => ({
   getDatabaseHandle: () => getDatabaseHandleMock(),
-  clearUserData: vi.fn(),
+  purgeLocalDataForSignOut: vi.fn(),
 }));
 
 const drainMutationQueueMock = vi.fn(async (..._args: unknown[]) => {});

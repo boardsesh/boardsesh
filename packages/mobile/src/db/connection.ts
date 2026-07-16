@@ -9,9 +9,10 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import {
   ensureMutationQueueTable,
   runMigrations,
-  deleteUserCheckpoints,
+  deleteAllSyncMeta,
   setCheckpoint,
   getCheckpointKey,
+  vacuumDatabase,
   BOARD_DATA_TABLES,
 } from '@boardsesh/offline-sync';
 import { resolveSeedAssetModuleId } from './seed-asset';
@@ -24,12 +25,21 @@ export const DATABASE_NAME = 'boardsesh.db';
 // user data.
 const SEEDABLE_BOARD_TABLES = BOARD_DATA_TABLES;
 
-// Tables that hold the signed-in user's own data. Cleared on sign-out so the
-// next account on the device never sees the previous user's ticks, playlists,
-// follows, or not-yet-synced writes. Board reference data (board_climbs,
-// board_climb_stats) is deliberately excluded — it is the expensive shared
-// cache and is identical regardless of who is logged in.
-const USER_DATA_TABLES_TO_CLEAR = [
+// Every table sign-out clears. The user's own rows (so the next account on the
+// device never sees the previous user's ticks, playlists, follows, or
+// not-yet-synced writes) AND the downloaded board catalogs.
+//
+// The board tables used to be excluded, on the grounds that the catalog is the
+// expensive shared cache and is identical whoever is logged in. That traded a
+// signed-out user's ~200k rows per board of disk for a faster re-enable, and it
+// no longer pays: snapshot bootstrap has since turned a re-download into one
+// CDN GET per board, and "log out" should not leave a board you downloaded
+// sitting on the phone (issue #3621).
+//
+// BOARD_DATA_TABLES is spread rather than listed so a future per-board table
+// (isPerBoard: true in TABLE_CONFIGS) is covered here automatically —
+// board_climb_grades fell through exactly this kind of hardcoded list once.
+const TABLES_TO_CLEAR = [
   'boardsesh_ticks',
   'playlists',
   'playlist_climbs',
@@ -38,6 +48,7 @@ const USER_DATA_TABLES_TO_CLEAR = [
   'setter_follows',
   'playlist_follows',
   'pending_mutations',
+  ...BOARD_DATA_TABLES,
 ] as const;
 
 let databaseHandle: SQLiteDatabase | null = null;
@@ -201,25 +212,67 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
 }
 
 /**
- * Wipes the current user's local data on sign-out (account lifecycle, I11).
- * Runs every delete plus the checkpoint reset inside one transaction so the
- * device is left in a clean, internally-consistent state for the next account:
- * either everything is cleared or nothing is.
+ * Wipes every trace of the signed-out user's local data — their own rows, their
+ * queued writes, and the board catalogs they downloaded (account lifecycle, I11).
  *
- * Board reference data is intentionally left in place (see
- * USER_DATA_TABLES_TO_CLEAR), and so are the board download checkpoints — the rows
- * survive as the shared cache, so re-crawling them from epoch on the next sign-in
- * would be wasteful. Only the user-scoped checkpoints (user tables + deletions) are
- * reset. Any pending mutations that had not yet reached the server are discarded
- * here along with their local rows — sign-out is an explicit "this account is done
- * on this device" signal, so dropping unsynced writes is the documented behaviour
- * rather than a data-loss bug.
+ * Every delete plus the sync_meta reset runs inside one transaction, so the device
+ * is left in a clean, internally-consistent state for the next account: either
+ * everything is cleared or nothing is. Rows and the markers describing them dying
+ * together is the load-bearing part — a marker outliving its rows is the
+ * unrecoverable direction (see deleteAllSyncMeta), because a surviving
+ * `scope-complete:` would serve an empty catalog to local-first search as a whole
+ * board, and a surviving checkpoint would make the strict `>` delta pull resume past
+ * rows that are gone.
+ *
+ * Any pending mutations that had not yet reached the server are discarded here along
+ * with their local rows — sign-out is an explicit "this account is done on this
+ * device" signal, so dropping unsynced writes is the documented behaviour rather than
+ * a data-loss bug. The manual sign-out path drains the queue best-effort first and
+ * warns about whatever is left (useConfirmSignOut).
+ *
+ * The caller MUST have aborted in-flight pulls first — a page already on the wire
+ * would otherwise land after the delete and resurrect part of a catalog, complete
+ * with a checkpoint past it. AuthProvider's setSigningOut(true) does that (it bumps
+ * the monotonic wipe epoch that every long-running pull re-checks across its awaits)
+ * and is what purgeLocalDataForSignOut runs inside.
  */
-export async function clearUserData(db: SQLiteDatabase): Promise<void> {
+export async function clearLocalData(db: SQLiteDatabase): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
-    for (const table of USER_DATA_TABLES_TO_CLEAR) {
+    // The board deletes take seconds on a large layout; don't lose the BEGIN
+    // EXCLUSIVE to a straggling write on the main connection.
+    await txn.execAsync('PRAGMA busy_timeout = 5000');
+    for (const table of TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }
-    await deleteUserCheckpoints(txn);
+    await deleteAllSyncMeta(txn);
   });
+}
+
+/**
+ * Sign-out's full local wipe: delete everything, then hand the freed pages back to
+ * the filesystem.
+ *
+ * The VACUUM is what makes the deletes visible to the user — without it SQLite parks
+ * the freed pages on its freelist and the .db keeps its old size forever, so someone
+ * who downloaded a 180MB board still sees the app occupying it in the OS storage
+ * screen after logging out. It's cheap in this particular case: VACUUM's cost tracks
+ * LIVE data, and clearLocalData has just emptied every table, so it rebuilds a
+ * near-empty file rather than the 5-20s exclusive rebuild the same call costs when
+ * scope-teardown leaves the rest of a catalog in place.
+ *
+ * It runs outside the transaction because SQLite rejects VACUUM inside one, and its
+ * failure is swallowed: the rows are already gone by then, so a SQLITE_FULL /
+ * SQLITE_BUSY means "the file didn't shrink", never data loss — and failing a
+ * sign-out over cosmetics would be the worse bug.
+ */
+export async function purgeLocalDataForSignOut(db: SQLiteDatabase): Promise<void> {
+  await clearLocalData(db);
+  try {
+    await vacuumDatabase(db);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[SQLite] post-sign-out VACUUM failed; data is cleared but the file did not shrink:', error);
+    }
+    reportError(error, { tags: { source: 'offline-sync', kind: 'sign-out-vacuum' } });
+  }
 }

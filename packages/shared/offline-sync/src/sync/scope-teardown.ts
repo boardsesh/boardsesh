@@ -162,10 +162,12 @@ export async function getScopeUsage(
 
 async function clearScopeSyncMeta(txn: SqlExecutor, scopeKey: string): Promise<void> {
   const keys = scopeSyncMetaKeys(scopeKey);
-  // An exact key list, NOT a `LIKE 'checkpoint:%'` pattern. deleteAllCheckpoints
-  // uses that pattern and it would swallow `checkpoint:deletions` — the single
-  // global deletions cursor, which must survive (see the note in removeBoardScopeData).
-  // Exact keys make that structurally impossible rather than pattern-dependent.
+  // An exact key list, NOT a prefix pattern. A `LIKE 'checkpoint:%'` sweep would
+  // swallow `checkpoint:deletions` — the single global deletions cursor, which must
+  // survive (see the note in removeBoardScopeData) — and a retained sibling scope's
+  // markers with it. Exact keys make that structurally impossible rather than
+  // pattern-dependent. Sign-out is the opposite case and wipes the table outright
+  // (checkpoints.ts's deleteAllSyncMeta).
   await txn.runAsync(`DELETE FROM sync_meta WHERE key IN (${keys.map(() => '?').join(', ')})`, keys);
 }
 

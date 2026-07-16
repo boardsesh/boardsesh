@@ -2,8 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState, type
 import { router, useSegments } from 'expo-router';
 import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { openDiscordInvite } from '../../lib/discord';
-import { reportError } from '../../lib/error-reporting';
-import { useAuth } from '../../providers/auth-provider';
+import { useConfirmSignOut } from '../../hooks/use-confirm-sign-out';
 import { FeedbackSheet, type FeedbackSheetMode } from './FeedbackSheet';
 
 type BoardReturnTo = '/(tabs)/discover' | '/(tabs)/climbs';
@@ -45,7 +44,7 @@ function currentBoardReturnTo(segments: readonly string[]): BoardReturnTo {
 }
 
 export function UserDrawerProvider({ children }: { children: ReactNode }) {
-  const { signOut } = useAuth();
+  const confirmSignOut = useConfirmSignOut();
   const segments = useSegments();
   const feedbackSheetRef = useRef<BottomSheetModal>(null);
   const [feedbackMode, setFeedbackMode] = useState<FeedbackSheetMode>('rating');
@@ -107,9 +106,12 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     void openDiscordInvite('user-drawer');
   }, []);
 
+  // The drawer row calls this via `close(after)`, so the confirm is raised after the
+  // drawer has slid away and its route popped — on iOS the dialog is a native Alert,
+  // which would otherwise sit over a drawer mid-dismiss.
   const signOutAction = useCallback(() => {
-    void signOut('manual').catch(reportError);
-  }, [signOut]);
+    void confirmSignOut();
+  }, [confirmSignOut]);
 
   const presentFeedback = useCallback(() => {
     feedbackSheetRef.current?.present();

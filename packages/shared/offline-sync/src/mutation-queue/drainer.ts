@@ -12,14 +12,14 @@ let _isDraining = false;
 
 // Sign-out guard (account lifecycle): while sign-out is wiping local user data,
 // a scheduler- or listener-triggered drain must not run concurrently — it could
-// race clearUserData's DELETEs (reading half-cleared rows) or re-touch the DB
-// mid-wipe. Sign-out sets this before clearUserData and clears it after; any
+// race clearLocalData's DELETEs (reading half-cleared rows) or re-touch the DB
+// mid-wipe. Sign-out sets this before clearLocalData and clears it after; any
 // drain entered while it's set early-returns. The one bounded drain sign-out
 // itself performs runs BEFORE the flag is set, so it isn't blocked.
 let _isSigningOut = false;
 
 // Monotonic wipe generation. The boolean above is true only for the
-// milliseconds clearUserData takes, so an async operation whose network await
+// milliseconds clearLocalData takes, so an async operation whose network await
 // was in flight during that window sees `false` on both sides of it and would
 // happily write the old user's data back after the wipe (or, in a drain, post
 // the old user's queued writes under the NEXT user's token). Long-running
@@ -60,7 +60,7 @@ export function beginLocalPurge(): void {
 
 // Read by the pull client too: an in-flight pullSync page must stop writing the
 // old user's rows once sign-out starts wiping — otherwise a page landing after
-// clearUserData resurrects data the next signed-in account could briefly see.
+// clearLocalData resurrects data the next signed-in account could briefly see.
 export function isSigningOut(): boolean {
   return _isSigningOut;
 }

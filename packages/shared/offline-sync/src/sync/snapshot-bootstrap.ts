@@ -117,9 +117,10 @@ export class SnapshotPermanentMissError extends Error {
   }
 }
 
-// --- Attempt / done markers (sync_meta, NOT under the checkpoint: prefix so the
-// sign-out checkpoint wipe leaves them alone, matching the board rows they
-// describe, which survive as the shared cache) ---------------------------------
+// --- Attempt / done markers (sync_meta, NOT under the checkpoint: prefix — which is
+// exactly why the two callers that delete board rows must clear them explicitly
+// rather than sweeping `checkpoint:%`: sign-out wipes the table whole
+// (deleteAllSyncMeta), scope-teardown deletes this scope's keys by name) ----------
 
 export async function getBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<number> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [

@@ -714,7 +714,7 @@ describe('pullSync', () => {
 
   it('stops pulling while sign-out is wiping local data (no fetches, no writes, no checkpoint advance)', async () => {
     // Mirrors the drainer's sign-out guard: an in-flight pull page landing after
-    // clearUserData would resurrect the old user's rows for the next account.
+    // clearLocalData would resurrect the old user's rows for the next account.
     setupGraphqlFetchForAllTables();
     setSigningOut(true);
     try {
@@ -729,7 +729,7 @@ describe('pullSync', () => {
 
   it('discards a page whose fetch was in flight while a wipe started AND finished (epoch guard)', async () => {
     // The old-boolean hole: sign-out sets the flag only for the milliseconds
-    // clearUserData takes. A page fetch awaiting the network across that window
+    // clearLocalData takes. A page fetch awaiting the network across that window
     // sees `false` on both sides and would write the signed-out user's rows —
     // and their checkpoints — back into the wiped DB. The monotonic wipe epoch
     // catches it: this fetch simulates a complete wipe cycle mid-flight.

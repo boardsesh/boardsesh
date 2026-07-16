@@ -163,14 +163,16 @@
         "description_one": "1 modification n'a pas pu se synchroniser. Réessaie pour l'envoyer maintenant.",
         "description_other": "{{count}} modifications n'ont pas pu se synchroniser. Réessaie pour les envoyer maintenant.",
         "retry": "Réessayer la synchronisation"
-      },
-      "signOut": {
-        "pendingTitle": "Se déconnecter ?",
-        "pendingMessage_one": "Tu as 1 modification pas encore synchronisée. La déconnexion la supprimera.",
-        "pendingMessage_other": "Tu as {{count}} modifications pas encore synchronisées. La déconnexion les supprimera.",
-        "confirm": "Se déconnecter",
-        "cancel": "Annuler"
       }
+    },
+    "signOut": {
+      "title": "Se déconnecter ?",
+      "message": "Tu devras te reconnecter pour retrouver ton carnet et tes boards.",
+      "messageOffline": "Les boards que tu as téléchargées et ton carnet hors ligne sont supprimés de ce téléphone. Tu les reconfigureras à ta prochaine connexion.",
+      "pending_one": "Tu as 1 modification pas encore synchronisée. La déconnexion la supprimera.",
+      "pending_other": "Tu as {{count}} modifications pas encore synchronisées. La déconnexion les supprimera.",
+      "confirm": "Se déconnecter",
+      "cancel": "Annuler"
     },
     "about": {
       "title": "À propos de Boardsesh",

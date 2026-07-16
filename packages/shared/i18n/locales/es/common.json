@@ -364,14 +364,16 @@
         "description_one": "1 cambio no se pudo sincronizar. Reintenta para enviarlo ahora.",
         "description_other": "{{count}} cambios no se pudieron sincronizar. Reintenta para enviarlos ahora.",
         "retry": "Reintentar sincronización"
-      },
-      "signOut": {
-        "pendingTitle": "¿Cerrar sesión?",
-        "pendingMessage_one": "Tienes 1 cambio sin sincronizar. Al cerrar sesión se descartará.",
-        "pendingMessage_other": "Tienes {{count}} cambios sin sincronizar. Al cerrar sesión se descartarán.",
-        "confirm": "Cerrar sesión",
-        "cancel": "Cancelar"
       }
+    },
+    "signOut": {
+      "title": "¿Cerrar sesión?",
+      "message": "Tendrás que iniciar sesión otra vez para volver a tu logbook y tus plafones.",
+      "messageOffline": "Los plafones que descargaste y tu logbook sin conexión se eliminan de este teléfono. Los volverás a configurar la próxima vez que inicies sesión.",
+      "pending_one": "Tienes 1 cambio sin sincronizar. Al cerrar sesión se descartará.",
+      "pending_other": "Tienes {{count}} cambios sin sincronizar. Al cerrar sesión se descartarán.",
+      "confirm": "Cerrar sesión",
+      "cancel": "Cancelar"
     },
     "about": {
       "title": "Sobre Boardsesh",

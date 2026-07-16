@@ -1,6 +1,6 @@
-// Exercises clearUserData against the REAL v1 DDL (via node:sqlite): every
-// user-data table plus the mutation queue and sync checkpoints must be wiped on
-// sign-out, while the expensive board reference cache is left untouched.
+// Exercises clearLocalData against the REAL v1 DDL (via node:sqlite): sign-out must
+// leave nothing behind — every user-data table, the mutation queue, the downloaded
+// board catalogs, and every sync_meta marker describing them.
 //
 // Also exercises the optional bundled-seed path in initializeDatabase: it must be
 // a true no-op when no asset is bundled (the default), and copy board reference
@@ -32,7 +32,7 @@ vi.mock('expo-asset', () => ({
 }));
 
 import type { SQLiteDatabase } from 'expo-sqlite';
-import { clearUserData, initializeDatabase } from '../connection';
+import { clearLocalData, initializeDatabase } from '../connection';
 import {
   runMigrations,
   SCHEMA_STATEMENTS,
@@ -41,6 +41,9 @@ import {
   getCheckpointKey,
   enqueue,
   getPendingCount,
+  markScopeDownloadComplete,
+  isScopeDownloadComplete,
+  getDownloadedScopeKeys,
 } from '@boardsesh/offline-sync';
 import { createTestDatabase, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
@@ -64,7 +67,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('clearUserData', () => {
+describe('clearLocalData', () => {
   it('clears every user-data table, the mutation queue, and sync checkpoints', async () => {
     const now = '2024-06-01T00:00:00Z';
 
@@ -87,14 +90,15 @@ describe('clearUserData', () => {
     await enqueue(db, 'boardsesh_ticks', 'create', { climbUuid: 'climb-1' }, 'tick-1');
     await setCheckpoint(db, getCheckpointKey('boardsesh_ticks'), { updatedAt: now, syncSeq: '5' });
 
-    // Board reference data that must survive the wipe.
+    // The downloaded catalog and its markers go too (issue #3621).
     await db.runAsync(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`, ['climb-1', 'kilter']);
     await db.runAsync(
       `INSERT INTO board_climb_stats (board_type, climb_uuid, angle, ascensionist_count) VALUES (?, ?, ?, ?)`,
       ['kilter', 'climb-1', 40, 12],
     );
+    await setCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'), { updatedAt: now, syncSeq: '9' });
 
-    await clearUserData(db);
+    await clearLocalData(db);
 
     expect(await countRows('boardsesh_ticks')).toBe(0);
     expect(await countRows('playlists')).toBe(0);
@@ -106,13 +110,33 @@ describe('clearUserData', () => {
     expect(await getPendingCount(db)).toBe(0);
     expect(await getCheckpoint(db, getCheckpointKey('boardsesh_ticks'))).toBeNull();
 
-    // The expensive shared cache is deliberately retained.
-    expect(await countRows('board_climbs')).toBe(1);
-    expect(await countRows('board_climb_stats')).toBe(1);
+    // The downloaded catalog is no longer kept for the next account.
+    expect(await countRows('board_climbs')).toBe(0);
+    expect(await countRows('board_climb_stats')).toBe(0);
+    expect(await getCheckpoint(db, getCheckpointKey('board_climbs', 'kilter:1:1'))).toBeNull();
+  });
+
+  // The failure this wipe exists to avoid, and the reason it clears sync_meta whole
+  // rather than by prefix: `scope-complete:` and the bootstrap markers deliberately
+  // sit OUTSIDE the `checkpoint:` prefix. If they outlive the rows they describe,
+  // isBoardDownloadedLocally reports the board as available offline and local-first
+  // search serves an empty catalog as though it were the whole board.
+  it('leaves no marker describing rows it deleted', async () => {
+    await db.runAsync(`INSERT INTO board_climbs (uuid, board_type) VALUES (?, ?)`, ['climb-1', 'kilter']);
+    await markScopeDownloadComplete(db, 'kilter:1:1');
+    await db.runAsync(`INSERT INTO sync_meta (key, value) VALUES (?, ?)`, ['bootstrap-done:kilter:1:1', '1']);
+    await db.runAsync(`INSERT INTO sync_meta (key, value) VALUES (?, ?)`, ['bootstrap-attempts:kilter:1:1', '2']);
+    expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(true);
+
+    await clearLocalData(db);
+
+    expect(await isScopeDownloadComplete(db, 'kilter:1:1')).toBe(false);
+    expect(await getDownloadedScopeKeys(db)).toEqual([]);
+    expect(await countRows('sync_meta')).toBe(0);
   });
 
   it('is a no-op on an already-empty database', async () => {
-    await clearUserData(db);
+    await clearLocalData(db);
 
     expect(await countRows('boardsesh_ticks')).toBe(0);
     expect(await getPendingCount(db)).toBe(0);
