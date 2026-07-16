@@ -1,29 +1,48 @@
 # Climb2Vec — offline training & evaluation
 
 Offline PyTorch/sklearn pipeline for the hold-geometry grade model (see
-`../../docs/climb2vec.md`). **Offline only** — nothing here ships to prod; serving
-is pure TypeScript. The pipeline reads the training matrix exported by
-`packages/db/scripts/extract-training-matrix.ts` and produces grade-accuracy and
-similarity numbers, plus (eventually) the `content_prior` + embedding artifacts
-that a nightly job `COPY`s into Postgres.
+`../../docs/climb2vec.md`). The production `climb2vec-v1` workflow remains
+unchanged. The Stage-3 morphology/relational path in this directory is a
+pre-registered offline trial; it cannot produce a loadable artifact unless it
+passes the incumbent comparison and the sealed test rule.
 
 ## Layout
 
 - `dataset.py` — load the JSONL extract, split by climb (no angle leakage), build
   label-free geometry features + hold-identity, duplicate-holdset keys.
 - `model.py` — the Deep Sets encoder: per-hold node MLP → masked mean/max/**sum**
-  pool → angle → penultimate **embedding** → linear grade head.
+  pool → angle → penultimate **embedding** → linear grade head; plus the
+  placement-ID-free relational residual candidate.
 - `evaluate.py` — the leakage-free eval: ridge + GBM + Deep Sets grade accuracy on
   held-out climbs, and similarity (duplicate retrieval + nearest-neighbour grade
   agreement). Writes `artifacts/results.json`.
+- `stage3_dataset.py` — physical-problem splits, sealed Tension benchmarks,
+  train-fold hold effects, incumbent/enhanced GBM features, and relational
+  tensors.
+- `stage3_experiment.py` — Runs 3–7 and their automatic kill/ship decisions.
+- `training.py` — deterministic weighted-Huber training over a detached,
+  cross-fitted GBM prediction.
 
 ## Leakage discipline
 
-The per-hold `hd`/`fd` fields in the extract were fit on **all** grades, so using
-them as model inputs would leak the label. Instead every hold effect is learned on
-the **train split only** — a train-fit ridge coefficient (fed as a node feature)
-and a learned per-placement embedding — then applied to held-out climbs. Only
-label-free geometry + hold identity reach the models.
+The per-hold `hd`/`fd` fields in the extract were fit on **all** grades, so the
+Stage-3 path never consumes them. Every behavioral hold effect is refit inside
+the relevant training partition. The residual model receives out-of-fold GBM
+predictions and hold effects whose ridge fit did not see that physical problem.
+
+The Stage-3 split key is `physicalKey`, not UUID. Kilter uses
+`(layout_id, hold_fingerprint)`. Tension uses the lexicographically smaller of
+the complete original/mirrored route signatures scoped to its product family.
+MoonBoard uses the same route signature scoped to `layout_id`, because editions
+reuse cell ids for different physical holds. STARTING, HAND, FINISH, and FOOT
+remain distinct. Duplicate listings, mirrors, and every angle therefore stay
+together.
+
+Any physical problem containing a Tension benchmark is sealed completely. It
+cannot fit hold effects, the GBM, the relational model, or choose the seed.
+The encoder limit is 40 holds; any physical problem containing a zero-hold or
+
+> 40-hold row is excluded and reported before splitting. No row is truncated.
 
 ## Run
 
@@ -32,13 +51,128 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 pip install torch --index-url https://download.pytorch.org/whl/cpu   # for Deep Sets
 
-# 1. Export the training matrix (needs board_hold_features populated):
-node --import tsx ../../packages/db/scripts/extract-training-matrix.ts \
-  --board=kilter --out=ml/climb2vec/data/kilter-train.jsonl   # run from repo root
+# 1. Rebuild deterministic per-hold morphology from committed transparent art.
+vp run db:extract-hold-morphology --
 
-# 2. Evaluate:
-python evaluate.py --data data/kilter-train.jsonl --epochs 30
+# 2. Export Kilter + Tension frozen Stage-2 targets in one read-only,
+# repeatable-read snapshot. Cold curated Tension benchmarks are retained for the
+# sealed answer key even without a Stage-2 crowd target. Conflicting duplicate
+# benchmark answers reject that whole physical problem and are recorded in
+# data/stage3-train.jsonl.rejections.json.
+vp run db:extract-training-matrix -- \
+  --board=kilter,tension --target=stage2 \
+  --morphology=ml/climb2vec/artifacts/hold-morphology-v1.jsonl \
+  --out=ml/climb2vec/data/stage3-train.jsonl
+
+# Score inputs are label-free and retain every UUID so a passing model can map
+# pooled physical predictions back to aliases.
+vp run db:extract-training-matrix -- \
+  --board=kilter --score \
+  --morphology=ml/climb2vec/artifacts/hold-morphology-v1.jsonl \
+  --out=ml/climb2vec/data/kilter-stage3-score.jsonl
+vp run db:extract-training-matrix -- \
+  --board=tension --score \
+  --morphology=ml/climb2vec/artifacts/hold-morphology-v1.jsonl \
+  --out=ml/climb2vec/data/tension-stage3-score.jsonl
+vp run db:extract-training-matrix -- \
+  --board=moonboard --score \
+  --morphology=ml/climb2vec/artifacts/hold-morphology-v1.jsonl \
+  --out=ml/climb2vec/data/moonboard-stage3-score.jsonl
+
+# 3. Run the complete five-run budget once. The command automatically stops
+# after Run 4 or Run 6 when a kill threshold fails.
+cd ml/climb2vec
+python stage3_experiment.py \
+  --data data/stage3-train.jsonl \
+  --through-run=7 \
+  --score data/kilter-stage3-score.jsonl \
+  --score data/tension-stage3-score.jsonl \
+  --score data/moonboard-stage3-score.jsonl
+
+cd ../..
+vp run db:evaluate-content-prior-shadow -- \
+  --in=ml/climb2vec/artifacts/stage3-shadow-predictions.jsonl
+
+# Only after offline + shadow approval: the artifact is intentionally combined,
+# identified, and catalog-complete. Each loader invocation validates every line,
+# selects one board by record.boardType, and atomically replaces that board.
+vp node --import tsx packages/db/scripts/load-content-model.ts \
+  --board=kilter --model=climb2vec-relational-morphology-v1 \
+  --in=ml/climb2vec/artifacts/stage3-shadow-predictions.jsonl
+vp node --import tsx packages/db/scripts/load-content-model.ts \
+  --board=tension --model=climb2vec-relational-morphology-v1 \
+  --in=ml/climb2vec/artifacts/stage3-shadow-predictions.jsonl
+vp node --import tsx packages/db/scripts/load-content-model.ts \
+  --board=moonboard --model=climb2vec-relational-morphology-v1 \
+  --in=ml/climb2vec/artifacts/stage3-shadow-predictions.jsonl
+
+cd ml/climb2vec
+python similarity_export.py \
+  --content artifacts/stage3-shadow-predictions.jsonl \
+  --out artifacts/stage3-similarity.jsonl
+cd ../..
+vp node --import tsx packages/db/scripts/load-similarity.ts \
+  --board=kilter --model=climb2vec-relational-morphology-v1 \
+  --in=ml/climb2vec/artifacts/stage3-similarity.jsonl
+vp node --import tsx packages/db/scripts/load-similarity.ts \
+  --board=tension --model=climb2vec-relational-morphology-v1 \
+  --in=ml/climb2vec/artifacts/stage3-similarity.jsonl
+vp node --import tsx packages/db/scripts/load-similarity.ts \
+  --board=moonboard --model=climb2vec-relational-morphology-v1 \
+  --in=ml/climb2vec/artifacts/stage3-similarity.jsonl
+
+# Post-approval integration safety only: validate-only always refits coefficients
+# in memory, and dry-run may do so when the frozen snapshot is stale. Do not run
+# these against prod under the Stage-3 read-only/no-refit constraint.
+vp run db:refresh-climb-grades -- --validate-only
+vp run db:refresh-climb-grades -- --dry-run
+
+# --through-run=4 or 6 is available for a cheap wiring audit. Do not run 4,
+# then 6, then 7 on the real dataset: that repeats earlier fits and spends more
+# than the pre-registered five-run budget.
 ```
+
+Every reported error is in one Aurora difficulty integer step: one Font
+sub-grade, roughly half a V-grade.
+
+## Pre-registered decision rule
+
+There are five registered run decisions, numbered 3–7.
+
+- Run 4 must improve Kilter validation MAE over the incumbent-feature Run 3 GBM
+  by at least `0.05` Aurora steps. Otherwise stop.
+- Runs 5 and 6 use fixed seeds 13 and 29. Both must improve Kilter validation
+  MAE over Run 4 by at least `0.05` Aurora steps. Otherwise stop.
+- Run 7 refits the selected seed on train+validation, using internal two-fold
+  cross-fitting for the residual target. It then opens the sealed test once and
+  passes offline only if Kilter test MAE improves over the same-feature GBM by
+  at least `0.05` Aurora steps and sealed Tension benchmark MAE regresses by no
+  more than `0.01` Aurora steps.
+
+Runs 5 and 6 share two train-fold GBMs. Run 7 owns the final enhanced-GBM refit,
+two internal cross-fold GBMs, and the selected neural refit before it reads
+either sealed answer key.
+`contentSd` is held-out RMSE grouped by predicted grade band, matching the band
+known when an unlabeled climb is scored.
+
+Passing Run 7 means “eligible for the read-only shadow,” not “ship.” The shadow
+requires usable predictions for at least 95% of eligible Kilter/Tension
+backtest rows overall and on each board, then applies its
+tail/head/grade-band/angle/no-shock/physical-problem checks. It does not report
+current-traffic buckets as cold-tail evidence because every backtest truth row
+currently has at least 50 ascents. The unchanged `--validate-only` and
+`--dry-run` publish-path sanity checks follow. Those unchanged commands do not
+measure content improvement because the protected production blend still uses
+content only in its existing cold-tail branch.
+
+The Stage-3 score artifact contains one row for every eligible catalog
+climb-angle. Supported rows carry the prior/uncertainty/embedding;
+zero- or over-40-hold physical problems carry `supported:false` with null model
+outputs. The identified loader verifies exact catalog coverage, validates the
+record board/model, and atomically replaces one selected board, so a newly
+unsupported cell cannot retain a stale prior. The incumbent `climb2vec-v1`
+single-board schema remains an explicit legacy upsert mode for the existing
+weekly workflow.
 
 ## Phase-1 feasibility result (Kilter, dev-DB extract: 29,748 obs, 80/20 by climb)
 
@@ -76,3 +210,9 @@ explicit contrastive objective (hold_fingerprint duplicates as positives),
 hyperparameter tuning, and training on the full prod catalog + all boards (board
 embedding). Then export `content_prior` + embeddings for the Phase-2 blend and the
 Phase-3 similarity table.
+
+That historical Phase-1b note predates the Stage-3 pre-registration above. The
+new path deliberately does not add an ordinal head, contrastive loss, board
+embedding, or hyperparameter sweep. If the same-feature GBM or either fixed seed
+fails, the honest result is that the incumbent remains the grade model while the
+morphology/split/shadow infrastructure stays available for similarity work.

@@ -68,11 +68,11 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          node --import tsx packages/db/scripts/load-content-model.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-content.jsonl
+          node --import tsx packages/db/scripts/load-content-model.ts --board="$BOARD" --model=climb2vec-v1 --in=ml/climb2vec/data/${BOARD}-content.jsonl
 
       - name: Build + load similarity neighbours
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           (cd ml/climb2vec && python similarity_export.py --content data/${BOARD}-content.jsonl --out data/${BOARD}-similar.jsonl)
-          node --import tsx packages/db/scripts/load-similarity.ts --board="$BOARD" --in=ml/climb2vec/data/${BOARD}-similar.jsonl
+          node --import tsx packages/db/scripts/load-similarity.ts --board="$BOARD" --model=climb2vec-v1 --in=ml/climb2vec/data/${BOARD}-similar.jsonl

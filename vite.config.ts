@@ -261,6 +261,22 @@ export default defineConfig({
         // flags with `vp run db:dedupe-serial-boards -- --only-serial <s> --apply`.
         cache: false,
       },
+      'db:extract-hold-morphology': {
+        command: 'pnpm --filter @boardsesh/db run db:extract-hold-morphology',
+        // Offline-only: reads committed transparent board art and writes a
+        // versioned JSONL artifact. It never connects to the database.
+        cache: false,
+      },
+      'db:extract-training-matrix': {
+        command: 'pnpm --filter @boardsesh/db run db:extract-training-matrix',
+        // Read-only DB export plus local JSONL output for offline model work.
+        cache: false,
+      },
+      'db:evaluate-content-prior-shadow': {
+        command: 'pnpm --filter @boardsesh/db run db:evaluate-content-prior-shadow',
+        // Read-only replay; a failing shadow exits non-zero and never publishes.
+        cache: false,
+      },
       'test:db': {
         command: 'pnpm --filter @boardsesh/db run test',
       },
