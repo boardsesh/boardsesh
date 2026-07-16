@@ -135,29 +135,27 @@ export const feedbackQueries = {
     const listWhere = combine([typeCondition, platformCondition, searchCondition, statusCondition]);
     const countsWhere = combine([typeCondition, platformCondition, searchCondition]);
 
-    const rows = await db
-      .select(reportColumns)
-      .from(feedback)
-      .leftJoin(reporter, eq(feedback.userId, reporter.id))
-      .leftJoin(resolver, eq(feedback.resolvedBy, resolver.id))
-      .where(listWhere)
-      // Secondary sort on id keeps ordering (and offset pagination) stable when
-      // rows share a created_at.
-      .orderBy(desc(feedback.createdAt), desc(feedback.id))
-      .limit(limit + 1)
-      .offset(offset);
+    // The page, the filtered total, and the per-status counts are independent
+    // reads — run them concurrently rather than paying three serial round-trips.
+    const [rows, totalRows, grouped] = await Promise.all([
+      db
+        .select(reportColumns)
+        .from(feedback)
+        .leftJoin(reporter, eq(feedback.userId, reporter.id))
+        .leftJoin(resolver, eq(feedback.resolvedBy, resolver.id))
+        .where(listWhere)
+        // Secondary sort on id keeps ordering (and offset pagination) stable when
+        // rows share a created_at.
+        .orderBy(desc(feedback.createdAt), desc(feedback.id))
+        .limit(limit + 1)
+        .offset(offset),
+      db.select({ value: count() }).from(feedback).where(listWhere),
+      db.select({ status: feedback.status, value: count() }).from(feedback).where(countsWhere).groupBy(feedback.status),
+    ]);
 
     const hasMore = rows.length > limit;
     const reports = (hasMore ? rows.slice(0, limit) : rows).map(mapFeedbackRow);
-
-    const [totalRow] = await db.select({ value: count() }).from(feedback).where(listWhere);
-    const totalCount = Number(totalRow?.value ?? 0);
-
-    const grouped = await db
-      .select({ status: feedback.status, value: count() })
-      .from(feedback)
-      .where(countsWhere)
-      .groupBy(feedback.status);
+    const totalCount = Number(totalRows[0]?.value ?? 0);
     const byStatus = new Map(grouped.map((entry) => [entry.status, Number(entry.value)]));
 
     return {

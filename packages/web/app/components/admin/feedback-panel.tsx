@@ -238,6 +238,9 @@ export default function FeedbackPanel() {
   );
 
   const statusFilters: StatusFilter[] = ['all', ...STATUS_ORDER];
+  // The 'All' chip counts every status (counts are independent of the active
+  // status filter), not `totalCount` — which is narrowed to the current filter.
+  const allCount = counts.new + counts.inProgress + counts.resolved + counts.wontFix;
 
   return (
     <Box>
@@ -260,7 +263,7 @@ export default function FeedbackPanel() {
         {statusFilters.map((option) => {
           const label =
             option === 'all'
-              ? `${t('feedback.statusFilter.all')} (${totalCount})`
+              ? `${t('feedback.statusFilter.all')} (${allCount})`
               : `${statusLabel(t, option)} (${counts[statusCountKey(option)]})`;
           const active = statusFilter === option;
           return (
