@@ -12,11 +12,12 @@ import { ActivityIndicator } from '../ActivityIndicator';
 import { SectionHeader } from '../SectionHeader';
 import { CommentSheet } from '../you/CommentSheet';
 import { SessionSummaryCard } from './SessionSummaryCard';
+import { SessionEditSheet } from './SessionEditSheet';
 import { SessionAnalyticsSection } from './SessionAnalyticsSection';
 import { SessionBetaCarousel } from './SessionBetaCarousel';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionTickRow } from './SessionTickRow';
-import { useSessionDetail, useBulkVoteSummaries } from '../../lib/graphql/hooks';
+import { useSessionDetail, useBulkVoteSummaries, useProfile } from '../../lib/graphql/hooks';
 import { openClimbInPlayDrawer } from '../../lib/open-climb-in-play-drawer';
 import { useBottomChromeMetrics } from '../../hooks/use-bottom-chrome-metrics';
 import { useDrawerHost } from '../../providers/drawer-host-provider';
@@ -49,9 +50,17 @@ export default function SessionDetailScreen() {
   const { data: session, isPending } = useSessionDetail(sessionId);
   const { data: voteSummaries } = useBulkVoteSummaries('session', sessionId ? [sessionId] : [], !!sessionId);
   const sessionVoteSummary = voteSummaries?.[0];
+  const { data: profile } = useProfile();
+
+  // Only the session's creator can rename it / edit the recap (the server enforces
+  // this too; gating the affordance keeps non-owners from hitting a rejection).
+  const canEdit = !!session?.ownerUserId && !!profile?.id && session.ownerUserId === profile.id;
 
   const commentSheetRef = useRef<BottomSheet | null>(null);
   const [commentTarget, setCommentTarget] = useState<{ entityId: string; entityType: SocialEntityType } | null>(null);
+  const [editVisible, setEditVisible] = useState(false);
+  const openEdit = useCallback(() => setEditVisible(true), []);
+  const closeEdit = useCallback(() => setEditVisible(false), []);
 
   // Session name, falling back to a generated "<date>" label when unnamed.
   const title = useMemo(() => {
@@ -129,6 +138,7 @@ export default function SessionDetailScreen() {
         titleIsDate={!session.sessionName}
         onOpenComments={handleOpenSessionComments}
         voteSummary={sessionVoteSummary}
+        onEditSession={canEdit ? openEdit : undefined}
       />
 
       <SessionAnalyticsSection gradeDistribution={session.gradeDistribution} />
@@ -160,6 +170,16 @@ export default function SessionDetailScreen() {
         entityType={commentTarget?.entityType ?? 'session'}
         onClose={() => setCommentTarget(null)}
       />
+
+      {canEdit ? (
+        <SessionEditSheet
+          visible={editVisible}
+          sessionId={session.sessionId}
+          currentName={session.sessionName ?? null}
+          currentNotes={session.notes ?? null}
+          onClose={closeEdit}
+        />
+      ) : null}
     </View>
   );
 }

@@ -24,7 +24,12 @@ const chrome = vi.hoisted(() => ({ props: null as ChromeProps | null }));
 const ctrl = vi.hoisted(() => ({ variant: 'glass' as 'glass' | 'material' }));
 // Captures the Material app bar's title + actions so the material branch can be
 // asserted without a real Paper render.
-const appbar = vi.hoisted(() => ({ title: null as string | null, actions: [] as string[] }));
+const appbar = vi.hoisted(() => ({
+  title: null as string | null,
+  actions: [] as string[],
+  contentPress: null as (() => void) | null,
+  contentAria: null as string | null,
+}));
 
 vi.mock('react-native', () => ({
   StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
@@ -47,9 +52,19 @@ vi.mock('../../../providers/theme-provider', () => ({
 vi.mock('react-native-paper', () => ({
   Appbar: {
     Header: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-appbar': 'true' }, children),
-    Content: ({ title }: { title?: string }) => {
+    Content: ({
+      title,
+      onPress,
+      accessibilityLabel,
+    }: {
+      title?: string;
+      onPress?: () => void;
+      accessibilityLabel?: string;
+    }) => {
       appbar.title = title ?? null;
-      return createElement('div', { 'data-appbar-title': title ?? '' });
+      appbar.contentPress = onPress ?? null;
+      appbar.contentAria = accessibilityLabel ?? null;
+      return createElement('div', { 'data-appbar-title': title ?? '', onClick: onPress });
     },
     Action: ({ accessibilityLabel }: { accessibilityLabel?: string }) => {
       if (accessibilityLabel) appbar.actions.push(accessibilityLabel);
@@ -128,6 +143,8 @@ describe('RecordTopChrome', () => {
     ctrl.variant = 'glass';
     appbar.title = null;
     appbar.actions = [];
+    appbar.contentPress = null;
+    appbar.contentAria = null;
   });
 
   it('gates the create island off (canCreate=false)', () => {
@@ -219,6 +236,21 @@ describe('RecordTopChrome', () => {
       appbar.actions = [];
       rerender(<RecordTopChrome {...makeProps({ onShare: vi.fn() })} />);
       expect(appbar.actions).toContain('mobile.session.invite');
+    });
+
+    it('wires onEditTitle to the app-bar title press with the edit accessibility label', () => {
+      const onEditTitle = vi.fn();
+      render(<RecordTopChrome {...makeProps({ title: 'Active session', onEditTitle })} />);
+      expect(typeof appbar.contentPress).toBe('function');
+      expect(appbar.contentAria).toBe('mobile.session.editTitleAria');
+      appbar.contentPress?.();
+      expect(onEditTitle).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves the title non-interactive (no edit aria) when onEditTitle is absent', () => {
+      render(<RecordTopChrome {...makeProps({ title: 'Active session' })} />);
+      expect(appbar.contentPress).toBeNull();
+      expect(appbar.contentAria).toBeNull();
     });
 
     it('shows the End app-bar action only while a session is live (onEndSession set)', () => {

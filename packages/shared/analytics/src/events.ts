@@ -37,6 +37,10 @@ export const SHARED_EVENTS = {
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
   SessionCommentAdded: 'Session Comment Added',
+  // A session's title was edited (both platforms). Props: { source:
+  // 'record_chrome' | 'session_detail', nameLength } — counts only, never the
+  // title text.
+  SessionRenamed: 'Session Renamed',
   AngleChanged: 'Angle Changed',
   // Queue sync-gate telemetry (createQueueSyncGate in @boardsesh/queue-runtime)
   // — observability for the sequence-gap / stale-event / hash-drift guards so

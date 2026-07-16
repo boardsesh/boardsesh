@@ -15,6 +15,7 @@ import ArrowBackOutlined from '@mui/icons-material/ArrowBackOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import ChatBubbleOutlineOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
 import DeleteOutlined from '@mui/icons-material/DeleteOutlined';
+import EditOutlined from '@mui/icons-material/EditOutlined';
 import LocaleLink from '@/app/components/i18n/locale-link';
 import { useLocaleRouter } from '@/app/lib/i18n/use-locale-router';
 import { useTranslation } from 'react-i18next';
@@ -42,6 +43,7 @@ import type { Climb, BoardDetails } from '@/app/lib/types';
 import SessionOverviewPanel, {
   buildSessionSummaryParts,
 } from '@/app/components/session-details/session-overview-panel';
+import EditSessionDialog from '@/app/components/session-details/edit-session-dialog';
 import CollapsibleSection, {
   type CollapsibleSectionConfig,
 } from '@/app/components/collapsible-section/collapsible-section';
@@ -304,6 +306,7 @@ export default function SessionDetailContent({
   const session = embedded ? initialSession : hookSession;
 
   const [sessionCommentsOpen, setSessionCommentsOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   const { boards: myBoards } = useMyBoards(true);
 
@@ -330,6 +333,8 @@ export default function SessionDetailContent({
 
   const currentUserId = authSession?.user?.id;
   const isParticipant = currentUserId ? participants.some((p) => p.userId === currentUserId) : false;
+  const ownerUserId = session?.ownerUserId;
+  const isOwner = !!currentUserId && !!ownerUserId && currentUserId === ownerUserId;
 
   const isMultiUser = participants.length > 1;
   const displayName = sessionName || generateSessionName(firstTickAt, boardTypes);
@@ -692,10 +697,30 @@ export default function SessionDetailContent({
               {formatDate(firstTickAt)}
             </Typography>
           </Box>
+          {isOwner && (
+            <IconButton
+              size="small"
+              data-testid="edit-session-button"
+              onClick={() => setEditDialogOpen(true)}
+              aria-label={t('detail.editSession')}
+            >
+              <EditOutlined fontSize="small" />
+            </IconButton>
+          )}
           <IconButton size="small" onClick={handleShare} aria-label={t('detail.share')}>
             <IosShare fontSize="small" />
           </IconButton>
         </Box>
+      )}
+
+      {!embedded && isOwner && (
+        <EditSessionDialog
+          open={editDialogOpen}
+          onClose={() => setEditDialogOpen(false)}
+          sessionId={sessionId}
+          initialName={sessionName ?? ''}
+          initialNotes={notes ?? ''}
+        />
       )}
 
       <Box

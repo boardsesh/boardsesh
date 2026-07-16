@@ -23,8 +23,16 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockRouterPush }),
 }));
 
+let mockSession: { data: unknown; status: string } = { data: null, status: 'unauthenticated' };
 vi.mock('next-auth/react', () => ({
-  useSession: () => ({ data: null, status: 'unauthenticated' }),
+  useSession: () => mockSession,
+}));
+
+// Stub the edit dialog so the owner-gating tests don't pull in the real
+// useUpdateSession hook (which needs a QueryClient provider). Dialog behavior
+// is covered by edit-session-dialog.test.tsx.
+vi.mock('@/app/components/session-details/edit-session-dialog', () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="edit-session-dialog" /> : null),
 }));
 
 vi.mock('@/app/hooks/use-session-detail', () => ({
@@ -344,6 +352,11 @@ function makeSession(overrides: Partial<SessionDetail> = {}): SessionDetail {
 }
 
 describe('SessionDetailContent', () => {
+  beforeEach(() => {
+    // Default to anonymous; owner-gating tests opt into an authenticated user.
+    mockSession = { data: null, status: 'unauthenticated' };
+  });
+
   it('shows "not found" when session is null', () => {
     render(<SessionDetailContent session={null} />);
     expect(screen.getByText('Session Not Found')).toBeTruthy();
@@ -790,6 +803,46 @@ describe('SessionDetailContent', () => {
     });
     render(<SessionDetailContent session={session} />);
     expect(screen.getByText('Great beta!')).toBeTruthy();
+  });
+
+  describe('owner edit gating', () => {
+    it('shows the edit button to the session owner', () => {
+      mockSession = { data: { user: { id: 'user-1' } }, status: 'authenticated' };
+      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
+      expect(screen.getByTestId('edit-session-button')).toBeTruthy();
+    });
+
+    it('hides the edit button from a non-owner', () => {
+      mockSession = { data: { user: { id: 'user-2' } }, status: 'authenticated' };
+      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
+      expect(screen.queryByTestId('edit-session-button')).toBeNull();
+    });
+
+    it('hides the edit button from anonymous visitors', () => {
+      mockSession = { data: null, status: 'unauthenticated' };
+      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
+      expect(screen.queryByTestId('edit-session-button')).toBeNull();
+    });
+
+    it('opens the edit dialog when the owner clicks edit', () => {
+      mockSession = { data: { user: { id: 'user-1' } }, status: 'authenticated' };
+      render(<SessionDetailContent session={makeSession({ ownerUserId: 'user-1' })} />);
+      expect(screen.queryByTestId('edit-session-dialog')).toBeNull();
+      fireEvent.click(screen.getByTestId('edit-session-button'));
+      expect(screen.getByTestId('edit-session-dialog')).toBeTruthy();
+    });
+
+    it('updates the header title when the session name changes without remount', () => {
+      // Mirrors the real flow: useUpdateSession patches the sessionDetail cache,
+      // useSessionDetail re-emits, and the header re-renders from that source.
+      const { rerender } = render(<SessionDetailContent session={makeSession({ sessionName: null })} />);
+      // 2024-01-15 is a Monday, boardTypes is ['kilter'] -> generated fallback.
+      expect(screen.getByText('Monday Kilter Session')).toBeTruthy();
+
+      rerender(<SessionDetailContent session={makeSession({ sessionName: 'Renamed Session' })} />);
+      expect(screen.getByText('Renamed Session')).toBeTruthy();
+      expect(screen.queryByText('Monday Kilter Session')).toBeNull();
+    });
   });
 
   describe('climb click handler', () => {

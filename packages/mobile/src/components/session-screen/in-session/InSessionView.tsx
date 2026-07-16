@@ -43,6 +43,7 @@ import { gradeBadgeColor } from '../../you/profile-chart-colors';
 import { hapticSelection, hapticMedium } from '../../../lib/haptics';
 import { reportHandledError } from '../../../lib/error-reporting';
 import { RecordTopChrome } from '../RecordTopChrome';
+import { SessionTitleSheet } from '../SessionTitleSheet';
 import { SessionAnalytics } from './SessionAnalytics';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
@@ -248,7 +249,7 @@ export function InSessionView({
   screenHeight,
 }: InSessionViewProps) {
   const { t } = useTranslation('session');
-  const { systemColors, brandColors } = useTheme();
+  const { systemColors, brandColors, features } = useTheme();
   const insets = useSafeAreaInsets();
   const bottomChrome = useBottomChromeMetrics();
   const router = useRouter();
@@ -264,6 +265,20 @@ export function InSessionView({
   // polling.
   const detailQuery = useSessionDetail(sessionId ?? undefined);
   const detail = detailQuery.data;
+
+  // The live session title: the creator-set name, or the default "Session" label.
+  // Drives both the in-body glass large title and the Material app-bar title.
+  // Truthy guard (not ??): an empty-string name must still fall back to the
+  // localized default title, matching SessionDetailScreen's guard.
+  const sessionTitle = detail?.sessionName || t('mobile.session.headerActive');
+
+  // The rename sheet (opened from the title's edit affordance on either variant).
+  const [titleSheetVisible, setTitleSheetVisible] = useState(false);
+  const openTitleSheet = useCallback(() => {
+    hapticSelection();
+    setTitleSheetVisible(true);
+  }, []);
+  const closeTitleSheet = useCallback(() => setTitleSheetVisible(false), []);
 
   // Only trust a live push that belongs to the CURRENT session. After a direct
   // A->B session switch the provider resets liveStats, but this guards the
@@ -524,7 +539,22 @@ export function InSessionView({
           overlay header strip already names the screen, so it's hidden there. On
           Material the app bar owns the title, so the in-body large title is gated
           off there too. */}
-      {showChrome ? <ScreenTitle style={styles.screenTitle}>{t('mobile.session.headerActive')}</ScreenTitle> : null}
+      {showChrome && features.inBodyLargeTitle ? (
+        <PressableSurface
+          onPress={openTitleSheet}
+          feedback="opacity"
+          opacityTo={0.6}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={t('mobile.session.editTitleAria')}
+          style={styles.titleRow}
+        >
+          <ScreenTitle style={styles.screenTitle} numberOfLines={1}>
+            {sessionTitle}
+          </ScreenTitle>
+          <Icon name="edit" size={20} color={systemColors.tertiaryLabel} />
+        </PressableSurface>
+      ) : null}
 
       <SessionPresenceRow users={sessionUsers} />
 
@@ -619,13 +649,21 @@ export function InSessionView({
 
       {showChrome ? (
         <RecordTopChrome
-          title={t('mobile.session.headerActive')}
+          title={sessionTitle}
+          onEditTitle={openTitleSheet}
           onOpenBoardSwitcher={handleOpenBoardSwitcher}
           onHeightChange={setChromeHeight}
           onShare={onShare}
           onEndSession={onRequestEndSession}
         />
       ) : null}
+
+      <SessionTitleSheet
+        visible={titleSheetVisible}
+        sessionId={sessionId ?? null}
+        currentName={detail?.sessionName ?? null}
+        onClose={closeTitleSheet}
+      />
 
       <EndSessionSheet
         visible={endVisible}
@@ -662,6 +700,15 @@ const styles = StyleSheet.create({
   // needs no extra horizontal padding (it collapses into the chrome capsule).
   screenTitle: {
     paddingBottom: spacing[2],
+    // Truncate long names so the trailing edit glyph always stays on screen.
+    flexShrink: 1,
+  },
+  // The tappable large-title row: the collapsing title plus a trailing edit glyph
+  // that opens the rename sheet.
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
   },
   // SectionHeader self-insets 16px; the list already pads 16, so bleed the header
   // back by 16 to keep its label flush with the screen gutter.

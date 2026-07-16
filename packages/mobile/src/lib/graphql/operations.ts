@@ -1067,6 +1067,10 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
         boardPath
         changedByParticipantId
       }
+      ... on SessionNameChanged {
+        name
+        changedByParticipantId
+      }
       ... on SessionBoardSerialChanged {
         lastConnectedBoardSerial
       }
@@ -1126,9 +1130,11 @@ export type SessionLiveStatsEvent = {
 // fall through the guard. Extend as more event handling lands.
 export type SessionUpdateEvent = {
   __typename: string;
-  // SessionBoardPathChanged
+  // SessionBoardPathChanged / SessionNameChanged
   boardPath?: string;
   changedByParticipantId?: string | null;
+  // SessionNameChanged — new title, or null when cleared
+  name?: string | null;
   // UserJoined / UserPresenceChanged
   user?: SessionUser;
   // UserLeft

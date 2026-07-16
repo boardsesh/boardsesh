@@ -1,0 +1,149 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { View, StyleSheet } from 'react-native';
+import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { useTranslation } from 'react-i18next';
+import { useQueryClient } from '@tanstack/react-query';
+import { SESSION_NAME_MAX_LENGTH, type SessionDetail } from '@boardsesh/shared-schema';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { Sheet } from '../Sheet';
+import { Text } from '../Text';
+import { Button } from '../Button';
+import { useTheme } from '../../providers/theme-provider';
+import { useUpdateSession } from '../../lib/graphql/hooks';
+import { track } from '../../lib/analytics';
+import { hapticSuccess } from '../../lib/haptics';
+import { spacing, borderRadius } from '../../theme/tokens';
+
+type SessionTitleSheetProps = {
+  /** Controlled visibility. */
+  visible: boolean;
+  /** The session being renamed; null disables the save. */
+  sessionId: string | null;
+  /** The session's current title (server value), used to seed the input on open. */
+  currentName?: string | null;
+  onClose: () => void;
+};
+
+/**
+ * Rename the active session from the Record screen. One single-line input seeded
+ * from the current title on each closed→open transition. Saving writes the new
+ * name through the creator-only `updateSession` mutation (an empty value clears
+ * it back to the default "Session" title), optimistically patches the
+ * `sessionDetail` cache so the chrome updates instantly (the 30s staleTime would
+ * otherwise leave the old title on screen), and closes. Failures surface inline —
+ * a toast would render behind the native sheet.
+ */
+export function SessionTitleSheet({ visible, sessionId, currentName, onClose }: SessionTitleSheetProps) {
+  const { t } = useTranslation('session');
+  const { t: tCommon } = useTranslation('common');
+  const { systemColors, brandColors } = useTheme();
+  const queryClient = useQueryClient();
+  const updateSession = useUpdateSession();
+
+  const [name, setName] = useState('');
+
+  // Seed the field from the current title each time the sheet opens; the Sheet is
+  // driven declaratively off `visible`, so track only the closed→open transition.
+  const wasVisibleRef = useRef(false);
+  useEffect(() => {
+    if (visible && !wasVisibleRef.current) {
+      setName(currentName ?? '');
+      updateSession.reset();
+    }
+    wasVisibleRef.current = visible;
+  }, [visible, currentName, updateSession]);
+
+  const handleChange = useCallback(
+    (text: string) => {
+      if (updateSession.isError) updateSession.reset();
+      setName(text);
+    },
+    [updateSession],
+  );
+
+  const handleSave = useCallback(() => {
+    if (!sessionId) return;
+    const trimmed = name.trim();
+    updateSession.mutate(
+      { input: { sessionId, name: trimmed.length > 0 ? trimmed : null } },
+      {
+        onSuccess: (updated) => {
+          // The chrome reads `sessionName` off the sessionDetail cache, whose 30s
+          // staleTime would otherwise show the old title until a refetch. Patch it
+          // in place so the header flips immediately.
+          queryClient.setQueryData<SessionDetail>(['sessionDetail', sessionId], (prev) =>
+            prev ? { ...prev, sessionName: updated.name } : prev,
+          );
+          hapticSuccess();
+          track(SHARED_EVENTS.SessionRenamed, { source: 'record_chrome', nameLength: trimmed.length });
+          onClose();
+        },
+      },
+    );
+  }, [sessionId, name, updateSession, queryClient, onClose]);
+
+  const footer = (
+    <View style={styles.actions}>
+      <Button title={tCommon('comment.cancel')} variant="text" onPress={onClose} />
+      <Button
+        title={t('mobile.session.renameSave')}
+        variant="filled"
+        loading={updateSession.isPending}
+        disabled={!sessionId}
+        onPress={handleSave}
+      />
+    </View>
+  );
+
+  return (
+    <Sheet visible={visible} snapPoints={['45%']} onClose={onClose} footer={footer}>
+      <View style={styles.body}>
+        <Text variant="title3" style={styles.title}>
+          {t('mobile.session.renameTitle')}
+        </Text>
+        <BottomSheetTextInput
+          value={name}
+          onChangeText={handleChange}
+          placeholder={t('creation.form.sessionNamePlaceholder')}
+          placeholderTextColor={systemColors.tertiaryLabel}
+          maxLength={SESSION_NAME_MAX_LENGTH}
+          style={[styles.input, { backgroundColor: systemColors.fill, color: systemColors.label }]}
+          returnKeyType="done"
+          autoFocus
+          onSubmitEditing={handleSave}
+        />
+        {updateSession.isError ? (
+          <Text variant="footnote" color={brandColors.error} style={styles.error}>
+            {t('mobile.session.renameError')}
+          </Text>
+        ) : null}
+      </View>
+    </Sheet>
+  );
+}
+
+const styles = StyleSheet.create({
+  body: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[2],
+    gap: spacing[3],
+  },
+  title: {
+    fontWeight: '700',
+  },
+  input: {
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[3],
+    fontSize: 16,
+  },
+  error: {
+    marginTop: -spacing[1],
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+});

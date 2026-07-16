@@ -16,6 +16,17 @@ vi.mock('../../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('i', { 'data-icon': name }) }));
+vi.mock('../../PressableSurface', () => ({
+  PressableSurface: ({
+    children,
+    onPress,
+    accessibilityLabel,
+  }: {
+    children?: ReactNode;
+    onPress?: () => void;
+    accessibilityLabel?: string;
+  }) => createElement('button', { onClick: onPress, 'data-pressable': accessibilityLabel ?? '' }, children),
+}));
 vi.mock('../../Card', () => ({
   Card: ({ children }: { children?: ReactNode }) => createElement('div', { 'data-testid': 'card' }, children),
 }));
@@ -201,5 +212,27 @@ describe('SessionSummaryCard', () => {
     const participants = [{ userId: 'u1', displayName: 'Alice', avatarUrl: null, sends: 3, flashes: 1, attempts: 7 }];
     render_(session({ participants }), 'Party', false);
     expect(mockAvatarGroup).toHaveBeenCalledWith(expect.objectContaining({ participants }));
+  });
+
+  it('renders the edit affordance and wires it when onEditSession is provided (owner)', () => {
+    const onEditSession = vi.fn();
+    const { container } = render(
+      createElement(SessionSummaryCard, {
+        session: session(),
+        title: 'Sesh',
+        titleIsDate: false,
+        onOpenComments: () => {},
+        onEditSession,
+      }),
+    );
+    const editButton = container.querySelector('[data-pressable="detail.editSession"]') as HTMLButtonElement | null;
+    expect(editButton).not.toBeNull();
+    editButton!.click();
+    expect(onEditSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the edit affordance when onEditSession is absent (non-owner)', () => {
+    const { container } = render_(session(), 'Sesh', false);
+    expect(container.querySelector('[data-pressable="detail.editSession"]')).toBeNull();
   });
 });

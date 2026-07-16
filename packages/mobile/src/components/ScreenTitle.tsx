@@ -6,6 +6,8 @@ import { useTheme } from '../providers/theme-provider';
 type ScreenTitleProps = {
   children: ReactNode;
   style?: StyleProp<TextStyle>;
+  /** Cap the title to N lines (long session names truncate instead of wrapping). */
+  numberOfLines?: number;
 };
 
 /**
@@ -15,11 +17,11 @@ type ScreenTitleProps = {
  * `<ScreenTitle>{title}</ScreenTitle>` unconditionally instead of repeating a
  * Material-only null gate (the old inline largeTitle suppression) at each site.
  */
-export function ScreenTitle({ children, style }: ScreenTitleProps) {
+export function ScreenTitle({ children, style, numberOfLines }: ScreenTitleProps) {
   const { features } = useTheme();
   if (!features.inBodyLargeTitle) return null;
   return (
-    <Text variant="largeTitle" style={style}>
+    <Text variant="largeTitle" style={style} numberOfLines={numberOfLines}>
       {children}
     </Text>
   );

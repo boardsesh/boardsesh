@@ -106,6 +106,7 @@ vi.mock('../../../PressableSurface', () => ({
 }));
 vi.mock('../../../SectionHeader', () => ({ SectionHeader: () => null }));
 vi.mock('../../RecordTopChrome', () => ({ RecordTopChrome: () => null }));
+vi.mock('../../SessionTitleSheet', () => ({ SessionTitleSheet: () => null }));
 vi.mock('../../../ClimbListItemContent', () => ({ ClimbListItemContent: () => null }));
 vi.mock('../../../EndSessionSheet', () => ({
   EndSessionSheet: ({ isEnding, onConfirm }: { isEnding?: boolean; onConfirm?: () => void }) => {
