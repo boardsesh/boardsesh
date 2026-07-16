@@ -16,6 +16,10 @@
   --color-accent: #ff8a3d;
   --color-on-accent: #16111f;
 
+  /* Lit-climb status hue — "now on the wall". Its own role (not --color-warning) so a
+     future warning retune can't silently shift the board-presence affordance. */
+  --color-live: #b45309;
+
   /* Help/guide accent — violet-slate */
   --color-info: #5e6491;
 
@@ -184,6 +188,8 @@ html[data-theme='dark'] {
   --color-on-primary: #ffffff;
   --color-accent: #ff8a3d;
   --color-on-accent: #16111f;
+  /* Lit-climb status hue lifts to the brighter amber on dark surfaces. */
+  --color-live: #fbbf24;
   --color-info: #a5abd6;
 
   /* Neutral palette (violet-grey, inverted: 50 darkest → 900 lightest) */

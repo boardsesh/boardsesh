@@ -35,10 +35,12 @@ declare module '@mui/material/Fab' {
     accent: true;
   }
 }
+// Note: `accent` is deliberately NOT exposed on SvgIcon. Accent is a FILL colour with
+// dark text (Button/Chip/Fab); as an icon FOREGROUND the amber #FF8A3D is only ~2.2:1
+// on the page and invites an inaccessible misuse. Icons must use a foreground role.
 declare module '@mui/material/SvgIcon' {
   interface SvgIconPropsColorOverrides {
     primaryFill: true;
-    accent: true;
   }
 }
 
@@ -47,18 +49,34 @@ declare module '@mui/material/SvgIcon' {
 // palette (foreground in light vs dark); raw `themeTokens.*` is only for values that
 // are intentionally scheme-invariant.
 const sharedComponents: Components<Theme> = {
+  // Keyboard focus ring for every ButtonBase-derived control (Button, IconButton, Tab,
+  // MenuItem, ListItemButton, …). MUI ships `outline: 0` on ButtonBase root and the
+  // branch's bare `:focus-visible` CSS rule in index.css loses the cascade to emotion
+  // (and disableElevation strips the focus shadow), so keyboard users would get no
+  // visible focus indicator — a WCAG 2.4.7 failure. Emit the outline at the component
+  // layer so emotion carries it. index.css keeps the bare rule for non-MUI elements.
+  MuiButtonBase: {
+    styleOverrides: {
+      root: {
+        '&:focus-visible, &.Mui-focusVisible': {
+          outline: '2px solid var(--color-primary)',
+          outlineOffset: '2px',
+        },
+      },
+    },
+  },
   MuiButton: {
     styleOverrides: {
       root: {
         borderRadius: themeTokens.borderRadius.button,
         fontWeight: themeTokens.typography.fontWeight.medium,
         textTransform: 'none' as const,
-        '&:not(:disabled):not(.MuiButton-text):hover': {
-          transform: 'translateY(-1px)',
-          boxShadow: 'var(--shadow-sm)',
-        },
-        '&:not(:disabled):active': {
-          transform: 'translateY(0)',
+        // Velvet hover is a background TINT, never a lift. Contained variants carry
+        // their own fill-hover (see containedPrimary); text/outlined get the violet
+        // selected wash. No transform/shadow here — nothing to gate behind a hover
+        // media query on this element.
+        '&:not(:disabled):not(.MuiButton-contained):hover': {
+          backgroundColor: 'var(--semantic-selected-hover)',
         },
       },
       // Contained PRIMARY buttons render the FILL violet (white text), not the
@@ -105,10 +123,15 @@ const sharedComponents: Components<Theme> = {
       root: {
         borderRadius: themeTokens.borderRadius.lg,
         boxShadow: 'var(--shadow-sm)',
-        transition: 'box-shadow 250ms cubic-bezier(0.2, 0, 0, 1), transform 250ms cubic-bezier(0.2, 0, 0, 1)',
+        transition:
+          'box-shadow var(--motion-normal) var(--ease-standard), transform var(--motion-normal) var(--ease-standard)',
         userSelect: 'none' as const,
-        '&:hover': {
-          boxShadow: 'var(--shadow-md)',
+        // Only deepen the shadow on real hover-capable pointers, so touch devices don't
+        // strand the elevated shadow after a tap.
+        '@media (hover: hover) and (pointer: fine)': {
+          '&:hover': {
+            boxShadow: 'var(--shadow-md)',
+          },
         },
       },
     },
@@ -556,6 +579,9 @@ function buildTheme(mode: 'light' | 'dark'): Theme {
       accent: base.palette.augmentColor({
         color: {
           main: themeTokens.colors.accent,
+          // MUI would auto-derive accent.dark ≈ #B36127, where the dark-text brand rule
+          // (accent is fill-only, dark text) fails AA (4.11:1). Pin a compliant orange.
+          dark: '#F97316',
           contrastText: themeTokens.colors.onAccent,
         },
         name: 'accent',

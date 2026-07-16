@@ -71,11 +71,18 @@ export const brandColorsDark = {
 } as const;
 
 /**
- * Material 3 tonal surfaces for the Material UI variant, keyed by color scheme.
- * These are also the shared *surface anchors* the web app reads (background, card,
- * label, separator, fill) — neutrals are tinted toward the violet brand (#6D28D9)
- * so every surface reads as the same product rather than a generic theme. Labels
- * use opaque values so text contrast clears WCAG AA.
+ * Material 3 tonal surfaces for the Material UI variant (the React Native app), keyed
+ * by color scheme. Neutrals are tinted toward the violet brand (#6D28D9) so every
+ * surface reads as the same product rather than a generic theme. Labels use opaque
+ * values so text contrast clears WCAG AA.
+ *
+ * Web shares only the BRAND colours from this package (`brandColors`/`brandColorsDark`
+ * — see `theme-config.ts`). The web SURFACE ladder is intentionally NOT these anchors:
+ * web hand-tunes a richer, more-violet page → card → elevated ladder in
+ * `packages/web/app/theme/theme-config.ts` (light #E8DDF6 / #FAF6FE / #FFFFFF, dark
+ * #110A20 / #251B3A / #2F234A) so the velvet permeates cards and greys rather than
+ * reading as white + neutral grey. That divergence is deliberate and guarded by
+ * `velvet-tokens-parity.test.ts`; changing either side is a conscious design decision.
  */
 export const materialSurfaces = {
   light: {

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
+import { materialSurfaces } from '@boardsesh/velvet-tokens';
 import { themeTokens, darkTokens } from '../theme-config';
 import { lightTheme, darkTheme } from '../mui-theme';
 // Read the literal index.css text from disk. A bundler import (?raw / glob) gets
@@ -67,11 +68,13 @@ describe('index.css ↔ theme-config parity', () => {
     ['--color-on-primary', themeTokens.colors.onPrimary, themeTokens.colors.onPrimary],
     ['--color-accent', themeTokens.colors.accent, themeTokens.colors.accent],
     ['--color-on-accent', themeTokens.colors.onAccent, themeTokens.colors.onAccent],
+    ['--color-live', themeTokens.colors.live, darkTokens.colors.live],
     ['--color-info', themeTokens.colors.info, darkTokens.colors.info],
     ['--color-success', themeTokens.colors.success, darkTokens.colors.success],
     ['--color-error', themeTokens.colors.error, darkTokens.colors.error],
     ['--color-warning', themeTokens.colors.warning, darkTokens.colors.warning],
     ['--color-error-muted', themeTokens.colors.errorMuted, darkTokens.colors.errorMuted],
+    ['--color-error-muted-hover', themeTokens.colors.errorMutedHover, darkTokens.colors.errorMutedHover],
     ['--semantic-background', themeTokens.semantic.background, darkTokens.semantic.background],
     ['--semantic-surface', themeTokens.semantic.surface, darkTokens.semantic.surface],
     ['--semantic-selected-border', themeTokens.semantic.selectedBorder, darkTokens.semantic.selectedBorder],
@@ -152,5 +155,34 @@ describe('Velvet palette clears WCAG AA at its load-bearing pairings', () => {
   it('secondary text clears AA on its surface (both schemes)', () => {
     expect(contrast(themeTokens.neutral[500], themeTokens.semantic.background)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(darkTokens.neutral[500], darkTokens.semantic.surface)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('web surface ladder deliberately diverges from the shared velvet-tokens anchors', () => {
+  // Web shares only the BRAND colours with @boardsesh/velvet-tokens. The SURFACE ladder
+  // (page → card → elevated) is hand-tuned here to be richer/more violet than the shared
+  // Material anchors (materialSurfaces), so the velvet permeates cards and greys instead
+  // of reading as white + neutral grey. That divergence is INTENTIONAL. These assertions
+  // pin the current web values so silent drift — in theme-config OR in velvet-tokens —
+  // fails and forces a conscious design decision rather than an accidental resync.
+  it('light ladder: page / card / elevated are the hand-tuned web values', () => {
+    expect(themeTokens.semantic.background).toBe('#E8DDF6');
+    expect(themeTokens.semantic.surface).toBe('#FAF6FE');
+    expect(themeTokens.semantic.surfaceElevated).toBe('#FFFFFF');
+  });
+
+  it('dark ladder: page / card / elevated are the hand-tuned web values', () => {
+    expect(darkTokens.semantic.background).toBe('#110A20');
+    expect(darkTokens.semantic.surface).toBe('#251B3A');
+    expect(darkTokens.semantic.surfaceElevated).toBe('#2F234A');
+  });
+
+  it('the web page base is intentionally NOT the shared materialSurfaces anchor (both schemes)', () => {
+    expect(themeTokens.semantic.background.toLowerCase()).not.toBe(materialSurfaces.light.background.toLowerCase());
+    expect(themeTokens.semantic.surface.toLowerCase()).not.toBe(
+      materialSurfaces.light.secondaryBackground.toLowerCase(),
+    );
+    expect(darkTokens.semantic.background.toLowerCase()).not.toBe(materialSurfaces.dark.background.toLowerCase());
+    expect(darkTokens.semantic.surface.toLowerCase()).not.toBe(materialSurfaces.dark.secondaryBackground.toLowerCase());
   });
 });

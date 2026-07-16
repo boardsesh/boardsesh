@@ -33,6 +33,7 @@ export const themeTokens = {
     onPrimary: brandColors.onPrimary, // #FFFFFF — text/icon on a primaryFill surface
     accent: brandColors.accent, // #FF8A3D — warm amber spark, FILL-ONLY, always pair with dark text
     onAccent: '#16111F', // dark text on accent (8.95:1)
+    live: brandColors.live, // #B45309 — "now on the wall / physically lit" status hue (own role, not warning)
     secondary: '#5B5563', // violet-grey for info/secondary
     info: '#5E6491', // Violet-slate — help/guide accent, re-pulled into the violet family
     success: brandColors.success, // #047857
@@ -235,6 +236,7 @@ export const darkTokens = {
     success: brandColorsDark.success, // #34D399
     warning: brandColorsDark.warning, // #FBBF24
     error: brandColorsDark.error, // #F87171
+    live: brandColorsDark.live, // #FBBF24 — lifted lit-climb hue on dark surfaces
     errorMuted: 'rgba(248, 113, 113, 0.2)', // lighter red wash for non-destructive buttons on dark
     errorMutedHover: 'rgba(248, 113, 113, 0.3)',
     accentGreen: '#2DD4BF',

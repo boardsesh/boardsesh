@@ -359,7 +359,7 @@ const NowOnTheWallHero = React.memo(function NowOnTheWallHeroInner({
         </Typography>
       ) : null}
       {litBy ? (
-        <Typography variant="caption" sx={{ display: 'block', color: 'var(--color-warning)' }} noWrap>
+        <Typography variant="caption" sx={{ display: 'block', color: 'var(--color-live)' }} noWrap>
           {litByLine(litBy)}
         </Typography>
       ) : null}

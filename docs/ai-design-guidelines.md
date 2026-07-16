@@ -536,7 +536,7 @@ The web app renders Velvet Send in light and dark. Wiring notes specific to web:
   only by filled buttons/FAB. Violet can't be both a dark-mode foreground and a white-text fill the way
   rose was, so the two roles are separate tokens.
 - **Scheme-awareness.** A direct `themeTokens.colors.{primary,success,error,warning,info}` read renders
-  the *light* value in dark mode — use the scheme-aware CSS vars instead: `var(--color-primary)`
+  the _light_ value in dark mode — use the scheme-aware CSS vars instead: `var(--color-primary)`
   (foreground), `var(--color-primary-fill)` (fills), `var(--color-success|error|warning|info)` (status).
 
 **Shared across web and mobile:** the brand palette + colour helpers (`@boardsesh/velvet-tokens`) and the
