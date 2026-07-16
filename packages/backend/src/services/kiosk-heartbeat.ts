@@ -51,7 +51,9 @@ type HeartbeatValue = { lastSeenAt: number; viewport?: string };
 
 // Test seam: the roundtrip suite injects a real Redis client here (mirrors how
 // distributed-state.test.ts drives real Redis) so the resolver path can be
-// exercised without booting the whole redisClientManager singleton.
+// exercised without booting the whole redisClientManager singleton. Module-level
+// mutable state is fine for today's serial test execution; it would race if the
+// suite ever ran multiple Vitest workers sharing this module.
 let clientOverrideForTests: Redis | null = null;
 
 /** @internal test-only — inject/clear the Redis client the heartbeat store uses. */
