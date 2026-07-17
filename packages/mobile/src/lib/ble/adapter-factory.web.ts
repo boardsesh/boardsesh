@@ -1,17 +1,13 @@
 import type { NativeBleConnectedDevice, NativeBleConnectedEvent } from '../../../modules/live-activity/src/index';
 import type { NativeIosBleAdapter } from './native-ios-adapter';
 import type { BluetoothAdapter, BoardScanFamily, DevicePickerFn } from './types';
+import { WebBluetoothAdapter } from './web-adapter';
 
-const unavailable = () => Promise.reject(new Error('Bluetooth is not available on web yet'));
-
-export function createBluetoothAdapter(_devicePicker: DevicePickerFn, _scanFamily: BoardScanFamily): BluetoothAdapter {
-  return {
-    isAvailable: () => Promise.resolve(false),
-    requestAndConnect: unavailable,
-    disconnect: () => Promise.resolve(),
-    write: unavailable,
-    onDisconnect: () => () => {},
-  };
+// The browser exposes its own device chooser through
+// navigator.bluetooth.requestDevice, so the RN device-picker callback (used by
+// the native adapters to drive an in-app scan UI) is unused on web.
+export function createBluetoothAdapter(_devicePicker: DevicePickerFn, scanFamily: BoardScanFamily): BluetoothAdapter {
+  return new WebBluetoothAdapter(scanFamily);
 }
 
 export function isNativeIosBleAdapter(_adapter: BluetoothAdapter): _adapter is NativeIosBleAdapter {
