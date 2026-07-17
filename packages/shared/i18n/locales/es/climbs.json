@@ -651,16 +651,15 @@
       "grade": "Grado",
       "gradeRange": "Rango de grado",
       "anyAscents": "Todos",
-      "refineHint": "Tipo, equipadores, precisión de grado",
-      "advancedHint": "Estado, progreso, beta, orden",
       "minRating": "Mín valoración",
       "anyRating": "Todos",
       "apply": "Aplicar filtros",
       "reset": "Restablecer",
       "section": {
-        "status": "Estado",
-        "refine": "Afinar",
-        "advanced": "Avanzado"
+        "difficulty": "Dificultad",
+        "quality": "Calidad",
+        "theClimb": "El bloque",
+        "sort": "Orden"
       },
       "popularity": "Popularidad",
       "established2plus": "Establecido 2+",
@@ -684,10 +683,8 @@
         "desc": "Descendente"
       },
       "status": {
-        "any": "Cualquiera",
         "drafts": "Borradores",
-        "established": "Publicadas",
-        "projects": "Proyectos"
+        "established": "Publicadas"
       },
       "accuracy": {
         "label": "Precisión del grado",
@@ -704,7 +701,6 @@
         "sent": "Encadenados",
         "unsent": "Sin encadenar"
       },
-      "signInForDrafts": "Inicia sesión para filtrar tus borradores",
       "setters": "Equipadores",
       "none": "Ninguno",
       "tall": "Solo vías altas",
@@ -718,7 +714,9 @@
       "betaVideosDescription": "Solo vías con un vídeo de beta",
       "searchSetters": "Buscar equipadores",
       "noSetters": "Sin equipadores",
-      "clearAll": "Borrar todo"
+      "clearAll": "Borrar todo",
+      "drafts": "Mis borradores",
+      "popularityUnrepeated": "Sin repetir"
     },
     "search": {
       "recentFilters": "Recientes",

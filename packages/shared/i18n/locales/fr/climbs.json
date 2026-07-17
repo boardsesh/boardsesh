@@ -651,16 +651,15 @@
       "grade": "Cotation",
       "gradeRange": "Plage de cotation",
       "anyAscents": "Tous",
-      "refineHint": "Type, ouvreurs, précision du niveau",
-      "advancedHint": "Statut, progression, beta, tri",
       "minRating": "Min note",
       "anyRating": "Tous",
       "apply": "Appliquer les filtres",
       "reset": "Réinitialiser",
       "section": {
-        "status": "Statut",
-        "refine": "Affiner",
-        "advanced": "Avancé"
+        "difficulty": "Difficulté",
+        "quality": "Qualité",
+        "theClimb": "Le bloc",
+        "sort": "Tri"
       },
       "popularity": "Popularité",
       "established2plus": "Établies 2+",
@@ -684,10 +683,8 @@
         "desc": "Décroissant"
       },
       "status": {
-        "any": "Toutes",
         "drafts": "Brouillons",
-        "established": "Publiées",
-        "projects": "Projets"
+        "established": "Publiées"
       },
       "accuracy": {
         "label": "Précision de la cotation",
@@ -704,7 +701,6 @@
         "sent": "Enchaînées",
         "unsent": "Non enchaînées"
       },
-      "signInForDrafts": "Connecte-toi pour filtrer tes brouillons",
       "setters": "Ouvreurs",
       "none": "Aucun",
       "tall": "Voies hautes uniquement",
@@ -718,7 +714,9 @@
       "betaVideosDescription": "Uniquement les voies avec une vidéo de beta",
       "searchSetters": "Rechercher des ouvreurs",
       "noSetters": "Aucun ouvreur",
-      "clearAll": "Tout effacer"
+      "clearAll": "Tout effacer",
+      "drafts": "Mes brouillons",
+      "popularityUnrepeated": "Non répétés"
     },
     "search": {
       "recentFilters": "Récents",

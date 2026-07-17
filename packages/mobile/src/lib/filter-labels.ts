@@ -59,8 +59,12 @@ export function buildFilterLabels(t: TFunction<'climbs'>): ClimbFilterLabels {
     tallOnly: () => t('mobile.filter.tallClimbs'),
     wideOnly: () => t('mobile.filter.wideClimbs'),
     betaOnly: () => t('mobile.filter.betaVideosShort'),
-    // i18n-keep mobile.filter.status.drafts mobile.filter.status.established mobile.filter.status.projects
-    status: (kind) => t(`mobile.filter.status.${kind}`),
+    // The community `projects` status now reads as "Unrepeated" (matching the
+    // Popularity bucket that writes it), so it never collides with the personal
+    // "Projects" progress value. Drafts/established keep their own status labels.
+    // i18n-keep mobile.filter.status.drafts mobile.filter.status.established
+    status: (kind) =>
+      kind === 'projects' ? t('mobile.filter.popularityUnrepeated') : t(`mobile.filter.status.${kind}`),
     // A single part for the collapsed progress selector (getBaseFilterParts reads
     // the current value via flagsToProgress); 'all' is never passed here.
     progress: (value) => progressFilterLabel(value, t),

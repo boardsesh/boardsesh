@@ -28,6 +28,7 @@ const mockT = ((key: string, options?: Record<string, unknown>) => {
   if (key === 'mobile.filter.sort.quality') return 'Quality';
   if (key === 'mobile.filter.benchmark') return 'Benchmarks only';
   if (key === 'mobile.filter.status.drafts') return 'Drafts';
+  if (key === 'mobile.filter.popularityUnrepeated') return 'Unrepeated';
   if (key === 'mobile.filter.tallClimbs') return 'Tall climbs';
   if (key === 'mobile.holdFilter.summaryCount') return `${text(options?.count)} holds`;
   if (key === 'mobile.zoneFilter.title') return 'Board region';
@@ -149,6 +150,14 @@ describe('getActiveFilterTokens', () => {
     expect(zone?.label).toBe('Board region');
     zone?.clear();
     expect(patchBoardFilters).toHaveBeenCalledWith({ zoneBox: null, zoneMode: undefined });
+  });
+
+  it('labels the community projects status token as "Unrepeated"', () => {
+    const { tokens, patchFilters } = build({ ...DEFAULT_FILTERS, status: 'projects' });
+    const status = tokens.find((token) => token.key === 'status');
+    expect(status?.label).toBe('Unrepeated');
+    status?.clear();
+    expect(patchFilters).toHaveBeenCalledWith({ status: 'any', minAscents: undefined });
   });
 
   it('orders grade first, then refinements in summary order', () => {

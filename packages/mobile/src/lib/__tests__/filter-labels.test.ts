@@ -88,10 +88,12 @@ describe('buildFilterLabels', () => {
     expect(labels.betaOnly()).toBe('mobile.filter.betaVideosShort');
   });
 
-  it('status appends the kind suffix', () => {
+  it('status appends the kind suffix, but community projects reads as "Unrepeated"', () => {
     expect(labels.status('drafts')).toBe('mobile.filter.status.drafts');
     expect(labels.status('established')).toBe('mobile.filter.status.established');
-    expect(labels.status('projects')).toBe('mobile.filter.status.projects');
+    // 'projects' relabels to the Popularity "Unrepeated" bucket so it never
+    // collides with the personal Projects progress value.
+    expect(labels.status('projects')).toBe('mobile.filter.popularityUnrepeated');
   });
 
   it('progress collapses the four tick flags into one value label', () => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createElement, forwardRef, useEffect, useImperativeHandle, useState, type ReactNode } from 'react';
+import { createElement, forwardRef, useEffect, useImperativeHandle, type ReactNode } from 'react';
 import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbBoardFilterState } from '@boardsesh/climb-filters';
@@ -240,8 +240,9 @@ vi.mock('../../lib/graphql/hooks', () => ({
   useSearchClimbsCount: () => ({ data: 12 }),
 }));
 
+const authMock = vi.hoisted(() => ({ isAuthenticated: true }));
 vi.mock('../../providers/auth-provider', () => ({
-  useAuth: () => ({ isAuthenticated: true }),
+  useAuth: () => ({ isAuthenticated: authMock.isAuthenticated }),
 }));
 
 vi.mock('../../lib/create-board-holds', () => ({
@@ -286,39 +287,29 @@ vi.mock('../Button', () => ({
 }));
 vi.mock('../SegmentedControl', () => ({ SegmentedControl: () => null }));
 vi.mock('../StarRating', () => ({ StarRating: () => null }));
-vi.mock('../CollapsibleSection', () => ({
-  CollapsibleSection: ({
-    children,
-    title,
-    defaultExpanded = false,
-    onExpandedChange,
-  }: {
-    children?: ReactNode;
-    title: string;
-    defaultExpanded?: boolean;
-    onExpandedChange?: (expanded: boolean) => void;
-  }) => {
-    const [expanded, setExpanded] = useState(defaultExpanded);
-    return createElement(
-      'section',
-      { 'data-testid': `section-${title}`, 'data-expanded': String(expanded) },
-      createElement(
-        'button',
-        {
-          onClick: () => {
-            const nextExpanded = !expanded;
-            setExpanded(nextExpanded);
-            onExpandedChange?.(nextExpanded);
-          },
-        },
-        `expand-${title}`,
-      ),
-      children,
-    );
-  },
-}));
 vi.mock('../RadioGroup', () => ({ RadioGroup: () => null }));
-vi.mock('../SwitchRow', () => ({ SwitchRow: () => null }));
+// A clickable toggle keyed by label, so tests can drive the "My drafts" /
+// benchmark / tall / wide switches.
+vi.mock('../SwitchRow', () => ({
+  SwitchRow: ({
+    label,
+    value,
+    onValueChange,
+  }: {
+    label: string;
+    value?: boolean;
+    onValueChange?: (next: boolean) => void;
+  }) =>
+    createElement(
+      'button',
+      {
+        'data-testid': `switch-${label}`,
+        'data-value': String(!!value),
+        onClick: () => onValueChange?.(!value),
+      },
+      label,
+    ),
+}));
 vi.mock('../Icon', () => ({ Icon: () => null }));
 vi.mock('../grade', () => ({ GradeRangeRail: () => null }));
 
@@ -352,35 +343,27 @@ beforeEach(() => {
   bottomSheetScrollViewProps.latest = null;
   managedSheetProps.latest = null;
   focusEffectHolder.cb = null;
+  authMock.isAuthenticated = true;
 });
 
 describe('ClimbFilterSheet sub-pickers', () => {
-  it('prewarms board holds when Refine expands', () => {
-    vi.useFakeTimers();
-    try {
-      const { getByText } = renderFilterSheet();
+  it('prewarms board holds when the sheet becomes visible (Holds row is always shown)', () => {
+    renderFilterSheet();
 
-      fireEvent.click(getByText('expand-mobile.filter.section.refine'));
+    // No accordion to expand: the sheet only mounts while visible, so mount is
+    // when we warm the create-board hold geometry the always-visible Holds row needs.
+    expect(createBoardHoldsMocks.parseSetIdsParam).toHaveBeenCalledWith('1,2');
+    expect(createBoardHoldsMocks.prewarmCreateBoardHolds).toHaveBeenCalledWith({
+      boardName: 'kilter',
+      layoutId: 1,
+      sizeId: 10,
+      setIds: [1, 2],
+    });
+  });
 
-      act(() => {
-        vi.advanceTimersByTime(149);
-      });
-      expect(createBoardHoldsMocks.prewarmCreateBoardHolds).not.toHaveBeenCalled();
-
-      act(() => {
-        vi.advanceTimersByTime(1);
-      });
-
-      expect(createBoardHoldsMocks.parseSetIdsParam).toHaveBeenCalledWith('1,2');
-      expect(createBoardHoldsMocks.prewarmCreateBoardHolds).toHaveBeenCalledWith({
-        boardName: 'kilter',
-        layoutId: 1,
-        sizeId: 10,
-        setIds: [1, 2],
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+  it('does not prewarm board holds when no board config is present', () => {
+    renderFilterSheet({ boardConfig: null });
+    expect(createBoardHoldsMocks.prewarmCreateBoardHolds).not.toHaveBeenCalled();
   });
 
   it('pushes the setters route with the current selection and suspends the sheet', () => {
@@ -579,49 +562,13 @@ describe('ClimbFilterSheet sub-pickers', () => {
     expect(routerPush).toHaveBeenLastCalledWith(expect.objectContaining({ pathname: '/(tabs)/climbs/holds' }));
   });
 
-  it('keeps Refine expanded across a sub-route round trip', () => {
-    const { getByLabelText, getByTestId, getByText } = renderFilterSheet();
-
-    fireEvent.click(getByText('expand-mobile.filter.section.refine'));
-    expect(getByTestId('section-mobile.filter.section.refine').getAttribute('data-expanded')).toBe('true');
-
-    fireEvent.click(getByLabelText('mobile.filter.setters'));
-    act(() => {
-      emitSetterFilterSelection(['route-setter']);
-    });
-    simulateScreenRefocus();
-
-    expect(getByTestId('section-mobile.filter.section.refine').getAttribute('data-expanded')).toBe('true');
-  });
-
-  it('keeps Advanced expanded across a sub-route round trip', () => {
-    const { getByLabelText, getByTestId, getByText } = renderFilterSheet();
-
-    fireEvent.click(getByText('expand-mobile.filter.section.advanced'));
-    expect(getByTestId('section-mobile.filter.section.advanced').getAttribute('data-expanded')).toBe('true');
-
-    fireEvent.click(getByLabelText('mobile.filter.setters'));
-    act(() => {
-      emitSetterFilterSelection(['route-setter']);
-    });
-    simulateScreenRefocus();
-
-    expect(getByTestId('section-mobile.filter.section.advanced').getAttribute('data-expanded')).toBe('true');
-  });
-
-  it('collapses Advanced after Reset across a sub-route round trip', () => {
+  it('fires a haptic on Reset (no accordions to collapse)', () => {
     // Reset is only enabled while the draft has active filters.
     filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
-    const { getByLabelText, getByTestId, getByText } = renderFilterSheet();
+    const { getByText } = renderFilterSheet();
 
-    fireEvent.click(getByText('expand-mobile.filter.section.advanced'));
     fireEvent.click(getByText('mobile.filter.reset'));
     expect(vi.mocked(hapticSelection)).toHaveBeenCalled();
-
-    fireEvent.click(getByLabelText('mobile.filter.setters'));
-    simulateScreenRefocus();
-
-    expect(getByTestId('section-mobile.filter.section.advanced').getAttribute('data-expanded')).toBe('false');
   });
 
   it('remounts the sheet host on resume so each present is a first present (#3330)', () => {
@@ -709,5 +656,54 @@ describe('ClimbFilterSheet random sort', () => {
       currentFilters: { ...currentFilters, sortBy: 'quality' },
     });
     expect(queryByText('mobile.filter.sort.reshuffle')).toBeNull();
+  });
+});
+
+describe('ClimbFilterSheet flat sections', () => {
+  it('renders five labeled sections flat, without any accordion controls', () => {
+    const { getByText, queryByText } = renderFilterSheet();
+
+    // The five top-level group headers are all present and always visible.
+    expect(getByText('mobile.filter.section.difficulty')).not.toBeNull();
+    expect(getByText('mobile.filter.progress.label')).not.toBeNull();
+    expect(getByText('mobile.filter.section.quality')).not.toBeNull();
+    expect(getByText('mobile.filter.section.theClimb')).not.toBeNull();
+    expect(getByText('mobile.filter.section.sort')).not.toBeNull();
+
+    // No CollapsibleSection: the old Refine/Advanced expand affordances are gone.
+    expect(queryByText('expand-mobile.filter.section.refine')).toBeNull();
+    expect(queryByText('expand-mobile.filter.section.advanced')).toBeNull();
+    expect(queryByText('mobile.filter.section.refine')).toBeNull();
+    expect(queryByText('mobile.filter.section.advanced')).toBeNull();
+  });
+
+  it('hides the Your progress section (and My drafts) when signed out', () => {
+    authMock.isAuthenticated = false;
+    const { queryByText, queryByTestId } = renderFilterSheet();
+    expect(queryByText('mobile.filter.progress.label')).toBeNull();
+    expect(queryByTestId('switch-mobile.filter.drafts')).toBeNull();
+  });
+
+  it('selecting the "Unrepeated" popularity bucket sets status to projects', () => {
+    const onApply = vi.fn();
+    const { getByLabelText, getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByLabelText('mobile.filter.popularityUnrepeated'));
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+
+    const applied = onApply.mock.calls.at(-1)?.[0] as ClimbFilters;
+    expect(applied.status).toBe('projects');
+  });
+
+  it('toggling "My drafts" on sets status to drafts, off returns it to any', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+
+    const draftsSwitch = getByTestId('switch-mobile.filter.drafts');
+    expect(draftsSwitch.getAttribute('data-value')).toBe('false');
+
+    fireEvent.click(draftsSwitch);
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).status).toBe('drafts');
   });
 });

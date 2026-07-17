@@ -40,7 +40,6 @@ import { Text } from './Text';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
 import { StarRating } from './StarRating';
-import { CollapsibleSection } from './CollapsibleSection';
 import { RadioGroup, type RadioOption } from './RadioGroup';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
@@ -83,20 +82,21 @@ type ClimbFilterSheetProps = {
   onApply: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
 };
 
-// Status options exposed in the sheet. "established" is retired as a user-facing
-// status — it's the same lever as "min ascents ≥ 2", now folded into the
-// Popularity control — but the enum value is kept for recent-filter replay.
-const STATUS_OPTIONS_UI = ['any', 'drafts', 'projects'] as const;
+// The status enum is still driven from the sheet — "My drafts" (Your progress
+// section) writes 'drafts', and "Unrepeated" (Popularity) writes 'projects' —
+// but there's no longer a Status radio, so no UI option list is needed here.
+// "established" stays retired: it's the "min ascents ≥ 2" lever, folded into the
+// Popularity buckets; the enum value survives only for recent-filter replay.
 
 // `statusForAuth` (in ../lib/climb-filter-types) coerces a persisted signed-out
 // `drafts` status to `any` at the SOURCE — the moment filters enter local state —
-// so the native picker never renders even one frame with a selection that has no
-// matching option. Applied in the useState initializer + the parent-sync effect.
+// so the "My drafts" switch never renders one frame on for a signed-out user.
+// Applied in the useState initializer + the parent-sync effect.
 
 // Popularity buckets consolidate the old min-ascents chips + the "established"
-// status into one control. undefined = Any; 2 = Established (≥2 ascents).
+// status into one control. undefined = Any; 2 = Established (≥2 ascents). The
+// leading "Unrepeated" bucket (status='projects') is rendered separately.
 const POPULARITY_BUCKETS: ReadonlyArray<number | undefined> = [undefined, 2, 10, 100, 1000];
-const PREWARM_BOARD_HOLDS_AFTER_REFINE_EXPAND_MS = 150;
 
 // The sheet's single native detent. The iOS JS-side height bound derived from it
 // lives in the shared useSheetColumnStyle hook (see the sheetColumnStyle below).
@@ -169,7 +169,6 @@ export function ClimbFilterSheet({
   // The epoch whose offset has already been restored — makes the restore in
   // onContentSizeChange one-shot per remount, not re-fire on later content growth.
   const restoredScrollEpochRef = useRef(0);
-  const refinePrewarmTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLocalDraftEditsRef = useRef(false);
   const boardName = boardConfig?.boardName ?? '';
   const { data: grades } = useGrades(boardName);
@@ -178,13 +177,6 @@ export function ClimbFilterSheet({
     statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
   );
   const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
-  // Bumped on Reset so the Refine/Advanced sections collapse back to default.
-  const [sectionResetKey, setSectionResetKey] = useState(0);
-  const [refineExpanded, setRefineExpanded] = useState(false);
-  // Hoisted like refineExpanded so it survives the sheet-host remount on resume
-  // (see presentEpoch). Kept internal to the section, it would collapse back to
-  // default on every sub-picker round trip.
-  const [advancedExpanded, setAdvancedExpanded] = useState(false);
   // The sub-pickers (setters / holds / zone) are pushed routes, not stacked
   // sheets (native sheets can't stack above this one). While a sub-route is open
   // we suspend — dismiss the native sheet without unmounting, so the draft below
@@ -227,12 +219,6 @@ export function ClimbFilterSheet({
     setLocalFilters((previous) => statusForAuth(previous, false));
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    return () => {
-      if (refinePrewarmTimeoutRef.current) clearTimeout(refinePrewarmTimeoutRef.current);
-    };
-  }, []);
-
   const detentSnapPoints = useMemo(() => [`${SHEET_DETENT_FRACTION * 100}%`], []);
   const snapPoints = useMemo(() => androidSafeSnapPoints(detentSnapPoints), [detentSnapPoints]);
   // On iOS the SwiftUI sheet host can propose an unbounded height, so a flex:1
@@ -274,16 +260,6 @@ export function ClimbFilterSheet({
     [t],
   );
 
-  const statusLabels = useMemo<Record<StatusFilter, string>>(
-    () => ({
-      any: t('mobile.filter.status.any'),
-      drafts: t('mobile.filter.status.drafts'),
-      established: t('mobile.filter.status.established'),
-      projects: t('mobile.filter.status.projects'),
-    }),
-    [t],
-  );
-
   const progressLabels = useMemo<Record<ProgressFilter, string>>(
     () =>
       PROGRESS_FILTER_VALUES.reduce(
@@ -312,18 +288,6 @@ export function ClimbFilterSheet({
       { key: 'asc', label: t('mobile.filter.sortOrder.asc') },
     ],
     [t],
-  );
-
-  // The native inline Picker can't disable an option or show a per-option hint, so
-  // gate "drafts" at the call site instead: drop it for signed-out users and render
-  // the "sign in for drafts" hint as a footnote below the picker (see render).
-  const statusOptions = useMemo<ReadonlyArray<RadioOption<StatusFilter>>>(
-    () =>
-      STATUS_OPTIONS_UI.filter((value) => value !== 'drafts' || isAuthenticated).map((value) => ({
-        value,
-        label: statusLabels[value],
-      })),
-    [statusLabels, isAuthenticated],
   );
 
   const accuracyOptions = useMemo<ReadonlyArray<RadioOption<GradeAccuracyValue | 'off'>>>(
@@ -390,11 +354,17 @@ export function ClimbFilterSheet({
     (bucket: number | undefined) => {
       // minAscents is mutually exclusive with projects/drafts at the DB layer
       // (createClimbFilters skips minAscents under projectsOnly; drafts drop all
-      // stats conditions). Clearing the status here stops a bucket from rendering
-      // active-but-inert when one of those statuses is set.
+      // stats conditions). "Unrepeated" (status='projects') now lives in the same
+      // chip group, so any Any/numeric tap must clear projects too — else the two
+      // would both apply, and the group wouldn't read as single-select. Clearing
+      // 'projects' with an inline `status: 'any'` patch reproduces the old Status
+      // radio's projects→any transition (applyStatusChange('any') = same fields).
+      // Drafts is a separate switch now, so it's only cleared by a numeric bucket
+      // (which drafts would render inert), never by tapping "Any".
       updateLocalFilters((previous) => {
-        const conflicts = bucket != null && (previous.status === 'projects' || previous.status === 'drafts');
-        return { ...previous, minAscents: bucket, ...(conflicts ? { status: 'any' } : {}) };
+        const clearsProjects = previous.status === 'projects';
+        const clearsDrafts = bucket != null && previous.status === 'drafts';
+        return { ...previous, minAscents: bucket, ...(clearsProjects || clearsDrafts ? { status: 'any' } : {}) };
       });
     },
     [updateLocalFilters],
@@ -467,11 +437,23 @@ export function ClimbFilterSheet({
     hapticSelection();
     updateLocalFilters(DEFAULT_FILTERS);
     updateLocalBoardFilters(DEFAULT_CLIMB_BOARD_FILTER_STATE);
-    setRefineExpanded(false);
-    setAdvancedExpanded(false);
     hasLocalDraftEditsRef.current = false;
-    setSectionResetKey((key) => key + 1);
   }, [updateLocalBoardFilters, updateLocalFilters]);
+
+  // The Holds row is always visible now (no Refine accordion to expand), so
+  // prewarm the create-board hold geometry as soon as the sheet is visible with
+  // a board config — the sheet only mounts while it's open, so mount == visible.
+  // Prewarming is an idempotent cache warm, so a re-run on boardConfig churn is
+  // harmless. (Replaces the old expand-triggered PREWARM_..._AFTER_REFINE path.)
+  useEffect(() => {
+    if (!boardConfig) return;
+    prewarmCreateBoardHolds({
+      boardName: boardConfig.boardName as BoardName,
+      layoutId: boardConfig.layoutId,
+      sizeId: boardConfig.sizeId,
+      setIds: parseSetIdsParam(boardConfig.setIds),
+    });
+  }, [boardConfig]);
 
   // Shared suspend preamble for the sub-picker openers: snapshot the scroll
   // offset for the post-remount restore, then dismiss the native sheet without
@@ -497,28 +479,6 @@ export function ClimbFilterSheet({
       },
     });
   }, [beginSubPickerSuspend, boardConfig, localFilters.setter, router]);
-
-  const scheduleBoardHoldsPrewarm = useCallback(() => {
-    if (!boardConfig) return;
-    if (refinePrewarmTimeoutRef.current) clearTimeout(refinePrewarmTimeoutRef.current);
-    refinePrewarmTimeoutRef.current = setTimeout(() => {
-      refinePrewarmTimeoutRef.current = null;
-      prewarmCreateBoardHolds({
-        boardName: boardConfig.boardName as BoardName,
-        layoutId: boardConfig.layoutId,
-        sizeId: boardConfig.sizeId,
-        setIds: parseSetIdsParam(boardConfig.setIds),
-      });
-    }, PREWARM_BOARD_HOLDS_AFTER_REFINE_EXPAND_MS);
-  }, [boardConfig]);
-
-  const handleRefineExpandedChange = useCallback(
-    (expanded: boolean) => {
-      setRefineExpanded(expanded);
-      if (expanded) scheduleBoardHoldsPrewarm();
-    },
-    [scheduleBoardHoldsPrewarm],
-  );
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
@@ -642,44 +602,6 @@ export function ClimbFilterSheet({
   const holdFilterCount = countFilteredHolds(localBoardFilters.holdsFilter);
   const zoneActive = localBoardFilters.zoneBox != null;
 
-  const refineSummary = useMemo(() => {
-    const parts: string[] = [];
-    // Boulders-only is the default, so only surface a chip when it differs.
-    const bouldersOn = localFilters.boulders ?? true;
-    const routesOn = localFilters.routes ?? false;
-    if (routesOn && !bouldersOn) parts.push(t('mobile.filter.routes'));
-    else if (routesOn && bouldersOn) parts.push(t('mobile.filter.both'));
-    if (localFilters.gradeAccuracy != null) parts.push(accuracyLabels[localFilters.gradeAccuracy]);
-    if (localFilters.setter && localFilters.setter.length > 0) {
-      parts.push(formatSetterSelection(localFilters.setter));
-    }
-    if (holdFilterCount > 0) parts.push(t('mobile.holdFilter.summaryCount', { count: holdFilterCount }));
-    if (zoneActive) parts.push(t('mobile.zoneFilter.title'));
-    if (localFilters.onlyTallClimbs) parts.push(t('mobile.filter.tallClimbs'));
-    if (localFilters.onlyWideClimbs) parts.push(t('mobile.filter.wideClimbs'));
-    return parts.join(' · ') || null;
-  }, [localFilters, accuracyLabels, holdFilterCount, zoneActive, formatSetterSelection, t]);
-
-  // Progress moved to the always-visible PRIMARY section, so it no longer feeds
-  // the Advanced collapsed summary — only Status, beta videos, and sort remain.
-  const advancedSummary = useMemo(() => {
-    const parts: string[] = [];
-    if (localFilters.status !== 'any') parts.push(statusLabels[localFilters.status]);
-    if (localFilters.onlyWithBetaVideos) parts.push(t('mobile.filter.betaVideosShort'));
-    if (localFilters.sortBy !== DEFAULT_FILTERS.sortBy || localFilters.sortOrder !== DEFAULT_FILTERS.sortOrder) {
-      parts.push(sortLabels[localFilters.sortBy]);
-    }
-    return parts.join(' · ') || null;
-  }, [
-    localFilters.status,
-    localFilters.onlyWithBetaVideos,
-    localFilters.sortBy,
-    localFilters.sortOrder,
-    statusLabels,
-    sortLabels,
-    t,
-  ]);
-
   const trackColor = systemColors.fill;
   const accuracyValue: GradeAccuracyValue | 'off' = localFilters.gradeAccuracy ?? 'off';
   const applyLabel =
@@ -723,29 +645,42 @@ export function ClimbFilterSheet({
           scrollEventThrottle={32}
           onContentSizeChange={handleScrollContentSizeChange}
         >
-          {/* PRIMARY — the levers the analytics say carry the product. Always open. */}
-          <View style={styles.primary}>
-            {/* Grade — inline and sheet-local, so dismissing the filter sheet does
-              not commit grade edits until Apply. */}
-            <GradeRangeRail
-              grades={grades ?? []}
-              bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
-              lastUsedGradeId={lastUsedGradeId}
-              onChange={handleGradeChange}
-              dismissible={false}
-              showTitle
-              style={styles.inlineGradeRail}
-            />
+          {/* Flat, labeled sections — no accordions. The scroll body is one column
+              child (styles.body) so the native sheet scrolls and the footer pins. */}
+          <View style={styles.body}>
+            {/* 1 · DIFFICULTY — grade bound + grade accuracy. */}
+            <View style={styles.sectionFirst}>
+              <Text variant="headline" style={styles.sectionHeader}>
+                {t('mobile.filter.section.difficulty')}
+              </Text>
+              {/* Grade — inline and sheet-local, so dismissing the filter sheet does
+                not commit grade edits until Apply. */}
+              <GradeRangeRail
+                grades={grades ?? []}
+                bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
+                lastUsedGradeId={lastUsedGradeId}
+                onChange={handleGradeChange}
+                dismissible={false}
+                showTitle
+                style={styles.inlineGradeRail}
+              />
 
-            {/* Your progress — a single-select over the four per-user tick flags
-              (auth-gated, exactly like the old hide-sent switch). "Projects" =
-              attempted-but-not-sent; "Unsent" = the old "hide climbs I've sent". */}
+              <View style={styles.subsectionGap} />
+              <Text variant="footnote" style={styles.subsectionLabel}>
+                {t('mobile.filter.accuracy.label')}
+              </Text>
+              <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} />
+            </View>
+
+            {/* 2 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
+                the "My drafts" toggle (old Status 'drafts', with its side-effects). */}
             {isAuthenticated ? (
-              <>
-                <View style={styles.subsectionGap} />
-                <Text variant="footnote" style={styles.subsectionLabel}>
+              <View style={styles.section}>
+                <Text variant="headline" style={styles.sectionHeader}>
                   {t('mobile.filter.progress.label')}
                 </Text>
+                {/* A single-select over the four per-user tick flags. "Projects" =
+                  attempted-but-not-sent; "Unsent" = the old "hide climbs I've sent". */}
                 <View style={styles.chipRow}>
                   {PROGRESS_FILTER_VALUES.map((value) => (
                     <Chip
@@ -756,67 +691,85 @@ export function ClimbFilterSheet({
                     />
                   ))}
                 </View>
-              </>
+
+                {/* My drafts — the old Status 'drafts' radio option, now a toggle.
+                  Routes through handleStatusChange so applyStatusChange's side
+                  effects (drafts → sort=creation desc, clear minAscents) still fire. */}
+                <View style={styles.subsectionGap} />
+                <View style={styles.groupedCard}>
+                  <SwitchRow
+                    label={t('mobile.filter.drafts')}
+                    value={localFilters.status === 'drafts'}
+                    onValueChange={(on) => handleStatusChange(on ? 'drafts' : 'any')}
+                  />
+                </View>
+              </View>
             ) : null}
 
-            {/* Benchmarks — its own inset card; a top-tier lever, not part of
-              progress. */}
-            <View style={styles.subsectionGap} />
-            <View style={styles.groupedCard}>
-              <SwitchRow
-                label={t('mobile.filter.benchmark')}
-                description={t('mobile.filter.benchmarkDescription')}
-                value={!!localBoardFilters.onlyBenchmarks}
-                onValueChange={(value) =>
-                  updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
-                }
-              />
-            </View>
-
-            <View style={styles.subsectionGap} />
-            <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.filter.popularity')}
-            </Text>
-            <View style={styles.chipRow}>
-              {POPULARITY_BUCKETS.map((bucket) => (
-                <Chip
-                  key={bucket ?? 'any'}
-                  label={popularityLabel(bucket)}
-                  selected={localFilters.minAscents === bucket}
-                  onPress={() => handlePopularity(bucket)}
+            {/* 3 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
+            <View style={styles.section}>
+              <Text variant="headline" style={styles.sectionHeader}>
+                {t('mobile.filter.section.quality')}
+              </Text>
+              {/* Benchmarks — top-tier lever, its own inset card. */}
+              <View style={styles.groupedCard}>
+                <SwitchRow
+                  label={t('mobile.filter.benchmark')}
+                  description={t('mobile.filter.benchmarkDescription')}
+                  value={!!localBoardFilters.onlyBenchmarks}
+                  onValueChange={(value) =>
+                    updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
+                  }
                 />
-              ))}
+              </View>
+
+              <View style={styles.subsectionGap} />
+              <Text variant="footnote" style={styles.subsectionLabel}>
+                {t('mobile.filter.minRating')}
+              </Text>
+              <View style={styles.ratingRow}>
+                <Chip
+                  label={t('mobile.filter.anyRating')}
+                  selected={localFilters.minRating == null}
+                  onPress={() => setFiltersPatch({ minRating: undefined })}
+                />
+                <StarRating
+                  value={localFilters.minRating}
+                  onChange={(value) => setFiltersPatch({ minRating: value })}
+                  clearValue={undefined}
+                />
+              </View>
+
+              <View style={styles.subsectionGap} />
+              <Text variant="footnote" style={styles.subsectionLabel}>
+                {t('mobile.filter.popularity')}
+              </Text>
+              {/* "Unrepeated" (status='projects') leads the group, then Any + the
+                numeric min-ascents buckets. The whole row reads as single-select:
+                picking any bucket clears projects (see handlePopularity), and the
+                Unrepeated chip is selected iff status==='projects'. */}
+              <View style={styles.chipRow}>
+                <Chip
+                  label={t('mobile.filter.popularityUnrepeated')}
+                  selected={localFilters.status === 'projects'}
+                  onPress={() => handleStatusChange('projects')}
+                />
+                {POPULARITY_BUCKETS.map((bucket) => (
+                  <Chip
+                    key={bucket ?? 'any'}
+                    label={popularityLabel(bucket)}
+                    selected={localFilters.minAscents === bucket && localFilters.status !== 'projects'}
+                    onPress={() => handlePopularity(bucket)}
+                  />
+                ))}
+              </View>
             </View>
 
-            <View style={styles.subsectionGap} />
-            <Text variant="footnote" style={styles.subsectionLabel}>
-              {t('mobile.filter.minRating')}
-            </Text>
-            <View style={styles.ratingRow}>
-              <Chip
-                label={t('mobile.filter.anyRating')}
-                selected={localFilters.minRating == null}
-                onPress={() => setFiltersPatch({ minRating: undefined })}
-              />
-              <StarRating
-                value={localFilters.minRating}
-                onChange={(value) => setFiltersPatch({ minRating: value })}
-                clearValue={undefined}
-              />
-            </View>
-          </View>
-
-          <View style={styles.sectionsContainer}>
-            {/* REFINE — mid-band controls, opt-in. */}
-            {/* `defaultExpanded` is read when `sectionResetKey` remounts this
-                section; Reset clears `refineExpanded` before bumping the key. */}
-            <CollapsibleSection
-              title={t('mobile.filter.section.refine')}
-              defaultExpanded={refineExpanded}
-              summary={refineSummary ?? t('mobile.filter.refineHint')}
-              resetKey={sectionResetKey}
-              onExpandedChange={handleRefineExpandedChange}
-            >
+            {/* 4 · THE CLIMB — type, shape, setters, holds, zones, beta. */}
+            <View style={styles.section}>
+              <Text variant="headline" style={styles.sectionHeader}>
+                {t('mobile.filter.section.theClimb')}
+              </Text>
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.climbType')}
               </Text>
@@ -827,6 +780,25 @@ export function ClimbFilterSheet({
                 textVariant="footnote"
                 trackColor={trackColor}
               />
+
+              {/* Shape — Kilter homewall only. */}
+              {isKilter ? (
+                <>
+                  <View style={styles.subsectionGap} />
+                  <SwitchRow
+                    label={t('mobile.filter.tall')}
+                    description={t('mobile.filter.tallDescription')}
+                    value={!!localFilters.onlyTallClimbs}
+                    onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
+                  />
+                  <SwitchRow
+                    label={t('mobile.filter.wide')}
+                    description={t('mobile.filter.wideDescription')}
+                    value={!!localFilters.onlyWideClimbs}
+                    onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
+                  />
+                </>
+              ) : null}
 
               <View style={styles.subsectionGap} />
               <Pressable
@@ -899,57 +871,19 @@ export function ClimbFilterSheet({
               </Pressable>
 
               <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.accuracy.label')}
-              </Text>
-              <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} />
-
-              {isKilter ? (
-                <>
-                  <View style={styles.subsectionGap} />
-                  <SwitchRow
-                    label={t('mobile.filter.tall')}
-                    description={t('mobile.filter.tallDescription')}
-                    value={!!localFilters.onlyTallClimbs}
-                    onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
-                  />
-                  <SwitchRow
-                    label={t('mobile.filter.wide')}
-                    description={t('mobile.filter.wideDescription')}
-                    value={!!localFilters.onlyWideClimbs}
-                    onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
-                  />
-                </>
-              ) : null}
-            </CollapsibleSection>
-
-            {/* ADVANCED — the sub-2% long tail. Kept, off the primary surface. */}
-            <CollapsibleSection
-              title={t('mobile.filter.section.advanced')}
-              defaultExpanded={advancedExpanded}
-              summary={advancedSummary ?? t('mobile.filter.advancedHint')}
-              resetKey={sectionResetKey}
-              onExpandedChange={setAdvancedExpanded}
-            >
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.section.status')}
-              </Text>
-              <RadioGroup options={statusOptions} value={localFilters.status} onChange={handleStatusChange} />
-              {!isAuthenticated ? (
-                <Text variant="footnote" style={styles.statusHint}>
-                  {t('mobile.filter.signInForDrafts')}
-                </Text>
-              ) : null}
-
-              <View style={styles.subsectionGap} />
               <SwitchRow
                 label={t('mobile.filter.betaVideos')}
                 description={t('mobile.filter.betaVideosDescription')}
                 value={!!localFilters.onlyWithBetaVideos}
                 onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
               />
+            </View>
 
-              <View style={styles.subsectionGap} />
+            {/* 5 · SORT — sort key + direction (or reshuffle for random). */}
+            <View style={styles.section}>
+              <Text variant="headline" style={styles.sectionHeader}>
+                {t('mobile.filter.section.sort')}
+              </Text>
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.sortBy')}
               </Text>
@@ -995,7 +929,7 @@ export function ClimbFilterSheet({
                   />
                 </>
               )}
-            </CollapsibleSection>
+            </View>
           </View>
         </BottomSheetScrollView>
 
@@ -1030,26 +964,26 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: spacing[4],
   },
-  primary: {
+  body: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[2],
-    paddingBottom: spacing[3],
   },
-  sectionsContainer: {
-    gap: spacing[3],
-    paddingHorizontal: spacing[4],
+  // Each top-level group. A generous top pad separates the five headers into
+  // distinct inset-style groups; the first group sits tighter under the sheet header.
+  section: {
+    paddingTop: spacing[5],
+  },
+  sectionFirst: {
     paddingTop: spacing[2],
+  },
+  // The five group titles — more prominent than the muted footnote sub-labels so
+  // the flat sheet reads as five inset groups without accordions.
+  sectionHeader: {
+    marginBottom: spacing[3],
   },
   subsectionLabel: {
     opacity: 0.55,
     marginTop: spacing[1],
     marginBottom: spacing[2],
-  },
-  statusHint: {
-    // Same muted footnote treatment as subsectionLabel above (the section's labels
-    // and hints share one opacity); marginTop sits it just below the picker.
-    opacity: 0.55,
-    marginTop: spacing[2],
   },
   subsectionGap: {
     height: spacing[4],
