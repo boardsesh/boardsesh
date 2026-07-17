@@ -110,7 +110,7 @@ export default function RegisterScreen() {
         if (result.authenticated === false) {
           track(SHARED_EVENTS.SignupCompleted, {
             auth_method: 'credentials',
-            flow: 'web',
+            flow: authFlow,
             requires_verification: result.requiresVerification,
           });
           const verificationEmailNeedsResend =

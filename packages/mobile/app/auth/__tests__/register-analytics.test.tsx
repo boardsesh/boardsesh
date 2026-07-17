@@ -154,7 +154,8 @@ describe('RegisterScreen analytics', () => {
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
   });
 
-  it('treats verification-required web registration as a completed but anonymous signup', async () => {
+  it('treats verification-required web registration as a completed but anonymous web signup', async () => {
+    platform.os = 'web';
     auth.register.mockResolvedValue({
       success: true,
       authenticated: false,
@@ -226,7 +227,8 @@ describe('RegisterScreen analytics', () => {
     expect(screen.queryByText('login.toasts.checkEmail')).toBeNull();
   });
 
-  it('shows sign-in guidance when the account was created but automatic login was unavailable', async () => {
+  it('reports a native anonymous registration with the native analytics flow', async () => {
+    platform.os = 'android';
     auth.register.mockResolvedValue({
       success: true,
       authenticated: false,
@@ -239,7 +241,7 @@ describe('RegisterScreen analytics', () => {
     await waitFor(() =>
       expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
         auth_method: 'credentials',
-        flow: 'web',
+        flow: 'native',
         requires_verification: false,
       }),
     );
