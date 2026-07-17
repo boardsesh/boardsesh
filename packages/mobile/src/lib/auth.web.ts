@@ -47,35 +47,66 @@ function responseError(responseBody: Record<string, unknown>, fallback: string):
   return typeof responseBody.error === 'string' && responseBody.error ? responseBody.error : fallback;
 }
 
-async function getCsrfToken(): Promise<CsrfResult> {
+type JsonFetchOutcome =
+  | { ok: true; response: Response; body: Record<string, unknown> }
+  | { ok: false; responseReceived: boolean; failure: AuthFailure };
+
+/**
+ * The fetch → JSON-object ladder shared by the auth endpoints that return an
+ * `AuthFailure` on transport/parse errors: a rejected fetch is `network`
+ * (`responseReceived: false`), a response that isn't a JSON object is
+ * `invalid_response` (`responseReceived: true`). `onResponse` runs after the
+ * response headers arrive but before the body is parsed — the credentials
+ * callback uses it to fence the previous cookie owner the moment Set-Cookie
+ * lands, even if the body is later truncated.
+ */
+async function fetchJsonObject(
+  input: string,
+  init: RequestInit,
+  onResponse?: (response: Response) => Promise<void>,
+): Promise<JsonFetchOutcome> {
   let response: Response;
   try {
-    response = await fetch('/api/auth/csrf', {
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: { Accept: 'application/json' },
-      signal: createTimeoutSignal(15_000),
-    });
+    response = await fetch(input, init);
   } catch {
-    return { success: false, status: null, error: 'network' };
+    return { ok: false, responseReceived: false, failure: { success: false, status: null, error: 'network' } };
   }
 
-  let responseBody: Record<string, unknown>;
+  if (onResponse) await onResponse(response);
+
+  let body: Record<string, unknown>;
   try {
-    responseBody = await readJsonObject(response);
+    body = await readJsonObject(response);
   } catch {
-    return { success: false, status: response.status, error: 'invalid_response' };
-  }
-
-  if (!response.ok || typeof responseBody.csrfToken !== 'string' || !responseBody.csrfToken) {
     return {
-      success: false,
-      status: response.status,
-      error: responseError(responseBody, `HTTP ${response.status}`),
+      ok: false,
+      responseReceived: true,
+      failure: { success: false, status: response.status, error: 'invalid_response' },
     };
   }
 
-  return { success: true, token: responseBody.csrfToken };
+  return { ok: true, response, body };
+}
+
+async function getCsrfToken(): Promise<CsrfResult> {
+  const outcome = await fetchJsonObject('/api/auth/csrf', {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+    signal: createTimeoutSignal(15_000),
+  });
+  if (!outcome.ok) return outcome.failure;
+
+  const { response, body } = outcome;
+  if (!response.ok || typeof body.csrfToken !== 'string' || !body.csrfToken) {
+    return {
+      success: false,
+      status: response.status,
+      error: responseError(body, `HTTP ${response.status}`),
+    };
+  }
+
+  return { success: true, token: body.csrfToken };
 }
 
 function callbackFailure(callbackUrl: unknown, responseStatus: number): AuthFailure | null {
@@ -107,9 +138,9 @@ async function replaceCredentialsCookie(email: string, password: string): Promis
   const csrf = await getCsrfToken();
   if (!csrf.success) return { result: csrf, responseReceived: false };
 
-  let response: Response;
-  try {
-    response = await fetch('/api/auth/callback/credentials', {
+  const outcome = await fetchJsonObject(
+    '/api/auth/callback/credentials',
+    {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
@@ -126,29 +157,14 @@ async function replaceCredentialsCookie(email: string, password: string): Promis
         json: 'true',
       }).toString(),
       signal: createTimeoutSignal(15_000),
-    });
-  } catch {
-    return {
-      result: { success: false, status: null, error: 'network' },
-      responseReceived: false,
-    };
-  }
+    },
+    // Fence the previous cookie owner the moment Set-Cookie lands so a truncated
+    // or malformed body cannot leave its JWE usable under another login.
+    () => clearTokens(),
+  );
+  if (!outcome.ok) return { result: outcome.failure, responseReceived: outcome.responseReceived };
 
-  // Set-Cookie is applied when response headers arrive, before JSON parsing.
-  // Fence the previous owner now so a truncated/malformed response cannot leave
-  // its JWE usable while the HttpOnly cookie already belongs to another login.
-  await clearTokens();
-
-  let responseBody: Record<string, unknown>;
-  try {
-    responseBody = await readJsonObject(response);
-  } catch {
-    return {
-      result: { success: false, status: response.status, error: 'invalid_response' },
-      responseReceived: true,
-    };
-  }
-
+  const { response, body: responseBody } = outcome;
   const failure = callbackFailure(responseBody.url, response.status);
   if (failure) return { result: failure, responseReceived: true };
   if (!response.ok) {
@@ -199,27 +215,17 @@ export async function registerWithCredentials(
   password: string,
   name?: string,
 ): Promise<RegistrationResult> {
-  let response: Response;
-  try {
-    response = await fetch('/api/auth/register', {
-      method: 'POST',
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, ...(name ? { name } : {}) }),
-      signal: createTimeoutSignal(15_000),
-    });
-  } catch {
-    return { success: false, status: null, error: 'network' };
-  }
+  const outcome = await fetchJsonObject('/api/auth/register', {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, ...(name ? { name } : {}) }),
+    signal: createTimeoutSignal(15_000),
+  });
+  if (!outcome.ok) return outcome.failure;
 
-  let responseBody: Record<string, unknown>;
-  try {
-    responseBody = await readJsonObject(response);
-  } catch {
-    return { success: false, status: response.status, error: 'invalid_response' };
-  }
-
+  const { response, body: responseBody } = outcome;
   if (!response.ok) {
     return {
       success: false,
