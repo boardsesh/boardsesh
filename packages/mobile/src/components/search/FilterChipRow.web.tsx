@@ -12,12 +12,13 @@ import { memo, useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Chip, Divider, Menu } from 'react-native-paper';
+import { PROGRESS_FILTER_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus';
 import { spacing } from '../../theme/tokens';
 import { useMaterialAngleControl } from '../chrome/use-material-angle-control';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
-import { popularityChipLabel, ratingChipLabel } from './FilterChipRow.logic';
+import { popularityChipLabel, progressFilterLabel, ratingChipLabel } from './FilterChipRow.logic';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 // A chip that anchors a controlled Paper Menu. The `children` render-prop receives
@@ -68,11 +69,11 @@ function FilterChipRowComponent({
   onChangePopularity,
   minRating,
   onChangeRating,
-  hideCompleted,
-  onToggleHideCompleted,
+  progress,
+  onChangeProgress,
+  canFilterProgress,
   onlyBenchmarks,
   onToggleBenchmarks,
-  canHideCompleted,
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const {
@@ -156,29 +157,42 @@ function FilterChipRowComponent({
           {gradeLabel}
         </Chip>
 
-        {/* Show — hide-sent (auth-gated) + benchmarks. */}
-        <MenuChip label={t('mobile.search.chips.show')} selected={hideCompleted || onlyBenchmarks}>
-          {() => (
-            <>
-              {canHideCompleted ? (
-                <Menu.Item
-                  title={t('mobile.filter.hideSent')}
-                  leadingIcon={hideCompleted ? 'check' : undefined}
-                  onPress={() => {
-                    onToggleHideCompleted(!hideCompleted);
-                  }}
-                />
-              ) : null}
-              <Menu.Item
-                title={t('mobile.filter.benchmark')}
-                leadingIcon={onlyBenchmarks ? 'check' : undefined}
-                onPress={() => {
-                  onToggleBenchmarks(!onlyBenchmarks);
-                }}
-              />
-            </>
-          )}
-        </MenuChip>
+        {/* Your progress ▾ — single-select over the four tick flags (auth-gated,
+            the chip hides when signed out). Each item commits its value and closes,
+            mirroring FilterChipRow.android.tsx. */}
+        {canFilterProgress ? (
+          <MenuChip
+            label={progress === 'all' ? t('mobile.filter.progress.label') : progressFilterLabel(progress, t)}
+            selected={progress !== 'all'}
+          >
+            {(close) => (
+              <>
+                {PROGRESS_FILTER_VALUES.map((value) => (
+                  <Menu.Item
+                    key={value}
+                    title={progressFilterLabel(value, t)}
+                    leadingIcon={value === progress ? 'check' : undefined}
+                    onPress={() => {
+                      onChangeProgress(value);
+                      close();
+                    }}
+                  />
+                ))}
+              </>
+            )}
+          </MenuChip>
+        ) : null}
+
+        {/* Benchmarks — its own toggle chip (a tap flips it), no longer folded in
+            with progress. */}
+        <Chip
+          mode="outlined"
+          selected={onlyBenchmarks}
+          onPress={() => onToggleBenchmarks(!onlyBenchmarks)}
+          style={styles.chip}
+        >
+          {t('mobile.filter.benchmark')}
+        </Chip>
 
         {/* Tall / Wide — board-shape chips for the current Kilter homewall size. */}
         {dimensionChips.map((dimension) => (
