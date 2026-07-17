@@ -1,20 +1,52 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds the static Expo web export (the /app SPA) and verifies the shell and
-# board-renderer WASM assets landed. This is the single export recipe shared by:
+# Builds the static Expo web export and verifies the shell and board-renderer
+# WASM assets landed. This is the single export recipe shared by:
 #   - `vp run build:expo-web` (defaults to packages/web/public/app so a local
 #     BOARDSESH_WEB=1 `vp run build:web` serves /app exactly like production),
 #   - Dockerfile.web's builder stage (same default target),
 #   - scripts/mobile-web-bundle-check.sh (temp dir; export-only validation).
 #
-# Usage: bash scripts/build-expo-web-export.sh [output-dir]
+# Two serving targets share the recipe, selected by --subdomain:
+#   - default          → baseUrl /app, the Next dev proxy + legacy prod-static
+#                        path (output packages/web/public/app).
+#   - --subdomain      → baseUrl /, a STANDALONE export a host/CDN serves at the
+#                        root of app.boardsesh.com (output
+#                        packages/web/public/app-standalone unless overridden).
+#                        The host must SPA-fallback deep routes to index.html.
+#
+# Usage: bash scripts/build-expo-web-export.sh [--subdomain] [output-dir]
 #
 # The output directory is wiped first, so never point it at a directory with
 # hand-maintained content. See docs/expo-web-deployment.md.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTPUT_DIR="${1:-$ROOT_DIR/packages/web/public/app}"
+
+# /app is the default so the dev proxy and the legacy prod-static path are
+# unchanged; --subdomain flips it to root-serving for app.boardsesh.com.
+WEB_BASE_URL="/app"
+DEFAULT_OUTPUT_DIR="$ROOT_DIR/packages/web/public/app"
+OUTPUT_DIR=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --subdomain)
+      WEB_BASE_URL="/"
+      DEFAULT_OUTPUT_DIR="$ROOT_DIR/packages/web/public/app-standalone"
+      shift
+      ;;
+    --)
+      shift
+      ;;
+    *)
+      OUTPUT_DIR="$1"
+      shift
+      ;;
+  esac
+done
+
+OUTPUT_DIR="${OUTPUT_DIR:-$DEFAULT_OUTPUT_DIR}"
 if [[ "$OUTPUT_DIR" != /* ]]; then
   OUTPUT_DIR="$PWD/$OUTPUT_DIR"
 fi
@@ -42,7 +74,10 @@ cd "$ROOT_DIR/packages/mobile"
 # caller has not expressed a preference (CI/Docker have no tailscaled anyway).
 export TAILSCALE_HOSTS="${TAILSCALE_HOSTS-}"
 
-BOARDSESH_WEB=1 EXPO_NO_WEB_SETUP=1 EXPO_NO_TELEMETRY=1 \
+# app.config.ts's resolveWebPlatforms reads BOARDSESH_WEB_BASE_URL (default
+# /app). Setting it explicitly here keeps the export deterministic regardless of
+# any ambient value; --subdomain sets it to / for root serving.
+BOARDSESH_WEB=1 BOARDSESH_WEB_BASE_URL="$WEB_BASE_URL" EXPO_NO_WEB_SETUP=1 EXPO_NO_TELEMETRY=1 \
   bunx expo export --platform web --output-dir "$OUTPUT_DIR"
 
 if [[ ! -f "$OUTPUT_DIR/index.html" ]]; then
@@ -55,4 +90,4 @@ if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/b
   exit 1
 fi
 
-echo "[build-expo-web-export] Expo web export written to $OUTPUT_DIR"
+echo "[build-expo-web-export] Expo web export (baseUrl $WEB_BASE_URL) written to $OUTPUT_DIR"
