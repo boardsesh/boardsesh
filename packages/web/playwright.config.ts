@@ -60,7 +60,25 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-      testIgnore: ['**/layout-screenshots.spec.ts', '**/help-screenshots.spec.ts'],
+      testIgnore: ['**/layout-screenshots.spec.ts', '**/help-screenshots.spec.ts', '**/expo-web/**'],
+    },
+
+    // Expo-web smoke — drives the mobile app compiled for the browser at /app.
+    // Requires the full expo-web dev stack (backend + Next proxy + Metro web):
+    //   vp run test:e2e:expo-web            (orchestrated: starts the stack, runs this)
+    // or vp run dev:mobile:web, then:
+    //   TEST_USER_EMAIL=test@boardsesh.com TEST_USER_PASSWORD=test \
+    //     cd packages/web && bunx playwright test --project=expo-web-smoke
+    // Viewport matches the Android parity reference (412×915) since the /app
+    // surface renders the Material variant.
+    {
+      name: 'expo-web-smoke',
+      use: {
+        viewport: { width: 412, height: 915 },
+        isMobile: true,
+        hasTouch: true,
+      },
+      testMatch: ['**/expo-web/*.spec.ts'],
     },
 
     // Help page screenshots - mobile viewport (390×844, iPhone 14 logical size).
@@ -90,13 +108,18 @@ export default defineConfig({
     },
   ],
 
-  /* Run your local dev server before starting the tests */
-  webServer: process.env.CI
-    ? undefined // In CI, we expect the server to be started separately
-    : {
-        command: 'bun run dev',
-        url: 'http://localhost:3000',
-        reuseExistingServer: !process.env.CI,
-        timeout: 120 * 1000,
-      },
+  /* Run your local dev server before starting the tests. Skipped in CI and
+   * whenever PLAYWRIGHT_TEST_BASE_URL points at an externally managed server —
+   * notably the expo-web stack (scripts/expo-web-e2e.ts), where auto-starting
+   * `bun run dev` here would race the orchestrator's Next instance for port
+   * 3000 and kill the whole stack mid-run. */
+  webServer:
+    process.env.CI || process.env.PLAYWRIGHT_TEST_BASE_URL
+      ? undefined
+      : {
+          command: 'bun run dev',
+          url: 'http://localhost:3000',
+          reuseExistingServer: !process.env.CI,
+          timeout: 120 * 1000,
+        },
 });

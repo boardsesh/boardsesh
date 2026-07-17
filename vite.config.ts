@@ -749,6 +749,14 @@ export default defineConfig({
         dependsOn: ['db:up'],
         cache: false,
       },
+      // Expo-web smoke: boots the full expo-web stack (backend + Next proxy +
+      // Metro web) via the dev orchestrator and runs the `expo-web-smoke`
+      // Playwright project against it. See scripts/expo-web-e2e.ts.
+      'test:e2e:expo-web': {
+        command: 'tsx scripts/expo-web-e2e.ts',
+        dependsOn: ['db:up', 'mobile:web-runtime:install'],
+        cache: false,
+      },
     },
   },
 });
