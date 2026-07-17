@@ -7,6 +7,15 @@ const VERCEL_PREVIEW_REGEX = /^https:\/\/boardsesh-[a-z0-9]+-marcodejonghs-proje
 
 // Homelab branch deploy pattern: https://{N}.preview.boardsesh.com
 const PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.preview\.boardsesh\.com$/;
+
+// Standalone Expo-web app served at its own origin (app.boardsesh.com). The
+// browser session exchange (POST /auth/native/exchange) plus the GraphQL and
+// token-refresh calls the SPA makes are all cross-origin from there, so the app
+// origin must be on the CORS allow-list. The exact prod origin is added in
+// initCors (env-configurable via APP_ORIGIN); this regex covers its numbered
+// homelab preview form: https://{N}.app.boardsesh.com
+const DEFAULT_APP_ORIGIN = 'https://app.boardsesh.com';
+const APP_PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.app\.boardsesh\.com$/;
 const DEV_PRIVATE_LAN_ORIGIN_REGEX =
   /^http:\/\/(?:(?:10(?:\.\d{1,3}){3})|(?:192\.168(?:\.\d{1,3}){2})|(?:172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})):(?:300[0-9])$/;
 // Match the dev orchestrator's findAvailablePort range — it auto-increments from 3000
@@ -90,6 +99,14 @@ export function initCors(boardseshUrl: string): void {
     // Invalid URL, skip www variant
   }
 
+  // The standalone Expo-web app (app.boardsesh.com) calls this backend
+  // cross-origin: the auth exchange, GraphQL, and token refresh. Configurable
+  // via APP_ORIGIN so a non-prod deployment can point it elsewhere; defaults to
+  // production. Numbered previews (https://{N}.app.boardsesh.com) match
+  // APP_PREVIEW_ORIGIN_REGEX in isOriginAllowed.
+  const appOrigin = process.env.APP_ORIGIN?.trim();
+  allowedOrigins.push(appOrigin && appOrigin.length > 0 ? appOrigin : DEFAULT_APP_ORIGIN);
+
   if (process.env.NODE_ENV !== 'production') {
     DEV_WEB_PORTS.forEach((port) => {
       allowedOrigins.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
@@ -141,6 +158,7 @@ export function isOriginAllowed(origin: string): boolean {
   if (allowedOrigins.includes(origin)) return true;
   if (VERCEL_PREVIEW_REGEX.test(origin)) return true;
   if (PREVIEW_ORIGIN_REGEX.test(origin)) return true;
+  if (APP_PREVIEW_ORIGIN_REGEX.test(origin)) return true;
   if (process.env.NODE_ENV !== 'production') {
     if (DEV_PRIVATE_LAN_ORIGIN_REGEX.test(origin)) return true;
     if (devTailscaleOriginRegex?.test(origin)) return true;
