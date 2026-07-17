@@ -370,6 +370,15 @@ self-hosted server. The canonical, durable fix is to **revert the offending JS c
 this workflow then republishes a good bundle automatically. When you need installs reverted in
 **minutes**, before a revert PR can merge, use the helper (wraps the `eoas` CLI):
 
+**From CI (no local Expo credentials needed):** dispatch the **Mobile OTA Emergency Rollback**
+workflow (`mobile-ota-emergency-rollback.yml`, `workflow_dispatch`) with `platform` (`all`/`ios`/
+`android`) and `confirm: true`. It runs the same `--mode embedded` rollback below under the
+`Production` environment's `EXPO_TOKEN`/`EXPO_UPDATES_URL`, shares the `mobile-ota-production`
+concurrency lane (so it can't race a publish), and posts the outcome to the Discord deploy channel.
+Use this when you don't have prod Expo credentials on hand but do have repo write access.
+
+**Locally:**
+
 ```bash
 vp run mobile:ota-rollback                       # rollback to the embedded bundle, all platforms
 vp run mobile:ota-rollback -- --platform ios     # one platform only

@@ -101,7 +101,7 @@ jobs:
             HEADER="🚨 **Production OTA rollback FAILED — installs may still be on the bad bundle**"
           fi
           REASON_LINE=""
-          [ -n "$INPUT_REASON" ] && REASON_LINE="• reason: ${INPUT_REASON}\n"
+          [ -n "$INPUT_REASON" ] && printf -v REASON_LINE '• reason: %s\n' "$INPUT_REASON"
           CONTENT=$(printf '%s\n• platform: %s\n%s• triggered by: %s\n<%s>' \
             "$HEADER" "$INPUT_PLATFORM" "$REASON_LINE" "$ACTOR" "$RUN_URL")
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
