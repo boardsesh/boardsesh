@@ -32,18 +32,8 @@ verify_synced_artifact() {
 verify_synced_artifact "$SOURCE_GLUE" "$PUBLIC_GLUE" "JavaScript glue"
 verify_synced_artifact "$SOURCE_WASM" "$PUBLIC_WASM" "WASM"
 
-cd "$ROOT_DIR/packages/mobile"
-
-BOARDSESH_WEB=1 EXPO_NO_WEB_SETUP=1 bunx expo export --platform web --output-dir "$OUTPUT_DIR"
-
-if [[ ! -f "$OUTPUT_DIR/index.html" ]]; then
-  echo "[mobile-web-bundle] missing index.html" >&2
-  exit 1
-fi
-
-if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm_bg.wasm" ]]; then
-  echo "[mobile-web-bundle] missing board-renderer WASM assets" >&2
-  exit 1
-fi
+# Single export recipe shared with the production build path (Dockerfile.web /
+# `vp run build:expo-web`); it also asserts the shell and WASM assets landed.
+bash "$ROOT_DIR/scripts/build-expo-web-export.sh" "$OUTPUT_DIR"
 
 echo "[mobile-web-bundle] Expo web export is complete and contains the required shell and WASM assets"
