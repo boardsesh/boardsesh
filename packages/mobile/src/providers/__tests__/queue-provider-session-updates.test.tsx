@@ -9,7 +9,12 @@ import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-sc
 const ws = vi.hoisted(() => {
   type WsEventName = 'connected' | 'closed';
   type WsEvent = { code: number; reason: string; wasClean: boolean };
-  let sessionUpdatesSink: { next: (payload: { data?: { sessionUpdates?: unknown } }) => void } | null = null;
+  type SubscriptionSink = {
+    next: (payload: { data?: Record<string, unknown> }) => void;
+    error?: (error: unknown) => void;
+  };
+  let queueUpdatesSink: SubscriptionSink | null = null;
+  let sessionUpdatesSink: SubscriptionSink | null = null;
   const listeners: Record<WsEventName, Set<(event?: WsEvent) => void>> = {
     connected: new Set(),
     closed: new Set(),
@@ -17,6 +22,7 @@ const ws = vi.hoisted(() => {
   const subscriptionCleanups: Array<ReturnType<typeof vi.fn>> = [];
   return {
     getSessionUpdatesSink: () => sessionUpdatesSink,
+    getQueueUpdatesSink: () => queueUpdatesSink,
     getSubscriptionCleanups: () => subscriptionCleanups,
     emit: (eventName: WsEventName, event?: WsEvent) => {
       for (const listener of listeners[eventName]) listener(event);
@@ -28,9 +34,12 @@ const ws = vi.hoisted(() => {
           listeners[eventName].delete(listener);
         };
       }),
-      subscribe: vi.fn((request: { query: string }, sink: { next: (payload: unknown) => void }) => {
+      subscribe: vi.fn((request: { query: string }, sink: SubscriptionSink) => {
+        if (request.query.includes('queueUpdates')) {
+          queueUpdatesSink = sink;
+        }
         if (request.query.includes('sessionUpdates')) {
-          sessionUpdatesSink = sink as { next: (payload: { data?: { sessionUpdates?: unknown } }) => void };
+          sessionUpdatesSink = sink;
         }
         const cleanup = vi.fn();
         subscriptionCleanups.push(cleanup);
@@ -38,6 +47,7 @@ const ws = vi.hoisted(() => {
       }),
     },
     reset: () => {
+      queueUpdatesSink = null;
       sessionUpdatesSink = null;
       subscriptionCleanups.length = 0;
       listeners.connected.clear();
@@ -597,7 +607,7 @@ describe('QueueProvider session update subscription', () => {
     });
   });
 
-  it('keeps established queue subscriptions alive through an auth-refresh reconnect', async () => {
+  it('replaces retained subscriptions after an auth-refresh rejoin without clearing the session', async () => {
     const snapshots: Snapshot[] = [];
     renderProvider((snapshot) => snapshots.push(snapshot));
 
@@ -605,6 +615,9 @@ describe('QueueProvider session update subscription', () => {
       expect(ws.client.subscribe).toHaveBeenCalledTimes(2);
     });
     const establishedSubscriptionCleanups = [...ws.getSubscriptionCleanups()];
+    const replayedQueueSink = ws.getQueueUpdatesSink();
+    const reconnectJoinDeferred = createDeferred<ReturnType<typeof createJoinSessionResponse>>();
+    graph.execute.mockReturnValueOnce(reconnectJoinDeferred.promise);
 
     act(() => {
       // ws-client remaps an authentication-rejected 4401 to retryable 4403.
@@ -623,12 +636,29 @@ describe('QueueProvider session update subscription', () => {
       // Initial join plus one rejoin for the fresh connection context.
       expect(graph.execute).toHaveBeenCalledTimes(2);
     });
-    // graphql-ws resubscribes the retained operations itself; the queue
-    // lifecycle must not cancel or duplicate them.
+
+    act(() => {
+      replayedQueueSink?.error?.([
+        {
+          message: 'Unauthorized: not in any session',
+          extensions: { code: 'NOT_SESSION_MEMBER', reason: 'no-session-id' },
+        },
+      ]);
+    });
+
+    expect(snapshots.at(-1)?.sessionId).toBe('session-1');
     expect(ws.client.subscribe).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      reconnectJoinDeferred.resolve(createJoinSessionResponse());
+      await reconnectJoinDeferred.promise;
+    });
+
+    await waitFor(() => expect(ws.client.subscribe).toHaveBeenCalledTimes(4));
     for (const cleanup of establishedSubscriptionCleanups) {
-      expect(cleanup).not.toHaveBeenCalled();
+      expect(cleanup).toHaveBeenCalledOnce();
     }
+    expect(snapshots.at(-1)?.sessionId).toBe('session-1');
   });
 
   it('sends the signed-in profile identity with JOIN_SESSION', async () => {

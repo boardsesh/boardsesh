@@ -1,6 +1,6 @@
 import { createGraphQLClient, type Client } from '@boardsesh/graphql-client';
 import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../auth-store';
-import { ensureFreshToken, recoverAuthRejection } from '../auth-interceptor';
+import { ensureFreshToken, recoverAuthRejection, type NativeAuthRejectionResult } from '../auth-interceptor';
 import { reportHandledError } from '../error-reporting';
 import { BACKEND_URL } from '../env';
 
@@ -32,21 +32,21 @@ const AUTH_REJECTED_CLOSE_CODE = 4401;
 // operations run through graphql-ws' normal reconnect and resubscribe loop.
 const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
 
-let authRecovery: { generation: number; promise: Promise<boolean> } | null = null;
+let authRecovery: { generation: number; promise: Promise<NativeAuthRejectionResult> } | null = null;
 
-function recoverRejectedAuthentication(generation: number): Promise<boolean> {
-  if (!isAuthCredentialGenerationCurrent(generation)) return Promise.resolve(false);
+function recoverRejectedAuthentication(generation: number): Promise<NativeAuthRejectionResult> {
+  if (!isAuthCredentialGenerationCurrent(generation)) return Promise.resolve('superseded');
   if (authRecovery?.generation === generation) return authRecovery.promise;
 
   const recoveryPromise = (async () => {
     try {
       // The server may reject a revoked token that has not expired yet, so this
       // must bypass ensureFreshToken's expiry gate.
-      const recovered = await recoverAuthRejection();
-      return recovered && isAuthCredentialGenerationCurrent(generation);
+      const result = await recoverAuthRejection();
+      return isAuthCredentialGenerationCurrent(generation) ? result : 'superseded';
     } catch (error) {
       reportHandledError(error);
-      return false;
+      return isAuthCredentialGenerationCurrent(generation) ? 'unavailable' : 'superseded';
     }
   })();
 
@@ -104,12 +104,13 @@ class NativeAppWebSocket {
         return;
       }
       const rejectedGeneration = this.credentialGeneration;
-      void recoverRejectedAuthentication(rejectedGeneration).then((recovered) => {
+      void recoverRejectedAuthentication(rejectedGeneration).then((recoveryResult) => {
         // Keep the ownership check and close delivery in one synchronous
         // continuation. A login queued at recovery completion must not turn an
         // old socket's fatal close into a retry under the new account.
+        const canRetry = recoveryResult === 'refreshed' || recoveryResult === 'unavailable';
         const deliveredEvent =
-          recovered && isAuthCredentialGenerationCurrent(rejectedGeneration) ? retryableAuthCloseEvent(event) : event;
+          canRetry && isAuthCredentialGenerationCurrent(rejectedGeneration) ? retryableAuthCloseEvent(event) : event;
         this.onclose?.call(this as unknown as WebSocket, deliveredEvent);
       });
     };

@@ -21,7 +21,7 @@ vi.mock('../../auth-store', () => ({
 
 vi.mock('../../auth-interceptor', () => ({
   ensureFreshToken: vi.fn().mockResolvedValue(true),
-  recoverAuthRejection: vi.fn().mockResolvedValue(true),
+  recoverAuthRejection: vi.fn().mockResolvedValue('refreshed'),
 }));
 
 vi.mock('../../error-reporting', () => ({
@@ -140,7 +140,7 @@ beforeEach(() => {
   captureAuthCredentialGenerationMock.mockReturnValue(1);
   isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
   ensureFreshTokenMock.mockResolvedValue(true);
-  recoverAuthRejectionMock.mockResolvedValue(true);
+  recoverAuthRejectionMock.mockResolvedValue('refreshed');
 });
 
 describe('native GraphQL WebSocket transport', () => {
@@ -184,9 +184,9 @@ describe('native GraphQL WebSocket transport', () => {
   });
 
   it('remaps a burst of 4401 closes, refreshes once, and keeps the singleton', async () => {
-    let releaseRefresh!: (refreshed: boolean) => void;
+    let releaseRefresh!: (result: string) => void;
     recoverAuthRejectionMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+      new Promise<string>((resolve) => {
         releaseRefresh = resolve;
       }),
     );
@@ -206,17 +206,30 @@ describe('native GraphQL WebSocket transport', () => {
     expect(getWsClient()).toBe(client);
     expect(disposeSpy).not.toHaveBeenCalled();
 
-    releaseRefresh(true);
+    releaseRefresh('refreshed');
     await vi.waitFor(() => expect(observedCloseCodes).toEqual([4403, 4403]));
+  });
+
+  it('keeps reconnecting after a transient auth refresh outage', async () => {
+    recoverAuthRejectionMock.mockResolvedValueOnce('unavailable');
+    getWsClient();
+    const NativeAppWebSocket = nativeWebSocketImplementation();
+    const socket = new NativeAppWebSocket('wss://api.test/graphql');
+    const observedCloseCodes: number[] = [];
+    socket.onclose = (event) => observedCloseCodes.push(event.code);
+
+    NativeSocketStub.instances[0]?.serverClose(4401, 'Unauthorized');
+
+    await vi.waitFor(() => expect(observedCloseCodes).toEqual([4403]));
   });
 
   it('keeps 4401 recovery isolated between native credential owners', async () => {
     let currentGeneration = 1;
     captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
     isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
-    let releaseOldRecovery!: (recovered: boolean) => void;
+    let releaseOldRecovery!: (result: string) => void;
     recoverAuthRejectionMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+      new Promise<string>((resolve) => {
         releaseOldRecovery = resolve;
       }),
     );
@@ -240,7 +253,7 @@ describe('native GraphQL WebSocket transport', () => {
     expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(2);
     expect(oldCloseCodes).toEqual([]);
 
-    releaseOldRecovery(true);
+    releaseOldRecovery('refreshed');
     await vi.waitFor(() => expect(oldCloseCodes).toEqual([4401]));
   });
 
@@ -248,8 +261,8 @@ describe('native GraphQL WebSocket transport', () => {
     let currentGeneration = 1;
     captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
     isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
-    let releaseRecovery!: (recovered: boolean) => void;
-    const pendingRecovery = new Promise<boolean>((resolve) => {
+    let releaseRecovery!: (result: string) => void;
+    const pendingRecovery = new Promise<string>((resolve) => {
       releaseRecovery = resolve;
     });
     recoverAuthRejectionMock.mockReturnValueOnce(pendingRecovery);
@@ -267,15 +280,15 @@ describe('native GraphQL WebSocket transport', () => {
     void pendingRecovery.then(() => {
       currentGeneration = 2;
     });
-    releaseRecovery(true);
+    releaseRecovery('refreshed');
 
     await vi.waitFor(() => expect(closeCodes).toEqual([4401]));
   });
 
   it('reconnects and resubscribes an active operation after refreshing a rejected token', async () => {
-    let releaseRefresh!: (refreshed: boolean) => void;
+    let releaseRefresh!: (result: string) => void;
     recoverAuthRejectionMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+      new Promise<string>((resolve) => {
         releaseRefresh = resolve;
       }),
     );
@@ -313,7 +326,7 @@ describe('native GraphQL WebSocket transport', () => {
     await vi.waitFor(() => expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(1));
     expect(NativeSocketStub.instances).toHaveLength(1);
 
-    releaseRefresh(true);
+    releaseRefresh('refreshed');
     await vi.waitFor(() => expect(NativeSocketStub.instances).toHaveLength(2));
     const secondSocket = NativeSocketStub.instances[1];
     if (!secondSocket) throw new Error('retry socket was not created');
@@ -335,8 +348,8 @@ describe('native GraphQL WebSocket transport', () => {
     await rawClient.dispose();
   });
 
-  it('keeps a failed 4401 recovery fatal instead of reconnecting with the rejected token', async () => {
-    recoverAuthRejectionMock.mockResolvedValueOnce(false);
+  it('keeps a rejected 4401 recovery fatal instead of reconnecting with the rejected token', async () => {
+    recoverAuthRejectionMock.mockResolvedValueOnce('rejected');
     getWsClient();
     const rawClient = createRawGraphQLWsClient({
       url: 'wss://api.test/graphql',

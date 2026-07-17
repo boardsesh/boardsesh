@@ -190,6 +190,7 @@ export function useSessionRealtime({
     let sessionUpdatesCleanup: (() => void) | null = null;
     let joinRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let joinRetryCount = 0;
+    let authRefreshRejoinInProgress = false;
 
     // iOS suspends the WebSocket while the app is backgrounded, so a
     // JOIN_SESSION fired now never completes and trips execute()'s 30s timeout
@@ -208,6 +209,7 @@ export function useSessionRealtime({
 
     const cleanupSubscriptions = () => {
       clearJoinRetryTimer();
+      authRefreshRejoinInProgress = false;
       queueUpdatesCleanup?.();
       sessionUpdatesCleanup?.();
       queueUpdatesCleanup = null;
@@ -246,6 +248,8 @@ export function useSessionRealtime({
       }
 
       const currentStartToken = ++subscriptionStartToken;
+      const retainedQueueUpdatesCleanup = preserveExistingSubscriptions ? queueUpdatesCleanup : null;
+      const retainedSessionUpdatesCleanup = preserveExistingSubscriptions ? sessionUpdatesCleanup : null;
       if (preserveExistingSubscriptions) {
         clearJoinRetryTimer();
       } else {
@@ -278,10 +282,6 @@ export function useSessionRealtime({
 
       if (disposed || currentStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
       joinRetryCount = 0;
-      // graphql-ws owns these established operations across the auth-refresh
-      // retry and resubscribes them on the same client. Creating replacements
-      // here would duplicate both streams after the reconnect.
-      if (preserveExistingSubscriptions) return;
 
       queueUpdatesCleanup = wsClient.subscribe<{ queueUpdates: QueueUpdateEvent }>(
         {
@@ -402,7 +402,11 @@ export function useSessionRealtime({
             // exists is just noise. (#2385 follow-up.) Guarded on the still-
             // active session so a late error from a superseded A→B switch can't
             // clear the new session.
-            if (sessionIdRef.current === sessionId && isNotSessionMemberError(subscriptionError)) {
+            if (
+              sessionIdRef.current === sessionId &&
+              isNotSessionMemberError(subscriptionError) &&
+              !authRefreshRejoinInProgress
+            ) {
               void clearSessionRef.current();
               return;
             }
@@ -552,6 +556,16 @@ export function useSessionRealtime({
         },
       );
 
+      // Retained operations keep graphql-ws's lazy reconnect alive, but a replay
+      // can be rejected before JOIN_SESSION updates the new connection context.
+      // Once joined, replace both streams before releasing the retained handles
+      // so the active-operation count never reaches zero.
+      if (preserveExistingSubscriptions) {
+        retainedQueueUpdatesCleanup?.();
+        retainedSessionUpdatesCleanup?.();
+        authRefreshRejoinInProgress = false;
+      }
+
       unsubscribeRef.current = cleanupSubscriptions;
     };
 
@@ -571,6 +585,7 @@ export function useSessionRealtime({
       const hasEstablishedSubscriptions = queueUpdatesCleanup !== null && sessionUpdatesCleanup !== null;
       if (getCloseEventCode(closeEvent) === AUTH_REFRESH_RETRY_CLOSE_CODE && hasEstablishedSubscriptions) {
         preserveSubscriptionsOnNextConnect = true;
+        authRefreshRejoinInProgress = true;
         clearJoinRetryTimer();
         gate.reset();
         return;
