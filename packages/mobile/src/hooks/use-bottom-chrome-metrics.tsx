@@ -111,15 +111,37 @@ export function BottomChromeMetricsProvider({ children }: { children: ReactNode 
   return <BottomChromeMetricsContext.Provider value={metrics}>{children}</BottomChromeMetricsContext.Provider>;
 }
 
+// Last-resort geometry for the bug-only case where a consumer renders OUTSIDE the
+// provider in a release build. Everything collapses to the no-chrome baseline.
+// It is never returned in dev or tests — those still throw so a mount-tree misuse
+// is caught before it ships. See useBottomChromeMetrics for why a release build
+// must not throw.
+const FALLBACK_BOTTOM_CHROME_METRICS: BottomChromeMetrics = computeBottomChromeMetrics({
+  uiVariant: 'material',
+  usesNativeTabBar: false,
+  insetsBottom: 0,
+  insideTabs: false,
+  onAccessorySurface: false,
+  hasCurrentClimb: false,
+  nativeAccessoryMounted: false,
+});
+
 /**
  * Bottom-chrome reserves and offsets for the current route, computed once by
  * {@link BottomChromeMetricsProvider}. The return shape is unchanged from before
  * the provider hoist, so consumers stay exactly as they were — they just read a
- * shared value instead of each recomputing it. Throws outside the provider, like
- * the other app-wide context hooks.
+ * shared value instead of each recomputing it.
+ *
+ * A consumer outside the provider is a mount-tree bug: it throws in dev and tests
+ * so it's caught before shipping. But a release build must NEVER throw here — the
+ * queue/undo snackbars once rendered above the provider, and the throw white-
+ * screened every install that took that OTA. So production falls back to the
+ * conservative {@link FALLBACK_BOTTOM_CHROME_METRICS} and keeps running instead of
+ * crashing the whole app.
  */
 export function useBottomChromeMetrics(): BottomChromeMetrics {
   const metrics = useContext(BottomChromeMetricsContext);
-  if (!metrics) throw new Error('useBottomChromeMetrics must be used within BottomChromeMetricsProvider');
-  return metrics;
+  if (metrics) return metrics;
+  if (__DEV__) throw new Error('useBottomChromeMetrics must be used within BottomChromeMetricsProvider');
+  return FALLBACK_BOTTOM_CHROME_METRICS;
 }

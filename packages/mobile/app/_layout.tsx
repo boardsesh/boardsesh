@@ -515,17 +515,20 @@ function RootLayout() {
                                                   sibling of its children) so both the drawer and the
                                                   bar descend from it. */}
                                                     <BleControlSheetProvider>
-                                                      <DrawerHostProvider>
-                                                        <DeepLinkProvider>
-                                                          <ShareTargetProvider>
-                                                            <TabBarHeightProvider>
-                                                              <UserDrawerProvider>
-                                                                {/* Reads the bottom-chrome geometry inputs (insets, route,
-                                                                    variant, presence, native-bar capability) ONCE and shares
-                                                                    the memoized result with every consumer below — the tab
-                                                                    screens inside <Stack> plus the always-mounted chrome
-                                                                    (PersistentQueueBar, AccessoryOnboardingTip). #2565. */}
-                                                                <BottomChromeMetricsProvider>
+                                                      {/* Reads the bottom-chrome geometry inputs (insets, route,
+                                                          variant, presence, native-bar capability) ONCE and shares the
+                                                          memoized result with every consumer below. Mounted ABOVE
+                                                          DrawerHostProvider because that provider renders the queue /
+                                                          undo-wall snackbars — themselves bottom-chrome consumers — as
+                                                          siblings of its children; a lower mount left those snackbars
+                                                          outside the context so useBottomChromeMetrics() threw and
+                                                          white-screened every install that took the OTA. #2565. */}
+                                                      <BottomChromeMetricsProvider>
+                                                        <DrawerHostProvider>
+                                                          <DeepLinkProvider>
+                                                            <ShareTargetProvider>
+                                                              <TabBarHeightProvider>
+                                                                <UserDrawerProvider>
                                                                   <ThemedNavigation>
                                                                     <Stack
                                                                       // Root scenes keep the opaque, theme-aware nav background so a dark
@@ -661,15 +664,15 @@ function RootLayout() {
                                                             <Stack> hit-region is frozen). No-op unless built with
                                                             EXPO_PUBLIC_FREEZE_DEBUG=1. */}
                                                                   <FreezeDebugOverlay />
-                                                                </BottomChromeMetricsProvider>
-                                                              </UserDrawerProvider>
-                                                            </TabBarHeightProvider>
-                                                            <AnalyticsScreenTracker />
-                                                            <OtaUpdateTracker />
-                                                            <InstallReferrerTracker />
-                                                          </ShareTargetProvider>
-                                                        </DeepLinkProvider>
-                                                      </DrawerHostProvider>
+                                                                </UserDrawerProvider>
+                                                              </TabBarHeightProvider>
+                                                              <AnalyticsScreenTracker />
+                                                              <OtaUpdateTracker />
+                                                              <InstallReferrerTracker />
+                                                            </ShareTargetProvider>
+                                                          </DeepLinkProvider>
+                                                        </DrawerHostProvider>
+                                                      </BottomChromeMetricsProvider>
                                                     </BleControlSheetProvider>
                                                   </RogueTimerProvider>
                                                 </BluetoothProviderWrapper>
