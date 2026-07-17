@@ -5,10 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 
 import stage3_dataset as data
+import stage3_experiment as experiment
 from stage3_experiment import (
     board_offsets,
     calibration_rmse,
@@ -18,6 +20,18 @@ from stage3_experiment import (
     neighbor_grade_agreement,
     run_experiment,
 )
+
+
+EXPERIMENT_VERSIONS = {
+    "morphologyVersion": "hold-morphology-v1",
+    "morphologySourceVersion": "source-v1",
+    "morphologyArtifactSha256": "artifact-v1",
+    "targetVersion": "climb2vec-frozen-stage2-v1",
+    "coeffVersion": "coeff-v1",
+    "extractionSnapshot": "100:100:",
+    "benchmarkRejectionManifestSha256": "rejections-v1",
+    "rejectedBenchmarkPhysicalProblems": 0,
+}
 
 
 def hold(pid=1, role="hand", morphology=None, hd=99.0, state=None):
@@ -60,6 +74,34 @@ def row(
         "benchmarkDifficulty": benchmark,
         "holds": [hold(1), hold(2, "foot")],
     }
+
+
+def experiment_rows(count=120):
+    rows = []
+    for index in range(count):
+        morphology = [index / count] * data.MORPHOLOGY_DIM
+        sample = row(
+            f"problem-{index}",
+            climb=f"climb-{index}",
+            label=15 + 8 * morphology[0],
+        )
+        sample["holds"] = [
+            hold(1, morphology=morphology),
+            hold(2, "foot", morphology=morphology),
+        ]
+        sample.update(EXPERIMENT_VERSIONS)
+        rows.append(sample)
+    return rows
+
+
+def experiment_args(input_path, through_run):
+    return SimpleNamespace(
+        data=[str(input_path)],
+        through_run=through_run,
+        epochs=1,
+        score=None,
+        predictions_out=None,
+    )
 
 
 class Stage3SplitTest(unittest.TestCase):
@@ -124,6 +166,27 @@ class Stage3SplitTest(unittest.TestCase):
             {item["physicalKey"] for item in split.tension_benchmark},
             {"benchmark-problem"},
         )
+
+    def test_sealed_tension_key_collision_with_kilter_fails_loudly(self):
+        rows = [
+            row(
+                "unexpected-shared-key",
+                board="tension",
+                climb="benchmark",
+                benchmark=21,
+            ),
+            row(
+                "unexpected-shared-key",
+                board="kilter",
+                climb="kilter-climb",
+            ),
+        ]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "collision across boards: 1 key\\(s\\), 1 non-Tension row",
+        ):
+            data.split_rows(rows)
 
 
 class Stage3FeatureTest(unittest.TestCase):
@@ -227,6 +290,53 @@ class Stage3FeatureTest(unittest.TestCase):
         self.assertAlmostEqual(float(weights.mean()), 1.0)
         self.assertGreater(float(weights.min()), 0)
         self.assertAlmostEqual(float(weights[-1] / weights[0]), 10_000)
+
+    def test_fit_hold_effects_is_fold_local_and_uses_hand_foot_roles(self):
+        easy = {
+            **row("easy", label=10),
+            "holds": [hold(101, state="STARTING")],
+        }
+        hard = {
+            **row("hard", label=30),
+            "holds": [hold(202, state="FINISH")],
+        }
+
+        effects = data.fit_hold_effects([easy, hard], alpha=1e-9)
+
+        self.assertLess(effects.for_hold(easy, easy["holds"][0]), 0)
+        self.assertGreater(effects.for_hold(hard, hard["holds"][0]), 0)
+        self.assertEqual(
+            set(effects.coefficients),
+            {("kilter", 101, "hand"), ("kilter", 202, "hand")},
+        )
+        self.assertEqual(effects.for_hold(easy, hold(999)), 0.0)
+
+    def test_cross_fitted_gbm_never_uses_held_out_problem_hold_effects(self):
+        rows = []
+        for index in range(16):
+            key = f"crossfit-problem-{index}"
+            angles = (40, 50) if index == 0 else (40,)
+            for angle in angles:
+                sample = row(
+                    key,
+                    climb=f"crossfit-climb-{index}-{angle}",
+                    angle=angle,
+                    label=12 + index,
+                )
+                sample["holds"] = [hold(1_000 + index)]
+                rows.append(sample)
+
+        predictions, row_effects = data.cross_fitted_gbm(rows, seed=13)
+
+        self.assertEqual(predictions.shape, (len(rows),))
+        self.assertTrue(np.isfinite(predictions).all())
+        self.assertEqual(len(row_effects), len(rows))
+        self.assertIs(row_effects[0], row_effects[1])
+        for sample, effects in zip(rows, row_effects, strict=True):
+            self.assertEqual(
+                effects.for_hold(sample, sample["holds"][0]),
+                0.0,
+            )
 
     def test_duplicate_physical_angle_rows_are_rejected(self):
         duplicate = [row("same", climb="a"), row("same", climb="b")]
@@ -454,50 +564,172 @@ class Stage3ArtifactTest(unittest.TestCase):
         self.assertIsNone(unsupported_record["embedding"])
 
     def test_run3_and_run4_execute_without_opening_neural_budget(self):
-        rows = []
-        for index in range(120):
-            morphology = [index / 120] * data.MORPHOLOGY_DIM
-            sample = row(
-                f"problem-{index}",
-                climb=f"climb-{index}",
-                label=15 + 8 * morphology[0],
-            )
-            sample["holds"] = [
-                hold(1, morphology=morphology),
-                hold(2, "foot", morphology=morphology),
-            ]
-            sample.update(
-                {
-                    "morphologyVersion": "hold-morphology-v1",
-                    "morphologySourceVersion": "source-v1",
-                    "morphologyArtifactSha256": "artifact-v1",
-                    "targetVersion": "climb2vec-frozen-stage2-v1",
-                    "coeffVersion": "coeff-v1",
-                    "extractionSnapshot": "100:100:",
-                    "benchmarkRejectionManifestSha256": "rejections-v1",
-                    "rejectedBenchmarkPhysicalProblems": 0,
-                }
-            )
-            rows.append(sample)
+        rows = experiment_rows()
 
         with tempfile.TemporaryDirectory() as directory:
             input_path = Path(directory) / "train.jsonl"
             input_path.write_text(
                 "".join(json.dumps(sample) + "\n" for sample in rows)
             )
-            result = run_experiment(
-                SimpleNamespace(
-                    data=[str(input_path)],
-                    through_run=4,
-                    epochs=1,
-                    score=None,
-                    predictions_out=None,
-                )
-            )
+            result = run_experiment(experiment_args(input_path, 4))
 
         self.assertIn("3", result["runs"])
         self.assertIn("4", result["runs"])
         self.assertNotIn("5", result["runs"])
+
+    def test_run4_kill_reports_morphology_failure(self):
+        rows = experiment_rows()
+        mock_effects = data.HoldEffects({})
+        metrics = [
+            experiment.GradeMetrics(10, 1.0, 1.2, 0.2, 0.8),
+            experiment.GradeMetrics(10, 0.96, 1.1, 0.2, 0.8),
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "train.jsonl"
+            input_path.write_text(
+                "".join(json.dumps(sample) + "\n" for sample in rows)
+            )
+            with (
+                mock.patch.object(
+                    data,
+                    "fit_gbm",
+                    return_value=(object(), mock_effects),
+                ),
+                mock.patch.object(
+                    data,
+                    "predict_gbm",
+                    side_effect=lambda _model, _effects, score_rows, enhanced: np.zeros(
+                        len(score_rows)
+                    ),
+                ),
+                mock.patch.object(
+                    experiment,
+                    "board_metrics",
+                    side_effect=metrics,
+                ),
+                mock.patch.object(
+                    data,
+                    "cross_fitted_gbm",
+                ) as cross_fitted,
+            ):
+                result = run_experiment(experiment_args(input_path, 4))
+
+        self.assertEqual(result["decision"]["status"], "killed_after_run4")
+        self.assertEqual(
+            result["decision"]["reason"],
+            "morphology-enhanced GBM gained <0.05 Aurora steps over the incumbent-feature GBM",
+        )
+        cross_fitted.assert_not_called()
+
+    def test_run6_kill_requires_both_relational_seeds(self):
+        rows = experiment_rows()
+        mock_effects = data.HoldEffects({})
+        improvements = (0.06, 0.01)
+        candidates = [
+            SimpleNamespace(
+                seed=seed,
+                model=object(),
+                max_holds=40,
+                validation_prediction=np.zeros(1),
+                validation_embedding=np.zeros((1, 64), dtype=np.float32),
+                metrics=experiment.GradeMetrics(
+                    10,
+                    0.90 - improvement,
+                    1.0,
+                    0.2,
+                    0.8,
+                ),
+                improvement=improvement,
+                losses=[1.0],
+            )
+            for seed, improvement in zip(
+                experiment.RELATIONAL_SEEDS,
+                improvements,
+                strict=True,
+            )
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            input_path = Path(directory) / "train.jsonl"
+            input_path.write_text(
+                "".join(json.dumps(sample) + "\n" for sample in rows)
+            )
+            with (
+                mock.patch.object(
+                    data,
+                    "fit_gbm",
+                    return_value=(object(), mock_effects),
+                ),
+                mock.patch.object(
+                    data,
+                    "predict_gbm",
+                    side_effect=lambda _model, _effects, score_rows, enhanced: np.zeros(
+                        len(score_rows)
+                    ),
+                ),
+                mock.patch.object(
+                    experiment,
+                    "board_metrics",
+                    side_effect=[
+                        experiment.GradeMetrics(10, 1.0, 1.2, 0.2, 0.8),
+                        experiment.GradeMetrics(10, 0.90, 1.1, 0.2, 0.8),
+                    ],
+                ),
+                mock.patch.object(
+                    data,
+                    "cross_fitted_gbm",
+                    side_effect=lambda train_rows, seed: (
+                        np.zeros(len(train_rows)),
+                        [mock_effects] * len(train_rows),
+                    ),
+                ),
+                mock.patch.object(
+                    experiment,
+                    "fit_relational_candidate",
+                    side_effect=candidates,
+                ),
+                mock.patch.object(
+                    experiment,
+                    "neighbor_grade_agreement",
+                    return_value={"n": 0, "neighborGradeMae": None},
+                ),
+            ):
+                result = run_experiment(experiment_args(input_path, 7))
+
+        self.assertEqual(result["decision"]["status"], "killed_after_run6")
+        self.assertEqual(
+            result["decision"]["reason"],
+            "at least one fixed relational seed did not beat Run 4 by 0.05",
+        )
+        self.assertTrue(result["runs"]["5"]["passed"])
+        self.assertFalse(result["runs"]["6"]["passed"])
+
+    def test_cli_exits_two_for_pre_registered_kill_decisions(self):
+        for status in ("killed_after_run4", "killed_after_run6"):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                output_path = Path(directory) / "results.json"
+                with (
+                    mock.patch.object(
+                        experiment,
+                        "run_experiment",
+                        return_value={"decision": {"status": status}},
+                    ),
+                    mock.patch(
+                        "sys.argv",
+                        [
+                            "stage3_experiment.py",
+                            "--through-run",
+                            "7",
+                            "--out",
+                            str(output_path),
+                        ],
+                    ),
+                    self.assertRaises(SystemExit) as raised,
+                ):
+                    experiment.main()
+
+                self.assertEqual(raised.exception.code, 2)
 
 
 if __name__ == "__main__":

@@ -91,6 +91,48 @@ void describe('buildFrozenTrainingTargets', () => {
     assert.equal(targets.get(contentTrainingStatKey('kilter', 'b', 40))?.localGrade, 22);
   });
 
+  void test('applies the minimum-ascent gate after pooling physical aliases', () => {
+    const stats: ContentTrainingStat[] = [
+      {
+        boardType: 'kilter',
+        climbUuid: 'sparse-duplicate-a',
+        layoutId: 1,
+        fingerprint: 'same-sparse-holds',
+        physicalKey: 'kilter\u00001\u0000same-sparse-holds',
+        angle: 40,
+        difficultyAverage: 20,
+        displayDifficulty: 20,
+        ascensionistCount: 10,
+      },
+      {
+        boardType: 'kilter',
+        climbUuid: 'sparse-duplicate-b',
+        layoutId: 1,
+        fingerprint: 'same-sparse-holds',
+        physicalKey: 'kilter\u00001\u0000same-sparse-holds',
+        angle: 40,
+        difficultyAverage: 22,
+        displayDifficulty: 22,
+        ascensionistCount: 10,
+      },
+    ];
+
+    const target = buildFrozenTrainingTargets(stats, coefficients, new Map() as Stage2EvidenceMap).get(
+      contentTrainingStatKey('kilter', 'sparse-duplicate-a', 40),
+    );
+    const resolved = resolveTrainingTarget({
+      boardType: 'kilter',
+      ascensionistCount: 10,
+      benchmarkDifficulty: null,
+      minimumAscents: 20,
+      coefficients,
+      target,
+    });
+
+    assert.ok(resolved);
+    assert.equal(resolved.pooledAscensionistCount, 20);
+  });
+
   void test('uses Tension local grades as the universal anchor without a stored offset', () => {
     const target = computeFrozenStage2Target(
       {

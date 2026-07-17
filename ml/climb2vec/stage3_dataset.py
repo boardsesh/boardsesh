@@ -102,6 +102,25 @@ def split_rows(
         if row.get("boardType") == TENSION_BOARD
         and row.get("benchmarkDifficulty") is not None
     }
+    cross_board_collision_rows = [
+        row
+        for row in rows
+        if row.get("boardType") != TENSION_BOARD
+        and physical_key(row) in sealed_keys
+    ]
+    if cross_board_collision_rows:
+        collision_keys = sorted(
+            {physical_key(row) for row in cross_board_collision_rows}
+        )
+        collision_boards = sorted(
+            {str(row.get("boardType")) for row in cross_board_collision_rows}
+        )
+        raise ValueError(
+            "sealed Tension physicalKey collision across boards: "
+            f"{len(collision_keys)} key(s), "
+            f"{len(cross_board_collision_rows)} non-Tension row(s) on "
+            f"{collision_boards}; examples={collision_keys[:3]}"
+        )
     train: list[dict] = []
     validation: list[dict] = []
     test: list[dict] = []
@@ -211,6 +230,13 @@ def labels(rows: Sequence[Mapping], benchmark=False) -> np.ndarray:
 
 
 def _hold_token(row: Mapping, hold: Mapping) -> tuple[str, int, str]:
+    """Identify the per-placement behavioral effect by hand/foot usage.
+
+    STARTING, HAND, and FINISH remain distinct in the physical route identity
+    and in the model's explicit state features.  They intentionally share the
+    hand-use effect here, matching the hand/foot behavioral substrate that this
+    fold-local ridge estimate replaces.
+    """
     return (
         str(row.get("boardType", "")),
         int(hold.get("modelHoldId", hold["pid"])),

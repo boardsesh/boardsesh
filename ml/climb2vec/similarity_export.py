@@ -145,7 +145,12 @@ def similarity_group_key(row):
 def rank_neighbor_indices(similarities, excluded_indices, k):
     """Return top-k finite neighbors after excluding a physical problem."""
     scores = np.asarray(similarities, dtype=np.float32).copy()
-    scores[np.asarray(list(excluded_indices), dtype=np.int64)] = -np.inf
+    exclusions = (
+        np.asarray(excluded_indices, dtype=np.int64)
+        if isinstance(excluded_indices, np.ndarray)
+        else np.fromiter(excluded_indices, dtype=np.int64)
+    )
+    scores[exclusions] = -np.inf
     valid_count = int(np.isfinite(scores).sum())
     neighbor_count = min(k, valid_count)
     if neighbor_count <= 0:
@@ -178,6 +183,10 @@ def similarity_records(rows, k, block=2000):
             physical_members[physical_key(rows[member_index])].append(
                 local_index
             )
+        physical_exclusions = {
+            key: np.asarray(indices, dtype=np.int64)
+            for key, indices in physical_members.items()
+        }
         for start in range(0, member_count, block):
             similarities = matrix[start : start + block] @ matrix.T
             for block_index in range(similarities.shape[0]):
@@ -185,7 +194,7 @@ def similarity_records(rows, k, block=2000):
                 query_row = rows[members[query_local_index]]
                 order = rank_neighbor_indices(
                     similarities[block_index],
-                    physical_members[physical_key(query_row)],
+                    physical_exclusions[physical_key(query_row)],
                     k,
                 )
                 neighbours = [

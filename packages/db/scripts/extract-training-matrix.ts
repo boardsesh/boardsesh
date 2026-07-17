@@ -124,7 +124,8 @@ async function loadMorphology(options: Options): Promise<MorphologyBundle | null
     byHold.set(key, record);
   }
 
-  let sourceVersionHash = createHash('sha256').update(artifact).digest('hex');
+  const artifactSha256 = createHash('sha256').update(artifact).digest('hex');
+  let sourceVersionHash = artifactSha256;
   let coverage: number | null = null;
   if (options.morphologyManifestPath) {
     const manifest = JSON.parse(await readFile(options.morphologyManifestPath, 'utf8')) as {
@@ -145,7 +146,7 @@ async function loadMorphology(options: Options): Promise<MorphologyBundle | null
     byHold,
     morphologyVersion,
     sourceVersionHash,
-    artifactSha256: createHash('sha256').update(artifact).digest('hex'),
+    artifactSha256,
     coverage,
   };
 }
@@ -154,6 +155,9 @@ async function loadMorphology(options: Options): Promise<MorphologyBundle | null
 function gradeGate(options: Options) {
   if (options.scoreAll) return sql``;
   if (options.target === 'stage2') {
+    // Stage 2 applies minAscents after aliases are pooled by physical problem + angle.
+    // Filtering individual rows here would discard aliases that jointly clear the
+    // threshold; cold Tension benchmarks must also remain available as sealed rows.
     return sql`
       AND (
         st.difficulty_average IS NOT NULL
@@ -274,7 +278,7 @@ async function loadFrozenCoefficients(db: ReadDb, requestedVersion: string | nul
 }
 
 async function loadStage2Evidence(db: ReadDb, coefficients: GradeCoefficients): Promise<Stage2EvidenceMap> {
-  await db.execute(sql`SET max_parallel_workers_per_gather = 0`);
+  await db.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
   const raterTrainingRows = rowsOf<RaterSampleRow>(
     await db.execute(buildRaterSampleSql({ excludeTensionBenchmarkHoldout: true })),
   );

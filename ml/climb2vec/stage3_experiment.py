@@ -561,7 +561,6 @@ def run_experiment(args) -> dict:
         for row in legacy_dataset.load_rows(path)
     ]
     rows, hold_count_filter = data.filter_supported_rows(rows, maximum_holds=40)
-    data.assert_unique_physical_angles(rows)
     morphology_version = require_single_version(rows, "morphologyVersion")
     morphology_source_version = require_single_version(
         rows,
@@ -589,6 +588,7 @@ def run_experiment(args) -> dict:
         )
     )
     split = data.split_rows(rows, seed=13)
+    data.assert_unique_physical_angles(rows)
     data.assert_disjoint_physical_splits(split)
     if not split.train or not split.validation:
         raise ValueError("training and validation splits must both be non-empty")
@@ -703,19 +703,21 @@ def run_experiment(args) -> dict:
         "improvementOverRun3": round(morphology_improvement, 4),
         "passed": morphology_passed,
     }
-    if args.through_run <= 4 or not morphology_passed:
+    if not morphology_passed:
         results["decision"] = {
-            "status": (
-                "stopped_after_run4"
-                if args.through_run <= 4 and morphology_passed
-                else "killed_after_run4"
-            ),
+            "status": "killed_after_run4",
             "ship": False,
             "reason": (
-                "neural budget not opened"
-                if morphology_passed
-                else "same-feature GBM gained <0.05 Aurora steps"
+                "morphology-enhanced GBM gained <0.05 Aurora steps "
+                "over the incumbent-feature GBM"
             ),
+        }
+        return results
+    if args.through_run <= 4:
+        results["decision"] = {
+            "status": "stopped_after_run4",
+            "ship": False,
+            "reason": "neural budget not opened",
         }
         return results
 
@@ -777,7 +779,10 @@ def run_experiment(args) -> dict:
             "reason": (
                 "sealed test budget not opened"
                 if seeds_passed
-                else "both fixed relational seeds did not beat Run 4 by 0.05"
+                else (
+                    "at least one fixed relational seed did not beat "
+                    "Run 4 by 0.05"
+                )
             ),
         }
         return results

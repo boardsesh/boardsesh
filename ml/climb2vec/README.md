@@ -96,6 +96,8 @@ vp run db:evaluate-content-prior-shadow -- \
 # Only after offline + shadow approval: the artifact is intentionally combined,
 # identified, and catalog-complete. Each loader invocation validates every line,
 # selects one board by record.boardType, and atomically replaces that board.
+# `vp node` is Vite+'s supported Node passthrough, keeping these maintenance
+# commands inside the repository's sanctioned toolchain.
 vp node --import tsx packages/db/scripts/load-content-model.ts \
   --board=kilter --model=climb2vec-relational-morphology-v1 \
   --in=ml/climb2vec/artifacts/stage3-shadow-predictions.jsonl
