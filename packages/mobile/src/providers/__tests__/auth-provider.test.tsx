@@ -8,7 +8,9 @@ const redirectMock = vi.hoisted(() => vi.fn());
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
 const routerState = vi.hoisted(() => ({ segments: [] as string[] }));
 const authTokenEventsState = vi.hoisted(() => ({
-  listener: null as ((token: string | null, source: 'local' | 'remote' | 'session' | 'hint') => void) | null,
+  listener: null as
+    | ((token: string | null, source: 'local' | 'remote' | 'remote-signout' | 'session' | 'hint') => void)
+    | null,
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
 }));
@@ -49,7 +51,7 @@ vi.mock('../../lib/screenshot-mode', () => ({
 
 vi.mock('../../lib/auth-token-events', () => ({
   subscribeAuthTokenChanges: (
-    listener: (token: string | null, source: 'local' | 'remote' | 'session' | 'hint') => void,
+    listener: (token: string | null, source: 'local' | 'remote' | 'remote-signout' | 'session' | 'hint') => void,
   ) => {
     authTokenEventsState.listener = listener;
     authTokenEventsState.subscribe(listener);
@@ -104,9 +106,15 @@ beforeEach(() => {
     userStorageOwnerState.current = owner as { userId: string; authSessionId: string } | null;
   });
   bumpAuthTransportRevisionMock.mockReset();
+  captureAuthCredentialGenerationMock.mockReset();
+  captureAuthCredentialGenerationMock.mockReturnValue(1);
   authSignInWithCredentialsMock.mockReset();
   clearStoredQueueSnapshotMock.mockReset();
   clearStoredQueueSnapshotMock.mockResolvedValue(undefined);
+  clearAllCreateClimbDraftsMock.mockReset();
+  clearAllCreateClimbDraftsMock.mockResolvedValue(undefined);
+  clearSessionCommentDraftMock.mockReset();
+  clearSessionCommentDraftMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -118,8 +126,9 @@ afterEach(() => {
 const getAuthTokenMock = vi.fn();
 const isTokenExpiringSoonMock = vi.fn();
 const isAuthCredentialGenerationCurrentMock = vi.fn();
+const captureAuthCredentialGenerationMock = vi.fn(() => 1);
 vi.mock('../../lib/auth-store', () => ({
-  captureAuthCredentialGeneration: vi.fn(() => 1),
+  captureAuthCredentialGeneration: () => captureAuthCredentialGenerationMock(),
   getAuthToken: () => getAuthTokenMock(),
   isAuthCredentialGenerationCurrent: (...args: unknown[]) => isAuthCredentialGenerationCurrentMock(...args),
   isTokenExpiringSoon: () => isTokenExpiringSoonMock(),
@@ -140,7 +149,7 @@ vi.mock('../../lib/auth', () => ({
   signInWithGoogle: vi.fn(),
   signInWithGoogleWeb: vi.fn(),
   signInWithAppleWeb: vi.fn(),
-  signOut: () => authSignOutMock(),
+  signOutForGeneration: (...args: unknown[]) => authSignOutMock(...args),
   signInWithCredentials: (...args: unknown[]) => authSignInWithCredentialsMock(...args),
   registerWithCredentials: (...args: unknown[]) => authRegisterMock(...args),
 }));
@@ -158,6 +167,16 @@ vi.mock('../../lib/active-board-store', () => ({
 const clearStoredQueueSnapshotMock = vi.fn();
 vi.mock('../../lib/queue-snapshot-store', () => ({
   clearStoredQueueSnapshot: (...args: unknown[]) => clearStoredQueueSnapshotMock(...args),
+}));
+
+const clearAllCreateClimbDraftsMock = vi.fn();
+vi.mock('../../lib/create-climb-draft-store', () => ({
+  clearAllCreateClimbDrafts: (...args: unknown[]) => clearAllCreateClimbDraftsMock(...args),
+}));
+
+const clearSessionCommentDraftMock = vi.fn();
+vi.mock('../../lib/session-comment-draft-store', () => ({
+  clearSessionCommentDraft: (...args: unknown[]) => clearSessionCommentDraftMock(...args),
 }));
 
 vi.mock('../../lib/user-storage-owner', () => ({
@@ -239,7 +258,7 @@ describe('AuthProvider.signOut', () => {
     // isAuthenticated to true without taking the refresh branch.
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
-    authSignOutMock.mockResolvedValue(undefined);
+    authSignOutMock.mockResolvedValue(true);
     clearStoredSessionIdMock.mockResolvedValue(undefined);
     clearStoredActiveBoardMock.mockResolvedValue(undefined);
   });
@@ -297,6 +316,11 @@ describe('AuthProvider.signOut', () => {
     expect(authSignOutMock).toHaveBeenCalledTimes(1);
     expect(clearStoredSessionIdMock).toHaveBeenCalledTimes(1);
     expect(clearStoredActiveBoardMock).toHaveBeenCalledTimes(1);
+    // Create-climb and session-recap drafts are wiped for account isolation
+    // only on web. Native sign-out keeps its origin behavior and must not touch
+    // these drafts, so this stays native-neutral when the PR ships via OTA.
+    expect(clearAllCreateClimbDraftsMock).not.toHaveBeenCalled();
+    expect(clearSessionCommentDraftMock).not.toHaveBeenCalled();
     expect(resetHttpClientMock).toHaveBeenCalledTimes(1);
     expect(disposeWsClientMock).toHaveBeenCalledTimes(1);
     // Active board cache was wiped — both the targeted removeQueries and the
@@ -365,6 +389,147 @@ describe('AuthProvider.signOut', () => {
     expect(disposeWsClientMock).toHaveBeenCalledTimes(1);
     expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
   });
+
+  it('does not sign out a newer credential owner that arrives during the queue drain', async () => {
+    platformState.OS = 'web';
+    getDatabaseHandleMock.mockReturnValue({ tag: 'db' });
+    getPendingCountMock.mockResolvedValue(1);
+    let releaseDrain!: () => void;
+    drainMutationQueueMock.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        releaseDrain = resolve;
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['userPlaylists'], [{ id: 'new-owner-playlist' }]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+    const pendingSignOut = result.current.signOut();
+    await vi.waitFor(() => expect(drainMutationQueueMock).toHaveBeenCalledOnce());
+    isAuthCredentialGenerationCurrentMock.mockReturnValue(false);
+    releaseDrain();
+
+    await act(async () => pendingSignOut);
+    expect(authSignOutMock).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(['userPlaylists'])).toEqual([{ id: 'new-owner-playlist' }]);
+  });
+
+  it('keeps a newer cross-tab login after the old owner sign-out is superseded in flight', async () => {
+    platformState.OS = 'web';
+    let currentGeneration = 1;
+    captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let finishOldSignOut!: (performed: boolean) => void;
+    authSignOutMock.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finishOldSignOut = resolve;
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+    const pendingSignOut = result.current.signOut();
+    await vi.waitFor(() => expect(authSignOutMock).toHaveBeenCalledWith(1));
+
+    currentGeneration = 2;
+    webSessionIdentityState.userId = 'user-2';
+    webSessionIdentityState.authSessionId = 'login-2';
+    getAuthTokenMock.mockResolvedValue('new-owner-jwt');
+    act(() => authTokenEventsState.listener?.(null, 'remote'));
+    await waitFor(() => expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' }));
+    queryClient.setQueryData(['userPlaylists'], [{ id: 'new-owner-playlist' }]);
+
+    finishOldSignOut(false);
+    await act(async () => pendingSignOut);
+
+    expect(queryClient.getQueryData(['userPlaylists'])).toEqual([{ id: 'new-owner-playlist' }]);
+    expect(userStorageOwnerState.current).toEqual({ userId: 'user-2', authSessionId: 'login-2' });
+  });
+
+  it('keeps a newer native login when the old owner credential clear finishes successfully', async () => {
+    let currentGeneration = 1;
+    captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let finishOldSignOut!: (performed: boolean) => void;
+    authSignOutMock.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finishOldSignOut = resolve;
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+    const pendingSignOut = result.current.signOut();
+    await vi.waitFor(() => expect(authSignOutMock).toHaveBeenCalledWith(1));
+    currentGeneration = 3;
+    queryClient.setQueryData(['userPlaylists'], [{ id: 'new-owner-playlist' }]);
+    finishOldSignOut(false);
+
+    await act(async () => pendingSignOut);
+    expect(clearStoredSessionIdMock).not.toHaveBeenCalled();
+    expect(resetHttpClientMock).not.toHaveBeenCalled();
+    expect(disposeWsClientMock).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(['userPlaylists'])).toEqual([{ id: 'new-owner-playlist' }]);
+  });
+
+  it('keeps a newer native login when the old owner credential clear fails', async () => {
+    let currentGeneration = 1;
+    captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    const oldCleanupError = new Error('old credential cleanup failed');
+    let failOldSignOut!: (error: unknown) => void;
+    authSignOutMock.mockReturnValueOnce(
+      new Promise<boolean>((_resolve, reject) => {
+        failOldSignOut = reject;
+      }),
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+    const pendingSignOut = result.current.signOut();
+    await vi.waitFor(() => expect(authSignOutMock).toHaveBeenCalledWith(1));
+    currentGeneration = 3;
+    queryClient.setQueryData(['userPlaylists'], [{ id: 'new-owner-playlist' }]);
+    failOldSignOut(oldCleanupError);
+
+    let caughtError: unknown;
+    await act(async () => {
+      try {
+        await pendingSignOut;
+      } catch (error) {
+        caughtError = error;
+      }
+    });
+    expect(caughtError).toBe(oldCleanupError);
+    expect(clearStoredSessionIdMock).not.toHaveBeenCalled();
+    expect(resetHttpClientMock).not.toHaveBeenCalled();
+    expect(disposeWsClientMock).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(['userPlaylists'])).toEqual([{ id: 'new-owner-playlist' }]);
+  });
 });
 
 describe('AuthProvider.register', () => {
@@ -412,7 +577,7 @@ describe('AuthProvider.signOut mutation-queue drain gating', () => {
     getPendingCountMock.mockReset();
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
-    authSignOutMock.mockResolvedValue(undefined);
+    authSignOutMock.mockResolvedValue(true);
     clearStoredSessionIdMock.mockResolvedValue(undefined);
     clearStoredActiveBoardMock.mockResolvedValue(undefined);
     drainMutationQueueMock.mockResolvedValue(undefined);
@@ -676,6 +841,29 @@ describe('AuthProvider forced sign-out registration', () => {
     expect(authSignOutMock).not.toHaveBeenCalled();
   });
 
+  it('isolates a confirmed remote sign-out without waiting for session revalidation', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData(['userPlaylists'], [{ id: 'old-user-playlist' }]);
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    const authReadsBeforeSignal = getAuthTokenMock.mock.calls.length;
+
+    act(() => authTokenEventsState.listener?.(null, 'remote-signout'));
+
+    expect(resetHttpClientMock).toHaveBeenCalled();
+    expect(disposeWsClientMock).toHaveBeenCalled();
+    expect(userStorageOwnerState.current).toBeNull();
+    await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
+    expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeSignal);
+    await waitFor(() => expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined());
+    expect(authSignOutMock).not.toHaveBeenCalled();
+  });
+
   it('coalesces duplicate remote signals into one anonymous cleanup', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData(['userPlaylists'], [{ id: 'old-user-playlist' }]);
@@ -705,7 +893,7 @@ describe('AuthProvider forced sign-out registration', () => {
 
     await waitFor(() => expect(clearStoredSessionIdMock).toHaveBeenCalledOnce());
     expect(clearStoredActiveBoardMock).toHaveBeenCalledOnce();
-    expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined();
+    await waitFor(() => expect(queryClient.getQueryData(['userPlaylists'])).toBeUndefined());
   });
 
   it('disposes transports promptly and prevents stale cleanup from erasing a newer login', async () => {

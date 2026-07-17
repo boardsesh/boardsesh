@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 // The module pulls in preference-store → AsyncStorage at import time; mock it so
 // the suite loads under Vitest (the native module isn't resolvable here).
@@ -13,6 +13,10 @@ vi.mock('@react-native-async-storage/async-storage', () => {
       removeItem: vi.fn(async (key: string) => {
         delete storage[key];
       }),
+      getAllKeys: vi.fn(async () => Object.keys(storage)),
+      removeMany: vi.fn(async (keys: string[]) => {
+        keys.forEach((key) => delete storage[key]);
+      }),
       __reset: () => {
         storage = {};
       },
@@ -21,6 +25,13 @@ vi.mock('@react-native-async-storage/async-storage', () => {
 });
 
 import { createClimbDraftKey } from '../create-climb-draft-store';
+
+beforeEach(async () => {
+  const storage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+    __reset: () => void;
+  };
+  storage.__reset();
+});
 
 describe('createClimbDraftKey', () => {
   const base = { boardName: 'kilter', layoutId: 1, sizeId: 2, setIds: '10', angle: 40 };
@@ -43,5 +54,17 @@ describe('createClimbDraftKey', () => {
     expect(createClimbDraftKey({ ...base, layoutId: 99 })).not.toBe(createClimbDraftKey(base));
     expect(createClimbDraftKey({ ...base, sizeId: 99 })).not.toBe(createClimbDraftKey(base));
     expect(createClimbDraftKey({ ...base, angle: 25 })).not.toBe(createClimbDraftKey(base));
+  });
+
+  it('clears every locally saved draft through the account cleanup boundary', async () => {
+    const { clearAllCreateClimbDrafts, loadDraft, saveDraft } = await import('../create-climb-draft-store');
+    const draft = { holdsJson: '{}', name: 'Project', description: '', isDraft: true };
+    await saveDraft('first-board', draft);
+    await saveDraft('second-board', { ...draft, name: 'Second project' });
+
+    await clearAllCreateClimbDrafts({ userId: 'ignored-native-user', authSessionId: 'ignored-native-session' });
+
+    await expect(loadDraft('first-board')).resolves.toBeNull();
+    await expect(loadDraft('second-board')).resolves.toBeNull();
   });
 });

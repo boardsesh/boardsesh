@@ -52,5 +52,10 @@ export async function getDraftComment(sessionId: string, _owner?: UserStorageOwn
 
 /** Drop the stored recap draft. No-op when the slot is empty. */
 export function clearDraftComment(_sessionId: string, _owner?: UserStorageOwner | null): Promise<void> {
+  return clearSessionCommentDraft(_owner);
+}
+
+/** Drop the single locally saved recap when its account signs out. */
+export function clearSessionCommentDraft(_owner?: UserStorageOwner | null): Promise<void> {
   return removePreference(SESSION_COMMENT_DRAFT_KEY);
 }

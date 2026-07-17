@@ -4,6 +4,7 @@ import { useSegments, Redirect } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { resolveAuthSession } from '../lib/auth-session';
+import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { subscribeAuthTokenChanges } from '../lib/auth-token-events';
 import { bumpAuthTransportRevision } from '../lib/auth-transport-revision';
 import {
@@ -11,7 +12,7 @@ import {
   signInWithGoogle as authSignInWithGoogle,
   signInWithGoogleWeb as authSignInWithGoogleWeb,
   signInWithAppleWeb as authSignInWithAppleWeb,
-  signOut as authSignOut,
+  signOutForGeneration as authSignOutForGeneration,
   signInWithCredentials as authSignInWithCredentials,
   registerWithCredentials as authRegisterWithCredentials,
   type CredentialsSignInResult,
@@ -27,6 +28,8 @@ import { disposeWsClient } from '../lib/graphql/ws-client';
 import { clearStoredSessionId } from '../lib/session-store';
 import { clearStoredActiveBoard } from '../lib/active-board-store';
 import { clearStoredQueueSnapshot } from '../lib/queue-snapshot-store';
+import { clearAllCreateClimbDrafts } from '../lib/create-climb-draft-store';
+import { clearSessionCommentDraft } from '../lib/session-comment-draft-store';
 import { setCurrentUserStorageOwner, type UserStorageOwner } from '../lib/user-storage-owner';
 import { ACTIVE_BOARD_QUERY_KEY } from '../lib/graphql/use-active-board';
 import { clearUserData, getDatabaseHandle } from '../db';
@@ -137,7 +140,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // when there's no live in-session cache to wipe (see handleSignedOutTransition).
   const clearPersistedUserStores = useCallback(
     (owner?: UserStorageOwner | null) =>
-      Promise.allSettled([clearStoredSessionId(owner), clearStoredActiveBoard(owner), clearStoredQueueSnapshot(owner)]),
+      Promise.allSettled([
+        clearStoredSessionId(owner),
+        clearStoredActiveBoard(owner),
+        clearStoredQueueSnapshot(owner),
+        // Create-climb and session-recap drafts are wiped for account
+        // isolation only on web (the new surface). Native sign-out keeps its
+        // origin behavior and leaves these drafts intact, so shipping this via
+        // OTA doesn't change what a native sign-out touches.
+        ...(Platform.OS === 'web' ? [clearAllCreateClimbDrafts(owner), clearSessionCommentDraft(owner)] : []),
+      ]),
     [],
   );
 
@@ -536,21 +548,56 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // remain visible to callers after local account isolation has completed.
   const signOut = useCallback(
     async (method: 'manual' | 'account_deleted' = 'manual') => {
+      const credentialGeneration = captureAuthCredentialGeneration();
+      const transitionEpoch = beginAuthTransition();
       track(SHARED_EVENTS.Logout, { method });
       await drainLocalMutationQueueBestEffort();
 
+      // A login in this or another tab supersedes the old account's intent. Do
+      // not let a delayed queue drain sign out or clean the newer owner.
+      if (!isAuthCredentialGenerationCurrent(credentialGeneration) || !isAuthTransitionCurrent(transitionEpoch)) {
+        return;
+      }
+
+      // Hide the browser's authenticated tree before the two NextAuth network
+      // phases. authSignOutForGeneration synchronously clears the exposed JWE
+      // before its first fetch; the remaining durable cookie revocation may be
+      // slow or fail without leaving private UI visible.
+      if (Platform.OS === 'web') {
+        resetHttpClient();
+        disposeWsClient();
+        pendingAuthTransportRestartRef.current = true;
+        setCurrentUserStorageOwner(null);
+        authStateRef.current = { ...authStateRef.current, isAuthenticated: false };
+        setIsAuthenticated(false);
+      }
+
       let durableSignOutError: unknown;
+      let signOutPerformed = false;
+      const isolatedCredentialGeneration = credentialGeneration + 1;
       try {
-        await authSignOut();
+        signOutPerformed = await authSignOutForGeneration(credentialGeneration);
       } catch (error) {
         durableSignOutError = error;
       }
 
-      // Local account isolation is unconditional. In particular, a failed web
-      // CSRF/network request must not leave the provider, query caches, or the
-      // exposed in-memory backend credential signed in.
-      const transitionEpoch = beginAuthTransition();
-      await enqueueAuthTransition(() => handleSignedOutTransition(transitionEpoch, true));
+      if (!isAuthTransitionCurrent(transitionEpoch)) {
+        if (durableSignOutError) {
+          if (method === 'account_deleted') reportError(durableSignOutError);
+          throw durableSignOutError;
+        }
+        return;
+      }
+
+      // `false` means another credential owner superseded this request while
+      // durable sign-out was in flight. That newer transition owns provider and
+      // cache state, so the old request must not run its cleanup. Recheck the
+      // isolated generation for errors too: a newer native login can take
+      // ownership between SecureStore rejecting and this continuation running.
+      const signOutStillOwnsCredentialState = isAuthCredentialGenerationCurrent(isolatedCredentialGeneration);
+      if (signOutStillOwnsCredentialState && (signOutPerformed || durableSignOutError)) {
+        await enqueueAuthTransition(() => handleSignedOutTransition(transitionEpoch, true));
+      }
 
       if (durableSignOutError) {
         if (method === 'account_deleted') reportError(durableSignOutError);
@@ -560,7 +607,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         throw durableSignOutError;
       }
     },
-    [beginAuthTransition, drainLocalMutationQueueBestEffort, enqueueAuthTransition, handleSignedOutTransition],
+    [
+      beginAuthTransition,
+      drainLocalMutationQueueBestEffort,
+      enqueueAuthTransition,
+      handleSignedOutTransition,
+      isAuthTransitionCurrent,
+    ],
   );
 
   const handleForcedSignOut = useCallback(() => {
@@ -569,6 +622,19 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     // The interceptor already confirmed this credential owner is anonymous.
     // Serialize its cleanup with session checks so a later login cannot be
     // erased by the tail of an older asynchronous cleanup.
+    enqueueAuthTransition(() => handleSignedOutTransition(transitionEpoch, true)).catch(reportError);
+  }, [beginAuthTransition, enqueueAuthTransition, handleSignedOutTransition]);
+
+  const handleRemoteConfirmedSignOut = useCallback(() => {
+    // The other tab already received a successful durable sign-out response, so
+    // no network revalidation is needed. Hide private UI and stop credential-
+    // bound transports before any persisted-store cleanup awaits.
+    resetHttpClient();
+    disposeWsClient();
+    setCurrentUserStorageOwner(null);
+    authStateRef.current = { ...authStateRef.current, isAuthenticated: false };
+    setIsAuthenticated(false);
+    const transitionEpoch = beginAuthTransition();
     enqueueAuthTransition(() => handleSignedOutTransition(transitionEpoch, true)).catch(reportError);
   }, [beginAuthTransition, enqueueAuthTransition, handleSignedOutTransition]);
 
@@ -642,13 +708,17 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         }
         if (token !== null) return;
         if (source === 'local') {
-          disposeWsClient();
+          if (!pendingAuthTransportRestartRef.current) disposeWsClient();
           pendingAuthTransportRestartRef.current = true;
+          return;
+        }
+        if (source === 'remote-signout') {
+          handleRemoteConfirmedSignOut();
           return;
         }
         handleRemoteAuthInvalidation(source === 'session');
       }),
-    [handleRemoteAuthInvalidation],
+    [handleRemoteAuthInvalidation, handleRemoteConfirmedSignOut],
   );
 
   const onReadyRef = useRef(onReady);

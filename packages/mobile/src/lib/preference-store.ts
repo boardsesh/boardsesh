@@ -34,3 +34,10 @@ export async function setPreference<T>(key: string, value: T): Promise<void> {
 export async function removePreference(key: string): Promise<void> {
   await AsyncStorage.removeItem(key);
 }
+
+/** Remove every preference whose key matches the supplied predicate. */
+export async function removePreferencesMatching(matchesKey: (key: string) => boolean): Promise<void> {
+  const matchingKeys = (await AsyncStorage.getAllKeys()).filter(matchesKey);
+  if (matchingKeys.length === 0) return;
+  await AsyncStorage.removeMany(matchingKeys);
+}
