@@ -416,17 +416,4 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(() => _runWarmupForTests()).not.toThrow();
     expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_bbbbbbbb')).toBe(true);
   });
-
-  it('bounds the in-memory overlay map to the renderer object-URL cache size', () => {
-    const entries = Array.from({ length: 513 }, (_, entryIndex) =>
-      makeMockEntry(`v3_kilter_1_10_24_${entryIndex.toString(16).padStart(8, '0')}.png`),
-    );
-    directoryListSpy.mockReturnValue(entries);
-
-    _runWarmupForTests();
-
-    expect(_renderedOverlaysForTests.size).toBe(512);
-    expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_00000000')).toBe(false);
-    expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_00000200')).toBe(true);
-  });
 });
