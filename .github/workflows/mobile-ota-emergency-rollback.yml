@@ -1,0 +1,109 @@
+name: Mobile OTA Emergency Rollback
+
+# Manual "stop the bleeding" button for a bad production OTA. Publishes a
+# rollback DIRECTIVE to the self-hosted expo-open-ota server: every install
+# currently on the bad bundle reverts to its binary's EMBEDDED (shipped,
+# known-good) bundle on next launch. Non-interactive, safe to run from CI —
+# this is `eoas rollback`, not the interactive `eoas republish`. See
+# docs/mobile-ota-updates.md ("Health monitoring & rollback").
+#
+# This does NOT fix the root cause. Land the real fix (a revert or corrected
+# commit) on `main` afterward — the normal mobile-ota-production.yml publish
+# then republishes a good bundle automatically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to roll back'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - ios
+          - android
+      confirm:
+        description: 'Type true to confirm — this reverts every live install on the bad OTA back to its embedded bundle'
+        required: true
+        default: false
+        type: boolean
+      reason:
+        description: 'Why (for the audit trail / Discord announcement)'
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Share the production publish's lane so a rollback can never race a publish
+  # (both mutate the same server-side branch state).
+  group: mobile-ota-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Gates EXPO_TOKEN + the EXPO_UPDATES_URL variable, same as the production publish.
+    environment: Production
+
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
+      INPUT_PLATFORM: ${{ github.event.inputs.platform || 'all' }}
+      INPUT_REASON: ${{ github.event.inputs.reason }}
+
+    steps:
+      - name: Require explicit confirmation
+        if: github.event.inputs.confirm != 'true'
+        run: |
+          echo "::error::Refusing to roll back: 'confirm' input was not set to true. Re-run this workflow with confirm=true."
+          exit 1
+
+      - name: Check OTA infra is wired
+        id: gate
+        run: |
+          # Same fail-closed check as the production publish: without the
+          # server URL configured there's nothing to roll back.
+          if [ -z "$EXPO_UPDATES_URL" ]; then
+            echo "::error::EXPO_UPDATES_URL is not set (repo variable) — nothing to roll back. See docs/mobile-ota-updates.md."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: voidzero-dev/setup-vp@v1
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install Node.js dependencies (workspace root)
+        run: bun install --frozen-lockfile
+
+      - name: Roll back to embedded bundle
+        run: vp run mobile:ota-rollback -- --platform "$INPUT_PLATFORM" --mode embedded
+
+      - name: Notify deployments channel
+        if: always()
+        env:
+          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
+            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
+            exit 0
+          fi
+          if [ "$JOB_STATUS" = "success" ]; then
+            HEADER="🛟 **Production OTA rolled back to embedded bundle**"
+          else
+            HEADER="🚨 **Production OTA rollback FAILED — installs may still be on the bad bundle**"
+          fi
+          REASON_LINE=""
+          [ -n "$INPUT_REASON" ] && REASON_LINE="• reason: ${INPUT_REASON}\n"
+          CONTENT=$(printf '%s\n• platform: %s\n%s• triggered by: %s\n<%s>' \
+            "$HEADER" "$INPUT_PLATFORM" "$REASON_LINE" "$ACTOR" "$RUN_URL")
+          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
+            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
+              echo "::warning::Failed to post Discord notification (see status above)"
