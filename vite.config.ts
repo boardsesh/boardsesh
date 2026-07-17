@@ -310,6 +310,20 @@ export default defineConfig({
       'build:web': {
         command: 'bun run --filter=@boardsesh/web build',
         dependsOn: ['build:shared', 'build:crypto', 'build:db', 'build:constants'],
+        // Forwarded into the task (vp runs tasks with a filtered environment)
+        // and part of the cache key: BOARDSESH_WEB=1 bakes the /app static
+        // serving rewrites into the standalone build (see next.config.mjs).
+        env: ['BOARDSESH_WEB'],
+      },
+      'build:expo-web': {
+        // Static Expo web export into packages/web/public/app — the same
+        // artifact Dockerfile.web bakes into the production image. Run this
+        // before a BOARDSESH_WEB=1 `vp run build:web` to verify /app serving
+        // locally; pass `-- <output-dir>` for a different target. The output
+        // is gitignored (packages/web/public/app).
+        command: 'bash scripts/build-expo-web-export.sh',
+        dependsOn: ['mobile:web-runtime:install'],
+        cache: false,
       },
       'verify:graphql-treeshake': {
         command: 'bun packages/web/scripts/verify-graphql-treeshake.ts',

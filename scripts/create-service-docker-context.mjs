@@ -23,7 +23,16 @@ const services = {
   },
   web: {
     dockerfile: 'Dockerfile.web',
-    rootPackageName: '@boardsesh/web',
+    // @boardsesh/mobile rides along because Dockerfile.web's builder stage runs
+    // the static Expo web export (served by Next at /app); the union walk pulls
+    // in the mobile app plus its transitive workspace deps.
+    rootPackageNames: ['@boardsesh/web', '@boardsesh/mobile'],
+    // Repo-root scripts the web image build needs, copied under source/scripts:
+    // the Expo web export recipe the Dockerfile invokes, plus the tailscale
+    // helper that packages/web/scripts/dev-with-tailscale.ts imports — Next's
+    // production type-check covers packages/web/scripts, so the module must
+    // resolve inside the build context.
+    extraSourceFiles: ['scripts/build-expo-web-export.sh', 'scripts/lib/tailscale-hostname.ts'],
   },
   sync: {
     dockerfile: 'Dockerfile.sync',
@@ -235,6 +244,14 @@ function createServiceDockerContext({ serviceName, repoRoot = defaultRepoRoot, o
 
   for (const packageDirectory of getServiceSourcePackageDirs(serviceName, absoluteRepoRoot)) {
     copyDirectory(join(absoluteRepoRoot, packageDirectory), join(absoluteOutputDir, 'source', packageDirectory));
+  }
+
+  for (const extraSourceFile of service.extraSourceFiles ?? []) {
+    const absoluteExtraSourcePath = join(absoluteRepoRoot, extraSourceFile);
+    if (!existsSync(absoluteExtraSourcePath)) {
+      throw new Error(`${serviceName} extra source file ${extraSourceFile} is missing`);
+    }
+    copyFileCreatingParent(absoluteExtraSourcePath, join(absoluteOutputDir, 'source', extraSourceFile));
   }
 
   return {

@@ -26,6 +26,10 @@ function createFixtureRepo() {
   writeFixtureFile(repoRoot, 'bun.lock', '');
   writeFixtureFile(repoRoot, '.dockerignore', '**/node_modules\n**/dist\n.docker-context\n');
   writeFixtureFile(repoRoot, 'railway.toml', '[deploy]\nstartCommand = "echo ok"\n');
+  // Declared as extraSourceFiles entries on the web service; context
+  // generation fails when one is missing, so the fixture repo carries stubs.
+  writeFixtureFile(repoRoot, 'scripts/build-expo-web-export.sh', '#!/usr/bin/env bash\n');
+  writeFixtureFile(repoRoot, 'scripts/lib/tailscale-hostname.ts', 'export {};\n');
 
   writePackage(repoRoot, 'packages/backend', {
     name: 'boardsesh-backend',
