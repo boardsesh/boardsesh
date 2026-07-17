@@ -16,6 +16,7 @@ import {
   type CriticalChildTermination,
 } from './lib/dev-child-process-lifecycle';
 import { isDevServerPortInUse } from './lib/dev-server-port-availability';
+import { createExpoWebStartArgs } from './lib/expo-web-start-command';
 import { prewarmExpoWeb } from './lib/expo-web-readiness';
 import { resolveTailscaleHostname as resolveTailscaleHostResolution } from './lib/tailscale-hostname';
 
@@ -523,42 +524,27 @@ function startExpoWeb(
 ): ReturnType<typeof spawn> {
   console.info(`[dev] Starting Expo web on port ${port}...`);
 
-  const expoWebProcess = spawn(
-    'bun',
-    [
-      'run',
-      '--filter=@boardsesh/mobile',
-      'start',
-      '--',
-      '--web',
-      '--no-dev',
-      '--port',
-      String(port),
-      '--host',
-      'localhost',
-    ],
-    {
-      ...criticalChildProcessSpawnOptions,
-      cwd: ROOT_DIR,
-      stdio: ['inherit', 'inherit', 'inherit'],
-      env: {
-        ...process.env,
-        BOARDSESH_WEB: '1',
-        BROWSER: 'none',
-        EXPO_NO_TELEMETRY: '1',
-        // The vp task installs the isolated web runtime first. Expo's package
-        // prerequisite only checks packages/mobile/package.json and cannot see
-        // that nested install, so skip its misleading missing-RNW warning.
-        EXPO_NO_WEB_SETUP: '1',
-        EXPO_PUBLIC_WEB_URL: webOrigin,
-        EXPO_PUBLIC_BACKEND_URL: backendOrigin,
-        EXPO_PUBLIC_WS_URL: webSocketUrl,
-        NODE_OPTIONS: composeNodeOptions(process.env.NODE_OPTIONS),
-        ...(devBuildMetadata.branchName ? { BOARDSESH_DEV_BRANCH_NAME: devBuildMetadata.branchName } : {}),
-        ...(devBuildMetadata.qaNotesFilePath ? { BOARDSESH_DEV_QA_NOTES_FILE: devBuildMetadata.qaNotesFilePath } : {}),
-      },
+  const expoWebProcess = spawn('bun', createExpoWebStartArgs(port), {
+    ...criticalChildProcessSpawnOptions,
+    cwd: ROOT_DIR,
+    stdio: ['inherit', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      BOARDSESH_WEB: '1',
+      BROWSER: 'none',
+      EXPO_NO_TELEMETRY: '1',
+      // The vp task installs the isolated web runtime first. Expo's package
+      // prerequisite only checks packages/mobile/package.json and cannot see
+      // that nested install, so skip its misleading missing-RNW warning.
+      EXPO_NO_WEB_SETUP: '1',
+      EXPO_PUBLIC_WEB_URL: webOrigin,
+      EXPO_PUBLIC_BACKEND_URL: backendOrigin,
+      EXPO_PUBLIC_WS_URL: webSocketUrl,
+      NODE_OPTIONS: composeNodeOptions(process.env.NODE_OPTIONS),
+      ...(devBuildMetadata.branchName ? { BOARDSESH_DEV_BRANCH_NAME: devBuildMetadata.branchName } : {}),
+      ...(devBuildMetadata.qaNotesFilePath ? { BOARDSESH_DEV_QA_NOTES_FILE: devBuildMetadata.qaNotesFilePath } : {}),
     },
-  );
+  });
 
   return expoWebProcess;
 }

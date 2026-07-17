@@ -68,6 +68,10 @@ jobs:
               - 'packages/backend/**'
             mobile:
               - 'packages/mobile/**'
+              - 'packages/board-renderer/wasm/pkg/**'
+              - 'scripts/mobile-platform-imports-check.sh'
+              - 'scripts/mobile-web-bundle-check.sh'
+              - 'scripts/sync-mobile-board-renderer-wasm.sh'
             ocr:
               - 'packages/moonboard-ocr/**'
             sharedDeps:

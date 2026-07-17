@@ -5,6 +5,7 @@
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
 const { applyExpoWebResponseHeaders } = require('./expo-web-response-headers.cjs');
+const { resolveWebRuntimeModulePath } = require('./metro-web-runtime-resolution.cjs');
 
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
@@ -78,9 +79,10 @@ const singletonRoots = Object.fromEntries(
 );
 const webReactDomRoot = path.resolve(projectRoot, 'web-runtime/node_modules/react-dom');
 
-// Exact bare-specifier redirects used only by the Expo web target. Native
-// resolution never enters this table, preserving the existing iOS/Android
-// module graph and OTA fingerprint.
+// Redirects used only by the Expo web target. Shims match exact bare
+// specifiers; isolated runtime packages also preserve their imported subpaths.
+// Native resolution never enters these tables, preserving the existing
+// iOS/Android module graph and OTA fingerprint.
 const WEB_SHIM_MODULES = {
   '@expo/ui/community/bottom-sheet': path.resolve(projectRoot, 'src/web-shims/bottom-sheet'),
   '@react-native-google-signin/google-signin': path.resolve(projectRoot, 'src/web-shims/google-signin'),
@@ -105,8 +107,9 @@ function isWebShimOrigin(originModulePath) {
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (platform === 'web' && Object.hasOwn(WEB_RUNTIME_MODULES, moduleName)) {
-    return context.resolveRequest(context, WEB_RUNTIME_MODULES[moduleName], platform);
+  const webRuntimeModulePath = platform === 'web' ? resolveWebRuntimeModulePath(WEB_RUNTIME_MODULES, moduleName) : null;
+  if (webRuntimeModulePath) {
+    return context.resolveRequest(context, webRuntimeModulePath, platform);
   }
 
   if (platform === 'web' && Object.hasOwn(WEB_SHIM_MODULES, moduleName) && !isWebShimOrigin(context.originModulePath)) {

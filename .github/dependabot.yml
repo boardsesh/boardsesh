@@ -9,3 +9,7 @@ updates:
     directory: '/'
     schedule:
       interval: 'weekly'
+  - package-ecosystem: 'bun' # Isolated Expo web runtime and its nested bun.lock
+    directory: '/packages/mobile/web-runtime'
+    schedule:
+      interval: 'weekly'
