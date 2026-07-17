@@ -2,6 +2,10 @@ import { randomUUID } from 'expo-crypto';
 import type { Climb, ClimbInput } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
 
+// `isClimbResolved` lives in ./queue-climb-resolution (no expo-crypto import) so
+// the shared visual can pull the predicate without this module's native deps.
+export { isClimbResolved } from './queue-climb-resolution';
+
 /**
  * Map a `Climb` to the GraphQL `ClimbInput` for queue mutations. `ClimbInput` is
  * a strict subset of `Climb` — sending extra fields (notably `created_at`, which

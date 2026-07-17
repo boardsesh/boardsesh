@@ -11,6 +11,7 @@ import { useTheme } from '../providers/theme-provider';
 import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
+import { isClimbResolved } from '../lib/queue-climb-resolution';
 import type { IconName } from './icon-map';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
 
@@ -62,7 +63,13 @@ export type ClimbListItemClimb = {
 };
 
 type ClimbListItemContentProps = {
-  climb: ClimbListItemClimb;
+  // Nullable/thin-tolerant: the search list always supplies a resolved climb, but
+  // a partially-synced peer queue item can reach the queue row with a missing or
+  // unresolved climb (`ClimbQueueItem.climb` is typed non-null, yet the wire
+  // boundary is untyped). When it isn't resolved we render an "Unknown Climb"
+  // placeholder rather than crashing on `climb.frames`; useQueueResolveClimbs
+  // then re-fetches and hydrates it in place (#2527).
+  climb: ClimbListItemClimb | null | undefined;
   boardName: BoardName;
   layoutId: number;
   sizeId: number;
@@ -164,20 +171,18 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
   showPlaylistChips = false,
 }: ClimbListItemContentProps) {
   const { t } = useTranslation('climbs');
+  const { t: tSession } = useTranslation('session');
   const { resolveGrade } = useDisplayGrade();
   const { systemColors } = useTheme();
 
-  // One O(1) resolve per row: the Boardsesh grade (label + colour) when the "Show
-  // Boardsesh grades" toggle is on and a trusted one exists, else the legacy
-  // Aurora grade. `resolveGrade` is the stable callback from `useDisplayGrade`
-  // (called once above), so it never re-derives per render beyond this call.
-  const { label: formattedGrade, color: gradeColor } = resolveGrade(climb);
-
   // Subtitle parts: sends · quality★ · setter (each dropped when absent). A
   // caller-supplied override wins outright — a string replaces the line, null
-  // hides it — so session rows can show the sender instead.
+  // hides it — so session rows can show the sender instead. Tolerates a nullish
+  // climb (partially-synced peer item) — the placeholder branch below renders
+  // before this value is read in that case.
   const subtitleText = useMemo(() => {
     if (primarySubtitleOverride !== undefined) return primarySubtitleOverride;
+    if (!climb) return null;
     const parts: string[] = [];
     if (climb.is_draft) {
       parts.push(t('createClimbForm.draftBadge'));
@@ -195,10 +200,10 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     return parts.length > 0 ? parts.join(' · ') : t('mobile.climbRow.projectFallback');
   }, [
     primarySubtitleOverride,
-    climb.is_draft,
-    climb.ascensionist_count,
-    climb.quality_average,
-    climb.setter_username,
+    climb?.is_draft,
+    climb?.ascensionist_count,
+    climb?.quality_average,
+    climb?.setter_username,
     t,
   ]);
 
@@ -206,6 +211,33 @@ const ClimbListItemContent = React.memo(function ClimbListItemContent({
     const parts = subtitleDetailParts?.filter((part) => part.length > 0) ?? [];
     return parts.length > 0 ? parts.join(' · ') : null;
   }, [subtitleDetailParts]);
+
+  // Partially-synced peer item whose climb isn't resolved yet (#2527): render an
+  // "Unknown Climb" placeholder that keeps the three-block layout so the row
+  // doesn't crash and its gutter/separator still line up with resolved rows.
+  // useQueueResolveClimbs re-fetches the climb by uuid and swaps in the real one,
+  // so this is transient for any item that carries a fetchable uuid.
+  // `!climb ||` is redundant with isClimbResolved at runtime but lets TypeScript
+  // narrow `climb` to non-null for the resolved render below.
+  if (!climb || !isClimbResolved(climb)) {
+    return (
+      <>
+        <View style={styles.thumbnailContainer} />
+        <View style={styles.centerColumn}>
+          <Text variant="body" numberOfLines={1} style={styles.climbName}>
+            {tSession('mobile.queue.unknownClimb')}
+          </Text>
+        </View>
+        <View style={styles.rightSection} />
+      </>
+    );
+  }
+
+  // One O(1) resolve per row: the Boardsesh grade (label + colour) when the "Show
+  // Boardsesh grades" toggle is on and a trusted one exists, else the legacy
+  // Aurora grade. `resolveGrade` is the stable callback from `useDisplayGrade`
+  // (called once above), so it never re-derives per render beyond this call.
+  const { label: formattedGrade, color: gradeColor } = resolveGrade(climb);
 
   return (
     <>

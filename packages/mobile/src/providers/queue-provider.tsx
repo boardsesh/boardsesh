@@ -32,7 +32,7 @@ import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
 import { toClimbQueueItem } from '../lib/queue-conversion';
-import { climbToQueueItem, toClimbInput } from '../lib/climb-to-queue-item';
+import { climbToQueueItem, toClimbInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track } from '../lib/analytics';
 import { reportHandledError } from '../lib/error-reporting';
 import { useAuthTransportRevision } from '../lib/auth-transport-revision';
@@ -60,6 +60,7 @@ import {
   type QueuePlaylistSuggestionContextValue,
 } from './queue/queue-contexts';
 import { useQueueRegrade } from './queue/use-queue-regrade';
+import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
 import { useQueuePersistence } from './queue/use-queue-persistence';
 import { useSessionCommands } from './queue/use-session-commands';
 import {
@@ -602,6 +603,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     setPlaylistSuggestionSourceState,
   });
 
+  // Self-healing resolve: a partially-synced peer item (or a snapshot restored
+  // before its climb data loaded) can land in the queue with an unresolved climb.
+  // Re-fetch it by uuid at the live angle and patch it in place so the row shows
+  // the real name/grade/thumbnail instead of an "Unknown Climb" placeholder. See
+  // useQueueResolveClimbs (#2527).
+  useQueueResolveClimbs({ activeBoard, queue: state.queue, dispatch });
+
   // The reducer raises `needsResync` when it filters corrupted (null) items out
   // of a server FullSync/UPDATE_QUEUE — the local queue is now known-stale.
   // Mirror web (use-queue-event-subscription): in a party session, clear the
@@ -630,6 +638,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         addedFromTab: 'mobile',
         currentQueueLength: stateRef.current.queue.length + 1,
       });
+      // No unresolved-climb guard here: addToQueue is only ever called with a
+      // fully-resolved climb from search / detail / playlist (a real user tap),
+      // never a peer placeholder. The re-broadcast vectors that need guarding are
+      // setCurrentClimb (next/previousClimb can land on an unhydrated peer item)
+      // and setQueue (whole-queue replace) — see #2527.
       mutations.addQueueItem(item).catch((error) => {
         if (__DEV__) console.warn('[queue] addQueueItem sync failed', error);
         // In a party session the add never reached peers — reconcile against the
@@ -718,7 +731,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const setQueue = useCallback(
     (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => {
       dispatch({ type: 'UPDATE_QUEUE', payload: { queue, currentClimbQueueItem: currentClimbQueueItem ?? null } });
-      mutations.setQueue(queue, currentClimbQueueItem ?? undefined).catch((error) => {
+      // Keep the full queue locally, but never broadcast a placeholder/thin item
+      // to peers (#2527): drop unresolved items from the wire payload (they can't
+      // form a valid ClimbInput and peers can't render them). useQueueResolveClimbs
+      // hydrates any resolvable item in place; a later mutation re-syncs the real
+      // one. An unresolved current climb is likewise not sent as current.
+      const syncableQueue = queue.filter((item) => isClimbResolved(item.climb));
+      const syncableCurrent =
+        currentClimbQueueItem && isClimbResolved(currentClimbQueueItem.climb) ? currentClimbQueueItem : undefined;
+      mutations.setQueue(syncableQueue, syncableCurrent).catch((error) => {
         if (__DEV__) console.warn('[queue] setQueue sync failed', error);
         void resyncQueueAfterMutationFailure();
       });
@@ -762,6 +783,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           insertAfterCurrent,
         },
       });
+      // Skip the broadcast for an unresolved climb (#2527) — a placeholder
+      // ClimbInput can't be sent (its uuid may be empty and name/frames are
+      // required server-side), and next/previousClimb can navigate onto a
+      // not-yet-hydrated peer item. The local reducer already applied the change,
+      // and useQueueResolveClimbs hydrates the item within a tick. No pending
+      // correlation is tracked since no server echo will arrive.
+      if (!isClimbResolved(item.climb)) {
+        if (__DEV__) console.warn('[queue] skipping setCurrentClimb sync for an unresolved climb. See #2527.');
+        return;
+      }
       coordinator.trackPendingMutation(correlationId);
       mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch(() => {
         // In a party session the current-climb change never reached peers —
