@@ -134,4 +134,76 @@ describe('GET /api/auth/native/callback', () => {
     // the meta tag is present and well-formed
     expect(html).toContain('content="0;url=');
   });
+
+  // Web hand-off mode: `?redirect=web` (or `?target=web`) 307s to the Expo-web
+  // app at app.boardsesh.com instead of the native custom-scheme deep link.
+  // SERVER_APP_URL resolves to its prod default here (no NEXT_PUBLIC_APP_URL /
+  // APP_URL env set in the test).
+  describe('web hand-off mode (?redirect=web)', () => {
+    const APP_ORIGIN = 'https://app.boardsesh.com';
+
+    it('307-redirects to the app callback with the transfer token and next path', async () => {
+      mockedGetServerSession.mockResolvedValue({ user: { id: 'user_123', email: 'test@test.com' } });
+      mockedIssueToken.mockReturnValue('web-transfer-token');
+
+      const response = await GET(createRequest('/api/auth/native/callback?redirect=web&next=/settings'));
+
+      expect(response.status).toBe(307);
+      const location = new URL(response.headers.get('location')!);
+      expect(location.origin).toBe(APP_ORIGIN);
+      expect(location.pathname).toBe('/auth/callback');
+      expect(location.searchParams.get('transferToken')).toBe('web-transfer-token');
+      expect(location.searchParams.get('next')).toBe('/settings');
+      expect(mockedIssueToken).toHaveBeenCalledWith({ userId: 'user_123', nextPath: '/settings' });
+    });
+
+    it('accepts the ?target=web alias', async () => {
+      mockedGetServerSession.mockResolvedValue({ user: { id: 'user_123' } });
+      mockedIssueToken.mockReturnValue('token');
+
+      const response = await GET(createRequest('/api/auth/native/callback?target=web'));
+
+      expect(response.status).toBe(307);
+      expect(new URL(response.headers.get('location')!).origin).toBe(APP_ORIGIN);
+    });
+
+    it('never redirects off the app origin, even with a hostile next param (open-redirect guard)', async () => {
+      mockedGetServerSession.mockResolvedValue({ user: { id: 'user_123' } });
+      mockedIssueToken.mockReturnValue('token');
+
+      const response = await GET(createRequest('/api/auth/native/callback?redirect=web&next=https://evil.com'));
+
+      expect(response.status).toBe(307);
+      const location = new URL(response.headers.get('location')!);
+      expect(location.origin).toBe(APP_ORIGIN);
+      expect(location.pathname).toBe('/auth/callback');
+      // The non-relative next collapses to root before it is issued or carried.
+      expect(location.searchParams.get('next')).toBe('/');
+      expect(mockedIssueToken).toHaveBeenCalledWith({ userId: 'user_123', nextPath: '/' });
+    });
+
+    it('sends a logged-out visitor to the app root (its own login), not a deep link', async () => {
+      mockedGetServerSession.mockResolvedValue(null);
+
+      const response = await GET(createRequest('/api/auth/native/callback?redirect=web&next=/feed'));
+
+      expect(response.status).toBe(307);
+      const location = new URL(response.headers.get('location')!);
+      expect(location.origin).toBe(APP_ORIGIN);
+      expect(location.pathname).toBe('/');
+      expect(mockedIssueToken).not.toHaveBeenCalled();
+    });
+
+    it('sends the visitor to the app root when token issuance fails', async () => {
+      mockedGetServerSession.mockResolvedValue({ user: { id: 'user_123' } });
+      mockedIssueToken.mockImplementation(() => {
+        throw new Error('NEXTAUTH_SECRET not set');
+      });
+
+      const response = await GET(createRequest('/api/auth/native/callback?redirect=web'));
+
+      expect(response.status).toBe(307);
+      expect(new URL(response.headers.get('location')!).pathname).toBe('/');
+    });
+  });
 });
