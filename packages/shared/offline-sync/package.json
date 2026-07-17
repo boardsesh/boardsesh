@@ -15,6 +15,11 @@
       "types": "./src/testing/index.ts",
       "import": "./src/testing/index.ts",
       "default": "./src/testing/index.ts"
+    },
+    "./error-classification": {
+      "types": "./src/mutation-queue/error-classification.ts",
+      "import": "./src/mutation-queue/error-classification.ts",
+      "default": "./src/mutation-queue/error-classification.ts"
     }
   },
   "scripts": {

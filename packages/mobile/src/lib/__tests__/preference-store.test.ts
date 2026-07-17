@@ -62,6 +62,21 @@ describe('preference-store', () => {
     await expect(getPreference('corrupt')).resolves.toBeNull();
   });
 
+  it('propagates a storage read rejection so a one-time-load store can retry after unlock (#3610)', async () => {
+    // iOS denies the backing-file read on a background launch before first unlock
+    // ("Failed to get values for keys"). getPreference deliberately does NOT swallow
+    // it: the rejection propagates so stores can distinguish "read failed" from "no
+    // value" and retry. Consumers own the catch (their load singleton clears the
+    // rejected promise + call sites `.catch`) so nothing floats into error tracking.
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      getItem: { mockRejectedValueOnce: (error: Error) => void };
+    };
+    asyncStorage.getItem.mockRejectedValueOnce(new Error('Failed to get values for keys'));
+
+    const { getPreference } = await import('../preference-store');
+    await expect(getPreference('locked')).rejects.toThrow('Failed to get values for keys');
+  });
+
   it('removePreference deletes the key', async () => {
     const { getPreference, setPreference, removePreference } = await import('../preference-store');
     await setPreference('k', 1);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { isRetryable, getErrorStatus } from '../error-classification';
+import { isRetryable, getErrorStatus, isNetworkError, isTransportNetworkError } from '../error-classification';
 
 describe('getErrorStatus', () => {
   it('extracts status from Response object', () => {
@@ -161,5 +161,72 @@ describe('isRetryable', () => {
       response: { errors: [{ message: 'invalid', extensions: { code: 400 } }] },
     };
     expect(isRetryable(clientError)).toBe(false);
+  });
+
+  it('an Error-typed WinterCG "fetch failed" wrapper is retryable (not just TypeError)', () => {
+    // graphql-ws HTTP transport rejects a timeout mid-drain as a plain Error, so
+    // the old `instanceof TypeError` gate dead-lettered a queued offline tick.
+    expect(isRetryable(new Error('fetch failed: The request timed out.'))).toBe(true);
+  });
+
+  it('a bare iOS NSURLError description (no wrapper) is retryable', () => {
+    expect(isRetryable(new Error('The connection has timed out unexpectedly.'))).toBe(true);
+  });
+
+  it('an Android UnknownHostException is retryable', () => {
+    expect(
+      isRetryable(new Error('fetch failed: java.net.UnknownHostException: Unable to resolve host "ws.boardsesh.com"')),
+    ).toBe(true);
+  });
+});
+
+describe('isTransportNetworkError', () => {
+  it('matches the always-English fetch/polyfill wrapper strings', () => {
+    expect(isTransportNetworkError(new TypeError('Network request failed'))).toBe(true);
+    expect(isTransportNetworkError(new TypeError('Failed to fetch'))).toBe(true);
+    expect(isTransportNetworkError(new Error('fetch failed: The network connection was lost.'))).toBe(true);
+  });
+
+  it('matches locale-independent Java networking exception class names', () => {
+    expect(isTransportNetworkError(new Error('java.net.SocketTimeoutException: timeout'))).toBe(true);
+    expect(isTransportNetworkError(new Error('javax.net.ssl.SSLHandshakeException: handshake failed'))).toBe(true);
+  });
+
+  it('matches an errno transport code on the error or its cause', () => {
+    expect(isTransportNetworkError(Object.assign(new Error('boom'), { code: 'ENOTFOUND' }))).toBe(true);
+    const wrapped = Object.assign(new Error('fetch failed'), {
+      cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+    });
+    expect(isTransportNetworkError(wrapped)).toBe(true);
+  });
+
+  it('matches the best-effort English NSURLError descriptions (un-wrapped iOS case)', () => {
+    expect(isTransportNetworkError(new Error('The internet connection appears to be offline.'))).toBe(true);
+    expect(isTransportNetworkError(new Error('A TLS error caused the secure connection to fail.'))).toBe(true);
+  });
+
+  it('does NOT match a programmer bug that merely mentions fetch/network/timed out', () => {
+    // Narrow markers keep real bugs at error level rather than silently retrying them.
+    expect(isTransportNetworkError(new TypeError("Cannot read property 'fetch' of undefined"))).toBe(false);
+    expect(isTransportNetworkError(new Error('BLE write timed out waiting for the board to accept data'))).toBe(false);
+    expect(isTransportNetworkError(new Error('network graph render failed'))).toBe(false);
+  });
+
+  it('does not classify a non-object or a real server error', () => {
+    expect(isTransportNetworkError('boom')).toBe(false);
+    expect(isTransportNetworkError({ response: { status: 500 } })).toBe(false);
+  });
+});
+
+describe('isNetworkError', () => {
+  it('still treats an AbortError (by name) as a network failure — replaying is safe', () => {
+    const aborted = new Error('Aborted');
+    aborted.name = 'AbortError';
+    expect(isNetworkError(aborted)).toBe(true);
+  });
+
+  it('classifies the broadened transport shapes', () => {
+    expect(isNetworkError(new Error('fetch failed: Could not connect to the server.'))).toBe(true);
+    expect(isNetworkError(new TypeError('Network request failed'))).toBe(true);
   });
 });

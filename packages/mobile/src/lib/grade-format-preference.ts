@@ -59,7 +59,17 @@ export async function setGradeDisplayFormatPreference(format: GradeDisplayFormat
 // effect) — the first caller starts it, everyone else awaits the same promise.
 let loadPromise: Promise<GradeDisplayFormat> | null = null;
 function ensureGradeFormatLoaded(): Promise<GradeDisplayFormat> {
-  if (!loadPromise) loadPromise = loadGradeDisplayFormat();
+  if (!loadPromise) {
+    loadPromise = loadGradeDisplayFormat().catch((error: unknown) => {
+      // A failed load must not leave a rejected promise cached — clear the
+      // singleton so the next mount retries instead of staying pinned to the
+      // default until the app restarts. `getPreference` already swallows locked-
+      // storage reads (returns null), so this is belt-and-braces for any other
+      // rejection in the load chain. Mirrors session-recording-preference.ts.
+      loadPromise = null;
+      throw error;
+    });
+  }
   return loadPromise;
 }
 
@@ -92,7 +102,9 @@ export function useGradeDisplayFormatPreference(): {
   // Kick the one-time AsyncStorage load from an effect (not render/subscribe).
   // The promise singleton makes this idempotent across every mounted row.
   useEffect(() => {
-    void ensureGradeFormatLoaded();
+    // Swallow load failures here — ensureGradeFormatLoaded already clears its
+    // cached promise so a later mount retries; nothing to do at this call site.
+    ensureGradeFormatLoaded().catch(() => {});
   }, []);
 
   const setGradeFormat = useCallback((next: GradeDisplayFormat) => {

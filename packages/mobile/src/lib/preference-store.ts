@@ -13,8 +13,17 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-/** Read a JSON-serialized preference. Returns null when the key is missing
- *  or the stored payload fails to parse. */
+/** Read a JSON-serialized preference. Returns null when the key is missing or the
+ *  stored payload fails to parse.
+ *
+ *  A storage-read REJECTION is intentionally NOT swallowed here — it propagates so
+ *  a one-time-load store can distinguish "read failed" (e.g. iOS denying the
+ *  backing-file read on a background launch before first unlock) from "no value
+ *  stored", and RETRY after unlock rather than caching the default. The obligation
+ *  that carries: every consumer's load singleton must clear a rejected promise and
+ *  its call sites must `.catch`, so the rejection never floats into error tracking.
+ *  See session-recording-preference.ts / dimension-lock-store.ts /
+ *  grade-format-preference.ts for the pattern (#3610). */
 export async function getPreference<T>(key: string): Promise<T | null> {
   const raw = await AsyncStorage.getItem(key);
   if (raw === null) return null;

@@ -84,6 +84,29 @@ describe('reportHandledError', () => {
     });
   });
 
+  it.each(['invalid_credentials', 'account_already_linked', 'rate_limited'])(
+    'drops an expected board-account rejection (%s) — already surfaced as a toast (#3610)',
+    (code) => {
+      // BoardAccountError is matched structurally by name + code (no import, to
+      // avoid the aurora-credentials → auth-interceptor → error-reporting cycle).
+      const boardAccountError = Object.assign(new Error(code), { name: 'BoardAccountError', code });
+      reportHandledError(boardAccountError, { tags: { source: 'react-query', kind: 'mutation' } });
+      expect(mockedCaptureToSentry).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['request_failed', 'unauthorized', 'not_allowed'])(
+    'still reports an unexpected board-account failure (%s) at error level',
+    (code) => {
+      const boardAccountError = Object.assign(new Error(code), { name: 'BoardAccountError', code });
+      reportHandledError(boardAccountError, { tags: { source: 'react-query', kind: 'mutation' } });
+      expect(mockedCaptureToSentry).toHaveBeenCalledWith(boardAccountError, {
+        level: 'error',
+        tags: { source: 'react-query', kind: 'mutation' },
+      });
+    },
+  );
+
   it('downgrades a RATE_LIMITED GraphQL rejection to a warning and tags it (expected backpressure — #3285)', () => {
     const rateLimited = Object.assign(new Error('Rate limit exceeded. Try again in 7 seconds.'), {
       response: {
@@ -142,6 +165,26 @@ describe('reportHandledError', () => {
     expect(mockedCaptureToSentry).toHaveBeenCalledWith(emptyBody, {
       level: 'warning',
       tags: { source: 'react-query', kind: 'query', network: true },
+    });
+  });
+
+  it('downgrades an Error-typed WinterCG "fetch failed" transport rejection to a warning (#3610)', () => {
+    // graphql-ws HTTP wraps the underlying NSURLError as `Error: "fetch failed: <cause>"`
+    // (a plain Error, not a TypeError) — the shared matcher classifies it as network.
+    const offline = new Error('fetch failed: The network connection was lost.');
+    reportHandledError(offline, { tags: { source: 'ws-client' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
+      level: 'warning',
+      tags: { source: 'ws-client', network: true },
+    });
+  });
+
+  it('downgrades a bare iOS NSURLError description (no wrapper) to a warning — best-effort English (#3610)', () => {
+    const offline = new Error('The connection has timed out unexpectedly.');
+    reportHandledError(offline, { tags: { source: 'ws-client' } });
+    expect(mockedCaptureToSentry).toHaveBeenCalledWith(offline, {
+      level: 'warning',
+      tags: { source: 'ws-client', network: true },
     });
   });
 
