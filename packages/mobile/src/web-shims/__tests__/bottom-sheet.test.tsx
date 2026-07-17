@@ -6,6 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 type MockGorhomProps = {
   children?: ReactNode;
   enableDynamicSizing?: boolean;
+  enableContentPanningGesture?: boolean;
+  enableHandlePanningGesture?: boolean;
+  keyboardBehavior?: string;
+  keyboardBlurBehavior?: string;
   onChange?: (index: number) => void;
   onClose?: () => void;
   onDismiss?: () => void;
@@ -44,6 +48,8 @@ vi.mock(gorhom.moduleId, async () => {
   const { createElement, forwardRef, useImperativeHandle } = await import('react');
 
   const Primitive = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
+  const FlatListPrimitive = () => createElement('div', { 'data-testid': 'gorhom-flat-list' });
+  const TextInputPrimitive = () => createElement('input', { 'data-testid': 'gorhom-text-input' });
   const MockBottomSheet = forwardRef<unknown, MockGorhomProps>(function MockBottomSheet(props, ref) {
     gorhom.state.bottomSheetProps = props;
     useImperativeHandle(ref, () => gorhom.state.bottomSheetMethods);
@@ -58,12 +64,12 @@ vi.mock(gorhom.moduleId, async () => {
   return {
     default: MockBottomSheet,
     BottomSheetBackdrop: Primitive,
-    BottomSheetFlatList: Primitive,
+    BottomSheetFlatList: FlatListPrimitive,
     BottomSheetModal: MockBottomSheetModal,
     BottomSheetModalProvider: Primitive,
     BottomSheetScrollView: Primitive,
     BottomSheetSectionList: Primitive,
-    BottomSheetTextInput: Primitive,
+    BottomSheetTextInput: TextInputPrimitive,
     BottomSheetView: Primitive,
     useBottomSheet: vi.fn(),
   };
@@ -78,7 +84,13 @@ vi.mock('../../providers/theme-provider', () => ({
 
 vi.mock('react-native', () => ({ Platform: { OS: 'web' } }));
 
-import { BottomSheet, BottomSheetModal, type BottomSheetMethods } from '../bottom-sheet';
+import {
+  BottomSheet,
+  BottomSheetFlatList,
+  BottomSheetModal,
+  BottomSheetTextInput,
+  type BottomSheetMethods,
+} from '../bottom-sheet';
 
 beforeEach(() => {
   gorhom.state.bottomSheetProps = null;
@@ -112,6 +124,38 @@ describe('Expo web bottom-sheet adapter', () => {
       snapPoints: ['50%', '95%'],
       enableDynamicSizing: false,
     });
+  });
+
+  it('forwards queue gesture locks and ascent keyboard contracts to Gorhom', () => {
+    render(
+      <BottomSheetModal
+        enableContentPanningGesture={false}
+        enableHandlePanningGesture={false}
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
+      >
+        <span />
+      </BottomSheetModal>,
+    );
+
+    expect(gorhom.state.modalProps).toMatchObject({
+      enableContentPanningGesture: false,
+      enableHandlePanningGesture: false,
+      keyboardBehavior: 'extend',
+      keyboardBlurBehavior: 'restore',
+    });
+  });
+
+  it('exports Gorhom sheet-aware list and text-input primitives', () => {
+    const rendered = render(
+      <>
+        <BottomSheetFlatList data={[]} renderItem={() => null} />
+        <BottomSheetTextInput />
+      </>,
+    );
+
+    expect(rendered.getByTestId('gorhom-flat-list')).toBeTruthy();
+    expect(rendered.getByTestId('gorhom-text-input')).toBeTruthy();
   });
 
   it('presents a modal and waits until Gorhom mounts it before applying a requested index', () => {

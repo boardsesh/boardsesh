@@ -14,6 +14,8 @@ type WebRefreshResult =
   | { status: 'unavailable'; generation: number }
   | { status: 'superseded' };
 
+export type WebAuthRejectionResult = WebRefreshResult['status'];
+
 let refresh: { generation: number; promise: Promise<WebRefreshResult> } | null = null;
 let forcedSignOut: { generation: number; promise: Promise<void> } | null = null;
 
@@ -92,8 +94,10 @@ export async function deduplicatedRefresh(): Promise<boolean> {
  * superseded request or unavailable endpoint must leave a newer/current session
  * alone while the rejected WebSocket closes without retrying its stale token.
  */
-export function recoverAuthRejection(): Promise<boolean> {
-  return deduplicatedRefresh();
+export async function recoverAuthRejection(): Promise<WebAuthRejectionResult> {
+  const refreshResult = await deduplicatedSessionRefresh();
+  if (refreshResult.status === 'anonymous') await forceSignOut(refreshResult.generation);
+  return refreshResult.status;
 }
 
 export async function ensureFreshToken(): Promise<boolean> {
@@ -119,9 +123,7 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
   const response = await fetch(url, { ...options, headers });
-  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-    throw new Error('Authentication session changed while the request was in flight');
-  }
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) return response;
   if (response.status !== 401 || !token) return response;
 
   const refreshResult = await deduplicatedSessionRefresh();
@@ -130,21 +132,16 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
     return response;
   }
   if (refreshResult.status === 'superseded' || refreshResult.generation !== requestGeneration) {
-    throw new Error('Authentication session changed while the request was in flight');
+    return response;
   }
 
   if (refreshResult.status === 'authenticated') {
     const refreshedToken = await getAuthToken();
-    if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-      throw new Error('Authentication session changed while the request was in flight');
-    }
+    if (!isAuthCredentialGenerationCurrent(requestGeneration)) return response;
     if (refreshedToken) {
       const retryHeaders = new Headers(headers);
       retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);
       const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
-      if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-        throw new Error('Authentication session changed while the request was in flight');
-      }
       if (retryResponse.status === 401) {
         // The cookie and bridge endpoint both said authenticated, but the
         // backend rejected that freshly resolved token too. Stop after one

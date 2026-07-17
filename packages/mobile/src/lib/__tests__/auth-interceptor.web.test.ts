@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { authenticatedFetch, setOnForcedSignOut } from '../auth-interceptor.web';
+import { authenticatedFetch, recoverAuthRejection, setOnForcedSignOut } from '../auth-interceptor.web';
 import { clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
 
 const reportHandledErrorMock = vi.fn();
@@ -69,7 +69,7 @@ describe('authenticatedFetch on web', () => {
 
     expect(first.status).toBe(401);
     expect(second.status).toBe(401);
-    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/session')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/session')).toHaveLength(2);
     expect(forcedSignOut).toHaveBeenCalledTimes(1);
     await expect(getAuthToken()).resolves.toBeNull();
   });
@@ -96,13 +96,14 @@ describe('authenticatedFetch on web', () => {
       .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
       .mockResolvedValueOnce(authenticatedBridgeResponse('new-jwe'))
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
       .mockResolvedValueOnce(jsonResponse({ url: '/app' }));
 
     const response = await authenticatedFetch('/graphql');
 
     expect(response.status).toBe(401);
-    expect(fetchMock).toHaveBeenCalledTimes(6);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(forcedSignOut).toHaveBeenCalledTimes(1);
     await expect(getAuthToken()).resolves.toBeNull();
   });
@@ -111,12 +112,13 @@ describe('authenticatedFetch on web', () => {
     await primeToken();
     const forcedSignOut = vi.fn();
     setOnForcedSignOut(forcedSignOut);
-    fetchMock.mockImplementation((url: string | URL | Request) => {
-      if (url === '/graphql') return Promise.resolve(new Response(null, { status: 401 }));
-      if (url === '/api/auth/session') return Promise.resolve(jsonResponse({}));
-      if (url === '/api/auth/csrf') return Promise.reject(new Error('offline'));
-      return Promise.resolve(new Response(null, { status: 500 }));
-    });
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('new-jwe'))
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockRejectedValueOnce(new Error('offline'));
 
     const response = await authenticatedFetch('/graphql');
 
@@ -126,7 +128,7 @@ describe('authenticatedFetch on web', () => {
     await expect(getAuthToken()).resolves.toBeNull();
   });
 
-  it('rejects an old-account response that returns after a browser account switch', async () => {
+  it('returns an old-account response that was already sent before a browser account switch', async () => {
     await primeToken();
     let resolveOldRequest!: (response: Response) => void;
     fetchMock.mockReturnValueOnce(
@@ -136,7 +138,6 @@ describe('authenticatedFetch on web', () => {
     );
 
     const oldRequest = authenticatedFetch('/graphql');
-    const oldRequestError = oldRequest.catch((error: unknown) => error);
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     await clearTokens();
 
@@ -146,9 +147,7 @@ describe('authenticatedFetch on web', () => {
     await synchronizeWebSession();
     resolveOldRequest(jsonResponse({ data: { privateForUserOne: true } }));
 
-    await expect(oldRequestError).resolves.toEqual(
-      expect.objectContaining({ message: expect.stringContaining('Authentication session changed') }),
-    );
+    await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 200 }));
     expect(fetchMock).toHaveBeenCalledTimes(3);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
@@ -169,7 +168,6 @@ describe('authenticatedFetch on web', () => {
       );
 
     const oldRequest = authenticatedFetch('/graphql');
-    const oldRequestError = oldRequest.catch((error: unknown) => error);
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await clearTokens();
 
@@ -184,14 +182,12 @@ describe('authenticatedFetch on web', () => {
     });
     resolveOldSession(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }));
 
-    await expect(oldRequestError).resolves.toEqual(
-      expect.objectContaining({ message: expect.stringContaining('Authentication session changed') }),
-    );
+    await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 401 }));
     expect(forcedSignOut).not.toHaveBeenCalled();
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
 
-  it('fences an in-flight A request when cookie revalidation discovers B without a broadcast', async () => {
+  it('returns an in-flight A response when cookie revalidation discovers B without a broadcast', async () => {
     await primeToken();
     let resolveOldRequest!: (response: Response) => void;
     fetchMock.mockReturnValueOnce(
@@ -201,7 +197,6 @@ describe('authenticatedFetch on web', () => {
     );
 
     const oldRequest = authenticatedFetch('/graphql');
-    const oldRequestError = oldRequest.catch((error: unknown) => error);
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
@@ -215,9 +210,21 @@ describe('authenticatedFetch on web', () => {
     });
     resolveOldRequest(jsonResponse({ data: { privateForUserOne: true } }));
 
-    await expect(oldRequestError).resolves.toEqual(
-      expect.objectContaining({ message: expect.stringContaining('Authentication session changed') }),
-    );
+    await expect(oldRequest).resolves.toEqual(expect.objectContaining({ status: 200 }));
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
+  });
+});
+
+describe('recoverAuthRejection on web', () => {
+  it('distinguishes an unavailable session bridge from a confirmed logout', async () => {
+    await primeToken();
+    const forcedSignOut = vi.fn();
+    setOnForcedSignOut(forcedSignOut);
+    fetchMock.mockRejectedValueOnce(new Error('offline'));
+
+    await expect(recoverAuthRejection()).resolves.toBe('unavailable');
+
+    expect(forcedSignOut).not.toHaveBeenCalled();
+    await expect(getAuthToken()).resolves.toBe('old-jwe');
   });
 });

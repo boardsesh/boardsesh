@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CreateGraphQLClientOptions, ExtendedClient } from '@boardsesh/graphql-client';
 import { createClient as createRawGraphQLWsClient } from 'graphql-ws';
 
+type WebAuthRecoveryResult = 'authenticated' | 'anonymous' | 'unavailable' | 'superseded';
+
 let capturedOptions: CreateGraphQLClientOptions | null = null;
 const disposeSpy = vi.fn();
 const singletonClient = { dispose: disposeSpy } as unknown as ExtendedClient;
@@ -21,7 +23,7 @@ vi.mock('../../auth-store.web', () => ({
 
 vi.mock('../../auth-interceptor.web', () => ({
   ensureFreshToken: vi.fn().mockResolvedValue(true),
-  recoverAuthRejection: vi.fn().mockResolvedValue(true),
+  recoverAuthRejection: vi.fn().mockResolvedValue('authenticated'),
 }));
 
 vi.mock('../../error-reporting', () => ({
@@ -138,7 +140,7 @@ beforeEach(() => {
   captureAuthCredentialGenerationMock.mockReturnValue(1);
   isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
   ensureFreshTokenMock.mockResolvedValue(true);
-  recoverAuthRejectionMock.mockResolvedValue(true);
+  recoverAuthRejectionMock.mockResolvedValue('authenticated');
 });
 
 describe('Expo web GraphQL WebSocket auth', () => {
@@ -174,9 +176,9 @@ describe('Expo web GraphQL WebSocket auth', () => {
   });
 
   it('remaps a burst of 4401 closes, refreshes once, and keeps the singleton', async () => {
-    let releaseRefresh!: (result: boolean) => void;
+    let releaseRefresh!: (result: WebAuthRecoveryResult) => void;
     recoverAuthRejectionMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+      new Promise<WebAuthRecoveryResult>((resolve) => {
         releaseRefresh = resolve;
       }),
     );
@@ -196,7 +198,7 @@ describe('Expo web GraphQL WebSocket auth', () => {
     expect(getWsClient()).toBe(client);
     expect(disposeSpy).not.toHaveBeenCalled();
 
-    releaseRefresh(true);
+    releaseRefresh('authenticated');
     await vi.waitFor(() => expect(observedCloseCodes).toEqual([4403, 4403]));
   });
 
@@ -204,9 +206,9 @@ describe('Expo web GraphQL WebSocket auth', () => {
     let currentGeneration = 1;
     captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
     isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
-    let releaseOldRecovery!: (recovered: boolean) => void;
+    let releaseOldRecovery!: (recovered: WebAuthRecoveryResult) => void;
     recoverAuthRejectionMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+      new Promise<WebAuthRecoveryResult>((resolve) => {
         releaseOldRecovery = resolve;
       }),
     );
@@ -230,7 +232,7 @@ describe('Expo web GraphQL WebSocket auth', () => {
     expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(2);
     expect(oldCloseCodes).toEqual([]);
 
-    releaseOldRecovery(true);
+    releaseOldRecovery('authenticated');
     await vi.waitFor(() => expect(oldCloseCodes).toEqual([4401]));
   });
 
@@ -238,8 +240,8 @@ describe('Expo web GraphQL WebSocket auth', () => {
     let currentGeneration = 1;
     captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
     isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
-    let releaseRecovery!: (recovered: boolean) => void;
-    const pendingRecovery = new Promise<boolean>((resolve) => {
+    let releaseRecovery!: (recovered: WebAuthRecoveryResult) => void;
+    const pendingRecovery = new Promise<WebAuthRecoveryResult>((resolve) => {
       releaseRecovery = resolve;
     });
     recoverAuthRejectionMock.mockReturnValueOnce(pendingRecovery);
@@ -257,15 +259,15 @@ describe('Expo web GraphQL WebSocket auth', () => {
     void pendingRecovery.then(() => {
       currentGeneration = 2;
     });
-    releaseRecovery(true);
+    releaseRecovery('authenticated');
 
     await vi.waitFor(() => expect(closeCodes).toEqual([4401]));
   });
 
   it('reconnects and resubscribes an active operation after refreshing a rejected token', async () => {
-    let releaseRefresh!: (result: boolean) => void;
+    let releaseRefresh!: (result: WebAuthRecoveryResult) => void;
     recoverAuthRejectionMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+      new Promise<WebAuthRecoveryResult>((resolve) => {
         releaseRefresh = resolve;
       }),
     );
@@ -303,7 +305,7 @@ describe('Expo web GraphQL WebSocket auth', () => {
     await vi.waitFor(() => expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(1));
     expect(BrowserSocketStub.instances).toHaveLength(1);
 
-    releaseRefresh(true);
+    releaseRefresh('authenticated');
     await vi.waitFor(() => expect(BrowserSocketStub.instances).toHaveLength(2));
     const secondSocket = BrowserSocketStub.instances[1];
     if (!secondSocket) throw new Error('retry socket was not created');
@@ -325,8 +327,8 @@ describe('Expo web GraphQL WebSocket auth', () => {
     await rawClient.dispose();
   });
 
-  it('keeps a failed 4401 recovery fatal instead of reconnecting with the rejected token', async () => {
-    recoverAuthRejectionMock.mockResolvedValueOnce(false);
+  it('keeps a confirmed anonymous 4401 recovery fatal instead of reconnecting', async () => {
+    recoverAuthRejectionMock.mockResolvedValueOnce('anonymous');
     getWsClient();
     const rawClient = createRawGraphQLWsClient({
       url: 'wss://api.test/graphql',
@@ -357,5 +359,20 @@ describe('Expo web GraphQL WebSocket auth', () => {
     expect(BrowserSocketStub.instances).toHaveLength(1);
     expect(getAuthTokenMock).toHaveBeenCalledTimes(1);
     await rawClient.dispose();
+  });
+
+  it('keeps a 4401 retryable while browser session revalidation is unavailable', async () => {
+    recoverAuthRejectionMock.mockResolvedValueOnce('unavailable');
+    getWsClient();
+    const BrowserAuthWebSocket = browserWebSocketImplementation();
+    const socket = new BrowserAuthWebSocket('wss://api.test/graphql');
+    const closeCodes: number[] = [];
+    socket.onclose = (event) => closeCodes.push(event.code);
+
+    BrowserSocketStub.instances[0]?.open();
+    BrowserSocketStub.instances[0]?.serverClose(4401, 'Unauthorized');
+
+    await vi.waitFor(() => expect(closeCodes).toEqual([4403]));
+    expect(recoverAuthRejectionMock).toHaveBeenCalledOnce();
   });
 });

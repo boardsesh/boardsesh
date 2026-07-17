@@ -302,4 +302,42 @@ describe('signOut', () => {
     expect(clearTokensForGenerationMock).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('returns false when a newer login arrives while credential deletion succeeds', async () => {
+    let currentGeneration = 1;
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let finishClear!: (cleared: boolean) => void;
+    clearTokensForGenerationMock.mockImplementationOnce(() => {
+      currentGeneration = 2;
+      return new Promise<boolean>((resolve) => {
+        finishClear = resolve;
+      });
+    });
+
+    const oldSignOut = signOutForGeneration(1);
+    await vi.waitFor(() => expect(clearTokensForGenerationMock).toHaveBeenCalledWith(1));
+    currentGeneration = 3;
+    finishClear(true);
+
+    await expect(oldSignOut).resolves.toBe(false);
+  });
+
+  it('returns false when a newer login arrives while credential deletion fails', async () => {
+    let currentGeneration = 1;
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let failClear!: (error: unknown) => void;
+    clearTokensForGenerationMock.mockImplementationOnce(() => {
+      currentGeneration = 2;
+      return new Promise<boolean>((_resolve, reject) => {
+        failClear = reject;
+      });
+    });
+
+    const oldSignOut = signOutForGeneration(1);
+    await vi.waitFor(() => expect(clearTokensForGenerationMock).toHaveBeenCalledWith(1));
+    currentGeneration = 3;
+    failClear(new Error('old credential cleanup failed'));
+
+    await expect(oldSignOut).resolves.toBe(false);
+  });
 });

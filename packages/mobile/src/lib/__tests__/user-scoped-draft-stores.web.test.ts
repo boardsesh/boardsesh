@@ -15,6 +15,10 @@ vi.mock('@react-native-async-storage/async-storage', () => {
       removeItem: vi.fn(async (key: string) => {
         delete storage[key];
       }),
+      getAllKeys: vi.fn(async () => Object.keys(storage)),
+      removeMany: vi.fn(async (keys: string[]) => {
+        keys.forEach((key) => delete storage[key]);
+      }),
       __reset: () => {
         storage = {};
       },
@@ -81,5 +85,33 @@ describe('browser user-scoped draft stores', () => {
     await expect(getDraftComment('session-1')).resolves.toBeNull();
     setCurrentUserStorageOwner(userASessionOne);
     await expect(getDraftComment('session-1')).resolves.toBe('A private recap');
+  });
+
+  it('clears all create-climb drafts for only the supplied owner', async () => {
+    const { clearAllCreateClimbDrafts, loadDraft, saveDraft } = await import('../create-climb-draft-store.web');
+    const firstDraft = { holdsJson: '{}', name: 'A project', description: '', isDraft: true };
+    const secondDraft = { ...firstDraft, name: 'A second project' };
+    const otherUserDraft = { ...firstDraft, name: 'B project' };
+    await saveDraft('first-board', firstDraft, userASessionOne);
+    await saveDraft('second-board', secondDraft, userASessionOne);
+    await saveDraft('first-board', otherUserDraft, userBSession);
+
+    await clearAllCreateClimbDrafts(userASessionOne);
+
+    await expect(loadDraft('first-board', userASessionOne)).resolves.toBeNull();
+    await expect(loadDraft('second-board', userASessionOne)).resolves.toBeNull();
+    await expect(loadDraft('first-board', userBSession)).resolves.toEqual(otherUserDraft);
+  });
+
+  it('clears the recap draft for only the supplied owner', async () => {
+    const { clearSessionCommentDraft, getDraftComment, setDraftComment } =
+      await import('../session-comment-draft-store.web');
+    await setDraftComment('session-1', 'A private recap', userASessionOne);
+    await setDraftComment('session-1', 'B private recap', userBSession);
+
+    await clearSessionCommentDraft(userASessionOne);
+
+    await expect(getDraftComment('session-1', userASessionOne)).resolves.toBeNull();
+    await expect(getDraftComment('session-1', userBSession)).resolves.toBe('B private recap');
   });
 });

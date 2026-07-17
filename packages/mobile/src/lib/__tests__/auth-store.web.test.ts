@@ -272,8 +272,8 @@ describe('synchronizeWebSession', () => {
         newValue: JSON.stringify({ event: 'session', data: { trigger: 'signout', userId: 'attacker' } }),
       }),
     );
-    expect(listener).toHaveBeenCalledWith(null, 'remote');
-    await expect(getAuthToken()).resolves.toBeNull();
+    expect(listener).toHaveBeenCalledWith('backend-jwe', 'hint');
+    await expect(getAuthToken()).resolves.toBe('backend-jwe');
     unsubscribe();
   });
 

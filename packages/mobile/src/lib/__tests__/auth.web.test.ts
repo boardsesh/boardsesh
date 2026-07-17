@@ -56,17 +56,72 @@ describe('Expo web credentials auth', () => {
     await expect(getAuthToken()).resolves.toBe('backend-jwe');
   });
 
-  it('maps a NextAuth credentials error without calling the token bridge', async () => {
+  it('maps a NextAuth credentials error after reconciling the unchanged cookie', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
-      .mockResolvedValueOnce(jsonResponse({ url: '/api/auth/error?error=CredentialsSignin' }));
+      .mockResolvedValueOnce(jsonResponse({ url: '/api/auth/error?error=CredentialsSignin' }))
+      .mockResolvedValueOnce(jsonResponse({}));
 
     await expect(signInWithCredentials('climber@example.com', 'wrong')).resolves.toEqual({
       success: false,
       status: 401,
       error: 'invalid_credentials',
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/auth/csrf',
+      '/api/auth/callback/credentials',
+      '/api/auth/session',
+    ]);
+  });
+
+  it('adopts a new cookie even when the credentials callback body is truncated', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('old-user-jwe'));
+    await synchronizeWebSession();
+
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
+      .mockResolvedValueOnce(
+        new Response('{', {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('new-user-jwe', 'user-2', 'login-2'));
+
+    await expect(signInWithCredentials('new-climber@example.com', 'password')).resolves.toEqual({ success: true });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/auth/csrf',
+      '/api/auth/callback/credentials',
+      '/api/auth/session',
+      '/api/internal/ws-auth',
+    ]);
+    await expect(getAuthToken()).resolves.toBe('new-user-jwe');
+  });
+
+  it('restores the prior login when a failed credentials callback leaves its cookie unchanged', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('old-user-jwe'));
+    await synchronizeWebSession();
+
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
+      .mockResolvedValueOnce(jsonResponse({ url: '/api/auth/error?error=CredentialsSignin' }))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('restored-user-jwe'));
+
+    await expect(signInWithCredentials('other@example.com', 'wrong')).resolves.toEqual({
+      success: false,
+      status: 401,
+      error: 'invalid_credentials',
+    });
+    await expect(getAuthToken()).resolves.toBe('restored-user-jwe');
   });
 
   it('keeps verification-required registration distinct from an authenticated result', async () => {
@@ -115,16 +170,23 @@ describe('Expo web credentials auth', () => {
 
     fetchMock.mockReset();
     fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
       .mockResolvedValueOnce(jsonResponse({ url: '/app' }));
 
     await signOut();
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/auth/csrf', '/api/auth/signout']);
-    const signOutOptions = fetchMock.mock.calls[1]?.[1] as RequestInit;
-    const signOutBody = new URLSearchParams(requestBody(1));
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/auth/session',
+      '/api/auth/csrf',
+      '/api/auth/signout',
+    ]);
+    const signOutOptions = fetchMock.mock.calls[2]?.[1] as RequestInit;
+    const signOutBody = new URLSearchParams(requestBody(2));
     expect(signOutBody.get('csrfToken')).toBe('csrf-token');
     expect(signOutBody.get('callbackUrl')).toBe('/app');
+    expect(signOutBody.get('expectedUserId')).toBe('user-1');
+    expect(signOutBody.get('expectedAuthSessionId')).toBe('login-1');
     expect(new Headers(signOutOptions.headers).get('X-Auth-Return-Redirect')).toBe('1');
     await expect(getAuthToken()).resolves.toBeNull();
   });
@@ -137,11 +199,37 @@ describe('Expo web credentials auth', () => {
 
     fetchMock.mockReset();
     fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
       .mockResolvedValueOnce(jsonResponse({ error: 'unavailable' }, 503));
 
     await expect(signOut()).rejects.toThrow('Could not sign out: HTTP 503');
     await expect(getAuthToken()).resolves.toBeNull();
+  });
+
+  it('clears the exposed memory credential before a slow durable sign-out finishes', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('backend-jwe'));
+    await synchronizeWebSession();
+
+    let resolveCsrf!: (response: Response) => void;
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolveCsrf = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ url: '/app' }));
+
+    const pendingSignOut = signOut();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await expect(getAuthToken()).resolves.toBeNull();
+
+    resolveCsrf(jsonResponse({ csrfToken: 'csrf-token' }));
+    await expect(pendingSignOut).resolves.toBeUndefined();
   });
 
   it('clears the memory credential when NextAuth rejects the sign-out callback', async () => {
@@ -152,6 +240,7 @@ describe('Expo web credentials auth', () => {
 
     fetchMock.mockReset();
     fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
       .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
       .mockResolvedValueOnce(jsonResponse({ url: '/api/auth/signout?csrf=true' }));
 
@@ -166,41 +255,129 @@ describe('Expo web credentials auth', () => {
     await synchronizeWebSession();
 
     fetchMock.mockReset();
-    fetchMock.mockRejectedValueOnce(new Error('offline'));
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockRejectedValueOnce(new Error('offline'));
 
     await expect(signOut()).rejects.toThrow('Could not start sign-out: network');
     await expect(getAuthToken()).resolves.toBeNull();
   });
 
   it('does not let an old sign-out clear a newer browser credential owner', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('old-user-jwe'));
+    await synchronizeWebSession();
+
+    fetchMock.mockReset();
     const oldGeneration = captureAuthCredentialGeneration();
     let resolveOldCsrf!: (response: Response) => void;
     fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
       .mockReturnValueOnce(
         new Promise<Response>((resolve) => {
           resolveOldCsrf = resolve;
         }),
-      )
-      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
-      .mockResolvedValueOnce(authenticatedBridgeResponse('new-user-jwe', 'user-2', 'login-2'));
+      );
 
     const oldSignOut = signOutForGeneration(oldGeneration);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await clearTokens();
+    resolveOldCsrf(jsonResponse({ csrfToken: 'old-csrf' }));
+    await expect(oldSignOut).resolves.toBe(false);
+
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('new-user-jwe', 'user-2', 'login-2'));
     await expect(synchronizeWebSession()).resolves.toEqual({
       status: 'authenticated',
       token: 'new-user-jwe',
       userId: 'user-2',
       authSessionId: 'login-2',
     });
-    resolveOldCsrf(jsonResponse({ csrfToken: 'old-csrf' }));
 
-    await expect(oldSignOut).resolves.toBe(false);
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/auth/session',
       '/api/auth/csrf',
       '/api/auth/session',
       '/api/internal/ws-auth',
     ]);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
+  });
+
+  it('does not post sign-out when the shared cookie already belongs to a newer login', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('old-user-jwe'));
+    await synchronizeWebSession();
+    const oldGeneration = captureAuthCredentialGeneration();
+
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('new-user-jwe', 'user-2', 'login-2'));
+
+    await expect(signOutForGeneration(oldGeneration)).resolves.toBe(false);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/auth/session',
+      '/api/auth/session',
+      '/api/internal/ws-auth',
+    ]);
+    await expect(getAuthToken()).resolves.toBe('new-user-jwe');
+  });
+
+  it('adopts a newer login when the server identity guard rejects the sign-out POST', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('old-user-jwe'));
+    await synchronizeWebSession();
+    const oldGeneration = captureAuthCredentialGeneration();
+
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'signout_identity_changed' }, 409))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-2' }, authSessionId: 'login-2' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('new-user-jwe', 'user-2', 'login-2'));
+
+    await expect(signOutForGeneration(oldGeneration)).resolves.toBe(false);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/auth/session',
+      '/api/auth/csrf',
+      '/api/auth/signout',
+      '/api/auth/session',
+      '/api/internal/ws-auth',
+    ]);
+    await expect(getAuthToken()).resolves.toBe('new-user-jwe');
+  });
+
+  it('does not post sign-out when another tab already removed the shared cookie', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('old-user-jwe'));
+    await synchronizeWebSession();
+    const oldGeneration = captureAuthCredentialGeneration();
+
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+
+    await expect(signOutForGeneration(oldGeneration)).resolves.toBe(true);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/auth/session']);
+    await expect(getAuthToken()).resolves.toBeNull();
+  });
+
+  it('does not adopt a newer generation while its local clear yields', async () => {
+    const oldGeneration = captureAuthCredentialGeneration();
+
+    const oldSignOut = signOutForGeneration(oldGeneration);
+    await clearTokens();
+
+    await expect(oldSignOut).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

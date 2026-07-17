@@ -1,4 +1,4 @@
-import { getPreference, removePreference, setPreference } from './preference-store';
+import { getPreference, removePreference, removePreferencesMatching, setPreference } from './preference-store';
 import type { UserStorageOwner } from './user-storage-owner';
 import { userScopedStorageKey } from './user-storage-owner.web';
 
@@ -52,4 +52,11 @@ export function saveDraft(boardKey: string, draft: CreateClimbDraft, owner?: Use
 export function clearDraft(boardKey: string, owner?: UserStorageOwner | null): Promise<void> {
   const scopedKey = userScopedStorageKey(storageKey(boardKey), owner);
   return scopedKey ? removePreference(scopedKey) : Promise.resolve();
+}
+
+/** Drops every create-climb draft owned by one authenticated browser session. */
+export function clearAllCreateClimbDrafts(owner?: UserStorageOwner | null): Promise<void> {
+  const ownerSuffix = userScopedStorageKey('', owner);
+  if (!ownerSuffix) return Promise.resolve();
+  return removePreferencesMatching((key) => key.startsWith(KEY_PREFIX) && key.endsWith(ownerSuffix));
 }

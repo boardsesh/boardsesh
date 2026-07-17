@@ -30,6 +30,11 @@ export async function getDraftComment(sessionId: string, owner?: UserStorageOwne
 }
 
 export function clearDraftComment(_sessionId: string, owner?: UserStorageOwner | null): Promise<void> {
+  return clearSessionCommentDraft(owner);
+}
+
+/** Drop the single recap draft owned by one authenticated browser session. */
+export function clearSessionCommentDraft(owner?: UserStorageOwner | null): Promise<void> {
   const storageKey = userScopedStorageKey(SESSION_COMMENT_DRAFT_KEY, owner);
   return storageKey ? removePreference(storageKey) : Promise.resolve();
 }

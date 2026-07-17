@@ -1,3 +1,5 @@
+import { withAuthCookieLock } from './auth-cookie-lock.web';
+
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
   | { status: 'anonymous' }
@@ -28,13 +30,25 @@ type WsAuthResponse = {
   authSessionId?: unknown;
 };
 
-export type AuthTokenChangeSource = 'local' | 'remote' | 'session' | 'hint';
+export type AuthTokenChangeSource = 'local' | 'remote' | 'remote-signout' | 'session' | 'hint';
 export type AuthTokenChangeListener = (token: string | null, source: AuthTokenChangeSource) => void;
 
-type AuthTokenClearedMessage = {
+type AuthTokenClearedMessageBase = {
   type: 'auth-token-cleared';
   sourceId: string;
 };
+
+type AuthTokenClearedMessage = AuthTokenClearedMessageBase &
+  (
+    | { reason: 'credential-rotation' }
+    | { reason: 'signout-started'; identity: WebAuthIdentity }
+    | { reason: 'confirmed-signout'; identity: WebAuthIdentity }
+  );
+
+type AuthTokenClearPayload =
+  | { reason: 'credential-rotation' }
+  | { reason: 'signout-started'; identity: WebAuthIdentity }
+  | { reason: 'confirmed-signout'; identity: WebAuthIdentity };
 
 let backendToken: string | null = null;
 let confirmedSessionIdentity: WebAuthIdentity | null | undefined;
@@ -62,10 +76,45 @@ function createAuthSignalSourceId(): string {
 
 const authSignalSourceId = createAuthSignalSourceId();
 
-function isAuthTokenClearedMessage(message: unknown): message is AuthTokenClearedMessage {
-  if (typeof message !== 'object' || message === null || Array.isArray(message)) return false;
+function readWebAuthIdentity(identity: unknown): WebAuthIdentity | null {
+  if (typeof identity !== 'object' || identity === null || Array.isArray(identity)) return null;
+  const candidate = identity as Record<string, unknown>;
+  if (typeof candidate.userId !== 'string' || !candidate.userId) return null;
+  if (typeof candidate.authSessionId !== 'string' || !candidate.authSessionId) return null;
+  return { userId: candidate.userId, authSessionId: candidate.authSessionId };
+}
+
+function parseAuthTokenClearedMessage(message: unknown): AuthTokenClearedMessage | null {
+  if (typeof message !== 'object' || message === null || Array.isArray(message)) return null;
   const candidate = message as Record<string, unknown>;
-  return candidate.type === 'auth-token-cleared' && typeof candidate.sourceId === 'string';
+  if (candidate.type !== 'auth-token-cleared' || typeof candidate.sourceId !== 'string') return null;
+
+  if (candidate.reason === undefined || candidate.reason === 'credential-rotation') {
+    return {
+      type: 'auth-token-cleared',
+      sourceId: candidate.sourceId,
+      reason: 'credential-rotation',
+    };
+  }
+  if (candidate.reason !== 'signout-started' && candidate.reason !== 'confirmed-signout') return null;
+
+  const identity = readWebAuthIdentity(candidate.identity);
+  if (identity === null) {
+    // A brief mixed-version window can deliver the reason before every sender
+    // includes its owner. It remains a revalidation-triggering rotation, never
+    // an unscoped authoritative logout of whichever account now owns this tab.
+    return {
+      type: 'auth-token-cleared',
+      sourceId: candidate.sourceId,
+      reason: 'credential-rotation',
+    };
+  }
+  return {
+    type: 'auth-token-cleared',
+    sourceId: candidate.sourceId,
+    reason: candidate.reason,
+    identity,
+  };
 }
 
 function notifyAuthTokenChange(token: string | null, source: AuthTokenChangeSource): void {
@@ -94,11 +143,31 @@ function createAuthTokenChannel(): BroadcastChannel | null {
     const channel = new BroadcastChannel(AUTH_TOKEN_CHANNEL_NAME);
     channel.addEventListener('message', (event: MessageEvent<unknown>) => {
       try {
-        if (!isAuthTokenClearedMessage(event.data) || event.data.sourceId === authSignalSourceId) return;
+        const message = parseAuthTokenClearedMessage(event.data);
+        if (message === null || message.sourceId === authSignalSourceId) return;
         // Remote invalidation is intentionally not broadcast again. Every tab
         // receives the original channel message directly, so rebroadcasting here
         // would create a logout loop and duplicate generation/listener updates.
-        clearInMemoryTokens('remote');
+        if (message.reason === 'credential-rotation') {
+          clearInMemoryTokens('remote');
+          return;
+        }
+
+        if (confirmedSessionIdentity !== undefined && !sameIdentity(confirmedSessionIdentity, message.identity)) {
+          // The durable sign-out belongs to an older login. Keep the newly
+          // confirmed owner usable, but re-read the shared cookie as a guard
+          // against unusual delivery ordering between browser primitives.
+          notifyAuthTokenChange(backendToken, 'hint');
+          return;
+        }
+        if (message.reason === 'signout-started') {
+          // Only the tab that already owns the cookie lock emits this signal.
+          // Fence peer requests and queued peer sign-outs; the lock owner does
+          // not receive its own BroadcastChannel message and keeps ownership.
+          clearInMemoryTokens('remote');
+          return;
+        }
+        clearInMemoryTokens('remote-signout');
       } catch {
         // A malformed or late page-teardown event cannot break auth startup.
       }
@@ -124,13 +193,11 @@ function createNextAuthStorageListener(): void {
       const candidate = message as Record<string, unknown>;
       if (candidate.event !== 'session') return;
       if (typeof candidate.data !== 'object' || candidate.data === null || Array.isArray(candidate.data)) return;
-      const messageData = candidate.data as Record<string, unknown>;
       // NextAuth's storage payload is only a hint. Never adopt identity or token
-      // data from it. A sign-out can stop credential use immediately; normal
-      // getSession broadcasts first re-read the HttpOnly cookie and rotate only
-      // if that authoritative response proves the login scope changed.
-      if (messageData.trigger === 'signout') clearInMemoryTokens('remote');
-      else notifyAuthTokenChange(backendToken, 'hint');
+      // data from it or treat an identity-less sign-out as authoritative. Every
+      // trigger first re-reads the HttpOnly cookie, and that response rotates or
+      // clears credentials only when it proves the login scope changed.
+      notifyAuthTokenChange(backendToken, 'hint');
     } catch {
       // Ignore malformed third-party/local storage events.
     }
@@ -213,6 +280,11 @@ async function fetchWithAbort(input: string, init: RequestInit, signal: AbortSig
 
 export function captureAuthCredentialGeneration(): number {
   return sessionGeneration;
+}
+
+export function captureConfirmedWebAuthIdentity(): WebAuthIdentity | null {
+  if (confirmedSessionIdentity === undefined || confirmedSessionIdentity === null) return null;
+  return { ...confirmedSessionIdentity };
 }
 
 export function isAuthCredentialGenerationCurrent(generation: number): boolean {
@@ -362,10 +434,18 @@ export function synchronizeWebSession(): Promise<AuthSessionResult> {
     () => controller.abort(new Error('Authentication session synchronization timed out')),
     SESSION_SYNCHRONIZATION_TIMEOUT_MS,
   );
-  const promise = fetchWebSession(generation, controller.signal).finally(() => {
-    clearTimeout(timeout);
-    if (synchronization?.promise === promise) synchronization = null;
-  });
+  const promise = withAuthCookieLock(async (): Promise<AuthSessionResult> => {
+    if (!isAuthCredentialGenerationCurrent(generation)) return { status: 'superseded' };
+    return fetchWebSession(generation, controller.signal);
+  }, controller.signal)
+    .catch((error: unknown): AuthSessionResult => {
+      if (!isAuthCredentialGenerationCurrent(generation)) return { status: 'superseded' };
+      return unavailable(error);
+    })
+    .finally(() => {
+      clearTimeout(timeout);
+      if (synchronization?.promise === promise) synchronization = null;
+    });
   synchronization = { generation, controller, promise };
   return promise;
 }
@@ -397,17 +477,59 @@ export function subscribeAuthTokenChanges(listener: AuthTokenChangeListener): ()
   return () => authTokenChangeListeners.delete(listener);
 }
 
-export async function clearTokens(): Promise<void> {
-  clearInMemoryTokens('local');
+function broadcastAuthTokenClear(payload: AuthTokenClearPayload): void {
   try {
     authTokenChannel?.postMessage({
       type: 'auth-token-cleared',
       sourceId: authSignalSourceId,
+      ...payload,
     } satisfies AuthTokenClearedMessage);
   } catch {
     // BroadcastChannel is best-effort. Local logout and generation invalidation
     // must still complete if a browser closes the channel during page teardown.
   }
+}
+
+export async function clearTokens(): Promise<void> {
+  clearInMemoryTokens('local');
+  broadcastCredentialRotation();
+}
+
+/** Prompt peer tabs to re-read the cookie without changing this tab's generation. */
+export function broadcastCredentialRotation(): void {
+  broadcastAuthTokenClear({ reason: 'credential-rotation' });
+}
+
+/**
+ * Stop this tab from using its JWE while a locked sign-out is in flight. Peer
+ * tabs are notified only after this caller owns the cookie lock and verifies
+ * the departing identity; an unscoped rotation here lets peer sign-outs cancel
+ * one another before either caller owns durable revocation.
+ */
+export async function isolateTokensForSignOut(): Promise<void> {
+  clearInMemoryTokens('local');
+}
+
+/** Prompt same-login peers to stop using their JWE while logout holds the cookie lock. */
+export function broadcastSignOutStarted(identity: WebAuthIdentity): void {
+  broadcastAuthTokenClear({
+    reason: 'signout-started',
+    identity: { ...identity },
+  });
+}
+
+/** Tell peer tabs that the shared HttpOnly session was durably deleted. */
+export function broadcastConfirmedSignOut(
+  departingIdentity: WebAuthIdentity | null = captureConfirmedWebAuthIdentity(),
+): void {
+  if (departingIdentity === null) {
+    broadcastAuthTokenClear({ reason: 'credential-rotation' });
+    return;
+  }
+  broadcastAuthTokenClear({
+    reason: 'confirmed-signout',
+    identity: { ...departingIdentity },
+  });
 }
 
 export async function isTokenExpiringSoon(): Promise<boolean> {
