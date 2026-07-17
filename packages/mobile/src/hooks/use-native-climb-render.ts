@@ -41,10 +41,11 @@ const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
  *
  * Note: no `mirrored` input here. Callers (ClimbListThumbnail,
  * BoardImageNative) flip with a CSS scaleX(-1) so a single cached PNG serves
- * both orientations; the Rust config is always pinned to `mirrored: false`.
+ * both orientations; the renderer config is always pinned to `mirrored: false`.
  * If we ever need true Rust-side mirroring (e.g. for an export pipeline that
  * doesn't go through <Image>), thread it back in, change configBase.mirrored,
- * and restore the cache-key suffix together.
+ * and restore the cache-key suffix together — don't desync the cache from
+ * what gets rendered.
  */
 type NativeClimbRenderParams = {
   frames: string;
@@ -133,15 +134,6 @@ const BOARD_CONFIG_CACHE_MAX = 20;
  * render with no useEffect-driven update.
  */
 const renderedOverlays = new Map<string, string>();
-const RENDERED_OVERLAYS_MAX = 512;
-
-function rememberRenderedOverlay(cacheKey: string, uri: string): void {
-  if (renderedOverlays.has(cacheKey)) renderedOverlays.delete(cacheKey);
-  renderedOverlays.set(cacheKey, uri);
-  if (renderedOverlays.size <= RENDERED_OVERLAYS_MAX) return;
-  const oldestKey = renderedOverlays.keys().next().value;
-  if (oldestKey !== undefined) renderedOverlays.delete(oldestKey);
-}
 
 /**
  * One-time eager scan of the native module's PNG cache directory. The
@@ -187,7 +179,7 @@ function warmupRenderedOverlaysOnce(): void {
         continue;
       }
       const cacheKey = name.slice(0, -'.png'.length);
-      rememberRenderedOverlay(cacheKey, entry.uri);
+      renderedOverlays.set(cacheKey, entry.uri);
     }
   } catch {
     // Filesystem errors at startup shouldn't break the app — the hook's
@@ -401,10 +393,11 @@ function getBoardConfig(
     board_width: renderData.boardWidth,
     board_height: renderData.boardHeight,
     output_width: outputWidth,
-    // The view layer mirrors the complete background + overlay stack. Keep the
-    // renderer unmirrored so both orientations reuse one cached image. This is
-    // explicit for older committed WASM artifacts that predate the Rust field's
-    // serde default.
+    // The view layer mirrors the complete background + overlay stack, so the
+    // renderer stays unmirrored and both orientations reuse one cached image.
+    // Pinned explicitly (a no-op on native, whose serde default is already
+    // false) for older committed WASM artifacts on web that predate the field's
+    // serde default and would otherwise render mirrored.
     mirrored: false,
     thumbnail: filledStyle,
     stroke_width_multiplier: brushThickness,
@@ -682,7 +675,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // have one for this cache key in the sync map.
   useEffect(() => {
     latestCacheKeyRef.current = currentCacheKey;
-    if (!frames) return;
+    if (!frames || unsupportedRenderSignatures.has(holdRenderSignature)) return;
 
     if (renderedOverlays.has(currentCacheKey)) {
       // Sync map already has it — make sure local state reflects that
@@ -697,67 +690,6 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
 
     const nativeModule = getNativeModule();
     if (!nativeModule) return;
-
-    const acceptRenderedOverlay = (fileUri: string) => {
-      rememberRenderedOverlay(currentCacheKey, fileUri);
-      if (mountedRef.current && latestCacheKeyRef.current === currentCacheKey) {
-        setNativeRender({ key: currentCacheKey, uri: fileUri });
-      }
-    };
-
-    const reportRenderFailure = (error: unknown, cacheKey: string) => {
-      const message = error instanceof Error ? error.message : String(error);
-      // eslint-disable-next-line no-console
-      console.warn(`[useNativeClimbRender] render failed for ${cacheKey}:`, message);
-      reportError(error, {
-        tags: {
-          feature: 'mobile_board_renderer',
-          boardName,
-        },
-        extra: {
-          layoutId,
-          sizeId,
-          setIds,
-          filledStyle,
-          renderWidth,
-          framesLength: frames.length,
-          cacheKey,
-        },
-      });
-    };
-
-    const renderWithDefaultMarkers = () => {
-      const fallbackConfig = getBoardConfig(
-        boardName,
-        layoutId,
-        sizeId,
-        setIds,
-        filledStyle,
-        renderWidth,
-        holdColorOverrides,
-        {},
-        DEFAULT_HOLD_BRUSH_THICKNESS,
-        DEFAULT_HOLD_SHAPE_SIZE,
-        `${holdRenderSignature}.markers-default`,
-      );
-      if (!fallbackConfig) return;
-      const fallbackCacheKey = `${currentCacheKey}_markers-default`;
-      const fallbackPromise = getOrStartInflightRender(fallbackCacheKey, () => {
-        const configJson = JSON.stringify({
-          ...fallbackConfig.configBase,
-          frames,
-        });
-        return nativeModule.renderHoldsOverlay(configJson, fallbackCacheKey);
-      });
-      fallbackPromise
-        .then(acceptRenderedOverlay)
-        .catch((error: unknown) => reportRenderFailure(error, fallbackCacheKey));
-    };
-
-    if (unsupportedRenderSignatures.has(holdRenderSignature)) {
-      renderWithDefaultMarkers();
-      return;
-    }
 
     const boardConfig = getBoardConfig(
       boardName,
@@ -782,18 +714,46 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       return nativeModule.renderHoldsOverlay(configJson, currentCacheKey);
     });
 
-    renderPromise.then(acceptRenderedOverlay).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (
-        holdRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE &&
-        message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE)
-      ) {
-        unsupportedRenderSignatures.add(holdRenderSignature);
-        renderWithDefaultMarkers();
-        return;
-      }
-      reportRenderFailure(error, currentCacheKey);
-    });
+    renderPromise
+      .then((fileUri) => {
+        renderedOverlays.set(currentCacheKey, fileUri);
+        // Discard a stale resolution (props moved on while this render was in
+        // flight) — see latestCacheKeyRef. The sync map above still keeps the
+        // file, so swiping back to this climb is an instant cache hit.
+        if (mountedRef.current && latestCacheKeyRef.current === currentCacheKey) {
+          setNativeRender({ key: currentCacheKey, uri: fileUri });
+        }
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          holdRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE &&
+          message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE)
+        ) {
+          unsupportedRenderSignatures.add(holdRenderSignature);
+        }
+        // Native render failed -- overlay stays null, backgrounds still show.
+        // Surface the cause in Metro logs so we can diagnose; without this
+        // the silent catch masked every binary/ABI mismatch behind a blank
+        // overlay layer.
+        // eslint-disable-next-line no-console
+        console.warn(`[useNativeClimbRender] render failed for ${currentCacheKey}:`, message);
+        reportError(error, {
+          tags: {
+            feature: 'mobile_board_renderer',
+            boardName,
+          },
+          extra: {
+            layoutId,
+            sizeId,
+            setIds,
+            filledStyle,
+            renderWidth,
+            framesLength: frames.length,
+            cacheKey: currentCacheKey,
+          },
+        });
+      });
     // nativeRender is intentionally excluded from deps: this effect *sets* it,
     // and the only meaningful re-trigger is a cacheKey change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
