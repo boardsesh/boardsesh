@@ -490,6 +490,7 @@ export async function signOutForGeneration(signOutGeneration: number): Promise<b
     // deletion/tombstone path below from removing locally usable credentials.
   }
   if (!isAuthCredentialGenerationCurrent(signOutGeneration)) return false;
+  const clearedGeneration = signOutGeneration + 1;
   const clearPromise = clearTokensForGeneration(signOutGeneration);
   if (refreshToken) {
     // Best-effort server-side revocation — don't block on failure
@@ -499,7 +500,13 @@ export async function signOutForGeneration(signOutGeneration: number): Promise<b
       body: JSON.stringify({ refreshToken }),
     }).catch(() => {});
   }
-  return clearPromise;
+  try {
+    const cleared = await clearPromise;
+    return cleared && isAuthCredentialGenerationCurrent(clearedGeneration);
+  } catch (error) {
+    if (!isAuthCredentialGenerationCurrent(clearedGeneration)) return false;
+    throw error;
+  }
 }
 
 export async function signOut(): Promise<void> {

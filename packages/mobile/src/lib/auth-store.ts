@@ -106,7 +106,8 @@ export function clearTokensForGeneration(generation: number): Promise<boolean> {
   if (!isAuthCredentialGenerationCurrent(generation)) return Promise.resolve(false);
   // Invalidate in-flight token writes synchronously, before deletion waits for
   // the serialized SecureStore mutation boundary.
-  credentialGeneration += 1;
+  const clearedGeneration = generation + 1;
+  credentialGeneration = clearedGeneration;
   return serializeCredentialMutation(async (): Promise<boolean> => {
     const results = await Promise.allSettled([
       clearStoredCredential(JWT_KEY),
@@ -115,9 +116,14 @@ export function clearTokensForGeneration(generation: number): Promise<boolean> {
     ]);
     const failures = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []));
     if (failures.length > 0) {
+      // A newer sign-in queues its writes behind this cleanup but takes
+      // generation ownership immediately. Its credentials will replace any
+      // failed deletion/tombstone once this mutation settles, so the old
+      // sign-out must neither report ownership nor surface its stale failure.
+      if (!isAuthCredentialGenerationCurrent(clearedGeneration)) return false;
       throw new AuthCredentialCleanupError('Failed to clear one or more stored auth credentials', failures);
     }
-    return true;
+    return isAuthCredentialGenerationCurrent(clearedGeneration);
   });
 }
 

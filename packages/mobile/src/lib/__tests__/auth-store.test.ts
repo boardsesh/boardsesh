@@ -164,4 +164,71 @@ describe('auth-store', () => {
     ).resolves.toBe(false);
     expect(store.setItemAsync).not.toHaveBeenCalled();
   });
+
+  it('reports a successful clear as superseded when a newer login takes generation ownership', async () => {
+    const store = await secureStore();
+    const {
+      captureAuthCredentialGeneration,
+      clearTokensForGeneration,
+      getAuthToken,
+      getRefreshToken,
+      getTokenExpiresAt,
+      storeTokens,
+    } = await import('../auth-store');
+    await storeTokens('old-jwt', 'old-refresh', '2026-08-01T00:00:00.000Z');
+    const oldGeneration = captureAuthCredentialGeneration();
+    let releaseFirstDelete!: () => void;
+    store.deleteItemAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirstDelete = resolve;
+        }),
+    );
+
+    const oldClear = clearTokensForGeneration(oldGeneration);
+    await vi.waitFor(() => expect(store.deleteItemAsync).toHaveBeenCalledTimes(3));
+    const newerLogin = storeTokens('new-jwt', 'new-refresh', '2026-10-01T00:00:00.000Z');
+    releaseFirstDelete();
+
+    await expect(oldClear).resolves.toBe(false);
+    await newerLogin;
+    await expect(getAuthToken()).resolves.toBe('new-jwt');
+    await expect(getRefreshToken()).resolves.toBe('new-refresh');
+    await expect(getTokenExpiresAt()).resolves.toEqual(new Date('2026-10-01T00:00:00.000Z'));
+  });
+
+  it('suppresses a stale clear failure when a newer login is queued behind it', async () => {
+    const store = await secureStore();
+    const {
+      captureAuthCredentialGeneration,
+      clearTokensForGeneration,
+      getAuthToken,
+      getRefreshToken,
+      getTokenExpiresAt,
+      storeTokens,
+    } = await import('../auth-store');
+    await storeTokens('old-jwt', 'old-refresh', '2026-08-01T00:00:00.000Z');
+    const oldGeneration = captureAuthCredentialGeneration();
+    store.deleteItemAsync.mockClear();
+    store.deleteItemAsync.mockRejectedValue(new Error('delete unavailable'));
+    store.setItemAsync.mockClear();
+    let rejectTombstones!: (reason?: unknown) => void;
+    const tombstoneFailure = new Promise<void>((_resolve, reject) => {
+      rejectTombstones = reject;
+    });
+    store.setItemAsync.mockImplementationOnce(() => tombstoneFailure);
+    store.setItemAsync.mockImplementationOnce(() => tombstoneFailure);
+    store.setItemAsync.mockImplementationOnce(() => tombstoneFailure);
+
+    const oldClear = clearTokensForGeneration(oldGeneration);
+    await vi.waitFor(() => expect(store.setItemAsync).toHaveBeenCalledTimes(3));
+    const newerLogin = storeTokens('new-jwt', 'new-refresh', '2026-10-01T00:00:00.000Z');
+    rejectTombstones(new Error('tombstone unavailable'));
+
+    await expect(oldClear).resolves.toBe(false);
+    await newerLogin;
+    await expect(getAuthToken()).resolves.toBe('new-jwt');
+    await expect(getRefreshToken()).resolves.toBe('new-refresh');
+    await expect(getTokenExpiresAt()).resolves.toEqual(new Date('2026-10-01T00:00:00.000Z'));
+  });
 });

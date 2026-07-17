@@ -12,8 +12,11 @@ import { reportError, reportHandledError } from './error-reporting';
 
 type AuthRefreshResult =
   | { status: 'refreshed'; generation: number }
-  | { status: 'failed'; generation: number }
+  | { status: 'rejected'; generation: number }
+  | { status: 'unavailable'; generation: number }
   | { status: 'superseded' };
+
+export type NativeAuthRejectionResult = AuthRefreshResult['status'];
 
 let refresh: { generation: number; promise: Promise<AuthRefreshResult> } | null = null;
 
@@ -28,14 +31,14 @@ export function setOnForcedSignOut(callback: (() => void) | null): void {
   onForcedSignOut = callback;
 }
 
-function failedRefreshResult(generation: number): AuthRefreshResult {
-  return isAuthCredentialGenerationCurrent(generation) ? { status: 'failed', generation } : { status: 'superseded' };
+function rejectedRefreshResult(generation: number): AuthRefreshResult {
+  return isAuthCredentialGenerationCurrent(generation) ? { status: 'rejected', generation } : { status: 'superseded' };
 }
 
 async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshResult> {
   const currentRefreshToken = await getRefreshToken();
   if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
-  if (!currentRefreshToken) return failedRefreshResult(credentialGeneration);
+  if (!currentRefreshToken) return rejectedRefreshResult(credentialGeneration);
 
   try {
     const response = await fetch(`${BACKEND_URL}/auth/native/refresh`, {
@@ -58,7 +61,9 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
           extra: { status: response.status },
         });
       }
-      return { status: 'failed', generation: credentialGeneration };
+      return response.status === 401 || response.status === 403
+        ? { status: 'rejected', generation: credentialGeneration }
+        : { status: 'unavailable', generation: credentialGeneration };
     }
 
     const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
@@ -69,7 +74,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
     console.warn('[Auth] Token refresh error:', error instanceof Error ? error.message : 'unknown');
     // Offline/aborted refreshes downgrade to a warning; a real throw reports.
     reportHandledError(error, { tags: { source: 'auth-refresh' } });
-    return { status: 'failed', generation: credentialGeneration };
+    return { status: 'unavailable', generation: credentialGeneration };
   }
 }
 
@@ -126,10 +131,10 @@ function forceSignOut(generation: number): Promise<void> {
 }
 
 /** Recover a server-rejected credential or finish the forced sign-out path. */
-export async function recoverAuthRejection(): Promise<boolean> {
+export async function recoverAuthRejection(): Promise<NativeAuthRejectionResult> {
   const refreshResult = await deduplicatedRefresh();
-  if (refreshResult.status === 'failed') await forceSignOut(refreshResult.generation);
-  return refreshResult.status === 'refreshed';
+  if (refreshResult.status === 'rejected') await forceSignOut(refreshResult.generation);
+  return refreshResult.status;
 }
 
 export async function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {
@@ -149,16 +154,14 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
   }
 
   const response = await fetch(url, { ...options, headers });
-  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-    throw new Error('Authentication session changed while the request was in flight');
-  }
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) return response;
 
   // On 401, force a refresh regardless of token expiry (server may have
   // revoked the token) and retry once with the new credentials.
   if (response.status === 401 && token) {
     const refreshResult = await deduplicatedRefresh();
     if (refreshResult.status === 'superseded' || !isAuthCredentialGenerationCurrent(requestGeneration)) {
-      throw new Error('Authentication session changed while the request was in flight');
+      return response;
     }
     if (
       refreshResult.status === 'refreshed' &&
@@ -166,22 +169,16 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
       isAuthCredentialGenerationCurrent(requestGeneration)
     ) {
       const newToken = await getAuthToken();
-      if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-        throw new Error('Authentication session changed while the request was in flight');
-      }
+      if (!isAuthCredentialGenerationCurrent(requestGeneration)) return response;
       if (newToken) {
         headers.set('Authorization', `Bearer ${newToken}`);
-        const retryResponse = await fetch(url, { ...options, headers });
-        if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
-          throw new Error('Authentication session changed while the request was in flight');
-        }
-        return retryResponse;
+        return fetch(url, { ...options, headers });
       }
     }
     // signOut() only revokes + clears tokens. forceSignOut also tells the provider
     // to run the rest of the cleanup so the UI leaves the authenticated screens
     // immediately, instead of waiting for the next background→foreground checkAuth.
-    if (refreshResult.status === 'failed') {
+    if (refreshResult.status === 'rejected') {
       await forceSignOut(refreshResult.generation);
       return response;
     }
