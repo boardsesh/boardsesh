@@ -82,13 +82,17 @@ describe('GET /api/internal/ws-auth', () => {
     expect(getTokenMock).toHaveBeenCalledTimes(2);
   });
 
-  it('does not expose a raw cookie whose decoded token has no login identity', async () => {
-    getTokenMock.mockResolvedValue({ sub: 'user-1' });
+  it('keeps a valid pre-deploy cookie usable while its login identity is backfilled', async () => {
+    getTokenMock.mockResolvedValueOnce({ sub: 'user-1' }).mockResolvedValueOnce('legacy-encrypted-session-token');
 
     const response = await GET(request());
 
-    await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
-    expect(getTokenMock).toHaveBeenCalledTimes(1);
+    await expect(response.json()).resolves.toEqual({
+      token: 'legacy-encrypted-session-token',
+      authenticated: true,
+      userId: 'user-1',
+    });
+    expect(getTokenMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps failures private and non-cacheable', async () => {

@@ -25,13 +25,7 @@ export async function GET(request: NextRequest) {
     // exposing its encrypted representation to the browser. `raw: true` alone
     // only reads the cookie bytes and can return malformed or subject-less data.
     const decodedToken = await getToken({ ...tokenOptions, raw: false });
-    if (
-      !decodedToken ||
-      typeof decodedToken.sub !== 'string' ||
-      !decodedToken.sub.trim() ||
-      typeof decodedToken.authSessionId !== 'string' ||
-      !decodedToken.authSessionId.trim()
-    ) {
+    if (!decodedToken || typeof decodedToken.sub !== 'string' || !decodedToken.sub.trim()) {
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 
@@ -42,12 +36,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 
+    const authSessionId =
+      typeof decodedToken.authSessionId === 'string' && decodedToken.authSessionId.trim()
+        ? decodedToken.authSessionId
+        : undefined;
+
     return NextResponse.json(
       {
         token,
         authenticated: true,
         userId: decodedToken.sub,
-        authSessionId: decodedToken.authSessionId,
+        ...(authSessionId ? { authSessionId } : {}),
       },
       { headers: PRIVATE_NO_STORE_HEADERS },
     );
