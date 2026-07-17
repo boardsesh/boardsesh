@@ -117,10 +117,25 @@ export function shellQuote(value: string): string {
  * `script` allocates a pty for the wrapped command (so its stdin reports
  * isTTY === true) and forwards whatever bytes arrive on *our* stdin through
  * that pty — so piping "y\n" lands as if a human typed it at the confirm
- * prompt. `-e` propagates the child's real exit code back out.
+ * prompt. `-e` propagates the child's real exit code back out. This is
+ * util-linux `script` syntax (Linux only — CI runs ubuntu-latest, and a local
+ * interactive run has a real TTY and never takes this path); macOS's BSD
+ * `script` takes its command as trailing positional args instead of `-c`.
  */
 export function buildPtyWrapperArgs(command: string[]): { command: string; args: string[] } {
   return { command: 'script', args: ['-qec', command.map(shellQuote).join(' '), '/dev/null'] };
+}
+
+/** Runs `command` under a faked pty (see buildPtyWrapperArgs) and auto-answers its confirm prompt. */
+function spawnWithFakedPty(command: string[], cwd: string, env: NodeJS.ProcessEnv) {
+  const { command: ptyCommand, args } = buildPtyWrapperArgs(command);
+  console.log('[ota-rollback] No TTY on stdin — auto-confirming via a faked pty (see needsPtyWorkaround).');
+  return spawnSync(ptyCommand, args, {
+    cwd,
+    input: 'y\n',
+    stdio: ['pipe', 'inherit', 'inherit'],
+    env,
+  });
 }
 
 function main(): number {
@@ -162,18 +177,8 @@ function main(): number {
   delete eoasEnv.EAS_BUILD;
   eoasEnv.PATH = pathWithoutBrokenBunxShims(process.env.PATH);
 
-  const bunxCommand = ['bunx', ...eoasArgs];
   const result = needsPtyWorkaround(options.mode, process.stdin.isTTY)
-    ? (() => {
-        const { command, args } = buildPtyWrapperArgs(bunxCommand);
-        console.log('[ota-rollback] No TTY on stdin — auto-confirming via a faked pty (see needsPtyWorkaround).');
-        return spawnSync(command, args, {
-          cwd: MOBILE_DIR,
-          input: 'y\n',
-          stdio: ['pipe', 'inherit', 'inherit'],
-          env: eoasEnv,
-        });
-      })()
+    ? spawnWithFakedPty(['bunx', ...eoasArgs], MOBILE_DIR, eoasEnv)
     : spawnSync('bunx', eoasArgs, {
         cwd: MOBILE_DIR,
         stdio: 'inherit', // a real terminal: let eoas prompt normally (republish needs it anyway)
