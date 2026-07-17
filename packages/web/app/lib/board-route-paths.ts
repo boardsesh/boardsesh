@@ -18,6 +18,16 @@ function getPathSegments(pathname: string): string[] {
   return segments;
 }
 
+/**
+ * Locale-stripped path segments for a board route. Exposed so the Expo-web
+ * rollout redirect map (edge middleware) can decompose a board URL into its
+ * board-config parts without re-implementing the `/es/…`, `/fr/…` prefix
+ * handling that classification already gets right.
+ */
+export function getBoardRouteSegments(pathname: string): string[] {
+  return getPathSegments(pathname);
+}
+
 export function isBoardRoutePath(pathname: string | null | undefined): boolean {
   if (!pathname) return false;
 
@@ -36,6 +46,20 @@ export function isBoardListPath(pathname: string | null | undefined): boolean {
   }
 
   return segments.length === 6 && segments[5] === 'list';
+}
+
+export function isBoardViewPath(pathname: string | null | undefined): boolean {
+  if (!pathname || !isBoardRoutePath(pathname)) return false;
+
+  const segments = getPathSegments(pathname);
+
+  // Slug form: /b/[board_slug]/[angle]/view/[climb_uuid]
+  if (segments[0] === 'b') {
+    return segments.length === 5 && segments[3] === 'view';
+  }
+
+  // Legacy form: /[board]/[layout]/[size]/[sets]/[angle]/view/[climb_uuid]
+  return segments.length === 7 && segments[5] === 'view';
 }
 
 export function isBoardCreatePath(pathname: string | null | undefined): boolean {
