@@ -31,7 +31,8 @@
     "notifications": "Notificaciones",
     "searchClimbsByName": "Buscar bloques por nombre",
     "userMenu": "Menú de usuario",
-    "toggleDarkMode": "Cambiar modo oscuro"
+    "toggleDarkMode": "Cambiar modo oscuro",
+    "startClimbing": "Empieza a escalar en la app"
   },
   "boardSelector": {
     "title": "Elige un plafón"
@@ -44,7 +45,8 @@
     "createdClimbs": "Bloques creados",
     "auroraMigration": "Migración de Aurora",
     "searchPlaceholder": "¿Qué quieres escalar?",
-    "searchClimbsPlaceholder": "Busca bloques..."
+    "searchClimbsPlaceholder": "Busca bloques...",
+    "startClimbing": "Empieza a escalar"
   },
   "share": {
     "profileTitle": "Perfil de escalada de {{name}}",
