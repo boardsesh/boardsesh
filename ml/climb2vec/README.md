@@ -49,7 +49,7 @@ The encoder limit is 40 holds; any physical problem containing a zero-hold or
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-pip install torch --index-url https://download.pytorch.org/whl/cpu   # for Deep Sets
+pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu   # for Deep Sets
 
 # 1. Rebuild deterministic per-hold morphology from committed transparent art.
 vp run db:extract-hold-morphology --

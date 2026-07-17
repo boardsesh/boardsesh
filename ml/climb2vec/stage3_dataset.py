@@ -256,6 +256,9 @@ def fit_hold_effects(
             _hold_token(row, hold)
             for row in rows
             for hold in row["holds"]
+            # The extractor maps STARTING/HAND/FINISH to the behavioral
+            # ``hand`` role and FOOT to ``foot``; state remains a separate
+            # physical-identity and model feature.
             if hold.get("role") in {"hand", "foot"}
         }
     )

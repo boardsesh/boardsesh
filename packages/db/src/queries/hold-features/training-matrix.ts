@@ -214,7 +214,6 @@ export function deduplicateTrainingRowsByPhysicalAngle(rows: readonly TrainingRo
   }
 
   const rejectedBenchmarkGroups: RejectedBenchmarkGroup[] = [];
-  const rejectedPhysicalKeys = new Set<string>();
   for (const group of byPhysicalAngle.values()) {
     const ordered = [...group].sort((left, right) => left.climbUuid.localeCompare(right.climbUuid));
     const representative = ordered[0]!;
@@ -226,7 +225,6 @@ export function deduplicateTrainingRowsByPhysicalAngle(rows: readonly TrainingRo
     );
     if (benchmarkDifficulties.size > 1) {
       const physicalKey = representative.physicalKey!;
-      rejectedPhysicalKeys.add(physicalKey);
       rejectedBenchmarkGroups.push({
         physicalKey,
         angle: representative.angle,
@@ -246,7 +244,6 @@ export function deduplicateTrainingRowsByPhysicalAngle(rows: readonly TrainingRo
   const deduplicatedRows = [...byPhysicalAngle.values()].flatMap((group) => {
     const ordered = [...group].sort((left, right) => left.climbUuid.localeCompare(right.climbUuid));
     const representative = ordered[0]!;
-    if (rejectedPhysicalKeys.has(representative.physicalKey!)) return [];
     const benchmarkDifficulties = new Set(
       ordered
         .map((row) => row.benchmarkDifficulty)

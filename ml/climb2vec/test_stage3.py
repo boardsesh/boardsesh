@@ -138,14 +138,18 @@ class Stage3SplitTest(unittest.TestCase):
                     )
 
     def test_tension_benchmark_seals_every_angle_for_physical_problem(self):
+        benchmark_row = row(
+            "benchmark-problem",
+            board="tension",
+            climb="benchmark",
+            angle=40,
+            benchmark=21,
+        )
+        # Cold benchmark-only rows deliberately remain in the extract with zero
+        # training weight so their answer key can be sealed before any fit.
+        benchmark_row["labelWeight"] = 0
         rows = [
-            row(
-                "benchmark-problem",
-                board="tension",
-                climb="benchmark",
-                angle=40,
-                benchmark=21,
-            ),
+            benchmark_row,
             row(
                 "benchmark-problem",
                 board="tension",
@@ -166,6 +170,7 @@ class Stage3SplitTest(unittest.TestCase):
             {item["physicalKey"] for item in split.tension_benchmark},
             {"benchmark-problem"},
         )
+        self.assertIn(benchmark_row, split.tension_benchmark)
 
     def test_sealed_tension_key_collision_with_kilter_fails_loudly(self):
         rows = [
@@ -291,7 +296,7 @@ class Stage3FeatureTest(unittest.TestCase):
         self.assertGreater(float(weights.min()), 0)
         self.assertAlmostEqual(float(weights[-1] / weights[0]), 10_000)
 
-    def test_fit_hold_effects_is_fold_local_and_uses_hand_foot_roles(self):
+    def test_fit_hold_effects_includes_starting_and_finish_as_hand_roles(self):
         easy = {
             **row("easy", label=10),
             "holds": [hold(101, state="STARTING")],
@@ -383,6 +388,17 @@ class Stage3ArtifactTest(unittest.TestCase):
         self.assertEqual(
             content_sd_for("kilter", 20, {"kilter": {"v3-5": 0.0}}),
             1e-4,
+        )
+
+    def test_moon_content_sd_uses_conservative_cross_board_calibration(self):
+        calibration = {
+            "kilter": {"v3-5": 1.1, "all": 1.2},
+            "tension": {"v3-5": 1.4, "all": 1.5},
+        }
+
+        self.assertEqual(
+            content_sd_for("moonboard", 20, calibration),
+            1.4,
         )
 
     def test_export_converts_universal_kilter_prediction_back_to_local(self):

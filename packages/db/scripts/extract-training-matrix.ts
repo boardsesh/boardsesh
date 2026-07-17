@@ -15,11 +15,15 @@
  *        · --angle=<deg> · --limit=<n> (`--limit` is forbidden for Stage 2).
  */
 import { createHash } from 'node:crypto';
-import { mkdirSync, createWriteStream } from 'node:fs';
+import { mkdirSync, createReadStream, createWriteStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import { sql } from 'drizzle-orm';
+import { createInterface } from 'node:readline';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { and, desc, eq, max, ne, sql } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
+import { boardGradeCoefficients } from '../src/schema/app/climb-grades.js';
 import { climbHoldPlacementMatchSql, moonBoardPlacementCoverageSql } from '../src/queries/climbs/placement-match.js';
 import {
   buildBehaviorEvidence,
@@ -58,7 +62,7 @@ const DEFAULT_MIN_ASCENTS = 20;
 const MORPHOLOGY_VECTOR_LENGTH = 12;
 
 type Db = ReturnType<typeof createScriptDb>['db'];
-type ReadDb = Pick<Db, 'execute'>;
+type ReadDb = Pick<Db, 'execute' | 'select'>;
 
 interface Options {
   boards: string[];
@@ -98,33 +102,39 @@ function morphologyKey(boardType: string, layoutId: number, holdId: number): str
 
 async function loadMorphology(options: Options): Promise<MorphologyBundle | null> {
   if (!options.morphologyPath) return null;
-  const artifact = await readFile(options.morphologyPath, 'utf8');
-  const records = artifact
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as MorphologyRecord);
-  const versions = new Set(records.map((record) => record.morphologyVersion));
+  const artifactHash = createHash('sha256');
+  const input = createReadStream(options.morphologyPath);
+  input.on('data', (chunk) => artifactHash.update(chunk));
+  const reader = createInterface({ input, crlfDelay: Infinity });
+  const versions = new Set<string>();
+  const byHold = new Map<string, MorphologyRecord>();
+  try {
+    for await (const line of reader) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const record = JSON.parse(trimmed) as MorphologyRecord;
+      versions.add(record.morphologyVersion);
+      if (record.vector.length !== MORPHOLOGY_VECTOR_LENGTH || !record.vector.every(Number.isFinite)) {
+        throw new Error(
+          `Invalid morphology vector for ${record.boardType}:${record.layoutId}:` +
+            `${record.placementId ?? record.gridCellId}`,
+        );
+      }
+      const holdId = record.boardType === 'moonboard' ? record.gridCellId : record.placementId;
+      if (holdId === undefined) throw new Error('Morphology record is missing its hold identity.');
+      const key = morphologyKey(record.boardType, Number(record.layoutId), Number(holdId));
+      if (byHold.has(key)) throw new Error(`Duplicate morphology record ${key}.`);
+      byHold.set(key, record);
+    }
+  } finally {
+    reader.close();
+    input.destroy();
+  }
   if (versions.size !== 1) throw new Error(`Morphology artifact has mixed versions: ${[...versions].join(', ')}`);
-  const morphologyVersion = records[0]?.morphologyVersion;
+  const morphologyVersion = versions.values().next().value;
   if (!morphologyVersion) throw new Error(`Morphology artifact ${options.morphologyPath} is empty.`);
 
-  const byHold = new Map<string, MorphologyRecord>();
-  for (const record of records) {
-    if (record.vector.length !== MORPHOLOGY_VECTOR_LENGTH || !record.vector.every(Number.isFinite)) {
-      throw new Error(
-        `Invalid morphology vector for ${record.boardType}:${record.layoutId}:` +
-          `${record.placementId ?? record.gridCellId}`,
-      );
-    }
-    const holdId = record.boardType === 'moonboard' ? record.gridCellId : record.placementId;
-    if (holdId === undefined) throw new Error('Morphology record is missing its hold identity.');
-    const key = morphologyKey(record.boardType, Number(record.layoutId), Number(holdId));
-    if (byHold.has(key)) throw new Error(`Duplicate morphology record ${key}.`);
-    byHold.set(key, record);
-  }
-
-  const artifactSha256 = createHash('sha256').update(artifact).digest('hex');
+  const artifactSha256 = artifactHash.digest('hex');
   let sourceVersionHash = artifactSha256;
   let coverage: number | null = null;
   if (options.morphologyManifestPath) {
@@ -247,38 +257,48 @@ async function loadStats(db: ReadDb, options: Options, board: string): Promise<C
 }
 
 async function loadFrozenCoefficients(db: ReadDb, requestedVersion: string | null): Promise<GradeCoefficients> {
-  const versions = rowsOf<{ coeff_version: string }>(
-    await db.execute(
-      requestedVersion
-        ? sql`SELECT ${requestedVersion}::text AS coeff_version`
-        : sql`
-            SELECT coeff_version
-            FROM board_grade_coefficients
-            WHERE kind <> 'gate_results'
-            GROUP BY coeff_version
-            ORDER BY MAX(created_at) DESC
-            LIMIT 1
-          `,
-    ),
-  );
-  const coeffVersion = versions[0]?.coeff_version;
+  let coeffVersion = requestedVersion;
+  if (coeffVersion === null) {
+    const latestCreatedAt = max(boardGradeCoefficients.createdAt);
+    const [latestRow] = await db
+      .select({
+        coeffVersion: boardGradeCoefficients.coeffVersion,
+        latestCreatedAt,
+      })
+      .from(boardGradeCoefficients)
+      .where(ne(boardGradeCoefficients.kind, 'gate_results'))
+      .groupBy(boardGradeCoefficients.coeffVersion)
+      .orderBy(desc(latestCreatedAt))
+      .limit(1);
+    coeffVersion = latestRow?.coeffVersion ?? null;
+  }
   if (!coeffVersion) {
     throw new Error('No frozen grade coefficient set exists; stage2 targets require a published coefficient snapshot.');
   }
-  const rows = rowsOf<FrozenCoefficientRow>(
-    await db.execute(sql`
-      SELECT coeff_version, kind, key, payload
-      FROM board_grade_coefficients
-      WHERE coeff_version = ${coeffVersion} AND kind <> 'gate_results'
-    `),
-  );
+  const rows: FrozenCoefficientRow[] = (
+    await db
+      .select({
+        coeffVersion: boardGradeCoefficients.coeffVersion,
+        kind: boardGradeCoefficients.kind,
+        key: boardGradeCoefficients.key,
+        payload: boardGradeCoefficients.payload,
+      })
+      .from(boardGradeCoefficients)
+      .where(
+        and(eq(boardGradeCoefficients.coeffVersion, coeffVersion), ne(boardGradeCoefficients.kind, 'gate_results')),
+      )
+  ).map((row) => ({
+    coeff_version: row.coeffVersion,
+    kind: row.kind,
+    key: row.key,
+    payload: row.payload,
+  }));
   const coefficients = hydrateFrozenGradeCoefficients(rows);
   if (!coefficients) throw new Error(`Coefficient snapshot ${coeffVersion} is empty.`);
   return coefficients;
 }
 
 async function loadStage2Evidence(db: ReadDb, coefficients: GradeCoefficients): Promise<Stage2EvidenceMap> {
-  await db.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
   const raterTrainingRows = rowsOf<RaterSampleRow>(
     await db.execute(buildRaterSampleSql({ excludeTensionBenchmarkHoldout: true })),
   );
@@ -600,14 +620,14 @@ async function main(): Promise<void> {
     const stream = createWriteStream(options.out, { encoding: 'utf8' });
     let written = 0;
     let holdTotal = 0;
-    for (const row of outputRows) {
-      stream.write(`${JSON.stringify(row)}\n`);
-      written++;
-      holdTotal += row.holds.length;
+    function* outputLines(): Generator<string> {
+      for (const row of outputRows) {
+        written++;
+        holdTotal += row.holds.length;
+        yield `${JSON.stringify(row)}\n`;
+      }
     }
-    await new Promise<void>((resolve, reject) =>
-      stream.end((error?: Error | null) => (error ? reject(error) : resolve())),
-    );
+    await pipeline(Readable.from(outputLines()), stream);
     if (options.target === 'stage2' && !options.scoreAll) {
       await writeFile(
         `${options.out}.rejections.json`,

@@ -163,6 +163,39 @@ void describe('content-prior shadow blend', () => {
     assert.deepEqual(new Set(report.segments.map((segment) => segment.dimension)), new Set(['angle', 'grade_band']));
   });
 
+  void test('fails closed when either MAE population has fewer than 100 rows', () => {
+    const rows = [
+      ...Array.from({ length: 99 }, (_, index) => backtestRow(index, true, index < 50 ? 'kilter' : 'tension')),
+      ...Array.from({ length: 99 }, (_, index) => backtestRow(index + 99, false, index < 49 ? 'kilter' : 'tension')),
+    ];
+    const candidates: ContentPriorCandidate[] = rows.map((row, index) => ({
+      boardType: row.board_type,
+      climbUuid: row.climb_uuid,
+      angle: row.angle,
+      contentPrior: 20,
+      contentSd: 1,
+      ascents: 50,
+      difficultyAverage: 20,
+      displayDifficulty: 20,
+      physicalKey: `${row.board_type}-physical-${Math.floor(index / 2)}`,
+    }));
+    const baseline = {
+      tailGate: { gate: 'tail_backtest', passed: true, detail: 'test', metrics: {} },
+      headGate: { gate: 'head_holdout', passed: true, detail: 'test', metrics: {} },
+      report: {
+        multiAngle: { n: 99, rawMae: 0, shrunkMae: 0 },
+        singleAngle: { n: 99, rawMae: 0, shrunkMae: 0 },
+      },
+    };
+
+    const report = evaluateContentPriorShadow(rows, candidates, coefficients, baseline);
+    assert.equal(report.tail.n, 99);
+    assert.equal(report.tail.passed, false);
+    assert.equal(report.head.n, 99);
+    assert.equal(report.head.passed, false);
+    assert.equal(report.passed, false);
+  });
+
   void test('blocks when supported-row prediction coverage falls below 95 percent', () => {
     const rows = [
       ...Array.from({ length: 110 }, (_, index) => backtestRow(index, true)),

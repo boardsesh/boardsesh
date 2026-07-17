@@ -53,7 +53,7 @@ jobs:
       - name: Install Python deps (offline training only)
         run: |
           python -m pip install --quiet -r ml/climb2vec/requirements.txt
-          python -m pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --quiet torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
 
       - name: Extract training + score matrices
         env:

@@ -444,6 +444,9 @@ def content_sd_for(
             value = source.get("all")
         if value is not None:
             candidates.append(float(value))
+    # MoonBoard has no independent calibration answer in our feed. The
+    # pre-registered policy therefore takes the larger available held-out RMSE
+    # instead of inventing a more precise transfer estimate.
     return max(MIN_CONTENT_SD, max(candidates)) if candidates else 1.5
 
 
@@ -808,6 +811,11 @@ def run_experiment(args) -> dict:
         seed=selected.seed,
         epochs=args.epochs,
     )
+    # This is deliberate cross-fitted stacking, not an accidental feature
+    # mismatch. The residual fit must see out-of-fold GBM predictions/effects
+    # or its own labels leak through those nuisance features. Sealed and score
+    # rows instead use the GBM/effects refit on all development rows, exactly as
+    # the serving artifact will; the sealed test measures that complete pipeline.
     test_baseline = data.predict_gbm(
         final_gbm,
         final_effects,
