@@ -1,4 +1,5 @@
 import { withAuthCookieLock } from './auth-cookie-lock.web';
+import type { AuthTokenChangeListener, AuthTokenChangeSource } from './auth-token-events';
 
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
@@ -30,8 +31,10 @@ type WsAuthResponse = {
   authSessionId?: unknown;
 };
 
-export type AuthTokenChangeSource = 'local' | 'remote' | 'remote-signout' | 'session' | 'hint';
-export type AuthTokenChangeListener = (token: string | null, source: AuthTokenChangeSource) => void;
+// Single definition lives in auth-token-events (imported above); re-exported
+// here because this file (and its .web fork) is where web consumers import
+// these from.
+export type { AuthTokenChangeListener, AuthTokenChangeSource };
 
 type AuthTokenClearedMessageBase = {
   type: 'auth-token-cleared';

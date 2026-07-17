@@ -6,6 +6,7 @@ import {
 } from './auth-store.web';
 import { signOutForGeneration } from './auth.web';
 import { reportHandledError } from './error-reporting';
+import type { AuthRejectionResult } from './auth-rejection-result';
 
 let onForcedSignOut: (() => void) | null = null;
 type WebRefreshResult =
@@ -13,8 +14,6 @@ type WebRefreshResult =
   | { status: 'anonymous'; generation: number }
   | { status: 'unavailable'; generation: number }
   | { status: 'superseded' };
-
-export type WebAuthRejectionResult = WebRefreshResult['status'];
 
 let refresh: { generation: number; promise: Promise<WebRefreshResult> } | null = null;
 let forcedSignOut: { generation: number; promise: Promise<void> } | null = null;
@@ -94,7 +93,7 @@ export async function deduplicatedRefresh(): Promise<boolean> {
  * superseded request or unavailable endpoint must leave a newer/current session
  * alone while the rejected WebSocket closes without retrying its stale token.
  */
-export async function recoverAuthRejection(): Promise<WebAuthRejectionResult> {
+export async function recoverAuthRejection(): Promise<AuthRejectionResult> {
   const refreshResult = await deduplicatedSessionRefresh();
   if (refreshResult.status === 'anonymous') await forceSignOut(refreshResult.generation);
   return refreshResult.status;
