@@ -88,7 +88,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </Suspense>
         {/* QueryClientProvider sits inside SessionProviderWrapper so its
             PersistQueryClientProvider can read useSession() — do not reorder. */}
-        <SessionProviderWrapper>
+        <SessionProviderWrapper enableExpoAuthBridge={process.env.BOARDSESH_WEB === '1'}>
           <QueryClientProvider>
             <AppRouterCacheProvider>
               <ColorModeProvider>

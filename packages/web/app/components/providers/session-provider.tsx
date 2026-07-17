@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, type ReactNode } from 'react';
 import type { Session } from 'next-auth';
 import { getSession, SessionProvider, useSession } from 'next-auth/react';
+import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-fetch-lock';
 
 const EXPO_AUTH_CHANNEL_NAME = 'boardsesh-expo-web-auth-v1';
 const NEXT_AUTH_STORAGE_KEY = 'nextauth.message';
@@ -72,12 +73,22 @@ export function ExpoAuthSessionBridge() {
 
 type SessionProviderWrapperProps = {
   children: ReactNode;
+  enableExpoAuthBridge?: boolean;
 };
 
-export default function SessionProviderWrapper({ children }: SessionProviderWrapperProps) {
+export default function SessionProviderWrapper({
+  children,
+  enableExpoAuthBridge = false,
+}: SessionProviderWrapperProps) {
+  if (enableExpoAuthBridge) {
+    // NextAuth starts its initial session read when the child provider renders.
+    // Install synchronously so that read and later callback/sign-out mutations
+    // use the same cookie lock as the Expo browser app.
+    installNextAuthCookieFetchLock();
+  }
   return (
     <SessionProvider refetchOnWindowFocus={false} refetchWhenOffline={false}>
-      <ExpoAuthSessionBridge />
+      {enableExpoAuthBridge && <ExpoAuthSessionBridge />}
       {children}
     </SessionProvider>
   );
