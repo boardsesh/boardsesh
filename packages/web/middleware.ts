@@ -11,6 +11,15 @@ import {
   isSupportedLocale,
 } from './app/lib/i18n/config';
 import { detectLocale } from './app/lib/i18n/detect-locale';
+import {
+  EXPO_WEB_CLASSIC_COOKIE,
+  EXPO_WEB_CLASSIC_PARAM,
+  hasAuthSessionCookie,
+  hasClassicOptOutCookie,
+  isExpoWebFlagCookieOn,
+  isExpoWebRolloutEnabled,
+  mapToExpoWebTarget,
+} from './app/lib/expo-web-rollout';
 
 const SPECIAL_ROUTES = ['angles', 'grades']; // routes that don't need board validation
 
@@ -146,6 +155,39 @@ export function middleware(request: NextRequest) {
       maxAge: 86400,
     });
     return response;
+  }
+
+  // Expo-web rollout: route logged-in visitors on migrated board surfaces to
+  // the /app Expo-web SPA, gated on BOARDSESH_WEB=1 AND the mirrored
+  // `expo-web-app` flag cookie AND a next-auth session. Off in every dimension
+  // by default — a logged-out visitor, a crawler, or a visitor whose flag
+  // hasn't resolved never redirects, so public/SEO board views stay canonical.
+  // Runs before locale detection so a migrated surface makes at most one hop
+  // straight to the locale-neutral /app SPA (no locale bounce first).
+  if (isExpoWebRolloutEnabled()) {
+    // Escape hatch: `?classic=1` pins the bs_classic cookie and lands the
+    // visitor back on the classic URL (param stripped), mirroring the ?session=
+    // handling above. From then on the cookie alone forces classic.
+    if (request.nextUrl.searchParams.get(EXPO_WEB_CLASSIC_PARAM) !== null) {
+      const classicUrl = request.nextUrl.clone();
+      classicUrl.searchParams.delete(EXPO_WEB_CLASSIC_PARAM);
+      const classicResponse = NextResponse.redirect(classicUrl, 307);
+      classicResponse.cookies.set(EXPO_WEB_CLASSIC_COOKIE, '1', {
+        path: '/',
+        sameSite: 'lax',
+        maxAge: 60 * 60 * 24 * 365,
+      });
+      return classicResponse;
+    }
+
+    if (!hasClassicOptOutCookie(request) && isExpoWebFlagCookieOn(request) && hasAuthSessionCookie(request)) {
+      const expoWebTarget = mapToExpoWebTarget(pathname);
+      if (expoWebTarget) {
+        // 307 (not 308): the flag can flip off at any time, so the redirect
+        // must never be cached by the browser as permanent.
+        return NextResponse.redirect(new URL(expoWebTarget, request.url), 307);
+      }
+    }
   }
 
   // Detect locale from URL prefix. API routes don't carry a locale prefix —

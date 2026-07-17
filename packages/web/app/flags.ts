@@ -1,3 +1,5 @@
+import { EXPO_WEB_FLAG } from '@/app/lib/expo-web-rollout';
+
 // A flat bag of runtime feature flags. `Record<string, boolean | undefined>` (rather than
 // the prior `Record<string, never>`, which made `useFeatureFlag` resolve to
 // `never` and was therefore unusable) so consumers can call
@@ -35,6 +37,10 @@ export const FEATURE_FLAG_KEYS = [
   GARMIN_WATCH_FLAG,
   BOARDSESH_GRADE_FLAG,
   GYM_KIOSK_FLAG,
+  // Master switch for the Expo-web rollout. FeatureFlagsProvider reads it from
+  // PostHog; ExpoWebRolloutCookieSync mirrors the resolved value into the
+  // `bs_expo_web` cookie that middleware's redirect map gates on.
+  EXPO_WEB_FLAG,
 ] as const;
 
 // Vercel's flags discovery endpoint expects an allFlags export.
