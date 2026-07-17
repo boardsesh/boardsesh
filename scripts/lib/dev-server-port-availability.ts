@@ -1,6 +1,7 @@
+/// <reference types="node" />
 import { createConnection, createServer } from 'node:net';
 
-type PortBindResult = 'available' | 'in-use' | 'unavailable' | 'unsupported';
+type PortBindResult = 'available' | 'in-use' | 'fallback-probe';
 
 function getErrorCode(error: unknown): string | undefined {
   return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
@@ -11,14 +12,13 @@ function getErrorCode(error: unknown): string | undefined {
 export function classifyDevServerPortBindError(error: unknown): Exclude<PortBindResult, 'available'> {
   const errorCode = getErrorCode(error);
   if (errorCode === 'EADDRINUSE') return 'in-use';
-  if (errorCode === 'EAFNOSUPPORT') return 'unsupported';
-  return 'unavailable';
+  return 'fallback-probe';
 }
 
 async function checkDefaultPortBind(port: number): Promise<PortBindResult> {
   return new Promise((resolve) => {
     const server = createServer();
-    server.once('error', (error) => {
+    server.once('error', (error: unknown) => {
       resolve(classifyDevServerPortBindError(error));
     });
     server.once('listening', () => {
@@ -56,9 +56,14 @@ async function isLocalhostPortInUse(port: number, timeout = 500): Promise<boolea
 /** Check whether a port can accept a backend-style wildcard listener. */
 export async function isDevServerPortInUse(port: number): Promise<boolean> {
   const bindResult = await checkDefaultPortBind(port);
-  if (bindResult !== 'unsupported') {
-    return bindResult !== 'available';
-  }
+  return resolveDevServerPortInUse(bindResult, () => isLocalhostPortInUse(port));
+}
 
-  return isLocalhostPortInUse(port);
+export async function resolveDevServerPortInUse(
+  bindResult: PortBindResult,
+  fallbackProbe: () => Promise<boolean>,
+): Promise<boolean> {
+  if (bindResult === 'available') return false;
+  if (bindResult === 'in-use') return true;
+  return fallbackProbe();
 }

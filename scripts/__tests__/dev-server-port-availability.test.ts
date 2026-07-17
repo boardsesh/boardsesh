@@ -1,8 +1,13 @@
+/// <reference types="node" />
 import { createServer, type Server } from 'node:net';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { classifyDevServerPortBindError, isDevServerPortInUse } from '../lib/dev-server-port-availability';
+import {
+  classifyDevServerPortBindError,
+  isDevServerPortInUse,
+  resolveDevServerPortInUse,
+} from '../lib/dev-server-port-availability';
 
 const openServers: Server[] = [];
 
@@ -71,13 +76,45 @@ describe('isDevServerPortInUse', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('treats permission failures as unavailable instead of falling back to a connection probe', () => {
+  it.each(['EPERM', 'EACCES', 'EAFNOSUPPORT'])(
+    'falls back to a connection probe when wildcard binding fails with %s',
+    (errorCode) => {
+      expect(classifyDevServerPortBindError(Object.assign(new Error('bind unavailable'), { code: errorCode }))).toBe(
+        'fallback-probe',
+      );
+    },
+  );
+
+  it('treats only EADDRINUSE as a definitive occupied result', () => {
+    expect(classifyDevServerPortBindError(Object.assign(new Error('occupied'), { code: 'EADDRINUSE' }))).toBe('in-use');
+  });
+
+  it('uses the connection fallback for indeterminate bind failures', async () => {
+    const availableFallback = async () => false;
+    const occupiedFallback = async () => true;
+
+    await expect(resolveDevServerPortInUse('fallback-probe', availableFallback)).resolves.toBe(false);
+    await expect(resolveDevServerPortInUse('fallback-probe', occupiedFallback)).resolves.toBe(true);
+  });
+
+  it('does not use the connection fallback for definitive bind results', async () => {
+    let fallbackCalled = false;
+    const fallback = async () => {
+      fallbackCalled = true;
+      return false;
+    };
+
+    await expect(resolveDevServerPortInUse('available', fallback)).resolves.toBe(false);
+    await expect(resolveDevServerPortInUse('in-use', fallback)).resolves.toBe(true);
+    expect(fallbackCalled).toBe(false);
+  });
+
+  it('classifies permission failures as fallback probes', () => {
     expect(classifyDevServerPortBindError(Object.assign(new Error('permission denied'), { code: 'EPERM' }))).toBe(
-      'unavailable',
+      'fallback-probe',
     );
     expect(classifyDevServerPortBindError(Object.assign(new Error('access denied'), { code: 'EACCES' }))).toBe(
-      'unavailable',
+      'fallback-probe',
     );
-    expect(classifyDevServerPortBindError(Object.assign(new Error('occupied'), { code: 'EADDRINUSE' }))).toBe('in-use');
   });
 });
