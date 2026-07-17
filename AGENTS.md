@@ -312,10 +312,15 @@ configuration behind that gate so native OTA fingerprints do not change.
   fingerprints.
 - `@gorhom/bottom-sheet` is a web-only implementation detail. It may be imported
   only by `packages/mobile/src/web-shims/bottom-sheet.tsx`; native and shared code
-  must keep importing `@expo/ui/community/bottom-sheet`. Its isolated install is
-  in `packages/mobile/web-runtime`; `vp` installs that nested lock for web/typecheck
-  tasks without exposing React Native Web to the native fingerprint graph. Gorhom
-  remains banned from the native graph because of the Android freeze fixed in #3167.
+  must keep importing `@expo/ui/community/bottom-sheet`. Expo's Vaul-based web
+  sheet renders, but does not implement the gesture-lock or keyboard contracts used
+  by QueueSheet and LogAscentSheet, and adds a scroll container around virtualized
+  sheet content. Keep Gorhom until those flows work against Expo's implementation;
+  mobile-browser keyboard behaviour remains a real-device QA gate.
+  Its isolated install is in `packages/mobile/web-runtime`; `vp` installs that
+  nested lock for web/typecheck tasks without exposing React Native Web to the
+  native fingerprint graph. Gorhom remains banned from the native graph because
+  of the Android freeze fixed in #3167.
 - Browser preferences use the v3 AsyncStorage `createAsyncStorage` IndexedDB
   implementation. Never persist authentication tokens in that store.
 - Platform-split native controls need a `.web.tsx` or shared fallback. Browser

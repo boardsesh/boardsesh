@@ -29,6 +29,19 @@ Examples: `QueueSheet`, `BoardSheet`, `LogAscentSheet`, `AngleSelectorSheet`,
 `ClimbActionsSheet`, `AddBetaVideoSheet` (sheet surfaces), `CreateDrawer` + `HoldRoleSheet`
 (declarative `Sheet`s).
 
+**Expo web implementation exception.** App and shared code still import
+`@expo/ui/community/bottom-sheet`, but Metro redirects that one module to
+`src/web-shims/bottom-sheet.tsx` on web. Expo SDK 57's Vaul implementation renders a sheet,
+but it is not compatible with the current interaction contract: gesture-lock props are no-ops,
+configured detents cannot be dragged between, snap-point content gains a second scroll owner
+around virtualized lists, keyboard behaviour props are no-ops, and there is no accurate
+post-animation dismissal signal. The isolated web shim uses Gorhom until Expo's implementation
+passes all of those gates. Keep Gorhom outside the native dependency graph because of the Android
+freeze fixed in #3167. Web QA must cover a long queue, row reorder without sheet movement,
+dragging between detents, note focus at a mobile viewport, and exactly-once dismissal. Soft-keyboard
+behaviour remains a real-device browser check even though the adapter preserves Gorhom's input and
+keyboard props.
+
 Prefer the controlled `visible` prop over an imperative ref + a local `isPresentedRef`: the
 coordinator reconciles present/dismiss from `visible`, and `onClose` fires only when the sheet is
 genuinely going away out from under the parent — a user pan-down / backdrop, or a displacement by

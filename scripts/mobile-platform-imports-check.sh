@@ -40,10 +40,13 @@ compose_bad=$(
     || true
 )
 
-# Gorhom was removed from native in #3167 after an Android freeze. Expo web uses
-# it behind one compatibility shim because @expo/ui's native sheet cannot render
-# there; no other app/shared module may import it. Metro's exact web redirect is
-# the only non-shim source allowed to name the package.
+# Gorhom was removed from native in #3167 after an Android freeze. Expo's
+# Vaul-based web sheet renders, but does not implement the gesture-lock and
+# keyboard contracts used by QueueSheet and LogAscentSheet and adds a scroll
+# container around virtualized content. Web keeps Gorhom behind one compatibility
+# shim for those flows (user-sanctioned web-only exception, 2026-07-17); no other
+# app/shared module may import it. Metro's exact web redirect is the only non-shim
+# source allowed to name the package.
 gorhom_bad=$(
   rg -l -g '*.{ts,tsx,js,jsx,mjs,cjs}' "['\"]@gorhom/bottom-sheet" "${gorhom_scan_dirs[@]}" \
     | grep -vE '^packages/mobile/(metro\.config\.js|src/web-shims/bottom-sheet\.tsx)$' \
