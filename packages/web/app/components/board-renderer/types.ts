@@ -3,6 +3,7 @@ export {
   HOLD_STATE_MAP,
   convertLitUpHoldsStringToMap,
   STATE_TO_PRIMARY_CODE,
+  getBoardStrokeWidthMultiplier,
 } from '@boardsesh/board-constants/hold-states';
 export type { HoldCode, HoldColor, HoldRenderStyle, HoldStateInfo } from '@boardsesh/board-constants/hold-states';
 export type { HoldState, LitupHold, LitUpHoldsMap } from '@boardsesh/shared-schema';

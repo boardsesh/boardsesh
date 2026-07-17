@@ -67,7 +67,21 @@ function configRequiresModernRenderer(configJson: string): boolean {
     return false;
   }
   if (!isRecord(parsedConfig)) return false;
-  if (isNonDefaultMultiplier(parsedConfig.stroke_width_multiplier)) return true;
+  // stroke_width_multiplier is deliberately NOT a gate here (unlike
+  // shape_size_multiplier below). renderHoldsOverlay and
+  // renderHoldsOverlayWithMarkers call the identical native renderOverlay()
+  // underneath (see BoardRendererModule.swift/.kt) — the "WithMarkers" name is
+  // purely a JS-side capability signal for whether a binary is new enough to
+  // trust, not a different render path. RenderConfig::stroke_width_multiplier
+  // is a plain #[serde(default)] f32 with no `deny_unknown_fields` on the
+  // struct (see board-renderer/core/src/types.rs), so on a binary that
+  // predates the field entirely, serde just ignores the unrecognized JSON key
+  // and renders at the built-in default — never a parse failure. Gating on it
+  // would instead throw MARKER_RENDERER_UNAVAILABLE_MESSAGE unconditionally
+  // (issue #2202: Grasshopper's board-level stroke default is now non-1.0
+  // even with zero user overrides), leaving the overlay permanently blank on
+  // any native binary that predates renderHoldsOverlayWithMarkers, instead of
+  // falling back to the classic path and just rendering without the boost.
   if (isNonDefaultMultiplier(parsedConfig.shape_size_multiplier)) return true;
 
   const holdStateMap = parsedConfig.hold_state_map;

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import type { BoardName } from '@boardsesh/shared-schema';
 
 // expo-file-system: stub Directory/Paths so the eager warm-up's
 // `new Directory(Paths.cache, 'board-thumbnails').list()` runs without
@@ -70,8 +71,9 @@ function asRecord(value: unknown): Record<string, unknown> {
 function getStateInfoByName(
   holdStateMap: Record<string, unknown>,
   stateName: string,
+  board: BoardName = 'kilter',
 ): Record<string, unknown> | undefined {
-  const stateCode = Object.entries(HOLD_STATE_MAP.kilter).find(([, stateInfo]) => stateInfo.name === stateName)?.[0];
+  const stateCode = Object.entries(HOLD_STATE_MAP[board]).find(([, stateInfo]) => stateInfo.name === stateName)?.[0];
   if (!stateCode) return undefined;
   return asRecord(holdStateMap[stateCode]);
 }
@@ -99,10 +101,12 @@ describe('buildCacheKey', () => {
     expect(small).not.toBe(full);
   });
 
-  it('uses RENDERER_VERSION v3 to invalidate stale overlay PNGs', () => {
-    // v3 marks marker shape, brush, and size override support. The version
-    // prefix guarantees rollout-era custom-marker cache files cannot be reused.
-    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v3_/);
+  it('uses RENDERER_VERSION v4 to invalidate stale overlay PNGs', () => {
+    // v4 (issue #2202) switches hold colors to each role's calibrated
+    // displayColor and boosts Grasshopper's default stroke width. The
+    // version prefix guarantees pre-fix v3 cache files (rendered with the
+    // raw, too-dark LED colors) cannot be reused.
+    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v4_/);
   });
 
   it('uses a distinct style token so filled (list) and stroke (play view) never collide', () => {
@@ -228,6 +232,53 @@ describe('_getBoardConfigForTests', () => {
     const holdStateMap = asRecord(configBase.hold_state_map);
     expect(getStateInfoByName(holdStateMap, 'HAND')?.color).toBe('#123456');
     expect(getStateInfoByName(holdStateMap, 'FOOT')?.shape).toBe('diamond');
+  });
+
+  it('issue #2202: prefers the calibrated displayColor over the raw LED color, and boosts Grasshopper stroke width', () => {
+    const boardConfig = _getBoardConfigForTests('grasshopper', 1, 10, '24', false);
+
+    expect(boardConfig).not.toBeNull();
+    const configBase = asRecord(boardConfig?.configBase);
+    const holdStateMap = asRecord(configBase.hold_state_map);
+
+    // Not the raw LED color '#0000FF' — that's far too dark against
+    // Grasshopper's busy board photo.
+    expect(getStateInfoByName(holdStateMap, 'HAND', 'grasshopper')?.color).toBe('#4455FF');
+    // Default brushThickness (1) × Grasshopper's board default (1.35).
+    expect(configBase.stroke_width_multiplier).toBe(1.35);
+  });
+
+  it('issue #2202: layers the board default under the user brush-thickness override, not instead of it', () => {
+    // getBoardConfig memoizes by (board, layout, size, setIds, style, width,
+    // renderSignature) — renderSignature must reflect the non-default
+    // brushThickness below, or this call collides with the all-defaults
+    // grasshopper case above and silently reuses its cached config.
+    const boardConfig = _getBoardConfigForTests(
+      'grasshopper',
+      1,
+      10,
+      '24',
+      false,
+      undefined,
+      {},
+      {},
+      1.5,
+      1,
+      'brush-1.5',
+    );
+
+    expect(boardConfig).not.toBeNull();
+    const configBase = asRecord(boardConfig?.configBase);
+    // 1.5 (user brush thickness) × 1.35 (Grasshopper default).
+    expect(configBase.stroke_width_multiplier).toBeCloseTo(2.025);
+  });
+
+  it('leaves Kilter (no render-defaults entry) at exactly the user brush thickness', () => {
+    const boardConfig = _getBoardConfigForTests('kilter', 1, 10, '24', false, undefined, {}, {}, 1.5, 1, 'brush-1.5');
+
+    expect(boardConfig).not.toBeNull();
+    const configBase = asRecord(boardConfig?.configBase);
+    expect(configBase.stroke_width_multiplier).toBe(1.5);
   });
 });
 
@@ -361,29 +412,33 @@ describe('renderedOverlays warm-up from disk cache', () => {
 
   it('exposes the populated map so a fresh hook init can hit it synchronously', () => {
     expect(_renderedOverlaysForTests).toBeInstanceOf(Map);
-    _renderedOverlaysForTests.set('v3_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
-    expect(_renderedOverlaysForTests.get('v3_kilter_1_10_24_deadbeef')).toBe('file:///prior/session.png');
-    _renderedOverlaysForTests.delete('v3_kilter_1_10_24_deadbeef');
+    _renderedOverlaysForTests.set('v4_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
+    expect(_renderedOverlaysForTests.get('v4_kilter_1_10_24_deadbeef')).toBe('file:///prior/session.png');
+    _renderedOverlaysForTests.delete('v4_kilter_1_10_24_deadbeef');
   });
 
   it('only loads PNGs whose name starts with the current RENDERER_VERSION prefix', () => {
-    // Mix of v1/v2 leftovers from previous app sessions and current v3
-    // entries. The warm-up should only surface v3 keys; older keys would
-    // never match any cacheKey lookup (all current keys are v3_*) so
-    // loading them just bloats memory.
+    // Mix of v1/v2/v3 leftovers from previous app sessions and current v4
+    // entries. The warm-up should only surface v4 keys; older keys would
+    // never match any cacheKey lookup (all current keys are v4_*) so
+    // loading them just bloats memory. v3 leftovers matter for issue #2202:
+    // they were rendered with the raw, too-dark LED colors and must not be
+    // reused post-fix.
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
-    const v3EntryA = makeMockEntry('v3_kilter_1_10_24_cccccccc.png');
-    const v3EntryB = makeMockEntry('v3_tension_2_8_15_dddddddd.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3EntryA, v3EntryB]);
+    const v3Entry = makeMockEntry('v3_kilter_1_10_24_eeeeeeee.png');
+    const v4EntryA = makeMockEntry('v4_kilter_1_10_24_cccccccc.png');
+    const v4EntryB = makeMockEntry('v4_tension_2_8_15_dddddddd.png');
+    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3Entry, v4EntryA, v4EntryB]);
 
     _runWarmupForTests();
 
-    expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_cccccccc')).toBe(true);
-    expect(_renderedOverlaysForTests.has('v3_tension_2_8_15_dddddddd')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v4_kilter_1_10_24_cccccccc')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v4_tension_2_8_15_dddddddd')).toBe(true);
     expect(_renderedOverlaysForTests.has('v1_kilter_1_10_24_aaaaaaaa')).toBe(false);
     expect(_renderedOverlaysForTests.has('v2_kilter_1_10_24_bbbbbbbb')).toBe(false);
-    // Only the two v3 entries should be present — no stragglers from
+    expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_eeeeeeee')).toBe(false);
+    // Only the two v4 entries should be present — no stragglers from
     // future-version PNGs slipping in either.
     expect(_renderedOverlaysForTests.size).toBe(2);
   });
@@ -391,8 +446,8 @@ describe('renderedOverlays warm-up from disk cache', () => {
   it('opportunistically deletes stale-version PNG files to reclaim disk', () => {
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
-    const v3Entry = makeMockEntry('v3_kilter_1_10_24_cccccccc.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3Entry]);
+    const v4Entry = makeMockEntry('v4_kilter_1_10_24_cccccccc.png');
+    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v4Entry]);
 
     _runWarmupForTests();
 
@@ -400,7 +455,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(v2Entry.delete).toHaveBeenCalledTimes(1);
     // Current-version files must never be deleted — they're the cache hits
     // the warm-up exists to surface.
-    expect(v3Entry.delete).not.toHaveBeenCalled();
+    expect(v4Entry.delete).not.toHaveBeenCalled();
   });
 
   it('keeps loading remaining entries when a delete throws', () => {
@@ -410,10 +465,10 @@ describe('renderedOverlays warm-up from disk cache', () => {
     v1Entry.delete.mockImplementation(() => {
       throw new Error('EACCES');
     });
-    const v3Entry = makeMockEntry('v3_kilter_1_10_24_bbbbbbbb.png');
-    directoryListSpy.mockReturnValue([v1Entry, v3Entry]);
+    const v4Entry = makeMockEntry('v4_kilter_1_10_24_bbbbbbbb.png');
+    directoryListSpy.mockReturnValue([v1Entry, v4Entry]);
 
     expect(() => _runWarmupForTests()).not.toThrow();
-    expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_bbbbbbbb')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v4_kilter_1_10_24_bbbbbbbb')).toBe(true);
   });
 });

@@ -121,6 +121,29 @@ export const STATE_TO_PRIMARY_CODE: Record<BoardName, Partial<Record<HoldState, 
   soill: { STARTING: 1, HAND: 2, FINISH: 3, FOOT: 4 },
 };
 
+export type BoardRenderDefaults = {
+  /**
+   * Multiplies the Rust/native renderer's base hold-outline stroke width
+   * (clamped 0.5–2.0 by the renderer itself — see
+   * packages/board-renderer/core/src/renderer.rs). Boards whose physical
+   * photo is darker/busier than Kilter's benefit from a heavier default
+   * outline so lit holds stay legible against the board art (issue #2202).
+   * Absent boards render at the renderer's own default of 1.0 (unchanged).
+   */
+  strokeWidthMultiplier?: number;
+};
+
+// Per-board default render tuning, layered on top of HOLD_STATE_MAP's
+// per-hold colors. 1.35 (35% thicker default outline) is a starting point
+// pending a visual pass — tune here, no renderer changes required.
+export const BOARD_RENDER_DEFAULTS: Partial<Record<BoardName, BoardRenderDefaults>> = {
+  grasshopper: { strokeWidthMultiplier: 1.35 },
+};
+
+export function getBoardStrokeWidthMultiplier(board: BoardName): number {
+  return BOARD_RENDER_DEFAULTS[board]?.strokeWidthMultiplier ?? 1.0;
+}
+
 // Warned hold states to avoid log spam
 const warnedHoldStates = new Set<string>();
 

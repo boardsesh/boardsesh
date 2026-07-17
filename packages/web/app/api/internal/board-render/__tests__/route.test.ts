@@ -119,10 +119,10 @@ vi.mock('@/app/components/board-renderer/types', () => ({
       4: { name: 'FOOT', color: '#FF00FF' },
     },
     grasshopper: {
-      1: { name: 'STARTING', color: '#00FF00' },
-      2: { name: 'HAND', color: '#0000FF' },
-      3: { name: 'FINISH', color: '#FF0000' },
-      4: { name: 'FOOT', color: '#FF00FF' },
+      1: { name: 'STARTING', color: '#00FF00', displayColor: '#00DD00' },
+      2: { name: 'HAND', color: '#0000FF', displayColor: '#4455FF' },
+      3: { name: 'FINISH', color: '#FF0000', displayColor: '#FF0000' },
+      4: { name: 'FOOT', color: '#FF00FF', displayColor: '#FF00FF' },
     },
     soill: {
       1: { name: 'STARTING', color: '#00FF00' },
@@ -313,6 +313,49 @@ describe('board-render API route', () => {
     const configJson = mockRenderOverlay.mock.calls[0][0];
     const config = JSON.parse(configJson);
     expect(config.mirrored).toBe(false);
+  });
+
+  it('sets stroke_width_multiplier to 1.0 for boards without a render-defaults override', async () => {
+    await GET(makeRequest(validParams)); // kilter
+    const configJson = mockRenderOverlay.mock.calls[0][0];
+    const config = JSON.parse(configJson);
+    expect(config.stroke_width_multiplier).toBe(1.0);
+  });
+
+  it('issue #2202: prefers the calibrated displayColor over the raw LED color, and boosts Grasshopper stroke width', async () => {
+    const { getBoardDetailsForBoard } = await import('@/app/lib/board-utils');
+    vi.mocked(getBoardDetailsForBoard).mockReturnValueOnce({
+      board_name: 'grasshopper',
+      layout_id: 1,
+      size_id: 1,
+      set_ids: [1],
+      boardWidth: 1080,
+      boardHeight: 1350,
+      holdsData: [{ id: 1, mirroredHoldId: null, cx: 100, cy: 200, r: 20 }],
+      images_to_holds: { 'grasshopper-bg.png': [] },
+      edge_left: 0,
+      edge_right: 11,
+      edge_bottom: 0,
+      edge_top: 18,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    await GET(
+      makeRequest({
+        board_name: 'grasshopper',
+        layout_id: '1',
+        size_id: '1',
+        set_ids: '1',
+        frames: 'p1r2', // HAND
+      }),
+    );
+
+    const configJson = mockRenderOverlay.mock.calls[0][0];
+    const config = JSON.parse(configJson);
+    // Not the raw LED color '#0000FF' — that's far too dark against
+    // Grasshopper's busy board photo (issue #2202).
+    expect(config.hold_state_map['2'].color).toBe('#4455FF');
+    expect(config.stroke_width_multiplier).toBe(1.35);
   });
 
   it('renders OG variant as PNG on a fixed social canvas', async () => {

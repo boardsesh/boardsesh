@@ -17,6 +17,8 @@ export type RenderRequest = {
   thumbnail: boolean;
   holds: Array<{ id: number; mirrored_hold_id?: number | null; cx: number; cy: number; r: number }>;
   holdStateMap: Record<number, { color: string }>;
+  /** Per-board default hold-outline stroke width multiplier (issue #2202). Defaults to 1.0 when omitted. */
+  strokeWidthMultiplier?: number;
   backgroundUrls: string[];
   /** Origin URL for resolving WASM assets (sent from main thread) */
   origin?: string;
@@ -92,6 +94,7 @@ async function renderBoard(request: RenderRequest): Promise<ImageBitmap> {
     thumbnail,
     holds,
     holdStateMap,
+    strokeWidthMultiplier = 1,
     backgroundUrls,
     cropTop = 0,
   } = request;
@@ -129,6 +132,7 @@ async function renderBoard(request: RenderRequest): Promise<ImageBitmap> {
       frames,
       mirrored: false, // We handle mirroring via canvas transform
       thumbnail,
+      stroke_width_multiplier: strokeWidthMultiplier,
       holds,
       hold_state_map: holdStateMap,
     };

@@ -9,7 +9,12 @@
 import React from 'react';
 import type { RenderRequest, RenderResponse, PreloadImagesMessage } from './board-render.worker';
 import type { BoardDetails } from '@/app/lib/types';
-import { type HoldRenderData, HOLD_STATE_MAP, THUMBNAIL_WIDTH } from '@/app/components/board-renderer/types';
+import {
+  type HoldRenderData,
+  HOLD_STATE_MAP,
+  THUMBNAIL_WIDTH,
+  getBoardStrokeWidthMultiplier,
+} from '@/app/components/board-renderer/types';
 import { getImageUrl } from '@/app/components/board-renderer/util';
 import { isCapacitor } from '@/app/lib/ble/capacitor-utils';
 import { trackWorkerRenderingDisabled } from '@/app/lib/rendering-metrics';
@@ -314,12 +319,15 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
     r: h.r,
   }));
 
-  // Build hold state map for this board
+  // Build hold state map for this board. Prefer each role's calibrated
+  // on-screen displayColor over its raw LED color — see the matching
+  // comment in api/internal/board-render/route.ts (issue #2202).
   const holdStateMap: Record<number, { color: string }> = {};
   const boardStates = HOLD_STATE_MAP[boardDetails.board_name];
   for (const [code, info] of Object.entries(boardStates)) {
-    holdStateMap[Number(code)] = { color: info.color };
+    holdStateMap[Number(code)] = { color: info.displayColor ?? info.color };
   }
+  const strokeWidthMultiplier = getBoardStrokeWidthMultiplier(boardDetails.board_name);
 
   // Build background image URLs — resolve to absolute so the Worker can fetch them
   const origin = window.location.origin;
@@ -338,6 +346,7 @@ export function renderBoard(options: RenderBoardOptions): Promise<ImageBitmap> {
     thumbnail,
     holds,
     holdStateMap,
+    strokeWidthMultiplier,
     origin: window.location.origin,
     backgroundUrls,
     cropTop,

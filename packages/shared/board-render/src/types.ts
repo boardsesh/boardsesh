@@ -56,7 +56,10 @@ export type BoardRenderDetails = {
 export type OutputFormat = 'webp' | 'png' | 'jpeg';
 
 /** Per-board hold-state colour/style map (subset of board-constants HoldStateInfo). */
-export type HoldStateRecord = Record<number | string, { color: string; renderStyle?: string; name?: string }>;
+export type HoldStateRecord = Record<
+  number | string,
+  { color: string; displayColor?: string; renderStyle?: string; name?: string }
+>;
 
 /** The JSON payload the WASM `render_overlay` entry point consumes. */
 export type WasmRenderConfig = {
@@ -67,6 +70,14 @@ export type WasmRenderConfig = {
   frames: string;
   mirrored: boolean;
   thumbnail: boolean;
+  /**
+   * Multiplies the renderer's base hold-outline stroke width (clamped
+   * 0.5–2.0 by the renderer itself). Optional — the Rust/WASM renderer
+   * defaults to 1.0 when omitted. See `getBoardStrokeWidthMultiplier`
+   * (issue #2202: Grasshopper's darker, busier board photo needs a heavier
+   * default outline to stay legible).
+   */
+  stroke_width_multiplier?: number;
   holds: RenderableHold[];
   hold_state_map: Record<number, { color: string; renderStyle?: string }>;
 };

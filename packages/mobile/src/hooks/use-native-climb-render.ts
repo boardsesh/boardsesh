@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { listOverlayCacheEntries, onOverlayCacheHydrated } from './overlay-cache-warmup';
 import { RENDERER_VERSION } from './renderer-version';
-import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
+import { HOLD_STATE_MAP, getBoardStrokeWidthMultiplier } from '@boardsesh/board-constants/hold-states';
 import { getBoardRenderData } from '../lib/board-details';
 import {
   ensureBackgroundsCached,
@@ -377,12 +377,18 @@ function getBoardConfig(
 
   // Build hold_state_map in the format the Rust renderer expects:
   // Record<number, { color: string, render_style?: string }>
+  //
+  // Prefer each role's calibrated on-screen displayColor over its raw LED
+  // color — the LED color is only correct for driving physical board
+  // hardware over BLE, not for what a viewer sees on screen (issue #2202:
+  // raw LED blue renders far too dark against a busy board photo). Boards
+  // without a displayColor (e.g. Kilter) render unchanged.
   const stateMap = HOLD_STATE_MAP[boardName];
   const holdStateMap: Record<number, { color: string; render_style?: string; shape?: string }> = {};
   for (const [codeStr, stateInfo] of Object.entries(stateMap)) {
     const shape = getEffectiveHoldStateShape(stateInfo.name, shapeOverrides);
     holdStateMap[Number(codeStr)] = {
-      color: getEffectiveHoldStateColor(stateInfo.name, stateInfo.color, colorOverrides),
+      color: getEffectiveHoldStateColor(stateInfo.name, stateInfo.displayColor ?? stateInfo.color, colorOverrides),
       ...(stateInfo.renderStyle ? { render_style: stateInfo.renderStyle } : {}),
       ...(shape !== DEFAULT_HOLD_MARKER_SHAPE ? { shape } : {}),
     };
@@ -405,7 +411,11 @@ function getBoardConfig(
     // serde default and would otherwise render mirrored.
     mirrored: false,
     thumbnail: filledStyle,
-    stroke_width_multiplier: brushThickness,
+    // Board-specific default (issue #2202: Grasshopper's busier board photo
+    // needs a heavier outline) layered under the user's accessibility
+    // brush-thickness multiplier. Boards without a render-defaults entry
+    // multiply by 1.0, i.e. unchanged.
+    stroke_width_multiplier: brushThickness * getBoardStrokeWidthMultiplier(boardName),
     shape_size_multiplier: shapeSize,
     holds: renderData.holdsData.map((hold) => ({
       id: hold.id,

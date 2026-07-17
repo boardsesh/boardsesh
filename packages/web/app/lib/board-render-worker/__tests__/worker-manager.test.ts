@@ -43,7 +43,14 @@ vi.mock('@/app/components/board-renderer/types', () => ({
     moonboard: {
       42: { name: 'STARTING', color: '#00FF00' },
     },
+    grasshopper: {
+      1: { name: 'STARTING', color: '#00FF00', displayColor: '#00DD00' },
+      2: { name: 'HAND', color: '#0000FF', displayColor: '#4455FF' },
+    },
   },
+  // issue #2202: Grasshopper gets a heavier default outline; every other
+  // board renders at the renderer's own default (1.0, unchanged).
+  getBoardStrokeWidthMultiplier: (board: string) => (board === 'grasshopper' ? 1.35 : 1.0),
 }));
 
 // ---------------------------------------------------------------------------
@@ -700,6 +707,34 @@ describe('renderBoard', () => {
     bgUrls.forEach((url) => {
       expect(url).toMatch(/^http:\/\/localhost:3000\//);
     });
+
+    // kilter has no displayColor overrides and no render-defaults entry —
+    // stroke width stays at the renderer's own default.
+    expect(request.strokeWidthMultiplier).toBe(1.0);
+  });
+
+  it('issue #2202: prefers the calibrated displayColor over the raw LED color, and boosts Grasshopper stroke width', async () => {
+    const { renderBoard } = await import('../worker-manager');
+
+    void renderBoard({
+      boardDetails: { ...mockBoardDetails, board_name: 'grasshopper' as const },
+      frames: 'p1r1p2r2',
+      mirrored: false,
+      thumbnail: false,
+    });
+
+    await vi.waitFor(() => {
+      expect(findWorkerWithRenderMsg('p1r1p2r2')).toBeTruthy();
+    });
+
+    const worker = findWorkerWithRenderMsg('p1r1p2r2')!;
+    const request = findRenderCall(worker, 'p1r1p2r2')!;
+
+    const holdStateMap = request.holdStateMap as Record<number, { color: string }>;
+    // Not the raw LED color '#0000FF' — that's far too dark against
+    // Grasshopper's busy board photo (issue #2202).
+    expect(holdStateMap[2]).toEqual({ color: '#4455FF' });
+    expect(request.strokeWidthMultiplier).toBe(1.35);
   });
 
   it('sets outputWidth to boardWidth when thumbnail is false', async () => {

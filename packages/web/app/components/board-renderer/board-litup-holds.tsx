@@ -47,7 +47,10 @@ const BoardLitupHolds = React.memo(
       <>
         {holdsToRender.map((hold) => {
           const isLitUp = litUpHoldsMap[hold.id]?.state && litUpHoldsMap[hold.id].state !== 'OFF';
-          const color = isLitUp ? litUpHoldsMap[hold.id].color : 'transparent';
+          // Prefer the calibrated on-screen displayColor over the raw LED
+          // color — the LED color is only correct for driving physical
+          // board hardware over BLE (issue #2202).
+          const color = isLitUp ? litUpHoldsMap[hold.id].displayColor || litUpHoldsMap[hold.id].color : 'transparent';
 
           let renderHold = hold;
           if (mirrored && hold.mirroredHoldId) {

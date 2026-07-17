@@ -1,3 +1,5 @@
+import type { BoardName } from '@boardsesh/shared-schema';
+import { getBoardStrokeWidthMultiplier } from '@boardsesh/board-constants/hold-states';
 import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import type { HoldStateRecord, RenderableBoardDetails, WasmRenderConfig } from './types';
@@ -51,10 +53,16 @@ export function buildRenderConfig({
   };
   const outputWidth = computeOutputWidth();
 
+  // Prefer each role's calibrated on-screen displayColor over its raw LED
+  // color — the LED color is only correct for driving physical board
+  // hardware over BLE (see light-control-drawer.tsx), not for what a viewer
+  // sees on screen (issue #2202: raw LED blue renders far too dark against a
+  // busy board photo). Boards without a displayColor (e.g. Kilter) render
+  // unchanged.
   const holdStateMap: Record<number, { color: string; renderStyle?: string }> = {};
   for (const [code, info] of Object.entries(boardStates)) {
     holdStateMap[Number(code)] = {
-      color: info.color,
+      color: info.displayColor ?? info.color,
       ...(info.renderStyle ? { renderStyle: info.renderStyle } : {}),
     };
   }
@@ -69,6 +77,7 @@ export function buildRenderConfig({
     // OG cards get the thumbnail stroke treatment (thicker rings, larger
     // markers) so holds stay readable at chat-preview sizes.
     thumbnail: thumbnail || isOgVariant,
+    stroke_width_multiplier: getBoardStrokeWidthMultiplier(boardName as BoardName),
     holds: boardDetails.holdsData.map((hold) => ({
       id: hold.id,
       mirroredHoldId: hold.mirroredHoldId,

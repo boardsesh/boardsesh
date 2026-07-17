@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vite-plus/test';
 import {
   HOLD_STATE_MAP,
   STATE_TO_PRIMARY_CODE,
+  BOARD_RENDER_DEFAULTS,
+  getBoardStrokeWidthMultiplier,
   convertLitUpHoldsStringToMap,
   splitFramesString,
   accumulateFramesToMaps,
@@ -30,6 +32,23 @@ describe('HOLD_STATE_MAP', () => {
         }
       }
     }
+  });
+});
+
+describe('getBoardStrokeWidthMultiplier', () => {
+  it('boosts Grasshopper (issue #2202 — darker/busier board photo)', () => {
+    expect(getBoardStrokeWidthMultiplier('grasshopper')).toBe(1.35);
+  });
+
+  it('defaults every other board to 1.0 (unchanged rendering)', () => {
+    const boards: BoardName[] = ['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'soill'];
+    for (const board of boards) {
+      expect(getBoardStrokeWidthMultiplier(board)).toBe(1.0);
+    }
+  });
+
+  it('only Grasshopper has a render-defaults override, so other boards stay data-driven-empty', () => {
+    expect(Object.keys(BOARD_RENDER_DEFAULTS)).toEqual(['grasshopper']);
   });
 });
 

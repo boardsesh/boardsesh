@@ -50,8 +50,8 @@ describe('renderHoldsOverlay shim', () => {
 
     const { renderHoldsOverlay } = await loadShim();
     const configJson = JSON.stringify({
-      stroke_width_multiplier: 1.5,
-      shape_size_multiplier: 1,
+      stroke_width_multiplier: 1,
+      shape_size_multiplier: 1.5,
       hold_state_map: {
         12: { color: '#ff0000' },
       },
@@ -62,6 +62,50 @@ describe('renderHoldsOverlay shim', () => {
     expect(renderMarkers).toHaveBeenCalledWith(configJson, 'cache-key-marker');
     expect(renderHolds).not.toHaveBeenCalled();
     expect(renderComposite).not.toHaveBeenCalled();
+  });
+
+  it('issue #2202: a non-default stroke_width_multiplier alone does not require the marker-aware renderer', async () => {
+    // Grasshopper's board-level stroke boost (1.35x) makes stroke_width_multiplier
+    // non-1 even for a user with zero accessibility overrides. Unlike
+    // shape_size_multiplier/shape, this must NOT force renderHoldsOverlayWithMarkers
+    // — otherwise every Grasshopper render throws MARKER_RENDERER_UNAVAILABLE_MESSAGE
+    // on any native binary older than the marker-accessibility release, leaving the
+    // overlay permanently blank instead of falling back to the classic renderer.
+    const renderMarkers = vi.fn().mockResolvedValue('file:///out/markers.png');
+    const renderHolds = vi.fn().mockResolvedValue('file:///out/classic.png');
+    nativeMock = { renderHoldsOverlayWithMarkers: renderMarkers, renderHoldsOverlay: renderHolds };
+
+    const { renderHoldsOverlay } = await loadShim();
+    const configJson = JSON.stringify({
+      stroke_width_multiplier: 1.35,
+      shape_size_multiplier: 1,
+      hold_state_map: {
+        2: { color: '#4455FF' },
+      },
+    });
+    const result = await renderHoldsOverlay(configJson, 'cache-key-grasshopper-stroke');
+
+    expect(result).toBe('file:///out/classic.png');
+    expect(renderHolds).toHaveBeenCalledWith(configJson, 'cache-key-grasshopper-stroke');
+    expect(renderMarkers).not.toHaveBeenCalled();
+  });
+
+  it('issue #2202: a non-default stroke_width_multiplier still falls back to renderComposite on old binaries', async () => {
+    const renderComposite = vi.fn().mockResolvedValue('file:///out/old.png');
+    nativeMock = { renderComposite };
+
+    const { renderHoldsOverlay } = await loadShim();
+    const configJson = JSON.stringify({
+      stroke_width_multiplier: 1.35,
+      shape_size_multiplier: 1,
+      hold_state_map: {
+        2: { color: '#4455FF' },
+      },
+    });
+    const result = await renderHoldsOverlay(configJson, 'cache-key-grasshopper-old-binary');
+
+    expect(result).toBe('file:///out/old.png');
+    expect(renderComposite).toHaveBeenCalledWith(configJson, [], 'cache-key-grasshopper-old-binary');
   });
 
   it('falls through to renderComposite when renderHoldsOverlay rejects with "is not a function"', async () => {
