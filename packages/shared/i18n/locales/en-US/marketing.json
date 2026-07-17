@@ -30,6 +30,8 @@
     "hero": {
       "title": "Get on the board!",
       "subtitle": "Track your sends across Kilter, Tension, and MoonBoard.",
+      "startClimbing": "Start climbing",
+      "startClimbingAria": "Start climbing in the app",
       "ctaInstallIos": "Install from App Store",
       "ctaInstallAndroid": "Get it on Google Play",
       "ctaUpdate": "Update the app"
