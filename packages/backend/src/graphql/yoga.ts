@@ -20,13 +20,9 @@ async function authenticateHttpBearer(authHeader: string | null): Promise<AuthRe
   if (!bearerMatch) return null;
 
   const token = bearerMatch[1]?.trim() ?? '';
-  const authResult = token ? await validateToken(token) : null;
-  if (!authResult) {
-    throw new GraphQLError('Unauthorized', {
-      extensions: { code: 'UNAUTHENTICATED', http: { status: 401 } },
-    });
-  }
-  return authResult;
+  // Preserve the deployed transport contract: an invalid or expired optional
+  // credential degrades to anonymous so public operations remain available.
+  return token ? validateToken(token) : null;
 }
 
 /**

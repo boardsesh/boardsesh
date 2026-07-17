@@ -101,14 +101,15 @@ export function setupWebSocketServer(httpServer: HttpServer): {
 
         if (token !== null) {
           const authResult = await validateToken(token);
-          if (!authResult) {
-            logger.warn('[Auth] Rejected WebSocket connection with invalid auth token');
-            ctx.extra.socket.close(4401, 'Unauthorized');
-            return;
+          if (authResult) {
+            isAuthenticated = true;
+            authenticatedUserId = authResult.userId;
+            logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
+          } else {
+            // Existing clients expect an expired optional credential to keep
+            // realtime connected anonymously until their HTTP auth path heals.
+            logger.warn('[Auth] Invalid WebSocket auth token; continuing anonymously');
           }
-          isAuthenticated = true;
-          authenticatedUserId = authResult.userId;
-          logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
         }
 
         // Check for controller API key authentication

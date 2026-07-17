@@ -71,7 +71,7 @@ describe('GraphQL transport authentication', () => {
     await closeServer(httpServer);
   });
 
-  it('returns HTTP 401 for an explicitly invalid Bearer credential', async () => {
+  it('keeps an HTTP request with an invalid Bearer credential anonymous and usable', async () => {
     const yoga = createYogaInstance();
     const response = await yoga.fetch('http://localhost/graphql', {
       method: 'POST',
@@ -82,11 +82,27 @@ describe('GraphQL transport authentication', () => {
       body: JSON.stringify({ query: '{ __typename }' }),
     });
 
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toMatchObject({
-      errors: [{ message: 'Unauthorized', extensions: { code: 'UNAUTHENTICATED' } }],
-    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ data: { __typename: 'Query' } });
   });
+
+  it.each(['Bearer', 'Bearer   '])(
+    'keeps an HTTP request with an empty Bearer credential anonymous and usable (%j)',
+    async (header) => {
+      const yoga = createYogaInstance();
+      const response = await yoga.fetch('http://localhost/graphql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: header,
+        },
+        body: JSON.stringify({ query: '{ __typename }' }),
+      });
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ data: { __typename: 'Query' } });
+    },
+  );
 
   it('keeps an HTTP request with no credential anonymous and usable', async () => {
     const yoga = createYogaInstance();
@@ -100,17 +116,56 @@ describe('GraphQL transport authentication', () => {
     await expect(response.json()).resolves.toEqual({ data: { __typename: 'Query' } });
   });
 
-  it('closes a WebSocket with explicit invalid auth using 4401', async () => {
-    const closed = new Promise<{ code: number; reason: string }>((resolve, reject) => {
+  it('accepts a WebSocket with invalid auth as anonymous', async () => {
+    const acknowledged = new Promise<string>((resolve, reject) => {
       const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS);
       socket.once('open', () => {
         socket.send(JSON.stringify({ type: 'connection_init', payload: { authToken: 'definitely-invalid' } }));
       });
-      socket.once('close', (code, reason) => resolve({ code, reason: reason.toString() }));
+      socket.once('message', (message) => {
+        const payload = JSON.parse(decodeMessage(message)) as { type?: unknown };
+        resolve(typeof payload.type === 'string' ? payload.type : '');
+        socket.close(1000);
+      });
       socket.once('error', reject);
     });
 
-    await expect(closed).resolves.toEqual({ code: 4401, reason: 'Unauthorized' });
+    await expect(acknowledged).resolves.toBe('connection_ack');
+  });
+
+  it.each([
+    ['empty string', ''],
+    ['null', null],
+  ])('accepts a WebSocket with an explicit %s auth token as anonymous', async (_label, authToken) => {
+    const acknowledged = new Promise<string>((resolve, reject) => {
+      const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS);
+      socket.once('open', () => {
+        socket.send(JSON.stringify({ type: 'connection_init', payload: { authToken } }));
+      });
+      socket.once('message', (message) => {
+        const payload = JSON.parse(decodeMessage(message)) as { type?: unknown };
+        resolve(typeof payload.type === 'string' ? payload.type : '');
+        socket.close(1000);
+      });
+      socket.once('error', reject);
+    });
+
+    await expect(acknowledged).resolves.toBe('connection_ack');
+  });
+
+  it('accepts a WebSocket with an explicit empty query token as anonymous', async () => {
+    const acknowledged = new Promise<string>((resolve, reject) => {
+      const socket = new WebSocket(`${webSocketUrl}?token=`, GRAPHQL_TRANSPORT_WS);
+      socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
+      socket.once('message', (message) => {
+        const payload = JSON.parse(decodeMessage(message)) as { type?: unknown };
+        resolve(typeof payload.type === 'string' ? payload.type : '');
+        socket.close(1000);
+      });
+      socket.once('error', reject);
+    });
+
+    await expect(acknowledged).resolves.toBe('connection_ack');
   });
 
   it('accepts a WebSocket with no credential as anonymous', async () => {
