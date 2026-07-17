@@ -1,0 +1,125 @@
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { useSegments } from 'expo-router';
+import { useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../providers/theme-provider';
+import { isAccessorySurfaceRoute, isTabsChromeRoute } from '../lib/route-segments';
+import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
+import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
+import { useDeviceLayout } from './use-device-layout';
+import { computeBottomChromeMetrics, type BottomChromeMetrics } from './bottom-chrome-metrics';
+import { resolveDetailPaneSurface } from '../theme/size-class';
+import { SIDEBAR_WIDTH } from '../theme/layout';
+
+/**
+ * Gathers the React inputs for the bottom-chrome geometry and delegates the
+ * arithmetic to the pure {@link computeBottomChromeMetrics}. Called ONCE — by
+ * {@link BottomChromeMetricsProvider} — so the ~9 input-hook subscriptions (and
+ * the sticky-presence grace timer) run a single time for the whole app instead
+ * of once per consumer. Consumers read the shared, memoized result through
+ * {@link useBottomChromeMetrics}.
+ */
+function useComputedBottomChromeMetrics(): BottomChromeMetrics {
+  const insets = useSafeAreaInsets();
+  const segments = useSegments();
+  // Only the *presence* of a current climb matters here — subscribe to the
+  // presence-only selector, which flips solely when a climb appears/disappears.
+  // This keeps bottom chrome from re-rendering on queue mutations OR on
+  // climb-to-climb navigation across every screen that floats it. Wall-aware so a
+  // board-presence ("on the wall") climb counts too. Use the same sticky wrapper
+  // as the accessory mount gate so the JS-vs-native arbitration tracks what the
+  // accessory host actually shows (incl. its brief presence-blip hold).
+  const hasCurrentClimb = useStickyAccessoryPresence();
+  const { variant } = useTheme();
+  // The TAB BAR is present on every tab route, including pushed sub-routes (session
+  // detail keeps it). The player route counts too (it's a modal over the live tabs)
+  // so the tab-bar metrics don't churn across its open/close — see isTabsChromeRoute.
+  const insideTabs = isTabsChromeRoute(segments);
+  // The ACCESSORY only shows on a top-level tab page (plus occluded under the player).
+  // Keep it separate from `insideTabs` so a pushed sub-route still reserves tab-bar
+  // height but no longer reserves accessory/toolbar space for a bar that's gone.
+  const onAccessorySurface = isAccessorySurfaceRoute(segments);
+  // The single canonical "is the native tab bar on screen?" predicate. The bottom
+  // accessory lives INSIDE that bar, so derive its mount from the SAME call plus the
+  // plain availability check — exactly what useNativeAccessoryActive() does — rather
+  // than calling useNativeTabBar() a second time. Sharing the one call (instead of
+  // re-deriving the accessory from the variant) is what guarantees the two never
+  // disagree about which bar is up; see use-bottom-accessory. It also drops the
+  // duplicate useTheme/useGlassCapability/useDeviceLayout subscriptions the second
+  // useNativeTabBar() call used to pull in.
+  const nativeTabBar = useNativeTabBar();
+  const nativeAccessoryActive = nativeTabBar && isBottomAccessoryAvailable();
+  const nativeAccessoryMounted = onAccessorySurface && nativeAccessoryActive;
+  const usesNativeTabBar = insideTabs && nativeTabBar;
+  // Regular-width iPad replaces the bottom tab bar with the left sidebar. Only
+  // widths that also mount the selected-climb detail pane suppress the floating
+  // queue toolbar; tight regular windows keep that toolbar because the pane is
+  // intentionally absent there.
+  const { width: windowWidth } = useWindowDimensions();
+  const { widthClass } = useDeviceLayout();
+  const usesSidebar = insideTabs && widthClass === 'regular';
+  const detailPaneOwnsQueue =
+    usesSidebar && resolveDetailPaneSurface({ width: windowWidth, widthClass, sidebarWidth: SIDEBAR_WIDTH }) === 'pane';
+
+  return useMemo(
+    () =>
+      computeBottomChromeMetrics({
+        uiVariant: variant,
+        usesNativeTabBar,
+        insetsBottom: insets.bottom,
+        insideTabs,
+        onAccessorySurface,
+        hasCurrentClimb,
+        nativeAccessoryMounted,
+        usesSidebar,
+        detailPaneOwnsQueue,
+      }),
+    [
+      variant,
+      usesNativeTabBar,
+      insets.bottom,
+      insideTabs,
+      onAccessorySurface,
+      hasCurrentClimb,
+      nativeAccessoryMounted,
+      usesSidebar,
+      detailPaneOwnsQueue,
+    ],
+  );
+}
+
+const BottomChromeMetricsContext = createContext<BottomChromeMetrics | null>(null);
+
+/**
+ * Computes the bottom-chrome reserves/offsets (the geometry for chrome that
+ * floats over scrollable content — the persistent queue toolbar / iOS 26 bottom
+ * accessory) ONCE and shares the memoized result with every consumer. Mount it
+ * once near the tab root (app/_layout.tsx), below the theme + queue providers and
+ * inside the router so `useSegments()` resolves.
+ *
+ * Before this hoist, ~25 always/often-mounted consumers (every tab list, the
+ * snackbars/FABs, the session views) each re-ran the same ~9 input-hook
+ * subscriptions on every render and each spun up its own presence grace timer,
+ * and every one re-rendered on every raw input fire (e.g. a geometry-neutral
+ * navigation). Now the inputs are read a single time and the value only changes
+ * when the derived geometry actually does, so a consumer re-renders only on a real
+ * geometry change. (#2565 — completes the "hoist into one provider" remedy after
+ * the queue-context split already isolated the live-session presence/stat churn.)
+ */
+export function BottomChromeMetricsProvider({ children }: { children: ReactNode }) {
+  const metrics = useComputedBottomChromeMetrics();
+  return <BottomChromeMetricsContext.Provider value={metrics}>{children}</BottomChromeMetricsContext.Provider>;
+}
+
+/**
+ * Bottom-chrome reserves and offsets for the current route, computed once by
+ * {@link BottomChromeMetricsProvider}. The return shape is unchanged from before
+ * the provider hoist, so consumers stay exactly as they were — they just read a
+ * shared value instead of each recomputing it. Throws outside the provider, like
+ * the other app-wide context hooks.
+ */
+export function useBottomChromeMetrics(): BottomChromeMetrics {
+  const metrics = useContext(BottomChromeMetricsContext);
+  if (!metrics) throw new Error('useBottomChromeMetrics must be used within BottomChromeMetricsProvider');
+  return metrics;
+}
