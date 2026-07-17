@@ -11,9 +11,9 @@
  */
 import { createScriptDb } from './db-connection.js';
 import { boardClimbEmbeddings } from '../src/schema/app/climb-embeddings.js';
-import { eq, sql } from 'drizzle-orm';
+import { boardClimbs, boardClimbStats } from '../src/schema/boards/unified.js';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { moonBoardPlacementCoverageSql } from '../src/queries/climbs/placement-match.js';
-import { rowsOf } from '../src/queries/util/rows.js';
 import {
   assertCompleteArtifactCoverage,
   contentArtifactKey,
@@ -104,26 +104,36 @@ async function main(): Promise<void> {
     const counts = await db.transaction(
       async (transaction) => {
         const placementCoverage = moonBoardPlacementCoverageSql({
-          boardType: sql.raw('climb.board_type'),
-          climbUuid: sql.raw('climb.uuid'),
-          layoutId: sql.raw('climb.layout_id'),
+          boardType: sql`${boardClimbs.boardType}`,
+          climbUuid: sql`${boardClimbs.uuid}`,
+          layoutId: sql`${boardClimbs.layoutId}`,
         });
-        const eligibleCells = rowsOf<{ climb_uuid: string; angle: number }>(
-          await transaction.execute(sql`
-            SELECT stat.climb_uuid, stat.angle
-            FROM board_climb_stats stat
-            JOIN board_climbs climb
-              ON climb.board_type = stat.board_type
-             AND climb.uuid = stat.climb_uuid
-            WHERE stat.board_type = ${board}
-              AND climb.is_listed = true
-              AND COALESCE(climb.is_draft, false) = false
-              AND ${placementCoverage}
-            ORDER BY stat.climb_uuid, stat.angle
-          `),
+        const eligibleCells = (
+          await transaction
+            .select({
+              climbUuid: boardClimbStats.climbUuid,
+              angle: boardClimbStats.angle,
+            })
+            .from(boardClimbStats)
+            .innerJoin(
+              boardClimbs,
+              and(
+                eq(boardClimbs.boardType, boardClimbStats.boardType),
+                eq(boardClimbs.uuid, boardClimbStats.climbUuid),
+              ),
+            )
+            .where(
+              and(
+                eq(boardClimbStats.boardType, board),
+                eq(boardClimbs.isListed, true),
+                or(eq(boardClimbs.isDraft, false), isNull(boardClimbs.isDraft)),
+                placementCoverage,
+              ),
+            )
+            .orderBy(boardClimbStats.climbUuid, boardClimbStats.angle)
         ).map(
           (cell): EligibleContentCell => ({
-            climbUuid: cell.climb_uuid,
+            climbUuid: cell.climbUuid,
             angle: Number(cell.angle),
           }),
         );

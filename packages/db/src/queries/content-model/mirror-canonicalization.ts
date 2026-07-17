@@ -20,10 +20,10 @@ export function canonicalizeMirrorFeatures(
 
     if (hold.nx !== null) hold.nx = 1 - hold.nx;
     if (hold.pull !== null) hold.pull = (360 - hold.pull) % 360;
-    if (hold.morph) {
+    if (hold.morph && hold.morph.length > 7) {
       // Horizontal reflection maps θ → π−θ, so sin(2θ) changes sign while
       // cos(2θ) and scalar shape/texture summaries do not.
-      hold.morph[7] = -(hold.morph[7] ?? 0);
+      hold.morph[7] = -hold.morph[7];
     }
     const originalHoleId = hold.holeId;
     hold.holeId = hold.mirroredHoleId ?? originalHoleId;

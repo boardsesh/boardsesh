@@ -44,6 +44,8 @@ TENSION_MAX_REGRESSION = 0.01
 RELATIONAL_SEEDS = (13, 29)
 SUPPORTED_THROUGH_RUNS = (4, 6, 7)
 MODEL_VERSION = "climb2vec-relational-morphology-v1"
+# The artifact loaders reject contentSd <= 0. Keep calibration output strictly
+# positive so even a perfect residual bucket remains a valid, finite signal.
 MIN_CONTENT_SD = 1e-4
 
 

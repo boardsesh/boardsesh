@@ -224,7 +224,9 @@ void describe('content-prior shadow blend', () => {
     const coverage = evaluateShadowCoverage(rows, candidates);
     assert.ok(coverage.ratio > SHADOW_MIN_ELIGIBLE_COVERAGE);
     assert.equal(coverage.byBoard.kilter?.ratio, 1);
+    assert.equal(coverage.byBoard.kilter?.passed, true);
     assert.equal(coverage.byBoard.tension?.ratio, 0.94);
+    assert.equal(coverage.byBoard.tension?.passed, false);
     assert.equal(coverage.passed, false);
   });
 

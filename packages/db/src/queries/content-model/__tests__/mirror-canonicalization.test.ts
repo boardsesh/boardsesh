@@ -50,4 +50,15 @@ void describe('canonicalizeMirrorFeatures', () => {
     assert.equal(canonical.nx, original.nx);
     assert.notEqual(canonical, original);
   });
+
+  void test('does not extend a partial morphology vector while mirroring', () => {
+    const original = { ...trainingHold(), morph: [1, 2, 3] };
+    const [mirrored] = canonicalizeMirrorFeatures([original], {
+      usesFingerprint: false,
+      mirrored: true,
+    });
+
+    assert.deepEqual(mirrored.morph, [1, 2, 3]);
+    assert.equal(mirrored.morph?.length, 3);
+  });
 });

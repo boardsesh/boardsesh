@@ -127,12 +127,11 @@ void describe('similarity artifact validation', () => {
   });
 
   void test('detects a selected-board key change between validation and load', () => {
+    const expectedKeys = new Set([similarityArtifactKey('expected', 40)]);
+    assert.doesNotThrow(() => assertUnchangedSimilaritySelection(expectedKeys, new Set(expectedKeys)));
+
     assert.throws(
-      () =>
-        assertUnchangedSimilaritySelection(
-          new Set([similarityArtifactKey('expected', 40)]),
-          new Set([similarityArtifactKey('changed', 40)]),
-        ),
+      () => assertUnchangedSimilaritySelection(expectedKeys, new Set([similarityArtifactKey('changed', 40)])),
       /changed after validation: expected=1, loaded=1, missing=1, extra=1/,
     );
   });
