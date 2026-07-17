@@ -16,6 +16,7 @@ const captures = vi.hoisted(() => ({
   scrollStyle: undefined as unknown,
   kavBehavior: undefined as string | undefined,
 }));
+const platform = vi.hoisted(() => ({ os: 'ios' }));
 
 type SheetMockProps = {
   children?: ReactNode;
@@ -44,7 +45,13 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 
 vi.mock('react-native', () => ({
   // Version drives the iOS 26+ card-gap correction in useSheetColumnStyle.
-  Platform: { OS: 'ios', Version: '26.1', select: (options: { ios?: unknown; android?: unknown }) => options.ios },
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+    Version: '26.1',
+    select: (options: { ios?: unknown; android?: unknown }) => options.ios,
+  },
   View: ({ children }: ViewMockProps) => createElement('div', null, children),
   KeyboardAvoidingView: ({ children, behavior }: ViewMockProps & { behavior?: string }) => {
     captures.kavBehavior = behavior;
@@ -104,6 +111,7 @@ beforeEach(() => {
   captures.bottomSheetViewUsed = false;
   captures.scrollStyle = undefined;
   captures.kavBehavior = undefined;
+  platform.os = 'ios';
   hapticMedium.mockClear();
 });
 
@@ -136,7 +144,17 @@ describe('Sheet', () => {
     expect(captures.scrollUsed).toBe(true);
   });
 
-  it('uses BottomSheetView to measure footerless dynamic content', () => {
+  it('keeps footerless native dynamic content in the existing plain View layout', () => {
+    render(
+      <Sheet enableDynamicSizing>
+        <div>body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(false);
+  });
+
+  it('uses BottomSheetView to measure footerless dynamic content on web', () => {
+    platform.os = 'web';
     render(
       <Sheet enableDynamicSizing>
         <div>body</div>

@@ -7,6 +7,7 @@ const captures = vi.hoisted(() => ({
   bottomSheetViewUsed: false,
   scrollUsed: false,
 }));
+const platform = vi.hoisted(() => ({ os: 'ios' }));
 
 type ViewMockProps = { children?: ReactNode };
 
@@ -25,7 +26,13 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 }));
 
 vi.mock('react-native', () => ({
-  Platform: { OS: 'ios', Version: '26.1', select: (options: { ios?: unknown }) => options.ios },
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+    Version: '26.1',
+    select: (options: { ios?: unknown }) => options.ios,
+  },
   View: ({ children }: ViewMockProps) => createElement('div', null, children),
   KeyboardAvoidingView: ({ children }: ViewMockProps) => createElement('div', null, children),
   useWindowDimensions: () => ({ width: 390, height: 844 }),
@@ -71,10 +78,23 @@ import { ModalSheet } from '../ModalSheet';
 beforeEach(() => {
   captures.bottomSheetViewUsed = false;
   captures.scrollUsed = false;
+  platform.os = 'ios';
 });
 
 describe('ModalSheet', () => {
-  it('uses BottomSheetView to measure footerless dynamic content', () => {
+  it('keeps footerless native dynamic content in the existing plain View layout', () => {
+    render(
+      <ModalSheet enableDynamicSizing>
+        <div>body</div>
+      </ModalSheet>,
+    );
+
+    expect(captures.bottomSheetViewUsed).toBe(false);
+    expect(captures.scrollUsed).toBe(false);
+  });
+
+  it('uses BottomSheetView to measure footerless dynamic content on web', () => {
+    platform.os = 'web';
     render(
       <ModalSheet enableDynamicSizing>
         <div>body</div>
