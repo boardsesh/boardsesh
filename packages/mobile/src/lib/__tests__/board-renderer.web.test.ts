@@ -76,7 +76,7 @@ describe('web board renderer', () => {
     expect(_webRendererForTests.renderedObjectUrls.size).toBe(0);
   });
 
-  it('revokes the least-recently-used URL beyond the 512-entry limit', () => {
+  it('does not revoke a URL that a mounted overlay may still reference', () => {
     const revokeObjectUrl = vi.fn();
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl });
     for (let entryIndex = 0; entryIndex < 512; entryIndex++) {
@@ -85,8 +85,8 @@ describe('web board renderer', () => {
 
     _webRendererForTests.rememberObjectUrl('key-512', 'blob:512');
 
-    expect(_webRendererForTests.renderedObjectUrls.size).toBe(512);
-    expect(_webRendererForTests.renderedObjectUrls.has('key-0')).toBe(false);
-    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:0');
+    expect(_webRendererForTests.renderedObjectUrls.size).toBe(513);
+    expect(_webRendererForTests.renderedObjectUrls.has('key-0')).toBe(true);
+    expect(revokeObjectUrl).not.toHaveBeenCalled();
   });
 });

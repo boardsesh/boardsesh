@@ -175,19 +175,14 @@ async function encodeRgbaToPngObjectUrl(
  * this map is the module-level backstop that keeps a repeated cacheKey from
  * minting a second blob URL (which would leak the first).
  *
- * Keep enough entries for the 500-row Phase 0 acceptance case. Beyond that,
- * evict the least-recently-used URL and release the backing Blob.
+ * Object URLs cannot be revoked while a mounted image may still reference
+ * them. The renderer contract has no release signal, so retain URLs for the
+ * document lifetime and release them together on a non-persisted pagehide.
  */
 const renderedObjectUrls = new Map<string, string>();
-const RENDERED_OBJECT_URLS_MAX = 512;
 
 function rememberObjectUrl(cacheKey: string, objectUrl: string): void {
   renderedObjectUrls.set(cacheKey, objectUrl);
-  if (renderedObjectUrls.size <= RENDERED_OBJECT_URLS_MAX) return;
-  const oldestEntry = renderedObjectUrls.entries().next().value as [string, string] | undefined;
-  if (!oldestEntry) return;
-  renderedObjectUrls.delete(oldestEntry[0]);
-  URL.revokeObjectURL(oldestEntry[1]);
 }
 
 function releaseAllObjectUrls(): void {
@@ -229,11 +224,7 @@ function decodeRenderOutput(rawBytes: Uint8Array): {
 
 export async function renderHoldsOverlay(configJson: string, cacheKey: string): Promise<string> {
   const cached = renderedObjectUrls.get(cacheKey);
-  if (cached) {
-    renderedObjectUrls.delete(cacheKey);
-    renderedObjectUrls.set(cacheKey, cached);
-    return cached;
-  }
+  if (cached) return cached;
 
   if (configRequiresModernRenderer(configJson)) {
     // The committed WASM is overlay-only — same position as an old native
