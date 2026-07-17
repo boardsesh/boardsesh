@@ -8,8 +8,11 @@
  *
  *   --mode embedded   (default) → `eoas rollback`   Publishes a rollback
  *       DIRECTIVE: every install currently on the bad OTA reverts to the binary's
- *       EMBEDDED bundle on its next launch. Non-interactive, CI-safe. Use this to
- *       stop the bleeding fast — it always lands on a known-good (shipped) bundle.
+ *       EMBEDDED bundle on its next launch. CI-safe — even though eoas's own
+ *       confirm prompt requires a TTY, this script fakes one (see
+ *       needsPtyWorkaround/buildPtyWrapperArgs below) and auto-answers it when
+ *       stdin isn't interactive. Use this to stop the bleeding fast — it always
+ *       lands on a known-good (shipped) bundle.
  *
  *   --mode republish            → `eoas republish`  Re-points the branch to a
  *       PREVIOUS published update you pick from a list. Interactive (eoas prompts
@@ -92,6 +95,34 @@ export function validateRollbackOptions(options: RollbackOptions): string | null
   return null;
 }
 
+/**
+ * `eoas rollback` (unlike `republish`) always asks "Are you sure?" via a prompt
+ * that throws immediately when stdin isn't a TTY (eoas@2.3.22's confirmAsync
+ * checks `process.stdin.isTTY` before reading anything — no flag skips it). CI
+ * runners have no TTY, so a plain `bunx eoas rollback` fails before it ever
+ * uploads. `republish`'s own interactive picker needs a *real* terminal to be
+ * usable, so it's exempt — this only patches the mode that's supposed to be
+ * CI-safe.
+ */
+export function needsPtyWorkaround(mode: RollbackMode, isTTY: boolean | undefined): boolean {
+  return mode === 'embedded' && !isTTY;
+}
+
+/** Single-quotes a shell argument, escaping embedded single quotes POSIX-style. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * `script` allocates a pty for the wrapped command (so its stdin reports
+ * isTTY === true) and forwards whatever bytes arrive on *our* stdin through
+ * that pty — so piping "y\n" lands as if a human typed it at the confirm
+ * prompt. `-e` propagates the child's real exit code back out.
+ */
+export function buildPtyWrapperArgs(command: string[]): { command: string; args: string[] } {
+  return { command: 'script', args: ['-qec', command.map(shellQuote).join(' '), '/dev/null'] };
+}
+
 function main(): number {
   const options = parseRollbackArgs(process.argv.slice(2));
 
@@ -131,11 +162,23 @@ function main(): number {
   delete eoasEnv.EAS_BUILD;
   eoasEnv.PATH = pathWithoutBrokenBunxShims(process.env.PATH);
 
-  const result = spawnSync('bunx', eoasArgs, {
-    cwd: MOBILE_DIR,
-    stdio: 'inherit', // republish is interactive; rollback streams progress
-    env: eoasEnv,
-  });
+  const bunxCommand = ['bunx', ...eoasArgs];
+  const result = needsPtyWorkaround(options.mode, process.stdin.isTTY)
+    ? (() => {
+        const { command, args } = buildPtyWrapperArgs(bunxCommand);
+        console.log('[ota-rollback] No TTY on stdin — auto-confirming via a faked pty (see needsPtyWorkaround).');
+        return spawnSync(command, args, {
+          cwd: MOBILE_DIR,
+          input: 'y\n',
+          stdio: ['pipe', 'inherit', 'inherit'],
+          env: eoasEnv,
+        });
+      })()
+    : spawnSync('bunx', eoasArgs, {
+        cwd: MOBILE_DIR,
+        stdio: 'inherit', // a real terminal: let eoas prompt normally (republish needs it anyway)
+        env: eoasEnv,
+      });
 
   if (result.status !== 0) {
     console.error('');
