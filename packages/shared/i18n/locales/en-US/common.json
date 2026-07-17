@@ -462,7 +462,8 @@
     "rateBoardsesh": "Rate Boardsesh",
     "reportBug": "Report a bug",
     "joinDiscord": "Join Discord",
-    "logout": "Log out"
+    "logout": "Log out",
+    "logoutError": "We couldn't log you out. Check your connection and try again."
   },
   "loading": {
     "messages": [

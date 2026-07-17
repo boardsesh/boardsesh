@@ -94,6 +94,7 @@
     "reportBug": "Reportar un bug",
     "joinDiscord": "Únete a Discord",
     "logout": "Cerrar sesión",
+    "logoutError": "No hemos podido cerrar tu sesión. Comprueba la conexión e inténtalo de nuevo.",
     "devBuild": "Build de dev",
     "branch": "Rama",
     "qaNotes": "Notas de QA",

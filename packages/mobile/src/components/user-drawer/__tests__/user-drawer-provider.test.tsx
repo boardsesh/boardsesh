@@ -14,10 +14,9 @@ const segmentsMock = vi.hoisted(() => ({ current: [] as string[] }));
 // only once it settles.
 const reanimated = vi.hoisted(() => ({ closeCallbacks: [] as Array<(finished: boolean) => void> }));
 const feedbackPresent = vi.hoisted(() => vi.fn());
-const alertMock = vi.hoisted(() => vi.fn());
+const signOutFailureAlertMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
-  Alert: { alert: alertMock },
   Pressable: ({
     accessibilityLabel,
     children,
@@ -79,6 +78,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../../lib/error-reporting', () => ({ reportError: vi.fn() }));
+vi.mock('../../../lib/sign-out-failure-alert', () => ({ showSignOutFailure: signOutFailureAlertMock }));
 // Mock the changelog data + seen-state so importing the screen never reaches the
 // real secure-store adapter. hasUnseenChangelog is a vi.fn so a test can flip it
 // to exercise the visible "New" pill path (default: nothing unseen → no pill).
@@ -175,7 +175,7 @@ beforeEach(() => {
   routerMock.back.mockClear();
   signOutMock.mockClear();
   signOutMock.mockResolvedValue(undefined);
-  alertMock.mockClear();
+  signOutFailureAlertMock.mockClear();
   feedbackPresent.mockClear();
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
@@ -356,7 +356,10 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     rerender(<Harness showScreen={false} />);
 
     await waitFor(() =>
-      expect(alertMock).toHaveBeenCalledWith('Sign-out was not confirmed', 'Reconnect and sign out again'),
+      expect(signOutFailureAlertMock).toHaveBeenCalledWith(
+        'Sign-out was not confirmed',
+        'Reconnect and sign out again',
+      ),
     );
   });
 

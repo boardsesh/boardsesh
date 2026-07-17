@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,6 +48,7 @@ import {
 } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
 import { reportError } from '../../../src/lib/error-reporting';
+import { showSignOutFailure } from '../../../src/lib/sign-out-failure-alert';
 
 // Translations live in the shared catalog at packages/shared/i18n/locales/<locale>/.
 // We deep-link to the active language's folder so a community member lands on the
@@ -199,7 +200,7 @@ export default function MoreScreen() {
     }
     void signOut().catch((error) => {
       reportError(error);
-      Alert.alert(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
+      showSignOutFailure(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
     });
   };
 

@@ -462,7 +462,8 @@
     "rateBoardsesh": "Noter Boardsesh",
     "reportBug": "Signaler un bug",
     "joinDiscord": "Rejoindre Discord",
-    "logout": "Se déconnecter"
+    "logout": "Se déconnecter",
+    "logoutError": "Impossible de te déconnecter. Vérifie ta connexion et réessaie."
   },
   "loading": {
     "messages": [
