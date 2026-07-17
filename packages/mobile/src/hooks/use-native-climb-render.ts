@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { Directory, Paths } from 'expo-file-system';
 import type { BoardName } from '@boardsesh/shared-schema';
+import { listOverlayCacheEntries } from './overlay-cache-warmup';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { getBoardRenderData } from '../lib/board-details';
 import {
@@ -32,9 +32,6 @@ const RENDERER_VERSION = 3;
 const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
 
-/** Subset of expo-file-system's `File`: its synchronous `delete()`. */
-type DeletableFsEntry = { delete?: () => void };
-
 /**
  * Inputs to the native climb renderer. Just the climb identity — no
  * render-size or quality knobs. The hook always renders at the board's
@@ -42,12 +39,12 @@ type DeletableFsEntry = { delete?: () => void };
  * <Image> scales it down via contentFit="contain" for small surfaces
  * like the list thumbnail.
  *
- * Note: no `mirrored` here. Callers (ClimbListThumbnail, BoardImageNative)
- * flip with a CSS scaleX(-1) so a single cached PNG serves both
- * orientations. If we ever need true Rust-side mirroring (e.g. for an
- * export pipeline that doesn't go through <Image>), thread it back in
- * AND propagate to configBase.mirrored — don't just re-add the cache
- * key suffix, that desyncs the cache from what gets rendered.
+ * Note: no `mirrored` input here. Callers (ClimbListThumbnail,
+ * BoardImageNative) flip with a CSS scaleX(-1) so a single cached PNG serves
+ * both orientations; the Rust config is always pinned to `mirrored: false`.
+ * If we ever need true Rust-side mirroring (e.g. for an export pipeline that
+ * doesn't go through <Image>), thread it back in, change configBase.mirrored,
+ * and restore the cache-key suffix together.
  */
 type NativeClimbRenderParams = {
   frames: string;
@@ -136,6 +133,15 @@ const BOARD_CONFIG_CACHE_MAX = 20;
  * render with no useEffect-driven update.
  */
 const renderedOverlays = new Map<string, string>();
+const RENDERED_OVERLAYS_MAX = 512;
+
+function rememberRenderedOverlay(cacheKey: string, uri: string): void {
+  if (renderedOverlays.has(cacheKey)) renderedOverlays.delete(cacheKey);
+  renderedOverlays.set(cacheKey, uri);
+  if (renderedOverlays.size <= RENDERED_OVERLAYS_MAX) return;
+  const oldestKey = renderedOverlays.keys().next().value;
+  if (oldestKey !== undefined) renderedOverlays.delete(oldestKey);
+}
 
 /**
  * One-time eager scan of the native module's PNG cache directory. The
@@ -155,33 +161,33 @@ function warmupRenderedOverlaysOnce(): void {
   if (warmupRun) return;
   warmupRun = true;
   try {
-    const cacheDir = new Directory(Paths.cache, CACHE_DIR_NAME);
-    if (!cacheDir.exists) return;
+    const entries = listOverlayCacheEntries(CACHE_DIR_NAME);
+    if (!entries) return;
     // Only PNGs from the current RENDERER_VERSION can be reused. Older
     // version prefixes (e.g. v1_*) describe a different render format and
     // would never be matched by cacheKey lookups, so loading them into
     // the map just wastes memory. Opportunistically delete those stale
     // files to reclaim disk while we're already walking the directory.
     const currentVersionPrefix = `v${RENDERER_VERSION}_`;
-    for (const entry of cacheDir.list()) {
-      if (!('uri' in entry) || typeof entry.uri !== 'string') continue;
+    for (const entry of entries) {
+      if (typeof entry.uri !== 'string') continue;
       // Files only — skip subdirectories. expo-file-system returns
       // File and Directory instances; File has a .name like "<key>.png".
-      const name = (entry as { name?: string }).name;
+      const name = entry.name;
       if (!name || !name.endsWith('.png')) continue;
       if (!name.startsWith(currentVersionPrefix)) {
         // Stale leftover from a prior RENDERER_VERSION. Best-effort delete;
         // any failure (permissions, race with another writer) is non-fatal
         // — the file simply lingers until the OS reclaims cache space.
         try {
-          (entry as DeletableFsEntry).delete?.();
+          entry.delete?.();
         } catch {
           // Swallow — never let a delete failure crash the warmup.
         }
         continue;
       }
       const cacheKey = name.slice(0, -'.png'.length);
-      renderedOverlays.set(cacheKey, entry.uri);
+      rememberRenderedOverlay(cacheKey, entry.uri);
     }
   } catch {
     // Filesystem errors at startup shouldn't break the app — the hook's
@@ -395,6 +401,11 @@ function getBoardConfig(
     board_width: renderData.boardWidth,
     board_height: renderData.boardHeight,
     output_width: outputWidth,
+    // The view layer mirrors the complete background + overlay stack. Keep the
+    // renderer unmirrored so both orientations reuse one cached image. This is
+    // explicit for older committed WASM artifacts that predate the Rust field's
+    // serde default.
+    mirrored: false,
     thumbnail: filledStyle,
     stroke_width_multiplier: brushThickness,
     shape_size_multiplier: shapeSize,
@@ -671,7 +682,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // have one for this cache key in the sync map.
   useEffect(() => {
     latestCacheKeyRef.current = currentCacheKey;
-    if (!frames || unsupportedRenderSignatures.has(holdRenderSignature)) return;
+    if (!frames) return;
 
     if (renderedOverlays.has(currentCacheKey)) {
       // Sync map already has it — make sure local state reflects that
@@ -686,6 +697,67 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
 
     const nativeModule = getNativeModule();
     if (!nativeModule) return;
+
+    const acceptRenderedOverlay = (fileUri: string) => {
+      rememberRenderedOverlay(currentCacheKey, fileUri);
+      if (mountedRef.current && latestCacheKeyRef.current === currentCacheKey) {
+        setNativeRender({ key: currentCacheKey, uri: fileUri });
+      }
+    };
+
+    const reportRenderFailure = (error: unknown, cacheKey: string) => {
+      const message = error instanceof Error ? error.message : String(error);
+      // eslint-disable-next-line no-console
+      console.warn(`[useNativeClimbRender] render failed for ${cacheKey}:`, message);
+      reportError(error, {
+        tags: {
+          feature: 'mobile_board_renderer',
+          boardName,
+        },
+        extra: {
+          layoutId,
+          sizeId,
+          setIds,
+          filledStyle,
+          renderWidth,
+          framesLength: frames.length,
+          cacheKey,
+        },
+      });
+    };
+
+    const renderWithDefaultMarkers = () => {
+      const fallbackConfig = getBoardConfig(
+        boardName,
+        layoutId,
+        sizeId,
+        setIds,
+        filledStyle,
+        renderWidth,
+        holdColorOverrides,
+        {},
+        DEFAULT_HOLD_BRUSH_THICKNESS,
+        DEFAULT_HOLD_SHAPE_SIZE,
+        `${holdRenderSignature}.markers-default`,
+      );
+      if (!fallbackConfig) return;
+      const fallbackCacheKey = `${currentCacheKey}_markers-default`;
+      const fallbackPromise = getOrStartInflightRender(fallbackCacheKey, () => {
+        const configJson = JSON.stringify({
+          ...fallbackConfig.configBase,
+          frames,
+        });
+        return nativeModule.renderHoldsOverlay(configJson, fallbackCacheKey);
+      });
+      fallbackPromise
+        .then(acceptRenderedOverlay)
+        .catch((error: unknown) => reportRenderFailure(error, fallbackCacheKey));
+    };
+
+    if (unsupportedRenderSignatures.has(holdRenderSignature)) {
+      renderWithDefaultMarkers();
+      return;
+    }
 
     const boardConfig = getBoardConfig(
       boardName,
@@ -710,46 +782,18 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       return nativeModule.renderHoldsOverlay(configJson, currentCacheKey);
     });
 
-    renderPromise
-      .then((fileUri) => {
-        renderedOverlays.set(currentCacheKey, fileUri);
-        // Discard a stale resolution (props moved on while this render was in
-        // flight) — see latestCacheKeyRef. The sync map above still keeps the
-        // file, so swiping back to this climb is an instant cache hit.
-        if (mountedRef.current && latestCacheKeyRef.current === currentCacheKey) {
-          setNativeRender({ key: currentCacheKey, uri: fileUri });
-        }
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (
-          holdRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE &&
-          message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE)
-        ) {
-          unsupportedRenderSignatures.add(holdRenderSignature);
-        }
-        // Native render failed -- overlay stays null, backgrounds still show.
-        // Surface the cause in Metro logs so we can diagnose; without this
-        // the silent catch masked every binary/ABI mismatch behind a blank
-        // overlay layer.
-        // eslint-disable-next-line no-console
-        console.warn(`[useNativeClimbRender] render failed for ${currentCacheKey}:`, message);
-        reportError(error, {
-          tags: {
-            feature: 'mobile_board_renderer',
-            boardName,
-          },
-          extra: {
-            layoutId,
-            sizeId,
-            setIds,
-            filledStyle,
-            renderWidth,
-            framesLength: frames.length,
-            cacheKey: currentCacheKey,
-          },
-        });
-      });
+    renderPromise.then(acceptRenderedOverlay).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        holdRenderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE &&
+        message.includes(MARKER_RENDERER_UNAVAILABLE_MESSAGE)
+      ) {
+        unsupportedRenderSignatures.add(holdRenderSignature);
+        renderWithDefaultMarkers();
+        return;
+      }
+      reportRenderFailure(error, currentCacheKey);
+    });
     // nativeRender is intentionally excluded from deps: this effect *sets* it,
     // and the only meaningful re-trigger is a cacheKey change.
     // eslint-disable-next-line react-hooks/exhaustive-deps

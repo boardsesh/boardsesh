@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 const browser = vi.hoisted(() => ({ openBrowserAsync: vi.fn().mockResolvedValue(undefined) }));
@@ -14,8 +14,10 @@ const segmentsMock = vi.hoisted(() => ({ current: [] as string[] }));
 // only once it settles.
 const reanimated = vi.hoisted(() => ({ closeCallbacks: [] as Array<(finished: boolean) => void> }));
 const feedbackPresent = vi.hoisted(() => vi.fn());
+const alertMock = vi.hoisted(() => vi.fn());
 
 vi.mock('react-native', () => ({
+  Alert: { alert: alertMock },
   Pressable: ({
     accessibilityLabel,
     children,
@@ -70,6 +72,8 @@ vi.mock('react-i18next', () => ({
         'userDrawer.rateBoardsesh': 'Rate Boardsesh',
         'userDrawer.reportBug': 'Report a bug',
         'userDrawer.whatsNew': "What's New",
+        'mobile.more.signOut.failureTitle': 'Sign-out was not confirmed',
+        'mobile.more.signOut.failure': 'Reconnect and sign out again',
       })[key] ?? key,
   }),
 }));
@@ -170,6 +174,8 @@ beforeEach(() => {
   routerMock.push.mockClear();
   routerMock.back.mockClear();
   signOutMock.mockClear();
+  signOutMock.mockResolvedValue(undefined);
+  alertMock.mockClear();
   feedbackPresent.mockClear();
   reanimated.closeCallbacks.length = 0;
   segmentsMock.current = [];
@@ -338,6 +344,20 @@ describe('user-drawer route defers each action until the route unmounts', () => 
     flushDrawerClose();
     rerender(<Harness showScreen={false} />);
     expect(signOutMock).toHaveBeenCalledWith('manual');
+  });
+
+  it('surfaces a durable manual sign-out failure after local cleanup', async () => {
+    const signOutError = new Error('cookie revocation failed');
+    signOutMock.mockRejectedValueOnce(signOutError);
+    const { rerender } = render(<Harness showScreen />);
+
+    fireEvent.click(screen.getByText('Log out'));
+    flushDrawerClose();
+    rerender(<Harness showScreen={false} />);
+
+    await waitFor(() =>
+      expect(alertMock).toHaveBeenCalledWith('Sign-out was not confirmed', 'Reconnect and sign out again'),
+    );
   });
 
   it('does not pop the route if the slide-out settles after the screen has unmounted (mountedRef guard)', () => {

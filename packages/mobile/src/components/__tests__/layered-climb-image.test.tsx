@@ -4,8 +4,14 @@ import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 type ViewMockProps = { children?: ReactNode; testID?: string };
+const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'web' }));
 
 vi.mock('react-native', () => ({
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+  },
   View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
@@ -59,6 +65,16 @@ describe('LayeredClimbImage', () => {
 
     expect(container.querySelector('[data-testid="layered-climb-image-empty-fallback"]')).toBeNull();
     expect(container.querySelector('img[src="file:///bundled/kilter.webp"]')).toBeTruthy();
+  });
+
+  it('keeps browser asset URLs loadable instead of turning them into file URLs', () => {
+    platform.os = 'web';
+    const { container } = render(
+      createElement(LayeredClimbImage, { overlayUri: null, backgroundPaths: ['/assets/kilter.webp'] }),
+    );
+
+    expect(container.querySelector('img[src="/assets/kilter.webp"]')).toBeTruthy();
+    platform.os = 'ios';
   });
 
   it('lets missing-background placeholders own the fallback state', () => {

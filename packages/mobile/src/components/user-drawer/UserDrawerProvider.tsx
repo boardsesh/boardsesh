@@ -1,5 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useSegments } from 'expo-router';
+import { useTranslation } from 'react-i18next';
+import { Alert } from 'react-native';
 import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { openDiscordInvite } from '../../lib/discord';
 import { reportError } from '../../lib/error-reporting';
@@ -46,6 +48,7 @@ function currentBoardReturnTo(segments: readonly string[]): BoardReturnTo {
 
 export function UserDrawerProvider({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
+  const { t } = useTranslation('common');
   const segments = useSegments();
   const feedbackSheetRef = useRef<BottomSheetModal>(null);
   const [feedbackMode, setFeedbackMode] = useState<FeedbackSheetMode>('rating');
@@ -108,8 +111,11 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOutAction = useCallback(() => {
-    void signOut('manual').catch(reportError);
-  }, [signOut]);
+    void signOut('manual').catch((error) => {
+      reportError(error);
+      Alert.alert(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
+    });
+  }, [signOut, t]);
 
   const presentFeedback = useCallback(() => {
     feedbackSheetRef.current?.present();

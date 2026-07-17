@@ -12,6 +12,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { readPosthogFeatureFlags, subscribePosthogFeatureFlags } from '../lib/analytics';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
+import { isOfflineDownloadsEnabled } from './offline-downloads-enabled';
 
 export type FeatureFlags = Record<string, boolean | undefined>;
 
@@ -141,7 +142,7 @@ export function useFeatureFlag<K extends keyof FeatureFlags>(key: K): FeatureFla
  * the safe default while PostHog resolves.
  */
 export function useOfflineDownloadsEnabled(): boolean {
-  return useFeatureFlag('offline-board-downloads') === true;
+  return isOfflineDownloadsEnabled(useFeatureFlag('offline-board-downloads'));
 }
 
 /**

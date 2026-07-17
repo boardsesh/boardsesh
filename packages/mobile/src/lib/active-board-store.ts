@@ -19,17 +19,18 @@
 
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { getPreference, setPreference, removePreference } from './preference-store';
+import type { UserStorageOwner } from './user-storage-owner';
 
 const ACTIVE_BOARD_KEY = 'boardsesh_active_board_v2';
 
-export function getStoredActiveBoard(): Promise<UserBoard | null> {
+export function getStoredActiveBoard(_owner?: UserStorageOwner | null): Promise<UserBoard | null> {
   return getPreference<UserBoard>(ACTIVE_BOARD_KEY);
 }
 
-export function setStoredActiveBoard(board: UserBoard): Promise<void> {
+export function setStoredActiveBoard(board: UserBoard, _owner?: UserStorageOwner | null): Promise<void> {
   return setPreference(ACTIVE_BOARD_KEY, board);
 }
 
-export function clearStoredActiveBoard(): Promise<void> {
+export function clearStoredActiveBoard(_owner?: UserStorageOwner | null): Promise<void> {
   return removePreference(ACTIVE_BOARD_KEY);
 }

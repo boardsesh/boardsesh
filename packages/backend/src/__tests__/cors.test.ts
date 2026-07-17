@@ -63,6 +63,8 @@ describe('CORS Handler', () => {
       expect(origins).toContain('http://127.0.0.1:3000');
       expect(origins).toContain('http://localhost:3001');
       expect(origins).toContain('http://127.0.0.1:3001');
+      expect(origins).toContain('http://localhost:3002');
+      expect(origins).toContain('http://127.0.0.1:3009');
     });
 
     it('parses DEV_ALLOWED_ORIGINS env var (comma-separated, trimmed)', () => {

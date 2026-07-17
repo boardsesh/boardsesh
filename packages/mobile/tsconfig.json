@@ -3,7 +3,8 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@gorhom/bottom-sheet": ["./web-runtime/node_modules/@gorhom/bottom-sheet"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx", "app/**/*.ts", "app/**/*.tsx"],

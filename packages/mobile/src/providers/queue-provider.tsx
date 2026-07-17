@@ -35,6 +35,7 @@ import { toClimbQueueItem } from '../lib/queue-conversion';
 import { climbToQueueItem, toClimbInput } from '../lib/climb-to-queue-item';
 import { track } from '../lib/analytics';
 import { reportHandledError } from '../lib/error-reporting';
+import { useAuthTransportRevision } from '../lib/auth-transport-revision';
 import { useToast } from './toast-provider';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { usePartyProfile } from './party-profile-provider';
@@ -48,7 +49,6 @@ import {
   QueueDataContext,
   QueueActionsContext,
   QueuePlaylistSuggestionContext,
-  type StartSessionConfig,
   type QueueContextValue,
   type QueueSessionControlContextValue,
   type QueueSessionIdContextValue,
@@ -111,6 +111,7 @@ const defaultSearchParams: QueueSearchParams = {};
 const EMPTY_USER_ID_SET: ReadonlySet<string> = new Set<string>();
 
 export function QueueProvider({ children }: { children: ReactNode }) {
+  const authTransportRevision = useAuthTransportRevision();
   const [state, dispatch] = useReducer(queueReducer, defaultSearchParams, initialState);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -543,6 +544,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // subscriptions, sync-gate wiring, roster/liveStats/wall-lit updates, peer
   // angle-follow, and the 60s hash watchdog. See useSessionRealtime.
   useSessionRealtime({
+    authTransportRevision,
     sessionId,
     dispatch,
     coordinator,

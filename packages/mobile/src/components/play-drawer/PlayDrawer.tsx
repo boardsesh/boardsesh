@@ -960,6 +960,7 @@ export function PlayDrawer({
                         lightbulbConnected={bluetoothConnected}
                         lightbulbPending={lightbulbPending}
                         lightbulbLongPressEnabled={bluetoothConnected}
+                        showLightbulb={bluetooth !== null}
                         // The on-wall banner owns the driver's face in the header
                         // when it's up; suppress the lightbulb pip so the same
                         // avatar never shows twice in the drawer.

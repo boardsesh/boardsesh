@@ -91,10 +91,10 @@ export function initCors(boardseshUrl: string): void {
   }
 
   if (process.env.NODE_ENV !== 'production') {
-    allowedOrigins.push('http://localhost:3000', 'http://127.0.0.1:3000');
-    allowedOrigins.push('http://localhost:3001', 'http://127.0.0.1:3001'); // For multi-instance testing
-    allowedOrigins.push('https://localhost:3000', 'https://127.0.0.1:3000');
-    allowedOrigins.push('https://localhost:3001', 'https://127.0.0.1:3001');
+    DEV_WEB_PORTS.forEach((port) => {
+      allowedOrigins.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
+      allowedOrigins.push(`https://localhost:${port}`, `https://127.0.0.1:${port}`);
+    });
 
     // Allow additional origins for LAN/mobile testing via DEV_ALLOWED_ORIGINS env var
     // Example: DEV_ALLOWED_ORIGINS=http://192.168.0.201:3000,http://192.168.1.100:3000

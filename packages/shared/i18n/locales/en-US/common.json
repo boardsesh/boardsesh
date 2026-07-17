@@ -176,7 +176,9 @@
         "pendingMessage_one": "You have 1 change that hasn't synced yet. Signing out discards it.",
         "pendingMessage_other": "You have {{count}} changes that haven't synced yet. Signing out discards them.",
         "confirm": "Sign out",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "failureTitle": "Sign-out wasn't confirmed",
+        "failure": "Boardsesh couldn't confirm sign-out. Reconnect and sign out again before leaving this device."
       }
     },
     "about": {

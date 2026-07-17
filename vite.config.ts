@@ -498,7 +498,7 @@ export default defineConfig({
       },
       'typecheck:mobile': {
         command: 'bun run --filter=@boardsesh/mobile typecheck',
-        dependsOn: ['build:shared', 'build:constants'],
+        dependsOn: ['build:shared', 'build:constants', 'mobile:web-runtime:install'],
       },
       'typecheck:kilter': {
         command: 'bun run --filter=@boardsesh/kilter-sync typecheck',
@@ -576,6 +576,10 @@ export default defineConfig({
       },
 
       // --- Mobile validation ---
+      'mobile:web-runtime:install': {
+        command: 'bun install --cwd packages/mobile/web-runtime --frozen-lockfile',
+        cache: false,
+      },
       'check:mobile-native-deps': {
         command: 'tsx scripts/mobile-native-deps-check.ts',
         cache: false,
@@ -624,6 +628,11 @@ export default defineConfig({
       },
       'check:mobile-bundle': {
         command: 'bash scripts/mobile-bundle-check.sh',
+        cache: false,
+      },
+      'check:mobile-web-bundle': {
+        command: 'bash scripts/mobile-web-bundle-check.sh',
+        dependsOn: ['mobile:web-runtime:install'],
         cache: false,
       },
       'check:mobile-simulator': {
@@ -706,6 +715,11 @@ export default defineConfig({
       // --- Dev servers ---
       'dev:mobile': {
         command: 'tsx scripts/mobile-dev-start.ts',
+        cache: false,
+      },
+      'dev:mobile:web': {
+        command: 'tsx scripts/dev-orchestrator.ts --expo-web',
+        dependsOn: ['db:up', 'mobile:web-runtime:install'],
         cache: false,
       },
       'dev:backend': {

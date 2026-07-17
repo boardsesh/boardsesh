@@ -21,6 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 scan_dirs=(packages/mobile/src packages/mobile/app)
+gorhom_scan_dirs=(packages/mobile packages/shared)
 
 # swift-ui (and its sub-paths, e.g. /modifiers) must live only in *.ios.{ts,tsx}.
 # Match a quoted module specifier so a stray mention in a comment doesn't trip it.
@@ -39,6 +40,16 @@ compose_bad=$(
     || true
 )
 
+# Gorhom was removed from native in #3167 after an Android freeze. Expo web uses
+# it behind one compatibility shim because @expo/ui's native sheet cannot render
+# there; no other app/shared module may import it. Metro's exact web redirect is
+# the only non-shim source allowed to name the package.
+gorhom_bad=$(
+  rg -l -g '*.{ts,tsx,js,jsx,mjs,cjs}' "['\"]@gorhom/bottom-sheet" "${gorhom_scan_dirs[@]}" \
+    | grep -vE '^packages/mobile/(metro\.config\.js|src/web-shims/bottom-sheet\.tsx)$' \
+    || true
+)
+
 fail=0
 if [ -n "$swiftui_bad" ]; then
   echo "✖ @expo/ui/swift-ui imported outside a *.ios.{ts,tsx} file:"
@@ -48,6 +59,11 @@ fi
 if [ -n "$compose_bad" ]; then
   echo "✖ @expo/ui/jetpack-compose imported outside a *.android.{ts,tsx} file:"
   echo "$compose_bad"
+  fail=1
+fi
+if [ -n "$gorhom_bad" ]; then
+  echo "✖ @gorhom/bottom-sheet may only be imported by the Expo web sheet shim:"
+  echo "$gorhom_bad"
   fail=1
 fi
 
@@ -61,4 +77,4 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
-echo "✓ @expo/ui/swift-ui imports are all in *.ios files; @expo/ui/jetpack-compose imports are all in *.android files."
+echo "✓ Expo UI platform imports and the web-only Gorhom boundary are valid."

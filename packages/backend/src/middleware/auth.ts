@@ -184,17 +184,16 @@ export async function validateToken(token: string): Promise<AuthResult | null> {
  */
 export function extractAuthToken(connectionParams?: Record<string, unknown>, requestUrl?: string): string | null {
   // Check connection params (preferred method)
-  if (connectionParams?.authToken && typeof connectionParams.authToken === 'string') {
-    return connectionParams.authToken;
+  if (connectionParams && Object.prototype.hasOwnProperty.call(connectionParams, 'authToken')) {
+    return typeof connectionParams.authToken === 'string' ? connectionParams.authToken : '';
   }
 
   // Fall back to URL query params
   if (requestUrl) {
     try {
       const url = new URL(requestUrl, 'http://localhost');
-      const token = url.searchParams.get('token');
-      if (token) {
-        return token;
+      if (url.searchParams.has('token')) {
+        return url.searchParams.get('token') ?? '';
       }
     } catch {
       // Invalid URL, ignore

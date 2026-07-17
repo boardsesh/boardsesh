@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vite-plus/test';
+import { afterEach, beforeEach, describe, it, expect } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
+import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
 
 const { getListPageCacheTTL, hasUserSpecificFilters } = await import('@/app/lib/list-page-cache');
 const { middleware } = await import('@/middleware');
@@ -12,6 +13,8 @@ function sp(params: Record<string, string> = {}): URLSearchParams {
 const TTL_24H = 86400;
 const LEGACY_LIST = '/kilter/original/12x12-square/screw_bolt/40/list';
 const SLUG_LIST = '/b/kilter-original-12x12/40/list';
+const originalExpoWebFlag = process.env.BOARDSESH_WEB;
+const originalExpoWebOrigin = process.env.BOARDSESH_EXPO_WEB_ORIGIN;
 
 describe('getListPageCacheTTL', () => {
   describe('route matching', () => {
@@ -262,6 +265,95 @@ describe('middleware session redirect', () => {
     const response = middleware(makeRequest('/kilter/original/12x12-square/screw_bolt/40/list?session=abc-123'));
     expect(response.status).toBe(307);
     expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
+  });
+});
+
+describe('middleware Expo web carve-out', () => {
+  it.each(['/app', '/app/(tabs)/climbs', '/APP/play'])('keeps %s on the unprefixed path', (path) => {
+    const request = makeRequest(path);
+    request.cookies.set(LOCALE_COOKIE, 'es');
+
+    const response = middleware(request);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.has('location')).toBe(false);
+    expect(response.headers.has('x-middleware-rewrite')).toBe(false);
+    expect(response.headers.has('set-cookie')).toBe(false);
+    expect(response.headers.get('x-robots-tag')).toBe('noindex, follow');
+    expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(response.headers.get('strict-transport-security')).toBe('max-age=31536000; includeSubDomains');
+    expect(response.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
+  });
+
+  it('does not consume legacy session query parameters under /app', () => {
+    const response = middleware(makeRequest('/app/play?session=party-123'));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.has('location')).toBe(false);
+    expect(response.headers.has('set-cookie')).toBe(false);
+  });
+});
+
+describe('middleware Expo web support namespace carve-out', () => {
+  beforeEach(() => {
+    process.env.BOARDSESH_WEB = '1';
+    process.env.BOARDSESH_EXPO_WEB_ORIGIN = 'http://localhost:8082';
+  });
+
+  afterEach(() => {
+    if (originalExpoWebFlag === undefined) delete process.env.BOARDSESH_WEB;
+    else process.env.BOARDSESH_WEB = originalExpoWebFlag;
+
+    if (originalExpoWebOrigin === undefined) delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
+    else process.env.BOARDSESH_EXPO_WEB_ORIGIN = originalExpoWebOrigin;
+  });
+
+  it.each([
+    ['/assets', 'es'],
+    ['/assets?unstable_path=node_modules%2Fvector-icons&session=party-123', 'fr'],
+    ['/assets/vector-icons?session=party-123', 'es'],
+    ['/packages/mobile', 'fr'],
+    ['/packages/mobile?platform=web&session=party-123', 'es'],
+    ['/packages/mobile/node_modules/expo-router/entry?platform=web&session=party-123', 'fr'],
+  ])('passes %s through without locale or session handling', (path, locale) => {
+    const request = makeRequest(path);
+    request.cookies.set(LOCALE_COOKIE, locale);
+
+    const response = middleware(request);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.has('location')).toBe(false);
+    expect(response.headers.has('x-middleware-rewrite')).toBe(false);
+    expect(response.headers.has('set-cookie')).toBe(false);
+    expect(response.headers.get(`x-middleware-request-${LOCALE_HEADER}`)).toBe(DEFAULT_LOCALE);
+  });
+
+  it.each([
+    ['missing web flag', undefined, 'http://localhost:8082'],
+    ['missing proxy origin', '1', undefined],
+  ])('preserves locale handling with %s', (_scenario, webFlag, proxyOrigin) => {
+    if (webFlag === undefined) delete process.env.BOARDSESH_WEB;
+    else process.env.BOARDSESH_WEB = webFlag;
+
+    if (proxyOrigin === undefined) delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
+    else process.env.BOARDSESH_EXPO_WEB_ORIGIN = proxyOrigin;
+
+    const request = makeRequest('/assets');
+    request.cookies.set(LOCALE_COOKIE, 'es');
+
+    const response = middleware(request);
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/es/assets');
+  });
+
+  it('does not weaken session handling on unrelated routes', () => {
+    const response = middleware(makeRequest('/some/page?session=party-123'));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('http://localhost:3000/some/page');
+    expect(response.headers.get('set-cookie')).toContain(CLIMB_SESSION_COOKIE);
   });
 });
 

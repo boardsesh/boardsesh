@@ -10,6 +10,7 @@ export default function AuthLayout() {
       <Stack.Screen name="register" />
       <Stack.Screen name="forgot-password" />
       <Stack.Screen name="reset-password" />
+      <Stack.Screen name="session-unavailable" />
     </Stack>
   );
 }

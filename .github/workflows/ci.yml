@@ -585,6 +585,8 @@ jobs:
           name: built-packages
       - name: Metro bundle check
         run: vp run check:mobile-bundle
+      - name: Expo web bundle check
+        run: vp run check:mobile-web-bundle
 
   commit-lint:
     needs: [changes]

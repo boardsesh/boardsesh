@@ -99,13 +99,16 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         let isAuthenticated = false;
         let authenticatedUserId: string | undefined;
 
-        if (token) {
+        if (token !== null) {
           const authResult = await validateToken(token);
-          if (authResult) {
-            isAuthenticated = true;
-            authenticatedUserId = authResult.userId;
-            logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
+          if (!authResult) {
+            logger.warn('[Auth] Rejected WebSocket connection with invalid auth token');
+            ctx.extra.socket.close(4401, 'Unauthorized');
+            return;
           }
+          isAuthenticated = true;
+          authenticatedUserId = authResult.userId;
+          logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
         }
 
         // Check for controller API key authentication

@@ -12,6 +12,7 @@ const captures = vi.hoisted(() => ({
   onChange: null as null | ((index: number) => void),
   snapPoints: undefined as unknown,
   scrollUsed: false,
+  bottomSheetViewUsed: false,
   scrollStyle: undefined as unknown,
   kavBehavior: undefined as string | undefined,
 }));
@@ -34,6 +35,10 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     captures.scrollUsed = true;
     captures.scrollStyle = style;
     return createElement('div', { 'data-scroll': 'true' }, children);
+  },
+  BottomSheetView: ({ children }: ViewMockProps) => {
+    captures.bottomSheetViewUsed = true;
+    return createElement('div', { 'data-bottom-sheet-view': 'true' }, children);
   },
 }));
 
@@ -96,6 +101,7 @@ beforeEach(() => {
   captures.onChange = null;
   captures.snapPoints = undefined;
   captures.scrollUsed = false;
+  captures.bottomSheetViewUsed = false;
   captures.scrollStyle = undefined;
   captures.kavBehavior = undefined;
   hapticMedium.mockClear();
@@ -128,6 +134,32 @@ describe('Sheet', () => {
       </Sheet>,
     );
     expect(captures.scrollUsed).toBe(true);
+  });
+
+  it('uses BottomSheetView to measure footerless dynamic content', () => {
+    render(
+      <Sheet enableDynamicSizing>
+        <div>body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(true);
+  });
+
+  it('keeps fixed-size and footer content in the existing plain View layout', () => {
+    const fixedSheet = render(
+      <Sheet>
+        <div>fixed body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(false);
+
+    fixedSheet.unmount();
+    render(
+      <Sheet enableDynamicSizing footer={<div>save</div>}>
+        <div>footer body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(false);
   });
 
   it('defaults snap points when none are provided', () => {

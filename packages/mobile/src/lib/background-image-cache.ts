@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { Asset } from 'expo-asset';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { getBoardRenderData } from './board-details';
@@ -101,6 +102,14 @@ function tryResolveBundledPathSync(manifestKey: string): string | null {
 
   try {
     const asset = Asset.fromModule(moduleId);
+    if (Platform.OS === 'web') {
+      const webUrl = asset.localUri ?? asset.uri;
+      if (webUrl) {
+        resolvedPaths.set(manifestKey, webUrl);
+        return webUrl;
+      }
+      return null;
+    }
     if (asset.localUri && asset.localUri.startsWith('file://')) {
       const path = toFilesystemPath(asset.localUri);
       resolvedPaths.set(manifestKey, path);
@@ -132,6 +141,15 @@ async function resolveBundledPathAsync(manifestKey: string): Promise<string | nu
 
   try {
     const asset = Asset.fromModule(moduleId);
+    if (Platform.OS === 'web') {
+      const webUrl = asset.localUri ?? asset.uri;
+      if (webUrl) {
+        resolvedPaths.set(manifestKey, webUrl);
+        return webUrl;
+      }
+      warnMissing(manifestKey, 'web asset resolved to no URL');
+      return null;
+    }
     if (!asset.localUri || !asset.localUri.startsWith('file://')) {
       await asset.downloadAsync();
     }

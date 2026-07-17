@@ -30,6 +30,11 @@ export default function RegisterScreen() {
   const [fieldErrors, setFieldErrors] = useState<RegisterFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [registrationNextStep, setRegistrationNextStep] = useState<
+    'verify_email_sent' | 'verify_email_resend' | 'sign_in' | null
+  >(null);
+  const [resendingVerification, setResendingVerification] = useState(false);
+  const [resendError, setResendError] = useState<string | null>(null);
   // Shared Apple/Google flow; OAuth errors land in the same region as the form.
   const { signIn: handleOAuthSignIn, inProgress: oauthInProgress } = useNativeOAuthSignIn({
     isRegistration: true,
@@ -92,22 +97,40 @@ export default function RegisterScreen() {
     setFieldErrors({});
     setFormError(null);
     setSubmitting(true);
-    track(SHARED_EVENTS.LoginAttempted, { auth_method: 'credentials', flow: 'native', is_registration: true });
+    const authFlow = Platform.OS === 'web' ? 'web' : 'native';
+    track(SHARED_EVENTS.LoginAttempted, { auth_method: 'credentials', flow: authFlow, is_registration: true });
     try {
       const result = await register(trimmedEmail, values.password, values.name.trim() || undefined);
       if (result.success) {
-        track(SHARED_EVENTS.LoginSucceeded, { auth_method: 'credentials', flow: 'native', is_registration: true });
-        track(SHARED_EVENTS.SignupCompleted, { auth_method: 'credentials', flow: 'native' });
-        // First-touch attribution — written once and never overwritten. Mirrors
-        // web's handleRegister (auth-page-content.tsx): PostHog merges these onto
-        // the authenticated user once reconcileAnalyticsIdentity's alias() runs.
-        // Native registration always auto-logs-in (registerWithCredentials has no
-        // email-verification branch, unlike web's /api/auth/register), so unlike
-        // web there's no "early return before alias()" caveat here.
         setPersonProperties(undefined, {
           signup_at: new Date().toISOString(),
           signup_auth_method: 'credentials',
         });
+
+        if (result.authenticated === false) {
+          track(SHARED_EVENTS.SignupCompleted, {
+            auth_method: 'credentials',
+            flow: 'web',
+            requires_verification: result.requiresVerification,
+          });
+          const verificationEmailNeedsResend =
+            Platform.OS === 'web' && result.requiresVerification && 'emailSent' in result && result.emailSent === false;
+          setRegistrationNextStep(
+            result.requiresVerification
+              ? verificationEmailNeedsResend
+                ? 'verify_email_resend'
+                : 'verify_email_sent'
+              : 'sign_in',
+          );
+          return;
+        }
+
+        track(SHARED_EVENTS.LoginSucceeded, {
+          auth_method: 'credentials',
+          flow: authFlow,
+          is_registration: true,
+        });
+        track(SHARED_EVENTS.SignupCompleted, { auth_method: 'credentials', flow: authFlow });
         // AuthProvider flips isAuthenticated and the auth-group Redirect lands the
         // new user in the app — same auto-login path as signInWithCredentials.
         return;
@@ -116,7 +139,7 @@ export default function RegisterScreen() {
       const failureReason = classifyNativeAuthFailureReason(result, 'credentials');
       track(SHARED_EVENTS.LoginFailed, {
         auth_method: 'credentials',
-        flow: 'native',
+        flow: authFlow,
         failure_reason: failureReason,
         failure_detail: result.error,
         is_registration: true,
@@ -134,7 +157,7 @@ export default function RegisterScreen() {
         // An unexpected backend failure (5xx, malformed response, …) — report it
         // so a broken register endpoint is visible, not just a red line.
         reportError(new Error(`Registration failed: ${result.error}`), {
-          tags: { source: 'native-auth', provider: 'credentials', flow: 'native', failure_reason: failureReason },
+          tags: { source: 'native-auth', provider: 'credentials', flow: authFlow, failure_reason: failureReason },
           extra: { status: result.status, server_error: result.error },
         });
         setFormError(t('login.toasts.registrationFailedRetry'));
@@ -142,13 +165,39 @@ export default function RegisterScreen() {
     } catch (registerError) {
       track(SHARED_EVENTS.LoginFailed, {
         auth_method: 'credentials',
-        flow: 'native',
+        flow: authFlow,
         failure_reason: 'exception',
         is_registration: true,
       });
       throw registerError;
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function onResendVerification() {
+    if (Platform.OS !== 'web' || registrationNextStep !== 'verify_email_resend' || resendingVerification) return;
+
+    setResendError(null);
+    setResendingVerification(true);
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmedEmail }),
+      });
+      if (!response.ok) {
+        setResendError(t('verifyRequest.toasts.failed'));
+        return;
+      }
+
+      setRegistrationNextStep('verify_email_sent');
+    } catch {
+      setResendError(t('verifyRequest.toasts.failed'));
+    } finally {
+      setResendingVerification(false);
     }
   }
 
@@ -169,159 +218,198 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <Text variant="subheadline" color={theme.systemColors.secondaryLabel} style={styles.intro}>
-            {t('login.signUp.subtitle')}
-          </Text>
-
-          {showSocialSignIn && (
+          {registrationNextStep ? (
+            <View style={styles.successContainer} accessibilityLiveRegion="polite">
+              <Text style={[styles.successText, { color: theme.systemColors.label }]}>
+                {registrationNextStep === 'verify_email_sent'
+                  ? t('login.toasts.checkEmail')
+                  : registrationNextStep === 'verify_email_resend'
+                    ? t('login.signUp.verificationEmailNotSent')
+                    : t('login.toasts.loginAfterCreate')}
+              </Text>
+              {registrationNextStep === 'verify_email_resend' ? (
+                <>
+                  <Button
+                    title={t('verifyRequest.resend')}
+                    onPress={() => {
+                      void onResendVerification();
+                    }}
+                    variant="filled"
+                    size="large"
+                    loading={resendingVerification}
+                    disabled={resendingVerification}
+                  />
+                  {resendError ? (
+                    <Text variant="footnote" style={styles.errorText} accessibilityLiveRegion="polite">
+                      {resendError}
+                    </Text>
+                  ) : null}
+                </>
+              ) : null}
+              <Button
+                title={t('login.submit.signIn')}
+                onPress={() => router.replace('/auth/login')}
+                variant="text"
+                size="large"
+              />
+            </View>
+          ) : (
             <>
-              <View style={styles.socialButtons}>
-                {showAppleSignIn && (
-                  // SIGN_UP variant on the registration screen, per Apple HIG.
-                  <AppleAuthentication.AppleAuthenticationButton
-                    buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
-                    buttonStyle={
-                      isDark
-                        ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                        : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-                    }
-                    cornerRadius={12}
-                    style={styles.appleButton}
-                    onPress={() => {
-                      hapticLight();
-                      void handleOAuthSignIn('apple');
-                    }}
-                  />
-                )}
-                {showGoogleSignIn && (
-                  <GoogleSigninButton
-                    size={GoogleSigninButton.Size.Wide}
-                    color={isDark ? GoogleSigninButton.Color.Dark : GoogleSigninButton.Color.Light}
-                    disabled={oauthInProgress}
-                    style={styles.googleButton}
-                    onPress={() => {
-                      hapticLight();
-                      void handleOAuthSignIn('google');
-                    }}
-                  />
-                )}
+              <Text variant="subheadline" color={theme.systemColors.secondaryLabel} style={styles.intro}>
+                {t('login.signUp.subtitle')}
+              </Text>
+
+              {showSocialSignIn && (
+                <>
+                  <View style={styles.socialButtons}>
+                    {showAppleSignIn && (
+                      // SIGN_UP variant on the registration screen, per Apple HIG.
+                      <AppleAuthentication.AppleAuthenticationButton
+                        buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+                        buttonStyle={
+                          isDark
+                            ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                            : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                        }
+                        cornerRadius={12}
+                        style={styles.appleButton}
+                        onPress={() => {
+                          hapticLight();
+                          void handleOAuthSignIn('apple');
+                        }}
+                      />
+                    )}
+                    {showGoogleSignIn && (
+                      <GoogleSigninButton
+                        size={GoogleSigninButton.Size.Wide}
+                        color={isDark ? GoogleSigninButton.Color.Dark : GoogleSigninButton.Color.Light}
+                        disabled={oauthInProgress}
+                        style={styles.googleButton}
+                        onPress={() => {
+                          hapticLight();
+                          void handleOAuthSignIn('google');
+                        }}
+                      />
+                    )}
+                  </View>
+
+                  <View style={styles.dividerRow}>
+                    <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
+                    <Text variant="footnote" color={theme.systemColors.secondaryLabel}>
+                      {t('login.divider')}
+                    </Text>
+                    <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
+                  </View>
+                </>
+              )}
+
+              <View style={styles.form}>
+                <AuthFieldset
+                  onSubmit={() => {
+                    void onSubmit();
+                  }}
+                  fields={[
+                    {
+                      key: 'email',
+                      label: t('login.fields.email'),
+                      value: values.email,
+                      onChangeText: setField('email'),
+                      placeholder: t('login.placeholders.email'),
+                      error: fieldErrors.email,
+                      keyboardType: 'email-address',
+                      autoCapitalize: 'none',
+                      autoCorrect: false,
+                      // `username` (not emailAddress) lets iOS offer Strong Password + save
+                      // the new credential to Keychain on a create-account screen.
+                      textContentType: 'username',
+                      autoComplete: 'email',
+                      editable: !submitting,
+                    },
+                    {
+                      key: 'password',
+                      label: t('login.fields.password'),
+                      value: values.password,
+                      onChangeText: setField('password'),
+                      placeholder: t('login.placeholders.password'),
+                      error: fieldErrors.password,
+                      hint: t('login.signUp.passwordHint'),
+                      secureTextEntry: true,
+                      autoCapitalize: 'none',
+                      autoCorrect: false,
+                      textContentType: 'newPassword',
+                      autoComplete: 'new-password',
+                      editable: !submitting,
+                      showLabel: t('login.a11y.showPassword'),
+                      hideLabel: t('login.a11y.hidePassword'),
+                    },
+                    {
+                      key: 'confirmPassword',
+                      label: t('login.fields.confirmPassword'),
+                      value: values.confirmPassword,
+                      onChangeText: setField('confirmPassword'),
+                      placeholder: t('login.placeholders.confirmPassword'),
+                      error: fieldErrors.confirmPassword,
+                      secureTextEntry: true,
+                      autoCapitalize: 'none',
+                      autoCorrect: false,
+                      textContentType: 'newPassword',
+                      autoComplete: 'new-password',
+                      editable: !submitting,
+                      showLabel: t('login.a11y.showPassword'),
+                      hideLabel: t('login.a11y.hidePassword'),
+                    },
+                    {
+                      key: 'name',
+                      label: t('login.fields.name'),
+                      value: values.name,
+                      onChangeText: setField('name'),
+                      placeholder: t('login.placeholders.name'),
+                      error: fieldErrors.name,
+                      autoCapitalize: 'words',
+                      autoCorrect: false,
+                      textContentType: 'name',
+                      autoComplete: 'name',
+                      editable: !submitting,
+                    },
+                  ]}
+                />
+                <Button
+                  title={t('login.submit.signUp')}
+                  onPress={() => {
+                    void onSubmit();
+                  }}
+                  variant="filled"
+                  size="large"
+                  loading={submitting}
+                  disabled={!canSubmit}
+                  style={styles.submitButton}
+                />
+                {formError ? (
+                  <Text variant="footnote" style={styles.errorText} accessibilityLiveRegion="polite">
+                    {formError}
+                  </Text>
+                ) : null}
               </View>
 
-              <View style={styles.dividerRow}>
-                <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
-                <Text variant="footnote" color={theme.systemColors.secondaryLabel}>
-                  {t('login.divider')}
+              <View style={styles.footer}>
+                <Text variant="subheadline" color={theme.systemColors.secondaryLabel}>
+                  {t('login.links.haveAccount')}{' '}
                 </Text>
-                <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
+                {/* replace (not back) so a deep-link straight to /auth/register still
+                lands on login rather than no-op'ing on an empty back stack. */}
+                <Pressable
+                  onPress={() => router.replace('/auth/login')}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                  style={styles.footerLinkHit}
+                  accessibilityRole="link"
+                >
+                  <Text variant="subheadline" color={theme.systemColors.accent} style={styles.footerLink}>
+                    {t('login.submit.signIn')}
+                  </Text>
+                </Pressable>
               </View>
             </>
           )}
-
-          <View style={styles.form}>
-            <AuthFieldset
-              onSubmit={() => {
-                void onSubmit();
-              }}
-              fields={[
-                {
-                  key: 'email',
-                  label: t('login.fields.email'),
-                  value: values.email,
-                  onChangeText: setField('email'),
-                  placeholder: t('login.placeholders.email'),
-                  error: fieldErrors.email,
-                  keyboardType: 'email-address',
-                  autoCapitalize: 'none',
-                  autoCorrect: false,
-                  // `username` (not emailAddress) lets iOS offer Strong Password + save
-                  // the new credential to Keychain on a create-account screen.
-                  textContentType: 'username',
-                  autoComplete: 'email',
-                  editable: !submitting,
-                },
-                {
-                  key: 'password',
-                  label: t('login.fields.password'),
-                  value: values.password,
-                  onChangeText: setField('password'),
-                  placeholder: t('login.placeholders.password'),
-                  error: fieldErrors.password,
-                  hint: t('login.signUp.passwordHint'),
-                  secureTextEntry: true,
-                  autoCapitalize: 'none',
-                  autoCorrect: false,
-                  textContentType: 'newPassword',
-                  autoComplete: 'new-password',
-                  editable: !submitting,
-                  showLabel: t('login.a11y.showPassword'),
-                  hideLabel: t('login.a11y.hidePassword'),
-                },
-                {
-                  key: 'confirmPassword',
-                  label: t('login.fields.confirmPassword'),
-                  value: values.confirmPassword,
-                  onChangeText: setField('confirmPassword'),
-                  placeholder: t('login.placeholders.confirmPassword'),
-                  error: fieldErrors.confirmPassword,
-                  secureTextEntry: true,
-                  autoCapitalize: 'none',
-                  autoCorrect: false,
-                  textContentType: 'newPassword',
-                  autoComplete: 'new-password',
-                  editable: !submitting,
-                  showLabel: t('login.a11y.showPassword'),
-                  hideLabel: t('login.a11y.hidePassword'),
-                },
-                {
-                  key: 'name',
-                  label: t('login.fields.name'),
-                  value: values.name,
-                  onChangeText: setField('name'),
-                  placeholder: t('login.placeholders.name'),
-                  error: fieldErrors.name,
-                  autoCapitalize: 'words',
-                  autoCorrect: false,
-                  textContentType: 'name',
-                  autoComplete: 'name',
-                  editable: !submitting,
-                },
-              ]}
-            />
-            <Button
-              title={t('login.submit.signUp')}
-              onPress={() => {
-                void onSubmit();
-              }}
-              variant="filled"
-              size="large"
-              loading={submitting}
-              disabled={!canSubmit}
-              style={styles.submitButton}
-            />
-            {formError ? (
-              <Text variant="footnote" style={styles.errorText} accessibilityLiveRegion="polite">
-                {formError}
-              </Text>
-            ) : null}
-          </View>
-
-          <View style={styles.footer}>
-            <Text variant="subheadline" color={theme.systemColors.secondaryLabel}>
-              {t('login.links.haveAccount')}{' '}
-            </Text>
-            {/* replace (not back) so a deep-link straight to /auth/register still
-                lands on login rather than no-op'ing on an empty back stack. */}
-            <Pressable
-              onPress={() => router.replace('/auth/login')}
-              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
-              style={styles.footerLinkHit}
-              accessibilityRole="link"
-            >
-              <Text variant="subheadline" color={theme.systemColors.accent} style={styles.footerLink}>
-                {t('login.submit.signIn')}
-              </Text>
-            </Pressable>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </>
@@ -348,6 +436,8 @@ const styles = StyleSheet.create({
   form: { gap: 12 },
   submitButton: { alignSelf: 'stretch', marginTop: 4 },
   errorText: { color: '#FF3B30', marginTop: 4 },
+  successContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
+  successText: { fontSize: 17, textAlign: 'center', lineHeight: 26 },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',

@@ -35,6 +35,8 @@ type PlayDrawerActionBarProps = {
   lightbulbAccessibilityLabel?: string;
   lightbulbLongPressAccessibilityHint?: string;
   lightbulbLongPressEnabled?: boolean;
+  /** Hide the BLE action when the host platform has no Bluetooth provider. */
+  showLightbulb?: boolean;
   /** Show the holder avatar pip on the lightbulb. Suppressed when the on-wall
    *  banner already carries the driver's face in the header, so the same face
    *  never appears twice in the drawer. */
@@ -68,6 +70,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   lightbulbAccessibilityLabel,
   lightbulbLongPressAccessibilityHint,
   lightbulbLongPressEnabled = lightbulbActive,
+  showLightbulb = true,
   showHolderBadge = true,
   ascentCount,
   currentAngle,
@@ -177,35 +180,39 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
           />
         </View>
         <View style={drawerActionBarStyles.primarySlot}>
-          <BleLightbulbButton
-            isConnected={lightbulbActive}
-            accessibilitySelected={lightbulbConnected}
-            isScanning={lightbulbPending}
-            onPress={onLightbulb}
-            onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
-            accessibilityLabel={
-              lightbulbAccessibilityLabel ??
-              (lightbulbConnected ? tSettings('ble.turnOff') : tSettings('ble.connectBoard'))
-            }
-            scanningAccessibilityHint={tSettings('ble.scanning')}
-            longPressAccessibilityHint={
-              lightbulbLongPressEnabled
-                ? (lightbulbLongPressAccessibilityHint ?? tSettings('ble.holdForControls'))
-                : undefined
-            }
-            haptic="medium"
-            size={SIZES.lg.icon}
-            containerSize={SIZES.lg.dim}
-          />
-          {/* "Who's connected" pip — the board-presence holder's avatar overlaid
-              on the lightbulb's top-right. Self-reads board presence and renders
-              nothing when the wall is free, so it never disturbs the slot's layout.
-              Suppressed when the on-wall banner already shows the driver in the
-              header, so the same face never appears twice in the drawer. */}
-          {showHolderBadge ? (
-            <View style={styles.connectionBadge} pointerEvents="none">
-              <LightbulbHolderBadge size={18} />
-            </View>
+          {showLightbulb ? (
+            <>
+              <BleLightbulbButton
+                isConnected={lightbulbActive}
+                accessibilitySelected={lightbulbConnected}
+                isScanning={lightbulbPending}
+                onPress={onLightbulb}
+                onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
+                accessibilityLabel={
+                  lightbulbAccessibilityLabel ??
+                  (lightbulbConnected ? tSettings('ble.turnOff') : tSettings('ble.connectBoard'))
+                }
+                scanningAccessibilityHint={tSettings('ble.scanning')}
+                longPressAccessibilityHint={
+                  lightbulbLongPressEnabled
+                    ? (lightbulbLongPressAccessibilityHint ?? tSettings('ble.holdForControls'))
+                    : undefined
+                }
+                haptic="medium"
+                size={SIZES.lg.icon}
+                containerSize={SIZES.lg.dim}
+              />
+              {/* "Who's connected" pip — the board-presence holder's avatar overlaid
+                  on the lightbulb's top-right. Self-reads board presence and renders
+                  nothing when the wall is free, so it never disturbs the slot's layout.
+                  Suppressed when the on-wall banner already shows the driver in the
+                  header, so the same face never appears twice in the drawer. */}
+              {showHolderBadge ? (
+                <View style={styles.connectionBadge} pointerEvents="none">
+                  <LightbulbHolderBadge size={18} />
+                </View>
+              ) : null}
+            </>
           ) : null}
         </View>
       </View>

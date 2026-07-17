@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+
 vi.mock('../board-details', () => ({
   getBoardRenderData: vi.fn(),
 }));

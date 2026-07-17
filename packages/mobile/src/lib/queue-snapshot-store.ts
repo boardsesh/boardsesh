@@ -15,6 +15,7 @@
 
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import { getPreference, setPreference, removePreference } from './preference-store';
+import type { UserStorageOwner } from './user-storage-owner';
 
 const QUEUE_SNAPSHOT_KEY = 'boardsesh_local_queue_snapshot_v1';
 
@@ -42,11 +43,14 @@ function capSuggestionSource(source: PlaylistSuggestionSource | null): PlaylistS
   return { ...source, climbs: source.climbs.slice(windowStart, windowStart + MAX_PERSISTED_SUGGESTION_CLIMBS) };
 }
 
-export function getStoredQueueSnapshot(): Promise<LocalQueueSnapshot | null> {
+export function getStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<LocalQueueSnapshot | null> {
   return getPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY);
 }
 
-export function setStoredQueueSnapshot(snapshot: Omit<LocalQueueSnapshot, 'savedAt'>): Promise<void> {
+export function setStoredQueueSnapshot(
+  snapshot: Omit<LocalQueueSnapshot, 'savedAt'>,
+  _owner?: UserStorageOwner | null,
+): Promise<void> {
   return setPreference<LocalQueueSnapshot>(QUEUE_SNAPSHOT_KEY, {
     ...snapshot,
     playlistSuggestionSource: capSuggestionSource(snapshot.playlistSuggestionSource),
@@ -54,6 +58,6 @@ export function setStoredQueueSnapshot(snapshot: Omit<LocalQueueSnapshot, 'saved
   });
 }
 
-export function clearStoredQueueSnapshot(): Promise<void> {
+export function clearStoredQueueSnapshot(_owner?: UserStorageOwner | null): Promise<void> {
   return removePreference(QUEUE_SNAPSHOT_KEY);
 }

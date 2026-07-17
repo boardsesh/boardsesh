@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -197,7 +197,10 @@ export default function MoreScreen() {
       });
       if (!confirmed) return;
     }
-    void signOut();
+    void signOut().catch((error) => {
+      reportError(error);
+      Alert.alert(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
+    });
   };
 
   // Live Metro dev-server switching needs expo-dev-client's native launcher, which

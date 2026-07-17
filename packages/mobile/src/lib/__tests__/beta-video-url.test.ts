@@ -34,6 +34,14 @@ describe('absolutizeThumbnail (mobile)', () => {
     );
   });
 
+  it('uses WEB_BASE_URL for the development thumbnail proxy route', () => {
+    expect(
+      absolutizeThumbnail('/api/internal/beta-link-thumbnail?url=https%3A%2F%2Fscontent.cdninstagram.com%2Fx.jpg'),
+    ).toBe(
+      'https://www.boardsesh.test/api/internal/beta-link-thumbnail?url=https%3A%2F%2Fscontent.cdninstagram.com%2Fx.jpg&size=280',
+    );
+  });
+
   it('returns null for null input', () => {
     expect(absolutizeThumbnail(null)).toBeNull();
   });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -9,6 +9,10 @@ const auth = vi.hoisted(() => ({ register: vi.fn() }));
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 const oauth = vi.hoisted(() => ({ signIn: vi.fn(async () => ({ success: true }) as unknown) }));
 const googleButton = vi.hoisted(() => ({ press: null as (() => void) | null }));
+const platform = vi.hoisted(() => ({ os: 'android' as 'android' | 'web' }));
+const fetchMock = vi.hoisted(() => vi.fn());
+
+vi.stubGlobal('fetch', fetchMock);
 
 // Captures the fields + submit callback AuthFieldset receives, so the test can
 // drive the form like a real user (fill email/password/confirmPassword, then
@@ -55,7 +59,11 @@ vi.mock('@react-native-google-signin/google-signin', () => ({
 }));
 vi.mock('react-native', () => ({
   KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  Platform: { OS: 'android' },
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+  },
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, children),
   ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
@@ -79,7 +87,8 @@ vi.mock('../../../src/components/AuthFieldset', () => ({
   },
 }));
 vi.mock('../../../src/components/Button', () => ({
-  Button: ({ onPress }: { onPress?: () => void }) => createElement('button', { onClick: onPress }),
+  Button: ({ title, onPress, loading }: { title: string; onPress?: () => void; loading?: boolean }) =>
+    createElement('button', { onClick: onPress, disabled: loading }, title),
 }));
 vi.mock('../../../src/components/Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
@@ -93,6 +102,8 @@ beforeEach(() => {
   auth.register.mockReset();
   router.replace.mockClear();
   oauth.signIn.mockClear();
+  fetchMock.mockReset();
+  platform.os = 'android';
   form.setters = {};
   form.submit = null;
   googleButton.press = null;
@@ -141,6 +152,100 @@ describe('RegisterScreen analytics', () => {
     await waitFor(() => expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object)));
     expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, expect.any(Object));
     expect(analytics.setPersonProperties).not.toHaveBeenCalled();
+  });
+
+  it('treats verification-required web registration as a completed but anonymous signup', async () => {
+    auth.register.mockResolvedValue({
+      success: true,
+      authenticated: false,
+      requiresVerification: true,
+      emailSent: true,
+    });
+
+    await fillAndSubmit();
+
+    await waitFor(() =>
+      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
+        auth_method: 'credentials',
+        flow: 'web',
+        requires_verification: true,
+      }),
+    );
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.any(Object));
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object));
+    expect(analytics.setPersonProperties).toHaveBeenCalledWith(undefined, {
+      signup_at: expect.any(String),
+      signup_auth_method: 'credentials',
+    });
+    expect(screen.getByText('login.toasts.checkEmail')).toBeTruthy();
+  });
+
+  it('offers a same-origin resend before claiming a failed verification email was delivered', async () => {
+    platform.os = 'web';
+    auth.register.mockResolvedValue({
+      success: true,
+      authenticated: false,
+      requiresVerification: true,
+      emailSent: false,
+    });
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ message: 'accepted' }), { status: 200 }));
+
+    await fillAndSubmit();
+
+    await waitFor(() => expect(screen.getByText('login.signUp.verificationEmailNotSent')).toBeTruthy());
+    expect(screen.queryByText('login.toasts.checkEmail')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'verifyRequest.resend' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/resend-verification');
+    expect(options.credentials).toBe('same-origin');
+    expect(options.method).toBe('POST');
+    if (typeof options.body !== 'string') throw new Error('Expected a JSON request body');
+    expect(JSON.parse(options.body)).toEqual({ email: 'new@example.com' });
+    await waitFor(() => expect(screen.getByText('login.toasts.checkEmail')).toBeTruthy());
+    expect(screen.queryByText('login.signUp.verificationEmailNotSent')).toBeNull();
+  });
+
+  it('keeps the resend action available when verification delivery fails again', async () => {
+    platform.os = 'web';
+    auth.register.mockResolvedValue({
+      success: true,
+      authenticated: false,
+      requiresVerification: true,
+      emailSent: false,
+    });
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: 'unavailable' }), { status: 503 }));
+
+    await fillAndSubmit();
+    fireEvent.click(await screen.findByRole('button', { name: 'verifyRequest.resend' }));
+
+    await waitFor(() => expect(screen.getByText('verifyRequest.toasts.failed')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'verifyRequest.resend' })).toBeTruthy();
+    expect(screen.queryByText('login.toasts.checkEmail')).toBeNull();
+  });
+
+  it('shows sign-in guidance when the account was created but automatic login was unavailable', async () => {
+    auth.register.mockResolvedValue({
+      success: true,
+      authenticated: false,
+      requiresVerification: false,
+      autoLoginUnavailable: true,
+    });
+
+    await fillAndSubmit();
+
+    await waitFor(() =>
+      expect(analytics.track).toHaveBeenCalledWith(SHARED_EVENTS.SignupCompleted, {
+        auth_method: 'credentials',
+        flow: 'web',
+        requires_verification: false,
+      }),
+    );
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginSucceeded, expect.any(Object));
+    expect(analytics.track).not.toHaveBeenCalledWith(SHARED_EVENTS.LoginFailed, expect.any(Object));
+    expect(screen.getByText('login.toasts.loginAfterCreate')).toBeTruthy();
   });
 
   it('does not fire SignupCompleted through the OAuth sign-in path', async () => {

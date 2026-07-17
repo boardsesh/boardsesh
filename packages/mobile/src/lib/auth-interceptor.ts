@@ -1,9 +1,21 @@
-import { getAuthToken, getRefreshToken, storeTokens, isTokenExpiringSoon } from './auth-store';
-import { signOut } from './auth';
+import {
+  captureAuthCredentialGeneration,
+  getAuthToken,
+  getRefreshToken,
+  isAuthCredentialGenerationCurrent,
+  isTokenExpiringSoon,
+  storeTokensForGeneration,
+} from './auth-store';
+import { signOutForGeneration } from './auth';
 import { BACKEND_URL } from './env';
 import { reportError, reportHandledError } from './error-reporting';
 
-let refreshPromise: Promise<boolean> | null = null;
+type AuthRefreshResult =
+  | { status: 'refreshed'; generation: number }
+  | { status: 'failed'; generation: number }
+  | { status: 'superseded' };
+
+let refresh: { generation: number; promise: Promise<AuthRefreshResult> } | null = null;
 
 // The interceptor lives in the lib layer and can't import the AuthProvider, but
 // a failed-refresh 401 means the session is dead and the provider must run its
@@ -16,9 +28,14 @@ export function setOnForcedSignOut(callback: (() => void) | null): void {
   onForcedSignOut = callback;
 }
 
-async function refreshTokens(): Promise<boolean> {
+function failedRefreshResult(generation: number): AuthRefreshResult {
+  return isAuthCredentialGenerationCurrent(generation) ? { status: 'failed', generation } : { status: 'superseded' };
+}
+
+async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshResult> {
   const currentRefreshToken = await getRefreshToken();
-  if (!currentRefreshToken) return false;
+  if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
+  if (!currentRefreshToken) return failedRefreshResult(credentialGeneration);
 
   try {
     const response = await fetch(`${BACKEND_URL}/auth/native/refresh`, {
@@ -27,6 +44,8 @@ async function refreshTokens(): Promise<boolean> {
       body: JSON.stringify({ refreshToken: currentRefreshToken }),
       signal: AbortSignal.timeout(15_000),
     });
+
+    if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
 
     if (!response.ok) {
       console.warn(`[Auth] Token refresh failed: HTTP ${response.status}`);
@@ -39,17 +58,18 @@ async function refreshTokens(): Promise<boolean> {
           extra: { status: response.status },
         });
       }
-      return false;
+      return { status: 'failed', generation: credentialGeneration };
     }
 
     const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
-    await storeTokens(data.jwt, data.refreshToken, data.expiresAt);
-    return true;
+    const stored = await storeTokensForGeneration(credentialGeneration, data.jwt, data.refreshToken, data.expiresAt);
+    return stored ? { status: 'refreshed', generation: credentialGeneration } : { status: 'superseded' };
   } catch (error) {
+    if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
     console.warn('[Auth] Token refresh error:', error instanceof Error ? error.message : 'unknown');
     // Offline/aborted refreshes downgrade to a warning; a real throw reports.
     reportHandledError(error, { tags: { source: 'auth-refresh' } });
-    return false;
+    return { status: 'failed', generation: credentialGeneration };
   }
 }
 
@@ -57,72 +77,114 @@ async function refreshTokens(): Promise<boolean> {
 // realtime mirror of the HTTP 401 branch below. Both go through the same
 // in-flight promise, so a simultaneous HTTP 401 and WS 4401 hit the refresh
 // endpoint exactly once.
-export function deduplicatedRefresh(): Promise<boolean> {
-  if (!refreshPromise) {
-    refreshPromise = refreshTokens().finally(() => {
-      refreshPromise = null;
-    });
-  }
-  return refreshPromise;
+export function deduplicatedRefresh(): Promise<AuthRefreshResult> {
+  const generation = captureAuthCredentialGeneration();
+  if (refresh?.generation === generation) return refresh.promise;
+
+  const promise = refreshTokens(generation).finally(() => {
+    if (refresh?.promise === promise) refresh = null;
+  });
+  refresh = { generation, promise };
+  return promise;
 }
 
 export async function ensureFreshToken(): Promise<boolean> {
   const expiring = await isTokenExpiringSoon();
   if (!expiring) return true;
-  return deduplicatedRefresh();
+  return (await deduplicatedRefresh()).status === 'refreshed';
 }
 
-let forcedSignOutPromise: Promise<void> | null = null;
+let forcedSignOut: { generation: number; promise: Promise<void> } | null = null;
 
-// A burst of concurrent requests all 401 and all see deduplicatedRefresh() return
-// false, so without collapsing them each would revoke + fire onForcedSignOut —
-// duplicate `forced` Logout events and redundant provider cleanup. Run the sign-out
-// once; reset on settle so a genuinely new 401 (after a later sign-in) still signs
-// out. signOut() must complete (revoke + clearTokens) before onForcedSignOut runs.
-function forceSignOut(): Promise<void> {
-  if (!forcedSignOutPromise) {
-    // Capture the hook now. signOut() awaits a network revoke; if the provider
-    // unmounts during that window its effect nulls the module ref, but the
-    // cleanup it registered must still run (dispose the WS, reset the http
-    // client, clear caches) or the forced sign-out silently drops — the exact
-    // failure this path exists to prevent.
-    const notifyProvider = onForcedSignOut;
-    forcedSignOutPromise = (async () => {
-      await signOut();
-      notifyProvider?.();
-    })().finally(() => {
-      forcedSignOutPromise = null;
-    });
-  }
-  return forcedSignOutPromise;
+// Collapse forced sign-out only within one credential generation. A later login
+// must never join an old cleanup promise or receive its provider callback.
+function forceSignOut(generation: number): Promise<void> {
+  if (!isAuthCredentialGenerationCurrent(generation)) return Promise.resolve();
+  if (forcedSignOut?.generation === generation) return forcedSignOut.promise;
+
+  // Capture the hook now. If the provider unmounts during credential cleanup its
+  // effect nulls the module ref, but the
+  // cleanup it registered must still run (dispose the WS, reset the http
+  // client, clear caches) or the forced sign-out silently drops — the exact
+  // failure this path exists to prevent.
+  const notifyProvider = onForcedSignOut;
+  const promise = (async () => {
+    try {
+      const performed = await signOutForGeneration(generation);
+      if (performed && isAuthCredentialGenerationCurrent(generation + 1)) notifyProvider?.();
+    } catch (error) {
+      // Cleanup failures happen after this generation was synchronously
+      // invalidated, so provider isolation is still required before rethrowing.
+      if (isAuthCredentialGenerationCurrent(generation + 1)) notifyProvider?.();
+      throw error;
+    }
+  })().finally(() => {
+    if (forcedSignOut?.promise === promise) forcedSignOut = null;
+  });
+  forcedSignOut = { generation, promise };
+  return promise;
+}
+
+/** Recover a server-rejected credential or finish the forced sign-out path. */
+export async function recoverAuthRejection(): Promise<boolean> {
+  const refreshResult = await deduplicatedRefresh();
+  if (refreshResult.status === 'failed') await forceSignOut(refreshResult.generation);
+  return refreshResult.status === 'refreshed';
 }
 
 export async function authenticatedFetch(url: string | URL | Request, options: RequestInit = {}): Promise<Response> {
+  const requestGeneration = captureAuthCredentialGeneration();
   await ensureFreshToken();
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
+    throw new Error('Authentication session changed before the request could be sent');
+  }
 
   const token = await getAuthToken();
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
+    throw new Error('Authentication session changed before the request could be sent');
+  }
   const headers = new Headers(options.headers);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
   const response = await fetch(url, { ...options, headers });
+  if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
+    throw new Error('Authentication session changed while the request was in flight');
+  }
 
   // On 401, force a refresh regardless of token expiry (server may have
   // revoked the token) and retry once with the new credentials.
   if (response.status === 401 && token) {
-    const refreshed = await deduplicatedRefresh();
-    if (refreshed) {
+    const refreshResult = await deduplicatedRefresh();
+    if (refreshResult.status === 'superseded' || !isAuthCredentialGenerationCurrent(requestGeneration)) {
+      throw new Error('Authentication session changed while the request was in flight');
+    }
+    if (
+      refreshResult.status === 'refreshed' &&
+      refreshResult.generation === requestGeneration &&
+      isAuthCredentialGenerationCurrent(requestGeneration)
+    ) {
       const newToken = await getAuthToken();
+      if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
+        throw new Error('Authentication session changed while the request was in flight');
+      }
       if (newToken) {
         headers.set('Authorization', `Bearer ${newToken}`);
-        return fetch(url, { ...options, headers });
+        const retryResponse = await fetch(url, { ...options, headers });
+        if (!isAuthCredentialGenerationCurrent(requestGeneration)) {
+          throw new Error('Authentication session changed while the request was in flight');
+        }
+        return retryResponse;
       }
     }
     // signOut() only revokes + clears tokens. forceSignOut also tells the provider
     // to run the rest of the cleanup so the UI leaves the authenticated screens
     // immediately, instead of waiting for the next background→foreground checkAuth.
-    await forceSignOut();
+    if (refreshResult.status === 'failed') {
+      await forceSignOut(refreshResult.generation);
+      return response;
+    }
   }
 
   return response;

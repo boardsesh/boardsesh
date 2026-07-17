@@ -1,6 +1,6 @@
 import { createGraphQLClient, type Client } from '@boardsesh/graphql-client';
-import { getAuthToken } from '../auth-store';
-import { deduplicatedRefresh, ensureFreshToken } from '../auth-interceptor';
+import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../auth-store';
+import { ensureFreshToken, recoverAuthRejection } from '../auth-interceptor';
 import { reportHandledError } from '../error-reporting';
 import { BACKEND_URL } from '../env';
 
@@ -26,51 +26,133 @@ type RNWebSocketCtor = new (
   options?: { headers?: Record<string, string> },
 ) => WebSocket;
 
-class NativeAppWebSocket extends (WebSocket as unknown as RNWebSocketCtor) {
-  constructor(url: string | URL, protocols?: string | string[]) {
-    super(url, protocols, { headers: { origin: '' } });
-  }
+const AUTH_REJECTED_CLOSE_CODE = 4401;
+// graphql-ws treats 4401 as fatal before invoking shouldRetry. 4403 is not in
+// its fatal-code list, so exposing the rejected handshake as 4403 lets active
+// operations run through graphql-ws' normal reconnect and resubscribe loop.
+const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
+
+let authRecovery: { generation: number; promise: Promise<boolean> } | null = null;
+
+function recoverRejectedAuthentication(generation: number): Promise<boolean> {
+  if (!isAuthCredentialGenerationCurrent(generation)) return Promise.resolve(false);
+  if (authRecovery?.generation === generation) return authRecovery.promise;
+
+  const recoveryPromise = (async () => {
+    try {
+      // The server may reject a revoked token that has not expired yet, so this
+      // must bypass ensureFreshToken's expiry gate.
+      const recovered = await recoverAuthRejection();
+      return recovered && isAuthCredentialGenerationCurrent(generation);
+    } catch (error) {
+      reportHandledError(error);
+      return false;
+    }
+  })();
+
+  authRecovery = { generation, promise: recoveryPromise };
+  void recoveryPromise.finally(() => {
+    if (authRecovery?.promise === recoveryPromise) authRecovery = null;
+  });
+  return recoveryPromise;
 }
 
-// The backend closes the socket with 4401 when it rejects our auth token —
-// expired, or revoked server-side while still within its lifetime.
-const AUTH_REJECTED_CLOSE_CODE = 4401;
+function retryableAuthCloseEvent(closeEvent: CloseEvent): CloseEvent {
+  return {
+    code: AUTH_REFRESH_RETRY_CLOSE_CODE,
+    reason: closeEvent.reason,
+    wasClean: closeEvent.wasClean,
+  } as CloseEvent;
+}
 
-function isAuthRejectedClose(errOrCloseEvent: unknown): boolean {
-  return (
-    typeof errOrCloseEvent === 'object' &&
-    errOrCloseEvent !== null &&
-    'code' in errOrCloseEvent &&
-    (errOrCloseEvent as { code: number }).code === AUTH_REJECTED_CLOSE_CODE
-  );
+/**
+ * Adds React Native's no-Origin option and translates rejected-auth closes at
+ * the transport boundary. Composition is intentional: graphql-ws owns the
+ * public handlers, while the underlying socket always routes through ours.
+ */
+class NativeAppWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+
+  readonly CONNECTING = NativeAppWebSocket.CONNECTING;
+  readonly OPEN = NativeAppWebSocket.OPEN;
+  readonly CLOSING = NativeAppWebSocket.CLOSING;
+  readonly CLOSED = NativeAppWebSocket.CLOSED;
+
+  onopen: WebSocket['onopen'] = null;
+  onmessage: WebSocket['onmessage'] = null;
+  onerror: WebSocket['onerror'] = null;
+  onclose: WebSocket['onclose'] = null;
+
+  private readonly socket: WebSocket;
+  private credentialGeneration = captureAuthCredentialGeneration();
+
+  constructor(url: string | URL, protocols?: string | string[]) {
+    const ReactNativeWebSocket = WebSocket as unknown as RNWebSocketCtor;
+    this.socket = new ReactNativeWebSocket(url, protocols, { headers: { origin: '' } });
+    this.socket.onopen = (event) => {
+      this.credentialGeneration = captureAuthCredentialGeneration();
+      this.onopen?.call(this as unknown as WebSocket, event);
+    };
+    this.socket.onmessage = (event) => this.onmessage?.call(this as unknown as WebSocket, event);
+    this.socket.onerror = (event) => this.onerror?.call(this as unknown as WebSocket, event);
+    this.socket.onclose = (event) => {
+      if (event.code !== AUTH_REJECTED_CLOSE_CODE) {
+        this.onclose?.call(this as unknown as WebSocket, event);
+        return;
+      }
+      const rejectedGeneration = this.credentialGeneration;
+      void recoverRejectedAuthentication(rejectedGeneration).then((recovered) => {
+        // Keep the ownership check and close delivery in one synchronous
+        // continuation. A login queued at recovery completion must not turn an
+        // old socket's fatal close into a retry under the new account.
+        const deliveredEvent =
+          recovered && isAuthCredentialGenerationCurrent(rejectedGeneration) ? retryableAuthCloseEvent(event) : event;
+        this.onclose?.call(this as unknown as WebSocket, deliveredEvent);
+      });
+    };
+  }
+
+  get readyState(): number {
+    return this.socket.readyState;
+  }
+
+  get url(): string {
+    return this.socket.url;
+  }
+
+  get protocol(): string {
+    return this.socket.protocol;
+  }
+
+  get extensions(): string {
+    return this.socket.extensions;
+  }
+
+  get bufferedAmount(): number {
+    return this.socket.bufferedAmount;
+  }
+
+  get binaryType(): BinaryType {
+    return this.socket.binaryType;
+  }
+
+  set binaryType(binaryType: BinaryType) {
+    this.socket.binaryType = binaryType;
+  }
+
+  send(data: Parameters<WebSocket['send']>[0]): void {
+    this.socket.send(data);
+  }
+
+  close(code?: number, reason?: string): void {
+    this.socket.close(code, reason);
+  }
 }
 
 let wsClient: Client | null = null;
-
-// Guards the refresh-and-recreate so a burst of 4401 closes (one per active
-// subscription) triggers a single token refresh and a single client teardown,
-// not a reconnect storm. Reset once the cycle settles so a later, genuinely new
-// auth failure can refresh again.
-let handlingAuthRejection = false;
-
-// Mirror of the HTTP path's 401 branch (auth-interceptor.authenticatedFetch):
-// force a refresh, then drop the client so the next getWsClient() rebuilds one
-// whose connectionParams read the new token. We force the refresh via
-// deduplicatedRefresh rather than ensureFreshToken because the server may have
-// revoked a token that hasn't expired yet — the expiry check would skip the
-// refresh and we'd reconnect with the same dead token. A failed refresh (the
-// refresh token is gone too) is left to the HTTP 401 path, which drives the
-// single forced sign-out; duplicating it here would double-revoke.
-async function refreshAuthAndRecreateClient(): Promise<void> {
-  if (handlingAuthRejection) return;
-  handlingAuthRejection = true;
-  try {
-    await deduplicatedRefresh();
-  } finally {
-    disposeWsClient();
-    handlingAuthRejection = false;
-  }
-}
 
 export function getWsClient(): Client {
   if (!wsClient) {
@@ -78,23 +160,25 @@ export function getWsClient(): Client {
       url: getWsUrl(),
       webSocketImpl: NativeAppWebSocket as unknown as typeof WebSocket,
       connectionParams: async () => {
+        const credentialGeneration = captureAuthCredentialGeneration();
+        // A retry created by a 4401 can open before the token refresh finishes.
+        // Hold connection_init until the forced refresh has settled so the
+        // reconnect cannot present the rejected token again.
+        if (authRecovery?.generation === credentialGeneration) await authRecovery.promise;
+        if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
+          throw new Error('Authentication session changed before the WebSocket handshake');
+        }
         // Refresh a soon-to-expire token before the handshake, matching the
         // HTTP path's up-front ensureFreshToken() in authenticatedFetch.
         await ensureFreshToken();
-        const token = await getAuthToken();
-        return token ? { authToken: token } : {};
-      },
-      shouldRetry: (errOrCloseEvent) => {
-        if (isAuthRejectedClose(errOrCloseEvent)) {
-          // Don't let graphql-ws retry the doomed connection with the same
-          // token. Refresh + drop the client so the next subscription rebuilds
-          // a fresh client and reconnects with a valid token. deduplicatedRefresh
-          // reports its own network failures; this catch only traces an
-          // unexpected teardown error so the path is never completely silent.
-          refreshAuthAndRecreateClient().catch(reportHandledError);
-          return false;
+        if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
+          throw new Error('Authentication session changed before the WebSocket handshake');
         }
-        return true;
+        const token = await getAuthToken();
+        if (!isAuthCredentialGenerationCurrent(credentialGeneration)) {
+          throw new Error('Authentication session changed before the WebSocket handshake');
+        }
+        return token ? { authToken: token } : {};
       },
     });
   }
@@ -103,7 +187,7 @@ export function getWsClient(): Client {
 
 export function disposeWsClient(): void {
   if (wsClient) {
-    wsClient.dispose();
+    void wsClient.dispose();
     wsClient = null;
   }
 }
