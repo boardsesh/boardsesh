@@ -217,6 +217,30 @@ describe('renderHoldsOverlay Cache-API integration', () => {
     return { postMessage };
   }
 
+  // A worker that accepts the post but never answers — models a wedged worker so
+  // the render request can only resolve via the 8s timeout.
+  function installStuckWorker() {
+    const postMessage = vi.fn();
+    const terminate = vi.fn();
+    class StuckWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: ((event: unknown) => void) | null = null;
+      constructor(
+        public url: string,
+        public options: unknown,
+      ) {}
+      postMessage(message: { id: number; configJson: string }) {
+        postMessage(message);
+        // Intentionally never calls onmessage.
+      }
+      terminate() {
+        terminate();
+      }
+    }
+    vi.stubGlobal('Worker', StuckWorker);
+    return { postMessage, terminate };
+  }
+
   const overlayConfig = JSON.stringify({ hold_state_map: {}, holds: [], frames: 'p1r1' });
 
   it('returns the persisted overlay on a hit without rendering (survives reload)', async () => {
@@ -255,5 +279,33 @@ describe('renderHoldsOverlay Cache-API integration', () => {
     await expect(
       renderHoldsOverlay(JSON.stringify({ stroke_width_multiplier: 1.5, hold_state_map: {} }), 'marker'),
     ).rejects.toThrow(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
+  });
+
+  it('terminates and disables the worker after a render times out, so later misses skip it', async () => {
+    installCaches();
+    const { postMessage, terminate } = installStuckWorker();
+    _webRendererForTests.resetWorker();
+    vi.useFakeTimers();
+    try {
+      // First render posts to the worker; it never answers, so only the timeout
+      // can settle it. Falls back to the main thread (which has no WASM in the
+      // test) — swallow that rejection; the worker lifecycle is what we assert.
+      const firstRender = _webRendererForTests.renderPngBlob(overlayConfig).catch(() => undefined);
+      expect(postMessage).toHaveBeenCalledTimes(1);
+
+      // Elapse the 8s budget: the wedged worker is terminated and disabled.
+      await vi.advanceTimersByTimeAsync(8000);
+      expect(terminate).toHaveBeenCalledTimes(1);
+
+      // A later cache miss must not re-post to the wedged worker — it renders on
+      // the main thread straight away instead of eating another timeout.
+      const secondRender = _webRendererForTests.renderPngBlob(overlayConfig).catch(() => undefined);
+      expect(postMessage).toHaveBeenCalledTimes(1);
+
+      await Promise.allSettled([firstRender, secondRender]);
+    } finally {
+      vi.useRealTimers();
+      _webRendererForTests.resetWorker();
+    }
   });
 });

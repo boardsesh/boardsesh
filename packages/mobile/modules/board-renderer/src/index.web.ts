@@ -195,6 +195,25 @@ let workerDisabled = false;
 let workerRequestId = 0;
 const WORKER_RENDER_TIMEOUT_MS = 8000;
 
+// Abandon the worker for the rest of this page's lifetime: settle every
+// in-flight request so its caller falls through to the main thread, drop the
+// cached instance, and flip the disable flag so getRenderWorker never hands the
+// worker out again. Module-lifetime — a fresh page load re-creates the worker.
+function disableRenderWorker(): void {
+  workerDisabled = true;
+  const worker = boardRenderWorker;
+  boardRenderWorker = null;
+  for (const settle of workerPending.values()) settle(null);
+  workerPending.clear();
+  if (worker) {
+    try {
+      worker.terminate();
+    } catch {
+      // best-effort
+    }
+  }
+}
+
 function getRenderWorker(): Worker | null {
   if (workerDisabled) return null;
   if (boardRenderWorker) return boardRenderWorker;
@@ -211,15 +230,7 @@ function getRenderWorker(): Worker | null {
     worker.onerror = () => {
       // The worker script failed to load/parse/run — abandon it and route every
       // in-flight and future render through the main thread.
-      workerDisabled = true;
-      for (const settle of workerPending.values()) settle(null);
-      workerPending.clear();
-      boardRenderWorker = null;
-      try {
-        worker.terminate();
-      } catch {
-        // best-effort
-      }
+      disableRenderWorker();
     };
     boardRenderWorker = worker;
     return worker;
@@ -243,7 +254,13 @@ function tryRenderPngBlobViaWorker(configJson: string): Promise<Blob | null> {
       workerPending.delete(id);
       resolve(blob);
     };
-    const timeout = setTimeout(() => finish(null), WORKER_RENDER_TIMEOUT_MS);
+    const timeout = setTimeout(() => {
+      // The worker missed the budget — treat it as stuck. Disabling it settles
+      // this request (falling it through to the main thread) AND routes every
+      // future cache miss straight to the main renderer, instead of each one
+      // posting to the same wedged worker and eating another full timeout.
+      disableRenderWorker();
+    }, WORKER_RENDER_TIMEOUT_MS);
     workerPending.set(id, (message) => {
       if (message && message.png) {
         finish(new Blob([message.png], { type: 'image/png' }));
