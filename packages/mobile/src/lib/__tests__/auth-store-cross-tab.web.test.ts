@@ -51,6 +51,11 @@ beforeEach(() => {
   vi.resetModules();
   MockBroadcastChannel.channels = [];
   fetchMock.mockReset();
+  // Simulate the www-mounted export (experiments.baseUrl '/app'), mirroring
+  // auth.web.test.ts: appCallbackUrl() derives the NextAuth callback from
+  // EXPO_BASE_URL, and the sign-out flow below compares the returned url
+  // against it.
+  vi.stubEnv('EXPO_BASE_URL', '/app');
   vi.stubGlobal('window', {
     addEventListener: vi.fn(),
     location: { origin: 'https://qa.boardsesh.test' },
@@ -61,6 +66,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.resetModules();
 });
 
