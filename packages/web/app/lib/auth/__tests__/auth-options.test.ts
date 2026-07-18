@@ -619,6 +619,13 @@ describe('authOptions.callbacks.redirect', () => {
     expect(await callRedirect({ url: `${BASE_URL}/app/play`, baseUrl: BASE_URL })).toBe(`${BASE_URL}/app/play`);
   });
 
+  it('keeps a same-origin url when NEXTAUTH_URL (baseUrl) carries a trailing slash', async () => {
+    // A trailing-slash NEXTAUTH_URL makes baseUrl `https://www.boardsesh.com/`,
+    // which never equals `new URL(url).origin` — a literal string compare would
+    // wrongly collapse this same-origin redirect to the base and strip the path.
+    expect(await callRedirect({ url: `${BASE_URL}/app/play`, baseUrl: `${BASE_URL}/` })).toBe(`${BASE_URL}/app/play`);
+  });
+
   it('allows the standalone app origin so a cross-subdomain sign-out confirms', async () => {
     const appCallback = 'https://app.boardsesh.com/app';
     expect(await callRedirect({ url: appCallback, baseUrl: BASE_URL })).toBe(appCallback);

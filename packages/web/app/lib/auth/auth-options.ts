@@ -142,6 +142,13 @@ providers.push(
 // Apple Sign-In posts its callback cross-origin (response_mode=form_post),
 // so verification cookies need SameSite=None (which requires Secure).
 // We override callbackUrl, state, nonce, and pkceCodeVerifier cookies for this reason.
+//
+// INTENTIONAL, REVIEWED: these four short-lived OAuth-flow cookies carry
+// SameSite=None on the shared `.boardsesh.com` scope. They are NOT the login —
+// they hold only in-flight CSRF/PKCE/nonce state consumed within a single OAuth
+// round-trip, and each requires Secure. The session token itself stays
+// SameSite=Lax (see the sessionToken block below); None is confined to these
+// transient flow cookies so the actual login is never sent cross-site.
 const useSecureCookies = isSecureCookieContext();
 
 // Shared parent domain so the session (and the OAuth-flow cookies) are readable
@@ -246,8 +253,14 @@ export const authOptions: NextAuthOptions = {
       // cross-origin URL still collapses to baseUrl (open-redirect guard).
       if (url.startsWith('/')) return `${baseUrl}${url}`;
       try {
+        // Compare origins, not the raw baseUrl string. baseUrl mirrors
+        // NEXTAUTH_URL verbatim and may carry a trailing slash or path, so a
+        // literal `targetOrigin === baseUrl` check misses a genuine same-origin
+        // redirect and strips it to the base. `new URL(baseUrl).origin` is
+        // scheme+host only, matching what `new URL(url).origin` returns.
+        const baseOrigin = new URL(baseUrl).origin;
         const targetOrigin = new URL(url).origin;
-        if (targetOrigin === baseUrl) return url;
+        if (targetOrigin === baseOrigin) return url;
         if (isAllowedAppOrigin(targetOrigin)) return url;
       } catch {
         // Unparseable URL falls through to the safe baseUrl default.
