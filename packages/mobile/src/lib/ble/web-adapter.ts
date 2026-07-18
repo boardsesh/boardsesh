@@ -16,7 +16,6 @@
 
 import {
   INTER_CHUNK_DELAY_MS,
-  MAX_BLUETOOTH_MESSAGE_SIZE,
   AURORA_ADVERTISED_SERVICE_UUID,
   UART_SERVICE_UUID,
   UART_WRITE_CHARACTERISTIC_UUID,
@@ -106,17 +105,6 @@ const isWithoutResponseUnsupportedError = (error: unknown): boolean => {
   return (error as { name?: unknown }).name === 'NotSupportedError';
 };
 
-const concatenateMessages = (messages: Uint8Array[]): Uint8Array => {
-  const totalLength = messages.reduce((sum, message) => sum + message.byteLength, 0);
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const message of messages) {
-    combined.set(message, offset);
-    offset += message.byteLength;
-  }
-  return combined;
-};
-
 async function writeCharacteristicSeries(
   characteristic: BluetoothRemoteGATTCharacteristic,
   messages: Uint8Array[],
@@ -152,8 +140,9 @@ async function writeCharacteristicSeries(
     await writeChunks(messages, useWithResponse);
   } catch (error) {
     if (!useWithResponse && options.allowUnsupportedWithResponseRetry && isWithoutResponseUnsupportedError(error)) {
-      const retryMessages = splitMessages(concatenateMessages(messages), MAX_BLUETOOTH_MESSAGE_SIZE);
-      await writeChunks(retryMessages, true);
+      // `messages` is already chunked at MAX_BLUETOOTH_MESSAGE_SIZE, so the retry
+      // reuses the same chunks — the with-response path is the only difference.
+      await writeChunks(messages, true);
       return;
     }
     throw error;
@@ -166,6 +155,11 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
   private device: BluetoothDevice | null = null;
   private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
   private disconnectHandler: (() => void) | null = null;
+  // Tail of the serialized write chain. Web Bluetooth rejects a writeValue*
+  // that starts while another GATT operation is still in flight ("GATT
+  // operation already in progress"); the native SDKs serialize internally, so
+  // we mirror that by queuing every write behind the previous one.
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly scanFamily: BoardScanFamily) {}
 
@@ -183,12 +177,25 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
     this.cleanupListeners();
 
     const device = await navigator.bluetooth.requestDevice(requestDeviceOptionsForFamily(this.scanFamily));
-    const characteristic =
-      this.scanFamily === 'moonboard'
-        ? await getMoonboardWriteCharacteristic(device)
-        : await getUartCharacteristic(device);
+
+    // Probing the write characteristic opens the GATT connection. If probing
+    // rejects (e.g. the UART service is absent on an Aurora variant) or comes
+    // back empty (a MoonBoard exposing neither controller), that connection is
+    // left open — drop it before surfacing the failure so we never leak a live
+    // GATT link the caller can't reach.
+    let characteristic: BluetoothRemoteGATTCharacteristic | undefined;
+    try {
+      characteristic =
+        this.scanFamily === 'moonboard'
+          ? await getMoonboardWriteCharacteristic(device)
+          : await getUartCharacteristic(device);
+    } catch (error) {
+      device.gatt?.disconnect();
+      throw error;
+    }
 
     if (!characteristic) {
+      device.gatt?.disconnect();
       throw new Error('Failed to resolve the board write characteristic');
     }
 
@@ -212,15 +219,31 @@ export class WebBluetoothAdapter implements BluetoothAdapter {
     return Promise.resolve();
   }
 
-  async write(data: Uint8Array, signal?: AbortSignal): Promise<void> {
+  write(data: Uint8Array, signal?: AbortSignal): Promise<void> {
     if (!this.characteristic) {
+      return Promise.reject(new Error('Not connected'));
+    }
+    // Chain this write onto the tail of the queue so it can't overlap an
+    // in-flight GATT operation. A failed or aborted write must not poison the
+    // chain, so the tail swallows the result — the next write still runs.
+    const run = this.writeQueue.then(() => this.performWrite(data, signal));
+    this.writeQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async performWrite(data: Uint8Array, signal?: AbortSignal): Promise<void> {
+    const characteristic = this.characteristic;
+    if (!characteristic) {
       throw new Error('Not connected');
     }
     const messages = splitMessages(data);
     // MoonBoard may choose write-with-response up front for the RedBearLab box;
     // Aurora starts without-response and only retries with-response when Web
     // Bluetooth rejects the write as unsupported by this characteristic.
-    await writeCharacteristicSeries(this.characteristic, messages, signal, {
+    await writeCharacteristicSeries(characteristic, messages, signal, {
       allowWithResponseFallback: this.scanFamily === 'moonboard',
       allowUnsupportedWithResponseRetry: this.scanFamily !== 'moonboard',
     });

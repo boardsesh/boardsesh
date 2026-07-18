@@ -182,6 +182,20 @@ export function hydrateOverlayCache(): Promise<void> {
         // Skip an unreadable entry; the rest still hydrate.
       }
     }
+
+    // Prune so the Cache API can't grow unbounded across sessions. Keys come
+    // back in insertion order, so the head is the least-recently rendered;
+    // evict everything older than the most-recent OVERLAY_HYDRATE_LIMIT (the
+    // entries we didn't hydrate anyway). Without this, cache.put eventually
+    // throws on quota and the renderer silently stops persisting.
+    const stale = requests.slice(0, Math.max(0, requests.length - OVERLAY_HYDRATE_LIMIT));
+    for (const request of stale) {
+      try {
+        await cache.delete(request);
+      } catch {
+        // Non-fatal — a failed delete just leaves the entry for the next sweep.
+      }
+    }
   })();
   return hydratePromise;
 }

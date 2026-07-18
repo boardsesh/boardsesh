@@ -328,24 +328,42 @@ export async function renderHoldsOverlay(configJson: string, cacheKey: string): 
   return objectUrl;
 }
 
-export const _webRendererForTests = {
-  decodeRenderOutput,
-  rememberObjectUrl,
-  releaseAllObjectUrls,
-  resolveWasmAssetUrl,
-  renderedObjectUrls: _overlayCacheStoreForTests.renderedObjectUrls,
-  renderPngBlob,
-  encodeRgbaToPngBlob,
-  resetWorker: () => {
-    if (boardRenderWorker) {
-      try {
-        boardRenderWorker.terminate();
-      } catch {
-        // best-effort
-      }
-    }
-    boardRenderWorker = null;
-    workerDisabled = false;
-    workerPending.clear();
-  },
+type WebRendererTestApi = {
+  decodeRenderOutput: typeof decodeRenderOutput;
+  rememberObjectUrl: typeof rememberObjectUrl;
+  releaseAllObjectUrls: typeof releaseAllObjectUrls;
+  resolveWasmAssetUrl: typeof resolveWasmAssetUrl;
+  renderedObjectUrls: typeof _overlayCacheStoreForTests.renderedObjectUrls;
+  renderPngBlob: typeof renderPngBlob;
+  encodeRgbaToPngBlob: typeof encodeRgbaToPngBlob;
+  resetWorker: () => void;
 };
+
+// Test-only surface. Gated on __DEV__ so bundlers dead-code-eliminate it from
+// the production web bundle (vitest defines __DEV__ truthy, so it's always
+// present under test); the cast keeps a stable type for the test importers.
+export const _webRendererForTests: WebRendererTestApi = (
+  __DEV__
+    ? {
+        decodeRenderOutput,
+        rememberObjectUrl,
+        releaseAllObjectUrls,
+        resolveWasmAssetUrl,
+        renderedObjectUrls: _overlayCacheStoreForTests.renderedObjectUrls,
+        renderPngBlob,
+        encodeRgbaToPngBlob,
+        resetWorker: () => {
+          if (boardRenderWorker) {
+            try {
+              boardRenderWorker.terminate();
+            } catch {
+              // best-effort
+            }
+          }
+          boardRenderWorker = null;
+          workerDisabled = false;
+          workerPending.clear();
+        },
+      }
+    : undefined
+) as WebRendererTestApi;
