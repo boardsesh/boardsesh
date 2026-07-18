@@ -319,8 +319,9 @@ export default defineConfig({
         // Static Expo web export into packages/web/public/app — the same
         // artifact Dockerfile.web bakes into the production image. Run this
         // before a BOARDSESH_WEB=1 `vp run build:web` to verify /app serving
-        // locally; pass `-- <output-dir>` for a different target. The output
-        // is gitignored (packages/web/public/app).
+        // locally; pass `-- <output-dir>` for a different target (the script
+        // strips vp's forwarded `--`). The output is gitignored
+        // (packages/web/public/app).
         command: 'bash scripts/build-expo-web-export.sh',
         dependsOn: ['mobile:web-runtime:install'],
         cache: false,
