@@ -249,6 +249,16 @@ sequenceDiagram
 9. **TTL Refresh**: `REFRESH_TTL_SCRIPT` runs on every connection-level refresh and bumps the TTL on the connection hash, the session-members set, the `sessionParticipants` set, the participant hash, the participant-connections set, **and the session-leader key**. The connection TTL is now aligned with the session-membership TTL (4h) so a long-idle leader's connection hash can't expire while the session keys still point at it. Without the leader-key refresh, a long-running session that's been quiet but never lost its leader would drop the leader key when the original election TTL expires and clients would see a surprise `LeaderChanged` mid-session.
 10. **Authoritative Leader Check**: Authorization for destructive operations (e.g. `endSession`) compares the caller's `connectionId` against the leader-key value from Redis (`distributedState.getSessionLeader`). `SessionUser.isLeader` derived from `getSessionMembers` can be momentarily stale during handoff — a participant whose local entry still says `isLeader=true` would otherwise authorize the action after the leader has already moved on.
 
+### Expo web token path (`/app`)
+
+The Expo app running on web can't use the mobile secure-store token path — the backend JWE lives in an HttpOnly NextAuth cookie that browser JS can't read. The web fork bridges it through three steps (all in `packages/mobile/src/lib`):
+
+1. **Poll `/api/internal/ws-auth`.** `synchronizeWebSession` (`auth-store.web.ts`) reads `/api/auth/session` then `/api/internal/ws-auth`, which returns the same encrypted JWE the WebSocket backend expects plus the decoded `userId`/`authSessionId`. The token is held in **process memory only** (never web storage); `getAuthToken()` returns it and `ensureFreshToken` re-syncs when it's missing/stale. One request pair is shared across concurrent HTTP 401s and WS 4401s so they can't storm the endpoint.
+2. **BroadcastChannel propagation.** Credential changes publish on the `boardsesh-expo-web-auth-v1` channel (shared with the Next.js `ExpoAuthSessionBridge`), so a sign-in/out or account switch in one tab invalidates the in-memory token in every other tab. A per-tab `sessionGeneration` fences stale reconnects against a newer login.
+3. **`BrowserAuthWebSocket`** (`ws-client.web.ts`) is the `webSocketImpl` passed to `createGraphQLClient`. Its `connectionParams` awaits any in-flight recovery, checks the credential generation, calls `ensureFreshToken`, then supplies the in-memory JWE. On a **4401** fatal close it runs `recoverRejectedAuthentication` (re-sync) and, only if recovery succeeds under the same generation, remaps the close to a retryable **4403** so graphql-ws reconnects with a fresh token — the browser analogue of mobile's `refreshAuthAndRecreateClient`.
+
+`ws-auth` decrypts the cookie exactly once per request: `getToken({ raw: true })` reads the raw cookie bytes (no decrypt), then a single `decode()` validates it (a malformed/expired cookie decodes to `null` → anonymous, not a 500).
+
 ### Initial Queue Seeding
 
 When a user starts party mode while they already have climbs in their local queue, the client sends the existing queue along with the `joinSession` mutation. This ensures users don't lose their queued climbs when transitioning to party mode.
