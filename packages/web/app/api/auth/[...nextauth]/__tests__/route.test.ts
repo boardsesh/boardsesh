@@ -16,9 +16,32 @@ vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
 vi.mock('@/app/lib/auth/secure-cookies', () => ({
   isSecureCookieContext: () => true,
   sessionCookieName: () => '__Secure-next-auth.session-token',
+  appendLegacyHostOnlySessionCookieClear: (response: Response) => {
+    response.headers.append(
+      'Set-Cookie',
+      '__Secure-next-auth.session-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+    );
+  },
+  responseSetsSessionCookie: (response: Response) => {
+    const setCookies =
+      typeof response.headers.getSetCookie === 'function'
+        ? response.headers.getSetCookie()
+        : response.headers.get('set-cookie')
+          ? [response.headers.get('set-cookie') as string]
+          : [];
+    return setCookies.some((setCookie) => {
+      const [nameValuePair] = setCookie.split(';', 1);
+      const separatorIndex = nameValuePair.indexOf('=');
+      if (separatorIndex === -1) return false;
+      return (
+        nameValuePair.slice(0, separatorIndex).trim() === '__Secure-next-auth.session-token' &&
+        nameValuePair.slice(separatorIndex + 1).trim().length > 0
+      );
+    });
+  },
 }));
 
-import { POST } from '../route';
+import { GET, POST } from '../route';
 
 const context = { params: Promise.resolve({ nextauth: ['signout'] }) };
 
@@ -28,6 +51,16 @@ function request(path: string, body: Record<string, string>): NextRequest {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(body),
   });
+}
+
+function hostOnlySessionCookieCleared(response: Response): boolean {
+  const setCookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+  return setCookies.some(
+    (setCookie) =>
+      setCookie.startsWith('__Secure-next-auth.session-token=;') &&
+      !/;\s*Domain=/i.test(setCookie) &&
+      /Max-Age=0/i.test(setCookie),
+  );
 }
 
 describe('POST /api/auth/[...nextauth]', () => {
@@ -117,5 +150,54 @@ describe('POST /api/auth/[...nextauth]', () => {
 
     expect(nextAuthHandlerMock).toHaveBeenCalledWith(callbackRequest, context);
     expect(getTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('clears the legacy host-only cookie when signing out', async () => {
+    getTokenMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          'Set-Cookie':
+            '__Secure-next-auth.session-token=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+        },
+      }),
+    );
+    const signOutRequest = request('/api/auth/signout', {
+      csrfToken: 'csrf-token',
+      expectedUserId: 'user-1',
+      expectedAuthSessionId: 'login-1',
+    });
+
+    const response = await POST(signOutRequest, context);
+
+    expect(response.status).toBe(200);
+    expect(hostOnlySessionCookieCleared(response)).toBe(true);
+  });
+
+  it('clears the legacy host-only cookie when a login writes a fresh session cookie', async () => {
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          'Set-Cookie':
+            '__Secure-next-auth.session-token=fresh-jwt; Path=/; Domain=.boardsesh.com; HttpOnly; SameSite=Lax; Secure',
+        },
+      }),
+    );
+    const callbackRequest = request('/api/auth/callback/credentials', {});
+
+    const response = await POST(callbackRequest, context);
+
+    expect(hostOnlySessionCookieCleared(response)).toBe(true);
+  });
+
+  it('does not clear the legacy cookie on a bare read that writes no session cookie', async () => {
+    nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
+    const sessionRequest = new NextRequest('https://www.boardsesh.com/api/auth/session', { method: 'GET' });
+
+    const response = await GET(sessionRequest, context);
+
+    expect(hostOnlySessionCookieCleared(response)).toBe(false);
   });
 });
