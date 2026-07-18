@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureAuthCredentialGeneration, clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
 import {
   registerWithCredentials,
@@ -37,7 +37,16 @@ function requestBody(callIndex: number): string {
 
 beforeEach(async () => {
   fetchMock.mockReset();
+  // Simulate the www-mounted export (experiments.baseUrl '/app'): Expo CLI
+  // inlines this into the bundle as EXPO_BASE_URL, and appCallbackUrl derives
+  // the NextAuth callback from it. The standalone subdomain export case
+  // (no base path → '/') has its own test below.
+  vi.stubEnv('EXPO_BASE_URL', '/app');
   await clearTokens();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('Expo web credentials auth', () => {
@@ -67,6 +76,22 @@ describe('Expo web credentials auth', () => {
     expect(new Headers(callbackOptions.headers).get('X-Auth-Return-Redirect')).toBe('1');
     expect(captureAuthCredentialGeneration()).toBe(generationBeforeLogin + 1);
     await expect(getAuthToken()).resolves.toBe('backend-jwe');
+  });
+
+  it('derives the callback from the export base — root on the standalone subdomain export', async () => {
+    // On app.boardsesh.com the app is rooted at '/', and '/app' does not exist:
+    // the stored NextAuth callback must point at the export's real base path.
+    vi.stubEnv('EXPO_BASE_URL', '');
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
+      .mockResolvedValueOnce(jsonResponse({ url: '/' }))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('backend-jwe'));
+
+    await expect(signInWithCredentials('climber@example.com', 'password')).resolves.toEqual({ success: true });
+
+    const callbackBody = new URLSearchParams(requestBody(1));
+    expect(callbackBody.get('callbackUrl')).toBe('/');
   });
 
   it('maps a NextAuth credentials error after reconciling the unchanged cookie', async () => {

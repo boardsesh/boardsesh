@@ -31,9 +31,16 @@ type CsrfResult = { success: true; token: string } | AuthFailure;
 
 const AUTH_COOKIE_LOCK_WAIT_TIMEOUT_MS = 15_000;
 
+// The Expo web export's mount path: Expo CLI inlines EXPO_BASE_URL from
+// `experiments.baseUrl` (app.config.ts derives it from BOARDSESH_WEB_BASE_URL)
+// — '/app' on the www-mounted export, '/' on the standalone subdomain export.
+// Deriving the callback from it keeps NextAuth's stored callback URL pointing
+// at a route that actually exists on whichever export is running, instead of a
+// hardcoded '/app' that is a 404 on app.boardsesh.com.
 function appCallbackUrl(): string {
-  if (typeof window === 'undefined') return '/app';
-  return new URL('/app', window.location.origin).toString();
+  const exportBasePath = process.env.EXPO_BASE_URL || '/';
+  if (typeof window === 'undefined') return exportBasePath;
+  return new URL(exportBasePath, window.location.origin).toString();
 }
 
 async function readJsonObject(response: Response): Promise<Record<string, unknown>> {
