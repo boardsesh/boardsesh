@@ -7,7 +7,19 @@ const withVercelToolbar = createWithVercelToolbar();
 export function resolveExpoWebDevOrigin(rawOrigin) {
   if (!rawOrigin) return null;
 
-  const parsedOrigin = new URL(rawOrigin);
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(rawOrigin);
+  } catch {
+    // A scheme-less value (e.g. `//localhost:8081`) makes `new URL` throw a bare
+    // "Invalid URL", which is opaque in a dev log. Fail with the actual value
+    // and the expected shape so the misconfig is obvious.
+    throw new Error(
+      `BOARDSESH_EXPO_WEB_ORIGIN is not a valid URL: ${JSON.stringify(rawOrigin)}. ` +
+        'Use a full origin with scheme, e.g. http://localhost:8081',
+    );
+  }
+
   if (parsedOrigin.protocol !== 'http:' && parsedOrigin.protocol !== 'https:') {
     throw new Error('BOARDSESH_EXPO_WEB_ORIGIN must use http or https');
   }
@@ -138,7 +150,17 @@ const nextConfig = {
     if (process.env.BOARDSESH_WEB !== '1') return [];
 
     const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
-    if (!expoWebOrigin) return [];
+    if (!expoWebOrigin) {
+      // BOARDSESH_WEB=1 with no BOARDSESH_EXPO_WEB_ORIGIN is a half-configured
+      // proxy: no /app rewrite is installed, so the middleware /app carve-out
+      // has nothing to forward to and /app 404s. Surface it instead of failing
+      // silently. Both env vars gate the rewrite (and the /assets middleware
+      // carve-out via isExpoWebProxyEnabled) — keep them set together.
+      console.warn(
+        '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — Expo web /app proxy is disabled.',
+      );
+      return [];
+    }
 
     return [
       {
