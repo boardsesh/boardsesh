@@ -67,8 +67,13 @@ export default defineConfig({
     // Requires the full expo-web dev stack (backend + Next proxy + Metro web):
     //   vp run test:e2e:expo-web            (orchestrated: starts the stack, runs this)
     // or vp run dev:mobile:web, then:
+    //   PLAYWRIGHT_SKIP_CLASSIC_SETUP=1 \
     //   TEST_USER_EMAIL=test@boardsesh.com TEST_USER_PASSWORD=test \
     //     cd packages/web && bunx playwright test --project=expo-web-smoke
+    // (PLAYWRIGHT_SKIP_CLASSIC_SETUP=1 stops global-setup from seeding and
+    // prewarming the classic Next routes the smoke never visits — under the
+    // expo-web stack a cold compile of those routes can blow the setup's 30s
+    // card timeout and fail the run before any smoke test starts.)
     // Viewport matches the Android parity reference (412×915) since the /app
     // surface renders the Material variant.
     {
@@ -78,6 +83,13 @@ export default defineConfig({
         isMobile: true,
         hasTouch: true,
       },
+      // The suite is serial and its first test absorbs Metro's on-demand
+      // compile of the whole web bundle when the stack is cold (a code edit or
+      // cache clear invalidates the orchestrator's prewarm). The global 60s
+      // per-test timeout would kill that test before the spec's 180s cold-load
+      // budget could elapse, so give this project its own ceiling with
+      // headroom over COLD_LOAD_TIMEOUT_MS.
+      timeout: 240_000,
       testMatch: ['**/expo-web/*.spec.ts'],
     },
 
