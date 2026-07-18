@@ -18,7 +18,8 @@ import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import type { SessionUser, SubscriptionQueueEvent, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
 import { isNotSessionMemberError } from '@boardsesh/graphql-client';
-import { AUTH_REFRESH_RETRY_CLOSE_CODE, getWsClient } from '../../lib/graphql/ws-client';
+import { getWsClient } from '../../lib/graphql/ws-client';
+import { AUTH_REFRESH_RETRY_CLOSE_CODE } from '../../lib/graphql/ws-close-codes';
 import {
   QUEUE_UPDATES_SUBSCRIPTION,
   SESSION_UPDATES_SUBSCRIPTION,

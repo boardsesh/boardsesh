@@ -3,6 +3,7 @@ import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerati
 import { ensureFreshToken, recoverAuthRejection, type NativeAuthRejectionResult } from '../auth-interceptor';
 import { reportHandledError } from '../error-reporting';
 import { BACKEND_URL } from '../env';
+import { AUTH_REFRESH_RETRY_CLOSE_CODE, AUTH_REJECTED_CLOSE_CODE } from './ws-close-codes';
 
 function getWsUrl(): string {
   const wsUrl = process.env.EXPO_PUBLIC_WS_URL;
@@ -25,14 +26,6 @@ type RNWebSocketCtor = new (
   protocols?: string | string[],
   options?: { headers?: Record<string, string> },
 ) => WebSocket;
-
-const AUTH_REJECTED_CLOSE_CODE = 4401;
-// graphql-ws treats 4401 as fatal before invoking shouldRetry. 4403 is not in
-// its fatal-code list, so exposing the rejected handshake as 4403 lets active
-// operations run through graphql-ws' normal reconnect and resubscribe loop.
-// Exported so the session-realtime consumer reads the same code this transport
-// emits, instead of re-declaring the literal.
-export const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
 
 let authRecovery: { generation: number; promise: Promise<NativeAuthRejectionResult> } | null = null;
 
