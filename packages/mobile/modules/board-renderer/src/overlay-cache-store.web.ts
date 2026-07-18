@@ -156,8 +156,16 @@ let hydratePromise: Promise<void> | null = null;
  * persisted overlays and mint object URLs for them so the shared hook's
  * synchronous warm-up can surface prior-session renders. Idempotent — the first
  * call kicks off the async hydration and later calls await the same promise.
+ *
+ * `currentVersionPrefix` (e.g. `v3_`) makes eviction deterministic and
+ * store-owned rather than dependent on the hook's warm-up: any key whose
+ * cacheKey doesn't carry the current renderer version is deleted here, so
+ * stale-version PNGs never burn a hydrate slot and are always reclaimed —
+ * regardless of whether the shared warm-up wins the startup race. Omit it
+ * (tests, callers that don't know the version) to keep the version-agnostic
+ * behaviour.
  */
-export function hydrateOverlayCache(): Promise<void> {
+export function hydrateOverlayCache(currentVersionPrefix?: string): Promise<void> {
   if (hydratePromise) return hydratePromise;
   hydratePromise = (async () => {
     const cache = await openOverlayCache();
@@ -168,8 +176,22 @@ export function hydrateOverlayCache(): Promise<void> {
     } catch {
       return;
     }
+
+    // Partition into current-version and stale-version keys. Stale keys are a
+    // different render format the hook can never match, so they're deleted
+    // outright — this is the only production eviction path for old-version
+    // bulk, and it runs whether or not the warm-up races ahead of hydration.
+    const currentRequests: Request[] = [];
+    const staleRequests: Request[] = [];
+    for (const request of requests) {
+      const cacheKey = cacheKeyFromUrl(request.url);
+      const isStaleVersion =
+        currentVersionPrefix !== undefined && (cacheKey === null || !cacheKey.startsWith(currentVersionPrefix));
+      (isStaleVersion ? staleRequests : currentRequests).push(request);
+    }
+
     // Tail = most-recently inserted; hydrate those first, bounded by the limit.
-    const recent = requests.slice(-OVERLAY_HYDRATE_LIMIT);
+    const recent = currentRequests.slice(-OVERLAY_HYDRATE_LIMIT);
     for (const request of recent) {
       const cacheKey = cacheKeyFromUrl(request.url);
       if (!cacheKey || renderedObjectUrls.has(cacheKey)) continue;
@@ -183,13 +205,13 @@ export function hydrateOverlayCache(): Promise<void> {
       }
     }
 
-    // Prune so the Cache API can't grow unbounded across sessions. Keys come
-    // back in insertion order, so the head is the least-recently rendered;
-    // evict everything older than the most-recent OVERLAY_HYDRATE_LIMIT (the
-    // entries we didn't hydrate anyway). Without this, cache.put eventually
-    // throws on quota and the renderer silently stops persisting.
-    const stale = requests.slice(0, Math.max(0, requests.length - OVERLAY_HYDRATE_LIMIT));
-    for (const request of stale) {
+    // Prune so the Cache API can't grow unbounded across sessions: evict every
+    // stale-version key plus the current-version overflow older than the most
+    // recent OVERLAY_HYDRATE_LIMIT (which we didn't hydrate anyway). Without
+    // this, cache.put eventually throws on quota and the renderer silently
+    // stops persisting.
+    const currentOverflow = currentRequests.slice(0, Math.max(0, currentRequests.length - OVERLAY_HYDRATE_LIMIT));
+    for (const request of [...staleRequests, ...currentOverflow]) {
       try {
         await cache.delete(request);
       } catch {

@@ -28,3 +28,13 @@ export function listOverlayCacheEntries(cacheDirName: string): OverlayCacheEntry
   if (!cacheDir.exists) return null;
   return cacheDir.list() as OverlayCacheEntry[];
 }
+
+/**
+ * Web twin runs the handler once the async Cache API hydration resolves. Native
+ * hydration is a synchronous disk list (listOverlayCacheEntries above), so there
+ * is nothing to await and the handler is dropped — the hook's first synchronous
+ * warm-up already sees the fully-listed directory.
+ */
+export function onOverlayCacheHydrated(_handler: () => void): void {
+  // Intentionally a no-op on native.
+}

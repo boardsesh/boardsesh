@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import type { BoardName } from '@boardsesh/shared-schema';
-import { listOverlayCacheEntries } from './overlay-cache-warmup';
+import { listOverlayCacheEntries, onOverlayCacheHydrated } from './overlay-cache-warmup';
+import { RENDERER_VERSION } from './renderer-version';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import { getBoardRenderData } from '../lib/board-details';
 import {
@@ -21,14 +22,6 @@ import {
   type HoldShapeOverrides,
 } from '../lib/hold-color-overrides';
 
-/**
- * Bump when the native overlay output/cache contract changes. v2 marks
- * the switch from composited PNGs (backgrounds baked in) to overlay-only
- * PNGs (transparent background, holds only). v3 marks marker shape,
- * brush, and size override support, and drops any wrong custom-marker
- * PNGs written by overlay-only dev binaries during rollout.
- */
-const RENDERER_VERSION = 3;
 const MARKER_RENDERER_UNAVAILABLE_MESSAGE =
   'Marker shape, size, and brush overrides require a rebuilt BoardRenderer native binary';
 
@@ -186,6 +179,18 @@ function warmupRenderedOverlaysOnce(): void {
     // render path will repopulate the map as climbs are viewed.
   }
 }
+
+// On web the persisted overlays live in the async Cache API, so the first
+// synchronous warm-up can run before hydration finishes and see an empty
+// snapshot. Re-run the warm-up once hydration resolves so prior-session
+// overlays land in the map for first paint. Native hydration is synchronous
+// (disk list) and this fires immediately as a no-op re-run. The re-run is
+// purely additive — the store already evicted stale-version entries during
+// hydration, so the snapshot only carries current-version overlays.
+onOverlayCacheHydrated(() => {
+  warmupRun = false;
+  warmupRenderedOverlaysOnce();
+});
 
 /** Test-only handle for re-running the warm-up against a fresh mock list. */
 export function _resetWarmupForTests(): void {

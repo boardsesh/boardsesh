@@ -157,6 +157,26 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(snapshotOverlayEntries()).toHaveLength(limit);
   });
 
+  it('evicts stale-version keys during hydration when given the current prefix', async () => {
+    const { store } = installCaches();
+    await writeOverlayToCache('v2_s_wfull_kilter_1_2_25_old', new Blob() as Blob);
+    await writeOverlayToCache('v3_s_wfull_kilter_1_2_25_keep', new Blob() as Blob);
+    await writeOverlayToCache('v1_f_w400_kilter_1_2_25_ancient', new Blob() as Blob);
+    _overlayCacheStoreForTests.renderedObjectUrls.clear();
+
+    await hydrateOverlayCache('v3_');
+
+    // Stale-version PNGs are deleted from the Cache API, not hydrated — so they
+    // never burn a hydrate slot and are always reclaimed regardless of the
+    // warm-up race.
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v2_s_wfull_kilter_1_2_25_old'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v1_f_w400_kilter_1_2_25_ancient'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('v3_s_wfull_kilter_1_2_25_keep'))).toBe(true);
+    const entries = snapshotOverlayEntries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].name).toBe('v3_s_wfull_kilter_1_2_25_keep.png');
+  });
+
   it('releaseAllObjectUrls revokes every retained URL', async () => {
     installCaches();
     await writeOverlayToCache('k1', new Blob() as Blob);
