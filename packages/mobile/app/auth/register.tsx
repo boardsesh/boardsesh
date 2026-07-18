@@ -15,6 +15,7 @@ import { AuthFieldset } from '../../src/components/AuthFieldset';
 import { Button } from '../../src/components/Button';
 import { Text } from '../../src/components/Text';
 import { track, setPersonProperties } from '../../src/lib/analytics';
+import { webApiUrl } from '../../src/lib/env';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 
@@ -181,9 +182,12 @@ export default function RegisterScreen() {
     setResendError(null);
     setResendingVerification(true);
     try {
-      const response = await fetch('/api/auth/resend-verification', {
+      // Cross-origin on the standalone app.boardsesh.com export: a relative
+      // URL would hit the static origin (404), so target www via webApiUrl()
+      // with included credentials — same pattern as the other auth fetches.
+      const response = await fetch(webApiUrl('/api/auth/resend-verification'), {
         method: 'POST',
-        credentials: 'same-origin',
+        credentials: 'include',
         cache: 'no-store',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: trimmedEmail }),

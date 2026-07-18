@@ -23,6 +23,8 @@ const CORS_AUTH_PATHS = new Set([
   '/api/auth/register',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
+  // The register screen's "Resend verification email" recovery button.
+  '/api/auth/resend-verification',
 ]);
 
 // The Expo-web credentials/signout POSTs carry a non-safelisted request header

@@ -181,7 +181,7 @@ describe('RegisterScreen analytics', () => {
     expect(screen.getByText('login.toasts.checkEmail')).toBeTruthy();
   });
 
-  it('offers a same-origin resend before claiming a failed verification email was delivered', async () => {
+  it('offers a cross-origin resend (via www) before claiming a failed verification email was delivered', async () => {
     platform.os = 'web';
     auth.register.mockResolvedValue({
       success: true,
@@ -200,8 +200,12 @@ describe('RegisterScreen analytics', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/api/auth/resend-verification');
-    expect(options.credentials).toBe('same-origin');
+    // Routed through webApiUrl() with included credentials so the standalone
+    // app.boardsesh.com export reaches www (a relative URL would 404 on the
+    // static origin); in this jsdom realm the origins differ, so the absolute
+    // form is used.
+    expect(url).toBe('https://www.boardsesh.com/api/auth/resend-verification');
+    expect(options.credentials).toBe('include');
     expect(options.method).toBe('POST');
     if (typeof options.body !== 'string') throw new Error('Expected a JSON request body');
     expect(JSON.parse(options.body)).toEqual({ email: 'new@example.com' });
