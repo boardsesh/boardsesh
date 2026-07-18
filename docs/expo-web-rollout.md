@@ -21,6 +21,8 @@ we bridge the flag to a cookie:
 1. `ExpoWebRolloutCookieSync` (mounted in `app/layout.tsx` inside
    `FeatureFlagsProvider`) reads the resolved `expo-web-app` value and mirrors it
    into the non-HttpOnly `bs_expo_web` cookie (`1` when on, cleared when off).
+   The on-value has a **4-hour TTL**, refreshed on every classic-side
+   navigation — see Rollback for why it is short.
 2. `middleware.ts` reads `bs_expo_web` on the edge and redirects matching
    surfaces.
 
@@ -35,18 +37,35 @@ truth. The `/app` SPA is client-routed (`baseUrl: '/app'`, web output `single`),
 so a plain path redirect resolves to `index.html` and Expo Router takes over.
 Locale prefixes (`/es/…`, `/fr/…`) are stripped — `/app` is locale-neutral.
 
-| Classic web surface | Redirects to | Board context carried |
-| --- | --- | --- |
-| `/[board]/[layout]/[size]/[sets]/[angle]/list` | `/app/climbs` | `?boardName&layoutId&sizeId&setIds&angle` |
-| `/b/[slug]/[angle]/list` | `/app/climbs` | `?boardSlug&angle` |
-| `/[board]/[layout]/[size]/[sets]/[angle]/view/[uuid]` | `/app/climbs/[uuid]` | `?boardName&layoutId&sizeId&setIds&angle` |
-| `/b/[slug]/[angle]/view/[uuid]` | `/app/climbs/[uuid]` | `?boardSlug&angle` |
+The map only emits URLs the SPA genuinely handles today — no redirect may land
+on a broken screen:
+
+| Classic web surface                                                                | Redirects to         | Board context carried                     |
+| ---------------------------------------------------------------------------------- | -------------------- | ----------------------------------------- |
+| `/[board]/[layout]/[size]/[sets]/[angle]/list` (numeric or named segments)         | `/app/climbs`        | none (see below)                          |
+| `/b/[slug]/[angle]/list`                                                           | `/app/climbs`        | none (see below)                          |
+| `/[board]/[layout]/[size]/[sets]/[angle]/view/[uuid]` — **fully-numeric IDs only** | `/app/climbs/[uuid]` | `?boardName&layoutId&sizeId&setIds&angle` |
+| `/[board]/[layout]/[size]/[sets]/[angle]/view/[uuid]` — named segments             | stays classic        | —                                         |
+| `/b/[slug]/[angle]/view/[uuid]`                                                    | stays classic        | —                                         |
 
 `/app/climbs/[uuid]` is the Expo Router **ClimbDetail** route, the native app's
-own deep-link target for a climb — it opens the play drawer. The legacy-numeric
-form carries the exact param contract that route reads
-(`boardName`/`layoutId`/`sizeId`/`setIds`/`angle`); the slug form carries
-`boardSlug` + `angle` and relies on the SPA to resolve the slug.
+own deep-link target for a climb — it opens the play drawer. It reads exactly
+`boardName`/`layoutId`/`sizeId`/`setIds`/`angle` and `Number(...)`s the IDs, so
+only the fully-numeric legacy form redirects there. The canonical named-segment
+form (what `constructClimbViewUrlWithSlugs` emits) and the `/b/[slug]` form stay
+classic until the SPA can resolve name slugs — redirecting them today would
+dead-end on a not-found screen.
+
+The list redirect carries **no board context**: the Climbs tab
+(`packages/mobile/app/(tabs)/climbs/index.tsx`) takes its board from the
+visitor's persisted active board and reads no board search params, so a flagged
+visitor following a shared list link lands on _their_ active board. That loss is
+deliberate and bounded — carrying the link's board requires SPA-side support
+first.
+
+A classic board URL with a query string (`?minGrade=…`, `?name=…`, `?sortBy=…`)
+never redirects: the SPA does not read filter state from the URL, so shared
+filtered links are served classic instead of silently dropping the filters.
 
 Everything else stays classic: board create/queue pages, profiles, playlists,
 gyms, setters, API routes, and the homepage all return `null` from the map.
@@ -85,14 +104,19 @@ There is no UI affordance yet; `?classic=1` is the documented lever.
 2. In PostHog, activate `expo-web-app` (id 767179) and dial the rollout
    percentage up gradually (start with an internal cohort / small %).
 3. Watch: do flagged users land on `/app/climbs` and `/app/climbs/[uuid]`
-   correctly (board resolves, climb opens in the play drawer)? Verify the
-   slug-view path resolves before widening, since it depends on SPA-side slug
-   resolution.
+   correctly (board resolves, climb opens in the play drawer)? Named-segment
+   and `/b/[slug]` climb-view URLs stay classic by design — widening them into
+   the map requires SPA-side slug resolution first.
 
 ## Rollback
 
-- **Instant, everyone:** set `expo-web-app` to 0% in PostHog. Clients clear
-  `bs_expo_web` on their next page load and stop redirecting. No deploy.
-- **Per-user:** `?classic=1` (see the escape hatch above).
+- **Flag off, no deploy:** set `expo-web-app` to 0% in PostHog. Visitors who
+  load any classic page clear `bs_expo_web` immediately. Visitors who live
+  entirely inside `/app` (the SPA never touches the cookie) are covered by the
+  cookie's 4-hour TTL: it expires, their next migrated-surface hit falls
+  through to classic, and the classic page re-evaluates the flag. Worst-case
+  rollback lag is therefore the TTL, not the cookie lifetime.
+- **Per-user:** `?classic=1` (see the escape hatch above) — works immediately,
+  even inside the TTL window.
 - **Whole build:** ship without `BOARDSESH_WEB=1` — gate 1 fails and the
   rollout is inert regardless of flag or cookie state.
