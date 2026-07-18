@@ -102,8 +102,18 @@ export function initCors(boardseshUrl: string): void {
     if (devAllowedOrigins) {
       devAllowedOrigins.split(',').forEach((origin) => {
         const trimmed = origin.trim();
-        if (trimmed) {
-          allowedOrigins.push(trimmed);
+        if (!trimmed) return;
+        // Only accept a well-formed http/https origin, so a typo can't push a
+        // malformed entry that would never match (or worse, a non-http scheme).
+        try {
+          const parsed = new URL(trimmed);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            logger.warn(`[CORS] Ignoring DEV_ALLOWED_ORIGINS entry with a non-http(s) scheme: ${trimmed}`);
+            return;
+          }
+          allowedOrigins.push(parsed.origin);
+        } catch {
+          logger.warn(`[CORS] Ignoring malformed DEV_ALLOWED_ORIGINS entry: ${trimmed}`);
         }
       });
     }

@@ -86,6 +86,26 @@ describe('CORS Handler', () => {
       delete process.env.DEV_ALLOWED_ORIGINS;
     });
 
+    it('drops malformed and non-http(s) DEV_ALLOWED_ORIGINS entries, keeping valid ones', () => {
+      process.env.DEV_ALLOWED_ORIGINS =
+        'http://192.168.0.1:3000, not a url, ftp://192.168.0.2:3000, javascript:alert(1), https://192.168.0.3:3000';
+      initCors('https://boardsesh.com');
+      const origins = getAllowedOrigins();
+      expect(origins).toContain('http://192.168.0.1:3000');
+      expect(origins).toContain('https://192.168.0.3:3000');
+      expect(origins).not.toContain('not a url');
+      expect(origins.some((o) => o.startsWith('ftp:'))).toBe(false);
+      expect(origins.some((o) => o.startsWith('javascript:'))).toBe(false);
+      delete process.env.DEV_ALLOWED_ORIGINS;
+    });
+
+    it('normalizes a DEV_ALLOWED_ORIGINS entry to its bare origin', () => {
+      process.env.DEV_ALLOWED_ORIGINS = 'http://192.168.0.4:3000/some/path';
+      initCors('https://boardsesh.com');
+      expect(getAllowedOrigins()).toContain('http://192.168.0.4:3000');
+      delete process.env.DEV_ALLOWED_ORIGINS;
+    });
+
     it('adds Tailscale hostname origins from TAILSCALE_HOSTNAME env var', () => {
       process.env.TAILSCALE_HOSTNAME = 'My-Laptop.tailnet123.ts.net';
       initCors('https://boardsesh.com');
