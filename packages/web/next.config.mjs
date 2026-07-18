@@ -7,7 +7,19 @@ const withVercelToolbar = createWithVercelToolbar();
 export function resolveExpoWebDevOrigin(rawOrigin) {
   if (!rawOrigin) return null;
 
-  const parsedOrigin = new URL(rawOrigin);
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(rawOrigin);
+  } catch {
+    // A scheme-less value (e.g. `//localhost:8081`) makes `new URL` throw a bare
+    // "Invalid URL", which is opaque in a dev log. Fail with the actual value
+    // and the expected shape so the misconfig is obvious.
+    throw new Error(
+      `BOARDSESH_EXPO_WEB_ORIGIN is not a valid URL: ${JSON.stringify(rawOrigin)}. ` +
+        'Use a full origin with scheme, e.g. http://localhost:8081',
+    );
+  }
+
   if (parsedOrigin.protocol !== 'http:' && parsedOrigin.protocol !== 'https:') {
     throw new Error('BOARDSESH_EXPO_WEB_ORIGIN must use http or https');
   }

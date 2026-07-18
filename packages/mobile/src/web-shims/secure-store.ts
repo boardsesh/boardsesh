@@ -1,5 +1,18 @@
 import AsyncStorage from './async-storage';
 
+// NON-SECRET VALUES ONLY. This is the browser shim for `expo-secure-store`. On
+// native, SecureStore is backed by the iOS Keychain / Android Keystore; in the
+// browser there is no equivalent, so this shim persists to plain IndexedDB with
+// NO encryption. Anything written here is readable cleartext by any script on
+// the origin. It exists purely so non-secret preference stores (last search,
+// last grade) keep working on web.
+//
+// Never route authentication tokens or credentials through here. Web auth
+// deliberately does NOT use this shim: `auth-store.web.ts` holds the session in
+// the NextAuth cookie (see `auth-cookie-lock.web.ts`), never in web storage.
+// Keep it that way — see the "Never persist authentication tokens in that store"
+// rule in CLAUDE.md (Expo web section).
+
 export type SecureStoreOptions = {
   keychainAccessible?: string;
   requireAuthentication?: boolean;
