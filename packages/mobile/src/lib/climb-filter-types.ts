@@ -10,12 +10,27 @@ export const DEFAULT_FILTERS: ClimbFilters = DEFAULT_CLIMB_FILTER_STATE;
 export type { SortOption };
 
 /**
- * A signed-out user can't filter to drafts — the option is gated out of the native
- * status picker. Coerce a persisted `drafts` status (left over from a prior signed-in
- * session) to `any` so the picker never receives a selection with no matching option.
- * Pure, so it can run inside a `useState` initializer and an effect with no ordering
- * hazards, and returns the same reference when there's nothing to change.
+ * Sanitizes the whole auth-gated "Your progress" section for a signed-out user.
+ * That section — the `drafts` status and the personal progress lens (the four
+ * per-user tick flags) — is hidden when signed out, so a value left over from a
+ * prior signed-in session would filter the results with no visible control to
+ * change it. Coerce `drafts`→`any` (the option is also gated out of the status
+ * picker) and clear the tick flags. Pure, so it can run inside a `useState`
+ * initializer and an effect with no ordering hazards, and returns the same
+ * reference when there's nothing to change.
  */
 export function statusForAuth(filters: ClimbFilters, isAuthenticated: boolean): ClimbFilters {
-  return !isAuthenticated && filters.status === 'drafts' ? { ...filters, status: 'any' } : filters;
+  if (isAuthenticated) return filters;
+  const needsStatusReset = filters.status === 'drafts';
+  const needsProgressReset =
+    filters.hideAttempted || filters.hideCompleted || filters.showOnlyAttempted || filters.showOnlyCompleted;
+  if (!needsStatusReset && !needsProgressReset) return filters;
+  return {
+    ...filters,
+    status: needsStatusReset ? 'any' : filters.status,
+    hideAttempted: undefined,
+    hideCompleted: undefined,
+    showOnlyAttempted: undefined,
+    showOnlyCompleted: undefined,
+  };
 }
