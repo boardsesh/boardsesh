@@ -58,9 +58,12 @@ function collectFatalConsoleErrors(page: Page): string[] {
 }
 
 function tabButton(page: Page, name: (typeof TAB_NAMES)[number]) {
-  // The Material tab bar exposes role=tab; accessible names carry the icon
-  // glyph before the label ("󰋜 Home"), so match the label as a word.
-  return page.getByRole('tab', { name: new RegExp(`\\b${name}\\b`) }).last();
+  // MaterialTabBar sets `accessibilityRole="tab"` + `accessibilityLabel={label}`
+  // on each destination, which react-native-web maps to role=tab with an
+  // aria-label equal to the tab title verbatim. Each label is unique and the
+  // hidden /wall route is filtered out, so an exact accessible-name match
+  // resolves to the one real tab — no positional `.last()` needed.
+  return page.getByRole('tab', { name, exact: true });
 }
 
 /**
@@ -116,15 +119,24 @@ test.describe('expo-web smoke', () => {
   async function bindSeededBoard(page: Page): Promise<void> {
     await tabButton(page, 'Climbs').click();
     const findBoardButton = page.getByRole('button', { name: 'Find my board' });
-    if (await findBoardButton.isVisible().catch(() => false)) {
+    const boundThumbnail = page.locator('img[src^="blob:"]').first();
+    // The Climbs tab settles into one of two determinate states: the follow-
+    // your-wall empty state (fresh context) or a populated list (already bound).
+    // Wait for whichever appears so the bind decision below isn't racing an
+    // unrendered UI — an immediate `isVisible()` could read false mid-mount and
+    // silently skip binding.
+    await expect(findBoardButton.or(boundThumbnail).first()).toBeVisible({ timeout: WARM_TIMEOUT_MS });
+    if (await findBoardButton.isVisible()) {
       await findBoardButton.click({ force: true });
       await page
         .getByRole('button', { name: /Dyno Den/ })
         .first()
         .click({ force: true });
     }
-    // Bound board → the list renders WASM thumbnails.
-    await expect(page.locator('img[src^="blob:"]').first()).toBeVisible({ timeout: 60_000 });
+    // Bound board → the list renders WASM thumbnails. Assert unconditionally so
+    // a skipped bind (e.g. the empty-state button got renamed) fails loudly
+    // here instead of letting downstream steps pass vacuously.
+    await expect(boundThumbnail).toBeVisible({ timeout: 60_000 });
   }
 
   /** Opens the first climbs-list climb into the play drawer. */
