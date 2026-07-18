@@ -2,6 +2,7 @@ import { createGraphQLClient, type Client } from '@boardsesh/graphql-client';
 import { reportHandledError } from '../error-reporting';
 import { BACKEND_URL } from '../env';
 import type { AuthRejectionResult } from '../auth-rejection-result';
+import { AUTH_REFRESH_RETRY_CLOSE_CODE, AUTH_REJECTED_CLOSE_CODE } from './ws-auth-close-codes';
 
 /**
  * Platform seam for the GraphQL-WS transport. Native and web differ only in how
@@ -42,12 +43,6 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
 
     return BACKEND_URL.replace(/^http(s?):\/\//, 'ws$1://') + '/graphql';
   }
-
-  const AUTH_REJECTED_CLOSE_CODE = 4401;
-  // graphql-ws treats 4401 as fatal before invoking shouldRetry. 4403 is not in
-  // its fatal-code list, so exposing the rejected handshake as 4403 lets active
-  // operations run through graphql-ws' normal reconnect and resubscribe loop.
-  const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
 
   let authRecovery: { generation: number; promise: Promise<AuthRejectionResult> } | null = null;
 
@@ -167,6 +162,21 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
 
     close(code?: number, reason?: string): void {
       this.socket.close(code, reason);
+    }
+
+    // graphql-ws drives this socket exclusively through the on* handlers above,
+    // so nothing calls these EventTarget methods today. Forward them to the
+    // underlying socket anyway: a future graphql-ws that switched to
+    // addEventListener would otherwise silently lose every event on this shim.
+    // The 4401→4403 remap lives only on the `onclose` property path — a 'close'
+    // listener registered here sees the underlying socket's raw code (a
+    // deliberate, documented tradeoff, since graphql-ws does not use this path).
+    addEventListener(...args: Parameters<WebSocket['addEventListener']>): void {
+      this.socket.addEventListener(...args);
+    }
+
+    removeEventListener(...args: Parameters<WebSocket['removeEventListener']>): void {
+      this.socket.removeEventListener(...args);
     }
   }
 
