@@ -101,30 +101,40 @@ describe('browser login-scoped core persistence', () => {
     await expect(getStoredQueueSnapshot()).resolves.toBeNull();
   });
 
-  it('reclaims a prior login of the same user on re-login and leaves other users alone', async () => {
+  it('reclaims a prior login of the same user only after the retention window', async () => {
     const { sweepOrphanedUserStorage } = await import('../user-storage-owner.web');
     const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store.web');
     const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store.web');
 
-    // Old login of user A, plus a live login for user B in another tab.
+    const startTime = 1_000_000_000_000;
+    const beyondRetention = startTime + 31 * 24 * 60 * 60 * 1000;
+
+    // Old login of user A, plus a live login for user B in another tab; both
+    // recorded as active at startTime.
     await setStoredActiveBoard(boardA, userALogin);
     await setStoredQueueSnapshot(
       { queue: [], currentClimbQueueItem: null, playlistSuggestionSource: null },
       userALogin,
     );
     await setStoredActiveBoard(boardB, userBLogin);
+    await sweepOrphanedUserStorage(userALogin, startTime);
+    await sweepOrphanedUserStorage(userBLogin, startTime);
 
-    await sweepOrphanedUserStorage(newerUserALogin);
+    // A rapid re-login as user A right away must NOT drop the old scope — a
+    // concurrent tab could still own it.
+    await sweepOrphanedUserStorage(newerUserALogin, startTime + 1000);
+    await expect(getStoredActiveBoard(userALogin)).resolves.toEqual(boardA);
 
-    // A's stale-login rows are gone; the new A login and user B are preserved.
+    // Once the old A login has been inactive past the window, it is reclaimed;
+    // the new A login and (older, other-user) B are preserved.
+    await sweepOrphanedUserStorage(newerUserALogin, beyondRetention);
     await expect(getStoredActiveBoard(userALogin)).resolves.toBeNull();
     await expect(getStoredQueueSnapshot(userALogin)).resolves.toBeNull();
-    await expect(getStoredActiveBoard(newerUserALogin)).resolves.toBeNull();
     await expect(getStoredActiveBoard(userBLogin)).resolves.toEqual(boardB);
 
     // A fresh write under the new A login survives a repeat sweep.
     await setStoredActiveBoard(boardA, newerUserALogin);
-    await sweepOrphanedUserStorage(newerUserALogin);
+    await sweepOrphanedUserStorage(newerUserALogin, beyondRetention);
     await expect(getStoredActiveBoard(newerUserALogin)).resolves.toEqual(boardA);
   });
 
