@@ -20,7 +20,7 @@
  * safe default.
  */
 import type { NextRequest } from 'next/server';
-import { getBoardRouteSegments, isBoardRoutePath } from './board-route-paths';
+import { getBoardRouteSegments, isBoardRoutePath, isNumericId } from './board-route-paths';
 
 /** PostHog flag key (id 767179, project 412845). Master switch for the rollout. */
 export const EXPO_WEB_FLAG = 'expo-web-app';
@@ -81,22 +81,45 @@ export function hasClassicOptOutCookie(request: NextRequest): boolean {
   return request.cookies.get(EXPO_WEB_CLASSIC_COOKIE)?.value === '1';
 }
 
-function buildClimbsTarget(params: Record<string, string>): string {
-  const query = new URLSearchParams(params).toString();
-  return query ? `${EXPO_WEB_CLIMBS_PATH}?${query}` : EXPO_WEB_CLIMBS_PATH;
-}
-
 function buildClimbTarget(climbUuid: string, params: Record<string, string>): string {
   const query = new URLSearchParams(params).toString();
   const base = `${EXPO_WEB_CLIMBS_PATH}/${encodeURIComponent(climbUuid)}`;
   return query ? `${base}?${query}` : base;
 }
 
+function decodeSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /**
- * Per-surface redirect map. Returns the `/app` SPA path (with a board-context
- * query string) for a migrated board surface, or `null` for everything else —
- * public/SEO routes (profiles, playlists, gyms, setters), board create/queue,
- * API routes, and anything unrecognised all fall through to the classic UI.
+ * True when the legacy board-config segments are the fully-numeric ID form
+ * (`/kilter/1/10/1,20/40/...`) the mobile ClimbDetail route can consume via
+ * `Number(...)`. The canonical modern URLs use *named* slug segments
+ * (`/kilter/original/12x12-square/screw_bolt/40/...` — what
+ * `constructClimbViewUrlWithSlugs` emits); forwarding those as `layoutId` etc.
+ * would give the SPA `Number('original') === NaN` and a dead not-found screen,
+ * so named/mixed forms must stay classic.
+ */
+function hasNumericBoardConfigSegments(layoutId: string, sizeId: string, setIds: string, angle: string): boolean {
+  return (
+    isNumericId(layoutId) &&
+    isNumericId(sizeId) &&
+    isNumericId(angle) &&
+    decodeSegment(setIds)
+      .split(',')
+      .every((setId) => isNumericId(setId.trim()))
+  );
+}
+
+/**
+ * Per-surface redirect map. Returns the `/app` SPA path for a migrated board
+ * surface, or `null` for everything else — public/SEO routes (profiles,
+ * playlists, gyms, setters), board create/queue, API routes, and anything
+ * unrecognised all fall through to the classic UI.
  *
  * Migrated surfaces (Expo Router URL shapes; the SPA is client-routed under
  * `/app`, so a plain path redirect resolves to `index.html` and the router
@@ -105,16 +128,22 @@ function buildClimbTarget(climbUuid: string, params: Record<string, string>): st
  *   Board list -> `/app/climbs` (the Climbs tab)
  *     legacy  /[board]/[layout]/[size]/[sets]/[angle]/list
  *     slug    /b/[slug]/[angle]/list
+ *   No board-context query: the Climbs tab reads its board from the visitor's
+ *   persisted active board, not from search params, so any params we attach
+ *   are dead weight. The redirect deliberately lands on the visitor's active
+ *   board; carrying the URL's board context requires SPA-side support first.
+ *
  *   Climb view -> `/app/climbs/[uuid]` (the ClimbDetail deep-link route, which
  *   opens the play drawer — the native app's own deep-link target for a climb)
- *     legacy  /[board]/[layout]/[size]/[sets]/[angle]/view/[uuid]
- *     slug    /b/[slug]/[angle]/view/[uuid]
+ *     legacy-numeric only  /[board]/[layout]/[size]/[sets]/[angle]/view/[uuid]
+ *   The query string carries the exact param contract ClimbDetail reads
+ *   (boardName/layoutId/sizeId/setIds/angle, all-numeric IDs). The named-slug
+ *   legacy form and the `/b/[slug]/[angle]/view/[uuid]` slug form stay classic
+ *   (`null`): ClimbDetail `Number(...)`s the IDs and nothing in the SPA
+ *   resolves a board slug, so redirecting those would land on a permanent
+ *   not-found screen. Widen only after the SPA can resolve slugs.
  *
- * Board context rides the query string. The legacy form carries the exact
- * param contract the mobile ClimbDetail route reads (boardName/layoutId/sizeId/
- * setIds/angle); the slug form carries boardSlug + angle (the SPA resolves the
- * slug). Locale prefixes (`/es/…`, `/fr/…`) are stripped — `/app` is
- * locale-neutral.
+ * Locale prefixes (`/es/…`, `/fr/…`) are stripped — `/app` is locale-neutral.
  */
 export function mapToExpoWebTarget(pathname: string): string | null {
   if (!isBoardRoutePath(pathname)) return null;
@@ -122,26 +151,28 @@ export function mapToExpoWebTarget(pathname: string): string | null {
   const segments = getBoardRouteSegments(pathname);
 
   if (segments[0] === 'b') {
-    const [, boardSlug, angle, surface, climbUuid] = segments;
+    const [, boardSlug, angle, surface] = segments;
     if (!boardSlug || !angle) return null;
-    const params = { boardSlug, angle };
     if (surface === 'list' && segments.length === 4) {
-      return buildClimbsTarget(params);
+      return EXPO_WEB_CLIMBS_PATH;
     }
-    if (surface === 'view' && segments.length === 5 && climbUuid) {
-      return buildClimbTarget(climbUuid, params);
-    }
+    // Slug climb view stays classic: the SPA has no boardSlug resolution, so a
+    // redirect would dead-end on ClimbDetail's not-found screen.
     return null;
   }
 
   const [boardName, layoutId, sizeId, setIds, angle, surface, climbUuid] = segments;
   if (!boardName || !layoutId || !sizeId || !setIds || !angle) return null;
-  const params = { boardName, layoutId, sizeId, setIds, angle };
   if (surface === 'list' && segments.length === 6) {
-    return buildClimbsTarget(params);
+    return EXPO_WEB_CLIMBS_PATH;
   }
-  if (surface === 'view' && segments.length === 7 && climbUuid) {
-    return buildClimbTarget(climbUuid, params);
+  if (
+    surface === 'view' &&
+    segments.length === 7 &&
+    climbUuid &&
+    hasNumericBoardConfigSegments(layoutId, sizeId, setIds, angle)
+  ) {
+    return buildClimbTarget(climbUuid, { boardName, layoutId, sizeId, setIds: decodeSegment(setIds), angle });
   }
   return null;
 }

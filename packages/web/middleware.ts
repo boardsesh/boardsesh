@@ -180,7 +180,17 @@ export function middleware(request: NextRequest) {
       return classicResponse;
     }
 
-    if (!hasClassicOptOutCookie(request) && isExpoWebFlagCookieOn(request) && hasAuthSessionCookie(request)) {
+    // A query string on a classic board URL is filter/search state (?minGrade,
+    // ?name, ?sortBy, …) the /app SPA does not read from the URL — redirecting
+    // would silently drop it, so shared filtered links are served classic.
+    const hasClassicQueryState = request.nextUrl.search !== '';
+
+    if (
+      !hasClassicQueryState &&
+      !hasClassicOptOutCookie(request) &&
+      isExpoWebFlagCookieOn(request) &&
+      hasAuthSessionCookie(request)
+    ) {
       const expoWebTarget = mapToExpoWebTarget(pathname);
       if (expoWebTarget) {
         // 307 (not 308): the flag can flip off at any time, so the redirect

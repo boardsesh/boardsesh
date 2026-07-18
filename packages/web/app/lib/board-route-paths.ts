@@ -48,18 +48,14 @@ export function isBoardListPath(pathname: string | null | undefined): boolean {
   return segments.length === 6 && segments[5] === 'list';
 }
 
-export function isBoardViewPath(pathname: string | null | undefined): boolean {
-  if (!pathname || !isBoardRoutePath(pathname)) return false;
-
-  const segments = getPathSegments(pathname);
-
-  // Slug form: /b/[board_slug]/[angle]/view/[climb_uuid]
-  if (segments[0] === 'b') {
-    return segments.length === 5 && segments[3] === 'view';
-  }
-
-  // Legacy form: /[board]/[layout]/[size]/[sets]/[angle]/view/[climb_uuid]
-  return segments.length === 7 && segments[5] === 'view';
+/**
+ * True when a board-route segment is a legacy numeric ID (`1`, `10`) rather
+ * than a name slug (`original`, `12x12-square`). Canonical definition lives
+ * here (edge-safe, importable from middleware); `url-utils.ts` re-exports it
+ * for the rest of the app.
+ */
+export function isNumericId(value: string): boolean {
+  return /^\d+$/.test(value);
 }
 
 export function isBoardCreatePath(pathname: string | null | undefined): boolean {

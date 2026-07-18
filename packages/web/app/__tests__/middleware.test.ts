@@ -416,14 +416,14 @@ describe('middleware Expo web rollout redirect', () => {
     return request;
   }
 
-  it('redirects a logged-in flagged visitor from a legacy board-list URL to /app/climbs', () => {
+  it('redirects a logged-in flagged visitor from a legacy board-list URL to /app/climbs with no query', () => {
     const response = middleware(loggedInFlaggedRequest(LEGACY_LIST));
     const location = redirectedToAppPath(response);
     expect(location).not.toBeNull();
     const url = new URL(location!);
     expect(url.pathname).toBe('/app/climbs');
-    expect(url.searchParams.get('boardName')).toBe('kilter');
-    expect(url.searchParams.get('angle')).toBe('40');
+    // The Climbs tab reads no board-context search params — don't imply otherwise.
+    expect(url.search).toBe('');
   });
 
   it('redirects a logged-in flagged visitor from a slug board-list URL to /app/climbs', () => {
@@ -433,11 +433,32 @@ describe('middleware Expo web rollout redirect', () => {
     expect(new URL(location!).pathname).toBe('/app/climbs');
   });
 
-  it('redirects a logged-in flagged visitor from a climb-view URL to the /app climb deep-link', () => {
-    const response = middleware(loggedInFlaggedRequest('/b/kilter-original-12x12/40/view/climb-uuid'));
+  it('redirects a numeric climb-view URL to the /app climb deep-link with the ClimbDetail param contract', () => {
+    const response = middleware(loggedInFlaggedRequest('/kilter/1/10/1,20/40/view/climb-uuid'));
     const location = redirectedToAppPath(response);
     expect(location).not.toBeNull();
-    expect(new URL(location!).pathname).toBe('/app/climbs/climb-uuid');
+    const url = new URL(location!);
+    expect(url.pathname).toBe('/app/climbs/climb-uuid');
+    expect(url.searchParams.get('boardName')).toBe('kilter');
+    expect(url.searchParams.get('layoutId')).toBe('1');
+    expect(url.searchParams.get('sizeId')).toBe('10');
+    expect(url.searchParams.get('setIds')).toBe('1,20');
+    expect(url.searchParams.get('angle')).toBe('40');
+  });
+
+  it('keeps a slug climb-view URL classic (the SPA has no boardSlug resolution)', () => {
+    const response = middleware(loggedInFlaggedRequest('/b/kilter-original-12x12/40/view/climb-uuid'));
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('keeps a named-segment climb-view URL classic (ClimbDetail would get layoutId=NaN)', () => {
+    const response = middleware(loggedInFlaggedRequest('/kilter/original/12x12-square/screw_bolt/40/view/climb-uuid'));
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('keeps a list URL with filter query params classic (the SPA cannot consume them)', () => {
+    const response = middleware(loggedInFlaggedRequest(`${LEGACY_LIST}?minGrade=10&sortBy=difficulty`));
+    expect(redirectedToAppPath(response)).toBeNull();
   });
 
   it('does not redirect when the flag cookie is absent (flag off / unresolved)', () => {
