@@ -22,12 +22,18 @@ type ExpectedSignOutIdentity = {
 
 const handler = NextAuth(authOptions) as NextAuthHandler;
 
-async function readExpectedSignOutIdentity(request: NextRequest): Promise<ExpectedSignOutIdentity | null | 'invalid'> {
+async function readExpectedSignOutIdentity(
+  request: NextRequest,
+): Promise<ExpectedSignOutIdentity | null | 'invalid' | 'unavailable'> {
   let form: FormData;
   try {
     form = await request.clone().formData();
   } catch {
-    return 'invalid';
+    // Couldn't even read the body as form data (too large, wrong content-type,
+    // a transient stream error). That's a server-side condition, not a client
+    // identity mismatch — surface it as retryable ('unavailable' → 503) so the
+    // caller doesn't treat a transient failure as a permanent identity change.
+    return 'unavailable';
   }
 
   const expectedUserId = form.get('expectedUserId');
@@ -77,6 +83,7 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
   // A standard NextAuth signOut() has no way to bind the request to the
   // session shown in its initiating tab. Requiring identity fields prevents an
   // old tab from deleting a cookie written by a newer login.
+  if (expectedIdentity === 'unavailable') return guardedSignOutResponse(503, 'signout_identity_unreadable');
   if (expectedIdentity === null) return guardedSignOutResponse(400, 'signout_identity_required');
   if (expectedIdentity === 'invalid') return guardedSignOutResponse(400, 'invalid_signout_identity');
 

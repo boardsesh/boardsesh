@@ -63,6 +63,25 @@ describe('POST /api/auth/[...nextauth]', () => {
     expect(getTokenMock).not.toHaveBeenCalled();
   });
 
+  it('returns a transient 503 when the sign-out body cannot be parsed as form data', async () => {
+    // A body that can't be read as form data (wrong content-type / too large /
+    // a stream error) is a server-side condition, not a permanent identity
+    // mismatch — it must not be a 400 the caller could treat as fatal.
+    const signOutRequest = new NextRequest('https://www.boardsesh.com/api/auth/signout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUserId: 'user-1', expectedAuthSessionId: 'login-1' }),
+    });
+
+    const response = await POST(signOutRequest, context);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    await expect(response.json()).resolves.toEqual({ error: 'signout_identity_unreadable' });
+    expect(nextAuthHandlerMock).not.toHaveBeenCalled();
+    expect(getTokenMock).not.toHaveBeenCalled();
+  });
+
   it('does not bypass the identity requirement with a trailing slash', async () => {
     const signOutRequest = request('/api/auth/signout/', { csrfToken: 'csrf-token' });
 
