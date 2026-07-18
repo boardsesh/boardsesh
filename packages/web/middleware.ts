@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getListPageCacheTTL } from './app/lib/list-page-cache';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
+import { resolveCrossSubdomainAuthCors } from './app/lib/auth/cross-subdomain-cors';
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
@@ -37,6 +38,16 @@ export function middleware(request: NextRequest) {
       status: 404,
       statusText: 'Not Found',
     });
+  }
+
+  // Credentialed cross-subdomain CORS for the standalone Expo-web app
+  // (app.boardsesh.com), which reads the shared `.boardsesh.com` session by
+  // calling www's auth + ws-auth endpoints cross-origin with credentials. Only
+  // an allowed app origin is echoed (never `*`); every other request — including
+  // same-origin www requests — resolves to `null` here and flows on unchanged.
+  const crossSubdomainAuthCors = resolveCrossSubdomainAuthCors(request);
+  if (crossSubdomainAuthCors && 'preflight' in crossSubdomainAuthCors) {
+    return crossSubdomainAuthCors.preflight;
   }
 
   // Expo web owns /app as a locale-neutral authenticated utility surface.
@@ -206,6 +217,13 @@ export function middleware(request: NextRequest) {
     const cdnCacheValue = `s-maxage=${cacheTTL}, stale-while-revalidate=${cacheTTL * 7}`;
     response.headers.set('Vercel-CDN-Cache-Control', cdnCacheValue);
     response.headers.set('CDN-Cache-Control', cdnCacheValue);
+  }
+
+  // Attach the credentialed CORS headers to the eventual auth-endpoint response
+  // when the request came from an allowed app origin (see the preflight branch
+  // near the top). No-op for every other request.
+  if (crossSubdomainAuthCors && 'applyHeaders' in crossSubdomainAuthCors) {
+    crossSubdomainAuthCors.applyHeaders(response);
   }
 
   return response;

@@ -388,3 +388,82 @@ describe('middleware cache headers on list pages', () => {
     expect(response.headers.has('CDN-Cache-Control')).toBe(false);
   });
 });
+
+// --- Cross-subdomain auth CORS for the standalone Expo-web app ---
+
+function makeCorsRequest(url: string, options: { origin?: string; method?: string } = {}): NextRequest {
+  const headers = new Headers();
+  if (options.origin) headers.set('origin', options.origin);
+  return new NextRequest(new URL(url, 'http://localhost:3000'), { method: options.method ?? 'GET', headers });
+}
+
+describe('middleware cross-subdomain auth CORS', () => {
+  // NEXT_PUBLIC_APP_URL is unset in tests, so APP_URL resolves to its prod default.
+  const APP_ORIGIN = 'https://app.boardsesh.com';
+
+  it('echoes the app origin with credentials on the session read', () => {
+    const response = middleware(makeCorsRequest('/api/auth/session', { origin: APP_ORIGIN }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(APP_ORIGIN);
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    expect(response.headers.get('Vary')).toContain('Origin');
+  });
+
+  it('echoes the app origin on the ws-auth bridge', () => {
+    const response = middleware(makeCorsRequest('/api/internal/ws-auth', { origin: APP_ORIGIN }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(APP_ORIGIN);
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+  });
+
+  it('answers the OPTIONS preflight with 204 and the credentialed CORS headers', () => {
+    const response = middleware(
+      makeCorsRequest('/api/auth/callback/credentials', { origin: APP_ORIGIN, method: 'OPTIONS' }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(APP_ORIGIN);
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    expect(response.headers.get('Access-Control-Allow-Methods')).toContain('POST');
+    expect(response.headers.get('Access-Control-Allow-Methods')).toContain('OPTIONS');
+    expect(response.headers.get('Access-Control-Allow-Headers')).toContain('content-type');
+  });
+
+  it('allows a numbered app preview origin (https://{N}.app.boardsesh.com)', () => {
+    const preview = 'https://3.app.boardsesh.com';
+    const response = middleware(makeCorsRequest('/api/auth/csrf', { origin: preview }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(preview);
+  });
+
+  it('rejects a look-alike suffix origin (no ACAO)', () => {
+    const response = middleware(makeCorsRequest('/api/auth/session', { origin: 'https://app.boardsesh.com.evil.com' }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBeNull();
+  });
+
+  it('rejects a look-alike prefix subdomain (no ACAO)', () => {
+    const response = middleware(makeCorsRequest('/api/auth/session', { origin: 'https://evil-app.boardsesh.com' }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('rejects an unrelated origin (no ACAO)', () => {
+    const response = middleware(makeCorsRequest('/api/auth/session', { origin: 'https://evil.com' }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('does not add CORS to an auth path outside the allow-list, even from the app origin', () => {
+    const response = middleware(makeCorsRequest('/api/auth/register', { origin: APP_ORIGIN }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+
+  it('adds no CORS to a same-origin request that carries no Origin header', () => {
+    const response = middleware(makeCorsRequest('/api/auth/session'));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+  });
+});
