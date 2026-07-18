@@ -34,7 +34,9 @@ const KEY_PREFIX = 'secure:';
 const SECRET_KEY_MARKERS = ['token', 'password', 'secret', 'credential', 'jwe', 'apikey', 'api_key', 'privatekey'];
 
 function isDev(): boolean {
-  return typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+  // `__DEV__` is the mobile repo convention (Metro/RN define it); the typeof
+  // guard keeps this safe under vitest, where the global is not injected.
+  return typeof __DEV__ !== 'undefined' && __DEV__;
 }
 
 function guardNonSecretKey(key: string): void {
