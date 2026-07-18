@@ -3,13 +3,7 @@
 import React from 'react';
 import Button from '@mui/material/Button';
 import type { SxProps, Theme } from '@mui/material/styles';
-import { useSession } from 'next-auth/react';
 import { APP_URL } from '@/app/lib/app-origin';
-
-// Same-origin mint route: a logged-in click 307s through here to
-// app.boardsesh.com/auth/callback carrying a transfer token. Same-tab navigation
-// (no target=_blank) so the redirect chain completes.
-const MINT_HREF = '/api/auth/native/callback?redirect=web&next=/';
 
 type StartClimbingButtonProps = {
   /** Resolved label (callers pass `t(...)` so the i18n linter can follow the key). */
@@ -23,13 +17,13 @@ type StartClimbingButtonProps = {
 };
 
 /**
- * "Start climbing" CTA that hands the visitor to the Expo-web app.
+ * "Start climbing" CTA: a plain same-tab link to the Expo-web app at
+ * `app.boardsesh.com`.
  *
- * - Authenticated: link to the same-origin mint route, which 307s to
- *   app.boardsesh.com with a short-lived transfer token (single sign-on).
- * - Unauthenticated: link straight to the app, which shows its own login.
- * - Loading: treated as unauthenticated (plain link to the app) so a token is
- *   never minted before auth resolves.
+ * There's no session hand-off to do — www and app share a `.boardsesh.com`
+ * HttpOnly NextAuth cookie, so a logged-in visitor arrives at the app already
+ * authenticated and a logged-out visitor gets the app's own login. Same for
+ * every visitor, so this stays a static link with no auth state to read.
  */
 export default function StartClimbingButton({
   label,
@@ -39,13 +33,10 @@ export default function StartClimbingButton({
   startIcon,
   sx,
 }: StartClimbingButtonProps) {
-  const { status } = useSession();
-  const href = status === 'authenticated' ? MINT_HREF : APP_URL;
-
   return (
     <Button
       component="a"
-      href={href}
+      href={APP_URL}
       aria-label={ariaLabel}
       size={size}
       variant={variant}
