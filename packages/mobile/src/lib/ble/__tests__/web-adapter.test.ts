@@ -147,6 +147,25 @@ describe('requestAndConnect', () => {
     await expect(new WebBluetoothAdapter('aurora').requestAndConnect()).rejects.toThrow(/no service/i);
   });
 
+  it('disconnects the GATT server when the Aurora probe rejects (no leaked connection)', async () => {
+    // getPrimaryService rejects for a missing UART service; the GATT connection
+    // opened by the probe must be dropped rather than left dangling.
+    const { device, server } = makeDevice({});
+    stubBluetooth(vi.fn().mockResolvedValue(device));
+    await expect(new WebBluetoothAdapter('aurora').requestAndConnect()).rejects.toThrow(/no service/i);
+    expect(server.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('disconnects the GATT server when MoonBoard exposes neither controller', async () => {
+    // The MoonBoard probe swallows the missing-service rejections and returns
+    // undefined; the still-open GATT connection must be released before the
+    // adapter surfaces its "write characteristic" error.
+    const { device, server } = makeDevice({});
+    stubBluetooth(vi.fn().mockResolvedValue(device));
+    await expect(new WebBluetoothAdapter('moonboard').requestAndConnect()).rejects.toThrow(/write characteristic/i);
+    expect(server.disconnect).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects when Web Bluetooth is unavailable', async () => {
     clearBluetooth();
     await expect(new WebBluetoothAdapter('aurora').requestAndConnect()).rejects.toThrow(/not available/i);
@@ -187,6 +206,51 @@ describe('write', () => {
 
     await expect(adapter.write(new Uint8Array([1, 2, 3]), AbortSignal.abort())).rejects.toThrow(/aborted/i);
     expect(characteristic.writeValueWithoutResponse).not.toHaveBeenCalled();
+  });
+
+  it('serializes concurrent writes so GATT operations never overlap', async () => {
+    // Web Bluetooth rejects a writeValue* that starts while another is in flight.
+    // Track live-write concurrency: each write holds for a macrotask so an
+    // unserialized second write would overlap and push the peak above 1.
+    const characteristic = makeCharacteristic();
+    let inFlight = 0;
+    let peakConcurrency = 0;
+    characteristic.writeValueWithoutResponse.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          inFlight += 1;
+          peakConcurrency = Math.max(peakConcurrency, inFlight);
+          setTimeout(() => {
+            inFlight -= 1;
+            resolve();
+          }, 1);
+        }),
+    );
+    const { device } = makeDevice({ [UART_SERVICE_UUID]: characteristic });
+    stubBluetooth(vi.fn().mockResolvedValue(device));
+    const adapter = new WebBluetoothAdapter('aurora');
+    await adapter.requestAndConnect();
+
+    // Two overlapping writes, 3 chunks each — fired without awaiting the first.
+    await Promise.all([adapter.write(new Uint8Array(50).fill(1)), adapter.write(new Uint8Array(50).fill(2))]);
+
+    expect(peakConcurrency).toBe(1);
+    expect(characteristic.writeValueWithoutResponse).toHaveBeenCalledTimes(6);
+  });
+
+  it('keeps the write queue alive after a failed write', async () => {
+    const characteristic = makeCharacteristic();
+    characteristic.writeValueWithoutResponse.mockRejectedValueOnce(new Error('transient GATT error'));
+    const { device } = makeDevice({ [UART_SERVICE_UUID]: characteristic });
+    stubBluetooth(vi.fn().mockResolvedValue(device));
+    const adapter = new WebBluetoothAdapter('aurora');
+    await adapter.requestAndConnect();
+
+    const first = adapter.write(new Uint8Array([1]));
+    const second = adapter.write(new Uint8Array([2]));
+    await expect(first).rejects.toThrow(/transient GATT error/i);
+    // A failed write must not poison the chain — the next write still runs.
+    await expect(second).resolves.toBeUndefined();
   });
 
   it('retries Aurora writes with-response when the browser rejects without-response as unsupported', async () => {
