@@ -688,6 +688,7 @@
       },
       "accuracy": {
         "label": "Precisión del grado",
+        "description": "Cuánto coincide la comunidad con el grado",
         "off": "Desactivado",
         "loose": "Flexible",
         "moderate": "Moderada",

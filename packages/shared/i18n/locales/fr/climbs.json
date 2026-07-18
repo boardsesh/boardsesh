@@ -688,6 +688,7 @@
       },
       "accuracy": {
         "label": "Précision de la cotation",
+        "description": "À quel point la communauté s'accorde sur la cotation",
         "off": "Désactivée",
         "loose": "Large",
         "moderate": "Modérée",

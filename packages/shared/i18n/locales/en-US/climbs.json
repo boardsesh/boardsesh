@@ -688,6 +688,7 @@
       },
       "accuracy": {
         "label": "Grade accuracy",
+        "description": "How closely the community agrees with the grade",
         "off": "Off",
         "loose": "Loose",
         "moderate": "Moderate",

@@ -40,7 +40,6 @@ import { Text } from './Text';
 import { Button } from './Button';
 import { SegmentedControl } from './SegmentedControl';
 import { StarRating } from './StarRating';
-import { RadioGroup, type RadioOption } from './RadioGroup';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
@@ -290,10 +289,10 @@ export function ClimbFilterSheet({
     [t],
   );
 
-  const accuracyOptions = useMemo<ReadonlyArray<RadioOption<GradeAccuracyValue | 'off'>>>(
+  const accuracyOptions = useMemo<Array<{ key: GradeAccuracyValue | 'off'; label: string }>>(
     () =>
       GRADE_ACCURACY_VALUES.map((value) => ({
-        value: value === '0' ? 'off' : value,
+        key: value === '0' ? 'off' : value,
         label: accuracyLabels[value],
       })),
     [accuracyLabels],
@@ -669,7 +668,16 @@ export function ClimbFilterSheet({
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.accuracy.label')}
               </Text>
-              <RadioGroup options={accuracyOptions} value={accuracyValue} onChange={handleAccuracyChange} />
+              <Text variant="footnote" style={styles.subsectionDescription}>
+                {t('mobile.filter.accuracy.description')}
+              </Text>
+              <View style={styles.controlGap} />
+              <SegmentedControl
+                options={accuracyOptions}
+                selectedKey={accuracyValue}
+                onSelect={handleAccuracyChange}
+                accessibilityLabel={t('mobile.filter.accuracy.label')}
+              />
             </View>
 
             {/* 2 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
@@ -872,6 +880,7 @@ export function ClimbFilterSheet({
                 </View>
               </Pressable>
 
+              {/* Beta videos — a content property of the climb, not a quality signal. */}
               <View style={styles.subsectionGap} />
               <SwitchRow
                 label={t('mobile.filter.betaVideos')}
@@ -987,6 +996,13 @@ const styles = StyleSheet.create({
     opacity: 0.55,
     marginTop: spacing[1],
     marginBottom: spacing[2],
+  },
+  // A one-line hint under a sub-label (e.g. what "Grade accuracy" means). Sits
+  // tight under the label (cancels its marginBottom) and more muted than it.
+  subsectionDescription: {
+    opacity: 0.4,
+    marginTop: -spacing[2],
+    marginBottom: spacing[1],
   },
   subsectionGap: {
     height: spacing[4],

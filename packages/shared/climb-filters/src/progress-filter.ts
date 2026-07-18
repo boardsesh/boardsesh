@@ -22,7 +22,9 @@ import type { ClimbFilterState } from './filter-state';
  * Note `unsent` is a superset of `untried` and `projects`; that overlap is fine
  * for a single-select — each value is just a different view of the same axis.
  */
-export const PROGRESS_FILTER_VALUES = ['all', 'untried', 'projects', 'sent', 'unsent'] as const;
+// Ordered for the UI: "All" and the broad "Unsent" (haven't sent) lead, then the
+// journey narrows through "Not tried" → "Projects", ending on "Sent".
+export const PROGRESS_FILTER_VALUES = ['all', 'unsent', 'untried', 'projects', 'sent'] as const;
 export type ProgressFilter = (typeof PROGRESS_FILTER_VALUES)[number];
 
 /** The four per-user tick flags this selector owns. */
