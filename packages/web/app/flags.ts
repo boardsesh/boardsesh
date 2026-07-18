@@ -27,12 +27,6 @@ export const BOARDSESH_GRADE_FLAG = 'boardsesh-grade';
 // page is only reachable via a URL the gym owner configured on purpose.
 export const GYM_KIOSK_FLAG = 'gym-kiosk';
 
-// Gates the "Start climbing" hand-off CTA (web → Expo-web app at
-// app.boardsesh.com) during the rollout. FeatureFlagsProvider reads it from
-// PostHog (flag id 767179, project 412845). The CTA currently ships always-on;
-// the flag stays registered so visibility can be dialled back if needed.
-export const EXPO_WEB_FLAG = 'expo-web-app';
-
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
 export const FEATURE_FLAG_KEYS = [
@@ -41,7 +35,6 @@ export const FEATURE_FLAG_KEYS = [
   GARMIN_WATCH_FLAG,
   BOARDSESH_GRADE_FLAG,
   GYM_KIOSK_FLAG,
-  EXPO_WEB_FLAG,
 ] as const;
 
 // Vercel's flags discovery endpoint expects an allFlags export.
