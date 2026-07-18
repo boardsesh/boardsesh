@@ -10,7 +10,7 @@ import * as schema from '@/app/lib/db/schema';
 import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
-import { isSecureCookieContext } from '@/app/lib/auth/secure-cookies';
+import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 
 // Build providers array conditionally based on available env vars
@@ -153,18 +153,19 @@ const useSecureCookies = isSecureCookieContext();
 
 // Shared parent domain so the session (and the OAuth-flow cookies) are readable
 // on every *.boardsesh.com subdomain — www.boardsesh.com sets the login, and the
-// standalone Expo-web app at app.boardsesh.com reads it cross-origin. Only set a
-// Domain in a secure context: on localhost/dev the cookie MUST stay host-only
-// (a Domain attribute on `localhost` is invalid and would drop the cookie).
-// Override with AUTH_COOKIE_DOMAIN if the parent domain ever differs from the
-// prod default.
+// standalone Expo-web app at app.boardsesh.com reads it cross-origin. The domain
+// is derived from the actual serving host (sessionCookieDomain): only the
+// production www/apex host gets `.boardsesh.com`; localhost, Vercel previews
+// (*.vercel.app would reject the Domain outright), and homelab preview hosts
+// all stay host-only. Override with AUTH_COOKIE_DOMAIN if the parent domain
+// ever differs from the prod default.
 //
 // SECURITY: with a `.boardsesh.com` Domain the session cookie is sent to *every*
 // subdomain (kiosk, embed previews, `{N}.app.boardsesh.com`, any future
 // subdomain), not just www + app. Any subdomain we serve can therefore read the
 // logged-in user's HttpOnly session — keep untrusted/third-party content off
 // *.boardsesh.com hosts.
-const cookieDomain = process.env.AUTH_COOKIE_DOMAIN ?? (useSecureCookies ? '.boardsesh.com' : undefined);
+const cookieDomain = sessionCookieDomain();
 
 export const authOptions: NextAuthOptions = {
   adapter: DrizzleAdapter(getDb(), {

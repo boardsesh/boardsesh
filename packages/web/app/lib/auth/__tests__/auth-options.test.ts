@@ -664,8 +664,10 @@ describe('authOptions.cookies — shared .boardsesh.com domain', () => {
     return freshOptions.cookies;
   }
 
-  it('scopes the session token to .boardsesh.com in a secure context (Lax, Secure, __Secure- prefix)', async () => {
+  it('scopes the session token to .boardsesh.com on the production www host (Lax, Secure, __Secure- prefix)', async () => {
     vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
     vi.resetModules();
     const cookies = await loadCookies();
 
@@ -678,6 +680,8 @@ describe('authOptions.cookies — shared .boardsesh.com domain', () => {
 
   it('scopes the OAuth-flow cookies to the same parent domain', async () => {
     vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
     vi.resetModules();
     const cookies = await loadCookies();
 
@@ -697,6 +701,38 @@ describe('authOptions.cookies — shared .boardsesh.com domain', () => {
     expect(cookies?.callbackUrl?.options.domain).toBe('.staging.boardsesh.com');
   });
 
+  it('sets NO cookie domain on a Vercel preview — secure context, but not the prod host', async () => {
+    // isSecureCookieContext() is true whenever VERCEL_URL is set, but a
+    // `Domain=.boardsesh.com` Set-Cookie from a *.vercel.app response is
+    // rejected by the browser. The domain must key on the serving host, not on
+    // the secure flag, or preview logins silently never store a cookie.
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('VERCEL_URL', 'boardsesh-abc123-marcodejonghs-projects.vercel.app');
+    vi.stubEnv('NEXTAUTH_URL', '');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.name).toBe('__Secure-next-auth.session-token');
+    expect(cookies?.sessionToken?.options.secure).toBe(true);
+    expect(cookies?.sessionToken?.options.domain).toBeUndefined();
+    expect(cookies?.callbackUrl?.options.domain).toBeUndefined();
+  });
+
+  it('sets NO cookie domain on a homelab preview host running unmerged PR code', async () => {
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'https://42.preview.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    // Secure context (https NEXTAUTH_URL) — but host-only, so a preview
+    // login/sign-out can never write or delete the domain-wide prod cookie.
+    expect(cookies?.sessionToken?.name).toBe('__Secure-next-auth.session-token');
+    expect(cookies?.sessionToken?.options.domain).toBeUndefined();
+  });
+
   it('sets NO cookie domain on localhost/dev — the cookie stays host-only', async () => {
     // Force a non-secure context: no production Vercel env, no https NEXTAUTH_URL,
     // no Vercel URL. A Domain attribute on `localhost` is invalid and would drop
@@ -704,6 +740,7 @@ describe('authOptions.cookies — shared .boardsesh.com domain', () => {
     vi.stubEnv('VERCEL_ENV', '');
     vi.stubEnv('VERCEL_URL', '');
     vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
     vi.resetModules();
     const cookies = await loadCookies();
 

@@ -42,8 +42,13 @@ function hostOnlySessionCookieCleared(response: Response): boolean {
 describe('POST /api/auth/[...nextauth]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Secure context → the real secure-cookies helpers use the `__Secure-` name.
+    // Production www host → the real secure-cookies helpers use the `__Secure-`
+    // name AND resolve the shared `.boardsesh.com` cookie domain (which arms
+    // the legacy host-only clear). Pin every env they read so shell values
+    // can't steer the branch under test.
     vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
     nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
   });
 
@@ -200,5 +205,26 @@ describe('POST /api/auth/[...nextauth]', () => {
     const response = await GET(sessionRequest, context);
 
     expect(hostOnlySessionCookieCleared(response)).toBe(false);
+  });
+
+  it('does not delete the just-written host-only cookie in a dev (non-secure) context', async () => {
+    // On localhost the fresh session cookie NextAuth writes is itself host-only
+    // with the same name and path — appending the "legacy" clear would expire
+    // the login in the same response, breaking every local login.
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: { 'Set-Cookie': 'next-auth.session-token=fresh-jwt; Path=/; HttpOnly; SameSite=Lax' },
+      }),
+    );
+    const callbackRequest = request('/api/auth/callback/credentials', {});
+
+    const response = await POST(callbackRequest, context);
+
+    const setCookies = response.headers.getSetCookie();
+    expect(setCookies).toEqual(['next-auth.session-token=fresh-jwt; Path=/; HttpOnly; SameSite=Lax']);
   });
 });
