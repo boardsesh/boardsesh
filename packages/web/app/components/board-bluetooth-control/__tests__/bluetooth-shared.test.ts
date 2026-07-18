@@ -9,10 +9,7 @@ import {
 } from '../bluetooth-shared';
 // The transport helpers moved to the shared ble-protocol package; type the
 // fabricated device/characteristic fakes against its Web Bluetooth surface.
-import type {
-  WebBluetoothDevice,
-  WebBluetoothRemoteGATTCharacteristic,
-} from '@boardsesh/ble-protocol/web-transport';
+import type { WebBluetoothDevice, WebBluetoothRemoteGATTCharacteristic } from '@boardsesh/ble-protocol/web-transport';
 
 // Map of serviceUuid -> { characteristicUuid -> characteristic object }.
 type ServiceMap = Record<string, Record<string, object>>;

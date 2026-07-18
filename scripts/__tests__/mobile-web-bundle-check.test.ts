@@ -55,6 +55,7 @@ mkdir -p "$output_dir/wasm"
 touch "$output_dir/index.html"
 touch "$output_dir/wasm/${GLUE_PATH}"
 touch "$output_dir/wasm/${WASM_PATH}"
+touch "$output_dir/wasm/board-render.worker.js"
 `,
     );
     chmodSync(bunxStub, 0o755);

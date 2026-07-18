@@ -8,12 +8,31 @@
 // between the two copies would never surface in CI. This test loads the worker's
 // decode logic straight from the asset source and pins it to the canonical
 // implementation so the copies cannot diverge unnoticed.
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { _webRendererForTests } from '../../../modules/board-renderer/src/index.web';
 
-const WORKER_PATH = fileURLToPath(new URL('../../../public/wasm/board-render.worker.js', import.meta.url));
+// Locate the static worker asset by walking up from the working directory. The
+// test runner rewrites `import.meta.url` to a non-file URL, so resolve against
+// cwd instead — which is the repo root under CI/vitest and packages/mobile for a
+// scoped run; both are covered.
+function resolveWorkerPath(): string {
+  const fromRepoRoot = join('packages', 'mobile', 'public', 'wasm', 'board-render.worker.js');
+  const fromMobile = join('public', 'wasm', 'board-render.worker.js');
+  let directory = process.cwd();
+  for (let depth = 0; depth < 8; depth++) {
+    for (const candidate of [join(directory, fromRepoRoot), join(directory, fromMobile)]) {
+      if (existsSync(candidate)) return candidate;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) break;
+    directory = parent;
+  }
+  throw new Error('Could not locate packages/mobile/public/wasm/board-render.worker.js from the working directory');
+}
+
+const WORKER_PATH = resolveWorkerPath();
 
 // Extract the two render-limit constants + decodeRenderOutput from the static
 // worker source and evaluate them in isolation. The block is pure (DataView /
