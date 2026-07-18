@@ -183,17 +183,23 @@ export async function validateToken(token: string): Promise<AuthResult | null> {
  * Checks connection params first, then falls back to URL query params.
  */
 export function extractAuthToken(connectionParams?: Record<string, unknown>, requestUrl?: string): string | null {
-  // Check connection params (preferred method)
-  if (connectionParams && Object.prototype.hasOwnProperty.call(connectionParams, 'authToken')) {
-    return typeof connectionParams.authToken === 'string' ? connectionParams.authToken : '';
+  // Check connection params (preferred method). A present-but-empty or non-string
+  // authToken (e.g. an anonymous web client that sends `authToken: null`) is
+  // treated as "no credential": fall through to the URL token and, ultimately,
+  // anonymous. Returning "" here instead would hand validateToken an empty string
+  // — a spurious "Invalid WebSocket auth token" warning on every anonymous
+  // connection — and skip the ?token= fallback below.
+  if (connectionParams && typeof connectionParams.authToken === 'string' && connectionParams.authToken.length > 0) {
+    return connectionParams.authToken;
   }
 
   // Fall back to URL query params
   if (requestUrl) {
     try {
       const url = new URL(requestUrl, 'http://localhost');
-      if (url.searchParams.has('token')) {
-        return url.searchParams.get('token') ?? '';
+      const token = url.searchParams.get('token');
+      if (token) {
+        return token;
       }
     } catch {
       // Invalid URL, ignore
