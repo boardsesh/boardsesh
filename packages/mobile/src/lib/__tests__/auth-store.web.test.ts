@@ -8,6 +8,12 @@ import {
   synchronizeWebSession,
 } from '../auth-store.web';
 
+// app.boardsesh.com calls www's auth/ws-auth endpoints cross-origin, so
+// `webApiUrl` targets the absolute web origin (WEB_BASE_URL default) with
+// credentials: 'include'. The jsdom window origin here isn't www, so the
+// resolved URL is always the absolute form.
+const WEB = 'https://www.boardsesh.com';
+
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
@@ -44,12 +50,15 @@ describe('synchronizeWebSession', () => {
       authSessionId: 'login-1',
     });
     await expect(getAuthToken()).resolves.toBe('backend-jwe');
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/auth/session', '/api/internal/ws-auth']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
+    ]);
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(
-      expect.objectContaining({ credentials: 'same-origin', cache: 'no-store' }),
+      expect.objectContaining({ credentials: 'include', cache: 'no-store' }),
     );
     expect(fetchMock.mock.calls[1]?.[1]).toEqual(
-      expect.objectContaining({ credentials: 'same-origin', cache: 'no-store' }),
+      expect.objectContaining({ credentials: 'include', cache: 'no-store' }),
     );
   });
 
@@ -144,10 +153,10 @@ describe('synchronizeWebSession', () => {
     });
     await expect(getAuthToken()).resolves.toBe('paired-user-b-jwe');
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/session',
-      '/api/internal/ws-auth',
-      '/api/auth/session',
-      '/api/internal/ws-auth',
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
     ]);
   });
 

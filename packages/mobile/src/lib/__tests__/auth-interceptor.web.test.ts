@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authenticatedFetch, recoverAuthRejection, setOnForcedSignOut } from '../auth-interceptor.web';
 import { clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
 
+// The revalidation/sign-out fetches triggered here hit www's auth endpoints
+// cross-origin, so `webApiUrl` resolves them to the absolute web origin
+// (WEB_BASE_URL default). Caller-supplied URLs like `/graphql` stay untouched.
+const WEB = 'https://www.boardsesh.com';
+
 const reportHandledErrorMock = vi.fn();
 vi.mock('../error-reporting', () => ({
   reportHandledError: (...args: unknown[]) => reportHandledErrorMock(...args),
@@ -59,9 +64,9 @@ describe('authenticatedFetch on web', () => {
     const forcedSignOut = vi.fn();
     setOnForcedSignOut(forcedSignOut);
     fetchMock.mockImplementation((url: string | URL | Request) => {
-      if (url === '/api/auth/session') return Promise.resolve(jsonResponse({}));
-      if (url === '/api/auth/csrf') return Promise.resolve(jsonResponse({ csrfToken: 'csrf-token' }));
-      if (url === '/api/auth/signout') return Promise.resolve(jsonResponse({ url: '/app' }));
+      if (url === `${WEB}/api/auth/session`) return Promise.resolve(jsonResponse({}));
+      if (url === `${WEB}/api/auth/csrf`) return Promise.resolve(jsonResponse({ csrfToken: 'csrf-token' }));
+      if (url === `${WEB}/api/auth/signout`) return Promise.resolve(jsonResponse({ url: '/app' }));
       return Promise.resolve(new Response(null, { status: 401 }));
     });
 
@@ -69,7 +74,7 @@ describe('authenticatedFetch on web', () => {
 
     expect(first.status).toBe(401);
     expect(second.status).toBe(401);
-    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/session')).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([url]) => url === `${WEB}/api/auth/session`)).toHaveLength(2);
     expect(forcedSignOut).toHaveBeenCalledTimes(1);
     await expect(getAuthToken()).resolves.toBeNull();
   });

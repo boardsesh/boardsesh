@@ -12,6 +12,7 @@ import {
   type WebAuthIdentity,
 } from './auth-store.web';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
+import { webApiUrl } from './env';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -89,8 +90,8 @@ async function fetchJsonObject(
 }
 
 async function getCsrfToken(): Promise<CsrfResult> {
-  const outcome = await fetchJsonObject('/api/auth/csrf', {
-    credentials: 'same-origin',
+  const outcome = await fetchJsonObject(webApiUrl('/api/auth/csrf'), {
+    credentials: 'include',
     cache: 'no-store',
     headers: { Accept: 'application/json' },
     signal: createTimeoutSignal(15_000),
@@ -139,10 +140,10 @@ async function replaceCredentialsCookie(email: string, password: string): Promis
   if (!csrf.success) return { result: csrf, responseReceived: false };
 
   const outcome = await fetchJsonObject(
-    '/api/auth/callback/credentials',
+    webApiUrl('/api/auth/callback/credentials'),
     {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: 'include',
       cache: 'no-store',
       headers: {
         Accept: 'application/json',
@@ -314,8 +315,8 @@ type CookieOwnership = 'owned' | 'anonymous' | 'changed';
 async function resolveCookieOwnership(departingIdentity: WebAuthIdentity | null): Promise<CookieOwnership> {
   let response: Response;
   try {
-    response = await fetch('/api/auth/session', {
-      credentials: 'same-origin',
+    response = await fetch(webApiUrl('/api/auth/session'), {
+      credentials: 'include',
       cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: createTimeoutSignal(15_000),
@@ -376,9 +377,9 @@ async function revokeOwnedNextAuthCookie(
 
     let response: Response;
     try {
-      response = await fetch('/api/auth/signout', {
+      response = await fetch(webApiUrl('/api/auth/signout'), {
         method: 'POST',
-        credentials: 'same-origin',
+        credentials: 'include',
         cache: 'no-store',
         headers: {
           Accept: 'application/json',

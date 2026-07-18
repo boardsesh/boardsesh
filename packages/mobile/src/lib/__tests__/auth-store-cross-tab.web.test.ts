@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The sign-out fetches here hit www's auth endpoints cross-origin, so
+// `webApiUrl` resolves them to the absolute web origin (WEB_BASE_URL default).
+// The stubbed window origin below isn't www, so the absolute form always wins.
+const WEB = 'https://www.boardsesh.com';
+
 type MessageListener = (event: MessageEvent<unknown>) => void;
 
 class MockBroadcastChannel {
@@ -181,11 +186,11 @@ describe('auth-store web cross-tab invalidation', () => {
     // Browser delivery of the started signal may cancel the peer before or
     // after it begins its ownership read. It must never reach CSRF or a second
     // durable sign-out mutation.
-    const ownershipReadCount = requestedUrls.filter((url) => url === '/api/auth/session').length;
+    const ownershipReadCount = requestedUrls.filter((url) => url === `${WEB}/api/auth/session`).length;
     expect(ownershipReadCount).toBeGreaterThanOrEqual(1);
     expect(ownershipReadCount).toBeLessThanOrEqual(2);
-    expect(requestedUrls.filter((url) => url === '/api/auth/csrf')).toHaveLength(1);
-    expect(requestedUrls.filter((url) => url === '/api/auth/signout')).toHaveLength(1);
+    expect(requestedUrls.filter((url) => url === `${WEB}/api/auth/csrf`)).toHaveLength(1);
+    expect(requestedUrls.filter((url) => url === `${WEB}/api/auth/signout`)).toHaveLength(1);
     await expect(firstTabStore.getAuthToken()).resolves.toBeNull();
     await expect(secondTabStore.getAuthToken()).resolves.toBeNull();
   });
