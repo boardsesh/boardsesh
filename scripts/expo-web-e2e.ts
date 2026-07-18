@@ -38,9 +38,11 @@ async function waitForAppSurface(appUrl: string): Promise<void> {
       const response = await fetch(appUrl, { redirect: 'manual' });
       if (response.ok) {
         const html = await response.text();
-        // The exported shell always references the Expo entry bundle; an error
-        // page or a bare proxy response does not.
-        if (html.includes('/app/') || html.includes('_expo')) return;
+        // The exported shell always references the Expo bundle under `/_expo`;
+        // an error page or a bare Next proxy response (which can still carry an
+        // `/app/` link) does not. Match the Expo-specific path so a stray Next
+        // page never reads as ready.
+        if (html.includes('/_expo')) return;
         lastFailure = 'HTML shell missing the Expo entry reference';
       } else {
         lastFailure = `HTTP ${response.status}`;
