@@ -88,8 +88,31 @@ describe('Expo web Next proxy', () => {
     );
     expect(appRewrites).toEqual([
       { source: '/app', destination: '/app/index.html' },
-      { source: '/app/:path*', destination: '/app/index.html' },
+      { source: '/app/:path((?!_expo/|assets/|wasm/).*)', destination: '/app/index.html' },
     ]);
+  });
+
+  it('keeps content-hashed and WASM namespaces out of the SPA fallback so missing assets 404', async () => {
+    process.env.BOARDSESH_WEB = '1';
+    delete process.env.BOARDSESH_EXPO_WEB_ORIGIN;
+
+    const appRewrites = flattenRewrites((await nextConfig.rewrites?.()) ?? []).filter(
+      ({ source }) => source === '/app' || source.startsWith('/app/'),
+    );
+
+    // The fallback source is a path-to-regexp pattern with a negative lookahead.
+    // Compile it and confirm hashed-asset / WASM paths do NOT fall back to the
+    // shell (they must miss public/ and 404), while real Expo Router routes do.
+    const fallback = appRewrites.find(({ source }) => source !== '/app');
+    expect(fallback?.destination).toBe('/app/index.html');
+    const capturedTail = /:path\((.*)\)/.exec(fallback?.source ?? '');
+    expect(capturedTail).not.toBeNull();
+    const tailMatcher = new RegExp(`^${capturedTail?.[1]}$`);
+
+    expect(tailMatcher.test('_expo/static/js/entry-abc123.js')).toBe(false);
+    expect(tailMatcher.test('assets/node_modules/expo/deadbeef.png')).toBe(false);
+    expect(tailMatcher.test('wasm/board_renderer_wasm.js')).toBe(false);
+    expect(tailMatcher.test('session/history')).toBe(true);
   });
 
   it('keeps Metro-only support namespaces out of the production static configuration', async () => {

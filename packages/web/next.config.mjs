@@ -158,7 +158,14 @@ const nextConfig = {
       // docs/expo-web-deployment.md).
       return [
         { source: '/app', destination: '/app/index.html' },
-        { source: '/app/:path*', destination: '/app/index.html' },
+        // SPA fallback for Expo Router routes ONLY. The content-hashed namespaces
+        // (_expo/, assets/) and the fixed-name WASM glue (wasm/) are excluded so a
+        // request for a missing hashed bundle 404s instead of falling through to
+        // the shell. Otherwise Next's headers() would stamp the index.html body
+        // with the immutable Cache-Control that matches the incoming .js/.wasm path
+        // (line 105), and a stale-shell or mid-deploy client would cache an HTML
+        // page at a bundle URL forever — permanently bricking that URL.
+        { source: '/app/:path((?!_expo/|assets/|wasm/).*)', destination: '/app/index.html' },
       ];
     }
 
