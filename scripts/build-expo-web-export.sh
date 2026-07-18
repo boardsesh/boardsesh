@@ -11,8 +11,8 @@ set -euo pipefail
 # Usage: bash scripts/build-expo-web-export.sh [output-dir]
 #
 # The output directory is wiped first. As a guard, the script refuses to wipe a
-# non-empty directory that isn't already an export (no index.html), and refuses
-# any target at or above the repo root. See docs/expo-web-deployment.md.
+# non-empty directory that isn't already an Expo web export (no `_expo/`), and
+# refuses any target at or above the repo root. See docs/expo-web-deployment.md.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -25,22 +25,26 @@ OUTPUT_DIR="${1:-$ROOT_DIR/packages/web/public/app}"
 if [[ "$OUTPUT_DIR" != /* ]]; then
   OUTPUT_DIR="$PWD/$OUTPUT_DIR"
 fi
-# Strip trailing slashes (shell tab-completion appends one) before the guards —
-# otherwise `<root>/` slips past the repo-root check and rm -rf wipes the repo.
-OUTPUT_DIR="${OUTPUT_DIR%/}"
+# Strip ALL trailing slashes (shell tab-completion appends one; `<root>//` needs
+# more than one strip) before the guards — otherwise `<root>/` slips past the
+# repo-root check and rm -rf wipes the repo.
+while [[ "$OUTPUT_DIR" == */ ]]; do OUTPUT_DIR="${OUTPUT_DIR%/}"; done
 
 if [[ -z "$OUTPUT_DIR" || "$OUTPUT_DIR" == "$ROOT_DIR" || "$ROOT_DIR" == "$OUTPUT_DIR"/* ]]; then
   echo "[build-expo-web-export] refusing to export over $OUTPUT_DIR" >&2
   exit 1
 fi
 
-# Refuse to wipe a directory that isn't already an export. The guard above only
-# protects the repo root and its ancestors; a one-segment typo like
+# Refuse to wipe a directory that isn't already an Expo web export. The guard
+# above only protects the repo root and its ancestors; a one-segment typo like
 # `packages/web/public` (instead of `.../public/app`) or any real directory
-# outside the repo would otherwise be rm -rf'd. A previous export always carries
-# index.html, so only wipe when the target is absent, empty, or a prior export.
-if [[ -d "$OUTPUT_DIR" && -n "$(ls -A "$OUTPUT_DIR" 2>/dev/null)" && ! -f "$OUTPUT_DIR/index.html" ]]; then
-  echo "[build-expo-web-export] refusing to wipe non-empty $OUTPUT_DIR (no index.html — not a previous export)" >&2
+# outside the repo would otherwise be rm -rf'd. The marker is the `_expo/`
+# directory, which `expo export --platform web` always emits — index.html is NOT
+# a safe marker because the committed `packages/web/public` (the exact typo this
+# guards against) already carries one. Only wipe when the target is absent,
+# empty, or a prior export.
+if [[ -d "$OUTPUT_DIR" && -n "$(ls -A "$OUTPUT_DIR" 2>/dev/null)" && ! -d "$OUTPUT_DIR/_expo" ]]; then
+  echo "[build-expo-web-export] refusing to wipe non-empty $OUTPUT_DIR (no _expo/ — not a previous Expo web export)" >&2
   exit 1
 fi
 
