@@ -30,7 +30,9 @@ const AUTH_REJECTED_CLOSE_CODE = 4401;
 // graphql-ws treats 4401 as fatal before invoking shouldRetry. 4403 is not in
 // its fatal-code list, so exposing the rejected handshake as 4403 lets active
 // operations run through graphql-ws' normal reconnect and resubscribe loop.
-const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
+// Exported so the session-realtime consumer reads the same code this transport
+// emits, instead of re-declaring the literal.
+export const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
 
 let authRecovery: { generation: number; promise: Promise<NativeAuthRejectionResult> } | null = null;
 

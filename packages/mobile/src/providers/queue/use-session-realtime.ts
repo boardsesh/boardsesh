@@ -18,7 +18,7 @@ import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import type { SessionUser, SubscriptionQueueEvent, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
 import { isNotSessionMemberError } from '@boardsesh/graphql-client';
-import { getWsClient } from '../../lib/graphql/ws-client';
+import { AUTH_REFRESH_RETRY_CLOSE_CODE, getWsClient } from '../../lib/graphql/ws-client';
 import {
   QUEUE_UPDATES_SUBSCRIPTION,
   SESSION_UPDATES_SUBSCRIPTION,
@@ -33,13 +33,12 @@ import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
-// ws-client remaps a rejected-auth 4401 to retryable 4403 at the transport
-// boundary. Unlike an ordinary socket drop, this retry must keep established
-// graphql-ws operations alive so its lazy client still has work to reconnect
-// and resubscribe. The authenticated durable-membership fast path on the
-// backend authorizes those subscriptions while JOIN_SESSION rebinds the fresh
-// connection context in parallel.
-const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
+// ws-client remaps a rejected-auth 4401 to the retryable AUTH_REFRESH_RETRY_CLOSE_CODE
+// (imported above) at the transport boundary. Unlike an ordinary socket drop,
+// this retry must keep established graphql-ws operations alive so its lazy
+// client still has work to reconnect and resubscribe. The authenticated
+// durable-membership fast path on the backend authorizes those subscriptions
+// while JOIN_SESSION rebinds the fresh connection context in parallel.
 
 function getCloseEventCode(closeEvent: unknown): number | null {
   if (typeof closeEvent !== 'object' || closeEvent === null || !('code' in closeEvent)) return null;

@@ -14,7 +14,9 @@ const AUTH_REJECTED_CLOSE_CODE = 4401;
 // graphql-ws marks 4401 as fatal before it asks shouldRetry. 4403 is retryable,
 // so remapping at the socket boundary preserves active operations and lets the
 // existing singleton reconnect and resubscribe after refreshing credentials.
-const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
+// Exported (matching the native fork) so the session-realtime consumer imports
+// this code from whichever platform variant resolves, rather than re-declaring it.
+export const AUTH_REFRESH_RETRY_CLOSE_CODE = 4403;
 
 let authRecovery: { generation: number; promise: Promise<WebAuthRejectionResult> } | null = null;
 
