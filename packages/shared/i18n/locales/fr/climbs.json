@@ -663,7 +663,7 @@
       },
       "popularity": "Popularité",
       "established2plus": "Établies 2+",
-      "benchmark": "Benchmarks uniquement",
+      "benchmark": "Benchmarks",
       "benchmarkDescription": "Voies marquées benchmark par l'ouvreur",
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
@@ -694,7 +694,7 @@
         "tight": "Stricte"
       },
       "progress": {
-        "label": "Ta progression",
+        "label": "Progression",
         "all": "Toutes",
         "untried": "Non essayées",
         "projects": "Projets",

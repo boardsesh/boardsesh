@@ -663,7 +663,7 @@
       },
       "popularity": "Popularity",
       "established2plus": "Established 2+",
-      "benchmark": "Benchmarks only",
+      "benchmark": "Benchmarks",
       "benchmarkDescription": "Setter-flagged benchmark climbs",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
@@ -694,7 +694,7 @@
         "tight": "Tight"
       },
       "progress": {
-        "label": "Your progress",
+        "label": "Progress",
         "all": "All",
         "untried": "Not tried",
         "projects": "Projects",

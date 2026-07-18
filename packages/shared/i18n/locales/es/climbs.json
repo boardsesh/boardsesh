@@ -663,7 +663,7 @@
       },
       "popularity": "Popularidad",
       "established2plus": "Establecido 2+",
-      "benchmark": "Solo benchmarks",
+      "benchmark": "Benchmarks",
       "benchmarkDescription": "Vías marcadas como benchmark por el equipador",
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
@@ -694,7 +694,7 @@
         "tight": "Estricta"
       },
       "progress": {
-        "label": "Tu progreso",
+        "label": "Progreso",
         "all": "Todos",
         "untried": "Sin intentar",
         "projects": "Proyectos",

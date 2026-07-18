@@ -691,18 +691,6 @@ export function ClimbFilterSheet({
                     />
                   ))}
                 </View>
-
-                {/* My drafts — the old Status 'drafts' radio option, now a toggle.
-                  Routes through handleStatusChange so applyStatusChange's side
-                  effects (drafts → sort=creation desc, clear minAscents) still fire. */}
-                <View style={styles.subsectionGap} />
-                <View style={styles.groupedCard}>
-                  <SwitchRow
-                    label={t('mobile.filter.drafts')}
-                    value={localFilters.status === 'drafts'}
-                    onValueChange={(on) => handleStatusChange(on ? 'drafts' : 'any')}
-                  />
-                </View>
               </View>
             ) : null}
 
@@ -711,7 +699,7 @@ export function ClimbFilterSheet({
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.quality')}
               </Text>
-              {/* Benchmarks — top-tier lever, its own inset card. */}
+              {/* Benchmarks + (signed-in) My drafts — grouped in one inset card. */}
               <View style={styles.groupedCard}>
                 <SwitchRow
                   label={t('mobile.filter.benchmark')}
@@ -721,6 +709,19 @@ export function ClimbFilterSheet({
                     updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
                   }
                 />
+                {/* My drafts — the old Status 'drafts' radio option, now a toggle.
+                  Routes through handleStatusChange so applyStatusChange's side effects
+                  (drafts → sort=creation desc, clear minAscents) still fire. Auth-only. */}
+                {isAuthenticated ? (
+                  <>
+                    <View style={[styles.groupDivider, { backgroundColor: systemColors.separator }]} />
+                    <SwitchRow
+                      label={t('mobile.filter.drafts')}
+                      value={localFilters.status === 'drafts'}
+                      onValueChange={(on) => handleStatusChange(on ? 'drafts' : 'any')}
+                    />
+                  </>
+                ) : null}
               </View>
 
               <View style={styles.subsectionGap} />
@@ -773,6 +774,7 @@ export function ClimbFilterSheet({
               <Text variant="footnote" style={styles.subsectionLabel}>
                 {t('mobile.filter.climbType')}
               </Text>
+              <View style={styles.controlGap} />
               <SegmentedControl
                 options={climbTypeOptions}
                 selectedKey={climbTypeKey}
@@ -920,6 +922,7 @@ export function ClimbFilterSheet({
                   <Text variant="footnote" style={styles.subsectionLabel}>
                     {t('mobile.filter.sortOrderLabel')}
                   </Text>
+                  <View style={styles.controlGap} />
                   <SegmentedControl
                     options={sortOrderOptions}
                     selectedKey={localFilters.sortOrder}
@@ -987,6 +990,16 @@ const styles = StyleSheet.create({
   },
   subsectionGap: {
     height: spacing[4],
+  },
+  // Breathing room between a footnote sub-label and a flush native SegmentedControl
+  // (which, unlike the chip rows, has no intrinsic top padding).
+  controlGap: {
+    height: spacing[2],
+  },
+  // Inset hairline between rows grouped in one card (iOS list style).
+  groupDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: spacing[4],
   },
   chipRow: {
     flexDirection: 'row',
