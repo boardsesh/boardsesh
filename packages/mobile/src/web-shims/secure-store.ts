@@ -24,6 +24,34 @@ export const AFTER_FIRST_UNLOCK = 'AFTER_FIRST_UNLOCK';
 
 const KEY_PREFIX = 'secure:';
 
+// Known-secret key markers. Genuine SecureStore secrets (auth tokens, refresh
+// tokens, credentials) must never reach this plaintext-IndexedDB shim — the
+// native writers that hold them have `.web.ts` forks that keep them in memory.
+// This denylist turns that convention into an enforced guard: a new native code
+// path that writes a real secret through SecureStore trips here on web instead
+// of silently persisting cleartext. It deliberately omits `session` and `auth`
+// (legitimate non-secret preference/session-id stores use those words).
+const SECRET_KEY_MARKERS = ['token', 'password', 'secret', 'credential', 'jwe', 'apikey', 'api_key', 'privatekey'];
+
+function isDev(): boolean {
+  return typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production';
+}
+
+function guardNonSecretKey(key: string): void {
+  const normalizedKey = key.toLowerCase();
+  if (!SECRET_KEY_MARKERS.some((marker) => normalizedKey.includes(marker))) return;
+  const message =
+    `SecureStore web shim received a key that looks like secret material ("${key}"). ` +
+    'The browser shim persists plaintext to IndexedDB — route secrets through a memory-only ' +
+    '`.web.ts` fork instead (see auth-store.web.ts).';
+  // Always surface it; fail loudly in development so the drift is caught before
+  // it ships, but stay non-fatal in production so an unexpected key can never
+  // brick the app. Kept dependency-free (no Sentry import) so the web bundle
+  // and this shim's tests stay lightweight.
+  console.error(message);
+  if (isDev()) throw new Error(message);
+}
+
 function storageKey(key: string): string {
   return `${KEY_PREFIX}${key}`;
 }
@@ -36,8 +64,11 @@ export function getItemAsync(key: string, _options?: SecureStoreOptions): Promis
   return AsyncStorage.getItem(storageKey(key));
 }
 
-export function setItemAsync(key: string, value: string, _options?: SecureStoreOptions): Promise<void> {
-  return AsyncStorage.setItem(storageKey(key), value);
+export async function setItemAsync(key: string, value: string, _options?: SecureStoreOptions): Promise<void> {
+  // `async` so a rejected guard surfaces as a promise rejection (matching the
+  // native `setItemAsync` contract) rather than a synchronous throw.
+  guardNonSecretKey(key);
+  await AsyncStorage.setItem(storageKey(key), value);
 }
 
 export function deleteItemAsync(key: string, _options?: SecureStoreOptions): Promise<void> {
@@ -50,6 +81,8 @@ export function getItem(_key: string, _options?: SecureStoreOptions): string | n
   return null;
 }
 
-export function setItem(_key: string, _value: string, _options?: SecureStoreOptions): void {}
+export function setItem(key: string, _value: string, _options?: SecureStoreOptions): void {
+  guardNonSecretKey(key);
+}
 
 export function deleteItem(_key: string, _options?: SecureStoreOptions): void {}

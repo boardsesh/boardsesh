@@ -166,7 +166,11 @@ const BottomSheet = forwardRef<BottomSheetMethods, WebBottomSheetProps>(function
       forceClose: () => innerRef.current?.forceClose(),
       present: () => {
         markPresented();
-        innerRef.current?.snapToIndex(indexProp ?? 0);
+        // A non-modal sheet is commonly mounted at index={-1} (hidden). The
+        // native `present()` contract shows the sheet regardless of mount index,
+        // so clamp to the first detent instead of forwarding -1 (which Gorhom
+        // resolves to `detents[-1] === undefined` and silently fails to open).
+        innerRef.current?.snapToIndex(Math.max(indexProp ?? 0, 0));
       },
       dismiss: () => innerRef.current?.close(),
     }),

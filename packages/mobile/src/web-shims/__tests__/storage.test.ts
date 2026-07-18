@@ -51,4 +51,17 @@ describe('Expo web storage shims', () => {
   it('does not pretend IndexedDB supports synchronous reads', () => {
     expect(SecureStore.getItem('theme')).toBeNull();
   });
+
+  it('refuses secret-looking keys so real credentials never land in plaintext IndexedDB', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(SecureStore.setItemAsync('backend_auth_token', 'jwe')).rejects.toThrow(/secret material/);
+    expect(() => SecureStore.setItem('refresh_token', 'value')).toThrow(/secret material/);
+    expect(indexedDbStorage.setItem).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('still allows non-secret preference and session-id keys', async () => {
+    await expect(SecureStore.setItemAsync('boardsesh_active_session_id', 'session-1')).resolves.toBeUndefined();
+    expect(indexedDbStorage.setItem).toHaveBeenCalledWith('secure:boardsesh_active_session_id', 'session-1');
+  });
 });

@@ -195,6 +195,20 @@ describe('Expo web bottom-sheet adapter', () => {
     expect(gorhom.state.modalMethods.snapToIndex).toHaveBeenCalledWith(0);
   });
 
+  it('presents a non-modal sheet mounted at index=-1 by clamping to the first detent', () => {
+    const sheetRef = createRef<BottomSheetMethods>();
+    render(
+      <BottomSheet ref={sheetRef} index={-1} snapPoints={['40%', '90%']}>
+        <span />
+      </BottomSheet>,
+    );
+
+    act(() => sheetRef.current?.present());
+    // Forwarding -1 would resolve to `detents[-1] === undefined` and never open.
+    expect(gorhom.state.bottomSheetMethods.snapToIndex).toHaveBeenCalledTimes(1);
+    expect(gorhom.state.bottomSheetMethods.snapToIndex).toHaveBeenCalledWith(0);
+  });
+
   it('maps close and dismiss commands to the correct Gorhom primitive', () => {
     const sheetRef = createRef<BottomSheetMethods>();
     const modalRef = createRef<BottomSheetMethods>();
