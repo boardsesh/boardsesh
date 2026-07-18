@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureAuthCredentialGeneration, clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
-import { registerWithCredentials, signInWithCredentials, signOut, signOutForGeneration } from '../auth.web';
+import {
+  registerWithCredentials,
+  requestPasswordReset,
+  resetPassword,
+  signInWithCredentials,
+  signOut,
+  signOutForGeneration,
+} from '../auth.web';
 
 // The Expo-web app calls www's auth endpoints cross-origin (app.boardsesh.com →
 // www.boardsesh.com), so the auth fetches target the absolute web origin
@@ -385,5 +392,41 @@ describe('Expo web credentials auth', () => {
 
     await expect(oldSignOut).resolves.toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Expo web register + password-reset endpoints', () => {
+  function credentials(callIndex: number): RequestCredentials | undefined {
+    return (fetchMock.mock.calls[callIndex]?.[1] as RequestInit | undefined)?.credentials;
+  }
+
+  it('registers cross-origin with credentials so the shared cookie is set', async () => {
+    // requiresVerification keeps this to the single register POST (no auto-login).
+    fetchMock.mockResolvedValueOnce(jsonResponse({ requiresVerification: true, emailSent: true }));
+
+    await registerWithCredentials('climber@example.com', 'password', 'Climber');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${WEB}/api/auth/register`);
+    expect(credentials(0)).toBe('include');
+  });
+
+  it('requests a password reset cross-origin with credentials', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+
+    await expect(requestPasswordReset('climber@example.com')).resolves.toEqual({ success: true });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${WEB}/api/auth/forgot-password`);
+    expect(credentials(0)).toBe('include');
+  });
+
+  it('resets the password cross-origin with credentials', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+
+    await expect(resetPassword('climber@example.com', 'reset-token', 'newpass', 'newpass')).resolves.toEqual({
+      success: true,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${WEB}/api/auth/reset-password`);
+    expect(credentials(0)).toBe('include');
   });
 });

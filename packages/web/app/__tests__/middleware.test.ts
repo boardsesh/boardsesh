@@ -436,6 +436,16 @@ describe('middleware cross-subdomain auth CORS', () => {
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe(preview);
   });
 
+  it.each(['/api/auth/register', '/api/auth/forgot-password', '/api/auth/reset-password'])(
+    'echoes the app origin on the credentials flow endpoint %s',
+    (path) => {
+      const response = middleware(makeCorsRequest(path, { origin: APP_ORIGIN }));
+
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBe(APP_ORIGIN);
+      expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    },
+  );
+
   it('rejects a look-alike suffix origin (no ACAO)', () => {
     const response = middleware(makeCorsRequest('/api/auth/session', { origin: 'https://app.boardsesh.com.evil.com' }));
 
@@ -456,7 +466,9 @@ describe('middleware cross-subdomain auth CORS', () => {
   });
 
   it('does not add CORS to an auth path outside the allow-list, even from the app origin', () => {
-    const response = middleware(makeCorsRequest('/api/auth/register', { origin: APP_ORIGIN }));
+    // /api/auth/providers-config isn't one of the endpoints the app calls
+    // cross-origin, so it must not grow an ambient-credential CORS surface.
+    const response = middleware(makeCorsRequest('/api/auth/providers-config', { origin: APP_ORIGIN }));
 
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });

@@ -216,9 +216,9 @@ export async function registerWithCredentials(
   password: string,
   name?: string,
 ): Promise<RegistrationResult> {
-  const outcome = await fetchJsonObject('/api/auth/register', {
+  const outcome = await fetchJsonObject(webApiUrl('/api/auth/register'), {
     method: 'POST',
-    credentials: 'same-origin',
+    credentials: 'include',
     cache: 'no-store',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password, ...(name ? { name } : {}) }),
@@ -266,9 +266,9 @@ export async function registerWithCredentials(
 async function postPasswordEndpoint(path: string, body: Record<string, string>): Promise<PasswordResetResult> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(webApiUrl(path), {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: 'include',
       cache: 'no-store',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
