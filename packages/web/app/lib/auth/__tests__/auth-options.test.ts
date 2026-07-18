@@ -593,3 +593,72 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
     });
   });
 });
+
+// =============================================================================
+// Shared .boardsesh.com session cookie (cross-subdomain auth)
+// =============================================================================
+//
+// The cookie block is resolved at module load from the env, so each case stubs
+// the env, resets the module registry, and re-imports authOptions to read the
+// freshly-resolved cookies.
+
+describe('authOptions.cookies — shared .boardsesh.com domain', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function loadCookies() {
+    const { authOptions: freshOptions } = await import('../auth-options');
+    return freshOptions.cookies;
+  }
+
+  it('scopes the session token to .boardsesh.com in a secure context (Lax, Secure, __Secure- prefix)', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.name).toBe('__Secure-next-auth.session-token');
+    expect(cookies?.sessionToken?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.sessionToken?.options.sameSite).toBe('lax');
+    expect(cookies?.sessionToken?.options.secure).toBe(true);
+    expect(cookies?.sessionToken?.options.httpOnly).toBe(true);
+  });
+
+  it('scopes the OAuth-flow cookies to the same parent domain', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.callbackUrl?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.state?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.nonce?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.pkceCodeVerifier?.options.domain).toBe('.boardsesh.com');
+  });
+
+  it('honours an AUTH_COOKIE_DOMAIN override', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '.staging.boardsesh.com');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.options.domain).toBe('.staging.boardsesh.com');
+    expect(cookies?.callbackUrl?.options.domain).toBe('.staging.boardsesh.com');
+  });
+
+  it('sets NO cookie domain on localhost/dev — the cookie stays host-only', async () => {
+    // Force a non-secure context: no production Vercel env, no https NEXTAUTH_URL,
+    // no Vercel URL. A Domain attribute on `localhost` is invalid and would drop
+    // the cookie, so it must be undefined here.
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.name).toBe('next-auth.session-token');
+    expect(cookies?.sessionToken?.options.domain).toBeUndefined();
+    expect(cookies?.sessionToken?.options.secure).toBe(false);
+    expect(cookies?.callbackUrl?.options.domain).toBeUndefined();
+  });
+});

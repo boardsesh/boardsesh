@@ -143,6 +143,21 @@ providers.push(
 // We override callbackUrl, state, nonce, and pkceCodeVerifier cookies for this reason.
 const useSecureCookies = isSecureCookieContext();
 
+// Shared parent domain so the session (and the OAuth-flow cookies) are readable
+// on every *.boardsesh.com subdomain — www.boardsesh.com sets the login, and the
+// standalone Expo-web app at app.boardsesh.com reads it cross-origin. Only set a
+// Domain in a secure context: on localhost/dev the cookie MUST stay host-only
+// (a Domain attribute on `localhost` is invalid and would drop the cookie).
+// Override with AUTH_COOKIE_DOMAIN if the parent domain ever differs from the
+// prod default.
+//
+// SECURITY: with a `.boardsesh.com` Domain the session cookie is sent to *every*
+// subdomain (kiosk, embed previews, `{N}.app.boardsesh.com`, any future
+// subdomain), not just www + app. Any subdomain we serve can therefore read the
+// logged-in user's HttpOnly session — keep untrusted/third-party content off
+// *.boardsesh.com hosts.
+const cookieDomain = process.env.AUTH_COOKIE_DOMAIN ?? (useSecureCookies ? '.boardsesh.com' : undefined);
+
 export const authOptions: NextAuthOptions = {
   adapter: DrizzleAdapter(getDb(), {
     usersTable: schema.users,
@@ -152,6 +167,22 @@ export const authOptions: NextAuthOptions = {
   }),
   providers,
   cookies: {
+    // The session token is the login itself. SameSite=Lax (NOT None) is correct
+    // here: app.boardsesh.com and www.boardsesh.com are the same SITE
+    // (registrable domain boardsesh.com), so Lax cookies ARE sent on
+    // cross-subdomain requests — no need for the weaker SameSite=None. `secure`
+    // stays true in secure contexts and the `__Secure-` prefix (which permits a
+    // Domain attribute) is kept so the name still matches what getToken reads.
+    sessionToken: {
+      name: `${useSecureCookies ? '__Secure-' : ''}next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: useSecureCookies,
+        domain: cookieDomain,
+      },
+    },
     callbackUrl: {
       name: `${useSecureCookies ? '__Secure-' : ''}next-auth.callback-url`,
       options: {
@@ -159,6 +190,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: useSecureCookies ? 'none' : 'lax',
         path: '/',
         secure: useSecureCookies,
+        domain: cookieDomain,
       },
     },
     state: {
@@ -168,6 +200,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: useSecureCookies ? 'none' : 'lax',
         path: '/',
         secure: useSecureCookies,
+        domain: cookieDomain,
       },
     },
     nonce: {
@@ -177,6 +210,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: useSecureCookies ? 'none' : 'lax',
         path: '/',
         secure: useSecureCookies,
+        domain: cookieDomain,
       },
     },
     pkceCodeVerifier: {
@@ -186,6 +220,7 @@ export const authOptions: NextAuthOptions = {
         sameSite: useSecureCookies ? 'none' : 'lax',
         path: '/',
         secure: useSecureCookies,
+        domain: cookieDomain,
       },
     },
   },
