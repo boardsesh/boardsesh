@@ -8,15 +8,17 @@ import {
   splitMessages,
   writeCharacteristicSeries,
 } from '@/app/components/board-bluetooth-control/bluetooth-shared';
+// The transport helpers above now come from @boardsesh/ble-protocol/web-transport
+// (re-exported through bluetooth-shared for stable web imports); its Web
+// Bluetooth type surface types the adapter's device/characteristic handles.
+import type { WebBluetoothDevice, WebBluetoothRemoteGATTCharacteristic } from '@boardsesh/ble-protocol/web-transport';
 import type { BleConnection, BluetoothAdapter } from './types';
 
 export class WebBluetoothAdapter implements BluetoothAdapter {
   constructor(private readonly boardName: BoardName = 'kilter') {}
 
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Web Bluetooth types resolve correctly at build time
-  private device: BluetoothDevice | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- Web Bluetooth types resolve correctly at build time
-  private characteristic: BluetoothRemoteGATTCharacteristic | null = null;
+  private device: WebBluetoothDevice | null = null;
+  private characteristic: WebBluetoothRemoteGATTCharacteristic | null = null;
   private disconnectHandler: (() => void) | null = null;
 
   async isAvailable(): Promise<boolean> {

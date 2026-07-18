@@ -19,12 +19,11 @@ export {
 
 import { AURORA_ADVERTISED_SERVICE_UUID, UART_SERVICE_UUID } from '@boardsesh/ble-protocol/transport';
 
-// --- Web-specific constants (use Web Bluetooth DOM types) ---
+// The request-device options live in the shared ble-protocol package (shared
+// with the Expo-web mobile adapter); re-export so web consumers keep resolving.
+export { AURORA_REQUEST_DEVICE_OPTIONS } from '@boardsesh/ble-protocol/web-transport';
+
+// --- Web-only scan constants (consumed by the LE-scan hook + native adapters) ---
 
 export const AURORA_SCAN_SERVICE_UUIDS = [AURORA_ADVERTISED_SERVICE_UUID] as const;
 export const AURORA_OPTIONAL_SERVICE_UUIDS = [UART_SERVICE_UUID] as const;
-
-export const AURORA_REQUEST_DEVICE_OPTIONS: RequestDeviceOptions = {
-  filters: [{ services: [...AURORA_SCAN_SERVICE_UUIDS] }],
-  optionalServices: [...AURORA_OPTIONAL_SERVICE_UUIDS],
-};
