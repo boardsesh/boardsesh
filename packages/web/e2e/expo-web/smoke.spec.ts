@@ -103,7 +103,12 @@ test.describe('expo-web smoke', () => {
     // context.
     const blobThumbnails = page.locator('img[src^="blob:"]');
     await expect(blobThumbnails.first()).toBeVisible({ timeout: 60_000 });
-    expect(await blobThumbnails.count()).toBeGreaterThanOrEqual(3);
+    // Each blob: src appears only when that card's WASM render resolves, and
+    // nothing synchronizes the renders — at the instant the first thumbnail is
+    // visible the others may still be in flight. Waiting on the third keeps
+    // the "several cards rendered" assertion retrying instead of snapshotting
+    // a racy count.
+    await expect(blobThumbnails.nth(2)).toBeVisible({ timeout: 60_000 });
     // A fresh browser context has no followed board, so the Climbs tab shows
     // the follow-your-wall empty state rather than a list.
     await tabButton(page, 'Climbs').click();
