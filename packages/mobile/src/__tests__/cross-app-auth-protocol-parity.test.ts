@@ -25,9 +25,13 @@ const mobileCookieLock = read('../lib/auth-cookie-lock.web.ts');
 const mobileAuthStore = read('../lib/auth-store.web.ts');
 const mobileAuthWeb = read('../lib/auth.web.ts');
 
-function extractConst(source: string, name: string): string | null {
-  const match = source.match(new RegExp(`${name}\\s*=\\s*'([^']+)'`));
-  return match ? match[1] : null;
+function extractConst(source: string, name: string): string {
+  // Accept single- or double-quoted literals so a formatter/quote-style change
+  // never silently turns a real value into `null` (which would defeat the
+  // cross-app equality assertions below).
+  const match = source.match(new RegExp(`${name}\\s*=\\s*['"]([^'"]+)['"]`));
+  if (!match) throw new Error(`Could not find a string constant named "${name}" — did it get renamed or removed?`);
+  return match[1];
 }
 
 describe('cross-app Expo-web auth protocol parity', () => {
