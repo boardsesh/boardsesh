@@ -15,9 +15,18 @@ const READY_LINE = /\[dev\] Expo web app: (\S+)/;
 const APP_READY_TIMEOUT_MS = 300_000;
 const APP_POLL_INTERVAL_MS = 2_000;
 
+function hasExited(child: ChildProcess): boolean {
+  // A signal-killed child (OOM killer, external SIGKILL) has exitCode === null
+  // but signalCode set — checking exitCode alone would treat it as still
+  // running, register an 'exit' listener that never fires (the event already
+  // did), and hang the returned promise. That hang drains the event loop and
+  // turns a crashed stack into exit code 0.
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
 function terminate(child: ChildProcess): Promise<void> {
   return new Promise((resolve) => {
-    if (child.exitCode !== null) {
+    if (hasExited(child)) {
       resolve();
       return;
     }
@@ -25,7 +34,7 @@ function terminate(child: ChildProcess): Promise<void> {
     // The orchestrator terminates its full child tree on SIGTERM.
     child.kill('SIGTERM');
     setTimeout(() => {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      if (!hasExited(child)) child.kill('SIGKILL');
     }, 15_000).unref();
   });
 }
