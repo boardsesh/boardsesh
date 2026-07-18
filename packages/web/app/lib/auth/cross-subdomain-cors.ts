@@ -31,6 +31,9 @@ const CORS_AUTH_PATHS = new Set([
 // needs no listing.
 const ALLOWED_REQUEST_HEADERS = 'content-type, x-auth-return-redirect';
 const ALLOWED_METHODS = 'GET, POST, OPTIONS';
+// One day — the browser caps this per its own ceiling (600s in Chromium), but a
+// generous value keeps the preflight cached across the whole sign-in sequence.
+const PREFLIGHT_MAX_AGE_SECONDS = '86400';
 
 type CrossSubdomainAuthCors = { preflight: NextResponse } | { applyHeaders: (response: NextResponse) => void };
 
@@ -63,6 +66,9 @@ export function resolveCrossSubdomainAuthCors(request: NextRequest): CrossSubdom
     setCorsHeaders(preflight.headers);
     preflight.headers.set('Access-Control-Allow-Methods', ALLOWED_METHODS);
     preflight.headers.set('Access-Control-Allow-Headers', ALLOWED_REQUEST_HEADERS);
+    // Cache the preflight for a day so the app's sequential credentialed
+    // sign-in calls (csrf → callback → session → ws-auth) don't each re-preflight.
+    preflight.headers.set('Access-Control-Max-Age', PREFLIGHT_MAX_AGE_SECONDS);
     return { preflight };
   }
 

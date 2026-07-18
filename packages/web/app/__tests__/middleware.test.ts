@@ -427,6 +427,8 @@ describe('middleware cross-subdomain auth CORS', () => {
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain('POST');
     expect(response.headers.get('Access-Control-Allow-Methods')).toContain('OPTIONS');
     expect(response.headers.get('Access-Control-Allow-Headers')).toContain('content-type');
+    // Cached so the sequential credentialed sign-in calls don't each re-preflight.
+    expect(response.headers.get('Access-Control-Max-Age')).toBe('86400');
   });
 
   it('allows a numbered app preview origin (https://{N}.app.boardsesh.com)', () => {
