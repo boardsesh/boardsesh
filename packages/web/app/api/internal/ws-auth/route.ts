@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import { decode, getToken, type JWT } from 'next-auth/jwt';
 import { isSecureCookieContext, sessionCookieName } from '@/app/lib/auth/secure-cookies';
 
 const PRIVATE_NO_STORE_HEADERS = { 'Cache-Control': 'private, no-store' } as const;
@@ -21,18 +21,25 @@ export async function GET(request: NextRequest) {
       cookieName: sessionCookieName(),
     };
 
-    // Validate the cookie through NextAuth's normal decrypt/decode path before
-    // exposing its encrypted representation to the browser. `raw: true` alone
-    // only reads the cookie bytes and can return malformed or subject-less data.
-    const decodedToken = await getToken({ ...tokenOptions, raw: false });
-    if (!decodedToken || typeof decodedToken.sub !== 'string' || !decodedToken.sub.trim()) {
+    // Read the raw cookie bytes once (`raw: true` does not decrypt), then run a
+    // single decrypt/decode to validate it. This is the same work `raw: false`
+    // does internally, so decoding here directly avoids the second cookie read
+    // and keeps the JWE decrypted exactly once per handshake.
+    const token = await getToken({ ...tokenOptions, raw: true });
+    if (typeof token !== 'string' || !token.trim()) {
+      // User is not authenticated - this is OK, just return null
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 
-    const token = await getToken({ ...tokenOptions, raw: true });
-
-    if (typeof token !== 'string' || !token.trim()) {
-      // User is not authenticated - this is OK, just return null
+    let decodedToken: JWT | null;
+    try {
+      decodedToken = await decode({ token, secret: process.env.NEXTAUTH_SECRET ?? '' });
+    } catch {
+      // A malformed or expired cookie is not authenticated — mirror the null that
+      // `getToken({ raw: false })` returns for the same input rather than 500ing.
+      decodedToken = null;
+    }
+    if (!decodedToken || typeof decodedToken.sub !== 'string' || !decodedToken.sub.trim()) {
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 

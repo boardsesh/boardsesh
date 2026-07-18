@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const getTokenMock = vi.fn();
+const decodeMock = vi.fn();
 vi.mock('next-auth/jwt', () => ({
   getToken: (...args: unknown[]) => getTokenMock(...args),
+  decode: (...args: unknown[]) => decodeMock(...args),
 }));
 
 vi.mock('@/app/lib/auth/secure-cookies', () => ({
@@ -22,10 +24,9 @@ describe('GET /api/internal/ws-auth', () => {
     vi.clearAllMocks();
   });
 
-  it('returns the raw NextAuth JWE without allowing it to be cached', async () => {
-    getTokenMock
-      .mockResolvedValueOnce({ sub: 'user-1', authSessionId: 'login-1' })
-      .mockResolvedValueOnce('encrypted-session-token');
+  it('reads the raw JWE once and decrypts it once, without allowing it to be cached', async () => {
+    getTokenMock.mockResolvedValue('encrypted-session-token');
+    decodeMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
 
     const response = await GET(request());
 
@@ -36,22 +37,13 @@ describe('GET /api/internal/ws-auth', () => {
       authSessionId: 'login-1',
     });
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
-    expect(getTokenMock).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        raw: false,
-        secureCookie: true,
-        cookieName: '__Secure-next-auth.session-token',
-      }),
+    // A single raw cookie read (no decrypt) and a single decode (one decrypt).
+    expect(getTokenMock).toHaveBeenCalledTimes(1);
+    expect(getTokenMock).toHaveBeenCalledWith(
+      expect.objectContaining({ raw: true, secureCookie: true, cookieName: '__Secure-next-auth.session-token' }),
     );
-    expect(getTokenMock).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        raw: true,
-        secureCookie: true,
-        cookieName: '__Secure-next-auth.session-token',
-      }),
-    );
+    expect(decodeMock).toHaveBeenCalledTimes(1);
+    expect(decodeMock).toHaveBeenCalledWith(expect.objectContaining({ token: 'encrypted-session-token' }));
   });
 
   it('returns a no-store anonymous result when the cookie is absent', async () => {
@@ -62,28 +54,33 @@ describe('GET /api/internal/ws-auth', () => {
     await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     expect(getTokenMock).toHaveBeenCalledTimes(1);
+    expect(decodeMock).not.toHaveBeenCalled();
   });
 
   it('does not expose a raw cookie whose decoded token has no subject', async () => {
-    getTokenMock.mockResolvedValue({ name: 'No Subject' });
+    getTokenMock.mockResolvedValue('encrypted-session-token');
+    decodeMock.mockResolvedValue({ name: 'No Subject' });
 
     const response = await GET(request());
 
     await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
-    expect(getTokenMock).toHaveBeenCalledTimes(1);
+    expect(decodeMock).toHaveBeenCalledTimes(1);
   });
 
-  it('returns anonymous when a validated cookie cannot be read in raw form', async () => {
-    getTokenMock.mockResolvedValueOnce({ sub: 'user-1', authSessionId: 'login-1' }).mockResolvedValueOnce(null);
+  it('treats a malformed or expired cookie as anonymous instead of erroring', async () => {
+    getTokenMock.mockResolvedValue('expired-session-token');
+    decodeMock.mockRejectedValue(new Error('"exp" claim timestamp check failed'));
 
     const response = await GET(request());
 
+    expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
-    expect(getTokenMock).toHaveBeenCalledTimes(2);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   });
 
   it('keeps a valid pre-deploy cookie usable while its login identity is backfilled', async () => {
-    getTokenMock.mockResolvedValueOnce({ sub: 'user-1' }).mockResolvedValueOnce('legacy-encrypted-session-token');
+    getTokenMock.mockResolvedValue('legacy-encrypted-session-token');
+    decodeMock.mockResolvedValue({ sub: 'user-1' });
 
     const response = await GET(request());
 
@@ -92,11 +89,10 @@ describe('GET /api/internal/ws-auth', () => {
       authenticated: true,
       userId: 'user-1',
     });
-    expect(getTokenMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps failures private and non-cacheable', async () => {
-    getTokenMock.mockRejectedValue(new Error('decode failed'));
+    getTokenMock.mockRejectedValue(new Error('cookie read failed'));
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     try {
