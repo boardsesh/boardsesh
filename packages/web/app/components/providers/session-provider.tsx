@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, type ReactNode } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { Session } from 'next-auth';
 import { getSession, SessionProvider, useSession } from 'next-auth/react';
 import { installNextAuthCookieFetchLock } from '../../lib/auth/nextauth-cookie-fetch-lock';
@@ -76,16 +76,23 @@ type SessionProviderWrapperProps = {
   enableExpoAuthBridge?: boolean;
 };
 
+// useLayoutEffect warns on the server; fall back to useEffect there (the install
+// no-ops without `window` anyway).
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
 export default function SessionProviderWrapper({
   children,
   enableExpoAuthBridge = false,
 }: SessionProviderWrapperProps) {
-  if (enableExpoAuthBridge) {
-    // NextAuth starts its initial session read when the child provider renders.
-    // Install synchronously so that read and later callback/sign-out mutations
-    // use the same cookie lock as the Expo browser app.
-    installNextAuthCookieFetchLock();
-  }
+  // Install the shared cookie-fetch lock in a layout effect rather than the
+  // render body: it mutates globalThis.fetch, which must not happen during
+  // render (a Strict-Mode double-render hazard). A parent layout effect still
+  // runs before the child SessionProvider's passive session-read effect, so the
+  // lock is in place before NextAuth's first cookie fetch. Kept gated on the
+  // Expo bridge so the normal web app's global fetch is left untouched.
+  useIsomorphicLayoutEffect(() => {
+    if (enableExpoAuthBridge) installNextAuthCookieFetchLock();
+  }, [enableExpoAuthBridge]);
   return (
     <SessionProvider refetchOnWindowFocus={false} refetchWhenOffline={false}>
       {enableExpoAuthBridge && <ExpoAuthSessionBridge />}
