@@ -1,7 +1,8 @@
+import { APP_PREVIEW_ORIGIN_REGEX } from '@boardsesh/shared-schema/app-origins';
 import { APP_URL } from '@/app/lib/app-origin';
 
 // The exact app origin (env-overridable via NEXT_PUBLIC_APP_URL; prod default
-// https://app.boardsesh.com).
+// DEFAULT_APP_ORIGIN from @boardsesh/shared-schema/app-origins).
 const APP_ORIGIN = (() => {
   try {
     return new URL(APP_URL).origin;
@@ -9,13 +10,6 @@ const APP_ORIGIN = (() => {
     return null;
   }
 })();
-
-// …plus numbered homelab previews (https://{N}.app.boardsesh.com), mirroring the
-// backend CORS allow-list (packages/backend/src/handlers/cors.ts). Both checks
-// are origin-anchored — a `URL.origin` is scheme+host+port with no path, and the
-// regex is `^…$`-anchored — so look-alikes like https://app.boardsesh.com.evil.com
-// or https://evil-app.boardsesh.com never match.
-const APP_PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.app\.boardsesh\.com$/;
 
 /**
  * True when `origin` is the standalone Expo-web app's own origin — the exact

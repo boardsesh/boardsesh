@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { execFileSync } from 'node:child_process';
+import { APP_PREVIEW_ORIGIN_REGEX, DEFAULT_APP_ORIGIN } from '@boardsesh/shared-schema/app-origins';
 import { logger } from '../utils/logger';
 
 // Vercel preview deployment pattern: https://boardsesh-{hash}-marcodejonghs-projects.vercel.app
@@ -12,10 +13,10 @@ const PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.preview\.boardsesh\.com$/;
 // browser session exchange (POST /auth/native/exchange) plus the GraphQL and
 // token-refresh calls the SPA makes are all cross-origin from there, so the app
 // origin must be on the CORS allow-list. The exact prod origin is added in
-// initCors (env-configurable via APP_ORIGIN); this regex covers its numbered
-// homelab preview form: https://{N}.app.boardsesh.com
-const DEFAULT_APP_ORIGIN = 'https://app.boardsesh.com';
-const APP_PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.app\.boardsesh\.com$/;
+// initCors (env-configurable via APP_ORIGIN); the shared
+// @boardsesh/shared-schema/app-origins regex covers its numbered homelab
+// preview form (https://{N}.app.boardsesh.com) — same source web's
+// app-origin-allowlist.ts imports, so the two CORS layers cannot drift.
 const DEV_PRIVATE_LAN_ORIGIN_REGEX =
   /^http:\/\/(?:(?:10(?:\.\d{1,3}){3})|(?:192\.168(?:\.\d{1,3}){2})|(?:172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})):(?:300[0-9])$/;
 // Match the dev orchestrator's findAvailablePort range — it auto-increments from 3000
