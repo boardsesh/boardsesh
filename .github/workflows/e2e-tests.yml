@@ -385,6 +385,75 @@ jobs:
       # Screenshot capture runs in the dedicated `screenshots` job below.
 
   # ---------------------------------------------------------------------------
+  # Expo-web smoke — boots the full expo-web dev stack (backend + Next proxy +
+  # Metro web) via `vp run test:e2e:expo-web` and runs the `expo-web-smoke`
+  # Playwright project against it (scripts/expo-web-e2e.ts). Runs on a bare
+  # runner rather than the Playwright container because the vp task's `db:up`
+  # dependency drives the dev-db Docker compose stack, and dev-mode Next +
+  # Metro don't need the prebuilt artifact the shards consume. Non-sharded:
+  # the suite is serial by design (the first test absorbs Metro's on-demand
+  # bundle compile).
+  # ---------------------------------------------------------------------------
+  expo-web-smoke:
+    name: Expo-web smoke
+    needs: [typecheck]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+
+      - name: Restore node_modules cache
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+          # Bare-runner key — matches the typecheck job, deliberately NOT the
+          # playwright-noble container key the build/e2e shards share.
+          key: ${{ runner.os }}-bun-node-modules-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-node-modules-
+
+      - name: Install dependencies
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright chromium
+        run: bunx playwright install --with-deps chromium
+        working-directory: packages/web
+
+      - name: Run expo-web smoke suite
+        # The vp task graph provides db:up (dev-db compose stack, seeded test
+        # user) and the mobile web-runtime install; scripts/expo-web-e2e.ts
+        # boots the orchestrator, waits for /app to serve the Expo shell, runs
+        # Playwright, and tears the stack down. Exit code mirrors Playwright's.
+        run: vp run test:e2e:expo-web
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-expo-web-smoke
+          path: packages/web/playwright-report/
+          retention-days: 7
+
+      - name: Upload Playwright test results
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-results-expo-web-smoke
+          path: packages/web/test-results/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   # Screenshots — like an e2e shard but runs the three screenshot Playwright
   # projects. `needs: e2e` sequences it after the functional tests so the
   # two don't fight over shared containers; `if: always()` makes sure a

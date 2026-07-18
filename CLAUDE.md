@@ -78,7 +78,7 @@ Common commands:
 - `vp run mobile:ios` — local Expo iOS build with the shared Boardsesh Xcode cache
 - `vp run mobile:publish` — EAS Update for current branch
 - `vp run test:e2e` — Playwright; auto-starts the dev DB + web server
-- `vp run test:e2e:expo-web` — Expo-web smoke; boots the full expo-web stack (backend + Next proxy + Metro web) via the dev orchestrator and runs the `expo-web-smoke` Playwright project against it (heavy; not part of PR CI — run locally). See `scripts/expo-web-e2e.ts`.
+- `vp run test:e2e:expo-web` — Expo-web smoke; boots the full expo-web stack (backend + Next proxy + Metro web) via the dev orchestrator and runs the `expo-web-smoke` Playwright project against it (heavy; runs in the manually-dispatched E2E workflow's `expo-web-smoke` job, not per-PR CI — run locally for pre-push confidence). See `scripts/expo-web-e2e.ts`.
 
 ### Database
 
