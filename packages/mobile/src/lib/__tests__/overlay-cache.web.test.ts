@@ -134,6 +134,29 @@ describe('overlay-cache-store hydration + snapshot (warmup contract)', () => {
     expect(store.size).toBe(0);
   });
 
+  it('prunes the Cache API beyond the hydrate limit so it can not grow unbounded', async () => {
+    const { store } = installCaches();
+    const limit = _overlayCacheStoreForTests.OVERLAY_HYDRATE_LIMIT;
+    // Seed limit + 2 overlays in insertion order (oldest first). A Map preserves
+    // insertion order, so cache.keys() returns them oldest → newest.
+    for (let index = 0; index < limit + 2; index++) {
+      await writeOverlayToCache(`overlay-key-${String(index).padStart(4, '0')}`, new Blob() as Blob);
+    }
+    _overlayCacheStoreForTests.renderedObjectUrls.clear();
+
+    await hydrateOverlayCache();
+
+    // The two oldest entries are evicted; the store is capped at the limit.
+    expect(store.size).toBe(limit);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('overlay-key-0000'))).toBe(false);
+    expect(store.has(_overlayCacheStoreForTests.overlayKeyUrl('overlay-key-0001'))).toBe(false);
+    expect(
+      store.has(_overlayCacheStoreForTests.overlayKeyUrl(`overlay-key-${String(limit + 1).padStart(4, '0')}`)),
+    ).toBe(true);
+    // Only the most-recent limit entries hydrate into memory.
+    expect(snapshotOverlayEntries()).toHaveLength(limit);
+  });
+
   it('releaseAllObjectUrls revokes every retained URL', async () => {
     installCaches();
     await writeOverlayToCache('k1', new Blob() as Blob);
