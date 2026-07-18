@@ -31,9 +31,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
     }
 
+    const nextAuthSecret = process.env.NEXTAUTH_SECRET;
+    if (!nextAuthSecret) {
+      // Server misconfiguration: without the secret the cookie can't be
+      // validated. Warn loudly and fail closed to an anonymous response.
+      console.warn('[ws-auth] NEXTAUTH_SECRET is not configured; treating the request as anonymous.');
+      return NextResponse.json({ token: null, authenticated: false }, { headers: PRIVATE_NO_STORE_HEADERS });
+    }
+
     let decodedToken: JWT | null;
     try {
-      decodedToken = await decode({ token, secret: process.env.NEXTAUTH_SECRET ?? '' });
+      decodedToken = await decode({ token, secret: nextAuthSecret });
     } catch {
       // A malformed or expired cookie is not authenticated — mirror the null that
       // `getToken({ raw: false })` returns for the same input rather than 500ing.

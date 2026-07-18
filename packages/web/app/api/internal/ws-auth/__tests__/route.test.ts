@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const getTokenMock = vi.fn();
@@ -20,8 +20,16 @@ function request(): NextRequest {
 }
 
 describe('GET /api/internal/ws-auth', () => {
+  const originalSecret = process.env.NEXTAUTH_SECRET;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.NEXTAUTH_SECRET = 'test-secret';
+  });
+
+  afterEach(() => {
+    if (originalSecret === undefined) delete process.env.NEXTAUTH_SECRET;
+    else process.env.NEXTAUTH_SECRET = originalSecret;
   });
 
   it('reads the raw JWE once and decrypts it once, without allowing it to be cached', async () => {
@@ -76,6 +84,24 @@ describe('GET /api/internal/ws-auth', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  });
+
+  it('fails closed to anonymous and warns when NEXTAUTH_SECRET is missing', async () => {
+    delete process.env.NEXTAUTH_SECRET;
+    getTokenMock.mockResolvedValue('encrypted-session-token');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const response = await GET(request());
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ token: null, authenticated: false });
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('NEXTAUTH_SECRET'));
+      // Never attempt to decode without the secret.
+      expect(decodeMock).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it('keeps a valid pre-deploy cookie usable while its login identity is backfilled', async () => {
