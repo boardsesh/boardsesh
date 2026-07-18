@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const { nextAuthHandlerMock, getTokenMock } = vi.hoisted(() => ({
@@ -13,33 +13,9 @@ vi.mock('next-auth/jwt', () => ({
   getToken: (...args: unknown[]) => getTokenMock(...args),
 }));
 vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
-vi.mock('@/app/lib/auth/secure-cookies', () => ({
-  isSecureCookieContext: () => true,
-  sessionCookieName: () => '__Secure-next-auth.session-token',
-  appendLegacyHostOnlySessionCookieClear: (response: Response) => {
-    response.headers.append(
-      'Set-Cookie',
-      '__Secure-next-auth.session-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
-    );
-  },
-  responseSetsSessionCookie: (response: Response) => {
-    const setCookies =
-      typeof response.headers.getSetCookie === 'function'
-        ? response.headers.getSetCookie()
-        : response.headers.get('set-cookie')
-          ? [response.headers.get('set-cookie') as string]
-          : [];
-    return setCookies.some((setCookie) => {
-      const [nameValuePair] = setCookie.split(';', 1);
-      const separatorIndex = nameValuePair.indexOf('=');
-      if (separatorIndex === -1) return false;
-      return (
-        nameValuePair.slice(0, separatorIndex).trim() === '__Secure-next-auth.session-token' &&
-        nameValuePair.slice(separatorIndex + 1).trim().length > 0
-      );
-    });
-  },
-}));
+// Use the REAL secure-cookies helpers (no copy-pasted stub to drift against the
+// production logic). VERCEL_ENV=production (set in beforeEach) puts them in the
+// secure-context branch, so the cookie names carry the `__Secure-` prefix.
 
 import { GET, POST } from '../route';
 
@@ -66,7 +42,13 @@ function hostOnlySessionCookieCleared(response: Response): boolean {
 describe('POST /api/auth/[...nextauth]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Secure context → the real secure-cookies helpers use the `__Secure-` name.
+    vi.stubEnv('VERCEL_ENV', 'production');
     nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('rejects an unscoped legacy NextAuth sign-out', async () => {
