@@ -11,6 +11,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { compare } from 'bcryptjs';
 import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-transfer';
 import { isSecureCookieContext } from '@/app/lib/auth/secure-cookies';
+import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 
 // Build providers array conditionally based on available env vars
 const providers: NextAuthOptions['providers'] = [];
@@ -233,6 +234,26 @@ export const authOptions: NextAuthOptions = {
     error: '/auth/error',
   },
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // Mirror NextAuth's default resolution (relative → baseUrl-prefixed;
+      // same-origin → as-is; anything else → baseUrl) and ADDITIONALLY allow the
+      // standalone Expo-web app's own origin. Without this, a sign-in/sign-out
+      // started on app.boardsesh.com passes a cross-origin `callbackUrl`, which
+      // the default callback would coerce to the www base origin — and the app's
+      // sign-out confirmation (which compares the returned URL's origin+path to
+      // its own app-origin callback) would then mismatch and throw. Restricted
+      // to the same anchored app allow-list the CORS layer uses, so every other
+      // cross-origin URL still collapses to baseUrl (open-redirect guard).
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      try {
+        const targetOrigin = new URL(url).origin;
+        if (targetOrigin === baseUrl) return url;
+        if (isAllowedAppOrigin(targetOrigin)) return url;
+      } catch {
+        // Unparseable URL falls through to the safe baseUrl default.
+      }
+      return baseUrl;
+    },
     async signIn({ user, account }) {
       // OAuth providers - allow sign in (emails are pre-verified by provider)
       // Skip native-oauth (transfer token flow) — email is already verified

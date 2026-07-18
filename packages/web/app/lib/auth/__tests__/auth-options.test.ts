@@ -595,6 +595,50 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
 });
 
 // =============================================================================
+// redirect callback — cross-subdomain sign-in/sign-out resolution
+// =============================================================================
+
+type RedirectParams = Parameters<NonNullable<NonNullable<typeof authOptions.callbacks>['redirect']>>[0];
+
+async function callRedirect(params: RedirectParams): Promise<string> {
+  const callback = authOptions.callbacks?.redirect;
+  if (!callback) throw new Error('redirect callback not defined');
+  return callback(params);
+}
+
+describe('authOptions.callbacks.redirect', () => {
+  // NEXT_PUBLIC_APP_URL is unset in tests, so the app allow-list resolves to its
+  // prod default (https://app.boardsesh.com).
+  const BASE_URL = 'https://www.boardsesh.com';
+
+  it('prefixes a relative url with baseUrl (NextAuth default)', async () => {
+    expect(await callRedirect({ url: '/app', baseUrl: BASE_URL })).toBe(`${BASE_URL}/app`);
+  });
+
+  it('returns a same-origin (www) url unchanged', async () => {
+    expect(await callRedirect({ url: `${BASE_URL}/app/play`, baseUrl: BASE_URL })).toBe(`${BASE_URL}/app/play`);
+  });
+
+  it('allows the standalone app origin so a cross-subdomain sign-out confirms', async () => {
+    const appCallback = 'https://app.boardsesh.com/app';
+    expect(await callRedirect({ url: appCallback, baseUrl: BASE_URL })).toBe(appCallback);
+  });
+
+  it('allows a numbered app preview origin', async () => {
+    const previewCallback = 'https://7.app.boardsesh.com/app';
+    expect(await callRedirect({ url: previewCallback, baseUrl: BASE_URL })).toBe(previewCallback);
+  });
+
+  it('coerces a disallowed cross-origin url to baseUrl (open-redirect guard)', async () => {
+    expect(await callRedirect({ url: 'https://evil.com/app', baseUrl: BASE_URL })).toBe(BASE_URL);
+  });
+
+  it('coerces a look-alike suffix origin to baseUrl', async () => {
+    expect(await callRedirect({ url: 'https://app.boardsesh.com.evil.com/app', baseUrl: BASE_URL })).toBe(BASE_URL);
+  });
+});
+
+// =============================================================================
 // Shared .boardsesh.com session cookie (cross-subdomain auth)
 // =============================================================================
 //

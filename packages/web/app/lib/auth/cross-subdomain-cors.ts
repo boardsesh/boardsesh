@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { APP_URL } from '@/app/lib/app-origin';
+import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 
 // Credentialed cross-origin CORS for the standalone Expo-web app.
 //
 // app.boardsesh.com is served as a static SPA on its own origin. It reads the
-// shared `.boardsesh.com` NextAuth session by calling www.boardsesh.com's auth
+// shared `.boardsesh.com` NextAuth session — and runs the credentials sign-in,
+// registration, and password-reset flows — by calling www.boardsesh.com's auth
 // endpoints cross-origin *with credentials* (`credentials: 'include'`), so those
 // responses need explicit, credentialed CORS headers. A credentialed request
 // forbids `Access-Control-Allow-Origin: *` — the Origin must be echoed exactly.
@@ -17,24 +18,12 @@ const CORS_AUTH_PATHS = new Set([
   '/api/auth/callback/credentials',
   '/api/auth/signout',
   '/api/internal/ws-auth',
+  // Reachable from the app's login screen (Sign up / Forgot password links) and
+  // the reset-password deep link, all POSTed cross-origin from app.boardsesh.com.
+  '/api/auth/register',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
 ]);
-
-// The exact app origin (env-overridable via NEXT_PUBLIC_APP_URL; prod default
-// https://app.boardsesh.com).
-const APP_ORIGIN = (() => {
-  try {
-    return new URL(APP_URL).origin;
-  } catch {
-    return null;
-  }
-})();
-
-// …plus numbered homelab previews (https://{N}.app.boardsesh.com), mirroring the
-// backend CORS allow-list (packages/backend/src/handlers/cors.ts). Both checks
-// are origin-anchored — a `URL.origin` is scheme+host+port with no path, and the
-// regex is `^…$`-anchored — so look-alikes like https://app.boardsesh.com.evil.com
-// or https://evil-app.boardsesh.com never match.
-const APP_PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.app\.boardsesh\.com$/;
 
 // The Expo-web credentials/signout POSTs carry a non-safelisted request header
 // (`X-Auth-Return-Redirect`) alongside the form content-type, so both must be
@@ -42,12 +31,6 @@ const APP_PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.app\.boardsesh\.com$/;
 // needs no listing.
 const ALLOWED_REQUEST_HEADERS = 'content-type, x-auth-return-redirect';
 const ALLOWED_METHODS = 'GET, POST, OPTIONS';
-
-export function isAllowedAppOrigin(origin: string | null | undefined): origin is string {
-  if (!origin) return false;
-  if (APP_ORIGIN !== null && origin === APP_ORIGIN) return true;
-  return APP_PREVIEW_ORIGIN_REGEX.test(origin);
-}
 
 type CrossSubdomainAuthCors = { preflight: NextResponse } | { applyHeaders: (response: NextResponse) => void };
 
