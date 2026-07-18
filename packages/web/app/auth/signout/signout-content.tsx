@@ -13,13 +13,7 @@ import { useSession } from 'next-auth/react';
 import { useTranslation } from 'react-i18next';
 import Logo from '@/app/components/brand/logo';
 import { guardedNextAuthSignOut } from '@/app/lib/auth/nextauth-cookie-fetch-lock';
-
-// Only same-origin relative paths are honoured, so a crafted `?callbackUrl=`
-// can never turn this into an open redirect.
-function safeCallbackUrl(rawCallbackUrl: string | null): string {
-  if (!rawCallbackUrl || !rawCallbackUrl.startsWith('/') || rawCallbackUrl.startsWith('//')) return '/';
-  return rawCallbackUrl;
-}
+import { safeCallbackUrl } from './safe-callback-url';
 
 export default function SignOutContent() {
   const { t } = useTranslation('auth');
