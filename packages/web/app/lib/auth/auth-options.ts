@@ -196,6 +196,10 @@ export const authOptions: NextAuthOptions = {
     signIn: '/auth/login',
     verifyRequest: '/auth/verify-request',
     error: '/auth/error',
+    // Replace NextAuth's built-in GET /api/auth/signout confirmation page. Its
+    // form POSTs only a CSRF token, which the identity-guarded signout route now
+    // rejects with 400. This page drives the guarded sign-out sequence instead.
+    signOut: '/auth/signout',
   },
   callbacks: {
     async signIn({ user, account }) {
