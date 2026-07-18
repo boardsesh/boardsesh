@@ -40,6 +40,10 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
       await storageState.preferenceDeleteBarriers.get(key);
       storageState.preferences.delete(key);
     }),
+    getAllKeys: vi.fn(async () => Array.from(storageState.preferences.keys())),
+    removeMany: vi.fn(async (keys: string[]) => {
+      for (const key of keys) storageState.preferences.delete(key);
+    }),
   },
 }));
 
@@ -95,6 +99,33 @@ describe('browser login-scoped core persistence', () => {
     await expect(getStoredSessionId()).resolves.toBeNull();
     await expect(getStoredActiveBoard()).resolves.toBeNull();
     await expect(getStoredQueueSnapshot()).resolves.toBeNull();
+  });
+
+  it('reclaims a prior login of the same user on re-login and leaves other users alone', async () => {
+    const { sweepOrphanedUserStorage } = await import('../user-storage-owner.web');
+    const { getStoredActiveBoard, setStoredActiveBoard } = await import('../active-board-store.web');
+    const { getStoredQueueSnapshot, setStoredQueueSnapshot } = await import('../queue-snapshot-store.web');
+
+    // Old login of user A, plus a live login for user B in another tab.
+    await setStoredActiveBoard(boardA, userALogin);
+    await setStoredQueueSnapshot(
+      { queue: [], currentClimbQueueItem: null, playlistSuggestionSource: null },
+      userALogin,
+    );
+    await setStoredActiveBoard(boardB, userBLogin);
+
+    await sweepOrphanedUserStorage(newerUserALogin);
+
+    // A's stale-login rows are gone; the new A login and user B are preserved.
+    await expect(getStoredActiveBoard(userALogin)).resolves.toBeNull();
+    await expect(getStoredQueueSnapshot(userALogin)).resolves.toBeNull();
+    await expect(getStoredActiveBoard(newerUserALogin)).resolves.toBeNull();
+    await expect(getStoredActiveBoard(userBLogin)).resolves.toEqual(boardB);
+
+    // A fresh write under the new A login survives a repeat sweep.
+    await setStoredActiveBoard(boardA, newerUserALogin);
+    await sweepOrphanedUserStorage(newerUserALogin);
+    await expect(getStoredActiveBoard(newerUserALogin)).resolves.toEqual(boardA);
   });
 
   it('keeps a newer login write when another tab finishes deleting the old login scope', async () => {
