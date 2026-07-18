@@ -10,6 +10,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 
+import { extractExpoWebEntryBundleSource } from './lib/expo-web-readiness';
+
 const repoRoot = path.resolve(__dirname, '..');
 const READY_LINE = /\[dev\] Expo web app: (\S+)/;
 const APP_READY_TIMEOUT_MS = 300_000;
@@ -47,11 +49,14 @@ async function waitForAppSurface(appUrl: string): Promise<void> {
       const response = await fetch(appUrl, { redirect: 'manual' });
       if (response.ok) {
         const html = await response.text();
-        // The exported shell always references the Expo bundle under `/_expo`;
-        // an error page or a bare Next proxy response (which can still carry an
-        // `/app/` link) does not. Match the Expo-specific path so a stray Next
-        // page never reads as ready.
-        if (html.includes('/_expo')) return;
+        // Dev-mode Metro references the entry as a `<script src>` containing
+        // `entry.bundle` + `platform=web` — the same detection the dev
+        // orchestrator's prewarm uses (extractExpoWebEntryBundleSource), so
+        // this probe and the prewarm agree on what "ready" means. An exported
+        // shell instead references hashed bundles under `/_expo`. Accept
+        // either; an error page or a bare Next proxy response (which can
+        // still carry an `/app/` link) matches neither.
+        if (extractExpoWebEntryBundleSource(html) !== null || html.includes('/_expo')) return;
         lastFailure = 'HTML shell missing the Expo entry reference';
       } else {
         lastFailure = `HTTP ${response.status}`;
