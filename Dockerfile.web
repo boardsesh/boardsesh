@@ -94,6 +94,16 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# BOARDSESH_WEB is read at REQUEST time by the standalone server, not just at
+# build: app/layout.tsx gates the Expo auth session bridge on it
+# (enableExpoAuthBridge) and middleware.ts gates the /app dev proxy. The builder
+# ARG/ENV above does not cross the stage boundary, so redeclare it here or the
+# runtime flag is undefined and the bridge stays off even though /app is served.
+# The default mirrors the builder so a single --build-arg BOARDSESH_WEB=0
+# rollback disables both the export AND the runtime bridge consistently.
+ARG BOARDSESH_WEB=1
+ENV BOARDSESH_WEB=$BOARDSESH_WEB
+
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
