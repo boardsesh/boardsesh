@@ -44,7 +44,16 @@ const EXPO_WEB_CLIMBS_PATH = `${EXPO_WEB_APP_BASE}/climbs`;
 // accept either — presence is the login heuristic, same as the rest of the app.
 const NEXT_AUTH_SESSION_COOKIES = ['__Secure-next-auth.session-token', 'next-auth.session-token'] as const;
 
-const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
+/**
+ * Short TTL, refreshed on every classic page load by ExpoWebRolloutCookieSync.
+ * A visitor who lives entirely inside `/app` (the SPA never touches this
+ * cookie) must still see a flag-off rollback: their cookie simply expires
+ * within hours, the next migrated-surface hit falls through to classic, and
+ * the classic page re-evaluates the flag. Keep this short — it bounds the
+ * worst-case rollback lag for exactly the cohort a rollback most needs to
+ * reach. The cost when the flag stays on is one classic page render per TTL.
+ */
+const EXPO_WEB_COOKIE_TTL_SECONDS = 60 * 60 * 4;
 
 /**
  * Master env gate. The redirect never fires unless the site is built with the
@@ -141,12 +150,15 @@ export function mapToExpoWebTarget(pathname: string): string | null {
  * Client-side mirror of the resolved `expo-web-app` flag into the `bs_expo_web`
  * cookie the edge reads. `true` writes `bs_expo_web=1`; `false` clears it so a
  * flag flipped back off (or a user removed from the rollout cohort) instantly
- * stops redirecting. SSR-guarded — a no-op on the server.
+ * stops redirecting. The on-value carries a deliberately short TTL (see
+ * EXPO_WEB_COOKIE_TTL_SECONDS) so visitors who never load a classic page still
+ * fall back to classic — and re-evaluate the flag — within hours of a
+ * rollback. SSR-guarded — a no-op on the server.
  */
 export function setExpoWebEnabledCookie(enabled: boolean): void {
   if (typeof document === 'undefined') return;
   if (enabled) {
-    document.cookie = `${EXPO_WEB_ENABLED_COOKIE}=1; path=/; SameSite=Lax; max-age=${ONE_YEAR_SECONDS}`;
+    document.cookie = `${EXPO_WEB_ENABLED_COOKIE}=1; path=/; SameSite=Lax; max-age=${EXPO_WEB_COOKIE_TTL_SECONDS}`;
   } else {
     document.cookie = `${EXPO_WEB_ENABLED_COOKIE}=; path=/; SameSite=Lax; max-age=0`;
   }
