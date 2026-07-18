@@ -33,6 +33,15 @@ describe('Expo web Next proxy', () => {
     expect(() => configModule.resolveExpoWebDevOrigin('file:///tmp/expo')).toThrow(/http or https/);
   });
 
+  it('rejects a scheme-less proxy origin with a clear message', () => {
+    // `//localhost:8081` (scheme omitted) makes `new URL` throw a bare
+    // "Invalid URL"; resolveExpoWebDevOrigin must surface the actual value and
+    // the expected shape instead.
+    expect(() => configModule.resolveExpoWebDevOrigin('//localhost:8081')).toThrow(
+      /BOARDSESH_EXPO_WEB_ORIGIN is not a valid URL/,
+    );
+  });
+
   it('adds /app rewrites only when Expo web and its proxy origin are enabled', async () => {
     process.env.BOARDSESH_WEB = '1';
     process.env.BOARDSESH_EXPO_WEB_ORIGIN = 'http://localhost:8082';
