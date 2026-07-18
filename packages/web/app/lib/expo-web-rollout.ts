@@ -188,9 +188,15 @@ export function mapToExpoWebTarget(pathname: string): string | null {
  */
 export function setExpoWebEnabledCookie(enabled: boolean): void {
   if (typeof document === 'undefined') return;
+  // Secure on https (production) so the cookie can't leak over plaintext;
+  // omitted on http localhost so the rollout is still testable in dev. This is
+  // the client-side mirror of the `secure: isSecureCookieContext()` the
+  // middleware uses for bs_classic — a document.cookie writer can only go by
+  // the page protocol.
+  const secureAttribute = window.location.protocol === 'https:' ? '; Secure' : '';
   if (enabled) {
-    document.cookie = `${EXPO_WEB_ENABLED_COOKIE}=1; path=/; SameSite=Lax; max-age=${EXPO_WEB_COOKIE_TTL_SECONDS}`;
+    document.cookie = `${EXPO_WEB_ENABLED_COOKIE}=1; path=/; SameSite=Lax; max-age=${EXPO_WEB_COOKIE_TTL_SECONDS}${secureAttribute}`;
   } else {
-    document.cookie = `${EXPO_WEB_ENABLED_COOKIE}=; path=/; SameSite=Lax; max-age=0`;
+    document.cookie = `${EXPO_WEB_ENABLED_COOKIE}=; path=/; SameSite=Lax; max-age=0${secureAttribute}`;
   }
 }

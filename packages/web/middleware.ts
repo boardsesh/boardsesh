@@ -11,6 +11,7 @@ import {
   isSupportedLocale,
 } from './app/lib/i18n/config';
 import { detectLocale } from './app/lib/i18n/detect-locale';
+import { isSecureCookieContext } from './app/lib/auth/secure-cookies';
 import {
   EXPO_WEB_CLASSIC_COOKIE,
   EXPO_WEB_CLASSIC_PARAM,
@@ -167,14 +168,21 @@ export function middleware(request: NextRequest) {
   if (isExpoWebRolloutEnabled()) {
     // Escape hatch: `?classic=1` pins the bs_classic cookie and lands the
     // visitor back on the classic URL (param stripped), mirroring the ?session=
-    // handling above. From then on the cookie alone forces classic.
-    if (request.nextUrl.searchParams.get(EXPO_WEB_CLASSIC_PARAM) !== null) {
+    // handling above. From then on the cookie alone forces classic. API routes
+    // are exempt — a `classic` query param on `/api/...` (e.g. an Aurora proxy
+    // call) is that endpoint's own business, and 307-ing an API request to a
+    // param-stripped URL would corrupt it.
+    if (!pathname.startsWith('/api/') && request.nextUrl.searchParams.get(EXPO_WEB_CLASSIC_PARAM) !== null) {
       const classicUrl = request.nextUrl.clone();
       classicUrl.searchParams.delete(EXPO_WEB_CLASSIC_PARAM);
       const classicResponse = NextResponse.redirect(classicUrl, 307);
       classicResponse.cookies.set(EXPO_WEB_CLASSIC_COOKIE, '1', {
         path: '/',
         sameSite: 'lax',
+        // Secure in https/prod contexts, mirroring the next-auth session
+        // cookie (see secure-cookies.ts); plain on http localhost so the
+        // escape hatch still works in dev.
+        secure: isSecureCookieContext(),
         maxAge: 60 * 60 * 24 * 365,
       });
       return classicResponse;

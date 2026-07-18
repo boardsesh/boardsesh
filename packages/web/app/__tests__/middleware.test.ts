@@ -461,6 +461,16 @@ describe('middleware Expo web rollout redirect', () => {
     expect(redirectedToAppPath(response)).toBeNull();
   });
 
+  it('redirects when the session rides the __Secure-next-auth.session-token cookie (https contexts)', () => {
+    const request = makeRequest('/kilter/1/10/1,20/40/view/climb-uuid');
+    request.cookies.set('__Secure-next-auth.session-token', 'token-123');
+    request.cookies.set(EXPO_WEB_ENABLED_COOKIE, '1');
+    const response = middleware(request);
+    const location = redirectedToAppPath(response);
+    expect(location).not.toBeNull();
+    expect(new URL(location!).pathname).toBe('/app/climbs/climb-uuid');
+  });
+
   it('does not redirect when the flag cookie is absent (flag off / unresolved)', () => {
     const request = makeRequest(LEGACY_LIST);
     request.cookies.set(AUTH_COOKIE, 'token-123');
@@ -501,5 +511,26 @@ describe('middleware Expo web rollout redirect', () => {
     request.cookies.set(EXPO_WEB_CLASSIC_COOKIE, '1');
     const response = middleware(request);
     expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('leaves a ?classic=1 API request alone (no 307, no cookie): the param belongs to the endpoint', () => {
+    const response = middleware(loggedInFlaggedRequest('/api/v1/kilter/proxy/login?classic=1'));
+    expect(response.status).not.toBe(307);
+    expect(response.headers.get('set-cookie') ?? '').not.toContain(EXPO_WEB_CLASSIC_COOKIE);
+  });
+
+  it('marks the bs_classic cookie Secure in an https context (mirrors the auth session cookie)', () => {
+    const originalNextAuthUrl = process.env.NEXTAUTH_URL;
+    process.env.NEXTAUTH_URL = 'https://www.boardsesh.com';
+    try {
+      const response = middleware(loggedInFlaggedRequest(`${SLUG_LIST}?classic=1`));
+      expect(response.status).toBe(307);
+      const setCookie = response.headers.get('set-cookie')!;
+      expect(setCookie).toContain(EXPO_WEB_CLASSIC_COOKIE);
+      expect(setCookie).toMatch(/secure/i);
+    } finally {
+      if (originalNextAuthUrl === undefined) delete process.env.NEXTAUTH_URL;
+      else process.env.NEXTAUTH_URL = originalNextAuthUrl;
+    }
   });
 });
