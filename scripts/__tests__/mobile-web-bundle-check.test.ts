@@ -117,4 +117,33 @@ touch "$output_dir/wasm/${WORKER_PATH}"
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('missing source or public board-renderer JavaScript glue');
   });
+
+  it('fails when the export omits the off-main-thread render worker asset', () => {
+    // Re-point the export stub at one that produces the shell + WASM but NOT the
+    // worker, so the guard's worker-required check is actually exercised.
+    writeFileSync(
+      join(fixtureRoot, 'bin', 'bunx'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+output_dir=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-dir" ]]; then
+    output_dir="$2"
+    break
+  fi
+  shift
+done
+mkdir -p "$output_dir/wasm"
+touch "$output_dir/index.html"
+touch "$output_dir/wasm/${GLUE_PATH}"
+touch "$output_dir/wasm/${WASM_PATH}"
+`,
+    );
+    chmodSync(join(fixtureRoot, 'bin', 'bunx'), 0o755);
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('missing board-render worker asset');
+  });
 });
