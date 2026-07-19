@@ -58,15 +58,16 @@ describe('cross-app Expo-web auth protocol parity', () => {
     expect(mobileStorageKey).toBe(webStorageKey);
   });
 
+  // Quote-agnostic literal match so a formatter/quote-style change on either side
+  // can't make a real divergence pass vacuously.
+  function quotedLiteral(value: string): RegExp {
+    return new RegExp(`['"]${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]`);
+  }
+
   it('shares the auth-token-cleared message type and reason values', () => {
-    for (const literal of [
-      "'auth-token-cleared'",
-      "'credential-rotation'",
-      "'signout-started'",
-      "'confirmed-signout'",
-    ]) {
-      expect(webFetchLock).toContain(literal);
-      expect(mobileAuthStore).toContain(literal);
+    for (const value of ['auth-token-cleared', 'credential-rotation', 'signout-started', 'confirmed-signout']) {
+      expect(webFetchLock).toMatch(quotedLiteral(value));
+      expect(mobileAuthStore).toMatch(quotedLiteral(value));
     }
   });
 
@@ -77,7 +78,7 @@ describe('cross-app Expo-web auth protocol parity', () => {
       expect(mobileAuthWeb).toContain(field);
     }
     // The web route emits `signout_identity_changed` as a 409; both clients read it.
-    expect(webNextAuthRoute).toContain("'signout_identity_changed'");
-    expect(mobileAuthWeb).toContain("'signout_identity_changed'");
+    expect(webNextAuthRoute).toMatch(quotedLiteral('signout_identity_changed'));
+    expect(mobileAuthWeb).toMatch(quotedLiteral('signout_identity_changed'));
   });
 });
