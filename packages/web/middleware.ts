@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getListPageCacheTTL } from './app/lib/list-page-cache';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
+import { isSecureCookieContext } from './app/lib/auth/secure-cookies';
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
@@ -143,6 +144,9 @@ export function middleware(request: NextRequest) {
     response.cookies.set(CLIMB_SESSION_COOKIE, sessionParam, {
       path: '/',
       sameSite: 'lax',
+      // Mark Secure on HTTPS deployments so the cookie is never sent over
+      // plaintext; skipped in local http dev so it still round-trips there.
+      secure: isSecureCookieContext(),
       maxAge: 86400,
     });
     return response;
