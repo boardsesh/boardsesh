@@ -96,6 +96,15 @@ async function ensureGridBadgeFixture(): Promise<void> {
 }
 
 export default async function globalSetup(config: FullConfig): Promise<void> {
+  // The expo-web smoke project drives the /app SPA, not the classic Next
+  // routes this setup seeds and prewarms — under the expo-web stack the cold
+  // classic-route compile can exceed the 30s card timeout and fail the run for
+  // surfaces the smoke never visits. scripts/expo-web-e2e.ts sets the skip.
+  if (process.env.PLAYWRIGHT_SKIP_CLASSIC_SETUP === '1') {
+    console.info('[global-setup] PLAYWRIGHT_SKIP_CLASSIC_SETUP=1 — skipping classic-app fixture seeding and prewarm.');
+    return;
+  }
+
   const baseURL = config.projects[0]?.use.baseURL ?? process.env.PLAYWRIGHT_TEST_BASE_URL ?? 'http://localhost:3000';
 
   await ensureGridBadgeFixture();
