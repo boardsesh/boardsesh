@@ -149,6 +149,19 @@ describe('CORS Handler', () => {
       expect(isOriginAllowed('https://boardsesh-abc123-marcodejonghs-projects.vercel.app')).toBe(true);
     });
 
+    it('honors a configurable VERCEL_PREVIEW_ORIGIN_SUFFIX', () => {
+      process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX = 'acme-team.vercel.app';
+      initCors('https://boardsesh.com');
+      try {
+        expect(isOriginAllowed('https://boardsesh-xyz789-acme-team.vercel.app')).toBe(true);
+        // The default account's suffix no longer matches once overridden.
+        expect(isOriginAllowed('https://boardsesh-abc123-marcodejonghs-projects.vercel.app')).toBe(false);
+      } finally {
+        delete process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX;
+        initCors('https://boardsesh.com');
+      }
+    });
+
     it('returns true for homelab preview deployments matching regex', () => {
       expect(isOriginAllowed('https://42.preview.boardsesh.com')).toBe(true);
       expect(isOriginAllowed('https://123.preview.boardsesh.com')).toBe(true);

@@ -2,8 +2,20 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { execFileSync } from 'node:child_process';
 import { logger } from '../utils/logger';
 
-// Vercel preview deployment pattern: https://boardsesh-{hash}-marcodejonghs-projects.vercel.app
-const VERCEL_PREVIEW_REGEX = /^https:\/\/boardsesh-[a-z0-9]+-marcodejonghs-projects\.vercel\.app$/;
+// Vercel preview deployment pattern: https://boardsesh-{hash}-{suffix}
+// The project suffix defaults to this repo's Vercel account but is configurable
+// via VERCEL_PREVIEW_ORIGIN_SUFFIX so a fork/other deployment can allow its own
+// preview origins without patching this file. Recomputed in initCors so the env
+// is read at startup (and in tests).
+const DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX = 'marcodejonghs-projects.vercel.app';
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function buildVercelPreviewRegex(): RegExp {
+  const suffix = process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX?.trim() || DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX;
+  return new RegExp(`^https://boardsesh-[a-z0-9]+-${escapeRegExp(suffix)}$`);
+}
+let vercelPreviewRegex = buildVercelPreviewRegex();
 
 // Homelab branch deploy pattern: https://{N}.preview.boardsesh.com
 const PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.preview\.boardsesh\.com$/;
@@ -79,6 +91,7 @@ function resolveTailscaleHostname(): { hostname: string | null; reason: string }
  */
 export function initCors(boardseshUrl: string): void {
   allowedOrigins = [boardseshUrl];
+  vercelPreviewRegex = buildVercelPreviewRegex();
 
   // Also allow www subdomain variant
   try {
@@ -149,7 +162,7 @@ export function initCors(boardseshUrl: string): void {
  */
 export function isOriginAllowed(origin: string): boolean {
   if (allowedOrigins.includes(origin)) return true;
-  if (VERCEL_PREVIEW_REGEX.test(origin)) return true;
+  if (vercelPreviewRegex.test(origin)) return true;
   if (PREVIEW_ORIGIN_REGEX.test(origin)) return true;
   if (process.env.NODE_ENV !== 'production') {
     if (DEV_PRIVATE_LAN_ORIGIN_REGEX.test(origin)) return true;
