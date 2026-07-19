@@ -236,9 +236,22 @@ vi.mock('../../settings', () => ({
 // calls so the lifecycle test can assert the contract.
 const setOnForcedSignOutMock = vi.fn();
 const ensureFreshTokenMock = vi.fn().mockResolvedValue(true);
+type MockRefreshResult =
+  | { status: 'refreshed'; generation: number }
+  | { status: 'rejected'; generation: number }
+  | { status: 'unavailable'; generation: number }
+  | { status: 'superseded' };
+// resolveAuthSession refreshes an expiring token through the status-returning
+// deduplicatedRefresh (not the boolean ensureFreshToken), so the refresh-fail
+// and superseded scenarios drive this mock's 4-way status.
+const deduplicatedRefreshMock = vi.fn<() => Promise<MockRefreshResult>>().mockResolvedValue({
+  status: 'refreshed',
+  generation: 1,
+});
 vi.mock('../../lib/auth-interceptor', () => ({
   setOnForcedSignOut: (callback: (() => void) | null) => setOnForcedSignOutMock(callback),
   ensureFreshToken: () => ensureFreshTokenMock(),
+  deduplicatedRefresh: () => deduplicatedRefreshMock(),
 }));
 
 import { AuthProvider, useAuth } from '../auth-provider';
@@ -1009,6 +1022,8 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     reportErrorMock.mockReset();
     // Default: a signed-in session with a fresh token so the first checkAuth
     // authenticates without taking the refresh branch.
+    deduplicatedRefreshMock.mockReset();
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 });
     getAuthTokenMock.mockResolvedValue('jwt-token');
     isTokenExpiringSoonMock.mockResolvedValue(false);
     ensureFreshTokenMock.mockResolvedValue(true);
@@ -1022,7 +1037,8 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
   // run the same cross-user cleanup signOut does, or the next user on a shared
   // device inherits the previous user's cache/board/clients.
   it('runs the full cross-user cleanup when a foreground refresh fails', async () => {
-    ensureFreshTokenMock.mockResolvedValue(false);
+    // A server-rejected refresh token is a confirmed logout → anonymous → cleanup.
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 });
 
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     queryClient.setQueryData(['userPlaylists'], [{ id: 'p-1', name: "User A's playlist" }]);
@@ -1067,17 +1083,19 @@ describe('AuthProvider.checkAuth signed-out cleanup', () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
 
-    let releaseRefresh!: (refreshed: boolean) => void;
+    let releaseRefresh!: (result: MockRefreshResult) => void;
     isTokenExpiringSoonMock.mockResolvedValue(true);
-    ensureFreshTokenMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+    deduplicatedRefreshMock.mockReturnValueOnce(
+      new Promise<MockRefreshResult>((resolve) => {
         releaseRefresh = resolve;
       }),
     );
     const oldSessionCheck = result.current.refreshAuthState();
-    await vi.waitFor(() => expect(ensureFreshTokenMock).toHaveBeenCalled());
+    await vi.waitFor(() => expect(deduplicatedRefreshMock).toHaveBeenCalled());
+    // The generation flips before the stalled refresh resolves → superseded, so
+    // this stale check must not clean up the newer login.
     isAuthCredentialGenerationCurrentMock.mockReturnValue(false);
-    releaseRefresh(false);
+    releaseRefresh({ status: 'refreshed', generation: 1 });
 
     await act(async () => {
       await oldSessionCheck;
