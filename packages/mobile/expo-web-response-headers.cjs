@@ -9,8 +9,8 @@ const EXPO_WEB_SECURITY_HEADERS = {
 function isExpoWebAppRequest(webFlag, rawUrl) {
   if (webFlag !== '1' || !rawUrl) return false;
 
-  const pathName = rawUrl.split('?')[0]?.toLowerCase();
-  return pathName === '/app' || pathName?.startsWith('/app/') === true;
+  const pathName = rawUrl.split('?')[0].toLowerCase();
+  return pathName === '/app' || pathName.startsWith('/app/');
 }
 
 function applyExpoWebResponseHeaders(response, webFlag, rawUrl) {
