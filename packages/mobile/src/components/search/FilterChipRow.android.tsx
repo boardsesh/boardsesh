@@ -42,7 +42,7 @@ import {
   HorizontalDivider,
 } from '@expo/ui/jetpack-compose';
 import { fillMaxWidth, horizontalScroll, padding } from '@expo/ui/jetpack-compose/modifiers';
-import { PROGRESS_FILTER_VALUES } from '@boardsesh/climb-filters';
+import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../lib/filter-chip-menus';
 import { useTheme } from '../../providers/theme-provider';
@@ -50,7 +50,15 @@ import { spacing } from '../../theme/tokens';
 import { filterChipBrandColors } from '../../theme/expo-ui-modifiers';
 import { useMaterialAngleControl } from '../chrome/use-material-angle-control';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
-import { popularityChipLabel, ratingChipLabel, progressFilterLabel, collectionChipLabel } from './FilterChipRow.logic';
+import {
+  popularityChipLabel,
+  ratingChipLabel,
+  progressFilterLabel,
+  collectionChipLabel,
+  sortChipLabel,
+  accuracyChipLabel,
+  climbTypeChipLabel,
+} from './FilterChipRow.logic';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
 
@@ -189,6 +197,15 @@ function FilterChipRowComponent({
   collection,
   onChangeCollection,
   canFilterDrafts,
+  sortBy,
+  sortActive,
+  onChangeSort,
+  accuracyValue,
+  onChangeAccuracy,
+  climbType,
+  onChangeClimbType,
+  betaActive,
+  onToggleBeta,
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors, colorScheme } = useTheme();
@@ -288,6 +305,33 @@ function FilterChipRowComponent({
             />
           ) : null}
 
+          {/* Grade accuracy ▾ — Off/Loose/Moderate/Tight single-choice. Opt-in. */}
+          {pinnedChips.includes('accuracy') ? (
+            <MenuChip
+              label={accuracyValue === 'off' ? t('mobile.filter.accuracy.label') : accuracyChipLabel(accuracyValue, t)}
+              selected={accuracyValue !== 'off'}
+              colors={chipColors}
+              renderItems={(close) => (
+                <>
+                  {GRADE_ACCURACY_VALUES.map((value) => {
+                    const tagValue = value === '0' ? 'off' : value;
+                    return (
+                      <MenuItem
+                        key={tagValue}
+                        label={accuracyChipLabel(value, t)}
+                        checked={tagValue === accuracyValue}
+                        onClick={() => {
+                          onChangeAccuracy(tagValue);
+                          close();
+                        }}
+                      />
+                    );
+                  })}
+                </>
+              )}
+            />
+          ) : null}
+
           {/* Your progress ▾ — single-select over the four tick flags (auth-gated,
             the chip hides when signed out). Each item commits its value and closes. */}
           {canFilterProgress && pinnedChips.includes('progress') ? (
@@ -338,6 +382,31 @@ function FilterChipRowComponent({
             />
           ) : null}
 
+          {/* Climb type ▾ — Boulders / Routes / Both single-choice. Default is
+              boulders-only, so the resting chip reads "Climb type". Opt-in. */}
+          {pinnedChips.includes('climbType') ? (
+            <MenuChip
+              label={climbType === 'boulders' ? t('mobile.filter.climbType') : climbTypeChipLabel(climbType, t)}
+              selected={climbType !== 'boulders'}
+              colors={chipColors}
+              renderItems={(close) => (
+                <>
+                  {(['boulders', 'routes', 'both'] as const).map((value) => (
+                    <MenuItem
+                      key={value}
+                      label={climbTypeChipLabel(value, t)}
+                      checked={value === climbType}
+                      onClick={() => {
+                        onChangeClimbType(value);
+                        close();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            />
+          ) : null}
+
           {/* Shape — one chip grouping the independent Tall + Wide toggles (a climb
             can be both). The menu stays open so both can be toggled. Shown only when
             the board size has the expansion. */}
@@ -358,6 +427,16 @@ function FilterChipRowComponent({
                   ))}
                 </>
               )}
+            />
+          ) : null}
+
+          {/* Beta videos — a plain on/off toggle (an action chip, no menu). Opt-in. */}
+          {pinnedChips.includes('beta') ? (
+            <ActionChip
+              label={t('mobile.filter.betaVideos')}
+              selected={betaActive}
+              colors={chipColors}
+              onPress={onToggleBeta}
             />
           ) : null}
 
@@ -400,6 +479,31 @@ function FilterChipRowComponent({
                       checked={bucket === minRating}
                       onClick={() => {
                         onChangeRating(bucket);
+                        close();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            />
+          ) : null}
+
+          {/* Sort ▾ — single-choice sort keys (direction stays sheet-only). Picking
+              Random reseeds a fresh shuffle. Opt-in, sits last. */}
+          {pinnedChips.includes('sort') ? (
+            <MenuChip
+              label={sortActive ? sortChipLabel(sortBy, t) : t('mobile.filter.sortBy')}
+              selected={sortActive}
+              colors={chipColors}
+              renderItems={(close) => (
+                <>
+                  {SORT_OPTIONS.map((value) => (
+                    <MenuItem
+                      key={value}
+                      label={sortChipLabel(value, t)}
+                      checked={value === sortBy}
+                      onClick={() => {
+                        onChangeSort(value);
                         close();
                       }}
                     />

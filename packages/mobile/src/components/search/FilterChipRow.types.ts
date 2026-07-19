@@ -5,10 +5,11 @@
 // jetpack-compose) — whose components resolve native views at module load — off the
 // other platform's bundle path.
 
-import type { ProgressFilter } from '@boardsesh/climb-filters';
+import type { ProgressFilter, SortOption, GradeAccuracyValue } from '@boardsesh/climb-filters';
 import type { RecentFilter } from '../../lib/recent-filter-store';
 import type { PinnableChipKind } from '../../lib/pinnable-chips';
 import type { CollectionFilter } from '../../lib/collection-filter';
+import type { ClimbTypeFilter } from './FilterChipRow.logic';
 import type { ClimbFilters } from '../ClimbFilterSheet';
 
 /**
@@ -73,4 +74,24 @@ export type FilterChipRowProps = {
   onChangeCollection: (value: CollectionFilter) => void;
   /** My drafts is auth-only; the option is dropped from the chip menu when signed out. */
   canFilterDrafts: boolean;
+
+  // --- Tier-2 (opt-in) chips: sheet-only controls a user can pin. ---
+
+  /** Current sort key; the Sort chip menu switches it (direction stays sheet-only). */
+  sortBy: SortOption;
+  /** Whether sort differs from the default (key or direction) — lights the chip. */
+  sortActive: boolean;
+  onChangeSort: (value: SortOption) => void;
+
+  /** Grade-accuracy bucket; 'off' is the neutral value. The chip menu switches it. */
+  accuracyValue: GradeAccuracyValue | 'off';
+  onChangeAccuracy: (value: GradeAccuracyValue | 'off') => void;
+
+  /** Climb-type single-select derived from the boulders/routes flags. */
+  climbType: ClimbTypeFilter;
+  onChangeClimbType: (value: ClimbTypeFilter) => void;
+
+  /** Beta-videos filter — a plain on/off toggle chip. */
+  betaActive: boolean;
+  onToggleBeta: () => void;
 };

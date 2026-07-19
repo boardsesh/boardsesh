@@ -11,11 +11,78 @@
 // `filter-chip-menus.ts` at the call sites so the chip and the sheet never diverge.
 
 import type { TFunction } from 'i18next';
-import { formatMinAscentsFilterCount, PROGRESS_FILTER_VALUES, type ProgressFilter } from '@boardsesh/climb-filters';
+import {
+  formatMinAscentsFilterCount,
+  PROGRESS_FILTER_VALUES,
+  SORT_OPTIONS,
+  type ProgressFilter,
+  type SortOption,
+  type GradeAccuracyValue,
+} from '@boardsesh/climb-filters';
 import type { CollectionFilter } from '../../lib/collection-filter';
+import { buildSortLabel } from '../../lib/filter-labels';
 
 export { progressFilterLabel } from '../../lib/filter-labels';
 export { isCollectionFilter } from '../../lib/collection-filter';
+
+/** Climb-type single-select values (mirrors the sheet's climbTypeKey). */
+export type ClimbTypeFilter = 'boulders' | 'routes' | 'both';
+
+/**
+ * Label for a sort key ("Ascents", "Quality", …). Falls back to the raw key if a
+ * new SORT_OPTIONS entry ever lacks a catalog string (keeps the chip usable).
+ */
+export function sortChipLabel(sortBy: SortOption, t: TFunction<'climbs'>): string {
+  return buildSortLabel(t)(sortBy) ?? sortBy;
+}
+
+/** Narrows a raw native-picker tag to a {@link SortOption}. */
+export function isSortOption(value: string): value is SortOption {
+  return (SORT_OPTIONS as readonly string[]).includes(value);
+}
+
+/**
+ * Label for a grade-accuracy bucket. Accepts the raw value ('0'…'0.05') and the
+ * 'off' tag the chip/segmented use for the neutral bucket, both mapping to the
+ * "Off" string — so one function labels both the menu items and the resting chip.
+ */
+export function accuracyChipLabel(value: GradeAccuracyValue | 'off', t: TFunction<'climbs'>): string {
+  switch (value) {
+    case 'off':
+    case '0':
+      return t('mobile.filter.accuracy.off');
+    case '0.2':
+      return t('mobile.filter.accuracy.loose');
+    case '0.1':
+      return t('mobile.filter.accuracy.moderate');
+    case '0.05':
+      return t('mobile.filter.accuracy.tight');
+  }
+}
+
+const ACCURACY_TAGS: readonly string[] = ['off', '0.2', '0.1', '0.05'];
+
+/** Narrows a raw native-picker tag to the accuracy value the chip commits. */
+export function isAccuracyTag(value: string): value is GradeAccuracyValue | 'off' {
+  return ACCURACY_TAGS.includes(value);
+}
+
+/** Label for the climb-type single-select ("Boulders" / "Routes" / "Both"). */
+export function climbTypeChipLabel(value: ClimbTypeFilter, t: TFunction<'climbs'>): string {
+  switch (value) {
+    case 'boulders':
+      return t('mobile.filter.boulders');
+    case 'routes':
+      return t('mobile.filter.routes');
+    case 'both':
+      return t('mobile.filter.both');
+  }
+}
+
+/** Narrows a raw native-picker tag to a {@link ClimbTypeFilter}. */
+export function isClimbType(value: string): value is ClimbTypeFilter {
+  return value === 'boulders' || value === 'routes' || value === 'both';
+}
 
 /**
  * Label for the "Collection" single-select: the chip shows "Benchmarks" / "My

@@ -16,11 +16,14 @@ import {
   flagsToProgress,
   progressToFlags,
   applyStatusChange,
+  newSortSeed,
   DEFAULT_CLIMB_FILTER_STATE,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type ClimbBoardFilterState,
   type GradeTapMeta,
   type ProgressFilter,
+  type SortOption,
+  type GradeAccuracyValue,
 } from '@boardsesh/climb-filters';
 import { getTallWideScope } from '@boardsesh/board-constants';
 import { ClimbListRow } from '../../../src/components/ClimbListRow';
@@ -33,6 +36,7 @@ import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
 import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
+import type { ClimbTypeFilter } from '../../../src/components/search/FilterChipRow.logic';
 import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
 import { usePinnedChips } from '../../../src/lib/pinned-chips-store';
 import { getCollectionFilter, type CollectionFilter } from '../../../src/lib/collection-filter';
@@ -1069,6 +1073,47 @@ function ClimbListInner() {
     },
     [patchBoardFilters, patchFilters, filters],
   );
+  // --- Tier-2 (opt-in) chip handlers — mirror the filter sheet's own controls so
+  // a chip and the sheet never diverge. ---
+  // Sort: picking Random reseeds a fresh shuffle (matches the sheet); every other
+  // key clears the seed. Direction (asc/desc) stays a sheet-only refinement.
+  const handleChangeSort = useCallback(
+    (value: SortOption) =>
+      patchFilters(
+        value === 'random' ? { sortBy: value, sortSeed: newSortSeed() } : { sortBy: value, sortSeed: undefined },
+      ),
+    [patchFilters],
+  );
+  const handleChangeAccuracy = useCallback(
+    (value: GradeAccuracyValue | 'off') => patchFilters({ gradeAccuracy: value === 'off' ? undefined : value }),
+    [patchFilters],
+  );
+  // Climb type — same three-way mapping as the sheet's handleClimbTypeChange.
+  const handleChangeClimbType = useCallback(
+    (value: ClimbTypeFilter) => {
+      if (value === 'routes') patchFilters({ boulders: false, routes: true });
+      else if (value === 'both') patchFilters({ boulders: true, routes: true });
+      else patchFilters({ boulders: true, routes: false });
+    },
+    [patchFilters],
+  );
+  const handleToggleBeta = useCallback(
+    () => patchFilters({ onlyWithBetaVideos: filters.onlyWithBetaVideos ? undefined : true }),
+    [patchFilters, filters.onlyWithBetaVideos],
+  );
+  // Climb-type single-select derived from the boulders/routes flags (mirrors the
+  // sheet's climbTypeKey): boulders-only is the default/resting value.
+  const climbType = useMemo<ClimbTypeFilter>(() => {
+    const bouldersOn = filters.boulders ?? true;
+    const routesOn = filters.routes ?? false;
+    if (bouldersOn && !routesOn) return 'boulders';
+    if (!bouldersOn && routesOn) return 'routes';
+    return 'both';
+  }, [filters.boulders, filters.routes]);
+  // Sort is "active" whenever the key OR direction differs from the default — the
+  // same condition the sort token uses, so the chip lights up in lockstep with it.
+  const sortActive =
+    filters.sortBy !== DEFAULT_CLIMB_FILTER_STATE.sortBy || filters.sortOrder !== DEFAULT_CLIMB_FILTER_STATE.sortOrder;
   // Tall/Wide chips appear on any board whose active size has a shorter/narrower
   // size in its product family — Kilter Homewall & Original, Tension Board 2,
   // Decoy, Grasshopper (getTallWideScope is the shared source of truth, matching
@@ -1184,6 +1229,15 @@ function ClimbListInner() {
           collection={getCollectionFilter(filters, boardFilters)}
           onChangeCollection={handleChangeCollection}
           canFilterDrafts={isAuthenticated}
+          sortBy={filters.sortBy}
+          sortActive={sortActive}
+          onChangeSort={handleChangeSort}
+          accuracyValue={filters.gradeAccuracy ?? 'off'}
+          onChangeAccuracy={handleChangeAccuracy}
+          climbType={climbType}
+          onChangeClimbType={handleChangeClimbType}
+          betaActive={!!filters.onlyWithBetaVideos}
+          onToggleBeta={handleToggleBeta}
         />
         <FilterTokenRow tokens={sheetOnlyFilterTokens} />
       </>
@@ -1210,6 +1264,12 @@ function ClimbListInner() {
     boardFilters.onlyBenchmarks,
     filters.status,
     isAuthenticated,
+    sortActive,
+    handleChangeSort,
+    handleChangeAccuracy,
+    climbType,
+    handleChangeClimbType,
+    handleToggleBeta,
     sheetOnlyFilterTokens,
   ]);
 

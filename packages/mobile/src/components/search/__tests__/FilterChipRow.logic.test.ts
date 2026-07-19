@@ -1,7 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import type { TFunction } from 'i18next';
-import { PROGRESS_FILTER_VALUES, progressToFlags } from '@boardsesh/climb-filters';
-import { popularityChipLabel, ratingChipLabel, progressFilterLabel, isProgressFilter } from '../FilterChipRow.logic';
+import { PROGRESS_FILTER_VALUES, progressToFlags, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
+import {
+  popularityChipLabel,
+  ratingChipLabel,
+  progressFilterLabel,
+  isProgressFilter,
+  sortChipLabel,
+  isSortOption,
+  accuracyChipLabel,
+  isAccuracyTag,
+  climbTypeChipLabel,
+  isClimbType,
+} from '../FilterChipRow.logic';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../../lib/filter-chip-menus';
 
 // Mirrors filter-labels.test.ts: the mock t returns the key (with interpolated
@@ -99,5 +110,60 @@ describe('progressToFlags (chip commit)', () => {
       showOnlyAttempted: undefined,
       showOnlyCompleted: undefined,
     });
+  });
+});
+
+// --- Tier-2 chip labels + tag guards. ---
+
+describe('sortChipLabel / isSortOption', () => {
+  it('labels a known sort key via the shared sort labels', () => {
+    expect(sortChipLabel('quality', mockT)).toBe('mobile.filter.sort.quality');
+  });
+
+  it('produces a non-empty label for every SORT_OPTIONS entry', () => {
+    for (const option of SORT_OPTIONS) expect(sortChipLabel(option, mockT).length).toBeGreaterThan(0);
+  });
+
+  it('accepts real sort keys and rejects a stray tag', () => {
+    for (const option of SORT_OPTIONS) expect(isSortOption(option)).toBe(true);
+    expect(isSortOption('sideways')).toBe(false);
+    expect(isSortOption('')).toBe(false);
+  });
+});
+
+describe('accuracyChipLabel / isAccuracyTag', () => {
+  it('maps both the raw "0" value and the "off" tag to the Off label', () => {
+    expect(accuracyChipLabel('0', mockT)).toBe('mobile.filter.accuracy.off');
+    expect(accuracyChipLabel('off', mockT)).toBe('mobile.filter.accuracy.off');
+  });
+
+  it('labels the loose/moderate/tight buckets', () => {
+    expect(accuracyChipLabel('0.2', mockT)).toBe('mobile.filter.accuracy.loose');
+    expect(accuracyChipLabel('0.1', mockT)).toBe('mobile.filter.accuracy.moderate');
+    expect(accuracyChipLabel('0.05', mockT)).toBe('mobile.filter.accuracy.tight');
+  });
+
+  it('accepts the chip tags ("off" + every non-zero accuracy value) and rejects others', () => {
+    expect(isAccuracyTag('off')).toBe(true);
+    for (const value of GRADE_ACCURACY_VALUES) {
+      // '0' is never a chip tag — it maps to 'off'.
+      if (value !== '0') expect(isAccuracyTag(value)).toBe(true);
+    }
+    expect(isAccuracyTag('0')).toBe(false);
+    expect(isAccuracyTag('0.99')).toBe(false);
+  });
+});
+
+describe('climbTypeChipLabel / isClimbType', () => {
+  it('labels each climb-type value', () => {
+    expect(climbTypeChipLabel('boulders', mockT)).toBe('mobile.filter.boulders');
+    expect(climbTypeChipLabel('routes', mockT)).toBe('mobile.filter.routes');
+    expect(climbTypeChipLabel('both', mockT)).toBe('mobile.filter.both');
+  });
+
+  it('accepts the three values and rejects others', () => {
+    for (const value of ['boulders', 'routes', 'both'] as const) expect(isClimbType(value)).toBe(true);
+    expect(isClimbType('slab')).toBe(false);
+    expect(isClimbType('')).toBe(false);
   });
 });

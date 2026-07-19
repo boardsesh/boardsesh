@@ -4,11 +4,11 @@
 // Android counterpart is FilterChipRow.android.tsx (native Jetpack Compose, the
 // Material default — see its header). Mounted by the caller; never on search focus.
 //
-// The always-visible facet chips follow the filter sheet's data-driven PRIMARY
-// importance order (the sheet's own comment: "the levers the analytics say carry
-// the product"): Grade → progress/benchmarks → popularity → min-rating. Sort
-// lives in the sheet's ADVANCED ("sub-2% long tail") and is intentionally NOT a
-// chip — it surfaces as a removable token when non-default.
+// Chips render in the fixed catalog order (lib/pinnable-chips.ts), gated on the
+// user's pinned set. Tier-1 chips (Grade, progress, Collection, shape, popularity,
+// min-rating) are pinned by default; Tier-2 chips (grade accuracy, climb type,
+// beta, sort) are opt-in and only appear once pinned in the sheet. An unpinned but
+// non-default control still surfaces as a removable token instead.
 //
 // One <Host> wraps a horizontal SwiftUI ScrollView + HStack of chips:
 //   Filters · N → opens the long-tail sheet (Button, no menu)
@@ -28,7 +28,7 @@ import { StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Host, HStack, ScrollView, Menu, Picker, Button, Text, Divider } from '@expo/ui/swift-ui';
 import { buttonStyle, controlSize, tint, tag, padding } from '@expo/ui/swift-ui/modifiers';
-import { PROGRESS_FILTER_VALUES } from '@boardsesh/climb-filters';
+import { PROGRESS_FILTER_VALUES, SORT_OPTIONS, GRADE_ACCURACY_VALUES } from '@boardsesh/climb-filters';
 import { getFilterKey } from '../../lib/recent-filter-store';
 import {
   POPULARITY_BUCKETS,
@@ -47,6 +47,12 @@ import {
   isProgressFilter,
   collectionChipLabel,
   isCollectionFilter,
+  sortChipLabel,
+  isSortOption,
+  accuracyChipLabel,
+  isAccuracyTag,
+  climbTypeChipLabel,
+  isClimbType,
 } from './FilterChipRow.logic';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
@@ -76,6 +82,15 @@ function FilterChipRowComponent({
   collection,
   onChangeCollection,
   canFilterDrafts,
+  sortBy,
+  sortActive,
+  onChangeSort,
+  accuracyValue,
+  onChangeAccuracy,
+  climbType,
+  onChangeClimbType,
+  betaActive,
+  onToggleBeta,
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
@@ -150,6 +165,29 @@ function FilterChipRowComponent({
             />
           ) : null}
 
+          {/* Grade accuracy ▾ — single-select over Off/Loose/Moderate/Tight; refines
+              how close a climb's difficulty must sit to the picked grade. Opt-in. */}
+          {pinnedChips.includes('accuracy') ? (
+            <Menu
+              label={accuracyValue === 'off' ? t('mobile.filter.accuracy.label') : accuracyChipLabel(accuracyValue, t)}
+              modifiers={chipModifiers(accuracyValue !== 'off')}
+            >
+              <Picker
+                selection={accuracyValue}
+                onSelectionChange={(value) => {
+                  if (typeof value !== 'string' || !isAccuracyTag(value)) return;
+                  onChangeAccuracy(value);
+                }}
+              >
+                {GRADE_ACCURACY_VALUES.map((value) => (
+                  <Text key={value} modifiers={[tag(value === '0' ? 'off' : value)]}>
+                    {accuracyChipLabel(value, t)}
+                  </Text>
+                ))}
+              </Picker>
+            </Menu>
+          ) : null}
+
           {/* Your progress ▾ — single-select over the four tick flags (auth-gated,
               the chip hides when signed out). [PRIMARY #2] — kept directly after
               Grade. Resting label is the dimension name; active shows the pick. */}
@@ -199,6 +237,29 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
+          {/* Climb type ▾ — Boulders / Routes / Both single-select. Default is
+              boulders-only, so the resting chip reads "Climb type" and is inactive. */}
+          {pinnedChips.includes('climbType') ? (
+            <Menu
+              label={climbType === 'boulders' ? t('mobile.filter.climbType') : climbTypeChipLabel(climbType, t)}
+              modifiers={chipModifiers(climbType !== 'boulders')}
+            >
+              <Picker
+                selection={climbType}
+                onSelectionChange={(value) => {
+                  if (typeof value !== 'string' || !isClimbType(value)) return;
+                  onChangeClimbType(value);
+                }}
+              >
+                {(['boulders', 'routes', 'both'] as const).map((value) => (
+                  <Text key={value} modifiers={[tag(value)]}>
+                    {climbTypeChipLabel(value, t)}
+                  </Text>
+                ))}
+              </Picker>
+            </Menu>
+          ) : null}
+
           {/* Tall / Wide — board-shape chips, present only on the Kilter homewall
               sizes where they apply (Wide on 10x10, Tall on 8x12, both on 10x12).
               A Menu with onPrimaryAction: TAP toggles the filter, LONG-PRESS opens
@@ -223,6 +284,16 @@ function FilterChipRowComponent({
                 />
               ))}
             </Menu>
+          ) : null}
+
+          {/* Beta videos — a plain on/off toggle (a content property, not a level).
+              A Button that flips on tap, like the old Benchmarks chip. Opt-in. */}
+          {pinnedChips.includes('beta') ? (
+            <Button
+              label={t('mobile.filter.betaVideos')}
+              onPress={onToggleBeta}
+              modifiers={chipModifiers(betaActive)}
+            />
           ) : null}
 
           {/* Popularity ▾ — min-ascents buckets; conflict-clear handled upstream.
@@ -268,6 +339,29 @@ function FilterChipRowComponent({
                 {RATING_BUCKETS.map((bucket) => (
                   <Text key={ratingTag(bucket)} modifiers={[tag(ratingTag(bucket))]}>
                     {ratingChipLabel(bucket, t)}
+                  </Text>
+                ))}
+              </Picker>
+            </Menu>
+          ) : null}
+
+          {/* Sort ▾ — single-select over the sort keys (direction stays a sheet-only
+              refinement). Picking Random reseeds a fresh shuffle. Opt-in, sits last. */}
+          {pinnedChips.includes('sort') ? (
+            <Menu
+              label={sortActive ? sortChipLabel(sortBy, t) : t('mobile.filter.sortBy')}
+              modifiers={chipModifiers(sortActive)}
+            >
+              <Picker
+                selection={sortBy}
+                onSelectionChange={(value) => {
+                  if (typeof value !== 'string' || !isSortOption(value)) return;
+                  onChangeSort(value);
+                }}
+              >
+                {SORT_OPTIONS.map((value) => (
+                  <Text key={value} modifiers={[tag(value)]}>
+                    {sortChipLabel(value, t)}
                   </Text>
                 ))}
               </Picker>

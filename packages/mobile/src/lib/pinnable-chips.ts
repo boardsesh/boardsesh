@@ -6,22 +6,44 @@
 // the store (pinned-chips-store.ts), the chip row, the sheet's pin toggles, and
 // the climbs screen's token dedup without pulling in React or native deps.
 //
-// v1 covers only controls that already render as chips. Adding the sheet-only
-// controls (setters, holds, zones, beta, sort, grade accuracy, climb type,
-// drafts) is a fast-follow that extends this catalog + a ChipDescriptor render.
+// The catalog grows one tier at a time. Tier 1 (grade…rating) are the controls
+// that already rendered as chips. Tier 2 adds the self-contained sheet-only
+// controls — sort, grade accuracy, climb type, beta — as opt-in chips (they are
+// NOT in the defaults, so the row is unchanged until a user pins one). The
+// remaining sheet-only controls (setters, holds, zones) are a later fast-follow
+// because they open a full picker rather than switching a value in place.
 
-export const PINNABLE_CHIP_KINDS = ['grade', 'progress', 'collection', 'shape', 'popularity', 'rating'] as const;
+export const PINNABLE_CHIP_KINDS = [
+  'grade',
+  'accuracy',
+  'progress',
+  'collection',
+  'climbType',
+  'shape',
+  'beta',
+  'popularity',
+  'rating',
+  'sort',
+] as const;
 
 export type PinnableChipKind = (typeof PINNABLE_CHIP_KINDS)[number];
 
 // Fixed canonical order the chips render in, regardless of pin/unpin sequence.
-// Matches today's hardcoded chip-row order so the default (all pinned) set is
-// visually identical to the current app.
+// Grouped to mirror the sheet's section order: accuracy sits by grade, climbType
+// by shape (both "The Climb"), beta after shape, sort last.
 export const PINNABLE_CHIP_CATALOG: readonly PinnableChipKind[] = PINNABLE_CHIP_KINDS;
 
-// Default pins = the whole catalog, so existing users see exactly today's row
-// until they opt to unpin something.
-export const DEFAULT_PINNED_CHIPS: readonly PinnableChipKind[] = PINNABLE_CHIP_CATALOG;
+// Default pins = exactly the Tier-1 chips, so existing users see the same row
+// they have today. The Tier-2 controls (accuracy, climbType, beta, sort) are
+// pinnable but opt-in — unpinned until a user turns them on in the sheet.
+export const DEFAULT_PINNED_CHIPS: readonly PinnableChipKind[] = [
+  'grade',
+  'progress',
+  'collection',
+  'shape',
+  'popularity',
+  'rating',
+];
 
 // Chips whose control is auth-gated (hidden when signed out), mirroring the
 // sheet + the chip row's `canFilterProgress`. The pin persists; only rendering
@@ -57,6 +79,14 @@ export function chipKindToTokenKeys(kind: PinnableChipKind): readonly string[] {
   switch (kind) {
     case 'grade':
       return ['grade'];
+    case 'accuracy':
+      return ['gradeAccuracy'];
+    case 'climbType':
+      return ['climbType'];
+    case 'beta':
+      return ['beta'];
+    case 'sort':
+      return ['sort'];
     case 'progress':
       return ['progress'];
     case 'collection':

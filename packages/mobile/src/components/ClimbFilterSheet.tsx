@@ -694,9 +694,12 @@ export function ClimbFilterSheet({
               />
 
               <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.accuracy.label')}
-              </Text>
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.accuracy.label')}
+                </Text>
+                <PinToggle kind="accuracy" />
+              </View>
               <Text variant="footnote" style={styles.subsectionDescription}>
                 {t('mobile.filter.accuracy.description')}
               </Text>
@@ -809,9 +812,12 @@ export function ClimbFilterSheet({
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.theClimb')}
               </Text>
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.climbType')}
-              </Text>
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.climbType')}
+                </Text>
+                <PinToggle kind="climbType" />
+              </View>
               <View style={styles.controlGap} />
               <SegmentedControl
                 options={climbTypeOptions}
@@ -916,11 +922,18 @@ export function ClimbFilterSheet({
                 </View>
               </Pressable>
 
-              {/* Beta videos — a content property of the climb, not a quality signal. */}
+              {/* Beta videos — a content property of the climb, not a quality signal.
+                  A group header carries the pin; the switch uses the descriptive line
+                  as its label so "Beta videos" isn't worded twice. */}
               <View style={styles.subsectionGap} />
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.betaVideos')}
+                </Text>
+                <PinToggle kind="beta" />
+              </View>
               <SwitchRow
-                label={t('mobile.filter.betaVideos')}
-                description={t('mobile.filter.betaVideosDescription')}
+                label={t('mobile.filter.betaVideosDescription')}
                 value={!!localFilters.onlyWithBetaVideos}
                 onValueChange={(value) => setFiltersPatch({ onlyWithBetaVideos: value || undefined })}
               />
@@ -931,9 +944,12 @@ export function ClimbFilterSheet({
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.sort')}
               </Text>
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.sortBy')}
-              </Text>
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.sortBy')}
+                </Text>
+                <PinToggle kind="sort" />
+              </View>
               {/* Flex-wrap (matching the popularity/rating chip rows above), not a
                   horizontal ScrollView: a gesture-handler ScrollView nested in the
                   native bottom sheet collapsed the chip row's height on iOS and
