@@ -23,7 +23,16 @@ const services = {
   },
   web: {
     dockerfile: 'Dockerfile.web',
-    rootPackageName: '@boardsesh/web',
+    // @boardsesh/mobile rides along because Dockerfile.web's builder stage runs
+    // the static Expo web export (served by Next at /app); the union walk pulls
+    // in the mobile app plus its transitive workspace deps.
+    rootPackageNames: ['@boardsesh/web', '@boardsesh/mobile'],
+    // Repo-root scripts the web image build needs, copied under source/scripts:
+    // the Expo web export recipe the Dockerfile invokes, plus the tailscale
+    // helper that packages/web/scripts/dev-with-tailscale.ts imports — Next's
+    // production type-check covers packages/web/scripts, so the module must
+    // resolve inside the build context.
+    extraSourceFiles: ['scripts/build-expo-web-export.sh', 'scripts/lib/tailscale-hostname.ts'],
   },
   sync: {
     dockerfile: 'Dockerfile.sync',
@@ -49,6 +58,14 @@ const ignoredDirectoryNames = new Set([
   'test-results',
 ]);
 const ignoredFileNames = new Set(['.DS_Store']);
+// Repo-relative directory paths to keep out of every context. Unlike
+// `ignoredDirectoryNames` (matched by basename, so it can't target `public/app`
+// without also dropping `packages/web/app` / `packages/mobile/app`), these match
+// the exact path from the repo root. `packages/web/public/app` is the default
+// local output of `vp run build:expo-web`; a stale copy must never ride into the
+// web image (it would ship the old shell at /app/index.html and defeat the
+// BOARDSESH_WEB=0 rollback). The Dockerfile.web builder rebuilds it from source.
+const ignoredRepoRelativePaths = new Set(['packages/web/public/app']);
 
 const toPosix = (filePath) => filePath.split(sep).join(posix.sep);
 const readJson = (filePath) => JSON.parse(readFileSync(filePath, 'utf8'));
@@ -157,24 +174,26 @@ function copyFileCreatingParent(sourcePath, destinationPath) {
   copyFileSync(sourcePath, destinationPath);
 }
 
-function shouldSkipSourceEntry(entryName, entryRelativePath, isDirectory) {
+function shouldSkipSourceEntry(entryName, entryRelativePath, repoRelativePath, isDirectory) {
   if (ignoredFileNames.has(entryName)) return true;
   if (isDirectory && ignoredDirectoryNames.has(entryName)) return true;
+  if (ignoredRepoRelativePaths.has(repoRelativePath)) return true;
   if (entryRelativePath.endsWith('.tsbuildinfo')) return true;
   return false;
 }
 
-function copyDirectory(sourceDirectory, destinationDirectory, rootSourceDirectory = sourceDirectory) {
+function copyDirectory(sourceDirectory, destinationDirectory, repoRoot, rootSourceDirectory = sourceDirectory) {
   mkdirSync(destinationDirectory, { recursive: true });
 
   for (const entry of readdirSync(sourceDirectory, { withFileTypes: true })) {
     const sourcePath = join(sourceDirectory, entry.name);
     const relativeSourcePath = toPosix(relative(rootSourceDirectory, sourcePath));
-    if (shouldSkipSourceEntry(entry.name, relativeSourcePath, entry.isDirectory())) continue;
+    const repoRelativePath = toPosix(relative(repoRoot, sourcePath));
+    if (shouldSkipSourceEntry(entry.name, relativeSourcePath, repoRelativePath, entry.isDirectory())) continue;
 
     const destinationPath = join(destinationDirectory, entry.name);
     if (entry.isDirectory()) {
-      copyDirectory(sourcePath, destinationPath, rootSourceDirectory);
+      copyDirectory(sourcePath, destinationPath, repoRoot, rootSourceDirectory);
     } else if (entry.isSymbolicLink()) {
       mkdirSync(dirname(destinationPath), { recursive: true });
       symlinkSync(readlinkSync(sourcePath), destinationPath);
@@ -234,7 +253,19 @@ function createServiceDockerContext({ serviceName, repoRoot = defaultRepoRoot, o
   }
 
   for (const packageDirectory of getServiceSourcePackageDirs(serviceName, absoluteRepoRoot)) {
-    copyDirectory(join(absoluteRepoRoot, packageDirectory), join(absoluteOutputDir, 'source', packageDirectory));
+    copyDirectory(
+      join(absoluteRepoRoot, packageDirectory),
+      join(absoluteOutputDir, 'source', packageDirectory),
+      absoluteRepoRoot,
+    );
+  }
+
+  for (const extraSourceFile of service.extraSourceFiles ?? []) {
+    const absoluteExtraSourcePath = join(absoluteRepoRoot, extraSourceFile);
+    if (!existsSync(absoluteExtraSourcePath)) {
+      throw new Error(`${serviceName} extra source file ${extraSourceFile} is missing`);
+    }
+    copyFileCreatingParent(absoluteExtraSourcePath, join(absoluteOutputDir, 'source', extraSourceFile));
   }
 
   return {

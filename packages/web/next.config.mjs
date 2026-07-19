@@ -123,6 +123,14 @@ const nextConfig = {
         headers: [{ key: 'X-Robots-Tag', value: 'noindex, follow' }],
       },
       {
+        // Exported Expo web bundles are content-hashed (entry-<hash>.js under
+        // _expo/static, md5-named files under assets/), so they can be cached
+        // forever. The SPA shell (/app/index.html) and the fixed-name WASM glue
+        // under /app/wasm keep the default no-store-ish behaviour on purpose.
+        source: '/app/:hashedDir(_expo|assets)/:path*',
+        headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
+      },
+      {
         // Every route EXCEPT /embed/** keeps the frame-denying default.
         // If this exclusion ever regresses, the fail-safe is SAMEORIGIN
         // (embeds break visibly rather than the whole site becoming frameable).
@@ -164,52 +172,77 @@ const nextConfig = {
 
     const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
     if (!expoWebOrigin) {
-      // BOARDSESH_WEB=1 with no BOARDSESH_EXPO_WEB_ORIGIN is a half-configured
-      // proxy: no /app rewrite is installed, so the middleware /app carve-out
-      // has nothing to forward to and /app 404s. Surface it instead of failing
-      // silently. Both env vars gate the rewrite (and the /assets middleware
-      // carve-out via isExpoWebProxyEnabled) — keep them set together.
-      console.warn(
-        '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — Expo web /app proxy is disabled.',
-      );
-      return [];
+      // In dev, BOARDSESH_WEB=1 with no BOARDSESH_EXPO_WEB_ORIGIN usually means
+      // a half-configured Metro proxy — surface it (the static-export fallback
+      // below still applies if public/app was built). In production this is the
+      // intended configuration: no Metro, serve the static export.
+      if (process.env.NODE_ENV === 'development') {
+        console.warn(
+          '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — Expo web /app dev proxy is disabled; serving the static export from public/app if present.',
+        );
+      }
+      // Production: no Metro to proxy to. The static Expo web export is copied
+      // into public/app (scripts/build-expo-web-export.sh; Dockerfile.web runs
+      // it in the builder stage), so real files — /app/_expo/* bundles,
+      // /app/assets/*, /app/wasm/* — are served straight from public/ before
+      // these afterFiles rewrites are consulted. Everything else under /app is
+      // an Expo Router SPA route and falls back to the exported shell. When the
+      // export was not built into the deploy, /app/index.html resolves to
+      // nothing and /app 404s — that absence is the rollback lever (see
+      // docs/expo-web-deployment.md).
+      return [
+        { source: '/app', destination: '/app/index.html' },
+        // SPA fallback for Expo Router routes ONLY. The content-hashed namespaces
+        // (_expo/, assets/) and the fixed-name WASM glue (wasm/) are excluded so a
+        // request for a missing hashed bundle 404s instead of falling through to
+        // the shell. Otherwise Next's headers() would stamp the index.html body
+        // with the immutable Cache-Control that matches the incoming .js/.wasm path
+        // (line 105), and a stale-shell or mid-deploy client would cache an HTML
+        // page at a bundle URL forever — permanently bricking that URL.
+        { source: '/app/:path((?!_expo/|assets/|wasm/).*)', destination: '/app/index.html' },
+      ];
     }
 
-    return [
-      {
-        source: '/app',
-        destination: `${expoWebOrigin}/app`,
-      },
-      {
-        // Expo serves public/ from its server root during `expo start`, while
-        // the production baseUrl makes browser imports point under /app.
-        // Resolve the committed WASM glue/binary before the SPA catch-all.
-        source: '/app/wasm/:path*',
-        destination: `${expoWebOrigin}/wasm/:path*`,
-      },
-      {
-        source: '/app/:path*',
-        destination: `${expoWebOrigin}/app/:path*`,
-      },
-      {
-        // Expo's development shell emits the Metro entry URL from the
-        // monorepo-relative module path even when baseUrl is /app. Keep that
-        // narrow namespace on the same browser origin while forwarding it to
-        // Metro; application/API routes remain owned by Next.
-        source: '/packages/mobile/:path*',
-        destination: `${expoWebOrigin}/packages/mobile/:path*`,
-      },
-      {
-        // Metro serves vector-icon fonts and other resolved module assets from
-        // this query-driven endpoint (for example `/assets?unstable_path=...`).
-        source: '/assets',
-        destination: `${expoWebOrigin}/assets`,
-      },
-      {
-        source: '/assets/:path*',
-        destination: `${expoWebOrigin}/assets/:path*`,
-      },
-    ];
+    // Development: proxy /app (and Metro's support namespaces) to the Expo dev
+    // server. beforeFiles, not the default afterFiles, so a stale local export
+    // sitting in public/app can never shadow Metro while the proxy is active.
+    return {
+      beforeFiles: [
+        {
+          source: '/app',
+          destination: `${expoWebOrigin}/app`,
+        },
+        {
+          // Expo serves public/ from its server root during `expo start`, while
+          // the production baseUrl makes browser imports point under /app.
+          // Resolve the committed WASM glue/binary before the SPA catch-all.
+          source: '/app/wasm/:path*',
+          destination: `${expoWebOrigin}/wasm/:path*`,
+        },
+        {
+          source: '/app/:path*',
+          destination: `${expoWebOrigin}/app/:path*`,
+        },
+        {
+          // Expo's development shell emits the Metro entry URL from the
+          // monorepo-relative module path even when baseUrl is /app. Keep that
+          // narrow namespace on the same browser origin while forwarding it to
+          // Metro; application/API routes remain owned by Next.
+          source: '/packages/mobile/:path*',
+          destination: `${expoWebOrigin}/packages/mobile/:path*`,
+        },
+        {
+          // Metro serves vector-icon fonts and other resolved module assets from
+          // this query-driven endpoint (for example `/assets?unstable_path=...`).
+          source: '/assets',
+          destination: `${expoWebOrigin}/assets`,
+        },
+        {
+          source: '/assets/:path*',
+          destination: `${expoWebOrigin}/assets/:path*`,
+        },
+      ],
+    };
   },
   async redirects() {
     return [

@@ -87,6 +87,9 @@ packages/web/public/uploads
 
 # generated API documentation
 packages/web/public/openapi.json
+
+# static Expo web export served at /app (scripts/build-expo-web-export.sh)
+packages/web/public/app
 .claude/settings.local.json
 packages/db/docker/tmp/g
 packages/db/docker/tmp/

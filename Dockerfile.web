@@ -27,6 +27,9 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# bash runs scripts/build-expo-web-export.sh (repo scripts are bash, not sh)
+RUN apk add --no-cache bash
+
 # Copy bun binary from deps stage (avoid re-downloading)
 COPY --from=deps /root/.bun/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
@@ -35,16 +38,51 @@ RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 COPY --from=deps /app/node_modules ./node_modules
 
 # Source-only edits land after install, so they do not invalidate the dependency layer.
+# The full workspace manifest set comes first: the lockfile spans every
+# workspace, while source/ only carries this service's packages, so the frozen
+# relink below needs the remaining package.json stubs to accept the lockfile.
+# source/packages then overwrites its subset with identical manifests + source.
+COPY manifests/packages ./packages
 COPY source/package.json source/bun.lock ./
 COPY source/patches ./patches
 COPY source/packages ./packages
+COPY source/scripts ./scripts
+
+# Bun's isolated linker resolves workspace deps through per-package symlink
+# farms (packages/*/node_modules -> ../../node_modules/.bun). The deps stage
+# created them next to the manifests, but only the root node_modules (with the
+# .bun store) crosses the stage boundary, so relink before the Expo export
+# resolves modules from the source tree — `bunx expo` must find the workspace's
+# pinned expo, never fall back to fetching a floating version.
+RUN bun install --frozen-lockfile
 
 # Accept build arguments for environment variables baked into the Next.js build
 ARG NEXT_PUBLIC_WS_URL
 ARG BASE_URL
+# BOARDSESH_WEB=1 turns on the Expo web export below AND the /app serving
+# branch that next.config.mjs bakes into the standalone build. Rollback lever:
+# build with --build-arg BOARDSESH_WEB=0 to ship an image without the Expo web
+# app — /app then 404s while the rest of the site is untouched.
+ARG BOARDSESH_WEB=1
 
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV BASE_URL=$BASE_URL
+ENV BOARDSESH_WEB=$BOARDSESH_WEB
+
+# Static Expo web export served by Next at /app. The nested web-runtime install
+# supplies the web-only renderer (react-native-web, react-dom, the gorhom sheet)
+# outside the native fingerprint graph — the export script runs it when missing.
+# The export lands in packages/web/public/app, which the runner stage picks up
+# through the existing public/ COPY and Next's standalone server then serves
+# statically. EXPO_PUBLIC_WEB_URL feeds the Expo Router head origin; the app's
+# runtime URLs (backend/WS) fall back to production defaults in src/lib/env.ts.
+# Only export EXPO_PUBLIC_WEB_URL when BASE_URL is non-empty: Expo inlines
+# EXPO_PUBLIC_* values verbatim, and a set-but-empty value would override the
+# production fallback in src/lib/env.ts with ''.
+RUN if [ "$BOARDSESH_WEB" = "1" ]; then \
+      if [ -n "$BASE_URL" ]; then export EXPO_PUBLIC_WEB_URL="$BASE_URL"; fi; \
+      bash scripts/build-expo-web-export.sh packages/web/public/app; \
+    fi
 
 # Build the Next.js application (standalone output)
 RUN bun run --filter=@boardsesh/web build
@@ -55,6 +93,16 @@ FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+
+# BOARDSESH_WEB is read at REQUEST time by the standalone server, not just at
+# build: app/layout.tsx gates the Expo auth session bridge on it
+# (enableExpoAuthBridge) and middleware.ts gates the /app dev proxy. The builder
+# ARG/ENV above does not cross the stage boundary, so redeclare it here or the
+# runtime flag is undefined and the bridge stays off even though /app is served.
+# The default mirrors the builder so a single --build-arg BOARDSESH_WEB=0
+# rollback disables both the export AND the runtime bridge consistently.
+ARG BOARDSESH_WEB=1
+ENV BOARDSESH_WEB=$BOARDSESH_WEB
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
