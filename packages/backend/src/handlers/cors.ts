@@ -11,8 +11,22 @@ const DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX = 'marcodejonghs-projects.vercel.app'
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+// A real Vercel project host: at least one label before `.vercel.app`. Rejects a
+// bare `vercel.app`, which would allow every deployment on the platform.
+const VERCEL_PROJECT_SUFFIX_REGEX = /^([a-z0-9-]+\.)+vercel\.app$/i;
 function buildVercelPreviewRegex(): RegExp {
-  const suffix = process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX?.trim() || DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX;
+  const configured = process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX?.trim();
+  let suffix = DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX;
+  if (configured) {
+    if (VERCEL_PROJECT_SUFFIX_REGEX.test(configured)) {
+      suffix = configured;
+    } else {
+      logger.warn(
+        `[CORS] Ignoring invalid VERCEL_PREVIEW_ORIGIN_SUFFIX "${configured}" ` +
+          '(must be a Vercel project host like team.vercel.app, not a bare vercel.app); using the default.',
+      );
+    }
+  }
   return new RegExp(`^https://boardsesh-[a-z0-9]+-${escapeRegExp(suffix)}$`);
 }
 let vercelPreviewRegex = buildVercelPreviewRegex();

@@ -99,6 +99,20 @@ describe('CORS Handler', () => {
       delete process.env.DEV_ALLOWED_ORIGINS;
     });
 
+    it('rejects a bare vercel.app suffix and falls back to the default', () => {
+      process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX = 'vercel.app';
+      initCors('https://boardsesh.com');
+      try {
+        // A bare suffix would allow every deployment on Vercel — must be ignored.
+        expect(isOriginAllowed('https://boardsesh-abc-vercel.app')).toBe(false);
+        // The default project suffix keeps working.
+        expect(isOriginAllowed('https://boardsesh-abc123-marcodejonghs-projects.vercel.app')).toBe(true);
+      } finally {
+        delete process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX;
+        initCors('https://boardsesh.com');
+      }
+    });
+
     it('normalizes a DEV_ALLOWED_ORIGINS entry to its bare origin', () => {
       process.env.DEV_ALLOWED_ORIGINS = 'http://192.168.0.4:3000/some/path';
       initCors('https://boardsesh.com');
