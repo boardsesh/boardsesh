@@ -1,6 +1,7 @@
 import { createVerify, generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  AppStoreConnectClient,
   buildIssueDraft,
   chunkText,
   createAppStoreConnectJwt,
@@ -214,5 +215,67 @@ describe('syncTestFlightFeedback', () => {
     expect(result).toEqual({ created: 0, dryRun: 1, skippedExisting: 0 });
     expect(issueExists).not.toHaveBeenCalled();
     expect(createIssue).not.toHaveBeenCalled();
+  });
+});
+
+describe('AppStoreConnectClient.listCrashFeedback', () => {
+  const crashListResponse = {
+    data: [
+      {
+        attributes: { comment: 'Crashes on launch', createdDate: '2026-06-11T00:00:00Z', deviceModel: 'iPhone 15' },
+        id: 'crash-404',
+        relationships: { build: { data: { id: 'build-1', type: 'builds' } } },
+        type: 'betaFeedbackCrashSubmissions',
+      },
+    ],
+    included: [{ attributes: { uploadedDate: '2026-06-10T10:00:00Z', version: '42' }, id: 'build-1', type: 'builds' }],
+  };
+  const listOptions = { maxPages: 1, pageLimit: 100, since: new Date('2026-06-10T00:00:00Z') };
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), { status, statusText: status === 200 ? 'OK' : 'Error' });
+  }
+
+  it('treats a 404 crash log as unavailable and keeps the submission', async () => {
+    const warn = vi.fn();
+    const fetcher = vi.fn(async (input: string | URL) => {
+      if (new URL(input).pathname.endsWith('/crashLog')) {
+        return jsonResponse({ errors: [{ code: 'NOT_FOUND', status: '404' }] }, 404);
+      }
+      return jsonResponse(crashListResponse);
+    });
+
+    const client = new AppStoreConnectClient({
+      apiBase: 'https://api.appstoreconnect.example',
+      fetcher,
+      logger: { error: vi.fn(), log: vi.fn(), warn },
+      token: 'test-token',
+    });
+
+    const feedback = await client.listCrashFeedback('app-1', listOptions);
+
+    expect(feedback).toHaveLength(1);
+    expect(feedback[0].id).toBe('crash-404');
+    expect(feedback[0].crashLog).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0][0]).toContain('crash-404');
+  });
+
+  it('still throws when the crash log fetch fails with a non-404 status', async () => {
+    const fetcher = vi.fn(async (input: string | URL) => {
+      if (new URL(input).pathname.endsWith('/crashLog')) {
+        return jsonResponse({ errors: [{ status: '500' }] }, 500);
+      }
+      return jsonResponse(crashListResponse);
+    });
+
+    const client = new AppStoreConnectClient({
+      apiBase: 'https://api.appstoreconnect.example',
+      fetcher,
+      logger: { error: vi.fn(), log: vi.fn(), warn: vi.fn() },
+      token: 'test-token',
+    });
+
+    await expect(client.listCrashFeedback('app-1', listOptions)).rejects.toThrow(/500/);
   });
 });

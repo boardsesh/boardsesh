@@ -286,15 +286,17 @@ async function readJsonResponse<T>(response: Response, context: string): Promise
   return JSON.parse(bodyText) as T;
 }
 
-class AppStoreConnectClient implements FeedbackSource {
+export class AppStoreConnectClient implements FeedbackSource {
   private readonly fetcher: Fetcher;
   private readonly token: string;
   private readonly apiBase: string;
+  private readonly logger: Logger;
 
-  constructor(args: { fetcher?: Fetcher; token: string; apiBase?: string }) {
+  constructor(args: { fetcher?: Fetcher; token: string; apiBase?: string; logger?: Logger }) {
     this.fetcher = args.fetcher ?? fetch;
     this.token = args.token;
     this.apiBase = args.apiBase ?? APP_STORE_CONNECT_API_BASE;
+    this.logger = args.logger ?? console;
   }
 
   async resolveAppId(bundleId: string): Promise<string> {
@@ -341,8 +343,18 @@ class AppStoreConnectClient implements FeedbackSource {
   private async readCrashLog(submissionId: string): Promise<string | null> {
     const url = this.apiUrl(`/v1/betaFeedbackCrashSubmissions/${submissionId}/crashLog`);
     url.searchParams.set('fields[betaCrashLogs]', 'logText');
-    const response = await this.fetchJson<JsonApiSingleResponse<BetaCrashLogResource>>(url);
-    return response.data.attributes?.logText ?? null;
+    const response = await this.fetchRaw(url);
+    // App Store Connect sometimes drops the crash log for a submission (404 NOT_FOUND on the
+    // crashLog sub-resource). Treat a missing log as unavailable so one gap does not abort the
+    // whole sync; genuine failures (auth, outages, other statuses) still throw via readJsonResponse.
+    if (response.status === 404) {
+      this.logger.warn(
+        `[testflight-feedback] Crash log unavailable for submission ${submissionId} (App Store Connect returned 404); continuing without it`,
+      );
+      return null;
+    }
+    const parsed = await readJsonResponse<JsonApiSingleResponse<BetaCrashLogResource>>(response, url.pathname);
+    return parsed.data.attributes?.logText ?? null;
   }
 
   private async listFeedbackResources<TResource extends { id: string; attributes?: { createdDate?: string } }>(args: {
@@ -390,13 +402,17 @@ class AppStoreConnectClient implements FeedbackSource {
     return new URL(path, this.apiBase);
   }
 
-  private async fetchJson<T>(url: URL): Promise<T> {
-    const response = await this.fetcher(url, {
+  private async fetchRaw(url: URL): Promise<Response> {
+    return this.fetcher(url, {
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${this.token}`,
       },
     });
+  }
+
+  private async fetchJson<T>(url: URL): Promise<T> {
+    const response = await this.fetchRaw(url);
     return readJsonResponse<T>(response, url.pathname);
   }
 }
@@ -981,7 +997,7 @@ async function runCli(argv: string[], env: NodeJS.ProcessEnv, logger: Logger): P
     const githubToken = cliOptions.dryRun ? null : getRequiredEnv('GITHUB_TOKEN', env);
     const since = cliOptions.since ?? new Date(Date.now() - cliOptions.lookbackHours * 60 * 60 * 1000);
 
-    const feedbackSource = new AppStoreConnectClient({ token });
+    const feedbackSource = new AppStoreConnectClient({ logger, token });
     const issueSink = githubToken
       ? new GitHubIssueClient({ repositoryFullName: cliOptions.githubRepository, token: githubToken })
       : dryRunIssueSink();
