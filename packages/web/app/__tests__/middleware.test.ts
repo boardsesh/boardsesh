@@ -269,6 +269,20 @@ describe('middleware session redirect', () => {
 });
 
 describe('middleware Expo web carve-out', () => {
+  const originalNextAuthUrl = process.env.NEXTAUTH_URL;
+
+  beforeEach(() => {
+    process.env.BOARDSESH_WEB = '1';
+    delete process.env.NEXTAUTH_URL;
+  });
+
+  afterEach(() => {
+    if (originalExpoWebFlag === undefined) delete process.env.BOARDSESH_WEB;
+    else process.env.BOARDSESH_WEB = originalExpoWebFlag;
+    if (originalNextAuthUrl === undefined) delete process.env.NEXTAUTH_URL;
+    else process.env.NEXTAUTH_URL = originalNextAuthUrl;
+  });
+
   it.each(['/app', '/app/(tabs)/climbs', '/APP/play'])('keeps %s on the unprefixed path', (path) => {
     const request = makeRequest(path);
     request.cookies.set(LOCALE_COOKIE, 'es');
@@ -282,8 +296,26 @@ describe('middleware Expo web carve-out', () => {
     expect(response.headers.get('x-robots-tag')).toBe('noindex, follow');
     expect(response.headers.get('x-frame-options')).toBe('SAMEORIGIN');
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(response.headers.get('strict-transport-security')).toBe('max-age=31536000; includeSubDomains');
     expect(response.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
+    // Insecure (local http) context: no HSTS.
+    expect(response.headers.has('strict-transport-security')).toBe(false);
+  });
+
+  it('sets HSTS on /app in a secure (HTTPS) context', () => {
+    process.env.NEXTAUTH_URL = 'https://www.boardsesh.com';
+
+    const response = middleware(makeRequest('/app'));
+
+    expect(response.headers.get('strict-transport-security')).toBe('max-age=31536000; includeSubDomains');
+  });
+
+  it('leaves /app to normal routing when Expo web is not enabled', () => {
+    delete process.env.BOARDSESH_WEB;
+
+    const response = middleware(makeRequest('/app'));
+
+    // No Expo carve-out: the utility headers are not applied.
+    expect(response.headers.has('x-robots-tag')).toBe(false);
   });
 
   it('does not consume legacy session query parameters under /app', () => {

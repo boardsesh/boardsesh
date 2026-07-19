@@ -25,8 +25,18 @@ const LOCALE_PREFIXED_EMBED_PATTERN = new RegExp(
   'i',
 );
 
+// Expo web owns /app whenever the app is enabled — in dev via the Metro proxy,
+// and in a static-serve deployment (no proxy origin) too. Scoped narrower than
+// the general middleware so a deployment without Expo web leaves /app to normal
+// routing.
+function isExpoWebEnabled(): boolean {
+  return process.env.BOARDSESH_WEB === '1';
+}
+
+// The /assets and /packages/mobile Metro namespaces only exist behind the dev
+// proxy, so they additionally require the proxy origin.
 function isExpoWebProxyEnabled(): boolean {
-  return process.env.BOARDSESH_WEB === '1' && Boolean(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
+  return isExpoWebEnabled() && Boolean(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
 }
 
 export function middleware(request: NextRequest) {
@@ -44,7 +54,7 @@ export function middleware(request: NextRequest) {
   // Bypass sticky-locale and legacy session handling so the Next rewrite keeps
   // this exact path and the HttpOnly NextAuth cookie remains same-origin.
   const lowercasePathname = pathname.toLowerCase();
-  if (lowercasePathname === '/app' || lowercasePathname.startsWith('/app/')) {
+  if (isExpoWebEnabled() && (lowercasePathname === '/app' || lowercasePathname.startsWith('/app/'))) {
     const expoWebRequestHeaders = new Headers(request.headers);
     expoWebRequestHeaders.set(LOCALE_HEADER, DEFAULT_LOCALE);
     const expoWebResponse = NextResponse.next({ request: { headers: expoWebRequestHeaders } });
@@ -58,8 +68,13 @@ export function middleware(request: NextRequest) {
     // Metro repeats these headers so direct development requests match.
     expoWebResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
     expoWebResponse.headers.set('X-Content-Type-Options', 'nosniff');
-    expoWebResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     expoWebResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // HSTS only in a secure (HTTPS) context — matching the climb-session cookie's
+    // Secure gate. Over local http it's ignored anyway, and Metro deliberately
+    // never sends it for direct dev requests.
+    if (isSecureCookieContext()) {
+      expoWebResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
     return expoWebResponse;
   }
 

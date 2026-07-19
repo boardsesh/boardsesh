@@ -39,6 +39,9 @@ describe('Expo web response headers', () => {
     for (const [name, value] of Object.entries(EXPO_WEB_SECURITY_HEADERS)) {
       expect(setHeader).toHaveBeenCalledWith(name, value);
     }
+    // Metro serves dev over http://localhost, so it must never send HSTS.
+    expect(EXPO_WEB_SECURITY_HEADERS['Strict-Transport-Security']).toBeUndefined();
+    expect(setHeader).not.toHaveBeenCalledWith('Strict-Transport-Security', expect.anything());
   });
 
   it('does not change native Metro responses', () => {

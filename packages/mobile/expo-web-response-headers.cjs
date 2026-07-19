@@ -1,10 +1,17 @@
 const EXPO_WEB_ROBOTS_VALUE = 'noindex, follow';
+// Always-on security headers. HSTS is intentionally NOT here: it only makes
+// sense over HTTPS, and Metro serves dev requests over http://localhost, where a
+// Strict-Transport-Security header is at best ignored and at worst poisons other
+// localhost http services. The web middleware sets HSTS on /app itself, gated on
+// a secure context (see EXPO_WEB_STRICT_TRANSPORT_SECURITY below).
 const EXPO_WEB_SECURITY_HEADERS = {
   'X-Frame-Options': 'SAMEORIGIN',
   'X-Content-Type-Options': 'nosniff',
-  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
 };
+// The HSTS value the web middleware applies in a secure (HTTPS) context. Kept
+// here so the middleware↔Metro parity test has one source for it.
+const EXPO_WEB_STRICT_TRANSPORT_SECURITY = 'max-age=31536000; includeSubDomains';
 
 function isExpoWebAppRequest(webFlag, rawUrl) {
   if (webFlag !== '1' || !rawUrl) return false;
@@ -25,6 +32,7 @@ function applyExpoWebResponseHeaders(response, webFlag, rawUrl) {
 module.exports = {
   EXPO_WEB_ROBOTS_VALUE,
   EXPO_WEB_SECURITY_HEADERS,
+  EXPO_WEB_STRICT_TRANSPORT_SECURITY,
   applyExpoWebResponseHeaders,
   isExpoWebAppRequest,
 };
