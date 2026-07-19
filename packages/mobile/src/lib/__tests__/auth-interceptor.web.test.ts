@@ -87,38 +87,75 @@ describe('authenticatedFetch on web', () => {
     await expect(getAuthToken()).resolves.toBe('old-jwe');
   });
 
-  it('stops after a second 401 and invalidates the confirmed bad browser session', async () => {
+  it('signs out after a second 401 once the session is confirmed dead', async () => {
     await primeToken();
     const forcedSignOut = vi.fn();
     setOnForcedSignOut(forcedSignOut);
-    fetchMock
-      .mockResolvedValueOnce(new Response(null, { status: 401 }))
-      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
-      .mockResolvedValueOnce(authenticatedBridgeResponse('new-jwe'))
-      .mockResolvedValueOnce(new Response(null, { status: 401 }))
-      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
-      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
-      .mockResolvedValueOnce(jsonResponse({ url: '/app' }));
+    let sessionCalls = 0;
+    fetchMock.mockImplementation((url: string | URL | Request) => {
+      if (url === '/graphql') return Promise.resolve(new Response(null, { status: 401 }));
+      if (url === '/api/auth/session') {
+        sessionCalls += 1;
+        // The first refresh confirms authenticated (driving the retry); every
+        // read after the retry-401 sees an anonymous cookie.
+        return Promise.resolve(
+          sessionCalls === 1 ? jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }) : jsonResponse({}),
+        );
+      }
+      if (url === '/api/internal/ws-auth') return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
+      if (url === '/api/auth/csrf') return Promise.resolve(jsonResponse({ csrfToken: 'csrf-token' }));
+      if (url === '/api/auth/signout') return Promise.resolve(jsonResponse({ url: '/app' }));
+      return Promise.resolve(new Response(null, { status: 401 }));
+    });
 
     const response = await authenticatedFetch('/graphql');
 
     expect(response.status).toBe(401);
-    expect(fetchMock).toHaveBeenCalledTimes(7);
     expect(forcedSignOut).toHaveBeenCalledTimes(1);
     await expect(getAuthToken()).resolves.toBeNull();
   });
 
-  it('still runs provider cleanup when durable forced sign-out cannot reach the CSRF endpoint', async () => {
+  it('does not sign out on a second 401 that is a permission denial, not a dead session', async () => {
     await primeToken();
     const forcedSignOut = vi.fn();
     setOnForcedSignOut(forcedSignOut);
-    fetchMock
-      .mockResolvedValueOnce(new Response(null, { status: 401 }))
-      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
-      .mockResolvedValueOnce(authenticatedBridgeResponse('new-jwe'))
-      .mockResolvedValueOnce(new Response(null, { status: 401 }))
-      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
-      .mockRejectedValueOnce(new Error('offline'));
+    fetchMock.mockImplementation((url: string | URL | Request) => {
+      if (url === '/graphql') return Promise.resolve(new Response(null, { status: 401 }));
+      if (url === '/api/auth/session')
+        return Promise.resolve(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }));
+      if (url === '/api/internal/ws-auth') return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
+      return Promise.resolve(new Response(null, { status: 401 }));
+    });
+
+    const response = await authenticatedFetch('/graphql');
+
+    expect(response.status).toBe(401);
+    // The cookie and bridge both still authenticate — a permission-401 must not
+    // log the user out.
+    expect(forcedSignOut).not.toHaveBeenCalled();
+    await expect(getAuthToken()).resolves.toBe('new-jwe');
+  });
+
+  it('still runs provider cleanup when durable forced sign-out cannot verify the cookie', async () => {
+    await primeToken();
+    const forcedSignOut = vi.fn();
+    setOnForcedSignOut(forcedSignOut);
+    let sessionCalls = 0;
+    fetchMock.mockImplementation((url: string | URL | Request) => {
+      if (url === '/graphql') return Promise.resolve(new Response(null, { status: 401 }));
+      if (url === '/api/internal/ws-auth') return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
+      if (url === '/api/auth/session') {
+        sessionCalls += 1;
+        // 1: refresh confirms authenticated; 2: post-retry confirmation is
+        // anonymous; 3: the durable sign-out's cookie check goes offline.
+        if (sessionCalls === 1) {
+          return Promise.resolve(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }));
+        }
+        if (sessionCalls === 2) return Promise.resolve(jsonResponse({}));
+        return Promise.reject(new Error('offline'));
+      }
+      return Promise.resolve(new Response(null, { status: 401 }));
+    });
 
     const response = await authenticatedFetch('/graphql');
 

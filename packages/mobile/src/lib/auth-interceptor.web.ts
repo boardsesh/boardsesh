@@ -142,11 +142,15 @@ export async function authenticatedFetch(url: string | URL | Request, options: R
       const retryHeaders = new Headers(headers);
       retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);
       const retryResponse = await fetch(url, { ...options, headers: retryHeaders });
-      if (retryResponse.status === 401) {
+      if (retryResponse.status === 401 && isAuthCredentialGenerationCurrent(requestGeneration)) {
         // The cookie and bridge endpoint both said authenticated, but the
-        // backend rejected that freshly resolved token too. Stop after one
-        // retry and invalidate the browser session rather than looping.
-        await forceSignOut(requestGeneration);
+        // backend rejected that freshly resolved token too. A 401 can mean the
+        // session is dead OR that this request simply lacked permission for the
+        // resource — re-confirm the session before signing out, so a
+        // permission-401 never logs the user out. Only a confirmed-anonymous
+        // cookie triggers sign-out.
+        const confirmation = await deduplicatedSessionRefresh();
+        if (confirmation.status === 'anonymous') await forceSignOut(confirmation.generation);
       }
       return retryResponse;
     }
