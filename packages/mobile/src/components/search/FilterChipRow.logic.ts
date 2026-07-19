@@ -12,8 +12,26 @@
 
 import type { TFunction } from 'i18next';
 import { formatMinAscentsFilterCount, PROGRESS_FILTER_VALUES, type ProgressFilter } from '@boardsesh/climb-filters';
+import type { CollectionFilter } from '../../lib/collection-filter';
 
 export { progressFilterLabel } from '../../lib/filter-labels';
+export { isCollectionFilter } from '../../lib/collection-filter';
+
+/**
+ * Label for the "Collection" single-select: the chip shows "Benchmarks" / "My
+ * drafts" when active, and "Any" for the neutral value (the resting chip uses the
+ * group name "Collection" instead — see the call site).
+ */
+export function collectionChipLabel(value: CollectionFilter, t: TFunction<'climbs'>): string {
+  switch (value) {
+    case 'benchmarks':
+      return t('mobile.filter.benchmark');
+    case 'drafts':
+      return t('mobile.filter.drafts');
+    case 'any':
+      return t('mobile.filter.collection.any');
+  }
+}
 
 /**
  * Narrows a raw native-picker tag to a {@link ProgressFilter}. The iOS Picker

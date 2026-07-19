@@ -663,6 +663,10 @@
       },
       "popularity": "Popularity",
       "shape": "Shape",
+      "collection": {
+        "label": "Collection",
+        "any": "Any"
+      },
       "pin": "Pin to shortcuts",
       "unpin": "Remove from shortcuts",
       "established2plus": "Established 2+",

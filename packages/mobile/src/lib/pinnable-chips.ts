@@ -10,7 +10,7 @@
 // controls (setters, holds, zones, beta, sort, grade accuracy, climb type,
 // drafts) is a fast-follow that extends this catalog + a ChipDescriptor render.
 
-export const PINNABLE_CHIP_KINDS = ['grade', 'progress', 'benchmarks', 'shape', 'popularity', 'rating'] as const;
+export const PINNABLE_CHIP_KINDS = ['grade', 'progress', 'collection', 'shape', 'popularity', 'rating'] as const;
 
 export type PinnableChipKind = (typeof PINNABLE_CHIP_KINDS)[number];
 
@@ -59,7 +59,11 @@ export function chipKindToTokenKeys(kind: PinnableChipKind): readonly string[] {
       return ['grade'];
     case 'progress':
       return ['progress'];
-    case 'benchmarks':
+    case 'collection':
+      // The onlyBenchmarks token. The Collection chip also owns My drafts
+      // (status='drafts'), whose token key `status` is shared with the Popularity
+      // group's "Unrepeated" (status='projects'), so it's left unclaimed here — a
+      // drafts token can still show alongside a pinned Collection chip (rare).
       return ['benchmark'];
     case 'shape':
       return ['tall', 'wide'];

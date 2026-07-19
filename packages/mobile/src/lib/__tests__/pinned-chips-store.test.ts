@@ -50,9 +50,9 @@ describe('pinned-chips-store', () => {
   });
 
   it('drops unknown kinds from a stored payload', async () => {
-    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'setters', 'benchmarks']));
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'setters', 'collection']));
     const { loadPinnedChips } = await import('../pinned-chips-store');
-    expect(await loadPinnedChips()).toEqual(['grade', 'benchmarks']);
+    expect(await loadPinnedChips()).toEqual(['grade', 'collection']);
   });
 
   it('falls back to defaults for an empty stored array (never a blank row)', async () => {
@@ -64,7 +64,7 @@ describe('pinned-chips-store', () => {
   it('togglePin removes a pinned kind and persists the canonical-ordered rest', async () => {
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
     await loadPinnedChips();
-    await togglePinnedChip('benchmarks');
+    await togglePinnedChip('collection');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
     expect(JSON.parse(raw as string)).toEqual(['grade', 'progress', 'shape', 'popularity', 'rating']);
   });
@@ -73,10 +73,10 @@ describe('pinned-chips-store', () => {
     (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'rating']));
     const { loadPinnedChips, togglePinnedChip } = await import('../pinned-chips-store');
     await loadPinnedChips();
-    await togglePinnedChip('benchmarks');
+    await togglePinnedChip('collection');
     const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
-    // benchmarks slots between grade and rating per catalog order, not at the end.
-    expect(JSON.parse(raw as string)).toEqual(['grade', 'benchmarks', 'rating']);
+    // collection slots between grade and rating per catalog order, not at the end.
+    expect(JSON.parse(raw as string)).toEqual(['grade', 'collection', 'rating']);
   });
 
   it('a set before load wins over the persisted value (no clobber on race)', async () => {

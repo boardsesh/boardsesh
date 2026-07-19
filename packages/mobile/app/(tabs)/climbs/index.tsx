@@ -15,6 +15,7 @@ import {
   describeGradeFilter,
   flagsToProgress,
   progressToFlags,
+  applyStatusChange,
   DEFAULT_CLIMB_FILTER_STATE,
   DEFAULT_CLIMB_BOARD_FILTER_STATE,
   type ClimbBoardFilterState,
@@ -34,6 +35,7 @@ import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
 import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
 import { usePinnedChips } from '../../../src/lib/pinned-chips-store';
+import { getCollectionFilter, type CollectionFilter } from '../../../src/lib/collection-filter';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
@@ -1056,9 +1058,16 @@ function ClimbListInner() {
     (value: ProgressFilter) => patchFilters(progressToFlags(value)),
     [patchFilters],
   );
-  const handleToggleBenchmarks = useCallback(
-    (next: boolean) => patchBoardFilters({ onlyBenchmarks: next || undefined }),
-    [patchBoardFilters],
+  // Collection — Benchmarks (board filter) + My drafts (status), mutually
+  // exclusive. Sets one, clears the other; only a lingering 'drafts' status is
+  // cleared (projects/Unrepeated lives in Popularity and can coexist).
+  const handleChangeCollection = useCallback(
+    (value: CollectionFilter) => {
+      patchBoardFilters({ onlyBenchmarks: value === 'benchmarks' || undefined });
+      if (value === 'drafts') patchFilters(applyStatusChange(filters, 'drafts'));
+      else if (filters.status === 'drafts') patchFilters(applyStatusChange(filters, 'any'));
+    },
+    [patchBoardFilters, patchFilters, filters],
   );
   // Tall/Wide chips appear on any board whose active size has a shorter/narrower
   // size in its product family — Kilter Homewall & Original, Tension Board 2,
@@ -1172,8 +1181,9 @@ function ClimbListInner() {
           progress={flagsToProgress(filters)}
           onChangeProgress={handleChangeProgress}
           canFilterProgress={isAuthenticated}
-          onlyBenchmarks={!!boardFilters.onlyBenchmarks}
-          onToggleBenchmarks={handleToggleBenchmarks}
+          collection={getCollectionFilter(filters, boardFilters)}
+          onChangeCollection={handleChangeCollection}
+          canFilterDrafts={isAuthenticated}
         />
         <FilterTokenRow tokens={sheetOnlyFilterTokens} />
       </>
@@ -1196,8 +1206,9 @@ function ClimbListInner() {
     handleChangePopularity,
     handleChangeRating,
     handleChangeProgress,
-    handleToggleBenchmarks,
+    handleChangeCollection,
     boardFilters.onlyBenchmarks,
+    filters.status,
     isAuthenticated,
     sheetOnlyFilterTokens,
   ]);

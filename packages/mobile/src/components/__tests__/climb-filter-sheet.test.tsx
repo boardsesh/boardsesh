@@ -285,7 +285,35 @@ vi.mock('../Button', () => ({
   Button: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress }, title),
 }));
-vi.mock('../SegmentedControl', () => ({ SegmentedControl: () => null }));
+// Render each segment as a clickable button keyed by option, so tests can drive
+// single-selects like Collection (Any / Benchmarks / My drafts).
+vi.mock('../SegmentedControl', () => ({
+  SegmentedControl: ({
+    options,
+    selectedKey,
+    onSelect,
+  }: {
+    options: { key: string; label: string }[];
+    selectedKey?: string;
+    onSelect?: (key: string) => void;
+  }) =>
+    createElement(
+      'div',
+      {},
+      options.map((option) =>
+        createElement(
+          'button',
+          {
+            key: option.key,
+            'data-testid': `segment-${option.key}`,
+            'data-selected': String(option.key === selectedKey),
+            onClick: () => onSelect?.(option.key),
+          },
+          option.label,
+        ),
+      ),
+    ),
+}));
 vi.mock('../StarRating', () => ({ StarRating: () => null }));
 vi.mock('../RadioGroup', () => ({ RadioGroup: () => null }));
 // A clickable toggle keyed by label, so tests can drive the "My drafts" /
@@ -677,11 +705,13 @@ describe('ClimbFilterSheet flat sections', () => {
     expect(queryByText('mobile.filter.section.advanced')).toBeNull();
   });
 
-  it('hides the Your progress section (and My drafts) when signed out', () => {
+  it('hides the Your progress section and the Collection "My drafts" option when signed out', () => {
     authMock.isAuthenticated = false;
     const { queryByText, queryByTestId } = renderFilterSheet();
     expect(queryByText('mobile.filter.progress.label')).toBeNull();
-    expect(queryByTestId('switch-mobile.filter.drafts')).toBeNull();
+    // Collection still shows (Any / Benchmarks), but the auth-only My drafts option is dropped.
+    expect(queryByTestId('segment-benchmarks')).not.toBeNull();
+    expect(queryByTestId('segment-drafts')).toBeNull();
   });
 
   it('selecting the "Unrepeated" popularity bucket sets status to projects', () => {
@@ -695,15 +725,24 @@ describe('ClimbFilterSheet flat sections', () => {
     expect(applied.status).toBe('projects');
   });
 
-  it('toggling "My drafts" on sets status to drafts, off returns it to any', () => {
+  it('selecting Collection "My drafts" sets status to drafts', () => {
     const onApply = vi.fn();
     const { getByTestId, getByText } = renderFilterSheet({ onApply });
 
-    const draftsSwitch = getByTestId('switch-mobile.filter.drafts');
-    expect(draftsSwitch.getAttribute('data-value')).toBe('false');
-
-    fireEvent.click(draftsSwitch);
+    fireEvent.click(getByTestId('segment-drafts'));
     fireEvent.click(getByText('mobile.filter.showCount12'));
     expect((onApply.mock.calls.at(-1)?.[0] as ClimbFilters).status).toBe('drafts');
+  });
+
+  it('selecting Collection "Benchmarks" clears a drafts status (mutually exclusive)', () => {
+    const onApply = vi.fn();
+    const { getByTestId, getByText } = renderFilterSheet({ onApply });
+
+    fireEvent.click(getByTestId('segment-drafts'));
+    fireEvent.click(getByTestId('segment-benchmarks'));
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    const call = onApply.mock.calls.at(-1);
+    expect((call?.[0] as ClimbFilters).status).toBe('any');
+    expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBe(true);
   });
 });

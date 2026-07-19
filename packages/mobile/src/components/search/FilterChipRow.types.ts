@@ -8,6 +8,7 @@
 import type { ProgressFilter } from '@boardsesh/climb-filters';
 import type { RecentFilter } from '../../lib/recent-filter-store';
 import type { PinnableChipKind } from '../../lib/pinnable-chips';
+import type { CollectionFilter } from '../../lib/collection-filter';
 import type { ClimbFilters } from '../ClimbFilterSheet';
 
 /**
@@ -67,6 +68,9 @@ export type FilterChipRowProps = {
   onChangeProgress: (value: ProgressFilter) => void;
   /** The progress selector is auth-gated (its chip hides), matching the sheet. */
   canFilterProgress: boolean;
-  onlyBenchmarks: boolean;
-  onToggleBenchmarks: (next: boolean) => void;
+  /** Current "Collection" single-select (Any / Benchmarks / My drafts). */
+  collection: CollectionFilter;
+  onChangeCollection: (value: CollectionFilter) => void;
+  /** My drafts is auth-only; the option is dropped from the chip menu when signed out. */
+  canFilterDrafts: boolean;
 };

@@ -50,7 +50,8 @@ import { spacing } from '../../theme/tokens';
 import { filterChipBrandColors } from '../../theme/expo-ui-modifiers';
 import { useMaterialAngleControl } from '../chrome/use-material-angle-control';
 import { AngleSelectorSheet } from '../play-drawer/AngleSelectorSheet';
-import { popularityChipLabel, ratingChipLabel, progressFilterLabel } from './FilterChipRow.logic';
+import { popularityChipLabel, ratingChipLabel, progressFilterLabel, collectionChipLabel } from './FilterChipRow.logic';
+import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
 
 // Semantic icon → Material XML vector drawable. White-filled (#FFFFFFFF) so the
@@ -163,70 +164,6 @@ function MenuItem({
   );
 }
 
-// Tall / Wide board-shape chip. A MENU chip (tap opens a DropdownMenu): Compose can't
-// give a FilterChip a long-press, so the lock can't ride a long-press the way iOS does
-// (see the file header). The menu carries a checkable filter toggle + a lock/unlock
-// item. The toggle is disabled while locked — `onToggle` ignores a locked chip, so the
-// menu reads "locked on, Unlock to change" rather than offering a dead tap.
-function DimensionChipView({
-  dimension,
-  label,
-  toggleLabel,
-  colors,
-  lockLabel,
-  unlockLabel,
-}: {
-  dimension: DimensionChip;
-  label: string;
-  toggleLabel: string;
-  colors: ChipColors;
-  lockLabel: string;
-  unlockLabel: string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
-      <DropdownMenu.Trigger>
-        <FilterChip selected={dimension.active} colors={colors} onClick={() => setExpanded(true)}>
-          {dimension.locked ? (
-            <FilterChip.LeadingIcon>
-              <Icon source={ICON.lock} size={ICON_SIZE} />
-            </FilterChip.LeadingIcon>
-          ) : null}
-          <FilterChip.Label>
-            <Text>{label}</Text>
-          </FilterChip.Label>
-        </FilterChip>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Items>
-        <MenuItem
-          label={toggleLabel}
-          checked={dimension.active}
-          enabled={!dimension.locked}
-          onClick={() => {
-            dimension.onToggle();
-            setExpanded(false);
-          }}
-        />
-        <HorizontalDivider />
-        <DropdownMenuItem
-          onClick={() => {
-            dimension.onToggleLock();
-            setExpanded(false);
-          }}
-        >
-          <DropdownMenuItem.LeadingIcon>
-            <Icon source={dimension.locked ? ICON.lockOpen : ICON.lock} size={ICON_SIZE} />
-          </DropdownMenuItem.LeadingIcon>
-          <DropdownMenuItem.Text>
-            <Text>{dimension.locked ? unlockLabel : lockLabel}</Text>
-          </DropdownMenuItem.Text>
-        </DropdownMenuItem>
-      </DropdownMenu.Items>
-    </DropdownMenu>
-  );
-}
-
 function FilterChipRowComponent({
   pinnedChips,
   activeFilterCount,
@@ -249,8 +186,9 @@ function FilterChipRowComponent({
   progress,
   onChangeProgress,
   canFilterProgress,
-  onlyBenchmarks,
-  onToggleBenchmarks,
+  collection,
+  onChangeCollection,
+  canFilterDrafts,
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors, colorScheme } = useTheme();
@@ -375,32 +313,53 @@ function FilterChipRowComponent({
             />
           ) : null}
 
-          {/* Benchmarks — its own toggle chip (a tap flips it), no longer folded in
-            with progress. */}
-          {pinnedChips.includes('benchmarks') ? (
-            <ActionChip
-              label={t('mobile.filter.benchmark')}
-              selected={onlyBenchmarks}
+          {/* Collection — Any / Benchmarks / My drafts single-select (My drafts is
+            auth-gated, dropped from the menu when signed out). */}
+          {pinnedChips.includes('collection') ? (
+            <MenuChip
+              label={collection === 'any' ? t('mobile.filter.collection.label') : collectionChipLabel(collection, t)}
+              selected={collection !== 'any'}
               colors={chipColors}
-              onPress={() => onToggleBenchmarks(!onlyBenchmarks)}
+              renderItems={(close) => (
+                <>
+                  {COLLECTION_VALUES.filter((value) => value !== 'drafts' || canFilterDrafts).map((value) => (
+                    <MenuItem
+                      key={value}
+                      label={collectionChipLabel(value, t)}
+                      checked={value === collection}
+                      onClick={() => {
+                        onChangeCollection(value);
+                        close();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
             />
           ) : null}
 
-          {/* Tall / Wide — board-shape chips for the current Kilter homewall size
-            (empty otherwise). Tap opens a menu: filter toggle + lock/unlock. */}
-          {pinnedChips.includes('shape')
-            ? dimensionChips.map((dimension) => (
-                <DimensionChipView
-                  key={dimension.key}
-                  dimension={dimension}
-                  label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-                  toggleLabel={dimension.key === 'tall' ? t('mobile.filter.tall') : t('mobile.filter.wide')}
-                  colors={chipColors}
-                  lockLabel={t('mobile.search.chips.lock')}
-                  unlockLabel={t('mobile.search.chips.unlock')}
-                />
-              ))
-            : null}
+          {/* Shape — one chip grouping the independent Tall + Wide toggles (a climb
+            can be both). The menu stays open so both can be toggled. Shown only when
+            the board size has the expansion. */}
+          {pinnedChips.includes('shape') && dimensionChips.length > 0 ? (
+            <MenuChip
+              label={t('mobile.filter.shape')}
+              selected={dimensionChips.some((dimension) => dimension.active)}
+              colors={chipColors}
+              renderItems={() => (
+                <>
+                  {dimensionChips.map((dimension) => (
+                    <MenuItem
+                      key={dimension.key}
+                      label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+                      checked={dimension.active}
+                      onClick={dimension.onToggle}
+                    />
+                  ))}
+                </>
+              )}
+            />
+          ) : null}
 
           {/* Popularity ▾ — single-choice min-ascents buckets. */}
           {pinnedChips.includes('popularity') ? (

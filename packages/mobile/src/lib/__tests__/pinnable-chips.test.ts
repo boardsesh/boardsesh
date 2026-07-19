@@ -11,7 +11,7 @@ import {
 describe('pinnable-chips catalog', () => {
   it('defaults to the whole catalog (reproduces today’s chip row)', () => {
     expect(DEFAULT_PINNED_CHIPS).toEqual(PINNABLE_CHIP_CATALOG);
-    expect([...PINNABLE_CHIP_CATALOG]).toEqual(['grade', 'progress', 'benchmarks', 'shape', 'popularity', 'rating']);
+    expect([...PINNABLE_CHIP_CATALOG]).toEqual(['grade', 'progress', 'collection', 'shape', 'popularity', 'rating']);
   });
 
   it('isValidChipKind accepts known kinds and rejects everything else', () => {
@@ -28,8 +28,8 @@ describe('normalizePinnedChips', () => {
     expect(normalizePinnedChips(['rating', 'grade', 'popularity'])).toEqual(['grade', 'popularity', 'rating']);
   });
 
-  it('drops unknown kinds and de-dupes', () => {
-    expect(normalizePinnedChips(['grade', 'nope', 'grade', 'shape'])).toEqual(['grade', 'shape']);
+  it('drops unknown kinds (incl. the retired "benchmarks") and de-dupes', () => {
+    expect(normalizePinnedChips(['grade', 'benchmarks', 'grade', 'shape'])).toEqual(['grade', 'shape']);
   });
 
   it('returns an empty array when nothing valid is left', () => {
@@ -42,7 +42,7 @@ describe('chipKindToTokenKeys', () => {
     const map: Record<PinnableChipKind, readonly string[]> = {
       grade: ['grade'],
       progress: ['progress'],
-      benchmarks: ['benchmark'],
+      collection: ['benchmark'],
       shape: ['tall', 'wide'],
       popularity: ['minAscents'],
       rating: ['minRating'],

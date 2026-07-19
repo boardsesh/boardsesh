@@ -43,6 +43,7 @@ import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
 import { PinToggle } from './search/PinToggle';
+import { getCollectionFilter, type CollectionFilter } from '../lib/collection-filter';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -349,6 +350,27 @@ export function ClimbFilterSheet({
       updateLocalFilters((previous) => ({ ...previous, ...applyStatusChange(previous, status) }));
     },
     [updateLocalFilters],
+  );
+  // Collection — a single-select over Benchmarks (board filter) + My drafts
+  // (status), which are mutually exclusive. Selecting one clears the other; only a
+  // lingering *drafts* status is cleared (never 'projects'/Unrepeated, which lives
+  // in the Popularity group and can coexist with Benchmarks).
+  const handleCollectionChange = useCallback(
+    (value: CollectionFilter) => {
+      updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value === 'benchmarks' || undefined }));
+      if (value === 'drafts') handleStatusChange('drafts');
+      else if (localFilters.status === 'drafts') handleStatusChange('any');
+    },
+    [updateLocalBoardFilters, handleStatusChange, localFilters.status],
+  );
+  const collectionOptions = useMemo(
+    () => [
+      { key: 'any' as const, label: t('mobile.filter.collection.any') },
+      { key: 'benchmarks' as const, label: t('mobile.filter.benchmark') },
+      // My drafts is auth-only, matching the old drafts toggle's gating.
+      ...(isAuthenticated ? [{ key: 'drafts' as const, label: t('mobile.filter.drafts') }] : []),
+    ],
+    [t, isAuthenticated],
   );
   const handlePopularity = useCallback(
     (bucket: number | undefined) => {
@@ -717,37 +739,22 @@ export function ClimbFilterSheet({
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.quality')}
               </Text>
-              {/* Benchmarks + (signed-in) My drafts — grouped in one inset card. */}
-              <View style={styles.groupedCard}>
-                <View style={styles.pinnableSwitchRow}>
-                  <View style={styles.pinnableSwitchRowControl}>
-                    <SwitchRow
-                      label={t('mobile.filter.benchmark')}
-                      description={t('mobile.filter.benchmarkDescription')}
-                      value={!!localBoardFilters.onlyBenchmarks}
-                      onValueChange={(value) =>
-                        updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
-                      }
-                    />
-                  </View>
-                  <View style={styles.pinnableSwitchRowPin}>
-                    <PinToggle kind="benchmarks" />
-                  </View>
-                </View>
-                {/* My drafts — the old Status 'drafts' radio option, now a toggle.
-                  Routes through handleStatusChange so applyStatusChange's side effects
-                  (drafts → sort=creation desc, clear minAscents) still fire. Auth-only. */}
-                {isAuthenticated ? (
-                  <>
-                    <View style={[styles.groupDivider, { backgroundColor: systemColors.separator }]} />
-                    <SwitchRow
-                      label={t('mobile.filter.drafts')}
-                      value={localFilters.status === 'drafts'}
-                      onValueChange={(on) => handleStatusChange(on ? 'drafts' : 'any')}
-                    />
-                  </>
-                ) : null}
+              {/* Collection — Benchmarks (board filter) + My drafts (status) folded
+                  into one single-select; they're mutually exclusive. My drafts is
+                  offered only when signed in (auth-gated like the old drafts toggle). */}
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.collection.label')}
+                </Text>
+                <PinToggle kind="collection" />
               </View>
+              <View style={styles.controlGap} />
+              <SegmentedControl
+                options={collectionOptions}
+                selectedKey={getCollectionFilter(localFilters, localBoardFilters)}
+                onSelect={handleCollectionChange}
+                accessibilityLabel={t('mobile.filter.collection.label')}
+              />
 
               <View style={styles.subsectionGap} />
               <View style={styles.pinnableLabelRow}>
@@ -1042,26 +1049,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  // Wraps a full-width SwitchRow with a trailing pin toggle at the row's edge.
-  pinnableSwitchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  pinnableSwitchRowControl: {
-    flex: 1,
-  },
-  pinnableSwitchRowPin: {
-    paddingRight: spacing[4],
-  },
   // Breathing room between a footnote sub-label and a flush native SegmentedControl
   // (which, unlike the chip rows, has no intrinsic top padding).
   controlGap: {
     height: spacing[2],
-  },
-  // Inset hairline between rows grouped in one card (iOS list style).
-  groupDivider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: spacing[4],
   },
   chipRow: {
     flexDirection: 'row',
@@ -1070,11 +1061,6 @@ const styles = StyleSheet.create({
   },
   chipText: {
     fontWeight: '500',
-  },
-  groupedCard: {
-    borderRadius: borderRadius.lg,
-    backgroundColor: `${iosSystemColors.systemGray}14`,
-    overflow: 'hidden',
   },
   ratingRow: {
     flexDirection: 'row',

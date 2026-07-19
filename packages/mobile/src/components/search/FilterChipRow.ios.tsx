@@ -40,7 +40,15 @@ import {
 } from '../../lib/filter-chip-menus';
 import { useTheme } from '../../providers/theme-provider';
 import { spacing } from '../../theme/tokens';
-import { popularityChipLabel, ratingChipLabel, progressFilterLabel, isProgressFilter } from './FilterChipRow.logic';
+import {
+  popularityChipLabel,
+  ratingChipLabel,
+  progressFilterLabel,
+  isProgressFilter,
+  collectionChipLabel,
+  isCollectionFilter,
+} from './FilterChipRow.logic';
+import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 function FilterChipRowComponent({
@@ -65,8 +73,9 @@ function FilterChipRowComponent({
   progress,
   onChangeProgress,
   canFilterProgress,
-  onlyBenchmarks,
-  onToggleBenchmarks,
+  collection,
+  onChangeCollection,
+  canFilterDrafts,
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
@@ -167,14 +176,27 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
-          {/* Benchmarks — its own toggle chip (a tap flips it), no longer folded in
-              with progress. [PRIMARY #3] */}
-          {pinnedChips.includes('benchmarks') ? (
-            <Button
-              label={t('mobile.filter.benchmark')}
-              onPress={() => onToggleBenchmarks(!onlyBenchmarks)}
-              modifiers={chipModifiers(onlyBenchmarks)}
-            />
+          {/* Collection — Any / Benchmarks / My drafts single-select (My drafts is
+              auth-gated, dropped from the menu when signed out). [PRIMARY #3] */}
+          {pinnedChips.includes('collection') ? (
+            <Menu
+              label={collection === 'any' ? t('mobile.filter.collection.label') : collectionChipLabel(collection, t)}
+              modifiers={chipModifiers(collection !== 'any')}
+            >
+              <Picker
+                selection={collection}
+                onSelectionChange={(value) => {
+                  if (typeof value !== 'string' || !isCollectionFilter(value)) return;
+                  onChangeCollection(value);
+                }}
+              >
+                {COLLECTION_VALUES.filter((value) => value !== 'drafts' || canFilterDrafts).map((value) => (
+                  <Text key={value} modifiers={[tag(value)]}>
+                    {collectionChipLabel(value, t)}
+                  </Text>
+                ))}
+              </Picker>
+            </Menu>
           ) : null}
 
           {/* Tall / Wide — board-shape chips, present only on the Kilter homewall
@@ -184,23 +206,24 @@ function FilterChipRowComponent({
               button's own tap gesture swallows the long-press, especially inside
               the scroll row.) Locked = a lock glyph + the filter pinned active
               through clears; a locked chip ignores tap until unlocked. */}
-          {pinnedChips.includes('shape')
-            ? dimensionChips.map((dimension) => (
-                <Menu
+          {/* Shape — one chip grouping the Tall + Wide toggles. They're independent
+              (a climb can be both), so the menu carries two checkable toggles rather
+              than a single-select. Shown only when the board size has the expansion. */}
+          {pinnedChips.includes('shape') && dimensionChips.length > 0 ? (
+            <Menu
+              label={t('mobile.filter.shape')}
+              modifiers={chipModifiers(dimensionChips.some((dimension) => dimension.active))}
+            >
+              {dimensionChips.map((dimension) => (
+                <Button
                   key={dimension.key}
                   label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-                  systemImage={dimension.locked ? 'lock.fill' : undefined}
-                  onPrimaryAction={dimension.onToggle}
-                  modifiers={chipModifiers(dimension.active)}
-                >
-                  <Button
-                    label={dimension.locked ? t('mobile.search.chips.unlock') : t('mobile.search.chips.lock')}
-                    systemImage={dimension.locked ? 'lock.open' : 'lock'}
-                    onPress={dimension.onToggleLock}
-                  />
-                </Menu>
-              ))
-            : null}
+                  systemImage={dimension.active ? 'checkmark' : undefined}
+                  onPress={dimension.onToggle}
+                />
+              ))}
+            </Menu>
+          ) : null}
 
           {/* Popularity ▾ — min-ascents buckets; conflict-clear handled upstream.
               [PRIMARY #4] */}

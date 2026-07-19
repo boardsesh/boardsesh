@@ -663,6 +663,10 @@
       },
       "popularity": "Popularidad",
       "shape": "Forma",
+      "collection": {
+        "label": "Colección",
+        "any": "Cualquiera"
+      },
       "pin": "Fijar como atajo",
       "unpin": "Quitar de los atajos",
       "established2plus": "Establecido 2+",
