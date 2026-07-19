@@ -80,11 +80,12 @@ function main(): void {
     console.info('[dev] TLS: serving via Next.js --experimental-https with Tailscale cert');
   }
 
-  // In TLS mode the cert is issued for the Tailscale MagicDNS hostname, not
-  // localhost. Binding Next to that hostname keeps its printed URL aligned
-  // with the certificate and avoids users opening https://localhost:<port>,
-  // which will always fail certificate validation.
-  const bindHostname = tlsEnabled ? resolution.hostname : '0.0.0.0';
+  // Bind all interfaces in both modes. Binding the MagicDNS hostname sounds
+  // right for TLS, but on macOS Tailscale resolves the machine's OWN name to
+  // 127.0.0.1, so Next would listen on loopback only and every other tailnet
+  // device gets connection-refused. The cert covers the ts.net name either
+  // way; the printed Web URL (above) is the one users should open.
+  const bindHostname = '0.0.0.0';
   const nextArgs = ['dev', '--hostname', bindHostname, '--turbopack'];
   if (tlsEnabled) {
     // Next.js requires --experimental-https to switch the dev server into
