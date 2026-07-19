@@ -11,3 +11,12 @@ The Expo (React Native) app runs on the web behind `/app`, served through a Next
 ## Scope
 
 `/app` is a locale-neutral **authenticated utility surface**, `noindex`. It is not a search/marketing surface — keep it out of the sitemap and locale routing (see the middleware carve-out and `next.config.mjs` header rules).
+
+## Dev loops
+
+Two ways to run the browser app locally — pick by what you're iterating on:
+
+- **`vp run dev:mobile:web`** — Metro dev proxy at `/app` with fast refresh. Cold-bundles on every start (`--clear`), so first paint takes minutes and can outrun the orchestrator's readiness window on a loaded machine (`BOARDSESH_EXPO_WEB_READY_TIMEOUT_MS` extends it). Best for mobile-code iteration.
+- **`vp run dev:mobile:web-static`** — bakes the static export (the exact artifact production serves) with the Tailscale origin inlined, then serves it at `/app` from the regular dev stack. No Metro race; open `https://<your-machine>.ts.net:3000/app` from any tailnet device. Mobile-code changes need a re-run; web code hot-reloads. Best for QA/device testing.
+
+Baking gotcha (applies to any manual export): `expo export` reuses Metro's transform cache even when `EXPO_PUBLIC_*` values change, silently shipping the previous env. The static task wipes the cache for you; wipe `"$TMPDIR"/metro-cache` yourself if you invoke `build-expo-web-export.sh` directly with different env. The three origin vars that must be baked: `EXPO_PUBLIC_WEB_URL` (must equal the serving web origin or auth calls go cross-origin), `EXPO_PUBLIC_BACKEND_URL`, `EXPO_PUBLIC_WS_URL`.

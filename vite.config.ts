@@ -737,6 +737,15 @@ export default defineConfig({
         dependsOn: ['db:up', 'mobile:web-runtime:install'],
         cache: false,
       },
+      // Static-export variant of dev:mobile:web: bakes the export with the
+      // Tailscale origin inlined and serves it at /app — robust on loaded
+      // machines (no Metro cold-bundle race) and prod-parity, at the cost of
+      // fast refresh for mobile code (re-run to pick up mobile changes).
+      'dev:mobile:web-static': {
+        command: 'bash scripts/dev-expo-web-static.sh',
+        dependsOn: ['db:up'],
+        cache: false,
+      },
       'dev:backend': {
         command: 'bun run --filter=boardsesh-backend dev',
         dependsOn: ['db:up'],
