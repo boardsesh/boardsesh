@@ -1,4 +1,12 @@
-export const DEFAULT_EXPO_WEB_READY_TIMEOUT_MS = 120_000;
+// The orchestrator starts Metro with --clear (see expo-web-start-command.ts),
+// so every prewarm is a full cold bundle. 120s covers a typical machine;
+// override for slower/loaded hosts where the cold compile runs longer.
+const READY_TIMEOUT_OVERRIDE = Number(
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    ?.BOARDSESH_EXPO_WEB_READY_TIMEOUT_MS,
+);
+export const DEFAULT_EXPO_WEB_READY_TIMEOUT_MS =
+  Number.isFinite(READY_TIMEOUT_OVERRIDE) && READY_TIMEOUT_OVERRIDE > 0 ? READY_TIMEOUT_OVERRIDE : 120_000;
 
 const DEFAULT_RETRY_INTERVAL_MS = 500;
 const EXPO_WEB_SHELL_PATH = '/app';
