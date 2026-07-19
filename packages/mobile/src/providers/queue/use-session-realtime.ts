@@ -551,7 +551,11 @@ export function useSessionRealtime({
               await setActiveBoardRef.current({ ...stored, angle: nextAngle });
             })();
           },
-          error: () => {},
+          error: (sessionSubscriptionError) => {
+            // Session-update stream errors were swallowed. Surface them for
+            // triage (the retained subscription still drives its own reconnect).
+            reportHandledError(sessionSubscriptionError);
+          },
           complete: () => {},
         },
       );
