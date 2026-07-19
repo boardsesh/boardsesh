@@ -19,6 +19,7 @@ import UnifiedSearchDrawer from '@/app/components/search-drawer/unified-search-d
 import { shareWithFallback } from '@/app/lib/share-utils';
 import { useSearchDrawerBridge } from '@/app/components/search-drawer/search-drawer-bridge-context';
 import UserDrawer from '@/app/components/user-drawer/user-drawer';
+import StartClimbingButton from '@/app/components/start-climbing-button';
 import { useIsOnBoardRoute } from '@/app/components/persistent-session/persistent-session-context';
 import type { BoardConfigData } from '@/app/lib/server-board-configs';
 import { isBoardCreatePath, isBoardListPath } from '@/app/lib/board-route-paths';
@@ -36,6 +37,23 @@ import { themeTokens } from '@/app/theme/theme-config';
 import styles from './global-header.module.css';
 
 const BADGE_SMALL_SX = { '& .MuiBadge-badge': themeTokens.badge.small } as const;
+
+// Compact brand-fill capsule for the persistent "Start climbing" CTA that hands
+// off to the Expo-web app. Matches the hero CTA's fill without the amber glow.
+const HEADER_START_CLIMBING_SX = {
+  flexShrink: 0,
+  borderRadius: `${themeTokens.borderRadius.full}px`,
+  textTransform: 'none',
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  px: 2,
+  whiteSpace: 'nowrap',
+  backgroundColor: 'var(--color-primary-fill)',
+  color: 'var(--color-on-primary)',
+  '&:hover': {
+    backgroundColor: 'var(--color-primary-fill-hover)',
+    transform: 'none',
+  },
+} as const;
 
 /** Route prefixes that render a simple title header instead of the default search/sesh header */
 const TITLE_HEADER_PAGE_PREFIXES = ['/aurora-migration'] as const;
@@ -344,11 +362,19 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
     );
   }
 
-  // On hidden-header pages, show only the avatar in a transparent bar
+  // On hidden-header pages, show the avatar plus the "Start climbing" hand-off
+  // in a transparent bar.
   if (HIDDEN_HEADER_PAGES.includes(pathname)) {
     return (
       <header className={styles.headerTransparent}>
         <UserDrawer boardConfigs={boardConfigs} />
+        <Box sx={{ flex: 1 }} />
+        <StartClimbingButton
+          label={t('header.startClimbing')}
+          ariaLabel={t('ariaLabels.startClimbing')}
+          size="small"
+          sx={HEADER_START_CLIMBING_SX}
+        />
       </header>
     );
   }
@@ -448,6 +474,13 @@ export default function GlobalHeader({ boardConfigs }: GlobalHeaderProps) {
             {nonNameFiltersActive && <span className={styles.filterActiveIndicator} />}
           </div>
         )}
+
+        <StartClimbingButton
+          label={t('header.startClimbing')}
+          ariaLabel={t('ariaLabels.startClimbing')}
+          size="small"
+          sx={HEADER_START_CLIMBING_SX}
+        />
       </header>
 
       {searchRendered && (

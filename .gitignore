@@ -90,6 +90,8 @@ packages/web/public/openapi.json
 
 # static Expo web export served at /app (scripts/build-expo-web-export.sh)
 packages/web/public/app
+# standalone Expo web export for app.boardsesh.com (--subdomain, baseUrl /)
+packages/web/public/app-standalone
 .claude/settings.local.json
 packages/db/docker/tmp/g
 packages/db/docker/tmp/

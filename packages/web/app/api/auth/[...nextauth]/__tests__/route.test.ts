@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const { nextAuthHandlerMock, getTokenMock } = vi.hoisted(() => ({
@@ -13,12 +13,11 @@ vi.mock('next-auth/jwt', () => ({
   getToken: (...args: unknown[]) => getTokenMock(...args),
 }));
 vi.mock('@/app/lib/auth/auth-options', () => ({ authOptions: {} }));
-vi.mock('@/app/lib/auth/secure-cookies', () => ({
-  isSecureCookieContext: () => true,
-  sessionCookieName: () => '__Secure-next-auth.session-token',
-}));
+// Use the REAL secure-cookies helpers (no copy-pasted stub to drift against the
+// production logic). VERCEL_ENV=production (set in beforeEach) puts them in the
+// secure-context branch, so the cookie names carry the `__Secure-` prefix.
 
-import { POST } from '../route';
+import { GET, POST } from '../route';
 
 const context = { params: Promise.resolve({ nextauth: ['signout'] }) };
 
@@ -30,10 +29,31 @@ function request(path: string, body: Record<string, string>): NextRequest {
   });
 }
 
+function hostOnlySessionCookieCleared(response: Response): boolean {
+  const setCookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+  return setCookies.some(
+    (setCookie) =>
+      setCookie.startsWith('__Secure-next-auth.session-token=;') &&
+      !/;\s*Domain=/i.test(setCookie) &&
+      /Max-Age=0/i.test(setCookie),
+  );
+}
+
 describe('POST /api/auth/[...nextauth]', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Production www host → the real secure-cookies helpers use the `__Secure-`
+    // name AND resolve the shared `.boardsesh.com` cookie domain (which arms
+    // the legacy host-only clear). Pin every env they read so shell values
+    // can't steer the branch under test.
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
     nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('rejects an unscoped legacy NextAuth sign-out', async () => {
@@ -44,6 +64,25 @@ describe('POST /api/auth/[...nextauth]', () => {
     expect(response.status).toBe(400);
     expect(response.headers.get('Cache-Control')).toBe('private, no-store');
     await expect(response.json()).resolves.toEqual({ error: 'signout_identity_required' });
+    expect(nextAuthHandlerMock).not.toHaveBeenCalled();
+    expect(getTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('returns a transient 503 when the sign-out body cannot be parsed as form data', async () => {
+    // A body that can't be read as form data (wrong content-type / too large /
+    // a stream error) is a server-side condition, not a permanent identity
+    // mismatch — it must not be a 400 the caller could treat as fatal.
+    const signOutRequest = new NextRequest('https://www.boardsesh.com/api/auth/signout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedUserId: 'user-1', expectedAuthSessionId: 'login-1' }),
+    });
+
+    const response = await POST(signOutRequest, context);
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    await expect(response.json()).resolves.toEqual({ error: 'signout_identity_unreadable' });
     expect(nextAuthHandlerMock).not.toHaveBeenCalled();
     expect(getTokenMock).not.toHaveBeenCalled();
   });
@@ -117,5 +156,75 @@ describe('POST /api/auth/[...nextauth]', () => {
 
     expect(nextAuthHandlerMock).toHaveBeenCalledWith(callbackRequest, context);
     expect(getTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('clears the legacy host-only cookie when signing out', async () => {
+    getTokenMock.mockResolvedValue({ sub: 'user-1', authSessionId: 'login-1' });
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          'Set-Cookie':
+            '__Secure-next-auth.session-token=; Path=/; Domain=.boardsesh.com; Max-Age=0; HttpOnly; SameSite=Lax; Secure',
+        },
+      }),
+    );
+    const signOutRequest = request('/api/auth/signout', {
+      csrfToken: 'csrf-token',
+      expectedUserId: 'user-1',
+      expectedAuthSessionId: 'login-1',
+    });
+
+    const response = await POST(signOutRequest, context);
+
+    expect(response.status).toBe(200);
+    expect(hostOnlySessionCookieCleared(response)).toBe(true);
+  });
+
+  it('clears the legacy host-only cookie when a login writes a fresh session cookie', async () => {
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          'Set-Cookie':
+            '__Secure-next-auth.session-token=fresh-jwt; Path=/; Domain=.boardsesh.com; HttpOnly; SameSite=Lax; Secure',
+        },
+      }),
+    );
+    const callbackRequest = request('/api/auth/callback/credentials', {});
+
+    const response = await POST(callbackRequest, context);
+
+    expect(hostOnlySessionCookieCleared(response)).toBe(true);
+  });
+
+  it('does not clear the legacy cookie on a bare read that writes no session cookie', async () => {
+    nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
+    const sessionRequest = new NextRequest('https://www.boardsesh.com/api/auth/session', { method: 'GET' });
+
+    const response = await GET(sessionRequest, context);
+
+    expect(hostOnlySessionCookieCleared(response)).toBe(false);
+  });
+
+  it('does not delete the just-written host-only cookie in a dev (non-secure) context', async () => {
+    // On localhost the fresh session cookie NextAuth writes is itself host-only
+    // with the same name and path — appending the "legacy" clear would expire
+    // the login in the same response, breaking every local login.
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: { 'Set-Cookie': 'next-auth.session-token=fresh-jwt; Path=/; HttpOnly; SameSite=Lax' },
+      }),
+    );
+    const callbackRequest = request('/api/auth/callback/credentials', {});
+
+    const response = await POST(callbackRequest, context);
+
+    const setCookies = response.headers.getSetCookie();
+    expect(setCookies).toEqual(['next-auth.session-token=fresh-jwt; Path=/; HttpOnly; SameSite=Lax']);
   });
 });

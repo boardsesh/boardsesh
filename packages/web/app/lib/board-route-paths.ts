@@ -18,16 +18,6 @@ function getPathSegments(pathname: string): string[] {
   return segments;
 }
 
-/**
- * Locale-stripped path segments for a board route. Exposed so the Expo-web
- * rollout redirect map (edge middleware) can decompose a board URL into its
- * board-config parts without re-implementing the `/es/…`, `/fr/…` prefix
- * handling that classification already gets right.
- */
-export function getBoardRouteSegments(pathname: string): string[] {
-  return getPathSegments(pathname);
-}
-
 export function isBoardRoutePath(pathname: string | null | undefined): boolean {
   if (!pathname) return false;
 

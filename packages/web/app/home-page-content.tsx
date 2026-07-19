@@ -34,6 +34,7 @@ import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import type { RecentBetaLinkRow } from '@/app/lib/server-recent-beta-links';
 import HomeRecentBetaSection from '@/app/components/beta-videos/home-recent-beta-section';
 import HomeGymCard from '@/app/components/home-gym-card/home-gym-card';
+import StartClimbingButton from '@/app/components/start-climbing-button';
 import { track } from '@/app/lib/analytics';
 import { useOnboardingTourOptional } from '@/app/components/onboarding/onboarding-tour-provider';
 import { TOUR_OPEN_START_SESH_EVENT } from '@/app/components/onboarding/onboarding-tour-events';
@@ -83,6 +84,29 @@ const accentSurface: Record<OnboardingCardAccent, string> = {
   v13: 'rgba(106, 27, 154, 0.10)', // V13 #6A1B9A
   none: 'transparent',
 };
+
+// Shared rounded-full brand CTA styling for the hero buttons — the Velvet violet
+// fill with an amber spark glow (Velvet's warm half on the hero). The
+// scheme-aware fill clears AA with white text in both modes. The global MUI
+// Button override adds a translateY(-1px) on hover; cancel it so the CTA stays
+// anchored under the warm glow.
+const HERO_CTA_SX = {
+  mt: 1,
+  borderRadius: `${themeTokens.borderRadius.full}px`,
+  px: 4,
+  py: 1.5,
+  fontSize: themeTokens.typography.fontSize.lg,
+  fontWeight: themeTokens.typography.fontWeight.semibold,
+  textTransform: 'none',
+  backgroundColor: 'var(--color-primary-fill)',
+  color: 'var(--color-on-primary)',
+  boxShadow: '0 6px 18px rgba(255, 138, 61, 0.35)',
+  '&:hover': {
+    backgroundColor: 'var(--color-primary-fill-hover)',
+    boxShadow: '0 8px 22px rgba(255, 138, 61, 0.45)',
+    transform: 'none',
+  },
+} as const;
 
 function resolveAccentIconColor(accent: OnboardingCardAccent): string {
   switch (accent) {
@@ -434,6 +458,15 @@ export default function HomePageContent({
           <Typography variant="body1" sx={{ color: 'var(--bs-text-brand-muted)', maxWidth: 320 }}>
             {t('home.hero.subtitle')}
           </Typography>
+          {/* Primary CTA: hand off to the Expo-web app (single sign-on when
+              logged in, the app's own login otherwise). */}
+          <StartClimbingButton
+            label={t('home.hero.startClimbing')}
+            ariaLabel={t('home.hero.startClimbingAria')}
+            size="large"
+            sx={HERO_CTA_SX}
+          />
+          {/* Secondary CTA: install the native app. */}
           <Button
             variant="contained"
             size="large"
@@ -447,28 +480,7 @@ export default function HomePageContent({
               });
               window.open(heroInstallUrl, '_blank', 'noopener,noreferrer');
             }}
-            sx={{
-              mt: 1,
-              borderRadius: `${themeTokens.borderRadius.full}px`,
-              px: 4,
-              py: 1.5,
-              fontSize: themeTokens.typography.fontSize.lg,
-              fontWeight: themeTokens.typography.fontWeight.semibold,
-              textTransform: 'none',
-              // Brand CTA — the Velvet violet fill with an amber spark glow
-              // (Velvet's warm half on the hero). The scheme-aware fill clears
-              // AA with white text in both modes. The global MUI Button override
-              // adds a translateY(-1px) on hover; cancel it so the CTA stays
-              // anchored under the warm glow.
-              backgroundColor: 'var(--color-primary-fill)',
-              color: 'var(--color-on-primary)',
-              boxShadow: '0 6px 18px rgba(255, 138, 61, 0.35)',
-              '&:hover': {
-                backgroundColor: 'var(--color-primary-fill-hover)',
-                boxShadow: '0 8px 22px rgba(255, 138, 61, 0.45)',
-                transform: 'none',
-              },
-            }}
+            sx={HERO_CTA_SX}
           >
             {heroInstallLabel}
           </Button>

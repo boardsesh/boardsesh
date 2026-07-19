@@ -13,10 +13,17 @@ type WebPlatformResolution = {
 export function resolveWebPlatforms(envValue: string | undefined): WebPlatformResolution {
   if (envValue !== '1') return { platforms: ['ios', 'android'] };
 
+  // Serve the SPA under /app by default (the Next dev proxy + the legacy
+  // prod-static path). Set BOARDSESH_WEB_BASE_URL=/ to build the standalone
+  // export a host/CDN serves at the root of app.boardsesh.com. Read ONLY inside
+  // this web branch so native builds (BOARDSESH_WEB unset) resolve a
+  // byte-identical config and keep their OTA fingerprint.
+  const webBaseUrl = process.env.BOARDSESH_WEB_BASE_URL ?? '/app';
+
   return {
     platforms: ['ios', 'android', 'web'],
     web: { output: 'single', bundler: 'metro' },
-    baseUrl: '/app',
+    baseUrl: webBaseUrl,
   };
 }
 

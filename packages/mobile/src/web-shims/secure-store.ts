@@ -79,12 +79,28 @@ export function deleteItemAsync(key: string, _options?: SecureStoreOptions): Pro
 
 // IndexedDB is asynchronous. Browser code that needs persistence must use the
 // async API; these sync compatibility methods intentionally expose no value.
+// The write stubs can't persist anything, so a caller reaching for the sync API
+// on web is a latent bug (a write that silently vanishes). Shout about it in dev
+// so it surfaces at the call site instead of as missing data later.
 export function getItem(_key: string, _options?: SecureStoreOptions): string | null {
   return null;
 }
 
 export function setItem(key: string, _value: string, _options?: SecureStoreOptions): void {
   guardNonSecretKey(key);
+  if (isDev()) {
+    console.error(
+      `[secure-store web-shim] SecureStore.setItem('${key}') is a no-op on web (IndexedDB is async). ` +
+        `Use setItemAsync instead — this write was dropped.`,
+    );
+  }
 }
 
-export function deleteItem(_key: string, _options?: SecureStoreOptions): void {}
+export function deleteItem(key: string, _options?: SecureStoreOptions): void {
+  if (isDev()) {
+    console.error(
+      `[secure-store web-shim] SecureStore.deleteItem('${key}') is a no-op on web (IndexedDB is async). ` +
+        `Use deleteItemAsync instead — this delete was dropped.`,
+    );
+  }
+}

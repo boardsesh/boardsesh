@@ -26,6 +26,11 @@
       "import": "./src/schema.ts",
       "default": "./src/schema.ts"
     },
+    "./app-origins": {
+      "types": "./src/app-origins.ts",
+      "import": "./src/app-origins.ts",
+      "default": "./src/app-origins.ts"
+    },
     "./moonboard-import": {
       "types": "./src/moonboard-import.ts",
       "import": "./src/moonboard-import.ts",

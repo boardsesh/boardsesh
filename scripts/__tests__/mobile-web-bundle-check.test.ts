@@ -10,9 +10,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = join(currentDirectory, '..', '..');
 const sourceGuardScript = join(repositoryRoot, 'scripts', 'mobile-web-bundle-check.sh');
+const sourceExportScript = join(repositoryRoot, 'scripts', 'build-expo-web-export.sh');
 
 const GLUE_PATH = 'board_renderer_wasm.js';
 const WASM_PATH = 'board_renderer_wasm_bg.wasm';
+const WORKER_PATH = 'board-render.worker.js';
 
 describe('mobile-web-bundle-check.sh', () => {
   let fixtureRoot: string;
@@ -31,7 +33,14 @@ describe('mobile-web-bundle-check.sh', () => {
     mkdirSync(sourceDirectory, { recursive: true });
     mkdirSync(publicDirectory, { recursive: true });
     mkdirSync(stubBinDirectory, { recursive: true });
+    // The guard delegates the export to build-expo-web-export.sh; ship it too.
     copyFileSync(sourceGuardScript, fixtureGuardScript);
+    copyFileSync(sourceExportScript, join(fixtureRoot, 'scripts', 'build-expo-web-export.sh'));
+    // Pre-seed the isolated web-runtime install so the export script skips its
+    // `bun install` step (no network in the test).
+    mkdirSync(join(fixtureRoot, 'packages', 'mobile', 'web-runtime', 'node_modules', 'react-native-web'), {
+      recursive: true,
+    });
 
     writeFileSync(join(sourceDirectory, GLUE_PATH), 'matching JavaScript glue');
     writeFileSync(join(publicDirectory, GLUE_PATH), 'matching JavaScript glue');
@@ -55,7 +64,7 @@ mkdir -p "$output_dir/wasm"
 touch "$output_dir/index.html"
 touch "$output_dir/wasm/${GLUE_PATH}"
 touch "$output_dir/wasm/${WASM_PATH}"
-touch "$output_dir/wasm/board-render.worker.js"
+touch "$output_dir/wasm/${WORKER_PATH}"
 `,
     );
     chmodSync(bunxStub, 0o755);
@@ -107,5 +116,34 @@ touch "$output_dir/wasm/board-render.worker.js"
 
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('missing source or public board-renderer JavaScript glue');
+  });
+
+  it('fails when the export omits the off-main-thread render worker asset', () => {
+    // Re-point the export stub at one that produces the shell + WASM but NOT the
+    // worker, so the guard's worker-required check is actually exercised.
+    writeFileSync(
+      join(fixtureRoot, 'bin', 'bunx'),
+      `#!/usr/bin/env bash
+set -euo pipefail
+output_dir=""
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--output-dir" ]]; then
+    output_dir="$2"
+    break
+  fi
+  shift
+done
+mkdir -p "$output_dir/wasm"
+touch "$output_dir/index.html"
+touch "$output_dir/wasm/${GLUE_PATH}"
+touch "$output_dir/wasm/${WASM_PATH}"
+`,
+    );
+    chmodSync(join(fixtureRoot, 'bin', 'bunx'), 0o755);
+
+    const result = runGuard();
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('missing board-render worker asset');
   });
 });

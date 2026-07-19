@@ -396,7 +396,8 @@
     "notifications": "Notifications",
     "searchClimbsByName": "Search climbs by name",
     "userMenu": "User menu",
-    "toggleDarkMode": "Toggle dark mode"
+    "toggleDarkMode": "Toggle dark mode",
+    "startClimbing": "Start climbing in the app"
   },
   "boardSelector": {
     "title": "Pick a board"
@@ -409,7 +410,8 @@
     "createdClimbs": "Created Climbs",
     "auroraMigration": "Aurora Migration",
     "searchPlaceholder": "What do you want to climb?",
-    "searchClimbsPlaceholder": "Search climbs..."
+    "searchClimbsPlaceholder": "Search climbs...",
+    "startClimbing": "Start climbing"
   },
   "share": {
     "profileTitle": "{{name}}'s climbing profile",

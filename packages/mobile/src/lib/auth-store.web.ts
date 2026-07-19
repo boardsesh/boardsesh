@@ -1,4 +1,5 @@
 import { withAuthCookieLock } from './auth-cookie-lock.web';
+import { webApiUrl } from './env';
 import type { AuthTokenChangeListener, AuthTokenChangeSource } from './auth-token-change-types';
 
 export type AuthSessionResult =
@@ -300,9 +301,9 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       // below returns both that request's decoded identity and its raw backend
       // JWE, so a cookie switch between the two requests can be detected.
       const sessionResponse = await fetchWithAbort(
-        '/api/auth/session',
+        webApiUrl('/api/auth/session'),
         {
-          credentials: 'same-origin',
+          credentials: 'include',
           cache: 'no-store',
           headers: { Accept: 'application/json' },
         },
@@ -339,9 +340,9 @@ async function fetchWebSession(generation: number, signal: AbortSignal): Promise
       identityChangedDuringSynchronization ||= confirmedIdentity.changed;
 
       const tokenResponse = await fetchWithAbort(
-        '/api/internal/ws-auth',
+        webApiUrl('/api/internal/ws-auth'),
         {
-          credentials: 'same-origin',
+          credentials: 'include',
           cache: 'no-store',
           headers: { Accept: 'application/json' },
         },

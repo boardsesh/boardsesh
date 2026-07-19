@@ -12,6 +12,7 @@ import {
   type WebAuthIdentity,
 } from './auth-store.web';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
+import { webApiUrl } from './env';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -30,9 +31,16 @@ type CsrfResult = { success: true; token: string } | AuthFailure;
 
 const AUTH_COOKIE_LOCK_WAIT_TIMEOUT_MS = 15_000;
 
+// The Expo web export's mount path: Expo CLI inlines EXPO_BASE_URL from
+// `experiments.baseUrl` (app.config.ts derives it from BOARDSESH_WEB_BASE_URL)
+// — '/app' on the www-mounted export, '/' on the standalone subdomain export.
+// Deriving the callback from it keeps NextAuth's stored callback URL pointing
+// at a route that actually exists on whichever export is running, instead of a
+// hardcoded '/app' that is a 404 on app.boardsesh.com.
 function appCallbackUrl(): string {
-  if (typeof window === 'undefined') return '/app';
-  return new URL('/app', window.location.origin).toString();
+  const exportBasePath = process.env.EXPO_BASE_URL || '/';
+  if (typeof window === 'undefined') return exportBasePath;
+  return new URL(exportBasePath, window.location.origin).toString();
 }
 
 async function readJsonObject(response: Response): Promise<Record<string, unknown>> {
@@ -89,8 +97,8 @@ async function fetchJsonObject(
 }
 
 async function getCsrfToken(): Promise<CsrfResult> {
-  const outcome = await fetchJsonObject('/api/auth/csrf', {
-    credentials: 'same-origin',
+  const outcome = await fetchJsonObject(webApiUrl('/api/auth/csrf'), {
+    credentials: 'include',
     cache: 'no-store',
     headers: { Accept: 'application/json' },
     signal: createTimeoutSignal(15_000),
@@ -139,10 +147,10 @@ async function replaceCredentialsCookie(email: string, password: string): Promis
   if (!csrf.success) return { result: csrf, responseReceived: false };
 
   const outcome = await fetchJsonObject(
-    '/api/auth/callback/credentials',
+    webApiUrl('/api/auth/callback/credentials'),
     {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: 'include',
       cache: 'no-store',
       headers: {
         Accept: 'application/json',
@@ -215,9 +223,9 @@ export async function registerWithCredentials(
   password: string,
   name?: string,
 ): Promise<RegistrationResult> {
-  const outcome = await fetchJsonObject('/api/auth/register', {
+  const outcome = await fetchJsonObject(webApiUrl('/api/auth/register'), {
     method: 'POST',
-    credentials: 'same-origin',
+    credentials: 'include',
     cache: 'no-store',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password, ...(name ? { name } : {}) }),
@@ -265,9 +273,9 @@ export async function registerWithCredentials(
 async function postPasswordEndpoint(path: string, body: Record<string, string>): Promise<PasswordResetResult> {
   let response: Response;
   try {
-    response = await fetch(path, {
+    response = await fetch(webApiUrl(path), {
       method: 'POST',
-      credentials: 'same-origin',
+      credentials: 'include',
       cache: 'no-store',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -314,8 +322,8 @@ type CookieOwnership = 'owned' | 'anonymous' | 'changed';
 async function resolveCookieOwnership(departingIdentity: WebAuthIdentity | null): Promise<CookieOwnership> {
   let response: Response;
   try {
-    response = await fetch('/api/auth/session', {
-      credentials: 'same-origin',
+    response = await fetch(webApiUrl('/api/auth/session'), {
+      credentials: 'include',
       cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: createTimeoutSignal(15_000),
@@ -376,9 +384,9 @@ async function revokeOwnedNextAuthCookie(
 
     let response: Response;
     try {
-      response = await fetch('/api/auth/signout', {
+      response = await fetch(webApiUrl('/api/auth/signout'), {
         method: 'POST',
-        credentials: 'same-origin',
+        credentials: 'include',
         cache: 'no-store',
         headers: {
           Accept: 'application/json',

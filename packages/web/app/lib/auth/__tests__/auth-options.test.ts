@@ -593,3 +593,160 @@ describe('CredentialsProvider.authorize — native-oauth', () => {
     });
   });
 });
+
+// =============================================================================
+// redirect callback — cross-subdomain sign-in/sign-out resolution
+// =============================================================================
+
+type RedirectParams = Parameters<NonNullable<NonNullable<typeof authOptions.callbacks>['redirect']>>[0];
+
+async function callRedirect(params: RedirectParams): Promise<string> {
+  const callback = authOptions.callbacks?.redirect;
+  if (!callback) throw new Error('redirect callback not defined');
+  return callback(params);
+}
+
+describe('authOptions.callbacks.redirect', () => {
+  // NEXT_PUBLIC_APP_URL is unset in tests, so the app allow-list resolves to its
+  // prod default (https://app.boardsesh.com).
+  const BASE_URL = 'https://www.boardsesh.com';
+
+  it('prefixes a relative url with baseUrl (NextAuth default)', async () => {
+    expect(await callRedirect({ url: '/app', baseUrl: BASE_URL })).toBe(`${BASE_URL}/app`);
+  });
+
+  it('returns a same-origin (www) url unchanged', async () => {
+    expect(await callRedirect({ url: `${BASE_URL}/app/play`, baseUrl: BASE_URL })).toBe(`${BASE_URL}/app/play`);
+  });
+
+  it('keeps a same-origin url when NEXTAUTH_URL (baseUrl) carries a trailing slash', async () => {
+    // A trailing-slash NEXTAUTH_URL makes baseUrl `https://www.boardsesh.com/`,
+    // which never equals `new URL(url).origin` — a literal string compare would
+    // wrongly collapse this same-origin redirect to the base and strip the path.
+    expect(await callRedirect({ url: `${BASE_URL}/app/play`, baseUrl: `${BASE_URL}/` })).toBe(`${BASE_URL}/app/play`);
+  });
+
+  it('allows the standalone app origin so a cross-subdomain sign-out confirms', async () => {
+    const appCallback = 'https://app.boardsesh.com/app';
+    expect(await callRedirect({ url: appCallback, baseUrl: BASE_URL })).toBe(appCallback);
+  });
+
+  it('allows a numbered app preview origin', async () => {
+    const previewCallback = 'https://7.app.boardsesh.com/app';
+    expect(await callRedirect({ url: previewCallback, baseUrl: BASE_URL })).toBe(previewCallback);
+  });
+
+  it('coerces a disallowed cross-origin url to baseUrl (open-redirect guard)', async () => {
+    expect(await callRedirect({ url: 'https://evil.com/app', baseUrl: BASE_URL })).toBe(BASE_URL);
+  });
+
+  it('coerces a look-alike suffix origin to baseUrl', async () => {
+    expect(await callRedirect({ url: 'https://app.boardsesh.com.evil.com/app', baseUrl: BASE_URL })).toBe(BASE_URL);
+  });
+});
+
+// =============================================================================
+// Shared .boardsesh.com session cookie (cross-subdomain auth)
+// =============================================================================
+//
+// The cookie block is resolved at module load from the env, so each case stubs
+// the env, resets the module registry, and re-imports authOptions to read the
+// freshly-resolved cookies.
+
+describe('authOptions.cookies — shared .boardsesh.com domain', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  async function loadCookies() {
+    const { authOptions: freshOptions } = await import('../auth-options');
+    return freshOptions.cookies;
+  }
+
+  it('scopes the session token to .boardsesh.com on the production www host (Lax, Secure, __Secure- prefix)', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.name).toBe('__Secure-next-auth.session-token');
+    expect(cookies?.sessionToken?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.sessionToken?.options.sameSite).toBe('lax');
+    expect(cookies?.sessionToken?.options.secure).toBe(true);
+    expect(cookies?.sessionToken?.options.httpOnly).toBe(true);
+  });
+
+  it('scopes the OAuth-flow cookies to the same parent domain', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.callbackUrl?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.state?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.nonce?.options.domain).toBe('.boardsesh.com');
+    expect(cookies?.pkceCodeVerifier?.options.domain).toBe('.boardsesh.com');
+  });
+
+  it('honours an AUTH_COOKIE_DOMAIN override', async () => {
+    vi.stubEnv('VERCEL_ENV', 'production');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '.staging.boardsesh.com');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.options.domain).toBe('.staging.boardsesh.com');
+    expect(cookies?.callbackUrl?.options.domain).toBe('.staging.boardsesh.com');
+  });
+
+  it('sets NO cookie domain on a Vercel preview — secure context, but not the prod host', async () => {
+    // isSecureCookieContext() is true whenever VERCEL_URL is set, but a
+    // `Domain=.boardsesh.com` Set-Cookie from a *.vercel.app response is
+    // rejected by the browser. The domain must key on the serving host, not on
+    // the secure flag, or preview logins silently never store a cookie.
+    vi.stubEnv('VERCEL_ENV', 'preview');
+    vi.stubEnv('VERCEL_URL', 'boardsesh-abc123-marcodejonghs-projects.vercel.app');
+    vi.stubEnv('NEXTAUTH_URL', '');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.name).toBe('__Secure-next-auth.session-token');
+    expect(cookies?.sessionToken?.options.secure).toBe(true);
+    expect(cookies?.sessionToken?.options.domain).toBeUndefined();
+    expect(cookies?.callbackUrl?.options.domain).toBeUndefined();
+  });
+
+  it('sets NO cookie domain on a homelab preview host running unmerged PR code', async () => {
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'https://42.preview.boardsesh.com');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    // Secure context (https NEXTAUTH_URL) — but host-only, so a preview
+    // login/sign-out can never write or delete the domain-wide prod cookie.
+    expect(cookies?.sessionToken?.name).toBe('__Secure-next-auth.session-token');
+    expect(cookies?.sessionToken?.options.domain).toBeUndefined();
+  });
+
+  it('sets NO cookie domain on localhost/dev — the cookie stays host-only', async () => {
+    // Force a non-secure context: no production Vercel env, no https NEXTAUTH_URL,
+    // no Vercel URL. A Domain attribute on `localhost` is invalid and would drop
+    // the cookie, so it must be undefined here.
+    vi.stubEnv('VERCEL_ENV', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('NEXTAUTH_URL', 'http://localhost:3000');
+    vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.resetModules();
+    const cookies = await loadCookies();
+
+    expect(cookies?.sessionToken?.name).toBe('next-auth.session-token');
+    expect(cookies?.sessionToken?.options.domain).toBeUndefined();
+    expect(cookies?.sessionToken?.options.secure).toBe(false);
+    expect(cookies?.callbackUrl?.options.domain).toBeUndefined();
+  });
+});

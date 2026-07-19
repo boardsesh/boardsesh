@@ -15,7 +15,6 @@ import { VercelToolbar } from '@vercel/toolbar/next';
 import { getAllBoardConfigs } from './lib/server-board-configs';
 import { EMPTY_FEATURE_FLAGS } from './flags';
 import { FeatureFlagsProvider } from './components/providers/feature-flags-provider';
-import { ExpoWebRolloutCookieSync } from './components/providers/expo-web-rollout-cookie-sync';
 import { OnboardingTourProvider } from './components/onboarding/onboarding-tour-provider';
 import OnboardingTourOverlay from './components/onboarding/onboarding-tour-overlay';
 import OnboardingDummySeshMount from './components/onboarding/onboarding-dummy-sesh-mount';
@@ -111,7 +110,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <NativeDeepLinkListener />
                     <AuthModalProvider>
                       <FeatureFlagsProvider flags={EMPTY_FEATURE_FLAGS}>
-                        <ExpoWebRolloutCookieSync />
                         <PersistentSessionWrapper boardConfigs={boardConfigs}>
                           <OnboardingTourProvider>
                             <NotificationSubscriptionManager>{children}</NotificationSubscriptionManager>

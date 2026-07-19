@@ -20,6 +20,7 @@ describe('CORS Handler', () => {
     });
     delete process.env.TAILSCALE_HOSTNAME;
     delete process.env.DEV_ALLOWED_ORIGINS;
+    delete process.env.APP_ORIGIN;
 
     // Reset to a known state before each test.
     // initCors invokes execFileSync (for Tailscale discovery), so clear the
@@ -53,6 +54,20 @@ describe('CORS Handler', () => {
       expect(() => initCors('not-a-valid-url')).not.toThrow();
       // The invalid string is still added as-is
       expect(getAllowedOrigins()).toContain('not-a-valid-url');
+    });
+
+    it('adds the standalone app origin (app.boardsesh.com) by default', () => {
+      initCors('https://boardsesh.com');
+      expect(getAllowedOrigins()).toContain('https://app.boardsesh.com');
+    });
+
+    it('uses APP_ORIGIN over the default when set', () => {
+      process.env.APP_ORIGIN = 'https://app.staging.boardsesh.com';
+      initCors('https://boardsesh.com');
+      const origins = getAllowedOrigins();
+      expect(origins).toContain('https://app.staging.boardsesh.com');
+      expect(origins).not.toContain('https://app.boardsesh.com');
+      delete process.env.APP_ORIGIN;
     });
 
     it('adds localhost origins in non-production env', () => {
@@ -184,6 +199,21 @@ describe('CORS Handler', () => {
     it('returns false for non-numeric preview subdomains', () => {
       expect(isOriginAllowed('https://abc.preview.boardsesh.com')).toBe(false);
       expect(isOriginAllowed('https://pr-5.preview.boardsesh.com')).toBe(false);
+    });
+
+    it('returns true for the standalone Expo-web app origin', () => {
+      expect(isOriginAllowed('https://app.boardsesh.com')).toBe(true);
+    });
+
+    it('returns true for numbered app preview deployments matching regex', () => {
+      expect(isOriginAllowed('https://42.app.boardsesh.com')).toBe(true);
+      expect(isOriginAllowed('https://123.app.boardsesh.com')).toBe(true);
+    });
+
+    it('returns false for non-numeric or look-alike app subdomains', () => {
+      expect(isOriginAllowed('https://pr-5.app.boardsesh.com')).toBe(false);
+      expect(isOriginAllowed('http://app.boardsesh.com')).toBe(false); // http not https
+      expect(isOriginAllowed('https://app.boardsesh.com.evil.com')).toBe(false);
     });
 
     it('returns false for preview origins with http (not https)', () => {

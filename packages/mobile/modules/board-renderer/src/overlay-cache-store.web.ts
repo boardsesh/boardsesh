@@ -199,6 +199,10 @@ export function hydrateOverlayCache(currentVersionPrefix?: string): Promise<void
         const response = await cache.match(request);
         if (!response) continue;
         const blob = await response.blob();
+        // A concurrent render may have minted this key while we awaited the
+        // cache; re-check before creating a second URL so we never orphan the
+        // one already stored (and referenced by a mounted <Image>).
+        if (renderedObjectUrls.has(cacheKey)) continue;
         rememberObjectUrl(cacheKey, URL.createObjectURL(blob));
       } catch {
         // Skip an unreadable entry; the rest still hydrate.

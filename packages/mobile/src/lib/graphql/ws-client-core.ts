@@ -163,6 +163,21 @@ export function createWsClientModule(deps: WsClientDeps): WsClientModule {
     close(code?: number, reason?: string): void {
       this.socket.close(code, reason);
     }
+
+    // graphql-ws drives this socket exclusively through the on* handlers above,
+    // so nothing calls these EventTarget methods today. Forward them to the
+    // underlying socket anyway: a future graphql-ws that switched to
+    // addEventListener would otherwise silently lose every event on this shim.
+    // The 4401→4403 remap lives only on the `onclose` property path — a 'close'
+    // listener registered here sees the underlying socket's raw code (a
+    // deliberate, documented tradeoff, since graphql-ws does not use this path).
+    addEventListener(...args: Parameters<WebSocket['addEventListener']>): void {
+      this.socket.addEventListener(...args);
+    }
+
+    removeEventListener(...args: Parameters<WebSocket['removeEventListener']>): void {
+      this.socket.removeEventListener(...args);
+    }
   }
 
   let wsClient: Client | null = null;

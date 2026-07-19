@@ -1,6 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureAuthCredentialGeneration, clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
-import { registerWithCredentials, signInWithCredentials, signOut, signOutForGeneration } from '../auth.web';
+import {
+  registerWithCredentials,
+  requestPasswordReset,
+  resetPassword,
+  signInWithCredentials,
+  signOut,
+  signOutForGeneration,
+} from '../auth.web';
+
+// The Expo-web app calls www's auth endpoints cross-origin (app.boardsesh.com →
+// www.boardsesh.com), so the auth fetches target the absolute web origin
+// (WEB_BASE_URL default) with credentials: 'include'. In this node test there is
+// no same-origin window, so `webApiUrl` always resolves to the absolute form.
+const WEB = 'https://www.boardsesh.com';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -24,7 +37,16 @@ function requestBody(callIndex: number): string {
 
 beforeEach(async () => {
   fetchMock.mockReset();
+  // Simulate the www-mounted export (experiments.baseUrl '/app'): Expo CLI
+  // inlines this into the bundle as EXPO_BASE_URL, and appCallbackUrl derives
+  // the NextAuth callback from it. The standalone subdomain export case
+  // (no base path → '/') has its own test below.
+  vi.stubEnv('EXPO_BASE_URL', '/app');
   await clearTokens();
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('Expo web credentials auth', () => {
@@ -39,10 +61,10 @@ describe('Expo web credentials auth', () => {
     await expect(signInWithCredentials('climber@example.com', 'password')).resolves.toEqual({ success: true });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/csrf',
-      '/api/auth/callback/credentials',
-      '/api/auth/session',
-      '/api/internal/ws-auth',
+      `${WEB}/api/auth/csrf`,
+      `${WEB}/api/auth/callback/credentials`,
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
     ]);
     const callbackOptions = fetchMock.mock.calls[1]?.[1] as RequestInit;
     const callbackBody = new URLSearchParams(requestBody(1));
@@ -50,10 +72,26 @@ describe('Expo web credentials auth', () => {
     expect(callbackBody.get('email')).toBe('climber@example.com');
     expect(callbackBody.get('password')).toBe('password');
     expect(callbackBody.get('callbackUrl')).toBe('/app');
-    expect(callbackOptions.credentials).toBe('same-origin');
+    expect(callbackOptions.credentials).toBe('include');
     expect(new Headers(callbackOptions.headers).get('X-Auth-Return-Redirect')).toBe('1');
     expect(captureAuthCredentialGeneration()).toBe(generationBeforeLogin + 1);
     await expect(getAuthToken()).resolves.toBe('backend-jwe');
+  });
+
+  it('derives the callback from the export base — root on the standalone subdomain export', async () => {
+    // On app.boardsesh.com the app is rooted at '/', and '/app' does not exist:
+    // the stored NextAuth callback must point at the export's real base path.
+    vi.stubEnv('EXPO_BASE_URL', '');
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-token' }))
+      .mockResolvedValueOnce(jsonResponse({ url: '/' }))
+      .mockResolvedValueOnce(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }))
+      .mockResolvedValueOnce(authenticatedBridgeResponse('backend-jwe'));
+
+    await expect(signInWithCredentials('climber@example.com', 'password')).resolves.toEqual({ success: true });
+
+    const callbackBody = new URLSearchParams(requestBody(1));
+    expect(callbackBody.get('callbackUrl')).toBe('/');
   });
 
   it('maps a NextAuth credentials error after reconciling the unchanged cookie', async () => {
@@ -68,9 +106,9 @@ describe('Expo web credentials auth', () => {
       error: 'invalid_credentials',
     });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/csrf',
-      '/api/auth/callback/credentials',
-      '/api/auth/session',
+      `${WEB}/api/auth/csrf`,
+      `${WEB}/api/auth/callback/credentials`,
+      `${WEB}/api/auth/session`,
     ]);
   });
 
@@ -95,10 +133,10 @@ describe('Expo web credentials auth', () => {
     await expect(signInWithCredentials('new-climber@example.com', 'password')).resolves.toEqual({ success: true });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/csrf',
-      '/api/auth/callback/credentials',
-      '/api/auth/session',
-      '/api/internal/ws-auth',
+      `${WEB}/api/auth/csrf`,
+      `${WEB}/api/auth/callback/credentials`,
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
     ]);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
@@ -177,9 +215,9 @@ describe('Expo web credentials auth', () => {
     await signOut();
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/session',
-      '/api/auth/csrf',
-      '/api/auth/signout',
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/auth/csrf`,
+      `${WEB}/api/auth/signout`,
     ]);
     const signOutOptions = fetchMock.mock.calls[2]?.[1] as RequestInit;
     const signOutBody = new URLSearchParams(requestBody(2));
@@ -297,10 +335,10 @@ describe('Expo web credentials auth', () => {
     });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/session',
-      '/api/auth/csrf',
-      '/api/auth/session',
-      '/api/internal/ws-auth',
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/auth/csrf`,
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
     ]);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
@@ -321,9 +359,9 @@ describe('Expo web credentials auth', () => {
     await expect(signOutForGeneration(oldGeneration)).resolves.toBe(false);
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/session',
-      '/api/auth/session',
-      '/api/internal/ws-auth',
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
     ]);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
@@ -346,11 +384,11 @@ describe('Expo web credentials auth', () => {
     await expect(signOutForGeneration(oldGeneration)).resolves.toBe(false);
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/auth/session',
-      '/api/auth/csrf',
-      '/api/auth/signout',
-      '/api/auth/session',
-      '/api/internal/ws-auth',
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/auth/csrf`,
+      `${WEB}/api/auth/signout`,
+      `${WEB}/api/auth/session`,
+      `${WEB}/api/internal/ws-auth`,
     ]);
     await expect(getAuthToken()).resolves.toBe('new-user-jwe');
   });
@@ -367,7 +405,7 @@ describe('Expo web credentials auth', () => {
 
     await expect(signOutForGeneration(oldGeneration)).resolves.toBe(true);
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/auth/session']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([`${WEB}/api/auth/session`]);
     await expect(getAuthToken()).resolves.toBeNull();
   });
 
@@ -379,5 +417,41 @@ describe('Expo web credentials auth', () => {
 
     await expect(oldSignOut).resolves.toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Expo web register + password-reset endpoints', () => {
+  function credentials(callIndex: number): RequestCredentials | undefined {
+    return (fetchMock.mock.calls[callIndex]?.[1] as RequestInit | undefined)?.credentials;
+  }
+
+  it('registers cross-origin with credentials so the shared cookie is set', async () => {
+    // requiresVerification keeps this to the single register POST (no auto-login).
+    fetchMock.mockResolvedValueOnce(jsonResponse({ requiresVerification: true, emailSent: true }));
+
+    await registerWithCredentials('climber@example.com', 'password', 'Climber');
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${WEB}/api/auth/register`);
+    expect(credentials(0)).toBe('include');
+  });
+
+  it('requests a password reset cross-origin with credentials', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+
+    await expect(requestPasswordReset('climber@example.com')).resolves.toEqual({ success: true });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${WEB}/api/auth/forgot-password`);
+    expect(credentials(0)).toBe('include');
+  });
+
+  it('resets the password cross-origin with credentials', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+
+    await expect(resetPassword('climber@example.com', 'reset-token', 'newpass', 'newpass')).resolves.toEqual({
+      success: true,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${WEB}/api/auth/reset-password`);
+    expect(credentials(0)).toBe('include');
   });
 });

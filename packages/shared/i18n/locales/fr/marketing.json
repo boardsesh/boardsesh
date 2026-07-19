@@ -30,6 +30,8 @@
     "hero": {
       "title": "Au mur !",
       "subtitle": "Notez vos croix sur Kilter, Tension et MoonBoard.",
+      "startClimbing": "Commencer à grimper",
+      "startClimbingAria": "Commencer à grimper dans l'appli",
       "ctaInstallIos": "Télécharger sur l'App Store",
       "ctaInstallAndroid": "Disponible sur Google Play",
       "ctaUpdate": "Mettre à jour l'appli"

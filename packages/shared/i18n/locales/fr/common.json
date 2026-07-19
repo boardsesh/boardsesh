@@ -396,7 +396,8 @@
     "notifications": "Notifications",
     "searchClimbsByName": "Rechercher des blocs par nom",
     "userMenu": "Menu utilisateur",
-    "toggleDarkMode": "Activer/désactiver le mode sombre"
+    "toggleDarkMode": "Activer/désactiver le mode sombre",
+    "startClimbing": "Commencer à grimper dans l'appli"
   },
   "boardSelector": {
     "title": "Choisir une board"
@@ -409,7 +410,8 @@
     "createdClimbs": "Blocs créés",
     "auroraMigration": "Migration Aurora",
     "searchPlaceholder": "Qu'est-ce qu'on grimpe ?",
-    "searchClimbsPlaceholder": "Rechercher des blocs..."
+    "searchClimbsPlaceholder": "Rechercher des blocs...",
+    "startClimbing": "Commencer à grimper"
   },
   "share": {
     "profileTitle": "Profil de grimpeur de {{name}}",
