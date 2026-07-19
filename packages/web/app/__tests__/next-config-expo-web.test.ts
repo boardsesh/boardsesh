@@ -42,6 +42,15 @@ describe('Expo web Next proxy', () => {
     );
   });
 
+  it('accepts only loopback hosts for the dev Metro proxy', () => {
+    expect(configModule.resolveExpoWebDevOrigin('http://localhost:8082')).toBe('http://localhost:8082');
+    expect(configModule.resolveExpoWebDevOrigin('http://127.0.0.1:8082')).toBe('http://127.0.0.1:8082');
+    expect(configModule.resolveExpoWebDevOrigin('http://[::1]:8082')).toBe('http://[::1]:8082');
+    // A non-loopback host would turn the /app rewrite into an open forward.
+    expect(() => configModule.resolveExpoWebDevOrigin('http://evil.example.com:8082')).toThrow(/loopback host/);
+    expect(() => configModule.resolveExpoWebDevOrigin('http://192.168.0.5:8082')).toThrow(/loopback host/);
+  });
+
   it('adds /app rewrites only when Expo web and its proxy origin are enabled', async () => {
     process.env.BOARDSESH_WEB = '1';
     process.env.BOARDSESH_EXPO_WEB_ORIGIN = 'http://localhost:8082';

@@ -24,6 +24,19 @@ export function resolveExpoWebDevOrigin(rawOrigin) {
     throw new Error('BOARDSESH_EXPO_WEB_ORIGIN must use http or https');
   }
 
+  // This is a dev-only Metro proxy — the dev orchestrator only ever points it at
+  // a loopback host (see scripts/lib/dev-server-origins.ts). Reject any other
+  // host so a stray/misconfigured value can't turn the /app rewrite into an open
+  // forward to an arbitrary origin.
+  const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+  if (!LOOPBACK_HOSTS.has(parsedOrigin.hostname)) {
+    throw new Error(
+      `BOARDSESH_EXPO_WEB_ORIGIN must point at a loopback host (localhost/127.0.0.1/[::1]); got ${JSON.stringify(
+        parsedOrigin.hostname,
+      )}. It is a dev-only Metro proxy.`,
+    );
+  }
+
   return parsedOrigin.origin;
 }
 
