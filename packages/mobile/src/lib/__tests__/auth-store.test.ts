@@ -63,6 +63,19 @@ describe('auth-store', () => {
     expect(store.setItemAsync).toHaveBeenCalledTimes(3);
   });
 
+  it('writes the JWT last so its presence is the commit marker', async () => {
+    const store = await secureStore();
+    const { storeTokens } = await import('../auth-store');
+
+    await storeTokens('jwt-value', 'refresh-value', '2026-08-01T00:00:00.000Z');
+
+    // getAuthToken keys "authenticated" off the JWT, so committing it last means
+    // a partial write can only ever drop the JWT (a clean unauthenticated state),
+    // never strand it without its refresh token.
+    const writtenKeys = store.setItemAsync.mock.calls.map(([key]) => key);
+    expect(writtenKeys).toEqual([REFRESH_TOKEN_KEY, EXPIRES_AT_KEY, JWT_KEY]);
+  });
+
   it('round-trips stored tokens through the getters', async () => {
     const { storeTokens, getAuthToken, getRefreshToken, getTokenExpiresAt } = await import('../auth-store');
 

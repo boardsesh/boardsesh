@@ -88,9 +88,13 @@ export function storeTokensForGeneration(
   expiresAt: string,
 ): Promise<boolean> {
   return serializeCredentialMutation(async () => {
-    if (!(await writeCredentialForGeneration(generation, JWT_KEY, jwt))) return false;
+    // Write the JWT LAST so its presence is the commit marker: getAuthToken keys
+    // "authenticated" off the JWT, so a partial write (or a generation change
+    // mid-sequence) can only leave the JWT absent — a clean unauthenticated
+    // state that re-syncs — never a JWT stranded without its refresh token.
     if (!(await writeCredentialForGeneration(generation, REFRESH_TOKEN_KEY, refreshToken))) return false;
-    return writeCredentialForGeneration(generation, EXPIRES_AT_KEY, expiresAt);
+    if (!(await writeCredentialForGeneration(generation, EXPIRES_AT_KEY, expiresAt))) return false;
+    return writeCredentialForGeneration(generation, JWT_KEY, jwt);
   });
 }
 
