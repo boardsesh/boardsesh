@@ -6,9 +6,15 @@ const authState = {
   token: 'old-jwt' as string | null,
   expiring: true,
 };
-const ensureFreshTokenMock = vi.fn();
 const getAuthTokenMock = vi.fn();
 const isTokenExpiringSoonMock = vi.fn();
+const deduplicatedRefreshMock = vi.fn();
+
+type RefreshResult =
+  | { status: 'refreshed'; generation: number }
+  | { status: 'rejected'; generation: number }
+  | { status: 'unavailable'; generation: number }
+  | { status: 'superseded' };
 
 vi.mock('../auth-store', () => ({
   captureAuthCredentialGeneration: () => authState.generation,
@@ -18,7 +24,7 @@ vi.mock('../auth-store', () => ({
 }));
 
 vi.mock('../auth-interceptor', () => ({
-  ensureFreshToken: () => ensureFreshTokenMock(),
+  deduplicatedRefresh: () => deduplicatedRefreshMock(),
 }));
 
 import { resolveAuthSession } from '../auth-session';
@@ -31,24 +37,48 @@ beforeEach(() => {
   getAuthTokenMock.mockImplementation(async () => authState.token);
   isTokenExpiringSoonMock.mockReset();
   isTokenExpiringSoonMock.mockResolvedValue(true);
-  ensureFreshTokenMock.mockReset();
-  ensureFreshTokenMock.mockResolvedValue(true);
+  deduplicatedRefreshMock.mockReset();
+  deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 } satisfies RefreshResult);
+});
+
+describe('resolveAuthSession refresh status mapping', () => {
+  it('maps a server-rejected refresh at expiry to anonymous', async () => {
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'rejected', generation: 1 } satisfies RefreshResult);
+
+    await expect(resolveAuthSession()).resolves.toEqual({ status: 'anonymous' });
+  });
+
+  it('maps a transient network failure at expiry to unavailable, never anonymous', async () => {
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'unavailable', generation: 1 } satisfies RefreshResult);
+
+    const result = await resolveAuthSession();
+
+    expect(result.status).toBe('unavailable');
+    expect(result.status).not.toBe('anonymous');
+  });
+
+  it('returns the refreshed token when the expiring credential refreshes', async () => {
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 } satisfies RefreshResult);
+    getAuthTokenMock.mockResolvedValue('fresh-jwt');
+
+    await expect(resolveAuthSession()).resolves.toEqual({ status: 'authenticated', token: 'fresh-jwt' });
+  });
 });
 
 describe('resolveAuthSession generation isolation', () => {
   it('returns superseded when an old foreground refresh finishes after a newer login', async () => {
-    let releaseRefresh!: (refreshed: boolean) => void;
-    ensureFreshTokenMock.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
+    let releaseRefresh!: (result: RefreshResult) => void;
+    deduplicatedRefreshMock.mockReturnValueOnce(
+      new Promise<RefreshResult>((resolve) => {
         releaseRefresh = resolve;
       }),
     );
 
     const oldSessionCheck = resolveAuthSession();
-    await vi.waitFor(() => expect(ensureFreshTokenMock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(1));
     authState.current = false;
     authState.token = 'new-user-jwt';
-    releaseRefresh(false);
+    releaseRefresh({ status: 'refreshed', generation: 1 });
 
     await expect(oldSessionCheck).resolves.toEqual({ status: 'superseded' });
   });

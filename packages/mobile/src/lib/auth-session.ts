@@ -1,4 +1,4 @@
-import { ensureFreshToken } from './auth-interceptor';
+import { deduplicatedRefresh } from './auth-interceptor';
 import {
   captureAuthCredentialGeneration,
   getAuthToken,
@@ -29,11 +29,18 @@ export async function resolveAuthSession(): Promise<AuthSessionResult> {
     const tokenExpiringSoon = await isTokenExpiringSoon();
     if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
     if (tokenExpiringSoon) {
-      const refreshed = await ensureFreshToken();
-      if (!refreshed) {
-        return isAuthCredentialGenerationCurrent(credentialGeneration)
-          ? { status: 'anonymous' }
-          : { status: 'superseded' };
+      // Refresh via the status-returning path (not the boolean `ensureFreshToken`,
+      // which collapses rejected and unavailable into the same `false`). A
+      // server-rejected refresh token is a real logout; a transient network
+      // failure must NOT sign the user out.
+      const refreshResult = await deduplicatedRefresh();
+      if (!isAuthCredentialGenerationCurrent(credentialGeneration) || refreshResult.status === 'superseded') {
+        return { status: 'superseded' };
+      }
+      if (refreshResult.status === 'rejected') return { status: 'anonymous' };
+      if (refreshResult.status === 'unavailable') {
+        // Preserve the session and let the caller retry, instead of a false logout.
+        return { status: 'unavailable', error: new Error('Token refresh unavailable') };
       }
 
       const refreshedToken = await getAuthToken();
