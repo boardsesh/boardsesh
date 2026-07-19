@@ -99,7 +99,7 @@ describe('authenticatedFetch on web', () => {
     let sessionCalls = 0;
     fetchMock.mockImplementation((url: string | URL | Request) => {
       if (url === '/graphql') return Promise.resolve(new Response(null, { status: 401 }));
-      if (url === '/api/auth/session') {
+      if (url === `${WEB}/api/auth/session`) {
         sessionCalls += 1;
         // The first refresh confirms authenticated (driving the retry); every
         // read after the retry-401 sees an anonymous cookie.
@@ -107,9 +107,9 @@ describe('authenticatedFetch on web', () => {
           sessionCalls === 1 ? jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }) : jsonResponse({}),
         );
       }
-      if (url === '/api/internal/ws-auth') return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
-      if (url === '/api/auth/csrf') return Promise.resolve(jsonResponse({ csrfToken: 'csrf-token' }));
-      if (url === '/api/auth/signout') return Promise.resolve(jsonResponse({ url: '/app' }));
+      if (url === `${WEB}/api/internal/ws-auth`) return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
+      if (url === `${WEB}/api/auth/csrf`) return Promise.resolve(jsonResponse({ csrfToken: 'csrf-token' }));
+      if (url === `${WEB}/api/auth/signout`) return Promise.resolve(jsonResponse({ url: '/app' }));
       return Promise.resolve(new Response(null, { status: 401 }));
     });
 
@@ -126,9 +126,9 @@ describe('authenticatedFetch on web', () => {
     setOnForcedSignOut(forcedSignOut);
     fetchMock.mockImplementation((url: string | URL | Request) => {
       if (url === '/graphql') return Promise.resolve(new Response(null, { status: 401 }));
-      if (url === '/api/auth/session')
+      if (url === `${WEB}/api/auth/session`)
         return Promise.resolve(jsonResponse({ user: { id: 'user-1' }, authSessionId: 'login-1' }));
-      if (url === '/api/internal/ws-auth') return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
+      if (url === `${WEB}/api/internal/ws-auth`) return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
       return Promise.resolve(new Response(null, { status: 401 }));
     });
 
@@ -148,8 +148,8 @@ describe('authenticatedFetch on web', () => {
     let sessionCalls = 0;
     fetchMock.mockImplementation((url: string | URL | Request) => {
       if (url === '/graphql') return Promise.resolve(new Response(null, { status: 401 }));
-      if (url === '/api/internal/ws-auth') return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
-      if (url === '/api/auth/session') {
+      if (url === `${WEB}/api/internal/ws-auth`) return Promise.resolve(authenticatedBridgeResponse('new-jwe'));
+      if (url === `${WEB}/api/auth/session`) {
         sessionCalls += 1;
         // 1: refresh confirms authenticated; 2: post-retry confirmation is
         // anonymous; 3: the durable sign-out's cookie check goes offline.
