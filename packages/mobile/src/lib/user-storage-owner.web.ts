@@ -67,7 +67,12 @@ export async function sweepOrphanedUserStorage(owner: UserStorageOwner, now: num
 /** Set before authenticated children mount so their first storage read is scoped. */
 export function setCurrentUserStorageOwner(owner: UserStorageOwner | null): void {
   currentUserStorageOwner = owner;
-  if (!owner) return;
+  if (!owner) {
+    // Sign-out clears the dedup so the next sign-in runs the sweep again — even
+    // for the same user id, whose new login mints a fresh authSessionId scope.
+    lastSweptOwnerScope = null;
+    return;
+  }
   const scope = ownerScope(owner);
   if (scope === lastSweptOwnerScope) return;
   lastSweptOwnerScope = scope;

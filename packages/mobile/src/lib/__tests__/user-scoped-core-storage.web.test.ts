@@ -138,6 +138,29 @@ describe('browser login-scoped core persistence', () => {
     await expect(getStoredActiveBoard(newerUserALogin)).resolves.toEqual(boardA);
   });
 
+  it('re-runs the sweep after a sign-out, even for the same user (dedup reset)', async () => {
+    const { setCurrentUserStorageOwner } = await import('../user-storage-owner.web');
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      setItem: ReturnType<typeof vi.fn>;
+    };
+    asyncStorage.setItem.mockClear();
+    const activityIndexWrites = () =>
+      asyncStorage.setItem.mock.calls.filter(([key]) => key === 'boardsesh_web_owner_activity_v1').length;
+
+    setCurrentUserStorageOwner(userALogin);
+    await vi.waitFor(() => expect(activityIndexWrites()).toBe(1));
+
+    // Re-setting the same owner without a sign-out is deduped — no new sweep.
+    setCurrentUserStorageOwner(userALogin);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(activityIndexWrites()).toBe(1);
+
+    // A sign-out (null owner) resets the dedup, so the next sign-in sweeps again.
+    setCurrentUserStorageOwner(null);
+    setCurrentUserStorageOwner(userALogin);
+    await vi.waitFor(() => expect(activityIndexWrites()).toBe(2));
+  });
+
   it('keeps a newer login write when another tab finishes deleting the old login scope', async () => {
     const { userScopedStorageKey } = await import('../user-storage-owner.web');
     const { clearStoredSessionId, getStoredSessionId, setStoredSessionId } = await import('../session-store.web');
