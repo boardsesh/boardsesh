@@ -7,6 +7,9 @@ import {
   REDBEARLAB_SERVICE_UUID,
   REDBEARLAB_WRITE_CHARACTERISTIC_UUID,
 } from '../bluetooth-shared';
+// The transport helpers moved to the shared ble-protocol package; type the
+// fabricated device/characteristic fakes against its Web Bluetooth surface.
+import type { WebBluetoothDevice, WebBluetoothRemoteGATTCharacteristic } from '@boardsesh/ble-protocol/web-transport';
 
 // Map of serviceUuid -> { characteristicUuid -> characteristic object }.
 type ServiceMap = Record<string, Record<string, object>>;
@@ -29,10 +32,10 @@ function makeServer(serviceMap: ServiceMap) {
 
 function makeDevice(serviceMap: ServiceMap | 'no-gatt') {
   if (serviceMap === 'no-gatt') {
-    return { gatt: undefined } as unknown as BluetoothDevice;
+    return { gatt: undefined } as unknown as WebBluetoothDevice;
   }
   const server = makeServer(serviceMap);
-  return { gatt: { connect: vi.fn(async () => server) } } as unknown as BluetoothDevice;
+  return { gatt: { connect: vi.fn(async () => server) } } as unknown as WebBluetoothDevice;
 }
 
 const uartChar = { id: 'uart-write' };
@@ -82,7 +85,7 @@ function makeWritableCharacteristic(writeWithoutResponse?: boolean) {
     properties: writeWithoutResponse === undefined ? undefined : { writeWithoutResponse },
     writeValueWithoutResponse: vi.fn().mockResolvedValue(undefined),
     writeValueWithResponse: vi.fn().mockResolvedValue(undefined),
-  } as unknown as BluetoothRemoteGATTCharacteristic & {
+  } as unknown as WebBluetoothRemoteGATTCharacteristic & {
     writeValueWithoutResponse: ReturnType<typeof vi.fn>;
     writeValueWithResponse: ReturnType<typeof vi.fn>;
   };

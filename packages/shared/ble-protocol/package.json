@@ -35,6 +35,11 @@
       "import": "./src/transport.ts",
       "default": "./src/transport.ts"
     },
+    "./web-transport": {
+      "types": "./src/web-transport.ts",
+      "import": "./src/web-transport.ts",
+      "default": "./src/web-transport.ts"
+    },
     "./scan-constants": {
       "types": "./src/scan-constants.ts",
       "import": "./src/scan-constants.ts",

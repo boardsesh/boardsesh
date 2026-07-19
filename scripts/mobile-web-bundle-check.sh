@@ -36,4 +36,11 @@ verify_synced_artifact "$SOURCE_WASM" "$PUBLIC_WASM" "WASM"
 # `vp run build:expo-web`); it also asserts the shell and WASM assets landed.
 bash "$ROOT_DIR/scripts/build-expo-web-export.sh" "$OUTPUT_DIR"
 
+# The off-main-thread render worker is a static asset loaded by runtime URL, so
+# it must be copied into the export verbatim (Metro never bundles it).
+if [[ ! -f "$OUTPUT_DIR/wasm/board-render.worker.js" ]]; then
+  echo "[mobile-web-bundle] missing board-render worker asset" >&2
+  exit 1
+fi
+
 echo "[mobile-web-bundle] Expo web export is complete and contains the required shell and WASM assets"

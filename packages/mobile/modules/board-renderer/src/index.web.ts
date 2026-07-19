@@ -27,6 +27,15 @@
  * rendering, instead of showing wrong markers.
  */
 
+import {
+  getRenderedObjectUrl,
+  rememberObjectUrl,
+  releaseAllObjectUrls,
+  readOverlayFromCache,
+  writeOverlayToCache,
+  _overlayCacheStoreForTests,
+} from './overlay-cache-store.web';
+
 // Signals "a web renderer is available" to the hook, which only checks this for
 // truthiness before calling the top-level renderHoldsOverlay wrapper. There is
 // no native module object to mirror on web.
@@ -132,18 +141,20 @@ function configRequiresModernRenderer(configJson: string): boolean {
 }
 
 /**
- * Encode raw RGBA pixels to a PNG object URL via a canvas. Prefers
- * OffscreenCanvas (main-thread available in modern browsers, promise API); falls
- * back to an HTMLCanvasElement when it is not.
+ * Encode raw RGBA pixels to a PNG Blob via a canvas. Prefers OffscreenCanvas
+ * (available on the main thread in modern browsers, promise API); falls back to
+ * an HTMLCanvasElement when it is not. The caller turns the Blob into an object
+ * URL and persists its bytes to the Cache API — keeping both concerns on the
+ * main thread (finding C2).
  */
-async function encodeRgbaToPngObjectUrl(
+async function encodeRgbaToPngBlob(
   // Backed by its own ArrayBuffer (not SharedArrayBuffer) — the shape
   // ImageData's ImageDataArray requires. The caller builds it from the WASM
   // bytes via the copying TypedArray constructor.
   rgba: Uint8ClampedArray<ArrayBuffer>,
   width: number,
   height: number,
-): Promise<string> {
+): Promise<Blob> {
   if (typeof ImageData === 'undefined') throw new Error('ImageData is unavailable in this browser');
   const imageData = new ImageData(rgba, width, height);
 
@@ -152,8 +163,7 @@ async function encodeRgbaToPngObjectUrl(
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Failed to get 2d context from OffscreenCanvas');
     context.putImageData(imageData, 0, 0);
-    const blob = await canvas.convertToBlob({ type: 'image/png' });
-    return URL.createObjectURL(blob);
+    return canvas.convertToBlob({ type: 'image/png' });
   }
 
   if (typeof document === 'undefined') throw new Error('Canvas is unavailable outside a browser document');
@@ -165,35 +175,117 @@ async function encodeRgbaToPngObjectUrl(
   context.putImageData(imageData, 0, 0);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) throw new Error('canvas.toBlob produced no PNG blob');
-  return URL.createObjectURL(blob);
+  return blob;
 }
 
-/**
- * Cache object URLs by cacheKey so the same climb renders once and reuses its
- * blob URL — mirroring the native module's on-disk PNG cache (same cacheKey →
- * same file). The hook already dedups in-flight renders and caches results, so
- * this map is the module-level backstop that keeps a repeated cacheKey from
- * minting a second blob URL (which would leak the first).
- *
- * Object URLs cannot be revoked while a mounted image may still reference
- * them. The renderer contract has no release signal, so retain URLs for the
- * document lifetime and release them together on a non-persisted pagehide.
- */
-const renderedObjectUrls = new Map<string, string>();
+// ── Off-main-thread render (Worker) with a main-thread fallback ─────────────
+// The WASM render + PNG encode run in a Worker served from public/wasm/ (loaded
+// by runtime URL so Metro never bundles it — see board-render.worker.js). The
+// worker returns the encoded PNG bytes; the object-URL + Cache-API lifecycle
+// stays on the main thread. Any worker failure (unsupported, load/parse error,
+// timeout) degrades transparently to the main-thread render below, which stays
+// the authoritative path — so the worker is a pure latency optimisation and
+// every code path (incl. jsdom tests, where Worker is absent) still renders.
 
-function rememberObjectUrl(cacheKey: string, objectUrl: string): void {
-  renderedObjectUrls.set(cacheKey, objectUrl);
+type WorkerRenderMessage = { id: number; png?: ArrayBuffer; error?: string };
+
+const workerPending = new Map<number, (message: WorkerRenderMessage | null) => void>();
+let boardRenderWorker: Worker | null = null;
+let workerDisabled = false;
+let workerRequestId = 0;
+const WORKER_RENDER_TIMEOUT_MS = 8000;
+
+// Abandon the worker for the rest of this page's lifetime: settle every
+// in-flight request so its caller falls through to the main thread, drop the
+// cached instance, and flip the disable flag so getRenderWorker never hands the
+// worker out again. Module-lifetime — a fresh page load re-creates the worker.
+function disableRenderWorker(): void {
+  workerDisabled = true;
+  const worker = boardRenderWorker;
+  boardRenderWorker = null;
+  for (const settle of workerPending.values()) settle(null);
+  workerPending.clear();
+  if (worker) {
+    try {
+      worker.terminate();
+    } catch {
+      // best-effort
+    }
+  }
 }
 
-function releaseAllObjectUrls(): void {
-  for (const objectUrl of renderedObjectUrls.values()) URL.revokeObjectURL(objectUrl);
-  renderedObjectUrls.clear();
+function getRenderWorker(): Worker | null {
+  if (workerDisabled) return null;
+  if (boardRenderWorker) return boardRenderWorker;
+  if (typeof Worker === 'undefined') {
+    workerDisabled = true;
+    return null;
+  }
+  try {
+    const worker = new Worker(resolveWasmAssetUrl('board-render.worker.js'), { type: 'module' });
+    worker.onmessage = (event: MessageEvent<WorkerRenderMessage>) => {
+      const settle = workerPending.get(event.data.id);
+      if (settle) settle(event.data);
+    };
+    worker.onerror = () => {
+      // The worker script failed to load/parse/run — abandon it and route every
+      // in-flight and future render through the main thread.
+      disableRenderWorker();
+    };
+    boardRenderWorker = worker;
+    return worker;
+  } catch {
+    workerDisabled = true;
+    return null;
+  }
 }
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', (event) => {
-    if (!event.persisted) releaseAllObjectUrls();
+/** Render a PNG Blob via the worker, or null on any failure so the caller falls back. */
+function tryRenderPngBlobViaWorker(configJson: string): Promise<Blob | null> {
+  const worker = getRenderWorker();
+  if (!worker) return Promise.resolve(null);
+  return new Promise<Blob | null>((resolve) => {
+    const id = ++workerRequestId;
+    let done = false;
+    const finish = (blob: Blob | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      workerPending.delete(id);
+      resolve(blob);
+    };
+    const timeout = setTimeout(() => {
+      // The worker missed the budget — treat it as stuck. Disabling it settles
+      // this request (falling it through to the main thread) AND routes every
+      // future cache miss straight to the main renderer, instead of each one
+      // posting to the same wedged worker and eating another full timeout.
+      disableRenderWorker();
+    }, WORKER_RENDER_TIMEOUT_MS);
+    workerPending.set(id, (message) => {
+      if (message && message.png) {
+        finish(new Blob([message.png], { type: 'image/png' }));
+      } else {
+        // A worker-reported render error (or an onerror null) falls through to
+        // the main thread, which reproduces the authoritative result or error.
+        finish(null);
+      }
+    });
+    try {
+      worker.postMessage({ id, configJson });
+    } catch {
+      finish(null);
+    }
   });
+}
+
+async function renderPngBlob(configJson: string): Promise<Blob> {
+  const viaWorker = await tryRenderPngBlobViaWorker(configJson);
+  if (viaWorker) return viaWorker;
+
+  const renderOverlay = await ensureWasmInitialized();
+  const rawBytes = renderOverlay(configJson);
+  const { rgba, width, height } = decodeRenderOutput(rawBytes);
+  return encodeRgbaToPngBlob(rgba, width, height);
 }
 
 const MAX_RENDER_DIMENSION = 8192;
@@ -223,7 +315,8 @@ function decodeRenderOutput(rawBytes: Uint8Array): {
 }
 
 export async function renderHoldsOverlay(configJson: string, cacheKey: string): Promise<string> {
-  const cached = renderedObjectUrls.get(cacheKey);
+  // 1. Live in-session object URL — the fast path once a climb has rendered.
+  const cached = getRenderedObjectUrl(cacheKey);
   if (cached) return cached;
 
   if (configRequiresModernRenderer(configJson)) {
@@ -233,23 +326,61 @@ export async function renderHoldsOverlay(configJson: string, cacheKey: string): 
     throw new Error(MARKER_RENDERER_UNAVAILABLE_MESSAGE);
   }
 
-  const renderOverlay = await ensureWasmInitialized();
-  const rawBytes = renderOverlay(configJson);
+  // 2. Persisted overlay from a prior session (survives a reload). On a hit this
+  //    mints + retains a fresh object URL without touching the WASM core.
+  const persisted = await readOverlayFromCache(cacheKey);
+  if (persisted) return persisted;
 
-  // First 8 bytes are width + height as u32 LE (see wasm/src/lib.rs). The glue's
-  // render_overlay already returns an owned copy detached from WASM memory, so
-  // the views below are safe.
-  const { rgba, width, height } = decodeRenderOutput(rawBytes);
+  // 3. Render (worker, falling back to the main thread), then encode to a PNG
+  //    Blob. First 8 bytes of the WASM output are width + height as u32 LE (see
+  //    wasm/src/lib.rs); the glue returns an owned copy detached from WASM
+  //    memory, so the decode is safe.
+  const pngBlob = await renderPngBlob(configJson);
 
-  const objectUrl = await encodeRgbaToPngObjectUrl(rgba, width, height);
+  const objectUrl = URL.createObjectURL(pngBlob);
   rememberObjectUrl(cacheKey, objectUrl);
+  // Persist the bytes so the overlay survives a reload. Fire-and-forget — a
+  // storage failure must not fail the render (the object URL already works).
+  void writeOverlayToCache(cacheKey, pngBlob);
   return objectUrl;
 }
 
-export const _webRendererForTests = {
-  decodeRenderOutput,
-  rememberObjectUrl,
-  releaseAllObjectUrls,
-  resolveWasmAssetUrl,
-  renderedObjectUrls,
+type WebRendererTestApi = {
+  decodeRenderOutput: typeof decodeRenderOutput;
+  rememberObjectUrl: typeof rememberObjectUrl;
+  releaseAllObjectUrls: typeof releaseAllObjectUrls;
+  resolveWasmAssetUrl: typeof resolveWasmAssetUrl;
+  renderedObjectUrls: typeof _overlayCacheStoreForTests.renderedObjectUrls;
+  renderPngBlob: typeof renderPngBlob;
+  encodeRgbaToPngBlob: typeof encodeRgbaToPngBlob;
+  resetWorker: () => void;
 };
+
+// Test-only surface. Gated on __DEV__ so bundlers dead-code-eliminate it from
+// the production web bundle (vitest defines __DEV__ truthy, so it's always
+// present under test); the cast keeps a stable type for the test importers.
+export const _webRendererForTests: WebRendererTestApi = (
+  __DEV__
+    ? {
+        decodeRenderOutput,
+        rememberObjectUrl,
+        releaseAllObjectUrls,
+        resolveWasmAssetUrl,
+        renderedObjectUrls: _overlayCacheStoreForTests.renderedObjectUrls,
+        renderPngBlob,
+        encodeRgbaToPngBlob,
+        resetWorker: () => {
+          if (boardRenderWorker) {
+            try {
+              boardRenderWorker.terminate();
+            } catch {
+              // best-effort
+            }
+          }
+          boardRenderWorker = null;
+          workerDisabled = false;
+          workerPending.clear();
+        },
+      }
+    : undefined
+) as WebRendererTestApi;
