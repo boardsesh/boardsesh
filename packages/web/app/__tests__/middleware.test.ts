@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect } from 'vite-plus/test';
 import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
+import { EXPO_WEB_CLASSIC_COOKIE, EXPO_WEB_ENABLED_COOKIE } from '@/app/lib/expo-web-rollout';
 
 const { getListPageCacheTTL, hasUserSpecificFilters } = await import('@/app/lib/list-page-cache');
 const { middleware } = await import('@/middleware');
@@ -418,5 +419,150 @@ describe('middleware cache headers on list pages', () => {
     const response = middleware(makeRequest('/some/page'));
     expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
     expect(response.headers.has('CDN-Cache-Control')).toBe(false);
+  });
+});
+
+describe('middleware Expo web rollout redirect', () => {
+  const AUTH_COOKIE = 'next-auth.session-token';
+
+  beforeEach(() => {
+    process.env.BOARDSESH_WEB = '1';
+  });
+
+  afterEach(() => {
+    if (originalExpoWebFlag === undefined) delete process.env.BOARDSESH_WEB;
+    else process.env.BOARDSESH_WEB = originalExpoWebFlag;
+  });
+
+  function redirectedToAppPath(response: ReturnType<typeof middleware>): string | null {
+    const location = response.headers.get('location');
+    if (response.status !== 307 || location === null) return null;
+    const { pathname } = new URL(location);
+    return pathname.startsWith('/app') ? location : null;
+  }
+
+  function loggedInFlaggedRequest(url: string): NextRequest {
+    const request = makeRequest(url);
+    request.cookies.set(AUTH_COOKIE, 'token-123');
+    request.cookies.set(EXPO_WEB_ENABLED_COOKIE, '1');
+    return request;
+  }
+
+  it('redirects a logged-in flagged visitor from a legacy board-list URL to /app/climbs with no query', () => {
+    const response = middleware(loggedInFlaggedRequest(LEGACY_LIST));
+    const location = redirectedToAppPath(response);
+    expect(location).not.toBeNull();
+    const url = new URL(location!);
+    expect(url.pathname).toBe('/app/climbs');
+    // The Climbs tab reads no board-context search params — don't imply otherwise.
+    expect(url.search).toBe('');
+  });
+
+  it('redirects a logged-in flagged visitor from a slug board-list URL to /app/climbs', () => {
+    const response = middleware(loggedInFlaggedRequest(SLUG_LIST));
+    const location = redirectedToAppPath(response);
+    expect(location).not.toBeNull();
+    expect(new URL(location!).pathname).toBe('/app/climbs');
+  });
+
+  it('redirects a numeric climb-view URL to the /app climb deep-link with the ClimbDetail param contract', () => {
+    const response = middleware(loggedInFlaggedRequest('/kilter/1/10/1,20/40/view/climb-uuid'));
+    const location = redirectedToAppPath(response);
+    expect(location).not.toBeNull();
+    const url = new URL(location!);
+    expect(url.pathname).toBe('/app/climbs/climb-uuid');
+    expect(url.searchParams.get('boardName')).toBe('kilter');
+    expect(url.searchParams.get('layoutId')).toBe('1');
+    expect(url.searchParams.get('sizeId')).toBe('10');
+    expect(url.searchParams.get('setIds')).toBe('1,20');
+    expect(url.searchParams.get('angle')).toBe('40');
+  });
+
+  it('keeps a slug climb-view URL classic (the SPA has no boardSlug resolution)', () => {
+    const response = middleware(loggedInFlaggedRequest('/b/kilter-original-12x12/40/view/climb-uuid'));
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('keeps a named-segment climb-view URL classic (ClimbDetail would get layoutId=NaN)', () => {
+    const response = middleware(loggedInFlaggedRequest('/kilter/original/12x12-square/screw_bolt/40/view/climb-uuid'));
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('keeps a list URL with filter query params classic (the SPA cannot consume them)', () => {
+    const response = middleware(loggedInFlaggedRequest(`${LEGACY_LIST}?minGrade=10&sortBy=difficulty`));
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('redirects when the session rides the __Secure-next-auth.session-token cookie (https contexts)', () => {
+    const request = makeRequest('/kilter/1/10/1,20/40/view/climb-uuid');
+    request.cookies.set('__Secure-next-auth.session-token', 'token-123');
+    request.cookies.set(EXPO_WEB_ENABLED_COOKIE, '1');
+    const response = middleware(request);
+    const location = redirectedToAppPath(response);
+    expect(location).not.toBeNull();
+    expect(new URL(location!).pathname).toBe('/app/climbs/climb-uuid');
+  });
+
+  it('does not redirect when the flag cookie is absent (flag off / unresolved)', () => {
+    const request = makeRequest(LEGACY_LIST);
+    request.cookies.set(AUTH_COOKIE, 'token-123');
+    const response = middleware(request);
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('does not redirect a logged-out visitor even with the flag cookie (public page stays canonical)', () => {
+    const request = makeRequest(LEGACY_LIST);
+    request.cookies.set(EXPO_WEB_ENABLED_COOKIE, '1');
+    const response = middleware(request);
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('does not redirect on a public/SEO route (playlists) even when flagged + logged in', () => {
+    const response = middleware(loggedInFlaggedRequest('/playlists'));
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('does not redirect when BOARDSESH_WEB is not set (master env gate off)', () => {
+    delete process.env.BOARDSESH_WEB;
+    const response = middleware(loggedInFlaggedRequest(LEGACY_LIST));
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('?classic=1 sets the bs_classic cookie and lands on the classic URL, not /app', () => {
+    const response = middleware(loggedInFlaggedRequest(`${SLUG_LIST}?classic=1`));
+    expect(response.status).toBe(307);
+    const location = new URL(response.headers.get('location')!);
+    expect(location.pathname).toBe(SLUG_LIST);
+    expect(location.pathname.startsWith('/app')).toBe(false);
+    expect(location.searchParams.has('classic')).toBe(false);
+    expect(response.headers.get('set-cookie')).toContain(EXPO_WEB_CLASSIC_COOKIE);
+  });
+
+  it('honours the bs_classic opt-out cookie: no /app redirect while flagged + logged in', () => {
+    const request = loggedInFlaggedRequest(LEGACY_LIST);
+    request.cookies.set(EXPO_WEB_CLASSIC_COOKIE, '1');
+    const response = middleware(request);
+    expect(redirectedToAppPath(response)).toBeNull();
+  });
+
+  it('leaves a ?classic=1 API request alone (no 307, no cookie): the param belongs to the endpoint', () => {
+    const response = middleware(loggedInFlaggedRequest('/api/v1/kilter/proxy/login?classic=1'));
+    expect(response.status).not.toBe(307);
+    expect(response.headers.get('set-cookie') ?? '').not.toContain(EXPO_WEB_CLASSIC_COOKIE);
+  });
+
+  it('marks the bs_classic cookie Secure in an https context (mirrors the auth session cookie)', () => {
+    const originalNextAuthUrl = process.env.NEXTAUTH_URL;
+    process.env.NEXTAUTH_URL = 'https://www.boardsesh.com';
+    try {
+      const response = middleware(loggedInFlaggedRequest(`${SLUG_LIST}?classic=1`));
+      expect(response.status).toBe(307);
+      const setCookie = response.headers.get('set-cookie')!;
+      expect(setCookie).toContain(EXPO_WEB_CLASSIC_COOKIE);
+      expect(setCookie).toMatch(/secure/i);
+    } finally {
+      if (originalNextAuthUrl === undefined) delete process.env.NEXTAUTH_URL;
+      else process.env.NEXTAUTH_URL = originalNextAuthUrl;
+    }
   });
 });

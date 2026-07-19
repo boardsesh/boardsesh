@@ -18,6 +18,16 @@ function getPathSegments(pathname: string): string[] {
   return segments;
 }
 
+/**
+ * Locale-stripped path segments for a board route. Exposed so the Expo-web
+ * rollout redirect map (edge middleware) can decompose a board URL into its
+ * board-config parts without re-implementing the `/es/…`, `/fr/…` prefix
+ * handling that classification already gets right.
+ */
+export function getBoardRouteSegments(pathname: string): string[] {
+  return getPathSegments(pathname);
+}
+
 export function isBoardRoutePath(pathname: string | null | undefined): boolean {
   if (!pathname) return false;
 
@@ -36,6 +46,16 @@ export function isBoardListPath(pathname: string | null | undefined): boolean {
   }
 
   return segments.length === 6 && segments[5] === 'list';
+}
+
+/**
+ * True when a board-route segment is a legacy numeric ID (`1`, `10`) rather
+ * than a name slug (`original`, `12x12-square`). Canonical definition lives
+ * here (edge-safe, importable from middleware); `url-utils.ts` re-exports it
+ * for the rest of the app.
+ */
+export function isNumericId(value: string): boolean {
+  return /^\d+$/.test(value);
 }
 
 export function isBoardCreatePath(pathname: string | null | undefined): boolean {

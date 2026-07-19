@@ -15,6 +15,7 @@ import type {
   ZoneMatchMode,
 } from '@/app/lib/types';
 import { BOARD_NAME_PREFIX_REGEX } from '@/app/lib/board-constants';
+import { isNumericId } from './board-route-paths';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { MOONBOARD_LAYOUTS } from '@/app/lib/moonboard-config';
 import { normalizeMinAscentsFilter, normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
@@ -677,10 +678,11 @@ export const isUuidOnly = (slugOrUuid: string): boolean => {
   return uuidRegex.test(slugOrUuid);
 };
 
-// Helper functions to determine if a parameter is numeric (old format) or slug (new format)
-export const isNumericId = (value: string): boolean => {
-  return /^\d+$/.test(value);
-};
+// Helper to determine if a parameter is numeric (old format) or slug (new
+// format). Canonical definition lives in board-route-paths.ts so the edge
+// middleware (Expo-web rollout map) can use it without pulling this module
+// into the edge bundle; re-exported here for the rest of the app.
+export { isNumericId };
 
 const decodeRouteSegment = (value: string): string => {
   try {
