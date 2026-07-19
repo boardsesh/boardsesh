@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 
@@ -38,6 +38,11 @@ type LayeredClimbImageProps = {
    */
   overlayTestID?: string;
 };
+
+export function backgroundImageUri(path: string): string {
+  if (Platform.OS === 'web' || path.includes('://')) return path;
+  return `file://${path}`;
+}
 
 /**
  * The shared 2-layer climb image stack used by both the list thumbnail
@@ -93,7 +98,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       {backgroundPaths.map((path) => (
         <Image
           key={path}
-          source={{ uri: `file://${path}` }}
+          source={{ uri: backgroundImageUri(path) }}
           style={styles.layer}
           contentFit="contain"
           cachePolicy="memory-disk"

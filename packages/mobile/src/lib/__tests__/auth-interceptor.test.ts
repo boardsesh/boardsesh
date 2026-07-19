@@ -10,26 +10,43 @@ vi.mock('expo-secure-store', () => ({
 
 // ── Mock auth-store for interceptor-level tests ─────────────────────────
 vi.mock('../auth-store', () => ({
+  captureAuthCredentialGeneration: vi.fn().mockReturnValue(7),
   getAuthToken: vi.fn().mockResolvedValue('test-jwt'),
   getRefreshToken: vi.fn().mockResolvedValue('test-refresh-token'),
-  storeTokens: vi.fn().mockResolvedValue(undefined),
+  isAuthCredentialGenerationCurrent: vi.fn().mockReturnValue(true),
+  storeTokensForGeneration: vi.fn().mockResolvedValue(true),
   isTokenExpiringSoon: vi.fn().mockResolvedValue(false),
   getTokenExpiresAt: vi.fn().mockResolvedValue(null),
 }));
 
 // ── Mock auth module (signOut used by interceptor on 401) ───────────────
-const mockSignOut = vi.fn().mockResolvedValue(undefined);
+const mockSignOut = vi.fn().mockResolvedValue(true);
 vi.mock('../auth', () => ({
-  signOut: (...args: unknown[]) => mockSignOut(...args),
+  signOutForGeneration: (...args: unknown[]) => mockSignOut(...args),
 }));
 
-import { ensureFreshToken, authenticatedFetch, setOnForcedSignOut } from '../auth-interceptor';
-import { getAuthToken, getRefreshToken, storeTokens, isTokenExpiringSoon } from '../auth-store';
+import {
+  authenticatedFetch,
+  deduplicatedRefresh,
+  ensureFreshToken,
+  recoverAuthRejection,
+  setOnForcedSignOut,
+} from '../auth-interceptor';
+import {
+  captureAuthCredentialGeneration,
+  getAuthToken,
+  getRefreshToken,
+  isAuthCredentialGenerationCurrent,
+  isTokenExpiringSoon,
+  storeTokensForGeneration,
+} from '../auth-store';
 
 const mockIsTokenExpiringSoon = isTokenExpiringSoon as Mock;
 const mockGetAuthToken = getAuthToken as Mock;
 const mockGetRefreshToken = getRefreshToken as Mock;
-const mockStoreTokens = storeTokens as Mock;
+const mockCaptureAuthCredentialGeneration = captureAuthCredentialGeneration as Mock;
+const mockIsAuthCredentialGenerationCurrent = isAuthCredentialGenerationCurrent as Mock;
+const mockStoreTokensForGeneration = storeTokensForGeneration as Mock;
 
 // ── Global fetch mock ────────────────────────────────────────────────────
 const mockFetch = vi.fn();
@@ -40,6 +57,9 @@ beforeEach(() => {
   mockGetAuthToken.mockResolvedValue('test-jwt');
   mockGetRefreshToken.mockResolvedValue('test-refresh-token');
   mockIsTokenExpiringSoon.mockResolvedValue(false);
+  mockCaptureAuthCredentialGeneration.mockReturnValue(7);
+  mockIsAuthCredentialGenerationCurrent.mockReturnValue(true);
+  mockStoreTokensForGeneration.mockResolvedValue(true);
   // The forced-sign-out hook is module-level state — clear it so a callback
   // registered by one test doesn't leak into the next.
   setOnForcedSignOut(null);
@@ -55,7 +75,7 @@ describe('ensureFreshToken', () => {
 
     expect(result).toBe(true);
     expect(mockFetch).not.toHaveBeenCalled();
-    expect(mockStoreTokens).not.toHaveBeenCalled();
+    expect(mockStoreTokensForGeneration).not.toHaveBeenCalled();
   });
 
   it('triggers refresh when token is expiring', async () => {
@@ -82,7 +102,7 @@ describe('ensureFreshToken', () => {
         body: JSON.stringify({ refreshToken: 'test-refresh-token' }),
       }),
     );
-    expect(mockStoreTokens).toHaveBeenCalledWith('new-jwt', 'new-refresh', '2099-01-01T00:00:00Z');
+    expect(mockStoreTokensForGeneration).toHaveBeenCalledWith(7, 'new-jwt', 'new-refresh', '2099-01-01T00:00:00Z');
   });
 
   it('deduplicates concurrent refresh calls', async () => {
@@ -114,7 +134,7 @@ describe('ensureFreshToken', () => {
 
     expect(result).toBe(false);
     expect(mockFetch).not.toHaveBeenCalled();
-    expect(mockStoreTokens).not.toHaveBeenCalled();
+    expect(mockStoreTokensForGeneration).not.toHaveBeenCalled();
   });
 
   it('returns false and logs warning when fetch throws', async () => {
@@ -127,10 +147,115 @@ describe('ensureFreshToken', () => {
       const result = await ensureFreshToken();
       expect(result).toBe(false);
       expect(warnSpy).toHaveBeenCalledWith('[Auth] Token refresh error:', 'Network error');
-      expect(mockStoreTokens).not.toHaveBeenCalled();
+      expect(mockStoreTokensForGeneration).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
     }
+  });
+});
+
+describe('recoverAuthRejection', () => {
+  it('forces provider cleanup when a rejected token cannot refresh', async () => {
+    const onForcedSignOut = vi.fn();
+    setOnForcedSignOut(onForcedSignOut);
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
+
+    await expect(recoverAuthRejection()).resolves.toBe('rejected');
+
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(onForcedSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not force-sign-out a newer login when an old refresh fails late', async () => {
+    const onForcedSignOut = vi.fn();
+    setOnForcedSignOut(onForcedSignOut);
+    let resolveRefresh!: (response: { ok: false; status: number }) => void;
+    mockFetch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+
+    const recovery = recoverAuthRejection();
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    mockIsAuthCredentialGenerationCurrent.mockReturnValue(false);
+    resolveRefresh({ ok: false, status: 403 });
+
+    await expect(recovery).resolves.toBe('superseded');
+    expect(mockSignOut).not.toHaveBeenCalled();
+    expect(onForcedSignOut).not.toHaveBeenCalled();
+  });
+
+  it('does not run provider cleanup when forced sign-out is superseded while reading credentials', async () => {
+    const onForcedSignOut = vi.fn();
+    setOnForcedSignOut(onForcedSignOut);
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 403 });
+    let releaseSignOut!: (performed: boolean) => void;
+    mockSignOut.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        releaseSignOut = resolve;
+      }),
+    );
+
+    const recovery = recoverAuthRejection();
+    await vi.waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1));
+    mockIsAuthCredentialGenerationCurrent.mockReturnValue(false);
+    releaseSignOut(false);
+
+    await expect(recovery).resolves.toBe('rejected');
+    expect(onForcedSignOut).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['network failure', () => Promise.reject(new Error('offline'))],
+    ['server failure', () => Promise.resolve({ ok: false, status: 503 })],
+  ])('keeps credentials on a transient %s', async (_label, refreshResponse) => {
+    const onForcedSignOut = vi.fn();
+    setOnForcedSignOut(onForcedSignOut);
+    mockFetch.mockImplementationOnce(refreshResponse);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      await expect(recoverAuthRejection()).resolves.toBe('unavailable');
+      expect(mockSignOut).not.toHaveBeenCalled();
+      expect(onForcedSignOut).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('starts a separate refresh for a newer credential generation', async () => {
+    let resolveOldRefresh!: (response: { ok: false; status: number }) => void;
+    mockFetch
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOldRefresh = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({ jwt: 'new-user-jwt', refreshToken: 'new-user-refresh', expiresAt: '2099-01-01T00:00:00Z' }),
+      });
+    mockIsAuthCredentialGenerationCurrent.mockImplementation(
+      (generation: number) => generation === mockCaptureAuthCredentialGeneration(),
+    );
+
+    const oldRefresh = deduplicatedRefresh();
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    mockCaptureAuthCredentialGeneration.mockReturnValue(8);
+    const newRefresh = deduplicatedRefresh();
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    resolveOldRefresh({ ok: false, status: 403 });
+
+    await expect(oldRefresh).resolves.toEqual({ status: 'superseded' });
+    await expect(newRefresh).resolves.toEqual({ status: 'refreshed', generation: 8 });
+    expect(mockStoreTokensForGeneration).toHaveBeenCalledWith(
+      8,
+      'new-user-jwt',
+      'new-user-refresh',
+      '2099-01-01T00:00:00Z',
+    );
   });
 });
 
@@ -245,8 +370,8 @@ describe('authenticatedFetch', () => {
     // resolves and the callback is invoked.
     let releaseSignOut!: () => void;
     mockSignOut.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        releaseSignOut = resolve;
+      new Promise<boolean>((resolve) => {
+        releaseSignOut = () => resolve(true);
       }),
     );
 
@@ -304,6 +429,25 @@ describe('authenticatedFetch', () => {
     expect(onForcedSignOut).not.toHaveBeenCalled();
   });
 
+  it('returns the original 401 without clearing credentials when refresh is temporarily unavailable', async () => {
+    mockIsTokenExpiringSoon.mockResolvedValue(false);
+    mockGetAuthToken.mockResolvedValue('old-jwt');
+    const onForcedSignOut = vi.fn();
+    setOnForcedSignOut(onForcedSignOut);
+    mockFetch.mockResolvedValueOnce({ status: 401, ok: false }).mockResolvedValueOnce({ ok: false, status: 503 });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const response = await authenticatedFetch('https://api.example.com/data');
+
+      expect(response.status).toBe(401);
+      expect(mockSignOut).not.toHaveBeenCalled();
+      expect(onForcedSignOut).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('attaches Authorization header from stored token', async () => {
     mockIsTokenExpiringSoon.mockResolvedValue(false);
     mockGetAuthToken.mockResolvedValue('my-jwt-token');
@@ -341,6 +485,47 @@ describe('authenticatedFetch', () => {
     const response = await authenticatedFetch('https://api.example.com/data');
 
     expect(response.status).toBe(401);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockSignOut).not.toHaveBeenCalled();
+    expect(onForcedSignOut).not.toHaveBeenCalled();
+  });
+
+  it('does not send a pending old-account request with a newer account token', async () => {
+    mockIsTokenExpiringSoon.mockResolvedValue(false);
+    let releaseTokenRead!: (token: string) => void;
+    mockGetAuthToken.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        releaseTokenRead = resolve;
+      }),
+    );
+
+    const oldRequest = authenticatedFetch('https://api.example.com/data');
+    await vi.waitFor(() => expect(mockGetAuthToken).toHaveBeenCalledTimes(1));
+    mockIsAuthCredentialGenerationCurrent.mockReturnValue(false);
+    releaseTokenRead('new-user-jwt');
+
+    await expect(oldRequest).rejects.toThrow('Authentication session changed');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns an old-account response without refreshing, retrying, or signing out after an account switch', async () => {
+    mockIsTokenExpiringSoon.mockResolvedValue(false);
+    mockGetAuthToken.mockResolvedValue('old-jwt');
+    const onForcedSignOut = vi.fn();
+    setOnForcedSignOut(onForcedSignOut);
+    let resolveRequest!: (response: { status: number; ok: false }) => void;
+    mockFetch.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+
+    const oldRequest = authenticatedFetch('https://api.example.com/data');
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    mockIsAuthCredentialGenerationCurrent.mockReturnValue(false);
+    resolveRequest({ status: 401, ok: false });
+
+    await expect(oldRequest).resolves.toEqual({ status: 401, ok: false });
     expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockSignOut).not.toHaveBeenCalled();
     expect(onForcedSignOut).not.toHaveBeenCalled();

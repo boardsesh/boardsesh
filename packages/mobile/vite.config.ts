@@ -13,6 +13,13 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     alias: [
+      // Gorhom is installed only in web-runtime so it stays outside the native
+      // fingerprint graph. This resolver target lets adapter tests install a
+      // hoisted module mock without making the real package visible to Vitest.
+      {
+        find: /^@gorhom\/bottom-sheet$/,
+        replacement: fileURLToPath(new URL('./test/gorhom-bottom-sheet-stub.ts', import.meta.url)),
+      },
       // The real `posthog-react-native` entry re-exports RN-native components
       // (PostHogProvider/PostHogMaskView) whose untransformed source throws a
       // `SyntaxError` under vitest's node env, breaking every suite that imports

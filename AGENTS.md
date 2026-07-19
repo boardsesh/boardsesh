@@ -139,10 +139,12 @@ Common commands:
 - `vp test run --project web|backend|mobile` — scope tests. **`--project` MUST come after `run`.** `vp test --project mobile run` (flag before `run`) silently treats the name as a filename filter and runs ~1 file — a false green. Prefer the footgun-proof aliases `vp run test:mobile` / `vp run test:web`.
 - `vp run dev` — start DB + backend + web
 - `vp run dev:mobile` — start mobile dev server (Metro)
+- `vp run dev:mobile:web` — start the env-gated Expo browser app behind Next at `/app`
 - `vp run db:up` / `vp run db:migrate` / `vp run db:studio`
 - `vp run build`, `vp run typecheck` (+ `:web`, `:backend`, `:mobile`, `:db`, `:shared`)
 - `vp run check:i18n` — fails on hardcoded English strings under `packages/web/app/`
 - `vp run check:mobile-bundle` — headless Metro bundle check (Linux-safe)
+- `vp run check:mobile-web-bundle` — export the Expo browser app and verify the shell/WASM assets
 - `vp run check:mobile-simulator`, `vp run mobile:screenshot` — macOS only
 - `vp run mobile:ios` — local Expo iOS build with the shared Boardsesh Xcode cache
 - `vp run mobile:publish` — EAS Update for current branch
@@ -299,6 +301,30 @@ React Native + Expo SDK 57, React Native 0.86, Expo Router 57.
 - **Dev mode**: `__DEV__` global, not `process.env.NODE_ENV`.
 - **Storage**: `expo-secure-store` for credentials, not IndexedDB.
 - **Navigation**: Expo Router, not Next.js App Router.
+
+### Expo web
+
+The Expo app's browser target is opt-in with `BOARDSESH_WEB=1`. Keep web-only
+configuration behind that gate so native OTA fingerprints do not change.
+
+- Use `.web.ts(x)` forks or exact Metro web shims for native modules. Do not use
+  `patch-package` for browser fixes because patched dependencies affect native
+  fingerprints.
+- `@gorhom/bottom-sheet` is a web-only implementation detail. It may be imported
+  only by `packages/mobile/src/web-shims/bottom-sheet.tsx`; native and shared code
+  must keep importing `@expo/ui/community/bottom-sheet`. Expo's Vaul-based web
+  sheet renders, but does not implement the gesture-lock or keyboard contracts used
+  by QueueSheet and LogAscentSheet, and adds a scroll container around virtualized
+  sheet content. Keep Gorhom until those flows work against Expo's implementation;
+  mobile-browser keyboard behaviour remains a real-device QA gate.
+  Its isolated install is in `packages/mobile/web-runtime`; `vp` installs that
+  nested lock for web/typecheck tasks without exposing React Native Web to the
+  native fingerprint graph. Gorhom remains banned from the native graph because
+  of the Android freeze fixed in #3167.
+- Browser preferences use the v3 AsyncStorage `createAsyncStorage` IndexedDB
+  implementation. Never persist authentication tokens in that store.
+- Platform-split native controls need a `.web.tsx` or shared fallback. Browser
+  variants follow the Material visual language.
 
 ### Validation sequence
 

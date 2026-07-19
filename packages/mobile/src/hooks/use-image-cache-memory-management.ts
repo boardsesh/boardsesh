@@ -20,6 +20,8 @@ export function useImageCacheMemoryManagement(): void {
     const sub = AppState.addEventListener('memoryWarning', () => {
       void Image.clearMemoryCache();
     });
-    return () => sub.remove();
+    // React Native Web does not implement the native memoryWarning event and
+    // returns no subscription. The background sweep above still works there.
+    return () => sub?.remove();
   }, []);
 }

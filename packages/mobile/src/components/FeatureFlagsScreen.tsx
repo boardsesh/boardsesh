@@ -5,6 +5,7 @@ import { useTheme } from '../providers/theme-provider';
 import { hapticLight, hapticSelection } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
 import { FEATURE_FLAG_DEFINITIONS, FEATURE_FLAG_KEYS } from '../providers/feature-flags-provider';
+import { isOfflineDownloadsEnabled } from '../providers/offline-downloads-enabled';
 import { useFeatureFlagOverrides } from '../lib/feature-flag-overrides';
 import { readPosthogFeatureFlags } from '../lib/analytics';
 import { useProfile } from '../lib/graphql/hooks';
@@ -52,7 +53,9 @@ export function FeatureFlagsScreen() {
         const base = baseFlags[definition.key];
         // i18n-ignore-next-line — tester-only screen
         const baseLabel = base === undefined ? 'not set' : base ? 'on' : 'off';
-        const effective = override ?? base ?? false;
+        const configuredValue = override ?? base ?? false;
+        const effective =
+          definition.key === 'offline-board-downloads' ? isOfflineDownloadsEnabled(configuredValue) : configuredValue;
         return {
           key: definition.key,
           label: definition.label,

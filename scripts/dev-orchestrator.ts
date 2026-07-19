@@ -2,13 +2,22 @@
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
-import { createConnection, createServer } from 'node:net';
 import { freemem, homedir, tmpdir, totalmem } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveDevServerOrigins } from './lib/dev-server-origins';
+import { allocateDevServerPorts } from './lib/dev-server-port-allocation';
+import {
+  criticalChildProcessSpawnOptions,
+  CriticalChildProcessGroup,
+  type CriticalChildTermination,
+} from './lib/dev-child-process-lifecycle';
+import { isDevServerPortInUse } from './lib/dev-server-port-availability';
+import { createExpoWebStartArgs } from './lib/expo-web-start-command';
+import { prewarmExpoWeb } from './lib/expo-web-readiness';
 import { resolveTailscaleHostname as resolveTailscaleHostResolution } from './lib/tailscale-hostname';
 
 // `vp run dev` always launches its own backend so that two worktrees / two
@@ -21,6 +30,7 @@ const ROOT_DIR = resolve(__dirname, '..');
 
 const DEFAULT_BACKEND_PORT = 8080;
 const DEFAULT_WEB_PORT = 3000;
+const DEFAULT_EXPO_WEB_PORT = 8082;
 // 5s was not enough for a cold tsx boot on a loaded box — the backend came up
 // healthy moments after the orchestrator had already given up and exited.
 const HEALTH_CHECK_TIMEOUT_MS = 60_000;
@@ -63,6 +73,7 @@ type DevSessionLock = {
   startedAt: number;
   backendPort: number | null;
   webPort: number | null;
+  expoWebPort?: number | null;
 };
 
 type ActiveDevSession = DevSessionLock & {
@@ -90,6 +101,7 @@ type DevDbEnv = Record<string, string>;
 type CliOptions = {
   qaNotesFilePath: string | null;
   killOldest: boolean;
+  expoWeb: boolean;
 };
 
 type SessionTombstone = {
@@ -105,16 +117,35 @@ type DevBuildMetadata = {
   qaNotesFilePath: string | null;
 };
 
-const processes: { backend: ProcessRef; web: ProcessRef } = {
+const processes: { backend: ProcessRef; web: ProcessRef; expoWeb: ProcessRef } = {
   backend: { process: null },
   web: { process: null },
+  expoWeb: { process: null },
 };
 
+const criticalChildProcesses = new CriticalChildProcessGroup({
+  onUnexpectedTermination: handleUnexpectedChildTermination,
+});
+
 let backendHealthy = false;
+let shutdownPromise: Promise<void> | null = null;
+
+function handleUnexpectedChildTermination(termination: CriticalChildTermination): void {
+  if (termination.type === 'error') {
+    console.error(`[dev] ${termination.name} process error:`, termination.error);
+  } else if (termination.signal) {
+    console.error(`[dev] ${termination.name} terminated unexpectedly by signal ${termination.signal}`);
+  } else {
+    console.error(`[dev] ${termination.name} exited unexpectedly with code ${termination.code ?? 'unknown'}`);
+  }
+
+  void shutdown(1);
+}
 
 function parseCliOptions(args: string[]): CliOptions {
   let qaNotesFilePath: string | null = null;
   let killOldest = false;
+  let expoWeb = false;
 
   for (let argumentIndex = 0; argumentIndex < args.length; argumentIndex++) {
     const argument = args[argumentIndex];
@@ -122,6 +153,11 @@ function parseCliOptions(args: string[]): CliOptions {
 
     if (argument === '--kill-oldest') {
       killOldest = true;
+      continue;
+    }
+
+    if (argument === '--expo-web') {
+      expoWeb = true;
       continue;
     }
 
@@ -153,7 +189,7 @@ function parseCliOptions(args: string[]): CliOptions {
     console.warn(`[dev] Ignoring unrecognized argument: ${argument}`);
   }
 
-  return { qaNotesFilePath, killOldest };
+  return { qaNotesFilePath, killOldest, expoWeb };
 }
 
 function runGitCommand(args: string[]): string | null {
@@ -402,81 +438,6 @@ async function checkBackendHealth(port: number, tls: TlsBundle | null): Promise<
   return false;
 }
 
-type PortBindResult = 'available' | 'in-use' | 'unsupported';
-
-function getErrorCode(error: unknown): string | undefined {
-  return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
-    ? error.code
-    : undefined;
-}
-
-async function checkWildcardPortBind(port: number): Promise<PortBindResult> {
-  return new Promise((resolve) => {
-    const server = createServer();
-    server.once('error', (error) => {
-      resolve(getErrorCode(error) === 'EADDRINUSE' ? 'in-use' : 'unsupported');
-    });
-    server.once('listening', () => {
-      server.close(() => {
-        resolve('available');
-      });
-    });
-    server.listen({ port, host: '0.0.0.0', exclusive: true });
-  });
-}
-
-async function isLocalhostPortInUse(port: number, timeout = 500): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = createConnection({ port, host: 'localhost' }, () => {
-      socket.destroy();
-      resolve(true);
-    });
-
-    socket.setTimeout(timeout);
-    socket.on('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-
-    socket.on('error', () => {
-      resolve(false);
-    });
-  });
-}
-
-/**
- * Check if a port is in use by first attempting the same wildcard bind the dev
- * servers use. If that probe is unsupported in a restricted environment, fall
- * back to the older localhost connection probe.
- */
-async function isPortInUse(port: number): Promise<boolean> {
-  const bindResult = await checkWildcardPortBind(port);
-  if (bindResult !== 'unsupported') {
-    return bindResult === 'in-use';
-  }
-
-  return isLocalhostPortInUse(port);
-}
-
-/**
- * Find an available port by incrementing from the base port
- */
-async function findAvailablePort(basePort: number, maxAttempts = 10): Promise<number> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const port = basePort + i;
-    const inUse = await isPortInUse(port);
-    if (!inUse) {
-      if (i > 0) {
-        console.info(`[dev] Port ${basePort} in use, using ${port} instead`);
-      }
-      return port;
-    }
-  }
-
-  console.error(`[dev] Could not find available port starting from ${basePort}`);
-  process.exit(1);
-}
-
 /**
  * Start the backend in the background
  */
@@ -484,6 +445,7 @@ function startBackend(port: number, tls: TlsBundle | null, devDbEnv: DevDbEnv): 
   console.info(`[dev] Starting backend on port ${port}...`);
 
   const backendProcess = spawn('bun', ['run', '--filter=boardsesh-backend', 'dev'], {
+    ...criticalChildProcessSpawnOptions,
     cwd: ROOT_DIR,
     stdio: ['inherit', 'inherit', 'inherit'],
     env: {
@@ -491,21 +453,14 @@ function startBackend(port: number, tls: TlsBundle | null, devDbEnv: DevDbEnv): 
       ...process.env,
       PORT: String(port),
       NODE_OPTIONS: composeNodeOptions(process.env.NODE_OPTIONS),
-      ...(tls ? { DEV_HTTPS_CERT_FILE: tls.certFile, DEV_HTTPS_KEY_FILE: tls.keyFile } : {}),
+      ...(tls
+        ? {
+            DEV_HTTPS_CERT_FILE: tls.certFile,
+            DEV_HTTPS_KEY_FILE: tls.keyFile,
+            TAILSCALE_HOSTNAME: tls.hostname,
+          }
+        : {}),
     },
-  });
-
-  backendProcess.on('error', (error) => {
-    console.error(`[dev] Backend failed to start:`, error);
-    process.exit(1);
-  });
-
-  backendProcess.on('exit', (code, signal) => {
-    if (signal) {
-      console.info(`[dev] Backend terminated by signal ${signal}`);
-    } else if (code !== 0) {
-      console.error(`[dev] Backend exited with code ${code}`);
-    }
   });
 
   return backendProcess;
@@ -520,10 +475,12 @@ function startWeb(
   tls: TlsBundle | null,
   devDbEnv: DevDbEnv,
   devBuildMetadata: DevBuildMetadata,
+  expoWebOrigin: string | null,
 ): ReturnType<typeof spawn> {
   console.info(`[dev] Starting web on port ${port}...`);
 
   const webProcess = spawn('bun', ['run', 'dev'], {
+    ...criticalChildProcessSpawnOptions,
     cwd: join(ROOT_DIR, 'packages/web'),
     stdio: ['inherit', 'inherit', 'inherit'],
     env: {
@@ -535,6 +492,16 @@ function startWeb(
       ...(devBuildMetadata.branchName ? { BOARDSESH_DEV_BRANCH_NAME: devBuildMetadata.branchName } : {}),
       ...(devBuildMetadata.qaNotes ? { BOARDSESH_DEV_QA_NOTES: devBuildMetadata.qaNotes } : {}),
       ...(devBuildMetadata.qaNotesFilePath ? { BOARDSESH_DEV_QA_NOTES_FILE: devBuildMetadata.qaNotesFilePath } : {}),
+      ...(expoWebOrigin
+        ? {
+            BOARDSESH_WEB: '1',
+            BOARDSESH_EXPO_WEB_ORIGIN: expoWebOrigin,
+            // If cert provisioning failed, keep NextAuth and the Expo shell on
+            // the localhost HTTP fallback even when Tailscale is discoverable.
+            // Successful TLS setup overrides this below with the public host.
+            TAILSCALE_HOSTNAME: 'localhost',
+          }
+        : {}),
       ...(tls
         ? {
             DEV_HTTPS_CERT_FILE: tls.certFile,
@@ -545,20 +512,41 @@ function startWeb(
     },
   });
 
-  webProcess.on('error', (error) => {
-    console.error(`[dev] Web failed to start:`, error);
-    process.exit(1);
-  });
-
-  webProcess.on('exit', (code, signal) => {
-    if (signal) {
-      console.info(`[dev] Web terminated by signal ${signal}`);
-    } else if (code !== 0) {
-      console.error(`[dev] Web exited with code ${code}`);
-    }
-  });
-
   return webProcess;
+}
+
+function startExpoWeb(
+  port: number,
+  webOrigin: string,
+  backendOrigin: string,
+  webSocketUrl: string,
+  devBuildMetadata: DevBuildMetadata,
+): ReturnType<typeof spawn> {
+  console.info(`[dev] Starting Expo web on port ${port}...`);
+
+  const expoWebProcess = spawn('bun', createExpoWebStartArgs(port), {
+    ...criticalChildProcessSpawnOptions,
+    cwd: ROOT_DIR,
+    stdio: ['inherit', 'inherit', 'inherit'],
+    env: {
+      ...process.env,
+      BOARDSESH_WEB: '1',
+      BROWSER: 'none',
+      EXPO_NO_TELEMETRY: '1',
+      // The vp task installs the isolated web runtime first. Expo's package
+      // prerequisite only checks packages/mobile/package.json and cannot see
+      // that nested install, so skip its misleading missing-RNW warning.
+      EXPO_NO_WEB_SETUP: '1',
+      EXPO_PUBLIC_WEB_URL: webOrigin,
+      EXPO_PUBLIC_BACKEND_URL: backendOrigin,
+      EXPO_PUBLIC_WS_URL: webSocketUrl,
+      NODE_OPTIONS: composeNodeOptions(process.env.NODE_OPTIONS),
+      ...(devBuildMetadata.branchName ? { BOARDSESH_DEV_BRANCH_NAME: devBuildMetadata.branchName } : {}),
+      ...(devBuildMetadata.qaNotesFilePath ? { BOARDSESH_DEV_QA_NOTES_FILE: devBuildMetadata.qaNotesFilePath } : {}),
+    },
+  });
+
+  return expoWebProcess;
 }
 
 /**
@@ -625,6 +613,12 @@ function printOwnTombstoneIfPresent(lockDir: string): void {
   console.warn('[dev]   evict yours back if both are needed concurrently.');
   console.warn(banner);
   console.warn('');
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined;
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -694,6 +688,7 @@ function printActiveSessions(sessions: ActiveDevSession[]): void {
     const ports = [
       session.backendPort != null ? `backend:${session.backendPort}` : null,
       session.webPort != null ? `web:${session.webPort}` : null,
+      session.expoWebPort != null ? `expo-web:${session.expoWebPort}` : null,
     ]
       .filter(Boolean)
       .join(', ');
@@ -1008,7 +1003,15 @@ function composeNodeOptions(existing: string | undefined): string {
 /**
  * Cleanup handler for graceful shutdown
  */
-async function shutdown() {
+function shutdown(exitCode = 0): Promise<void> {
+  criticalChildProcesses.beginShutdown(exitCode);
+  process.exitCode = criticalChildProcesses.shutdownExitCode;
+
+  shutdownPromise ??= performShutdown();
+  return shutdownPromise;
+}
+
+async function performShutdown(): Promise<void> {
   // Surface the eviction banner FIRST so it lands at the top of whatever the
   // owning agent sees. Cheap if no tombstone exists — just a missing-file
   // read that returns immediately.
@@ -1018,30 +1021,22 @@ async function shutdown() {
 
   if (processes.backend.process) {
     console.info('[dev] Stopping backend...');
-    processes.backend.process.kill('SIGTERM');
   }
 
   if (processes.web.process) {
     console.info('[dev] Stopping web...');
-    processes.web.process.kill('SIGTERM');
   }
 
-  // Give processes time to shut down gracefully
-  await delay(1000);
-
-  // Force kill if still running
-  if (processes.backend.process && !processes.backend.process.killed) {
-    processes.backend.process.kill('SIGKILL');
+  if (processes.expoWeb.process) {
+    console.info('[dev] Stopping Expo web...');
   }
 
-  if (processes.web.process && !processes.web.process.killed) {
-    processes.web.process.kill('SIGKILL');
-  }
+  await criticalChildProcesses.terminate();
 
   releaseOwnSessionLock(ownSessionLockFile);
   ownSessionLockFile = null;
 
-  process.exit(0);
+  process.exit(criticalChildProcesses.shutdownExitCode);
 }
 
 /**
@@ -1057,36 +1052,68 @@ async function main(): Promise<void> {
   const sessionLockDir = resolveSessionLockDir();
   await runOomGuard(sessionLockDir, cliOptions.killOldest);
 
-  // Try to provision a Tailscale HTTPS cert so real phones (which require a
-  // secure context for DeviceMotion, Web Bluetooth, clipboard, etc.) can
-  // actually use those APIs against the dev server. Null → HTTP fallback.
+  // Provision one Tailscale cert bundle for Next and the backend. Expo web is
+  // still an internal localhost HTTP upstream; browsers reach it through the
+  // public Next /app URL, so its app/backend URLs must follow this TLS choice.
+  // Null preserves the localhost HTTP fallback for non-Tailscale developers.
   const tls = await resolveTlsBundle();
 
   const requestedBackendPort = parseInt(process.env.BACKEND_PORT || String(DEFAULT_BACKEND_PORT), 10);
   const requestedWebPort = parseInt(process.env.PORT || String(DEFAULT_WEB_PORT), 10);
+  const requestedExpoWebPort = parseInt(process.env.EXPO_WEB_PORT || String(DEFAULT_EXPO_WEB_PORT), 10);
   const devDbEnv = loadGeneratedDevDbEnv();
 
-  // Backend port: explicit BACKEND_PORT must be respected (and must be free —
-  // we won't shoot a process the user explicitly aimed us at). Otherwise we
-  // auto-increment from the default so two worktrees can run side-by-side.
-  let backendPort: number;
-  if (process.env.BACKEND_PORT) {
-    backendPort = requestedBackendPort;
-    if (await isPortInUse(backendPort)) {
-      console.warn(`[dev] ⚠ Port ${backendPort} (BACKEND_PORT) is in use`);
-      console.warn(`[dev] ⚠ Try 'lsof -i :${backendPort}' to find the holder, or unset BACKEND_PORT to auto-pick`);
-      process.exit(1);
+  // Allocate the complete port set before starting any child. A selected
+  // fallback is reserved immediately, even though its server has not bound it
+  // yet, so backend/web/Expo can never receive the same port.
+  const { backendPort, webPort, expoWebPort } = await allocateDevServerPorts(
+    {
+      backend: {
+        port: requestedBackendPort,
+        envName: 'BACKEND_PORT',
+        explicit: Boolean(process.env.BACKEND_PORT),
+      },
+      web: {
+        port: requestedWebPort,
+        envName: 'PORT',
+        explicit: Boolean(process.env.PORT),
+      },
+      expoWeb: cliOptions.expoWeb
+        ? {
+            port: requestedExpoWebPort,
+            envName: 'EXPO_WEB_PORT',
+            explicit: Boolean(process.env.EXPO_WEB_PORT),
+          }
+        : null,
+    },
+    isDevServerPortInUse,
+  );
+
+  for (const [requestedPort, allocatedPort] of [
+    [requestedBackendPort, backendPort],
+    [requestedWebPort, webPort],
+    ...(expoWebPort === null ? [] : [[requestedExpoWebPort, expoWebPort]]),
+  ]) {
+    if (requestedPort !== allocatedPort) {
+      console.info(`[dev] Port ${requestedPort} unavailable, using ${allocatedPort} instead`);
     }
-  } else {
-    backendPort = await findAvailablePort(requestedBackendPort);
   }
 
-  // Web port follows the same rule.
-  const webPort = process.env.PORT ? requestedWebPort : await findAvailablePort(requestedWebPort);
+  const origins = resolveDevServerOrigins({
+    webPort,
+    backendPort,
+    expoWebPort,
+    tlsHostname: tls?.hostname ?? null,
+  });
 
   console.info(`[dev] Boardsesh Development Orchestrator`);
   console.info(`[dev] Backend port: ${backendPort}`);
   console.info(`[dev] Web port: ${webPort}`);
+  if (expoWebPort !== null) {
+    console.info(`[dev] Expo web port: ${expoWebPort}`);
+    console.info(`[dev] Expo web proxy: ${origins.expoWebProxyOrigin}`);
+    console.info(`[dev] Expo web app: ${origins.expoWebAppUrl}`);
+  }
   if (tls) {
     console.info(`[dev] HTTPS enabled — https://${tls.hostname}:${webPort}`);
   }
@@ -1110,6 +1137,7 @@ async function main(): Promise<void> {
     startedAt: Date.now(),
     backendPort,
     webPort,
+    expoWebPort,
   });
 
   // Release the lockfile on hard exits too — `shutdown` covers SIGINT/SIGTERM,
@@ -1120,23 +1148,60 @@ async function main(): Promise<void> {
   // Install signal handlers BEFORE spawning anything — if another session
   // evicts us mid-startup via `--kill-oldest`, the shutdown handler still
   // needs to fire to read the tombstone and print the eviction banner.
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', () => void shutdown());
+  process.on('SIGTERM', () => void shutdown());
 
+  if (criticalChildProcesses.isShuttingDown) return;
   processes.backend.process = startBackend(backendPort, tls, devDbEnv);
+  if (!criticalChildProcesses.register('Backend', processes.backend.process)) return;
 
   console.info(`[dev] Waiting for backend to be healthy...`);
   backendHealthy = await checkBackendHealth(backendPort, tls);
+  if (criticalChildProcesses.isShuttingDown) return;
+
   if (!backendHealthy) {
     console.error(`[dev] ✗ Backend failed to start or become healthy`);
-    process.exit(1);
+    await shutdown(1);
+    return;
   }
   console.info(`[dev] ✓ Backend is healthy`);
 
-  processes.web.process = startWeb(webPort, backendPort, tls, devDbEnv, devBuildMetadata);
+  if (expoWebPort !== null) {
+    if (criticalChildProcesses.isShuttingDown) return;
+    const expoWebProcess = startExpoWeb(
+      expoWebPort,
+      origins.publicWebOrigin,
+      origins.publicBackendOrigin,
+      origins.publicWebSocketUrl,
+      devBuildMetadata,
+    );
+    processes.expoWeb.process = expoWebProcess;
+    if (!criticalChildProcesses.register('Expo web', expoWebProcess)) return;
+
+    if (!origins.expoWebProxyOrigin) {
+      throw new Error('Expo web proxy origin is missing');
+    }
+
+    console.info('[dev] Waiting for Expo web to compile its browser bundle...');
+    const prewarmResult = await prewarmExpoWeb({
+      origin: origins.expoWebProxyOrigin,
+      isProcessRunning: () => expoWebProcess.exitCode === null && expoWebProcess.signalCode === null,
+    });
+    if (criticalChildProcesses.isShuttingDown) return;
+
+    console.info(`[dev] ✓ Expo web bundle is ready (${new URL(prewarmResult.bundleUrl).pathname})`);
+  }
+  if (criticalChildProcesses.isShuttingDown) return;
+  processes.web.process = startWeb(webPort, backendPort, tls, devDbEnv, devBuildMetadata, origins.expoWebProxyOrigin);
+  if (!criticalChildProcesses.register('Web', processes.web.process)) return;
 }
 
 main().catch((error) => {
+  // A signal may terminate Expo while prewarm is awaiting its bundle. That
+  // rejection belongs to the already-running graceful shutdown and must not
+  // upgrade its exit status to a failure.
+  if (criticalChildProcesses.isShuttingDown) return;
+
   console.error('[dev] Fatal error:', error);
-  process.exit(1);
+  void shutdown(1);
 });

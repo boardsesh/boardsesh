@@ -4,6 +4,7 @@ import { GraphQLError } from 'graphql';
 import * as Sentry from '@sentry/node';
 import { schema } from './index';
 import { validateToken } from '../middleware/auth';
+import type { AuthResult } from '../middleware/auth';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { maxDepthPlugin } from '@escape.tech/graphql-armor-max-depth';
 import { costLimitPlugin } from '@escape.tech/graphql-armor-cost-limit';
@@ -11,6 +12,18 @@ import { isLocalDevelopment, isTestEnvironment } from '@boardsesh/db/client/conf
 import { logger } from '../utils/logger';
 import { wasErrorReported } from '../utils/sentry-dedupe';
 import { maskDatabaseError } from './mask-error';
+
+async function authenticateHttpBearer(authHeader: string | null): Promise<AuthResult | null> {
+  if (!authHeader) return null;
+
+  const bearerMatch = /^Bearer(?:\s+(.*))?$/i.exec(authHeader.trim());
+  if (!bearerMatch) return null;
+
+  const token = bearerMatch[1]?.trim() ?? '';
+  // Preserve the deployed transport contract: an invalid or expired optional
+  // credential degrades to anonymous so public operations remain available.
+  return token ? validateToken(token) : null;
+}
 
 /**
  * Create and configure the GraphQL Yoga instance
@@ -37,20 +50,16 @@ export function createYogaInstance() {
       const clientIp =
         request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || undefined;
 
-      if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.slice(7);
-        const authResult = await validateToken(token);
-
-        if (authResult) {
-          return {
-            connectionId: `http-${uuidv4()}`,
-            transport: 'http' as const,
-            sessionId: undefined,
-            userId: authResult.userId,
-            isAuthenticated: true,
-            clientIp,
-          };
-        }
+      const authResult = await authenticateHttpBearer(authHeader);
+      if (authResult) {
+        return {
+          connectionId: `http-${uuidv4()}`,
+          transport: 'http' as const,
+          sessionId: undefined,
+          userId: authResult.userId,
+          isAuthenticated: true,
+          clientIp,
+        };
       }
 
       return {

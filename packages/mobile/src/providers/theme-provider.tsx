@@ -270,7 +270,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // choice would leave iOS system colours on the OS scheme. Keep
   // `userInterfaceStyle: 'automatic'` in app.config.ts so this can take effect.
   useEffect(() => {
-    Appearance.setColorScheme(themeOverride === 'system' ? 'unspecified' : themeOverride);
+    if (Platform.OS !== 'web') {
+      Appearance.setColorScheme(themeOverride === 'system' ? 'unspecified' : themeOverride);
+    }
   }, [themeOverride]);
 
   const colorScheme: ColorScheme = useMemo(() => {

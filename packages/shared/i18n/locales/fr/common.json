@@ -176,7 +176,9 @@
         "pendingMessage_one": "Tu as 1 modification pas encore synchronisée. La déconnexion la supprimera.",
         "pendingMessage_other": "Tu as {{count}} modifications pas encore synchronisées. La déconnexion les supprimera.",
         "confirm": "Se déconnecter",
-        "cancel": "Annuler"
+        "cancel": "Annuler",
+        "failureTitle": "Déconnexion non confirmée",
+        "failure": "Boardsesh n'a pas pu confirmer la déconnexion. Reconnecte-toi et déconnecte-toi à nouveau avant de laisser cet appareil."
       }
     },
     "about": {
@@ -460,7 +462,8 @@
     "rateBoardsesh": "Noter Boardsesh",
     "reportBug": "Signaler un bug",
     "joinDiscord": "Rejoindre Discord",
-    "logout": "Se déconnecter"
+    "logout": "Se déconnecter",
+    "logoutError": "Impossible de te déconnecter. Vérifie ta connexion et réessaie."
   },
   "loading": {
     "messages": [

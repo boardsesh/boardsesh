@@ -4,7 +4,13 @@ import * as WebBrowser from 'expo-web-browser';
 import { getRandomBytes, digestStringAsync, CryptoDigestAlgorithm, CryptoEncoding } from 'expo-crypto';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { createTimeoutSignal } from './abort-timeout';
-import { storeTokens, clearTokens, getRefreshToken } from './auth-store';
+import {
+  captureAuthCredentialGeneration,
+  clearTokensForGeneration,
+  getRefreshToken,
+  isAuthCredentialGenerationCurrent,
+  storeTokens,
+} from './auth-store';
 import { raceBrowserSignIn } from './auth-session-race';
 import { nativeSignInErrorCode } from './native-auth-analytics';
 import { parseDeepLinkQueryParams } from './deep-link-query';
@@ -320,6 +326,11 @@ export function signInWithAppleWeb(): Promise<OAuthSignInResult> {
 }
 
 export type CredentialsSignInResult = { success: true } | NativeAuthFailure;
+export type RegistrationResult =
+  | { success: true; authenticated?: true }
+  | { success: true; authenticated: false; requiresVerification: true }
+  | { success: true; authenticated: false; requiresVerification: false; autoLoginUnavailable: true }
+  | NativeAuthFailure;
 
 export async function signInWithCredentials(email: string, password: string): Promise<CredentialsSignInResult> {
   let response: Response;
@@ -364,7 +375,7 @@ export async function registerWithCredentials(
   email: string,
   password: string,
   name?: string,
-): Promise<CredentialsSignInResult> {
+): Promise<RegistrationResult> {
   let response: Response;
   try {
     response = await fetch(`${BACKEND_URL}/auth/native/register`, {
@@ -470,8 +481,17 @@ export async function resetPassword(
   return { success: true };
 }
 
-export async function signOut(): Promise<void> {
-  const refreshToken = await getRefreshToken();
+export async function signOutForGeneration(signOutGeneration: number): Promise<boolean> {
+  let refreshToken: string | null = null;
+  try {
+    refreshToken = await getRefreshToken();
+  } catch {
+    // Revocation is best-effort. A keychain read failure must not prevent the
+    // deletion/tombstone path below from removing locally usable credentials.
+  }
+  if (!isAuthCredentialGenerationCurrent(signOutGeneration)) return false;
+  const clearedGeneration = signOutGeneration + 1;
+  const clearPromise = clearTokensForGeneration(signOutGeneration);
   if (refreshToken) {
     // Best-effort server-side revocation — don't block on failure
     fetch(`${BACKEND_URL}/auth/native/revoke`, {
@@ -480,5 +500,15 @@ export async function signOut(): Promise<void> {
       body: JSON.stringify({ refreshToken }),
     }).catch(() => {});
   }
-  await clearTokens();
+  try {
+    const cleared = await clearPromise;
+    return cleared && isAuthCredentialGenerationCurrent(clearedGeneration);
+  } catch (error) {
+    if (!isAuthCredentialGenerationCurrent(clearedGeneration)) return false;
+    throw error;
+  }
+}
+
+export async function signOut(): Promise<void> {
+  await signOutForGeneration(captureAuthCredentialGeneration());
 }

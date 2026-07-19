@@ -20,6 +20,7 @@
 // changes so stale values are ignored rather than misread.
 
 import { getPreference, setPreference, removePreference } from './preference-store';
+import type { UserStorageOwner } from './user-storage-owner';
 
 const SESSION_COMMENT_DRAFT_KEY = 'boardsesh_session_comment_draft_v1';
 
@@ -31,7 +32,7 @@ type SessionCommentDraft = {
 };
 
 /** Persist the in-progress recap for a session, overwriting any prior draft. */
-export function setDraftComment(sessionId: string, comment: string): Promise<void> {
+export function setDraftComment(sessionId: string, comment: string, _owner?: UserStorageOwner | null): Promise<void> {
   return setPreference<SessionCommentDraft>(SESSION_COMMENT_DRAFT_KEY, {
     sessionId,
     comment,
@@ -43,13 +44,18 @@ export function setDraftComment(sessionId: string, comment: string): Promise<voi
  * Read the stored recap draft for `sessionId`. Returns null when there's no
  * draft or the stored draft belongs to a different session (single-slot).
  */
-export async function getDraftComment(sessionId: string): Promise<string | null> {
+export async function getDraftComment(sessionId: string, _owner?: UserStorageOwner | null): Promise<string | null> {
   const draft = await getPreference<SessionCommentDraft>(SESSION_COMMENT_DRAFT_KEY);
   if (!draft || draft.sessionId !== sessionId) return null;
   return draft.comment;
 }
 
 /** Drop the stored recap draft. No-op when the slot is empty. */
-export function clearDraftComment(_sessionId: string): Promise<void> {
+export function clearDraftComment(_sessionId: string, _owner?: UserStorageOwner | null): Promise<void> {
+  return clearSessionCommentDraft(_owner);
+}
+
+/** Drop the single locally saved recap when its account signs out. */
+export function clearSessionCommentDraft(_owner?: UserStorageOwner | null): Promise<void> {
   return removePreference(SESSION_COMMENT_DRAFT_KEY);
 }

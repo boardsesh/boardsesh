@@ -4,6 +4,42 @@ import createWithVercelToolbar from '@vercel/toolbar/plugins/next';
 
 const withVercelToolbar = createWithVercelToolbar();
 
+export function resolveExpoWebDevOrigin(rawOrigin) {
+  if (!rawOrigin) return null;
+
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(rawOrigin);
+  } catch {
+    // A scheme-less value (e.g. `//localhost:8081`) makes `new URL` throw a bare
+    // "Invalid URL", which is opaque in a dev log. Fail with the actual value
+    // and the expected shape so the misconfig is obvious.
+    throw new Error(
+      `BOARDSESH_EXPO_WEB_ORIGIN is not a valid URL: ${JSON.stringify(rawOrigin)}. ` +
+        'Use a full origin with scheme, e.g. http://localhost:8081',
+    );
+  }
+
+  if (parsedOrigin.protocol !== 'http:' && parsedOrigin.protocol !== 'https:') {
+    throw new Error('BOARDSESH_EXPO_WEB_ORIGIN must use http or https');
+  }
+
+  // This is a dev-only Metro proxy — the dev orchestrator only ever points it at
+  // a loopback host (see scripts/lib/dev-server-origins.ts). Reject any other
+  // host so a stray/misconfigured value can't turn the /app rewrite into an open
+  // forward to an arbitrary origin.
+  const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+  if (!LOOPBACK_HOSTS.has(parsedOrigin.hostname)) {
+    throw new Error(
+      `BOARDSESH_EXPO_WEB_ORIGIN must point at a loopback host (localhost/127.0.0.1/[::1]); got ${JSON.stringify(
+        parsedOrigin.hostname,
+      )}. It is a dev-only Metro proxy.`,
+    );
+  }
+
+  return parsedOrigin.origin;
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
@@ -81,6 +117,12 @@ const nextConfig = {
         headers: [{ key: 'Content-Type', value: 'application/json' }],
       },
       {
+        // Expo web is an authenticated utility surface. Keep it out of search
+        // while it is rolled out behind the /app proxy.
+        source: '/app/:path*',
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, follow' }],
+      },
+      {
         // Every route EXCEPT /embed/** keeps the frame-denying default.
         // If this exclusion ever regresses, the fail-safe is SAMEORIGIN
         // (embeds break visibly rather than the whole site becoming frameable).
@@ -114,6 +156,58 @@ const nextConfig = {
           { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
         ],
+      },
+    ];
+  },
+  async rewrites() {
+    if (process.env.BOARDSESH_WEB !== '1') return [];
+
+    const expoWebOrigin = resolveExpoWebDevOrigin(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
+    if (!expoWebOrigin) {
+      // BOARDSESH_WEB=1 with no BOARDSESH_EXPO_WEB_ORIGIN is a half-configured
+      // proxy: no /app rewrite is installed, so the middleware /app carve-out
+      // has nothing to forward to and /app 404s. Surface it instead of failing
+      // silently. Both env vars gate the rewrite (and the /assets middleware
+      // carve-out via isExpoWebProxyEnabled) — keep them set together.
+      console.warn(
+        '[next.config] BOARDSESH_WEB=1 but BOARDSESH_EXPO_WEB_ORIGIN is unset — Expo web /app proxy is disabled.',
+      );
+      return [];
+    }
+
+    return [
+      {
+        source: '/app',
+        destination: `${expoWebOrigin}/app`,
+      },
+      {
+        // Expo serves public/ from its server root during `expo start`, while
+        // the production baseUrl makes browser imports point under /app.
+        // Resolve the committed WASM glue/binary before the SPA catch-all.
+        source: '/app/wasm/:path*',
+        destination: `${expoWebOrigin}/wasm/:path*`,
+      },
+      {
+        source: '/app/:path*',
+        destination: `${expoWebOrigin}/app/:path*`,
+      },
+      {
+        // Expo's development shell emits the Metro entry URL from the
+        // monorepo-relative module path even when baseUrl is /app. Keep that
+        // narrow namespace on the same browser origin while forwarding it to
+        // Metro; application/API routes remain owned by Next.
+        source: '/packages/mobile/:path*',
+        destination: `${expoWebOrigin}/packages/mobile/:path*`,
+      },
+      {
+        // Metro serves vector-icon fonts and other resolved module assets from
+        // this query-driven endpoint (for example `/assets?unstable_path=...`).
+        source: '/assets',
+        destination: `${expoWebOrigin}/assets`,
+      },
+      {
+        source: '/assets/:path*',
+        destination: `${expoWebOrigin}/assets/:path*`,
       },
     ];
   },

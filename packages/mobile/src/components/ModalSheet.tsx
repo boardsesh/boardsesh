@@ -12,7 +12,12 @@
 
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { BottomSheetModal, BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
+import {
+  BottomSheetModal,
+  BottomSheetScrollView,
+  BottomSheetView,
+  type BottomSheetMethods,
+} from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
@@ -122,6 +127,8 @@ export const ModalSheet = forwardRef<BottomSheetMethods, ModalSheetProps>(functi
     >
       {children}
     </BottomSheetScrollView>
+  ) : enableDynamicSizing && !footer && Platform.OS === 'web' ? (
+    <BottomSheetView style={[bodyStyle, contentContainerStyle]}>{children}</BottomSheetView>
   ) : (
     <View style={[bodyStyle, contentContainerStyle]}>{children}</View>
   );

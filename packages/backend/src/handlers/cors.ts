@@ -2,8 +2,34 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { execFileSync } from 'node:child_process';
 import { logger } from '../utils/logger';
 
-// Vercel preview deployment pattern: https://boardsesh-{hash}-marcodejonghs-projects.vercel.app
-const VERCEL_PREVIEW_REGEX = /^https:\/\/boardsesh-[a-z0-9]+-marcodejonghs-projects\.vercel\.app$/;
+// Vercel preview deployment pattern: https://boardsesh-{hash}-{suffix}
+// The project suffix defaults to this repo's Vercel account but is configurable
+// via VERCEL_PREVIEW_ORIGIN_SUFFIX so a fork/other deployment can allow its own
+// preview origins without patching this file. Recomputed in initCors so the env
+// is read at startup (and in tests).
+const DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX = 'marcodejonghs-projects.vercel.app';
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+// A real Vercel project host: at least one label before `.vercel.app`. Rejects a
+// bare `vercel.app`, which would allow every deployment on the platform.
+const VERCEL_PROJECT_SUFFIX_REGEX = /^([a-z0-9-]+\.)+vercel\.app$/i;
+function buildVercelPreviewRegex(): RegExp {
+  const configured = process.env.VERCEL_PREVIEW_ORIGIN_SUFFIX?.trim();
+  let suffix = DEFAULT_VERCEL_PREVIEW_ORIGIN_SUFFIX;
+  if (configured) {
+    if (VERCEL_PROJECT_SUFFIX_REGEX.test(configured)) {
+      suffix = configured;
+    } else {
+      logger.warn(
+        `[CORS] Ignoring invalid VERCEL_PREVIEW_ORIGIN_SUFFIX "${configured}" ` +
+          '(must be a Vercel project host like team.vercel.app, not a bare vercel.app); using the default.',
+      );
+    }
+  }
+  return new RegExp(`^https://boardsesh-[a-z0-9]+-${escapeRegExp(suffix)}$`);
+}
+let vercelPreviewRegex = buildVercelPreviewRegex();
 
 // Homelab branch deploy pattern: https://{N}.preview.boardsesh.com
 const PREVIEW_ORIGIN_REGEX = /^https:\/\/\d+\.preview\.boardsesh\.com$/;
@@ -79,6 +105,7 @@ function resolveTailscaleHostname(): { hostname: string | null; reason: string }
  */
 export function initCors(boardseshUrl: string): void {
   allowedOrigins = [boardseshUrl];
+  vercelPreviewRegex = buildVercelPreviewRegex();
 
   // Also allow www subdomain variant
   try {
@@ -91,10 +118,10 @@ export function initCors(boardseshUrl: string): void {
   }
 
   if (process.env.NODE_ENV !== 'production') {
-    allowedOrigins.push('http://localhost:3000', 'http://127.0.0.1:3000');
-    allowedOrigins.push('http://localhost:3001', 'http://127.0.0.1:3001'); // For multi-instance testing
-    allowedOrigins.push('https://localhost:3000', 'https://127.0.0.1:3000');
-    allowedOrigins.push('https://localhost:3001', 'https://127.0.0.1:3001');
+    DEV_WEB_PORTS.forEach((port) => {
+      allowedOrigins.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
+      allowedOrigins.push(`https://localhost:${port}`, `https://127.0.0.1:${port}`);
+    });
 
     // Allow additional origins for LAN/mobile testing via DEV_ALLOWED_ORIGINS env var
     // Example: DEV_ALLOWED_ORIGINS=http://192.168.0.201:3000,http://192.168.1.100:3000
@@ -102,8 +129,18 @@ export function initCors(boardseshUrl: string): void {
     if (devAllowedOrigins) {
       devAllowedOrigins.split(',').forEach((origin) => {
         const trimmed = origin.trim();
-        if (trimmed) {
-          allowedOrigins.push(trimmed);
+        if (!trimmed) return;
+        // Only accept a well-formed http/https origin, so a typo can't push a
+        // malformed entry that would never match (or worse, a non-http scheme).
+        try {
+          const parsed = new URL(trimmed);
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            logger.warn(`[CORS] Ignoring DEV_ALLOWED_ORIGINS entry with a non-http(s) scheme: ${trimmed}`);
+            return;
+          }
+          allowedOrigins.push(parsed.origin);
+        } catch {
+          logger.warn(`[CORS] Ignoring malformed DEV_ALLOWED_ORIGINS entry: ${trimmed}`);
         }
       });
     }
@@ -139,7 +176,7 @@ export function initCors(boardseshUrl: string): void {
  */
 export function isOriginAllowed(origin: string): boolean {
   if (allowedOrigins.includes(origin)) return true;
-  if (VERCEL_PREVIEW_REGEX.test(origin)) return true;
+  if (vercelPreviewRegex.test(origin)) return true;
   if (PREVIEW_ORIGIN_REGEX.test(origin)) return true;
   if (process.env.NODE_ENV !== 'production') {
     if (DEV_PRIVATE_LAN_ORIGIN_REGEX.test(origin)) return true;

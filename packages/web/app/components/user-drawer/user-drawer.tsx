@@ -25,7 +25,7 @@ import DarkModeOutlined from '@mui/icons-material/DarkModeOutlined';
 import AccountTreeOutlined from '@mui/icons-material/AccountTreeOutlined';
 import FactCheckOutlined from '@mui/icons-material/FactCheckOutlined';
 
-import { useSession, signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { useColorMode } from '@/app/hooks/use-color-mode';
 import { usePathname } from 'next/navigation';
 import LocaleLink from '@/app/components/i18n/locale-link';
@@ -46,6 +46,8 @@ import CompactLanguageSwitcher from '@/app/components/i18n/compact-language-swit
 import DevUrlDialog from '../dev-url-dialog/dev-url-dialog';
 import { useDevUrl } from '@/app/lib/dev-url';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
+import { useSnackbar } from '@/app/components/providers/snackbar-provider';
+import { guardedNextAuthSignOut } from '@/app/lib/auth/nextauth-cookie-fetch-lock';
 import { HoldClassificationWizard } from '../hold-classification';
 import { FeedbackDialog } from '../feedback/feedback-dialog';
 import { BugReportDialog } from '../feedback/bug-report-dialog';
@@ -92,6 +94,7 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
   const [isOpen, setIsOpen] = useState(false);
   const [drawerRendered, setDrawerRendered] = useState(false);
   const { openAuthModal } = useAuthModal();
+  const { showMessage } = useSnackbar();
   const [showHoldClassification, setShowHoldClassification] = useState(false);
   const [showBoardSelector, setShowBoardSelector] = useState(false);
   const [boardSelectorRendered, setBoardSelectorRendered] = useState(false);
@@ -225,8 +228,18 @@ export default function UserDrawer({ boardDetails, boardConfigs }: UserDrawerPro
   );
 
   const handleSignOut = () => {
+    if (!session?.user.id || !session.authSessionId) {
+      showMessage(t('userDrawer.logoutError'), 'error');
+      return;
+    }
     track('Logout', { method: 'manual' });
-    void signOut();
+    void guardedNextAuthSignOut({
+      userId: session.user.id,
+      authSessionId: session.authSessionId,
+    }).catch((error: unknown) => {
+      console.error('Sign out error:', error);
+      showMessage(t('userDrawer.logoutError'), 'error');
+    });
     handleClose();
   };
 

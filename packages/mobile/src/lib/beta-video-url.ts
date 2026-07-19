@@ -1,6 +1,6 @@
 import { mapBetaLinkRow, mapBetaLinksResponse, BETA_THUMBNAIL_REQUEST_SIZE } from '@boardsesh/shared-schema';
 import type { BetaLink, BetaLinksGqlRow } from '@boardsesh/shared-schema';
-import { BACKEND_URL } from './env';
+import { BACKEND_URL, WEB_BASE_URL } from './env';
 
 // Re-export the platform-agnostic helpers so mobile code has a single import.
 export {
@@ -14,11 +14,10 @@ export {
 export type { BetaLink, BetaLinksGqlRow };
 
 /**
- * Beta thumbnails are served by the backend's `/static/beta-link-thumbnails/...`
- * handler. The GraphQL resolver returns the path as a backend-relative URL;
- * mobile always talks to the backend over `BACKEND_URL`, so prepend it when
- * the value is a path (not already an absolute URL), and request a sized
- * variant via `?size=`.
+ * Cached thumbnails use the backend's `/static/beta-link-thumbnails/...`
+ * handler. Development fallback thumbnails use Next's SSRF-guarded
+ * `/api/internal/beta-link-thumbnail` proxy, so those paths must use the web
+ * origin instead. Request a sized variant for either relative form.
  *
  * Already-absolute URLs (third-party CDNs) are passed through untouched —
  * we can't resize those.
@@ -28,7 +27,8 @@ export type { BetaLink, BetaLinksGqlRow };
  */
 export function absolutizeThumbnail(thumbnail: string | null): string | null {
   if (!thumbnail || !thumbnail.startsWith('/')) return thumbnail;
-  const absolute = `${BACKEND_URL.replace(/\/+$/, '')}${thumbnail}`;
+  const origin = thumbnail.startsWith('/api/internal/') ? WEB_BASE_URL : BACKEND_URL;
+  const absolute = `${origin.replace(/\/+$/, '')}${thumbnail}`;
   const separator = absolute.includes('?') ? '&' : '?';
   return `${absolute}${separator}size=${BETA_THUMBNAIL_REQUEST_SIZE}`;
 }

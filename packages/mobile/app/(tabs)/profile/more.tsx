@@ -48,6 +48,7 @@ import {
 } from '../../../src/providers/feature-flags-provider';
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
 import { reportError } from '../../../src/lib/error-reporting';
+import { showSignOutFailure } from '../../../src/lib/sign-out-failure-alert';
 
 // Translations live in the shared catalog at packages/shared/i18n/locales/<locale>/.
 // We deep-link to the active language's folder so a community member lands on the
@@ -197,7 +198,10 @@ export default function MoreScreen() {
       });
       if (!confirmed) return;
     }
-    void signOut();
+    void signOut().catch((error) => {
+      reportError(error);
+      showSignOutFailure(t('mobile.more.signOut.failureTitle'), t('mobile.more.signOut.failure'));
+    });
   };
 
   // Live Metro dev-server switching needs expo-dev-client's native launcher, which

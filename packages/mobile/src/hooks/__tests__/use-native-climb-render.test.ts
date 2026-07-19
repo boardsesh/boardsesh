@@ -221,6 +221,7 @@ describe('_getBoardConfigForTests', () => {
 
     expect(boardConfig).not.toBeNull();
     const configBase = asRecord(boardConfig?.configBase);
+    expect(configBase.mirrored).toBe(false);
     expect(configBase.stroke_width_multiplier).toBe(1.5);
     expect(configBase.shape_size_multiplier).toBe(1.8);
 

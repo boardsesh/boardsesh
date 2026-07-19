@@ -3,6 +3,36 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ExpoConfig, ConfigContext } from 'expo/config';
 
+type WebPlatformResolution = {
+  platforms: NonNullable<ExpoConfig['platforms']>;
+  web?: NonNullable<ExpoConfig['web']>;
+  baseUrl?: string;
+};
+
+/** Keep web opt-in without adding any native fingerprint source files. */
+export function resolveWebPlatforms(envValue: string | undefined): WebPlatformResolution {
+  if (envValue !== '1') return { platforms: ['ios', 'android'] };
+
+  return {
+    platforms: ['ios', 'android', 'web'],
+    web: { output: 'single', bundler: 'metro' },
+    baseUrl: '/app',
+  };
+}
+
+export function resolveWebHeadOrigin(
+  webFlag: string | undefined,
+  publicWebUrl: string | undefined,
+): string | undefined {
+  if (webFlag !== '1' || !publicWebUrl) return undefined;
+
+  const parsedUrl = new URL(publicWebUrl);
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    throw new Error('EXPO_PUBLIC_WEB_URL must use http or https');
+  }
+  return parsedUrl.origin;
+}
+
 const DEFAULT_EAS_PROJECT_ID = '87499648-655e-4fb8-9856-65da37e55fb1';
 const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? DEFAULT_EAS_PROJECT_ID;
 const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
@@ -167,6 +197,8 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
   // sets this so we bake dev-menu suppression into Info.plist — see
   // ./plugins/with-screenshot-dev-menu. Off for every other build.
   const isScreenshotBuild = process.env.BOARDSESH_SCREENSHOT_BUILD === '1';
+  const webPlatform = resolveWebPlatforms(process.env.BOARDSESH_WEB);
+  const webHeadOrigin = resolveWebHeadOrigin(process.env.BOARDSESH_WEB, process.env.EXPO_PUBLIC_WEB_URL);
 
   // The "Boardsesh Dev" variant (set by .github/workflows/android-apk-dev-client.yml
   // and `expo prebuild` runs that pass BOARDSESH_APP_VARIANT=dev). It ships under a
@@ -219,10 +251,12 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     experiments: {
       ...config.experiments,
       reactCompiler: true,
+      ...(webPlatform.baseUrl ? { baseUrl: webPlatform.baseUrl } : {}),
     },
-    // Mobile-only; opting out of web keeps `expo export --platform=all` from
-    // failing on missing `react-native-web` during EAS Update publishes.
-    platforms: ['ios', 'android'],
+    // Web is opt-in so OTA/EAS jobs that do not set BOARDSESH_WEB continue to
+    // resolve the historical mobile-only config and native fingerprint.
+    platforms: webPlatform.platforms,
+    ...(webPlatform.web ? { web: webPlatform.web } : {}),
     // Board backgrounds are bundled via explicit require() in
     // src/lib/board-backgrounds-manifest.ts (canonical files live in
     // packages/web/public/images, no duplication), so they're picked up
@@ -584,6 +618,7 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     ],
     extra: {
       ...config.extra,
+      ...(webHeadOrigin ? { router: { headOrigin: webHeadOrigin } } : {}),
       ...(EAS_PROJECT_ID ? { eas: { projectId: EAS_PROJECT_ID } } : {}),
       ...(hasDevMetadata
         ? {

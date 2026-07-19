@@ -14,8 +14,11 @@ const mockGuardBoardSwitch = vi.fn();
 const mockConstructBoardSlugListUrl = vi.fn();
 const mockConstructClimbListWithSlugs = vi.fn();
 const mockTryConstructSlugListUrl = vi.fn();
+const mockGuardedSignOut = vi.fn();
+const mockShowMessage = vi.fn();
 let mockSessionData: {
   user: { id: string; name?: string | null; email?: string | null; image?: string | null };
+  authSessionId?: string;
 } | null = null;
 
 // Callbacks captured by the BoardDiscoveryScroll stub on each render
@@ -29,7 +32,14 @@ const captured = {
 // -------------------------------------------------------------------------
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: mockSessionData }),
-  signOut: vi.fn(),
+}));
+
+vi.mock('@/app/lib/auth/nextauth-cookie-fetch-lock', () => ({
+  guardedNextAuthSignOut: (...args: unknown[]) => mockGuardedSignOut(...args),
+}));
+
+vi.mock('@/app/components/providers/snackbar-provider', () => ({
+  useSnackbar: () => ({ showMessage: mockShowMessage }),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -227,6 +237,32 @@ describe('UserDrawer', () => {
     profileLinks.forEach((link) => {
       expect(link.getAttribute('data-next-link')).toBe('true');
     });
+  });
+
+  it('shows a visible error when guarded sign-out fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockSessionData = {
+      user: { id: 'user-123', name: 'Test User' },
+      authSessionId: 'login-123',
+    };
+    mockGuardedSignOut.mockRejectedValueOnce(new Error('offline'));
+
+    render(<UserDrawer />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /user menu/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Log out' }));
+      await Promise.resolve();
+    });
+
+    expect(mockGuardedSignOut).toHaveBeenCalledWith({ userId: 'user-123', authSessionId: 'login-123' });
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      "We couldn't log you out. Check your connection and try again.",
+      'error',
+    );
+    expect(consoleError).toHaveBeenCalledWith('Sign out error:', expect.any(Error));
+    consoleError.mockRestore();
   });
 
   // -----------------------------------------------------------------------

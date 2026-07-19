@@ -24,8 +24,7 @@ export type BaseClientOptions = {
    */
   webSocketImpl?: typeof WebSocket;
   /**
-   * Custom retry predicate. When provided, overrides the default
-   * `() => true`. Mobile uses this to reject 4401 auth-error close codes.
+   * Custom retry predicate. When provided, overrides the default `() => true`.
    */
   shouldRetry?: (errOrCloseEvent: unknown) => boolean;
   /**

@@ -12,9 +12,11 @@ const captures = vi.hoisted(() => ({
   onChange: null as null | ((index: number) => void),
   snapPoints: undefined as unknown,
   scrollUsed: false,
+  bottomSheetViewUsed: false,
   scrollStyle: undefined as unknown,
   kavBehavior: undefined as string | undefined,
 }));
+const platform = vi.hoisted(() => ({ os: 'ios' }));
 
 type SheetMockProps = {
   children?: ReactNode;
@@ -35,11 +37,21 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
     captures.scrollStyle = style;
     return createElement('div', { 'data-scroll': 'true' }, children);
   },
+  BottomSheetView: ({ children }: ViewMockProps) => {
+    captures.bottomSheetViewUsed = true;
+    return createElement('div', { 'data-bottom-sheet-view': 'true' }, children);
+  },
 }));
 
 vi.mock('react-native', () => ({
   // Version drives the iOS 26+ card-gap correction in useSheetColumnStyle.
-  Platform: { OS: 'ios', Version: '26.1', select: (options: { ios?: unknown; android?: unknown }) => options.ios },
+  Platform: {
+    get OS() {
+      return platform.os;
+    },
+    Version: '26.1',
+    select: (options: { ios?: unknown; android?: unknown }) => options.ios,
+  },
   View: ({ children }: ViewMockProps) => createElement('div', null, children),
   KeyboardAvoidingView: ({ children, behavior }: ViewMockProps & { behavior?: string }) => {
     captures.kavBehavior = behavior;
@@ -96,8 +108,10 @@ beforeEach(() => {
   captures.onChange = null;
   captures.snapPoints = undefined;
   captures.scrollUsed = false;
+  captures.bottomSheetViewUsed = false;
   captures.scrollStyle = undefined;
   captures.kavBehavior = undefined;
+  platform.os = 'ios';
   hapticMedium.mockClear();
 });
 
@@ -128,6 +142,42 @@ describe('Sheet', () => {
       </Sheet>,
     );
     expect(captures.scrollUsed).toBe(true);
+  });
+
+  it('keeps footerless native dynamic content in the existing plain View layout', () => {
+    render(
+      <Sheet enableDynamicSizing>
+        <div>body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(false);
+  });
+
+  it('uses BottomSheetView to measure footerless dynamic content on web', () => {
+    platform.os = 'web';
+    render(
+      <Sheet enableDynamicSizing>
+        <div>body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(true);
+  });
+
+  it('keeps fixed-size and footer content in the existing plain View layout', () => {
+    const fixedSheet = render(
+      <Sheet>
+        <div>fixed body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(false);
+
+    fixedSheet.unmount();
+    render(
+      <Sheet enableDynamicSizing footer={<div>save</div>}>
+        <div>footer body</div>
+      </Sheet>,
+    );
+    expect(captures.bottomSheetViewUsed).toBe(false);
   });
 
   it('defaults snap points when none are provided', () => {

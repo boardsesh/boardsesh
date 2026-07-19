@@ -1,148 +1,384 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CreateGraphQLClientOptions, ExtendedClient } from '@boardsesh/graphql-client';
+import { createClient as createRawGraphQLWsClient } from 'graphql-ws';
 
-// ── Capture the options passed to createGraphQLClient ───────────────────────
-// ws-client builds a real graphql-ws Client; we don't want a socket. Mock the
-// factory to record the options (connectionParams / shouldRetry) and hand back a
-// fake client whose dispose() we can observe.
 let capturedOptions: CreateGraphQLClientOptions | null = null;
 const disposeSpy = vi.fn();
-
-function makeFakeClient(): ExtendedClient {
-  return { dispose: disposeSpy } as unknown as ExtendedClient;
-}
+const singletonClient = { dispose: disposeSpy } as unknown as ExtendedClient;
 
 vi.mock('@boardsesh/graphql-client', () => ({
   createGraphQLClient: (options: CreateGraphQLClientOptions) => {
     capturedOptions = options;
-    return makeFakeClient();
+    return singletonClient;
   },
 }));
 
-// ── Mock the auth helpers ws-client reuses ──────────────────────────────────
 vi.mock('../../auth-store', () => ({
+  captureAuthCredentialGeneration: vi.fn().mockReturnValue(1),
   getAuthToken: vi.fn().mockResolvedValue('jwt-token'),
+  isAuthCredentialGenerationCurrent: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock('../../auth-interceptor', () => ({
   ensureFreshToken: vi.fn().mockResolvedValue(true),
-  deduplicatedRefresh: vi.fn().mockResolvedValue(true),
+  recoverAuthRejection: vi.fn().mockResolvedValue('refreshed'),
+}));
+
+vi.mock('../../error-reporting', () => ({
+  reportHandledError: vi.fn(),
 }));
 
 vi.mock('../../env', () => ({ BACKEND_URL: 'https://api.test' }));
 
-import { getWsClient, disposeWsClient } from '../ws-client';
-import { getAuthToken } from '../../auth-store';
-import { ensureFreshToken, deduplicatedRefresh } from '../../auth-interceptor';
+type NativeSocketOptions = { headers?: Record<string, string> };
 
-const mockGetAuthToken = getAuthToken as Mock;
-const mockEnsureFreshToken = ensureFreshToken as Mock;
-const mockDeduplicatedRefresh = deduplicatedRefresh as Mock;
+class NativeSocketStub {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+  static instances: NativeSocketStub[] = [];
 
-function connectionParams() {
-  if (!capturedOptions || !('connectionParams' in capturedOptions) || !capturedOptions.connectionParams) {
-    throw new Error('connectionParams not captured');
+  readonly CONNECTING = NativeSocketStub.CONNECTING;
+  readonly OPEN = NativeSocketStub.OPEN;
+  readonly CLOSING = NativeSocketStub.CLOSING;
+  readonly CLOSED = NativeSocketStub.CLOSED;
+  readonly url: string;
+  readonly protocol = 'graphql-transport-ws';
+  readonly extensions = '';
+  readonly bufferedAmount = 0;
+  readonly protocols: string | string[] | undefined;
+  readonly options: NativeSocketOptions | undefined;
+  readonly sentMessages: string[] = [];
+
+  readyState = NativeSocketStub.CONNECTING;
+  binaryType: BinaryType = 'blob';
+  onopen: WebSocket['onopen'] = null;
+  onmessage: WebSocket['onmessage'] = null;
+  onerror: WebSocket['onerror'] = null;
+  onclose: WebSocket['onclose'] = null;
+
+  constructor(url: string | URL, protocols?: string | string[], options?: NativeSocketOptions) {
+    this.url = url.toString();
+    this.protocols = protocols;
+    this.options = options;
+    NativeSocketStub.instances.push(this);
   }
+
+  open(): void {
+    this.readyState = NativeSocketStub.OPEN;
+    this.onopen?.call(this as unknown as WebSocket, {} as Event);
+  }
+
+  receive(message: Record<string, unknown>): void {
+    this.onmessage?.call(
+      this as unknown as WebSocket,
+      {
+        data: JSON.stringify(message),
+      } as MessageEvent,
+    );
+  }
+
+  serverClose(code: number, reason = ''): void {
+    this.readyState = NativeSocketStub.CLOSED;
+    this.onclose?.call(
+      this as unknown as WebSocket,
+      {
+        code,
+        reason,
+        wasClean: true,
+      } as CloseEvent,
+    );
+  }
+
+  send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void {
+    if (typeof data !== 'string') throw new Error('graphql-ws sent a non-string frame');
+    this.sentMessages.push(data);
+  }
+
+  close(code = 1000, reason = ''): void {
+    if (this.readyState === NativeSocketStub.CLOSED) return;
+    this.serverClose(code, reason);
+  }
+}
+
+import { disposeWsClient, getWsClient } from '../ws-client';
+import { captureAuthCredentialGeneration, getAuthToken, isAuthCredentialGenerationCurrent } from '../../auth-store';
+import { ensureFreshToken, recoverAuthRejection } from '../../auth-interceptor';
+
+const getAuthTokenMock = getAuthToken as Mock;
+const captureAuthCredentialGenerationMock = captureAuthCredentialGeneration as Mock;
+const isAuthCredentialGenerationCurrentMock = isAuthCredentialGenerationCurrent as Mock;
+const recoverAuthRejectionMock = recoverAuthRejection as Mock;
+const ensureFreshTokenMock = ensureFreshToken as Mock;
+
+function connectionParams(): () => Promise<Record<string, unknown>> {
+  if (!capturedOptions?.connectionParams) throw new Error('connectionParams not captured');
   return capturedOptions.connectionParams;
 }
 
-function shouldRetry() {
-  if (!capturedOptions?.shouldRetry) throw new Error('shouldRetry not captured');
-  return capturedOptions.shouldRetry;
+function nativeWebSocketImplementation(): typeof WebSocket {
+  if (!capturedOptions?.webSocketImpl) throw new Error('webSocketImpl not captured');
+  return capturedOptions.webSocketImpl;
+}
+
+function parsedMessages(socket: NativeSocketStub): Array<Record<string, unknown>> {
+  return socket.sentMessages.map((message) => JSON.parse(message) as Record<string, unknown>);
+}
+
+function messagesOfType(socket: NativeSocketStub, type: string): Array<Record<string, unknown>> {
+  return parsedMessages(socket).filter((message) => message.type === type);
 }
 
 beforeEach(() => {
-  // ws-client holds a module-level singleton; drop any client a prior test left
-  // BEFORE clearing mocks, so its teardown dispose() doesn't pollute disposeSpy.
   disposeWsClient();
   vi.clearAllMocks();
-  mockGetAuthToken.mockResolvedValue('jwt-token');
-  mockEnsureFreshToken.mockResolvedValue(true);
-  mockDeduplicatedRefresh.mockResolvedValue(true);
+  vi.stubGlobal('WebSocket', NativeSocketStub);
+  NativeSocketStub.instances = [];
   capturedOptions = null;
+  getAuthTokenMock.mockResolvedValue('jwt-token');
+  captureAuthCredentialGenerationMock.mockReturnValue(1);
+  isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
+  ensureFreshTokenMock.mockResolvedValue(true);
+  recoverAuthRejectionMock.mockResolvedValue('refreshed');
 });
 
-describe('getWsClient connectionParams', () => {
-  it('refreshes a soon-to-expire token before reading it, then sends authToken', async () => {
+describe('native GraphQL WebSocket transport', () => {
+  it("drops React Native's Origin header and sends the fresh token", async () => {
     getWsClient();
+    const NativeAppWebSocket = nativeWebSocketImplementation();
 
+    new NativeAppWebSocket('wss://api.test/graphql', 'graphql-transport-ws');
     const params = await connectionParams()();
 
-    expect(mockEnsureFreshToken).toHaveBeenCalledTimes(1);
-    // The freshen must precede the token read so we connect with a live token.
-    expect(mockEnsureFreshToken.mock.invocationCallOrder[0]).toBeLessThan(mockGetAuthToken.mock.invocationCallOrder[0]);
+    expect(NativeSocketStub.instances[0]?.options).toEqual({ headers: { origin: '' } });
+    expect(ensureFreshTokenMock).toHaveBeenCalledTimes(1);
+    expect(ensureFreshTokenMock.mock.invocationCallOrder[0]).toBeLessThan(getAuthTokenMock.mock.invocationCallOrder[0]);
     expect(params).toEqual({ authToken: 'jwt-token' });
   });
 
   it('omits authToken when no token is stored', async () => {
-    mockGetAuthToken.mockResolvedValue(null);
+    getAuthTokenMock.mockResolvedValue(null);
     getWsClient();
 
-    const params = await connectionParams()();
-
-    expect(params).toEqual({});
-  });
-});
-
-describe('getWsClient shouldRetry', () => {
-  it('retries non-auth close events without refreshing', () => {
-    getWsClient();
-
-    expect(shouldRetry()({ code: 1006 })).toBe(true);
-    expect(shouldRetry()(new Error('socket hiccup'))).toBe(true);
-    expect(mockDeduplicatedRefresh).not.toHaveBeenCalled();
+    await expect(connectionParams()()).resolves.toEqual({});
   });
 
-  it('does not retry a 4401 close, force-refreshes the token, and recreates the client', async () => {
-    getWsClient();
-
-    expect(shouldRetry()({ code: 4401 })).toBe(false);
-
-    // The refresh + dispose run on a fired-and-forgotten async task.
-    await vi.waitFor(() => expect(disposeSpy).toHaveBeenCalledTimes(1));
-    expect(mockDeduplicatedRefresh).toHaveBeenCalledTimes(1);
-    // ensureFreshToken (the expiry-gated path) would no-op for a revoked but
-    // still-valid token; the 4401 branch must force the refresh.
-    expect(mockEnsureFreshToken).not.toHaveBeenCalled();
-
-    // After teardown the next getWsClient() builds a fresh client.
-    capturedOptions = null;
-    getWsClient();
-    expect(capturedOptions).not.toBeNull();
-  });
-
-  it('refreshes once for a burst of 4401 closes (no reconnect storm)', async () => {
-    // Hold the refresh open so all three closes land while the first is in flight.
-    let releaseRefresh!: (value: boolean) => void;
-    mockDeduplicatedRefresh.mockReturnValueOnce(
+  it('rejects a handshake superseded while its token is being prepared', async () => {
+    let releaseFreshToken!: (fresh: boolean) => void;
+    ensureFreshTokenMock.mockReturnValueOnce(
       new Promise<boolean>((resolve) => {
-        releaseRefresh = resolve;
+        releaseFreshToken = resolve;
       }),
     );
     getWsClient();
-    const retry = shouldRetry();
 
-    expect(retry({ code: 4401 })).toBe(false);
-    expect(retry({ code: 4401 })).toBe(false);
-    expect(retry({ code: 4401 })).toBe(false);
+    const params = connectionParams()();
+    const paramsExpectation = expect(params).rejects.toThrow('Authentication session changed');
+    await vi.waitFor(() => expect(ensureFreshTokenMock).toHaveBeenCalledTimes(1));
+    isAuthCredentialGenerationCurrentMock.mockReturnValue(false);
+    releaseFreshToken(true);
 
-    releaseRefresh(true);
-    await vi.waitFor(() => expect(disposeSpy).toHaveBeenCalledTimes(1));
-    // One refresh and one teardown despite three closes.
-    expect(mockDeduplicatedRefresh).toHaveBeenCalledTimes(1);
-    expect(disposeSpy).toHaveBeenCalledTimes(1);
+    await paramsExpectation;
+    expect(getAuthTokenMock).not.toHaveBeenCalled();
   });
 
-  it('allows a later, genuinely new auth failure to refresh again', async () => {
-    getWsClient();
-    shouldRetry()({ code: 4401 });
-    await vi.waitFor(() => expect(disposeSpy).toHaveBeenCalledTimes(1));
-    expect(mockDeduplicatedRefresh).toHaveBeenCalledTimes(1);
+  it('remaps a burst of 4401 closes, refreshes once, and keeps the singleton', async () => {
+    let releaseRefresh!: (result: string) => void;
+    recoverAuthRejectionMock.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        releaseRefresh = resolve;
+      }),
+    );
+    const client = getWsClient();
+    const NativeAppWebSocket = nativeWebSocketImplementation();
+    const firstSocket = new NativeAppWebSocket('wss://api.test/graphql');
+    const secondSocket = new NativeAppWebSocket('wss://api.test/graphql');
+    const observedCloseCodes: number[] = [];
+    firstSocket.onclose = (event) => observedCloseCodes.push(event.code);
+    secondSocket.onclose = (event) => observedCloseCodes.push(event.code);
 
-    // Next subscription rebuilds the client; a fresh 4401 must refresh again.
+    NativeSocketStub.instances[0]?.serverClose(4401, 'Unauthorized');
+    NativeSocketStub.instances[1]?.serverClose(4401, 'Unauthorized');
+
+    expect(observedCloseCodes).toEqual([]);
+    expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(1);
+    expect(getWsClient()).toBe(client);
+    expect(disposeSpy).not.toHaveBeenCalled();
+
+    releaseRefresh('refreshed');
+    await vi.waitFor(() => expect(observedCloseCodes).toEqual([4403, 4403]));
+  });
+
+  it('keeps reconnecting after a transient auth refresh outage', async () => {
+    recoverAuthRejectionMock.mockResolvedValueOnce('unavailable');
     getWsClient();
-    shouldRetry()({ code: 4401 });
-    await vi.waitFor(() => expect(disposeSpy).toHaveBeenCalledTimes(2));
-    expect(mockDeduplicatedRefresh).toHaveBeenCalledTimes(2);
+    const NativeAppWebSocket = nativeWebSocketImplementation();
+    const socket = new NativeAppWebSocket('wss://api.test/graphql');
+    const observedCloseCodes: number[] = [];
+    socket.onclose = (event) => observedCloseCodes.push(event.code);
+
+    NativeSocketStub.instances[0]?.serverClose(4401, 'Unauthorized');
+
+    await vi.waitFor(() => expect(observedCloseCodes).toEqual([4403]));
+  });
+
+  it('keeps 4401 recovery isolated between native credential owners', async () => {
+    let currentGeneration = 1;
+    captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let releaseOldRecovery!: (result: string) => void;
+    recoverAuthRejectionMock.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        releaseOldRecovery = resolve;
+      }),
+    );
+    getWsClient();
+    const NativeAppWebSocket = nativeWebSocketImplementation();
+    const oldSocket = new NativeAppWebSocket('wss://api.test/graphql');
+    const oldCloseCodes: number[] = [];
+    oldSocket.onclose = (event) => oldCloseCodes.push(event.code);
+    NativeSocketStub.instances[0]?.open();
+    NativeSocketStub.instances[0]?.serverClose(4401, 'Unauthorized');
+    await vi.waitFor(() => expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(1));
+
+    currentGeneration = 2;
+    const newSocket = new NativeAppWebSocket('wss://api.test/graphql');
+    const newCloseCodes: number[] = [];
+    newSocket.onclose = (event) => newCloseCodes.push(event.code);
+    NativeSocketStub.instances[1]?.open();
+    NativeSocketStub.instances[1]?.serverClose(4401, 'Unauthorized');
+
+    await vi.waitFor(() => expect(newCloseCodes).toEqual([4403]));
+    expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(2);
+    expect(oldCloseCodes).toEqual([]);
+
+    releaseOldRecovery('refreshed');
+    await vi.waitFor(() => expect(oldCloseCodes).toEqual([4401]));
+  });
+
+  it('rechecks native credential ownership in the close-delivery continuation', async () => {
+    let currentGeneration = 1;
+    captureAuthCredentialGenerationMock.mockImplementation(() => currentGeneration);
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let releaseRecovery!: (result: string) => void;
+    const pendingRecovery = new Promise<string>((resolve) => {
+      releaseRecovery = resolve;
+    });
+    recoverAuthRejectionMock.mockReturnValueOnce(pendingRecovery);
+    getWsClient();
+    const NativeAppWebSocket = nativeWebSocketImplementation();
+    const socket = new NativeAppWebSocket('wss://api.test/graphql');
+    const closeCodes: number[] = [];
+    socket.onclose = (event) => closeCodes.push(event.code);
+    NativeSocketStub.instances[0]?.open();
+    NativeSocketStub.instances[0]?.serverClose(4401, 'Unauthorized');
+    await vi.waitFor(() => expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(1));
+
+    // This reaction runs after the recovery helper resumes, but before its
+    // resolved result is delivered to the socket's close continuation.
+    void pendingRecovery.then(() => {
+      currentGeneration = 2;
+    });
+    releaseRecovery('refreshed');
+
+    await vi.waitFor(() => expect(closeCodes).toEqual([4401]));
+  });
+
+  it('reconnects and resubscribes an active operation after refreshing a rejected token', async () => {
+    let releaseRefresh!: (result: string) => void;
+    recoverAuthRejectionMock.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        releaseRefresh = resolve;
+      }),
+    );
+    getAuthTokenMock.mockResolvedValueOnce('rejected-token').mockResolvedValue('fresh-token');
+    const singletonBeforeReconnect = getWsClient();
+
+    const subscriptionErrors: unknown[] = [];
+    const rawClient = createRawGraphQLWsClient({
+      url: 'wss://api.test/graphql',
+      webSocketImpl: nativeWebSocketImplementation(),
+      connectionParams: connectionParams(),
+      lazy: true,
+      retryAttempts: 2,
+      retryWait: async () => {},
+    });
+    const unsubscribe = rawClient.subscribe(
+      { query: 'subscription SessionEvents { sessionEvents { __typename } }' },
+      {
+        next: () => {},
+        error: (error) => subscriptionErrors.push(error),
+        complete: () => {},
+      },
+    );
+
+    await vi.waitFor(() => expect(NativeSocketStub.instances).toHaveLength(1));
+    const firstSocket = NativeSocketStub.instances[0];
+    if (!firstSocket) throw new Error('first socket was not created');
+    firstSocket.open();
+    await vi.waitFor(() => expect(messagesOfType(firstSocket, 'connection_init')).toHaveLength(1));
+    expect(messagesOfType(firstSocket, 'connection_init')[0]?.payload).toEqual({ authToken: 'rejected-token' });
+    firstSocket.receive({ type: 'connection_ack' });
+    await vi.waitFor(() => expect(messagesOfType(firstSocket, 'subscribe')).toHaveLength(1));
+
+    firstSocket.serverClose(4401, 'Unauthorized');
+    await vi.waitFor(() => expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(1));
+    expect(NativeSocketStub.instances).toHaveLength(1);
+
+    releaseRefresh('refreshed');
+    await vi.waitFor(() => expect(NativeSocketStub.instances).toHaveLength(2));
+    const secondSocket = NativeSocketStub.instances[1];
+    if (!secondSocket) throw new Error('retry socket was not created');
+    secondSocket.open();
+
+    await vi.waitFor(() => expect(messagesOfType(secondSocket, 'connection_init')).toHaveLength(1));
+    expect(messagesOfType(secondSocket, 'connection_init')[0]?.payload).toEqual({ authToken: 'fresh-token' });
+    secondSocket.receive({ type: 'connection_ack' });
+    await vi.waitFor(() => expect(messagesOfType(secondSocket, 'subscribe')).toHaveLength(1));
+
+    expect(messagesOfType(secondSocket, 'subscribe')[0]?.payload).toEqual(
+      messagesOfType(firstSocket, 'subscribe')[0]?.payload,
+    );
+    expect(subscriptionErrors).toEqual([]);
+    expect(getWsClient()).toBe(singletonBeforeReconnect);
+    expect(disposeSpy).not.toHaveBeenCalled();
+
+    unsubscribe();
+    await rawClient.dispose();
+  });
+
+  it('keeps a rejected 4401 recovery fatal instead of reconnecting with the rejected token', async () => {
+    recoverAuthRejectionMock.mockResolvedValueOnce('rejected');
+    getWsClient();
+    const rawClient = createRawGraphQLWsClient({
+      url: 'wss://api.test/graphql',
+      webSocketImpl: nativeWebSocketImplementation(),
+      connectionParams: connectionParams(),
+      lazy: true,
+      retryAttempts: 2,
+      retryWait: async () => {},
+    });
+    const subscriptionErrors: unknown[] = [];
+    rawClient.subscribe(
+      { query: 'subscription SessionEvents { sessionEvents { __typename } }' },
+      { next: () => {}, error: (error) => subscriptionErrors.push(error), complete: () => {} },
+    );
+
+    await vi.waitFor(() => expect(NativeSocketStub.instances).toHaveLength(1));
+    const socket = NativeSocketStub.instances[0];
+    if (!socket) throw new Error('socket was not created');
+    socket.open();
+    await vi.waitFor(() => expect(messagesOfType(socket, 'connection_init')).toHaveLength(1));
+    socket.receive({ type: 'connection_ack' });
+    await vi.waitFor(() => expect(messagesOfType(socket, 'subscribe')).toHaveLength(1));
+
+    socket.serverClose(4401, 'Unauthorized');
+
+    await vi.waitFor(() => expect(subscriptionErrors).toHaveLength(1));
+    expect(recoverAuthRejectionMock).toHaveBeenCalledTimes(1);
+    expect(NativeSocketStub.instances).toHaveLength(1);
+    expect(getAuthTokenMock).toHaveBeenCalledTimes(1);
+    await rawClient.dispose();
   });
 });

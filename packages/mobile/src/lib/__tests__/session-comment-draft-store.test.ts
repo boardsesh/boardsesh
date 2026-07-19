@@ -64,4 +64,14 @@ describe('session-comment-draft-store', () => {
     await clearDraftComment('session-1');
     await expect(getDraftComment('session-1')).resolves.toBeNull();
   });
+
+  it('clears the stored draft through the account cleanup boundary', async () => {
+    const { clearSessionCommentDraft, getDraftComment, setDraftComment } =
+      await import('../session-comment-draft-store');
+    await setDraftComment('session-1', 'to be cleared at sign-out');
+
+    await clearSessionCommentDraft({ userId: 'ignored-native-user', authSessionId: 'ignored-native-session' });
+
+    await expect(getDraftComment('session-1')).resolves.toBeNull();
+  });
 });

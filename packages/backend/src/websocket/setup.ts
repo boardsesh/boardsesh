@@ -99,12 +99,16 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         let isAuthenticated = false;
         let authenticatedUserId: string | undefined;
 
-        if (token) {
+        if (token !== null) {
           const authResult = await validateToken(token);
           if (authResult) {
             isAuthenticated = true;
             authenticatedUserId = authResult.userId;
             logger.info(`[Auth] Authenticated user: ${authenticatedUserId}`);
+          } else {
+            // Existing clients expect an expired optional credential to keep
+            // realtime connected anonymously until their HTTP auth path heals.
+            logger.warn('[Auth] Invalid WebSocket auth token; continuing anonymously');
           }
         }
 

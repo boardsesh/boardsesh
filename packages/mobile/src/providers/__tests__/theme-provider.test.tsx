@@ -6,9 +6,13 @@ import type { ReactNode } from 'react';
 // Mock the secure-store adapter, not expo-secure-store directly. The adapter
 // is the seam ThemeProvider depends on; controlling its three methods is enough
 // to drive every persistence + hydration path in the provider.
-const getMock = vi.fn();
-const setMock = vi.fn();
-const removeMock = vi.fn();
+const { appearanceSetColorSchemeMock, getMock, removeMock, setMock, useColorSchemeMock } = vi.hoisted(() => ({
+  appearanceSetColorSchemeMock: vi.fn(),
+  getMock: vi.fn(),
+  removeMock: vi.fn(),
+  setMock: vi.fn(),
+  useColorSchemeMock: vi.fn(),
+}));
 vi.mock('../../lib/preferences/secure-store-adapter', () => ({
   secureStorePreferences: {
     get: (key: string) => getMock(key),
@@ -22,13 +26,12 @@ vi.mock('../../lib/preferences/secure-store-adapter', () => ({
 // skips the iOS PlatformColor branch in src/theme/colors so importing the
 // module doesn't blow up. PlatformColor is still mocked as a passthrough for
 // belt-and-braces in case some other module reaches for it.
-const useColorSchemeMock = vi.fn();
 // Platform.OS is a getter so a test can flip it to 'ios' and exercise the
 // platform-driven 'auto' → liquidGlass resolution. Default 'android' keeps the
 // colour assertions below on the Android fallback path; iosSystemColors is
 // computed at module import (null here), so the iOS path degrades to that
 // fallback rather than touching native PlatformColor.
-const platform = vi.hoisted(() => ({ os: 'android' as 'ios' | 'android' }));
+const platform = vi.hoisted(() => ({ os: 'android' as 'ios' | 'android' | 'web' }));
 vi.mock('react-native', () => ({
   Platform: {
     get OS() {
@@ -39,7 +42,7 @@ vi.mock('react-native', () => ({
   PlatformColor: (name: string) => name,
   // The provider drives Appearance.setColorScheme so the override flips native
   // iOS colours; mock it so the effect doesn't blow up under jsdom.
-  Appearance: { setColorScheme: vi.fn() },
+  Appearance: { setColorScheme: appearanceSetColorSchemeMock },
 }));
 
 // The provider resolves 'auto' off Platform.OS ('android' here → Material), not
@@ -61,6 +64,7 @@ describe('ThemeProvider', () => {
     setMock.mockReset();
     removeMock.mockReset();
     useColorSchemeMock.mockReset();
+    appearanceSetColorSchemeMock.mockReset();
     // Defaults: no stored preference, OS in light mode, Android platform.
     getMock.mockResolvedValue(null);
     setMock.mockResolvedValue(undefined);
@@ -69,6 +73,14 @@ describe('ThemeProvider', () => {
   });
 
   describe('resolved colorScheme (without persistence)', () => {
+    it('does not call the native Appearance override on web', async () => {
+      platform.os = 'web';
+      renderHook(() => useTheme(), { wrapper });
+
+      await waitFor(() => expect(getMock).toHaveBeenCalled());
+      expect(appearanceSetColorSchemeMock).not.toHaveBeenCalled();
+    });
+
     it("'system' override follows the device scheme", async () => {
       useColorSchemeMock.mockReturnValue('dark');
       const { result } = renderHook(() => useTheme(), { wrapper });

@@ -11,6 +11,10 @@ vi.mock('@react-native-async-storage/async-storage', () => {
       removeItem: vi.fn(async (key: string) => {
         delete storage[key];
       }),
+      getAllKeys: vi.fn(async () => Object.keys(storage)),
+      removeMany: vi.fn(async (keys: string[]) => {
+        keys.forEach((key) => delete storage[key]);
+      }),
       __reset: () => {
         storage = {};
       },
@@ -64,5 +68,18 @@ describe('preference-store', () => {
     await expect(getPreference<number>('k')).resolves.toBe(1);
     await removePreference('k');
     await expect(getPreference('k')).resolves.toBeNull();
+  });
+
+  it('removePreferencesMatching deletes only matching keys', async () => {
+    const { getPreference, removePreferencesMatching, setPreference } = await import('../preference-store');
+    await setPreference('draft:first', 1);
+    await setPreference('draft:second', 2);
+    await setPreference('unrelated', 3);
+
+    await removePreferencesMatching((key) => key.startsWith('draft:'));
+
+    await expect(getPreference('draft:first')).resolves.toBeNull();
+    await expect(getPreference('draft:second')).resolves.toBeNull();
+    await expect(getPreference('unrelated')).resolves.toBe(3);
   });
 });

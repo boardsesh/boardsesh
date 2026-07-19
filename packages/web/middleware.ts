@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
 import { getListPageCacheTTL } from './app/lib/list-page-cache';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
+import { isSecureCookieContext } from './app/lib/auth/secure-cookies';
 import {
   DEFAULT_LOCALE,
   LOCALE_COOKIE,
@@ -24,6 +25,20 @@ const LOCALE_PREFIXED_EMBED_PATTERN = new RegExp(
   'i',
 );
 
+// Expo web owns /app whenever the app is enabled — in dev via the Metro proxy,
+// and in a static-serve deployment (no proxy origin) too. Scoped narrower than
+// the general middleware so a deployment without Expo web leaves /app to normal
+// routing.
+function isExpoWebEnabled(): boolean {
+  return process.env.BOARDSESH_WEB === '1';
+}
+
+// The /assets and /packages/mobile Metro namespaces only exist behind the dev
+// proxy, so they additionally require the proxy origin.
+function isExpoWebProxyEnabled(): boolean {
+  return isExpoWebEnabled() && Boolean(process.env.BOARDSESH_EXPO_WEB_ORIGIN);
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -33,6 +48,50 @@ export function middleware(request: NextRequest) {
       status: 404,
       statusText: 'Not Found',
     });
+  }
+
+  // Expo web owns /app as a locale-neutral authenticated utility surface.
+  // Bypass sticky-locale and legacy session handling so the Next rewrite keeps
+  // this exact path and the HttpOnly NextAuth cookie remains same-origin.
+  const lowercasePathname = pathname.toLowerCase();
+  if (isExpoWebEnabled() && (lowercasePathname === '/app' || lowercasePathname.startsWith('/app/'))) {
+    const expoWebRequestHeaders = new Headers(request.headers);
+    expoWebRequestHeaders.set(LOCALE_HEADER, DEFAULT_LOCALE);
+    const expoWebResponse = NextResponse.next({ request: { headers: expoWebRequestHeaders } });
+    // External rewrites forward the Expo response headers and can bypass the
+    // matching next.config header rule. Attach noindex in middleware as well so
+    // the actual proxied response remains a utility surface in development and
+    // in any future same-origin deployment.
+    expoWebResponse.headers.set('X-Robots-Tag', 'noindex, follow');
+    // External rewrites can also replace next.config's global response headers.
+    // Keep the authenticated SPA frame-protected at the middleware boundary;
+    // Metro repeats these headers so direct development requests match.
+    expoWebResponse.headers.set('X-Frame-Options', 'SAMEORIGIN');
+    expoWebResponse.headers.set('X-Content-Type-Options', 'nosniff');
+    expoWebResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // HSTS only in a secure (HTTPS) context — matching the climb-session cookie's
+    // Secure gate. Over local http it's ignored anyway, and Metro deliberately
+    // never sends it for direct dev requests.
+    if (isSecureCookieContext()) {
+      expoWebResponse.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    return expoWebResponse;
+  }
+
+  // Metro emits browser bundle and resolved-asset URLs from these root-level
+  // namespaces. When the matching Next rewrites are enabled, keep them out of
+  // locale and legacy-session handling so their query strings reach Metro
+  // unchanged. Preserve the normal Next middleware behavior when the Expo
+  // proxy is not fully configured.
+  const isExpoWebSupportPath =
+    lowercasePathname === '/assets' ||
+    lowercasePathname.startsWith('/assets/') ||
+    lowercasePathname === '/packages/mobile' ||
+    lowercasePathname.startsWith('/packages/mobile/');
+  if (isExpoWebSupportPath && isExpoWebProxyEnabled()) {
+    const expoWebRequestHeaders = new Headers(request.headers);
+    expoWebRequestHeaders.set(LOCALE_HEADER, DEFAULT_LOCALE);
+    return NextResponse.next({ request: { headers: expoWebRequestHeaders } });
   }
 
   // /embed/** — iframe widgets for gym websites: display-only, cookieless,
@@ -47,7 +106,6 @@ export function middleware(request: NextRequest) {
   // embed headers — this carve-out must cover the same set of paths or a
   // case-drifted request (e.g. /EMBED/...?session=abc) would run the full
   // pipeline and could Set-Cookie on a frameable response.
-  const lowercasePathname = pathname.toLowerCase();
   if (lowercasePathname === '/embed' || lowercasePathname.startsWith('/embed/')) {
     // Embeds render en-US only: overwrite the locale request header instead
     // of forwarding it, so a crafted client-supplied x-boardsesh-locale can't
@@ -101,6 +159,9 @@ export function middleware(request: NextRequest) {
     response.cookies.set(CLIMB_SESSION_COOKIE, sessionParam, {
       path: '/',
       sameSite: 'lax',
+      // Mark Secure on HTTPS deployments so the cookie is never sent over
+      // plaintext; skipped in local http dev so it still round-trips there.
+      secure: isSecureCookieContext(),
       maxAge: 86400,
     });
     return response;

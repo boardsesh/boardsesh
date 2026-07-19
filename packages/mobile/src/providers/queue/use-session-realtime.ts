@@ -19,6 +19,7 @@ import type { SessionUser, SubscriptionQueueEvent, UserBoard } from '@boardsesh/
 import { emitWallConfirm } from '@boardsesh/play-view';
 import { isNotSessionMemberError } from '@boardsesh/graphql-client';
 import { getWsClient } from '../../lib/graphql/ws-client';
+import { AUTH_REFRESH_RETRY_CLOSE_CODE } from '../../lib/graphql/ws-close-codes';
 import {
   QUEUE_UPDATES_SUBSCRIPTION,
   SESSION_UPDATES_SUBSCRIPTION,
@@ -33,6 +34,17 @@ import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
+// ws-client remaps a rejected-auth 4401 to the retryable AUTH_REFRESH_RETRY_CLOSE_CODE
+// (imported above) at the transport boundary. Unlike an ordinary socket drop,
+// this retry must keep established graphql-ws operations alive so its lazy
+// client still has work to reconnect and resubscribe. The authenticated
+// durable-membership fast path on the backend authorizes those subscriptions
+// while JOIN_SESSION rebinds the fresh connection context in parallel.
+
+function getCloseEventCode(closeEvent: unknown): number | null {
+  if (typeof closeEvent !== 'object' || closeEvent === null || !('code' in closeEvent)) return null;
+  return typeof closeEvent.code === 'number' ? closeEvent.code : null;
+}
 
 // The wire envelope shape matches what QUEUE_UPDATES_SUBSCRIPTION returns —
 // the subscription aliases `item`→`addedItem` (disambiguates from the
@@ -81,6 +93,7 @@ export const createEmptySessionRuntimeState = (): MobileSessionRuntimeState => (
 });
 
 type UseSessionRealtimeParams = {
+  authTransportRevision: number;
   sessionId: string | null;
   dispatch: React.Dispatch<QueueAction>;
   coordinator: { clientId: string };
@@ -116,6 +129,7 @@ type UseSessionRealtimeParams = {
  * restart the subscriptions.
  */
 export function useSessionRealtime({
+  authTransportRevision,
   sessionId,
   dispatch,
   coordinator,
@@ -176,6 +190,7 @@ export function useSessionRealtime({
     let sessionUpdatesCleanup: (() => void) | null = null;
     let joinRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let joinRetryCount = 0;
+    let authRefreshRejoinInProgress = false;
 
     // iOS suspends the WebSocket while the app is backgrounded, so a
     // JOIN_SESSION fired now never completes and trips execute()'s 30s timeout
@@ -194,6 +209,7 @@ export function useSessionRealtime({
 
     const cleanupSubscriptions = () => {
       clearJoinRetryTimer();
+      authRefreshRejoinInProgress = false;
       queueUpdatesCleanup?.();
       sessionUpdatesCleanup?.();
       queueUpdatesCleanup = null;
@@ -205,18 +221,18 @@ export function useSessionRealtime({
       if (__DEV__) console.warn('[queue] joinSession failed', err);
     };
 
-    const scheduleJoinRetry = (failedStartToken: number) => {
+    const scheduleJoinRetry = (failedStartToken: number, preserveExistingSubscriptions = false) => {
       const retryDelayMs =
         JOIN_SESSION_RETRY_BACKOFF_MS[Math.min(joinRetryCount, JOIN_SESSION_RETRY_BACKOFF_MS.length - 1)];
       joinRetryCount++;
       joinRetryTimer = setTimeout(() => {
         joinRetryTimer = null;
         if (disposed || failedStartToken !== subscriptionStartToken || sessionIdRef.current !== sessionId) return;
-        void startJoinedSubscriptions();
+        void startJoinedSubscriptions(preserveExistingSubscriptions);
       }, retryDelayMs);
     };
 
-    const startJoinedSubscriptions = async () => {
+    const startJoinedSubscriptions = async (preserveExistingSubscriptions = false) => {
       // While backgrounded the socket is suspended: defer the join instead of
       // firing one that can only time out (#3605). Supersede any in-flight join
       // (bump the token), tear down subscriptions, and let the AppState listener
@@ -232,7 +248,13 @@ export function useSessionRealtime({
       }
 
       const currentStartToken = ++subscriptionStartToken;
-      cleanupSubscriptions();
+      const retainedQueueUpdatesCleanup = preserveExistingSubscriptions ? queueUpdatesCleanup : null;
+      const retainedSessionUpdatesCleanup = preserveExistingSubscriptions ? sessionUpdatesCleanup : null;
+      if (preserveExistingSubscriptions) {
+        clearJoinRetryTimer();
+      } else {
+        cleanupSubscriptions();
+      }
 
       try {
         await ensureJoined(sessionId);
@@ -254,7 +276,7 @@ export function useSessionRealtime({
           showToastRef.current(tRef.current('mobile.queue.syncError'), 'error');
           reportHandledError(joinError, { tags: { source: 'queue-sync', op: 'join' } });
         }
-        scheduleJoinRetry(currentStartToken);
+        scheduleJoinRetry(currentStartToken, preserveExistingSubscriptions);
         return;
       }
 
@@ -380,7 +402,11 @@ export function useSessionRealtime({
             // exists is just noise. (#2385 follow-up.) Guarded on the still-
             // active session so a late error from a superseded A→B switch can't
             // clear the new session.
-            if (sessionIdRef.current === sessionId && isNotSessionMemberError(subscriptionError)) {
+            if (
+              sessionIdRef.current === sessionId &&
+              isNotSessionMemberError(subscriptionError) &&
+              !authRefreshRejoinInProgress
+            ) {
               void clearSessionRef.current();
               return;
             }
@@ -525,22 +551,50 @@ export function useSessionRealtime({
               await setActiveBoardRef.current({ ...stored, angle: nextAngle });
             })();
           },
-          error: () => {},
+          error: (sessionSubscriptionError) => {
+            // Session-update stream errors were swallowed. Surface them for
+            // triage (the retained subscription still drives its own reconnect).
+            reportHandledError(sessionSubscriptionError);
+          },
           complete: () => {},
         },
       );
+
+      // Retained operations keep graphql-ws's lazy reconnect alive, but a replay
+      // can be rejected before JOIN_SESSION updates the new connection context.
+      // Once joined, replace both streams before releasing the retained handles
+      // so the active-operation count never reaches zero.
+      if (preserveExistingSubscriptions) {
+        retainedQueueUpdatesCleanup?.();
+        retainedSessionUpdatesCleanup?.();
+        authRefreshRejoinInProgress = false;
+      }
 
       unsubscribeRef.current = cleanupSubscriptions;
     };
 
     // graphql-ws auto-reconnects, and every reconnect gives us a fresh
-    // per-connection ConnectionContext on the backend. Tear down subscriptions
-    // when the socket closes so they cannot auto-resubscribe before JOIN_SESSION
-    // has updated that fresh context.
-    const unsubClosed = wsClient.on('closed', () => {
+    // per-connection ConnectionContext on the backend. Ordinary drops retain
+    // the existing join-before-new-subscriptions flow. A rejected-auth retry is
+    // different: cancelling the established operations drops the lazy client's
+    // active-operation count to zero and aborts the retry that ws-client just
+    // initiated. Preserve those operations only for that transport-remapped
+    // close; authenticated durable membership authorizes their resubscription
+    // while JOIN_SESSION rebinds the connection context in parallel.
+    let preserveSubscriptionsOnNextConnect = false;
+    const unsubClosed = wsClient.on('closed', (closeEvent) => {
       joinTracker.bumpEpoch();
       subscriptionStartToken++;
       joinRetryCount = 0;
+      const hasEstablishedSubscriptions = queueUpdatesCleanup !== null && sessionUpdatesCleanup !== null;
+      if (getCloseEventCode(closeEvent) === AUTH_REFRESH_RETRY_CLOSE_CODE && hasEstablishedSubscriptions) {
+        preserveSubscriptionsOnNextConnect = true;
+        authRefreshRejoinInProgress = true;
+        clearJoinRetryTimer();
+        gate.reset();
+        return;
+      }
+      preserveSubscriptionsOnNextConnect = false;
       cleanupSubscriptions();
       // The reconnect's FullSync re-baselines tracking on its own
       // (evaluateIncoming always applies + resets a FullSync), but reset here
@@ -550,7 +604,9 @@ export function useSessionRealtime({
       gate.reset();
     });
     const unsubConnected = wsClient.on('connected', () => {
-      void startJoinedSubscriptions();
+      const preserveExistingSubscriptions = preserveSubscriptionsOnNextConnect;
+      preserveSubscriptionsOnNextConnect = false;
+      void startJoinedSubscriptions(preserveExistingSubscriptions);
     });
 
     // Re-run a join deferred while backgrounded once the app returns to the
@@ -596,7 +652,7 @@ export function useSessionRealtime({
       participantIdRef.current = null;
       joinTracker.reset();
     };
-  }, [sessionId, coordinator, ensureJoined, joinTracker]);
+  }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision]);
 
   // Periodic local-vs-server hash watchdog (mirrors web's 60s interval in
   // use-session-subscriptions.ts, ported into the shared gate's

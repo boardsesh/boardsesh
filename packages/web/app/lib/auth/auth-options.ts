@@ -1,4 +1,5 @@
 import type { NextAuthOptions } from 'next-auth';
+import { randomUUID } from 'node:crypto';
 import { DrizzleAdapter } from '@auth/drizzle-adapter';
 import GoogleProvider from 'next-auth/providers/google';
 import AppleProvider from 'next-auth/providers/apple';
@@ -195,6 +196,10 @@ export const authOptions: NextAuthOptions = {
     signIn: '/auth/login',
     verifyRequest: '/auth/verify-request',
     error: '/auth/error',
+    // Replace NextAuth's built-in GET /api/auth/signout confirmation page. Its
+    // form POSTs only a CSRF token, which the identity-guarded signout route now
+    // rejects with 400. This page drives the guarded sign-out sequence instead.
+    signOut: '/auth/signout',
   },
   callbacks: {
     async signIn({ user, account }) {
@@ -240,6 +245,9 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
     async session({ session, token }) {
+      if (typeof token.authSessionId === 'string' && token.authSessionId) {
+        session.authSessionId = token.authSessionId;
+      }
       // Include user ID in session from JWT
       if (session?.user && token?.sub) {
         session.user.id = token.sub;
@@ -263,6 +271,12 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
     async jwt({ token, user }) {
+      // Stable for one NextAuth login across cookie rotations and tabs, but new
+      // for a later login even when it belongs to the same user. Existing JWTs
+      // can reuse their standard jti so rollout does not force a sign-out.
+      if (!token.authSessionId) {
+        token.authSessionId = typeof token.jti === 'string' && token.jti ? token.jti : randomUUID();
+      }
       // Persist the OAuth access_token and user id to the token right after signin
       if (user) {
         token.id = user.id;

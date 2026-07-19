@@ -368,6 +368,48 @@ describe('authOptions.callbacks.session', () => {
 
     expect(result.user?.id).toBe('user-42');
   });
+
+  it('exposes the stable login generation from the JWT', async () => {
+    const result = await callSession({
+      session: {
+        user: { id: 'user-1', name: 'speedywalker8392' },
+        authSessionId: 'old-login',
+        expires: '2099-01-01',
+      },
+      token: { sub: 'user-1', authSessionId: 'login-generation-1' },
+    });
+
+    expect(result.authSessionId).toBe('login-generation-1');
+  });
+});
+
+type JwtParams = Parameters<NonNullable<NonNullable<typeof authOptions.callbacks>['jwt']>>[0];
+
+async function callJwt(params: Partial<JwtParams>) {
+  const callback = authOptions.callbacks?.jwt;
+  if (!callback) throw new Error('jwt callback not defined');
+  return callback(params as JwtParams);
+}
+
+describe('authOptions.callbacks.jwt', () => {
+  it('preserves an existing login generation through cookie refreshes', async () => {
+    const result = await callJwt({ token: { sub: 'user-1', authSessionId: 'login-generation-1' } });
+
+    expect(result.authSessionId).toBe('login-generation-1');
+  });
+
+  it('seeds preexisting JWTs from their standard jti', async () => {
+    const result = await callJwt({ token: { sub: 'user-1', jti: 'existing-jti' } });
+
+    expect(result.authSessionId).toBe('existing-jti');
+  });
+
+  it('creates a login generation when the JWT has no prior identifier', async () => {
+    const result = await callJwt({ token: { sub: 'user-1' } });
+
+    expect(result.authSessionId).toEqual(expect.any(String));
+    expect(result.authSessionId).not.toBe('');
+  });
 });
 
 // =============================================================================

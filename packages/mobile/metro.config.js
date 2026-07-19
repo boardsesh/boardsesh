@@ -4,6 +4,8 @@
 // unchanged.
 const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 const path = require('path');
+const { applyExpoWebResponseHeaders } = require('./expo-web-response-headers.cjs');
+const { resolveWebRuntimeModulePath } = require('./metro-web-runtime-resolution.cjs');
 
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '../..');
@@ -25,7 +27,8 @@ function ignoredRootPattern(filePath) {
 }
 
 // Exclude non-source directories from Metro's crawl/watch:
-//  - <root>/.agents/* and <root>/.claude/* — agent config and hooks. Anchor
+//  - <root>/.agents/*, <root>/.claude/*, and <root>/.codex/* — agent config
+//    and hooks. Anchor
 //    these to the repo root because this checkout itself may live under
 //    .claude/worktrees.
 //  - <root>/.local-work/* — local tooling scratch (e.g. an Android SDK install
@@ -35,7 +38,7 @@ function ignoredRootPattern(filePath) {
 //    Metro logs.
 // Nothing the app imports lives in these directories, so pruning them is safe
 // and lets the dev server boot in seconds.
-const ignoredRoots = ['.agents', '.claude', '.local-work', '.boardsesh'].map((name) =>
+const ignoredRoots = ['.agents', '.claude', '.codex', '.local-work', '.boardsesh'].map((name) =>
   ignoredRootPattern(path.join(monorepoRoot, name)),
 );
 config.resolver.blockList = config.resolver.blockList
@@ -63,19 +66,63 @@ config.resolver.assetExts = [...(config.resolver.assetExts ?? []), 'xml'];
 // to the shared hooks' useQueryClient() → "No QueryClient set". Redirecting the
 // bare specifier to the mobile app's copy guarantees one context across app +
 // shared packages, while leaving relative/absolute paths to Metro's resolver.
-const SINGLETON_MODULES = ['react', 'react-dom', '@tanstack/react-query'];
+const SINGLETON_MODULES = [
+  'react',
+  'react-dom',
+  '@tanstack/react-query',
+  'react-native-gesture-handler',
+  'react-native-reanimated',
+  'react-native-worklets',
+];
 const singletonRoots = Object.fromEntries(
   SINGLETON_MODULES.map((name) => [name, path.resolve(projectRoot, 'node_modules', name)]),
 );
+const webReactDomRoot = path.resolve(projectRoot, 'web-runtime/node_modules/react-dom');
+
+// Redirects used only by the Expo web target. Shims match exact bare
+// specifiers; isolated runtime packages also preserve their imported subpaths.
+// Native resolution never enters these tables, preserving the existing
+// iOS/Android module graph and OTA fingerprint.
+const WEB_SHIM_MODULES = {
+  '@expo/ui/community/bottom-sheet': path.resolve(projectRoot, 'src/web-shims/bottom-sheet'),
+  '@react-native-google-signin/google-signin': path.resolve(projectRoot, 'src/web-shims/google-signin'),
+  '@react-native-async-storage/async-storage': path.resolve(projectRoot, 'src/web-shims/async-storage'),
+  '@react-native-community/blur': path.resolve(projectRoot, 'src/web-shims/community-blur'),
+  'expo-secure-store': path.resolve(projectRoot, 'src/web-shims/secure-store'),
+  'expo-sqlite': path.resolve(projectRoot, 'src/web-shims/sqlite'),
+  'expo-apple-authentication': path.resolve(projectRoot, 'src/web-shims/apple-authentication'),
+};
+const WEB_RUNTIME_MODULES = {
+  '@gorhom/bottom-sheet': path.resolve(projectRoot, 'web-runtime/node_modules/@gorhom/bottom-sheet'),
+  'react-native-web': path.resolve(projectRoot, 'web-runtime/node_modules/react-native-web'),
+};
+const WEB_SHIMS_DIR = path.resolve(projectRoot, 'src/web-shims');
+
+function isWebShimOrigin(originModulePath) {
+  return (
+    originModulePath === WEB_SHIMS_DIR ||
+    (originModulePath && originModulePath.startsWith(`${WEB_SHIMS_DIR}${path.sep}`))
+  );
+}
 
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const webRuntimeModulePath = platform === 'web' ? resolveWebRuntimeModulePath(WEB_RUNTIME_MODULES, moduleName) : null;
+  if (webRuntimeModulePath) {
+    return context.resolveRequest(context, webRuntimeModulePath, platform);
+  }
+
+  if (platform === 'web' && Object.hasOwn(WEB_SHIM_MODULES, moduleName) && !isWebShimOrigin(context.originModulePath)) {
+    return context.resolveRequest(context, WEB_SHIM_MODULES[moduleName], platform);
+  }
+
   // Only rewrite bare specifiers for the singleton packages — `react`,
   // `@tanstack/react-query`, and their subpaths (`react/jsx-runtime`, etc.).
   // Relative ('./x') and absolute imports fall straight through untouched.
   for (const name of SINGLETON_MODULES) {
     if (moduleName === name || moduleName.startsWith(`${name}/`)) {
-      const redirected = path.join(singletonRoots[name], moduleName.slice(name.length));
+      const singletonRoot = platform === 'web' && name === 'react-dom' ? webReactDomRoot : singletonRoots[name];
+      const redirected = path.join(singletonRoot, moduleName.slice(name.length));
       return context.resolveRequest(context, redirected, platform);
     }
   }
@@ -119,6 +166,10 @@ config.server = {
         return;
       }
 
+      // The Next external rewrite forwards Metro's final response. Emit the
+      // utility-surface directive upstream so it survives that proxy boundary;
+      // +html.tsx provides the equivalent meta tag for static exports.
+      applyExpoWebResponseHeaders(response, process.env.BOARDSESH_WEB, request.url);
       enhancedMiddleware(request, response, next);
     };
   },

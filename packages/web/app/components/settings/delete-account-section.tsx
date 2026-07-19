@@ -13,7 +13,7 @@ import TextField from '@mui/material/TextField';
 import CircularProgress from '@mui/material/CircularProgress';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Checkbox from '@mui/material/Checkbox';
-import { signOut } from 'next-auth/react';
+import { useSession } from 'next-auth/react';
 import { track } from '@/app/lib/analytics';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSnackbar } from '@/app/components/providers/snackbar-provider';
@@ -21,6 +21,7 @@ import { ClientError } from 'graphql-request';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { GET_DELETE_ACCOUNT_INFO, DELETE_ACCOUNT } from '@boardsesh/graphql/operations/account';
+import { guardedNextAuthSignOut } from '@/app/lib/auth/nextauth-cookie-fetch-lock';
 
 export default function DeleteAccountSection() {
   const { t } = useTranslation('settings');
@@ -32,6 +33,7 @@ export default function DeleteAccountSection() {
   const [loadingInfo, setLoadingInfo] = useState(false);
   const { showMessage } = useSnackbar();
   const { token } = useWsAuthToken();
+  const { data: session } = useSession();
 
   const isConfirmed = confirmText === 'DELETE';
 
@@ -81,7 +83,12 @@ export default function DeleteAccountSection() {
   };
 
   const handleDelete = async () => {
-    if (!isConfirmed || !token) return;
+    if (!isConfirmed || !token || !session?.user.id || !session.authSessionId) return;
+
+    const deletedSessionIdentity = {
+      userId: session.user.id,
+      authSessionId: session.authSessionId,
+    };
 
     try {
       setDeleting(true);
@@ -95,8 +102,10 @@ export default function DeleteAccountSection() {
       // resolves so a network failure on signOut doesn't record a Logout that
       // never actually happened (the GraphQL deletion already succeeded, but
       // the auth session won't be cleared until signOut completes).
-      await signOut({ callbackUrl: '/' });
-      track('Logout', { method: 'account_deleted' });
+      const signOutResult = await guardedNextAuthSignOut(deletedSessionIdentity, { callbackUrl: '/' });
+      if (signOutResult.status === 'signed-out') {
+        track('Logout', { method: 'account_deleted' });
+      }
     } catch (error) {
       console.error('Delete account error:', error);
       let message = t('deleteAccount.error');
@@ -189,7 +198,7 @@ export default function DeleteAccountSection() {
             color="error"
             variant="contained"
             onClick={handleDelete}
-            disabled={!isConfirmed || deleting}
+            disabled={!isConfirmed || deleting || !session?.authSessionId}
             startIcon={deleting ? <CircularProgress size={16} /> : undefined}
           >
             {t('deleteAccount.dialog.confirm')}

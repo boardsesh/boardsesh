@@ -7,7 +7,8 @@
 //
 // Backed by AsyncStorage (non-secret UI state) via the shared preference store.
 
-import { getPreference, setPreference, removePreference } from './preference-store';
+import { getPreference, setPreference, removePreference, removePreferencesMatching } from './preference-store';
+import type { UserStorageOwner } from './user-storage-owner';
 
 export type CreateClimbDraft = {
   /** JSON.stringify of the editor's LitUpHoldsMap. */
@@ -53,17 +54,26 @@ function isCreateClimbDraft(value: unknown): value is CreateClimbDraft {
 }
 
 /** Returns the saved working draft for this board, or null if none/invalid. */
-export async function loadDraft(boardKey: string): Promise<CreateClimbDraft | null> {
+export async function loadDraft(boardKey: string, _owner?: UserStorageOwner | null): Promise<CreateClimbDraft | null> {
   const stored = await getPreference<unknown>(storageKey(boardKey));
   return isCreateClimbDraft(stored) ? stored : null;
 }
 
 /** Persists the current working draft for this board (overwrites any prior). */
-export async function saveDraft(boardKey: string, draft: CreateClimbDraft): Promise<void> {
+export async function saveDraft(
+  boardKey: string,
+  draft: CreateClimbDraft,
+  _owner?: UserStorageOwner | null,
+): Promise<void> {
   await setPreference(storageKey(boardKey), draft);
 }
 
 /** Drops the working draft for this board (after save, clear, or empty form). */
-export async function clearDraft(boardKey: string): Promise<void> {
+export async function clearDraft(boardKey: string, _owner?: UserStorageOwner | null): Promise<void> {
   await removePreference(storageKey(boardKey));
+}
+
+/** Drops every locally saved create-climb draft for the departing account. */
+export function clearAllCreateClimbDrafts(_owner?: UserStorageOwner | null): Promise<void> {
+  return removePreferencesMatching((key) => key.startsWith(KEY_PREFIX));
 }

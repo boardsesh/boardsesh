@@ -129,6 +129,13 @@ describe('PlayDrawerActionBar', () => {
     expect(noPip.container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeNull();
   });
 
+  it('omits the Bluetooth action when the host has no Bluetooth provider', () => {
+    const { container } = render(createElement(PlayDrawerActionBar, { ...baseProps, showLightbulb: false }));
+
+    expect(container.querySelector('[data-ble="true"]')).toBeNull();
+    expect(container.querySelector('[data-lightbulb-holder-badge="true"]')).toBeNull();
+  });
+
   it('keeps the 32pt angle pill tappable at the 44pt floor via hit-slop', () => {
     const { container } = render(createElement(PlayDrawerActionBar, baseProps));
     const anglePill = container.querySelector('[data-label="mobile.angleSelector.title"]') as HTMLElement;

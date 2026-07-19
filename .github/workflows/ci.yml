@@ -68,6 +68,10 @@ jobs:
               - 'packages/backend/**'
             mobile:
               - 'packages/mobile/**'
+              - 'packages/board-renderer/wasm/pkg/**'
+              - 'scripts/mobile-platform-imports-check.sh'
+              - 'scripts/mobile-web-bundle-check.sh'
+              - 'scripts/sync-mobile-board-renderer-wasm.sh'
             ocr:
               - 'packages/moonboard-ocr/**'
             sharedDeps:
@@ -149,6 +153,9 @@ jobs:
           cache: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Install Expo web lint dependencies
+        if: needs.changes.outputs.mobile == 'true'
+        run: vp run mobile:web-runtime:install
       - name: Download built packages
         uses: actions/download-artifact@v4
         with:
@@ -585,6 +592,8 @@ jobs:
           name: built-packages
       - name: Metro bundle check
         run: vp run check:mobile-bundle
+      - name: Expo web bundle check
+        run: vp run check:mobile-web-bundle
 
   commit-lint:
     needs: [changes]

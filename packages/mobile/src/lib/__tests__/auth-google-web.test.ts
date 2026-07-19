@@ -44,10 +44,15 @@ vi.mock('../abort-timeout', () => ({ createTimeoutSignal: () => undefined }));
 vi.mock('../env', () => ({ BACKEND_URL: 'https://backend.test', WEB_BASE_URL: 'https://web.test' }));
 
 const storeTokensMock = vi.fn();
+const clearTokensForGenerationMock = vi.fn();
+const getRefreshTokenMock = vi.fn();
+const isAuthCredentialGenerationCurrentMock = vi.fn();
 vi.mock('../auth-store', () => ({
+  captureAuthCredentialGeneration: vi.fn(() => 1),
   storeTokens: (...args: unknown[]) => storeTokensMock(...args),
-  clearTokens: vi.fn(),
-  getRefreshToken: vi.fn(),
+  clearTokensForGeneration: (...args: unknown[]) => clearTokensForGenerationMock(...args),
+  getRefreshToken: (...args: unknown[]) => getRefreshTokenMock(...args),
+  isAuthCredentialGenerationCurrent: (...args: unknown[]) => isAuthCredentialGenerationCurrentMock(...args),
 }));
 
 // Plain vi.fn() (no inline implementation) so the wrapper's spread call stays
@@ -61,7 +66,7 @@ vi.mock('expo-web-browser', () => ({
   dismissBrowser: (...args: unknown[]) => dismissBrowserMock(...args),
 }));
 
-const { signInWithGoogleWeb, signInWithAppleWeb } = await import('../auth');
+const { signInWithGoogleWeb, signInWithAppleWeb, signOut, signOutForGeneration } = await import('../auth');
 
 // Keep in sync with the web app's NATIVE_OAUTH_CALLBACK_SCHEME
 // (packages/web/app/lib/auth/native-oauth-config.ts) and auth.ts's
@@ -102,6 +107,12 @@ function resetMocks() {
   removeListenerMock.mockClear();
   addEventListenerMock.mockClear();
   storeTokensMock.mockReset();
+  clearTokensForGenerationMock.mockReset();
+  clearTokensForGenerationMock.mockResolvedValue(true);
+  getRefreshTokenMock.mockReset();
+  getRefreshTokenMock.mockResolvedValue(null);
+  isAuthCredentialGenerationCurrentMock.mockReset();
+  isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
   armBrowser();
 }
 
@@ -247,5 +258,86 @@ describe('signInWithAppleWeb', () => {
 
     expect(await racePromise).toEqual({ success: false, cancelled: true });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('signOut', () => {
+  beforeEach(resetMocks);
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('still clears credentials when reading the best-effort revocation token fails', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch');
+    getRefreshTokenMock.mockRejectedValueOnce(new Error('keychain read unavailable'));
+
+    await expect(signOut()).resolves.toBeUndefined();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(clearTokensForGenerationMock).toHaveBeenCalledWith(1);
+  });
+
+  it('surfaces a credential cleanup failure', async () => {
+    const cleanupError = new Error('credential cleanup failed');
+    clearTokensForGenerationMock.mockRejectedValueOnce(cleanupError);
+
+    await expect(signOut()).rejects.toBe(cleanupError);
+  });
+
+  it('does not clear or revoke a newer account when an old forced sign-out is superseded', async () => {
+    const fetchMock = vi.spyOn(global, 'fetch');
+    let releaseRefreshTokenRead!: (token: string) => void;
+    getRefreshTokenMock.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        releaseRefreshTokenRead = resolve;
+      }),
+    );
+
+    const oldSignOut = signOutForGeneration(1);
+    await vi.waitFor(() => expect(getRefreshTokenMock).toHaveBeenCalledTimes(1));
+    isAuthCredentialGenerationCurrentMock.mockReturnValue(false);
+    releaseRefreshTokenRead('new-user-refresh-token');
+
+    await expect(oldSignOut).resolves.toBe(false);
+    expect(clearTokensForGenerationMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('returns false when a newer login arrives while credential deletion succeeds', async () => {
+    let currentGeneration = 1;
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let finishClear!: (cleared: boolean) => void;
+    clearTokensForGenerationMock.mockImplementationOnce(() => {
+      currentGeneration = 2;
+      return new Promise<boolean>((resolve) => {
+        finishClear = resolve;
+      });
+    });
+
+    const oldSignOut = signOutForGeneration(1);
+    await vi.waitFor(() => expect(clearTokensForGenerationMock).toHaveBeenCalledWith(1));
+    currentGeneration = 3;
+    finishClear(true);
+
+    await expect(oldSignOut).resolves.toBe(false);
+  });
+
+  it('returns false when a newer login arrives while credential deletion fails', async () => {
+    let currentGeneration = 1;
+    isAuthCredentialGenerationCurrentMock.mockImplementation((generation: number) => generation === currentGeneration);
+    let failClear!: (error: unknown) => void;
+    clearTokensForGenerationMock.mockImplementationOnce(() => {
+      currentGeneration = 2;
+      return new Promise<boolean>((_resolve, reject) => {
+        failClear = reject;
+      });
+    });
+
+    const oldSignOut = signOutForGeneration(1);
+    await vi.waitFor(() => expect(clearTokensForGenerationMock).toHaveBeenCalledWith(1));
+    currentGeneration = 3;
+    failClear(new Error('old credential cleanup failed'));
+
+    await expect(oldSignOut).resolves.toBe(false);
   });
 });

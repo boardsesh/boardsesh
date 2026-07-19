@@ -26,7 +26,6 @@ import * as Updates from 'expo-updates';
 import { SystemBars } from 'react-native-edge-to-edge';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@expo/ui/community/bottom-sheet';
-import { SQLiteProvider } from 'expo-sqlite';
 import { QueryProvider } from '../src/providers/query-provider';
 import { ThemeProvider, useTheme } from '../src/providers/theme-provider';
 import { MaterialThemeProvider } from '../src/providers/material-theme-provider';
@@ -47,6 +46,7 @@ import { FeatureFlagsProvider, type FeatureFlags } from '../src/providers/featur
 import { MobileBoardPresenceProvider } from '../src/providers/board-presence-provider';
 import { SheetPresentationProvider } from '../src/providers/sheet-presentation-provider';
 import { PartyProfileProvider } from '../src/providers/party-profile-provider';
+import { DatabaseProvider } from '../src/providers/database-provider';
 import { ConnectionSettingsProvider } from '../src/providers/connection-settings-provider';
 import { FavoritesProvider } from '../src/providers/favorites-provider';
 import { PlaylistsProvider } from '../src/providers/playlists-provider';
@@ -79,7 +79,6 @@ import { InstallReferrerTracker } from '../src/components/analytics/InstallRefer
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
-import { DATABASE_NAME, initializeDatabase } from '../src/db';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -114,12 +113,6 @@ function buildStaticFeatureFlags(): FeatureFlags | undefined {
 }
 
 const STATIC_FEATURE_FLAGS = buildStaticFeatureFlags();
-
-function handleDatabaseError(error: Error): void {
-  if (__DEV__) {
-    console.warn('[SQLite] database initialization failed; running without local storage:', error);
-  }
-}
 
 const errorStyles = StyleSheet.create({
   container: {
@@ -459,7 +452,7 @@ function RootLayout() {
       <AnalyticsProvider>
         <I18nProvider>
           <QueryProvider>
-            <SQLiteProvider databaseName={DATABASE_NAME} onInit={initializeDatabase} onError={handleDatabaseError}>
+            <DatabaseProvider>
               <ThemeProvider>
                 <MaterialThemeProvider>
                   {/* Inside MaterialThemeProvider (Paper Portal host) and above every
@@ -689,7 +682,7 @@ function RootLayout() {
                   </DialogProvider>
                 </MaterialThemeProvider>
               </ThemeProvider>
-            </SQLiteProvider>
+            </DatabaseProvider>
           </QueryProvider>
         </I18nProvider>
       </AnalyticsProvider>

@@ -9,7 +9,11 @@ import { KeyboardAvoidingView, Platform, StyleSheet, View, type StyleProp, type 
 // Present/dismiss route through the SheetPresentationProvider coordinator so two
 // native sheet transitions never overlap (the iOS UIKit deadlock / app freeze —
 // see sheet-presentation-provider.tsx).
-import BottomSheet, { BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
+import BottomSheet, {
+  BottomSheetScrollView,
+  BottomSheetView,
+  type BottomSheetMethods,
+} from '@expo/ui/community/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { hapticMedium } from '../lib/haptics';
 import { spacing } from '../theme/tokens';
@@ -123,6 +127,8 @@ export const Sheet = forwardRef<BottomSheetMethods, SheetProps>(function Sheet(
     >
       {children}
     </BottomSheetScrollView>
+  ) : enableDynamicSizing && !footer && Platform.OS === 'web' ? (
+    <BottomSheetView style={[bodyStyle, contentContainerStyle]}>{children}</BottomSheetView>
   ) : (
     <View style={[bodyStyle, contentContainerStyle]}>{children}</View>
   );
