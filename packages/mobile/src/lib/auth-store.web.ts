@@ -1,4 +1,5 @@
 import { withAuthCookieLock } from './auth-cookie-lock.web';
+import type { AuthTokenChangeListener, AuthTokenChangeSource } from './auth-token-change-types';
 
 export type AuthSessionResult =
   | { status: 'authenticated'; token: string; userId: string; authSessionId: string }
@@ -29,9 +30,6 @@ type WsAuthResponse = {
   userId?: unknown;
   authSessionId?: unknown;
 };
-
-export type AuthTokenChangeSource = 'local' | 'remote' | 'remote-signout' | 'session' | 'hint';
-export type AuthTokenChangeListener = (token: string | null, source: AuthTokenChangeSource) => void;
 
 type AuthTokenClearedMessageBase = {
   type: 'auth-token-cleared';

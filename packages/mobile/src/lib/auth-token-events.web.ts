@@ -1,1 +1,2 @@
-export { subscribeAuthTokenChanges, type AuthTokenChangeListener, type AuthTokenChangeSource } from './auth-store.web';
+export { subscribeAuthTokenChanges } from './auth-store.web';
+export type { AuthTokenChangeListener, AuthTokenChangeSource } from './auth-token-change-types';

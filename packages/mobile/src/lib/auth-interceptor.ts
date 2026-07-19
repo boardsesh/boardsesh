@@ -9,14 +9,13 @@ import {
 import { signOutForGeneration } from './auth';
 import { BACKEND_URL } from './env';
 import { reportError, reportHandledError } from './error-reporting';
+import type { AuthRejectionResult } from './auth-rejection-result';
 
 type AuthRefreshResult =
   | { status: 'refreshed'; generation: number }
   | { status: 'rejected'; generation: number }
   | { status: 'unavailable'; generation: number }
   | { status: 'superseded' };
-
-export type NativeAuthRejectionResult = AuthRefreshResult['status'];
 
 let refresh: { generation: number; promise: Promise<AuthRefreshResult> } | null = null;
 
@@ -131,7 +130,7 @@ function forceSignOut(generation: number): Promise<void> {
 }
 
 /** Recover a server-rejected credential or finish the forced sign-out path. */
-export async function recoverAuthRejection(): Promise<NativeAuthRejectionResult> {
+export async function recoverAuthRejection(): Promise<AuthRejectionResult> {
   const refreshResult = await deduplicatedRefresh();
   if (refreshResult.status === 'rejected') await forceSignOut(refreshResult.generation);
   return refreshResult.status;
