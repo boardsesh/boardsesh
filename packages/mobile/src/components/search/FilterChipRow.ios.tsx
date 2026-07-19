@@ -47,13 +47,13 @@ import {
   isProgressFilter,
   collectionChipLabel,
   isCollectionFilter,
-  sortChipLabel,
   isSortOption,
   accuracyChipLabel,
   isAccuracyTag,
   climbTypeChipLabel,
   isClimbType,
 } from './FilterChipRow.logic';
+import { buildSortLabel } from '../../lib/filter-labels';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
@@ -94,6 +94,8 @@ function FilterChipRowComponent({
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
+  // Built once per render, reused for the resting label + all 7 menu items.
+  const sortLabelFor = buildSortLabel(t);
 
   // Popularity / rating chip wording lives in FilterChipRow.logic (shared with the
   // Android tree) so a filter is never worded two ways across platforms.
@@ -349,7 +351,7 @@ function FilterChipRowComponent({
               refinement). Picking Random reseeds a fresh shuffle. Opt-in, sits last. */}
           {pinnedChips.includes('sort') ? (
             <Menu
-              label={sortActive ? sortChipLabel(sortBy, t) : t('mobile.filter.sortBy')}
+              label={sortActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
               modifiers={chipModifiers(sortActive)}
             >
               <Picker
@@ -361,7 +363,7 @@ function FilterChipRowComponent({
               >
                 {SORT_OPTIONS.map((value) => (
                   <Text key={value} modifiers={[tag(value)]}>
-                    {sortChipLabel(value, t)}
+                    {sortLabelFor(value) ?? value}
                   </Text>
                 ))}
               </Picker>

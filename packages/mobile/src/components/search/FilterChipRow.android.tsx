@@ -55,10 +55,10 @@ import {
   ratingChipLabel,
   progressFilterLabel,
   collectionChipLabel,
-  sortChipLabel,
   accuracyChipLabel,
   climbTypeChipLabel,
 } from './FilterChipRow.logic';
+import { buildSortLabel } from '../../lib/filter-labels';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
 import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
 
@@ -210,6 +210,8 @@ function FilterChipRowComponent({
   const { t } = useTranslation('climbs');
   const { brandColors, colorScheme } = useTheme();
   const chipColors = filterChipBrandColors(brandColors);
+  // Built once per render, reused for the resting label + all 7 menu items.
+  const sortLabelFor = buildSortLabel(t);
 
   // Angle rides as the first chip: it re-grades the whole list, so it belongs with
   // the other list-refinement chips rather than in the app bar. Self-contained (reads
@@ -492,7 +494,7 @@ function FilterChipRowComponent({
               Random reseeds a fresh shuffle. Opt-in, sits last. */}
           {pinnedChips.includes('sort') ? (
             <MenuChip
-              label={sortActive ? sortChipLabel(sortBy, t) : t('mobile.filter.sortBy')}
+              label={sortActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
               selected={sortActive}
               colors={chipColors}
               renderItems={(close) => (
@@ -500,7 +502,7 @@ function FilterChipRowComponent({
                   {SORT_OPTIONS.map((value) => (
                     <MenuItem
                       key={value}
-                      label={sortChipLabel(value, t)}
+                      label={sortLabelFor(value) ?? value}
                       checked={value === sortBy}
                       onClick={() => {
                         onChangeSort(value);

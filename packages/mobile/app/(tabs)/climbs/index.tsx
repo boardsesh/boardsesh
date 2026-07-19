@@ -36,15 +36,17 @@ import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
 import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
-import type { ClimbTypeFilter } from '../../../src/components/search/FilterChipRow.logic';
 import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
 import { usePinnedChips } from '../../../src/lib/pinned-chips-store';
-import { getCollectionFilter, type CollectionFilter } from '../../../src/lib/collection-filter';
+import {
+  getCollectionFilter,
+  getClimbTypeFilter,
+  type CollectionFilter,
+  type ClimbTypeFilter,
+} from '../../../src/lib/collection-filter';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
-import { useDimensionLocks, useDimensionRepin } from '../../../src/lib/dimension-lock-store';
-import { hapticMedium } from '../../../src/lib/haptics';
 import { useDrawerHost } from '../../../src/providers/drawer-host-provider';
 import { useTheme } from '../../../src/providers/theme-provider';
 import { selectByVariant } from '../../../src/theme/variants';
@@ -1101,15 +1103,9 @@ function ClimbListInner() {
     () => patchFilters({ onlyWithBetaVideos: filters.onlyWithBetaVideos ? undefined : true }),
     [patchFilters, filters.onlyWithBetaVideos],
   );
-  // Climb-type single-select derived from the boulders/routes flags (mirrors the
-  // sheet's climbTypeKey): boulders-only is the default/resting value.
-  const climbType = useMemo<ClimbTypeFilter>(() => {
-    const bouldersOn = filters.boulders ?? true;
-    const routesOn = filters.routes ?? false;
-    if (bouldersOn && !routesOn) return 'boulders';
-    if (!bouldersOn && routesOn) return 'routes';
-    return 'both';
-  }, [filters.boulders, filters.routes]);
+  // Climb-type single-select derived from the boulders/routes flags — one shared
+  // helper with the sheet, so the chip and sheet never show a different pick.
+  const climbType = getClimbTypeFilter(filters);
   // Sort is "active" whenever the key OR direction differs from the default — the
   // same condition the sort token uses, so the chip lights up in lockstep with it.
   const sortActive =
@@ -1117,10 +1113,7 @@ function ClimbListInner() {
   // Tall/Wide chips appear on any board whose active size has a shorter/narrower
   // size in its product family — Kilter Homewall & Original, Tension Board 2,
   // Decoy, Grasshopper (getTallWideScope is the shared source of truth, matching
-  // the server filter). Tap toggles the filter; long-press locks it (persisted)
-  // so it survives clears — the re-pin effects below re-apply a locked filter
-  // whenever it's cleared.
-  const { locks: dimensionLocks, setLock: setDimensionLock } = useDimensionLocks();
+  // the server filter). Tap toggles the filter.
   const { hasShorter: showTallChip, hasNarrower: showWideChip } = getTallWideScope(
     boardName as BoardName,
     layoutId,
@@ -1129,59 +1122,21 @@ function ClimbListInner() {
   const dimensionChips = useMemo<DimensionChip[]>(() => {
     const chips: DimensionChip[] = [];
     if (showTallChip) {
-      const locked = dimensionLocks.tall;
       chips.push({
         key: 'tall',
-        active: locked || !!filters.onlyTallClimbs,
-        locked,
-        // A locked chip ignores tap — only a long-press unlock frees it.
-        onToggle: () => {
-          if (locked) return;
-          patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true });
-        },
-        onToggleLock: () => {
-          hapticMedium();
-          const next = !locked;
-          setDimensionLock('tall', next);
-          if (next) patchFilters({ onlyTallClimbs: true });
-        },
+        active: !!filters.onlyTallClimbs,
+        onToggle: () => patchFilters({ onlyTallClimbs: filters.onlyTallClimbs ? undefined : true }),
       });
     }
     if (showWideChip) {
-      const locked = dimensionLocks.wide;
       chips.push({
         key: 'wide',
-        active: locked || !!filters.onlyWideClimbs,
-        locked,
-        onToggle: () => {
-          if (locked) return;
-          patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true });
-        },
-        onToggleLock: () => {
-          hapticMedium();
-          const next = !locked;
-          setDimensionLock('wide', next);
-          if (next) patchFilters({ onlyWideClimbs: true });
-        },
+        active: !!filters.onlyWideClimbs,
+        onToggle: () => patchFilters({ onlyWideClimbs: filters.onlyWideClimbs ? undefined : true }),
       });
     }
     return chips;
-  }, [
-    showTallChip,
-    showWideChip,
-    dimensionLocks.tall,
-    dimensionLocks.wide,
-    filters.onlyTallClimbs,
-    filters.onlyWideClimbs,
-    patchFilters,
-    setDimensionLock,
-  ]);
-  // A locked dimension stays active through any clear (sheet Reset, FAB clear,
-  // recent re-apply): re-pin its filter whenever it's been cleared while locked.
-  const pinTall = useCallback(() => patchFilters({ onlyTallClimbs: true }), [patchFilters]);
-  const pinWide = useCallback(() => patchFilters({ onlyWideClimbs: true }), [patchFilters]);
-  useDimensionRepin(showTallChip, dimensionLocks.tall, !!filters.onlyTallClimbs, pinTall);
-  useDimensionRepin(showWideChip, dimensionLocks.wide, !!filters.onlyWideClimbs, pinWide);
+  }, [showTallChip, showWideChip, filters.onlyTallClimbs, filters.onlyWideClimbs, patchFilters]);
   // Token row = the receipt for the long tail only; a filter backed by a *pinned*
   // chip shows and clears itself there, so it's excluded to avoid wording it
   // twice. Derived from the user's pinned set so unpinning a chip re-surfaces its
@@ -1262,7 +1217,6 @@ function ClimbListInner() {
     handleChangeProgress,
     handleChangeCollection,
     boardFilters.onlyBenchmarks,
-    filters.status,
     isAuthenticated,
     sortActive,
     handleChangeSort,

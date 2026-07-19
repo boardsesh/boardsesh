@@ -22,3 +22,18 @@ export function getCollectionFilter(
   if (filters.status === 'drafts') return 'drafts';
   return 'any';
 }
+
+// "Climb type" is a single-select over the boulders/routes flags. Boulders-only
+// is the default; routes-only and both-on are the other two picks (both-off is
+// treated as "both" — no frames_count constraint). One derivation, shared by the
+// chip row and the sheet so they can't show a different selected value.
+export type ClimbTypeFilter = 'boulders' | 'routes' | 'both';
+
+/** Reads the current Climb type choice out of the boulders/routes flags. */
+export function getClimbTypeFilter(filters: Pick<ClimbFilterState, 'boulders' | 'routes'>): ClimbTypeFilter {
+  const bouldersOn = filters.boulders ?? true;
+  const routesOn = filters.routes ?? false;
+  if (bouldersOn && !routesOn) return 'boulders';
+  if (!bouldersOn && routesOn) return 'routes';
+  return 'both';
+}

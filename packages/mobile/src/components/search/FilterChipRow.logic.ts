@@ -13,28 +13,22 @@
 import type { TFunction } from 'i18next';
 import {
   formatMinAscentsFilterCount,
+  gradeAccuracyBucket,
   PROGRESS_FILTER_VALUES,
   SORT_OPTIONS,
   type ProgressFilter,
   type SortOption,
   type GradeAccuracyValue,
 } from '@boardsesh/climb-filters';
-import type { CollectionFilter } from '../../lib/collection-filter';
-import { buildSortLabel } from '../../lib/filter-labels';
+import type { CollectionFilter, ClimbTypeFilter } from '../../lib/collection-filter';
 
 export { progressFilterLabel } from '../../lib/filter-labels';
 export { isCollectionFilter } from '../../lib/collection-filter';
+export type { ClimbTypeFilter } from '../../lib/collection-filter';
 
-/** Climb-type single-select values (mirrors the sheet's climbTypeKey). */
-export type ClimbTypeFilter = 'boulders' | 'routes' | 'both';
-
-/**
- * Label for a sort key ("Ascents", "Quality", …). Falls back to the raw key if a
- * new SORT_OPTIONS entry ever lacks a catalog string (keeps the chip usable).
- */
-export function sortChipLabel(sortBy: SortOption, t: TFunction<'climbs'>): string {
-  return buildSortLabel(t)(sortBy) ?? sortBy;
-}
+// Sort labels come straight from the shared `buildSortLabel` — the chip row
+// builds that record once per render and reuses it, so there's no per-item helper
+// here (an earlier `sortChipLabel` rebuilt the whole record on every menu item).
 
 /** Narrows a raw native-picker tag to a {@link SortOption}. */
 export function isSortOption(value: string): value is SortOption {
@@ -43,19 +37,19 @@ export function isSortOption(value: string): value is SortOption {
 
 /**
  * Label for a grade-accuracy bucket. Accepts the raw value ('0'…'0.05') and the
- * 'off' tag the chip/segmented use for the neutral bucket, both mapping to the
- * "Off" string — so one function labels both the menu items and the resting chip.
+ * 'off' tag the chip/segmented use for the neutral bucket. The value→bucket
+ * boundaries live once in the shared `gradeAccuracyBucket`; this only maps the
+ * bucket to its i18n string (literal keys, so the i18n linter stays happy).
  */
 export function accuracyChipLabel(value: GradeAccuracyValue | 'off', t: TFunction<'climbs'>): string {
-  switch (value) {
+  switch (gradeAccuracyBucket(value === 'off' ? '0' : value)) {
     case 'off':
-    case '0':
       return t('mobile.filter.accuracy.off');
-    case '0.2':
+    case 'loose':
       return t('mobile.filter.accuracy.loose');
-    case '0.1':
+    case 'moderate':
       return t('mobile.filter.accuracy.moderate');
-    case '0.05':
+    case 'tight':
       return t('mobile.filter.accuracy.tight');
   }
 }

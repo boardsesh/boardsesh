@@ -45,10 +45,9 @@ export const DEFAULT_PINNED_CHIPS: readonly PinnableChipKind[] = [
   'rating',
 ];
 
-// Chips whose control is auth-gated (hidden when signed out), mirroring the
-// sheet + the chip row's `canFilterProgress`. The pin persists; only rendering
-// is gated.
-export const AUTH_GATED_CHIPS: ReadonlySet<PinnableChipKind> = new Set<PinnableChipKind>(['progress']);
+// Auth-gating (progress + My drafts hide when signed out) is applied at the chip
+// row via the `canFilterProgress` / `canFilterDrafts` props, not here — the pin
+// itself always persists, only rendering is gated.
 
 export function isValidChipKind(value: unknown): value is PinnableChipKind {
   return typeof value === 'string' && (PINNABLE_CHIP_KINDS as readonly string[]).includes(value);

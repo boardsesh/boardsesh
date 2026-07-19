@@ -6,7 +6,6 @@ import {
   ratingChipLabel,
   progressFilterLabel,
   isProgressFilter,
-  sortChipLabel,
   isSortOption,
   accuracyChipLabel,
   isAccuracyTag,
@@ -115,15 +114,7 @@ describe('progressToFlags (chip commit)', () => {
 
 // --- Tier-2 chip labels + tag guards. ---
 
-describe('sortChipLabel / isSortOption', () => {
-  it('labels a known sort key via the shared sort labels', () => {
-    expect(sortChipLabel('quality', mockT)).toBe('mobile.filter.sort.quality');
-  });
-
-  it('produces a non-empty label for every SORT_OPTIONS entry', () => {
-    for (const option of SORT_OPTIONS) expect(sortChipLabel(option, mockT).length).toBeGreaterThan(0);
-  });
-
+describe('isSortOption', () => {
   it('accepts real sort keys and rejects a stray tag', () => {
     for (const option of SORT_OPTIONS) expect(isSortOption(option)).toBe(true);
     expect(isSortOption('sideways')).toBe(false);

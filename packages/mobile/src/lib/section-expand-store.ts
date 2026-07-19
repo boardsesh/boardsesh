@@ -81,7 +81,7 @@ export function setSectionExpanded(key: string, expanded: boolean): void {
 }
 
 /** Test-only: clear the in-memory singleton so each test starts from a cold
- *  store (mirrors the `resetDimensionLocksForTests` convention). */
+ *  store (mirrors the `resetPinnedChipsStoreForTests` convention). */
 export function resetSectionExpandStoreForTests(): void {
   current = {};
   hasLoaded = false;

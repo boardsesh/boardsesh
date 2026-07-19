@@ -43,7 +43,7 @@ import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
 import { PinToggle } from './search/PinToggle';
-import { getCollectionFilter, type CollectionFilter } from '../lib/collection-filter';
+import { getCollectionFilter, getClimbTypeFilter, type CollectionFilter } from '../lib/collection-filter';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -404,13 +404,8 @@ export function ClimbFilterSheet({
   // Climb-type toggle (main's #2496 control). A 3-way control means there's no
   // UI path to "neither", so the never-both-off invariant is structural (see
   // toClimbSearchInput). "Both" = show everything; boulders-only is the default.
-  const climbTypeKey = useMemo<'boulders' | 'routes' | 'both'>(() => {
-    const bouldersOn = localFilters.boulders ?? true;
-    const routesOn = localFilters.routes ?? false;
-    if (bouldersOn && !routesOn) return 'boulders';
-    if (!bouldersOn && routesOn) return 'routes';
-    return 'both';
-  }, [localFilters.boulders, localFilters.routes]);
+  // Same derivation as the chip row (getClimbTypeFilter) so they never disagree.
+  const climbTypeKey = getClimbTypeFilter(localFilters);
   const handleClimbTypeChange = useCallback(
     (key: string) => {
       if (key === 'routes') setFiltersPatch({ boulders: false, routes: true });
