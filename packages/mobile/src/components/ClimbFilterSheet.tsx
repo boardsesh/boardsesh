@@ -42,6 +42,7 @@ import { SegmentedControl } from './SegmentedControl';
 import { StarRating } from './StarRating';
 import { SwitchRow } from './SwitchRow';
 import { Icon } from './Icon';
+import { PinToggle } from './search/PinToggle';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { androidSafeSnapPoints } from './sheet-snap-points';
@@ -653,14 +654,20 @@ export function ClimbFilterSheet({
                 {t('mobile.filter.section.difficulty')}
               </Text>
               {/* Grade — inline and sheet-local, so dismissing the filter sheet does
-                not commit grade edits until Apply. */}
+                not commit grade edits until Apply. The rail's own title is replaced
+                by a pinnable label row. */}
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.gradeRange')}
+                </Text>
+                <PinToggle kind="grade" />
+              </View>
               <GradeRangeRail
                 grades={grades ?? []}
                 bound={{ minGradeId: localFilters.minGrade, maxGradeId: localFilters.maxGrade }}
                 lastUsedGradeId={lastUsedGradeId}
                 onChange={handleGradeChange}
                 dismissible={false}
-                showTitle
                 style={styles.inlineGradeRail}
               />
 
@@ -684,9 +691,12 @@ export function ClimbFilterSheet({
                 the "My drafts" toggle (old Status 'drafts', with its side-effects). */}
             {isAuthenticated ? (
               <View style={styles.section}>
-                <Text variant="headline" style={styles.sectionHeader}>
-                  {t('mobile.filter.progress.label')}
-                </Text>
+                <View style={styles.pinnableLabelRow}>
+                  <Text variant="headline" style={styles.sectionHeader}>
+                    {t('mobile.filter.progress.label')}
+                  </Text>
+                  <PinToggle kind="progress" />
+                </View>
                 {/* A single-select over the four per-user tick flags. "Projects" =
                   attempted-but-not-sent; "Unsent" = the old "hide climbs I've sent". */}
                 <View style={styles.chipRow}>
@@ -709,14 +719,21 @@ export function ClimbFilterSheet({
               </Text>
               {/* Benchmarks + (signed-in) My drafts — grouped in one inset card. */}
               <View style={styles.groupedCard}>
-                <SwitchRow
-                  label={t('mobile.filter.benchmark')}
-                  description={t('mobile.filter.benchmarkDescription')}
-                  value={!!localBoardFilters.onlyBenchmarks}
-                  onValueChange={(value) =>
-                    updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
-                  }
-                />
+                <View style={styles.pinnableSwitchRow}>
+                  <View style={styles.pinnableSwitchRowControl}>
+                    <SwitchRow
+                      label={t('mobile.filter.benchmark')}
+                      description={t('mobile.filter.benchmarkDescription')}
+                      value={!!localBoardFilters.onlyBenchmarks}
+                      onValueChange={(value) =>
+                        updateLocalBoardFilters((previous) => ({ ...previous, onlyBenchmarks: value || undefined }))
+                      }
+                    />
+                  </View>
+                  <View style={styles.pinnableSwitchRowPin}>
+                    <PinToggle kind="benchmarks" />
+                  </View>
+                </View>
                 {/* My drafts — the old Status 'drafts' radio option, now a toggle.
                   Routes through handleStatusChange so applyStatusChange's side effects
                   (drafts → sort=creation desc, clear minAscents) still fire. Auth-only. */}
@@ -733,9 +750,12 @@ export function ClimbFilterSheet({
               </View>
 
               <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.minRating')}
-              </Text>
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.minRating')}
+                </Text>
+                <PinToggle kind="rating" />
+              </View>
               <View style={styles.ratingRow}>
                 <Chip
                   label={t('mobile.filter.anyRating')}
@@ -750,9 +770,12 @@ export function ClimbFilterSheet({
               </View>
 
               <View style={styles.subsectionGap} />
-              <Text variant="footnote" style={styles.subsectionLabel}>
-                {t('mobile.filter.popularity')}
-              </Text>
+              <View style={styles.pinnableLabelRow}>
+                <Text variant="footnote" style={styles.subsectionLabel}>
+                  {t('mobile.filter.popularity')}
+                </Text>
+                <PinToggle kind="popularity" />
+              </View>
               {/* "Unrepeated" (status='projects') leads the group, then Any + the
                 numeric min-ascents buckets. The whole row reads as single-select:
                 picking any bucket clears projects (see handlePopularity), and the
@@ -795,6 +818,12 @@ export function ClimbFilterSheet({
               {isKilter ? (
                 <>
                   <View style={styles.subsectionGap} />
+                  <View style={styles.pinnableLabelRow}>
+                    <Text variant="footnote" style={styles.subsectionLabel}>
+                      {t('mobile.filter.shape')}
+                    </Text>
+                    <PinToggle kind="shape" />
+                  </View>
                   <SwitchRow
                     label={t('mobile.filter.tall')}
                     description={t('mobile.filter.tallDescription')}
@@ -1006,6 +1035,23 @@ const styles = StyleSheet.create({
   },
   subsectionGap: {
     height: spacing[4],
+  },
+  // A control's label line with a trailing pin toggle (pin the control to the chip row).
+  pinnableLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  // Wraps a full-width SwitchRow with a trailing pin toggle at the row's edge.
+  pinnableSwitchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pinnableSwitchRowControl: {
+    flex: 1,
+  },
+  pinnableSwitchRowPin: {
+    paddingRight: spacing[4],
   },
   // Breathing room between a footnote sub-label and a flush native SegmentedControl
   // (which, unlike the chip rows, has no intrinsic top padding).

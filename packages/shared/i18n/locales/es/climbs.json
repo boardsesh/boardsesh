@@ -662,6 +662,9 @@
         "sort": "Orden"
       },
       "popularity": "Popularidad",
+      "shape": "Forma",
+      "pin": "Fijar como atajo",
+      "unpin": "Quitar de los atajos",
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
       "benchmarkDescription": "Vías marcadas como benchmark por el equipador",

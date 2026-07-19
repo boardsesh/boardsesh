@@ -228,6 +228,7 @@ function DimensionChipView({
 }
 
 function FilterChipRowComponent({
+  pinnedChips,
   activeFilterCount,
   onOpenFilters,
   recentFilters,
@@ -340,16 +341,18 @@ function FilterChipRowComponent({
           ) : null}
 
           {/* Grade → the range rail overlay. Action chip, no menu; tap toggles the rail. */}
-          <ActionChip
-            label={gradeLabel}
-            selected={gradeActive}
-            colors={chipColors}
-            onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
-          />
+          {pinnedChips.includes('grade') ? (
+            <ActionChip
+              label={gradeLabel}
+              selected={gradeActive}
+              colors={chipColors}
+              onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+            />
+          ) : null}
 
           {/* Your progress ▾ — single-select over the four tick flags (auth-gated,
             the chip hides when signed out). Each item commits its value and closes. */}
-          {canFilterProgress ? (
+          {canFilterProgress && pinnedChips.includes('progress') ? (
             <MenuChip
               label={progress === 'all' ? t('mobile.filter.progress.label') : progressFilterLabel(progress, t)}
               selected={progress !== 'all'}
@@ -374,70 +377,78 @@ function FilterChipRowComponent({
 
           {/* Benchmarks — its own toggle chip (a tap flips it), no longer folded in
             with progress. */}
-          <ActionChip
-            label={t('mobile.filter.benchmark')}
-            selected={onlyBenchmarks}
-            colors={chipColors}
-            onPress={() => onToggleBenchmarks(!onlyBenchmarks)}
-          />
+          {pinnedChips.includes('benchmarks') ? (
+            <ActionChip
+              label={t('mobile.filter.benchmark')}
+              selected={onlyBenchmarks}
+              colors={chipColors}
+              onPress={() => onToggleBenchmarks(!onlyBenchmarks)}
+            />
+          ) : null}
 
           {/* Tall / Wide — board-shape chips for the current Kilter homewall size
             (empty otherwise). Tap opens a menu: filter toggle + lock/unlock. */}
-          {dimensionChips.map((dimension) => (
-            <DimensionChipView
-              key={dimension.key}
-              dimension={dimension}
-              label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-              toggleLabel={dimension.key === 'tall' ? t('mobile.filter.tall') : t('mobile.filter.wide')}
-              colors={chipColors}
-              lockLabel={t('mobile.search.chips.lock')}
-              unlockLabel={t('mobile.search.chips.unlock')}
-            />
-          ))}
+          {pinnedChips.includes('shape')
+            ? dimensionChips.map((dimension) => (
+                <DimensionChipView
+                  key={dimension.key}
+                  dimension={dimension}
+                  label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+                  toggleLabel={dimension.key === 'tall' ? t('mobile.filter.tall') : t('mobile.filter.wide')}
+                  colors={chipColors}
+                  lockLabel={t('mobile.search.chips.lock')}
+                  unlockLabel={t('mobile.search.chips.unlock')}
+                />
+              ))
+            : null}
 
           {/* Popularity ▾ — single-choice min-ascents buckets. */}
-          <MenuChip
-            label={hasActivePopularity ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity')}
-            selected={hasActivePopularity}
-            colors={chipColors}
-            renderItems={(close) => (
-              <>
-                {POPULARITY_BUCKETS.map((bucket) => (
-                  <MenuItem
-                    key={bucket ?? 'any'}
-                    label={popularityChipLabel(bucket, t)}
-                    checked={bucket === minAscents}
-                    onClick={() => {
-                      onChangePopularity(bucket);
-                      close();
-                    }}
-                  />
-                ))}
-              </>
-            )}
-          />
+          {pinnedChips.includes('popularity') ? (
+            <MenuChip
+              label={hasActivePopularity ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity')}
+              selected={hasActivePopularity}
+              colors={chipColors}
+              renderItems={(close) => (
+                <>
+                  {POPULARITY_BUCKETS.map((bucket) => (
+                    <MenuItem
+                      key={bucket ?? 'any'}
+                      label={popularityChipLabel(bucket, t)}
+                      checked={bucket === minAscents}
+                      onClick={() => {
+                        onChangePopularity(bucket);
+                        close();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            />
+          ) : null}
 
           {/* Min rating ▾ — single-choice star buckets. */}
-          <MenuChip
-            label={hasActiveRating ? ratingChipLabel(minRating, t) : t('mobile.filter.minRating')}
-            selected={hasActiveRating}
-            colors={chipColors}
-            renderItems={(close) => (
-              <>
-                {RATING_BUCKETS.map((bucket) => (
-                  <MenuItem
-                    key={bucket ?? 'any'}
-                    label={ratingChipLabel(bucket, t)}
-                    checked={bucket === minRating}
-                    onClick={() => {
-                      onChangeRating(bucket);
-                      close();
-                    }}
-                  />
-                ))}
-              </>
-            )}
-          />
+          {pinnedChips.includes('rating') ? (
+            <MenuChip
+              label={hasActiveRating ? ratingChipLabel(minRating, t) : t('mobile.filter.minRating')}
+              selected={hasActiveRating}
+              colors={chipColors}
+              renderItems={(close) => (
+                <>
+                  {RATING_BUCKETS.map((bucket) => (
+                    <MenuItem
+                      key={bucket ?? 'any'}
+                      label={ratingChipLabel(bucket, t)}
+                      checked={bucket === minRating}
+                      onClick={() => {
+                        onChangeRating(bucket);
+                        close();
+                      }}
+                    />
+                  ))}
+                </>
+              )}
+            />
+          ) : null}
         </Row>
       </Host>
       {canAdjustAngle && activeBoard ? (

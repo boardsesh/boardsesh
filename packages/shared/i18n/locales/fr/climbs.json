@@ -662,6 +662,9 @@
         "sort": "Tri"
       },
       "popularity": "Popularité",
+      "shape": "Forme",
+      "pin": "Épingler comme raccourci",
+      "unpin": "Retirer des raccourcis",
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks",
       "benchmarkDescription": "Voies marquées benchmark par l'ouvreur",

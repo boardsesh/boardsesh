@@ -32,6 +32,8 @@ import { ClimbFilterSheet, hasActiveFilters, type ClimbFilters } from '../../../
 import { ClimbTopChrome } from '../../../src/components/search/ClimbTopChrome';
 import { FilterChipRow } from '../../../src/components/search/FilterChipRow';
 import type { DimensionChip } from '../../../src/components/search/FilterChipRow.types';
+import { chipKindToTokenKeys } from '../../../src/lib/pinnable-chips';
+import { usePinnedChips } from '../../../src/lib/pinned-chips-store';
 import { FilterTokenRow } from '../../../src/components/search/FilterTokenRow';
 import { GradeRangeRail } from '../../../src/components/grade';
 import { applyPopularityBucket } from '../../../src/lib/filter-chip-menus';
@@ -104,7 +106,6 @@ const PREWARM_BOARD_HOLDS_DELAY_MS = 1200;
 // excluded from the removable token row so an active filter is never worded
 // twice — the chip shows/changes it, the token row is the receipt for the
 // long-tail (sheet-only) filters that have no chip.
-const CHIP_BACKED_TOKEN_KEYS = new Set<string>(['grade', 'minAscents', 'minRating', 'progress', 'benchmark']);
 
 type NativeSearchBarRef = {
   focus: () => void;
@@ -187,6 +188,10 @@ function ClimbListInner() {
     patchFilters,
     patchBoardFilters,
   } = useClimbSearch();
+  // The user's pinned chips: which filter controls appear in the persistent chip
+  // row (defaults reproduce today's set). Drives both the chip row and the token
+  // "receipt" dedup below.
+  const { pinned: pinnedChips } = usePinnedChips();
   const { lastUsedGrade, rememberGrade } = useLastUsedGrade();
   const { getLogbook } = useBoardActions();
   const searchHeaderRef = useRef<SearchHeaderHandle>(null);
@@ -1123,25 +1128,30 @@ function ClimbListInner() {
   const pinWide = useCallback(() => patchFilters({ onlyWideClimbs: true }), [patchFilters]);
   useDimensionRepin(showTallChip, dimensionLocks.tall, !!filters.onlyTallClimbs, pinTall);
   useDimensionRepin(showWideChip, dimensionLocks.wide, !!filters.onlyWideClimbs, pinWide);
-  // Token row = the receipt for the long tail only; the chip-backed facets show
-  // and clear themselves, so they're excluded to avoid wording a filter twice.
-  // Tall/Wide are chip-backed only on the homewall sizes where their chip shows;
-  // elsewhere they stay a removable token.
+  // Token row = the receipt for the long tail only; a filter backed by a *pinned*
+  // chip shows and clears itself there, so it's excluded to avoid wording it
+  // twice. Derived from the user's pinned set so unpinning a chip re-surfaces its
+  // filter as a removable token (and re-pinning removes the token). Tall/Wide are
+  // chip-backed only when Shape is pinned AND the homewall size shows their chip.
+  const chipBackedTokenKeys = useMemo(
+    () => new Set<string>(pinnedChips.flatMap((kind) => chipKindToTokenKeys(kind))),
+    [pinnedChips],
+  );
   const sheetOnlyFilterTokens = useMemo(
     () =>
       filterTokens.filter((token) => {
-        if (CHIP_BACKED_TOKEN_KEYS.has(token.key)) return false;
-        if (token.key === 'tall' && showTallChip) return false;
-        if (token.key === 'wide' && showWideChip) return false;
-        return true;
+        if (token.key === 'tall') return !(chipBackedTokenKeys.has('tall') && showTallChip);
+        if (token.key === 'wide') return !(chipBackedTokenKeys.has('wide') && showWideChip);
+        return !chipBackedTokenKeys.has(token.key);
       }),
-    [filterTokens, showTallChip, showWideChip],
+    [filterTokens, chipBackedTokenKeys, showTallChip, showWideChip],
   );
   const filterChrome = useMemo(() => {
     if (!showFilterChips) return null;
     return (
       <>
         <FilterChipRow
+          pinnedChips={pinnedChips}
           activeFilterCount={activeFilterCount}
           onOpenFilters={handleOpenFilters}
           recentFilters={recentFilters}
@@ -1170,6 +1180,7 @@ function ClimbListInner() {
     );
   }, [
     showFilterChips,
+    pinnedChips,
     activeFilterCount,
     handleOpenFilters,
     recentFilters,

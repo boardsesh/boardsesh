@@ -662,6 +662,9 @@
         "sort": "Sort"
       },
       "popularity": "Popularity",
+      "shape": "Shape",
+      "pin": "Pin to shortcuts",
+      "unpin": "Remove from shortcuts",
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
       "benchmarkDescription": "Setter-flagged benchmark climbs",

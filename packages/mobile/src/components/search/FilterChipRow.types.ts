@@ -7,6 +7,7 @@
 
 import type { ProgressFilter } from '@boardsesh/climb-filters';
 import type { RecentFilter } from '../../lib/recent-filter-store';
+import type { PinnableChipKind } from '../../lib/pinnable-chips';
 import type { ClimbFilters } from '../ClimbFilterSheet';
 
 /**
@@ -25,6 +26,14 @@ export type DimensionChip = {
 };
 
 export type FilterChipRowProps = {
+  /**
+   * The filter chips the user has pinned, in render order (see
+   * lib/pinnable-chips.ts). Each pinnable chip renders only when its kind is
+   * present; the fixed chrome (Filters button, Recent, Android Angle) always
+   * renders. Defaults reproduce today's row.
+   */
+  pinnedChips: readonly PinnableChipKind[];
+
   /** Total active filters → the Filters · N badge; tapping opens the sheet. */
   activeFilterCount: number;
   onOpenFilters: () => void;

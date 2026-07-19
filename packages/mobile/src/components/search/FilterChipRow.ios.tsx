@@ -44,6 +44,7 @@ import { popularityChipLabel, ratingChipLabel, progressFilterLabel, isProgressFi
 import type { FilterChipRowProps } from './FilterChipRow.types';
 
 function FilterChipRowComponent({
+  pinnedChips,
   activeFilterCount,
   onOpenFilters,
   recentFilters,
@@ -132,16 +133,18 @@ function FilterChipRowComponent({
 
           {/* Grade → the range rail overlay. A button, not a menu; tap toggles the
               rail (close path beyond the tap-outside dismiss layer). [PRIMARY #1] */}
-          <Button
-            label={gradeLabel}
-            onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
-            modifiers={chipModifiers(gradeActive)}
-          />
+          {pinnedChips.includes('grade') ? (
+            <Button
+              label={gradeLabel}
+              onPress={gradeRailOpen ? onCloseGrade : onOpenGrade}
+              modifiers={chipModifiers(gradeActive)}
+            />
+          ) : null}
 
           {/* Your progress ▾ — single-select over the four tick flags (auth-gated,
               the chip hides when signed out). [PRIMARY #2] — kept directly after
               Grade. Resting label is the dimension name; active shows the pick. */}
-          {canFilterProgress ? (
+          {canFilterProgress && pinnedChips.includes('progress') ? (
             <Menu
               label={progress === 'all' ? t('mobile.filter.progress.label') : progressFilterLabel(progress, t)}
               modifiers={chipModifiers(progress !== 'all')}
@@ -166,11 +169,13 @@ function FilterChipRowComponent({
 
           {/* Benchmarks — its own toggle chip (a tap flips it), no longer folded in
               with progress. [PRIMARY #3] */}
-          <Button
-            label={t('mobile.filter.benchmark')}
-            onPress={() => onToggleBenchmarks(!onlyBenchmarks)}
-            modifiers={chipModifiers(onlyBenchmarks)}
-          />
+          {pinnedChips.includes('benchmarks') ? (
+            <Button
+              label={t('mobile.filter.benchmark')}
+              onPress={() => onToggleBenchmarks(!onlyBenchmarks)}
+              modifiers={chipModifiers(onlyBenchmarks)}
+            />
+          ) : null}
 
           {/* Tall / Wide — board-shape chips, present only on the Kilter homewall
               sizes where they apply (Wide on 10x10, Tall on 8x12, both on 10x12).
@@ -179,66 +184,72 @@ function FilterChipRowComponent({
               button's own tap gesture swallows the long-press, especially inside
               the scroll row.) Locked = a lock glyph + the filter pinned active
               through clears; a locked chip ignores tap until unlocked. */}
-          {dimensionChips.map((dimension) => (
-            <Menu
-              key={dimension.key}
-              label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
-              systemImage={dimension.locked ? 'lock.fill' : undefined}
-              onPrimaryAction={dimension.onToggle}
-              modifiers={chipModifiers(dimension.active)}
-            >
-              <Button
-                label={dimension.locked ? t('mobile.search.chips.unlock') : t('mobile.search.chips.lock')}
-                systemImage={dimension.locked ? 'lock.open' : 'lock'}
-                onPress={dimension.onToggleLock}
-              />
-            </Menu>
-          ))}
+          {pinnedChips.includes('shape')
+            ? dimensionChips.map((dimension) => (
+                <Menu
+                  key={dimension.key}
+                  label={dimension.key === 'tall' ? t('mobile.search.chips.tall') : t('mobile.search.chips.wide')}
+                  systemImage={dimension.locked ? 'lock.fill' : undefined}
+                  onPrimaryAction={dimension.onToggle}
+                  modifiers={chipModifiers(dimension.active)}
+                >
+                  <Button
+                    label={dimension.locked ? t('mobile.search.chips.unlock') : t('mobile.search.chips.lock')}
+                    systemImage={dimension.locked ? 'lock.open' : 'lock'}
+                    onPress={dimension.onToggleLock}
+                  />
+                </Menu>
+              ))
+            : null}
 
           {/* Popularity ▾ — min-ascents buckets; conflict-clear handled upstream.
               [PRIMARY #4] */}
-          <Menu
-            label={hasActivePopularity ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity')}
-            modifiers={chipModifiers(hasActivePopularity)}
-          >
-            <Picker
-              selection={popularityTag(minAscents)}
-              onSelectionChange={(value) => {
-                // @expo/ui types the selection as the untyped Picker tag; our tags
-                // are always strings, so guard rather than blind-cast (a non-string
-                // would otherwise become NaN silently).
-                if (typeof value !== 'string') return;
-                onChangePopularity(popularityFromTag(value));
-              }}
+          {pinnedChips.includes('popularity') ? (
+            <Menu
+              label={hasActivePopularity ? popularityChipLabel(minAscents, t) : t('mobile.filter.popularity')}
+              modifiers={chipModifiers(hasActivePopularity)}
             >
-              {POPULARITY_BUCKETS.map((bucket) => (
-                <Text key={popularityTag(bucket)} modifiers={[tag(popularityTag(bucket))]}>
-                  {popularityChipLabel(bucket, t)}
-                </Text>
-              ))}
-            </Picker>
-          </Menu>
+              <Picker
+                selection={popularityTag(minAscents)}
+                onSelectionChange={(value) => {
+                  // @expo/ui types the selection as the untyped Picker tag; our tags
+                  // are always strings, so guard rather than blind-cast (a non-string
+                  // would otherwise become NaN silently).
+                  if (typeof value !== 'string') return;
+                  onChangePopularity(popularityFromTag(value));
+                }}
+              >
+                {POPULARITY_BUCKETS.map((bucket) => (
+                  <Text key={popularityTag(bucket)} modifiers={[tag(popularityTag(bucket))]}>
+                    {popularityChipLabel(bucket, t)}
+                  </Text>
+                ))}
+              </Picker>
+            </Menu>
+          ) : null}
 
           {/* Min rating ▾ — star buckets (single-select). [PRIMARY #5] */}
-          <Menu
-            label={hasActiveRating ? t('mobile.search.rating', { count: minRating }) : t('mobile.filter.minRating')}
-            modifiers={chipModifiers(hasActiveRating)}
-          >
-            <Picker
-              selection={ratingTag(minRating)}
-              onSelectionChange={(value) => {
-                // See the popularity Picker: guard the untyped tag before mapping it.
-                if (typeof value !== 'string') return;
-                onChangeRating(ratingFromTag(value));
-              }}
+          {pinnedChips.includes('rating') ? (
+            <Menu
+              label={hasActiveRating ? t('mobile.search.rating', { count: minRating }) : t('mobile.filter.minRating')}
+              modifiers={chipModifiers(hasActiveRating)}
             >
-              {RATING_BUCKETS.map((bucket) => (
-                <Text key={ratingTag(bucket)} modifiers={[tag(ratingTag(bucket))]}>
-                  {ratingChipLabel(bucket, t)}
-                </Text>
-              ))}
-            </Picker>
-          </Menu>
+              <Picker
+                selection={ratingTag(minRating)}
+                onSelectionChange={(value) => {
+                  // See the popularity Picker: guard the untyped tag before mapping it.
+                  if (typeof value !== 'string') return;
+                  onChangeRating(ratingFromTag(value));
+                }}
+              >
+                {RATING_BUCKETS.map((bucket) => (
+                  <Text key={ratingTag(bucket)} modifiers={[tag(ratingTag(bucket))]}>
+                    {ratingChipLabel(bucket, t)}
+                  </Text>
+                ))}
+              </Picker>
+            </Menu>
+          ) : null}
         </HStack>
       </ScrollView>
     </Host>
