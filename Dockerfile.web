@@ -34,9 +34,16 @@ COPY source/scripts ./scripts
 # Accept build arguments for environment variables baked into the Next.js build
 ARG NEXT_PUBLIC_WS_URL
 ARG BASE_URL
+# Public client key (phc_…), not a secret — inlined so getPosthog() doesn't
+# short-circuit. The Vercel build previously supplied this from the project
+# env; when the CI prebuilt Vercel build stopped getting it passed explicitly,
+# ALL client-side PostHog analytics went dark in prod. Don't drop this again
+# when wiring the Railway build-arg pipeline.
+ARG NEXT_PUBLIC_POSTHOG_KEY
 
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV BASE_URL=$BASE_URL
+ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 
 # No Expo web export step here (W-24, #4438). The browser app ships only at
 # app.boardsesh.com, exported and published by production-deploy.yml's
