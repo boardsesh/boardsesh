@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, render, waitFor, act } from '@testing-library/react';
+import { renderHook, render, screen, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -45,10 +45,11 @@ vi.mock('react-native', () => ({
 }));
 
 // The loading-state splash renders react-native/expo-image primitives this
-// jsdom-mocked env doesn't provide; stub it — these tests exercise auth logic,
-// not the placeholder's pixels.
+// jsdom-mocked env doesn't provide; stub it to a detectable text marker (a
+// component may return a raw string) so a test can assert the loading window
+// renders the splash rather than a blank tree.
 vi.mock('../../components/AppLoadingSplash', () => ({
-  AppLoadingSplash: () => null,
+  AppLoadingSplash: () => 'app-loading-splash',
 }));
 
 vi.mock('../../lib/screenshot-mode', () => ({
@@ -262,6 +263,36 @@ vi.mock('../../lib/auth-interceptor', () => ({
 }));
 
 import { AuthProvider, useAuth } from '../auth-provider';
+
+describe('AuthProvider loading state', () => {
+  beforeEach(() => {
+    // A signed-in, fresh-token session so checkAuth flips isLoading false and
+    // isAuthenticated true (segments=[] keeps it out of the redirect branches),
+    // letting the tree swap from the splash to the app children.
+    getAuthTokenMock.mockResolvedValue('jwt-token');
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+  });
+
+  it('renders the splash placeholder (not a blank tree) while auth resolves, then swaps to children', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <span data-testid="app-children">ready</span>
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+
+    // Synchronously after mount, auth is still loading: the splash shows and the
+    // app tree is withheld. This is the web FCP win — a painted splash, not blank.
+    expect(screen.getByText('app-loading-splash')).toBeTruthy();
+    expect(screen.queryByTestId('app-children')).toBeNull();
+
+    // Once the session resolves, the placeholder is replaced by the app tree.
+    await waitFor(() => expect(screen.queryByTestId('app-children')).not.toBeNull());
+    expect(screen.queryByText('app-loading-splash')).toBeNull();
+  });
+});
 
 describe('AuthProvider.signOut', () => {
   beforeEach(() => {
