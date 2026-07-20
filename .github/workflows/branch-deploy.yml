@@ -152,10 +152,17 @@ jobs:
           # origins must appear in the exported JS bundles, or the app would
           # phone home to the wrong backend/web preview.
           JS_DIR="${RUNNER_TEMP}/app-context/app-standalone/_expo/static/js/web"
+          # Guard the dir exists and holds .js before grepping — a missing dir
+          # or an unexpanded glob would otherwise mask the real "origin absent"
+          # failure behind a confusing "No such file" from grep.
+          if [ ! -d "${JS_DIR}" ] || [ -z "$(find "${JS_DIR}" -maxdepth 1 -name '*.js' -print -quit)" ]; then
+            echo "::error::no exported JS bundles under ${JS_DIR}"
+            exit 1
+          fi
           for origin in \
             "https://${PR_NUMBER}.ws.preview.boardsesh.com" \
             "https://${PR_NUMBER}.preview.boardsesh.com"; do
-            if ! grep -rqF "${origin}" "${JS_DIR}"/*.js; then
+            if ! grep -rqF "${origin}" "${JS_DIR}"; then
               echo "::error::expected origin ${origin} not found in exported JS (${JS_DIR})"
               exit 1
             fi
