@@ -28,7 +28,19 @@ now — typically under a day.
 `concurrency.group: export-board-snapshots` with `cancel-in-progress: false` means overlapping runs queue
 instead of stepping on each other.
 
-For every `(board_type, layout_id)` pair with at least one climb (`discoverLayoutPairs`), the job:
+**Dual-publish during the gzip transition.** The nightly runs the export **twice**, targeting two
+prefixes via `--key-prefix` (default `board-snapshots/v1`):
+
+- `board-snapshots/v1` — **identity**-encoded, exactly the pre-gzip run. This is what the current fleet
+  reads (all mobile workflows' `EXPO_PUBLIC_SNAPSHOT_BASE_URL` still point here), so it is left unchanged.
+- `board-snapshots/v1-gzip` — `--gzip`, ~2.6× smaller (`kilter:1` 258 MB → ~99 MB). Newer builds point at
+  this prefix once transparent `Content-Encoding: gzip` decode is validated on-device.
+
+Each prefix is a self-contained, single-encoding manifest: the merge and prune logic below scope entirely
+to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. The follow-up
+that cuts the whole fleet to gzip drops the identity pass and deletes the `v1` prefix (see Rollout plan).
+
+For every `(board_type, layout_id)` pair with at least one climb (`discoverLayoutPairs`), each pass:
 
 1. Opens a `node:sqlite` file and applies DDL derived from the shared client `MIGRATIONS` — every
    migration statement that touches `board_climbs` or `board_climb_stats`, in version order, plus a
@@ -44,10 +56,10 @@ For every `(board_type, layout_id)` pair with at least one climb (`discoverLayou
 4. Computes each table's watermark — the max `(updated_at, sync_seq)` over the exported rows — from the
    **same transaction snapshot** as the row stream, and writes it into `snapshot_meta` alongside
    `row_count`, `schema_version` (`LATEST_SCHEMA_VERSION`), and `format_version`.
-5. Uploads the SQLite file to `board-snapshots/v1/<boardType>/<layoutId>/<builtAt-colon-free>.db`.
-   Artifacts are identity-encoded by default; `--gzip` is available once both mobile platforms have been
-   verified to receive a decompressed file from `expo-file-system`.
-6. After every artifact for the run has landed, writes `board-snapshots/v1/manifest.json` **last**, so a
+5. Uploads the SQLite file to `<keyPrefix>/<boardType>/<layoutId>/<builtAt-colon-free>.db` — identity by
+   default, or `gzip` (with `Content-Encoding: gzip`) under `--gzip`. The manifest's `contentEncoding`
+   field records which, so the client stays agnostic.
+6. After every artifact for the run has landed, writes `<keyPrefix>/manifest.json` **last**, so a
    reader only ever sees a fully-consistent old-or-new manifest, never a manifest pointing at an artifact
    that hasn't finished uploading.
 
@@ -87,16 +99,17 @@ avoid dropping data on a broken read:
 
 ### Storage layout and cache headers
 
-- Artifacts: `board-snapshots/v1/<boardType>/<layoutId>/<builtAt>.db`,
-  `Content-Type: application/x-sqlite3`, with manifest `contentEncoding: 'identity'` by default. `--gzip`
-  uploads with `Content-Encoding: gzip` and records `contentEncoding: 'gzip'` in the manifest, but should
-  stay off for mobile rollout until iOS and Android both prove the downloaded file is decompressed on disk.
-  No explicit `cacheControl` is passed to `uploadToS3`, so artifacts get the storage layer's default:
-  `public, max-age=31536000, immutable`. Content-addressed by build timestamp — safe to cache forever, a
-  new build gets a new key.
-- Manifest: `board-snapshots/v1/manifest.json`, `Content-Type: application/json`,
+- Artifacts: `<keyPrefix>/<boardType>/<layoutId>/<builtAt>.db`, `Content-Type: application/x-sqlite3`. The
+  `v1` prefix uploads `contentEncoding: 'identity'`; the `v1-gzip` prefix (`--gzip`) uploads with
+  `Content-Encoding: gzip` and records `contentEncoding: 'gzip'` in its manifest. `Content-Type` stays
+  `application/x-sqlite3` either way — encoding is layered on top of type. Gzip artifacts are published in
+  parallel so the fleet can be cut over only after iOS **and** Android both prove the downloaded file is
+  decompressed on disk (see Rollout plan). No explicit `cacheControl` is passed to `uploadToS3`, so
+  artifacts get the storage layer's default: `public, max-age=31536000, immutable`. Content-addressed by
+  build timestamp — safe to cache forever, a new build gets a new key.
+- Manifest: `<keyPrefix>/manifest.json`, `Content-Type: application/json`,
   `Cache-Control: public, max-age=300`. Mutable and cheap to refetch, written last so it's the only object
-  in the whole scheme that changes in place.
+  in the whole scheme that changes in place. Each prefix has its own manifest.
 
 ### Pruning
 
@@ -280,8 +293,10 @@ pre-import empty result set.
   `SnapshotPermanentMissError` (no attempt burned, same-cycle paged fallback), and a handled error is
   reported to Sentry with
   `tags: { source: 'offline-sync', kind: 'snapshot-bootstrap' }`. This client does not attempt to gunzip
-  the file itself; keep the export job identity-encoded until gzip has been verified on both mobile
-  platforms.
+  the file itself — it relies on the native stack's transparent decode, and the sniff is the safety net if
+  that assumption is ever wrong on a given platform/build (fresh boards fall back to the paged crawl, never
+  a crash). This is why the fleet is only pointed at the `v1-gzip` prefix after that decode is verified
+  on-device (see Rollout plan).
 - **Telemetry**:
   - `Offline Board Download Completed` (PostHog, `SHARED_EVENTS.OfflineBoardDownloadCompleted`) fires once
     per scope's first-download completion (both board tables reached the tail), with method `snapshot` or
@@ -304,14 +319,18 @@ From a local shell, from `packages/backend/`:
 ```sh
 DATABASE_URL=<primary connection string> \
 AWS_S3_BUCKET_NAME=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_ENDPOINT_URL=... AWS_DEFAULT_REGION=... \
-node --import tsx src/scripts/export-board-snapshots.ts [--dry-run] [--gzip] [--board <boardType>] [--layout <layoutId>]
+node --import tsx src/scripts/export-board-snapshots.ts \
+  [--dry-run] [--gzip] [--key-prefix <prefix>] [--board <boardType>] [--layout <layoutId>]
 ```
 
 - `--dry-run` builds artifacts locally (in a temp dir, cleaned up after) and logs sizes/row counts, but
   never uploads anything and never touches the manifest. Works with **no AWS credentials at all**.
 - `--gzip` compresses artifact objects and publishes manifest entries with `contentEncoding: 'gzip'`.
-  Leave it off for mobile rollout until a device check proves iOS and Android both download decompressed
-  SQLite files from the object store path.
+  Pair it with `--key-prefix board-snapshots/v1-gzip` so gzip artifacts land beside — never overwrite — the
+  identity `v1` prefix the live fleet reads.
+- `--key-prefix <prefix>` (default `board-snapshots/v1`) targets a self-contained prefix: its own manifest,
+  merge, and prune, isolated from every other prefix. Validated against a safe key charset. The nightly
+  workflow uses it to publish `v1` (identity) and `v1-gzip` (gzip) in one run.
 - `--board`/`--layout` filter to a subset. A filter matching **zero** `(boardType, layoutId)` pairs is
   treated as an operator error and throws loudly (e.g. `--board=kilterr` typo) rather than silently leaving
   that board's artifacts stale.
@@ -424,3 +443,32 @@ page — that's the trigger to prioritize the fix.
 3. **Percentage ramp**: increase the PostHog rollout gradually, watching `Offline Board Download Completed`
    duration percentiles split by `method`, and the Sentry `snapshot-bootstrap` failure rate, at each step.
    Hold or roll back on a `snapshot` p95 that doesn't clearly beat `paged`, or a failure-rate step change.
+
+## Gzip transition & cutover
+
+Gzip cuts artifact size ~2.6× (`kilter:1` 258 MB → ~99 MB), directly shrinking the download portion of
+`durationMs`. It ships in stages so the live fleet is never regressed while transparent decode is unverified:
+
+1. **Dual-publish (shipped).** The nightly publishes both `board-snapshots/v1` (identity, unchanged) and
+   `board-snapshots/v1-gzip` (`--gzip`). Every mobile workflow's `EXPO_PUBLIC_SNAPSHOT_BASE_URL` still
+   points at `v1`, so the fleet is untouched. After merging, dispatch the workflow once (or wait a night) to
+   populate `v1-gzip`.
+2. **Validate transparent decode on-device, iOS + Android.** Build a dev-client with
+   `EXPO_PUBLIC_SNAPSHOT_BASE_URL=<base>/board-snapshots/v1-gzip` (build-time only, **not** committed — the
+   parity test below forbids a single-workflow change), flags on, and enable a fresh board. Pass =
+   PostHog `Offline Board Download Completed` `method: 'snapshot'`, `durationMs` down markedly, and **no**
+   Sentry handled error `kind: 'snapshot-bootstrap'` "arrived still gzip-compressed". Android is runnable
+   via `vp run mobile:android-shots` (real OkHttp); iOS needs a Mac.
+3. **Cutover (follow-up PR).** Flip `EXPO_PUBLIC_SNAPSHOT_BASE_URL` to the `v1-gzip` path in **all** the
+   mobile fingerprint workflows **at once** — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
+   `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml` —
+   because `scripts/mobile-ci-env-parity.test.ts` requires this var byte-identical across them (a
+   single-workflow change fails CI, and the `pr-<number>` preview channel bakes the same env as
+   production, so there is no "preview-only" pointer). The production OTA then migrates the fleet on next
+   launch; any straggler where decode fails degrades to the paged crawl, never a crash. Watch the same
+   telemetry as the ramp above.
+4. **Cleanup (later PR).** Once the fleet has migrated, drop the identity pass from the export workflow and
+   delete the `board-snapshots/v1` artifacts + manifest.
+
+**Rollback** at any stage: point the workflows back at `v1` (identity is always live) — no export change
+needed.

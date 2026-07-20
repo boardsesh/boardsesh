@@ -52,8 +52,18 @@ import { logger } from '../utils/logger';
 
 // --- Constants ----------------------------------------------------------------
 
-const SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1';
-const MANIFEST_KEY = `${SNAPSHOT_KEY_PREFIX}/manifest.json`;
+// The default S3 prefix everything lands under (`<prefix>/<board>/<layout>/*.db`
+// + `<prefix>/manifest.json`). `--key-prefix` overrides it so one run can target
+// a parallel prefix — e.g. a gzip transition that publishes `board-snapshots/v1`
+// (identity, unchanged for the live fleet) and `board-snapshots/v1-gzip` side by
+// side. Each prefix is a self-contained, single-encoding manifest: the merge and
+// prune logic below scope entirely to whichever prefix the run targets.
+const DEFAULT_SNAPSHOT_KEY_PREFIX = 'board-snapshots/v1';
+// A safe key prefix: lowercase alphanumerics separated by single `-`/`/`, no
+// leading/trailing separator and no `..`. It's spliced into S3 object keys and
+// the manifest path, so validate it (mirrors SAFE_IDENTIFIER's intent for keys).
+const SAFE_KEY_PREFIX = /^[a-z0-9]+(?:[/-][a-z0-9]+)*$/;
+const manifestKeyForPrefix = (keyPrefix: string): string => `${keyPrefix}/manifest.json`;
 const MANIFEST_CACHE_CONTROL = 'public, max-age=300';
 const ARTIFACT_CONTENT_TYPE = 'application/x-sqlite3';
 
@@ -385,12 +395,13 @@ type ExportOptions = {
   // Content-Encoding: gzip decode is verified on-device (see the encoding
   // comment in the pair loop).
   gzip: boolean;
+  keyPrefix: string;
   boardFilter?: string;
   layoutFilter?: number;
 };
 
 function parseArgs(argv: string[]): ExportOptions {
-  const options: ExportOptions = { dryRun: false, gzip: false };
+  const options: ExportOptions = { dryRun: false, gzip: false, keyPrefix: DEFAULT_SNAPSHOT_KEY_PREFIX };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue; // vp forwards a literal `--` into argv
@@ -398,6 +409,10 @@ function parseArgs(argv: string[]): ExportOptions {
       options.dryRun = true;
     } else if (arg === '--gzip') {
       options.gzip = true;
+    } else if (arg === '--key-prefix') {
+      options.keyPrefix = parseKeyPrefix(argv[(index += 1)]);
+    } else if (arg.startsWith('--key-prefix=')) {
+      options.keyPrefix = parseKeyPrefix(arg.slice('--key-prefix='.length));
     } else if (arg === '--board') {
       options.boardFilter = parseBoardFilter(argv[(index += 1)]);
     } else if (arg.startsWith('--board=')) {
@@ -416,6 +431,16 @@ function parseBoardFilter(raw: string | undefined): string {
     throw new Error(`--board expects a board type, got ${JSON.stringify(raw)}`);
   }
   return raw;
+}
+
+function parseKeyPrefix(raw: string | undefined): string {
+  const keyPrefix = raw?.trim().replace(/\/+$/, '');
+  if (!keyPrefix || !SAFE_KEY_PREFIX.test(keyPrefix)) {
+    // A bad prefix would either silently write to the wrong place or splice an
+    // unsafe value into S3 keys — fail loudly instead.
+    throw new Error(`--key-prefix expects a safe key like "board-snapshots/v1", got ${JSON.stringify(raw)}`);
+  }
+  return keyPrefix;
 }
 
 function parseLayoutFilter(raw: string | undefined): number {
@@ -499,8 +524,11 @@ export function mergeManifestEntries(params: {
  *                                      only vanished layouts' entries are lost,
  *                                      and those drop regardless)
  */
-async function fetchPreviousManifest(options: { isFilteredRun: boolean }): Promise<SnapshotManifest | null> {
-  const manifestObject = await getFromS3Strict(MANIFEST_KEY);
+async function fetchPreviousManifest(options: {
+  isFilteredRun: boolean;
+  manifestKey: string;
+}): Promise<SnapshotManifest | null> {
+  const manifestObject = await getFromS3Strict(options.manifestKey);
   if (!manifestObject) {
     logger.warn('[export-snapshots] no previous manifest on S3 (first run?) — merging against empty');
     return null;
@@ -521,7 +549,7 @@ async function fetchPreviousManifest(options: { isFilteredRun: boolean }): Promi
   if (invalidReason) {
     if (options.isFilteredRun) {
       throw new Error(
-        `previous manifest at ${MANIFEST_KEY} is invalid (${invalidReason}); a filtered run cannot merge safely — aborting before any upload`,
+        `previous manifest at ${options.manifestKey} is invalid (${invalidReason}); a filtered run cannot merge safely — aborting before any upload`,
       );
     }
     logger.warn(
@@ -543,13 +571,13 @@ async function fetchPreviousManifest(options: { isFilteredRun: boolean }): Promi
  * manifest provably references every artifact that must survive. Defensive by
  * design: any prune failure is logged and swallowed, never failing the run.
  */
-async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number): Promise<void> {
+async function pruneStaleArtifacts(manifest: SnapshotManifest, nowMs: number, keyPrefix: string): Promise<void> {
   try {
     const referencedKeys = new Set<string>(manifest.entries.map((entry) => entry.key));
-    referencedKeys.add(MANIFEST_KEY);
+    referencedKeys.add(manifestKeyForPrefix(keyPrefix));
     const cutoffMs = nowMs - PRUNE_GRACE_MS;
 
-    const objects = await listS3Objects(`${SNAPSHOT_KEY_PREFIX}/`);
+    const objects = await listS3Objects(`${keyPrefix}/`);
     let prunedCount = 0;
     for (const object of objects) {
       if (referencedKeys.has(object.key)) continue;
@@ -578,6 +606,8 @@ export async function runExport(argv: string[]): Promise<void> {
   const options = parseArgs(argv);
   const builtAt = new Date().toISOString();
   const isFilteredRun = options.boardFilter !== undefined || options.layoutFilter !== undefined;
+  const keyPrefix = options.keyPrefix;
+  const manifestKey = manifestKeyForPrefix(keyPrefix);
 
   if (!options.dryRun && !isS3Configured()) {
     throw new Error(
@@ -621,6 +651,8 @@ export async function runExport(argv: string[]): Promise<void> {
     logger.info('[export-snapshots] starting run', {
       dryRun: options.dryRun,
       filtered: isFilteredRun,
+      gzip: options.gzip,
+      keyPrefix,
       pairs: pairs.length,
       builtAt,
       stabilityWindowSeconds: DEFAULT_STABILITY_WINDOW_SECONDS,
@@ -628,7 +660,7 @@ export async function runExport(argv: string[]): Promise<void> {
 
     // Fetch the previous manifest BEFORE any upload: if it is unreadable the
     // run aborts with S3 completely untouched (matrix in fetchPreviousManifest).
-    const previousManifest = options.dryRun ? null : await fetchPreviousManifest({ isFilteredRun });
+    const previousManifest = options.dryRun ? null : await fetchPreviousManifest({ isFilteredRun, manifestKey });
 
     for (const pair of pairs) {
       const startedAt = Date.now();
@@ -654,7 +686,7 @@ export async function runExport(argv: string[]): Promise<void> {
         // Colon-free key stamp: ISO colons are legal in S3 keys but historically
         // trip CDNs/URL parsers, and getPublicUrl does no percent-encoding.
         const keyStamp = builtAt.replace(/[:.]/g, '-');
-        const key = `${SNAPSHOT_KEY_PREFIX}/${pair.boardType}/${pair.layoutId}/${keyStamp}.db`;
+        const key = `${keyPrefix}/${pair.boardType}/${pair.layoutId}/${keyStamp}.db`;
 
         if (options.dryRun) {
           logger.info('[export-snapshots] built (dry-run, not uploaded)', {
@@ -742,20 +774,22 @@ export async function runExport(argv: string[]): Promise<void> {
         generatedAt: new Date().toISOString(),
         entries: mergedEntries,
       };
-      await uploadToS3(Buffer.from(JSON.stringify(manifest)), MANIFEST_KEY, 'application/json', {
+      await uploadToS3(Buffer.from(JSON.stringify(manifest)), manifestKey, 'application/json', {
         cacheControl: MANIFEST_CACHE_CONTROL,
       });
       logger.info('[export-snapshots] manifest uploaded', {
         entries: mergedEntries.length,
         refreshed: newEntries.length,
-        key: MANIFEST_KEY,
+        key: manifestKey,
       });
 
       // Prune superseded artifacts only after a fully-successful unfiltered
       // run: filtered runs lack the full picture, and skipping on failure
-      // nights just defers pruning to the next green nightly.
+      // nights just defers pruning to the next green nightly. Scoped to this
+      // run's key prefix, so a gzip run never prunes the identity prefix's
+      // artifacts (and vice versa).
       if (!isFilteredRun && failures.length === 0) {
-        await pruneStaleArtifacts(manifest, Date.now());
+        await pruneStaleArtifacts(manifest, Date.now(), keyPrefix);
       }
     }
 

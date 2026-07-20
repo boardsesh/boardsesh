@@ -332,3 +332,84 @@ describe('runExport — SNAPSHOT_PUBLIC_BASE_URL', () => {
     expect(entry.url).toBe(`https://cdn.example/${entry.key}`);
   });
 });
+
+describe('runExport — gzip + key-prefix (dual-publish transition)', () => {
+  const GZIP_PREFIX = 'board-snapshots/v1-gzip';
+  const GZIP_MANIFEST_KEY = `${GZIP_PREFIX}/manifest.json`;
+
+  /** uploadToS3 calls for artifacts (everything that isn't a manifest write). */
+  function artifactUploadCalls(): unknown[][] {
+    return vi.mocked(uploadToS3).mock.calls.filter(([, key]) => !String(key).endsWith('/manifest.json'));
+  }
+
+  it('default run stays identity under board-snapshots/v1 (regression guard for the live fleet)', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runExport([]);
+
+    const entry = uploadedManifest().entries[0];
+    expect(entry.contentEncoding).toBe('identity');
+    expect(entry.key.startsWith('board-snapshots/v1/')).toBe(true);
+    // No gzip option on the artifact upload → S3 stores it identity-encoded.
+    const [, , , options] = artifactUploadCalls()[0];
+    expect(options).toBeUndefined();
+  });
+
+  it('--gzip --key-prefix publishes a gzip manifest under the new prefix, never touching v1', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    // Reads and writes its OWN manifest, isolated from the identity v1 one.
+    expect(getFromS3Strict).toHaveBeenCalledWith(GZIP_MANIFEST_KEY);
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
+    expect(manifestCalls.length).toBe(1);
+    const manifest = JSON.parse((manifestCalls[0][0] as Buffer).toString('utf8')) as SnapshotManifest;
+
+    const entry = manifest.entries[0];
+    expect(entry.contentEncoding).toBe('gzip');
+    expect(entry.key.startsWith(`${GZIP_PREFIX}/kilter/1/`)).toBe(true);
+    expect(entry.url).toContain(GZIP_PREFIX);
+    // The identity (v1) manifest is not written by a gzip run.
+    expect(vi.mocked(uploadToS3).mock.calls.some(([, key]) => key === MANIFEST_KEY)).toBe(false);
+
+    // The artifact object is uploaded gzip-compressed with Content-Encoding: gzip.
+    const [body, key, , options] = artifactUploadCalls()[0];
+    expect(String(key)).toContain(`${GZIP_PREFIX}/kilter/1/`);
+    expect(options).toEqual({ contentEncoding: 'gzip' });
+    expect((body as Buffer)[0]).toBe(0x1f); // gzip magic
+    expect((body as Buffer)[1]).toBe(0x8b);
+  });
+
+  it('rejects an unsafe --key-prefix before any upload', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await expect(runExport(['--key-prefix', '../evil'])).rejects.toThrow(/--key-prefix expects a safe key/);
+    await expect(runExport(['--key-prefix'])).rejects.toThrow(/--key-prefix expects a safe key/);
+    expect(uploadToS3).not.toHaveBeenCalled();
+  });
+
+  it('prunes only within the gzip prefix, never the identity prefix', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX]);
+
+    expect(listS3Objects).toHaveBeenCalledWith(`${GZIP_PREFIX}/`);
+    expect(listS3Objects).not.toHaveBeenCalledWith('board-snapshots/v1/');
+  });
+
+  it('honors --board/--layout under --gzip --key-prefix (filtered canary of one layout)', async () => {
+    await seedClimb('kilter', 1, 'k1-a');
+    await seedClimb('kilter', 2, 'k2-a');
+
+    await runExport(['--gzip', '--key-prefix', GZIP_PREFIX, '--board', 'kilter', '--layout', '1']);
+
+    const manifestCalls = vi.mocked(uploadToS3).mock.calls.filter(([, key]) => key === GZIP_MANIFEST_KEY);
+    const manifest = JSON.parse((manifestCalls[0][0] as Buffer).toString('utf8')) as SnapshotManifest;
+    // Only the filtered layout was built, gzip-encoded, under the gzip prefix.
+    expect(manifest.entries.map((entry) => `${entry.boardType}:${entry.layoutId}`)).toEqual(['kilter:1']);
+    expect(manifest.entries[0].contentEncoding).toBe('gzip');
+    expect(manifest.entries[0].key.startsWith(`${GZIP_PREFIX}/kilter/1/`)).toBe(true);
+    // A filtered run never prunes.
+    expect(listS3Objects).not.toHaveBeenCalled();
+  });
+});

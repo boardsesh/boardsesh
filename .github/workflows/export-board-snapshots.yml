@@ -1,15 +1,37 @@
 name: Export Board Snapshots
 
 # Nightly: build a per-(board, layout) SQLite snapshot of board_climbs +
-# board_climb_stats and upload it to Tigris/S3 under board-snapshots/v1/.
-# A freshly downloaded board on mobile warms from these artifacts instead of
-# paging the whole catalog over GraphQL, then resumes an incremental pull from
-# the watermarks the manifest records. Idempotent — each run mints new
-# content-addressed artifacts and rewrites the manifest last.
+# board_climb_stats and upload it to Tigris/S3. A freshly downloaded board on
+# mobile warms from these artifacts instead of paging the whole catalog over
+# GraphQL, then resumes an incremental pull from the watermarks the manifest
+# records. Idempotent — each run mints new content-addressed artifacts and
+# rewrites the manifest last.
+#
+# The run publishes the catalog under TWO prefixes side by side during the gzip
+# transition (see docs/board-snapshots.md):
+#   - board-snapshots/v1       identity-encoded — what the current fleet reads. Unchanged.
+#   - board-snapshots/v1-gzip  gzip-encoded (~2.6x smaller) — what newer builds read once
+#                              transparent Content-Encoding decode is validated on-device.
+# Each prefix is a self-contained, single-encoding manifest; the export merges
+# and prunes strictly within the prefix it targets. The follow-up that cuts the
+# whole fleet to gzip drops the identity pass and deletes the v1 prefix.
 on:
   schedule:
     - cron: '15 7 * * *' # 07:15 UTC daily (off-peak; distinct from the 06:00/06:30 refresh crons)
   workflow_dispatch:
+    inputs:
+      gzip_only:
+        description: 'Skip the identity (v1) pass; only refresh the gzip (v1-gzip) artifacts'
+        type: boolean
+        default: false
+      board:
+        description: 'Limit both passes to one board type (e.g. kilter). Blank = all boards.'
+        required: false
+        default: ''
+      layout:
+        description: 'Limit both passes to one layout id (needs a board). Blank = all layouts.'
+        required: false
+        default: ''
 
 concurrency:
   group: export-board-snapshots
@@ -18,7 +40,9 @@ concurrency:
 jobs:
   export:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Two sequential read-only passes (identity + gzip). gzip CPU adds ~30s; the
+    # second Postgres stream is the real cost — 45m leaves ample headroom.
+    timeout-minutes: 45
     # DATABASE_URL is read-only-sufficient (snapshots only SELECT) but MUST
     # point at the PRIMARY, never a read replica: the sync cursor
     # (updated_at, sync_seq) is write-time ordered while a replica snapshot is
@@ -26,6 +50,25 @@ jobs:
     # cover rows absent from the artifact — bootstrapped clients would skip
     # those rows forever.
     environment: Production
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      # Accept the Tigris console's exported names (AWS_ENDPOINT_URL_S3 /
+      # AWS_REGION) so rotating keys stays copy-paste, with the plain names
+      # as fallback for any other S3-compatible store.
+      AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
+      # Tigris serves public objects only on the bucket's virtual-host
+      # domain — the S3 endpoint's path-style URLs 403 unauthenticated GETs
+      # even on a public bucket, so manifest entry URLs must be built here.
+      # Not a secret (it's in every manifest the app fetches). Keep in sync
+      # with EXPO_PUBLIC_SNAPSHOT_BASE_URL in the mobile workflows.
+      SNAPSHOT_PUBLIC_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io
+      # Keep the export's stability window in lockstep with the backend if
+      # it's ever configured off-default (empty → the shared 30s default).
+      SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,25 +83,35 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Export board snapshots
+      # Identity pass → board-snapshots/v1. This is what the live fleet reads, so
+      # it stays byte-for-byte the pre-gzip run. Skipped only when a manual
+      # dispatch asks to refresh just the gzip artifacts.
+      #
+      # BOARD/LAYOUT come through `env` and are read as shell variables, never
+      # interpolated into the run script with `${{ }}` — a dispatch input must not
+      # be able to inject shell before the CLI's parseBoardFilter/parseLayoutFilter
+      # ever sees it. Empty values add no flag.
+      - name: Export board snapshots (identity → board-snapshots/v1)
+        if: ${{ inputs.gzip_only != true }}
         working-directory: packages/backend
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AWS_S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          # Accept the Tigris console's exported names (AWS_ENDPOINT_URL_S3 /
-          # AWS_REGION) so rotating keys stays copy-paste, with the plain names
-          # as fallback for any other S3-compatible store.
-          AWS_ENDPOINT_URL: ${{ secrets.AWS_ENDPOINT_URL_S3 || secrets.AWS_ENDPOINT_URL }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
-          # Tigris serves public objects only on the bucket's virtual-host
-          # domain — the S3 endpoint's path-style URLs 403 unauthenticated GETs
-          # even on a public bucket, so manifest entry URLs must be built here.
-          # Not a secret (it's in every manifest the app fetches). Keep in sync
-          # with EXPO_PUBLIC_SNAPSHOT_BASE_URL in the mobile workflows.
-          SNAPSHOT_PUBLIC_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io
-          # Keep the export's stability window in lockstep with the backend if
-          # it's ever configured off-default (empty → the shared 30s default).
-          SYNC_STABILITY_WINDOW_SECONDS: ${{ vars.SYNC_STABILITY_WINDOW_SECONDS }}
-        run: node --import tsx src/scripts/export-board-snapshots.ts
+          BOARD: ${{ inputs.board }}
+          LAYOUT: ${{ inputs.layout }}
+        run: |
+          args=()
+          if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
+          if [ -n "$LAYOUT" ]; then args+=("--layout=$LAYOUT"); fi
+          node --import tsx src/scripts/export-board-snapshots.ts "${args[@]}"
+
+      # Gzip pass → board-snapshots/v1-gzip. Additive: newer builds point their
+      # EXPO_PUBLIC_SNAPSHOT_BASE_URL at this prefix once decode is validated.
+      - name: Export board snapshots (gzip → board-snapshots/v1-gzip)
+        working-directory: packages/backend
+        env:
+          BOARD: ${{ inputs.board }}
+          LAYOUT: ${{ inputs.layout }}
+        run: |
+          args=(--gzip --key-prefix board-snapshots/v1-gzip)
+          if [ -n "$BOARD" ]; then args+=("--board=$BOARD"); fi
+          if [ -n "$LAYOUT" ]; then args+=("--layout=$LAYOUT"); fi
+          node --import tsx src/scripts/export-board-snapshots.ts "${args[@]}"
