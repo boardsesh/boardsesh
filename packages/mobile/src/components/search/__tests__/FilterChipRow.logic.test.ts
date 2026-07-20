@@ -11,6 +11,7 @@ import {
   isAccuracyTag,
   climbTypeChipLabel,
   isClimbType,
+  collectionChipLabel,
 } from '../FilterChipRow.logic';
 import { POPULARITY_BUCKETS, RATING_BUCKETS } from '../../../lib/filter-chip-menus';
 
@@ -142,6 +143,14 @@ describe('accuracyChipLabel / isAccuracyTag', () => {
     }
     expect(isAccuracyTag('0')).toBe(false);
     expect(isAccuracyTag('0.99')).toBe(false);
+  });
+});
+
+describe('collectionChipLabel', () => {
+  it('labels each collection value', () => {
+    expect(collectionChipLabel('benchmarks', mockT)).toBe('mobile.filter.benchmark');
+    expect(collectionChipLabel('drafts', mockT)).toBe('mobile.filter.drafts');
+    expect(collectionChipLabel('any', mockT)).toBe('mobile.filter.collection.any');
   });
 });
 
