@@ -25,7 +25,8 @@
     "gymClaims": "Hallen-Ansprüche",
     "feedback": "Bug-Reports",
     "gymDuplicates": "Doppelte Hallen",
-    "locationSync": "Standort-Sync-Sperren"
+    "locationSync": "Standort-Sync-Sperren",
+    "costs": "Laufende Kosten"
   },
   "feedback": {
     "title": "Bug-Reports & Feedback",
@@ -428,6 +429,67 @@
     },
     "ownerReports": {
       "note": "Betreiber*innen können Duplikate jetzt auf ihrer Hallenseite melden. Diese Meldungen kommen vorerst als Team-E-Mail, behalte neben dieser Liste also auch das Postfach im Blick."
+    }
+  },
+  "costs": {
+    "title": "Laufende Kosten",
+    "subtitle": "Was es kostet, Boardsesh am Laufen zu halten. Erfasse wiederkehrende Rechnungen und einmalige Ausgaben; die Transparenzseite fasst sie nach Monat zusammen.",
+    "backToAdmin": "Zurück zur Admin-Übersicht",
+    "newEntry": "Neue Kostenposition",
+    "empty": "Noch keine Kostenpositionen.",
+    "error": "Kostenpositionen konnten nicht geladen werden.",
+    "retry": "Erneut versuchen",
+    "kind": {
+      "recurring": "Wiederkehrend",
+      "incidental": "Einmalig"
+    },
+    "category": {
+      "hosting": "Hosting",
+      "ai": "KI",
+      "domain": "Domain",
+      "other": "Sonstiges"
+    },
+    "table": {
+      "kind": "Art",
+      "category": "Kategorie",
+      "label": "Bezeichnung",
+      "amount": "Betrag",
+      "start": "Beginn",
+      "end": "Ende",
+      "actions": "Aktionen",
+      "ongoing": "Laufend",
+      "none": "—"
+    },
+    "actions": {
+      "edit": "Bearbeiten",
+      "delete": "Löschen"
+    },
+    "dialog": {
+      "addTitle": "Neue Kostenposition",
+      "editTitle": "Kostenposition bearbeiten",
+      "label": "Bezeichnung",
+      "kind": "Art",
+      "category": "Kategorie",
+      "amount": "Betrag",
+      "currency": "Währung",
+      "startMonth": "Startmonat",
+      "endMonth": "Endmonat",
+      "note": "Notiz (optional)",
+      "cancel": "Abbrechen",
+      "save": "Speichern"
+    },
+    "delete": {
+      "title": "Diese Kostenposition löschen?",
+      "body": "„{{label}}“ entfernen? Das kann nicht rückgängig gemacht werden.",
+      "cancel": "Abbrechen",
+      "confirm": "Löschen"
+    },
+    "snackbar": {
+      "created": "Kostenposition hinzugefügt",
+      "updated": "Kostenposition aktualisiert",
+      "deleted": "Kostenposition gelöscht",
+      "saveFailed": "Kostenposition konnte nicht gespeichert werden",
+      "deleteFailed": "Kostenposition konnte nicht gelöscht werden"
     }
   }
 }

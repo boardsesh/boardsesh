@@ -1673,6 +1673,34 @@ export type ControllerRegistration = {
   controllerId: Scalars['ID']['output'];
 };
 
+/** Per-category cost total within a single month. */
+export type CostCategoryAmount = {
+  __typename?: 'CostCategoryAmount';
+  amountCents: Scalars['Int']['output'];
+  category: Scalars['String']['output'];
+};
+
+/**
+ * A single running-cost line item, maintained by admins on /admin/costs.
+ * `recurring` entries repeat every month from `startMonth` until `endMonth`
+ * (or forever while `endMonth` is null); `incidental` entries are one-offs that
+ * land in `startMonth` only. Month keys are 'YYYY-MM'. Amounts are integer cents.
+ */
+export type CostEntry = {
+  __typename?: 'CostEntry';
+  amountCents: Scalars['Int']['output'];
+  /** 'hosting' | 'ai' | 'domain' | 'other' */
+  category: Scalars['String']['output'];
+  currency: Scalars['String']['output'];
+  endMonth?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  /** 'recurring' | 'incidental' */
+  kind: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  note?: Maybe<Scalars['String']['output']>;
+  startMonth: Scalars['String']['output'];
+};
+
 /** Input for creating a board. */
 export type CreateBoardInput = {
   /**
@@ -1721,6 +1749,17 @@ export type CreateBoardInput = {
   sizeId: Scalars['Int']['input'];
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CreateCostEntryInput = {
+  amountCents: Scalars['Int']['input'];
+  category: Scalars['String']['input'];
+  currency?: InputMaybe<Scalars['String']['input']>;
+  endMonth?: InputMaybe<Scalars['String']['input']>;
+  kind: Scalars['String']['input'];
+  label: Scalars['String']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
+  startMonth: Scalars['String']['input'];
 };
 
 /** Input for creating a gym. */
@@ -1931,6 +1970,10 @@ export type DeleteAccountInfo = {
 export type DeleteAccountInput = {
   /** Whether to remove the setter name from published climbs */
   removeSetterName: Scalars['Boolean']['input'];
+};
+
+export type DeleteCostEntryInput = {
+  id: Scalars['ID']['input'];
 };
 
 export type DeleteHoldOutlineOverrideInput = {
@@ -3762,6 +3805,8 @@ export type Mutation = {
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
+  /** Admin only: create a running-cost line item. */
+  createCostEntry: CostEntry;
   /** Create a new gym. */
   createGym: Gym;
   /**
@@ -3818,6 +3863,8 @@ export type Mutation = {
   /** Delete a comment (soft-delete if it has replies). */
   deleteComment: Scalars['Boolean']['output'];
   deleteController: Scalars['Boolean']['output'];
+  /** Admin only: delete a running-cost line item. Returns true when a row was removed. */
+  deleteCostEntry: Scalars['Boolean']['output'];
   /**
    * Delete one of the current user's unpublished draft climbs.
    * Published climbs cannot be deleted through this mutation.
@@ -4297,6 +4344,8 @@ export type Mutation = {
   updateClimb: UpdateClimbResult;
   /** Update a comment's body text. */
   updateComment: Comment;
+  /** Admin only: update a running-cost line item. */
+  updateCostEntry: CostEntry;
   /** Update a gym's metadata. */
   updateGym: Gym;
   /**
@@ -4427,6 +4476,11 @@ export type MutationCreateBoardArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationCreateCostEntryArgs = {
+  input: CreateCostEntryInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationCreateGymArgs = {
   input: CreateGymInput;
 };
@@ -4489,6 +4543,11 @@ export type MutationDeleteCommentArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteControllerArgs = {
   controllerId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteCostEntryArgs = {
+  input: DeleteCostEntryInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5034,6 +5093,11 @@ export type MutationUpdateClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateCommentArgs = {
   input: UpdateCommentInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateCostEntryArgs = {
+  input: UpdateCostEntryInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5981,6 +6045,8 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
+  /** Admin only: every running-cost line item, for the /admin/costs editor. */
+  costEntries: Array<CostEntry>;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**
@@ -6290,6 +6356,11 @@ export type Query = {
    * 2026-09-14): a climb that lost three holds is exactly the one worth remixing.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
+  /**
+   * Public: rolled-up monthly running costs for the transparency screen. Returns
+   * the last `months` calendar months through the current one (ascending).
+   */
+  runningCosts: RunningCostsReport;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -7017,6 +7088,11 @@ export type QueryRemixClimbArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryRunningCostsArgs = {
+  months?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QuerySearchBoardsArgs = {
   input: SearchBoardsInput;
 };
@@ -7698,6 +7774,31 @@ export type RevokeRoleInput = {
   boardType?: InputMaybe<Scalars['String']['input']>;
   role: CommunityRoleType;
   userId: Scalars['ID']['input'];
+};
+
+/**
+ * One month's rolled-up running cost: recurring entries active that month plus
+ * incidentals that landed in it, split by kind and by category.
+ */
+export type RunningCostsMonth = {
+  __typename?: 'RunningCostsMonth';
+  byCategory: Array<CostCategoryAmount>;
+  incidentalCents: Scalars['Int']['output'];
+  month: Scalars['String']['output'];
+  recurringCents: Scalars['Int']['output'];
+  totalCents: Scalars['Int']['output'];
+};
+
+/**
+ * Public running-cost report for the transparency screen: the last `months`
+ * calendar months through the current one (ascending), plus the current month's
+ * total for a headline figure.
+ */
+export type RunningCostsReport = {
+  __typename?: 'RunningCostsReport';
+  currency: Scalars['String']['output'];
+  latestMonthlyTotalCents: Scalars['Int']['output'];
+  months: Array<RunningCostsMonth>;
 };
 
 /** Input for saving Aurora board credentials. */
@@ -9742,6 +9843,18 @@ export type UpdateCommentInput = {
   commentUuid: Scalars['ID']['input'];
 };
 
+export type UpdateCostEntryInput = {
+  amountCents: Scalars['Int']['input'];
+  category: Scalars['String']['input'];
+  currency?: InputMaybe<Scalars['String']['input']>;
+  endMonth?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  kind: Scalars['String']['input'];
+  label: Scalars['String']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
+  startMonth: Scalars['String']['input'];
+};
+
 /** Input for updating a gym. */
 export type UpdateGymInput = {
   /** New address */
@@ -11309,6 +11422,91 @@ export type VoteMutation = {
     userVote: number;
   };
 };
+
+export type CostEntriesQueryVariables = Exact<{ [key: string]: never }>;
+
+export type CostEntriesQuery = {
+  __typename?: 'Query';
+  costEntries: Array<{
+    __typename?: 'CostEntry';
+    id: string;
+    kind: string;
+    category: string;
+    label: string;
+    amountCents: number;
+    currency: string;
+    startMonth: string;
+    endMonth?: string | null;
+    note?: string | null;
+  }>;
+};
+
+export type RunningCostsQueryVariables = Exact<{
+  months?: InputMaybe<Scalars['Int']['input']>;
+}>;
+
+export type RunningCostsQuery = {
+  __typename?: 'Query';
+  runningCosts: {
+    __typename?: 'RunningCostsReport';
+    currency: string;
+    latestMonthlyTotalCents: number;
+    months: Array<{
+      __typename?: 'RunningCostsMonth';
+      month: string;
+      totalCents: number;
+      recurringCents: number;
+      incidentalCents: number;
+      byCategory: Array<{ __typename?: 'CostCategoryAmount'; category: string; amountCents: number }>;
+    }>;
+  };
+};
+
+export type CreateCostEntryMutationVariables = Exact<{
+  input: CreateCostEntryInput;
+}>;
+
+export type CreateCostEntryMutation = {
+  __typename?: 'Mutation';
+  createCostEntry: {
+    __typename?: 'CostEntry';
+    id: string;
+    kind: string;
+    category: string;
+    label: string;
+    amountCents: number;
+    currency: string;
+    startMonth: string;
+    endMonth?: string | null;
+    note?: string | null;
+  };
+};
+
+export type UpdateCostEntryMutationVariables = Exact<{
+  input: UpdateCostEntryInput;
+}>;
+
+export type UpdateCostEntryMutation = {
+  __typename?: 'Mutation';
+  updateCostEntry: {
+    __typename?: 'CostEntry';
+    id: string;
+    kind: string;
+    category: string;
+    label: string;
+    amountCents: number;
+    currency: string;
+    startMonth: string;
+    endMonth?: string | null;
+    note?: string | null;
+  };
+};
+
+export type DeleteCostEntryMutationVariables = Exact<{
+  input: DeleteCostEntryInput;
+}>;
+
+export type DeleteCostEntryMutation = { __typename?: 'Mutation'; deleteCostEntry: boolean };
 
 export type CreateSessionMutationVariables = Exact<{
   input: CreateSessionInput;
@@ -16640,6 +16838,239 @@ export const VoteDocument = {
     },
   ],
 } as unknown as DocumentNode<VoteMutation, VoteMutationVariables>;
+export const CostEntriesDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'CostEntries' },
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'costEntries' },
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'category' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'label' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'amountCents' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currency' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'startMonth' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'endMonth' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'note' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CostEntriesQuery, CostEntriesQueryVariables>;
+export const RunningCostsDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'RunningCosts' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'months' } },
+          type: { kind: 'NamedType', name: { kind: 'Name', value: 'Int' } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'runningCosts' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'months' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'months' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'currency' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'latestMonthlyTotalCents' } },
+                {
+                  kind: 'Field',
+                  name: { kind: 'Name', value: 'months' },
+                  selectionSet: {
+                    kind: 'SelectionSet',
+                    selections: [
+                      { kind: 'Field', name: { kind: 'Name', value: 'month' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'totalCents' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'recurringCents' } },
+                      { kind: 'Field', name: { kind: 'Name', value: 'incidentalCents' } },
+                      {
+                        kind: 'Field',
+                        name: { kind: 'Name', value: 'byCategory' },
+                        selectionSet: {
+                          kind: 'SelectionSet',
+                          selections: [
+                            { kind: 'Field', name: { kind: 'Name', value: 'category' } },
+                            { kind: 'Field', name: { kind: 'Name', value: 'amountCents' } },
+                          ],
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<RunningCostsQuery, RunningCostsQueryVariables>;
+export const CreateCostEntryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'CreateCostEntry' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'CreateCostEntryInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'createCostEntry' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'category' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'label' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'amountCents' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currency' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'startMonth' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'endMonth' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'note' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<CreateCostEntryMutation, CreateCostEntryMutationVariables>;
+export const UpdateCostEntryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'UpdateCostEntry' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'UpdateCostEntryInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'updateCostEntry' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'id' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'kind' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'category' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'label' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'amountCents' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'currency' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'startMonth' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'endMonth' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'note' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<UpdateCostEntryMutation, UpdateCostEntryMutationVariables>;
+export const DeleteCostEntryDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'mutation',
+      name: { kind: 'Name', value: 'DeleteCostEntry' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+          type: {
+            kind: 'NonNullType',
+            type: { kind: 'NamedType', name: { kind: 'Name', value: 'DeleteCostEntryInput' } },
+          },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'deleteCostEntry' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'input' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'input' } },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<DeleteCostEntryMutation, DeleteCostEntryMutationVariables>;
 export const CreateSessionDocument = {
   kind: 'Document',
   definitions: [

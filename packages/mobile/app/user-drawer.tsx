@@ -86,6 +86,7 @@ export default function UserDrawerScreen() {
     navigateToPlaylists,
     navigateToChangelog,
     navigateToAbout,
+    navigateToCosts,
     openDiscord,
     signOutAction,
     setFeedbackMode,
@@ -280,10 +281,11 @@ export default function UserDrawerScreen() {
                 ) : undefined
               }
             />
+            <DrawerRow icon="info" title={t('userDrawer.about')} onPress={() => close(() => navigateToAbout())} />
             <DrawerRow
-              icon="info"
-              title={t('userDrawer.about')}
-              onPress={() => close(() => navigateToAbout())}
+              icon="chart.bar"
+              title={t('userDrawer.costs')}
+              onPress={() => close(() => navigateToCosts())}
               showSeparator={false}
             />
           </View>

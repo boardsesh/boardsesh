@@ -1676,6 +1676,34 @@ export type ControllerRegistration = {
   controllerId: Scalars['ID']['output'];
 };
 
+/** Per-category cost total within a single month. */
+export type CostCategoryAmount = {
+  __typename?: 'CostCategoryAmount';
+  amountCents: Scalars['Int']['output'];
+  category: Scalars['String']['output'];
+};
+
+/**
+ * A single running-cost line item, maintained by admins on /admin/costs.
+ * `recurring` entries repeat every month from `startMonth` until `endMonth`
+ * (or forever while `endMonth` is null); `incidental` entries are one-offs that
+ * land in `startMonth` only. Month keys are 'YYYY-MM'. Amounts are integer cents.
+ */
+export type CostEntry = {
+  __typename?: 'CostEntry';
+  amountCents: Scalars['Int']['output'];
+  /** 'hosting' | 'ai' | 'domain' | 'other' */
+  category: Scalars['String']['output'];
+  currency: Scalars['String']['output'];
+  endMonth?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  /** 'recurring' | 'incidental' */
+  kind: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  note?: Maybe<Scalars['String']['output']>;
+  startMonth: Scalars['String']['output'];
+};
+
 /** Input for creating a board. */
 export type CreateBoardInput = {
   /**
@@ -1724,6 +1752,17 @@ export type CreateBoardInput = {
   sizeId: Scalars['Int']['input'];
   /** Paired Rogue Fitness timer's advertised BLE name */
   timerName?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type CreateCostEntryInput = {
+  amountCents: Scalars['Int']['input'];
+  category: Scalars['String']['input'];
+  currency?: InputMaybe<Scalars['String']['input']>;
+  endMonth?: InputMaybe<Scalars['String']['input']>;
+  kind: Scalars['String']['input'];
+  label: Scalars['String']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
+  startMonth: Scalars['String']['input'];
 };
 
 /** Input for creating a gym. */
@@ -1934,6 +1973,10 @@ export type DeleteAccountInfo = {
 export type DeleteAccountInput = {
   /** Whether to remove the setter name from published climbs */
   removeSetterName: Scalars['Boolean']['input'];
+};
+
+export type DeleteCostEntryInput = {
+  id: Scalars['ID']['input'];
 };
 
 export type DeleteHoldOutlineOverrideInput = {
@@ -3765,6 +3808,8 @@ export type Mutation = {
   controllerHeartbeat: Scalars['Boolean']['output'];
   /** Create a new board. */
   createBoard: UserBoard;
+  /** Admin only: create a running-cost line item. */
+  createCostEntry: CostEntry;
   /** Create a new gym. */
   createGym: Gym;
   /**
@@ -3821,6 +3866,8 @@ export type Mutation = {
   /** Delete a comment (soft-delete if it has replies). */
   deleteComment: Scalars['Boolean']['output'];
   deleteController: Scalars['Boolean']['output'];
+  /** Admin only: delete a running-cost line item. Returns true when a row was removed. */
+  deleteCostEntry: Scalars['Boolean']['output'];
   /**
    * Delete one of the current user's unpublished draft climbs.
    * Published climbs cannot be deleted through this mutation.
@@ -4300,6 +4347,8 @@ export type Mutation = {
   updateClimb: UpdateClimbResult;
   /** Update a comment's body text. */
   updateComment: Comment;
+  /** Admin only: update a running-cost line item. */
+  updateCostEntry: CostEntry;
   /** Update a gym's metadata. */
   updateGym: Gym;
   /**
@@ -4430,6 +4479,11 @@ export type MutationCreateBoardArgs = {
 };
 
 /** Root mutation type for all write operations. */
+export type MutationCreateCostEntryArgs = {
+  input: CreateCostEntryInput;
+};
+
+/** Root mutation type for all write operations. */
 export type MutationCreateGymArgs = {
   input: CreateGymInput;
 };
@@ -4492,6 +4546,11 @@ export type MutationDeleteCommentArgs = {
 /** Root mutation type for all write operations. */
 export type MutationDeleteControllerArgs = {
   controllerId: Scalars['ID']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationDeleteCostEntryArgs = {
+  input: DeleteCostEntryInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5037,6 +5096,11 @@ export type MutationUpdateClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationUpdateCommentArgs = {
   input: UpdateCommentInput;
+};
+
+/** Root mutation type for all write operations. */
+export type MutationUpdateCostEntryArgs = {
+  input: UpdateCostEntryInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5984,6 +6048,8 @@ export type Query = {
   communitySettings: Array<CommunitySetting>;
   /** Headline usage numbers for the marketing site. Public, cached, no auth. */
   communityStats: CommunityStats;
+  /** Admin only: every running-cost line item, for the /admin/costs editor. */
+  costEntries: Array<CostEntry>;
   /** Sessions and the last 30 days of published climbs from followed authors. */
   crewFeed: CrewFeedResult;
   /**
@@ -6293,6 +6359,11 @@ export type Query = {
    * 2026-09-14): a climb that lost three holds is exactly the one worth remixing.
    */
   remixClimb?: Maybe<SprayRemixSeed>;
+  /**
+   * Public: rolled-up monthly running costs for the transparency screen. Returns
+   * the last `months` calendar months through the current one (ascending).
+   */
+  runningCosts: RunningCostsReport;
   /** Search public boards. */
   searchBoards: UserBoardConnection;
   /**
@@ -7020,6 +7091,11 @@ export type QueryRemixClimbArgs = {
 };
 
 /** Root query type for all read operations. */
+export type QueryRunningCostsArgs = {
+  months?: InputMaybe<Scalars['Int']['input']>;
+};
+
+/** Root query type for all read operations. */
 export type QuerySearchBoardsArgs = {
   input: SearchBoardsInput;
 };
@@ -7701,6 +7777,31 @@ export type RevokeRoleInput = {
   boardType?: InputMaybe<Scalars['String']['input']>;
   role: CommunityRoleType;
   userId: Scalars['ID']['input'];
+};
+
+/**
+ * One month's rolled-up running cost: recurring entries active that month plus
+ * incidentals that landed in it, split by kind and by category.
+ */
+export type RunningCostsMonth = {
+  __typename?: 'RunningCostsMonth';
+  byCategory: Array<CostCategoryAmount>;
+  incidentalCents: Scalars['Int']['output'];
+  month: Scalars['String']['output'];
+  recurringCents: Scalars['Int']['output'];
+  totalCents: Scalars['Int']['output'];
+};
+
+/**
+ * Public running-cost report for the transparency screen: the last `months`
+ * calendar months through the current one (ascending), plus the current month's
+ * total for a headline figure.
+ */
+export type RunningCostsReport = {
+  __typename?: 'RunningCostsReport';
+  currency: Scalars['String']['output'];
+  latestMonthlyTotalCents: Scalars['Int']['output'];
+  months: Array<RunningCostsMonth>;
 };
 
 /** Input for saving Aurora board credentials. */
@@ -9745,6 +9846,18 @@ export type UpdateCommentInput = {
   commentUuid: Scalars['ID']['input'];
 };
 
+export type UpdateCostEntryInput = {
+  amountCents: Scalars['Int']['input'];
+  category: Scalars['String']['input'];
+  currency?: InputMaybe<Scalars['String']['input']>;
+  endMonth?: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  kind: Scalars['String']['input'];
+  label: Scalars['String']['input'];
+  note?: InputMaybe<Scalars['String']['input']>;
+  startMonth: Scalars['String']['input'];
+};
+
 /** Input for updating a gym. */
 export type UpdateGymInput = {
   /** New address */
@@ -10431,7 +10544,10 @@ export type ResolversTypes = ResolversObject<{
   ControllerQueueItem: ResolverTypeWrapper<ControllerQueueItem>;
   ControllerQueueSync: ResolverTypeWrapper<ControllerQueueSync>;
   ControllerRegistration: ResolverTypeWrapper<ControllerRegistration>;
+  CostCategoryAmount: ResolverTypeWrapper<CostCategoryAmount>;
+  CostEntry: ResolverTypeWrapper<CostEntry>;
   CreateBoardInput: CreateBoardInput;
+  CreateCostEntryInput: CreateCostEntryInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
   CreatePlaylistInput: CreatePlaylistInput;
@@ -10448,6 +10564,7 @@ export type ResolversTypes = ResolversObject<{
   CurrentClimbChanged: ResolverTypeWrapper<CurrentClimbChanged>;
   DeleteAccountInfo: ResolverTypeWrapper<DeleteAccountInfo>;
   DeleteAccountInput: DeleteAccountInput;
+  DeleteCostEntryInput: DeleteCostEntryInput;
   DeleteHoldOutlineOverrideInput: DeleteHoldOutlineOverrideInput;
   DeleteProposalInput: DeleteProposalInput;
   DetachBoardFromGymInput: DetachBoardFromGymInput;
@@ -10667,6 +10784,8 @@ export type ResolversTypes = ResolversObject<{
   ReviewGymClaimInput: ReviewGymClaimInput;
   RevokeGymWriteAccessInput: RevokeGymWriteAccessInput;
   RevokeRoleInput: RevokeRoleInput;
+  RunningCostsMonth: ResolverTypeWrapper<RunningCostsMonth>;
+  RunningCostsReport: ResolverTypeWrapper<RunningCostsReport>;
   SaveAuroraCredentialInput: SaveAuroraCredentialInput;
   SaveClimbInput: SaveClimbInput;
   SaveClimbResult: ResolverTypeWrapper<SaveClimbResult>;
@@ -10774,6 +10893,7 @@ export type ResolversTypes = ResolversObject<{
   UpdateClimbInput: UpdateClimbInput;
   UpdateClimbResult: ResolverTypeWrapper<UpdateClimbResult>;
   UpdateCommentInput: UpdateCommentInput;
+  UpdateCostEntryInput: UpdateCostEntryInput;
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
@@ -10898,7 +11018,10 @@ export type ResolversParentTypes = ResolversObject<{
   ControllerQueueItem: ControllerQueueItem;
   ControllerQueueSync: ControllerQueueSync;
   ControllerRegistration: ControllerRegistration;
+  CostCategoryAmount: CostCategoryAmount;
+  CostEntry: CostEntry;
   CreateBoardInput: CreateBoardInput;
+  CreateCostEntryInput: CreateCostEntryInput;
   CreateGymInput: CreateGymInput;
   CreateGymKioskInput: CreateGymKioskInput;
   CreatePlaylistInput: CreatePlaylistInput;
@@ -10915,6 +11038,7 @@ export type ResolversParentTypes = ResolversObject<{
   CurrentClimbChanged: CurrentClimbChanged;
   DeleteAccountInfo: DeleteAccountInfo;
   DeleteAccountInput: DeleteAccountInput;
+  DeleteCostEntryInput: DeleteCostEntryInput;
   DeleteHoldOutlineOverrideInput: DeleteHoldOutlineOverrideInput;
   DeleteProposalInput: DeleteProposalInput;
   DetachBoardFromGymInput: DetachBoardFromGymInput;
@@ -11108,6 +11232,8 @@ export type ResolversParentTypes = ResolversObject<{
   ReviewGymClaimInput: ReviewGymClaimInput;
   RevokeGymWriteAccessInput: RevokeGymWriteAccessInput;
   RevokeRoleInput: RevokeRoleInput;
+  RunningCostsMonth: RunningCostsMonth;
+  RunningCostsReport: RunningCostsReport;
   SaveAuroraCredentialInput: SaveAuroraCredentialInput;
   SaveClimbInput: SaveClimbInput;
   SaveClimbResult: SaveClimbResult;
@@ -11203,6 +11329,7 @@ export type ResolversParentTypes = ResolversObject<{
   UpdateClimbInput: UpdateClimbInput;
   UpdateClimbResult: UpdateClimbResult;
   UpdateCommentInput: UpdateCommentInput;
+  UpdateCostEntryInput: UpdateCostEntryInput;
   UpdateGymInput: UpdateGymInput;
   UpdateGymKioskInput: UpdateGymKioskInput;
   UpdatePlaylistInput: UpdatePlaylistInput;
@@ -12152,6 +12279,31 @@ export type ControllerRegistrationResolvers<
 > = ResolversObject<{
   apiKey?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   controllerId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CostCategoryAmountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CostCategoryAmount'] = ResolversParentTypes['CostCategoryAmount'],
+> = ResolversObject<{
+  amountCents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  category?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type CostEntryResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['CostEntry'] = ResolversParentTypes['CostEntry'],
+> = ResolversObject<{
+  amountCents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  category?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  currency?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  endMonth?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  id?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
+  kind?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  label?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  note?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  startMonth?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -13200,6 +13352,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationCreateBoardArgs, 'input'>
   >;
+  createCostEntry?: Resolver<
+    ResolversTypes['CostEntry'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationCreateCostEntryArgs, 'input'>
+  >;
   createGym?: Resolver<ResolversTypes['Gym'], ParentType, ContextType, RequireFields<MutationCreateGymArgs, 'input'>>;
   createGymKiosk?: Resolver<
     ResolversTypes['GymKiosk'],
@@ -13272,6 +13430,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationDeleteControllerArgs, 'controllerId'>
+  >;
+  deleteCostEntry?: Resolver<
+    ResolversTypes['Boolean'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationDeleteCostEntryArgs, 'input'>
   >;
   deleteDraftClimb?: Resolver<
     ResolversTypes['Boolean'],
@@ -13868,6 +14032,12 @@ export type MutationResolvers<
     ParentType,
     ContextType,
     RequireFields<MutationUpdateCommentArgs, 'input'>
+  >;
+  updateCostEntry?: Resolver<
+    ResolversTypes['CostEntry'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationUpdateCostEntryArgs, 'input'>
   >;
   updateGym?: Resolver<ResolversTypes['Gym'], ParentType, ContextType, RequireFields<MutationUpdateGymArgs, 'input'>>;
   updateGymKiosk?: Resolver<
@@ -14572,6 +14742,7 @@ export type QueryResolvers<
     RequireFields<QueryCommunitySettingsArgs, 'scope' | 'scopeKey'>
   >;
   communityStats?: Resolver<ResolversTypes['CommunityStats'], ParentType, ContextType>;
+  costEntries?: Resolver<Array<ResolversTypes['CostEntry']>, ParentType, ContextType>;
   crewFeed?: Resolver<ResolversTypes['CrewFeedResult'], ParentType, ContextType, Partial<QueryCrewFeedArgs>>;
   defaultBoard?: Resolver<Maybe<ResolversTypes['UserBoard']>, ParentType, ContextType>;
   deleteAccountInfo?: Resolver<ResolversTypes['DeleteAccountInfo'], ParentType, ContextType>;
@@ -14852,6 +15023,12 @@ export type QueryResolvers<
     ParentType,
     ContextType,
     RequireFields<QueryRemixClimbArgs, 'parentUuid'>
+  >;
+  runningCosts?: Resolver<
+    ResolversTypes['RunningCostsReport'],
+    ParentType,
+    ContextType,
+    RequireFields<QueryRunningCostsArgs, 'months'>
   >;
   searchBoards?: Resolver<
     ResolversTypes['UserBoardConnection'],
@@ -15354,6 +15531,28 @@ export type ResolvedBoardResolvers<
   layoutId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   setIds?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   sizeId?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type RunningCostsMonthResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['RunningCostsMonth'] = ResolversParentTypes['RunningCostsMonth'],
+> = ResolversObject<{
+  byCategory?: Resolver<Array<ResolversTypes['CostCategoryAmount']>, ParentType, ContextType>;
+  incidentalCents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  month?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  recurringCents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  totalCents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type RunningCostsReportResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['RunningCostsReport'] = ResolversParentTypes['RunningCostsReport'],
+> = ResolversObject<{
+  currency?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  latestMonthlyTotalCents?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  months?: Resolver<Array<ResolversTypes['RunningCostsMonth']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -16603,6 +16802,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   ControllerQueueItem?: ControllerQueueItemResolvers<ContextType>;
   ControllerQueueSync?: ControllerQueueSyncResolvers<ContextType>;
   ControllerRegistration?: ControllerRegistrationResolvers<ContextType>;
+  CostCategoryAmount?: CostCategoryAmountResolvers<ContextType>;
+  CostEntry?: CostEntryResolvers<ContextType>;
   CrewClimbGroupItem?: CrewClimbGroupItemResolvers<ContextType>;
   CrewClimbItem?: CrewClimbItemResolvers<ContextType>;
   CrewFeedItem?: CrewFeedItemResolvers<ContextType>;
@@ -16723,6 +16924,8 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   RequestGymClaimResult?: RequestGymClaimResultResolvers<ContextType>;
   ResolveBoardResult?: ResolveBoardResultResolvers<ContextType>;
   ResolvedBoard?: ResolvedBoardResolvers<ContextType>;
+  RunningCostsMonth?: RunningCostsMonthResolvers<ContextType>;
+  RunningCostsReport?: RunningCostsReportResolvers<ContextType>;
   SaveClimbResult?: SaveClimbResultResolvers<ContextType>;
   SearchPlaylistsResult?: SearchPlaylistsResultResolvers<ContextType>;
   SendDeviceLogsResponse?: SendDeviceLogsResponseResolvers<ContextType>;

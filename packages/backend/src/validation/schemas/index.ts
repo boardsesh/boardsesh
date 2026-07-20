@@ -15,6 +15,7 @@ export * from './boards';
 export * from './gyms';
 export * from './gym-kiosks';
 export * from './feedback';
+export * from './costs';
 export * from './qa';
 export * from './board-presence';
 export * from './integrations';

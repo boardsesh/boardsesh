@@ -577,6 +577,24 @@
       "errorTitle": "Konnte nicht geladen werden",
       "errorBody": "Das ist nicht durchgekommen. Versuch es noch mal.",
       "retry": "Erneut versuchen"
+    },
+    "costs": {
+      "title": "Laufende Kosten",
+      "loading": "Rechnungen werden zusammengerechnet",
+      "error": "Laufende Kosten konnten nicht geladen werden. Prüfe deine Verbindung und versuche es erneut.",
+      "retry": "Erneut versuchen",
+      "empty": "Noch keine Kosten verfügbar.",
+      "perMonthLabel": "Pro Monat",
+      "headline": "Das kostet der Betrieb von Boardsesh pro Monat.",
+      "overTimeTitle": "Kosten im Zeitverlauf",
+      "byCategoryTitle": "Dieser Monat nach Kategorie",
+      "categoryHosting": "Hosting",
+      "categoryAi": "KI",
+      "categoryDomain": "Domain",
+      "categoryOther": "Sonstiges",
+      "sponsorsTitle": "Hilf, die Kosten zu decken",
+      "sponsorsBody": "Das sind die echten Rechnungen hinter Boardsesh, vollständig aufgeschlüsselt. Wenn du die App bei deinen Sessions nutzt, unterstütze den Betrieb über GitHub Sponsors.",
+      "sponsorsCta": "Unterstützen"
     }
   },
   "lightControl": {

@@ -76,6 +76,8 @@ import { feedbackMutations } from './feedback/mutations';
 import { feedbackQueries } from './feedback/queries';
 import { qaMutations } from './qa/mutations';
 import { qaQueries } from './qa/queries';
+import { costQueries } from './costs/queries';
+import { costMutations } from './costs/mutations';
 import { integrationQueries } from './integrations/queries';
 import { integrationMutations } from './integrations/mutations';
 import { betaLinkQueries } from './beta-videos/queries';
@@ -140,6 +142,7 @@ export const resolvers = {
     ...syncQueries,
     ...feedbackQueries,
     ...qaQueries,
+    ...costQueries,
   },
 
   Mutation: {
@@ -179,6 +182,7 @@ export const resolvers = {
     ...sessionEditMutations,
     ...feedbackMutations,
     ...qaMutations,
+    ...costMutations,
     ...boardPresenceResolvers.Mutation,
     ...integrationMutations,
   },

@@ -23,6 +23,7 @@ export * from './vote-counts';
 export * from './session-participants';
 export * from './feedback';
 export * from './qa-verdicts';
+export * from './costs';
 export * from './profile-percentiles';
 export * from './activity-push-tokens';
 export * from './recommendation-stats';

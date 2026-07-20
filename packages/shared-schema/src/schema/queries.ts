@@ -712,6 +712,17 @@ export const queriesTypeDefs = /* GraphQL */ `
     qaPreviews(prNumbers: [Int!]!, includeBuilding: Boolean): [QaPreview!]!
 
     """
+    Admin only: every running-cost line item, for the /admin/costs editor.
+    """
+    costEntries: [CostEntry!]!
+
+    """
+    Public: rolled-up monthly running costs for the transparency screen. Returns
+    the last \`months\` calendar months through the current one (ascending).
+    """
+    runningCosts(months: Int = 12): RunningCostsReport!
+
+    """
     A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
     busiest weekdays for the current window plus the equally-long window before
     it (for week-over-week deltas). Requires gym edit access (owner, gym

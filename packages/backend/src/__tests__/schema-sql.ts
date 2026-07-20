@@ -1379,6 +1379,26 @@ CREATE INDEX "board_climb_events_chronological_idx" ON "board_climb_events" USIN
   CREATE INDEX IF NOT EXISTS "qa_verdicts_pr_created_idx" ON "qa_verdicts" ("pr_number", "created_at");
   CREATE INDEX IF NOT EXISTS "qa_verdicts_user_idx" ON "qa_verdicts" ("user_id");
 
+  -- Running-cost line items exposed only through the aggregated public report.
+  -- Mirrors packages/db/src/schema/app/costs.ts with text + CHECK stand-ins for
+  -- production enums used in resolver tests.
+  DROP TABLE IF EXISTS "cost_entries" CASCADE;
+  CREATE TABLE IF NOT EXISTS "cost_entries" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "kind" text NOT NULL CHECK ("kind" IN ('recurring', 'incidental')),
+    "category" text NOT NULL,
+    "label" text NOT NULL,
+    "amount_cents" integer NOT NULL,
+    "currency" text DEFAULT 'USD' NOT NULL,
+    "start_month" text NOT NULL,
+    "end_month" text,
+    "note" text,
+    "created_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "cost_entries_start_month_idx" ON "cost_entries" ("start_month");
+
   CREATE INDEX IF NOT EXISTS "gym_kiosks_gym_idx" ON "gym_kiosks" ("gym_id") WHERE "deleted_at" IS NULL;
 
   -- Hand-corrected hold outlines, overriding the traced geometry shard. Mirrors

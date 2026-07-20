@@ -69,6 +69,7 @@
     "changeBoard": "Cambiar de plafón",
     "myPlaylists": "Mis listas",
     "about": "Sobre",
+    "costs": "Costes de funcionamiento",
     "whatsNew": "Novedades",
     "newBadge": "Nuevo",
     "rateBoardsesh": "Valorar Boardsesh",
@@ -690,6 +691,24 @@
       "partnerBody": "Boardsesh funciona con Kilter, Tension y MoonBoard desde fuera. Si fabricas plafones y quieres crear algo oficial juntos, nos encantaría hablar.",
       "acknowledgementsLink": "Agradecimientos",
       "acknowledgementsLinkBody": "Las personas detrás de Boardsesh"
+    },
+    "costs": {
+      "title": "Costes de funcionamiento",
+      "loading": "Sumando las facturas",
+      "error": "No pudimos cargar los costes. Revisa tu conexión e inténtalo de nuevo.",
+      "retry": "Reintentar",
+      "empty": "Aún no hay costes que mostrar.",
+      "perMonthLabel": "Al mes",
+      "headline": "Lo que cuesta mantener Boardsesh cada mes.",
+      "overTimeTitle": "Costes a lo largo del tiempo",
+      "byCategoryTitle": "Este mes, por categoría",
+      "categoryHosting": "Alojamiento",
+      "categoryAi": "IA",
+      "categoryDomain": "Dominio",
+      "categoryOther": "Otro",
+      "sponsorsTitle": "Ayuda a cubrir los costes",
+      "sponsorsBody": "Estas son las facturas reales de Boardsesh, mostradas al completo. Si forma parte de tus sesiones, colabora a través de GitHub Sponsors para mantenerlo en marcha.",
+      "sponsorsCta": "Colaborar"
     },
     "acknowledgements": {
       "title": "Agradecimientos",

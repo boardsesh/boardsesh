@@ -138,7 +138,8 @@
     "gymClaims": "Reclamaciones de rocódromos",
     "feedback": "Reportes de errores",
     "gymDuplicates": "Rocódromos duplicados",
-    "locationSync": "Bloqueos de sincronización de ubicaciones"
+    "locationSync": "Bloqueos de sincronización de ubicaciones",
+    "costs": "Costes de funcionamiento"
   },
   "feedback": {
     "title": "Errores y comentarios",
@@ -428,6 +429,67 @@
     },
     "ownerReports": {
       "note": "Los propietarios ahora pueden señalar duplicados desde la página de su rocódromo. Por ahora esos reportes llegan por correo al equipo, así que revisa la bandeja junto a esta cola."
+    }
+  },
+  "costs": {
+    "title": "Costes de funcionamiento",
+    "subtitle": "Lo que cuesta mantener Boardsesh en marcha. Registra gastos recurrentes y puntuales; la página de transparencia los agrupa por mes.",
+    "backToAdmin": "Volver al panel",
+    "newEntry": "Nuevo coste",
+    "empty": "Aún no hay costes.",
+    "error": "No se pudieron cargar los costes.",
+    "retry": "Reintentar",
+    "kind": {
+      "recurring": "Recurrente",
+      "incidental": "Puntual"
+    },
+    "category": {
+      "hosting": "Alojamiento",
+      "ai": "IA",
+      "domain": "Dominio",
+      "other": "Otro"
+    },
+    "table": {
+      "kind": "Tipo",
+      "category": "Categoría",
+      "label": "Etiqueta",
+      "amount": "Importe",
+      "start": "Inicio",
+      "end": "Fin",
+      "actions": "Acciones",
+      "ongoing": "En curso",
+      "none": "—"
+    },
+    "actions": {
+      "edit": "Editar",
+      "delete": "Eliminar"
+    },
+    "dialog": {
+      "addTitle": "Nuevo coste",
+      "editTitle": "Editar coste",
+      "label": "Etiqueta",
+      "kind": "Tipo",
+      "category": "Categoría",
+      "amount": "Importe",
+      "currency": "Moneda",
+      "startMonth": "Mes de inicio",
+      "endMonth": "Mes de fin",
+      "note": "Nota (opcional)",
+      "cancel": "Cancelar",
+      "save": "Guardar"
+    },
+    "delete": {
+      "title": "¿Eliminar este coste?",
+      "body": "¿Quitar «{{label}}»? Esta acción no se puede deshacer.",
+      "cancel": "Cancelar",
+      "confirm": "Eliminar"
+    },
+    "snackbar": {
+      "created": "Coste añadido",
+      "updated": "Coste actualizado",
+      "deleted": "Coste eliminado",
+      "saveFailed": "No se pudo guardar el coste",
+      "deleteFailed": "No se pudo eliminar el coste"
     }
   }
 }

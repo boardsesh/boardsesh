@@ -25,6 +25,7 @@ import { boardPresenceTypeDefs } from './board-presence';
 import { controllerTypeDefs } from './controller';
 import { feedbackTypeDefs } from './feedback';
 import { qaTypeDefs } from './qa';
+import { costsTypeDefs } from './costs';
 import { betaLinksTypeDefs } from './beta-links';
 import { integrationsTypeDefs } from './integrations';
 import { syncTypeDefs } from './sync';
@@ -72,6 +73,7 @@ export const typeDefs = [
   controllerTypeDefs,
   feedbackTypeDefs,
   qaTypeDefs,
+  costsTypeDefs,
   boardPresenceTypeDefs,
   userDataExportTypeDefs,
 ];
