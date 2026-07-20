@@ -465,7 +465,7 @@ describe('NativeIosBleAdapter on newer binaries (adoption surface present)', () 
     expect(nativeMock.connect).toHaveBeenCalledWith('moon-1');
   });
 
-  it('uses the Aurora service filter and drops unrelated devices on Aurora scans', async () => {
+  it('scans unfiltered on Aurora and surfaces boards whose UUID rode the scan-response PDU', async () => {
     let manualPick: (deviceId: string) => void = () => {};
     const seenDeviceIds: string[] = [];
     const adapter = new NativeIosBleAdapter(
@@ -482,27 +482,42 @@ describe('NativeIosBleAdapter on newer binaries (adoption surface present)', () 
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(nativeMock.startScan).toHaveBeenCalledWith(['AURORA-UUID']);
+    // Unfiltered on the newer surface: a native `withServices:[Aurora]` filter
+    // only matches the primary ADV, dropping boxes (Kilter-built bare-name /
+    // NimBLE dev boards) whose UUID rides the scan-response PDU. The JS filter
+    // below narrows instead. Matches the Android adapter (adapter.ts, #3806).
+    expect(nativeMock.startScan).toHaveBeenCalledWith([]);
 
+    // An unrelated peripheral must still be dropped by the JS filter...
     scanListeners[0]?.({
       device: { deviceId: 'airpods', name: "Marco's AirPods #1" },
       localName: "Marco's AirPods #1",
       rssi: -30,
       serviceUuids: [],
     });
+    // ...a board that DID advertise the UUID in its primary ADV must surface...
     scanListeners[0]?.({
       device: { deviceId: 'aurora-1', name: 'Kilter Board#751737@3' },
       localName: 'Kilter Board#751737@3',
       rssi: -40,
       serviceUuids: ['AURORA-UUID'],
     });
+    // ...and so must one whose Aurora UUID never reached `serviceUuids` (rode
+    // the scan-response PDU) — matched by its name alone. The hardware filter
+    // would have dropped this one; the regression that broke the dev board.
+    scanListeners[0]?.({
+      device: { deviceId: 'aurora-devboard', name: 'Kilter Board#123456@3' },
+      localName: 'Kilter Board#123456@3',
+      rssi: -45,
+      serviceUuids: [],
+    });
 
-    expect(seenDeviceIds).toEqual(['aurora-1']);
+    expect(seenDeviceIds).toEqual(['aurora-1', 'aurora-devboard']);
 
-    manualPick('aurora-1');
+    manualPick('aurora-devboard');
     await vi.runAllTimersAsync();
     await connectPromise;
-    expect(nativeMock.connect).toHaveBeenCalledWith('aurora-1');
+    expect(nativeMock.connect).toHaveBeenCalledWith('aurora-devboard');
   });
 });
 

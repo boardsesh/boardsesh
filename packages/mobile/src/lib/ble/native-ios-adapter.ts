@@ -133,9 +133,15 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       openPicker();
     }
 
-    // MoonBoard scans are unfiltered on newer binaries (a native service-UUID
-    // filter would hide controllers that only surface via name). Aurora scans
-    // stay filtered to avoid unrelated peripherals reaching the picker.
+    // Both families scan unfiltered on newer binaries, then narrow in JS via
+    // isLikelyBoardDevice. A native service-UUID filter hides any box whose UUID
+    // rides the scan-response PDU rather than the primary advertisement — iOS
+    // `scanForPeripherals(withServices:)` only matches the primary. That drops
+    // Kilter-built bare-name boxes and NimBLE-based controllers (dev boards)
+    // whose 128-bit Aurora UUID + long name can't co-fit in the 31-byte legacy
+    // ADV, giving an empty picker (regression 0710be7a8, the same one adapter.ts
+    // fixed for Android in #3806 — the native iOS path was missed). Older
+    // binaries fall back to the explicit per-family UUID filter they understand.
     const supportsUnfilteredScan = nativeBleSupportsConnectionAdoption();
 
     const scanSubscription = native.addListener('scanResult', (payload: NativeBleScanEvent) => {
@@ -179,15 +185,14 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
     let scanTimeoutId: ReturnType<typeof setTimeout> | undefined;
     let selectedDeviceId: string;
     try {
-      const scanServiceUuids =
-        this.scanFamily === 'aurora'
+      const scanServiceUuids = supportsUnfilteredScan
+        ? []
+        : this.scanFamily === 'aurora'
           ? [AURORA_ADVERTISED_SERVICE_UUID]
-          : supportsUnfilteredScan
-            ? []
-            : // MoonBoard spans two controller generations: newer boards
-              // advertise Nordic UART, the original RedBearLab box its own
-              // service. Filter on both when an unfiltered scan isn't available.
-              [UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID];
+          : // MoonBoard spans two controller generations: newer boards
+            // advertise Nordic UART, the original RedBearLab box its own
+            // service. Filter on both when an unfiltered scan isn't available.
+            [UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID];
       await native.startScan(scanServiceUuids);
 
       // Grace window: if the stored serial hasn't matched shortly, open the
