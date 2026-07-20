@@ -85,7 +85,7 @@ env:
   # Manifest base for the offline snapshot bootstrap (bundle-only, no fingerprint
   # effect). Public Tigris bucket; keep in sync with SNAPSHOT_PUBLIC_BASE_URL in
   # export-board-snapshots.yml.
-  EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1
+  EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
   # Baked into the binary by `expo prebuild`; the server maps this channel to a
   # same-named branch. Part of the resolved config, so it's fingerprint-relevant.
   EXPO_UPDATES_CHANNEL: production
