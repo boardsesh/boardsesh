@@ -725,6 +725,21 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     updateAppFeedbackStatus(input: UpdateAppFeedbackStatusInput!): AppFeedbackReport!
 
+    """
+    Admin only: create a running-cost line item.
+    """
+    createCostEntry(input: CreateCostEntryInput!): CostEntry!
+
+    """
+    Admin only: update a running-cost line item.
+    """
+    updateCostEntry(input: UpdateCostEntryInput!): CostEntry!
+
+    """
+    Admin only: delete a running-cost line item. Returns true when a row was removed.
+    """
+    deleteCostEntry(input: DeleteCostEntryInput!): Boolean!
+
     # ============================================
     # External Platform Integration Mutations
     # ============================================

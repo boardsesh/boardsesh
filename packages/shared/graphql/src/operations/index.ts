@@ -17,6 +17,7 @@ export * from './climb-stats-history';
 export * from './climb-stats-for-angles';
 export * from './boardsesh-grade';
 export * from './feedback';
+export * from './costs';
 export * from './beta-links';
 export * from './integrations';
 // queue-session.ts is intentionally NOT re-exported here: its CREATE_SESSION,

@@ -7,6 +7,10 @@
     "retention": {
       "title": "Retention",
       "description": "Cohort retention dashboard"
+    },
+    "costs": {
+      "title": "Running costs",
+      "description": "Manage Boardsesh running-cost entries"
     }
   },
   "title": "Admin Panel",
@@ -21,7 +25,8 @@
   "nav": {
     "retention": "Retention dashboard",
     "gymClaims": "Gym claims",
-    "feedback": "Bug reports"
+    "feedback": "Bug reports",
+    "costs": "Running costs"
   },
 
   "feedback": {
@@ -244,5 +249,66 @@
       "actions": "Actions"
     },
     "loadMore": "Load more"
+  },
+  "costs": {
+    "title": "Running costs",
+    "subtitle": "What it costs to keep Boardsesh running. Track recurring bills and one-off expenses; the transparency page rolls them up by month.",
+    "backToAdmin": "Back to admin",
+    "newEntry": "New cost",
+    "empty": "No cost entries yet.",
+    "error": "Couldn't load cost entries.",
+    "retry": "Retry",
+    "kind": {
+      "recurring": "Recurring",
+      "incidental": "One-off"
+    },
+    "category": {
+      "hosting": "Hosting",
+      "ai": "AI",
+      "domain": "Domain",
+      "other": "Other"
+    },
+    "table": {
+      "kind": "Kind",
+      "category": "Category",
+      "label": "Label",
+      "amount": "Amount",
+      "start": "Start",
+      "end": "End",
+      "actions": "Actions",
+      "ongoing": "Ongoing",
+      "none": "—"
+    },
+    "actions": {
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "dialog": {
+      "addTitle": "New cost",
+      "editTitle": "Edit cost",
+      "label": "Label",
+      "kind": "Kind",
+      "category": "Category",
+      "amount": "Amount",
+      "currency": "Currency",
+      "startMonth": "Start month",
+      "endMonth": "End month",
+      "note": "Note (optional)",
+      "cancel": "Cancel",
+      "save": "Save"
+    },
+    "delete": {
+      "title": "Delete this cost?",
+      "body": "Remove \"{{label}}\"? This can't be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete"
+    },
+    "snackbar": {
+      "created": "Cost added",
+      "updated": "Cost updated",
+      "deleted": "Cost deleted",
+      "saveFailed": "Couldn't save the cost",
+      "deleteFailed": "Couldn't delete the cost"
+    }
   }
 }

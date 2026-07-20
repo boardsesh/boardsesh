@@ -7,6 +7,10 @@
     "retention": {
       "title": "Rétention",
       "description": "Tableau de bord de rétention par cohorte"
+    },
+    "costs": {
+      "title": "Coûts de fonctionnement",
+      "description": "Gérez les coûts de fonctionnement de Boardsesh"
     }
   },
   "title": "Panneau d'administration",
@@ -21,7 +25,8 @@
   "nav": {
     "retention": "Tableau de rétention",
     "gymClaims": "Revendications de salles",
-    "feedback": "Rapports de bugs"
+    "feedback": "Rapports de bugs",
+    "costs": "Coûts de fonctionnement"
   },
 
   "feedback": {
@@ -244,5 +249,66 @@
       "actions": "Actions"
     },
     "loadMore": "Charger plus"
+  },
+  "costs": {
+    "title": "Coûts de fonctionnement",
+    "subtitle": "Ce que coûte le fonctionnement de Boardsesh. Suivez les dépenses récurrentes et ponctuelles ; la page de transparence les regroupe par mois.",
+    "backToAdmin": "Retour à l'admin",
+    "newEntry": "Nouveau coût",
+    "empty": "Aucun coût pour le moment.",
+    "error": "Impossible de charger les coûts.",
+    "retry": "Réessayer",
+    "kind": {
+      "recurring": "Récurrent",
+      "incidental": "Ponctuel"
+    },
+    "category": {
+      "hosting": "Hébergement",
+      "ai": "IA",
+      "domain": "Domaine",
+      "other": "Autre"
+    },
+    "table": {
+      "kind": "Type",
+      "category": "Catégorie",
+      "label": "Libellé",
+      "amount": "Montant",
+      "start": "Début",
+      "end": "Fin",
+      "actions": "Actions",
+      "ongoing": "En cours",
+      "none": "—"
+    },
+    "actions": {
+      "edit": "Modifier",
+      "delete": "Supprimer"
+    },
+    "dialog": {
+      "addTitle": "Nouveau coût",
+      "editTitle": "Modifier le coût",
+      "label": "Libellé",
+      "kind": "Type",
+      "category": "Catégorie",
+      "amount": "Montant",
+      "currency": "Devise",
+      "startMonth": "Mois de début",
+      "endMonth": "Mois de fin",
+      "note": "Note (facultatif)",
+      "cancel": "Annuler",
+      "save": "Enregistrer"
+    },
+    "delete": {
+      "title": "Supprimer ce coût ?",
+      "body": "Supprimer « {{label}} » ? Cette action est irréversible.",
+      "cancel": "Annuler",
+      "confirm": "Supprimer"
+    },
+    "snackbar": {
+      "created": "Coût ajouté",
+      "updated": "Coût mis à jour",
+      "deleted": "Coût supprimé",
+      "saveFailed": "Impossible d'enregistrer le coût",
+      "deleteFailed": "Impossible de supprimer le coût"
+    }
   }
 }

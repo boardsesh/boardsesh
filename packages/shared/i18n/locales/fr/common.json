@@ -202,6 +202,24 @@
       "changelogLink": "Nouveautés",
       "changelogLinkBody": "Dernières améliorations et corrections"
     },
+    "costs": {
+      "title": "Coûts de fonctionnement",
+      "loading": "On additionne les factures",
+      "error": "Impossible de charger les coûts. Vérifiez votre connexion et réessayez.",
+      "retry": "Réessayer",
+      "empty": "Aucun coût à afficher pour l'instant.",
+      "perMonthLabel": "Par mois",
+      "headline": "Ce que coûte le fonctionnement de Boardsesh chaque mois.",
+      "overTimeTitle": "Coûts dans le temps",
+      "byCategoryTitle": "Ce mois-ci, par catégorie",
+      "categoryHosting": "Hébergement",
+      "categoryAi": "IA",
+      "categoryDomain": "Domaine",
+      "categoryOther": "Autres",
+      "sponsorsTitle": "Aidez à couvrir les coûts",
+      "sponsorsBody": "Ce sont les vraies factures de Boardsesh, affichées en entier. Si ça fait partie de vos sessions, participez via GitHub Sponsors pour que ça continue de tourner.",
+      "sponsorsCta": "Participer"
+    },
     "acknowledgements": {
       "title": "Remerciements",
       "intro": "Boardsesh existe grâce aux personnes qui le construisent, le soutiennent et supportent que je parle sans fin de boards. Merci.",
@@ -459,6 +477,7 @@
     "recentSessions": "Sessions récentes",
     "help": "Aide",
     "about": "À propos",
+    "costs": "Coûts de fonctionnement",
     "whatsNew": "Nouveautés",
     "newBadge": "Nouveau",
     "rateBoardsesh": "Noter Boardsesh",

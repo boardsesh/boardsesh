@@ -28,6 +28,7 @@ type UserDrawerContextValue = {
   navigateToPlaylists: () => void;
   navigateToChangelog: () => void;
   navigateToAbout: () => void;
+  navigateToCosts: () => void;
   openDiscord: () => void;
   signOutAction: () => void;
   setFeedbackMode: (mode: FeedbackSheetMode) => void;
@@ -106,6 +107,10 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
     router.push('/about');
   }, []);
 
+  const navigateToCosts = useCallback(() => {
+    router.push('/costs');
+  }, []);
+
   const openDiscord = useCallback(() => {
     void openDiscordInvite('user-drawer');
   }, []);
@@ -132,6 +137,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       navigateToPlaylists,
       navigateToChangelog,
       navigateToAbout,
+      navigateToCosts,
       openDiscord,
       signOutAction,
       setFeedbackMode,
@@ -147,6 +153,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
       navigateToPlaylists,
       navigateToChangelog,
       navigateToAbout,
+      navigateToCosts,
       openDiscord,
       signOutAction,
       setFeedbackMode,

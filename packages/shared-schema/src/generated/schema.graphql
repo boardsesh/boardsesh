@@ -5171,6 +5171,17 @@ type Query {
   adminAppFeedback(input: AdminAppFeedbackInput): AdminAppFeedbackResult!
 
   """
+  Admin only: every running-cost line item, for the /admin/costs editor.
+  """
+  costEntries: [CostEntry!]!
+
+  """
+  Public: rolled-up monthly running costs for the transparency screen. Returns
+  the last `months` calendar months through the current one (ascending).
+  """
+  runningCosts(months: Int = 12): RunningCostsReport!
+
+  """
   A gym owner's activity snapshot: unique climbers, ascents, top climbs, and
   busiest weekdays for the current window plus the equally-long window before
   it (for week-over-week deltas). Requires gym edit access (owner, gym
@@ -6143,6 +6154,21 @@ type Mutation {
   """
   updateAppFeedbackStatus(input: UpdateAppFeedbackStatusInput!): AppFeedbackReport!
 
+  """
+  Admin only: create a running-cost line item.
+  """
+  createCostEntry(input: CreateCostEntryInput!): CostEntry!
+
+  """
+  Admin only: update a running-cost line item.
+  """
+  updateCostEntry(input: UpdateCostEntryInput!): CostEntry!
+
+  """
+  Admin only: delete a running-cost line item. Returns true when a row was removed.
+  """
+  deleteCostEntry(input: DeleteCostEntryInput!): Boolean!
+
   # ============================================
   # External Platform Integration Mutations
   # ============================================
@@ -6904,6 +6930,82 @@ the resolver + timestamp; moving back to `new`/`in_progress` clears them.
 input UpdateAppFeedbackStatusInput {
   id: ID!
   status: AppFeedbackStatus!
+}
+
+"""
+A single running-cost line item, maintained by admins on /admin/costs.
+`recurring` entries repeat every month from `startMonth` until `endMonth`
+(or forever while `endMonth` is null); `incidental` entries are one-offs that
+land in `startMonth` only. Month keys are 'YYYY-MM'. Amounts are integer cents.
+"""
+type CostEntry {
+  id: ID!
+  "'recurring' | 'incidental'"
+  kind: String!
+  "'hosting' | 'ai' | 'domain' | 'other'"
+  category: String!
+  label: String!
+  amountCents: Int!
+  currency: String!
+  startMonth: String!
+  endMonth: String
+  note: String
+}
+
+"Per-category cost total within a single month."
+type CostCategoryAmount {
+  category: String!
+  amountCents: Int!
+}
+
+"""
+One month's rolled-up running cost: recurring entries active that month plus
+incidentals that landed in it, split by kind and by category.
+"""
+type RunningCostsMonth {
+  month: String!
+  totalCents: Int!
+  recurringCents: Int!
+  incidentalCents: Int!
+  byCategory: [CostCategoryAmount!]!
+}
+
+"""
+Public running-cost report for the transparency screen: the last `months`
+calendar months through the current one (ascending), plus the current month's
+total for a headline figure.
+"""
+type RunningCostsReport {
+  currency: String!
+  months: [RunningCostsMonth!]!
+  latestMonthlyTotalCents: Int!
+}
+
+input CreateCostEntryInput {
+  kind: String!
+  category: String!
+  label: String!
+  amountCents: Int!
+  currency: String
+  startMonth: String!
+  endMonth: String
+  note: String
+}
+
+input UpdateCostEntryInput {
+  id: ID!
+  kind: String!
+  category: String!
+  label: String!
+  amountCents: Int!
+  currency: String
+  startMonth: String!
+  endMonth: String
+  note: String
+}
+
+input DeleteCostEntryInput {
+  id: ID!
 }
 
 # ============================================

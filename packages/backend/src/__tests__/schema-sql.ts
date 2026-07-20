@@ -909,6 +909,26 @@ export const schemaSQL = `
   CREATE INDEX IF NOT EXISTS "app_feedback_user_idx" ON "app_feedback" ("user_id");
   CREATE INDEX IF NOT EXISTS "app_feedback_board_idx" ON "app_feedback" ("board_name");
   CREATE INDEX IF NOT EXISTS "app_feedback_status_idx" ON "app_feedback" ("status");
+
+  -- Running-cost line items for the cost-transparency feature. Mirrors
+  -- packages/db/src/schema/app/costs.ts. kind is plain text here (prod uses the
+  -- cost_entry_kind enum); the resolvers only read the string value.
+  DROP TABLE IF EXISTS "cost_entries" CASCADE;
+  CREATE TABLE IF NOT EXISTS "cost_entries" (
+    "id" bigserial PRIMARY KEY NOT NULL,
+    "kind" text NOT NULL,
+    "category" text NOT NULL,
+    "label" text NOT NULL,
+    "amount_cents" integer NOT NULL,
+    "currency" text DEFAULT 'USD' NOT NULL,
+    "start_month" text NOT NULL,
+    "end_month" text,
+    "note" text,
+    "created_by" text REFERENCES "users"("id") ON DELETE SET NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "updated_at" timestamp DEFAULT now() NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS "cost_entries_start_month_idx" ON "cost_entries" ("start_month");
   CREATE INDEX IF NOT EXISTS "gym_kiosks_gym_idx" ON "gym_kiosks" ("gym_id") WHERE "deleted_at" IS NULL;
 
   -- Board followers (enrichBoard counts these per board).
