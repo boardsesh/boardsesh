@@ -1180,6 +1180,26 @@ describe('useBoardBluetooth native connection adoption', () => {
     expect(result.current.isConnected).toBe(true);
   });
 
+  it('remembers an adopted MoonBoard by its device id (no serial)', async () => {
+    const adapter = makeAdoptableAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      connectedListener?.({ deviceId: 'moon-native-dev', deviceName: 'MoonBoard A1' });
+    });
+
+    expect(adapter.adoptConnection).toHaveBeenCalledWith('moon-native-dev');
+    expect(result.current.isConnected).toBe(true);
+    // A MoonBoard has no serial, so an adopted native connection is remembered by
+    // device id — so a later drop can reconnect to the same board on one tap.
+    expect(mockLastConnectedBoardStore.setStoredLastConnectedBoard).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceId: 'moon-native-dev' }),
+    );
+    expect(result.current.reconnectDeviceIdForCurrentBoard).toBe('moon-native-dev');
+  });
+
   it('reconfigures adopted native boards when role colour overrides change', async () => {
     const adapter = makeAdoptableAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(adapter as unknown as ReturnType<typeof createBluetoothAdapter>);

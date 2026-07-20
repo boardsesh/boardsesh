@@ -260,6 +260,7 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
     bt.armUndoWallChangeToast.mockClear();
     bt.reassertWall.mockClear();
     bt.reconnectSerialForCurrentBoard = 'serial-123';
+    bt.reconnectDeviceIdForCurrentBoard = null;
     analytics.track.mockClear();
     climbRender.overlayUri = null;
     climbRender.backgroundPaths = [];
@@ -345,7 +346,6 @@ describe('LiveActivityBridge lightbulb (boardControl)', () => {
     });
 
     expect(bt.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-abc');
-    bt.reconnectDeviceIdForCurrentBoard = null;
   });
 
   it('reassert: re-pushes the current climb without reconnecting (no undo toast — nothing changed)', () => {
