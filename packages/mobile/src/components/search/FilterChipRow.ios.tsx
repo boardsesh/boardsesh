@@ -262,13 +262,6 @@ function FilterChipRowComponent({
             </Menu>
           ) : null}
 
-          {/* Tall / Wide — board-shape chips, present only on the Kilter homewall
-              sizes where they apply (Wide on 10x10, Tall on 8x12, both on 10x12).
-              A Menu with onPrimaryAction: TAP toggles the filter, LONG-PRESS opens
-              a Lock/Unlock menu. (A Button + onLongPressGesture doesn't work — the
-              button's own tap gesture swallows the long-press, especially inside
-              the scroll row.) Locked = a lock glyph + the filter pinned active
-              through clears; a locked chip ignores tap until unlocked. */}
           {/* Shape — one chip grouping the Tall + Wide toggles. They're independent
               (a climb can be both), so the menu carries two checkable toggles rather
               than a single-select. Shown only when the board size has the expansion. */}

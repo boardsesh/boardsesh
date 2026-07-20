@@ -12,17 +12,10 @@
 //   • Single-select menus (Your progress, Popularity, Rating) close on pick by
 //     calling the renderItems `close()`; a keep-open menu would simply not call it
 //     (Compose has no menuActionDismissBehavior and doesn't auto-dismiss on click).
-//   • Dimension chips DIVERGE from iOS here (tap-toggle + long-press-lock). iOS uses a
-//     Menu+onPrimaryAction so a tap toggles and a long-press opens lock/unlock. On
-//     Compose that's unreachable: the FilterChip always wires its own internal onClick,
-//     which consumes the gesture — both a `combinedClickable` on the chip's modifier AND
-//     one on a wrapping container fail (the chip eats the tap/long-press; verified
-//     on-device, a long-press just registers as a tap). So the Android dimension chip is
-//     a MENU chip like Show/Popularity/Rating: tap opens a DropdownMenu with a checkable
-//     toggle item (the filter on/off) + a lock/unlock item. The toggle item is disabled
-//     while locked (`onToggle` early-returns when locked anyway), so the menu reads
-//     "locked on — Unlock to change"; the shared `useDimensionRepin` keeps a locked
-//     filter pinned through clears (the same lock outcome as iOS).
+//   • Shape is a single MENU chip grouping the independent Tall + Wide toggles (a
+//     climb can be both), like Popularity/Rating: tap opens a DropdownMenu with a
+//     checkable item per dimension. It renders only when the board size has a
+//     shorter/narrower sibling in its family (dimensionChips non-empty).
 //   • Single-choice (Popularity/Rating) skips the iOS string-tag Picker round-trip:
 //     each item's onClick closure carries the real `number | undefined` bucket.
 // Labels reuse FilterChipRow.logic so a filter is never worded two ways across
