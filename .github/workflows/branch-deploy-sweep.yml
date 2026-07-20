@@ -23,8 +23,9 @@ jobs:
           OPEN_PRS=$(gh pr list --repo ${{ github.repository }} --state open --json number --jq '.[].number' | sort)
           echo "Open PRs: ${OPEN_PRS:-none}"
 
-          # Find all branch deploy containers
-          for container in $(docker ps -a --filter "name=web-pr-" --filter "name=backend-pr-" --format "{{.Names}}"); do
+          # Find all branch deploy containers. Multiple --filter "name=..." args
+          # OR together, so this matches web-pr-*, backend-pr-*, and app-pr-*.
+          for container in $(docker ps -a --filter "name=web-pr-" --filter "name=backend-pr-" --filter "name=app-pr-" --format "{{.Names}}"); do
             # Extract PR number from container name
             PR_NUM=$(echo "$container" | grep -Eo '[0-9]+')
 
