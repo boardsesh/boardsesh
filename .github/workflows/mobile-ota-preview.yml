@@ -209,8 +209,12 @@ jobs:
       # number straight from the event (one of these is set per trigger).
       group: mobile-ota-preview-publish-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
       cancel-in-progress: true
+    # EXPO_TOKEN is NOT a job-level env: this job checks out PR-head and runs
+    # PR-author code (`bun install` on the PR tree, app.config execSync) — a
+    # job-level token would be live throughout that. It's scoped to the three steps
+    # that publish (channel create + iOS/Android publish) instead. This is
+    # defense-in-depth on top of the `environment: ota-preview` reviewer gate.
     env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       CHANNEL: ${{ needs.gate.outputs.channel }}
       PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
     steps:
@@ -300,6 +304,8 @@ jobs:
       # setupExpoChannel). eoas publish requires a pre-created+mapped channel.
       - name: Create + map Expo channel
         working-directory: packages/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           run_eas() {
             echo "+ eas-cli $* --non-interactive"
@@ -315,12 +321,15 @@ jobs:
       - name: Publish iOS OTA
         id: publish_ios
         if: steps.compat.outputs.verdict_ios != 'native-change-required'
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: vp run mobile:publish -- --channel "$CHANNEL" --platform ios
 
       - name: Publish Android OTA
         id: publish_android
         if: steps.compat.outputs.verdict_android != 'native-change-required'
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: vp run mobile:publish -- --channel "$CHANNEL" --platform android
 
@@ -447,7 +456,10 @@ jobs:
       group: mobile-ota-preview-cleanup-${{ github.event.pull_request.number }}
       cancel-in-progress: false
     env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # Presence flag only (a boolean, NOT the token) so the delete step's `if:` can
+      # skip a fork-PR close where secrets are absent. The token itself is scoped to
+      # that step, off checkout / setup-bun / `bun install`.
+      HAS_EXPO_TOKEN: ${{ secrets.EXPO_TOKEN != '' }}
       CHANNEL: ${{ needs.gate.outputs.channel }}
     steps:
       - name: Assert preview channel name
@@ -471,8 +483,10 @@ jobs:
       # objects are reclaimed by the bucket's `pr-` lifecycle rule (there is no
       # branch-delete primitive). Skipped when EXPO_TOKEN is absent (fork close).
       - name: Delete Expo channel + branch
-        if: env.EXPO_TOKEN != ''
+        if: env.HAS_EXPO_TOKEN == 'true'
         working-directory: packages/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           run_eas() {
             echo "+ eas-cli $* --non-interactive"

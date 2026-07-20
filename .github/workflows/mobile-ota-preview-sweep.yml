@@ -26,12 +26,14 @@ jobs:
   sweep:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    # EXPO_TOKEN / GH_TOKEN are NOT job-level env: that would expose them to
+    # checkout, setup-bun, and `bun install`. Each is scoped to the step that
+    # uses it — EXPO_TOKEN to the gate + delete steps, GH_TOKEN to the delete step.
     steps:
       - name: Skip if OTA isn't wired
         id: gate
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           if [ -z "$EXPO_TOKEN" ] || [ -z "${{ vars.EXPO_UPDATES_URL }}" ]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -54,6 +56,9 @@ jobs:
       - name: Delete preview channels for non-open PRs
         if: steps.gate.outputs.run == 'true'
         working-directory: packages/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
 

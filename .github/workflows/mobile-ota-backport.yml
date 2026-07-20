@@ -103,8 +103,9 @@ jobs:
       fail-fast: false
       matrix:
         platform: ${{ fromJSON(needs.setup.outputs.platforms) }}
-    env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    # EXPO_TOKEN is NOT a job-level env: that would expose the publish-capable token
+    # to checkout, setup-vp/bun, `bun install`, and the cherry-pick before the
+    # publish. It's scoped to the "Publish OTA" step below instead.
 
     steps:
       - name: Checkout repository
@@ -231,6 +232,7 @@ jobs:
       - name: Publish OTA to the approved release
         if: ${{ !inputs.dry_run }}
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           PLATFORM: ${{ matrix.platform }}
           GOOGLE_MAPS_API_KEY: ${{ matrix.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
           VERSION: ${{ inputs.version }}
