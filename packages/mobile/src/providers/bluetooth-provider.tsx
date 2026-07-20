@@ -45,7 +45,12 @@ import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-c
 type BluetoothContextValue = {
   isConnected: boolean;
   loading: boolean;
-  connect: (initialFrames?: string, mirrored?: boolean, targetSerial?: string) => Promise<boolean>;
+  connect: (
+    initialFrames?: string,
+    mirrored?: boolean,
+    targetSerial?: string,
+    targetDeviceId?: string,
+  ) => Promise<boolean>;
   disconnect: () => Promise<void>;
   sendFramesToBoard: SendFramesToBoard;
   clearBoard: () => Promise<boolean | undefined>;
@@ -80,9 +85,16 @@ type BluetoothContextValue = {
   /**
    * Serial to silently reconnect to for the board currently in view, or null
    * when nothing is remembered or the user switched boards — in which case
-   * callers open the device picker instead.
+   * callers open the device picker instead. Aurora boards only.
    */
   reconnectSerialForCurrentBoard: string | null;
+  /**
+   * BLE device id to silently reconnect to for a MoonBoard currently in view
+   * (MoonBoards carry no serial), or null when nothing is remembered or the user
+   * switched boards. The lightbulb passes this so the tap reconnects to the same
+   * board instead of opening the picker.
+   */
+  reconnectDeviceIdForCurrentBoard: string | null;
 };
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -779,6 +791,7 @@ export function BluetoothProvider({
     sendFramesToBoard,
     pickerState,
     reconnectSerialForCurrentBoard,
+    reconnectDeviceIdForCurrentBoard,
     connectInitialSendRef,
     lastDisconnectInfoRef,
   } = useBoardBluetooth({
@@ -1283,6 +1296,7 @@ export function BluetoothProvider({
       relightPresenceClimb,
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
+      reconnectDeviceIdForCurrentBoard,
     }),
     [
       isConnected,
@@ -1296,6 +1310,7 @@ export function BluetoothProvider({
       relightPresenceClimb,
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
+      reconnectDeviceIdForCurrentBoard,
     ],
   );
 

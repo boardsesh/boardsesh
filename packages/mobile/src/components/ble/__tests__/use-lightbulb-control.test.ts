@@ -11,6 +11,7 @@ type BluetoothCtx = {
   disconnect: ReturnType<typeof vi.fn>;
   armUndoWallChangeToast: ReturnType<typeof vi.fn>;
   reconnectSerialForCurrentBoard: string | null;
+  reconnectDeviceIdForCurrentBoard: string | null;
 } | null;
 
 const ctrl = vi.hoisted(() => ({
@@ -48,6 +49,7 @@ function makeBluetooth(over: Partial<NonNullable<BluetoothCtx>> = {}): NonNullab
     disconnect: vi.fn().mockResolvedValue(undefined),
     armUndoWallChangeToast: vi.fn(),
     reconnectSerialForCurrentBoard: null,
+    reconnectDeviceIdForCurrentBoard: null,
     ...over,
   };
 }
@@ -178,12 +180,21 @@ describe('useLightbulbControl press action', () => {
     const { result } = renderControl();
     result.current.onPress();
     expect(ctrl.bluetooth?.armUndoWallChangeToast).toHaveBeenCalledOnce();
-    expect(ctrl.bluetooth?.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-1');
+    expect(ctrl.bluetooth?.connect).toHaveBeenCalledWith(undefined, undefined, 'serial-1', undefined);
     expect(ctrl.bluetooth?.disconnect).not.toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith(
       'Board Lightbulb Connect',
       expect.objectContaining({ source: 'lightbulb_toolbar' }),
     );
+  });
+
+  it('reconnects a MoonBoard by its remembered device id (no serial)', () => {
+    ctrl.bluetooth = makeBluetooth({ isConnected: false, reconnectDeviceIdForCurrentBoard: 'moon-abc' });
+    const { result } = renderControl();
+    result.current.onPress();
+    // Serial arg stays undefined; the device id is forwarded so the adapter
+    // silently reconnects to the same MoonBoard instead of opening the picker.
+    expect(ctrl.bluetooth?.connect).toHaveBeenCalledWith(undefined, undefined, undefined, 'moon-abc');
   });
 
   it('disconnects (no connect, no track) when already connected', () => {

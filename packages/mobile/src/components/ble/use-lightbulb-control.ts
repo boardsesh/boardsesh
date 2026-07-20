@@ -91,7 +91,14 @@ export function useLightbulbControl(options: UseLightbulbControlOptions): Lightb
       climbUuid: climbUuid ?? null,
     });
     bluetooth.armUndoWallChangeToast();
-    void bluetooth.connect(undefined, undefined, bluetooth.reconnectSerialForCurrentBoard ?? undefined);
+    // Reconnect straight to the same board — by serial (Aurora) or device id
+    // (MoonBoard). With neither remembered, the adapter opens the picker.
+    void bluetooth.connect(
+      undefined,
+      undefined,
+      bluetooth.reconnectSerialForCurrentBoard ?? undefined,
+      bluetooth.reconnectDeviceIdForCurrentBoard ?? undefined,
+    );
   }, [bluetooth, source, sessionId, boardLayout, climbUuid]);
 
   const onLongPress = useCallback(() => {

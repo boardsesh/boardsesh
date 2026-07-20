@@ -161,7 +161,13 @@ export function LiveActivityBridge({ boardName, layoutId, sizeId, setIds }: Live
           climbUuid: climbUuidRef.current ?? null,
         });
         bluetoothCtx.armUndoWallChangeToast();
-        void bluetoothCtx.connect(undefined, undefined, bluetoothCtx.reconnectSerialForCurrentBoard ?? undefined);
+        // By serial (Aurora) or device id (MoonBoard); neither → adapter picker.
+        void bluetoothCtx.connect(
+          undefined,
+          undefined,
+          bluetoothCtx.reconnectSerialForCurrentBoard ?? undefined,
+          bluetoothCtx.reconnectDeviceIdForCurrentBoard ?? undefined,
+        );
       } else if (event.action === 'reassert') {
         // A re-push of the current climb — no climb change to undo, so no toast.
         bluetoothCtx.reassertWall();

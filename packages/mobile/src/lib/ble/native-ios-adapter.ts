@@ -97,15 +97,16 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
   // The scan/select flow (silent serial auto-select → grace-window picker
   // fallback → scan timeout) mirrors RNBleAdapter.requestAndConnect and the web
   // adapters. Kept in lockstep by hand; if you change one, change the others.
-  async requestAndConnect(targetSerial?: string): Promise<BleConnection> {
+  async requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection> {
     const native = this.requireNative();
     const devices = new Map<string, DiscoveredDevice>();
     let updateListener: ((devices: DiscoveredDevice[]) => void) | null = null;
     let scanStoppedListener: (() => void) | null = null;
     const pushDevices = () => updateListener?.([...devices.values()]);
 
-    // One selection promise, resolved by either the silent serial auto-select
-    // or — if that serial never shows up — the picker the grace window opens.
+    // One selection promise, resolved by either the silent auto-select (by serial
+    // or device id) or — if the target never shows up — the picker the grace
+    // window opens.
     let resolveSelection!: (deviceId: string) => void;
     let rejectSelection!: (error: Error) => void;
     const selectionPromise = new Promise<string>((resolve, reject) => {
@@ -113,9 +114,9 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       rejectSelection = reject;
     });
 
-    // True only while we're still silently matching the target serial — flips
+    // True only while we're still silently matching the reconnect target — flips
     // false the moment we auto-select or hand off to the picker.
-    let autoSelecting = Boolean(targetSerial);
+    let autoSelecting = Boolean(targetSerial || targetDeviceId);
     let pickerOpened = false;
     const openPicker = () => {
       if (pickerOpened) return;
@@ -128,8 +129,8 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
       }).then(resolveSelection, rejectSelection);
     };
 
-    // No target serial → straight to the picker.
-    if (!targetSerial) {
+    // No reconnect target → straight to the picker.
+    if (!targetSerial && !targetDeviceId) {
       openPicker();
     }
 
@@ -161,10 +162,13 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
         pushDevices();
       }
 
-      // Auto-select the stored board only until the picker takes over.
-      if (autoSelecting && targetSerial) {
-        const serial = parseSerialNumber(device.name);
-        if (serial === targetSerial) {
+      // Auto-select the stored board only until the picker takes over. A
+      // MoonBoard has no serial, so it matches on the remembered BLE device id;
+      // Aurora boards match on the serial parsed from the advertised name.
+      if (autoSelecting) {
+        const matchesDeviceId = targetDeviceId !== undefined && device.deviceId === targetDeviceId;
+        const matchesSerial = targetSerial !== undefined && parseSerialNumber(device.name) === targetSerial;
+        if (matchesDeviceId || matchesSerial) {
           autoSelecting = false;
           resolveSelection(device.deviceId);
         }
@@ -190,15 +194,16 @@ export class NativeIosBleAdapter implements BluetoothAdapter {
               [UART_SERVICE_UUID, REDBEARLAB_SERVICE_UUID];
       await native.startScan(scanServiceUuids);
 
-      // Grace window: if the stored serial hasn't matched shortly, open the
+      // Grace window: if the remembered board hasn't matched shortly, open the
       // picker (scan keeps running so it live-updates) instead of waiting out
       // the full scan window and failing. Matches the web reconnect-by-serial
       // fallback.
-      pickerFallbackId = targetSerial
-        ? setTimeout(() => {
-            if (autoSelecting) openPicker();
-          }, SERIAL_RECONNECT_GRACE_MS)
-        : undefined;
+      pickerFallbackId =
+        targetSerial || targetDeviceId
+          ? setTimeout(() => {
+              if (autoSelecting) openPicker();
+            }, SERIAL_RECONNECT_GRACE_MS)
+          : undefined;
 
       scanTimeoutId = setTimeout(() => {
         void native.stopScan();

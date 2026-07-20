@@ -101,7 +101,9 @@ export type BleConnectDiagnostics = {
 
 export type BluetoothAdapter = {
   isAvailable(): Promise<boolean>;
-  requestAndConnect(targetSerial?: string): Promise<BleConnection>;
+  // `targetSerial` (Aurora) / `targetDeviceId` (MoonBoard) silently auto-select
+  // the remembered board on the reconnect scan; with neither, the picker opens.
+  requestAndConnect(targetSerial?: string, targetDeviceId?: string): Promise<BleConnection>;
   disconnect(): Promise<void>;
   write(data: Uint8Array, signal?: AbortSignal): Promise<void>;
   onDisconnect(callback: (info?: BleDisconnectInfo) => void): () => void;

@@ -48,6 +48,7 @@ import {
   clearStoredLastConnectedBoard,
   getStoredLastConnectedBoard,
   setStoredLastConnectedBoard,
+  type StoredLastConnectedBoard,
 } from './last-connected-board-store';
 
 // Exported for testing. Decides how a connect-failure category reaches error
@@ -329,12 +330,14 @@ export function useBoardBluetooth({
   const [loading, setLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
-  // Remember the board (serial + which config it was paired against) so a later
-  // involuntary drop can be recovered with a silent reconnect to the same board
-  // (the lightbulb tap, native shells). Only valid while the current route still
-  // points at the same board — switching board/layout/size invalidates it and
-  // callers fall back to the picker. Mirrors the web `reconnectSerialForCurrentBoard`.
-  const [lastConnectedBoard, setLastConnectedBoard] = useState<{ serial: string; configKey: string } | null>(null);
+  // Remember the board (its reconnect handle + which config it was paired
+  // against) so a later involuntary drop can be recovered with a silent reconnect
+  // to the same board (the lightbulb tap, native shells). The handle is a serial
+  // for Aurora boards and a BLE peripheral id for MoonBoards. Only valid while the
+  // current route still points at the same board — switching board/layout/size
+  // invalidates it and callers fall back to the picker. Mirrors the web
+  // `reconnectSerialForCurrentBoard`.
+  const [lastConnectedBoard, setLastConnectedBoard] = useState<StoredLastConnectedBoard | null>(null);
   const lastConnectedBoardRef = useRef(lastConnectedBoard);
   lastConnectedBoardRef.current = lastConnectedBoard;
 
@@ -342,8 +345,7 @@ export function useBoardBluetooth({
   // one-tap silent reconnect survives a cold start or provider remount, not just
   // the current session (#3609). Storage writes are fire-and-forget: a failure
   // just means the next launch falls back to the picker, never a thrown error.
-  const rememberConnectedBoard = useCallback((serial: string, configKey: string) => {
-    const board = { serial, configKey };
+  const rememberConnectedBoard = useCallback((board: StoredLastConnectedBoard) => {
     setLastConnectedBoard(board);
     void setStoredLastConnectedBoard(board).catch(() => {});
   }, []);
@@ -680,27 +682,38 @@ export function useBoardBluetooth({
             failureReason: bleFailureReason,
             ...bleWriteDiagnosticsProperties(writeDiagnostics),
           });
+          // A write that fails because the link is gone is a lost link. Two
+          // signatures land here: the predicate matches the native adapters'
+          // "not connected" / "disconnected during write" wording, and — on a
+          // MoonBoard — a genuine link-timeout drop (CoreBluetooth error 6) whose
+          // native error slips past that predicate ("No board is connected") and
+          // falls into the generic `write_failed` bucket. Both mean the same for
+          // these last-connection-wins boards: the wall went dark and we should
+          // stop showing "connected". The native self-recovery buckets
+          // (`write_timeout` / `write_recovery_failed`) are excluded — the native
+          // layer is already cycling those and must not be torn down here.
+          const lostLink = isDisconnectionError(error);
+          const moonboardDeadLink = boardName === 'moonboard' && bleFailureReason === 'write_failed';
           // A dropped link is routine on these last-connection-wins boards
           // (another climber grabbed it, or it disconnected mid-session), so keep
           // it a filterable warning rather than a full error that drowns real
           // write bugs. Already tracked above via ClimbSentToBoardFailure.
           reportHandledError(error, {
-            level: bleFailureReason === 'disconnected' ? 'warning' : 'error',
+            level: lostLink || moonboardDeadLink ? 'warning' : 'error',
             tags: { source: 'ble-send', failure_reason: bleFailureReason },
             extra: writeDiagnostics ? { bleWriteDiagnostics: writeDiagnostics } : undefined,
           });
-          // A write that fails because the link is gone (the board dropped or
-          // another device grabbed it — these boards are last-connection-wins) is
-          // often the only signal we get: the adapter's disconnect event may never
-          // fire. Mark the connection lost so the lightbulb stops showing
-          // "connected" and a deliberate reconnect can run. The native adapters
-          // throw the plain-Error signatures the predicate matches ("Not
-          // connected", "Device disconnected during write").
-          if (isDisconnectionError(error)) {
-            // The tug-of-war signal: we believed we were connected but a write just
-            // failed on a dead link. On a shared board this is usually another
-            // device having grabbed it. Recorded so the two-climber case is visible.
-            track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
+          // Mark the connection lost so the lightbulb stops showing "connected"
+          // and a deliberate reconnect can run. The adapter's disconnect event may
+          // never fire (or arrive only after iOS's slow supervision timeout), so a
+          // failed write is often the first — sometimes only — signal we get.
+          if (lostLink || moonboardDeadLink) {
+            // The tug-of-war signal (another device grabbed a shared board) only
+            // fits the predicate-matched case; a MoonBoard link timeout isn't a
+            // steal, so don't mislabel it.
+            if (lostLink) {
+              track(SHARED_EVENTS.BluetoothConnectionStolen, { boardName, layoutId, sizeId });
+            }
             handleDisconnection({ source: 'write-failure' });
           }
           return false;
@@ -735,7 +748,7 @@ export function useBoardBluetooth({
   );
 
   const connect = useCallback(
-    async (initialFrames?: string, mirrored?: boolean, targetSerial?: string) => {
+    async (initialFrames?: string, mirrored?: boolean, targetSerial?: string, targetDeviceId?: string) => {
       if (!boardName) {
         console.error('Cannot connect to Bluetooth without board name');
         return false;
@@ -797,11 +810,16 @@ export function useBoardBluetooth({
         }
 
         // Surface the scan on the session-recording timeline / PostHog. `reconnect`
-        // distinguishes a deliberate same-board serial reconnect (lightbulb) from a
-        // fresh picker-driven connect.
-        track(SHARED_EVENTS.BluetoothScanStarted, { boardName, layoutId, sizeId, reconnect: !!targetSerial });
+        // distinguishes a deliberate same-board reconnect (lightbulb — by serial for
+        // Aurora, by device id for MoonBoard) from a fresh picker-driven connect.
+        track(SHARED_EVENTS.BluetoothScanStarted, {
+          boardName,
+          layoutId,
+          sizeId,
+          reconnect: !!targetSerial || !!targetDeviceId,
+        });
 
-        const connection = await adapter.requestAndConnect(targetSerial);
+        const connection = await adapter.requestAndConnect(targetSerial, targetDeviceId);
         apiLevelRef.current = parseApiLevel(connection.deviceName);
         configuredDeviceNameRef.current = connection.deviceName;
 
@@ -853,12 +871,18 @@ export function useBoardBluetooth({
         }
 
         // Remember the board (keyed to the config it was paired against) so an
-        // involuntary drop can be recovered with a silent reconnect. Only Aurora
-        // boards expose a parseable serial; moonboard can't be reconnected by
-        // serial. Without a full config there is no usable key (and the
-        // reconnect comparison against currentConfigKey could never match).
-        if (parsedSerial && layoutId !== undefined && sizeId !== undefined) {
-          rememberConnectedBoard(parsedSerial, boardConfigKey(boardName, layoutId, sizeId));
+        // involuntary drop can be recovered by a one-tap reconnect. Aurora boards
+        // reconnect by their parseable serial; a MoonBoard has none, so we remember
+        // its BLE peripheral id and reconnect by matching that on the next scan.
+        // Without a full config there is no usable key (the reconnect comparison
+        // against currentConfigKey could never match).
+        if (layoutId !== undefined && sizeId !== undefined) {
+          const configKey = boardConfigKey(boardName, layoutId, sizeId);
+          if (parsedSerial) {
+            rememberConnectedBoard({ configKey, serial: parsedSerial });
+          } else if (boardName === 'moonboard') {
+            rememberConnectedBoard({ configKey, deviceId: connection.deviceId });
+          }
         }
 
         // Send initial frames if provided; seed the AutoSender's dedup with
@@ -1139,7 +1163,9 @@ export function useBoardBluetooth({
 
       const serial = deviceName ? (parseSerialNumber(deviceName) ?? null) : (rememberedBoard?.serial ?? null);
       if (serial) {
-        rememberConnectedBoard(serial, currentConfigKey);
+        rememberConnectedBoard({ configKey: currentConfigKey, serial });
+      } else if (boardName === 'moonboard') {
+        rememberConnectedBoard({ configKey: currentConfigKey, deviceId });
       }
       connectedConfigKeyRef.current = currentConfigKey;
       lastDisconnectInfoRef.current = null;
@@ -1225,10 +1251,17 @@ export function useBoardBluetooth({
   // provider.
   const currentConfigKey =
     boardName && layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
-  const reconnectSerialForCurrentBoard =
+  // The remembered board only counts while the route still points at the same
+  // config; a stored handle for a different board is never offered as a target.
+  const rememberedForCurrentBoard =
     lastConnectedBoard && currentConfigKey && lastConnectedBoard.configKey === currentConfigKey
-      ? lastConnectedBoard.serial
+      ? lastConnectedBoard
       : null;
+  // Aurora reconnects by serial; MoonBoard (no serial) reconnects by BLE device
+  // id. The lightbulb passes whichever is set so the tap silently reconnects to
+  // the same board instead of dropping the user into the picker.
+  const reconnectSerialForCurrentBoard = rememberedForCurrentBoard?.serial ?? null;
+  const reconnectDeviceIdForCurrentBoard = rememberedForCurrentBoard?.deviceId ?? null;
 
   // Rehydrate the remembered board from storage on mount so a one-tap silent
   // reconnect survives a cold start / provider remount, not just the in-memory
@@ -1271,6 +1304,7 @@ export function useBoardBluetooth({
     sendFramesToBoard,
     pickerState,
     reconnectSerialForCurrentBoard,
+    reconnectDeviceIdForCurrentBoard,
     connectInitialSendRef,
     lastDisconnectInfoRef,
   };
