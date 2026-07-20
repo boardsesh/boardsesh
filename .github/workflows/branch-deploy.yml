@@ -101,6 +101,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_WS_URL=wss://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com/graphql
             BASE_URL=https://${{ env.PR_NUMBER }}.preview.boardsesh.com
+            NEXT_PUBLIC_POSTHOG_KEY=${{ vars.NEXT_PUBLIC_POSTHOG_KEY }}
           cache-from: |
             type=gha,scope=web-pr-${{ env.PR_NUMBER }}
             type=gha,scope=web-main
@@ -122,6 +123,56 @@ jobs:
             type=gha,scope=backend-pr-${{ env.PR_NUMBER }}
             type=gha,scope=backend-main
           cache-to: type=gha,mode=max,scope=backend-pr-${{ env.PR_NUMBER }}
+
+      # ---------------------------------------------------------------------
+      # Standalone Expo-web preview (https://{N}.app.boardsesh.com). A static
+      # SPA export served by a tiny Caddy image. The preview env trio is
+      # inlined at export time; the app then talks to this PR's own web +
+      # backend previews.
+      # ---------------------------------------------------------------------
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies for Expo-web export
+        run: bun install --frozen-lockfile
+
+      - name: Build standalone Expo-web export
+        env:
+          EXPO_PUBLIC_BACKEND_URL: https://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com
+          EXPO_PUBLIC_WS_URL: wss://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com/graphql
+          EXPO_PUBLIC_WEB_URL: https://${{ env.PR_NUMBER }}.preview.boardsesh.com
+          # Inert until #3797 (adds --clear + BOARDSESH_EXPORT_EXPECT_URLS
+          # assertion) merges; harmless before then.
+          BOARDSESH_EXPORT_EXPECT_URLS: https://${{ env.PR_NUMBER }}.ws.preview.boardsesh.com https://${{ env.PR_NUMBER }}.preview.boardsesh.com
+        run: |
+          bash scripts/build-expo-web-export.sh --subdomain "${RUNNER_TEMP}/app-context/app-standalone"
+
+      - name: Verify preview origins are inlined in the export
+        run: |
+          # Belt-and-braces even before #3797's assertion lands: both preview
+          # origins must appear in the exported JS bundles, or the app would
+          # phone home to the wrong backend/web preview.
+          JS_DIR="${RUNNER_TEMP}/app-context/app-standalone/_expo/static/js/web"
+          for origin in \
+            "https://${PR_NUMBER}.ws.preview.boardsesh.com" \
+            "https://${PR_NUMBER}.preview.boardsesh.com"; do
+            if ! grep -rqF "${origin}" "${JS_DIR}"/*.js; then
+              echo "::error::expected origin ${origin} not found in exported JS (${JS_DIR})"
+              exit 1
+            fi
+            echo "Found ${origin} in exported JS"
+          done
+
+      - name: Assemble app-web build context
+        run: |
+          cp deploy/app-preview/Caddyfile "${RUNNER_TEMP}/app-context/Caddyfile"
+
+      - name: Build and push app-web image
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/app-context
+          file: Dockerfile.app-web
+          push: true
+          tags: ghcr.io/boardsesh/boardsesh-app-web:pr-${{ env.PR_NUMBER }}
 
   deploy:
     needs: [build-images, detect-changes, create-deployment]
@@ -213,6 +264,23 @@ jobs:
             --restart unless-stopped \
             ghcr.io/boardsesh/boardsesh-web:pr-${PR_NUM}
 
+          # Standalone Expo-web preview (static SPA behind a tiny Caddy).
+          # TLS terminates upstream, same as web/backend — no TLS labels.
+          docker stop app-pr-${PR_NUM} 2>/dev/null || true
+          docker rm -f app-pr-${PR_NUM} 2>/dev/null || true
+
+          docker pull ghcr.io/boardsesh/boardsesh-app-web:pr-${PR_NUM}
+
+          docker run -d \
+            --name app-pr-${PR_NUM} \
+            --network ${NETWORK} \
+            --label "traefik.enable=true" \
+            --label "traefik.http.routers.app-pr-${PR_NUM}.rule=Host(\`${PR_NUM}.app.boardsesh.com\`)" \
+            --label "traefik.http.services.app-pr-${PR_NUM}.loadbalancer.server.port=80" \
+            --memory=64m \
+            --restart unless-stopped \
+            ghcr.io/boardsesh/boardsesh-app-web:pr-${PR_NUM}
+
       - name: Wait for containers to be healthy
         env:
           PR_NUM: ${{ env.PR_NUMBER }}
@@ -221,11 +289,23 @@ jobs:
           echo "Waiting for containers to start..."
           sleep 10
           if [ "${BACKEND_CHANGED}" = "true" ]; then
-            docker ps --filter "name=web-pr-${PR_NUM}" --filter "name=backend-pr-${PR_NUM}" --format "table {{.Names}}\t{{.Status}}"
+            docker ps --filter "name=web-pr-${PR_NUM}" --filter "name=backend-pr-${PR_NUM}" --filter "name=app-pr-${PR_NUM}" --format "table {{.Names}}\t{{.Status}}"
           else
             echo "FE-only deploy (using staging backend)"
-            docker ps --filter "name=web-pr-${PR_NUM}" --filter "name=staging-backend" --format "table {{.Names}}\t{{.Status}}"
+            docker ps --filter "name=web-pr-${PR_NUM}" --filter "name=app-pr-${PR_NUM}" --filter "name=staging-backend" --format "table {{.Names}}\t{{.Status}}"
           fi
+
+      - name: Publish preview URLs to job summary
+        env:
+          PR_NUM: ${{ env.PR_NUMBER }}
+        run: |
+          {
+            echo "### Preview URLs for PR #${PR_NUM}"
+            echo ""
+            echo "- Web: https://${PR_NUM}.preview.boardsesh.com"
+            echo "- Backend (WS): https://${PR_NUM}.ws.preview.boardsesh.com"
+            echo "- Standalone app: https://${PR_NUM}.app.boardsesh.com"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Note: deployment tracking only runs for pull_request events.
   # Manual workflow_dispatch deploys skip deployment creation since there's no PR to attach to.
