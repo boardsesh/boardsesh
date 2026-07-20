@@ -200,6 +200,13 @@ export const queriesTypeDefs = /* GraphQL */ `
     userTicks(userId: ID!, boardType: String!): [Tick!]!
 
     """
+    Per-board-type tick counts for a user, as a single grouped aggregate.
+    Lets the home feed infer a default board without fetching every tick per
+    board type (avoids one userTicks request per board on cold load).
+    """
+    userTickCountsByBoard(userId: ID!): [BoardTickCount!]!
+
+    """
     Get public ascent activity feed for a user.
     Includes enriched climb data for display.
     """

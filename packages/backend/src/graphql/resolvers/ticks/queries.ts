@@ -425,6 +425,31 @@ export const tickQueries = {
   },
 
   /**
+   * Per-board-type tick counts for a user, as ONE grouped aggregate.
+   *
+   * The home feed infers a default board when a user owns more than one wall and
+   * hasn't picked an active board. That inference only needs to know which board
+   * type the climber has logged the most on — not the ticks themselves — so this
+   * returns `COUNT(*) GROUP BY board_type` in a single indexed round trip instead
+   * of the caller fetching a full `userTicks` list per board (6-7 requests on the
+   * home-load critical path). Public, like `userTicks`; counts aren't sensitive.
+   */
+  userTickCountsByBoard: async (
+    _: unknown,
+    { userId }: { userId: string },
+  ): Promise<Array<{ boardType: string; count: number }>> => {
+    if (!userId || typeof userId !== 'string' || userId.trim() === '') return [];
+
+    const rows = await db
+      .select({ boardType: dbSchema.boardseshTicks.boardType, tickCount: count() })
+      .from(dbSchema.boardseshTicks)
+      .where(eq(dbSchema.boardseshTicks.userId, userId))
+      .groupBy(dbSchema.boardseshTicks.boardType);
+
+    return rows.map((row) => ({ boardType: row.boardType, count: Number(row.tickCount) }));
+  },
+
+  /**
    * Get ascent activity feed for a specific user (public query)
    * Returns ticks with enriched climb data for display in a feed
    */

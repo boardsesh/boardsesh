@@ -776,6 +776,19 @@ export type BoardStatsUpdated = {
 };
 
 /**
+ * Number of ticks a user has logged on a given board type. A lightweight
+ * aggregate (COUNT grouped by board_type) used to infer a default "home board"
+ * without fetching every tick history per board.
+ */
+export type BoardTickCount = {
+  __typename?: 'BoardTickCount';
+  /** Board type */
+  boardType: Scalars['String']['output'];
+  /** Number of ticks logged on this board type */
+  count: Scalars['Int']['output'];
+};
+
+/**
  * The Boardsesh grade for a climb at one angle: the data-science-backed grade
  * produced by the nightly refresh job. Null query result means no grade has been
  * computed for that climb+angle (e.g. MoonBoard, or too few ascents).
@@ -4735,6 +4748,12 @@ export type Query = {
   userPlaylists: Array<Playlist>;
   /** Get profile statistics with distinct climb counts per grade. */
   userProfileStats: ProfileStats;
+  /**
+   * Per-board-type tick counts for a user, as a single grouped aggregate.
+   * Lets the home feed infer a default board without fetching every tick per
+   * board type (avoids one userTicks request per board on cold load).
+   */
+  userTickCountsByBoard: Array<BoardTickCount>;
   /** Get public ticks for any user by their ID. */
   userTicks: Array<Tick>;
   /** Get vote summary for a single entity. */
@@ -5333,6 +5352,11 @@ export type QueryUserPlaylistsArgs = {
 
 /** Root query type for all read operations. */
 export type QueryUserProfileStatsArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryUserTickCountsByBoardArgs = {
   userId: Scalars['ID']['input'];
 };
 
@@ -9578,6 +9602,15 @@ export type GetUserTicksQuery = {
     climbedAt: string;
     layoutId?: number | null;
   }>;
+};
+
+export type GetUserTickCountsByBoardQueryVariables = Exact<{
+  userId: Scalars['ID']['input'];
+}>;
+
+export type GetUserTickCountsByBoardQuery = {
+  __typename?: 'Query';
+  userTickCountsByBoard: Array<{ __typename?: 'BoardTickCount'; boardType: string; count: number }>;
 };
 
 export type SaveTickMutationVariables = Exact<{
@@ -15641,6 +15674,46 @@ export const GetUserTicksDocument = {
     },
   ],
 } as unknown as DocumentNode<GetUserTicksQuery, GetUserTicksQueryVariables>;
+export const GetUserTickCountsByBoardDocument = {
+  kind: 'Document',
+  definitions: [
+    {
+      kind: 'OperationDefinition',
+      operation: 'query',
+      name: { kind: 'Name', value: 'GetUserTickCountsByBoard' },
+      variableDefinitions: [
+        {
+          kind: 'VariableDefinition',
+          variable: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+          type: { kind: 'NonNullType', type: { kind: 'NamedType', name: { kind: 'Name', value: 'ID' } } },
+        },
+      ],
+      selectionSet: {
+        kind: 'SelectionSet',
+        selections: [
+          {
+            kind: 'Field',
+            name: { kind: 'Name', value: 'userTickCountsByBoard' },
+            arguments: [
+              {
+                kind: 'Argument',
+                name: { kind: 'Name', value: 'userId' },
+                value: { kind: 'Variable', name: { kind: 'Name', value: 'userId' } },
+              },
+            ],
+            selectionSet: {
+              kind: 'SelectionSet',
+              selections: [
+                { kind: 'Field', name: { kind: 'Name', value: 'boardType' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'count' } },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  ],
+} as unknown as DocumentNode<GetUserTickCountsByBoardQuery, GetUserTickCountsByBoardQueryVariables>;
 export const SaveTickDocument = {
   kind: 'Document',
   definitions: [

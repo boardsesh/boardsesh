@@ -157,6 +157,18 @@ export const ticksTypeDefs = /* GraphQL */ `
   }
 
   """
+  Number of ticks a user has logged on a given board type. A lightweight
+  aggregate (COUNT grouped by board_type) used to infer a default "home board"
+  without fetching every tick history per board.
+  """
+  type BoardTickCount {
+    "Board type"
+    boardType: String!
+    "Number of ticks logged on this board type"
+    count: Int!
+  }
+
+  """
   Input for attaching an Instagram or TikTok video as beta for a climb.
   """
   input AttachBetaLinkInput {

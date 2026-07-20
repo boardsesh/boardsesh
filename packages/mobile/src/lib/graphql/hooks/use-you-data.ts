@@ -1,6 +1,7 @@
 import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
 import {
   GET_USER_TICKS,
+  GET_USER_TICK_COUNTS_BY_BOARD,
   GET_USER_PROFILE_STATS,
   GET_USER_CLIMB_PERCENTILE,
   GET_USER_ASCENTS_FEED,
@@ -9,6 +10,7 @@ import {
   GET_ACTIVITY_FEED,
   GET_SESSION_GROUPED_FEED,
   type GetUserTicksQueryResponse,
+  type GetUserTickCountsByBoardQueryResponse,
   type GetUserProfileStatsQueryResponse,
   type GetUserClimbPercentileQueryResponse,
   type GetUserAscentsFeedQueryResponse,
@@ -60,6 +62,31 @@ export function useAllBoardsTicks(userId: string | undefined) {
         }),
       );
       return collected;
+    },
+    enabled: !!userId,
+    staleTime: PROFILE_STALE_TIME_MS,
+  });
+}
+
+/**
+ * Per-board-type tick counts for a user, as a single grouped aggregate — the
+ * input the home-board inference needs (which board type has the most ticks)
+ * without pulling every tick per board. One request instead of `useAllBoardsTicks`'
+ * 6-7. Returns a `Record<boardType, count>` for O(1) lookups.
+ */
+export function useUserTickCountsByBoard(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['userTickCountsByBoard', userId],
+    queryFn: async () => {
+      const response = await getHttpClient().request<GetUserTickCountsByBoardQueryResponse>(
+        GET_USER_TICK_COUNTS_BY_BOARD,
+        { userId },
+      );
+      const counts: Record<string, number> = {};
+      for (const row of response.userTickCountsByBoard) {
+        counts[row.boardType] = row.count;
+      }
+      return counts;
     },
     enabled: !!userId,
     staleTime: PROFILE_STALE_TIME_MS,

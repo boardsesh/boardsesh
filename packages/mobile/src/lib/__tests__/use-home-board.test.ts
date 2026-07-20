@@ -6,12 +6,12 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 vi.mock('../../providers/auth-provider', () => ({ useAuth: vi.fn() }));
 vi.mock('../graphql/use-active-board', () => ({ useActiveBoard: vi.fn() }));
 vi.mock('../graphql/hooks/index', () => ({ useMyBoards: vi.fn(), useProfile: vi.fn() }));
-vi.mock('../graphql/hooks/use-you-data', () => ({ useAllBoardsTicks: vi.fn() }));
+vi.mock('../graphql/hooks/use-you-data', () => ({ useUserTickCountsByBoard: vi.fn() }));
 
 import { useAuth } from '../../providers/auth-provider';
 import { useActiveBoard } from '../graphql/use-active-board';
 import { useMyBoards, useProfile } from '../graphql/hooks/index';
-import { useAllBoardsTicks } from '../graphql/hooks/use-you-data';
+import { useUserTickCountsByBoard } from '../graphql/hooks/use-you-data';
 import { useHomeBoard } from '../graphql/hooks/use-home-board';
 
 function board(overrides: Partial<UserBoard>): UserBoard {
@@ -24,7 +24,7 @@ beforeEach(() => {
   vi.mocked(useProfile).mockReturnValue({ data: { id: 'u1' }, isLoading: false } as never);
   vi.mocked(useActiveBoard).mockReturnValue({ data: null, isLoading: false } as never);
   vi.mocked(useMyBoards).mockReturnValue({ data: undefined, isLoading: false } as never);
-  vi.mocked(useAllBoardsTicks).mockReturnValue({ data: undefined, isLoading: false } as never);
+  vi.mocked(useUserTickCountsByBoard).mockReturnValue({ data: undefined, isLoading: false } as never);
 });
 
 describe('useHomeBoard', () => {
@@ -55,8 +55,8 @@ describe('useHomeBoard', () => {
       },
       isLoading: false,
     } as never);
-    vi.mocked(useAllBoardsTicks).mockReturnValue({
-      data: { kilter: [1, 2, 3], tension: [1] },
+    vi.mocked(useUserTickCountsByBoard).mockReturnValue({
+      data: { kilter: 3, tension: 1 },
       isLoading: false,
     } as never);
     const { result } = renderHook(() => useHomeBoard());
@@ -71,7 +71,7 @@ describe('useHomeBoard', () => {
       data: { boards: [board({ uuid: 'a', boardType: 'kilter' }), board({ uuid: 'b', boardType: 'tension' })] },
       isLoading: false,
     } as never);
-    vi.mocked(useAllBoardsTicks).mockReturnValue({ data: {}, isLoading: false } as never);
+    vi.mocked(useUserTickCountsByBoard).mockReturnValue({ data: {}, isLoading: false } as never);
     const { result } = renderHook(() => useHomeBoard());
     expect(result.current.board).toBeNull();
   });
@@ -102,7 +102,7 @@ describe('useHomeBoard', () => {
       isLoading: false,
     } as never);
     vi.mocked(useProfile).mockReturnValue({ data: undefined, isLoading: true } as never);
-    vi.mocked(useAllBoardsTicks).mockReturnValue({ data: undefined, isLoading: false } as never);
+    vi.mocked(useUserTickCountsByBoard).mockReturnValue({ data: undefined, isLoading: false } as never);
     const { result } = renderHook(() => useHomeBoard());
     expect(result.current.isResolving).toBe(true);
     expect(result.current.board).toBeNull();

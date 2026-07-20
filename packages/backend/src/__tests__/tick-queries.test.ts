@@ -115,6 +115,9 @@ const callUserTicks = (userId: string, boardType: string) =>
     Array<{ uuid: string; quality: number | null; effectiveQuality: number | null }>
   >;
 
+const callUserTickCountsByBoard = (userId: string) =>
+  tickQueries.userTickCountsByBoard(undefined, { userId }) as Promise<Array<{ boardType: string; count: number }>>;
+
 const insertUser = async (id: string) => {
   await db.execute(sql`
     INSERT INTO "users" (id, email, name, created_at, updated_at)
@@ -910,6 +913,49 @@ describe('tickQueries — behavior fixes', () => {
         percentile: 0,
         totalActiveUsers: 88,
       });
+    });
+  });
+
+  describe('userTickCountsByBoard — grouped per-board counts', () => {
+    it('returns one row per board type with the tick count, scoped to the user', async () => {
+      const kilterClimb = CLIMB_PREFIX + 'counts-kilter';
+      const tensionClimb = CLIMB_PREFIX + 'counts-tension';
+      await insertClimb(kilterClimb, 'Counts kilter', { boardType: 'kilter' });
+      await insertClimb(tensionClimb, 'Counts tension', { boardType: 'tension' });
+
+      // 3 kilter + 1 tension for the test user; another user's ticks must not leak.
+      await insertTick({ uuid: CLIMB_PREFIX + 'c1', climbUuid: kilterClimb, climbedAt: '2024-01-01', status: 'send' });
+      await insertTick({ uuid: CLIMB_PREFIX + 'c2', climbUuid: kilterClimb, climbedAt: '2024-01-02', status: 'send' });
+      await insertTick({
+        uuid: CLIMB_PREFIX + 'c3',
+        climbUuid: kilterClimb,
+        climbedAt: '2024-01-03',
+        status: 'attempt',
+      });
+      await insertTick({
+        uuid: CLIMB_PREFIX + 'c4',
+        climbUuid: tensionClimb,
+        climbedAt: '2024-01-04',
+        status: 'flash',
+        boardType: 'tension',
+      });
+      await insertTick({
+        uuid: CLIMB_PREFIX + 'c5',
+        userId: OTHER_USER_ID,
+        climbUuid: kilterClimb,
+        climbedAt: '2024-01-05',
+        status: 'send',
+      });
+
+      const rows = await callUserTickCountsByBoard(TEST_USER_ID);
+      const byBoard = Object.fromEntries(rows.map((row) => [row.boardType, row.count]));
+
+      expect(byBoard).toEqual({ kilter: 3, tension: 1 });
+    });
+
+    it('returns an empty array for a user with no ticks and for a blank userId', async () => {
+      expect(await callUserTickCountsByBoard(OTHER_USER_ID)).toEqual([]);
+      expect(await callUserTickCountsByBoard('')).toEqual([]);
     });
   });
 

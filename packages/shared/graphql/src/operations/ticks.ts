@@ -42,6 +42,26 @@ export const GET_USER_TICKS = gql`
   }
 `;
 
+// Lightweight per-board tick counts — one grouped aggregate instead of a full
+// GET_USER_TICKS list per board type. Used to infer the home feed's default
+// board without pulling every tick on cold load.
+export const GET_USER_TICK_COUNTS_BY_BOARD = gql`
+  query GetUserTickCountsByBoard($userId: ID!) {
+    userTickCountsByBoard(userId: $userId) {
+      boardType
+      count
+    }
+  }
+`;
+
+export type GetUserTickCountsByBoardQueryVariables = {
+  userId: string;
+};
+
+export type GetUserTickCountsByBoardQueryResponse = {
+  userTickCountsByBoard: Array<{ boardType: string; count: number }>;
+};
+
 export const SAVE_TICK = gql`
   mutation SaveTick($input: SaveTickInput!) {
     saveTick(input: $input) {

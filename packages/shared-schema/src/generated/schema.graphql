@@ -1057,6 +1057,18 @@ input GetTicksInput {
 }
 
 """
+Number of ticks a user has logged on a given board type. A lightweight
+aggregate (COUNT grouped by board_type) used to infer a default "home board"
+without fetching every tick history per board.
+"""
+type BoardTickCount {
+  "Board type"
+  boardType: String!
+  "Number of ticks logged on this board type"
+  count: Int!
+}
+
+"""
 Input for attaching an Instagram or TikTok video as beta for a climb.
 """
 input AttachBetaLinkInput {
@@ -4758,6 +4770,13 @@ type Query {
   Get public ticks for any user by their ID.
   """
   userTicks(userId: ID!, boardType: String!): [Tick!]!
+
+  """
+  Per-board-type tick counts for a user, as a single grouped aggregate.
+  Lets the home feed infer a default board without fetching every tick per
+  board type (avoids one userTicks request per board on cold load).
+  """
+  userTickCountsByBoard(userId: ID!): [BoardTickCount!]!
 
   """
   Get public ascent activity feed for a user.

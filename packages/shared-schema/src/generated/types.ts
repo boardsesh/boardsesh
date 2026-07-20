@@ -779,6 +779,19 @@ export type BoardStatsUpdated = {
 };
 
 /**
+ * Number of ticks a user has logged on a given board type. A lightweight
+ * aggregate (COUNT grouped by board_type) used to infer a default "home board"
+ * without fetching every tick history per board.
+ */
+export type BoardTickCount = {
+  __typename?: 'BoardTickCount';
+  /** Board type */
+  boardType: Scalars['String']['output'];
+  /** Number of ticks logged on this board type */
+  count: Scalars['Int']['output'];
+};
+
+/**
  * The Boardsesh grade for a climb at one angle: the data-science-backed grade
  * produced by the nightly refresh job. Null query result means no grade has been
  * computed for that climb+angle (e.g. MoonBoard, or too few ascents).
@@ -4738,6 +4751,12 @@ export type Query = {
   userPlaylists: Array<Playlist>;
   /** Get profile statistics with distinct climb counts per grade. */
   userProfileStats: ProfileStats;
+  /**
+   * Per-board-type tick counts for a user, as a single grouped aggregate.
+   * Lets the home feed infer a default board without fetching every tick per
+   * board type (avoids one userTicks request per board on cold load).
+   */
+  userTickCountsByBoard: Array<BoardTickCount>;
   /** Get public ticks for any user by their ID. */
   userTicks: Array<Tick>;
   /** Get vote summary for a single entity. */
@@ -5336,6 +5355,11 @@ export type QueryUserPlaylistsArgs = {
 
 /** Root query type for all read operations. */
 export type QueryUserProfileStatsArgs = {
+  userId: Scalars['ID']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryUserTickCountsByBoardArgs = {
   userId: Scalars['ID']['input'];
 };
 
@@ -7495,6 +7519,7 @@ export type ResolversTypes = ResolversObject<{
   BoardQueuePreviewItem: ResolverTypeWrapper<BoardQueuePreviewItem>;
   BoardSerialConfig: ResolverTypeWrapper<BoardSerialConfig>;
   BoardStatsUpdated: ResolverTypeWrapper<BoardStatsUpdated>;
+  BoardTickCount: ResolverTypeWrapper<BoardTickCount>;
   BoardseshGrade: ResolverTypeWrapper<BoardseshGrade>;
   BoardseshGradeForAngle: ResolverTypeWrapper<BoardseshGradeForAngle>;
   Boolean: ResolverTypeWrapper<Scalars['Boolean']['output']>;
@@ -7834,6 +7859,7 @@ export type ResolversParentTypes = ResolversObject<{
   BoardQueuePreviewItem: BoardQueuePreviewItem;
   BoardSerialConfig: BoardSerialConfig;
   BoardStatsUpdated: BoardStatsUpdated;
+  BoardTickCount: BoardTickCount;
   BoardseshGrade: BoardseshGrade;
   BoardseshGradeForAngle: BoardseshGradeForAngle;
   Boolean: Scalars['Boolean']['output'];
@@ -8530,6 +8556,15 @@ export type BoardStatsUpdatedResolvers<
 > = ResolversObject<{
   seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   stats?: Resolver<ResolversTypes['BoardPresenceStats'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardTickCountResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardTickCount'] = ResolversParentTypes['BoardTickCount'],
+> = ResolversObject<{
+  boardType?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -11042,6 +11077,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryUserProfileStatsArgs, 'userId'>
   >;
+  userTickCountsByBoard?: Resolver<
+    Array<ResolversTypes['BoardTickCount']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryUserTickCountsByBoardArgs, 'userId'>
+  >;
   userTicks?: Resolver<
     Array<ResolversTypes['Tick']>,
     ParentType,
@@ -12097,6 +12138,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BoardQueuePreviewItem?: BoardQueuePreviewItemResolvers<ContextType>;
   BoardSerialConfig?: BoardSerialConfigResolvers<ContextType>;
   BoardStatsUpdated?: BoardStatsUpdatedResolvers<ContextType>;
+  BoardTickCount?: BoardTickCountResolvers<ContextType>;
   BoardseshGrade?: BoardseshGradeResolvers<ContextType>;
   BoardseshGradeForAngle?: BoardseshGradeForAngleResolvers<ContextType>;
   Climb?: ClimbResolvers<ContextType>;

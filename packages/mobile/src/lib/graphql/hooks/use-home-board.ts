@@ -3,7 +3,7 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 import { useAuth } from '../../../providers/auth-provider';
 import { useActiveBoard } from '../use-active-board';
 import { useMyBoards, useProfile } from './index';
-import { useAllBoardsTicks } from './use-you-data';
+import { useUserTickCountsByBoard } from './use-you-data';
 
 export type HomeBoardResult = {
   /** The board the home feed scopes to by default, or `null` when none can be
@@ -52,19 +52,24 @@ export function useHomeBoard(): HomeBoardResult {
   // Only pay for the per-board-type tick scan when it can actually change the
   // answer: no active board AND more than one owned board to disambiguate.
   const needsTicks = !activeBoard && (boards?.length ?? 0) > 1;
-  const { data: ticksByBoard, isLoading: ticksLoading } = useAllBoardsTicks(needsTicks ? profile?.id : undefined);
+  // Counts only (one grouped aggregate), not full tick histories — the inference
+  // just needs the most-logged board type. This keeps the home-load critical
+  // path to one request instead of a userTicks fetch per board type.
+  const { data: tickCountsByBoard, isLoading: ticksLoading } = useUserTickCountsByBoard(
+    needsTicks ? profile?.id : undefined,
+  );
 
   const board = useMemo<UserBoard | null>(() => {
     if (activeBoard) return activeBoard;
     if (!boards || boards.length === 0) return null;
     if (boards.length === 1) return boards[0];
 
-    if (ticksByBoard) {
+    if (tickCountsByBoard) {
       let topType: string | null = null;
       let topCount = 0;
-      for (const [boardType, entries] of Object.entries(ticksByBoard)) {
-        if (entries.length > topCount) {
-          topCount = entries.length;
+      for (const [boardType, tickCount] of Object.entries(tickCountsByBoard)) {
+        if (tickCount > topCount) {
+          topCount = tickCount;
           topType = boardType;
         }
       }
@@ -79,7 +84,7 @@ export function useHomeBoard(): HomeBoardResult {
     }
 
     return null;
-  }, [activeBoard, boards, ticksByBoard]);
+  }, [activeBoard, boards, tickCountsByBoard]);
 
   // The active board is read from AsyncStorage, so it's `undefined` for the
   // first render(s). Treat that pending read as "still resolving" — otherwise a
