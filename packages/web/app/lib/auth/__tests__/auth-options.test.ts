@@ -303,64 +303,58 @@ describe('authOptions.callbacks.session', () => {
     mockDbLimit.mockResolvedValue([]);
   });
 
-  it('overrides session.user.name with userProfiles.displayName when present', async () => {
-    mockDbLimit.mockResolvedValue([{ avatarUrl: null, displayName: 'jojo' }]);
-
+  // The session callback now reads the avatar/display name off the JWT (the
+  // `jwt` callback keeps them fresh), so it must NOT query the DB — that's the
+  // whole point of the perf change. Assert that below, and drive the display
+  // fields from token claims here.
+  it('overrides session.user.name with the JWT-cached displayName without hitting the DB', async () => {
     const result = await callSession({
       session: { user: { id: 'user-1', name: 'speedywalker8392', email: 'user@example.com' }, expires: '2099-01-01' },
-      token: { sub: 'user-1' },
+      token: { sub: 'user-1', profileDisplayName: 'jojo' },
     });
 
     expect(result.user?.name).toBe('jojo');
+    expect(mockDbSelect).not.toHaveBeenCalled();
   });
 
-  it('leaves session.user.name unchanged when no userProfiles row exists', async () => {
-    mockDbLimit.mockResolvedValue([]);
-
+  it('leaves session.user.name unchanged when the JWT has no cached displayName', async () => {
     const result = await callSession({
       session: { user: { id: 'user-1', name: 'speedywalker8392' }, expires: '2099-01-01' },
       token: { sub: 'user-1' },
     });
 
     expect(result.user?.name).toBe('speedywalker8392');
+    expect(mockDbSelect).not.toHaveBeenCalled();
   });
 
-  it('leaves session.user.name unchanged when the profile row has a null displayName', async () => {
-    mockDbLimit.mockResolvedValue([{ avatarUrl: 'https://cdn.example.com/avatar.jpg', displayName: null }]);
-
+  it('leaves session.user.name unchanged when the cached displayName is null', async () => {
     const result = await callSession({
       session: { user: { id: 'user-1', name: 'speedywalker8392' }, expires: '2099-01-01' },
-      token: { sub: 'user-1' },
+      token: { sub: 'user-1', profileAvatarUrl: 'https://cdn.example.com/avatar.jpg', profileDisplayName: null },
     });
 
     expect(result.user?.name).toBe('speedywalker8392');
   });
 
-  it('leaves session.user.name unchanged when the profile row has an empty-string displayName (known gap: clearing the field does not live-revert to the auto-generated handle)', async () => {
-    mockDbLimit.mockResolvedValue([{ avatarUrl: null, displayName: '' }]);
-
+  it('leaves session.user.name unchanged when the cached displayName is an empty string (clearing does not live-revert to the auto-generated handle)', async () => {
     const result = await callSession({
       session: { user: { id: 'user-1', name: 'speedywalker8392' }, expires: '2099-01-01' },
-      token: { sub: 'user-1' },
+      token: { sub: 'user-1', profileAvatarUrl: null, profileDisplayName: '' },
     });
 
     expect(result.user?.name).toBe('speedywalker8392');
   });
 
-  it('still overrides session.user.image with userProfiles.avatarUrl when present (regression guard)', async () => {
-    mockDbLimit.mockResolvedValue([{ avatarUrl: 'https://cdn.example.com/avatar.jpg', displayName: null }]);
-
+  it('overrides session.user.image with the JWT-cached avatarUrl when present (regression guard)', async () => {
     const result = await callSession({
       session: { user: { id: 'user-1', name: 'speedywalker8392', image: 'old.png' }, expires: '2099-01-01' },
-      token: { sub: 'user-1' },
+      token: { sub: 'user-1', profileAvatarUrl: 'https://cdn.example.com/avatar.jpg' },
     });
 
     expect(result.user?.image).toBe('https://cdn.example.com/avatar.jpg');
   });
 
   it('sets session.user.id from token.sub', async () => {
-    mockDbLimit.mockResolvedValue([]);
-
     const result = await callSession({
       session: { user: { id: 'user-99', name: 'speedywalker8392' }, expires: '2099-01-01' },
       token: { sub: 'user-42' },
@@ -392,6 +386,16 @@ async function callJwt(params: Partial<JwtParams>) {
 }
 
 describe('authOptions.callbacks.jwt', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default DB chain: select().from().where().limit() resolves to empty so the
+    // profile-claim refresh below doesn't throw when a test doesn't care about it.
+    mockDbSelect.mockReturnValue({ from: mockDbFrom });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbWhere.mockReturnValue({ limit: mockDbLimit });
+    mockDbLimit.mockResolvedValue([]);
+  });
+
   it('preserves an existing login generation through cookie refreshes', async () => {
     const result = await callJwt({ token: { sub: 'user-1', authSessionId: 'login-generation-1' } });
 
@@ -409,6 +413,88 @@ describe('authOptions.callbacks.jwt', () => {
 
     expect(result.authSessionId).toEqual(expect.any(String));
     expect(result.authSessionId).not.toBe('');
+  });
+
+  // Profile-claim caching (the perf change): the jwt callback fetches
+  // avatar/display name and stamps them on the token so the session callback
+  // reads them for free.
+  it('caches userProfiles avatar/displayName onto the token on a first (uncached) read', async () => {
+    mockDbLimit.mockResolvedValue([{ avatarUrl: 'https://cdn.example.com/a.jpg', displayName: 'jojo' }]);
+
+    const result = await callJwt({ token: { sub: 'user-1' } });
+
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
+    expect(result.profileAvatarUrl).toBe('https://cdn.example.com/a.jpg');
+    expect(result.profileDisplayName).toBe('jojo');
+    expect(result.profileClaimsRefreshedAt).toEqual(expect.any(Number));
+  });
+
+  it('does NOT re-query the DB when the cached claims are still within the TTL', async () => {
+    const result = await callJwt({
+      token: {
+        sub: 'user-1',
+        authSessionId: 'login-1',
+        profileAvatarUrl: 'https://cdn.example.com/a.jpg',
+        profileDisplayName: 'jojo',
+        profileClaimsRefreshedAt: Date.now(),
+      },
+    });
+
+    expect(mockDbSelect).not.toHaveBeenCalled();
+    // Cached claims survive untouched.
+    expect(result.profileDisplayName).toBe('jojo');
+  });
+
+  it('re-queries the DB when the cached claims have aged past the TTL', async () => {
+    mockDbLimit.mockResolvedValue([{ avatarUrl: null, displayName: 'renamed' }]);
+
+    const result = await callJwt({
+      token: {
+        sub: 'user-1',
+        authSessionId: 'login-1',
+        profileDisplayName: 'stale',
+        // 6 minutes ago — past the 5-minute TTL.
+        profileClaimsRefreshedAt: Date.now() - 6 * 60 * 1000,
+      },
+    });
+
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
+    expect(result.profileDisplayName).toBe('renamed');
+    expect(result.profileAvatarUrl).toBeNull();
+  });
+
+  it('force-refreshes on an explicit session update() even when the cache is fresh', async () => {
+    mockDbLimit.mockResolvedValue([{ avatarUrl: null, displayName: 'edited-just-now' }]);
+
+    const result = await callJwt({
+      token: {
+        sub: 'user-1',
+        authSessionId: 'login-1',
+        profileDisplayName: 'old',
+        profileClaimsRefreshedAt: Date.now(),
+      },
+      trigger: 'update',
+    });
+
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
+    expect(result.profileDisplayName).toBe('edited-just-now');
+  });
+
+  it('keeps the previously cached claims when the profile refresh query throws', async () => {
+    mockDbLimit.mockRejectedValue(new Error('DB exploded'));
+
+    const result = await callJwt({
+      token: {
+        sub: 'user-1',
+        authSessionId: 'login-1',
+        profileDisplayName: 'kept',
+        profileClaimsRefreshedAt: Date.now() - 6 * 60 * 1000,
+      },
+    });
+
+    // Refresh failed → prior claims stand, and the token read still succeeds.
+    expect(result.profileDisplayName).toBe('kept');
+    expect(result.authSessionId).toBe('login-1');
   });
 });
 

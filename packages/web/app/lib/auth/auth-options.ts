@@ -13,6 +13,14 @@ import { verifyNativeOAuthTransferToken } from '@/app/lib/auth/native-oauth-tran
 import { isSecureCookieContext, sessionCookieDomain } from '@/app/lib/auth/secure-cookies';
 import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 
+// How long a JWT-cached profile avatar/name stays authoritative before the
+// `jwt` callback re-reads userProfiles. A Settings edit refreshes it instantly
+// (the client calls `update()` → `trigger: 'update'`); this TTL is only the
+// safety net for changes made elsewhere (another device, a backend avatar
+// swap). Long enough that ordinary browsing never re-queries the DB, short
+// enough that out-of-band edits still surface within a few minutes.
+const PROFILE_CLAIMS_TTL_MS = 5 * 60 * 1000;
+
 // Build providers array conditionally based on available env vars
 const providers: NextAuthOptions['providers'] = [];
 
@@ -322,25 +330,19 @@ export const authOptions: NextAuthOptions = {
       if (session?.user && token?.sub) {
         session.user.id = token.sub;
 
-        // Fetch custom avatar/display name from userProfiles on every session read so the
-        // drawer/header reflect the latest Settings edit instead of whatever was baked into
-        // the JWT at sign-in (the JWT's name/image claims are never refreshed otherwise).
-        const db = getDb();
-        const profiles = await db
-          .select({ avatarUrl: schema.userProfiles.avatarUrl, displayName: schema.userProfiles.displayName })
-          .from(schema.userProfiles)
-          .where(eq(schema.userProfiles.userId, token.sub))
-          .limit(1);
-        if (profiles[0]?.avatarUrl) {
-          session.user.image = profiles[0].avatarUrl;
+        // Custom avatar/display name come off the JWT, which the `jwt` callback
+        // keeps fresh (sign-in, Settings `update()`, or a TTL refresh) — so a
+        // session read no longer runs a userProfiles DB query on every call.
+        if (token.profileAvatarUrl) {
+          session.user.image = token.profileAvatarUrl;
         }
-        if (profiles[0]?.displayName) {
-          session.user.name = profiles[0].displayName;
+        if (token.profileDisplayName) {
+          session.user.name = token.profileDisplayName;
         }
       }
       return session;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       // Stable for one NextAuth login across cookie rotations and tabs, but new
       // for a later login even when it belongs to the same user. Existing JWTs
       // can reuse their standard jti so rollout does not force a sign-out.
@@ -350,6 +352,34 @@ export const authOptions: NextAuthOptions = {
       // Persist the OAuth access_token and user id to the token right after signin
       if (user) {
         token.id = user.id;
+      }
+
+      // Cache the userProfiles avatar/display name ON the token so the `session`
+      // callback (which runs on every /api/auth/session read — each page load,
+      // plus NextAuth's client polling) doesn't hit the DB every time. Refresh
+      // on sign-in (`user`), on an explicit `update()` after a Settings edit
+      // (`trigger === 'update'`), or when the cache has aged past the TTL;
+      // otherwise the previously cached claims stand.
+      const profileCacheStale =
+        typeof token.profileClaimsRefreshedAt !== 'number' ||
+        Date.now() - token.profileClaimsRefreshedAt > PROFILE_CLAIMS_TTL_MS;
+      if (token.sub && (Boolean(user) || trigger === 'update' || profileCacheStale)) {
+        try {
+          const db = getDb();
+          const profiles = await db
+            .select({ avatarUrl: schema.userProfiles.avatarUrl, displayName: schema.userProfiles.displayName })
+            .from(schema.userProfiles)
+            .where(eq(schema.userProfiles.userId, token.sub))
+            .limit(1);
+          token.profileAvatarUrl = profiles[0]?.avatarUrl ?? null;
+          token.profileDisplayName = profiles[0]?.displayName ?? null;
+          token.profileClaimsRefreshedAt = Date.now();
+        } catch (error) {
+          // Keep whatever claims are already cached rather than failing the
+          // whole token read — a briefly stale avatar/name is fine; a broken
+          // session (signed-out header, failed page load) is not.
+          console.warn('Failed to refresh profile claims for session JWT:', error);
+        }
       }
       return token;
     },
