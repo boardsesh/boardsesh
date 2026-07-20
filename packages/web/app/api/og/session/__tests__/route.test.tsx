@@ -57,7 +57,9 @@ vi.mock('@/app/lib/grade-colors', () => ({
 }));
 
 vi.mock('@/app/lib/board-data', () => ({
-  BOULDER_GRADES: [{ difficulty_id: 10, font_grade: 'V5' }],
+  // v_grade drives the V0 axis-anchoring: difficulty 10 → V5, so a session whose
+  // lowest send is difficulty 10 gets empty floor bars for V0…V4 prepended.
+  BOULDER_GRADES: [{ difficulty_id: 10, font_grade: 'V5', v_grade: 'V5' }],
 }));
 
 vi.mock('@/app/lib/seo/og', () => ({
@@ -168,6 +170,9 @@ describe('api/og/session route', () => {
     expect(textContent).toContain('5 sends so far');
     expect(textContent).toContain('Grades climbed so far');
     expect(textContent).toContain('V5');
+    // The axis is anchored at V0: the lowest send (difficulty 10 → V5) gets empty
+    // floor bars for V0…V4 prepended, so the board's easiest grade (4a) shows.
+    expect(textContent).toContain('4a');
     expect(imageSources).toContain(
       'http://localhost:3000/api/internal/board-render?board_name=kilter&frames=&thumbnail=1&include_background=1&format=png',
     );

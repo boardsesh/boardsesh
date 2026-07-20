@@ -123,6 +123,21 @@ Metro and never pass through this script, so an install prompt in dev keeps
   content-hashed and can be cached forever (`Cache-Control: immutable`);
   `index.html` and `wasm/*` (fixed names) should not.
 
+### Favicon + link-preview (OpenGraph) tags
+
+`output: 'single'` ships a default `index.html` shell and only runs
+`app/+html.tsx` inside the JS bundle, so link unfurlers (Discord, Slack,
+iMessage) — which read the static HTML without executing JS — saw no favicon or
+OG image. `build-expo-web-export.sh` therefore post-processes `index.html`,
+injecting `<link rel="icon">` + OpenGraph/Twitter tags that point at the
+route-mark logo. The images are static assets committed under
+`packages/mobile/public/{favicon,og}.png` (regenerate from
+`assets/splash-icon.png` if the logo changes) and ship at the export root. The
+`og:image` is absolute and depends on the serve origin: the `--subdomain` build
+uses `https://app.boardsesh.com`, the legacy `/app` build uses
+`https://www.boardsesh.com`. Editing the tags in `app/+html.tsx` alone will
+**not** reach the static shell — change the injection in the export script.
+
 ### Cross-origin backend
 
 Because the app runs on `app.boardsesh.com` and the backend on
