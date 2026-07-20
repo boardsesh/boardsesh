@@ -140,6 +140,17 @@ export function moonboardNumRowsForNative(boardName: string | undefined, layoutI
   return boardName === 'moonboard' ? getMoonBoardGeometryByLayoutId(layoutId).numRows : undefined;
 }
 
+// How many consecutive MoonBoard write failures (with no successful write in
+// between) must occur before we conclude the link is dead and drop it. A
+// MoonBoard's dead-link write surfaces as a generic `write_failed` — the same
+// bucket a one-off transient hiccup lands in — and force-dropping a still-live
+// link is costly on these boards: some controllers need a physical power cycle
+// before they'll accept a new connection, so a wrong teardown can leave the user
+// unable to reconnect at all. A genuine supervision-timeout drop fails every
+// subsequent send, so a small streak separates it from a transient glitch (whose
+// next send succeeds and resets the count) without dropping a live board.
+export const MOONBOARD_WRITE_FAILURE_DROP_THRESHOLD = 2;
+
 export type PickerState = {
   devices: DiscoveredDevice[];
   isScanning: boolean;
@@ -372,6 +383,10 @@ export function useBoardBluetooth({
   // both. Mirrors the web hook's writeChainRef; reset on connect/disconnect
   // so a hung write can't wedge the next connection's sends.
   const writeChainRef = useRef<Promise<void>>(Promise.resolve());
+  // Consecutive MoonBoard `write_failed` count, reset by any successful write and
+  // on connect/drop. Gates the dead-link teardown so a single transient write
+  // error never drops a live board — see MOONBOARD_WRITE_FAILURE_DROP_THRESHOLD.
+  const moonboardWriteFailureStreakRef = useRef(0);
   // True while a connect attempt is running. Guards against a second
   // concurrent connect (double-tapped lightbulb): both attempts would share
   // the singleton BLE manager, and the first attempt's scan teardown kills
@@ -465,6 +480,7 @@ export function useBoardBluetooth({
     writeAbortRef.current?.abort();
     writeAbortRef.current = null;
     writeChainRef.current = Promise.resolve();
+    moonboardWriteFailureStreakRef.current = 0;
     setIsConnected(false);
     onConnectionChange?.(false);
     // Drop the connect-time BLE diagnostic tags so a later unrelated error
@@ -561,6 +577,8 @@ export function useBoardBluetooth({
               });
               return false;
             }
+            // A write just landed, so the link is alive — clear the dead-link streak.
+            moonboardWriteFailureStreakRef.current = 0;
             if (frames === '') {
               // Deliberate clear-all just went out as `l##`: community firmware
               // (ArduinoMoonBoardLED) clears every LED on each incoming frame;
@@ -682,24 +700,31 @@ export function useBoardBluetooth({
             failureReason: bleFailureReason,
             ...bleWriteDiagnosticsProperties(writeDiagnostics),
           });
-          // A write that fails because the link is gone is a lost link. Two
-          // signatures land here: the predicate matches the native adapters'
-          // "not connected" / "disconnected during write" wording, and — on a
-          // MoonBoard — a genuine link-timeout drop (CoreBluetooth error 6) whose
-          // native error slips past that predicate ("No board is connected") and
-          // falls into the generic `write_failed` bucket. Both mean the same for
-          // these last-connection-wins boards: the wall went dark and we should
-          // stop showing "connected". The native self-recovery buckets
-          // (`write_timeout` / `write_recovery_failed`) are excluded — the native
-          // layer is already cycling those and must not be torn down here.
+          // A write that fails because the link is gone is a lost link. The
+          // predicate matches the native adapters' "not connected" / "disconnected
+          // during write" wording — a definite drop — so tear down immediately.
           const lostLink = isDisconnectionError(error);
-          const moonboardDeadLink = boardName === 'moonboard' && bleFailureReason === 'write_failed';
+          // On a MoonBoard a genuine link-timeout drop (CoreBluetooth error 6)
+          // slips past that predicate ("No board is connected") and falls into the
+          // generic `write_failed` bucket — but so does a one-off transient write
+          // error on a still-live link. Dropping a live MoonBoard is costly (some
+          // controllers need a power cycle before a new connection), so we only
+          // treat it as dead after consecutive failures with no success between:
+          // a real drop fails every send, a glitch's next send resets the streak.
+          // The native self-recovery buckets (`write_timeout` /
+          // `write_recovery_failed`) never count — the native layer cycles those.
+          const moonboardWriteFailed = boardName === 'moonboard' && bleFailureReason === 'write_failed';
+          if (moonboardWriteFailed) {
+            moonboardWriteFailureStreakRef.current += 1;
+          }
+          const moonboardDeadLink =
+            moonboardWriteFailed && moonboardWriteFailureStreakRef.current >= MOONBOARD_WRITE_FAILURE_DROP_THRESHOLD;
           // A dropped link is routine on these last-connection-wins boards
           // (another climber grabbed it, or it disconnected mid-session), so keep
           // it a filterable warning rather than a full error that drowns real
           // write bugs. Already tracked above via ClimbSentToBoardFailure.
           reportHandledError(error, {
-            level: lostLink || moonboardDeadLink ? 'warning' : 'error',
+            level: lostLink || moonboardWriteFailed ? 'warning' : 'error',
             tags: { source: 'ble-send', failure_reason: bleFailureReason },
             extra: writeDiagnostics ? { bleWriteDiagnostics: writeDiagnostics } : undefined,
           });
@@ -794,6 +819,8 @@ export function useBoardBluetooth({
         writeAbortRef.current?.abort();
         writeAbortRef.current = null;
         writeChainRef.current = Promise.resolve();
+        // Fresh connection generation — a stale dead-link streak must not carry over.
+        moonboardWriteFailureStreakRef.current = 0;
 
         // Clean up any existing adapter
         if (adapterRef.current) {
