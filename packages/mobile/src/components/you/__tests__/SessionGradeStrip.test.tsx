@@ -65,7 +65,7 @@ describe('SessionGradeStrip', () => {
     expect(barEls(empty)).toHaveLength(0);
   });
 
-  it('renders one grade-coloured bar per grade with height proportional to count (8px floor, 20px max)', () => {
+  it('anchors the axis at V0: prepends empty floor bars below the lowest send', () => {
     state.bars = bars([
       ['V3', 2, 'color-V3'],
       ['V5', 4, 'color-V5'],
@@ -73,9 +73,31 @@ describe('SessionGradeStrip', () => {
     ]);
     const { container } = render(createElement(SessionGradeStrip, { distribution, totalSends: 7 }));
     const els = barEls(container);
-    expect(els).toHaveLength(3);
-    // maxCount = 4 → V5 = 20; V3 = round(2/4*20)=10; V6 = max(8, round(1/4*20)=5)=8 (floor).
-    expect(els.map((node) => node.getAttribute('data-h'))).toEqual(['10', '20', '8']);
-    expect(els.map((node) => node.getAttribute('data-bg'))).toEqual(['color-V3', 'color-V5', 'color-V6']);
+    // V0, V1, V2 floor bars are synthesized in front of the three real grades.
+    expect(els).toHaveLength(6);
+    // Floor bars carry count 0 → the 8px minimum height; the real bars keep their
+    // count-proportional heights (maxCount = 4 → V5 = 20; V3 = round(2/4*20)=10;
+    // V6 = max(8, round(1/4*20)=5)=8).
+    expect(els.map((node) => node.getAttribute('data-h'))).toEqual(['8', '8', '8', '10', '20', '8']);
+    // Floor bars have no explicit segment colour → fall back to gradeChartColor(key).
+    expect(els.map((node) => node.getAttribute('data-bg'))).toEqual([
+      'color-V0',
+      'color-V1',
+      'color-V2',
+      'color-V3',
+      'color-V5',
+      'color-V6',
+    ]);
+  });
+
+  it('leaves the axis untouched when the lowest send is already V0', () => {
+    state.bars = bars([
+      ['V0', 2, 'color-V0'],
+      ['V2', 1, 'color-V2'],
+    ]);
+    const { container } = render(createElement(SessionGradeStrip, { distribution, totalSends: 3 }));
+    const els = barEls(container);
+    expect(els).toHaveLength(2);
+    expect(els.map((node) => node.getAttribute('data-bg'))).toEqual(['color-V0', 'color-V2']);
   });
 });
