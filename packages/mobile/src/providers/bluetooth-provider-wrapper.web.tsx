@@ -1,21 +1,32 @@
 import type { ReactNode } from 'react';
-import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
-
-const ignorePickerAction = () => undefined;
-const WEB_BLE_PICKER_HOST: BlePickerHostValue = {
-  pickerState: null,
-  onSelect: ignorePickerAction,
-  currentBoardConfig: undefined,
-  setHostedExternally: ignorePickerAction,
-};
+import { BluetoothProvider } from './bluetooth-provider';
+import { useActiveBoard } from '../lib/graphql/use-active-board';
 
 /**
- * Web Bluetooth is not supported by the Expo app yet. Leaving the Bluetooth
- * provider out makes optional BLE consumers hide or disable their controls
- * instead of exposing actions backed by the rejecting web adapter. The play
- * route still mounts its lightweight device-picker host, so provide that host
- * with an inert value to keep the route renderable.
+ * Web twin of the native BluetoothProviderWrapper. Web Bluetooth
+ * (navigator.bluetooth) drives the same Aurora / MoonBoard LED protocol as native
+ * through WebBluetoothAdapter, which Metro selects via adapter-factory.web.ts. We
+ * mount the real provider so the lightbulb controls appear on the Expo-web build;
+ * on browsers without Web Bluetooth (Safari/Firefox) the shared BLE UI surfaces
+ * its "Bluetooth unavailable" state on tap, matching native's powered-off path.
+ *
+ * The provider is mounted unconditionally for the same reason as native: the
+ * board from `useActiveBoard` resolves a tick after mount, and keeping a stable
+ * element type at this tree position avoids remounting the whole subtree on the
+ * `undefined → board` transition. LiveActivityBridge is iOS-native and omitted.
  */
 export function BluetoothProviderWrapper({ children }: { children: ReactNode }) {
-  return <BlePickerHostContext.Provider value={WEB_BLE_PICKER_HOST}>{children}</BlePickerHostContext.Provider>;
+  const { data: activeBoard } = useActiveBoard();
+
+  return (
+    <BluetoothProvider
+      boardName={activeBoard?.boardType}
+      layoutId={activeBoard?.layoutId}
+      sizeId={activeBoard?.sizeId}
+      setIds={activeBoard?.setIds}
+      boardUuid={activeBoard?.uuid}
+    >
+      {children}
+    </BluetoothProvider>
+  );
 }
