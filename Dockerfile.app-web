@@ -1,0 +1,22 @@
+# Per-PR standalone Expo-web preview image (https://{N}.app.boardsesh.com).
+#
+# A tiny Caddy container that serves the pre-built static SPA export. The image
+# is COPY-only — the heavy `expo export` runs in the CI job, not here — so it
+# stays a few MB over the caddy:2-alpine base and needs no build cache.
+#
+# Expected build-context layout (assembled by the branch-deploy workflow):
+#
+#   <context>/
+#     app-standalone/        # output of `build-expo-web-export.sh --subdomain`
+#       index.html
+#       _expo/...            # fingerprinted JS/CSS bundles
+#       assets/...           # fingerprinted static assets
+#       wasm/...             # board-renderer WASM glue
+#     Caddyfile              # copied from deploy/app-preview/Caddyfile
+#
+# Build:
+#   docker build -f Dockerfile.app-web -t boardsesh-app-web:pr-N <context>
+FROM caddy:2-alpine
+
+COPY app-standalone/ /srv
+COPY Caddyfile /etc/caddy/Caddyfile
