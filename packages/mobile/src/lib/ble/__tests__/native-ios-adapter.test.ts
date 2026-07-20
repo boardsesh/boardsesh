@@ -544,6 +544,25 @@ describe('NativeIosBleAdapter on older binaries (no adoption surface)', () => {
     // Nordic UART service — without an unfiltered scan we must list both.
     expect(nativeMock.startScan).toHaveBeenCalledWith(['UART-UUID', 'REDBEARLAB-UUID']);
   });
+
+  it('filters an Aurora scan on the Aurora service when unfiltered scanning is unavailable', async () => {
+    // Explicit older-binary Aurora coverage: without the adoption surface we
+    // can't scan unfiltered, so we must keep the native Aurora service filter
+    // (an old binary always filters natively regardless). The scan-response-PDU
+    // gap this diff fixes only exists on capable binaries that go unfiltered.
+    const adapter = new NativeIosBleAdapter(
+      (subscribe) =>
+        new Promise<string>(() => {
+          subscribe(() => {});
+        }),
+      'aurora',
+    );
+    void adapter.requestAndConnect();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(nativeMock.startScan).toHaveBeenCalledWith(['AURORA-UUID']);
+  });
 });
 
 // ── Per-write transport diagnostics (#3230) ─────────────────────────────────
