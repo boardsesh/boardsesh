@@ -203,6 +203,13 @@ async function findAliasedGym(db: DrizzleDb, sourceKey: string): Promise<Aliased
  * re-minting gyms that owners already curate. Each row carries its distance,
  * owner, approved-claim flag, and the provider source keys already aliased to it;
  * {@link classifyGymMatch} turns that into a tier-1 / tier-2 / reject decision.
+ *
+ * This is a hand-written raw SQL block (PostGIS `ST_Distance`/`ST_DWithin`,
+ * multi-CTE aggregation) that literal-names every table — `gyms`, `user_boards`,
+ * `gym_claims`, `location_sync_gym_sources`, … — matching the importer's existing
+ * match-query convention. The lighter `findAliasedGym` below is a Drizzle builder
+ * query, so it uses the `${gymClaims}` table reference; the two intentionally
+ * differ because one is raw SQL and the other is a query builder.
  */
 async function findGymMatchCandidates(db: DrizzleDb, record: ValidBoardLocation): Promise<GymMatchCandidate[]> {
   const result = await db.execute(sql`
