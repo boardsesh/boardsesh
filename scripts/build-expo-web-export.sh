@@ -98,8 +98,14 @@ export TAILSCALE_HOSTS="${TAILSCALE_HOSTS-}"
 # app.config.ts's resolveWebPlatforms reads BOARDSESH_WEB_BASE_URL (default
 # /app). Setting it explicitly here keeps the export deterministic regardless of
 # any ambient value; --subdomain sets it to / for root serving.
+#
+# --clear: expo export reuses Metro's transform cache across EXPO_PUBLIC_* env
+# changes, silently shipping a stale bundle with old env values inlined
+# (verified 2026-07-18..20). Every consumer of this script is a
+# build-the-artifact-once path (Docker builder stage, CI deploy, bundle
+# check), so the cache buys nothing here and the staleness risk is real.
 BOARDSESH_WEB=1 BOARDSESH_WEB_BASE_URL="$WEB_BASE_URL" EXPO_NO_WEB_SETUP=1 EXPO_NO_TELEMETRY=1 \
-  bunx expo export --platform web --output-dir "$OUTPUT_DIR"
+  bunx expo export --platform web --output-dir "$OUTPUT_DIR" --clear
 
 if [[ ! -f "$OUTPUT_DIR/index.html" ]]; then
   echo "[build-expo-web-export] missing index.html in $OUTPUT_DIR" >&2
@@ -109,6 +115,43 @@ fi
 if [[ ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm.js" || ! -f "$OUTPUT_DIR/wasm/board_renderer_wasm_bg.wasm" ]]; then
   echo "[build-expo-web-export] missing board-renderer WASM assets in $OUTPUT_DIR" >&2
   exit 1
+fi
+
+# BOARDSESH_EXPORT_EXPECT_URLS (space-separated substrings, e.g.
+# "https://ws.boardsesh.com https://www.boardsesh.com") is the direct detector
+# for the stale-cache bug the --clear flag above guards against: assert every
+# substring actually landed in an emitted JS bundle. CI deploy workflows set
+# this so a regression of --clear fails loudly instead of shipping a bundle
+# with stale baked-in origins.
+assert_baked_urls() {
+  local js_dir="$OUTPUT_DIR/_expo/static/js/web"
+  if [[ ! -d "$js_dir" ]]; then
+    echo "[build-expo-web-export] BOARDSESH_EXPORT_EXPECT_URLS is set but no JS bundles were found in $js_dir" >&2
+    exit 1
+  fi
+
+  local missing=()
+  local expected_url
+  for expected_url in $BOARDSESH_EXPORT_EXPECT_URLS; do
+    if ! grep -rqF -- "$expected_url" "$js_dir"; then
+      missing+=("$expected_url")
+    fi
+  done
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo "[build-expo-web-export] expected URL(s) not found in any bundle under $js_dir:" >&2
+    local missing_url
+    for missing_url in "${missing[@]}"; do
+      echo "  - $missing_url" >&2
+    done
+    exit 1
+  fi
+
+  echo "[build-expo-web-export] verified baked URL(s): $BOARDSESH_EXPORT_EXPECT_URLS"
+}
+
+if [[ -n "${BOARDSESH_EXPORT_EXPECT_URLS:-}" ]]; then
+  assert_baked_urls
 fi
 
 echo "[build-expo-web-export] Expo web export (baseUrl $WEB_BASE_URL) written to $OUTPUT_DIR"

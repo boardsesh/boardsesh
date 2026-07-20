@@ -50,6 +50,18 @@ fingerprint graph), runs `BOARDSESH_WEB=1 BOARDSESH_WEB_BASE_URL=/
 EXPO_NO_WEB_SETUP=1 bunx expo export --platform web`, and asserts the shell +
 board-renderer WASM assets landed.
 
+The export always passes `--clear` to wipe Metro's transform cache first.
+`expo export` reuses that cache across `EXPO_PUBLIC_*` env changes — it does
+not key on env — so a rebuild with a different backend/WS URL can silently
+ship a bundle with the _previous_ build's values baked in. Every caller of
+this script builds the artifact once (Docker builder stage, CI deploy, the
+bundle check), so the cache buys nothing and the staleness risk is real.
+Deploy pipelines should also set `BOARDSESH_EXPORT_EXPECT_URLS` (space-
+separated substrings, e.g. `"https://ws.boardsesh.com https://www.boardsesh.com"`)
+so the script greps the emitted JS bundles for each expected origin and fails
+loudly if one is missing — the direct detector for a stale-env artifact
+reaching production.
+
 ### What the host must do
 
 - **Serve the export directory at the origin root.** `index.html`, `_expo/*`,
