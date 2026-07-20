@@ -163,4 +163,12 @@ describe('updateCostEntry / deleteCostEntry', () => {
       costMutations.updateCostEntry(null, { input: { id: '999999', ...validRecurring } }, authCtx(ADMIN)),
     ).rejects.toThrow(/not found/i);
   });
+
+  // Delete is intentionally idempotent (returns false for a missing row) rather
+  // than throwing like update — there is nothing to return, and re-deleting is a
+  // no-op. This asymmetry is deliberate.
+  it('returns false when deleting a missing entry', async () => {
+    const removed = await costMutations.deleteCostEntry(null, { input: { id: '999999' } }, authCtx(ADMIN));
+    expect(removed).toBe(false);
+  });
 });

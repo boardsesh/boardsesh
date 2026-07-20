@@ -1,5 +1,5 @@
 import type { ConnectionContext } from '@boardsesh/shared-schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import type { CostCategory } from '@boardsesh/db/schema';
@@ -58,7 +58,8 @@ export const costMutations = {
     const validated = validateInput(UpdateCostEntryInputSchema, input, 'input');
     const [row] = await db
       .update(dbSchema.costEntries)
-      .set({ ...toColumnValues(validated), updatedAt: new Date().toISOString() })
+      // DB clock (matches defaultNow() on create) rather than the app clock.
+      .set({ ...toColumnValues(validated), updatedAt: sql`now()` })
       .where(eq(dbSchema.costEntries.id, Number(validated.id)))
       .returning();
 
