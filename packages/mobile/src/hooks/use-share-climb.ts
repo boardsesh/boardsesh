@@ -3,7 +3,7 @@ import { Platform, Share } from 'react-native';
 import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-utils';
 import { toFlatFrames } from '@boardsesh/board-constants/hold-states';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
-import { BACKEND_URL, WEB_BASE_URL } from '../lib/env';
+import { BACKEND_URL, CLIMB_SHARE_BASE_URL } from '../lib/env';
 
 type ShareClimbArgs = {
   climb: Climb | null;
@@ -66,7 +66,7 @@ function prewarmShareCaches(urls: string[]): void {
 export function useShareClimb({ climb, boardName, layoutId, sizeId, setIds, angle }: ShareClimbArgs) {
   return useCallback(async () => {
     if (!climb) return;
-    const url = `${WEB_BASE_URL}${buildReadableClimbViewPath({
+    const url = `${CLIMB_SHARE_BASE_URL}${buildReadableClimbViewPath({
       boardName,
       layoutId,
       sizeId,

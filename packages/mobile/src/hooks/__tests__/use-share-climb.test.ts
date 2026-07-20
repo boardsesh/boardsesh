@@ -27,7 +27,7 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('../../lib/env', () => ({
-  WEB_BASE_URL: 'https://www.boardsesh.com',
+  CLIMB_SHARE_BASE_URL: 'https://www.boardsesh.com',
   BACKEND_URL: 'https://ws.boardsesh.com',
 }));
 

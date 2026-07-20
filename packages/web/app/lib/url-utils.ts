@@ -14,9 +14,17 @@ import type {
   HoldFilterMode,
   ZoneMatchMode,
 } from '@/app/lib/types';
-import { BOARD_NAME_PREFIX_REGEX } from '@/app/lib/board-constants';
+import {
+  generateSlugFromText,
+  generateDescriptionSlug,
+  generateLayoutSlug,
+  generateSizeSlug,
+  generateSetSlug,
+  extractUuidFromClimbSegment as extractUuidFromSlug,
+  tryBuildReadableClimbViewPath,
+  tryBuildReadableClimbListPath,
+} from '@boardsesh/play-view/readable-url-utils';
 import { isNumericId } from './board-route-paths';
-import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { MOONBOARD_LAYOUTS } from '@/app/lib/moonboard-config';
 import { normalizeMinAscentsFilter, normalizeMinRatingFilter } from '@/app/lib/climb-quality-filter-options';
 import { detectLocale } from '@/app/lib/i18n/detect-locale';
@@ -465,6 +473,15 @@ export const constructClimbViewUrl = (
   return `${baseUrl}${climb_uuid}`;
 };
 
+/**
+ * Name-based, so it emits the *bare* size slug even for a size that shares one
+ * with another on the same layout (Kilter "12 x 12 without kickboard" — see
+ * `resolveSizeSlug` in @boardsesh/play-view). Such a link still resolves, just
+ * to the first match, exactly as it did before. The Expo app's builders take
+ * ids and emit the qualified slug; `getSizeBySlug` resolves both. Threading ids
+ * through here would let web emit the exact form too — worth doing when these
+ * call sites next get touched.
+ */
 export const constructClimbViewUrlWithSlugs = (
   board_name: string,
   layoutName: string,
@@ -522,55 +539,18 @@ export const constructClimbListWithSlugs = (
 };
 
 /**
- * Generates a slug from a text string by normalizing it.
- * This is a shared helper used by size slug generation.
+ * The canonical board-URL slug vocabulary lives in `@boardsesh/play-view` so
+ * web and the Expo app (app.boardsesh.com) emit byte-identical URLs — a shared
+ * link has to keep working when it crosses hosts. Re-exported here because the
+ * rest of the web app imports these from `url-utils`.
  */
-export const generateSlugFromText = (text: string): string => {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-};
-
-/**
- * Generates a description slug, removing "LED Kit" suffix.
- * This is a shared helper used by size slug generation.
- */
-export const generateDescriptionSlug = (description: string): string => {
-  return description
-    .toLowerCase()
-    .replace(/led\s*kit/gi, '') // Remove "LED Kit" suffix
-    .trim()
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-};
-
-export const generateLayoutSlug = (layoutName: string): string => {
-  const baseSlug = layoutName
-    .toLowerCase()
-    .trim()
-    .replace(BOARD_NAME_PREFIX_REGEX, '') // Remove board name prefix
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  // Handle Tension board specific cases
-  if (baseSlug === 'original-layout') {
-    return 'original';
-  }
-
-  // Replace numbers with words for better readability
-  if (baseSlug.startsWith('2-')) {
-    return baseSlug.replace('2-', 'two-');
-  }
-
-  return baseSlug;
+export {
+  generateSlugFromText,
+  generateDescriptionSlug,
+  generateLayoutSlug,
+  generateSizeSlug,
+  generateSetSlug,
+  extractUuidFromSlug,
 };
 
 /**
@@ -597,79 +577,6 @@ export const getMoonBoardLayoutBySlug = (slug: string): { id: number; name: stri
     }
   }
   return null;
-};
-
-export const generateSizeSlug = (sizeName: string, description?: string): string => {
-  // Extract size dimensions (e.g., "12 x 12 Commercial" -> "12x12")
-  const sizeMatch = sizeName.match(/(\d+)\s*x\s*(\d+)/i);
-  let baseSlug = '';
-
-  if (sizeMatch) {
-    baseSlug = `${sizeMatch[1]}x${sizeMatch[2]}`;
-  } else {
-    // Fallback to general slug generation
-    baseSlug = generateSlugFromText(sizeName);
-  }
-
-  // Append description suffix if provided (for disambiguating sizes with same dimensions)
-  if (description && description.trim()) {
-    const descSlug = generateDescriptionSlug(description);
-
-    if (descSlug) {
-      return `${baseSlug}-${descSlug}`;
-    }
-  }
-
-  return baseSlug;
-};
-
-export const generateSetSlug = (setNames: string[]): string => {
-  return setNames
-    .map((name) => {
-      const lowercaseName = name.toLowerCase().trim();
-
-      // Handle homewall-specific set names (supports both "Auxiliary/Mainline" and "Aux/Main" variants)
-      const hasAux = lowercaseName.includes('auxiliary') || lowercaseName.includes('aux');
-      const hasMain = lowercaseName.includes('mainline') || lowercaseName.includes('main');
-      // Support both "kickboard" and "kicker" in set names (different sizes use different naming)
-      const hasKickerVariant = lowercaseName.includes('kickboard') || lowercaseName.includes('kicker');
-
-      if (hasAux && hasKickerVariant) {
-        return 'aux-kicker';
-      }
-      if (hasMain && hasKickerVariant) {
-        return 'main-kicker';
-      }
-      if (hasAux) {
-        return 'aux';
-      }
-      if (hasMain) {
-        return 'main';
-      }
-
-      // Handle original kilter/tension set names
-      let result = lowercaseName
-        .replace(/\s+ons?$/i, '') // Remove "on" or "ons" suffix
-        .replace(/\s+/g, '-'); // Replace spaces with hyphens
-
-      // Extract just 'bolt' or 'screw' if it starts with those
-      if (result.startsWith('bolt')) {
-        result = 'bolt';
-      } else if (result.startsWith('screw')) {
-        result = 'screw';
-      }
-
-      return result;
-    })
-    .sort((a, b) => b.localeCompare(a)) // Sort alphabetically descending
-    .join('_'); // Use underscore as delimiter between sets
-};
-
-export const extractUuidFromSlug = (slugOrUuid: string): string => {
-  // Match 32 hex characters (UUID without hyphens) - could be at end of string or standalone
-  const uuidRegex = /[0-9A-F]{32}/i;
-  const match = slugOrUuid.match(uuidRegex);
-  return match ? match[0] : slugOrUuid;
 };
 
 export const isUuidOnly = (slugOrUuid: string): boolean => {
@@ -749,31 +656,15 @@ export const constructCreateClimbUrl = (
   return baseUrl;
 };
 
-/** BoardDetails with slug fields guaranteed to be present. */
-type ResolvedBoardSlugs = BoardDetails & Required<Pick<BoardDetails, 'layout_name' | 'size_name' | 'set_names'>>;
-
 /**
- * Resolve slug-ready board details from static data.
- * Returns null if the lookup fails or the result lacks slug fields.
+ * Try to construct a slug-based view URL. Returns null if resolution fails.
+ *
+ * Delegates to the shared builder rather than `constructClimbViewUrlWithSlugs`
+ * because it has the size *id*: that is what lets it emit the qualified size
+ * slug for a size that shares a base slug with another on the same layout (see
+ * `resolveSizeSlug`). The name-based builder can't, so a link from here is
+ * exact where one built from names alone would be ambiguous.
  */
-const tryResolveBoardSlugs = (
-  board_name: string,
-  layout_id: number,
-  size_id: number,
-  set_ids: number[],
-): ResolvedBoardSlugs | null => {
-  try {
-    const details = getBoardDetailsForBoard({ board_name, layout_id, size_id, set_ids });
-    if (details.layout_name && details.size_name && details.set_names) {
-      return details as ResolvedBoardSlugs;
-    }
-  } catch {
-    // Static data lookup failed for this board config
-  }
-  return null;
-};
-
-/** Try to construct a slug-based view URL. Returns null if resolution fails. */
 export const tryConstructSlugViewUrl = (
   board_name: string,
   layout_id: number,
@@ -782,21 +673,16 @@ export const tryConstructSlugViewUrl = (
   angle: number,
   climb_uuid: string,
   climbName?: string,
-): string | null => {
-  const d = tryResolveBoardSlugs(board_name, layout_id, size_id, set_ids);
-  return d
-    ? constructClimbViewUrlWithSlugs(
-        d.board_name,
-        d.layout_name,
-        d.size_name,
-        d.size_description,
-        d.set_names,
-        angle,
-        climb_uuid,
-        climbName,
-      )
-    : null;
-};
+): string | null =>
+  tryBuildReadableClimbViewPath({
+    boardName: board_name,
+    layoutId: layout_id,
+    sizeId: size_id,
+    setIds: set_ids.join(','),
+    angle,
+    climbUuid: climb_uuid,
+    climbName,
+  });
 
 /** Try to construct a slug-based list URL. Returns null if resolution fails. */
 export const tryConstructSlugListUrl = (
@@ -805,12 +691,14 @@ export const tryConstructSlugListUrl = (
   size_id: number,
   set_ids: number[],
   angle: number,
-): string | null => {
-  const d = tryResolveBoardSlugs(board_name, layout_id, size_id, set_ids);
-  return d
-    ? constructClimbListWithSlugs(d.board_name, d.layout_name, d.size_name, d.size_description, d.set_names, angle)
-    : null;
-};
+): string | null =>
+  tryBuildReadableClimbListPath({
+    boardName: board_name,
+    layoutId: layout_id,
+    sizeId: size_id,
+    setIds: set_ids.join(','),
+    angle,
+  });
 
 /**
  * Extracts the base board configuration path from a full pathname.

@@ -85,7 +85,7 @@ vi.mock('../../providers/theme-provider', () => ({
 }));
 vi.mock('../../theme/ios-colors', () => ({ iosSystemColors: { systemRed: '#f00', systemOrange: '#f80' } }));
 vi.mock('../../theme/tokens', () => ({ spacing: { 2: 8 } }));
-vi.mock('../../lib/env', () => ({ WEB_BASE_URL: 'https://boardsesh.test' }));
+vi.mock('../../lib/env', () => ({ CLIMB_SHARE_BASE_URL: 'https://boardsesh.test' }));
 vi.mock('../../lib/analytics', () => ({ track: vi.fn() }));
 
 import { ClimbActionsSheet } from '../ClimbActionsSheet';

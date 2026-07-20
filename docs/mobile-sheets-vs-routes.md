@@ -339,6 +339,13 @@ waits out the whole transition and is disabled in screenshot mode.
   pushes them (rule 1, the suspend→push→re-present pattern). Hold/zone are full-screen interactive
   boards → pushed routes (rule 3); setters is a searchable list route.
 - **Onboarding** — immersive cover, not over the live tab bar → `fullScreenModal`.
+- **Canonical climb URLs** (`app/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/{list,view,play}`
+  and `app/b/[board_slug]/...`) — a third category the decision tree above doesn't cover:
+  **redirectors**, not surfaces. They exist so the browser build serves the same URLs the Next.js
+  app does; each one resolves the URL to a board, adopts it as active, hands off to the Climbs tab
+  or the play drawer, and replaces itself. They render only a spinner or a not-found, own no sheet
+  of their own, and are the one case where a route is _not_ a destination. Don't hang new UI off
+  them — put it on the surface they hand off to.
 
 ## iPad-only tab destinations (sidebar rail, never a phone tab)
 
