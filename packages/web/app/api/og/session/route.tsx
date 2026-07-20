@@ -15,7 +15,9 @@ const DIFFICULTY_TO_GRADE: Record<number, string> = Object.fromEntries(
 );
 
 const GRADE_ORDER: string[] = BOULDER_GRADES.map((g) => g.font_grade);
-const DIFFICULTY_TO_V: Record<number, string> = Object.fromEntries(BOULDER_GRADES.map((g) => [g.difficulty_id, g.v_grade]));
+const DIFFICULTY_TO_V: Record<number, string> = Object.fromEntries(
+  BOULDER_GRADES.map((g) => [g.difficulty_id, g.v_grade]),
+);
 
 function gradeBarColor(grade: string, opacity: number): string {
   const hex = FONT_GRADE_COLORS[grade.toLowerCase()];
