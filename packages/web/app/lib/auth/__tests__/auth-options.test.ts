@@ -429,6 +429,21 @@ describe('authOptions.callbacks.jwt', () => {
     expect(result.profileClaimsRefreshedAt).toEqual(expect.any(Number));
   });
 
+  it('caches null claims (not undefined) at sign-in when the new user has no profile row yet', async () => {
+    // events.createUser inserts an empty userProfiles row for OAuth users, but a
+    // brand-new credentials user can reach the jwt callback before any row
+    // exists — the query returns []. Cache null so the session callback falls
+    // back to the provider-supplied name/image instead of re-querying forever.
+    mockDbLimit.mockResolvedValue([]);
+
+    const result = await callJwt({ token: { sub: 'new-user' }, user: { id: 'new-user', email: 'new@example.com' } });
+
+    expect(mockDbSelect).toHaveBeenCalledTimes(1);
+    expect(result.profileAvatarUrl).toBeNull();
+    expect(result.profileDisplayName).toBeNull();
+    expect(result.profileClaimsRefreshedAt).toEqual(expect.any(Number));
+  });
+
   it('does NOT re-query the DB when the cached claims are still within the TTL', async () => {
     const result = await callJwt({
       token: {
