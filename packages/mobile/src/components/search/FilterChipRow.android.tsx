@@ -203,8 +203,9 @@ function FilterChipRowComponent({
   const { t } = useTranslation('climbs');
   const { brandColors, colorScheme } = useTheme();
   const chipColors = filterChipBrandColors(brandColors);
-  // Built once per render, reused for the resting label + all 7 menu items.
-  const sortLabelFor = buildSortLabel(t);
+  // Built once per render (and only when Sort is actually pinned), reused for the
+  // resting label + all 7 menu items.
+  const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
 
   // Angle rides as the first chip: it re-grades the whole list, so it belongs with
   // the other list-refinement chips rather than in the app bar. Self-contained (reads
@@ -487,7 +488,7 @@ function FilterChipRowComponent({
               Random reseeds a fresh shuffle. Opt-in, sits last. */}
           {pinnedChips.includes('sort') ? (
             <MenuChip
-              label={sortActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
+              label={sortActive ? (sortLabelFor?.(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
               selected={sortActive}
               colors={chipColors}
               renderItems={(close) => (
@@ -495,7 +496,7 @@ function FilterChipRowComponent({
                   {SORT_OPTIONS.map((value) => (
                     <MenuItem
                       key={value}
-                      label={sortLabelFor(value) ?? value}
+                      label={sortLabelFor?.(value) ?? value}
                       checked={value === sortBy}
                       onClick={() => {
                         onChangeSort(value);

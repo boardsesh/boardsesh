@@ -85,4 +85,15 @@ describe('pinned-chips-store', () => {
     await setPinnedChips(['rating']);
     expect(await loadPinnedChips()).toEqual(['rating']);
   });
+
+  it('togglePin during the load window flips the PERSISTED set, not the DEFAULT snapshot', async () => {
+    (await getMockStorage()).__setRaw(STORAGE_KEY, JSON.stringify(['grade', 'rating']));
+    const { togglePinnedChip } = await import('../pinned-chips-store');
+    // Toggle WITHOUT awaiting loadPinnedChips first — simulates an early pin tap on
+    // cold start. It must load the saved set first, then remove 'rating' from it,
+    // rather than computing DEFAULT − 'rating' and discarding the customization.
+    await togglePinnedChip('rating');
+    const raw = (await getMockStorage()).__getRaw(STORAGE_KEY);
+    expect(JSON.parse(raw as string)).toEqual(['grade']);
+  });
 });

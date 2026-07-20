@@ -14,6 +14,7 @@ import type { TFunction } from 'i18next';
 import {
   formatMinAscentsFilterCount,
   gradeAccuracyBucket,
+  GRADE_ACCURACY_VALUES,
   PROGRESS_FILTER_VALUES,
   SORT_OPTIONS,
   type ProgressFilter,
@@ -54,7 +55,10 @@ export function accuracyChipLabel(value: GradeAccuracyValue | 'off', t: TFunctio
   }
 }
 
-const ACCURACY_TAGS: readonly string[] = ['off', '0.2', '0.1', '0.05'];
+// The chip's picker tags: 'off' for the neutral bucket ('0'), plus every other
+// accuracy value. Derived from GRADE_ACCURACY_VALUES so a new bucket can't render
+// as a selectable-but-un-committable option.
+const ACCURACY_TAGS: readonly string[] = ['off', ...GRADE_ACCURACY_VALUES.filter((value) => value !== '0')];
 
 /** Narrows a raw native-picker tag to the accuracy value the chip commits. */
 export function isAccuracyTag(value: string): value is GradeAccuracyValue | 'off' {

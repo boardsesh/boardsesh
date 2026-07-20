@@ -50,6 +50,7 @@ import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useGrades, useSearchClimbsCount } from '../lib/graphql/hooks';
 import type { BoardName, HoldsFilter } from '@boardsesh/shared-schema';
+import { getTallWideScope } from '@boardsesh/board-constants';
 import { buildFilterLabels, formatSettersLabel, progressFilterLabel } from '../lib/filter-labels';
 import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-holds';
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
@@ -227,7 +228,13 @@ export function ClimbFilterSheet({
   // (#3330). The shared hook pins the column to this single detent's height;
   // Android bounds the column natively, so it keeps flex:1.
   const sheetColumnStyle = useSheetColumnStyle(detentSnapPoints);
-  const isKilter = boardName === 'kilter';
+  // Tall/Wide apply on any board whose active size has a shorter/narrower sibling
+  // in its family (getTallWideScope — the shared source of truth the chip row and
+  // server filter use), not just Kilter. Each toggle renders only where it applies,
+  // so the sheet control stays reachable even when the Shape chip is unpinned.
+  const { hasShorter: showTallControl, hasNarrower: showWideControl } = boardConfig
+    ? getTallWideScope(boardConfig.boardName as BoardName, boardConfig.layoutId, boardConfig.sizeId)
+    : { hasShorter: false, hasNarrower: false };
 
   // Live "Show N" preview for the in-progress edits (matches what Apply yields).
   // Debounced so rapid chip/toggle taps don't each fire a count request.
@@ -822,8 +829,11 @@ export function ClimbFilterSheet({
                 trackColor={trackColor}
               />
 
-              {/* Shape — Kilter homewall only. */}
-              {isKilter ? (
+              {/* Shape — shown wherever a shorter/narrower sibling size exists (Kilter
+                  homewall, Tension Board 2, Decoy, Grasshopper); each toggle only where
+                  it applies. Matches the chip row so Tall/Wide stays reachable here even
+                  when the Shape chip is unpinned. */}
+              {showTallControl || showWideControl ? (
                 <>
                   <View style={styles.subsectionGap} />
                   <View style={styles.pinnableLabelRow}>
@@ -832,18 +842,22 @@ export function ClimbFilterSheet({
                     </Text>
                     <PinToggle kind="shape" />
                   </View>
-                  <SwitchRow
-                    label={t('mobile.filter.tall')}
-                    description={t('mobile.filter.tallDescription')}
-                    value={!!localFilters.onlyTallClimbs}
-                    onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
-                  />
-                  <SwitchRow
-                    label={t('mobile.filter.wide')}
-                    description={t('mobile.filter.wideDescription')}
-                    value={!!localFilters.onlyWideClimbs}
-                    onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
-                  />
+                  {showTallControl ? (
+                    <SwitchRow
+                      label={t('mobile.filter.tall')}
+                      description={t('mobile.filter.tallDescription')}
+                      value={!!localFilters.onlyTallClimbs}
+                      onValueChange={(value) => setFiltersPatch({ onlyTallClimbs: value || undefined })}
+                    />
+                  ) : null}
+                  {showWideControl ? (
+                    <SwitchRow
+                      label={t('mobile.filter.wide')}
+                      description={t('mobile.filter.wideDescription')}
+                      value={!!localFilters.onlyWideClimbs}
+                      onValueChange={(value) => setFiltersPatch({ onlyWideClimbs: value || undefined })}
+                    />
+                  ) : null}
                 </>
               ) : null}
 

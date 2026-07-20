@@ -55,6 +55,11 @@ export async function setPinnedChips(kinds: readonly PinnableChipKind[]): Promis
 }
 
 export async function togglePinnedChip(kind: PinnableChipKind): Promise<void> {
+  // Wait for the persisted set to load first, so a toggle during the cold-start
+  // load window flips the user's SAVED pins — not the transient DEFAULT snapshot.
+  // Without this, an early tap would compute DEFAULT±kind and setPinnedChips'
+  // hasLoaded=true would then make the in-flight load discard the saved set.
+  await ensurePinnedChipsLoaded();
   const next = current.includes(kind) ? current.filter((k) => k !== kind) : [...current, kind];
   await setPinnedChips(next);
 }

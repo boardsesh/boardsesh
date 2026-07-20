@@ -1151,9 +1151,15 @@ function ClimbListInner() {
       filterTokens.filter((token) => {
         if (token.key === 'tall') return !(chipBackedTokenKeys.has('tall') && showTallChip);
         if (token.key === 'wide') return !(chipBackedTokenKeys.has('wide') && showWideChip);
+        // The Sort chip only switches the sort KEY, never the direction. So keep the
+        // sort token (its clear() resets both) whenever the direction is non-default —
+        // else an ascending sort set in the sheet would be unclearable from the row.
+        if (token.key === 'sort') {
+          return !(chipBackedTokenKeys.has('sort') && filters.sortOrder === DEFAULT_CLIMB_FILTER_STATE.sortOrder);
+        }
         return !chipBackedTokenKeys.has(token.key);
       }),
-    [filterTokens, chipBackedTokenKeys, showTallChip, showWideChip],
+    [filterTokens, chipBackedTokenKeys, showTallChip, showWideChip, filters.sortOrder],
   );
   const filterChrome = useMemo(() => {
     if (!showFilterChips) return null;

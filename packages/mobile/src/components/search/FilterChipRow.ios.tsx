@@ -94,8 +94,9 @@ function FilterChipRowComponent({
 }: FilterChipRowProps) {
   const { t } = useTranslation('climbs');
   const { brandColors } = useTheme();
-  // Built once per render, reused for the resting label + all 7 menu items.
-  const sortLabelFor = buildSortLabel(t);
+  // Built once per render (and only when Sort is actually pinned), reused for the
+  // resting label + all 7 menu items.
+  const sortLabelFor = pinnedChips.includes('sort') ? buildSortLabel(t) : null;
 
   // Popularity / rating chip wording lives in FilterChipRow.logic (shared with the
   // Android tree) so a filter is never worded two ways across platforms.
@@ -344,7 +345,7 @@ function FilterChipRowComponent({
               refinement). Picking Random reseeds a fresh shuffle. Opt-in, sits last. */}
           {pinnedChips.includes('sort') ? (
             <Menu
-              label={sortActive ? (sortLabelFor(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
+              label={sortActive ? (sortLabelFor?.(sortBy) ?? sortBy) : t('mobile.filter.sortBy')}
               modifiers={chipModifiers(sortActive)}
             >
               <Picker
@@ -356,7 +357,7 @@ function FilterChipRowComponent({
               >
                 {SORT_OPTIONS.map((value) => (
                   <Text key={value} modifiers={[tag(value)]}>
-                    {sortLabelFor(value) ?? value}
+                    {sortLabelFor?.(value) ?? value}
                   </Text>
                 ))}
               </Picker>
