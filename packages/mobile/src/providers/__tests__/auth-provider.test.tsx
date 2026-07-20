@@ -44,6 +44,13 @@ vi.mock('react-native', () => ({
   },
 }));
 
+// The loading-state splash renders react-native/expo-image primitives this
+// jsdom-mocked env doesn't provide; stub it — these tests exercise auth logic,
+// not the placeholder's pixels.
+vi.mock('../../components/AppLoadingSplash', () => ({
+  AppLoadingSplash: () => null,
+}));
+
 vi.mock('../../lib/screenshot-mode', () => ({
   SCREENSHOT_USER_EMAIL: 'screenshots@example.com',
   SCREENSHOT_USER_PASSWORD: 'screenshot-password',

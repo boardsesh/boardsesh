@@ -3,6 +3,7 @@ import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { AppLoadingSplash } from '../components/AppLoadingSplash';
 import { resolveAuthSession } from '../lib/auth-session';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { subscribeAuthTokenChanges } from '../lib/auth-token-events';
@@ -762,7 +763,12 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   );
 
   if (isLoading) {
-    return null;
+    // Not `null`: on web there's no native splash to cover a blank render, so
+    // returning nothing here leaves the page white until the session round-trip
+    // resolves (~2s cold). Paint the splash placeholder instead — instant FCP on
+    // web, invisible on native (the OS splash is still up). Redirect/auth logic
+    // below is unchanged; it only runs once the session has actually resolved.
+    return <AppLoadingSplash />;
   }
 
   const inAuthGroup = segments[0] === 'auth';
