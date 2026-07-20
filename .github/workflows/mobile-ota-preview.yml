@@ -321,6 +321,13 @@ jobs:
       - name: Publish iOS OTA
         id: publish_ios
         if: steps.compat.outputs.verdict_ios != 'native-change-required'
+        # THROWAWAY (test/ios-gzip-ota-preview — do NOT merge): point this preview at
+        # the gzip snapshot prefix to validate on-device transparent gzip decode on a
+        # real iOS binary via the pr-<n> channel. Step-level override (bundle-only,
+        # no fingerprint effect) — the workflow-level EXPO_PUBLIC_SNAPSHOT_BASE_URL
+        # stays v1 so mobile-ci-env-parity.test.ts stays green.
+        env:
+          EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
         run: vp run mobile:publish -- --channel "$CHANNEL" --platform ios
 
       - name: Publish Android OTA
@@ -328,6 +335,8 @@ jobs:
         if: steps.compat.outputs.verdict_android != 'native-change-required'
         env:
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          # THROWAWAY (see iOS step) — gzip prefix for the pr-<n> preview bundle.
+          EXPO_PUBLIC_SNAPSHOT_BASE_URL: https://boardsesh-board-snapshots.t3.tigrisfiles.io/board-snapshots/v1-gzip
         run: vp run mobile:publish -- --channel "$CHANNEL" --platform android
 
       # Sticky comment + deployment status, reflecting per-platform outcome. Always
