@@ -64,7 +64,7 @@ import { springs } from '../theme/animations';
 // with white text that must stay legible in both schemes.
 import { brandColors as staticBrandColors } from '../theme/colors';
 import { iosSystemColors } from '../theme/ios-colors';
-import { spacing, borderRadius } from '../theme/tokens';
+import { spacing } from '../theme/tokens';
 import { GradeRangeRail } from './grade';
 import type { ClimbFilters } from '../lib/climb-filter-types';
 import { DEFAULT_FILTERS, statusForAuth } from '../lib/climb-filter-types';

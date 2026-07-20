@@ -671,7 +671,6 @@
       "unpin": "Quitar de los atajos",
       "established2plus": "Establecido 2+",
       "benchmark": "Benchmarks",
-      "benchmarkDescription": "Vías marcadas como benchmark por el equipador",
       "showCount_one": "Ver {{count}} vía",
       "showCount_other": "Ver {{count}} vías",
       "sort": {
@@ -753,9 +752,7 @@
       "chips": {
         "filtersWithCount": "Filtros · {{count}}",
         "tall": "Altas",
-        "wide": "Anchas",
-        "lock": "Bloquear",
-        "unlock": "Desbloquear"
+        "wide": "Anchas"
       },
       "removeFilterAria": "Quitar {{filter}}"
     },

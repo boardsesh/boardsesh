@@ -53,7 +53,7 @@ import {
 } from './FilterChipRow.logic';
 import { buildSortLabel } from '../../lib/filter-labels';
 import { COLLECTION_VALUES } from '../../lib/collection-filter';
-import type { DimensionChip, FilterChipRowProps } from './FilterChipRow.types';
+import type { FilterChipRowProps } from './FilterChipRow.types';
 
 // Semantic icon → Material XML vector drawable. White-filled (#FFFFFFFF) so the
 // Compose `Icon` recolours them: inside a chip/menu slot the Icon inherits the

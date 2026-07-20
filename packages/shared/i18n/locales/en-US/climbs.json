@@ -671,7 +671,6 @@
       "unpin": "Remove from shortcuts",
       "established2plus": "Established 2+",
       "benchmark": "Benchmarks",
-      "benchmarkDescription": "Setter-flagged benchmark climbs",
       "showCount_one": "Show {{count}} climb",
       "showCount_other": "Show {{count}} climbs",
       "sort": {
@@ -753,9 +752,7 @@
       "chips": {
         "filtersWithCount": "Filters · {{count}}",
         "tall": "Tall",
-        "wide": "Wide",
-        "lock": "Lock",
-        "unlock": "Unlock"
+        "wide": "Wide"
       },
       "removeFilterAria": "Remove {{filter}}"
     },

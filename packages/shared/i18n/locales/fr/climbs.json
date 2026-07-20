@@ -671,7 +671,6 @@
       "unpin": "Retirer des raccourcis",
       "established2plus": "Établies 2+",
       "benchmark": "Benchmarks",
-      "benchmarkDescription": "Voies marquées benchmark par l'ouvreur",
       "showCount_one": "Voir {{count}} voie",
       "showCount_other": "Voir {{count}} voies",
       "sort": {
@@ -753,9 +752,7 @@
       "chips": {
         "filtersWithCount": "Filtres · {{count}}",
         "tall": "Hautes",
-        "wide": "Larges",
-        "lock": "Verrouiller",
-        "unlock": "Déverrouiller"
+        "wide": "Larges"
       },
       "removeFilterAria": "Retirer {{filter}}"
     },
