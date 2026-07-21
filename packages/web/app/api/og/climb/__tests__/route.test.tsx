@@ -39,7 +39,10 @@ vi.mock('@/app/lib/board-utils', () => ({
 }));
 
 vi.mock('@/app/components/board-renderer/util', () => ({
-  buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=10&set_ids=1%2C20&frames=p1r42&format=jpeg'),
+  buildOgBoardRenderUrl: vi.fn(
+    () =>
+      'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=10&set_ids=1%2C20&frames=p1r42&format=jpeg',
+  ),
 }));
 
 function makeRequest(params: Record<string, string>): NextRequest {
