@@ -1,7 +1,9 @@
 import React, { type PropsWithChildren } from 'react';
+import { headers } from 'next/headers';
 import type { BoardRouteParameters } from '@/app/lib/types';
-import { constructClimbListWithSlugs } from '@/app/lib/url-utils';
+import { constructClimbListWithSlugs, layoutOwnsNumericSlugRedirect } from '@/app/lib/url-utils';
 import { parseRouteParams } from '@/app/lib/url-utils.server';
+import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 import { permanentRedirect } from 'next/navigation';
 import { getBoardDetailsForBoard, generateBoardTitle } from '@/app/lib/board-utils';
 import BoardSeshHeader from '@/app/components/board-page/header';
@@ -48,8 +50,11 @@ export default async function BoardLayout(props: PropsWithChildren<BoardLayoutPr
 
   const { parsedParams, isNumericFormat } = await parseRouteParams(params);
 
-  // Redirect old numeric URLs to new slug format
-  if (isNumericFormat) {
+  // Redirect old numeric URLs to new slug format — but not for the /view and
+  // /play child routes, whose own pages redirect while preserving the climb
+  // uuid. Redirecting those to the bare list here would drop the climb.
+  const pathname = (await headers()).get(PATHNAME_HEADER) ?? '';
+  if (isNumericFormat && layoutOwnsNumericSlugRedirect(pathname)) {
     const boardDetails = getBoardDetailsForBoard(parsedParams);
 
     if (boardDetails.layout_name && boardDetails.size_name && boardDetails.set_names) {

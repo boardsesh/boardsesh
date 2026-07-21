@@ -708,6 +708,20 @@ export const hasOnlyNumericBoardRouteSegments = (
   );
 };
 
+/**
+ * The board `[angle]` layout wraps every child route (list, view, play, …) and
+ * 308-redirects legacy numeric URLs to their slug list URL. But the `/view` and
+ * `/play` child routes run their OWN numeric→slug redirect that preserves the
+ * climb uuid; if the layout redirected them to the bare list first, a shared
+ * legacy climb link would land on the list page (with a generic OG card) instead
+ * of the climb. The layout can't see the child segment from its route params, so
+ * it consults the request pathname (forwarded by middleware) and defers to the
+ * child for these climb-scoped routes.
+ */
+export const layoutOwnsNumericSlugRedirect = (pathname: string): boolean => {
+  return !pathname.includes('/view/') && !pathname.includes('/play/');
+};
+
 export const constructCreateClimbUrl = (
   board_name: string,
   layoutName: string,

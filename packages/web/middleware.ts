@@ -1,8 +1,9 @@
 // middleware.ts
 import { NextResponse, type NextRequest } from 'next/server';
 import { SUPPORTED_BOARDS } from './app/lib/board-data';
-import { getListPageCacheTTL } from './app/lib/list-page-cache';
+import { getClimbViewPageCacheTTL, getListPageCacheTTL } from './app/lib/list-page-cache';
 import { CLIMB_SESSION_COOKIE } from './app/lib/climb-session-cookie';
+import { PATHNAME_HEADER } from './app/lib/request-pathname-header';
 import { isSecureCookieContext } from './app/lib/auth/secure-cookies';
 import { resolveCrossSubdomainAuthCors } from './app/lib/auth/cross-subdomain-cors';
 import {
@@ -261,6 +262,12 @@ export function middleware(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(LOCALE_HEADER, locale);
+  // Expose the routing pathname to server layouts, which don't otherwise see
+  // their child route segment. The board `[angle]` layout reads it to leave a
+  // legacy numeric `/view/` or `/play/` URL to the child page's own
+  // climb-preserving redirect. Overwrite (never append) so a client-supplied
+  // value can't reach the layout.
+  requestHeaders.set(PATHNAME_HEADER, strippedPath);
 
   let response: NextResponse;
   if (needsRewrite) {
@@ -290,7 +297,12 @@ export function middleware(request: NextRequest) {
   // Vercel-CDN-Cache-Control is the highest-priority header for Vercel's CDN
   // and is not touched by Next.js rendering.
   // Cache-key follows the original (locale-prefixed) URL, so en and es never collide.
-  const cacheTTL = getListPageCacheTTL(strippedPath, request.nextUrl.searchParams);
+  // Climb view pages are equally URL-determined and personalization-free, so they
+  // cache the same way — including their legacy numeric variants, whose permanent
+  // redirect the CDN can then serve without re-rendering.
+  const cacheTTL =
+    getListPageCacheTTL(strippedPath, request.nextUrl.searchParams) ??
+    getClimbViewPageCacheTTL(strippedPath, request.nextUrl.searchParams);
   if (cacheTTL !== null) {
     const cdnCacheValue = `s-maxage=${cacheTTL}, stale-while-revalidate=${cacheTTL * 7}`;
     response.headers.set('Vercel-CDN-Cache-Control', cdnCacheValue);

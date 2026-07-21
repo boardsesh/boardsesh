@@ -3,8 +3,10 @@ import { NextRequest } from 'next/server';
 import { CLIMB_SESSION_COOKIE } from '@/app/lib/climb-session-cookie';
 import { DEFAULT_LOCALE, LOCALE_COOKIE, LOCALE_HEADER } from '@/app/lib/i18n/config';
 import { EXPO_WEB_CLASSIC_COOKIE, EXPO_WEB_ENABLED_COOKIE } from '@/app/lib/expo-web-rollout';
+import { PATHNAME_HEADER } from '@/app/lib/request-pathname-header';
 
-const { getListPageCacheTTL, hasUserSpecificFilters } = await import('@/app/lib/list-page-cache');
+const { getClimbViewPageCacheTTL, getListPageCacheTTL, hasUserSpecificFilters } =
+  await import('@/app/lib/list-page-cache');
 const { middleware } = await import('@/middleware');
 
 function sp(params: Record<string, string> = {}): URLSearchParams {
@@ -12,8 +14,13 @@ function sp(params: Record<string, string> = {}): URLSearchParams {
 }
 
 const TTL_24H = 86400;
+const TTL_1H = 3600;
 const LEGACY_LIST = '/kilter/original/12x12-square/screw_bolt/40/list';
 const SLUG_LIST = '/b/kilter-original-12x12/40/list';
+// View pages, all three URL shapes that resolve to the same climb.
+const SLUG_VIEW = '/b/kilter-original-12x12/40/view/test-climb-abcdef1234567890abcdef1234567890';
+const NAMED_VIEW = '/kilter/original/12x12-square/screw_bolt/40/view/test-climb-abcdef1234567890abcdef1234567890';
+const NUMERIC_VIEW = '/kilter/1/10/1,20/40/view/abcdef1234567890abcdef1234567890';
 const originalExpoWebFlag = process.env.BOARDSESH_WEB;
 const originalExpoWebOrigin = process.env.BOARDSESH_EXPO_WEB_ORIGIN;
 
@@ -148,6 +155,69 @@ describe('getListPageCacheTTL', () => {
       expect(getListPageCacheTTL(LEGACY_LIST, sp({ minGrade: '10', hideAttempted: 'false', onlyDrafts: '0' }))).toBe(
         TTL_24H,
       );
+    });
+  });
+});
+
+describe('getClimbViewPageCacheTTL', () => {
+  describe('route matching', () => {
+    it('matches the slug view format', () => {
+      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp())).toBe(TTL_1H);
+    });
+
+    it('matches the named-segment (legacy) view format', () => {
+      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp())).toBe(TTL_1H);
+    });
+
+    it('matches the numeric view format (so its redirect is cacheable)', () => {
+      expect(getClimbViewPageCacheTTL(NUMERIC_VIEW, sp())).toBe(TTL_1H);
+    });
+
+    it('matches the tension board view', () => {
+      expect(getClimbViewPageCacheTTL('/tension/original/12x12/screw_bolt/30/view/some-climb-uuid', sp())).toBe(TTL_1H);
+    });
+
+    it('rejects an unsupported board (legacy view shape)', () => {
+      expect(getClimbViewPageCacheTTL('/fakeboard/1/10/1,20/40/view/some-uuid', sp())).toBeNull();
+    });
+
+    it('rejects a list page', () => {
+      expect(getClimbViewPageCacheTTL(LEGACY_LIST, sp())).toBeNull();
+      expect(getClimbViewPageCacheTTL(SLUG_LIST, sp())).toBeNull();
+    });
+
+    it('rejects a play page (the play redirect page carries no OG card worth caching)', () => {
+      expect(getClimbViewPageCacheTTL('/kilter/1/10/1,20/40/play/some-uuid', sp())).toBeNull();
+      expect(getClimbViewPageCacheTTL('/b/kilter-original-12x12/40/play/some-uuid', sp())).toBeNull();
+    });
+
+    it('rejects a create page', () => {
+      expect(getClimbViewPageCacheTTL('/kilter/original/12x12-square/screw_bolt/40/create', sp())).toBeNull();
+    });
+
+    it('rejects the slug view shape with a wrong segment count', () => {
+      // /b/[board_slug]/view/[uuid] is missing the angle segment.
+      expect(getClimbViewPageCacheTTL('/b/kilter-original-12x12/view/some-uuid', sp())).toBeNull();
+    });
+
+    it('rejects the root and settings paths', () => {
+      expect(getClimbViewPageCacheTTL('/', sp())).toBeNull();
+      expect(getClimbViewPageCacheTTL('/settings', sp())).toBeNull();
+    });
+  });
+
+  describe('search params', () => {
+    it('caches with non-user-specific params (tracking/query noise)', () => {
+      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ utm_source: 'twitter' }))).toBe(TTL_1H);
+    });
+
+    it.each([
+      ['hideAttempted', 'true'],
+      ['showOnlyCompleted', '1'],
+      ['onlyDrafts', 'true'],
+    ])('skips cache for user-specific %s=%s (matching list behavior)', (param, value) => {
+      expect(getClimbViewPageCacheTTL(SLUG_VIEW, sp({ [param]: value }))).toBeNull();
+      expect(getClimbViewPageCacheTTL(NAMED_VIEW, sp({ [param]: value }))).toBeNull();
     });
   });
 });
@@ -419,6 +489,74 @@ describe('middleware cache headers on list pages', () => {
     const response = middleware(makeRequest('/some/page'));
     expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
     expect(response.headers.has('CDN-Cache-Control')).toBe(false);
+  });
+});
+
+describe('middleware cache headers on climb view pages', () => {
+  const expected1h = `s-maxage=${TTL_1H}, stale-while-revalidate=${TTL_1H * 7}`;
+
+  it.each([
+    ['slug view', SLUG_VIEW],
+    ['named-segment view', NAMED_VIEW],
+    // The numeric view URL 308-redirects to its slug form; caching the request
+    // lets the CDN serve that deterministic redirect without re-rendering.
+    ['numeric view (redirect)', NUMERIC_VIEW],
+  ])('sets 1h CDN cache headers on the %s URL', (_shape, url) => {
+    const response = middleware(makeRequest(url));
+    expect(response.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
+    expect(response.headers.get('CDN-Cache-Control')).toBe(expected1h);
+  });
+
+  it('does not cache a play page', () => {
+    const response = middleware(makeRequest('/kilter/1/10/1,20/40/play/some-uuid'));
+    expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
+  });
+
+  it('does not cache a view page carrying a user-specific filter', () => {
+    const response = middleware(makeRequest(`${SLUG_VIEW}?hideAttempted=true`));
+    expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
+  });
+
+  it('cache-keys es and en separately (header follows the original locale-prefixed URL)', () => {
+    const enResponse = middleware(makeRequest(SLUG_VIEW));
+    const esResponse = middleware(makeRequest(`/es${SLUG_VIEW}`));
+    // Both are cacheable, but the CDN keys them by their distinct request URLs.
+    expect(enResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
+    expect(esResponse.headers.get('Vercel-CDN-Cache-Control')).toBe(expected1h);
+  });
+
+  it('never caches the sticky-locale redirect — a cookie-varying 307 must not enter the CDN', () => {
+    const request = makeRequest(SLUG_VIEW);
+    request.cookies.set(LOCALE_COOKIE, 'es');
+    const response = middleware(request);
+    // A visitor with a non-default locale cookie on the unprefixed URL gets a
+    // 307 to /es/…; if that response ever carried the CDN header, the redirect
+    // would be cached under the plain URL and served to every visitor.
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toContain('/es');
+    expect(response.headers.has('Vercel-CDN-Cache-Control')).toBe(false);
+    expect(response.headers.has('CDN-Cache-Control')).toBe(false);
+  });
+});
+
+describe('middleware forwards the routing pathname header', () => {
+  const requestHeader = `x-middleware-request-${PATHNAME_HEADER}`;
+
+  it('forwards the locale-stripped pathname on a board route', () => {
+    const response = middleware(makeRequest(NUMERIC_VIEW));
+    expect(response.headers.get(requestHeader)).toBe(NUMERIC_VIEW);
+  });
+
+  it('strips the locale prefix from the forwarded pathname', () => {
+    const response = middleware(makeRequest(`/es${SLUG_VIEW}`));
+    expect(response.headers.get(requestHeader)).toBe(SLUG_VIEW);
+  });
+
+  it('overwrites any client-supplied pathname header (no spoofing)', () => {
+    const request = makeRequest(SLUG_VIEW);
+    request.headers.set(PATHNAME_HEADER, '/list');
+    const response = middleware(request);
+    expect(response.headers.get(requestHeader)).toBe(SLUG_VIEW);
   });
 });
 

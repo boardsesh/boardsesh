@@ -18,6 +18,7 @@ import {
   isUuidOnly,
   isNumericId,
   hasOnlyNumericBoardRouteSegments,
+  layoutOwnsNumericSlugRedirect,
   getBaseBoardPath,
   extractAngleFromPathname,
   replaceAngleInPathname,
@@ -1096,6 +1097,26 @@ describe('Utility functions', () => {
           set_ids: 'power_flow_engage',
         }),
       ).toBe(false);
+    });
+  });
+
+  describe('layoutOwnsNumericSlugRedirect', () => {
+    it('owns the redirect for a bare list URL', () => {
+      expect(layoutOwnsNumericSlugRedirect('/kilter/1/10/1,20/40/list')).toBe(true);
+    });
+
+    it('owns the redirect for non-climb child routes (create/liked/logbook)', () => {
+      expect(layoutOwnsNumericSlugRedirect('/kilter/1/10/1,20/40/create')).toBe(true);
+      expect(layoutOwnsNumericSlugRedirect('/kilter/1/10/1,20/40/liked')).toBe(true);
+      expect(layoutOwnsNumericSlugRedirect('/kilter/1/10/1,20/40/logbook')).toBe(true);
+    });
+
+    it('defers to the child page for a numeric view URL (the fix: keep the climb)', () => {
+      expect(layoutOwnsNumericSlugRedirect('/kilter/1/10/1,20/40/view/abcdef1234567890abcdef1234567890')).toBe(false);
+    });
+
+    it('defers to the child page for a numeric play URL', () => {
+      expect(layoutOwnsNumericSlugRedirect('/kilter/1/10/1,20/40/play/abcdef1234567890abcdef1234567890')).toBe(false);
     });
   });
 });
