@@ -39,7 +39,7 @@ vi.mock('@/app/lib/board-utils', () => ({
 }));
 
 vi.mock('@/app/components/board-renderer/util', () => ({
-  buildOgBoardRenderUrl: vi.fn(() => '/api/internal/board-render?board_name=kilter&variant=og&format=png'),
+  buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb?board_name=kilter&variant=og&format=jpeg'),
 }));
 
 function makeRequest(params: Record<string, string>): NextRequest {
@@ -64,12 +64,12 @@ describe('api/og/climb legacy redirect', () => {
     vi.clearAllMocks();
   });
 
-  it('redirects legacy climb OG requests to the immutable Rust-render URL', async () => {
+  it('redirects legacy climb OG requests to the absolute backend OG image URL', async () => {
     const response = await GET(makeRequest(validParams));
 
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toBe(
-      'http://localhost:3000/api/internal/board-render?board_name=kilter&variant=og&format=png',
+      'https://ws.boardsesh.com/og/climb?board_name=kilter&variant=og&format=jpeg',
     );
     expect(response.headers.get('Cache-Control')).toContain('s-maxage=300');
   });

@@ -83,7 +83,7 @@ vi.mock('@/app/lib/url-utils', () => ({
 }));
 
 vi.mock('@/app/components/board-renderer/util', () => ({
-  buildOgBoardRenderUrl: vi.fn(() => '/api/internal/board-render?board_name=kilter&variant=og&format=png'),
+  buildOgBoardRenderUrl: vi.fn(() => 'https://ws.boardsesh.com/og/climb?board_name=kilter&variant=og&format=jpeg'),
   buildOverlayUrl: vi.fn(() => '/api/internal/board-render?board_name=kilter&variant=overlay'),
 }));
 
@@ -115,7 +115,7 @@ function getOpenGraphImageUrl(image: string | URL | { url: string | URL } | unde
 }
 
 describe('board slug climb metadata', () => {
-  it('uses the immutable Rust board render URL for social images', async () => {
+  it('uses the absolute backend OG image URL for social images', async () => {
     const metadata = await pageModule.generateMetadata({
       params: Promise.resolve({
         board_slug: 'my-board',
@@ -127,7 +127,9 @@ describe('board slug climb metadata', () => {
     const image = Array.isArray(metadata.openGraph?.images) ? metadata.openGraph.images[0] : metadata.openGraph?.images;
     const imageUrl = getOpenGraphImageUrl(image);
 
-    expect(imageUrl).toBe('/api/internal/board-render?board_name=kilter&variant=og&format=png');
+    // The absolute backend URL must pass through createPageMetadata/normalizePath
+    // untouched — no leading slash mangling it into `/https://…`.
+    expect(imageUrl).toBe('https://ws.boardsesh.com/og/climb?board_name=kilter&variant=og&format=jpeg');
     expect(imageUrl).not.toContain('/api/og/climb');
   });
 

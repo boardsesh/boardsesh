@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vite-plus/test';
+import { describe, it, expect, vi, afterEach } from 'vite-plus/test';
 import { getImageUrl, buildBoardRenderUrl, buildOverlayUrl, buildOgBoardRenderUrl } from '../util';
 import type { BoardDetails } from '@/app/lib/types';
 
@@ -136,13 +136,34 @@ describe('buildOgBoardRenderUrl', () => {
     boardHeight: 1350,
   } as unknown as BoardDetails;
 
-  it('builds the public OG board render URL', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('points at the backend /og/climb endpoint as an absolute JPEG URL when the origin resolves', () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
+
+    const url = buildOgBoardRenderUrl(boardDetails, 'p1r12,p2r13');
+
+    expect(url).toBe(
+      'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1,20' +
+        '&frames=p1r42p2r43&include_background=1&variant=og&format=jpeg',
+    );
+    expect(url).toContain('format=jpeg');
+    expect(url).not.toContain('/api/internal/board-render');
+    expect(url).not.toContain('/api/og/climb');
+  });
+
+  it('falls back to the relative web board-render PNG URL when the backend origin is unset', () => {
+    vi.stubEnv('NEXT_PUBLIC_WS_URL', '');
+
     const url = buildOgBoardRenderUrl(boardDetails, 'p1r12,p2r13');
 
     expect(url).toContain('/api/internal/board-render');
     expect(url).toContain('include_background=1');
     expect(url).toContain('variant=og');
     expect(url).toContain('format=png');
+    expect(url).not.toContain('ws.boardsesh.com');
     expect(url).not.toContain('/api/og/climb');
   });
 });

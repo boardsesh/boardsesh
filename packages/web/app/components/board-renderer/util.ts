@@ -1,5 +1,6 @@
 import { accumulateFramesToMaps, accumulatedMapsToFrameStrings } from '@boardsesh/board-constants/hold-states';
 import type { BoardDetails, BoardName } from '@/app/lib/types';
+import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { BOARD_IMAGE_DIMENSIONS } from '../../lib/board-data';
 export { convertLitUpHoldsStringToMap } from './types';
 // Multi-frame playback primitives now live in the shared, renderer-agnostic
@@ -85,12 +86,36 @@ export const buildOverlayUrl = (boardDetails: BoardDetails, frames: string, thum
     includeBackground: true,
   });
 
-export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string) =>
-  buildBoardRenderUrl(boardDetails, toFlatFrames(frames, boardDetails.board_name), {
+/**
+ * OG card image for a shared climb. Points at the backend `/og/climb` endpoint
+ * (long-running process, warm renderer, JPEG by default) as an absolute URL so
+ * crawlers fetch it directly instead of the slow Vercel render path. When the
+ * backend origin can't be resolved (misconfigured env, some test contexts) it
+ * falls back to the web board-render route unchanged.
+ */
+export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string) => {
+  const flatFrames = toFlatFrames(frames, boardDetails.board_name);
+  const backendOrigin = getPublicBackendHttpUrl();
+
+  if (backendOrigin) {
+    return (
+      `${backendOrigin}/og/climb?board_name=${boardDetails.board_name}` +
+      `&layout_id=${boardDetails.layout_id}` +
+      `&size_id=${boardDetails.size_id}` +
+      `&set_ids=${boardDetails.set_ids.join(',')}` +
+      `&frames=${encodeURIComponent(flatFrames)}` +
+      // include_background/variant are inert on the backend (it always renders
+      // the OG composite); kept so the URL family stays param-compatible.
+      `&include_background=1&variant=og&format=jpeg`
+    );
+  }
+
+  return buildBoardRenderUrl(boardDetails, flatFrames, {
     includeBackground: true,
     variant: 'og',
     format: 'png',
   });
+};
 
 const USE_SELF_HOSTED_IMAGES = true;
 

@@ -28,6 +28,12 @@ function normalizePath(path?: string): string | undefined {
     return undefined;
   }
 
+  // Absolute URLs (e.g. the backend-hosted OG image) pass through untouched —
+  // prefixing a slash would mangle them into `/https://…`.
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
   if (path === '/') {
     return '/';
   }

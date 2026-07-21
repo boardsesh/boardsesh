@@ -58,6 +58,20 @@ describe('SEO metadata helper', () => {
       });
     });
 
+    it('passes an absolute image URL through untouched for OG and Twitter', () => {
+      const absoluteImageUrl = 'https://ws.boardsesh.com/og/climb?board_name=kilter&variant=og&format=jpeg';
+      const metadata = createPageMetadata({
+        title: 'Kilter Climb',
+        description: 'A shared climb card.',
+        path: 'b/my-board/40/view/test-climb',
+        imagePath: absoluteImageUrl,
+      });
+
+      const image = Array.isArray(metadata.openGraph?.images) ? metadata.openGraph.images[0] : undefined;
+      expect(image).toMatchObject({ url: absoluteImageUrl });
+      expect(metadata.twitter?.images).toEqual([absoluteImageUrl]);
+    });
+
     it('supports pages without a canonical path or social image', () => {
       const metadata = createPageMetadata({
         title: 'Standalone',
