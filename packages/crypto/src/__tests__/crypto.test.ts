@@ -43,8 +43,12 @@ describe('encrypt and decrypt', () => {
 
   it('throws on tampered ciphertext', () => {
     const encrypted = encrypt('test');
-    // Modify the last character to corrupt the auth tag
-    const tampered = encrypted.slice(0, -1) + 'X';
+    // Flip the bits of the final ciphertext byte to corrupt the auth tag.
+    // (Replacing the last base64 character was flaky: the replacement could
+    // equal the original, or differ only in base64's unused trailing bits.)
+    const tamperedBytes = Buffer.from(encrypted, 'base64');
+    tamperedBytes[tamperedBytes.length - 1] ^= 0xff;
+    const tampered = tamperedBytes.toString('base64');
     expect(() => decrypt(tampered)).toThrow();
   });
 
