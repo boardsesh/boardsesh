@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type { OutputFormat } from './types';
 
-/** Board names the render pipeline accepts. */
-export const VALID_BOARD_NAMES = new Set([
+/** Board names the render pipeline accepts. Single source for the Set and the zod enum. */
+const VALID_BOARD_NAME_LIST = [
   'kilter',
   'tension',
   'moonboard',
@@ -10,7 +10,9 @@ export const VALID_BOARD_NAMES = new Set([
   'touchstone',
   'grasshopper',
   'soill',
-]);
+] as const;
+
+export const VALID_BOARD_NAMES: ReadonlySet<string> = new Set(VALID_BOARD_NAME_LIST);
 
 /** Hard cap on the encoded frames string, to bound WASM work per request. */
 export const MAX_FRAMES_LENGTH = 16_384;
@@ -80,7 +82,7 @@ export function isValidFramesString(frames: string): boolean {
  * push the backend into wasted WASM/sharp renders.
  */
 export const ogClimbQuerySchema = z.object({
-  board_name: z.enum(['kilter', 'tension', 'moonboard', 'decoy', 'touchstone', 'grasshopper', 'soill']),
+  board_name: z.enum(VALID_BOARD_NAME_LIST),
   layout_id: z.coerce.number().int().nonnegative(),
   size_id: z.coerce.number().int().nonnegative(),
   set_ids: z

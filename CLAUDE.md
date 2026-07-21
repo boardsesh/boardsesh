@@ -113,6 +113,7 @@ Read relevant `docs/` before working on the matching area; update docs when the 
 - `docs/ai-design-guidelines.md` — Velvet Send design system (mobile-canonical: palette, typography, tokens, Liquid Glass / Material variants; web now consumes it too via `@boardsesh/velvet-tokens` + the foreground/fill split — see the "Web (consuming Velvet Send)" section)
 - `docs/live-activity-push-testing.md` — APNs Live Activity push testing
 - `docs/logging.md` — backend structured logger (winston)
+- `docs/og-climb.md` — backend-served climb OG share cards (`GET /og/climb`: caches, env vars, timings)
 - `docs/mobile-sheets-vs-routes.md` — mobile: which surface to use (bottom sheet vs route), with the decision tree + the hard rules (incl. why `fullScreenModal` breaks the iOS 26 native tab bar)
 
 ## Architecture Overview

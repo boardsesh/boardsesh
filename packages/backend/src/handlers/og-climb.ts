@@ -8,21 +8,24 @@ import {
 import { applyCorsHeaders } from './cors';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 import { RateLimitError } from '../utils/rate-limiter';
-import { isBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
 import { logger } from '../utils/logger';
 
 const RATE_LIMIT_MAX = 120;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const SLOW_RENDER_MS = 1000;
 
-/** Best-effort client IP for rate limiting. Prefers the proxy-forwarded IP. */
+/**
+ * Client IP for rate limiting. Uses the LAST x-forwarded-for entry: the edge
+ * proxy (Railway) appends the IP it observed, while earlier entries are
+ * client-supplied and spoofable — trusting the first hop would let a client
+ * mint a fresh identity per request and bypass the per-IP limit.
+ */
 function getClientIp(req: IncomingMessage): string {
   const forwarded = req.headers['x-forwarded-for'];
-  const firstHop = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0];
-  const realIp = req.headers['x-real-ip'];
-  return (
-    firstHop?.trim() || (Array.isArray(realIp) ? realIp[0] : realIp)?.trim() || req.socket.remoteAddress || 'unknown'
-  );
+  const forwardedChain = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
+  const lastHop = forwardedChain?.split(',').at(-1)?.trim();
+  return lastHop || req.socket.remoteAddress || 'unknown';
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
@@ -66,7 +69,7 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     throw error;
   }
 
-  if (!isBoardRendererAvailable()) {
+  if (!(await ensureBoardRendererAvailable())) {
     sendJson(res, 503, { error: 'Board renderer unavailable' });
     return;
   }

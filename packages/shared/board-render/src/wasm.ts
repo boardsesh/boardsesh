@@ -34,7 +34,12 @@ export function createOverlayRenderer(loadWasmBytes: () => Promise<Uint8Array | 
         const wasmBytes = await loadWasmBytes();
         wasmModule.initSync({ module: wasmBytes });
         renderOverlay = wasmModule.render_overlay;
-      })();
+      })().catch((initError: unknown) => {
+        // Clear the lock so a transient failure (e.g. I/O) can be retried by a
+        // later call instead of pinning every caller to the same rejection.
+        initPromise = null;
+        throw initError;
+      });
     }
     await initPromise;
   }

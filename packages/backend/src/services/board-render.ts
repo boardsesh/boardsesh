@@ -10,13 +10,15 @@ import type { BoardName } from '@boardsesh/shared-schema';
 import { logger } from '../utils/logger';
 
 /**
- * Default board configs used to warm the OG base cache at boot. Copied from
- * web's FALLBACK_BOARD_PREVIEW_CONFIGS (not imported — the backend must not
- * depend on packages/web).
+ * Default board configs used to warm the OG base cache at boot. Mirrors web's
+ * FALLBACK_BOARD_PREVIEW_CONFIGS (not imported — the backend must not depend
+ * on packages/web) plus a MoonBoard 2016 entry so every supported board gets a
+ * warm base.
  */
 const FALLBACK_BOARD_PREVIEW_CONFIGS: Record<string, { layout_id: number; size_id: number; set_ids: number[] }> = {
   kilter: { layout_id: 1, size_id: 10, set_ids: [1, 20] },
   tension: { layout_id: 1, size_id: 10, set_ids: [1] },
+  moonboard: { layout_id: 2, size_id: 1, set_ids: [2, 3, 4] },
   decoy: { layout_id: 2, size_id: 1, set_ids: [1, 2] },
   touchstone: { layout_id: 1, size_id: 1, set_ids: [1] },
   grasshopper: { layout_id: 1, size_id: 4, set_ids: [1, 2] },
@@ -36,15 +38,24 @@ const byteCache = new BoundedLru<{ buffer: Buffer; contentType: string }>({
 
 // Pre-composited OG backdrop + board photos (raw RGBA), keyed by board config.
 // Every climb on the same board reuses it, so only the cheap overlay composite
-// + encode runs per climb. Entry-bounded (each base is ~3 MB raw).
+// + encode runs per climb. Entry-bounded (each base is ~3 MB raw), so no byte
+// budget applies.
 const baseCache = new BoundedLru<OgBaseResult>({
   maxEntries: OG_BASE_CACHE_ENTRIES,
-  maxBytes: Number.MAX_SAFE_INTEGER,
+  maxBytes: Infinity,
   sizeOf: (value) => value.base.length,
 });
 
+// Coalesces concurrent requests for the same uncached climb into one render —
+// simultaneous crawler fetches (FB + Twitter + WhatsApp) must not each pay
+// WASM + sharp for identical bytes.
+const inFlightRenders = new Map<string, Promise<OgClimbRenderResult>>();
+
+const INIT_RETRY_INTERVAL_MS = 30_000;
+
 let overlayRenderer: OverlayRenderer | null = null;
 let rendererAvailable = false;
+let lastInitAttemptAtMs = 0;
 let imagesRoot = '';
 
 function resolveImagePath(relPath: string): string | null {
@@ -59,6 +70,7 @@ function resolveImagePath(relPath: string): string | null {
  * 503) — this never throws, so a missing asset can't crash the server.
  */
 export async function initBoardRenderer(): Promise<void> {
+  lastInitAttemptAtMs = Date.now();
   try {
     const require = createRequire(import.meta.url);
     const wasmJsPath = require.resolve('@boardsesh/board-renderer-wasm');
@@ -89,7 +101,16 @@ export async function initBoardRenderer(): Promise<void> {
   }
 }
 
-export function isBoardRendererAvailable(): boolean {
+/**
+ * True when the renderer is ready. When boot-time init failed (e.g. a transient
+ * I/O error), re-attempts init at most once per INIT_RETRY_INTERVAL_MS so the
+ * endpoint recovers without a process restart.
+ */
+export async function ensureBoardRendererAvailable(): Promise<boolean> {
+  if (rendererAvailable) return true;
+  if (Date.now() - lastInitAttemptAtMs >= INIT_RETRY_INTERVAL_MS) {
+    await initBoardRenderer();
+  }
   return rendererAvailable;
 }
 
@@ -128,9 +149,27 @@ export async function renderOgClimb(params: OgClimbRenderParams): Promise<OgClim
     throw new Error('Board renderer is not initialised');
   }
 
-  const cached = byteCache.get(byteCacheKey(params));
+  const cacheKey = byteCacheKey(params);
+  const cached = byteCache.get(cacheKey);
   if (cached) {
     return { ...cached, cache: 'hit', timings: { wasmMs: 0, baseMs: 0, encodeMs: 0 } };
+  }
+
+  const inFlight = inFlightRenders.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const renderPromise = renderOgClimbUncached(params, cacheKey).finally(() => {
+    inFlightRenders.delete(cacheKey);
+  });
+  inFlightRenders.set(cacheKey, renderPromise);
+  return renderPromise;
+}
+
+async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: string): Promise<OgClimbRenderResult> {
+  if (!overlayRenderer) {
+    throw new Error('Board renderer is not initialised');
   }
 
   const parsedSetIds = params.setIds
@@ -186,7 +225,7 @@ export async function renderOgClimb(params: OgClimbRenderParams): Promise<OgClim
   });
   const encodeMs = performance.now() - encodeT0;
 
-  byteCache.set(byteCacheKey(params), { buffer, contentType });
+  byteCache.set(cacheKey, { buffer, contentType });
 
   return { buffer, contentType, cache, timings: { wasmMs, baseMs, encodeMs } };
 }

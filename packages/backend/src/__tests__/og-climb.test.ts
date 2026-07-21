@@ -10,7 +10,7 @@ import { RateLimitError } from '../utils/rate-limiter';
 // handling, headers, availability) is exercised in isolation; the real service
 // is pulled in via vi.importActual for the render smoke test at the end.
 vi.mock('../services/board-render', () => ({
-  isBoardRendererAvailable: vi.fn(() => true),
+  ensureBoardRendererAvailable: vi.fn(async () => true),
   renderOgClimb: vi.fn(),
   initBoardRenderer: vi.fn(),
 }));
@@ -19,7 +19,7 @@ vi.mock('../utils/redis-rate-limiter', () => ({
 }));
 
 import { handleOgClimb } from '../handlers/og-climb';
-import { isBoardRendererAvailable, renderOgClimb } from '../services/board-render';
+import { ensureBoardRendererAvailable, renderOgClimb } from '../services/board-render';
 import { checkRateLimitRedis } from '../utils/redis-rate-limiter';
 
 type MockRes = {
@@ -80,7 +80,7 @@ async function run(params: Record<string, string>): Promise<MockRes> {
 describe('handleOgClimb', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(isBoardRendererAvailable).mockReturnValue(true);
+    vi.mocked(ensureBoardRendererAvailable).mockResolvedValue(true);
     vi.mocked(checkRateLimitRedis).mockResolvedValue(undefined);
     vi.mocked(renderOgClimb).mockResolvedValue({
       buffer: Buffer.from([0xff, 0xd8, 0xff, 0x00]),
@@ -135,9 +135,20 @@ describe('handleOgClimb', () => {
 
   describe('availability', () => {
     it('returns 503 when the renderer is unavailable, without rendering', async () => {
-      vi.mocked(isBoardRendererAvailable).mockReturnValue(false);
+      vi.mocked(ensureBoardRendererAvailable).mockResolvedValue(false);
       const res = await run(validParams);
       expect(res.statusCode).toBe(503);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('CORS preflight', () => {
+    it('short-circuits OPTIONS before rate limiting and rendering', async () => {
+      const { req, url } = makeRequest(validParams, 'OPTIONS');
+      const res = makeResponse();
+      await handleOgClimb(req, res as unknown as ServerResponse, url);
+      expect(res.statusCode).toBe(200);
+      expect(checkRateLimitRedis).not.toHaveBeenCalled();
       expect(renderOgClimb).not.toHaveBeenCalled();
     });
   });
@@ -192,7 +203,7 @@ describe('renderOgClimb (real render)', () => {
     const service = await vi.importActual<typeof import('../services/board-render')>('../services/board-render');
 
     await service.initBoardRenderer();
-    expect(service.isBoardRendererAvailable()).toBe(true);
+    expect(await service.ensureBoardRendererAvailable()).toBe(true);
 
     const params = {
       boardName: 'kilter',
@@ -220,5 +231,14 @@ describe('renderOgClimb (real render)', () => {
     expect(second.cache).toBe('hit');
     expect(second.timings.wasmMs).toBe(0);
     expect(second.buffer).toBe(first.buffer);
+
+    // Concurrent requests for the same uncached climb coalesce into a single
+    // render: both callers resolve to the exact same result object.
+    const uncachedParams = { ...params, frames: 'p1096r15p1234r12' };
+    const [concurrentFirst, concurrentSecond] = await Promise.all([
+      service.renderOgClimb(uncachedParams),
+      service.renderOgClimb(uncachedParams),
+    ]);
+    expect(concurrentSecond).toBe(concurrentFirst);
   }, 30_000);
 });
