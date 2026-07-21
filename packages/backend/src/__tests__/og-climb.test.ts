@@ -110,6 +110,16 @@ describe('handleOgClimb', () => {
       expect(renderOgClimb).not.toHaveBeenCalled();
     });
 
+    it('rejects missing or empty frames with 400 — a blank board must not get immutable 200 headers', async () => {
+      const { frames: _omit, ...paramsWithoutFrames } = validParams;
+      const missingFramesResponse = await run(paramsWithoutFrames);
+      expect(missingFramesResponse.statusCode).toBe(400);
+
+      const emptyFramesResponse = await run({ ...validParams, frames: '' });
+      expect(emptyFramesResponse.statusCode).toBe(400);
+      expect(renderOgClimb).not.toHaveBeenCalled();
+    });
+
     it('rejects malformed frames with 400', async () => {
       const res = await run({ ...validParams, frames: 'p1073r42<script>' });
       expect(res.statusCode).toBe(400);

@@ -97,8 +97,8 @@ describe('ogClimbQuerySchema', () => {
     expect(parsed.frames).toBe('p1080r15p1202r12');
   });
 
-  it('accepts an empty frames string', () => {
-    expect(ogClimbQuerySchema.parse({ ...valid, frames: '' }).frames).toBe('');
+  it('rejects an empty frames string (a blank board must not be cacheable as a climb card)', () => {
+    expect(ogClimbQuerySchema.safeParse({ ...valid, frames: '' }).success).toBe(false);
   });
 
   it('accepts a single set id', () => {

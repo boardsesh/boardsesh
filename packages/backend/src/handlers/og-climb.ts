@@ -12,6 +12,11 @@ import { ensureBoardRendererAvailable, renderOgClimb } from '../services/board-r
 import { logger } from '../utils/logger';
 
 const RATE_LIMIT_MAX = 120;
+// Secondary bucket keyed by the TCP peer: on Railway that is the edge proxy,
+// so this acts as a high global ceiling that still caps abuse if the service
+// is ever reached through a proxy that forwards x-forwarded-for without
+// appending (which would let clients mint fresh per-IP buckets at will).
+const SOCKET_RATE_LIMIT_MAX = 600;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const SLOW_RENDER_MS = 1000;
 
@@ -56,10 +61,17 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
     return;
   }
 
-  // Per-IP rate limit. Fails open when Redis is unavailable (falls back to the
-  // in-memory limiter inside checkRateLimitRedis).
+  // Per-IP rate limit plus a per-socket-peer ceiling (see SOCKET_RATE_LIMIT_MAX).
+  // Fails open when Redis is unavailable (falls back to the in-memory limiter
+  // inside checkRateLimitRedis).
   try {
     await checkRateLimitRedis(getClientIp(req), 'og-climb', RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS);
+    await checkRateLimitRedis(
+      req.socket.remoteAddress || 'unknown',
+      'og-climb-peer',
+      SOCKET_RATE_LIMIT_MAX,
+      RATE_LIMIT_WINDOW_MS,
+    );
   } catch (error) {
     if (error instanceof RateLimitError) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(error.retryAfterSeconds) });

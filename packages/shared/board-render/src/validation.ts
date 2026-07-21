@@ -93,6 +93,9 @@ export const ogClimbQuerySchema = z.object({
     .transform((setIdsCsv) => [...new Set(setIdsCsv.split(',').map(Number))].sort((a, b) => a - b).join(',')),
   frames: z
     .string()
+    // Required: an empty frames string would render a blank board and cache it
+    // with immutable headers as if it were a real climb card.
+    .min(1, 'frames is required')
     .max(MAX_FRAMES_LENGTH, 'frames string is too large')
     .refine(isValidFramesString, 'frames contains invalid syntax'),
   format: z.enum(['webp', 'png', 'jpeg', 'jpg']).optional(),
