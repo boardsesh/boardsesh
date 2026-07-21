@@ -1,9 +1,7 @@
-export const OG_IMAGE_WIDTH = 1200;
-export const OG_IMAGE_HEIGHT = 630;
-
-const ONE_YEAR_SECONDS = 31_536_000;
-const SHORT_TTL_SECONDS = 300;
-const STALE_TTL_SECONDS = 86_400;
+// OG canvas dimensions + the immutable/short-TTL header builder live in the
+// shared @boardsesh/board-render package (also used by the backend OG renderer).
+// Re-exported here so web's existing importers keep the same module path.
+export { OG_IMAGE_WIDTH, OG_IMAGE_HEIGHT, createOgImageHeaders } from '@boardsesh/board-render';
 
 function toVersionMillis(value: Date | string | number | null | undefined): number | null {
   if (value === null || value === undefined) {
@@ -64,30 +62,4 @@ export function buildVersionedOgImagePath(
 
   const query = searchParams.toString();
   return query ? `${path}?${query}` : path;
-}
-
-export function createOgImageHeaders({
-  contentType,
-  version,
-  serverTiming,
-}: {
-  contentType: string;
-  version?: string | null;
-  serverTiming?: string;
-}): Record<string, string> {
-  const isVersioned = version !== null && version !== undefined;
-  const browserCacheControl = isVersioned
-    ? `public, max-age=${ONE_YEAR_SECONDS}, s-maxage=${ONE_YEAR_SECONDS}, immutable`
-    : `public, max-age=0, s-maxage=${SHORT_TTL_SECONDS}, stale-while-revalidate=${STALE_TTL_SECONDS}`;
-  const cdnCacheControl = isVersioned
-    ? `public, s-maxage=${ONE_YEAR_SECONDS}, immutable`
-    : `public, s-maxage=${SHORT_TTL_SECONDS}, stale-while-revalidate=${STALE_TTL_SECONDS}`;
-
-  return {
-    'Content-Type': contentType,
-    'Cache-Control': browserCacheControl,
-    'CDN-Cache-Control': cdnCacheControl,
-    'Vercel-CDN-Cache-Control': cdnCacheControl,
-    ...(serverTiming ? { 'Server-Timing': serverTiming } : {}),
-  };
 }

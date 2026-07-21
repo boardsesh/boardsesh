@@ -62,6 +62,8 @@
         "@boardsesh/aurora-sync": "*",
         "@boardsesh/board-config": "*",
         "@boardsesh/board-constants": "*",
+        "@boardsesh/board-render": "*",
+        "@boardsesh/board-renderer-wasm": "*",
         "@boardsesh/crypto": "*",
         "@boardsesh/db": "*",
         "@boardsesh/email": "*",
@@ -450,6 +452,26 @@
         "react": "^19",
       },
     },
+    "packages/shared/board-render": {
+      "name": "@boardsesh/board-render",
+      "version": "1.0.0",
+      "dependencies": {
+        "@boardsesh/board-config": "*",
+        "@boardsesh/board-constants": "*",
+        "@boardsesh/board-renderer-wasm": "*",
+        "@boardsesh/play-view": "*",
+        "@boardsesh/shared-schema": "*",
+        "zod": "^4.3.6",
+      },
+      "devDependencies": {
+        "@types/node": "^25.3.3",
+        "sharp": "^0.34.5",
+        "typescript": "~6.0.3",
+      },
+      "peerDependencies": {
+        "sharp": "^0.34.5",
+      },
+    },
     "packages/shared/climb-actions": {
       "name": "@boardsesh/climb-actions",
       "version": "1.0.0",
@@ -744,6 +766,7 @@
         "@boardsesh/board-presence": "*",
         "@boardsesh/board-presence-react": "*",
         "@boardsesh/board-react": "*",
+        "@boardsesh/board-render": "*",
         "@boardsesh/board-renderer-wasm": "*",
         "@boardsesh/climb-actions": "*",
         "@boardsesh/climb-filters": "*",
@@ -1167,6 +1190,8 @@
     "@boardsesh/board-presence-react": ["@boardsesh/board-presence-react@workspace:packages/shared/board-presence-react"],
 
     "@boardsesh/board-react": ["@boardsesh/board-react@workspace:packages/shared/board-react"],
+
+    "@boardsesh/board-render": ["@boardsesh/board-render@workspace:packages/shared/board-render"],
 
     "@boardsesh/board-renderer-wasm": ["@boardsesh/board-renderer-wasm@workspace:packages/board-renderer/wasm"],
 

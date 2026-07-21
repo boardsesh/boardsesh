@@ -32,5 +32,6 @@ export type HeatmapData = {
   userAttempts?: number;
 };
 
-/** Thumbnail render width in pixels. Covers 3x retina at ~64px CSS display. */
-export const THUMBNAIL_WIDTH = 200;
+// Thumbnail render width (px). Defined in @boardsesh/board-render (shared with
+// the backend OG renderer); re-exported here so importers keep the same path.
+export { THUMBNAIL_WIDTH } from '@boardsesh/board-render';

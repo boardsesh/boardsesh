@@ -20,6 +20,11 @@ const services = {
   backend: {
     dockerfile: 'Dockerfile.backend',
     rootPackageName: 'boardsesh-backend',
+    // The OG climb renderer (GET /og/climb) composites board photos onto the
+    // social card, so the backend image needs the board images tree (~70MB).
+    // The prebuilt .wasm rides in automatically via the
+    // @boardsesh/board-renderer-wasm workspace-dep walk.
+    extraSourceDirs: ['packages/web/public/images'],
   },
   web: {
     dockerfile: 'Dockerfile.web',
@@ -266,6 +271,17 @@ function createServiceDockerContext({ serviceName, repoRoot = defaultRepoRoot, o
       throw new Error(`${serviceName} extra source file ${extraSourceFile} is missing`);
     }
     copyFileCreatingParent(absoluteExtraSourcePath, join(absoluteOutputDir, 'source', extraSourceFile));
+  }
+
+  // Whole directories a service needs beyond its workspace-dep source packages
+  // (e.g. the backend's board images tree). Copied verbatim under source/<dir>
+  // with the same ignore rules the package walk uses.
+  for (const extraSourceDir of service.extraSourceDirs ?? []) {
+    const absoluteExtraSourceDir = join(absoluteRepoRoot, extraSourceDir);
+    if (!existsSync(absoluteExtraSourceDir)) {
+      throw new Error(`${serviceName} extra source directory ${extraSourceDir} is missing`);
+    }
+    copyDirectory(absoluteExtraSourceDir, join(absoluteOutputDir, 'source', extraSourceDir), absoluteRepoRoot);
   }
 
   return {

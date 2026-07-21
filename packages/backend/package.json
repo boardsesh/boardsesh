@@ -28,6 +28,8 @@
     "@boardsesh/aurora-sync": "*",
     "@boardsesh/board-config": "*",
     "@boardsesh/board-constants": "*",
+    "@boardsesh/board-render": "*",
+    "@boardsesh/board-renderer-wasm": "*",
     "@boardsesh/crypto": "*",
     "@boardsesh/db": "*",
     "@boardsesh/email": "*",

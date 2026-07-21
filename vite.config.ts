@@ -102,6 +102,7 @@ export default defineConfig({
       './packages/crypto/vite.config.ts',
       './packages/shared/ble-protocol/vite.config.ts',
       './packages/shared/board-config/vite.config.ts',
+      './packages/shared/board-render/vite.config.ts',
       './packages/shared/velvet-tokens/vite.config.ts',
       './packages/shared/board-react/vite.config.ts',
       './packages/shared/create-climb-react/vite.config.ts',
@@ -477,6 +478,10 @@ export default defineConfig({
       'typecheck:board-config': {
         command: 'bun run --filter=@boardsesh/board-config typecheck',
       },
+      'typecheck:board-render': {
+        command: 'bun run --filter=@boardsesh/board-render typecheck',
+        dependsOn: ['build:constants'],
+      },
       'typecheck:play-view': {
         command: 'bun run --filter=@boardsesh/play-view typecheck',
       },
@@ -558,6 +563,7 @@ export default defineConfig({
           'typecheck:climb-actions',
           'typecheck:key-value-storage',
           'typecheck:board-config',
+          'typecheck:board-render',
           'typecheck:play-view',
           'typecheck:playback-react',
           'typecheck:profile-stats',

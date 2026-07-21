@@ -57,6 +57,7 @@ const nextConfig = {
     '@boardsesh/moonboard-ocr',
     '@boardsesh/ble-protocol',
     '@boardsesh/board-config',
+    '@boardsesh/board-render',
     '@boardsesh/graphql',
     '@boardsesh/graphql-client',
     '@boardsesh/queue',

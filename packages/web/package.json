@@ -36,6 +36,7 @@
     "@boardsesh/board-presence": "*",
     "@boardsesh/board-presence-react": "*",
     "@boardsesh/board-react": "*",
+    "@boardsesh/board-render": "*",
     "@boardsesh/board-renderer-wasm": "*",
     "@boardsesh/climb-actions": "*",
     "@boardsesh/climb-filters": "*",

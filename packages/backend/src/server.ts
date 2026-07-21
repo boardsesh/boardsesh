@@ -12,6 +12,8 @@ import { handleSessionJoin } from './handlers/join';
 import { handleAvatarUpload } from './handlers/avatars';
 import { handleGymLogoUpload } from './handlers/gym-logos';
 import { handleStaticAvatar, handleStaticBetaThumbnail, handleStaticGymLogo } from './handlers/static';
+import { handleOgClimb } from './handlers/og-climb';
+import { initBoardRenderer } from './services/board-render';
 import { parseSizeParam } from './lib/image-resize';
 import { handleOcrTestDataUpload } from './handlers/ocr-test-data';
 import { handlePosthogProxy } from './handlers/posthog';
@@ -97,6 +99,10 @@ export async function startServer(): Promise<ServerResources> {
   // Initialize PubSub (connects to Redis if configured)
   // This must happen before we start accepting connections
   await pubsub.initialize();
+
+  // Initialize the OG climb renderer (loads the WASM overlay module + resolves
+  // the board images root). Never throws — on failure GET /og/climb returns 503.
+  await initBoardRenderer();
 
   // Wire the durable seq-floor lookup for board-presence's dormancy reseed
   // (A3) — pubsub stays DB-free at import time, but the running server needs
@@ -315,6 +321,13 @@ export async function startServer(): Promise<ServerResources> {
       // Health check endpoint
       if (pathname === '/health' && req.method === 'GET') {
         await handleHealthCheck(req, res);
+        return;
+      }
+
+      // Climb Open Graph share-card renderer (moved off Vercel; long-running
+      // process warms WASM + caches rendered bytes in memory).
+      if (pathname === '/og/climb' && (req.method === 'GET' || req.method === 'OPTIONS')) {
+        await handleOgClimb(req, res, url);
         return;
       }
 
