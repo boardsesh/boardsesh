@@ -21,12 +21,19 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const SLOW_RENDER_MS = 1000;
 
 /**
- * Client IP for rate limiting. Uses the LAST x-forwarded-for entry: the edge
- * proxy (Railway) appends the IP it observed, while earlier entries are
- * client-supplied and spoofable — trusting the first hop would let a client
- * mint a fresh identity per request and bypass the per-IP limit.
+ * Client IP for rate limiting. Prefers CF-Connecting-IP so that when
+ * Cloudflare fronts ws.boardsesh.com the per-IP buckets track real clients —
+ * the last x-forwarded-for hop is Cloudflare's colo IP there, which would
+ * collapse everyone behind a colo into one bucket. Otherwise uses the LAST
+ * x-forwarded-for entry: the edge proxy (Railway) appends the IP it observed,
+ * while earlier entries are client-supplied and spoofable. A client hitting
+ * Railway directly could spoof CF-Connecting-IP for fresh buckets, but the
+ * per-peer ceiling in the handler still caps total throughput.
  */
 function getClientIp(req: IncomingMessage): string {
+  const cloudflareClientIp = req.headers['cf-connecting-ip'];
+  const cloudflareIp = Array.isArray(cloudflareClientIp) ? cloudflareClientIp[0] : cloudflareClientIp;
+  if (cloudflareIp?.trim()) return cloudflareIp.trim();
   const forwarded = req.headers['x-forwarded-for'];
   const forwardedChain = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
   const lastHop = forwardedChain?.split(',').at(-1)?.trim();

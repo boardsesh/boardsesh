@@ -63,6 +63,28 @@ repeats, ~700ms worst-case first render of a never-seen board config.
   backdrop-only (no board photo) rather than failing.
 - Quick prod check:
   `curl -o /dev/null -s -w 'code=%{http_code} ttfb=%{time_starttransfer}s\n' 'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=10&set_ids=1,20&frames=p1080r15p1202r12'`
+
+## Cloudflare in front of ws.boardsesh.com (edge-caching the og image)
+
+`ws.boardsesh.com` is a single-region Railway origin; distant clients (and the
+iOS share sheet, which fetches previews from the sender's phone) pay full RTT
+per image. Fronting it with Cloudflare edge-caches the immutable og responses
+globally. Flip runbook (dashboard):
+
+1. Code prerequisite (shipped): the og rate limiter prefers `CF-Connecting-IP`,
+   so per-client buckets survive the proxy hop.
+2. Cloudflare DNS: toggle the `ws` record to Proxied (orange cloud). SSL/TLS
+   mode must be Full (strict) — Flexible causes redirect loops with Railway.
+3. Cache Rule: host `ws.boardsesh.com` AND path starts with `/og/` → Eligible
+   for cache, respect origin TTL (responses are `immutable`, 1y). Leave every
+   other path default so `/graphql`, REST, and WebSocket upgrades bypass cache.
+4. Confirm WebSockets are enabled for the zone (Network tab; on by default on
+   current plans).
+5. Verify: `wss://ws.boardsesh.com/graphql` still connects (web party mode +
+   mobile app); `curl -sI 'https://ws.boardsesh.com/og/climb?...'` twice —
+   second response shows `cf-cache-status: HIT`. Rollback = grey-cloud the
+   record.
+
 - Web points `og:image` here via `buildOgBoardRenderUrl`
   (`packages/web/app/components/board-renderer/util.ts`), which derives the
   backend origin from `NEXT_PUBLIC_WS_URL`.

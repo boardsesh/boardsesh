@@ -164,6 +164,22 @@ describe('handleOgClimb', () => {
       expect(res.statusCode).toBe(200);
       expect(vi.mocked(checkRateLimitRedis).mock.calls[0][0]).toBe('unknown');
     });
+
+    it('prefers CF-Connecting-IP over the x-forwarded-for chain when Cloudflare fronts the host', async () => {
+      const url = new URL('http://localhost:8080/og/climb');
+      for (const [key, value] of Object.entries(validParams)) {
+        url.searchParams.set(key, value);
+      }
+      const req = {
+        method: 'GET',
+        headers: { 'cf-connecting-ip': '203.0.113.7', 'x-forwarded-for': '203.0.113.7, 172.68.1.1' },
+        socket: { remoteAddress: '10.0.0.1' },
+      } as unknown as IncomingMessage;
+      const res = makeResponse();
+      await handleOgClimb(req, res as unknown as ServerResponse, url);
+      expect(res.statusCode).toBe(200);
+      expect(vi.mocked(checkRateLimitRedis).mock.calls[0][0]).toBe('203.0.113.7');
+    });
   });
 
   describe('CORS preflight', () => {
