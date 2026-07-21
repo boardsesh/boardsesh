@@ -47,6 +47,11 @@ export const userBoards = pgTable(
     timerName: text('timer_name'),
     gymId: bigint('gym_id', { mode: 'number' }).references(() => gyms.id, { onDelete: 'set null' }),
     deletedAt: timestamp('deleted_at'),
+    // Human-curation marker. Non-null means someone with edit access changed this
+    // row (edited, claimed, or soft-deleted it), so the location sync must never
+    // overwrite its metadata again — the sync engine skips its ON CONFLICT SET
+    // when this is set. Sync still keeps the board→gym link current.
+    syncFrozenAt: timestamp('sync_frozen_at'),
   },
   (table) => ({
     // Gym lookup

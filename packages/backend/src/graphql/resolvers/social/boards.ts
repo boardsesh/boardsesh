@@ -1836,6 +1836,10 @@ export const socialBoardMutations = {
     // Build update values (only provided fields)
     const updateValues: Record<string, unknown> = {
       updatedAt: new Date(),
+      // A deliberate human edit — freeze the row so the location sync can never
+      // overwrite these curated values (a moderator's catalog fix, say) on its
+      // next run.
+      syncFrozenAt: new Date(),
     };
 
     if (validatedInput.name !== undefined) updateValues.name = validatedInput.name;
@@ -1979,7 +1983,12 @@ export const socialBoardMutations = {
       throw new Error('Not authorized to delete this board');
     }
 
-    await db.update(dbSchema.userBoards).set({ deletedAt: new Date() }).where(eq(dbSchema.userBoards.id, board.id));
+    // Freeze it too, so a later sync can't resurrect the board the owner
+    // deliberately removed (the board upsert clears deletedAt).
+    await db
+      .update(dbSchema.userBoards)
+      .set({ deletedAt: new Date(), syncFrozenAt: new Date() })
+      .where(eq(dbSchema.userBoards.id, board.id));
 
     return true;
   },

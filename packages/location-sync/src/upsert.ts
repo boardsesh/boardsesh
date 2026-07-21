@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { gyms, locationSyncGymSources, userBoards, users } from '@boardsesh/db/schema';
@@ -126,7 +126,10 @@ async function refreshSyncedGymMetadata(db: DrizzleDb, gymId: number, record: Va
       updatedAt: sql`NOW()`,
       deletedAt: null,
     })
-    .where(eq(gyms.id, gymId));
+    // Never overwrite a gym a human has curated (edited, claimed, or deleted).
+    // The source alias / physical match still resolved the gym id, so boards
+    // keep linking — only the metadata refresh is skipped for a frozen row.
+    .where(and(eq(gyms.id, gymId), isNull(gyms.syncFrozenAt)));
 }
 
 async function findAliasedGymId(db: DrizzleDb, sourceKey: string): Promise<number | null> {
@@ -252,6 +255,10 @@ async function createOrUpdateSourceGym(
     })
     .onConflictDoUpdate({
       target: gyms.uuid,
+      // Never overwrite a gym a human has curated. A brand-new INSERT is
+      // unaffected (it has no syncFrozenAt); an existing frozen row keeps its
+      // human edits — the fallback below still resolves its id so boards link.
+      setWhere: isNull(gyms.syncFrozenAt),
       set: {
         slug: sql`COALESCE(${gyms.slug}, excluded.slug)`,
         name: sql`excluded.name`,
@@ -265,11 +272,24 @@ async function createOrUpdateSourceGym(
     })
     .returning({ id: gyms.id });
 
-  if (upsertedGym) {
-    await upsertSourceAlias(db, sourceKey, upsertedGym.id);
+  // A frozen conflicting row is blocked by setWhere, so the upsert returns no
+  // row. Look it up by its deterministic uuid so the alias still points at it
+  // and the board resolves the right gym id, without touching its metadata.
+  let gymId = upsertedGym?.id ?? null;
+  if (gymId === null) {
+    const [existingGym] = await db
+      .select({ id: gyms.id })
+      .from(gyms)
+      .where(eq(gyms.uuid, gymIdentifiers.uuid))
+      .limit(1);
+    gymId = existingGym?.id ?? null;
   }
 
-  return upsertedGym?.id ?? null;
+  if (gymId !== null) {
+    await upsertSourceAlias(db, sourceKey, gymId);
+  }
+
+  return gymId;
 }
 
 async function resolveGymIdForSource(
@@ -371,6 +391,11 @@ export async function upsertPublicBoardLocations(
       })
       .onConflictDoUpdate({
         target: userBoards.uuid,
+        // Never overwrite a catalog board a human has curated (edited or
+        // soft-deleted). A frozen row is blocked here, so `returning()` yields
+        // nothing and it isn't counted in boardsUpserted — that's a cosmetic
+        // undercount in the summary telemetry, not a linking/correctness issue.
+        setWhere: isNull(userBoards.syncFrozenAt),
         set: {
           slug: sql`COALESCE(${userBoards.slug}, excluded.slug)`,
           boardType: sql`excluded.board_type`,

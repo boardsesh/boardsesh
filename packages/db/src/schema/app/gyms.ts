@@ -63,6 +63,12 @@ export const gyms = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     deletedAt: timestamp('deleted_at'),
+    // Human-curation marker. Non-null means someone with edit access changed this
+    // gym (edited it, claimed ownership, or soft-deleted it), so the location sync
+    // must never overwrite its metadata again — the sync engine skips its
+    // UPDATE / ON CONFLICT SET when this is set. Sync still resolves the gym id so
+    // boards keep linking, and still keeps the source alias current.
+    syncFrozenAt: timestamp('sync_frozen_at'),
   },
   (table) => ({
     uniqueSlugIdx: uniqueIndex('gyms_unique_slug')

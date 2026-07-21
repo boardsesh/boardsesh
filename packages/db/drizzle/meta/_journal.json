@@ -1289,6 +1289,20 @@
       "when": 1784236914655,
       "tag": "0183_feedback_status_and_github_link",
       "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1784640861787,
+      "tag": "0184_add_sync_frozen_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1784640871238,
+      "tag": "0185_backfill_sync_frozen_at",
+      "breakpoints": true
     }
   ]
 }

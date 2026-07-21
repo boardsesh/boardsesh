@@ -308,6 +308,10 @@ async function fetchCandidates(commandDb: ExecuteDb, onlyName: string | null): P
       WHERE g.owner_id = ${SYSTEM_USER_ID}
         AND g.is_public = true
         AND g.deleted_at IS NULL
+        -- Never touch a human-curated gym. A frozen row (edited by a moderator
+        -- while still system-owned) is left out of dedup entirely, so the merge
+        -- can't move, un-delete, re-publish, or otherwise overwrite it.
+        AND g.sync_frozen_at IS NULL
         AND g.latitude IS NOT NULL
         AND g.longitude IS NOT NULL
         AND g.location IS NOT NULL
@@ -342,6 +346,10 @@ async function fetchCandidatesForApply(commandDb: ExecuteDb, gymIds: number[]): 
           AND g.owner_id = ${SYSTEM_USER_ID}
           AND g.is_public = true
           AND g.deleted_at IS NULL
+          -- Same guard as fetchCandidates: a row frozen by a human between plan
+          -- and apply drops out here, so the count check in refetchClusterForApply
+          -- aborts the merge rather than overwriting the new human edit.
+          AND g.sync_frozen_at IS NULL
           AND g.latitude IS NOT NULL
           AND g.longitude IS NOT NULL
           AND g.location IS NOT NULL

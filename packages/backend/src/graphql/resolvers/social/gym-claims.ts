@@ -113,7 +113,9 @@ export async function applyGymClaim(
     if (priorOwnerId !== claimantId) {
       await tx
         .update(dbSchema.gyms)
-        .set({ ownerId: claimantId, updatedAt: new Date() })
+        // Taking ownership is a strong human-curation signal — freeze the gym so
+        // the location sync stops reshaping the listing the new owner now controls.
+        .set({ ownerId: claimantId, syncFrozenAt: new Date(), updatedAt: new Date() })
         .where(eq(dbSchema.gyms.id, gym.id));
 
       // Keep a real prior owner on as a gym admin (never the system import user).

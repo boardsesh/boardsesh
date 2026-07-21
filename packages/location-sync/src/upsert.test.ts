@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { gyms, locationSyncGymSources, userBoards, users } from '@boardsesh/db/schema';
 import type { CanonicalGymCandidate } from '@boardsesh/db/queries';
 import type { PublicBoardLocationInput } from './types';
+import { gymUuidForSource } from './ids';
 import {
   buildBoardWriteIdentifiers,
   buildGymWriteIdentifiers,
@@ -142,6 +143,12 @@ class FakeInsertBuilder {
 
     if (Object.is(this.table, gyms)) {
       this.fakeDb.createdGymWrites.push(this.pendingRowValues);
+      const pendingUuid = this.pendingRowValues.uuid;
+      // A frozen conflicting row is blocked by the `setWhere` guard, so the real
+      // upsert returns no row — model that so the by-uuid fallback is exercised.
+      if (typeof pendingUuid === 'string' && this.fakeDb.frozenGymUuids.has(pendingUuid)) {
+        return [];
+      }
       return [{ id: this.fakeDb.createdGymId }];
     }
 
@@ -176,6 +183,8 @@ class FakeUpdateBuilder {
 }
 
 class FakeSelectBuilder {
+  private usedInnerJoin = false;
+
   constructor(private readonly fakeDb: FakeLocationSyncDb) {}
 
   from(_table: unknown): this {
@@ -183,6 +192,7 @@ class FakeSelectBuilder {
   }
 
   innerJoin(_table: unknown, _condition: unknown): this {
+    this.usedInnerJoin = true;
     return this;
   }
 
@@ -191,7 +201,12 @@ class FakeSelectBuilder {
   }
 
   limit(_limit: number): Array<{ id: number }> {
-    return this.fakeDb.aliasedGymId === null ? [] : [{ id: this.fakeDb.aliasedGymId }];
+    // The alias lookup (findAliasedGymId) joins the alias table to gyms; the
+    // createOrUpdateSourceGym fallback selects gyms by uuid with no join.
+    if (this.usedInnerJoin) {
+      return this.fakeDb.aliasedGymId === null ? [] : [{ id: this.fakeDb.aliasedGymId }];
+    }
+    return this.fakeDb.fallbackGymId === null ? [] : [{ id: this.fakeDb.fallbackGymId }];
   }
 }
 
@@ -207,17 +222,25 @@ class FakeLocationSyncDb {
   readonly physicalCandidates: CanonicalGymCandidate[];
   readonly createdGymId: number;
   readonly createdBoardId: number;
+  // Gym uuids whose upsert is blocked by the frozen `setWhere` guard.
+  readonly frozenGymUuids: Set<string>;
+  // Id returned by the by-uuid fallback SELECT for a blocked (frozen) gym.
+  readonly fallbackGymId: number | null;
 
   constructor(options: {
     aliasedGymId?: number | null;
     physicalCandidates?: CanonicalGymCandidate[];
     createdGymId?: number;
     createdBoardId?: number;
+    frozenGymUuids?: Iterable<string>;
+    fallbackGymId?: number | null;
   }) {
     this.aliasedGymId = options.aliasedGymId ?? null;
     this.physicalCandidates = options.physicalCandidates ?? [];
     this.createdGymId = options.createdGymId ?? 900;
     this.createdBoardId = options.createdBoardId ?? 901;
+    this.frozenGymUuids = new Set(options.frozenGymUuids ?? []);
+    this.fallbackGymId = options.fallbackGymId ?? null;
   }
 
   insert(table: unknown): FakeInsertBuilder {
@@ -400,5 +423,27 @@ describe('public board location upsert gym resolution', () => {
     expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: 'tension:gym-new', gymId: 123 }]);
     expect(fakeDb.gymMetadataWrites).toEqual([]);
     expect(fakeDb.boardWrites[0]?.gymId).toBe(123);
+  });
+
+  it('links a frozen source gym via the by-uuid fallback without overwriting it', async () => {
+    const gymSourceKey = 'tension:gym-frozen';
+    const frozenGymUuid = gymUuidForSource(gymSourceKey);
+    const fakeDb = new FakeLocationSyncDb({
+      aliasedGymId: null, // no alias yet
+      physicalCandidates: [], // no physical match
+      frozenGymUuids: [frozenGymUuid], // the source gym already exists and is frozen
+      fallbackGymId: 555, // the by-uuid fallback resolves its id
+    });
+
+    const summary = await upsertPublicBoardLocations(fakeDb as unknown as UpsertDb, [
+      locationRecord({ sourceKey: 'tension:board-frozen', gymSourceKey }),
+    ]);
+
+    // The conflicting frozen gym returned no upserted row, so its metadata was
+    // never overwritten — but the fallback still resolved its id, so the alias
+    // and the board both link to the existing gym.
+    expect(summary.gymsUpserted).toBe(1);
+    expect(fakeDb.sourceAliasWrites).toMatchObject([{ sourceKey: gymSourceKey, gymId: 555 }]);
+    expect(fakeDb.boardWrites[0]?.gymId).toBe(555);
   });
 });

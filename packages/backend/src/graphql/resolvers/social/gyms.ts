@@ -96,6 +96,7 @@ function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$infer
     createdAt: row.created_at != null ? new Date(row.created_at as string) : (null as unknown as Date),
     updatedAt: row.updated_at != null ? new Date(row.updated_at as string) : (null as unknown as Date),
     deletedAt: row.deleted_at != null ? new Date(row.deleted_at as string) : null,
+    syncFrozenAt: row.sync_frozen_at != null ? new Date(row.sync_frozen_at as string) : null,
   };
 }
 
@@ -799,6 +800,9 @@ export const socialGymMutations = {
 
     const updateValues: Record<string, unknown> = {
       updatedAt: new Date(),
+      // A deliberate human edit — freeze the row so the location sync can never
+      // overwrite these curated values on its next run.
+      syncFrozenAt: new Date(),
     };
 
     if (validatedInput.name !== undefined) updateValues.name = validatedInput.name;
@@ -879,8 +883,12 @@ export const socialGymMutations = {
       throw new Error('Not authorized to delete this gym');
     }
 
-    // Soft-delete the gym
-    await db.update(dbSchema.gyms).set({ deletedAt: new Date() }).where(eq(dbSchema.gyms.id, gym.id));
+    // Soft-delete the gym. Freeze it too, so a later sync can't resurrect the
+    // listing the owner deliberately removed (the sync clears deletedAt).
+    await db
+      .update(dbSchema.gyms)
+      .set({ deletedAt: new Date(), syncFrozenAt: new Date() })
+      .where(eq(dbSchema.gyms.id, gym.id));
 
     // Unlink all boards
     await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.gymId, gym.id));
