@@ -109,8 +109,15 @@ export async function handleOgClimb(req: IncomingMessage, res: ServerResponse, u
       `cache;desc=${cache}`,
     ].join(', ');
 
+    // The shared helper also emits Vercel-CDN-Cache-Control for the web route;
+    // that header is meaningless from this origin, so drop it.
+    const { 'Vercel-CDN-Cache-Control': _vercelOnlyHeader, ...ogImageHeaders } = createOgImageHeaders({
+      contentType,
+      version: 'immutable',
+      serverTiming,
+    });
     res.writeHead(200, {
-      ...createOgImageHeaders({ contentType, version: 'immutable', serverTiming }),
+      ...ogImageHeaders,
       'Content-Length': buffer.length,
       'X-Content-Type-Options': 'nosniff',
     });

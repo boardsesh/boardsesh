@@ -152,6 +152,20 @@ describe('handleOgClimb', () => {
     });
   });
 
+  describe('rate-limit identity', () => {
+    it('buckets headerless clients under "unknown" rather than skipping the limit', async () => {
+      const url = new URL('http://localhost:8080/og/climb');
+      for (const [key, value] of Object.entries(validParams)) {
+        url.searchParams.set(key, value);
+      }
+      const req = { method: 'GET', headers: {}, socket: {} } as unknown as IncomingMessage;
+      const res = makeResponse();
+      await handleOgClimb(req, res as unknown as ServerResponse, url);
+      expect(res.statusCode).toBe(200);
+      expect(vi.mocked(checkRateLimitRedis).mock.calls[0][0]).toBe('unknown');
+    });
+  });
+
   describe('CORS preflight', () => {
     it('short-circuits OPTIONS before rate limiting and rendering', async () => {
       const { req, url } = makeRequest(validParams, 'OPTIONS');

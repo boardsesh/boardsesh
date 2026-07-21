@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import {
   isValidFrameSegment,
   isValidFramesString,
@@ -76,6 +77,12 @@ describe('VALID_BOARD_NAMES', () => {
 
   it('rejects unknown boards', () => {
     expect(VALID_BOARD_NAMES.has('evil')).toBe(false);
+  });
+
+  it('every valid board has hold states — buildRenderConfig requires them at render time', () => {
+    for (const boardName of VALID_BOARD_NAMES) {
+      expect(HOLD_STATE_MAP, `HOLD_STATE_MAP is missing "${boardName}"`).toHaveProperty(boardName);
+    }
   });
 });
 

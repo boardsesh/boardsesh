@@ -135,8 +135,8 @@ function byteCacheKey(params: OgClimbRenderParams): string {
   return `${params.boardName}:${params.layoutId}:${params.sizeId}:${params.setIds}:${params.frames}:${params.format}`;
 }
 
-function baseCacheKey(params: OgClimbRenderParams): string {
-  return `${params.boardName}:${params.layoutId}:${params.sizeId}:${params.setIds}`;
+function baseCacheKey(boardName: string, layoutId: number, sizeId: number, setIds: string): string {
+  return `${boardName}:${layoutId}:${sizeId}:${setIds}`;
 }
 
 /**
@@ -177,6 +177,11 @@ async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: stri
     .map(Number)
     .filter((setId) => !Number.isNaN(setId));
 
+  const boardStates = HOLD_STATE_MAP[params.boardName as BoardName];
+  if (!boardStates) {
+    throw new Error(`No hold states defined for board ${params.boardName}`);
+  }
+
   const boardDetails = getBoardDetailsForBoard({
     board_name: params.boardName,
     layout_id: params.layoutId,
@@ -190,14 +195,14 @@ async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: stri
     frames: params.frames,
     thumbnail: false,
     isOgVariant: true,
-    boardStates: HOLD_STATE_MAP[params.boardName as BoardName],
+    boardStates,
   });
 
   const wasmT0 = performance.now();
   const overlay = await overlayRenderer.render(JSON.stringify(config));
   const wasmMs = performance.now() - wasmT0;
 
-  const baseKey = baseCacheKey(params);
+  const baseKey = baseCacheKey(params.boardName, params.layoutId, params.sizeId, params.setIds);
   let base = baseCache.get(baseKey);
   let cache: OgClimbRenderResult['cache'];
   let baseMs = 0;
@@ -232,22 +237,60 @@ async function renderOgClimbUncached(params: OgClimbRenderParams, cacheKey: stri
 
 /**
  * Non-blocking warm of the fallback board bases so the first real crawler fetch
- * for a common board is a cheap base-hit. Failures are logged, never thrown.
+ * for a common board is a cheap base-hit. Composes bases directly into the base
+ * cache — no byte-cache entries, which real requests could never hit (the
+ * handler requires non-empty frames). Failures are logged, never thrown.
  */
 async function warmFallbackBoardPreviews(): Promise<void> {
-  for (const [boardName, config] of Object.entries(FALLBACK_BOARD_PREVIEW_CONFIGS)) {
-    try {
-      await renderOgClimb({
-        boardName,
-        layoutId: config.layout_id,
-        sizeId: config.size_id,
-        setIds: config.set_ids.join(','),
-        frames: '',
-        format: 'jpeg',
-      });
-    } catch (error) {
-      logger.warn(`[OGClimb] Warm-up failed for ${boardName}:`, error instanceof Error ? error.message : error);
-    }
-  }
+  await Promise.allSettled(
+    Object.entries(FALLBACK_BOARD_PREVIEW_CONFIGS).map(async ([boardName, config]) => {
+      try {
+        await warmBoardBase(boardName, config);
+      } catch (error) {
+        logger.warn(`[OGClimb] Warm-up failed for ${boardName}:`, error instanceof Error ? error.message : error);
+      }
+    }),
+  );
   logger.info('[OGClimb] Fallback board preview warm-up complete');
+}
+
+async function warmBoardBase(
+  boardName: string,
+  config: { layout_id: number; size_id: number; set_ids: number[] },
+): Promise<void> {
+  if (!overlayRenderer) return;
+
+  const setIds = config.set_ids.join(',');
+  const baseKey = baseCacheKey(boardName, config.layout_id, config.size_id, setIds);
+  if (baseCache.has(baseKey)) return;
+
+  const boardStates = HOLD_STATE_MAP[boardName as BoardName];
+  if (!boardStates) return;
+
+  const boardDetails = getBoardDetailsForBoard({
+    board_name: boardName,
+    layout_id: config.layout_id,
+    size_id: config.size_id,
+    set_ids: config.set_ids,
+  });
+
+  // An empty-frames overlay render is the cheap way to learn the board's
+  // output dimensions, which the base composite is sized to.
+  const { config: renderConfig } = buildRenderConfig({
+    boardName,
+    boardDetails,
+    frames: '',
+    thumbnail: false,
+    isOgVariant: true,
+    boardStates,
+  });
+  const overlay = await overlayRenderer.render(JSON.stringify(renderConfig));
+
+  const base = await composeOgBaseBuffer({
+    boardDetails,
+    boardWidth: overlay.width,
+    boardHeight: overlay.height,
+    resolveImagePath,
+  });
+  baseCache.set(baseKey, base);
 }
