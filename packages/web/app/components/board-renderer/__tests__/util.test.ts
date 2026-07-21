@@ -149,9 +149,6 @@ describe('buildOgBoardRenderUrl', () => {
       'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20' +
         '&frames=p1r42p2r43&format=jpeg',
     );
-    expect(url).toContain('format=jpeg');
-    expect(url).not.toContain('/api/internal/board-render');
-    expect(url).not.toContain('/api/og/climb');
   });
 
   it('falls back to the relative web board-render PNG URL when the backend origin is unset', () => {

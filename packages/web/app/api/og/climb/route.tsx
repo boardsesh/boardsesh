@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     );
 
     // Only the cache headers are applied to the redirect (Content-Type is
-    // skipped below); the contentType argument is a required formality.
+    // skipped below). image/jpeg mirrors what the backend target serves.
     const cacheHeaders = createOgImageHeaders({
       contentType: 'image/jpeg',
       serverTiming: response.headers.get('Server-Timing') || undefined,
