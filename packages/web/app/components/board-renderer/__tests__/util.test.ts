@@ -146,8 +146,8 @@ describe('buildOgBoardRenderUrl', () => {
     const url = buildOgBoardRenderUrl(boardDetails, 'p1r12,p2r13');
 
     expect(url).toBe(
-      'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1,20' +
-        '&frames=p1r42p2r43&include_background=1&variant=og&format=jpeg',
+      'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20' +
+        '&frames=p1r42p2r43&format=jpeg',
     );
     expect(url).toContain('format=jpeg');
     expect(url).not.toContain('/api/internal/board-render');

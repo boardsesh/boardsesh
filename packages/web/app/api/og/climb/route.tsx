@@ -51,8 +51,10 @@ export async function GET(request: NextRequest) {
       `db;dur=${dbMs.toFixed(1)}, route;dur=${(performance.now() - routeT0).toFixed(1)}`,
     );
 
+    // Only the cache headers are applied to the redirect (Content-Type is
+    // skipped below); the contentType argument is a required formality.
     const cacheHeaders = createOgImageHeaders({
-      contentType: 'image/png',
+      contentType: 'image/jpeg',
       serverTiming: response.headers.get('Server-Timing') || undefined,
     });
 

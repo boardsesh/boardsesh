@@ -98,16 +98,15 @@ export const buildOgBoardRenderUrl = (boardDetails: BoardDetails, frames: string
   const backendOrigin = getPublicBackendHttpUrl();
 
   if (backendOrigin) {
-    return (
-      `${backendOrigin}/og/climb?board_name=${boardDetails.board_name}` +
-      `&layout_id=${boardDetails.layout_id}` +
-      `&size_id=${boardDetails.size_id}` +
-      `&set_ids=${boardDetails.set_ids.join(',')}` +
-      `&frames=${encodeURIComponent(flatFrames)}` +
-      // include_background/variant are inert on the backend (it always renders
-      // the OG composite); kept so the URL family stays param-compatible.
-      `&include_background=1&variant=og&format=jpeg`
-    );
+    const backendParams = new URLSearchParams({
+      board_name: boardDetails.board_name,
+      layout_id: String(boardDetails.layout_id),
+      size_id: String(boardDetails.size_id),
+      set_ids: boardDetails.set_ids.join(','),
+      frames: flatFrames,
+      format: 'jpeg',
+    });
+    return `${backendOrigin}/og/climb?${backendParams}`;
   }
 
   return buildBoardRenderUrl(boardDetails, flatFrames, {
