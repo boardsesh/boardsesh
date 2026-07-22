@@ -8,7 +8,11 @@
     <meta name="robots" content="noindex, follow" />
     <meta name="application-name" content="Boardsesh" />
     <meta name="theme-color" content="#000000" />
-    <link rel="manifest" href="/manifest.json" />
+    <!-- /app is the current serving root (dev proxy + legacy prod-static path,
+         see docs/expo-web-deployment.md). Revisit this href if/when the
+         app.boardsesh.com subdomain export (baseUrl /) goes live — it'd need
+         a root-relative /manifest.json instead. -->
+    <link rel="manifest" href="/app/manifest.json" />
     <link rel="icon" href="https://www.boardsesh.com/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="https://www.boardsesh.com/icons/apple-touch-icon.png" />
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
