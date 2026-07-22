@@ -70,6 +70,9 @@ export function parseArgs(argv: string[]): CliOptions {
     else if (argument === '--dry-run') apply = false;
     else if (argument === '--allow-zone-ssl') allowZoneSsl = true;
     else if (argument === '--help' || argument === '-h') help = true;
+    // Reject typos loudly — a silently ignored --appply would dry-run when the
+    // operator believed they applied.
+    else throw new Error(`Unknown flag: ${argument} (see --help)`);
   }
 
   return { apply, allowZoneSsl, help };
@@ -140,7 +143,10 @@ async function resolveZoneId(token: string, zoneName: string): Promise<string> {
     'GET',
     `/zones?name=${encodeURIComponent(zoneName)}`,
   );
-  const zone = zones.find((candidate) => candidate.name === zoneName) ?? zones[0];
+  const zone = zones.find((candidate) => candidate.name === zoneName);
+  if (!zone) {
+    throw new Error(`Zone "${zoneName}" not found among ${zones.length} zone(s) visible to this token`);
+  }
   if (!zone) {
     throw new Error(
       `No Cloudflare zone found for "${zoneName}". Set CLOUDFLARE_ZONE_ID, or grant the token Zone.Zone Read.`,
@@ -277,6 +283,9 @@ async function main(): Promise<number> {
 
   let blockedRemaining = 0;
 
+  // Mutations are applied sequentially with no rollback: a mid-apply failure
+  // leaves the zone partially converged. Safe because the plan is ordered
+  // (SSL -> cache rule -> proxied flip last) and re-running converges the rest.
   for (const change of changes) {
     if (change.blocked) {
       console.warn(`[cf-apply] SKIPPED (blocked): ${change.summary}`);

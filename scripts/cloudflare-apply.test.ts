@@ -235,6 +235,20 @@ describe('buildPlan', () => {
   });
 });
 
+describe('parseArgs strictness', () => {
+  it('rejects unknown flags instead of silently dry-running', () => {
+    expect(() => parseArgs(['--appply'])).toThrow('Unknown flag: --appply');
+  });
+});
+
+describe('diffSslMode with an unrecognized live mode', () => {
+  it('treats an unknown mode as drift needing a change', () => {
+    const change = diffSslMode('strict', 'mystery_mode', false);
+    expect(change).not.toBeNull();
+    expect(change?.blocked).toBe(true);
+  });
+});
+
 describe('jsonEqual', () => {
   it('compares nested objects independent of key order', () => {
     expect(jsonEqual({ a: 1, b: { c: 2 } }, { b: { c: 2 }, a: 1 })).toBe(true);
