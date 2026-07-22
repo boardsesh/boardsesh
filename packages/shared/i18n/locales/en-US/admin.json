@@ -296,6 +296,9 @@
       "name": "Gym",
       "address": "Address",
       "counts": "Counts"
+    },
+    "ownerReports": {
+      "note": "Owners can now flag duplicates from their gym page. Those reports arrive as team email for now, so keep an eye on the inbox alongside this queue."
     }
   }
 }

@@ -122,6 +122,17 @@ export const RequestGymClaimInputSchema = z.object({
 });
 
 /**
+ * Report-a-duplicate input validation schema. An owner (or any signed-in climber)
+ * who sees a second listing of a gym flags the pair for the admin merge queue.
+ * The resolver additionally checks the two uuids are distinct and both live.
+ */
+export const ReportGymDuplicateInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  duplicateGymUuid: UUIDSchema,
+  note: z.string().max(GYM_CLAIM_MESSAGE_MAX_LENGTH, 'Note too long').optional(),
+});
+
+/**
  * Review gym claim input validation schema (admin)
  */
 export const ReviewGymClaimInputSchema = z.object({

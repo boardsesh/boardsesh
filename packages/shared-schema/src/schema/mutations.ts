@@ -551,6 +551,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     """
     dismissGymCluster(input: DismissGymClusterInput!): Boolean!
 
+    """
+    Report that two gym listings are the same gym (any signed-in user). Surfaces the
+    pair to admins for review in the merge queue. Rate-limited and de-duplicated per
+    pair so repeated reports don't spam the team.
+    """
+    reportGymDuplicate(input: ReportGymDuplicateInput!): ReportGymDuplicateResult!
+
     # ============================================
     # Gym Kiosk Mutations (require gym edit access)
     # ============================================

@@ -296,6 +296,9 @@
       "name": "Gimnasio",
       "address": "Dirección",
       "counts": "Totales"
+    },
+    "ownerReports": {
+      "note": "Los propietarios ahora pueden señalar duplicados desde la página de su gimnasio. Por ahora esos reportes llegan por correo al equipo, así que revisa la bandeja junto a esta cola."
     }
   }
 }

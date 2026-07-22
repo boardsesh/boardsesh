@@ -25,6 +25,7 @@ vi.mock('@/app/components/ui/follow-button', () => ({ default: () => <div data-t
 vi.mock('@/app/components/social/comment-section', () => ({ default: () => <div data-testid="comment-section" /> }));
 vi.mock('../gym-member-management', () => ({ default: () => <div data-testid="member-management" /> }));
 vi.mock('../claim-gym-dialog', () => ({ default: () => null }));
+vi.mock('../report-duplicate-dialog', () => ({ default: () => null }));
 vi.mock('../edit-gym-form', () => ({ default: () => null }));
 
 vi.mock('@/app/hooks/use-ws-auth-token', () => ({

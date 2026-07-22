@@ -31,6 +31,8 @@ import type {
   MergeGymsInput,
   MergeGymsResult,
   DismissGymClusterInput,
+  ReportGymDuplicateInput,
+  ReportGymDuplicateResult,
 } from '@boardsesh/shared-schema';
 
 // ============================================
@@ -411,6 +413,14 @@ export const DISMISS_GYM_CLUSTER = gql`
   }
 `;
 
+export const REPORT_GYM_DUPLICATE = gql`
+  mutation ReportGymDuplicate($input: ReportGymDuplicateInput!) {
+    reportGymDuplicate(input: $input) {
+      status
+    }
+  }
+`;
+
 // ============================================
 // Query/Mutation Variable Types
 // ============================================
@@ -613,4 +623,12 @@ export type DismissGymClusterMutationVariables = {
 
 export type DismissGymClusterMutationResponse = {
   dismissGymCluster: boolean;
+};
+
+export type ReportGymDuplicateMutationVariables = {
+  input: ReportGymDuplicateInput;
+};
+
+export type ReportGymDuplicateMutationResponse = {
+  reportGymDuplicate: ReportGymDuplicateResult;
 };

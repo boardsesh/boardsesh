@@ -40,6 +40,7 @@ import GymPageManageButton from './gym-page-manage-button';
 import GymFollowButton from './gym-follow-button';
 import GymClaimCta from './gym-claim-cta';
 import GymOwnerPrompts from './gym-owner-prompts';
+import GymReportDuplicateCta from './gym-report-duplicate-cta';
 import { getPublicBackendHttpUrl } from '@/app/lib/backend-url';
 import { resolveGymLogoDisplayUrl } from '@/app/lib/gym-logo-display-url';
 
@@ -259,6 +260,13 @@ export default async function GymPage(props: GymRouteProps) {
         />
 
         {gym.canClaim && <GymClaimCta gymUuid={gym.uuid} gymName={gym.name} website={gym.website} />}
+
+        <GymReportDuplicateCta
+          gymUuid={gym.uuid}
+          gymName={gym.name}
+          latitude={gym.latitude}
+          longitude={gym.longitude}
+        />
 
         <Divider sx={{ mb: 3 }} />
 

@@ -42,6 +42,7 @@ import { socialGymKioskQueries, socialGymKioskMutations } from './social/gym-kio
 import { socialGymInsightsQueries } from './social/gym-insights';
 import { socialGymClaimQueries, socialGymClaimMutations } from './social/gym-claims';
 import { socialGymDuplicateQueries, socialGymDuplicateMutations } from './social/gym-duplicates';
+import { socialGymReportMutations } from './social/gym-reports';
 import {
   socialNotificationQueries,
   socialNotificationMutations,
@@ -127,6 +128,7 @@ export const resolvers = {
     ...socialGymKioskMutations,
     ...socialGymClaimMutations,
     ...socialGymDuplicateMutations,
+    ...socialGymReportMutations,
     ...socialNotificationMutations,
     ...socialProposalMutations,
     ...socialRoleMutations,

@@ -176,6 +176,46 @@ export async function sendGymClaimAdminNotification(details: {
 }
 
 /**
+ * Notify the Boardsesh team that a gym owner (or a signed-in climber) flagged two
+ * listings as the same gym, so an admin can fold them together in the merge queue.
+ */
+export async function sendGymDuplicateReportAdminNotification(details: {
+  gymName: string;
+  gymUuid: string;
+  duplicateGymName: string;
+  duplicateGymUuid: string;
+  reporterName: string;
+  note?: string | null;
+}): Promise<void> {
+  // Static path, no user input — used raw in the href (see the verify email note).
+  const reviewUrl = `${webPublicUrl()}/admin/gym-duplicates`;
+  const safeGym = escapeHtml(details.gymName);
+  const safeDuplicate = escapeHtml(details.duplicateGymName);
+  const safeReporter = escapeHtml(details.reporterName);
+  const safeNote = details.note ? escapeHtml(details.note) : null;
+
+  await getTransporter().sendMail({
+    from: fromAddress(),
+    to: ADMIN_NOTIFICATION_EMAIL,
+    subject: headerSafe(`Duplicate gym report: ${details.gymName}`),
+    html: shell(
+      'Duplicate gym report',
+      `
+      <p style="color: ${colors.textPrimary}; font-size: 16px; line-height: 1.5;">
+        <strong>${safeReporter}</strong> says <strong>${safeGym}</strong> and <strong>${safeDuplicate}</strong> are the same gym.
+      </p>
+      ${safeNote ? `<p style="color: ${colors.textSecondary}; font-size: 15px; line-height: 1.5;">"${safeNote}"</p>` : ''}
+      ${button(reviewUrl, 'Review duplicates')}
+      <hr style="border: none; border-top: 1px solid ${colors.border}; margin: 32px 0;" />
+      <p style="color: ${colors.textMuted}; font-size: 12px;">Gym UUID: ${escapeHtml(details.gymUuid)}</p>
+      <p style="color: ${colors.textMuted}; font-size: 12px;">Reported duplicate UUID: ${escapeHtml(details.duplicateGymUuid)}</p>
+    `,
+    ),
+    text: `${details.reporterName} says ${details.gymName} and ${details.duplicateGymName} are the same gym.${details.note ? `\n\nNote: ${details.note}` : ''}\n\nReview: ${reviewUrl}\n\nGym UUID: ${details.gymUuid}\nReported duplicate UUID: ${details.duplicateGymUuid}`,
+  });
+}
+
+/**
  * Let the claimant know their claim went through (domain-verified or approved).
  * Best-effort — failures are logged, never thrown, so they don't undo an
  * already-applied ownership transfer.

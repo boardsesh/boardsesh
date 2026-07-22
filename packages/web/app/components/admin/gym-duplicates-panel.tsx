@@ -196,6 +196,12 @@ function DuplicatesQueue() {
 
   return (
     <Box>
+      {/* Owner-reported duplicates arrive as team emails (see reportGymDuplicate);
+          there's no persisted reports table yet, so surface where to find them. */}
+      <Alert severity="info" sx={{ mb: 2 }}>
+        {t('gymDuplicates.ownerReports.note')}
+      </Alert>
+
       {kioskWarnings.length > 0 && (
         <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setKioskWarnings([])}>
           <Stack spacing={0.5}>

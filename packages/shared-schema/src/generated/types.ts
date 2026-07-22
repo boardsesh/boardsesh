@@ -3134,6 +3134,12 @@ export type Mutation = {
    */
   reportBoardDisconnect: Scalars['Boolean']['output'];
   /**
+   * Report that two gym listings are the same gym (any signed-in user). Surfaces the
+   * pair to admins for review in the merge queue. Rate-limited and de-duplicated per
+   * pair so repeated reports don't spam the team.
+   */
+  reportGymDuplicate: ReportGymDuplicateResult;
+  /**
    * Report that this client's BLE link to the wall dropped (explicit lightbulb-off or a
    * detected drop), so every session participant turns the queue-control-bar lightbulb off.
    * The current climb is unchanged — pressing the lightbulb re-asserts (re-sends) it.
@@ -3673,6 +3679,11 @@ export type MutationReportBoardClimbArgs = {
 /** Root mutation type for all write operations. */
 export type MutationReportBoardDisconnectArgs = {
   boardId: Scalars['Int']['input'];
+};
+
+/** Root mutation type for all write operations. */
+export type MutationReportGymDuplicateArgs = {
+  input: ReportGymDuplicateInput;
 };
 
 /** Root mutation type for all write operations. */
@@ -5811,6 +5822,25 @@ export type ReorderPlaylistClimbInput = {
   /** Playlist ID */
   playlistId: Scalars['ID']['input'];
 };
+
+/** Input for an owner-facing duplicate report: the gym being viewed and the listing the reporter believes is the same gym. */
+export type ReportGymDuplicateInput = {
+  /** The other listing the reporter believes is the same gym. */
+  duplicateGymUuid: Scalars['ID']['input'];
+  /** The gym the report is filed from (usually the one the reporter is viewing). */
+  gymUuid: Scalars['ID']['input'];
+  /** Optional free-text context for the admin who reviews the pair. */
+  note?: InputMaybe<Scalars['String']['input']>;
+};
+
+/** Outcome of a reportGymDuplicate call. */
+export type ReportGymDuplicateResult = {
+  __typename?: 'ReportGymDuplicateResult';
+  /** `reported` when the pair was surfaced to admins; `already_reported` when the same pair was flagged recently and no duplicate signal was sent. */
+  status: ReportGymDuplicateStatus;
+};
+
+export type ReportGymDuplicateStatus = 'already_reported' | 'reported';
 
 /** Input for requesting ownership of a gym. */
 export type RequestGymClaimInput = {
@@ -7974,6 +8004,9 @@ export type ResolversTypes = ResolversObject<{
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
+  ReportGymDuplicateInput: ReportGymDuplicateInput;
+  ReportGymDuplicateResult: ResolverTypeWrapper<ReportGymDuplicateResult>;
+  ReportGymDuplicateStatus: ReportGymDuplicateStatus;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: ResolverTypeWrapper<RequestGymClaimResult>;
   ResolveBoardResult: ResolverTypeWrapper<ResolveBoardResult>;
@@ -8312,6 +8345,8 @@ export type ResolversParentTypes = ResolversObject<{
   RemoveFavoriteInput: RemoveFavoriteInput;
   RemoveGymMemberInput: RemoveGymMemberInput;
   ReorderPlaylistClimbInput: ReorderPlaylistClimbInput;
+  ReportGymDuplicateInput: ReportGymDuplicateInput;
+  ReportGymDuplicateResult: ReportGymDuplicateResult;
   RequestGymClaimInput: RequestGymClaimInput;
   RequestGymClaimResult: RequestGymClaimResult;
   ResolveBoardResult: ResolveBoardResult;
@@ -10239,6 +10274,12 @@ export type MutationResolvers<
     ContextType,
     RequireFields<MutationReportBoardDisconnectArgs, 'boardId'>
   >;
+  reportGymDuplicate?: Resolver<
+    ResolversTypes['ReportGymDuplicateResult'],
+    ParentType,
+    ContextType,
+    RequireFields<MutationReportGymDuplicateArgs, 'input'>
+  >;
   reportWallDisconnect?: Resolver<ResolversTypes['Session'], ParentType, ContextType>;
   requestGymClaim?: Resolver<
     ResolversTypes['RequestGymClaimResult'],
@@ -11618,6 +11659,15 @@ export type RecentBetaLinkResolvers<
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
+export type ReportGymDuplicateResultResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['ReportGymDuplicateResult'] =
+    ResolversParentTypes['ReportGymDuplicateResult'],
+> = ResolversObject<{
+  status?: Resolver<ResolversTypes['ReportGymDuplicateStatus'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
 export type RequestGymClaimResultResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['RequestGymClaimResult'] = ResolversParentTypes['RequestGymClaimResult'],
@@ -12665,6 +12715,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   QueueReordered?: QueueReorderedResolvers<ContextType>;
   QueueState?: QueueStateResolvers<ContextType>;
   RecentBetaLink?: RecentBetaLinkResolvers<ContextType>;
+  ReportGymDuplicateResult?: ReportGymDuplicateResultResolvers<ContextType>;
   RequestGymClaimResult?: RequestGymClaimResultResolvers<ContextType>;
   ResolveBoardResult?: ResolveBoardResultResolvers<ContextType>;
   ResolvedBoard?: ResolvedBoardResolvers<ContextType>;

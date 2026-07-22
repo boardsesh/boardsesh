@@ -615,5 +615,21 @@
         "serverError": "Une erreur est survenue de notre côté. Réessayez dans un instant."
       }
     }
+  },
+  "reportDuplicate": {
+    "cta": "Signaler un doublon",
+    "title": "Signaler un doublon",
+    "description": "Vous voyez {{gym}} en double ? Indiquez-nous l'autre fiche et on les fusionne.",
+    "searchLabel": "Trouver la fiche en double",
+    "searchPlaceholder": "Nom de la salle",
+    "noResults": "Aucune correspondance pour l'instant. Essayez un autre nom.",
+    "noteLabel": "Autre chose ? (facultatif)",
+    "notePlaceholder": "Ce qui vous fait dire que c'est la même salle",
+    "submit": "Envoyer le signalement",
+    "cancel": "Annuler",
+    "done": "Terminé",
+    "sent": "Merci, on regarde ça et on les fusionne.",
+    "alreadyReported": "Vous avez déjà signalé cette paire. On s'en occupe.",
+    "errorGeneric": "Une erreur s'est produite. Réessayez."
   }
 }

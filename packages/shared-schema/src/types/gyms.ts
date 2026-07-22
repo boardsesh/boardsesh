@@ -374,3 +374,15 @@ export type DismissGymClusterInput = {
   gymUuids: string[];
   canonicalGymUuid: string;
 };
+
+export type ReportGymDuplicateInput = {
+  gymUuid: string;
+  duplicateGymUuid: string;
+  note?: string;
+};
+
+export type ReportGymDuplicateStatus = 'reported' | 'already_reported';
+
+export type ReportGymDuplicateResult = {
+  status: ReportGymDuplicateStatus;
+};

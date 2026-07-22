@@ -759,4 +759,25 @@ export const gymsTypeDefs = /* GraphQL */ `
     "The suggested canonical member, recorded on the dismissal audit row."
     canonicalGymUuid: ID!
   }
+
+  "Input for an owner-facing duplicate report: the gym being viewed and the listing the reporter believes is the same gym."
+  input ReportGymDuplicateInput {
+    "The gym the report is filed from (usually the one the reporter is viewing)."
+    gymUuid: ID!
+    "The other listing the reporter believes is the same gym."
+    duplicateGymUuid: ID!
+    "Optional free-text context for the admin who reviews the pair."
+    note: String
+  }
+
+  "Outcome of a reportGymDuplicate call."
+  type ReportGymDuplicateResult {
+    "\`reported\` when the pair was surfaced to admins; \`already_reported\` when the same pair was flagged recently and no duplicate signal was sent."
+    status: ReportGymDuplicateStatus!
+  }
+
+  enum ReportGymDuplicateStatus {
+    reported
+    already_reported
+  }
 `;

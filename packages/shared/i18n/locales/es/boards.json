@@ -615,5 +615,21 @@
         "serverError": "Algo salió mal por nuestra parte. Inténtalo de nuevo en un momento."
       }
     }
+  },
+  "reportDuplicate": {
+    "cta": "Reportar un duplicado",
+    "title": "Reportar un duplicado",
+    "description": "¿Aparece {{gym}} dos veces? Señálanos el otro listado y los fusionamos.",
+    "searchLabel": "Encuentra el listado duplicado",
+    "searchPlaceholder": "Nombre del gimnasio",
+    "noResults": "Aún no hay coincidencias. Prueba con otro nombre.",
+    "noteLabel": "¿Algo más? (opcional)",
+    "notePlaceholder": "Qué te hace pensar que es el mismo gimnasio",
+    "submit": "Enviar reporte",
+    "cancel": "Cancelar",
+    "done": "Listo",
+    "sent": "Gracias, le echamos un vistazo y los fusionamos.",
+    "alreadyReported": "Ya has señalado este par. Estamos en ello.",
+    "errorGeneric": "Algo salió mal. Inténtalo de nuevo."
   }
 }

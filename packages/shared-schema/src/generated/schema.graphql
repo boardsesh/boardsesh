@@ -3357,6 +3357,27 @@ input DismissGymClusterInput {
   canonicalGymUuid: ID!
 }
 
+"Input for an owner-facing duplicate report: the gym being viewed and the listing the reporter believes is the same gym."
+input ReportGymDuplicateInput {
+  "The gym the report is filed from (usually the one the reporter is viewing)."
+  gymUuid: ID!
+  "The other listing the reporter believes is the same gym."
+  duplicateGymUuid: ID!
+  "Optional free-text context for the admin who reviews the pair."
+  note: String
+}
+
+"Outcome of a reportGymDuplicate call."
+type ReportGymDuplicateResult {
+  "`reported` when the pair was surfaced to admins; `already_reported` when the same pair was flagged recently and no duplicate signal was sent."
+  status: ReportGymDuplicateStatus!
+}
+
+enum ReportGymDuplicateStatus {
+  reported
+  already_reported
+}
+
 # ============================================
 # Gym Kiosk Types (smart-TV wall dashboard)
 # ============================================
@@ -6204,6 +6225,13 @@ type Mutation {
   not a duplicate so the review queue hides it. Touches no gym row.
   """
   dismissGymCluster(input: DismissGymClusterInput!): Boolean!
+
+  """
+  Report that two gym listings are the same gym (any signed-in user). Surfaces the
+  pair to admins for review in the merge queue. Rate-limited and de-duplicated per
+  pair so repeated reports don't spam the team.
+  """
+  reportGymDuplicate(input: ReportGymDuplicateInput!): ReportGymDuplicateResult!
 
   # ============================================
   # Gym Kiosk Mutations (require gym edit access)

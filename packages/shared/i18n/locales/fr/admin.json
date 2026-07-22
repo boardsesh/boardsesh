@@ -296,6 +296,9 @@
       "name": "Salle",
       "address": "Adresse",
       "counts": "Totaux"
+    },
+    "ownerReports": {
+      "note": "Les propriétaires peuvent désormais signaler des doublons depuis la page de leur salle. Pour l'instant ces signalements arrivent par e-mail à l'équipe, alors surveillez la boîte de réception en plus de cette file."
     }
   }
 }

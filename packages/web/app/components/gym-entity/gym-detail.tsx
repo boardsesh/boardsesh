@@ -26,6 +26,7 @@ import FitnessCenterOutlined from '@mui/icons-material/FitnessCenterOutlined';
 import PersonOutlined from '@mui/icons-material/PersonOutlined';
 import PeopleOutlined from '@mui/icons-material/PeopleOutlined';
 import ChatBubbleOutlined from '@mui/icons-material/ChatBubbleOutlineOutlined';
+import FlagOutlined from '@mui/icons-material/FlagOutlined';
 import type { Gym } from '@boardsesh/shared-schema';
 import SwipeableDrawer from '@/app/components/swipeable-drawer/swipeable-drawer';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
@@ -51,6 +52,7 @@ import { GYM_KIOSK_FLAG } from '@/app/flags';
 import EditGymForm from './edit-gym-form';
 import GymMemberManagement from './gym-member-management';
 import ClaimGymDialog from './claim-gym-dialog';
+import ReportDuplicateDialog from './report-duplicate-dialog';
 import GymStatChip from './gym-stat-chip';
 import CommentSection from '@/app/components/social/comment-section';
 
@@ -73,6 +75,7 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showClaimDialog, setShowClaimDialog] = useState(false);
+  const [showReportDialog, setShowReportDialog] = useState(false);
   const { token } = useWsAuthToken();
   const { data: session } = useSession();
   const { showMessage } = useSnackbar();
@@ -101,6 +104,7 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
       setActiveTab(0);
       // This is a single reused instance across gyms — clear per-gym dialog state.
       setShowClaimDialog(false);
+      setShowReportDialog(false);
       setShowDeleteDialog(false);
     }
   }, [open, fetchGym]);
@@ -321,6 +325,19 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
               </MuiButton>
             )}
           </Box>
+
+          {/* Low-key "see two of this gym?" flag for any signed-in climber. */}
+          {currentUserId && (
+            <MuiButton
+              variant="text"
+              size="small"
+              startIcon={<FlagOutlined sx={{ fontSize: 16 }} />}
+              onClick={() => setShowReportDialog(true)}
+              sx={{ textTransform: 'none', mt: 1, color: 'text.secondary' }}
+            >
+              {t('reportDuplicate.cta')}
+            </MuiButton>
+          )}
         </Box>
 
         <Divider />
@@ -369,6 +386,18 @@ export default function GymDetail({ gymUuid, open, onClose, onDeleted, anchor = 
           website={gym.website}
           open={showClaimDialog}
           onClose={() => setShowClaimDialog(false)}
+        />
+      )}
+
+      {/* Report a duplicate dialog */}
+      {gym && (
+        <ReportDuplicateDialog
+          gymUuid={gym.uuid}
+          gymName={gym.name}
+          latitude={gym.latitude}
+          longitude={gym.longitude}
+          open={showReportDialog}
+          onClose={() => setShowReportDialog(false)}
         />
       )}
 

@@ -615,5 +615,21 @@
         "serverError": "Something went wrong on our end. Try again in a bit."
       }
     }
+  },
+  "reportDuplicate": {
+    "cta": "Report a duplicate",
+    "title": "Report a duplicate",
+    "description": "Seeing {{gym}} listed twice? Point us at the other listing and we'll merge them.",
+    "searchLabel": "Find the duplicate listing",
+    "searchPlaceholder": "Gym name",
+    "noResults": "No matches yet. Try a different name.",
+    "noteLabel": "Anything else? (optional)",
+    "notePlaceholder": "What makes you sure it's the same gym",
+    "submit": "Send report",
+    "cancel": "Cancel",
+    "done": "Done",
+    "sent": "Thanks, we'll take a look and merge them.",
+    "alreadyReported": "You've already flagged this pair. We're on it.",
+    "errorGeneric": "Something went wrong. Try again."
   }
 }
