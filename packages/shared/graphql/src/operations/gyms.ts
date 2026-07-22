@@ -21,6 +21,8 @@ import type {
   GymClaimConnection,
   FindSimilarGymsInput,
   SimilarGym,
+  StrayBoard,
+  AttachBoardToGymInput,
   UserBoard,
   GymStats,
   GymStatsInput,
@@ -174,6 +176,22 @@ export const GET_GYM_BOARDS = gql`
   }
 `;
 
+// Boards that probably belong to the gym but aren't linked yet — merged-twin
+// leftovers and nearby unlinked/SYSTEM boards. Powers the "Boards that might be
+// yours" section on the manage-gym Boards tab. Requires gym edit access.
+export const STRAY_BOARDS_FOR_GYM = gql`
+  query StrayBoardsForGym($gymUuid: ID!) {
+    strayBoardsForGym(gymUuid: $gymUuid) {
+      uuid
+      name
+      currentGymUuid
+      currentGymName
+      distanceMeters
+      reason
+    }
+  }
+`;
+
 // Owner Insights dashboard: current + prior window counts (for week-over-week
 // deltas), the top-10 climbs, and busiest weekdays. Requires gym edit access.
 export const GET_GYM_STATS = gql`
@@ -258,6 +276,12 @@ export const UNFOLLOW_GYM = gql`
 export const LINK_BOARD_TO_GYM = gql`
   mutation LinkBoardToGym($input: LinkBoardToGymInput!) {
     linkBoardToGym(input: $input)
+  }
+`;
+
+export const ATTACH_BOARD_TO_GYM = gql`
+  mutation AttachBoardToGym($input: AttachBoardToGymInput!) {
+    attachBoardToGym(input: $input)
   }
 `;
 
@@ -471,6 +495,14 @@ export type GetGymBoardsQueryResponse = {
   gymBoards: UserBoard[];
 };
 
+export type StrayBoardsForGymQueryVariables = {
+  gymUuid: string;
+};
+
+export type StrayBoardsForGymQueryResponse = {
+  strayBoardsForGym: StrayBoard[];
+};
+
 export type GetGymStatsQueryVariables = {
   input: GymStatsInput;
 };
@@ -541,6 +573,14 @@ export type LinkBoardToGymMutationVariables = {
 
 export type LinkBoardToGymMutationResponse = {
   linkBoardToGym: boolean;
+};
+
+export type AttachBoardToGymMutationVariables = {
+  input: AttachBoardToGymInput;
+};
+
+export type AttachBoardToGymMutationResponse = {
+  attachBoardToGym: boolean;
 };
 
 export type GrantGymWriteAccessMutationVariables = {

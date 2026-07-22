@@ -255,6 +255,18 @@
         "loading": "Chargement de tes boards…",
         "link": "Relier",
         "close": "Fermer"
+      },
+      "strays": {
+        "heading": "Des boards qui sont peut-être les tiennes",
+        "description": "Elles sont dans ta salle ou sont restées sur une fiche fusionnée. Ajoute celles qui t'appartiennent.",
+        "reasonMerged": "Était sur une fiche fusionnée",
+        "reasonNearby": "à {{meters}} m",
+        "reasonNearbyGeneric": "Juste à côté",
+        "onListing": "sur « {{name}} »",
+        "attach": "Ajouter à la salle",
+        "attached": "Board ajoutée à ta salle.",
+        "attachFailed": "Impossible d'ajouter cette board.",
+        "empty": "Rien qui traîne pour l'instant. Toutes les boards près de ta salle sont déjà sur ta fiche."
       }
     },
     "presets": {

@@ -255,6 +255,18 @@
         "loading": "Loading your boards…",
         "link": "Link",
         "close": "Close"
+      },
+      "strays": {
+        "heading": "Boards that might be yours",
+        "description": "These sit at your gym or drifted off a merged listing. Add the ones that belong here.",
+        "reasonMerged": "Was on a merged listing",
+        "reasonNearby": "{{meters}} m away",
+        "reasonNearbyGeneric": "Right nearby",
+        "onListing": "on \"{{name}}\"",
+        "attach": "Add to gym",
+        "attached": "Board added to your gym.",
+        "attachFailed": "Couldn't add that board.",
+        "empty": "Nothing loose right now. Every board near your gym is already on your listing."
       }
     },
     "presets": {

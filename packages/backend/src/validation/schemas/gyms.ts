@@ -216,6 +216,16 @@ export const LinkBoardToGymInputSchema = z.object({
 });
 
 /**
+ * Attach stray board to gym input validation schema. Both a target gym and the
+ * board are required — the resolver additionally checks the board is a genuine
+ * stray candidate for the gym before re-pointing gym_id.
+ */
+export const AttachBoardToGymInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  boardUuid: UUIDSchema,
+});
+
+/**
  * Gym insights (owner activity dashboard) input validation schema. `period`
  * chooses the window length; the resolver derives the day count and the equally
  * long prior comparison window from it.

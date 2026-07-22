@@ -93,6 +93,26 @@ export type FindSimilarGymsInput = {
   longitude?: number;
 };
 
+/** Why a board is surfaced as a candidate to attach to a gym. */
+export type StrayBoardReason = 'MERGED_TWIN' | 'NEARBY';
+
+export type StrayBoard = {
+  uuid: string;
+  name: string;
+  /** The gym the board is currently linked to (a merged twin or a synced listing); null when unlinked. */
+  currentGymUuid?: string | null;
+  /** Name of the gym the board is currently linked to; null when unlinked. */
+  currentGymName?: string | null;
+  /** Metres from this gym's location to the board; null when either lacks coordinates. */
+  distanceMeters?: number | null;
+  reason: StrayBoardReason;
+};
+
+export type AttachBoardToGymInput = {
+  gymUuid: string;
+  boardUuid: string;
+};
+
 export type CreateGymInput = {
   name: string;
   description?: string;

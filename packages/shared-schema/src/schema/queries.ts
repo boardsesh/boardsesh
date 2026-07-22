@@ -605,6 +605,16 @@ export const queriesTypeDefs = /* GraphQL */ `
     gymBoards(gymUuid: ID!): [UserBoard!]!
 
     """
+    Boards that probably belong to a gym but aren't linked to it yet, for the
+    gym's Boards tab. Requires edit access to the gym. Returns two kinds of
+    candidate: boards on a listing whose merged_into chain resolves to this gym
+    (they should have followed the merge), and boards within ~150 m of the gym's
+    location that are either unlinked or attached to a synced (SYSTEM) listing at
+    the same spot. Merged-twin candidates first, then nearest. Capped at 25.
+    """
+    strayBoardsForGym(gymUuid: ID!): [StrayBoard!]!
+
+    """
     List pending gym ownership claims for the admin review queue (admin only).
     """
     pendingGymClaims(input: PendingGymClaimsInput): GymClaimConnection!

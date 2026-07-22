@@ -15,8 +15,10 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
+import Divider from '@mui/material/Divider';
 import AddOutlined from '@mui/icons-material/AddOutlined';
 import LinkOffOutlined from '@mui/icons-material/LinkOffOutlined';
+import AddLinkOutlined from '@mui/icons-material/AddLinkOutlined';
 import { useSession } from 'next-auth/react';
 import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
@@ -25,13 +27,19 @@ import {
   GET_GYM_BOARDS,
   GET_MY_BOARDS,
   LINK_BOARD_TO_GYM,
+  STRAY_BOARDS_FOR_GYM,
+  ATTACH_BOARD_TO_GYM,
   type GetGymBoardsQueryResponse,
   type GetGymBoardsQueryVariables,
   type GetMyBoardsQueryResponse,
   type LinkBoardToGymMutationResponse,
   type LinkBoardToGymMutationVariables,
+  type StrayBoardsForGymQueryResponse,
+  type StrayBoardsForGymQueryVariables,
+  type AttachBoardToGymMutationResponse,
+  type AttachBoardToGymMutationVariables,
 } from '@boardsesh/graphql/operations';
-import type { UserBoard } from '@boardsesh/shared-schema';
+import type { StrayBoard, UserBoard } from '@boardsesh/shared-schema';
 import { boardTypeLabel } from '@boardsesh/board-constants';
 import { themeTokens } from '@/app/theme/theme-config';
 import { canManageGymBoards, canUnlinkBoard, linkableBoards } from './gym-board-permissions';
@@ -197,6 +205,8 @@ export default function GymBoardsTab({ gym }: GymManageTabProps) {
         </List>
       )}
 
+      {gym.canEdit && <StrayBoardsSection gymUuid={gym.uuid} onAttached={fetchBoards} />}
+
       <Dialog open={unlinkTarget !== null} onClose={() => setUnlinkTarget(null)}>
         <DialogTitle>{t('manage.boards.unlinkTitle')}</DialogTitle>
         <DialogContent>
@@ -339,5 +349,135 @@ function AddBoardDialog({ open, gymUuid, viewerUserId, linkedBoardUuids, onClose
         </Button>
       </DialogActions>
     </Dialog>
+  );
+}
+
+type StrayBoardsSectionProps = {
+  gymUuid: string;
+  /** Called after a successful attach so the linked-boards list refetches. */
+  onAttached: () => Promise<void> | void;
+};
+
+/**
+ * "Boards that might be yours": candidates the backend surfaces as physically at
+ * this gym (within ~150 m, unlinked or on a synced listing) or left behind by a
+ * merged listing. One tap re-points the board to this gym. Only mounted for
+ * viewers with gym edit access — the resolver enforces the same gate.
+ */
+function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
+  const { t } = useTranslation('kiosk');
+  const { token } = useWsAuthToken();
+  const [strays, setStrays] = useState<StrayBoard[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [attachingUuid, setAttachingUuid] = useState<string | null>(null);
+
+  const attachMutation = useEntityMutation<AttachBoardToGymMutationResponse, AttachBoardToGymMutationVariables>(
+    ATTACH_BOARD_TO_GYM,
+    { successMessage: t('manage.boards.strays.attached'), errorMessage: t('manage.boards.strays.attachFailed') },
+  );
+
+  const fetchStrays = useCallback(async () => {
+    if (!token) return;
+    setLoadError(false);
+    try {
+      const client = createGraphQLHttpClient(token);
+      const data = await client.request<StrayBoardsForGymQueryResponse, StrayBoardsForGymQueryVariables>(
+        STRAY_BOARDS_FOR_GYM,
+        { gymUuid },
+      );
+      setStrays(data.strayBoardsForGym ?? []);
+    } catch (error) {
+      console.error('Failed to load stray boards:', error);
+      setLoadError(true);
+      setStrays([]);
+    }
+  }, [token, gymUuid]);
+
+  useEffect(() => {
+    void fetchStrays();
+  }, [fetchStrays]);
+
+  const handleAttach = async (board: StrayBoard) => {
+    setAttachingUuid(board.uuid);
+    try {
+      const result = await attachMutation.execute({ input: { gymUuid, boardUuid: board.uuid } });
+      if (result) {
+        // Drop the attached candidate and pull it into the linked list above.
+        setStrays((prev) => (prev === null ? prev : prev.filter((candidate) => candidate.uuid !== board.uuid)));
+        await onAttached();
+      }
+    } finally {
+      setAttachingUuid(null);
+    }
+  };
+
+  const reasonText = (board: StrayBoard): string => {
+    if (board.reason === 'MERGED_TWIN') {
+      return t('manage.boards.strays.reasonMerged');
+    }
+    if (board.distanceMeters == null) {
+      return t('manage.boards.strays.reasonNearbyGeneric');
+    }
+    return t('manage.boards.strays.reasonNearby', { meters: Math.round(board.distanceMeters) });
+  };
+
+  // Hide the whole section while the first fetch is in flight so it doesn't flash
+  // an empty state, and on a load error (the linked list above already surfaces
+  // gym-boards failures — a second error block would just be noise).
+  if (strays === null || loadError) {
+    return null;
+  }
+
+  return (
+    <Box sx={{ mt: 4 }}>
+      <Divider sx={{ mb: 2 }} />
+      <Typography variant="h6" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
+        {t('manage.boards.strays.heading')}
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {t('manage.boards.strays.description')}
+      </Typography>
+
+      {strays.length === 0 ? (
+        <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+          {t('manage.boards.strays.empty')}
+        </Typography>
+      ) : (
+        <List disablePadding>
+          {strays.map((board) => (
+            <ListItem
+              key={board.uuid}
+              divider
+              disableGutters
+              secondaryAction={
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={<AddLinkOutlined />}
+                  disabled={attachingUuid !== null}
+                  onClick={() => handleAttach(board)}
+                  sx={{ textTransform: 'none' }}
+                >
+                  {attachingUuid === board.uuid ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    t('manage.boards.strays.attach')
+                  )}
+                </Button>
+              }
+            >
+              <ListItemText
+                primary={board.name}
+                secondary={
+                  board.currentGymName
+                    ? `${reasonText(board)} · ${t('manage.boards.strays.onListing', { name: board.currentGymName })}`
+                    : reasonText(board)
+                }
+              />
+            </ListItem>
+          ))}
+        </List>
+      )}
+    </Box>
   );
 }

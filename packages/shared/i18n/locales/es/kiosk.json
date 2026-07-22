@@ -255,6 +255,18 @@
         "loading": "Cargando tus plafones…",
         "link": "Vincular",
         "close": "Cerrar"
+      },
+      "strays": {
+        "heading": "Plafones que podrían ser tuyos",
+        "description": "Están en tu rocódromo o quedaron sueltos tras fusionar una ficha. Añade los que te correspondan.",
+        "reasonMerged": "Estaba en una ficha fusionada",
+        "reasonNearby": "a {{meters}} m",
+        "reasonNearbyGeneric": "Justo al lado",
+        "onListing": "en «{{name}}»",
+        "attach": "Añadir al rocódromo",
+        "attached": "Plafón añadido a tu rocódromo.",
+        "attachFailed": "No se pudo añadir ese plafón.",
+        "empty": "Nada suelto por ahora. Todos los plafones cerca de tu rocódromo ya están en tu ficha."
       }
     },
     "presets": {

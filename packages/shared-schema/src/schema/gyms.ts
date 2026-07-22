@@ -148,6 +148,36 @@ export const gymsTypeDefs = /* GraphQL */ `
   }
 
   """
+  Why a board is a candidate to attach to a gym in strayBoardsForGym.
+  """
+  enum StrayBoardReason {
+    "The board sits on a listing that was merged into this gym."
+    MERGED_TWIN
+    "The board is physically within ~150 m of this gym but isn't linked to it."
+    NEARBY
+  }
+
+  """
+  A board that probably belongs to a gym but isn't linked to it yet — either it
+  followed a listing that got merged into this gym, or it sits at the gym's
+  coordinates while unlinked or attached to a synced (SYSTEM) listing.
+  """
+  type StrayBoard {
+    "The board's unique identifier."
+    uuid: ID!
+    "The board's display name."
+    name: String!
+    "The gym this board is currently linked to (a merged twin or a synced listing); null when unlinked."
+    currentGymUuid: ID
+    "Name of the gym this board is currently linked to; null when unlinked."
+    currentGymName: String
+    "Metres from this gym's location to the board; null when either lacks coordinates."
+    distanceMeters: Float
+    "Why this board is a candidate for this gym."
+    reason: StrayBoardReason!
+  }
+
+  """
   A member of a gym.
   """
   type GymMember {
@@ -343,6 +373,18 @@ export const gymsTypeDefs = /* GraphQL */ `
     boardUuid: ID!
     "Gym UUID (null to unlink)"
     gymUuid: String
+  }
+
+  """
+  Input for attaching a stray board (from strayBoardsForGym) to a gym. Unlike
+  linkBoardToGym, the caller need not own the board — the gate is edit access to
+  the target gym plus the board actually being a stray candidate for it.
+  """
+  input AttachBoardToGymInput {
+    "Gym UUID to attach the board to"
+    gymUuid: ID!
+    "Stray board UUID to attach"
+    boardUuid: ID!
   }
 
   """

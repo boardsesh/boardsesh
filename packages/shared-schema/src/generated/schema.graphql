@@ -2745,6 +2745,36 @@ type SimilarGym {
 }
 
 """
+Why a board is a candidate to attach to a gym in strayBoardsForGym.
+"""
+enum StrayBoardReason {
+  "The board sits on a listing that was merged into this gym."
+  MERGED_TWIN
+  "The board is physically within ~150 m of this gym but isn't linked to it."
+  NEARBY
+}
+
+"""
+A board that probably belongs to a gym but isn't linked to it yet — either it
+followed a listing that got merged into this gym, or it sits at the gym's
+coordinates while unlinked or attached to a synced (SYSTEM) listing.
+"""
+type StrayBoard {
+  "The board's unique identifier."
+  uuid: ID!
+  "The board's display name."
+  name: String!
+  "The gym this board is currently linked to (a merged twin or a synced listing); null when unlinked."
+  currentGymUuid: ID
+  "Name of the gym this board is currently linked to; null when unlinked."
+  currentGymName: String
+  "Metres from this gym's location to the board; null when either lacks coordinates."
+  distanceMeters: Float
+  "Why this board is a candidate for this gym."
+  reason: StrayBoardReason!
+}
+
+"""
 A member of a gym.
 """
 type GymMember {
@@ -2940,6 +2970,18 @@ input LinkBoardToGymInput {
   boardUuid: ID!
   "Gym UUID (null to unlink)"
   gymUuid: String
+}
+
+"""
+Input for attaching a stray board (from strayBoardsForGym) to a gym. Unlike
+linkBoardToGym, the caller need not own the board — the gate is edit access to
+the target gym plus the board actually being a stray candidate for it.
+"""
+input AttachBoardToGymInput {
+  "Gym UUID to attach the board to"
+  gymUuid: ID!
+  "Stray board UUID to attach"
+  boardUuid: ID!
 }
 
 """
@@ -5381,6 +5423,16 @@ type Query {
   gymBoards(gymUuid: ID!): [UserBoard!]!
 
   """
+  Boards that probably belong to a gym but aren't linked to it yet, for the
+  gym's Boards tab. Requires edit access to the gym. Returns two kinds of
+  candidate: boards on a listing whose merged_into chain resolves to this gym
+  (they should have followed the merge), and boards within ~150 m of the gym's
+  location that are either unlinked or attached to a synced (SYSTEM) listing at
+  the same spot. Merged-twin candidates first, then nearest. Capped at 25.
+  """
+  strayBoardsForGym(gymUuid: ID!): [StrayBoard!]!
+
+  """
   List pending gym ownership claims for the admin review queue (admin only).
   """
   pendingGymClaims(input: PendingGymClaimsInput): GymClaimConnection!
@@ -6162,6 +6214,14 @@ type Mutation {
   Link or unlink a board to/from a gym.
   """
   linkBoardToGym(input: LinkBoardToGymInput!): Boolean!
+
+  """
+  Attach a stray board (surfaced by strayBoardsForGym) to a gym in one tap.
+  Re-points the board's gym_id to this gym. The caller need not own the board;
+  the gate is edit access to the target gym, and the board must be a genuine
+  stray candidate for it (a merged-twin board or a nearby unlinked/SYSTEM one).
+  """
+  attachBoardToGym(input: AttachBoardToGymInput!): Boolean!
 
   """
   Grant a user write (editor) access to a gym: edit details only, no

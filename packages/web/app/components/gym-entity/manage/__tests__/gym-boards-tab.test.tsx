@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vite-plus/test';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { tFromCatalog } from '@/app/__test-helpers__/i18n-mock';
-import type { Gym, UserBoard } from '@boardsesh/shared-schema';
+import type { Gym, StrayBoard, UserBoard } from '@boardsesh/shared-schema';
 import GymBoardsTab from '../gym-boards-tab';
 
 vi.mock('react-i18next', () => ({
@@ -74,9 +74,21 @@ function makeBoard(overrides: Partial<UserBoard>): UserBoard {
   } as UserBoard;
 }
 
-/** Routes the shared request mock by operation: gymBoards list vs myBoards. */
-function stubRequests({ gymBoards, myBoards }: { gymBoards: UserBoard[]; myBoards: UserBoard[] }) {
+/** Routes the shared request mock by operation: strayBoardsForGym vs gymBoards vs myBoards. */
+function stubRequests({
+  gymBoards,
+  myBoards,
+  strays = [],
+}: {
+  gymBoards: UserBoard[];
+  myBoards: UserBoard[];
+  strays?: StrayBoard[];
+}) {
   mockRequest.mockImplementation(async (document: string) => {
+    // strayBoardsForGym must be matched before gymBoards — both are board reads.
+    if (typeof document === 'string' && document.includes('strayBoardsForGym')) {
+      return { strayBoardsForGym: strays };
+    }
     if (typeof document === 'string' && document.includes('gymBoards')) {
       return { gymBoards };
     }
@@ -141,5 +153,93 @@ describe('GymBoardsTab — permission gating', () => {
     await screen.findByText(/no boards linked yet/i);
     expect(screen.queryByRole('button', { name: /add a board/i })).toBeNull();
     expect(screen.getByText(/only the gym owner or an admin can link boards/i)).toBeTruthy();
+  });
+});
+
+describe('GymBoardsTab — stray boards', () => {
+  const editableGym = { ...gym, canEdit: true } as unknown as Gym;
+
+  function makeStray(overrides: Partial<StrayBoard>): StrayBoard {
+    return {
+      uuid: 'stray-1',
+      name: 'Nearby Tension',
+      currentGymUuid: null,
+      currentGymName: null,
+      distanceMeters: 42,
+      reason: 'NEARBY',
+      ...overrides,
+    };
+  }
+
+  it('lists stray candidates with their reason and the current listing', async () => {
+    stubRequests({
+      gymBoards: [],
+      myBoards: [],
+      strays: [
+        makeStray({ uuid: 'stray-merged', name: 'Old Kilter', reason: 'MERGED_TWIN', currentGymName: 'Old Listing' }),
+        makeStray({ uuid: 'stray-nearby', name: 'Nearby Tension', reason: 'NEARBY', distanceMeters: 42 }),
+      ],
+    });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    expect(await screen.findByText(/boards that might be yours/i)).toBeTruthy();
+    expect(screen.getByText('Old Kilter')).toBeTruthy();
+    expect(screen.getByText(/was on a merged listing/i)).toBeTruthy();
+    expect(screen.getByText('Nearby Tension')).toBeTruthy();
+    expect(screen.getByText(/42 m away/i)).toBeTruthy();
+  });
+
+  it('attaches a stray board and drops it from the list', async () => {
+    stubRequests({
+      gymBoards: [],
+      myBoards: [],
+      strays: [makeStray({ uuid: 'stray-nearby', name: 'Nearby Tension' })],
+    });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Nearby Tension');
+    mockExecute.mockResolvedValueOnce({ attachBoardToGym: true });
+
+    fireEvent.click(screen.getByRole('button', { name: /add to gym/i }));
+
+    await waitFor(() =>
+      expect(mockExecute).toHaveBeenCalledWith({
+        input: { gymUuid: GYM_UUID, boardUuid: 'stray-nearby' },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText('Nearby Tension')).toBeNull());
+  });
+
+  it('keeps the candidate when the attach mutation fails', async () => {
+    stubRequests({
+      gymBoards: [],
+      myBoards: [],
+      strays: [makeStray({ uuid: 'stray-nearby', name: 'Nearby Tension' })],
+    });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    await screen.findByText('Nearby Tension');
+    mockExecute.mockResolvedValueOnce(null); // useEntityMutation resolves null on failure
+
+    fireEvent.click(screen.getByRole('button', { name: /add to gym/i }));
+
+    await waitFor(() => expect(mockExecute).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('Nearby Tension')).toBeTruthy();
+  });
+
+  it('shows a climber-voice empty state when there are no strays', async () => {
+    stubRequests({ gymBoards: [], myBoards: [], strays: [] });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    expect(await screen.findByText(/nothing loose right now/i)).toBeTruthy();
+  });
+
+  it('does not render the strays section without gym edit access', async () => {
+    const noEditGym = { ...gym, canEdit: false } as unknown as Gym;
+    stubRequests({ gymBoards: [], myBoards: [], strays: [makeStray({})] });
+    render(<GymBoardsTab gym={noEditGym} onGymChange={vi.fn()} />);
+
+    await screen.findByText(/no boards linked yet/i);
+    expect(screen.queryByText(/boards that might be yours/i)).toBeNull();
   });
 });

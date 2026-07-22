@@ -510,6 +510,14 @@ export const mutationsTypeDefs = /* GraphQL */ `
     linkBoardToGym(input: LinkBoardToGymInput!): Boolean!
 
     """
+    Attach a stray board (surfaced by strayBoardsForGym) to a gym in one tap.
+    Re-points the board's gym_id to this gym. The caller need not own the board;
+    the gate is edit access to the target gym, and the board must be a genuine
+    stray candidate for it (a merged-twin board or a nearby unlinked/SYSTEM one).
+    """
+    attachBoardToGym(input: AttachBoardToGymInput!): Boolean!
+
+    """
     Grant a user write (editor) access to a gym: edit details only, no
     membership/board management, no delete. Callable by the gym owner, a gym
     admin, or a community admin/leader for one of the gym's board types.
