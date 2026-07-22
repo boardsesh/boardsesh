@@ -22,6 +22,7 @@ const anonCtx = (): ConnectionContext =>
   ({ connectionId: `conn-anon-${connectionCounter++}`, isAuthenticated: false }) as ConnectionContext;
 
 const REPORTER = 'gdr-reporter';
+const STRANGER = 'gdr-stranger';
 
 const insertUser = (id: string, name: string) =>
   db.execute(sql`
@@ -32,14 +33,16 @@ const insertUser = (id: string, name: string) =>
 
 const insertGym = async (opts: {
   name: string;
+  ownerId?: string;
+  isPublic?: boolean;
   deleted?: boolean;
   mergedIntoId?: number | null;
 }): Promise<{ id: number; uuid: string }> => {
-  const { name, deleted = false, mergedIntoId = null } = opts;
+  const { name, ownerId = REPORTER, isPublic = true, deleted = false, mergedIntoId = null } = opts;
   const uuid = uuidv4();
   const result = await db.execute(sql`
     INSERT INTO gyms (uuid, name, slug, owner_id, is_public, deleted_at, merged_into_gym_id, created_at, updated_at)
-    VALUES (${uuid}, ${name}, ${uuid}, ${REPORTER}, true, ${deleted ? sql`now()` : null}, ${mergedIntoId}, now(), now())
+    VALUES (${uuid}, ${name}, ${uuid}, ${ownerId}, ${isPublic}, ${deleted ? sql`now()` : null}, ${mergedIntoId}, now(), now())
     RETURNING id
   `);
   return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
@@ -56,6 +59,7 @@ beforeEach(async () => {
   vi.mocked(sendGymDuplicateReportAdminNotification).mockImplementation(() => Promise.resolve());
   await db.execute(sql`TRUNCATE TABLE "gym_members", "gyms" RESTART IDENTITY CASCADE`);
   await insertUser(REPORTER, 'Reporter Rae');
+  await insertUser(STRANGER, 'Strange Stranger');
 });
 
 describe('reportGymDuplicate — validation', () => {
@@ -101,6 +105,27 @@ describe('reportGymDuplicate — validation', () => {
     await expect(
       reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: merged.uuid }, authCtx(REPORTER)),
     ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+  });
+
+  it("won't confirm or email a stranger's private gym (no existence oracle)", async () => {
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    // A private gym owned by someone else — invisible to this reporter.
+    const strangerPrivate = await insertGym({ name: 'Secret Home Wall', ownerId: STRANGER, isPublic: false });
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: strangerPrivate.uuid }, authCtx(REPORTER)),
+    ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+    expect(sendGymDuplicateReportAdminNotification).not.toHaveBeenCalled();
+  });
+
+  it('lets a reporter flag their OWN private gym as a duplicate', async () => {
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const ownPrivate = await insertGym({ name: 'My Garage', ownerId: REPORTER, isPublic: false });
+    const result = await reportGymDuplicate(
+      { gymUuid: gym.uuid, duplicateGymUuid: ownPrivate.uuid },
+      authCtx(REPORTER),
+    );
+    expect(result).toEqual({ status: 'reported' });
+    expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
   });
 });
 
