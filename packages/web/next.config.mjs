@@ -221,6 +221,14 @@ const nextConfig = {
           destination: `${expoWebOrigin}/wasm/:path*`,
         },
         {
+          // Same public/ root-vs-baseUrl mismatch as the WASM rule above: the
+          // PWA manifest (packages/mobile/public/manifest.json) is served by
+          // Metro unprefixed, so /app/manifest.json must resolve before the SPA
+          // catch-all or it 404s into the exported shell instead of real JSON.
+          source: '/app/manifest.json',
+          destination: `${expoWebOrigin}/manifest.json`,
+        },
+        {
           source: '/app/:path*',
           destination: `${expoWebOrigin}/app/:path*`,
         },

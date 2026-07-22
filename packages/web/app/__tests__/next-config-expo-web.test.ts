@@ -62,6 +62,10 @@ describe('Expo web Next proxy', () => {
       source: '/app/wasm/:path*',
       destination: 'http://localhost:8082/wasm/:path*',
     });
+    expect(rewrites).toContainEqual({
+      source: '/app/manifest.json',
+      destination: 'http://localhost:8082/manifest.json',
+    });
     expect(rewrites).toContainEqual({ source: '/app/:path*', destination: 'http://localhost:8082/app/:path*' });
     expect(rewrites).toContainEqual({
       source: '/packages/mobile/:path*',
