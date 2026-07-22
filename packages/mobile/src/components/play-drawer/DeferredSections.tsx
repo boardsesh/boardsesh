@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
 import type { Climb } from '@boardsesh/shared-schema';
@@ -33,6 +33,12 @@ type DeferredSectionsProps = {
   /** Reports the measured height of the Logbook section header (drives the play
    *  drawer's first-screen reserve so the header teases at the bottom of the fold). */
   onLogbookHeaderLayout?: (height: number) => void;
+  /** Reports the measured height of the whole Logbook section (header + expanded
+   *  body). Lets the play drawer scroll a deliberate expand fully into view. */
+  onLogbookSectionLayout?: (height: number) => void;
+  /** Fires when the user taps to expand/collapse the Logbook (not on mount), with
+   *  the new state — the play drawer scrolls the section into view on expand. */
+  onLogbookToggle?: (expanded: boolean) => void;
   /** Opens the "share your beta" sheet. Rendered as the Beta Videos header "+" for
    *  signed-in users; absent (undefined) hides it. */
   onAddBetaVideo?: () => void;
@@ -54,6 +60,8 @@ export const DeferredSections = memo(function DeferredSections({
   contentEnabled,
   onSimilarClimbPress,
   onLogbookHeaderLayout,
+  onLogbookSectionLayout,
+  onLogbookToggle,
   onAddBetaVideo,
 }: DeferredSectionsProps) {
   const { t } = useTranslation('session');
@@ -67,6 +75,13 @@ export const DeferredSections = memo(function DeferredSections({
     void Haptics.selectionAsync();
     onAddBetaVideo?.();
   }, [onAddBetaVideo]);
+
+  const handleLogbookSectionLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      onLogbookSectionLayout?.(event.nativeEvent.layout.height);
+    },
+    [onLogbookSectionLayout],
+  );
   // Defer the JS-heavy below-fold sections until just after the drawer's open
   // animation and only after the user has started scrolling below the fold.
   // The Logbook stays eager above because its collapsed header is the scroll
@@ -125,19 +140,24 @@ export const DeferredSections = memo(function DeferredSections({
   // interaction queue.
   return (
     <View style={styles.container}>
-      <CollapsibleSection
-        title={t('mobile.logbook.title')}
-        summary={logbookSummary}
-        persistKey="logbook"
-        onHeaderLayout={onLogbookHeaderLayout}
-      >
-        <LogbookSection
-          climbUuid={climb.uuid}
-          boardName={boardName}
-          userAscents={climb.userAscents}
-          userAttempts={climb.userAttempts}
-        />
-      </CollapsibleSection>
+      {/* Wrapper measures the whole section (header + expanded body) so the play
+          drawer can smoothly scroll a deliberate expand fully into view. */}
+      <View onLayout={onLogbookSectionLayout ? handleLogbookSectionLayout : undefined}>
+        <CollapsibleSection
+          title={t('mobile.logbook.title')}
+          summary={logbookSummary}
+          persistKey="logbook"
+          onHeaderLayout={onLogbookHeaderLayout}
+          onToggle={onLogbookToggle}
+        >
+          <LogbookSection
+            climbUuid={climb.uuid}
+            boardName={boardName}
+            userAscents={climb.userAscents}
+            userAttempts={climb.userAttempts}
+          />
+        </CollapsibleSection>
+      </View>
 
       {readyToRender && (
         <>

@@ -43,7 +43,7 @@ import { PlayDrawerActionBar } from './PlayDrawerActionBar';
 import { SwitchBoardOverlay } from './SwitchBoardOverlay';
 import { LogAscentSheet } from '../LogAscentSheet';
 import { DeferredSections } from './DeferredSections';
-import { computeFirstScreenHeight } from './play-drawer-layout';
+import { computeFirstScreenHeight, computeLogbookScrollTarget } from './play-drawer-layout';
 import { useDrawerDismissGesture } from './use-drawer-dismiss-gesture';
 import { AngleSelectorSheet } from './AngleSelectorSheet';
 import { ClimbActionsSheet } from '../ClimbActionsSheet';
@@ -239,6 +239,11 @@ export function PlayDrawer({
   const [tickTarget, setTickTarget] = useState<{ climb: Climb; boardConfig: BoardConfig } | null>(null);
   const [belowFoldContentRequested, setBelowFoldContentRequested] = useState(false);
   const resetZoomRef = useRef<(() => void) | null>(null);
+  // Set true when the user taps to expand the Logbook peek; the section's next
+  // layout then glides it fully into view. Stays armed across the logbook's
+  // loading→loaded height growth (so a slow fetch still lands framed) and is
+  // disarmed once the user drives the scroll, collapses it, or the climb changes.
+  const pendingLogbookScrollRef = useRef(false);
 
   // RNGH ref for the scroll container. The board's swipe + pinch gestures declare
   // themselves simultaneous with it (otherwise the plain RN ScrollView starved
@@ -441,6 +446,9 @@ export function PlayDrawer({
   useEffect(() => {
     setIsTickBarActive(false);
     setFavoriteOverride(null);
+    // A new climb's Logbook re-lays out from scratch — don't let a stale expand
+    // intent auto-scroll it.
+    pendingLogbookScrollRef.current = false;
   }, [displayedClimbUuid]);
 
   // When the board angle changes, drop the locally-pinned climb so the drawer
@@ -699,6 +707,13 @@ export function PlayDrawer({
 
   const handleScrollTowardBelowFold = useCallback(() => {
     setBelowFoldContentRequested(true);
+    // The user is driving the scroll now — stand down the expand-into-view glide.
+    pendingLogbookScrollRef.current = false;
+  }, []);
+
+  // Arm (expand) / disarm (collapse) the scroll-into-view for the Logbook peek.
+  const handleLogbookToggle = useCallback((expanded: boolean) => {
+    pendingLogbookScrollRef.current = expanded;
   }, []);
 
   const handleOpenAngleSelector = useCallback(() => {
@@ -768,8 +783,29 @@ export function PlayDrawer({
     spacing[3] + (logbookHeaderHeight > 0 ? logbookHeaderHeight : DEFAULT_LOGBOOK_HEADER_HEIGHT) + spacing[2];
   // Size the first screen from the MEASURED viewport (the scroll container fills
   // the full window), falling back to windowHeight pre-layout. The reserve leaves
-  // the Beta Videos header peeking below the fold.
+  // the Logbook header peeking below the fold.
   const firstScreenHeight = computeFirstScreenHeight(sheetViewportHeight || windowHeight, firstScreenReserve);
+
+  // When the user expands the Logbook peek, glide it fully into view. Fires on the
+  // section's layout (re-firing as a slow logbook fetch grows it) while armed.
+  // The Logbook is the first below-fold section, so it starts right after the
+  // fixed-height first screen, past the DeferredSections top padding.
+  const handleLogbookSectionLayout = useCallback(
+    (sectionHeight: number) => {
+      if (!pendingLogbookScrollRef.current) return;
+      const target = computeLogbookScrollTarget({
+        firstScreenHeight,
+        topPadding: spacing[3],
+        sectionHeight,
+        viewport: sheetViewportHeight || windowHeight,
+        topInset: insets.top,
+        bottomInset: insets.bottom,
+        margin: spacing[2],
+      });
+      scrollRef.current?.scrollTo({ y: target, animated: true });
+    },
+    [firstScreenHeight, sheetViewportHeight, windowHeight, insets.bottom, insets.top],
+  );
 
   const ascentCount = displayedClimb?.userAscents ?? 0;
   const supportsMirroring = boardSupportsMirroring(boardName, layoutId);
@@ -1001,6 +1037,8 @@ export function PlayDrawer({
                   contentEnabled={belowFoldContentRequested}
                   onSimilarClimbPress={handleSimilarClimbPress}
                   onLogbookHeaderLayout={handleLogbookHeaderLayout}
+                  onLogbookSectionLayout={handleLogbookSectionLayout}
+                  onLogbookToggle={handleLogbookToggle}
                   onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
                 />
               </>

@@ -29,6 +29,10 @@ type CollapsibleSectionProps = {
   /** Fires when the section expands/collapses (and once on mount). Lets a caller
    *  gate expensive content (e.g. a query) on the section being open. */
   onExpandedChange?: (expanded: boolean) => void;
+  /** Fires only on a user tap that toggles the section — not on mount or a
+   *  persisted-state reconciliation — with the new expanded state. Lets a host
+   *  react to a deliberate expand (e.g. scroll the section into view). */
+  onToggle?: (expanded: boolean) => void;
   /** When set, the section's expand state persists under this key (across climbs
    *  and app restarts) instead of resetting to `defaultExpanded` each mount.
    *  `defaultExpanded` is then only the first-ever state before the user touches
@@ -46,6 +50,7 @@ export function CollapsibleSection({
   headerAction,
   onHeaderLayout,
   onExpandedChange,
+  onToggle,
   persistKey,
   children,
 }: CollapsibleSectionProps) {
@@ -79,6 +84,7 @@ export function CollapsibleSection({
       headerAction={headerAction}
       onHeaderLayoutEvent={onHeaderLayout ? handleHeaderLayout : undefined}
       onExpandedChange={onExpandedChange}
+      onToggle={onToggle}
       persistKey={persistKey}
     >
       {children}
@@ -94,6 +100,7 @@ function CollapsibleSectionInternal({
   headerAction,
   onHeaderLayoutEvent,
   onExpandedChange,
+  onToggle,
   persistKey,
   children,
 }: {
@@ -107,6 +114,7 @@ function CollapsibleSectionInternal({
   // never get conflated in callers or refactors.
   onHeaderLayoutEvent?: (event: LayoutChangeEvent) => void;
   onExpandedChange?: (expanded: boolean) => void;
+  onToggle?: (expanded: boolean) => void;
   persistKey?: string;
   children: ReactNode;
 }) {
@@ -155,7 +163,11 @@ function CollapsibleSectionInternal({
     chevronRotation.value = withTiming(next ? 1 : 0, { duration: timing.normal });
     if (persistKey) setSectionExpanded(persistKey, next);
     setExpanded(next);
-  }, [expanded, chevronRotation, persistKey]);
+    // User-intent signal (distinct from onExpandedChange, which also fires on
+    // mount / persisted reconciliation) — lets a host scroll a deliberate expand
+    // into view.
+    onToggle?.(next);
+  }, [expanded, chevronRotation, persistKey, onToggle]);
 
   const chevronStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${chevronRotation.value * 180}deg` }],
