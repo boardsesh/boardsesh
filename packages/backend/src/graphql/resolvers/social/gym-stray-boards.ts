@@ -31,11 +31,13 @@ type GymRow = typeof dbSchema.gyms.$inferSelect;
 
 export type StrayBoardReason = 'MERGED_TWIN' | 'NEARBY';
 
-// The GraphQL StrayBoard payload plus the internal board id the attach mutation
-// re-points. `boardId` never leaves this module (stripped before the resolver
-// returns), so the internal row id is never exposed over the API.
+// The GraphQL StrayBoard payload plus the internal board id + current gym id the
+// attach mutation needs. `boardId`/`currentGymId` never leave this module
+// (stripped before the resolver returns), so no internal row id is exposed.
 type StrayBoardCandidate = {
   boardId: number;
+  /** The board's gym_id at the moment it was read — the compare-and-swap guard on attach. */
+  currentGymId: number | null;
   uuid: string;
   name: string;
   currentGymUuid: string | null;
@@ -44,7 +46,7 @@ type StrayBoardCandidate = {
   reason: StrayBoardReason;
 };
 
-export type StrayBoardResult = Omit<StrayBoardCandidate, 'boardId'>;
+export type StrayBoardResult = Omit<StrayBoardCandidate, 'boardId' | 'currentGymId'>;
 
 const STRAY_BOARD_LIMIT = 25;
 
@@ -112,9 +114,10 @@ function distanceFromGym(
  *     gym. The admin merge already established they're the same place, so these
  *     are surfaced regardless of visibility and rank first.
  *   - NEARBY: boards within 150 m of the gym that are unlinked or on a SYSTEM
- *     listing at the same spot. Gated to boards the viewer may see (public,
- *     SYSTEM catalog, or their own) and never a hide-location board, so the tab
- *     can't enumerate a stranger's private home wall by proximity.
+ *     listing at the same spot. Gated to boards it's legitimate to capture —
+ *     SYSTEM (synced catalog) or the viewer's own — never a third party's, and
+ *     never a hide-location board. A stranger's board (public or private) is
+ *     excluded: attaching it would hand the gym owner edit rights over it.
  *
  * Exported so attachBoardToGym gates on the exact same candidate set the Boards
  * tab shows — a board this wouldn't surface can't be attached.
@@ -127,6 +130,7 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
       ? await db
           .select({
             boardId: dbSchema.userBoards.id,
+            currentGymId: dbSchema.userBoards.gymId,
             uuid: dbSchema.userBoards.uuid,
             name: dbSchema.userBoards.name,
             latitude: dbSchema.userBoards.latitude,
@@ -145,6 +149,7 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
     ? await db
         .select({
           boardId: dbSchema.userBoards.id,
+          currentGymId: dbSchema.userBoards.gymId,
           uuid: dbSchema.userBoards.uuid,
           name: dbSchema.userBoards.name,
           latitude: dbSchema.userBoards.latitude,
@@ -167,13 +172,13 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
               isNull(dbSchema.userBoards.gymId),
               and(eq(dbSchema.gyms.ownerId, SYSTEM_BOARD_OWNER_ID), ne(dbSchema.userBoards.gymId, gym.id)),
             )!,
-            // Privacy gate: public boards, SYSTEM catalog boards, or the viewer's
-            // own — never a stranger's private wall.
-            or(
-              eq(dbSchema.userBoards.isPublic, true),
-              eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
-              eq(dbSchema.userBoards.ownerId, viewerUserId),
-            )!,
+            // Ownership gate: only a SYSTEM (synced catalog) board or the viewer's
+            // own board is a legitimate stray to attach — never a third party's,
+            // public or private. Attaching a stranger's board would hand the gym
+            // owner/admin edit rights over it (rename, serialNumber/BLE, privacy
+            // flags) via requireBoardEditAccess's gym-admin branch. Being public
+            // does not make a board safe to capture.
+            or(eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID), eq(dbSchema.userBoards.ownerId, viewerUserId))!,
           ),
         )
         .limit(STRAY_BOARD_LIMIT * 2)
@@ -182,6 +187,7 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
   const twinCandidates: StrayBoardCandidate[] = twinRows
     .map((row) => ({
       boardId: row.boardId,
+      currentGymId: row.currentGymId ?? null,
       uuid: row.uuid,
       name: row.name,
       currentGymUuid: row.currentGymUuid ?? null,
@@ -202,6 +208,7 @@ export async function findStrayBoardCandidates(gym: GymRow, viewerUserId: string
     seen.add(row.uuid);
     nearbyCandidates.push({
       boardId: row.boardId,
+      currentGymId: row.currentGymId ?? null,
       uuid: row.uuid,
       name: row.name,
       currentGymUuid: row.currentGymUuid ?? null,
@@ -235,8 +242,8 @@ export const socialGymStrayBoardQueries = {
     const gym = await requireGymEditAccess(gymUuid, userId);
 
     const candidates = await findStrayBoardCandidates(gym, userId);
-    // Strip the internal board id — the GraphQL StrayBoard type never exposes it.
-    return candidates.map(({ boardId: _boardId, ...strayBoard }) => strayBoard);
+    // Strip the internal ids — the GraphQL StrayBoard type never exposes them.
+    return candidates.map(({ boardId: _boardId, currentGymId: _currentGymId, ...strayBoard }) => strayBoard);
   },
 };
 
@@ -260,7 +267,27 @@ export const socialGymStrayBoardMutations = {
       });
     }
 
-    await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, target.boardId));
+    // Compare-and-swap: only re-point if the board's gym_id is still what we saw
+    // when we vetted it, so a concurrent re-link (the owner moving the board
+    // between the check and this write) can't be silently clobbered. `IS NOT
+    // DISTINCT FROM` handles the unlinked (NULL) case; the ::bigint cast anchors
+    // the bound param's type against the bigint column.
+    const updated = await db
+      .update(dbSchema.userBoards)
+      .set({ gymId: gym.id })
+      .where(
+        and(
+          eq(dbSchema.userBoards.id, target.boardId),
+          sql`${dbSchema.userBoards.gymId} IS NOT DISTINCT FROM ${target.currentGymId}::bigint`,
+        ),
+      )
+      .returning({ id: dbSchema.userBoards.id });
+
+    if (updated.length === 0) {
+      throw new GraphQLError('This board changed before it could be attached. Refresh and try again.', {
+        extensions: { code: 'CONFLICT' },
+      });
+    }
     return true;
   },
 };

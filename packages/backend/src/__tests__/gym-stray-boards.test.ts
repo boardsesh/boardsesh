@@ -172,13 +172,28 @@ describe('strayBoardsForGym — merged-twin candidates', () => {
 
     expect(results.some((candidate) => candidate.uuid === board.uuid && candidate.reason === 'MERGED_TWIN')).toBe(true);
   });
+
+  it('terminates on a corrupt cyclic merge pointer instead of spinning', async () => {
+    // target ← twinA ← twinB, then a corrupt back-pointer target → twinB closes a
+    // cycle in the reverse-walk graph. The canonical-id + visited guards must make
+    // the walk finish and still surface twinB's board — never loop.
+    const target = await seedTargetGym();
+    const twinA = await insertGym({ ownerId: OTHER, name: 'Cycle A', deleted: true, mergedIntoGymId: target.id });
+    const twinB = await insertGym({ ownerId: OTHER, name: 'Cycle B', deleted: true, mergedIntoGymId: twinA.id });
+    await db.execute(sql`UPDATE gyms SET merged_into_gym_id = ${twinB.id} WHERE id = ${target.id}`);
+    const board = await insertBoard({ ownerId: OTHER, name: 'On The Cycle', gymId: twinB.id });
+
+    const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
+
+    expect(results.some((candidate) => candidate.uuid === board.uuid)).toBe(true);
+  });
 });
 
 describe('strayBoardsForGym — nearby candidates', () => {
   it('surfaces an unlinked board within 150 m and excludes one 300 m away', async () => {
     const target = await seedTargetGym();
     const near = await insertBoard({
-      ownerId: OTHER,
+      ownerId: OWNER,
       name: 'Wall Next Door',
       latitude: LAT_60M,
       longitude: BASE.longitude,
@@ -223,8 +238,18 @@ describe('strayBoardsForGym — nearby candidates', () => {
     expect(stray?.currentGymUuid).toBe(systemGym.uuid);
   });
 
-  it("does not leak a stranger's private wall or a hide-location board", async () => {
+  it("does not surface a stranger's board — public or private — or a hide-location board", async () => {
     const target = await seedTargetGym();
+    // A stranger's PUBLIC board is the hijack vector: if surfaced and attached,
+    // the gym owner would gain edit rights over it via requireBoardEditAccess.
+    // Public does not make a third party's board safe to capture.
+    const publicWall = await insertBoard({
+      ownerId: OTHER,
+      name: 'Public Home Wall',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      isPublic: true,
+    });
     const privateWall = await insertBoard({
       ownerId: OTHER,
       name: 'Private Home Wall',
@@ -243,8 +268,25 @@ describe('strayBoardsForGym — nearby candidates', () => {
 
     const results = await strayBoardsForGym(target.uuid, authCtx(OWNER));
 
+    expect(results.some((candidate) => candidate.uuid === publicWall.uuid)).toBe(false);
     expect(results.some((candidate) => candidate.uuid === privateWall.uuid)).toBe(false);
     expect(results.some((candidate) => candidate.uuid === hidden.uuid)).toBe(false);
+  });
+
+  it("refuses to attach a stranger's nearby public board", async () => {
+    const target = await seedTargetGym();
+    const strangerPublic = await insertBoard({
+      ownerId: OTHER,
+      name: 'Public Home Wall',
+      latitude: LAT_60M,
+      longitude: BASE.longitude,
+      isPublic: true,
+    });
+
+    await expect(
+      attachBoardToGym({ gymUuid: target.uuid, boardUuid: strangerPublic.uuid }, authCtx(OWNER)),
+    ).rejects.toThrow();
+    expect(await boardGymId(strangerPublic.uuid)).toBeNull();
   });
 });
 
@@ -290,7 +332,7 @@ describe('attachBoardToGym', () => {
   it('re-points a nearby stray board to the gym', async () => {
     const target = await seedTargetGym();
     const board = await insertBoard({
-      ownerId: OTHER,
+      ownerId: SYSTEM_OWNER,
       name: 'Wall Next Door',
       latitude: LAT_60M,
       longitude: BASE.longitude,

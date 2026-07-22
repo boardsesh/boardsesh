@@ -266,7 +266,9 @@
         "attach": "Añadir al rocódromo",
         "attached": "Plafón añadido a tu rocódromo.",
         "attachFailed": "No se pudo añadir ese plafón.",
-        "empty": "Nada suelto por ahora. Todos los plafones cerca de tu rocódromo ya están en tu ficha."
+        "empty": "Nada suelto por ahora. Todos los plafones cerca de tu rocódromo ya están en tu ficha.",
+        "loadError": "No se pudieron buscar plafones sueltos.",
+        "retry": "Reintentar"
       }
     },
     "presets": {

@@ -266,7 +266,9 @@
         "attach": "Ajouter à la salle",
         "attached": "Board ajoutée à ta salle.",
         "attachFailed": "Impossible d'ajouter cette board.",
-        "empty": "Rien qui traîne pour l'instant. Toutes les boards près de ta salle sont déjà sur ta fiche."
+        "empty": "Rien qui traîne pour l'instant. Toutes les boards près de ta salle sont déjà sur ta fiche.",
+        "loadError": "Impossible de chercher les boards égarées.",
+        "retry": "Réessayer"
       }
     },
     "presets": {

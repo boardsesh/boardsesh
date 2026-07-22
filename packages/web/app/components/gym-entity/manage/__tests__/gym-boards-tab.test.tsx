@@ -234,6 +234,23 @@ describe('GymBoardsTab — stray boards', () => {
     expect(await screen.findByText(/nothing loose right now/i)).toBeTruthy();
   });
 
+  it('surfaces a load error with a retry when the strays query fails', async () => {
+    // gymBoards resolves (empty) so the linked list settles; strayBoardsForGym rejects.
+    mockRequest.mockImplementation(async (document: string) => {
+      if (typeof document === 'string' && document.includes('strayBoardsForGym')) {
+        throw new Error('network down');
+      }
+      if (typeof document === 'string' && document.includes('gymBoards')) {
+        return { gymBoards: [] };
+      }
+      return { myBoards: { boards: [], totalCount: 0, hasMore: false } };
+    });
+    render(<GymBoardsTab gym={editableGym} onGymChange={vi.fn()} />);
+
+    expect(await screen.findByText(/couldn't check for stray boards/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy();
+  });
+
   it('does not render the strays section without gym edit access', async () => {
     const noEditGym = { ...gym, canEdit: false } as unknown as Gym;
     stubRequests({ gymBoards: [], myBoards: [], strays: [makeStray({})] });

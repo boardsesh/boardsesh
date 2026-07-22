@@ -389,7 +389,7 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
     } catch (error) {
       console.error('Failed to load stray boards:', error);
       setLoadError(true);
-      setStrays([]);
+      setStrays(null);
     }
   }, [token, gymUuid]);
 
@@ -397,19 +397,22 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
     void fetchStrays();
   }, [fetchStrays]);
 
-  const handleAttach = async (board: StrayBoard) => {
-    setAttachingUuid(board.uuid);
-    try {
-      const result = await attachMutation.execute({ input: { gymUuid, boardUuid: board.uuid } });
-      if (result) {
-        // Drop the attached candidate and pull it into the linked list above.
-        setStrays((prev) => (prev === null ? prev : prev.filter((candidate) => candidate.uuid !== board.uuid)));
-        await onAttached();
+  const handleAttach = useCallback(
+    async (board: StrayBoard) => {
+      setAttachingUuid(board.uuid);
+      try {
+        const result = await attachMutation.execute({ input: { gymUuid, boardUuid: board.uuid } });
+        if (result) {
+          // Drop the attached candidate and pull it into the linked list above.
+          setStrays((prev) => (prev === null ? prev : prev.filter((candidate) => candidate.uuid !== board.uuid)));
+          await onAttached();
+        }
+      } finally {
+        setAttachingUuid(null);
       }
-    } finally {
-      setAttachingUuid(null);
-    }
-  };
+    },
+    [attachMutation, gymUuid, onAttached],
+  );
 
   const reasonText = (board: StrayBoard): string => {
     if (board.reason === 'MERGED_TWIN') {
@@ -421,11 +424,29 @@ function StrayBoardsSection({ gymUuid, onAttached }: StrayBoardsSectionProps) {
     return t('manage.boards.strays.reasonNearby', { meters: Math.round(board.distanceMeters) });
   };
 
-  // Hide the whole section while the first fetch is in flight so it doesn't flash
-  // an empty state, and on a load error (the linked list above already surfaces
-  // gym-boards failures — a second error block would just be noise).
-  if (strays === null || loadError) {
-    return null;
+  // Nothing loaded yet: while the first fetch is in flight, render nothing so the
+  // section doesn't flash. If that fetch failed, show the heading with an error +
+  // retry so a gym owner knows the check didn't run (rather than silently vanish).
+  if (strays === null) {
+    if (!loadError) {
+      return null;
+    }
+    return (
+      <Box sx={{ mt: 4 }}>
+        <Divider sx={{ mb: 2 }} />
+        <Typography variant="h6" sx={{ fontWeight: themeTokens.typography.fontWeight.bold }}>
+          {t('manage.boards.strays.heading')}
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
+          <Typography variant="body2" color="error">
+            {t('manage.boards.strays.loadError')}
+          </Typography>
+          <Button size="small" onClick={() => void fetchStrays()} sx={{ textTransform: 'none' }}>
+            {t('manage.boards.strays.retry')}
+          </Button>
+        </Box>
+      </Box>
+    );
   }
 
   return (
