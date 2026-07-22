@@ -305,10 +305,14 @@
   "mobile": {
     "logbook": {
       "title": "Carnet",
-      "noEntries": "Pas encore d'ascensions",
-      "sendsAndAttempts": "{{sends}} croix, {{attempts}} essais",
-      "sendsOnly": "{{sends}} croix",
-      "attemptsOnly": "{{attempts}} essais",
+      "noEntries": "Pas encore d'essai. Lance-toi.",
+      "sendCount_one": "{{count}} croix",
+      "sendCount_other": "{{count}} croix",
+      "attemptCount_one": "{{count}} essai",
+      "attemptCount_other": "{{count}} essais",
+      "summarySendsAndAttempts": "{{sends}} · {{attempts}}",
+      "summaryAttemptsNoSend": "{{attempts}}, pas encore enchaîné",
+      "summaryUntried": "Pas encore essayé",
       "tries_one": "{{count}} essai",
       "tries_other": "{{count}} essais",
       "mirroredTag": "Miroir",

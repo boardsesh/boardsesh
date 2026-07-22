@@ -305,10 +305,14 @@
   "mobile": {
     "logbook": {
       "title": "Logbook",
-      "noEntries": "No ascents yet",
-      "sendsAndAttempts": "{{sends}} sends, {{attempts}} attempts",
-      "sendsOnly": "{{sends}} sends",
-      "attemptsOnly": "{{attempts}} attempts",
+      "noEntries": "No tries yet. Get on it.",
+      "sendCount_one": "{{count}} send",
+      "sendCount_other": "{{count}} sends",
+      "attemptCount_one": "{{count}} attempt",
+      "attemptCount_other": "{{count}} attempts",
+      "summarySendsAndAttempts": "{{sends}} · {{attempts}}",
+      "summaryAttemptsNoSend": "{{attempts}}, no send yet",
+      "summaryUntried": "Not tried yet",
       "pendingSync_one": "{{count}} waiting to sync",
       "pendingSync_other": "{{count}} waiting to sync",
       "tries_one": "{{count}} try",

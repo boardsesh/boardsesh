@@ -132,13 +132,15 @@ export const LogbookSection = memo(function LogbookSection({
     );
   }
 
+  const sendsLabel = t('mobile.logbook.sendCount', { count: sends });
+  const attemptsLabel = t('mobile.logbook.attemptCount', { count: attempts });
   let summaryText: string;
   if (sends > 0 && attempts > 0) {
-    summaryText = t('mobile.logbook.sendsAndAttempts', { sends, attempts });
+    summaryText = t('mobile.logbook.summarySendsAndAttempts', { sends: sendsLabel, attempts: attemptsLabel });
   } else if (sends > 0) {
-    summaryText = t('mobile.logbook.sendsOnly', { sends });
+    summaryText = sendsLabel;
   } else {
-    summaryText = t('mobile.logbook.attemptsOnly', { attempts });
+    summaryText = t('mobile.logbook.summaryAttemptsNoSend', { attempts: attemptsLabel });
   }
 
   return (

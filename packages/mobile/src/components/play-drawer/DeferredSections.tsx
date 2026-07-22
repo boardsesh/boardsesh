@@ -30,9 +30,9 @@ type DeferredSectionsProps = {
   enabled: boolean;
   contentEnabled: boolean;
   onSimilarClimbPress: (climb: Climb) => void;
-  /** Reports the measured height of the Beta Videos section header (drives the play
+  /** Reports the measured height of the Logbook section header (drives the play
    *  drawer's first-screen reserve so the header teases at the bottom of the fold). */
-  onBetaHeaderLayout?: (height: number) => void;
+  onLogbookHeaderLayout?: (height: number) => void;
   /** Opens the "share your beta" sheet. Rendered as the Beta Videos header "+" for
    *  signed-in users; absent (undefined) hides it. */
   onAddBetaVideo?: () => void;
@@ -53,7 +53,7 @@ export const DeferredSections = memo(function DeferredSections({
   enabled,
   contentEnabled,
   onSimilarClimbPress,
-  onBetaHeaderLayout,
+  onLogbookHeaderLayout,
   onAddBetaVideo,
 }: DeferredSectionsProps) {
   const { t } = useTranslation('session');
@@ -69,22 +69,30 @@ export const DeferredSections = memo(function DeferredSections({
   }, [onAddBetaVideo]);
   // Defer the JS-heavy below-fold sections until just after the drawer's open
   // animation and only after the user has started scrolling below the fold.
-  // Beta videos stay eager below because their header/body is the user's first
-  // scroll affordance once the drawer opens.
+  // The Logbook stays eager above because its collapsed header is the scroll
+  // hint at the bottom of the first screen — it must measure immediately.
   // Re-defers per climb (resetKey = uuid) and — unlike a bare
   // runAfterInteractions — falls back to a bounded timeout, so a starved
   // interaction queue can't leave these sections blank until the drawer reopens.
   const readyToRender = useDeferredAfterInteractions(enabled && contentEnabled, climb.uuid);
 
-  // Tally shown next to the collapsed Logbook header so the user sees their
-  // history without expanding. Mirrors LogbookSection's summary fallback.
+  // The one-line sends/attempts tally shown on the collapsed Logbook header — the
+  // scroll hint the user peeks at the fold. Reads the denormalised
+  // userAscents/userAttempts counts (both angle-scoped, disjoint), so it renders
+  // and measures instantly without waiting on the logbook fetch. Sends and
+  // attempts pluralize individually, then compose so a locale owns the joining.
   const logbookSummary = useMemo(() => {
     const sends = climb.userAscents ?? 0;
     const attempts = climb.userAttempts ?? 0;
-    if (sends > 0 && attempts > 0) return t('mobile.logbook.sendsAndAttempts', { sends, attempts });
-    if (sends > 0) return t('mobile.logbook.sendsOnly', { sends });
-    if (attempts > 0) return t('mobile.logbook.attemptsOnly', { attempts });
-    return null;
+    const sendsLabel = t('mobile.logbook.sendCount', { count: sends });
+    const attemptsLabel = t('mobile.logbook.attemptCount', { count: attempts });
+    if (sends > 0 && attempts > 0)
+      return t('mobile.logbook.summarySendsAndAttempts', { sends: sendsLabel, attempts: attemptsLabel });
+    if (sends > 0) return sendsLabel;
+    // Attempts but no send yet — the "how often did I fight this" case, named as
+    // unfinished business to invite the return.
+    if (attempts > 0) return t('mobile.logbook.summaryAttemptsNoSend', { attempts: attemptsLabel });
+    return t('mobile.logbook.summaryUntried');
   }, [climb.userAscents, climb.userAttempts, t]);
 
   // Grade shown next to the collapsed Boardsesh grade header. Lifted up here
@@ -110,41 +118,50 @@ export const DeferredSections = memo(function DeferredSections({
     return null;
   }
 
-  // Keep Beta Videos eager so it can measure immediately and tease real content
-  // at the bottom of the first screen. The heavier Logbook/Community/Similar
-  // sections still wait for scroll + the interaction queue.
+  // Keep the Logbook eager and collapsed so its one-line header (sends/attempts)
+  // measures immediately and teases as the scroll hint at the bottom of the first
+  // screen. The per-angle history mounts only when the user expands it. The
+  // heavier Beta/Community/Similar sections still wait for scroll + the
+  // interaction queue.
   return (
     <View style={styles.container}>
       <CollapsibleSection
-        title={t('mobile.betaVideos.title')}
-        keepExpanded
-        onHeaderLayout={onBetaHeaderLayout}
-        headerAction={
-          isAuthenticated && onAddBetaVideo ? (
-            <Pressable
-              onPress={handleAddBetaVideoPress}
-              accessibilityRole="button"
-              accessibilityLabel={t('mobile.betaVideos.addButton')}
-              hitSlop={8}
-              style={({ pressed }) => [styles.addButton, pressed && { backgroundColor: `${brandColors.primary}1A` }]}
-            >
-              <Icon name="add" size={22} color={brandColors.primary} />
-            </Pressable>
-          ) : undefined
-        }
+        title={t('mobile.logbook.title')}
+        summary={logbookSummary}
+        persistKey="logbook"
+        onHeaderLayout={onLogbookHeaderLayout}
       >
-        <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />
+        <LogbookSection
+          climbUuid={climb.uuid}
+          boardName={boardName}
+          userAscents={climb.userAscents}
+          userAttempts={climb.userAttempts}
+        />
       </CollapsibleSection>
 
       {readyToRender && (
         <>
-          <CollapsibleSection title={t('mobile.logbook.title')} summary={logbookSummary} persistKey="logbook">
-            <LogbookSection
-              climbUuid={climb.uuid}
-              boardName={boardName}
-              userAscents={climb.userAscents}
-              userAttempts={climb.userAttempts}
-            />
+          <CollapsibleSection
+            title={t('mobile.betaVideos.title')}
+            keepExpanded
+            headerAction={
+              isAuthenticated && onAddBetaVideo ? (
+                <Pressable
+                  onPress={handleAddBetaVideoPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('mobile.betaVideos.addButton')}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    pressed && { backgroundColor: `${brandColors.primary}1A` },
+                  ]}
+                >
+                  <Icon name="add" size={22} color={brandColors.primary} />
+                </Pressable>
+              ) : undefined
+            }
+          >
+            <BetaVideosSection climbUuid={climb.uuid} boardName={boardName} />
           </CollapsibleSection>
 
           {boardseshGradeEnabled && (

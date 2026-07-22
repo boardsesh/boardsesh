@@ -123,11 +123,11 @@ describe('DeferredSections', () => {
     boardseshGradeQuery.data = undefined;
   });
 
-  it('keeps Beta videos eager while heavier sections wait for scroll and interaction readiness', () => {
+  it('keeps the Logbook eager (the scroll hint) while heavier sections wait for scroll and interaction readiness', () => {
     renderSections({ contentEnabled: false });
 
-    expect(screen.getByTestId('beta-videos')).not.toBeNull();
-    expect(screen.queryByTestId('logbook')).toBeNull();
+    expect(screen.getByTestId('logbook')).not.toBeNull();
+    expect(screen.queryByTestId('beta-videos')).toBeNull();
     expect(screen.queryByTestId('community')).toBeNull();
     expect(screen.queryByTestId('similar-climbs')).toBeNull();
     expect(deferred.calls.at(-1)).toEqual({ active: false, resetKey: 'climb-1' });
@@ -136,8 +136,8 @@ describe('DeferredSections', () => {
   it('still waits for the interaction defer after the content is requested', () => {
     renderSections({ contentEnabled: true });
 
-    expect(screen.getByTestId('beta-videos')).not.toBeNull();
-    expect(screen.queryByTestId('logbook')).toBeNull();
+    expect(screen.getByTestId('logbook')).not.toBeNull();
+    expect(screen.queryByTestId('beta-videos')).toBeNull();
     expect(deferred.calls.at(-1)).toEqual({ active: true, resetKey: 'climb-1' });
   });
 
@@ -145,8 +145,8 @@ describe('DeferredSections', () => {
     deferred.ready = true;
     renderSections({ contentEnabled: true });
 
-    expect(screen.getByTestId('beta-videos')).not.toBeNull();
     expect(screen.getByTestId('logbook')).not.toBeNull();
+    expect(screen.getByTestId('beta-videos')).not.toBeNull();
     expect(screen.getByTestId('community')).not.toBeNull();
     expect(screen.getByTestId('similar-climbs')).not.toBeNull();
   });

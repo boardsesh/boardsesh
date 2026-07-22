@@ -166,9 +166,10 @@ type PlayDrawerProps = {
   paneTopInset?: boolean;
 };
 
-// Fallback used for the first-screen reserve before the Beta Videos header has
+// Fallback used for the first-screen reserve before the Logbook header has
 // been measured, so the board fits without a visible jump on first open.
-const DEFAULT_BETA_HEADER_HEIGHT = 52;
+// A collapsed section header is a single row (title + summary + chevron).
+const DEFAULT_LOGBOOK_HEADER_HEIGHT = 52;
 
 /**
  * Full-screen "now playing" player (Spotify-style track view). Rendered as the
@@ -313,12 +314,12 @@ export function PlayDrawer({
     },
   );
 
-  // Beta Videos section-header height feeds the first-screen reserve so the
+  // Logbook section-header height feeds the first-screen reserve so the
   // header teases at the bottom of the full-screen view (the cue that there's
   // more to scroll). Measured because it varies with locale / font scaling.
-  const [betaHeaderHeight, setBetaHeaderHeight] = useState(0);
-  const handleBetaHeaderLayout = useCallback((measured: number) => {
-    setBetaHeaderHeight((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
+  const [logbookHeaderHeight, setLogbookHeaderHeight] = useState(0);
+  const handleLogbookHeaderLayout = useCallback((measured: number) => {
+    setLogbookHeaderHeight((prev) => (Math.abs(prev - measured) > 2 ? Math.round(measured) : prev));
   }, []);
 
   const { queue, currentClimbQueueItem } = useQueueData();
@@ -756,15 +757,15 @@ export function PlayDrawer({
     [addToQueue, setCurrentClimb],
   );
 
-  // The first screen is sized so the action bar stays visible and the Beta
-  // Videos header teases at the bottom across board sizes — the carousel fits
+  // The first screen is sized so the action bar stays visible and the Logbook
+  // header teases at the bottom across board sizes — the carousel fits
   // the leftover space (SwipeBoardCarousel contains the board). Reserve the
-  // DeferredSections top padding, the beta header, and a small margin so that
+  // DeferredSections top padding, the logbook header, and a small margin so that
   // header peeks just above the fold. The home-indicator inset belongs to the
   // scroll view's paddingBottom only — counting it here too would shrink the
   // board by that inset twice.
   const firstScreenReserve =
-    spacing[3] + (betaHeaderHeight > 0 ? betaHeaderHeight : DEFAULT_BETA_HEADER_HEIGHT) + spacing[2];
+    spacing[3] + (logbookHeaderHeight > 0 ? logbookHeaderHeight : DEFAULT_LOGBOOK_HEADER_HEIGHT) + spacing[2];
   // Size the first screen from the MEASURED viewport (the scroll container fills
   // the full window), falling back to windowHeight pre-layout. The reserve leaves
   // the Beta Videos header peeking below the fold.
@@ -999,7 +1000,7 @@ export function PlayDrawer({
                   enabled={isSheetOpen}
                   contentEnabled={belowFoldContentRequested}
                   onSimilarClimbPress={handleSimilarClimbPress}
-                  onBetaHeaderLayout={handleBetaHeaderLayout}
+                  onLogbookHeaderLayout={handleLogbookHeaderLayout}
                   onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
                 />
               </>

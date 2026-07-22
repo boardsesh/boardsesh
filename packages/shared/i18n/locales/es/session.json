@@ -305,10 +305,14 @@
   "mobile": {
     "logbook": {
       "title": "Registro",
-      "noEntries": "Sin ascensiones todavía",
-      "sendsAndAttempts": "{{sends}} encadenes, {{attempts}} intentos",
-      "sendsOnly": "{{sends}} encadenes",
-      "attemptsOnly": "{{attempts}} intentos",
+      "noEntries": "Aún sin intentos. A por ello.",
+      "sendCount_one": "{{count}} encadene",
+      "sendCount_other": "{{count}} encadenes",
+      "attemptCount_one": "{{count}} intento",
+      "attemptCount_other": "{{count}} intentos",
+      "summarySendsAndAttempts": "{{sends}} · {{attempts}}",
+      "summaryAttemptsNoSend": "{{attempts}}, aún sin encadenar",
+      "summaryUntried": "Aún sin intentar",
       "pendingSync_one": "{{count}} pendiente de sincronizar",
       "pendingSync_other": "{{count}} pendientes de sincronizar",
       "tries_one": "{{count}} intento",
