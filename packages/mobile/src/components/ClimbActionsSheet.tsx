@@ -125,7 +125,13 @@ function ClimbActionsSheet({
         climbName: climb.name,
       })}`;
       await Clipboard.setStringAsync(url);
-      track(SHARED_EVENTS.ClimbShared, { method: 'copy_link', climbUuid: climb.uuid, boardName, layoutId });
+      track(SHARED_EVENTS.ClimbShared, {
+        method: 'copy_link',
+        source: 'climb_actions_sheet',
+        climbUuid: climb.uuid,
+        boardName,
+        layoutId,
+      });
       showToast(t('mobile.climbActions.linkCopied'), 'info');
     } finally {
       onClose();

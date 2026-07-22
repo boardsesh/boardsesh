@@ -39,7 +39,7 @@ export function ShareAction({
         title: climb.name,
         text: t('share.actionText', { climbName: climb.name, difficulty: climb.difficulty }),
         trackingEvent: 'Climb Shared',
-        trackingProps: { boardName: boardDetails.board_name, climbUuid: climb.uuid },
+        trackingProps: { boardName: boardDetails.board_name, climbUuid: climb.uuid, source: 'climb_actions' },
         onClipboardSuccess: () => showMessage(t('share.linkCopied'), 'success'),
         onError: () => showMessage(t('share.shareFailed'), 'error'),
       });

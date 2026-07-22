@@ -350,7 +350,13 @@ export function useClimbActions({
         // Dismiss the overlay, then open the native share sheet (same as the play
         // drawer). .catch so a dismissed/failed share isn't an unhandled rejection.
         after();
-        track(SHARED_EVENTS.ClimbShared, { method: 'share', climbUuid: climb.uuid, boardName, layoutId });
+        track(SHARED_EVENTS.ClimbShared, {
+          method: 'share',
+          source: 'climb_actions_menu',
+          climbUuid: climb.uuid,
+          boardName,
+          layoutId,
+        });
         void shareClimb().catch(() => {});
       },
     });
