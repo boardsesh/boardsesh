@@ -77,21 +77,75 @@ best-effort — failures are swallowed and never delay sharing.
 `ws.boardsesh.com` is a single-region Railway origin; distant clients (and the
 iOS share sheet, which fetches previews from the sender's phone) pay full RTT
 per image. Fronting it with Cloudflare edge-caches the immutable og responses
-globally. Flip runbook (dashboard):
+globally.
 
-1. Code prerequisite (shipped): the og rate limiter prefers `CF-Connecting-IP`,
-   so per-client buckets survive the proxy hop.
-2. Cloudflare DNS: toggle the `ws` record to Proxied (orange cloud). SSL/TLS
-   mode must be Full (strict) — Flexible causes redirect loops with Railway.
-3. Cache Rule: host `ws.boardsesh.com` AND path starts with `/og/` → Eligible
-   for cache, respect origin TTL (responses are `immutable`, 1y). Leave every
-   other path default so `/graphql`, REST, and WebSocket upgrades bypass cache.
-4. Confirm WebSockets are enabled for the zone (Network tab; on by default on
-   current plans).
-5. Verify: `wss://ws.boardsesh.com/graphql` still connects (web party mode +
-   mobile app); `curl -sI 'https://ws.boardsesh.com/og/climb?...'` twice —
-   second response shows `cf-cache-status: HIT`. Rollback = grey-cloud the
-   record.
+The zone config is managed from the repo — not dashboard clicks — by
+`scripts/cloudflare-apply.ts` (registered as `vp run cf:apply`). The desired
+state is declared in `infra/cloudflare/config.ts`; the script diffs it against
+the live zone and, with `--apply`, converges only the delta (idempotent, so a
+second run is a no-op).
+
+What it manages (and nothing else on the zone):
+
+- **DNS** — the `ws` record's proxied flag → orange cloud. The record's
+  target/type/content are not managed; the record must already exist.
+- **Cache** — one rule in the `http_request_cache_settings` phase, expression
+  `(http.host eq "ws.boardsesh.com" and starts_with(http.request.uri.path, "/og/"))`
+  → eligible for cache, edge TTL "use cache-control if present, bypass if not"
+  so error responses (400/429/503 — sent without Cache-Control) are never
+  edge-cached, and browser TTL "respect origin" (successful responses are `immutable`,
+  1y). Every other rule already in that phase is preserved verbatim (the tool
+  finds its own rule by a stable description marker and touches only that one),
+  so `/graphql`, REST, and WebSocket upgrades keep bypassing cache.
+- **SSL** — asserts the zone SSL/TLS mode is `strict` (Full (strict); Flexible
+  causes redirect loops with Railway). If the zone-wide mode is weaker the tool
+  **reports it but does not change it** — the setting affects every hostname on
+  `boardsesh.com`. Pass `--allow-zone-ssl` to opt into setting it.
+
+Code prerequisite (shipped): the og rate limiter prefers `CF-Connecting-IP`, so
+per-client buckets survive the proxy hop.
+
+### One-time: create the API token
+
+Create a token at <https://dash.cloudflare.com/profile/api-tokens> scoped to the
+`boardsesh.com` zone with:
+
+- **Zone.Zone Read** — resolve the zone id by name + read the zone list
+- **Zone.DNS Edit** — patch the `ws` record proxied flag
+- **Zone.Cache Rules Edit** — create/update the `/og/` cache rule
+- **Zone.Zone Settings Read** — read the SSL/TLS mode
+- **Zone.Zone Settings Edit** — only if you'll run `--allow-zone-ssl`
+
+### Flip runbook
+
+```bash
+# 1. Dry-run (default) — prints the diff, exits non-zero if there's drift. Never mutates.
+CLOUDFLARE_API_TOKEN=... vp run cf:apply
+
+# 2. Apply — performs only the needed mutations.
+CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply
+
+# (optional) also set the zone-wide SSL mode when it's weaker than strict:
+CLOUDFLARE_API_TOKEN=... vp run cf:apply -- --apply --allow-zone-ssl
+```
+
+`CLOUDFLARE_ZONE_ID` is optional — when unset, the zone id is resolved by name.
+
+Confirm WebSockets are enabled for the zone (Network tab; on by default on
+current plans). WebSocket caveat: the cache rule scopes to `/og/` only, so
+`wss://ws.boardsesh.com/graphql` upgrades and every other path continue to pass
+straight through to Railway.
+
+### Verify
+
+`wss://ws.boardsesh.com/graphql` still connects (web party mode + mobile app);
+`curl -sI 'https://ws.boardsesh.com/og/climb?...'` twice — the second response
+shows `cf-cache-status: HIT`.
+
+### Rollback
+
+Set `proxied: false` on the `ws` record in `infra/cloudflare/config.ts` and
+`vp run cf:apply -- --apply`, or grey-cloud the record in the dashboard.
 
 - Web points `og:image` here via `buildOgBoardRenderUrl`
   (`packages/web/app/components/board-renderer/util.ts`), which derives the
