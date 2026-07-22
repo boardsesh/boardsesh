@@ -204,6 +204,24 @@
       "changelogLink": "What's New",
       "changelogLinkBody": "Recent updates and fixes"
     },
+    "costs": {
+      "title": "Running costs",
+      "loading": "Adding up the bills",
+      "error": "We couldn't load the running costs. Check your connection and try again.",
+      "retry": "Try again",
+      "empty": "No costs to show yet.",
+      "perMonthLabel": "Per month",
+      "headline": "What it costs to run Boardsesh each month.",
+      "overTimeTitle": "Cost over time",
+      "byCategoryTitle": "This month, by category",
+      "categoryHosting": "Hosting",
+      "categoryAi": "AI",
+      "categoryDomain": "Domain",
+      "categoryOther": "Other",
+      "sponsorsTitle": "Help cover the costs",
+      "sponsorsBody": "These are the real bills behind Boardsesh, shown in full. If it's part of your sessions, chip in through GitHub Sponsors to keep it running.",
+      "sponsorsCta": "Chip in"
+    },
     "acknowledgements": {
       "title": "Acknowledgements",
       "intro": "Boardsesh exists because of the people who build it, back it, and put up with endless board talk. Thank you.",
@@ -462,6 +480,7 @@
     "recentSessions": "Recent sessions",
     "help": "Help",
     "about": "About",
+    "costs": "Running costs",
     "whatsNew": "What's New",
     "newBadge": "New",
     "rateBoardsesh": "Rate Boardsesh",

@@ -34,6 +34,11 @@ type Documents = {
   '\n  mutation UpdateComment($input: UpdateCommentInput!) {\n    updateComment(input: $input) {\n      uuid\n      userId\n      userDisplayName\n      userAvatarUrl\n      entityType\n      entityId\n      parentCommentUuid\n      body\n      isDeleted\n      replyCount\n      upvotes\n      downvotes\n      voteScore\n      userVote\n      createdAt\n      updatedAt\n    }\n  }\n': typeof types.UpdateCommentDocument;
   '\n  mutation DeleteComment($commentUuid: ID!) {\n    deleteComment(commentUuid: $commentUuid)\n  }\n': typeof types.DeleteCommentDocument;
   '\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n': typeof types.VoteDocument;
+  '\n  query CostEntries {\n    costEntries {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n': typeof types.CostEntriesDocument;
+  '\n  query RunningCosts($months: Int) {\n    runningCosts(months: $months) {\n      currency\n      latestMonthlyTotalCents\n      months {\n        month\n        totalCents\n        recurringCents\n        incidentalCents\n        byCategory {\n          category\n          amountCents\n        }\n      }\n    }\n  }\n': typeof types.RunningCostsDocument;
+  '\n  mutation CreateCostEntry($input: CreateCostEntryInput!) {\n    createCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n': typeof types.CreateCostEntryDocument;
+  '\n  mutation UpdateCostEntry($input: UpdateCostEntryInput!) {\n    updateCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n': typeof types.UpdateCostEntryDocument;
+  '\n  mutation DeleteCostEntry($input: DeleteCostEntryInput!) {\n    deleteCostEntry(input: $input)\n  }\n': typeof types.DeleteCostEntryDocument;
   '\n  mutation CreateSession($input: CreateSessionInput!) {\n    createSession(input: $input) {\n      id\n      name\n      boardPath\n      goal\n      isPublic\n      isPermanent\n      color\n      startedAt\n    }\n  }\n': typeof types.CreateSessionDocument;
   '\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n': typeof types.FavoritesDocument;
   '\n  mutation ToggleFavorite($input: ToggleFavoriteInput!) {\n    toggleFavorite(input: $input) {\n      favorited\n    }\n  }\n': typeof types.ToggleFavoriteDocument;
@@ -174,6 +179,16 @@ const documents: Documents = {
     types.DeleteCommentDocument,
   '\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n':
     types.VoteDocument,
+  '\n  query CostEntries {\n    costEntries {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n':
+    types.CostEntriesDocument,
+  '\n  query RunningCosts($months: Int) {\n    runningCosts(months: $months) {\n      currency\n      latestMonthlyTotalCents\n      months {\n        month\n        totalCents\n        recurringCents\n        incidentalCents\n        byCategory {\n          category\n          amountCents\n        }\n      }\n    }\n  }\n':
+    types.RunningCostsDocument,
+  '\n  mutation CreateCostEntry($input: CreateCostEntryInput!) {\n    createCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n':
+    types.CreateCostEntryDocument,
+  '\n  mutation UpdateCostEntry($input: UpdateCostEntryInput!) {\n    updateCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n':
+    types.UpdateCostEntryDocument,
+  '\n  mutation DeleteCostEntry($input: DeleteCostEntryInput!) {\n    deleteCostEntry(input: $input)\n  }\n':
+    types.DeleteCostEntryDocument,
   '\n  mutation CreateSession($input: CreateSessionInput!) {\n    createSession(input: $input) {\n      id\n      name\n      boardPath\n      goal\n      isPublic\n      isPermanent\n      color\n      startedAt\n    }\n  }\n':
     types.CreateSessionDocument,
   '\n  query Favorites($boardName: String!, $climbUuids: [String!]!, $angle: Int!) {\n    favorites(boardName: $boardName, climbUuids: $climbUuids, angle: $angle)\n  }\n':
@@ -501,6 +516,36 @@ export function graphql(
 export function graphql(
   source: '\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n',
 ): (typeof documents)['\n  mutation Vote($input: VoteInput!) {\n    vote(input: $input) {\n      entityType\n      entityId\n      upvotes\n      downvotes\n      voteScore\n      userVote\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query CostEntries {\n    costEntries {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n',
+): (typeof documents)['\n  query CostEntries {\n    costEntries {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  query RunningCosts($months: Int) {\n    runningCosts(months: $months) {\n      currency\n      latestMonthlyTotalCents\n      months {\n        month\n        totalCents\n        recurringCents\n        incidentalCents\n        byCategory {\n          category\n          amountCents\n        }\n      }\n    }\n  }\n',
+): (typeof documents)['\n  query RunningCosts($months: Int) {\n    runningCosts(months: $months) {\n      currency\n      latestMonthlyTotalCents\n      months {\n        month\n        totalCents\n        recurringCents\n        incidentalCents\n        byCategory {\n          category\n          amountCents\n        }\n      }\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation CreateCostEntry($input: CreateCostEntryInput!) {\n    createCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n',
+): (typeof documents)['\n  mutation CreateCostEntry($input: CreateCostEntryInput!) {\n    createCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation UpdateCostEntry($input: UpdateCostEntryInput!) {\n    updateCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n',
+): (typeof documents)['\n  mutation UpdateCostEntry($input: UpdateCostEntryInput!) {\n    updateCostEntry(input: $input) {\n      id\n      kind\n      category\n      label\n      amountCents\n      currency\n      startMonth\n      endMonth\n      note\n    }\n  }\n'];
+/**
+ * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
+ */
+export function graphql(
+  source: '\n  mutation DeleteCostEntry($input: DeleteCostEntryInput!) {\n    deleteCostEntry(input: $input)\n  }\n',
+): (typeof documents)['\n  mutation DeleteCostEntry($input: DeleteCostEntryInput!) {\n    deleteCostEntry(input: $input)\n  }\n'];
 /**
  * The graphql function is used to parse GraphQL queries into a document that can be used by GraphQL clients.
  */

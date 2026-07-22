@@ -23,6 +23,7 @@ import { eventsTypeDefs } from './events';
 import { boardPresenceTypeDefs } from './board-presence';
 import { controllerTypeDefs } from './controller';
 import { feedbackTypeDefs } from './feedback';
+import { costsTypeDefs } from './costs';
 import { betaLinksTypeDefs } from './beta-links';
 import { integrationsTypeDefs } from './integrations';
 import { otaTypeDefs } from './ota';
@@ -57,5 +58,6 @@ export const typeDefs = [
   eventsTypeDefs,
   controllerTypeDefs,
   feedbackTypeDefs,
+  costsTypeDefs,
   boardPresenceTypeDefs,
 ];
