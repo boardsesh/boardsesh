@@ -56,6 +56,10 @@ export interface CacheRuleActionParameters {
      */
     mode: 'bypass_by_default';
   };
+  browser_ttl: {
+    /** Honour the origin max-age so a zone-level Browser Cache TTL can't override it. */
+    mode: 'respect_origin';
+  };
 }
 
 export interface CacheRuleDesired {
