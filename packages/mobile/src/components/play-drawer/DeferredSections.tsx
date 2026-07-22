@@ -2,7 +2,9 @@ import { memo, useCallback, useMemo } from 'react';
 import { View, Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
-import type { Climb } from '@boardsesh/shared-schema';
+import type { BoardName, Climb } from '@boardsesh/shared-schema';
+import { useLogbook } from '@boardsesh/board-react';
+import { deriveOtherAngleActivity } from './logbook-summary';
 import { CollapsibleSection } from '../CollapsibleSection';
 import { Icon } from '../Icon';
 import { LogbookSection } from './LogbookSection';
@@ -91,24 +93,58 @@ export const DeferredSections = memo(function DeferredSections({
   // interaction queue can't leave these sections blank until the drawer reopens.
   const readyToRender = useDeferredAfterInteractions(enabled && contentEnabled, climb.uuid);
 
-  // The one-line sends/attempts tally shown on the collapsed Logbook header — the
-  // scroll hint the user peeks at the fold. Reads the denormalised
-  // userAscents/userAttempts counts (both angle-scoped, disjoint), so it renders
-  // and measures instantly without waiting on the logbook fetch. Sends and
-  // attempts pluralize individually, then compose so a locale owns the joining.
+  // The climber's ticks for this climb across every angle. Fed to the summary's
+  // cross-angle clause below. Warm-cached and deduped with LogbookSection's
+  // identical fetch, so an eager read here costs no extra request; it stays empty
+  // until it lands, and the summary just drops the clause meanwhile.
+  const { logbook } = useLogbook(boardName as BoardName, [climb.uuid]);
+  const otherAngleActivity = useMemo(() => {
+    const entriesForClimb = logbook.filter((entry) => entry.climb_uuid === climb.uuid);
+    return deriveOtherAngleActivity(entriesForClimb, angle);
+  }, [logbook, climb.uuid, angle]);
+
+  // The one-line summary on the collapsed Logbook header — the scroll hint the
+  // user peeks at the fold. The current-angle counts read the denormalised
+  // userAscents/userAttempts (both angle-scoped, disjoint), so the line renders
+  // and measures instantly. Prefixed with the board's angle, then — once the
+  // logbook lands — a concise clause flags other angles the climb was sent or
+  // only tried at (a send always leads; 3+ angles collapse to a count).
   const logbookSummary = useMemo(() => {
     const sends = climb.userAscents ?? 0;
     const attempts = climb.userAttempts ?? 0;
     const sendsLabel = t('mobile.logbook.sendCount', { count: sends });
     const attemptsLabel = t('mobile.logbook.attemptCount', { count: attempts });
+    let body: string;
     if (sends > 0 && attempts > 0)
-      return t('mobile.logbook.summarySendsAndAttempts', { sends: sendsLabel, attempts: attemptsLabel });
-    if (sends > 0) return sendsLabel;
+      body = t('mobile.logbook.summarySendsAndAttempts', { sends: sendsLabel, attempts: attemptsLabel });
+    else if (sends > 0) body = sendsLabel;
     // Attempts but no send yet — the "how often did I fight this" case, named as
     // unfinished business to invite the return.
-    if (attempts > 0) return t('mobile.logbook.summaryAttemptsNoSend', { attempts: attemptsLabel });
-    return t('mobile.logbook.summaryUntried');
-  }, [climb.userAscents, climb.userAttempts, t]);
+    else if (attempts > 0) body = t('mobile.logbook.summaryAttemptsNoSend', { attempts: attemptsLabel });
+    else body = t('mobile.logbook.summaryUntried');
+
+    const line = t('mobile.logbook.summaryAnglePrefix', { angle, body });
+
+    const { sentAngles, triedAngles } = otherAngleActivity;
+    const formatAngles = (angles: number[]) => angles.map((otherAngle) => `${otherAngle}°`).join(', ');
+    // At most 2 angles inline, then collapse to a count so the one line stays
+    // scannable. A send elsewhere is the achievement, so its clause leads.
+    const sentClause =
+      sentAngles.length === 0
+        ? null
+        : sentAngles.length <= 2
+          ? t('mobile.logbook.otherAnglesSent', { angles: formatAngles(sentAngles) })
+          : t('mobile.logbook.otherAnglesSentCount', { count: sentAngles.length });
+    const triedClause =
+      triedAngles.length === 0
+        ? null
+        : triedAngles.length <= 2
+          ? t('mobile.logbook.otherAnglesTried', { angles: formatAngles(triedAngles) })
+          : t('mobile.logbook.otherAnglesTriedCount', { count: triedAngles.length });
+    const clause = [sentClause, triedClause].filter(Boolean).join(' · ');
+
+    return clause ? t('mobile.logbook.summaryWithOtherAngles', { body: line, clause }) : line;
+  }, [climb.userAscents, climb.userAttempts, angle, otherAngleActivity, t]);
 
   // Grade shown next to the collapsed Boardsesh grade header. Lifted up here
   // (rather than read from BoardseshGradeSection) because that section
