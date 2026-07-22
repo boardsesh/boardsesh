@@ -64,22 +64,30 @@ function WorkoutTypeTile({ item }: { item: WorkoutTypeShelfItem }) {
         },
       ]}
     >
-      <View pointerEvents="none" style={styles.chartSlot}>
-        {item.bars ? (
-          <StackedBarChart
-            bars={item.bars}
-            colorBy="grade"
-            height={CHART_HEIGHT}
-            maxXLabels={5}
-            fitYAxisToData
-            interactive={false}
-            zoomable={false}
-          />
-        ) : (
-          <View style={[styles.emptyChart, { backgroundColor: systemColors.fill }]}>
-            <Icon name={item.emptyIcon ?? 'chart.bar'} size={24} color={systemColors.secondaryLabel} />
-          </View>
-        )}
+      <View style={styles.chartSlot}>
+        <View pointerEvents="none">
+          {item.bars ? (
+            <StackedBarChart
+              bars={item.bars}
+              colorBy="grade"
+              height={CHART_HEIGHT}
+              maxXLabels={5}
+              fitYAxisToData
+              interactive={false}
+              zoomable={false}
+            />
+          ) : (
+            <View style={[styles.emptyChart, { backgroundColor: systemColors.fill }]}>
+              <Icon name={item.emptyIcon ?? 'chart.bar'} size={24} color={systemColors.secondaryLabel} />
+            </View>
+          )}
+        </View>
+        {/* react-native-gifted-charts renders each bar with its own explicit
+            pointerEvents:'auto', which on web overrides the `pointerEvents="none"`
+            above and swallows the tap before it bubbles to this tile's Pressable.
+            An unhandled transparent overlay on top absorbs the tap there instead,
+            so it bubbles normally to the tile. */}
+        <View style={styles.chartTapOverlay} />
       </View>
       <Text
         variant="footnote"
@@ -108,6 +116,9 @@ const styles = StyleSheet.create({
   },
   chartSlot: {
     height: CHART_HEIGHT,
+  },
+  chartTapOverlay: {
+    ...StyleSheet.absoluteFill,
   },
   emptyChart: {
     height: CHART_HEIGHT,
