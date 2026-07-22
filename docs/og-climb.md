@@ -142,6 +142,15 @@ straight through to Railway.
 `curl -sI 'https://ws.boardsesh.com/og/climb?...'` twice — the second response
 shows `cf-cache-status: HIT`.
 
+### CI auto-apply
+
+`production-deploy.yml` runs `vp run cf:apply -- --apply` on pushes to main
+that touch `infra/cloudflare/` or the apply script (and on manual dispatch),
+reading `CLOUDFLARE_API_TOKEN` from the GitHub **Production** environment
+secrets: `gh secret set CLOUDFLARE_API_TOKEN --env Production`. A failing job
+means unapplied drift (often a blocked zone-SSL change) — run the dry-run
+locally to see the plan.
+
 ### Rollback
 
 Set `proxied: false` on the `ws` record in `infra/cloudflare/config.ts` and
