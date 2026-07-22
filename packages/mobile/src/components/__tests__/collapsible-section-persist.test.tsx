@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { render, waitFor, fireEvent } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { loadSectionExpandState, resetSectionExpandStoreForTests } from '../../lib/section-expand-store';
 
@@ -104,5 +104,25 @@ describe('CollapsibleSection persistence', () => {
       }),
     );
     expect(getByText(BODY)).toBeTruthy();
+  });
+
+  it('fires onToggle only on a user tap, with the next expanded state', () => {
+    // This is the signal the play drawer keys its scroll-into-view off, so it
+    // must fire on the tap (and NOT on mount / persisted reconciliation).
+    const onToggle = vi.fn();
+    const { getByRole } = render(
+      createElement(CollapsibleSection, {
+        title: 'Logbook',
+        defaultExpanded: false,
+        onToggle,
+        children: createElement('span', null, BODY),
+      }),
+    );
+
+    expect(onToggle).not.toHaveBeenCalled();
+    fireEvent.click(getByRole('button'));
+    expect(onToggle).toHaveBeenLastCalledWith(true);
+    fireEvent.click(getByRole('button'));
+    expect(onToggle).toHaveBeenLastCalledWith(false);
   });
 });

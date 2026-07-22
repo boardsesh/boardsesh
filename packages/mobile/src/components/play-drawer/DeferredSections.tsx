@@ -94,9 +94,10 @@ export const DeferredSections = memo(function DeferredSections({
   const readyToRender = useDeferredAfterInteractions(enabled && contentEnabled, climb.uuid);
 
   // The climber's ticks for this climb across every angle. Fed to the summary's
-  // cross-angle clause below. Warm-cached and deduped with LogbookSection's
-  // identical fetch, so an eager read here costs no extra request; it stays empty
-  // until it lands, and the summary just drops the clause meanwhile.
+  // cross-angle clause below. Reading it here is eager (one fetch per climb on
+  // open), but React Query dedupes it with LogbookSection's identical fetch, so
+  // it never doubles up; it stays empty until it lands, and the summary just
+  // drops the clause meanwhile.
   const { logbook } = useLogbook(boardName as BoardName, [climb.uuid]);
   const otherAngleActivity = useMemo(() => {
     const entriesForClimb = logbook.filter((entry) => entry.climb_uuid === climb.uuid);
@@ -110,6 +111,9 @@ export const DeferredSections = memo(function DeferredSections({
   // logbook lands — a concise clause flags other angles the climb was sent or
   // only tried at (a send always leads; 3+ angles collapse to a count).
   const logbookSummary = useMemo(() => {
+    // Logged-out visitors have no logbook, so "not tried yet" would be a lie —
+    // show no subtitle at all (the section still expands to the sign-in prompt).
+    if (!isAuthenticated) return null;
     const sends = climb.userAscents ?? 0;
     const attempts = climb.userAttempts ?? 0;
     const sendsLabel = t('mobile.logbook.sendCount', { count: sends });
@@ -144,7 +148,7 @@ export const DeferredSections = memo(function DeferredSections({
     const clause = [sentClause, triedClause].filter(Boolean).join(' · ');
 
     return clause ? t('mobile.logbook.summaryWithOtherAngles', { body: line, clause }) : line;
-  }, [climb.userAscents, climb.userAttempts, angle, otherAngleActivity, t]);
+  }, [isAuthenticated, climb.userAscents, climb.userAttempts, angle, otherAngleActivity, t]);
 
   // Grade shown next to the collapsed Boardsesh grade header. Lifted up here
   // (rather than read from BoardseshGradeSection) because that section
