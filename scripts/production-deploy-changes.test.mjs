@@ -69,31 +69,37 @@ void test('classifies changed paths with the production workflow semantics', () 
     web: false,
     backend: false,
     app: false,
+    cloudflare: false,
   });
   assert.deepEqual(classifyChangedFiles(['packages/backend/src/index.ts']), {
     web: true,
     backend: true,
     app: false,
+    cloudflare: false,
   });
   assert.deepEqual(classifyChangedFiles(['packages/mobile/app/index.tsx']), {
     web: false,
     backend: true,
     app: true,
+    cloudflare: false,
   });
   assert.deepEqual(classifyChangedFiles(['packages/shared-schema/src/schema.ts']), {
     web: true,
     backend: true,
     app: true,
+    cloudflare: false,
   });
   assert.deepEqual(classifyChangedFiles(['scripts/production-backend-smoke.mjs']), {
     web: false,
     backend: true,
     app: false,
+    cloudflare: false,
   });
   assert.deepEqual(classifyChangedFiles(['scripts/production-backend-smoke.test.mjs']), {
     web: false,
     backend: false,
     app: false,
+    cloudflare: false,
   });
 });
 
@@ -104,7 +110,7 @@ void test('the deploy watchdog never queues a deploy of its own', () => {
     'scripts/production-deploy-watchdog.mjs',
     'scripts/production-deploy-watchdog.test.mjs',
   ]) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false, cloudflare: false });
   }
 });
 
@@ -121,22 +127,23 @@ void test('a watchdog file alongside real code still deploys the real code', () 
     web: true,
     backend: true,
     app: false,
+    cloudflare: false,
   });
   assert.deepEqual(
     classifyChangedFiles(['.github/workflows/production-deploy-watchdog.yml', 'packages/mobile/app/index.tsx']),
-    { web: false, backend: true, app: true },
+    { web: false, backend: true, app: true, cloudflare: false },
   );
 });
 
 void test('treats the production workflow and its detector as affecting every target', () => {
   for (const filePath of ['.github/workflows/production-deploy.yml', 'scripts/production-deploy-changes.mjs']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: true });
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: true, cloudflare: true });
   }
 });
 
 void test('keeps production deploy unit tests CI-only', () => {
   for (const filePath of ['scripts/production-backend-smoke.test.mjs', 'scripts/production-deploy-changes.test.mjs']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: false, backend: false, app: false, cloudflare: false });
   }
 });
 
@@ -147,7 +154,7 @@ void test('treats every input of the app.boardsesh.com export as app-affecting',
   // merge green, deploy nothing, and leave the author believing it shipped.
   // W-24 / #4438.
   for (const filePath of ['scripts/build-expo-web-export.sh', 'scripts/lib/patch-expo-web-pwa-manifest.mjs']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true });
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true, cloudflare: false });
   }
 });
 
@@ -165,7 +172,7 @@ void test('treats every deployed Cloudflare Pages config file as app-affecting',
     'deploy/app-subdomain/_routes.json',
     'deploy/app-subdomain/functions/_middleware.ts',
   ]) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true });
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: false, app: true, cloudflare: false });
   }
 });
 
@@ -184,9 +191,41 @@ void test('leaves the non-deployed files in deploy/app-subdomain out of the app 
   }
 });
 
+void test('a Cloudflare zone-config change converges the edge without a web deploy', () => {
+  // infra/cloudflare is desired edge state, not Next input: a cache rule or WAF
+  // edit changes what Cloudflare does, and rebuilding www would prove nothing.
+  // isWebAffecting is a denylist, so without the explicit exclusion every zone
+  // edit would queue a full production web deploy for free.
+  for (const filePath of [
+    'infra/cloudflare/config.ts',
+    'infra/cloudflare/plan.ts',
+    'scripts/cloudflare-apply.ts',
+    'scripts/cloudflare-apply.test.ts',
+  ]) {
+    assert.deepEqual(
+      classifyChangedFiles([filePath]),
+      { web: false, backend: false, app: false, cloudflare: true },
+      `${filePath} must converge Cloudflare and nothing else`,
+    );
+  }
+});
+
+void test('a code change never drags the Cloudflare apply along with it', () => {
+  // The converse guard. deploy-cloudflare talks to the live zone with a
+  // production token; firing it on every packages/ commit would turn an
+  // unrelated merge into an edge mutation.
+  for (const filePath of ['packages/web/app/page.tsx', 'packages/backend/src/index.ts', 'bun.lock']) {
+    assert.equal(
+      classifyChangedFiles([filePath]).cloudflare,
+      false,
+      `${filePath} must not trigger deploy-cloudflare`,
+    );
+  }
+});
+
 void test('keeps every backend build and runtime control path backend-affecting', () => {
   for (const filePath of ['Dockerfile.backend', 'railway.toml', 'bun.lock', 'package.json']) {
-    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: false });
+    assert.deepEqual(classifyChangedFiles([filePath]), { web: true, backend: true, app: false, cloudflare: false });
   }
 });
 
@@ -199,8 +238,14 @@ void test('manual dispatch builds every target without consulting history or git
   });
 
   assert.deepEqual(
-    { web: result.web, backend: result.backend, app: result.app, fullBuild: result.fullBuild },
-    { web: true, backend: true, app: true, fullBuild: true },
+    {
+      web: result.web,
+      backend: result.backend,
+      app: result.app,
+      cloudflare: result.cloudflare,
+      fullBuild: result.fullBuild,
+    },
+    { web: true, backend: true, app: true, cloudflare: true, fullBuild: true },
   );
   assert.equal(result.reason, 'workflow_dispatch');
 });
@@ -297,7 +342,7 @@ void test('compares the successful deployment baseline through the current head'
     ['ancestor', BASE_SHA, HEAD_SHA],
     ['diff', BASE_SHA, HEAD_SHA],
   ]);
-  assert.equal(formatGitHubOutputs(result), `web=true\nbackend=true\napp=false\ndeployment_base_sha=${BASE_SHA}`);
+  assert.equal(formatGitHubOutputs(result), `web=true\nbackend=true\napp=false\ncloudflare=false\ndeployment_base_sha=${BASE_SHA}`);
 });
 
 void test('a git comparison error falls back to a full build', () => {

@@ -74,6 +74,7 @@ jobs:
       backend_changed: ${{ steps.changes.outputs.backend }}
       app_changed: ${{ steps.changes.outputs.app }}
       deployment_base_sha: ${{ steps.changes.outputs.deployment_base_sha }}
+      cloudflare_changed: ${{ steps.changes.outputs.cloudflare }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -540,6 +541,29 @@ jobs:
   # detect-changes. No inline Playwright smoke gate — a per-deploy expo-web boot
   # is too heavy here (this file has no such gate for web/backend either); the
   # expo-web-smoke suite stays the dispatch-only gate in e2e-tests.yml.
+  # Converges the Cloudflare zone config (infra/cloudflare) on main. Runs only
+  # when the desired state or apply tooling changes (or on manual dispatch);
+  # nothing else depends on it, so a Cloudflare API hiccup never blocks the
+  # web/backend deploys. A non-zero exit = unapplied drift (e.g. a blocked
+  # zone-SSL change) and should be investigated, not retried blindly.
+  deploy-cloudflare:
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.cloudflare_changed == 'true'
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply Cloudflare config
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: vp run cf:apply -- --apply
+
   # Manual deploy freeze for app.boardsesh.com, the Cloudflare Pages analogue of
   # check-rollback. deploy-web and deploy-production-backend both honour a pinned
   # Vercel Instant Rollback; Pages has no equivalent signal here, so without this
