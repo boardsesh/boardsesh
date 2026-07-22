@@ -546,6 +546,9 @@ jobs:
   # nothing else depends on it, so a Cloudflare API hiccup never blocks the
   # web/backend deploys. A non-zero exit = unapplied drift (e.g. a blocked
   # zone-SSL change) and should be investigated, not retried blindly.
+  # The planned OpenNext (Cloudflare Workers) deploy of packages/web will be a
+  # sibling job reusing the same Production-environment CLOUDFLARE_API_TOKEN
+  # (+ CLOUDFLARE_ACCOUNT_ID) — see docs/cloudflare.md for the token scopes.
   deploy-cloudflare:
     needs: [detect-changes]
     if: needs.detect-changes.outputs.cloudflare_changed == 'true'
