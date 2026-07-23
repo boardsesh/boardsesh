@@ -298,7 +298,7 @@ export const climbMutations = {
     // with the unified CLIMB_IS_DUPLICATE extension so the frontend's
     // duplicate-UX handler can react the same way across boards.
     if (!isDraft) {
-      const duplicateMatch = await findMoonBoardDuplicateMatch(validated.layoutId, validated.angle, validated.holds);
+      const duplicateMatch = await findMoonBoardDuplicateMatch(validated.layoutId, validated.holds);
       if (duplicateMatch) {
         throw new GraphQLError(buildMoonBoardDuplicateError(duplicateMatch.existingClimbName), {
           extensions: {

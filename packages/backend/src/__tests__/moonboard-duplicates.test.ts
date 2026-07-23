@@ -39,7 +39,7 @@ describe('moonboard duplicate helpers', () => {
       ])
       .mockResolvedValueOnce([]);
 
-    const result = await findMoonBoardDuplicateMatches(2, 40, [
+    const result = await findMoonBoardDuplicateMatches(2, [
       {
         clientKey: 'candidate-1',
         holds: {
@@ -76,7 +76,7 @@ describe('moonboard duplicate helpers', () => {
       },
     ]);
 
-    const result = await findMoonBoardDuplicateMatches(2, 40, [
+    const result = await findMoonBoardDuplicateMatches(2, [
       {
         clientKey: 'candidate-1',
         holds,

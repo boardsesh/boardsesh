@@ -46,7 +46,7 @@ export const climbQueries = {
   ) => {
     await applyRateLimit(ctx, 60, 'moonboard-duplicate-check');
     const validated = validateInput(CheckMoonBoardClimbDuplicatesInputSchema, input, 'input');
-    return findMoonBoardDuplicateMatches(validated.layoutId, validated.angle, validated.climbs);
+    return findMoonBoardDuplicateMatches(validated.layoutId, validated.climbs);
   },
 
   /**

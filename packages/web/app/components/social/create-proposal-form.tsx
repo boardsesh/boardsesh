@@ -20,7 +20,8 @@ import { useWsAuthToken } from '@/app/hooks/use-ws-auth-token';
 import { ClientError } from 'graphql-request';
 import { createGraphQLHttpClient } from '@/app/lib/graphql/client';
 import { CREATE_PROPOSAL } from '@boardsesh/graphql/operations/proposals';
-import { BOULDER_GRADES, ANGLES } from '@/app/lib/board-data';
+import { BOULDER_GRADES } from '@/app/lib/board-data';
+import { useBoardAngleOptions } from '@/app/hooks/use-board-angles';
 import { getGradeTintColor } from '@/app/lib/grade-colors';
 import SwipeableDrawer from '@/app/components/swipeable-drawer/swipeable-drawer';
 import type { Proposal, ProposalType } from '@boardsesh/shared-schema';
@@ -57,7 +58,8 @@ export default function CreateProposalForm({
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState('');
 
-  const boardAngles = boardName ? ANGLES[boardName as BoardName] || [] : [];
+  const angleOptions = useBoardAngleOptions((boardName as BoardName | undefined) ?? 'kilter');
+  const boardAngles = boardName ? angleOptions : [];
 
   const handleClose = useCallback(() => {
     setOpen(false);

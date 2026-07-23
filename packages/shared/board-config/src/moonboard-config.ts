@@ -116,8 +116,21 @@ const MOONBOARD_ROWS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1
 
 export { MOONBOARD_GRID };
 
-// MoonBoard only supports 25 and 40 degree angles
+// The two angles Moon Climbing's own catalog grades problems at (25°/40°).
+// This is the default/fallback angle list every picker uses. It's a UI
+// convention, not a hard limit — nothing server-side rejects other angles for
+// MoonBoard (angle is a plain 0-90 bounded int everywhere it's validated) —
+// see MOONBOARD_WIDE_ANGLES_FLAG in packages/web/app/flags.ts for the
+// flag-gated wider range.
 export const MOONBOARD_ANGLES = [25, 40] as const;
+
+// The full angle range, matching Kilter/Tension (ANGLES.kilter/tension in
+// board-data.ts), offered by angle pickers when MOONBOARD_WIDE_ANGLES_FLAG is
+// on. A MoonBoard problem's holds don't change with angle — Moon Climbing
+// just never grades outside 25°/40°, so climbs graded at other angles start
+// with no catalog grade/stats until the community logs there, exactly like
+// any Aurora board today.
+export const MOONBOARD_WIDE_ANGLES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70] as const;
 
 // MoonBoard has a single fixed size (all boards are same dimensions)
 export const MOONBOARD_SIZE = {

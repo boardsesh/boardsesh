@@ -22,6 +22,16 @@ export const BOARDSESH_GRADE_FLAG = 'boardsesh-grade';
 // page is only reachable via a URL the gym owner configured on purpose.
 export const GYM_KIOSK_FLAG = 'gym-kiosk';
 
+// Gates offering MoonBoard's full 0-70° angle range in angle pickers (angle
+// drawer, board selector, playlist generator, log-ascent form, propose-change
+// form, create-climb form). OFF keeps every picker limited to MOONBOARD_ANGLES
+// (25°/40°, the two angles Moon Climbing's own catalog grades) — see
+// MOONBOARD_WIDE_ANGLES in @boardsesh/board-config. Nothing server-side
+// enforces this restriction (angle is a plain 0-90 bounded int everywhere it's
+// validated), so this is purely a UI rollout control, same as every other flag
+// here — matching the documented "flags gate the UI entry point only" pattern.
+export const MOONBOARD_WIDE_ANGLES_FLAG = 'moonboard-wide-angles';
+
 // Keys read from PostHog by FeatureFlagsProvider. Each must have a matching
 // PostHog feature flag; values stay `undefined` (OFF) until that flag resolves.
 export const FEATURE_FLAG_KEYS = [
@@ -29,6 +39,7 @@ export const FEATURE_FLAG_KEYS = [
   GARMIN_WATCH_FLAG,
   BOARDSESH_GRADE_FLAG,
   GYM_KIOSK_FLAG,
+  MOONBOARD_WIDE_ANGLES_FLAG,
 ] as const;
 
 // Vercel's flags discovery endpoint expects an allFlags export.

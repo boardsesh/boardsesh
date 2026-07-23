@@ -132,7 +132,6 @@ export function buildMoonBoardDuplicateError(existingClimbName?: string | null):
 
 export async function findMoonBoardDuplicateMatches(
   layoutId: number,
-  angle: number,
   climbs: DuplicateCandidate[],
 ): Promise<MoonBoardClimbDuplicateMatch[]> {
   if (climbs.length === 0) return [];
@@ -174,7 +173,9 @@ export async function findMoonBoardDuplicateMatches(
        AND ${dbSchema.boardClimbStats.angle} = ${dbSchema.boardClimbs.angle}
       WHERE ${dbSchema.boardClimbs.boardType} = 'moonboard'
         AND ${dbSchema.boardClimbs.layoutId} = ${layoutId}
-        AND ${dbSchema.boardClimbs.angle} = ${angle}
+        -- Angle is deliberately NOT a predicate — a MoonBoard problem is the
+        -- same physical route regardless of the angle it's set up at, exactly
+        -- like findExactDuplicateMatch for Kilter/Tension (climb-similarity.ts).
         AND ${dbSchema.boardClimbs.isListed} = true
         AND ${dbSchema.boardClimbs.isDraft} = false
       GROUP BY
@@ -216,7 +217,6 @@ export async function findMoonBoardDuplicateMatches(
        AND ${dbSchema.boardClimbStats.angle} = ${dbSchema.boardClimbs.angle}
       WHERE ${dbSchema.boardClimbs.boardType} = 'moonboard'
         AND ${dbSchema.boardClimbs.layoutId} = ${layoutId}
-        AND ${dbSchema.boardClimbs.angle} = ${angle}
         AND ${dbSchema.boardClimbs.isListed} = true
         AND ${dbSchema.boardClimbs.isDraft} = false
         AND NOT EXISTS (
@@ -258,9 +258,8 @@ export async function findMoonBoardDuplicateMatches(
 
 export async function findMoonBoardDuplicateMatch(
   layoutId: number,
-  angle: number,
   holds: MoonBoardHoldsInput,
 ): Promise<MoonBoardClimbDuplicateMatch | null> {
-  const [match] = await findMoonBoardDuplicateMatches(layoutId, angle, [{ clientKey: 'save', holds }]);
+  const [match] = await findMoonBoardDuplicateMatches(layoutId, [{ clientKey: 'save', holds }]);
   return match?.exists ? match : null;
 }
