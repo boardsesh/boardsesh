@@ -13,13 +13,16 @@ import {
   resolveCatalogClimbUuid,
   holdsToFrames,
   catalogClimbUuid,
+  legacyCatalogClimbUuid,
   catalogAliasRows,
   isImportableProblem,
   isImportableConfig,
-  mapCatalogConfig,
+  mapCatalogProblemStructural,
+  mapCatalogConfigStats,
   catalogProblemToClimbs,
   isBetterCatalogClimb,
   type MoonBoardCatalogProblem,
+  type MappedCatalogClimb,
 } from './moonboard-catalog-helpers.js';
 
 // "Porridge & Salt" (Joe Wallace) — id 541453, MoonBoard 2024 (holdsetup 21).
@@ -59,6 +62,12 @@ const PORRIDGE: MoonBoardCatalogProblem = {
     },
   ],
 };
+
+function makeMappedClimb(overrides: Partial<MappedCatalogClimb> = {}): MappedCatalogClimb {
+  const climb = catalogProblemToClimbs(PORRIDGE, 3);
+  if (!climb) throw new Error('PORRIDGE must map to a climb');
+  return { ...climb, ...overrides };
+}
 
 void test('HOLDSETUP_TO_LAYOUT covers all 7 boards', () => {
   assert.deepEqual(HOLDSETUP_TO_LAYOUT, { 1: 2, 15: 4, 17: 5, 19: 6, 21: 3, 22: 7, 23: 1 });
@@ -105,50 +114,50 @@ void test('holdsToFrames encodes p{holdId}r{roleCode} in move order', () => {
   assert.equal(holdsToFrames(holds), 'p104r43p137r43p196r44p87r43p131r43p11r42p66r42');
 });
 
-void test('catalogClimbUuid is deterministic, id+angle keyed, distinct per angle', () => {
-  const uuid = catalogClimbUuid({ id: 541453, angle: 40 });
-  assert.equal(uuid, uuidv5('moonboard:541453:40', MOONBOARD_UUID_NAMESPACE));
+void test('catalogClimbUuid is deterministic and angle-agnostic — id-keyed only', () => {
+  const uuid = catalogClimbUuid({ id: 541453 });
+  assert.equal(uuid, uuidv5('moonboard:541453', MOONBOARD_UUID_NAMESPACE));
   assert.match(uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.notEqual(uuid, catalogClimbUuid({ id: 541453, angle: 25 }));
+  // Same id → same uuid regardless of which angle is being considered.
+  assert.equal(uuid, catalogClimbUuid({ id: 541453 }));
 });
 
-void test('catalogAliasRows aliases the problem-id UUID onto a reused legacy UUID', () => {
-  const idBased = catalogClimbUuid({ id: 509834, angle: 40 });
+void test('legacyCatalogClimbUuid reproduces the old per-angle scheme, distinct per angle', () => {
+  const uuid40 = legacyCatalogClimbUuid({ id: 541453, angle: 40 });
+  assert.equal(uuid40, uuidv5('moonboard:541453:40', MOONBOARD_UUID_NAMESPACE));
+  assert.notEqual(uuid40, legacyCatalogClimbUuid({ id: 541453, angle: 25 }));
+  assert.notEqual(uuid40, catalogClimbUuid({ id: 541453 }));
+});
 
-  // New climb (no merge): the id-based UUID *is* the canonical, so only a
-  // self-alias — no redundant second row.
-  assert.deepEqual(catalogAliasRows(idBased, idBased), [{ aliasUuid: idBased, canonicalUuid: idBased }]);
+void test('catalogAliasRows: brand new climb (no merge) — self-alias plus one legacy alias per graded angle', () => {
+  const canonicalUuid = catalogClimbUuid({ id: 509834 });
+  const rows = catalogAliasRows({ problemId: 509834, angles: [25, 40], canonicalUuid });
+  assert.deepEqual(rows, [
+    { aliasUuid: canonicalUuid, canonicalUuid },
+    // No separate id-based row: canonicalUuid IS the id-based uuid already.
+    { aliasUuid: legacyCatalogClimbUuid({ id: 509834, angle: 25 }), canonicalUuid },
+    { aliasUuid: legacyCatalogClimbUuid({ id: 509834, angle: 40 }), canonicalUuid },
+  ]);
+});
 
-  // Merged onto a legacy (name-based) UUID — as every MoonBoard 2024 climb was.
-  // We must alias the stable problem-id UUID to the canonical, otherwise the
-  // logbook importer's `moonboard:{id}:{angle}` lookup never finds the climb.
+void test('catalogAliasRows: merged onto a legacy (name-based) UUID — as every MoonBoard 2024 climb was', () => {
   const legacy = 'moonboard-legacy-name-based-uuid';
-  assert.deepEqual(catalogAliasRows(idBased, legacy), [
+  const rows = catalogAliasRows({ problemId: 509834, angles: [40], canonicalUuid: legacy });
+  assert.deepEqual(rows, [
     { aliasUuid: legacy, canonicalUuid: legacy },
-    { aliasUuid: idBased, canonicalUuid: legacy },
+    { aliasUuid: catalogClimbUuid({ id: 509834 }), canonicalUuid: legacy },
+    { aliasUuid: legacyCatalogClimbUuid({ id: 509834, angle: 40 }), canonicalUuid: legacy },
   ]);
 });
 
 void test('catalog matching excludes delisted rows even when they have stale self-aliases', () => {
-  const mapped = mapCatalogConfig(PORRIDGE, PORRIDGE.configurations![1], { layoutId: 3, angle: 40 });
+  const mapped = makeMappedClimb();
   const delistedUuid = 'moonboard-delisted-duplicate';
   const canonicalUuid = 'moonboard-listed-canonical';
   const index = buildExistingCatalogMatchIndex(
     [
-      {
-        uuid: delistedUuid,
-        layoutId: mapped.layoutId,
-        angle: mapped.angle,
-        name: mapped.name,
-        isListed: false,
-      },
-      {
-        uuid: canonicalUuid,
-        layoutId: mapped.layoutId,
-        angle: mapped.angle,
-        name: mapped.name,
-        isListed: true,
-      },
+      { uuid: delistedUuid, layoutId: mapped.layoutId, name: mapped.name, isListed: false },
+      { uuid: canonicalUuid, layoutId: mapped.layoutId, name: mapped.name, isListed: true },
     ],
     new Map([
       [delistedUuid, mapped.holdFingerprint],
@@ -161,21 +170,17 @@ void test('catalog matching excludes delisted rows even when they have stale sel
   );
 
   assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: canonicalUuid, matched: true });
-  assert.deepEqual(catalogAliasRows(mapped.uuid, canonicalUuid), [
-    { aliasUuid: canonicalUuid, canonicalUuid },
-    { aliasUuid: mapped.uuid, canonicalUuid },
-  ]);
 });
 
 void test('catalog matching follows alias chains and collapses candidates at the same canonical UUID', () => {
-  const mapped = mapCatalogConfig(PORRIDGE, PORRIDGE.configurations![1], { layoutId: 3, angle: 40 });
+  const mapped = makeMappedClimb();
   const firstUuid = 'moonboard-first-listed-alias';
   const secondUuid = 'moonboard-intermediate-alias';
   const canonicalUuid = 'moonboard-terminal-canonical';
   const index = buildExistingCatalogMatchIndex(
     [
-      { uuid: firstUuid, layoutId: 3, angle: 40, name: 'old name', isListed: true },
-      { uuid: canonicalUuid, layoutId: 3, angle: 40, name: 'canonical name', isListed: true },
+      { uuid: firstUuid, layoutId: 3, name: 'old name', isListed: true },
+      { uuid: canonicalUuid, layoutId: 3, name: 'canonical name', isListed: true },
     ],
     new Map([
       [firstUuid, mapped.holdFingerprint],
@@ -192,11 +197,11 @@ void test('catalog matching follows alias chains and collapses candidates at the
 });
 
 void test('catalog matching ignores cyclic aliases instead of writing another broken redirect', () => {
-  const mapped = mapCatalogConfig(PORRIDGE, PORRIDGE.configurations![1], { layoutId: 3, angle: 40 });
+  const mapped = makeMappedClimb();
   const firstUuid = 'moonboard-cycle-a';
   const secondUuid = 'moonboard-cycle-b';
   const index = buildExistingCatalogMatchIndex(
-    [{ uuid: firstUuid, layoutId: 3, angle: 40, name: mapped.name, isListed: true }],
+    [{ uuid: firstUuid, layoutId: 3, name: mapped.name, isListed: true }],
     new Map([[firstUuid, mapped.holdFingerprint]]),
     new Map([
       [firstUuid, secondUuid],
@@ -208,13 +213,13 @@ void test('catalog matching ignores cyclic aliases instead of writing another br
 });
 
 void test('catalog matching ignores a listed alias chain whose terminal climb is delisted', () => {
-  const mapped = mapCatalogConfig(PORRIDGE, PORRIDGE.configurations![1], { layoutId: 3, angle: 40 });
+  const mapped = makeMappedClimb();
   const listedUuid = 'moonboard-listed-alias';
   const delistedUuid = 'moonboard-delisted-terminal';
   const index = buildExistingCatalogMatchIndex(
     [
-      { uuid: listedUuid, layoutId: 3, angle: 40, name: mapped.name, isListed: true },
-      { uuid: delistedUuid, layoutId: 3, angle: 40, name: mapped.name, isListed: false },
+      { uuid: listedUuid, layoutId: 3, name: mapped.name, isListed: true },
+      { uuid: delistedUuid, layoutId: 3, name: mapped.name, isListed: false },
     ],
     new Map([[listedUuid, mapped.holdFingerprint]]),
     new Map([
@@ -248,79 +253,96 @@ void test('isImportableConfig skips empty-grade and deleted configs', () => {
   assert.equal(isImportableConfig({ ...PORRIDGE.configurations![1], dateDeleted: '2025-01-01' }), false);
 });
 
-void test('mapCatalogConfig fills stats from the configuration', () => {
-  const mapped = mapCatalogConfig(PORRIDGE, PORRIDGE.configurations![1], { layoutId: 3, angle: 40 });
-  assert.equal(mapped.uuid, catalogClimbUuid({ id: 541453, angle: 40 }));
-  assert.equal(mapped.difficultyId, 23); // 7A+
-  assert.equal(mapped.isBenchmark, true);
-  assert.equal(mapped.ascensionistCount, 812);
-  assert.equal(mapped.qualityAverage, 4);
-  assert.equal(mapped.setterUsername, 'Joe Wallace');
-  assert.equal(mapped.createdAt, '2023-11-23T18:00:15.227');
-  assert.equal(mapped.characteristics, null); // "Any marked holds" → no token
+void test('mapCatalogProblemStructural is angle-agnostic — holds/name/setter computed once', () => {
+  const structural = mapCatalogProblemStructural(PORRIDGE, 3);
+  assert.equal(structural.uuid, catalogClimbUuid({ id: 541453 }));
+  assert.equal(structural.setterUsername, 'Joe Wallace');
+  assert.equal(structural.createdAt, '2023-11-23T18:00:15.227');
+  assert.equal(structural.characteristics, null); // "Any marked holds" → no token
+  assert.equal(structural.layoutId, 3);
+});
+
+void test('mapCatalogConfigStats fills per-angle stats from the configuration', () => {
+  const stats = mapCatalogConfigStats(PORRIDGE.configurations![1], 40);
+  assert.equal(stats.angle, 40);
+  assert.equal(stats.difficultyId, 23); // 7A+
+  assert.equal(stats.isBenchmark, true);
+  assert.equal(stats.ascensionistCount, 812);
+  assert.equal(stats.qualityAverage, 4);
 });
 
 void test('userRating 0 becomes null quality (0 is off the 1-5 scale)', () => {
-  const mapped = mapCatalogConfig(
-    PORRIDGE,
-    { ...PORRIDGE.configurations![1], userRating: 0 },
-    { layoutId: 3, angle: 40 },
-  );
-  assert.equal(mapped.qualityAverage, null);
+  const stats = mapCatalogConfigStats({ ...PORRIDGE.configurations![1], userRating: 0 }, 40);
+  assert.equal(stats.qualityAverage, null);
 });
 
-void test('catalogProblemToClimbs yields one climb per graded angle, skipping phantoms', () => {
-  const climbs = catalogProblemToClimbs(PORRIDGE, 3);
+void test('catalogProblemToClimbs yields one climb with one stats entry per graded angle, skipping phantoms', () => {
+  const climb = catalogProblemToClimbs(PORRIDGE, 3);
   // Only the graded 40° config is imported; the empty-grade 25° phantom is dropped.
-  assert.equal(climbs.length, 1);
-  assert.equal(climbs[0].angle, 40);
-  assert.equal(climbs[0].difficultyId, 23);
+  assert.ok(climb);
+  assert.equal(climb.stats.length, 1);
+  assert.equal(climb.stats[0].angle, 40);
+  assert.equal(climb.stats[0].difficultyId, 23);
 
-  // Both angles graded → two rows.
+  // Both angles graded → one climb, two stats rows.
   const bothGraded = catalogProblemToClimbs(
     { ...PORRIDGE, configurations: [{ ...PORRIDGE.configurations![0], grade: '6C' }, PORRIDGE.configurations![1]] },
     3,
   );
+  assert.ok(bothGraded);
   assert.deepEqual(
-    bothGraded.map((climb) => climb.angle).sort((a, b) => a - b),
+    bothGraded.stats.map((stat) => stat.angle).sort((a, b) => a - b),
     [25, 40],
   );
+  // Structural identity is a single UUID shared by both angles.
+  assert.equal(bothGraded.uuid, catalogClimbUuid({ id: PORRIDGE.id }));
 
   // A deleted / holdless problem yields nothing.
-  assert.deepEqual(catalogProblemToClimbs({ ...PORRIDGE, dateDeleted: '2025-01-01' }, 3), []);
+  assert.equal(catalogProblemToClimbs({ ...PORRIDGE, dateDeleted: '2025-01-01' }, 3), null);
+
+  // A problem with configurations but none graded also yields nothing.
+  assert.equal(catalogProblemToClimbs({ ...PORRIDGE, configurations: [PORRIDGE.configurations![0]] }, 3), null);
 });
 
 void test('unmappable grades map to undefined difficulty', () => {
-  const mapped = mapCatalogConfig(
-    PORRIDGE,
-    { ...PORRIDGE.configurations![1], grade: '9Z' },
-    { layoutId: 3, angle: 40 },
-  );
-  assert.equal(mapped.difficultyId, undefined);
+  const stats = mapCatalogConfigStats({ ...PORRIDGE.configurations![1], grade: '9Z' }, 40);
+  assert.equal(stats.difficultyId, undefined);
 });
 
-void test('isBetterCatalogClimb keeps the stronger of two same-holds problems', () => {
+void test('isBetterCatalogClimb keeps the stronger of two same-holds problems (summed across angles)', () => {
   const cfg = PORRIDGE.configurations![1];
   // Mirrors the real "birthday cake trail mix" (38,683 repeats, benchmark) vs the
-  // junk duplicate "name" (19 repeats, not a benchmark) — identical holds+angle.
-  const real = mapCatalogConfig(
-    { ...PORRIDGE, name: 'birthday cake trail mix' },
-    { ...cfg, repeats: 38683, isBenchmark: true },
-    { layoutId: 3, angle: 40 },
-  );
-  const junk = mapCatalogConfig(
-    { ...PORRIDGE, name: 'name' },
-    { ...cfg, repeats: 19, isBenchmark: false },
-    { layoutId: 3, angle: 40 },
-  );
+  // junk duplicate "name" (19 repeats, not a benchmark) — identical holds.
+  const real = makeMappedClimb({
+    name: 'birthday cake trail mix',
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 38683, isBenchmark: true }, 40)],
+  });
+  const junk = makeMappedClimb({
+    name: 'name',
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 19, isBenchmark: false }, 40)],
+  });
 
-  // More repeats wins, regardless of processing order.
+  // More total repeats wins, regardless of processing order.
   assert.equal(isBetterCatalogClimb(real, junk), true);
   assert.equal(isBetterCatalogClimb(junk, real), false);
 
-  // Tie on repeats → benchmark wins.
-  const benchTie = mapCatalogConfig(PORRIDGE, { ...cfg, repeats: 100, isBenchmark: true }, { layoutId: 3, angle: 40 });
-  const plainTie = mapCatalogConfig(PORRIDGE, { ...cfg, repeats: 100, isBenchmark: false }, { layoutId: 3, angle: 40 });
+  // Sums across BOTH graded angles, not just one.
+  const twoAngles = makeMappedClimb({
+    stats: [
+      mapCatalogConfigStats({ ...cfg, repeats: 50, isBenchmark: false }, 25),
+      mapCatalogConfigStats({ ...cfg, repeats: 50, isBenchmark: false }, 40),
+    ],
+  }); // total 100
+  const oneAngle = makeMappedClimb({
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 90, isBenchmark: false }, 40)],
+  }); // total 90
+  assert.equal(isBetterCatalogClimb(twoAngles, oneAngle), true);
+
+  // Tie on total repeats → any benchmark angle wins.
+  const benchTie = makeMappedClimb({ stats: [mapCatalogConfigStats({ ...cfg, repeats: 100, isBenchmark: true }, 40)] });
+  const plainTie = makeMappedClimb({
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 100, isBenchmark: false }, 40)],
+  });
   assert.equal(isBetterCatalogClimb(benchTie, plainTie), true);
   assert.equal(isBetterCatalogClimb(plainTie, benchTie), false);
 

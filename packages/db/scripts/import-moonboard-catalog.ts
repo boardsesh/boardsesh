@@ -26,14 +26,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // MoonBoard catalog import (all 7 boards)
 // =============================================================================
 // Imports the full MoonBoard catalog dataset. One file per board, each
-// { count, holdsetup, problems[] }. We write one climb row per (problem, graded
-// angle) across all 7 boards and both 25°/40° angles.
+// { count, holdsetup, problems[] }. We write ONE climb row per problem —
+// angle-agnostic, matching Kilter/Tension — and one board_climb_stats row per
+// graded angle (typically 25° and 40°) under that same climb UUID.
 //
 // MERGE IN PLACE (non-destructive): the dataset re-keys identities (stable
 // problem id) vs the rows already in prod (keyed on apiId / name+setter). To
 // avoid duplicating ~163k existing MoonBoard climbs — and to keep their UUIDs,
 // URLs, ticks and favourites intact — we match each incoming climb to an
-// existing one by (layout_id, angle, hold_fingerprint), tie-breaking on
+// existing one by (layout_id, hold_fingerprint), tie-breaking on
 // case-insensitive name. A match reuses the existing UUID (so the upsert updates
 // it in place, backfilling the 2024 quality/ascensionist gap); a miss mints a
 // stable id-based UUID and inserts. Stat upserts are monotonic — they never
@@ -53,7 +54,7 @@ const BATCH_SIZE = 2000;
 
 /**
  * Build the in-memory match index for the non-destructive merge:
- * `${layoutId}|${angle}|${fingerprint}` → existing climbs with those holds.
+ * `${layoutId}|${fingerprint}` → existing climbs with those holds.
  * Existing MoonBoard climbs predate the fingerprint column (only layout 3 has
  * it populated in prod), so we recompute every fingerprint from board_climb_holds.
  * Holds are streamed with a cursor and folded per-climb so memory stays bounded.
@@ -91,7 +92,6 @@ async function buildExistingIndex(
     .select({
       uuid: boardClimbs.uuid,
       layoutId: boardClimbs.layoutId,
-      angle: boardClimbs.angle,
       name: boardClimbs.name,
       isListed: boardClimbs.isListed,
     })
@@ -161,10 +161,11 @@ async function importMoonBoardCatalog() {
 
       // Dedupe in memory keyed per conflict target so a single batch never
       // proposes the same target twice ("ON CONFLICT cannot affect row a second
-      // time"). When two problems share the same holds+angle (so they resolve to
-      // one target UUID) we keep the STRONGER problem (isBetterCatalogClimb: more
-      // repeats, then benchmark) instead of last-wins — otherwise a junk duplicate
-      // can clobber a real benchmark's ascent count and benchmark flag.
+      // time"). When two problems share the same holds (so they resolve to one
+      // target UUID) we keep the STRONGER problem (isBetterCatalogClimb: more
+      // total repeats across its graded angles, then benchmark) instead of
+      // last-wins — otherwise a junk duplicate can clobber a real benchmark's
+      // ascent count and benchmark flag.
       const bestByUuid = new Map<string, MappedCatalogClimb>();
       const climbByUuid = new Map<string, typeof boardClimbs.$inferInsert>();
       const statsByUuid = new Map<string, typeof boardClimbStats.$inferInsert>();
@@ -175,100 +176,116 @@ async function importMoonBoardCatalog() {
       let skippedProblems = 0;
 
       for (const problem of dump.problems) {
-        const climbs = catalogProblemToClimbs(problem, layoutId);
-        if (climbs.length === 0) {
+        const mapped = catalogProblemToClimbs(problem, layoutId);
+        if (!mapped) {
           skippedProblems++;
           continue;
         }
-        for (const mapped of climbs) {
-          const { uuid, matched: matchedExisting } = resolveCatalogClimbUuid(mapped, existingIndex);
+        const { uuid, matched: matchedExisting } = resolveCatalogClimbUuid(mapped, existingIndex);
 
-          // Record the aliases before the dedupe below: when two problems collapse
-          // onto one climb (same holds+angle) we drop the weaker climb row, but we
-          // still want BOTH problem ids to resolve to the survivor. The self-alias
-          // lets resolveCanonicalClimbUuid hit; the id-based alias (only added when
-          // the merge reused a legacy UUID) makes the climb addressable by its
-          // MoonBoard problem id — the fix for 2024 logbook imports.
-          for (const aliasRow of catalogAliasRows(mapped.uuid, uuid)) {
-            aliasByUuid.set(aliasRow.aliasUuid, {
-              boardType: 'moonboard',
-              aliasUuid: aliasRow.aliasUuid,
-              canonicalUuid: aliasRow.canonicalUuid,
-              source: 'moonboard-catalog-import',
-            });
-          }
-
-          const incumbent = bestByUuid.get(uuid);
-          if (incumbent) {
-            // Same holds+angle as an already-seen problem — keep the stronger one.
-            if (!isBetterCatalogClimb(mapped, incumbent)) continue;
-          } else if (matchedExisting) {
-            matched++;
-          } else {
-            inserted++;
-          }
-          bestByUuid.set(uuid, mapped);
-
-          climbByUuid.set(uuid, {
-            uuid,
+        // Record the aliases before the dedupe below: when two problems collapse
+        // onto one climb (same holds) we drop the weaker problem's data, but we
+        // still want BOTH problem ids to resolve to the survivor. The self-alias
+        // lets resolveCanonicalClimbUuid hit; the id-based alias (only added when
+        // the merge reused a legacy UUID) makes the climb addressable by its
+        // MoonBoard problem id; the per-angle legacy aliases keep the
+        // personal-logbook importer's `moonboard:{id}:{angle}` lookup resolving.
+        for (const aliasRow of catalogAliasRows({
+          problemId: problem.id,
+          angles: mapped.stats.map((stat) => stat.angle),
+          canonicalUuid: uuid,
+        })) {
+          aliasByUuid.set(aliasRow.aliasUuid, {
             boardType: 'moonboard',
-            layoutId: mapped.layoutId,
-            setterId: null,
-            setterUsername: mapped.setterUsername,
-            name: mapped.name,
-            description: mapped.description,
-            hsm: null,
-            edgeLeft: null,
-            edgeRight: null,
-            edgeBottom: null,
-            edgeTop: null,
-            angle: mapped.angle,
-            framesCount: 1,
-            framesPace: 0,
-            frames: mapped.frames,
-            isDraft: false,
-            isListed: true,
-            createdAt: mapped.createdAt,
-            synced: true,
-            syncError: null,
-            userId: null,
-            holdFingerprint: mapped.holdFingerprint,
-            characteristics: mapped.characteristics,
+            aliasUuid: aliasRow.aliasUuid,
+            canonicalUuid: aliasRow.canonicalUuid,
+            source: 'moonboard-catalog-import',
           });
+        }
 
-          statsByUuid.set(uuid, {
+        const incumbent = bestByUuid.get(uuid);
+        if (incumbent) {
+          // Same holds as an already-seen problem — keep the stronger one.
+          if (!isBetterCatalogClimb(mapped, incumbent)) continue;
+        } else if (matchedExisting) {
+          matched++;
+        } else {
+          inserted++;
+        }
+        bestByUuid.set(uuid, mapped);
+
+        climbByUuid.set(uuid, {
+          uuid,
+          boardType: 'moonboard',
+          layoutId: mapped.layoutId,
+          setterId: null,
+          setterUsername: mapped.setterUsername,
+          name: mapped.name,
+          description: mapped.description,
+          hsm: null,
+          edgeLeft: null,
+          edgeRight: null,
+          edgeBottom: null,
+          edgeTop: null,
+          angle: null,
+          framesCount: 1,
+          framesPace: 0,
+          frames: mapped.frames,
+          isDraft: false,
+          isListed: true,
+          createdAt: mapped.createdAt,
+          synced: true,
+          syncError: null,
+          userId: null,
+          holdFingerprint: mapped.holdFingerprint,
+          characteristics: mapped.characteristics,
+        });
+
+        // If this problem beat a previously-seen incumbent for the same uuid,
+        // the incumbent's stats/holds entries (keyed by uuid+angle/holdId) must
+        // be cleared first — the new winner's graded angles can differ from
+        // the old one's, and stale entries would otherwise linger.
+        for (const stat of incumbent?.stats ?? []) {
+          statsByUuid.delete(`${uuid}:${stat.angle}`);
+        }
+        for (const hold of incumbent?.holds ?? []) {
+          holdsByKey.delete(`${uuid}:${hold.holdId}`);
+        }
+
+        for (const stat of mapped.stats) {
+          statsByUuid.set(`${uuid}:${stat.angle}`, {
             boardType: 'moonboard',
             climbUuid: uuid,
-            angle: mapped.angle,
-            displayDifficulty: mapped.difficultyId ?? null,
-            benchmarkDifficulty: mapped.isBenchmark && mapped.difficultyId !== undefined ? mapped.difficultyId : null,
+            angle: stat.angle,
+            displayDifficulty: stat.difficultyId ?? null,
+            benchmarkDifficulty: stat.isBenchmark && stat.difficultyId !== undefined ? stat.difficultyId : null,
             // MoonBoard's community-repeat count is this board's upstream source.
             // Seed the total too (a fresh row has no Boardsesh ticks yet); the tick
             // recompute later adds boardsesh_ascensionist_count on top of upstream.
-            upstreamAscensionistCount: mapped.ascensionistCount,
-            ascensionistCount: mapped.ascensionistCount,
-            difficultyAverage: mapped.difficultyId ?? null,
-            qualityAverage: mapped.qualityAverage,
+            upstreamAscensionistCount: stat.ascensionistCount,
+            ascensionistCount: stat.ascensionistCount,
+            difficultyAverage: stat.difficultyId ?? null,
+            qualityAverage: stat.qualityAverage,
             // The manufacturer average also seeds upstream_quality_average (the
             // blend's upstream term). On a fresh INSERT quality_average == this
             // value because no Boardsesh votes exist yet; on conflict it re-blends.
-            upstreamQualityAverage: mapped.qualityAverage,
+            upstreamQualityAverage: stat.qualityAverage,
             qualityNormalized: true,
             faUsername: null,
             faAt: null,
             // MoonBoard catalog import is this board's upstream stats source.
             upstreamSyncedAt: new Date().toISOString(),
           });
+        }
 
-          for (const hold of mapped.holds) {
-            holdsByKey.set(`${uuid}:${hold.holdId}`, {
-              boardType: 'moonboard',
-              climbUuid: uuid,
-              holdId: hold.holdId,
-              frameNumber: 0,
-              holdState: hold.holdState,
-            });
-          }
+        for (const hold of mapped.holds) {
+          holdsByKey.set(`${uuid}:${hold.holdId}`, {
+            boardType: 'moonboard',
+            climbUuid: uuid,
+            holdId: hold.holdId,
+            frameNumber: 0,
+            holdState: hold.holdState,
+          });
         }
       }
 
