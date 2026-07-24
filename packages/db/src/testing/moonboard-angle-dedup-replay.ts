@@ -242,7 +242,7 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
  *    distinct angles, exercising every repoint/collision/merge path.
  *  - CASE B ("q25a"/"q25b"): a same-angle collision (both members at 25°) —
  *    must be left completely untouched.
- *  - CASE C ("r25"/"r25u"): a catalog row and a user-owned row that happen to
+ *  - CASE C ("r25"/"r30u"): a catalog row and a user-owned row that happen to
  *    share holds+angle — the user-owned row must never be touched.
  *  - CASE D ("t25"/"t40"/"t55"): a 3-angle group, proving the migration
  *    handles arbitrary group sizes, not just pairs.
@@ -643,6 +643,14 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
         rows.map((row) => row.angle),
         [25, 40, 55],
       );
+    },
+  },
+  {
+    name: 'CASE D: no spurious vote_counts row for a climb neither side ever voted on',
+    run: async (db) => {
+      const rows =
+        await db`SELECT 1 FROM vote_counts WHERE entity_type = 'climb' AND entity_id IN ('t25', 't40', 't55')`;
+      assert.equal(rows.length, 0, 'recompute, not invent — t25/t40/t55 never had a vote_counts row or any votes');
     },
   },
   {

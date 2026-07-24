@@ -269,6 +269,9 @@ BEGIN
   UPDATE playlist_climbs pc SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE pc.climb_uuid = m.alias_uuid;
 
+  -- A collision here can leave a gap in the circuit's position sequence
+  -- (the dropped alias's slot isn't resequenced) — accepted: position only
+  -- drives ORDER BY for circuit member display, which doesn't need contiguity.
   DELETE FROM board_circuits_climbs cc USING _mad_map m
    WHERE cc.board_type = 'moonboard' AND cc.climb_uuid = m.alias_uuid
      AND EXISTS (
@@ -354,6 +357,11 @@ BEGIN
          COALESCE(created.created_at, now())
     FROM agg
     LEFT JOIN created ON created.canonical_uuid = agg.canonical_uuid
+   -- Skip canonicals with no real vote data: recompute, don't invent. Without
+   -- this, a climb neither side ever voted on gets a spurious 0/0/0 ghost row
+   -- (agg's LEFT JOIN votes still produces a zero-count row for every
+   -- canonical in _mad_map, and created's INNER JOIN finds nothing for it).
+   WHERE agg.upvotes > 0 OR agg.downvotes > 0 OR created.canonical_uuid IS NOT NULL
   ON CONFLICT (entity_type, entity_id) DO UPDATE SET
     upvotes = excluded.upvotes, downvotes = excluded.downvotes, score = excluded.score,
     hot_score = excluded.hot_score, created_at = excluded.created_at;
