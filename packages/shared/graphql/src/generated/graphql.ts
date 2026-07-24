@@ -863,7 +863,7 @@ export type BulkVoteSummaryInput = {
 };
 
 export type CheckMoonBoardClimbDuplicatesInput = {
-  angle: Scalars['Int']['input'];
+  angle?: InputMaybe<Scalars['Int']['input']>;
   climbs: Array<MoonBoardClimbDuplicateCandidateInput>;
   layoutId: Scalars['Int']['input'];
 };

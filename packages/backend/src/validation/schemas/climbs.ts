@@ -252,7 +252,9 @@ export const SaveMoonBoardClimbInputSchema = z.object({
 
 export const CheckMoonBoardClimbDuplicatesInputSchema = z.object({
   layoutId: z.number().int().positive('Layout ID must be positive'),
-  angle: z.number().int().min(0).max(90),
+  // Accepted but no longer used server-side — see the schema comment on
+  // CheckMoonBoardClimbDuplicatesInput (new-climb-feed.ts).
+  angle: z.number().int().min(0).max(90).optional(),
   climbs: z
     .array(
       z.object({

@@ -4385,7 +4385,11 @@ input MoonBoardClimbDuplicateCandidateInput {
 
 input CheckMoonBoardClimbDuplicatesInput {
   layoutId: Int!
-  angle: Int!
+  # Accepted but no longer used server-side: a MoonBoard duplicate check is
+  # angle-agnostic (same holds = same climb, regardless of angle — see
+  # findMoonBoardDuplicateMatches). Kept optional, not removed, so existing
+  # clients that still send it aren't broken by a schema error.
+  angle: Int
   climbs: [MoonBoardClimbDuplicateCandidateInput!]!
 }
 
