@@ -1,6 +1,26 @@
+/**
+ * Context passed to the `onError` callback. `userId`/`board` are the original
+ * pair; the rest is the per-credential failure ledger snapshot so a callback
+ * (a future Sentry/metric wiring) can escalate on the *state* of a credential
+ * — how deep the consecutive-failure streak is and whether the attempt just
+ * quarantined it out of the pool — instead of firing identically for a
+ * one-off transient blip and a credential that's been dead for days.
+ */
+export type SyncErrorContext = {
+  userId?: string;
+  board?: string;
+  boardType?: string;
+  /** Resolved sync_status after this attempt (e.g. 'error', 'expired'). */
+  syncStatus?: string;
+  /** consecutive_failures after this attempt (drives backoff). */
+  consecutiveFailures?: number;
+  /** True when this attempt pushed the credential to 'expired' (out of the pool). */
+  quarantined?: boolean;
+};
+
 export type SyncRunnerConfig = {
   onLog?: (message: string) => void;
-  onError?: (error: Error, context: { userId?: string; board?: string }) => void;
+  onError?: (error: Error, context: SyncErrorContext) => void;
   /**
    * Minimum time between shared-sync attempts on the same board. Multiple users
    * cycling through user-sync within this window only trigger one shared-sync

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuroraRequestError } from '../api/errors';
-import { SyncRunner } from './sync-runner';
+import { CredentialSyncError, formatSyncHealthSummary, SyncRunner, type SyncHealthSnapshot } from './sync-runner';
 import type { AuroraBoardName } from '../api/types';
-import type { CredentialRecord } from './types';
+import type { CredentialRecord, SyncErrorContext } from './types';
 
 type SyncRunnerPrivates = {
   updateCredentialStatus: (
@@ -22,6 +22,10 @@ type SyncRunnerPrivates = {
   getActiveCredentials: () => Promise<CredentialRecord[]>;
   getNextCredentialToSync: () => Promise<CredentialRecord | null>;
   recordSyncFailure: (cred: CredentialRecord, errorMsg: string) => Promise<void>;
+  recordInvalidCredentialFailure: (
+    cred: CredentialRecord,
+    errorMessage: string,
+  ) => Promise<{ storedErrorMessage: string; status: string; quarantined: boolean }>;
 };
 
 const { mockDecrypt, mockEncrypt, mockSignIn, mockSyncUserData, mockSyncSharedData, mockSyncAuroraBoardLocations } =
@@ -427,5 +431,173 @@ describe('SyncRunner.recordSyncFailure', () => {
     // A transient/generic failure must NOT touch the user-facing status/error.
     expect(updates[0].syncStatus).toBeUndefined();
     expect(updates[0].syncError).toBeUndefined();
+    // A failed cycle must NEVER advance last_sync_at — that is the user-facing
+    // "last successful sync" and only the success path may stamp it.
+    expect(updates[0].lastSyncAt).toBeUndefined();
+  });
+
+  it('logs a FLAPPING event exactly when consecutive_failures crosses the threshold', async () => {
+    process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
+    const dbShim = {
+      update() {
+        return { set: () => ({ where: () => Promise.resolve() }) };
+      },
+    };
+
+    const runFor = async (priorConsecutiveFailures: number): Promise<string[]> => {
+      const logs: string[] = [];
+      const runner = new SyncRunner({ onLog: (msg) => logs.push(msg) });
+      const runnerPrivates = runner as unknown as SyncRunnerPrivates & {
+        getClient: () => { client: unknown; db: unknown };
+      };
+      vi.spyOn(runnerPrivates, 'getClient').mockReturnValue({ client: {}, db: dbShim });
+      await runnerPrivates.recordSyncFailure(
+        createCredential({ consecutiveFailures: priorConsecutiveFailures }),
+        'aurora exploded',
+      );
+      return logs;
+    };
+
+    // Threshold is 5: the 5th consecutive failure (prior 4 → new 5) fires once.
+    const atThreshold = await runFor(4);
+    expect(atThreshold.some((msg) => msg.includes('CREDENTIAL FLAPPING'))).toBe(true);
+    expect(atThreshold.find((msg) => msg.includes('CREDENTIAL FLAPPING'))).toContain('consecutiveFailures=5');
+
+    // One below the threshold (new 4): no flap yet.
+    const belowThreshold = await runFor(3);
+    expect(belowThreshold.some((msg) => msg.includes('CREDENTIAL FLAPPING'))).toBe(false);
+
+    // Already past the threshold (new 6): no repeat — the crossing already fired.
+    const pastThreshold = await runFor(5);
+    expect(pastThreshold.some((msg) => msg.includes('CREDENTIAL FLAPPING'))).toBe(false);
+  });
+});
+
+describe('SyncRunner.recordInvalidCredentialFailure quarantine event', () => {
+  beforeEach(() => {
+    process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
+  });
+
+  it('logs a QUARANTINED event only when the credential expires (2nd failure)', async () => {
+    const secondFailureLogs: string[] = [];
+    const secondRunner = new SyncRunner({ onLog: (msg) => secondFailureLogs.push(msg) });
+    const secondPrivates = secondRunner as unknown as SyncRunnerPrivates;
+    vi.spyOn(secondPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+
+    const secondResult = await secondPrivates.recordInvalidCredentialFailure(
+      createCredential({ credentialFailureCount: 1 }),
+      'Login failed: Invalid username or password',
+    );
+
+    expect(secondResult).toEqual({
+      storedErrorMessage: expect.stringContaining('expired after 2 failed credential attempts'),
+      status: 'expired',
+      quarantined: true,
+    });
+    const quarantineLine = secondFailureLogs.find((msg) => msg.includes('CREDENTIAL QUARANTINED'));
+    expect(quarantineLine).toBeDefined();
+    expect(quarantineLine).toContain('reason=invalid_credentials');
+
+    // First failure (count 0 → 1): still 'error', no quarantine event.
+    const firstFailureLogs: string[] = [];
+    const firstRunner = new SyncRunner({ onLog: (msg) => firstFailureLogs.push(msg) });
+    const firstPrivates = firstRunner as unknown as SyncRunnerPrivates;
+    vi.spyOn(firstPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+
+    const firstResult = await firstPrivates.recordInvalidCredentialFailure(
+      createCredential({ credentialFailureCount: 0 }),
+      'Login failed: Invalid username or password',
+    );
+
+    expect(firstResult.status).toBe('error');
+    expect(firstResult.quarantined).toBe(false);
+    expect(firstFailureLogs.some((msg) => msg.includes('CREDENTIAL QUARANTINED'))).toBe(false);
+  });
+});
+
+describe('SyncRunner enriched onError context', () => {
+  beforeEach(() => {
+    process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
+  });
+
+  it('reports the post-attempt failure ledger from a CredentialSyncError', async () => {
+    const contexts: SyncErrorContext[] = [];
+    const runner = new SyncRunner({ onError: (_error, context) => contexts.push(context) });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'getNextCredentialToSync').mockResolvedValue(
+      createCredential({ userId: 'user-Q', syncStatus: 'error', consecutiveFailures: 1 }),
+    );
+    vi.spyOn(runnerPrivates, 'recordSyncFailure').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'syncSingleCredential').mockRejectedValue(
+      new CredentialSyncError('Login failed: bad (expired ...)', { syncStatus: 'expired', quarantined: true }),
+    );
+
+    await runner.syncNextUser();
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toEqual({
+      userId: 'user-Q',
+      board: 'decoy',
+      boardType: 'decoy',
+      syncStatus: 'expired',
+      consecutiveFailures: 2,
+      quarantined: true,
+    });
+  });
+
+  it('falls back to pre-attempt status with quarantined=false for a generic (DB) error', async () => {
+    const contexts: SyncErrorContext[] = [];
+    const runner = new SyncRunner({ onError: (_error, context) => contexts.push(context) });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'getNextCredentialToSync').mockResolvedValue(
+      createCredential({ userId: 'user-D', syncStatus: 'active', consecutiveFailures: 0 }),
+    );
+    vi.spyOn(runnerPrivates, 'recordSyncFailure').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'syncSingleCredential').mockRejectedValue(new Error('Database error [code=23503]'));
+
+    await runner.syncNextUser();
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]).toEqual({
+      userId: 'user-D',
+      board: 'decoy',
+      boardType: 'decoy',
+      syncStatus: 'active',
+      consecutiveFailures: 1,
+      quarantined: false,
+    });
+  });
+});
+
+describe('formatSyncHealthSummary', () => {
+  it('renders counts, backoff, and the oldest attempt as an ISO string', () => {
+    const snapshot: SyncHealthSnapshot = {
+      total: 12,
+      active: 8,
+      pending: 1,
+      error: 2,
+      expired: 1,
+      inBackoff: 3,
+      oldestAttemptAt: new Date('2026-01-02T03:04:05.000Z'),
+    };
+    expect(formatSyncHealthSummary(snapshot)).toBe(
+      '[SyncRunner] Sync health: 12 aurora credentials — active=8 pending=1 error=2 expired=1; ' +
+        'inBackoff=3; oldestAttempt=2026-01-02T03:04:05.000Z',
+    );
+  });
+
+  it('renders "never" when some credential has never been attempted', () => {
+    const snapshot: SyncHealthSnapshot = {
+      total: 2,
+      active: 1,
+      pending: 1,
+      error: 0,
+      expired: 0,
+      inBackoff: 0,
+      oldestAttemptAt: null,
+    };
+    expect(formatSyncHealthSummary(snapshot)).toContain('oldestAttempt=never');
   });
 });

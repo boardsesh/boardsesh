@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { program } from 'commander';
+import { credentialBackoffMs } from '@boardsesh/db/queries';
 import { SyncRunner } from '../runner/sync-runner';
 import { AURORA_BOARDS } from '../api/types';
 import { AURORA_LOCATION_BOARDS, type AuroraLocationBoardName } from '../sync/locations-sync';
@@ -24,13 +25,32 @@ function createRunner(verbose: boolean): SyncRunner {
             msg.includes('Quiet hours') ||
             msg.includes('Waiting') ||
             msg.includes('No users') ||
-            msg.includes('Transient')
+            msg.includes('Transient') ||
+            // Stuck-credential observability events (see SyncRunner):
+            // CREDENTIAL QUARANTINED / CREDENTIAL FLAPPING and the hourly
+            // "Sync health" fleet summary must surface in non-verbose prod logs.
+            msg.includes('CREDENTIAL') ||
+            msg.includes('Sync health')
           ) {
             console.info(msg);
           }
         },
     onError: (error, context) => {
-      console.error(`Error syncing ${context.userId ?? 'daemon'}/${context.board ?? 'unknown'}:`, error.message);
+      // Surface the failure ledger snapshot so a stuck/quarantined credential is
+      // visible in the daemon logs (structured stdout; Railway captures it).
+      const ledger = [
+        context.consecutiveFailures !== undefined ? `consecutiveFailures=${context.consecutiveFailures}` : null,
+        context.syncStatus ? `syncStatus=${context.syncStatus}` : null,
+        context.quarantined ? 'quarantined=true' : null,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' ');
+      const suffix = ledger ? ` [${ledger}]` : '';
+      console.error(
+        `Error syncing ${context.userId ?? 'daemon'}/${context.board ?? 'unknown'}:`,
+        error.message,
+        suffix,
+      );
     },
   });
 }
@@ -152,6 +172,11 @@ program
           syncStatus: auroraCredentials.syncStatus,
           lastSyncAt: auroraCredentials.lastSyncAt,
           syncError: auroraCredentials.syncError,
+          // Failure ledger: surface the scheduler/backoff fields so an operator
+          // can see WHY a card is stuck and WHEN it retries next.
+          lastSyncAttemptAt: auroraCredentials.lastSyncAttemptAt,
+          consecutiveFailures: auroraCredentials.consecutiveFailures,
+          lastSyncError: auroraCredentials.lastSyncError,
         })
         .from(auroraCredentials);
 
@@ -160,6 +185,7 @@ program
       if (credentials.length === 0) {
         console.info('No credentials found.');
       } else {
+        const now = new Date();
         credentials.forEach((cred) => {
           let status = '○';
           if (cred.syncStatus === 'active') {
@@ -168,12 +194,29 @@ program
             status = '✗';
           }
           const lastSync = cred.lastSyncAt ? new Date(cred.lastSyncAt).toISOString() : 'never';
+          const lastAttempt = cred.lastSyncAttemptAt ? new Date(cred.lastSyncAttemptAt).toISOString() : 'never';
+          const consecutiveFailures = cred.consecutiveFailures ?? 0;
           console.info(`${status} ${cred.userId} (${cred.boardType})`);
           console.info(`    Aurora ID: ${cred.auroraUserId}`);
           console.info(`    Status: ${cred.syncStatus}`);
           console.info(`    Last sync: ${lastSync}`);
+          console.info(`    Last attempt: ${lastAttempt}`);
+          console.info(`    Consecutive failures: ${consecutiveFailures}`);
+          if (consecutiveFailures > 0 && cred.lastSyncAttemptAt) {
+            const backoffMs = credentialBackoffMs(consecutiveFailures);
+            const readyAt = new Date(new Date(cred.lastSyncAttemptAt).getTime() + backoffMs);
+            if (readyAt > now) {
+              const remainingMin = Math.ceil((readyAt.getTime() - now.getTime()) / 60000);
+              console.info(`    Backoff: retry-ready at ${readyAt.toISOString()} (~${remainingMin}m)`);
+            } else {
+              console.info(`    Backoff: retry-ready now`);
+            }
+          }
           if (cred.syncError) {
             console.info(`    Error: ${cred.syncError}`);
+          }
+          if (cred.lastSyncError && cred.lastSyncError !== cred.syncError) {
+            console.info(`    Last attempt error: ${cred.lastSyncError}`);
           }
           console.info('');
         });

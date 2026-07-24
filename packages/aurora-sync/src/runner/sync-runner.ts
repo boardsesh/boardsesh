@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, ne, and, or, isNotNull, sql } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema/auth';
-import { credentialRetryReadySql, selfHealStaleClimbStats } from '@boardsesh/db/queries';
+import { credentialBackoffMs, credentialRetryReadySql, selfHealStaleClimbStats } from '@boardsesh/db/queries';
 import { syncUserData } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
 import {
@@ -18,7 +18,7 @@ import { decrypt, encrypt } from '@boardsesh/crypto';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
 import { resolveDaemonOptions, runDaemonLoop } from './daemon';
-import type { SyncRunnerConfig, SyncSummary, CredentialRecord, DaemonOptions } from './types';
+import type { SyncRunnerConfig, SyncSummary, CredentialRecord, DaemonOptions, SyncErrorContext } from './types';
 
 type RunnerClient = ReturnType<typeof postgres>;
 type RunnerDb = ReturnType<typeof drizzle>;
@@ -32,6 +32,64 @@ type RunnerDb = ReturnType<typeof drizzle>;
 // (climbs, climb_stats); tune via SyncRunnerConfig.sharedSyncCooldownMs.
 const DEFAULT_SHARED_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
 const MAX_CREDENTIAL_FAILURES = 2;
+
+// Consecutive-failure count at which we emit a distinct FLAPPING log event.
+// The credential is already backing off and rotating out (the starvation fix);
+// this just makes "this one isn't a one-off blip" greppable for an operator.
+// At 5 consecutive failures the backoff has accumulated ~2+4+8+16 = 30 min of
+// skipped windows — a clear signal, and it fires exactly once (at the crossing)
+// because consecutive_failures increments by 1 per cycle.
+const CREDENTIAL_FLAP_THRESHOLD = 5;
+
+// Hourly gate for the read-only fleet health summary logged by the daemon.
+const SYNC_HEALTH_SUMMARY_COOLDOWN_MS = 60 * 60 * 1000;
+
+/**
+ * Failure carrying the credential's *resolved* post-attempt state so the
+ * `syncNextUser` catch can build an accurate {@link SyncErrorContext} without a
+ * re-read. Thrown by the deterministic-failure branches of
+ * syncSingleCredential (decryption, invalid-credential, other login error).
+ * Transient failures re-throw the original AuroraRequestError untouched (they
+ * do NOT change sync_status), and DB errors surface as plain Errors — both fall
+ * back to the credential's pre-attempt state in the catch, which is correct.
+ */
+export class CredentialSyncError extends Error {
+  readonly syncStatus: string;
+  readonly quarantined: boolean;
+
+  constructor(message: string, options: { syncStatus: string; quarantined: boolean }) {
+    super(message);
+    this.name = 'CredentialSyncError';
+    this.syncStatus = options.syncStatus;
+    this.quarantined = options.quarantined;
+  }
+}
+
+/** Read-only snapshot of the aurora credential fleet, for the health-summary log. */
+export type SyncHealthSnapshot = {
+  total: number;
+  active: number;
+  pending: number;
+  error: number;
+  expired: number;
+  /** Syncable credentials currently skipped because they're inside a backoff window. */
+  inBackoff: number;
+  /** Oldest last_sync_attempt_at across aurora credentials (null = some never attempted). */
+  oldestAttemptAt: Date | null;
+};
+
+/**
+ * Format a {@link SyncHealthSnapshot} as a single greppable log line. Pure so
+ * it's unit-testable without a database.
+ */
+export function formatSyncHealthSummary(snapshot: SyncHealthSnapshot): string {
+  const oldest = snapshot.oldestAttemptAt ? snapshot.oldestAttemptAt.toISOString() : 'never';
+  return (
+    `[SyncRunner] Sync health: ${snapshot.total} aurora credentials — ` +
+    `active=${snapshot.active} pending=${snapshot.pending} error=${snapshot.error} expired=${snapshot.expired}; ` +
+    `inBackoff=${snapshot.inBackoff}; oldestAttempt=${oldest}`
+  );
+}
 
 type CredentialFailureUpdate = {
   credentialFailureCount?: number;
@@ -56,6 +114,9 @@ export class SyncRunner {
   // immediately — exactly catching the debounced recomputes that the deploy's
   // restart dropped (the whole point of the self-heal).
   private lastSelfHealAt = 0;
+  // In-memory hourly gate for the fleet health summary. Resets to 0 on process
+  // start so the first daemon cycle after a deploy logs a snapshot immediately.
+  private lastHealthSummaryAt = 0;
 
   constructor(config: SyncRunnerConfig = {}) {
     this.config = config;
@@ -92,7 +153,7 @@ export class SyncRunner {
     }
   }
 
-  private handleError(error: Error, context: { userId?: string; board?: string }): void {
+  private handleError(error: Error, context: SyncErrorContext): void {
     if (this.config.onError) {
       this.config.onError(error, context);
     } else {
@@ -140,14 +201,31 @@ export class SyncRunner {
         boardType: cred.boardType,
         error: errorMsg,
       });
-      this.handleError(error instanceof Error ? error : new Error(errorMsg), {
-        userId: cred.userId,
-        board: cred.boardType,
-      });
+      this.handleError(error instanceof Error ? error : new Error(errorMsg), this.buildErrorContext(cred, error));
       this.log(`[SyncRunner] ✗ Failed to sync user ${cred.userId} for ${cred.boardType}: ${errorMsg}`);
     }
 
     return results;
+  }
+
+  /**
+   * Build the failure ledger snapshot handed to `onError`. `consecutiveFailures`
+   * is the post-attempt count (recordSyncFailure just bumped it by one). The
+   * resolved `syncStatus`/`quarantined` come from the CredentialSyncError thrown
+   * by a deterministic-failure branch; a transient or DB error carries neither,
+   * so we honestly fall back to the credential's pre-attempt status (unchanged
+   * for transient) with `quarantined: false`.
+   */
+  private buildErrorContext(cred: CredentialRecord, error: unknown): SyncErrorContext {
+    const resolved = error instanceof CredentialSyncError ? error : null;
+    return {
+      userId: cred.userId,
+      board: cred.boardType,
+      boardType: cred.boardType,
+      syncStatus: resolved?.syncStatus ?? cred.syncStatus ?? undefined,
+      consecutiveFailures: (cred.consecutiveFailures ?? 0) + 1,
+      quarantined: resolved?.quarantined ?? false,
+    };
   }
 
   /**
@@ -171,6 +249,18 @@ export class SyncRunner {
         updatedAt: attemptAt,
       })
       .where(and(eq(auroraCredentials.userId, cred.userId), eq(auroraCredentials.boardType, cred.boardType)));
+
+    // consecutive_failures is incremented in SQL above; mirror the resulting
+    // value in JS to fire the FLAPPING event exactly once, when the streak
+    // crosses the threshold (it grows by 1 per cycle, so `===` fires once).
+    const consecutiveFailures = (cred.consecutiveFailures ?? 0) + 1;
+    if (consecutiveFailures === CREDENTIAL_FLAP_THRESHOLD) {
+      const nextRetryMs = credentialBackoffMs(consecutiveFailures);
+      this.log(
+        `[SyncRunner] ✗ CREDENTIAL FLAPPING user=${cred.userId} board=${cred.boardType} ` +
+          `consecutiveFailures=${consecutiveFailures} nextRetryMs=${nextRetryMs} lastError=${errorMsg}`,
+      );
+    }
   }
 
   /** @deprecated Use syncNextUser() instead to avoid IP blocking */
@@ -256,6 +346,9 @@ export class SyncRunner {
           // hourly. Runs after the per-user sync so a fresh tick's recompute
           // has had its chance first.
           await this.maybeSelfHealRecomputes();
+          // Hourly read-only fleet health summary so stuck/quarantined/backing-off
+          // credentials are visible in the daemon logs without a manual DB query.
+          await this.maybeLogSyncHealth();
         },
         resolved,
         {
@@ -330,7 +423,7 @@ export class SyncRunner {
     } catch (decryptError) {
       const errorMessage = `Decryption failed: ${this.formatErrorMessage(decryptError)}`;
       await this.updateCredentialStatus(cred.userId, cred.boardType, 'error', errorMessage);
-      throw new Error(errorMessage);
+      throw new CredentialSyncError(errorMessage, { syncStatus: 'error', quarantined: false });
     }
 
     this.log(`[SyncRunner] Getting fresh token for user ${cred.userId} (${boardType})...`);
@@ -353,11 +446,14 @@ export class SyncRunner {
 
       const errorMessage = `Login failed: ${this.formatErrorMessage(loginError)}`;
       if (this.isInvalidCredentialError(loginError)) {
-        const storedErrorMessage = await this.recordInvalidCredentialFailure(cred, errorMessage);
-        throw new Error(storedErrorMessage);
+        const { storedErrorMessage, status, quarantined } = await this.recordInvalidCredentialFailure(
+          cred,
+          errorMessage,
+        );
+        throw new CredentialSyncError(storedErrorMessage, { syncStatus: status, quarantined });
       } else {
         await this.updateCredentialStatus(cred.userId, cred.boardType, 'error', errorMessage);
-        throw new Error(errorMessage);
+        throw new CredentialSyncError(errorMessage, { syncStatus: 'error', quarantined: false });
       }
     }
 
@@ -456,6 +552,63 @@ export class SyncRunner {
     }
   }
 
+  /**
+   * Read-only fleet snapshot for the health summary: counts by sync_status,
+   * how many syncable credentials are currently inside a backoff window, and
+   * the oldest attempt clock. Scoped to aurora credentials (board_type != kilter)
+   * and served by the same partial index the scheduler uses. One aggregate scan
+   * over a small table — safe to run every cycle even under an overlapping
+   * second daemon instance (#3539), since it never writes.
+   */
+  private async getSyncHealthSnapshot(): Promise<SyncHealthSnapshot> {
+    const { db } = this.getClient();
+    const rows = await db
+      .select({
+        total: sql<number>`(count(*))::int`,
+        active: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'active'))::int`,
+        pending: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'pending'))::int`,
+        error: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'error'))::int`,
+        expired: sql<number>`(count(*) filter (where ${auroraCredentials.syncStatus} = 'expired'))::int`,
+        inBackoff: sql<number>`(count(*) filter (
+          where ${auroraCredentials.syncStatus} in ('pending', 'active', 'error')
+            and not ${credentialRetryReadySql()}
+        ))::int`,
+        oldestAttemptAt: sql<Date | null>`min(${auroraCredentials.lastSyncAttemptAt})`,
+      })
+      .from(auroraCredentials)
+      .where(ne(auroraCredentials.boardType, 'kilter'));
+
+    const row = rows[0];
+    return {
+      total: Number(row?.total ?? 0),
+      active: Number(row?.active ?? 0),
+      pending: Number(row?.pending ?? 0),
+      error: Number(row?.error ?? 0),
+      expired: Number(row?.expired ?? 0),
+      inBackoff: Number(row?.inBackoff ?? 0),
+      oldestAttemptAt: row?.oldestAttemptAt ?? null,
+    };
+  }
+
+  /**
+   * Log the fleet health summary once an hour (in-memory gate, mirroring the
+   * self-heal). Read-only; a failure never breaks the daemon cycle.
+   */
+  private async maybeLogSyncHealth(): Promise<void> {
+    const now = Date.now();
+    if (this.lastHealthSummaryAt !== 0 && now - this.lastHealthSummaryAt < SYNC_HEALTH_SUMMARY_COOLDOWN_MS) {
+      return;
+    }
+    this.lastHealthSummaryAt = now;
+    try {
+      const snapshot = await this.getSyncHealthSnapshot();
+      this.log(formatSyncHealthSummary(snapshot));
+    } catch (error) {
+      this.handleError(error instanceof Error ? error : new Error(String(error)), {});
+      this.log(`[SyncRunner] Sync health summary failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   async syncLocations(
     board: AuroraLocationBoardName | 'all',
   ): Promise<LocationSyncSummary | Record<AuroraLocationBoardName, LocationSyncSummary>> {
@@ -519,26 +672,34 @@ export class SyncRunner {
     return isAuroraRequestError(error) && error.code === 'invalid_credentials';
   }
 
-  private async recordInvalidCredentialFailure(cred: CredentialRecord, errorMessage: string): Promise<string> {
+  private async recordInvalidCredentialFailure(
+    cred: CredentialRecord,
+    errorMessage: string,
+  ): Promise<{ storedErrorMessage: string; status: string; quarantined: boolean }> {
     const credentialFailureCount = (cred.credentialFailureCount ?? 0) + 1;
-    const expired = credentialFailureCount >= MAX_CREDENTIAL_FAILURES;
-    const storedErrorMessage = expired
+    const quarantined = credentialFailureCount >= MAX_CREDENTIAL_FAILURES;
+    const status = quarantined ? 'expired' : 'error';
+    const storedErrorMessage = quarantined
       ? `${errorMessage} (expired after ${MAX_CREDENTIAL_FAILURES} failed credential attempts; reconnect to resume sync)`
       : errorMessage;
 
-    await this.updateCredentialStatus(
-      cred.userId,
-      cred.boardType,
-      expired ? 'expired' : 'error',
-      storedErrorMessage,
-      undefined,
-      {
-        credentialFailureCount,
-        lastCredentialFailureAt: new Date(),
-      },
-    );
+    await this.updateCredentialStatus(cred.userId, cred.boardType, status, storedErrorMessage, undefined, {
+      credentialFailureCount,
+      lastCredentialFailureAt: new Date(),
+    });
 
-    return storedErrorMessage;
+    if (quarantined) {
+      // Distinct, greppable event at the moment the credential leaves the
+      // syncable pool — the point an operator needs to prompt the user to
+      // reconnect. (The generic ✗ failure line carries the same message, but
+      // this token makes the quarantine transition countable in the logs.)
+      this.log(
+        `[SyncRunner] ✗ CREDENTIAL QUARANTINED user=${cred.userId} board=${cred.boardType} ` +
+          `reason=invalid_credentials failures=${credentialFailureCount} — excluded from sync until reconnect`,
+      );
+    }
+
+    return { storedErrorMessage, status, quarantined };
   }
 
   private async updateStoredToken(userId: string, boardType: string, token: string): Promise<void> {
