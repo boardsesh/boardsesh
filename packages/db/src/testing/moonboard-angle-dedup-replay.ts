@@ -561,6 +561,9 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       const history =
         await db`SELECT 1 FROM board_climb_stats_history WHERE board_type = 'moonboard' AND climb_uuid = 'p40'`;
       assert.equal(history.length, 1);
+      const historyOrphaned =
+        await db`SELECT 1 FROM board_climb_stats_history WHERE board_type = 'moonboard' AND climb_uuid = 'p25'`;
+      assert.equal(historyOrphaned.length, 0, 'no stats_history rows left under the retired uuid');
       const events = await db`SELECT 1 FROM board_climb_events WHERE board_type = 'moonboard' AND climb_uuid = 'p40'`;
       assert.equal(events.length, 1);
       const proposals = await db`SELECT 1 FROM climb_proposals WHERE board_type = 'moonboard' AND climb_uuid = 'p40'`;

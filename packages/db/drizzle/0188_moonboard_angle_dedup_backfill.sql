@@ -110,7 +110,10 @@ BEGIN
   END IF;
 
   -- Live per-climb hold signature (board_climbs.hold_fingerprint is sparse —
-  -- see header — so compute it directly from board_climb_holds).
+  -- see header — so compute it directly from board_climb_holds). Deliberately
+  -- omits frame_number: MoonBoard climbs are always single-frame
+  -- (frames_count = 1, no multi-move routes), so it never distinguishes two
+  -- otherwise-identical hold sets here — safe to drop from the signature.
   CREATE TEMP TABLE _mad_fingerprints ON COMMIT DROP AS
     SELECT climb_uuid,
            string_agg(hold_id::text || ':' || hold_state, ',' ORDER BY hold_id) AS fp
@@ -364,7 +367,15 @@ BEGIN
   -- board_climb_send_stats has no angle dimension (PK is board_type+climb_uuid)
   -- and is a small PostHog-mined trending aggregate with no guaranteed
   -- near-term rebuild (unlike embeddings/similarity above), so its counts are
-  -- merged rather than dropped.
+  -- merged rather than dropped. send_count_30d/90d are true event counts, so
+  -- they sum cleanly. sender_count_30d is a DISTINCT-sender count we can't
+  -- deduplicate here without the raw per-user PostHog rows (this migration
+  -- only has each angle-row's already-aggregated count) — GREATEST is a
+  -- deliberate conservative floor (correct if the two angle-rows' senders
+  -- fully overlap, an undercount if they don't) rather than SUM, which would
+  -- double-count any climber who sent both angle variants. Acceptable given
+  -- the table's own "safe to be stale" contract; the next nightly job
+  -- recomputes it properly from raw events regardless.
   INSERT INTO board_climb_send_stats (board_type, climb_uuid, send_count_30d, sender_count_30d, send_count_90d, last_sent_at, updated_at)
   SELECT s.board_type, m.canonical_uuid, s.send_count_30d, s.sender_count_30d, s.send_count_90d, s.last_sent_at, now()
     FROM board_climb_send_stats s
