@@ -31,6 +31,7 @@ import {
 } from '../src/schema/boards/unified.js';
 import { boardseshTicks } from '../src/schema/app/ascents.js';
 import { recomputeClimbStatsBulk } from '../src/queries/climb-stats/recompute.js';
+import { clearAuroraBoardData, countBoardseshOwnedRows } from '../src/queries/boards/clear-aurora-board.js';
 import { normalizeQualityTo5 } from '@boardsesh/shared-schema';
 import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
 import {
@@ -59,7 +60,7 @@ type ImportConfig = {
 function parseBoardName(value: string | undefined): DirectAuroraBoard {
   if (!value || !DIRECT_AURORA_BOARDS.includes(value as DirectAuroraBoard)) {
     console.error(
-      `Usage: bunx tsx scripts/import-aurora-board-unified.ts <${DIRECT_AURORA_BOARDS.join('|')}> <sqlite-db-path>`,
+      `Usage: bunx tsx scripts/import-aurora-board-unified.ts <${DIRECT_AURORA_BOARDS.join('|')}> <sqlite-db-path> [--dry-run]`,
     );
     process.exit(1);
   }
@@ -531,41 +532,18 @@ async function insertBatches(
   }
 }
 
-async function clearBoardData(tx: PgDatabase<PgQueryResultHKT>, boardName: DirectAuroraBoard) {
-  // The rows deleted here are recreated in this same transaction; tell the
-  // sync tombstone triggers (log_deletion_board_climbs / _stats) to stand
-  // down, or the re-import floods sync_deletions with one NULL-scoped row per
-  // climb and every offline client deletes its just-repulled board copy.
-  // SET LOCAL scopes the GUC to this transaction only.
-  await tx.execute(sql`SET LOCAL boardsesh.suppress_sync_tombstones = 'on'`);
-  await tx.delete(boardTags).where(eq(boardTags.boardType, boardName));
-  await tx.delete(boardCircuitsClimbs).where(eq(boardCircuitsClimbs.boardType, boardName));
-  await tx.delete(boardBetaLinks).where(eq(boardBetaLinks.boardType, boardName));
-  await tx.delete(boardClimbStatsHistory).where(eq(boardClimbStatsHistory.boardType, boardName));
-  await tx.delete(boardClimbHolds).where(eq(boardClimbHolds.boardType, boardName));
-  await tx.delete(boardClimbStats).where(eq(boardClimbStats.boardType, boardName));
-  await tx.delete(boardCircuits).where(eq(boardCircuits.boardType, boardName));
-  await tx.delete(boardUserSyncs).where(eq(boardUserSyncs.boardType, boardName));
-  await tx.delete(boardWalls).where(eq(boardWalls.boardType, boardName));
-  await tx.delete(boardClimbs).where(eq(boardClimbs.boardType, boardName));
-  await tx.delete(boardProductSizesLayoutsSets).where(eq(boardProductSizesLayoutsSets.boardType, boardName));
-  await tx.delete(boardPlacements).where(eq(boardPlacements.boardType, boardName));
-  await tx.delete(boardLeds).where(eq(boardLeds.boardType, boardName));
-  await tx.delete(boardPlacementRoles).where(eq(boardPlacementRoles.boardType, boardName));
-  await tx.delete(boardHoles).where(eq(boardHoles.boardType, boardName));
-  await tx.delete(boardLayouts).where(eq(boardLayouts.boardType, boardName));
-  await tx.delete(boardProductSizes).where(eq(boardProductSizes.boardType, boardName));
-  await tx.delete(boardSets).where(eq(boardSets.boardType, boardName));
-  await tx.delete(boardProducts).where(eq(boardProducts.boardType, boardName));
-  await tx.delete(boardUsers).where(eq(boardUsers.boardType, boardName));
-  await tx.delete(boardSharedSyncs).where(eq(boardSharedSyncs.boardType, boardName));
-  await tx.delete(boardDifficultyGrades).where(eq(boardDifficultyGrades.boardType, boardName));
-  await tx.delete(boardAttempts).where(eq(boardAttempts.boardType, boardName));
-}
+// Thrown at the end of the import transaction under --dry-run to force Postgres
+// to roll the whole thing back; caught by identity in main() so the process
+// still exits 0. Nothing is committed, but the operator sees the full plan
+// (preserved counts, per-table row counts, recompute) exactly as a real run.
+const DRY_RUN_ROLLBACK = new Error('__dry_run_rollback__');
 
 async function main() {
-  const boardName = parseBoardName(process.argv[2]);
-  const sqlitePath = process.argv[3] ? path.resolve(process.cwd(), process.argv[3]) : '';
+  const args = process.argv.slice(2);
+  const dryRun = args.includes('--dry-run');
+  const positionals = args.filter((arg) => !arg.startsWith('--'));
+  const boardName = parseBoardName(positionals[0]);
+  const sqlitePath = positionals[1] ? path.resolve(process.cwd(), positionals[1]) : '';
 
   if (!sqlitePath || !fs.existsSync(sqlitePath)) {
     console.error(`SQLite database not found: ${sqlitePath || '<missing path>'}`);
@@ -576,6 +554,9 @@ async function main() {
   const dbHost = new URL(databaseUrl).host;
   console.info(`Importing ${boardName} from ${sqlitePath}`);
   console.info(`Target database: ${dbHost}`);
+  if (dryRun) {
+    console.info('Dry run: the import transaction will be rolled back — nothing is committed.');
+  }
 
   const availableTables = listSqliteTables(sqlitePath);
   const tableCache = new Map<string, SqliteRow[]>();
@@ -634,8 +615,17 @@ async function main() {
   try {
     const transactionalDb = db as unknown as PgDatabase<PgQueryResultHKT>;
     await transactionalDb.transaction(async (tx) => {
-      console.info(`Clearing existing ${boardName} rows from unified tables...`);
-      await clearBoardData(tx, boardName);
+      // Preflight: report the Boardsesh-owned rows this refresh must preserve
+      // (user-created climbs + their holds/stats, and Boardsesh-attached beta
+      // links). clearAuroraBoardData asserts these counts are unchanged after
+      // the scoped clear and rolls back if not (issue #3540).
+      const preserved = await countBoardseshOwnedRows(tx, boardName);
+      console.info(
+        `Preserving ${preserved.ownedClimbs} Boardsesh-owned climb(s) and ` +
+          `${preserved.boardseshBetaLinks} Boardsesh-attached beta link(s) for ${boardName}.`,
+      );
+      console.info(`Clearing existing upstream ${boardName} rows from unified tables...`);
+      await clearAuroraBoardData(tx, boardName);
 
       console.info(`Loading ${boardName} tables into unified schema...`);
 
@@ -703,19 +693,21 @@ async function main() {
       `);
 
       // Restore the Boardsesh tick-derived stats terms (issue #3540):
-      // clearBoardData hard-deleted every board_climb_stats row and the
-      // climb_stats reinsert above restores only the upstream side, so without
-      // this pass a re-run zeroes boardsesh_ascensionist_count AND the quality
-      // blend's boardsesh_quality_sum/count (leaving quality_average a stale
-      // pure-upstream value). Re-derive them from boardsesh_ticks for every key
-      // with >=1 flash/send tick on this board — recomputeClimbStatsBulk rebuilds
-      // the Boardsesh count, the materialized ascensionist total, the Boardsesh
-      // quality terms and the blended quality_average in one set-based pass, and
-      // its defensive seed re-creates stats rows for tick keys the reinsert
-      // didn't cover. Same transaction, so a crash can't leave the board with
-      // upstream-only stats. DIRECT_AURORA_BOARDS are small (decoy & friends),
-      // so the key set is at most a few thousand. Ticks pointing at climbs the
-      // re-import dropped entirely remain #3540's scope (climb deletion).
+      // clearAuroraBoardData replaced every UPSTREAM board_climb_stats row and the
+      // climb_stats reinsert above restores only the upstream side, so without this
+      // pass a re-run zeroes boardsesh_ascensionist_count AND the quality blend's
+      // boardsesh_quality_sum/count (leaving quality_average a stale pure-upstream
+      // value). Re-derive them from boardsesh_ticks for every key with >=1
+      // flash/send tick on this board — recomputeClimbStatsBulk rebuilds the
+      // Boardsesh count, the materialized ascensionist total, the Boardsesh quality
+      // terms and the blended quality_average in one set-based pass, updating both
+      // the reinserted upstream rows and the preserved owned-climb rows in place;
+      // its defensive seed re-creates stats rows for tick keys the reinsert didn't
+      // cover. Same transaction, so a crash can't leave the board with upstream-only
+      // stats. DIRECT_AURORA_BOARDS are small (decoy & friends), so the key set is
+      // at most a few thousand. Owned climbs are no longer dropped, so their ticks
+      // stay live; only upstream climbs genuinely removed from the new dump orphan
+      // their ticks — an upstream-catalog fact, not Boardsesh data loss.
       console.info(`  Recomputing Boardsesh tick-derived stats for ${boardName}...`);
       const tickKeys = await tx
         .selectDistinct({
@@ -729,9 +721,20 @@ async function main() {
         await recomputeClimbStatsBulk(tx, tickKeys);
         console.info(`  Recomputed ${tickKeys.length} tick key(s) for ${boardName}`);
       }
+
+      if (dryRun) {
+        console.info(`Dry run: rolling back the ${boardName} import — no changes committed.`);
+        throw DRY_RUN_ROLLBACK;
+      }
     });
 
     console.info(`Finished importing ${boardName}.`);
+  } catch (error) {
+    if (error === DRY_RUN_ROLLBACK) {
+      console.info(`Dry run complete for ${boardName}. Transaction rolled back; nothing was written.`);
+    } else {
+      throw error;
+    }
   } finally {
     await close();
   }

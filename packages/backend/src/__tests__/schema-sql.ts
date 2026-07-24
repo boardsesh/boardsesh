@@ -363,6 +363,172 @@ export const schemaSQL = `
     PRIMARY KEY ("board_type", "id")
   );
 
+  -- Remaining Aurora catalog tables. The direct-Aurora unified importer's
+  -- provenance-scoped clear (clearAuroraBoardData, issue #3540) DELETEs from
+  -- every board catalog table; these stubs let that clear run against the test
+  -- DB. Minimal (no cross-table FKs) — the tests never insert into them.
+  CREATE TABLE IF NOT EXISTS "board_attempts" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "position" integer,
+    "name" text,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_products" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "name" text,
+    "is_listed" boolean,
+    "password" text,
+    "min_count_in_frame" integer,
+    "max_count_in_frame" integer,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_sets" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "name" text,
+    "hsm" integer,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_users" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "username" text,
+    "created_at" text,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_layouts" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "product_id" integer,
+    "name" text,
+    "instagram_caption" text,
+    "is_mirrored" boolean,
+    "is_listed" boolean,
+    "password" text,
+    "created_at" text,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_product_sizes" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "product_id" integer NOT NULL,
+    "edge_left" integer,
+    "edge_right" integer,
+    "edge_bottom" integer,
+    "edge_top" integer,
+    "name" text,
+    "description" text,
+    "image_filename" text,
+    "position" integer,
+    "is_listed" boolean,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_holes" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "product_id" integer,
+    "name" text,
+    "x" integer,
+    "y" integer,
+    "mirrored_hole_id" integer,
+    "mirror_group" integer DEFAULT 0,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_placement_roles" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "product_id" integer,
+    "position" integer,
+    "name" text,
+    "full_name" text,
+    "led_color" text,
+    "screen_color" text,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_leds" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "product_size_id" integer,
+    "hole_id" integer,
+    "position" integer,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_product_sizes_layouts_sets" (
+    "board_type" text NOT NULL,
+    "id" integer NOT NULL,
+    "product_size_id" integer,
+    "layout_id" integer,
+    "set_id" integer,
+    "image_filename" text,
+    "is_listed" boolean,
+    PRIMARY KEY ("board_type", "id")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_walls" (
+    "board_type" text NOT NULL,
+    "uuid" text NOT NULL,
+    "user_id" integer,
+    "name" text,
+    "product_id" integer,
+    "is_adjustable" boolean,
+    "angle" integer,
+    "layout_id" integer,
+    "product_size_id" integer,
+    "hsm" integer,
+    "serial_number" text,
+    "created_at" text,
+    PRIMARY KEY ("board_type", "uuid")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_user_syncs" (
+    "board_type" text NOT NULL,
+    "user_id" integer NOT NULL,
+    "table_name" text NOT NULL,
+    "last_synchronized_at" text,
+    PRIMARY KEY ("board_type", "user_id", "table_name")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_circuits" (
+    "board_type" text NOT NULL,
+    "uuid" text NOT NULL,
+    "name" text,
+    "description" text,
+    "color" text,
+    "user_id" integer,
+    "is_public" boolean,
+    "created_at" text,
+    "updated_at" text,
+    PRIMARY KEY ("board_type", "uuid")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_circuits_climbs" (
+    "board_type" text NOT NULL,
+    "circuit_uuid" text NOT NULL,
+    "climb_uuid" text NOT NULL,
+    "position" integer,
+    PRIMARY KEY ("board_type", "circuit_uuid", "climb_uuid")
+  );
+
+  CREATE TABLE IF NOT EXISTS "board_tags" (
+    "board_type" text NOT NULL,
+    "entity_uuid" text NOT NULL,
+    "user_id" integer NOT NULL,
+    "name" text NOT NULL,
+    "is_listed" boolean,
+    PRIMARY KEY ("board_type", "entity_uuid", "user_id", "name")
+  );
+
   DROP TABLE IF EXISTS "board_climb_holds" CASCADE;
   CREATE TABLE IF NOT EXISTS "board_climb_holds" (
     "board_type" text NOT NULL,
