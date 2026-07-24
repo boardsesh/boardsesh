@@ -59,12 +59,13 @@
 --     reference, so it stays as originally recorded.
 --   * app_feedback.context.climbUuid — informational JSONB, not a real
 --     relational reference.
---   * board_climb_ratings — structurally CANNOT contain a moonboard row: its
---     only writer in the whole codebase (packages/kilter-sync/src/sync/
---     user-sync.ts) hardcodes boardType to KILTER_BOARD_TYPE. Verified by
---     reading every insert into this table, not inferred from a prod count
---     (no prod DB access at authoring time) — grep `insert(boardClimbRatings`
---     across the repo to re-confirm if this ever changes.
+-- board_climb_ratings IS defensively repointed below (step 5b) even though
+-- it structurally CANNOT contain a moonboard row today: its only writer in
+-- the whole codebase (packages/kilter-sync/src/sync/user-sync.ts) hardcodes
+-- boardType to KILTER_BOARD_TYPE (verified by reading every insert into this
+-- table, not inferred from a prod count — no prod DB access at authoring
+-- time). The repoint is a no-op today and costs nothing; it's there so this
+-- migration stays correct if that ever changes.
 -- (board_climb_stats_history IS repointed below, unlike 0163/0165/0166's
 -- ticks-merge migrations — this one never deletes a climb row, so repointing
 -- the audit trail is safe and keeps it queryable from the canonical uuid.)
@@ -186,6 +187,19 @@ BEGIN
   -- 1. Alias every non-canonical row onto the canonical. Repoint any
   --    pre-existing alias that (unexpectedly) already pointed at an
   --    alias_uuid first, defensively, then upsert the direct alias.
+  --    This UPDATE fixes EVERY row whose canonical_uuid currently equals ANY
+  --    alias_uuid being retired in this batch (_mad_map), regardless of how
+  --    many logical hops that row represents in some pre-existing chain — so
+  --    this migration never WORSENS chain depth for anything it touches.
+  --    KNOWN LIMITATION (pre-existing, not introduced here, same as 0163):
+  --    packages/db/src/queries/aliases.ts's resolveCanonicalClimbUuid (the
+  --    general app-wide resolver used by ticks/climb lookups) does a SINGLE
+  --    lookup, not a full chain walk. If some OTHER, unrelated process ever
+  --    created a chain deeper than one hop (Y -> X -> Z, where X is not
+  --    itself retired by this migration), that resolver already returned the
+  --    intermediate node X for Y before this migration ran, and still will
+  --    after — orthogonal to what 0185 does. No evidence this shape exists in
+  --    prod; flattening it would be a separate, general alias-integrity fix.
   UPDATE board_climb_aliases a
      SET canonical_uuid = m.canonical_uuid, last_seen_at = now()
     FROM _mad_map m
@@ -299,28 +313,47 @@ BEGIN
   UPDATE board_beta_links bl SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE bl.board_type = 'moonboard' AND bl.climb_uuid = m.alias_uuid;
 
-  -- 5. Angle-scoped uniqueness tables: a collision is not expected (angle
-  --    differs by construction — _mad_groups guarantees distinct angles per
-  --    group) but the dedupe-then-update shape costs nothing extra, so it's
-  --    kept for defense-in-depth.
+  -- 5. Angle-scoped uniqueness tables. A collision at the ALIAS MEMBER's own
+  --    angle (m.angle) isn't expected — _mad_groups guarantees distinct
+  --    angles per group — but the dedupe check below matches on each row's
+  --    OWN angle (not m.angle), so it also defends the row unconditionally:
+  --    if a row somehow exists at a DIFFERENT angle than the member's own
+  --    (e.g. m.angle=25 but this row is angle=40), the subsequent UPDATE has
+  --    no angle filter and would otherwise risk a unique-constraint failure
+  --    on an untested angle. Matching every row's actual angle, not just
+  --    m.angle, closes that gap at no extra cost.
   DELETE FROM user_favorites uf USING _mad_map m
-   WHERE uf.board_name = 'moonboard' AND uf.climb_uuid = m.alias_uuid AND uf.angle = m.angle
+   WHERE uf.board_name = 'moonboard' AND uf.climb_uuid = m.alias_uuid
      AND EXISTS (
        SELECT 1 FROM user_favorites uf2
         WHERE uf2.user_id = uf.user_id AND uf2.board_name = 'moonboard'
-          AND uf2.climb_uuid = m.canonical_uuid AND uf2.angle = m.angle
+          AND uf2.climb_uuid = m.canonical_uuid AND uf2.angle = uf.angle
      );
   UPDATE user_favorites uf SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE uf.board_name = 'moonboard' AND uf.climb_uuid = m.alias_uuid;
 
   DELETE FROM climb_community_status ccs USING _mad_map m
-   WHERE ccs.board_type = 'moonboard' AND ccs.climb_uuid = m.alias_uuid AND ccs.angle = m.angle
+   WHERE ccs.board_type = 'moonboard' AND ccs.climb_uuid = m.alias_uuid
      AND EXISTS (
        SELECT 1 FROM climb_community_status ccs2
-        WHERE ccs2.board_type = 'moonboard' AND ccs2.climb_uuid = m.canonical_uuid AND ccs2.angle = m.angle
+        WHERE ccs2.board_type = 'moonboard' AND ccs2.climb_uuid = m.canonical_uuid AND ccs2.angle = ccs.angle
      );
   UPDATE climb_community_status ccs SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE ccs.board_type = 'moonboard' AND ccs.climb_uuid = m.alias_uuid;
+
+  -- 5b. board_climb_ratings — see header: no MoonBoard row can exist today
+  -- (only writer hardcodes boardType to Kilter), so this is a defensive no-op
+  -- kept in case that ever changes. Same dedupe-then-update shape, unique key
+  -- (board_type, climb_uuid, angle, user_id).
+  DELETE FROM board_climb_ratings bcr USING _mad_map m
+   WHERE bcr.board_type = 'moonboard' AND bcr.climb_uuid = m.alias_uuid
+     AND EXISTS (
+       SELECT 1 FROM board_climb_ratings bcr2
+        WHERE bcr2.board_type = 'moonboard' AND bcr2.climb_uuid = m.canonical_uuid
+          AND bcr2.angle = bcr.angle AND bcr2.user_id = bcr.user_id
+     );
+  UPDATE board_climb_ratings bcr SET climb_uuid = m.canonical_uuid
+    FROM _mad_map m WHERE bcr.board_type = 'moonboard' AND bcr.climb_uuid = m.alias_uuid;
 
   -- 6. votes: drop the losing duplicate (a user who voted on both angle-rows
   --    keeps only their canonical-row vote), repoint survivors, then

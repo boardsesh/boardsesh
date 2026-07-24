@@ -188,6 +188,16 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
     UNIQUE (climb_uuid, board_type, angle)
   );
 
+  CREATE TABLE board_climb_ratings (
+    id bigserial PRIMARY KEY,
+    board_type text NOT NULL,
+    climb_uuid text NOT NULL,
+    angle integer NOT NULL,
+    user_id text NOT NULL,
+    rating integer,
+    UNIQUE (board_type, climb_uuid, angle, user_id)
+  );
+
   CREATE TABLE votes (
     id bigserial PRIMARY KEY,
     user_id text NOT NULL,
