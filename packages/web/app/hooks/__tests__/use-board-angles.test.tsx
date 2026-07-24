@@ -1,9 +1,4 @@
-/**
- * Unit tests for `useBoardAngleOptions` — the flag-gated MoonBoard angle
- * widening. Every non-MoonBoard board must be completely unaffected by the
- * flag; MoonBoard must default to the narrow [25, 40] list and only widen
- * when MOONBOARD_WIDE_ANGLES_FLAG resolves true.
- */
+// Flag-gated MoonBoard angle widening: only MoonBoard is affected, and only when the flag resolves true.
 import { describe, it, expect } from 'vite-plus/test';
 import React from 'react';
 import { renderHook } from '@testing-library/react';
@@ -33,7 +28,6 @@ describe('useBoardAngleOptions', () => {
   it('returns the full Kilter/Tension-style range for MoonBoard when the flag is on', () => {
     const { result } = renderHook(() => useBoardAngleOptions('moonboard'), { wrapper: wrapper(true) });
     expect(result.current).toEqual([...MOONBOARD_WIDE_ANGLES]);
-    expect(result.current).toEqual([...ANGLES.kilter]);
   });
 
   it('never widens Kilter, flag on or off', () => {

@@ -5,16 +5,14 @@ import { useFeatureFlag } from '@/app/components/providers/feature-flags-provide
 import type { BoardName } from '@/app/lib/types';
 import type { Angle } from '@boardsesh/board-config';
 
-/**
- * The angle options an angle picker should offer for `boardName`. Identical
- * to `ANGLES[boardName]` for every board except MoonBoard, which stays
- * limited to `ANGLES.moonboard` (25°/40°) unless MOONBOARD_WIDE_ANGLES_FLAG
- * is on, in which case it offers the full Kilter/Tension-style range.
- */
+// Module scope so every call returns the same array reference (a stable dep/memo key).
+const MOONBOARD_WIDE_ANGLE_OPTIONS: Angle[] = [...MOONBOARD_WIDE_ANGLES];
+
+// Angle options for `boardName`: ANGLES[boardName], except MoonBoard swaps in the full range when MOONBOARD_WIDE_ANGLES_FLAG is on.
 export function useBoardAngleOptions(boardName: BoardName): Angle[] {
   const wideAnglesEnabled = useFeatureFlag(MOONBOARD_WIDE_ANGLES_FLAG);
   if (boardName === 'moonboard' && wideAnglesEnabled) {
-    return [...MOONBOARD_WIDE_ANGLES];
+    return MOONBOARD_WIDE_ANGLE_OPTIONS;
   }
   return ANGLES[boardName];
 }
