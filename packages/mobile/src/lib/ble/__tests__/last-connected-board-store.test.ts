@@ -63,4 +63,18 @@ describe('last-connected-board-store', () => {
     const { getStoredLastConnectedBoard } = await import('../last-connected-board-store');
     await expect(getStoredLastConnectedBoard()).resolves.toBeNull();
   });
+
+  it('rejects a stored payload with both a serial and a device id set', async () => {
+    // The two handles are mutually exclusive by board generation — the writer
+    // never sets both. A record with both is an unvalidated/foreign write, so
+    // it must fail visibly (null → picker fallback) rather than silently
+    // reconnecting on an ambiguous pairing.
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+    await asyncStorage.setItem(
+      'boardsesh_last_connected_board_v1',
+      JSON.stringify({ configKey: 'moonboard::1::2', serial: 'ABC123', deviceId: 'device-1' }),
+    );
+    const { getStoredLastConnectedBoard } = await import('../last-connected-board-store');
+    await expect(getStoredLastConnectedBoard()).resolves.toBeNull();
+  });
 });

@@ -995,6 +995,50 @@ describe('useBoardBluetooth', () => {
     expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Stolen')).toBeUndefined();
   });
 
+  it('reports the first ambiguous MoonBoard write_failed as an error, only downgrading once the streak confirms a dead link', async () => {
+    // The first `write_failed` could be a genuine write bug unrelated to a dead
+    // link — it must still surface at 'error' level so it isn't drowned out.
+    // Only the second (streak-confirmed) failure, which drops the connection,
+    // downgrades to 'warning' — mirroring the routine-disconnect treatment.
+    const fakeAdapter = makeFakeAdapter({
+      requestAndConnect: vi.fn().mockResolvedValue({ deviceId: 'moon-1', deviceName: 'MoonBoard' }),
+      write: vi.fn().mockRejectedValue(new Error('Write failed')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x09]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    await act(async () => {
+      await result.current.connect();
+    });
+
+    await act(async () => {
+      await result.current.sendFramesToBoard('p100r12');
+    });
+    const sendFailureCalls = vi
+      .mocked(reportHandledError)
+      .mock.calls.filter(([, options]) => options?.tags?.source === 'ble-send');
+    expect(sendFailureCalls).toHaveLength(1);
+    expect(sendFailureCalls[0][1]).toMatchObject({ level: 'error' });
+
+    await act(async () => {
+      await result.current.sendFramesToBoard('p101r12');
+    });
+    const sendFailureCallsAfterDrop = vi
+      .mocked(reportHandledError)
+      .mock.calls.filter(([, options]) => options?.tags?.source === 'ble-send');
+    expect(sendFailureCallsAfterDrop).toHaveLength(2);
+    expect(sendFailureCallsAfterDrop[1][1]).toMatchObject({ level: 'warning' });
+  });
+
   it('resets the MoonBoard dead-link streak after a successful write (no drop on isolated glitches)', async () => {
     // Two write failures with a success between them must not drop the link: the
     // success proves the board is alive, so the streak resets and the second

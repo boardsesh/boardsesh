@@ -722,9 +722,13 @@ export function useBoardBluetooth({
           // A dropped link is routine on these last-connection-wins boards
           // (another climber grabbed it, or it disconnected mid-session), so keep
           // it a filterable warning rather than a full error that drowns real
-          // write bugs. Already tracked above via ClimbSentToBoardFailure.
+          // write bugs. Already tracked above via ClimbSentToBoardFailure. Only
+          // downgrade a MoonBoard `write_failed` once the streak *confirms* a dead
+          // link (moonboardDeadLink) — the first, still-ambiguous failure could be
+          // a genuine write bug unrelated to the supervision-timeout pattern, and
+          // that should still surface as an error.
           reportHandledError(error, {
-            level: lostLink || moonboardWriteFailed ? 'warning' : 'error',
+            level: lostLink || moonboardDeadLink ? 'warning' : 'error',
             tags: { source: 'ble-send', failure_reason: bleFailureReason },
             extra: writeDiagnostics ? { bleWriteDiagnostics: writeDiagnostics } : undefined,
           });

@@ -45,6 +45,12 @@ function isStoredLastConnectedBoard(value: unknown): value is StoredLastConnecte
   // config-only record can never be offered as a reconnect target.
   if (candidate.serial !== undefined && !hasSerial) return false;
   if (candidate.deviceId !== undefined && !hasDeviceId) return false;
+  // The two handles are mutually exclusive by board generation (Aurora serial vs.
+  // MoonBoard device id) — the writer only ever sets one. Reject a record with
+  // both rather than silently picking one, so a future writer bug that sets both
+  // fails visibly (falls back to the picker) instead of reconnecting on an
+  // unvalidated pairing.
+  if (hasSerial && hasDeviceId) return false;
   return hasSerial || hasDeviceId;
 }
 
