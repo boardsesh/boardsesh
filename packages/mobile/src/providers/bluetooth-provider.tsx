@@ -277,6 +277,15 @@ function BluetoothAutoSender({
       colorSignature,
     };
 
+    // TEMP DIAG (ble-relight-diag): remove once the Expo-web relight regression
+    // is confirmed fixed on a real board.
+    if (__DEV__) {
+      console.warn('[ble-relight-diag] AutoSender fired', {
+        climbUuid: currentClimbQueueItem.climb.uuid,
+        isWriting: isWritingRef.current,
+      });
+    }
+
     if (isWritingRef.current) {
       pendingSendRef.current = sendRequest;
       return;
@@ -373,6 +382,15 @@ function BluetoothAutoSender({
               climbBoardType: item.climb.boardType,
               climbLayoutId: item.climb.layoutId,
             });
+
+            // TEMP DIAG (ble-relight-diag): remove once confirmed fixed on a board.
+            if (__DEV__) {
+              console.warn('[ble-relight-diag] AutoSender send result', {
+                climbUuid: item.climb.uuid,
+                result,
+                signalAborted: signal?.aborted ?? null,
+              });
+            }
 
             // After the await, the AutoSender may have unmounted — skip
             // post-send side effects.

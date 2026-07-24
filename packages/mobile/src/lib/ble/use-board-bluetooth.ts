@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState } from 'react-native';
+import { Alert, AppState, Platform } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import {
@@ -309,6 +309,37 @@ function mergeAbortSignals(signalA: AbortSignal, signalB: AbortSignal): { signal
   return { signal: controller.signal, dispose: detach };
 }
 
+/**
+ * Resolve the AbortSignal an adapter write runs under, plus a `dispose` to detach
+ * any listeners the merge added.
+ *
+ * - **Native** (`platformOS !== 'web'`): merge the caller signal with the
+ *   per-connection generation controller, so a reconnect (which aborts the
+ *   generation controller) cancels this in-flight write.
+ * - **Web** (`platformOS === 'web'`): pass the caller signal straight through with
+ *   NO generation merge, mirroring the proven Next.js web app. On web a reconnect
+ *   swaps in a fresh WebBluetoothAdapter + characteristic and disconnects the old
+ *   one, so a stale write fails closed on its own — the merge buys nothing. The
+ *   merge was also the one wrapper the working web path never had, sitting on the
+ *   exact seam where Expo web relit the FIRST climb (connect() sends it with no
+ *   caller signal, bypassing the merge) but risked silently no-op'ing the ones
+ *   after (every AutoSender send passes a caller signal through the merge).
+ *
+ * Exported for testing.
+ */
+export function resolveWriteSignal(
+  callerSignal: AbortSignal | undefined,
+  generationSignal: AbortSignal,
+  platformOS: string,
+): { combinedSignal: AbortSignal; dispose: () => void } {
+  const mergeGenerationSignal = platformOS !== 'web';
+  const merged = callerSignal && mergeGenerationSignal ? mergeAbortSignals(callerSignal, generationSignal) : null;
+  return {
+    combinedSignal: merged ? merged.signal : (callerSignal ?? generationSignal),
+    dispose: merged ? merged.dispose : () => {},
+  };
+}
+
 export function useBoardBluetooth({
   boardName,
   layoutId,
@@ -493,7 +524,20 @@ export function useBoardBluetooth({
 
   const sendFramesToBoard = useCallback(
     async (frames: string, mirrored: boolean = false, signal?: AbortSignal, sendContext?: BleSendContext) => {
-      if (!adapterRef.current || !boardName || layoutId === undefined || sizeId === undefined) return;
+      if (!adapterRef.current || !boardName || layoutId === undefined || sizeId === undefined) {
+        // TEMP DIAG (ble-relight-diag): remove once the Expo-web relight regression
+        // is confirmed fixed on a real board.
+        if (__DEV__) {
+          console.warn('[ble-relight-diag] send bailed at precondition', {
+            hasAdapter: !!adapterRef.current,
+            boardName,
+            layoutId,
+            sizeId,
+            sendSource: sendContext?.sendSource,
+          });
+        }
+        return;
+      }
       // Resolved here (where layoutId is narrowed to a number) so the nested
       // performSend closure can use it. Mini LED strips are 12 rows, standard 18.
       const moonNumRows = getMoonBoardGeometryByLayoutId(layoutId).numRows;
@@ -514,9 +558,25 @@ export function useBoardBluetooth({
       }
       const generationSignal = writeAbortRef.current.signal;
 
-      // Combine caller-provided signal with the generation controller.
-      const merged = signal ? mergeAbortSignals(signal, generationSignal) : null;
-      const combinedSignal = merged ? merged.signal : generationSignal;
+      // Resolve the signal the adapter write runs under. Native merges the caller
+      // signal with the generation controller; web passes the caller signal
+      // straight through (see resolveWriteSignal).
+      const { combinedSignal, dispose: disposeWriteSignal } = resolveWriteSignal(signal, generationSignal, Platform.OS);
+
+      // TEMP DIAG (ble-relight-diag): remove once the Expo-web relight regression
+      // is confirmed fixed on a real board.
+      if (__DEV__) {
+        console.warn('[ble-relight-diag] send start', {
+          platform: Platform.OS,
+          sendSource: sendContext?.sendSource,
+          framesHead: frames.slice(0, 24),
+          hasCallerSignal: !!signal,
+          callerAborted: signal?.aborted ?? null,
+          generationAborted: generationSignal.aborted,
+          combinedAborted: combinedSignal.aborted,
+          combinedIsCaller: combinedSignal === signal,
+        });
+      }
 
       const performSend = async (): Promise<boolean | undefined> => {
         // Transport diagnostics of the write that just settled (#3230) — iOS
@@ -534,7 +594,17 @@ export function useBoardBluetooth({
           // The send may have queued behind another write; by the time it runs
           // the connection generation may be gone (reconnect/disconnect) — bail
           // before touching the (possibly new) adapter.
-          if (combinedSignal.aborted || !adapterRef.current) return;
+          if (combinedSignal.aborted || !adapterRef.current) {
+            // TEMP DIAG (ble-relight-diag): remove once confirmed fixed on a board.
+            if (__DEV__) {
+              console.warn('[ble-relight-diag] performSend bailed', {
+                combinedAborted: combinedSignal.aborted,
+                hasAdapter: !!adapterRef.current,
+                sendSource: sendContext?.sendSource,
+              });
+            }
+            return;
+          }
           sendAdapter = adapterRef.current;
 
           if (boardName === 'moonboard') {
@@ -659,6 +729,13 @@ export function useBoardBluetooth({
           }
 
           await adapterRef.current.write(result.packet, combinedSignal);
+          // TEMP DIAG (ble-relight-diag): remove once confirmed fixed on a board.
+          if (__DEV__) {
+            console.warn('[ble-relight-diag] write resolved (packet sent)', {
+              packetBytes: result.packet.length,
+              sendSource: sendContext?.sendSource,
+            });
+          }
           track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
             ...boardAnalyticsProperties,
             ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),
@@ -705,7 +782,7 @@ export function useBoardBluetooth({
           }
           return false;
         } finally {
-          merged?.dispose();
+          disposeWriteSignal();
         }
       };
 

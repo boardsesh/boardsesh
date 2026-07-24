@@ -135,6 +135,7 @@ import {
   convertToMirroredFramesString,
   dispatchMoonboardPacket,
   moonboardNumRowsForNative,
+  resolveWriteSignal,
   useBoardBluetooth,
 } from '../use-board-bluetooth';
 import type { BleWriteDiagnostics } from '../types';
@@ -1748,5 +1749,80 @@ describe('bleWriteDiagnosticsProperties', () => {
       bleCanSendAtTrip: true,
       bleWriteDurationMs: 88,
     });
+  });
+});
+
+describe('resolveWriteSignal', () => {
+  // The Expo-web relight regression: after the connect-time first send (which
+  // carries no caller signal), every AutoSender send passed a caller signal
+  // through the native generation-signal merge. Web now bypasses that merge and
+  // passes the caller signal straight through, mirroring the proven Next.js web
+  // app. These lock in that platform split.
+
+  it('web: passes the caller signal straight through (no merge wrapper)', () => {
+    const caller = new AbortController();
+    const generation = new AbortController();
+    const { combinedSignal } = resolveWriteSignal(caller.signal, generation.signal, 'web');
+    // Same object — not a merged wrapper — so nothing the app does to the
+    // generation controller can touch this write.
+    expect(combinedSignal).toBe(caller.signal);
+  });
+
+  it('web: aborting the generation controller does NOT abort the write signal', () => {
+    const caller = new AbortController();
+    const generation = new AbortController();
+    const { combinedSignal } = resolveWriteSignal(caller.signal, generation.signal, 'web');
+
+    generation.abort();
+
+    // The whole point of the fix: a generation-controller abort can no longer
+    // silently no-op a web relight the way the merged signal could.
+    expect(combinedSignal.aborted).toBe(false);
+  });
+
+  it('web: falls back to the generation signal when there is no caller signal (connect-time send)', () => {
+    const generation = new AbortController();
+    const { combinedSignal } = resolveWriteSignal(undefined, generation.signal, 'web');
+    expect(combinedSignal).toBe(generation.signal);
+  });
+
+  it('native: merges caller + generation so a reconnect (generation abort) cancels the write', () => {
+    const caller = new AbortController();
+    const generation = new AbortController();
+    const { combinedSignal } = resolveWriteSignal(caller.signal, generation.signal, 'ios');
+
+    // A distinct merged signal, not either input by identity.
+    expect(combinedSignal).not.toBe(caller.signal);
+    expect(combinedSignal).not.toBe(generation.signal);
+    expect(combinedSignal.aborted).toBe(false);
+
+    generation.abort();
+    expect(combinedSignal.aborted).toBe(true);
+  });
+
+  it('native: the merged signal also aborts when the caller signal aborts', () => {
+    const caller = new AbortController();
+    const generation = new AbortController();
+    const { combinedSignal } = resolveWriteSignal(caller.signal, generation.signal, 'android');
+
+    caller.abort();
+    expect(combinedSignal.aborted).toBe(true);
+  });
+
+  it('native: dispose detaches the merge listeners so a later abort is inert', () => {
+    const caller = new AbortController();
+    const generation = new AbortController();
+    const { combinedSignal, dispose } = resolveWriteSignal(caller.signal, generation.signal, 'android');
+
+    dispose();
+    generation.abort();
+    // Detached before the abort — the merged controller never saw it.
+    expect(combinedSignal.aborted).toBe(false);
+  });
+
+  it('native: falls back to the generation signal when there is no caller signal', () => {
+    const generation = new AbortController();
+    const { combinedSignal } = resolveWriteSignal(undefined, generation.signal, 'ios');
+    expect(combinedSignal).toBe(generation.signal);
   });
 });
