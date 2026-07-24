@@ -54,15 +54,14 @@
 -- repointed by this migration.
 --
 -- Explicitly NOT touched (left pointing at their original uuid):
---   * board_climb_stats_history — actually IS repointed below (unlike
---     0163/0165/0166's ticks-merge migrations, this one never deletes a
---     climb row, so repointing the audit trail is safe and keeps it
---     queryable from the climb page's canonical uuid).
 --   * sync_deletions — an append-only log of deletions that already
 --     happened; its encoded climb_uuid is a historical fact, not a live
 --     reference, so it stays as originally recorded.
 --   * app_feedback.context.climbUuid — informational JSONB, not a real
 --     relational reference.
+-- (board_climb_stats_history IS repointed below, unlike 0163/0165/0166's
+-- ticks-merge migrations — this one never deletes a climb row, so repointing
+-- the audit trail is safe and keeps it queryable from the canonical uuid.)
 --
 -- vote_counts.hot_score has no scheduled recompute job (verified: no cron/
 -- workflow touches it), so it is recomputed here inline using the exact

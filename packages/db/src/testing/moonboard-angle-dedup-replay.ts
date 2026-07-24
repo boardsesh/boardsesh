@@ -244,6 +244,8 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
  *    must be left completely untouched.
  *  - CASE C ("r25"/"r25u"): a catalog row and a user-owned row that happen to
  *    share holds+angle — the user-owned row must never be touched.
+ *  - CASE D ("t25"/"t40"/"t55"): a 3-angle group, proving the migration
+ *    handles arbitrary group sizes, not just pairs.
  */
 export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   -- CASE A: problem P, graded at 25° (fewer ascents) and 40° (more ascents,
@@ -260,14 +262,17 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     ('moonboard','p25',25,5,3.5),
     ('moonboard','p40',40,20,4.2);
 
-  -- A pre-existing alias from an earlier, unrelated merge (e.g. the catalog
+  -- Realistic pre-migration alias state: the catalog importer already wrote
+  -- p25 a self-alias (every catalog climb gets one on ingest — see PR #3851),
+  -- AND a pre-existing alias from an earlier, unrelated merge (e.g. the
   -- importer's own id-based-uuid-vs-legacy-uuid aliasing) already points at
-  -- p25, which THIS migration is about to retire. Step 1 must repoint it
-  -- straight to the new canonical (p40) rather than leaving a two-hop chain
-  -- through a now-delisted row. (p25's own self-alias is intentionally NOT
-  -- pre-seeded here — that row is freshly created by this migration, and the
-  -- separate 'aliases p25 onto p40' check below asserts its source.)
+  -- p25 too. Step 1 must: (a) hit the ON CONFLICT DO UPDATE branch for p25's
+  -- own row (repointing canonical_uuid to p40 without touching source — the
+  -- plain-INSERT path alone is never exercised in prod), and (b) repoint the
+  -- OTHER alias straight to p40 rather than leaving a two-hop chain through a
+  -- now-delisted row.
   INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source) VALUES
+    ('moonboard', 'p25', 'p25', 'moonboard-catalog-import'),
     ('moonboard', 'p25-prior-alias', 'p25', 'moonboard-catalog-import');
 
   INSERT INTO boardsesh_ticks (user_id, board_type, climb_uuid, angle) VALUES
@@ -320,6 +325,25 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   INSERT INTO comments (entity_type, entity_id) VALUES ('climb','p25');
   INSERT INTO feed_items (entity_type, entity_id) VALUES ('climb','p25');
   INSERT INTO notifications (entity_type, entity_id) VALUES ('climb','p25');
+
+  -- CASE D: problem T, graded at THREE distinct angles (25°, 40°, 55°) — the
+  -- migration is written to handle arbitrary group sizes, not just pairs;
+  -- this exercises canonical selection among 3 candidates and a 3-row
+  -- (not 2-row) stats/ticks repoint.
+  INSERT INTO board_climbs (uuid, board_type, layout_id, angle, user_id, is_draft, is_listed, created_at) VALUES
+    ('t25', 'moonboard', 1, 25, NULL, false, true, '2024-01-01T00:00:00Z'),
+    ('t40', 'moonboard', 1, 40, NULL, false, true, '2024-01-02T00:00:00Z'),
+    ('t55', 'moonboard', 1, 55, NULL, false, true, '2024-01-03T00:00:00Z');
+  INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES
+    ('moonboard','t25',30,'STARTING'), ('moonboard','t25',31,'FINISH'),
+    ('moonboard','t40',30,'STARTING'), ('moonboard','t40',31,'FINISH'),
+    ('moonboard','t55',30,'STARTING'), ('moonboard','t55',31,'FINISH');
+  INSERT INTO board_climb_stats (board_type, climb_uuid, angle, upstream_ascensionist_count) VALUES
+    ('moonboard','t25',25,3),
+    ('moonboard','t40',40,50),
+    ('moonboard','t55',55,7);
+  INSERT INTO boardsesh_ticks (user_id, board_type, climb_uuid, angle) VALUES
+    ('u5','moonboard','t25',25), ('u5','moonboard','t40',40), ('u5','moonboard','t55',55);
 
   -- CASE B: problem Q, two catalog rows BOTH at 25° (identical holds) — a
   -- residual same-angle duplicate this migration must NOT auto-merge.
@@ -376,13 +400,17 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
     },
   },
   {
-    name: 'CASE A: aliases p25 onto p40',
+    name: "CASE A: repoints p25's pre-existing self-alias onto p40 (step 1 ON CONFLICT branch)",
     run: async (db) => {
       const alias = await db`SELECT canonical_uuid, source FROM board_climb_aliases
         WHERE board_type = 'moonboard' AND alias_uuid = 'p25'`;
       assert.equal(alias.length, 1);
-      assert.equal(alias[0].canonical_uuid, 'p40');
-      assert.equal(alias[0].source, 'moonboard-angle-dedup');
+      assert.equal(alias[0].canonical_uuid, 'p40', 'repointed to the new canonical');
+      assert.equal(
+        alias[0].source,
+        'moonboard-catalog-import',
+        'ON CONFLICT DO UPDATE only touches canonical_uuid/last_seen_at — the pre-existing source is preserved, not overwritten to moonboard-angle-dedup',
+      );
     },
   },
   {
@@ -574,6 +602,47 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       assert.equal(feed.length, 1);
       const notif = await db`SELECT 1 FROM notifications WHERE entity_type = 'climb' AND entity_id = 'p40'`;
       assert.equal(notif.length, 1);
+    },
+  },
+  {
+    name: 'CASE D: a 3-angle group picks the highest-ascent member as canonical and merges the other two',
+    run: async (db) => {
+      const climbs = await db`SELECT uuid, is_listed FROM board_climbs WHERE uuid IN ('t25','t40','t55') ORDER BY uuid`;
+      assert.deepEqual(
+        climbs.map((row) => [row.uuid, row.is_listed]),
+        [
+          ['t25', false],
+          ['t40', true],
+          ['t55', false],
+        ],
+        't40 has the most ascents (50) so it wins canonical; t25/t55 delisted, never deleted',
+      );
+    },
+  },
+  {
+    name: 'CASE D: all three angle stats rows survive under the canonical uuid',
+    run: async (db) => {
+      const rows = await db`SELECT angle, upstream_ascensionist_count FROM board_climb_stats
+        WHERE board_type = 'moonboard' AND climb_uuid = 't40' ORDER BY angle`;
+      assert.deepEqual(
+        rows.map((row) => [row.angle, Number(row.upstream_ascensionist_count)]),
+        [
+          [25, 3],
+          [40, 50],
+          [55, 7],
+        ],
+      );
+    },
+  },
+  {
+    name: 'CASE D: all three angle ticks repointed, each keeping its own angle',
+    run: async (db) => {
+      const rows = await db`SELECT angle FROM boardsesh_ticks
+        WHERE board_type = 'moonboard' AND climb_uuid = 't40' ORDER BY angle`;
+      assert.deepEqual(
+        rows.map((row) => row.angle),
+        [25, 40, 55],
+      );
     },
   },
   {
