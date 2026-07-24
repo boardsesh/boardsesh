@@ -21,6 +21,7 @@ import {
   mapCatalogConfigStats,
   catalogProblemToClimbs,
   isBetterCatalogClimb,
+  resolveIncumbentReplacement,
   type MoonBoardCatalogProblem,
   type MappedCatalogClimb,
 } from './moonboard-catalog-helpers.js';
@@ -348,4 +349,52 @@ void test('isBetterCatalogClimb keeps the stronger of two same-holds problems (s
 
   // Fully equal → keep incumbent (stable, deterministic re-runs).
   assert.equal(isBetterCatalogClimb(plainTie, plainTie), false);
+});
+
+void test('resolveIncumbentReplacement: no incumbent — accepted, nothing stale', () => {
+  const cfg = PORRIDGE.configurations![1];
+  const candidate = makeMappedClimb({ stats: [mapCatalogConfigStats(cfg, 40)] });
+  const decision = resolveIncumbentReplacement('uuid-1', candidate, undefined);
+  assert.deepEqual(decision, { accept: true, staleStatKeys: [], staleHoldKeys: [] });
+});
+
+void test('resolveIncumbentReplacement: weaker candidate rejected, incumbent untouched', () => {
+  const cfg = PORRIDGE.configurations![1];
+  const incumbent = makeMappedClimb({
+    name: 'birthday cake trail mix',
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 38683, isBenchmark: true }, 40)],
+  });
+  const candidate = makeMappedClimb({
+    name: 'name',
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 19, isBenchmark: false }, 40)],
+  });
+  assert.deepEqual(resolveIncumbentReplacement('uuid-1', candidate, incumbent), { accept: false });
+});
+
+void test("resolveIncumbentReplacement: stronger candidate wins and reports the incumbent's stale keys", () => {
+  const cfg = PORRIDGE.configurations![1];
+  // Incumbent graded at BOTH 25° and 40°; the stronger winner is only graded
+  // at 40° — its 25° stats entry must be reported stale so it doesn't linger
+  // under the winning uuid.
+  const incumbent = makeMappedClimb({
+    name: 'weaker, but graded at two angles',
+    holds: [
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 2, holdState: 'FINISH' },
+    ],
+    stats: [
+      mapCatalogConfigStats({ ...cfg, repeats: 10, isBenchmark: false }, 25),
+      mapCatalogConfigStats({ ...cfg, repeats: 10, isBenchmark: false }, 40),
+    ],
+  });
+  const candidate = makeMappedClimb({
+    name: 'stronger, one angle',
+    stats: [mapCatalogConfigStats({ ...cfg, repeats: 38683, isBenchmark: true }, 40)],
+  });
+
+  const decision = resolveIncumbentReplacement('uuid-1', candidate, incumbent);
+  assert.equal(decision.accept, true);
+  if (!decision.accept) return;
+  assert.deepEqual(decision.staleStatKeys.sort(), ['uuid-1:25', 'uuid-1:40']);
+  assert.deepEqual(decision.staleHoldKeys.sort(), ['uuid-1:1', 'uuid-1:2']);
 });

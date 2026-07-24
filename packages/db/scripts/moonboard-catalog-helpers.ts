@@ -364,3 +364,31 @@ export function isBetterCatalogClimb(candidate: MappedCatalogClimb, incumbent: M
   }
   return false;
 }
+
+export type IncumbentReplacementDecision =
+  | { accept: false }
+  | { accept: true; staleStatKeys: string[]; staleHoldKeys: string[] };
+
+/**
+ * Decide whether `candidate` should replace `incumbent` for the same resolved
+ * `uuid` within one import batch (see isBetterCatalogClimb), and — when it
+ * does — which of the incumbent's previously-staged stats/holds batch-map
+ * keys must be cleared first. The winner's graded angles can differ from the
+ * loser's (e.g. incumbent graded at 25°+40°, winner only at 40°), so without
+ * clearing, a stale per-angle stats entry from the loser would silently
+ * survive into the DB under the winning uuid.
+ */
+export function resolveIncumbentReplacement(
+  uuid: string,
+  candidate: MappedCatalogClimb,
+  incumbent: MappedCatalogClimb | undefined,
+): IncumbentReplacementDecision {
+  if (incumbent && !isBetterCatalogClimb(candidate, incumbent)) {
+    return { accept: false };
+  }
+  return {
+    accept: true,
+    staleStatKeys: (incumbent?.stats ?? []).map((stat) => `${uuid}:${stat.angle}`),
+    staleHoldKeys: (incumbent?.holds ?? []).map((hold) => `${uuid}:${hold.holdId}`),
+  };
+}

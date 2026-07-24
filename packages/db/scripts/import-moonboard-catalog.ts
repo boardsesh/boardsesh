@@ -13,7 +13,7 @@ import {
   catalogAliasConflictUpdate,
   catalogAliasRows,
   catalogProblemToClimbs,
-  isBetterCatalogClimb,
+  resolveIncumbentReplacement,
   resolveCatalogClimbUuid,
   type MoonBoardCatalogFile,
   type MappedCatalogClimb,
@@ -162,10 +162,10 @@ async function importMoonBoardCatalog() {
       // Dedupe in memory keyed per conflict target so a single batch never
       // proposes the same target twice ("ON CONFLICT cannot affect row a second
       // time"). When two problems share the same holds (so they resolve to one
-      // target UUID) we keep the STRONGER problem (isBetterCatalogClimb: more
-      // total repeats across its graded angles, then benchmark) instead of
-      // last-wins — otherwise a junk duplicate can clobber a real benchmark's
-      // ascent count and benchmark flag.
+      // target UUID) we keep the STRONGER problem (resolveIncumbentReplacement /
+      // isBetterCatalogClimb: more total repeats across its graded angles, then
+      // benchmark) instead of last-wins — otherwise a junk duplicate can
+      // clobber a real benchmark's ascent count and benchmark flag.
       const bestByUuid = new Map<string, MappedCatalogClimb>();
       const climbByUuid = new Map<string, typeof boardClimbs.$inferInsert>();
       const statsByUuid = new Map<string, typeof boardClimbStats.$inferInsert>();
@@ -204,13 +204,11 @@ async function importMoonBoardCatalog() {
         }
 
         const incumbent = bestByUuid.get(uuid);
-        if (incumbent) {
-          // Same holds as an already-seen problem — keep the stronger one.
-          if (!isBetterCatalogClimb(mapped, incumbent)) continue;
-        } else if (matchedExisting) {
-          matched++;
-        } else {
-          inserted++;
+        const decision = resolveIncumbentReplacement(uuid, mapped, incumbent);
+        if (!decision.accept) continue;
+        if (!incumbent) {
+          if (matchedExisting) matched++;
+          else inserted++;
         }
         bestByUuid.set(uuid, mapped);
 
@@ -241,15 +239,13 @@ async function importMoonBoardCatalog() {
           characteristics: mapped.characteristics,
         });
 
-        // If this problem beat a previously-seen incumbent for the same uuid,
-        // the incumbent's stats/holds entries (keyed by uuid+angle/holdId) must
-        // be cleared first — the new winner's graded angles can differ from
-        // the old one's, and stale entries would otherwise linger.
-        for (const stat of incumbent?.stats ?? []) {
-          statsByUuid.delete(`${uuid}:${stat.angle}`);
+        // Clear the beaten incumbent's stale batch-map entries (see
+        // resolveIncumbentReplacement's doc comment for why this is needed).
+        for (const key of decision.staleStatKeys) {
+          statsByUuid.delete(key);
         }
-        for (const hold of incumbent?.holds ?? []) {
-          holdsByKey.delete(`${uuid}:${hold.holdId}`);
+        for (const key of decision.staleHoldKeys) {
+          holdsByKey.delete(key);
         }
 
         for (const stat of mapped.stats) {
