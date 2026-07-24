@@ -206,6 +206,22 @@ Boardsesh-originated climb shifts `quality_average` / `difficulty_average`
 / `display_difficulty` accordingly. If you add a new mutation that touches
 ticks, queue a recompute too.
 
+`updateTick` also accepts `angle` (added for issue #3770 — fixing a wrong
+angle logged by mistake, e.g. an accidental log at the board's current angle
+instead of the angle actually climbed). Angle is the third component of
+`board_climb_stats`'s key `(board_type, climb_uuid, angle)`, so moving a
+tick between angles moves it between two **independent** aggregation rows.
+`recomputeClimbStats` fully re-derives one key from scratch by scanning
+`boardsesh_ticks` at that key — it has no way to know a tick used to live at
+a different key. `updateTick` therefore queues the recompute **twice** on an
+angle change: once at the new angle (where the tick now lives) and once at
+the old angle (which just lost a tick). Skipping the old-angle recompute
+would leave that bucket's `ascensionist_count` / `quality_average`
+permanently stale — there's no self-heal path for a tick that moved away
+from a key, since the hourly self-heal job (see the `flashSendUpdatedAtIdx`
+comment in `packages/db/src/schema/app/ascents.ts`) keys off ticks at their
+_current_ angle.
+
 ---
 
 ## Read Paths and the Consensus Fallback

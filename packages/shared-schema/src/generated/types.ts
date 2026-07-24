@@ -7370,6 +7370,8 @@ export type UpdateSessionResult = {
  * All fields are optional — only provided fields are updated.
  */
 export type UpdateTickInput = {
+  /** Board angle to move this ascent to. Recomputes board_climb_stats at BOTH the old and new angle — the two are independent aggregation buckets. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
   /** Number of attempts */
   attemptCount?: InputMaybe<Scalars['Int']['input']>;
   /** When the climb was attempted (ISO 8601) */

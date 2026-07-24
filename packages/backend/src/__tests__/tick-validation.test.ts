@@ -136,6 +136,38 @@ describe('UpdateTickInputSchema', () => {
       }),
     ).toThrowError(/Climbed at cannot be in the future/);
   });
+
+  it('accepts an angle within the valid 0-90 range', () => {
+    expect(() =>
+      UpdateTickInputSchema.parse({
+        angle: 25,
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects a negative angle', () => {
+    expect(() =>
+      UpdateTickInputSchema.parse({
+        angle: -5,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects an angle above 90', () => {
+    expect(() =>
+      UpdateTickInputSchema.parse({
+        angle: 95,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects a non-integer angle', () => {
+    expect(() =>
+      UpdateTickInputSchema.parse({
+        angle: 27.5,
+      }),
+    ).toThrow();
+  });
 });
 
 describeWithDatabase('tickMutations.updateTick', () => {
@@ -206,6 +238,55 @@ describeWithDatabase('tickMutations.updateTick', () => {
     });
     expect(storedTick?.climbedAt).toContain('2026-06-02');
     expect(storedTick?.climbedAt).toContain('12:45');
+    expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
+  });
+
+  it('moving a tick to a new angle recomputes stats at BOTH the old and new angle', async () => {
+    const tickUuid = `${TEST_TICK_UUID_PREFIX}-angle-move`;
+    await insertTickValidationTick({ uuid: tickUuid, attemptCount: 1, status: 'send' });
+
+    const result = await tickMutations.updateTick(
+      null,
+      {
+        uuid: tickUuid,
+        input: { angle: 25 },
+      },
+      authenticatedContext,
+    );
+    const [storedTick] = await db
+      .select()
+      .from(dbSchema.boardseshTicks)
+      .where(eq(dbSchema.boardseshTicks.uuid, tickUuid));
+
+    expect(result).toMatchObject({ uuid: tickUuid, angle: 25 });
+    expect(storedTick?.angle).toBe(25);
+
+    // The tick started at angle 40 (insertTickValidationTick's fixture angle).
+    // A move to 25 must recompute BOTH buckets: the new angle (where the tick
+    // now lives) and the old angle (which just lost a tick and would
+    // otherwise stay stale forever — board_climb_stats has no self-heal path
+    // for a tick that moved away from a key).
+    expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledTimes(2);
+    expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 25);
+    expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
+  });
+
+  it('an update that keeps the same angle recomputes stats only once', async () => {
+    const tickUuid = `${TEST_TICK_UUID_PREFIX}-angle-unchanged`;
+    await insertTickValidationTick({ uuid: tickUuid, attemptCount: 1, status: 'send' });
+
+    // Fixture angle is 40 — re-supplying the same value must not trigger a
+    // second (wasted, no-op) recompute at the "old" angle.
+    await tickMutations.updateTick(
+      null,
+      {
+        uuid: tickUuid,
+        input: { angle: 40, comment: 'no angle change here' },
+      },
+      authenticatedContext,
+    );
+
+    expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledTimes(1);
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
   });
 });

@@ -21,7 +21,7 @@ const TICK_DEPENDENT_KEYS = [
 
 const updateVars = {
   uuid: 'tick-1',
-  input: { status: 'send' as const, difficulty: 16, quality: null, attemptCount: 2, comment: '' },
+  input: { status: 'send' as const, difficulty: 16, quality: null, attemptCount: 2, comment: '', angle: 25 },
 };
 
 // First-element (root) of every queryKey passed to invalidateQueries.
@@ -89,6 +89,7 @@ describe('useUpdateTick (shared)', () => {
         isBenchmark: false,
         comment: 'sent it',
         climbedAt: '2026-07-01 10:00:00',
+        angle: 25,
         updatedAt: '2026-07-03 09:00:00',
       },
     });
@@ -101,8 +102,8 @@ describe('useUpdateTick (shared)', () => {
               {
                 key: 'climb-1-2026-07-01',
                 items: [
-                  { uuid: 'tick-1', status: 'attempt', attemptCount: 4, quality: null, comment: '' },
-                  { uuid: 'tick-2', status: 'attempt', attemptCount: 1, quality: null, comment: '' },
+                  { uuid: 'tick-1', status: 'attempt', attemptCount: 4, quality: null, comment: '', angle: 40 },
+                  { uuid: 'tick-2', status: 'attempt', attemptCount: 1, quality: null, comment: '', angle: 40 },
                 ],
               },
             ],
@@ -140,9 +141,10 @@ describe('useUpdateTick (shared)', () => {
       quality: 3,
       difficulty: 16,
       difficultyName: '6a/V3',
+      angle: 25,
     });
-    // Sibling untouched.
-    expect(groupedItems?.[1]).toMatchObject({ uuid: 'tick-2', status: 'attempt', attemptCount: 1 });
+    // Sibling untouched — still at the original angle.
+    expect(groupedItems?.[1]).toMatchObject({ uuid: 'tick-2', status: 'attempt', attemptCount: 1, angle: 40 });
     const flatItems = queryClient.getQueryData<FlatCache>(['userAscentsFeed', 'user-1', {}])?.pages[0].userAscentsFeed
       .items;
     expect(flatItems?.[0]).toMatchObject({ uuid: 'tick-1', status: 'send', attemptCount: 5, comment: 'sent it' });

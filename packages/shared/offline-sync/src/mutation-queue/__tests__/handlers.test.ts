@@ -68,6 +68,7 @@ describe('boardsesh_ticks update dispatch', () => {
       isBenchmark: false,
       comment: '',
       climbedAt: '2026-05-01T10:00:00Z',
+      angle: 0,
     };
     const mutation = pendingMutation({
       payload: JSON.stringify({ uuid: 'tick-uuid-2', ...fullInput }),
@@ -77,5 +78,17 @@ describe('boardsesh_ticks update dispatch', () => {
 
     const [, variables] = graphqlFetch.mock.calls[0];
     expect(variables).toEqual({ uuid: 'tick-uuid-2', input: fullInput });
+  });
+
+  it('carries an angle edit through the whitelist', async () => {
+    const graphqlFetch = vi.fn().mockResolvedValue({});
+    const mutation = pendingMutation({
+      payload: JSON.stringify({ uuid: 'tick-uuid-3', angle: 25 }),
+    });
+
+    await processMutation(mutation, graphqlFetch);
+
+    const [, variables] = graphqlFetch.mock.calls[0];
+    expect(variables).toEqual({ uuid: 'tick-uuid-3', input: { angle: 25 } });
   });
 });

@@ -424,6 +424,7 @@
       "clearGradeOverride": "Borrar grado personalizado",
       "consensusSuffix": "consenso",
       "attemptCount": "Número de intentos",
+      "angleSelector": "Ángulo",
       "starOption_one": "{{count}} estrella",
       "starOption_other": "{{count}} estrellas"
     },

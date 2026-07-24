@@ -157,6 +157,7 @@ export const UpdateTickInputSchema = z
         'Climbed at cannot be in the future',
       )
       .optional(),
+    angle: z.number().int().min(0).max(90).optional(),
   })
   .refine(
     (data) => {

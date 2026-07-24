@@ -34,6 +34,7 @@ const boardDataMocks = vi.hoisted(() => ({
       ? [{ difficulty_id: 18, difficulty_name: '6b/V4', v_grade: 'V4' }]
       : [{ difficulty_id: 20, difficulty_name: '7a/V6', v_grade: 'V6' }],
   ),
+  ANGLES: { kilter: [25, 30, 40, 45], moonboard: [25, 40] } as Record<string, number[]>,
 }));
 // Holder so tests can swap queue-actions availability without remounting.
 const queueActionsState: {
@@ -122,6 +123,7 @@ vi.mock('@/app/lib/climb-action-utils', () => ({
 
 vi.mock('@/app/lib/board-data', () => ({
   getGradesForBoard: boardDataMocks.getGradesForBoard,
+  ANGLES: boardDataMocks.ANGLES,
 }));
 
 vi.mock('@/app/components/activity-feed/ascent-thumbnail', () => ({
@@ -172,6 +174,11 @@ vi.mock('../../logbook/tick-controls', () => ({
   InlineTriesPicker: ({ onSelect }: { onSelect: (v: number) => void }) => (
     <button data-testid="inline-tries-picker" onClick={() => onSelect(5)}>
       tries
+    </button>
+  ),
+  InlineAnglePicker: ({ onSelect }: { onSelect: (v: number) => void }) => (
+    <button data-testid="inline-angle-picker" onClick={() => onSelect(30)}>
+      angle
     </button>
   ),
 }));
@@ -357,6 +364,45 @@ describe('LogbookFeedItem', () => {
     expect(updateTickAsyncMock).toHaveBeenCalledWith({
       uuid: 'tick-1',
       input: expect.objectContaining({ quality: 3 }),
+    });
+  });
+
+  it('includes the ascent angle unchanged in the save payload', async () => {
+    updateTickAsyncMock.mockResolvedValue({});
+    render(<LogbookFeedItem item={makeItem({ angle: 40 })} isEditing />);
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Save'));
+    });
+    expect(updateTickAsyncMock).toHaveBeenCalledWith({
+      uuid: 'tick-1',
+      input: expect.objectContaining({ angle: 40 }),
+    });
+  });
+
+  it('shows the current angle as a tappable chip in edit mode', () => {
+    render(<LogbookFeedItem item={makeItem({ angle: 40 })} isEditing />);
+    expect(screen.getByLabelText('Select angle')).toBeDefined();
+    expect(screen.getByText('40°')).toBeDefined();
+  });
+
+  it('expands angle picker when the angle chip is clicked in edit mode', () => {
+    render(<LogbookFeedItem item={makeItem()} isEditing />);
+    fireEvent.click(screen.getByLabelText('Select angle'));
+    expect(screen.getByTestId('inline-angle-picker')).toBeDefined();
+  });
+
+  it('selecting an angle updates edit state and saves the new angle', async () => {
+    updateTickAsyncMock.mockResolvedValue({});
+    render(<LogbookFeedItem item={makeItem({ angle: 40 })} isEditing />);
+    fireEvent.click(screen.getByLabelText('Select angle'));
+    fireEvent.click(screen.getByTestId('inline-angle-picker'));
+    expect(screen.getByText('30°')).toBeDefined();
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Save'));
+    });
+    expect(updateTickAsyncMock).toHaveBeenCalledWith({
+      uuid: 'tick-1',
+      input: expect.objectContaining({ angle: 30 }),
     });
   });
 

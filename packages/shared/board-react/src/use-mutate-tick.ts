@@ -89,6 +89,7 @@ function patchTickInAscentFeeds(queryClient: QueryClient, updatedTick: UpdateTic
           isBenchmark: updatedTick.isBenchmark,
           comment: updatedTick.comment,
           climbedAt: updatedTick.climbedAt,
+          angle: updatedTick.angle,
         }
       : item;
 

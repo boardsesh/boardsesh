@@ -123,6 +123,27 @@ vi.mock('../../SectionHeader', () => ({
   SectionHeader: ({ title }: { title: string }) => createElement('h2', null, title),
 }));
 vi.mock('../../grade', () => ({ GradeSingleSelectRail: () => null }));
+vi.mock('@boardsesh/board-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/board-config')>();
+  return {
+    ...actual,
+    ANGLES: { kilter: [25, 30, 40, 45], tension: [25, 30, 40, 45] },
+  };
+});
+vi.mock('../../play-drawer/AngleSlider', () => ({
+  AngleSlider: ({ angles, onChange }: { angles: number[]; value: number; onChange: (angle: number) => void }) =>
+    createElement(
+      'div',
+      null,
+      ...angles.map((angle) =>
+        createElement(
+          'button',
+          { key: angle, 'data-testid': `angle-option-${angle}`, onClick: () => onChange(angle) },
+          `${angle}°`,
+        ),
+      ),
+    ),
+}));
 vi.mock('../../../lib/graphql/hooks', () => ({ useGrades: () => ({ data: [] }) }));
 vi.mock('../../../lib/haptics', () => ({ hapticSuccess: vi.fn(), hapticError: vi.fn() }));
 vi.mock('../../../providers/theme-provider', () => ({
@@ -388,5 +409,45 @@ describe('LogbookEditSheet', () => {
       },
       expect.any(Object),
     );
+  });
+
+  it('includes the ascent angle unchanged in the save payload', () => {
+    renderSheet(makeAscent({ angle: 40 }));
+
+    fireEvent.click(screen.getByText('mobile.logbook.save'));
+
+    const variables = firstUpdateVariables();
+    expect(variables.input.angle).toBe(40);
+  });
+
+  it('saves a new angle after the slider is moved', () => {
+    renderSheet(makeAscent({ angle: 40 }));
+
+    fireEvent.click(screen.getByTestId('angle-option-25'));
+    fireEvent.click(screen.getByText('mobile.logbook.save'));
+
+    const variables = firstUpdateVariables();
+    expect(variables.input.angle).toBe(25);
+  });
+
+  it('re-seeds angle when a different ascent opens the sheet', () => {
+    const firstAscent = makeAscent({ uuid: 'tick-1', angle: 40 });
+    const secondAscent = makeAscent({ uuid: 'tick-2', angle: 25 });
+    const { rerender } = renderSheet(firstAscent);
+
+    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    expect(firstUpdateVariables().input.angle).toBe(40);
+    mutations.updateMutate.mockClear();
+
+    rerender(
+      createElement(LogbookEditSheet, {
+        sheetRef: { current: null },
+        ascent: secondAscent,
+        onClose: vi.fn(),
+      }),
+    );
+
+    fireEvent.click(screen.getByText('mobile.logbook.save'));
+    expect(firstUpdateVariables().input.angle).toBe(25);
   });
 });

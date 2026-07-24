@@ -41,6 +41,7 @@ export const UPDATE_TICK_INPUT_FIELDS = [
   'isBenchmark',
   'comment',
   'climbedAt',
+  'angle',
 ] as const;
 
 function buildDispatch(mutation: PendingMutation): MutationDispatch {

@@ -4,6 +4,8 @@ import { BottomSheetTextInput, type BottomSheet } from '@expo/ui/community/botto
 import { useTranslation } from 'react-i18next';
 import { useUpdateTick, useDeleteTick } from '@boardsesh/board-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { ANGLES } from '@boardsesh/board-config';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { track } from '../../lib/analytics';
 import type { AscentFeedItem, UpdateTickInput } from '@boardsesh/graphql/operations';
 import { Text } from '../Text';
@@ -14,6 +16,7 @@ import { StarRating } from '../StarRating';
 import { SegmentedControl } from '../SegmentedControl';
 import { SectionHeader } from '../SectionHeader';
 import { GradeSingleSelectRail } from '../grade';
+import { AngleSlider } from '../play-drawer/AngleSlider';
 import { ClimbedAtField } from '../logbook/ClimbedAtField';
 import { clampToNow, toEditableDate, MAXIMUM_CLIMBED_AT_REFRESH_MS } from '../logbook/climbed-at';
 import { useGrades } from '../../lib/graphql/hooks';
@@ -31,7 +34,7 @@ type LogbookEditSheetProps = {
   onClose: () => void;
 };
 
-/** Edit (status / grade / stars / tries / comment) or delete a logged ascent. */
+/** Edit (status / grade / angle / stars / tries / comment) or delete a logged ascent. */
 export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheetProps) {
   const { t } = useTranslation('you');
   const { systemColors, brandColors } = useTheme();
@@ -56,6 +59,12 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
   const [hasClimbedAtChanged, setHasClimbedAtChanged] = useState(false);
   const [maximumClimbedAtDate, setMaximumClimbedAtDate] = useState(() => new Date());
   const [comment, setComment] = useState('');
+  const [angle, setAngle] = useState(0);
+
+  // Valid angles come from the static per-board table (what web and the
+  // play-drawer angle selector use) — robust and offline, unlike a per-board
+  // query.
+  const angles = useMemo<number[]>(() => ANGLES[ascent?.boardType as BoardName] ?? [], [ascent?.boardType]);
 
   // Re-seed the form whenever a different ascent opens the sheet.
   useEffect(() => {
@@ -67,6 +76,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     setClimbedAt(toEditableDate(ascent.climbedAt));
     setHasClimbedAtChanged(false);
     setComment(ascent.comment ?? '');
+    setAngle(ascent.angle);
   }, [ascent]);
 
   useEffect(() => {
@@ -107,6 +117,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
       quality: quality ?? null,
       attemptCount: finalAttemptCount,
       comment,
+      angle,
     };
     if (hasClimbedAtChanged) {
       input.climbedAt = clampToNow(climbedAt).toISOString();
@@ -130,6 +141,7 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
     );
   }, [
     ascent,
+    angle,
     attemptCount,
     climbedAt,
     comment,
@@ -223,6 +235,16 @@ export function LogbookEditSheet({ sheetRef, ascent, onClose }: LogbookEditSheet
         allowClear={false}
       />
 
+      <SectionHeader title={t('mobile.logbook.angleLabel')} />
+      <View style={styles.field}>
+        <View style={styles.angleValueRow}>
+          <Text variant="title3" style={styles.angleValue}>
+            {angle}°
+          </Text>
+        </View>
+        {angles.length > 0 && <AngleSlider angles={angles} value={angle} onChange={setAngle} />}
+      </View>
+
       <SectionHeader title={t('mobile.logbook.qualityLabel')} />
       <View style={styles.field}>
         <StarRating value={quality} onChange={setQuality} />
@@ -281,6 +303,8 @@ const styles = StyleSheet.create({
   field: { paddingHorizontal: spacing[4] },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: spacing[5] },
   stepperValue: { minWidth: 40, textAlign: 'center' },
+  angleValueRow: { flexDirection: 'row', justifyContent: 'center' },
+  angleValue: { marginBottom: spacing[1] },
   input: {
     minHeight: 72,
     borderRadius: borderRadius.lg,

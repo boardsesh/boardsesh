@@ -869,6 +869,7 @@ export const tickMutations = {
     if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
     if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
     if (validatedInput.climbedAt !== undefined) updates.climbedAt = validatedInput.climbedAt;
+    if (validatedInput.angle !== undefined) updates.angle = validatedInput.angle;
 
     const finalStatus = validatedInput.status ?? existing[0].status;
     const finalAttemptCount = validatedInput.attemptCount ?? existing[0].attemptCount;
@@ -891,6 +892,18 @@ export const tickMutations = {
     // toward ascensionist_count, and a quality/difficulty/comment edit can
     // also change downstream derived stats once we aggregate those. Recompute.
     queueClimbStatsRecompute(updated.boardType, updated.climbUuid, updated.angle);
+
+    // An angle edit moves this tick between two INDEPENDENT board_climb_stats
+    // buckets (keyed on board_type + climb_uuid + angle). The recompute above
+    // only re-derives the NEW angle's bucket from boardsesh_ticks — it can't
+    // see that a tick just left the OLD angle, because the row's angle column
+    // has already been updated by the time it runs. Without this second call,
+    // the old angle's ascensionist_count / quality_average stay permanently
+    // stale (over-counting the moved tick): there's no self-heal path for it,
+    // since the self-heal job keys off ticks at their CURRENT angle too.
+    if (updated.angle !== existing[0].angle) {
+      queueClimbStatsRecompute(updated.boardType, updated.climbUuid, existing[0].angle);
+    }
 
     // Board presence: an edited tick on a connected wall can change that
     // wall's durable stats (e.g. attempt -> send). See the longer comment on

@@ -7367,6 +7367,8 @@ export type UpdateSessionResult = {
  * All fields are optional — only provided fields are updated.
  */
 export type UpdateTickInput = {
+  /** Board angle to move this ascent to. Recomputes board_climb_stats at BOTH the old and new angle — the two are independent aggregation buckets. */
+  angle?: InputMaybe<Scalars['Int']['input']>;
   /** Number of attempts */
   attemptCount?: InputMaybe<Scalars['Int']['input']>;
   /** When the climb was attempted (ISO 8601) */
@@ -10119,6 +10121,7 @@ export type UpdateTickMutation = {
     isBenchmark: boolean;
     comment: string;
     climbedAt: string;
+    angle: number;
     updatedAt: string;
   };
 };
@@ -16501,6 +16504,7 @@ export const UpdateTickDocument = {
                 { kind: 'Field', name: { kind: 'Name', value: 'isBenchmark' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'comment' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'climbedAt' } },
+                { kind: 'Field', name: { kind: 'Name', value: 'angle' } },
                 { kind: 'Field', name: { kind: 'Name', value: 'updatedAt' } },
               ],
             },

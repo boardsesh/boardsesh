@@ -136,6 +136,7 @@
       "editTitle": "Edit ascent",
       "statusLabel": "Status",
       "gradeLabel": "Grade",
+      "angleLabel": "Angle",
       "qualityLabel": "Stars",
       "triesLabel": "Tries",
       "dateLabel": "Date",

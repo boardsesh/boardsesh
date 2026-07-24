@@ -541,6 +541,7 @@ export const UPDATE_TICK = gql`
       isBenchmark
       comment
       climbedAt
+      angle
       updatedAt
     }
   }
@@ -558,6 +559,7 @@ export type UpdateTickInput = {
   isBenchmark?: boolean;
   comment?: string;
   climbedAt?: string;
+  angle?: number;
 };
 
 export type UpdateTickVariables = {
@@ -575,6 +577,7 @@ export type UpdateTickResponse = {
     isBenchmark: boolean;
     comment: string;
     climbedAt: string;
+    angle: number;
     updatedAt: string;
   };
 };
