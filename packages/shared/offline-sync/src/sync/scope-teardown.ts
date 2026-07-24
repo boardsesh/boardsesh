@@ -28,6 +28,7 @@
 // a checkpoint past it.
 
 import type { OfflineDatabase, SqlExecutor, SqlValue } from '../database';
+import { applyBusyTimeout } from '../db/pragmas';
 import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
 import { getCheckpointKey, SCOPE_COMPLETE_PREFIX } from './checkpoints';
@@ -216,7 +217,7 @@ export async function removeBoardScopeData(params: {
     // These deletes take seconds on a 40k-climb layout; don't lose the BEGIN
     // EXCLUSIVE to a straggling write on the main connection. Same guard
     // bootstrapScopeFromSnapshot uses.
-    await txn.execAsync('PRAGMA busy_timeout = 5000');
+    await applyBusyTimeout(txn);
 
     const { sql, params: predicateParams } = orphanClimbsPredicate(scope, retainedSizeIds);
     const climbUuids = `SELECT uuid FROM board_climbs WHERE ${sql}`;

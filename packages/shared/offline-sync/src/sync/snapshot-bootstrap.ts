@@ -32,6 +32,7 @@ import {
 } from './checkpoints';
 import { getWipeEpoch, isSigningOut } from '../mutation-queue/drainer';
 import { LATEST_SCHEMA_VERSION } from '../db/migrations';
+import { applyBusyTimeout } from '../db/pragmas';
 import type { SchemaDriftReporter } from './pull-client';
 
 /** The two reference tables a snapshot carries; import order is climbs → stats. */
@@ -500,7 +501,7 @@ export async function bootstrapScopeFromSnapshot(params: {
 
         // The import can take seconds on a big layout; don't let a concurrent
         // write on the app's main connection fail it with SQLITE_BUSY.
-        await txn.execAsync('PRAGMA busy_timeout = 5000');
+        await applyBusyTimeout(txn);
         await txn.execAsync('BEGIN EXCLUSIVE');
       } catch (preTransactionError) {
         await txn.execAsync('BEGIN').catch(() => {});

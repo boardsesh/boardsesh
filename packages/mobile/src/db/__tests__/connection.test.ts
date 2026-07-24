@@ -198,3 +198,45 @@ describe('initializeDatabase optional seed', () => {
     expect(remaining?.uuid).toBe('existing');
   });
 });
+
+// WAL persists on the file header (so it can't be checked on an in-memory DB —
+// PRAGMA journal_mode = WAL returns "memory" there), so these run file-backed.
+describe('initializeDatabase connection PRAGMAs', () => {
+  let dbDir: string;
+  let fileDb: TestSqliteDb & SQLiteDatabase;
+  let dbPath: string;
+
+  beforeEach(() => {
+    dbDir = mkdtempSync(join(tmpdir(), 'bs-conn-'));
+    dbPath = join(dbDir, 'boardsesh.db');
+    fileDb = createTestDatabase(dbPath) as unknown as TestSqliteDb & SQLiteDatabase;
+    resolveSeedAssetModuleId.mockReturnValue(null);
+    assetLocalUri.current = null;
+  });
+
+  afterEach(() => {
+    rmSync(dbDir, { recursive: true, force: true });
+  });
+
+  it('puts the main connection in WAL mode with a 5s busy_timeout', async () => {
+    await initializeDatabase(fileDb);
+
+    const journal = await fileDb.getFirstAsync<{ journal_mode: string }>('PRAGMA journal_mode');
+    expect(journal?.journal_mode?.toLowerCase()).toBe('wal');
+    const busy = await fileDb.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
+    expect(busy?.timeout).toBe(5000);
+  });
+
+  it('persists WAL on the file so a fresh connection inherits it', async () => {
+    await initializeDatabase(fileDb);
+
+    // A separately-opened connection (mirrors the per-task connection
+    // withExclusiveTransactionAsync spins up) reads WAL from the file header,
+    // but starts with the default busy_timeout of 0 — hence the per-connection set.
+    const other = createTestDatabase(dbPath) as unknown as TestSqliteDb & SQLiteDatabase;
+    const journal = await other.getFirstAsync<{ journal_mode: string }>('PRAGMA journal_mode');
+    expect(journal?.journal_mode?.toLowerCase()).toBe('wal');
+    const busy = await other.getFirstAsync<{ timeout: number }>('PRAGMA busy_timeout');
+    expect(busy?.timeout).toBe(0);
+  });
+});

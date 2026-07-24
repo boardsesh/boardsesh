@@ -32,6 +32,9 @@ function createMockDb() {
     runAsync: vi.fn(async (sql: string, params: unknown[]) => {
       sqlCalls.push({ sql, params });
     }),
+    // The upsert transaction sets busy_timeout via execAsync first; a no-op that
+    // stays out of sqlCalls keeps the runAsync-based assertions unchanged.
+    execAsync: vi.fn(async () => {}),
   };
   const db = {
     runAsync: vi.fn(async (sql: string, params: unknown[]) => {

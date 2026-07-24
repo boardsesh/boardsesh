@@ -24,6 +24,7 @@ import {
 } from './snapshot-bootstrap';
 import { parseSnapshotManifest, type SnapshotManifest } from './snapshot-manifest';
 import { findSnapshotEntry, isSnapshotEntryUsable } from './snapshot-estimate';
+import { applyBusyTimeout } from '../db/pragmas';
 import { isSigningOut, getWipeEpoch, isBackgrounded } from '../mutation-queue/drainer';
 import { parseOfflineBoardKey, type OfflineBoardScope } from '../offline-board-key';
 
@@ -237,6 +238,9 @@ async function upsertDocuments(
   // commit overhead by 10 while giving the drainer no meaningful extra window —
   // it can interleave between pages either way.
   await db.withExclusiveTransactionAsync(async (transaction) => {
+    // This page's insert runs on its own connection (busy_timeout defaults to 0);
+    // wait for a held lock instead of losing the whole page to an instant SQLITE_BUSY.
+    await applyBusyTimeout(transaction);
     for (let chunkStart = 0; chunkStart < documents.length; chunkStart += chunkSize) {
       const chunk = documents.slice(chunkStart, chunkStart + chunkSize);
       const values: SqlValue[] = [];

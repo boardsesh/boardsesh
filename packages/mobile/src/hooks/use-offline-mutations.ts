@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { enqueue, type GraphQLFetch, type OfflineDatabase } from '@boardsesh/offline-sync';
+import { applyBusyTimeout, enqueue, type GraphQLFetch, type OfflineDatabase } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import type { SaveTickMutationVariables } from '../lib/graphql/operations';
 
@@ -30,6 +30,9 @@ export async function writeTickLocal(db: OfflineDatabase, input: SaveTickInput, 
   const sessionId = input.sessionId ?? null;
 
   await db.withExclusiveTransactionAsync(async (txn) => {
+    // Own connection, busy_timeout defaults to 0 — wait for a held write lock
+    // instead of failing this offline write instantly (BOARDSESH-AB/AX).
+    await applyBusyTimeout(txn);
     await txn.runAsync(
       `INSERT INTO boardsesh_ticks (uuid, board_type, climb_uuid, angle, status,
        attempt_count, quality, difficulty, comment, climbed_at, session_id, is_mirror, is_benchmark,
@@ -70,6 +73,7 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
   const now = new Date().toISOString();
 
   await db.withExclusiveTransactionAsync(async (txn) => {
+    await applyBusyTimeout(txn);
     await txn.runAsync(
       `INSERT OR IGNORE INTO user_favorites (board_name, climb_uuid, angle, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?)`,
@@ -85,6 +89,7 @@ export async function addFavoriteLocal(db: OfflineDatabase, input: FavoriteInput
 
 export async function removeFavoriteLocal(db: OfflineDatabase, input: FavoriteInput): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
+    await applyBusyTimeout(txn);
     await txn.runAsync(`DELETE FROM user_favorites WHERE board_name = ? AND climb_uuid = ? AND angle = ?`, [
       input.boardName,
       input.climbUuid,
@@ -113,6 +118,7 @@ export function useOfflineFollowUser(db: OfflineDatabase, graphqlFetch: GraphQLF
       const idempotencyKey = `add:user_follows:${followingId}`;
 
       await db.withExclusiveTransactionAsync(async (txn) => {
+        await applyBusyTimeout(txn);
         await txn.runAsync(
           `INSERT OR IGNORE INTO user_follows (following_id, created_at, updated_at)
            VALUES (?, ?, ?)`,
@@ -146,6 +152,7 @@ export function useOfflineUnfollowUser(db: OfflineDatabase, graphqlFetch: GraphQ
       const idempotencyKey = `del:user_follows:${followingId}`;
 
       await db.withExclusiveTransactionAsync(async (txn) => {
+        await applyBusyTimeout(txn);
         await txn.runAsync(`DELETE FROM user_follows WHERE following_id = ?`, [followingId]);
 
         // Cancel a not-yet-drained follow, but ALWAYS enqueue the unfollow —

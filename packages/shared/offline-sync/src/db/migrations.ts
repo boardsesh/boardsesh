@@ -12,6 +12,7 @@
 // loading native expo-sqlite.
 
 import { SCHEMA_STATEMENTS } from './schema';
+import { applyBusyTimeout } from './pragmas';
 import type { OfflineDatabase, SqlExecutor } from '../database';
 
 export type Migration = {
@@ -105,6 +106,9 @@ export async function runMigrations(db: OfflineDatabase): Promise<void> {
 
   for (const migration of pending) {
     await db.withExclusiveTransactionAsync(async (txn) => {
+      // Migrations run on their own connection (busy_timeout defaults to 0); wait for
+      // any straggling write on the main connection rather than failing the migration.
+      await applyBusyTimeout(txn);
       for (const statement of migration.statements) {
         await txn.execAsync(statement);
       }

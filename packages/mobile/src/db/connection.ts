@@ -13,6 +13,8 @@ import {
   setCheckpoint,
   getCheckpointKey,
   BOARD_DATA_TABLES,
+  applyBusyTimeout,
+  configureMainConnection,
 } from '@boardsesh/offline-sync';
 import { resolveSeedAssetModuleId } from './seed-asset';
 import { reportError } from '../lib/error-reporting';
@@ -127,6 +129,9 @@ async function loadOptionalSeed(db: SQLiteDatabase): Promise<void> {
   await db.execAsync(`ATTACH DATABASE '${seedPath.replace(/'/g, "''")}' AS seed`);
   try {
     await db.withExclusiveTransactionAsync(async (txn) => {
+      // The task runs on its own native connection (busy_timeout defaults to 0);
+      // wait-and-retry instead of failing instantly if the main connection is mid-write.
+      await applyBusyTimeout(txn);
       for (const table of SEEDABLE_BOARD_TABLES) {
         // Transaction extends SQLiteDatabase, so the txn reuses the helpers above.
         if (!(await isTableEmpty(txn, table))) continue;
@@ -178,6 +183,10 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
   // On failure we log (dev) and leave the handle unpublished, so getDatabaseHandle()
   // returns null and offline reads/writes degrade to no-ops instead of crashing.
   try {
+    // WAL (persists on the file, so every later connection inherits it) + busy_timeout
+    // on the main connection. Runs first, in autocommit: journal_mode can't change
+    // inside a transaction, and ensureMutationQueueTable/runMigrations open one.
+    await configureMainConnection(db);
     await ensureMutationQueueTable(db);
     await runMigrations(db);
     // Seed is wrapped in its own guard so a bad/absent asset never blocks the
@@ -217,6 +226,9 @@ export async function initializeDatabase(db: SQLiteDatabase): Promise<void> {
  */
 export async function clearUserData(db: SQLiteDatabase): Promise<void> {
   await db.withExclusiveTransactionAsync(async (txn) => {
+    // Sign-out teardown runs on its own connection concurrently with in-flight sync
+    // reads/writes; wait for the lock instead of failing instantly (BOARDSESH-A9).
+    await applyBusyTimeout(txn);
     for (const table of USER_DATA_TABLES_TO_CLEAR) {
       await txn.runAsync(`DELETE FROM ${table}`);
     }

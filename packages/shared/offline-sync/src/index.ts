@@ -121,6 +121,7 @@ export { vacuumDatabase, measureReclaimableBytes } from './db/vacuum';
 export { SCHEMA_STATEMENTS } from './db/schema';
 export { runMigrations, MIGRATIONS, LATEST_SCHEMA_VERSION } from './db/migrations';
 export type { Migration } from './db/migrations';
+export { OFFLINE_DB_BUSY_TIMEOUT_MS, applyBusyTimeout, configureMainConnection } from './db/pragmas';
 
 // --- Offline board scope keys ----------------------------------------------------
 export {
