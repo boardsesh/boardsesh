@@ -540,8 +540,20 @@ const DRY_RUN_ROLLBACK = new Error('__dry_run_rollback__');
 
 async function main() {
   const args = process.argv.slice(2);
-  const dryRun = args.includes('--dry-run');
-  const positionals = args.filter((arg) => !arg.startsWith('--'));
+  // Fail closed on any unrecognised dash-arg: a typo'd flag (`--dryrun`,
+  // `-dry-run`) must abort, never be silently dropped so a REAL import runs when
+  // the operator meant --dry-run.
+  const flags = args.filter((arg) => arg.startsWith('-'));
+  const unknownFlags = flags.filter((flag) => flag !== '--dry-run');
+  if (unknownFlags.length > 0) {
+    console.error(`Unknown option(s): ${unknownFlags.join(', ')}`);
+    console.error(
+      `Usage: bunx tsx scripts/import-aurora-board-unified.ts <${DIRECT_AURORA_BOARDS.join('|')}> <sqlite-db-path> [--dry-run]`,
+    );
+    process.exit(1);
+  }
+  const dryRun = flags.includes('--dry-run');
+  const positionals = args.filter((arg) => !arg.startsWith('-'));
   const boardName = parseBoardName(positionals[0]);
   const sqlitePath = positionals[1] ? path.resolve(process.cwd(), positionals[1]) : '';
 

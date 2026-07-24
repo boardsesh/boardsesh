@@ -33,14 +33,21 @@ async function seedUser(id: string, name: string) {
   `);
 }
 
-async function insertClimb(uuid: string, userId: string | null, isDraft: boolean, angle: number) {
+async function insertClimb(uuid: string, userId: string | null, isDraft: boolean, angle: number, synced = true) {
   await db.execute(sql`
     INSERT INTO board_climbs
       (uuid, board_type, layout_id, name, frames, frames_count, is_draft, is_listed,
-       user_id, angle, edge_left, edge_right, edge_bottom, edge_top, created_at)
+       user_id, synced, angle, edge_left, edge_right, edge_bottom, edge_top, created_at)
     VALUES
       (${uuid}, ${BOARD}, 1, ${'climb-' + uuid}, 'p1r1', 1, ${isDraft}, ${!isDraft},
-       ${userId}, ${angle}, 0, 100, 0, 150, '2024-01-01')
+       ${userId}, ${synced}, ${angle}, 0, 100, 0, 150, '2024-01-01')
+  `);
+}
+
+async function insertHistory(uuid: string, angle: number) {
+  await db.execute(sql`
+    INSERT INTO board_climb_stats_history (board_type, climb_uuid, angle, ascensionist_count)
+    VALUES (${BOARD}, ${uuid}, ${angle}, 1)
   `);
 }
 
@@ -111,23 +118,29 @@ afterEach(async () => {
 });
 
 describe('aurora import — #3540 clear preserves Boardsesh-owned data', () => {
-  it('deletes upstream climbs but preserves user-created climbs, their holds and stats', async () => {
+  it('deletes upstream climbs but preserves user-created climbs, their holds, stats and history', async () => {
     // Upstream catalog climb (dump-owned) + one Boardsesh-owned draft climb.
     await insertClimb('u1', null, false, 40);
     await insertHold('u1', 10);
     await insertStats('u1', 40, 3, null, 3);
+    await insertHistory('u1', 40);
 
     await insertClimb('o1', OWNER_ID, true, 30);
     await insertHold('o1', 20);
     await insertHold('o1', 21);
     await insertStats('o1', 30, null, null, null);
+    await insertHistory('o1', 30);
 
+    // The invariant snapshot must see every preserved row class, not just climbs.
     const before = await countBoardseshOwnedRows(db as unknown as ClearDb, BOARD);
     expect(before.ownedClimbs).toBe(1);
+    expect(before.ownedHolds).toBe(2);
+    expect(before.ownedStats).toBe(1);
+    expect(before.ownedStatsHistory).toBe(1);
 
     await runClear();
 
-    // Upstream climb + its holds + its stats are gone.
+    // Upstream climb + its holds + its stats + its history are all gone.
     expect(
       await scalar(sql`SELECT count(*)::int AS n FROM board_climbs WHERE board_type = ${BOARD} AND uuid = 'u1'`),
     ).toBe(0);
@@ -141,8 +154,13 @@ describe('aurora import — #3540 clear preserves Boardsesh-owned data', () => {
         sql`SELECT count(*)::int AS n FROM board_climb_stats WHERE board_type = ${BOARD} AND climb_uuid = 'u1'`,
       ),
     ).toBe(0);
+    expect(
+      await scalar(
+        sql`SELECT count(*)::int AS n FROM board_climb_stats_history WHERE board_type = ${BOARD} AND climb_uuid = 'u1'`,
+      ),
+    ).toBe(0);
 
-    // The user-created draft climb, its two holds and its stats row all survive.
+    // The user-created draft climb, its two holds, its stats and its history survive.
     const ownedClimbs = await scalar(
       sql`SELECT count(*)::int AS n FROM board_climbs WHERE board_type = ${BOARD} AND uuid = 'o1' AND user_id = ${OWNER_ID}`,
     );
@@ -157,6 +175,57 @@ describe('aurora import — #3540 clear preserves Boardsesh-owned data', () => {
         sql`SELECT count(*)::int AS n FROM board_climb_stats WHERE board_type = ${BOARD} AND climb_uuid = 'o1'`,
       ),
     ).toBe(1);
+    expect(
+      await scalar(
+        sql`SELECT count(*)::int AS n FROM board_climb_stats_history WHERE board_type = ${BOARD} AND climb_uuid = 'o1'`,
+      ),
+    ).toBe(1);
+  });
+
+  it('preserves an account-deleted user’s published climb (user_id NULL, synced=false) with its holds/stats/history', async () => {
+    // deleteAccount nulls user_id on published climbs (ON DELETE SET NULL) to
+    // preserve them, but leaves synced=false. A user_id-only predicate would
+    // treat this as upstream and delete it; the synced=false marker must save it.
+    await insertClimb('u1', null, false, 40); // genuine upstream (synced=true)
+    await insertHold('u1', 10);
+
+    await insertClimb('anon', null, false, 30, /* synced */ false); // anonymized owned
+    await insertHold('anon', 20);
+    await insertStats('anon', 30, null, null, null);
+    await insertHistory('anon', 30);
+
+    const before = await countBoardseshOwnedRows(db as unknown as ClearDb, BOARD);
+    expect(before.ownedClimbs).toBe(1);
+    expect(before.ownedHolds).toBe(1);
+    expect(before.ownedStats).toBe(1);
+    expect(before.ownedStatsHistory).toBe(1);
+
+    await runClear();
+
+    // The anonymized published climb and all its dependent rows survive.
+    expect(
+      await scalar(sql`SELECT count(*)::int AS n FROM board_climbs WHERE board_type = ${BOARD} AND uuid = 'anon'`),
+    ).toBe(1);
+    expect(
+      await scalar(
+        sql`SELECT count(*)::int AS n FROM board_climb_holds WHERE board_type = ${BOARD} AND climb_uuid = 'anon'`,
+      ),
+    ).toBe(1);
+    expect(
+      await scalar(
+        sql`SELECT count(*)::int AS n FROM board_climb_stats WHERE board_type = ${BOARD} AND climb_uuid = 'anon'`,
+      ),
+    ).toBe(1);
+    expect(
+      await scalar(
+        sql`SELECT count(*)::int AS n FROM board_climb_stats_history WHERE board_type = ${BOARD} AND climb_uuid = 'anon'`,
+      ),
+    ).toBe(1);
+
+    // The genuine upstream climb is still cleared.
+    expect(
+      await scalar(sql`SELECT count(*)::int AS n FROM board_climbs WHERE board_type = ${BOARD} AND uuid = 'u1'`),
+    ).toBe(0);
   });
 
   it('preserves Boardsesh-attached beta links but clears upstream beta links', async () => {
