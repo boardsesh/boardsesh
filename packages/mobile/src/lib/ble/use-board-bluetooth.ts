@@ -330,7 +330,7 @@ function mergeAbortSignals(signalA: AbortSignal, signalB: AbortSignal): { signal
 export function resolveWriteSignal(
   callerSignal: AbortSignal | undefined,
   generationSignal: AbortSignal,
-  platformOS: string,
+  platformOS: typeof Platform.OS,
 ): { combinedSignal: AbortSignal; dispose: () => void } {
   const mergeGenerationSignal = platformOS !== 'web';
   const merged = callerSignal && mergeGenerationSignal ? mergeAbortSignals(callerSignal, generationSignal) : null;
@@ -524,20 +524,7 @@ export function useBoardBluetooth({
 
   const sendFramesToBoard = useCallback(
     async (frames: string, mirrored: boolean = false, signal?: AbortSignal, sendContext?: BleSendContext) => {
-      if (!adapterRef.current || !boardName || layoutId === undefined || sizeId === undefined) {
-        // TEMP DIAG (ble-relight-diag): remove once the Expo-web relight regression
-        // is confirmed fixed on a real board.
-        if (__DEV__) {
-          console.warn('[ble-relight-diag] send bailed at precondition', {
-            hasAdapter: !!adapterRef.current,
-            boardName,
-            layoutId,
-            sizeId,
-            sendSource: sendContext?.sendSource,
-          });
-        }
-        return;
-      }
+      if (!adapterRef.current || !boardName || layoutId === undefined || sizeId === undefined) return;
       // Resolved here (where layoutId is narrowed to a number) so the nested
       // performSend closure can use it. Mini LED strips are 12 rows, standard 18.
       const moonNumRows = getMoonBoardGeometryByLayoutId(layoutId).numRows;
@@ -563,21 +550,6 @@ export function useBoardBluetooth({
       // straight through (see resolveWriteSignal).
       const { combinedSignal, dispose: disposeWriteSignal } = resolveWriteSignal(signal, generationSignal, Platform.OS);
 
-      // TEMP DIAG (ble-relight-diag): remove once the Expo-web relight regression
-      // is confirmed fixed on a real board.
-      if (__DEV__) {
-        console.warn('[ble-relight-diag] send start', {
-          platform: Platform.OS,
-          sendSource: sendContext?.sendSource,
-          framesHead: frames.slice(0, 24),
-          hasCallerSignal: !!signal,
-          callerAborted: signal?.aborted ?? null,
-          generationAborted: generationSignal.aborted,
-          combinedAborted: combinedSignal.aborted,
-          combinedIsCaller: combinedSignal === signal,
-        });
-      }
-
       const performSend = async (): Promise<boolean | undefined> => {
         // Transport diagnostics of the write that just settled (#3230) — iOS
         // native adapter (full flow-control story) or ble-plx (MTU/chunking
@@ -594,17 +566,7 @@ export function useBoardBluetooth({
           // The send may have queued behind another write; by the time it runs
           // the connection generation may be gone (reconnect/disconnect) — bail
           // before touching the (possibly new) adapter.
-          if (combinedSignal.aborted || !adapterRef.current) {
-            // TEMP DIAG (ble-relight-diag): remove once confirmed fixed on a board.
-            if (__DEV__) {
-              console.warn('[ble-relight-diag] performSend bailed', {
-                combinedAborted: combinedSignal.aborted,
-                hasAdapter: !!adapterRef.current,
-                sendSource: sendContext?.sendSource,
-              });
-            }
-            return;
-          }
+          if (combinedSignal.aborted || !adapterRef.current) return;
           sendAdapter = adapterRef.current;
 
           if (boardName === 'moonboard') {
@@ -729,13 +691,6 @@ export function useBoardBluetooth({
           }
 
           await adapterRef.current.write(result.packet, combinedSignal);
-          // TEMP DIAG (ble-relight-diag): remove once confirmed fixed on a board.
-          if (__DEV__) {
-            console.warn('[ble-relight-diag] write resolved (packet sent)', {
-              packetBytes: result.packet.length,
-              sendSource: sendContext?.sendSource,
-            });
-          }
           track(SHARED_EVENTS.ClimbSentToBoardSuccess, {
             ...boardAnalyticsProperties,
             ...bleWriteDiagnosticsProperties(await fetchWriteDiagnostics()),

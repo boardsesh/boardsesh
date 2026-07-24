@@ -1786,6 +1786,17 @@ describe('resolveWriteSignal', () => {
     expect(combinedSignal).toBe(generation.signal);
   });
 
+  it('web: a caller signal already aborted before the call stays aborted (no silent swallow)', () => {
+    const caller = new AbortController();
+    caller.abort();
+    const generation = new AbortController();
+    const { combinedSignal } = resolveWriteSignal(caller.signal, generation.signal, 'web');
+    // Passed straight through — an already-aborted caller signal must read as
+    // aborted immediately, not get lost in a merge wrapper.
+    expect(combinedSignal).toBe(caller.signal);
+    expect(combinedSignal.aborted).toBe(true);
+  });
+
   it('native: merges caller + generation so a reconnect (generation abort) cancels the write', () => {
     const caller = new AbortController();
     const generation = new AbortController();
