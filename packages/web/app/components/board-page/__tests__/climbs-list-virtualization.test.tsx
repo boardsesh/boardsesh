@@ -416,6 +416,31 @@ describe('ClimbsList thumbnail and row click both open the play drawer', () => {
     expect(drawerEvents[0].detail).toMatchObject({ climb: expect.objectContaining({ uuid: 'climb-0' }) });
     dispatchSpy.mockRestore();
   });
+
+  it('shows a cross-board hint instead of silently ignoring a tap on an unrenderable climb (#3825)', async () => {
+    const onClimbSelect = vi.fn();
+    render(
+      <ClimbsList
+        boardDetails={makeBoardDetails()}
+        climbs={allClimbs.slice(0, 3)}
+        isFetching={false}
+        hasMore={false}
+        onLoadMore={vi.fn()}
+        onClimbSelect={onClimbSelect}
+        unsupportedClimbs={new Set(['climb-0'])}
+      />,
+    );
+
+    // Tapping the greyed cross-board climb must not strand the user with a
+    // silent no-op — it surfaces an explanatory alert and skips selection.
+    fireEvent.click(screen.getByTestId('row-climb-0'));
+    expect(onClimbSelect).not.toHaveBeenCalled();
+    expect(await screen.findByRole('alert')).toBeDefined();
+
+    // A renderable climb still selects normally.
+    fireEvent.click(screen.getByTestId('row-climb-1'));
+    expect(onClimbSelect).toHaveBeenCalledWith(expect.objectContaining({ uuid: 'climb-1' }));
+  });
 });
 
 describe('ClimbsList infinite scroll', () => {

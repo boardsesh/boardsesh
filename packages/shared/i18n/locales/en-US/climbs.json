@@ -46,6 +46,10 @@
       "title": "Won't fit your board",
       "description": "This one runs off the edge of your wall. You'll need a bigger size to send it."
     },
+    "crossBoard": {
+      "title": "Different board",
+      "description": "These climbs are for the {{board}} board — switch boards to get on them."
+    },
     "sort": {
       "ascents": "Ascents",
       "popular": "Popular",

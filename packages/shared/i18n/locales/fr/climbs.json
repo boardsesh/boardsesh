@@ -46,6 +46,10 @@
       "title": "Ne rentre pas sur votre board",
       "description": "Celui-ci sort du mur. Il vous faut une taille au-dessus pour l'enchaîner."
     },
+    "crossBoard": {
+      "title": "Une autre board",
+      "description": "Ces blocs sont pour la board {{board}}. Changez de board pour les grimper."
+    },
     "sort": {
       "ascents": "Enchaînements",
       "popular": "Populaires",

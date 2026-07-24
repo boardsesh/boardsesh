@@ -20,6 +20,7 @@ import { useMyBoards } from '@/app/hooks/use-my-boards';
 import { useQueueBridgeBoardInfo } from '@/app/components/queue-control/queue-bridge-context';
 import { constructBoardSlugPlaylistsUrl } from '@/app/lib/url-utils';
 import { findMatchingBoard } from '@/app/lib/find-matching-board';
+import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import { deriveIsAuthenticated } from '@/app/lib/derive-auth-status';
 import type { UserBoard, PopularBoardConfig } from '@boardsesh/shared-schema';
 import { useAuthModal } from '@/app/components/providers/auth-modal-provider';
@@ -104,7 +105,11 @@ export default function LibraryPageContent({
   );
 
   // Get current session/queue board info to use as default selection (global route only)
-  const { boardDetails: currentBoardDetails, hasActiveQueue } = useQueueBridgeBoardInfo();
+  const {
+    boardDetails: currentBoardDetails,
+    hasActiveQueue,
+    isHydrated: isSessionHydrated,
+  } = useQueueBridgeBoardInfo();
 
   // Auto-select the matching board once boards finish loading (fallback for non-SSR paths)
   useEffect(() => {
@@ -168,6 +173,23 @@ export default function LibraryPageContent({
     candidatePlaylists: playlists,
   });
 
+  // Board-aware Discover: match the board the user is actually on so a Kilter
+  // user isn't shown an all-boards feed dominated by another board type
+  // (#3825). An explicit board chip wins; otherwise fall back to the active
+  // session / route board even when the user owns no *saved* board — the
+  // ownership-gated auto-select above (findMatchingBoard) can't cover a
+  // boardless user browsing a wall. With no board context at all, keep the
+  // multi-board feed (cards carry a board label so it's still legible).
+  const discoverBoardFilter = useMemo<{ boardType?: string; layoutId?: number }>(() => {
+    if (selectedBoard) {
+      return { boardType: selectedBoard.boardType, layoutId: selectedBoard.layoutId };
+    }
+    if (isSessionHydrated && hasActiveQueue && currentBoardDetails) {
+      return { boardType: currentBoardDetails.board_name, layoutId: currentBoardDetails.layout_id };
+    }
+    return {};
+  }, [selectedBoard, isSessionHydrated, hasActiveQueue, currentBoardDetails]);
+
   // Discover playlists — paginated horizontal scroll. Reset on board filter
   // change. Two parallel cursors (popular + recent) live inside the hook;
   // exhausted streams stop pulling additional pages.
@@ -179,8 +201,8 @@ export default function LibraryPageContent({
     hasMore: discoverHasMore,
     loadMore: loadMoreDiscover,
   } = useDiscoverPlaylists({
-    boardType: selectedBoard?.boardType,
-    layoutId: selectedBoard?.layoutId,
+    boardType: discoverBoardFilter.boardType,
+    layoutId: discoverBoardFilter.layoutId,
     pageSize: 10,
     initialData: hasInitialDiscoverData
       ? { popular: initialDiscoverPlaylists.popular, recent: initialDiscoverPlaylists.recent }
@@ -513,6 +535,7 @@ export default function LibraryPageContent({
               climbCount={p.climbCount}
               boardType={p.boardType}
               layoutId={p.layoutId}
+              boardLabel={getBoardDisplayName(p.boardType)}
               color={p.color}
               icon={p.icon}
               href={getPlaylistUrl(p.uuid)}
@@ -525,11 +548,14 @@ export default function LibraryPageContent({
 
       {/* Discover — paginated horizontal scroll, popular + recent streams
           merged client-side. Same IntersectionObserver-driven loadMore as
-          "Jump Back In". */}
-      {(discoverLoading || discoverItems.length > 0) && (
+          "Jump Back In". Held in the loading state until the persistent
+          session hydrates so a boardless user doesn't briefly see the
+          unfiltered all-boards feed before it resolves to their board
+          (#3825). */}
+      {(discoverLoading || !isSessionHydrated || discoverItems.length > 0) && (
         <PlaylistScrollSection
           title={t('library.sections.discover')}
-          loading={discoverLoading}
+          loading={discoverLoading || !isSessionHydrated}
           onLoadMore={loadMoreDiscover}
           hasMore={discoverHasMore}
           isLoadingMore={discoverLoadingMore}
@@ -541,6 +567,7 @@ export default function LibraryPageContent({
               climbCount={p.climbCount}
               boardType={p.boardType}
               layoutId={p.layoutId}
+              boardLabel={getBoardDisplayName(p.boardType)}
               color={p.color}
               icon={p.icon}
               href={getPlaylistUrl(p.uuid)}

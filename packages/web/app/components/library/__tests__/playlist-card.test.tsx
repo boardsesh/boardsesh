@@ -99,6 +99,28 @@ describe('PlaylistCard', () => {
     expect(link?.getAttribute('href')).toBe('/playlists/linked-id');
   });
 
+  it('renders the board label on the scroll variant when provided', () => {
+    render(
+      <PlaylistCard
+        name="Cross-board playlist"
+        climbCount={8}
+        boardType="tension"
+        boardLabel="Tension"
+        href="/playlists/xyz"
+        variant="scroll"
+      />,
+    );
+
+    expect(screen.getByText('Tension')).toBeDefined();
+  });
+
+  it('omits the board label when none is provided', () => {
+    render(<PlaylistCard name="No label" climbCount={4} boardType="kilter" href="/playlists/xyz" variant="scroll" />);
+
+    // The board's brand name should not appear anywhere on the card.
+    expect(screen.queryByText('Kilter')).toBeNull();
+  });
+
   it('passes isLikedClimbs through to PlaylistPreviewSquare', () => {
     mockPreviewSquare.mockClear();
 

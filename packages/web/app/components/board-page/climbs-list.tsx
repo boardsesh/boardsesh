@@ -31,6 +31,7 @@ import { useOptionalQueueActions } from '../graphql-queue';
 import { useOnboardingTourOptional } from '@/app/components/onboarding/onboarding-tour-provider';
 import { dispatchTourClimbListPick } from '@/app/components/onboarding/onboarding-tour-events';
 import { useTranslation } from 'react-i18next';
+import { getBoardDisplayName } from '@boardsesh/climb-actions';
 import listStyles from './climbs-list.module.css';
 
 const SwipeableDrawer = dynamic(() => import('../swipeable-drawer/swipeable-drawer'), {
@@ -408,6 +409,12 @@ const ClimbsList = ({
     isFetching,
   });
 
+  // Cross-board hint: shown when a tapped climb belongs to a board the active
+  // wall can't render (#3825). The name is retained through the close
+  // transition so the message doesn't flicker to empty while fading out.
+  const [crossBoardOpen, setCrossBoardOpen] = useState(false);
+  const [crossBoardName, setCrossBoardName] = useState('');
+
   // Row / thumbnail / card-cover click: opens the play drawer with the tapped
   // climb. In solo, also sends to the wall; in party, the drawer shows the
   // climb locally without broadcasting (see previewClimbFromBrowse).
@@ -415,11 +422,15 @@ const ClimbsList = ({
     (index: number) => {
       const climb = climbs[index];
       if (!climb) return;
-      // Tap target is inert for climbs the active board can't render — the
-      // row is already greyed via the `unsupported` prop, this aligns the
-      // tap target with the visual state so a user who picks an incompatible
-      // playlist climb doesn't see a generic snackbar.
-      if (unsupportedClimbs?.has(climb.uuid)) return;
+      // Climbs the active board can't render are greyed via the `unsupported`
+      // prop. Opening the play drawer for one would strand the user, but a
+      // silent no-op reads as "nothing works" (#3825) — so instead tell them
+      // which board the climb belongs to and how to get on it.
+      if (unsupportedClimbs?.has(climb.uuid)) {
+        setCrossBoardName(getBoardDisplayName(climb.boardType ?? ''));
+        setCrossBoardOpen(true);
+        return;
+      }
       // During the onboarding tour's "climb-list" step, swallow the drawer
       // open and signal the tour — we want the user to just pick a climb so
       // the tour can advance, not fall into the play view.
@@ -460,6 +471,7 @@ const ClimbsList = ({
   const [biggerBoardOpen, setBiggerBoardOpen] = useState(false);
   const handleNeedsBiggerBoard = useCallback(() => setBiggerBoardOpen(true), []);
   const handleCloseBiggerBoard = useCallback(() => setBiggerBoardOpen(false), []);
+  const handleCloseCrossBoard = useCallback(() => setCrossBoardOpen(false), []);
 
   const handleOpenActions = useCallback((climb: Climb) => {
     if (process.env.NODE_ENV !== 'production' && !drawerRef.current) {
@@ -760,6 +772,18 @@ const ClimbsList = ({
           <Alert severity="warning" onClose={handleCloseBiggerBoard} variant="filled">
             <AlertTitle>{t('list.biggerBoard.title')}</AlertTitle>
             {t('list.biggerBoard.description')}
+          </Alert>
+        </Snackbar>
+
+        <Snackbar
+          open={crossBoardOpen}
+          autoHideDuration={4000}
+          onClose={handleCloseCrossBoard}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert severity="info" onClose={handleCloseCrossBoard} variant="filled">
+            <AlertTitle>{t('list.crossBoard.title')}</AlertTitle>
+            {t('list.crossBoard.description', { board: crossBoardName })}
           </Alert>
         </Snackbar>
       </Box>

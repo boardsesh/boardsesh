@@ -63,8 +63,25 @@ vi.mock('@/app/hooks/use-my-boards', () => ({
   }),
 }));
 
+// Mutable active-session board info so tests can simulate a user browsing a
+// wall (with or without an owned board). Read lazily inside the mock.
+const mockBoardInfo: {
+  boardDetails: { board_name: string; layout_id: number } | null;
+  hasActiveQueue: boolean;
+  isHydrated: boolean;
+} = { boardDetails: null, hasActiveQueue: false, isHydrated: true };
 vi.mock('@/app/components/queue-control/queue-bridge-context', () => ({
-  useQueueBridgeBoardInfo: () => ({ boardDetails: null, hasActiveQueue: false }),
+  useQueueBridgeBoardInfo: () => mockBoardInfo,
+}));
+
+// Capture the board filter the Discover hook is called with so we can assert
+// the feed is scoped to the board the user is actually on (#3825).
+const discoverCapture = vi.hoisted(() => ({ last: null as { boardType?: string; layoutId?: number } | null }));
+vi.mock('@/app/hooks/use-discover-playlists', () => ({
+  useDiscoverPlaylists: (opts: { boardType?: string; layoutId?: number }) => {
+    discoverCapture.last = { boardType: opts.boardType, layoutId: opts.layoutId };
+    return { popular: [], recent: [], isLoading: false, isLoadingMore: false, hasMore: false, loadMore: () => {} };
+  },
 }));
 
 const mockExecuteGraphQL = vi.fn();
@@ -281,6 +298,10 @@ beforeEach(() => {
   });
   mockSession.data = { user: { id: 'user-1' } };
   mockSession.status = 'authenticated';
+  mockBoardInfo.boardDetails = null;
+  mockBoardInfo.hasActiveQueue = false;
+  mockBoardInfo.isHydrated = true;
+  discoverCapture.last = null;
 });
 
 describe('LibraryPageContent FAB orchestration', () => {
@@ -486,5 +507,72 @@ describe('LibraryPageContent FAB orchestration', () => {
       />,
     );
     expect(screen.queryByLabelText(tFromCatalog('playlists', 'library.createFab.ariaLabel'))).toBeNull();
+  });
+});
+
+describe('LibraryPageContent board-aware Discover (#3825)', () => {
+  it('scopes Discover to the active session board even when the user owns no matching board', async () => {
+    // Boardless user (no saved boards) browsing a Kilter wall — the ownership-
+    // gated auto-select can't set selectedBoard, so Discover must fall back to
+    // the active session board instead of an all-boards feed.
+    mockBoardInfo.boardDetails = { board_name: 'kilter', layout_id: 8 };
+    mockBoardInfo.hasActiveQueue = true;
+    mockBoardInfo.isHydrated = true;
+
+    render(
+      <LibraryPageContent
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
+        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
+        boardConfigs={fakeBoardConfigs}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(discoverCapture.last).toEqual({ boardType: 'kilter', layoutId: 8 });
+    });
+  });
+
+  it('keeps Discover unfiltered when there is no board context at all', async () => {
+    mockBoardInfo.boardDetails = null;
+    mockBoardInfo.hasActiveQueue = false;
+    mockBoardInfo.isHydrated = true;
+
+    render(
+      <LibraryPageContent
+        initialMyBoards={[]}
+        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
+        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
+        boardConfigs={fakeBoardConfigs}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(discoverCapture.last).toEqual({ boardType: undefined, layoutId: undefined });
+    });
+  });
+
+  it('prefers an explicitly selected board over the active session board', async () => {
+    // Session says Kilter, but the user picked a Tension board chip — the chip
+    // wins so Discover matches what they filtered to.
+    mockBoardInfo.boardDetails = { board_name: 'kilter', layout_id: 8 };
+    mockBoardInfo.hasActiveQueue = true;
+    mockBoardInfo.isHydrated = true;
+
+    const tensionBoard = makeBoard('tension-uuid', { boardType: 'tension', layoutId: 10 });
+    render(
+      <LibraryPageContent
+        initialMyBoards={[tensionBoard]}
+        initialPlaylists={{ playlists: [], totalCount: 0, hasMore: false }}
+        initialDiscoverPlaylists={{ popular: [], recent: [], popularHasMore: false, recentHasMore: false }}
+        boardConfigs={fakeBoardConfigs}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId(`filter-pick-${tensionBoard.uuid}`));
+
+    await waitFor(() => {
+      expect(discoverCapture.last).toEqual({ boardType: 'tension', layoutId: 10 });
+    });
   });
 });

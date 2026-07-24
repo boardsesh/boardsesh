@@ -13,6 +13,9 @@ export type PlaylistCardProps = {
   climbCount: number;
   boardType: string;
   layoutId?: number | null;
+  /** Human board name (e.g. "Kilter", "Tension") shown on the scroll card so a
+   *  cross-board playlist is legible before it's opened (#3825). */
+  boardLabel?: string;
   color?: string;
   icon?: string;
   href: string;
@@ -31,6 +34,7 @@ export default function PlaylistCard({
   climbCount,
   boardType,
   layoutId,
+  boardLabel,
   color,
   icon,
   href,
@@ -103,6 +107,7 @@ export default function PlaylistCard({
         />
       </div>
       <div className={styles.cardName}>{name}</div>
+      {boardLabel && <div className={styles.cardBoardLabel}>{boardLabel}</div>}
       <div className={styles.cardMeta}>
         {climbCount} {climbCount === 1 ? 'climb' : 'climbs'}
       </div>

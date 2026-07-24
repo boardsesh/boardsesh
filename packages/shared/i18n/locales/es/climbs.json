@@ -46,6 +46,10 @@
       "title": "No cabe en tu plafón",
       "description": "Este se sale del borde de tu pared. Necesitas un tamaño mayor para encadenarlo."
     },
+    "crossBoard": {
+      "title": "Es de otro plafón",
+      "description": "Estos bloques son para el plafón {{board}}. Cambia de plafón para probarlos."
+    },
     "sort": {
       "ascents": "Encadenes",
       "popular": "Popular",
