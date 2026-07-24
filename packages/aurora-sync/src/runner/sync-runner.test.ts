@@ -26,6 +26,7 @@ type SyncRunnerPrivates = {
     cred: CredentialRecord,
     errorMessage: string,
   ) => Promise<{ storedErrorMessage: string; status: string; quarantined: boolean }>;
+  getSyncHealthSnapshot: () => Promise<SyncHealthSnapshot>;
 };
 
 const { mockDecrypt, mockEncrypt, mockSignIn, mockSyncUserData, mockSyncSharedData, mockSyncAuroraBoardLocations } =
@@ -599,5 +600,81 @@ describe('formatSyncHealthSummary', () => {
       oldestAttemptAt: null,
     };
     expect(formatSyncHealthSummary(snapshot)).toContain('oldestAttempt=never');
+  });
+});
+
+describe('SyncRunner.getSyncHealthSnapshot', () => {
+  beforeEach(() => {
+    process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
+  });
+
+  // The aggregate SQL (counts + the `not credentialRetryReadySql()` backoff
+  // filter) is exercised against Postgres in prod; the backoff predicate's
+  // correctness is anchored by the tested JS mirror (isCredentialInBackoff in
+  // credential-backoff.test.ts). This test pins the method's JS mapping: string
+  // counts from postgres-js are coerced to numbers and a null min() stays null.
+  it('coerces the aggregate row into a typed snapshot', async () => {
+    const oldest = new Date('2026-05-06T07:08:09.000Z');
+    const dbShim = {
+      select: () => ({
+        from: () => ({
+          // postgres-js returns bigint counts as strings unless cast; assert
+          // the Number() coercion holds even if a driver hands back strings.
+          where: () =>
+            Promise.resolve([
+              {
+                total: '9',
+                active: 5,
+                pending: '1',
+                error: 2,
+                expired: '1',
+                inBackoff: 3,
+                oldestAttemptAt: oldest,
+              },
+            ]),
+        }),
+      }),
+    };
+
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates & {
+      getClient: () => { client: unknown; db: unknown };
+    };
+    vi.spyOn(runnerPrivates, 'getClient').mockReturnValue({ client: {}, db: dbShim });
+
+    const snapshot = await runnerPrivates.getSyncHealthSnapshot();
+
+    expect(snapshot).toEqual({
+      total: 9,
+      active: 5,
+      pending: 1,
+      error: 2,
+      expired: 1,
+      inBackoff: 3,
+      oldestAttemptAt: oldest,
+    });
+  });
+
+  it('defaults counts to 0 and oldestAttemptAt to null when no rows come back', async () => {
+    const dbShim = {
+      select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }),
+    };
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates & {
+      getClient: () => { client: unknown; db: unknown };
+    };
+    vi.spyOn(runnerPrivates, 'getClient').mockReturnValue({ client: {}, db: dbShim });
+
+    const snapshot = await runnerPrivates.getSyncHealthSnapshot();
+
+    expect(snapshot).toEqual({
+      total: 0,
+      active: 0,
+      pending: 0,
+      error: 0,
+      expired: 0,
+      inBackoff: 0,
+      oldestAttemptAt: null,
+    });
   });
 });

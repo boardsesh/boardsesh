@@ -33,6 +33,11 @@ type RunnerDb = ReturnType<typeof drizzle>;
 const DEFAULT_SHARED_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
 const MAX_CREDENTIAL_FAILURES = 2;
 
+// aurora-sync owns every board EXCEPT kilter (which kilter-sync drives via its
+// own OAuth flow), so every credential query here excludes this board_type.
+// Named once so the scheduler filter and the health snapshot can't drift.
+const KILTER_BOARD_TYPE = 'kilter';
+
 // Consecutive-failure count at which we emit a distinct FLAPPING log event.
 // The credential is already backing off and rotating out (the starvation fix);
 // this just makes "this one isn't a one-off blip" greppable for an operator.
@@ -253,6 +258,9 @@ export class SyncRunner {
     // consecutive_failures is incremented in SQL above; mirror the resulting
     // value in JS to fire the FLAPPING event exactly once, when the streak
     // crosses the threshold (it grows by 1 per cycle, so `===` fires once).
+    // Under two overlapping daemon instances (#3539, out of scope here) both
+    // could read the same pre-increment value and each emit the event once —
+    // a harmless duplicate log line, not a correctness issue.
     const consecutiveFailures = (cred.consecutiveFailures ?? 0) + 1;
     if (consecutiveFailures === CREDENTIAL_FLAP_THRESHOLD) {
       const nextRetryMs = credentialBackoffMs(consecutiveFailures);
@@ -377,7 +385,7 @@ export class SyncRunner {
       isNotNull(auroraCredentials.encryptedUsername),
       isNotNull(auroraCredentials.encryptedPassword),
       isNotNull(auroraCredentials.auroraUserId),
-      ne(auroraCredentials.boardType, 'kilter'),
+      ne(auroraCredentials.boardType, KILTER_BOARD_TYPE),
     );
   }
 
@@ -576,7 +584,7 @@ export class SyncRunner {
         oldestAttemptAt: sql<Date | null>`min(${auroraCredentials.lastSyncAttemptAt})`,
       })
       .from(auroraCredentials)
-      .where(ne(auroraCredentials.boardType, 'kilter'));
+      .where(ne(auroraCredentials.boardType, KILTER_BOARD_TYPE));
 
     const row = rows[0];
     return {
@@ -599,6 +607,9 @@ export class SyncRunner {
     if (this.lastHealthSummaryAt !== 0 && now - this.lastHealthSummaryAt < SYNC_HEALTH_SUMMARY_COOLDOWN_MS) {
       return;
     }
+    // Stamp before the query (not after) so a slow/erroring snapshot doesn't
+    // re-fire on the very next cycle — a summary is anti-spam by design, and
+    // it's fine for a one-off DB blip to skip a single hourly line.
     this.lastHealthSummaryAt = now;
     try {
       const snapshot = await this.getSyncHealthSnapshot();

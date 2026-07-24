@@ -45,12 +45,14 @@ function createRunner(verbose: boolean): SyncRunner {
       ]
         .filter((part): part is string => part !== null)
         .join(' ');
-      const suffix = ledger ? ` [${ledger}]` : '';
-      console.error(
-        `Error syncing ${context.userId ?? 'daemon'}/${context.board ?? 'unknown'}:`,
-        error.message,
-        suffix,
-      );
+      const prefix = `Error syncing ${context.userId ?? 'daemon'}/${context.board ?? 'unknown'}:`;
+      // Only pass the ledger token when there is one — never a trailing empty
+      // argument (some formatters render it as a dangling space/token).
+      if (ledger) {
+        console.error(prefix, error.message, `[${ledger}]`);
+      } else {
+        console.error(prefix, error.message);
+      }
     },
   });
 }
