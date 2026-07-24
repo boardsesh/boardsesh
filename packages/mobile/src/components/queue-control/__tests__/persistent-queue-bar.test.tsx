@@ -100,11 +100,10 @@ vi.mock('../../../providers/theme-provider', () => ({ useTheme: () => ({ variant
 // flag (its two callers also set nativeTabBar=true), keeping the composite result
 // identical while exercising the real one-call arbitration.
 vi.mock('../../../hooks/use-bottom-accessory', () => ({
+  // Keep accessory availability and the native tab bar independent: a capable device
+  // with no current climb mounts the tab bar but not the accessory, so the one-call
+  // arbitration in use-bottom-chrome-metrics must see the two flags vary separately.
   isBottomAccessoryAvailable: () => cfg.nativeAccessoryActive,
-  // Drive each hook from its own flag: the native tab bar and the native accessory
-  // can diverge (e.g. a capable device with no current climb mounts the bar but not
-  // the accessory), so the tests keep them independent.
-  useNativeAccessoryActive: () => cfg.nativeAccessoryActive,
   useNativeTabBar: () => cfg.nativeTabBar,
 }));
 vi.mock('../ClimbCapsule', () => ({

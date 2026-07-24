@@ -113,6 +113,21 @@ export function useQueueResolveClimbs({ activeBoard, queue, dispatch }: UseQueue
     })();
 
     return () => {
+      // Release this run's still-pending in-flight claims BEFORE cancelling. The
+      // successor effect run scans the queue synchronously (line ~55), before these
+      // now-abandoned fetches settle and clear their own markers in `finally` — so
+      // if we left the markers set, the successor would treat every still-thin uuid
+      // as "already resolving" and skip it, while the discarded (cancelled) fetch
+      // never patches it either. The row would then stay "Unknown Climb" until some
+      // unrelated queue change happened to re-trigger. Deleting the claims here lets
+      // the successor re-fetch them. Only release claims still keyed to THIS run's
+      // angle — a newer run that already re-targeted a uuid at a different angle
+      // keeps its claim (stale-angle protection preserved).
+      for (const climbUuid of targetUuids) {
+        if (resolveInFlightRef.current.get(climbUuid) === angle) {
+          resolveInFlightRef.current.delete(climbUuid);
+        }
+      }
       cancelled = true;
     };
   }, [queue, activeBoard, dispatch]);

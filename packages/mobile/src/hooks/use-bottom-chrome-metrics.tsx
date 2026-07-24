@@ -8,8 +8,10 @@ import { useStickyAccessoryPresence } from './use-sticky-accessory-presence';
 import { isBottomAccessoryAvailable, useNativeTabBar } from './use-bottom-accessory';
 import { useDeviceLayout } from './use-device-layout';
 import { computeBottomChromeMetrics, type BottomChromeMetrics } from './bottom-chrome-metrics';
+import { shouldThrowOnMissingProvider } from './bottom-chrome-provider-gate';
 import { resolveDetailPaneSurface } from '../theme/size-class';
 import { SIDEBAR_WIDTH } from '../theme/layout';
+import { reportHandledError } from '../lib/error-reporting';
 
 /**
  * Gathers the React inputs for the bottom-chrome geometry and delegates the
@@ -116,7 +118,7 @@ export function BottomChromeMetricsProvider({ children }: { children: ReactNode 
 // It is never returned in dev or tests — those still throw so a mount-tree misuse
 // is caught before it ships. See useBottomChromeMetrics for why a release build
 // must not throw.
-const FALLBACK_BOTTOM_CHROME_METRICS: BottomChromeMetrics = computeBottomChromeMetrics({
+export const FALLBACK_BOTTOM_CHROME_METRICS: BottomChromeMetrics = computeBottomChromeMetrics({
   uiVariant: 'material',
   usesNativeTabBar: false,
   insetsBottom: 0,
@@ -126,6 +128,12 @@ const FALLBACK_BOTTOM_CHROME_METRICS: BottomChromeMetrics = computeBottomChromeM
   nativeAccessoryMounted: false,
 });
 
+// Report the out-of-provider fallback at most ONCE per app launch. A misplaced
+// consumer re-renders constantly, so without this guard the release fallback would
+// flood error tracking with one report per frame. Module-level so it survives
+// across every hook call in a launch.
+let hasReportedMissingProviderFallback = false;
+
 /**
  * Bottom-chrome reserves and offsets for the current route, computed once by
  * {@link BottomChromeMetricsProvider}. The return shape is unchanged from before
@@ -133,15 +141,27 @@ const FALLBACK_BOTTOM_CHROME_METRICS: BottomChromeMetrics = computeBottomChromeM
  * shared value instead of each recomputing it.
  *
  * A consumer outside the provider is a mount-tree bug: it throws in dev and tests
- * so it's caught before shipping. But a release build must NEVER throw here — the
- * queue/undo snackbars once rendered above the provider, and the throw white-
- * screened every install that took that OTA. So production falls back to the
+ * (gated through {@link shouldThrowOnMissingProvider} so the release path stays
+ * testable) so it's caught before shipping. But a release build must NEVER throw
+ * here — the queue/undo snackbars once rendered above the provider, and the throw
+ * white-screened every install that took that OTA. So production falls back to the
  * conservative {@link FALLBACK_BOTTOM_CHROME_METRICS} and keeps running instead of
- * crashing the whole app.
+ * crashing the whole app — while reporting the misuse once so it's still visible in
+ * error tracking rather than silently masked.
  */
 export function useBottomChromeMetrics(): BottomChromeMetrics {
   const metrics = useContext(BottomChromeMetricsContext);
   if (metrics) return metrics;
-  if (__DEV__) throw new Error('useBottomChromeMetrics must be used within BottomChromeMetricsProvider');
+  if (shouldThrowOnMissingProvider()) {
+    throw new Error('useBottomChromeMetrics must be used within BottomChromeMetricsProvider');
+  }
+  if (!hasReportedMissingProviderFallback) {
+    hasReportedMissingProviderFallback = true;
+    // OTA-safe: reportHandledError no-ops when tracking is off, and downgrades /
+    // filters per the noise policy otherwise.
+    reportHandledError(new Error('useBottomChromeMetrics rendered outside BottomChromeMetricsProvider'), {
+      tags: { source: 'bottom-chrome-fallback' },
+    });
+  }
   return FALLBACK_BOTTOM_CHROME_METRICS;
 }

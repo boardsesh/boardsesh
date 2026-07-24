@@ -178,6 +178,12 @@ describe('isRetryable', () => {
       isRetryable(new Error('fetch failed: java.net.UnknownHostException: Unable to resolve host "ws.boardsesh.com"')),
     ).toBe(true);
   });
+
+  it('an EPIPE broken-pipe error is retryable (server closed a keep-alive socket, no response)', () => {
+    // Replaying an idempotent sync write is safe: the request never completed.
+    expect(isRetryable({ code: 'EPIPE' })).toBe(true);
+    expect(isRetryable(Object.assign(new Error('write failed'), { cause: { code: 'EPIPE' } }))).toBe(true);
+  });
 });
 
 describe('isTransportNetworkError', () => {
@@ -196,6 +202,16 @@ describe('isTransportNetworkError', () => {
     expect(isTransportNetworkError(Object.assign(new Error('boom'), { code: 'ENOTFOUND' }))).toBe(true);
     const wrapped = Object.assign(new Error('fetch failed'), {
       cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+    });
+    expect(isTransportNetworkError(wrapped)).toBe(true);
+  });
+
+  it('classifies EPIPE (broken pipe) as transport — on the error and on its cause', () => {
+    // A server-initiated keep-alive socket close surfaces as EPIPE. The request
+    // never got a response, so it is a transport failure, not a server verdict.
+    expect(isTransportNetworkError({ code: 'EPIPE' })).toBe(true);
+    const wrapped = Object.assign(new Error('write failed'), {
+      cause: Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }),
     });
     expect(isTransportNetworkError(wrapped)).toBe(true);
   });
