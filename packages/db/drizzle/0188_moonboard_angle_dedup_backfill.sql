@@ -59,6 +59,12 @@
 --     reference, so it stays as originally recorded.
 --   * app_feedback.context.climbUuid — informational JSONB, not a real
 --     relational reference.
+--   * board_climb_ratings — structurally CANNOT contain a moonboard row: its
+--     only writer in the whole codebase (packages/kilter-sync/src/sync/
+--     user-sync.ts) hardcodes boardType to KILTER_BOARD_TYPE. Verified by
+--     reading every insert into this table, not inferred from a prod count
+--     (no prod DB access at authoring time) — grep `insert(boardClimbRatings`
+--     across the repo to re-confirm if this ever changes.
 -- (board_climb_stats_history IS repointed below, unlike 0163/0165/0166's
 -- ticks-merge migrations — this one never deletes a climb row, so repointing
 -- the audit trail is safe and keeps it queryable from the canonical uuid.)
