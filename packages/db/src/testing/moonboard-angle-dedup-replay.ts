@@ -260,6 +260,16 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     ('moonboard','p25',25,5,3.5),
     ('moonboard','p40',40,20,4.2);
 
+  -- A pre-existing alias from an earlier, unrelated merge (e.g. the catalog
+  -- importer's own id-based-uuid-vs-legacy-uuid aliasing) already points at
+  -- p25, which THIS migration is about to retire. Step 1 must repoint it
+  -- straight to the new canonical (p40) rather than leaving a two-hop chain
+  -- through a now-delisted row. (p25's own self-alias is intentionally NOT
+  -- pre-seeded here — that row is freshly created by this migration, and the
+  -- separate 'aliases p25 onto p40' check below asserts its source.)
+  INSERT INTO board_climb_aliases (board_type, alias_uuid, canonical_uuid, source) VALUES
+    ('moonboard', 'p25-prior-alias', 'p25', 'moonboard-catalog-import');
+
   INSERT INTO boardsesh_ticks (user_id, board_type, climb_uuid, angle) VALUES
     ('u1','moonboard','p25',25), ('u1','moonboard','p40',40);
 
@@ -373,6 +383,20 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       assert.equal(alias.length, 1);
       assert.equal(alias[0].canonical_uuid, 'p40');
       assert.equal(alias[0].source, 'moonboard-angle-dedup');
+    },
+  },
+  {
+    name: 'CASE A: repoints a pre-existing alias chain through p25 straight onto p40 (step 1)',
+    run: async (db) => {
+      const alias = await db`SELECT canonical_uuid, source FROM board_climb_aliases
+        WHERE board_type = 'moonboard' AND alias_uuid = 'p25-prior-alias'`;
+      assert.equal(alias.length, 1);
+      assert.equal(alias[0].canonical_uuid, 'p40', 'repointed directly to the new canonical, not left on p25');
+      assert.equal(
+        alias[0].source,
+        'moonboard-catalog-import',
+        'source untouched — only canonical_uuid/last_seen_at move',
+      );
     },
   },
   {
