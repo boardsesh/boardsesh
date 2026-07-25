@@ -2,13 +2,79 @@ import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { db } from '../../db/client';
 import { sessionQueues } from '../../db/schema';
 import { eq, and, sql } from 'drizzle-orm';
-import type { RedisSessionStore } from '../redis-session-store';
+import { CAS_ANY_VERSION, type RedisSessionStore, type QueueStateCasResult } from '../redis-session-store';
 import { computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
 import { VersionConflictError, type QueueState, type RoomManagerDeps } from './types';
 import { writeQueueStateToPostgres } from './write-scheduler';
 
 /**
+ * Run the queue-state compare-and-swap, transparently fetching the durable
+ * Postgres counters and retrying once when Redis holds no hash for the session
+ * (a session dormant past the 4h TTL — see `UPDATE_QUEUE_STATE_CAS_SCRIPT`).
+ *
+ * The hot path is a single round trip: no read-before-write, because the
+ * script does its own read. That is one fewer round trip than the
+ * read-modify-write it replaces.
+ */
+async function casWithDormancyFloor(
+  redisStore: RedisSessionStore,
+  sessionId: string,
+  input: {
+    queue: ClimbQueueItem[];
+    currentClimbQueueItem: ClimbQueueItem | null;
+    expectedVersion: number | typeof CAS_ANY_VERSION;
+    stateHash: string;
+    stateHashOrdered: string;
+  },
+): Promise<QueueStateCasResult> {
+  const firstAttempt = await redisStore.casUpdateQueueState({
+    sessionId,
+    ...input,
+    versionFloor: 0,
+    sequenceFloor: 0,
+    floorsKnown: false,
+  });
+
+  if (firstAttempt.status !== 'NEEDS_FLOOR') {
+    return firstAttempt;
+  }
+
+  // Passing `null` for the store forces the Postgres read — the script just
+  // told us Redis has nothing to offer.
+  const durable = await getQueueState(sessionId, null);
+  return redisStore.casUpdateQueueState({
+    sessionId,
+    ...input,
+    versionFloor: durable.version,
+    sequenceFloor: durable.sequence,
+    floorsKnown: true,
+  });
+}
+
+/**
+ * Coerce empty-string hashes to null. Legacy session rows in Redis or Postgres
+ * can have `stateHash = ''` (the field was added mid-development and older rows
+ * never recorded one), and `stateHashOrdered` is newer still (#3906), so
+ * sessions written before that rollout have no value until their first write.
+ * `computeQueueStateHash` always returns a non-empty 8-character hex string, so
+ * an empty stored hash means "we don't know the previous state" — semantically
+ * the same as null. Callers compare with `=== stateHash`, which would silently
+ * never match for legacy sessions even when the resync *was* a no-op,
+ * suppressing the diagnostic. Normalising here makes null-vs-empty a non-issue
+ * at the consumer.
+ */
+const normalizeHash = (hash: string | undefined | null): string | null => (hash ? hash : null);
+
+/**
  * Update queue state with Redis as source of truth and debounced Postgres writes.
+ *
+ * `expectedVersion` is a real optimistic-locking guard: when it is supplied and
+ * the stored version has moved on, this throws `VersionConflictError` and the
+ * caller must re-read and recompute. It used to be accepted and then silently
+ * ignored — `newVersion` was derived from it without ever comparing it to the
+ * stored value — which made every `VersionConflictError` retry loop pointed at
+ * this function dead code and let concurrent mutations overwrite each other's
+ * whole queue array (issue #3906).
  */
 export async function updateQueueState(
   deps: RoomManagerDeps,
@@ -26,112 +92,100 @@ export async function updateQueueState(
 }> {
   const { redisStore, writeScheduler, distributedState } = deps;
 
-  // Get current version, sequence, and prior state hash from Redis if
-  // available, otherwise from Postgres. The prior hashes are returned so
-  // callers (currently setQueue) can detect no-op resyncs without a
-  // second round-trip.
-  //
-  // We return BOTH the prior order-insensitive (v1) and order-sensitive (v2)
-  // hashes. Redis persists only v1, so the prior v2 is recomputed from the
-  // same snapshot Redis/Postgres just returned (mirrors getQueueState's
-  // read-time derivation). setQueue's no-op check needs both: a pure reorder
-  // leaves v1 unchanged but moves v2, so comparing v1 alone misreports a
-  // legitimate reorder as a no-op (issue #2387).
-  //
-  // We coerce empty-string hashes to null. Legacy session rows in Redis
-  // or Postgres can have `stateHash = ''` (the hash field was added
-  // mid-development and older rows never recorded one). `computeQueueStateHash`
-  // always returns a non-empty 8-character hex string, so an empty stored
-  // hash means "we don't know the previous state" — semantically the
-  // same as null. Callers compare with `=== stateHash`, which would
-  // silently never match for legacy sessions even when the resync *was*
-  // a no-op, suppressing the diagnostic. Normalising here makes
-  // null-vs-empty a non-issue at the consumer.
-  const normalizeHash = (h: string | undefined | null): string | null => (h ? h : null);
-
-  let currentVersion = expectedVersion;
-  let currentSequence = 0;
-  let previousStateHash: string | null = null;
-  let previousStateHashOrdered: string | null = null;
-
-  // Derive the prior order-sensitive (v2) hash from a Redis snapshot's stored
-  // queue — Redis persists only v1, so v2 is recomputed on read (same pattern
-  // as getQueueState). `null` when there's no snapshot to derive from.
-  const orderedHashFromRedisSession = (
-    redisSession: { queue: ClimbQueueItem[]; currentClimbQueueItem: ClimbQueueItem | null } | null | undefined,
-  ): string | null =>
-    redisSession
-      ? computeQueueStateHashOrdered(redisSession.queue, redisSession.currentClimbQueueItem?.uuid || null)
-      : null;
-
-  if (currentVersion === undefined) {
-    if (redisStore) {
-      const redisSession = await redisStore.getSession(sessionId);
-      currentVersion = redisSession?.version ?? 0;
-      currentSequence = redisSession?.sequence ?? 0;
-      previousStateHash = normalizeHash(redisSession?.stateHash);
-      previousStateHashOrdered = orderedHashFromRedisSession(redisSession);
-    }
-    if (currentVersion === undefined || currentVersion === 0) {
-      const pgState = await getQueueState(sessionId, redisStore);
-      currentVersion = pgState.version;
-      currentSequence = pgState.sequence;
-      previousStateHash ??= normalizeHash(pgState.stateHash);
-      previousStateHashOrdered ??= normalizeHash(pgState.stateHashOrdered);
-    }
-  } else {
-    // If version is provided, get sequence and prior hashes from Redis or Postgres
-    if (redisStore) {
-      const redisSession = await redisStore.getSession(sessionId);
-      currentSequence = redisSession?.sequence ?? 0;
-      previousStateHash = normalizeHash(redisSession?.stateHash);
-      previousStateHashOrdered = orderedHashFromRedisSession(redisSession);
-    }
-    if (currentSequence === 0) {
-      const pgState = await getQueueState(sessionId, redisStore);
-      currentSequence = pgState.sequence;
-      previousStateHash ??= normalizeHash(pgState.stateHash);
-      previousStateHashOrdered ??= normalizeHash(pgState.stateHashOrdered);
-    }
-  }
-
-  const newVersion = currentVersion + 1;
-  const newSequence = currentSequence + 1;
   const stateHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
   // Order-sensitive companion (v2), computed from the exact same inputs so the
-  // pair stays consistent. Additive: only Redis's v1 hash is persisted; the
-  // ordered one is recomputed on read (see getQueueState) and sent on the wire.
+  // pair stays consistent. Both are now persisted in Redis, so the prior pair
+  // comes straight back from the CAS instead of being recomputed on read.
   const stateHashOrdered = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid || null);
 
-  // Write to Redis immediately (source of truth for active sessions)
-  if (redisStore) {
-    await redisStore.updateQueueState(sessionId, queue, currentClimbQueueItem, newVersion, newSequence, stateHash);
-    // Debounce Postgres write (30 seconds) - eventual consistency when Redis provides fast reads
-    writeScheduler.schedulePostgresWrite(
-      sessionId,
-      queue,
-      currentClimbQueueItem,
-      newVersion,
-      newSequence,
-      distributedState,
-    );
-  } else {
-    // No Redis - write to Postgres immediately since it's the only read source
+  // No Redis - Postgres is the only read source, and its guarded UPDATE is
+  // already atomic. Unchanged behaviour.
+  if (!redisStore) {
+    const pgState = await getQueueState(sessionId, null);
+    if (expectedVersion !== undefined && pgState.version !== expectedVersion) {
+      throw new VersionConflictError(sessionId, expectedVersion);
+    }
+    const newVersion = pgState.version + 1;
+    const newSequence = pgState.sequence + 1;
     await writeQueueStateToPostgres(
       sessionId,
       { queue, currentClimbQueueItem, version: newVersion, sequence: newSequence },
       writeScheduler,
     );
+    return {
+      version: newVersion,
+      sequence: newSequence,
+      stateHash,
+      stateHashOrdered,
+      previousStateHash: normalizeHash(pgState.stateHash),
+      previousStateHashOrdered: normalizeHash(pgState.stateHashOrdered),
+    };
   }
 
-  return {
-    version: newVersion,
-    sequence: newSequence,
+  // Single atomic read-check-write against Redis, the source of truth for
+  // active sessions. The prior hashes come back from the same script call, so
+  // callers (currently setQueue) can detect no-op resyncs without a second
+  // round trip. setQueue's no-op check needs both: a pure reorder leaves the
+  // order-insensitive v1 hash unchanged but moves v2, so comparing v1 alone
+  // misreports a legitimate reorder as a no-op (issue #2387).
+  const result = await casWithDormancyFloor(redisStore, sessionId, {
+    queue,
+    currentClimbQueueItem,
+    expectedVersion: expectedVersion ?? CAS_ANY_VERSION,
     stateHash,
     stateHashOrdered,
-    previousStateHash,
-    previousStateHashOrdered,
+  });
+
+  if (result.status !== 'OK') {
+    // `expectedVersion` is necessarily defined here: a CAS_ANY_VERSION call
+    // cannot conflict, and NEEDS_FLOOR is resolved inside casWithDormancyFloor.
+    throw new VersionConflictError(sessionId, expectedVersion ?? 0);
+  }
+
+  // Debounce Postgres write (30 seconds) - eventual consistency when Redis
+  // provides fast reads.
+  writeScheduler.schedulePostgresWrite(
+    sessionId,
+    queue,
+    currentClimbQueueItem,
+    result.version,
+    result.sequence,
+    distributedState,
+  );
+
+  return {
+    version: result.version,
+    sequence: result.sequence,
+    stateHash,
+    stateHashOrdered,
+    previousStateHash: normalizeHash(result.previousStateHash),
+    previousStateHashOrdered: normalizeHash(result.previousStateHashOrdered),
   };
+}
+
+/**
+ * Mirror a Postgres-settled queue state into Redis. Safe as a blind write only
+ * because the counters came from a guarded SQL statement that already resolved
+ * the conflict — live party mutations must use the CAS instead (#3906).
+ */
+async function mirrorSettledStateToRedis(
+  redisStore: RedisSessionStore,
+  sessionId: string,
+  queue: ClimbQueueItem[],
+  currentClimbQueueItem: ClimbQueueItem | null,
+  version: number,
+  sequence: number,
+): Promise<void> {
+  const currentClimbUuid = currentClimbQueueItem?.uuid || null;
+  await redisStore.updateQueueState(
+    sessionId,
+    queue,
+    currentClimbQueueItem,
+    version,
+    sequence,
+    computeQueueStateHash(queue, currentClimbUuid),
+    computeQueueStateHashOrdered(queue, currentClimbUuid),
+  );
 }
 
 /**
@@ -169,14 +223,13 @@ export async function updateQueueStateImmediate(
 
       // Also update Redis
       if (redisStore) {
-        const stateHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
-        await redisStore.updateQueueState(
+        await mirrorSettledStateToRedis(
+          redisStore,
           sessionId,
           queue,
           currentClimbQueueItem,
           result[0].version,
           result[0].sequence,
-          stateHash,
         );
       }
 
@@ -202,14 +255,13 @@ export async function updateQueueStateImmediate(
 
     // Also update Redis
     if (redisStore) {
-      const stateHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
-      await redisStore.updateQueueState(
+      await mirrorSettledStateToRedis(
+        redisStore,
         sessionId,
         queue,
         currentClimbQueueItem,
         result[0].version,
         result[0].sequence,
-        stateHash,
       );
     }
 
@@ -244,16 +296,20 @@ export async function updateQueueStateImmediate(
 
   // Also update Redis
   if (redisStore) {
-    const stateHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
-    await redisStore.updateQueueState(sessionId, queue, currentClimbQueueItem, newVersion, newSequence, stateHash);
+    await mirrorSettledStateToRedis(redisStore, sessionId, queue, currentClimbQueueItem, newVersion, newSequence);
   }
 
   return newVersion;
 }
 
 /**
- * Update only the queue without touching currentClimbQueueItem.
+ * Update only the queue, carrying `currentClimbQueueItem` through unchanged.
  * Uses Redis as source of truth for real-time state. Postgres writes are debounced.
+ *
+ * `expectedVersion` is the optimistic-locking guard. It was already compared
+ * here before #3906, but as a check-then-act across two round trips — two
+ * callers could both pass the comparison and then both write. The comparison
+ * now happens inside the same Lua script as the write.
  */
 export async function updateQueueOnly(
   deps: RoomManagerDeps,
@@ -263,60 +319,53 @@ export async function updateQueueOnly(
 ): Promise<{ version: number; sequence: number; stateHash: string; stateHashOrdered: string }> {
   const { redisStore, writeScheduler, distributedState } = deps;
 
-  // Get current state from Redis (source of truth for real-time sync)
-  let currentVersion = 0;
-  let currentSequence = 0;
-  let currentClimbQueueItem: ClimbQueueItem | null = null;
+  // The current climb is carried through untouched, so it still has to be read
+  // to recompute the hashes. Any concurrent change to it bumps the version,
+  // which the CAS below rejects — so a stale read here can never be written.
+  const currentState = await getQueueState(sessionId, redisStore);
+  const currentClimbQueueItem = currentState.currentClimbQueueItem;
 
-  if (redisStore) {
-    const redisSession = await redisStore.getSession(sessionId);
-    if (redisSession) {
-      currentVersion = redisSession.version;
-      currentSequence = redisSession.sequence;
-      currentClimbQueueItem = redisSession.currentClimbQueueItem;
-    }
-  }
-
-  // Fallback to Postgres if Redis doesn't have the data
-  if (currentVersion === 0 && currentSequence === 0) {
-    const pgState = await getQueueState(sessionId, redisStore);
-    currentVersion = pgState.version;
-    currentSequence = pgState.sequence;
-    currentClimbQueueItem = pgState.currentClimbQueueItem;
-  }
-
-  // Validate expectedVersion if provided (optimistic locking)
-  if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
-    throw new VersionConflictError(sessionId, expectedVersion);
-  }
-
-  const newVersion = currentVersion + 1;
-  const newSequence = currentSequence + 1;
   const stateHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
   const stateHashOrdered = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid || null);
 
-  // Write to Redis immediately (source of truth for real-time state)
-  if (redisStore) {
-    await redisStore.updateQueueState(sessionId, queue, currentClimbQueueItem, newVersion, newSequence, stateHash);
-    // Debounce Postgres write - eventual consistency when Redis provides fast reads
-    writeScheduler.schedulePostgresWrite(
-      sessionId,
-      queue,
-      currentClimbQueueItem,
-      newVersion,
-      newSequence,
-      distributedState,
-    );
-  } else {
+  if (!redisStore) {
     // No Redis - write to Postgres immediately since it's the only read source
+    if (expectedVersion !== undefined && currentState.version !== expectedVersion) {
+      throw new VersionConflictError(sessionId, expectedVersion);
+    }
+    const newVersion = currentState.version + 1;
+    const newSequence = currentState.sequence + 1;
     await writeQueueStateToPostgres(
       sessionId,
       { queue, currentClimbQueueItem, version: newVersion, sequence: newSequence },
       writeScheduler,
     );
+    return { version: newVersion, sequence: newSequence, stateHash, stateHashOrdered };
   }
 
-  return { version: newVersion, sequence: newSequence, stateHash, stateHashOrdered };
+  const result = await casWithDormancyFloor(redisStore, sessionId, {
+    queue,
+    currentClimbQueueItem,
+    expectedVersion: expectedVersion ?? CAS_ANY_VERSION,
+    stateHash,
+    stateHashOrdered,
+  });
+
+  if (result.status !== 'OK') {
+    throw new VersionConflictError(sessionId, expectedVersion ?? 0);
+  }
+
+  // Debounce Postgres write - eventual consistency when Redis provides fast reads
+  writeScheduler.schedulePostgresWrite(
+    sessionId,
+    queue,
+    currentClimbQueueItem,
+    result.version,
+    result.sequence,
+    distributedState,
+  );
+
+  return { version: result.version, sequence: result.sequence, stateHash, stateHashOrdered };
 }
 
 /**
@@ -333,13 +382,13 @@ export async function getQueueState(sessionId: string, redisStore: RedisSessionS
         version: redisSession.version,
         sequence: redisSession.sequence,
         stateHash: redisSession.stateHash,
-        // Only the v1 hash is persisted in Redis; recompute the order-sensitive
-        // v2 hash from the same stored queue so the pair stays consistent
-        // without a Redis schema change (additive dual-hash rollout).
-        stateHashOrdered: computeQueueStateHashOrdered(
-          redisSession.queue,
-          redisSession.currentClimbQueueItem?.uuid || null,
-        ),
+        // Both hashes are persisted since #3906. Sessions written before that
+        // rollout have no stored v2 hash (empty string), so fall back to
+        // recomputing it from the same stored queue — the pair stays consistent
+        // either way.
+        stateHashOrdered:
+          redisSession.stateHashOrdered ||
+          computeQueueStateHashOrdered(redisSession.queue, redisSession.currentClimbQueueItem?.uuid || null),
       };
     }
   }

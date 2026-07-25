@@ -95,6 +95,7 @@ async function restoreFromPostgres(
       version: queueState.version,
       sequence: queueState.sequence,
       stateHash: queueState.stateHash,
+      stateHashOrdered: queueState.stateHashOrdered,
       lastActivity: pgSession.lastActivity,
       discoverable: pgSession.discoverable,
       latitude: pgSession.latitude,

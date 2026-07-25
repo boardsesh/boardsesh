@@ -690,6 +690,23 @@ The session's `boardPath` is the route string the host first joined / created on
 
 Every delta event carries the post-event `stateHash`. Clients must store that hash after accepting the matching `sequence`; the periodic hash watchdog compares the local queue hash against this last accepted server hash. Updating the hash only on `FullSync` is incorrect and can create a resync loop after ordinary delta traffic.
 
+### Sequence Assignment (atomic compare-and-swap)
+
+A session's queue lives in one Redis hash, `boardsesh:session:{id}`, and Redis is the source of truth while the session is live (Postgres writes are debounced 30s). Sequence and version are allocated by a single Lua script, `UPDATE_QUEUE_STATE_CAS_SCRIPT` (`services/redis-session-store.ts`), invoked through `RedisSessionStore.casUpdateQueueState`.
+
+The script reads the stored version, compares it to the caller's `expectedVersion`, and writes the new queue in one atomic step. Callers pass `CAS_ANY_VERSION` to skip the comparison. On mismatch it returns `CONFLICT` and writes nothing; `queue-state.ts` turns that into a `VersionConflictError`, and `withQueueVersionRetry` (`graphql/resolvers/shared/queue-retry.ts`) re-reads state and recomputes the mutation, up to `MAX_RETRIES` (3).
+
+Why it has to be atomic: this was a read-modify-write until #3906 — HGETALL, compute `+1` in Node, HMSET the whole hash back. Two mutations overlapping anywhere in that window both read the same version and both wrote `+1`, and the later HMSET replaced the entire `queue` array, so a climb a party member had just added silently disappeared. `updateQueueState` also accepted an `expectedVersion` it never compared to anything, which made every `VersionConflictError` retry loop pointed at it dead code. The guarantee has to hold across _processes_, not just within one event loop: Redis is shared by every backend instance, and Railway's rolling deploys run two of them at once even at a single replica. An in-process mutex would not have helped.
+
+Two further pieces of the contract:
+
+- **Dormancy floor.** A session past the 4h Redis TTL still has durable counters in Postgres. When the hash is missing, the script returns `NEEDS_FLOOR` without writing; the caller reads Postgres and retries with `versionFloor`/`sequenceFloor`, and the script takes the max. Restarting the counter at 1 would rewind the sequence clients gap-check against. Same shape as the board-presence reseed in `allocateBoardSeqAtLeast`.
+- **`setQueue` is deliberately exempt.** Its payload is entirely client-supplied, so there is nothing to recompute against a concurrent write, and replacing server state wholesale is the mutation's contract. It passes `CAS_ANY_VERSION` — it needs a unique sequence, not a conflict. Consequence, accepted rather than fixed here: a peer's `addQueueItem` landing inside a `setQueue` window is still overwritten. Web's drag-to-reorder takes this path.
+
+`stateHashOrdered` is now stored in the Redis hash alongside `stateHash` so the CAS can hand the prior pair back to `setQueue`'s redundant-resync diagnostic in the same round trip. Sessions written before this rollout have no stored value; reads fall back to recomputing it from the stored queue.
+
+Note that duplicate sequence numbers remain legal on one specific path: `setClimbFromLedPositions` publishes a `FullSync` and a `CurrentClimbChanged` under the same sequence on purpose, so the ESP32 still receives the originating `clientId`. Peers drop the second as a stale duplicate. Sequence allocation is per state _write_, not per publish.
+
 ### Queue Mutations
 
 | Mutation                   | Event emitted                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

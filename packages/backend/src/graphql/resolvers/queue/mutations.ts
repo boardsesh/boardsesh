@@ -1,5 +1,5 @@
 import type { ConnectionContext, ClimbQueueItem, QueueState } from '@boardsesh/shared-schema';
-import { roomManager, VersionConflictError } from '../../../services/room-manager';
+import { roomManager } from '../../../services/room-manager';
 import { pubsub } from '../../../pubsub/index';
 import { setCurrentClimbAndPublish } from '../../../services/queue-navigation';
 import {
@@ -7,7 +7,6 @@ import {
   applyRateLimit,
   validateInput,
   parseArrayTolerant,
-  MAX_RETRIES,
   RATE_LIMIT_SESSION,
   RATE_LIMIT_SESSION_OP,
   RATE_LIMIT_PLAYBACK,
@@ -16,6 +15,7 @@ import {
   RATE_LIMIT_SET_QUEUE_OP,
 } from '../shared/helpers';
 import { ClimbQueueItemSchema, QueueIndexSchema, QueueItemIdSchema } from '../../../validation/schemas';
+import { withQueueVersionRetry } from '../shared/queue-retry';
 import { logMutationMetrics } from './mutation-metrics';
 import { logger } from '../../../utils/logger';
 
@@ -59,10 +59,7 @@ export const queueMutations = {
     let resultStateHash = '';
     let resultStateHashOrdered = '';
 
-    // Retry loop for optimistic locking
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      // Get current state and update
-      const currentState = await roomManager.getQueueState(sessionId);
+    await withQueueVersionRetry('addQueueItem', sessionId, async (currentState) => {
       if (DEBUG)
         logger.info(
           '[addQueueItem] Current state - queue size:',
@@ -77,7 +74,8 @@ export const queueMutations = {
       if (queue.some((i) => i.uuid === item.uuid)) {
         // Item already in queue - return without publishing event
         if (DEBUG) logger.info('[addQueueItem] Item already in queue, skipping');
-        return item;
+        itemWasAdded = false;
+        return;
       }
 
       if (position !== undefined && position >= 0 && position <= queue.length) {
@@ -86,22 +84,13 @@ export const queueMutations = {
         queue = [...queue, item];
       }
 
-      try {
-        // Use updateQueueOnly with version check to avoid race conditions
-        const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version);
-        itemWasAdded = true;
-        resultSequence = result.sequence;
-        resultStateHash = result.stateHash;
-        resultStateHashOrdered = result.stateHashOrdered;
-        break; // Success, exit retry loop
-      } catch (error) {
-        if (error instanceof VersionConflictError && attempt < MAX_RETRIES - 1) {
-          if (DEBUG) logger.info(`[addQueueItem] Version conflict, retrying (attempt ${attempt + 1}/${MAX_RETRIES})`);
-          continue; // Retry
-        }
-        throw error; // Re-throw if not a version conflict or max retries exceeded
-      }
-    }
+      // Use updateQueueOnly with version check to avoid race conditions
+      const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version);
+      itemWasAdded = true;
+      resultSequence = result.sequence;
+      resultStateHash = result.stateHash;
+      resultStateHashOrdered = result.stateHashOrdered;
+    });
 
     // Only publish event if item was actually added
     if (itemWasAdded) {
@@ -139,19 +128,20 @@ export const queueMutations = {
     // Validate input
     validateInput(QueueItemIdSchema, uuid, 'uuid');
 
-    const currentState = await roomManager.getQueueState(sessionId);
-    const queue = currentState.queue.filter((i) => i.uuid !== uuid);
-    let currentClimb = currentState.currentClimbQueueItem;
-
-    // Clear current climb if it was removed
-    if (currentClimb?.uuid === uuid) {
-      currentClimb = null;
-    }
-
-    const { sequence, stateHash, stateHashOrdered } = await roomManager.updateQueueState(
+    const { sequence, stateHash, stateHashOrdered } = await withQueueVersionRetry(
+      'removeQueueItem',
       sessionId,
-      queue,
-      currentClimb,
+      async (currentState) => {
+        const queue = currentState.queue.filter((i) => i.uuid !== uuid);
+        let currentClimb = currentState.currentClimbQueueItem;
+
+        // Clear current climb if it was removed
+        if (currentClimb?.uuid === uuid) {
+          currentClimb = null;
+        }
+
+        return roomManager.updateQueueState(sessionId, queue, currentClimb, currentState.version);
+      },
     );
 
     pubsub.publishQueueEvent(sessionId, {
@@ -183,27 +173,32 @@ export const queueMutations = {
     validateInput(QueueIndexSchema, oldIndex, 'oldIndex');
     validateInput(QueueIndexSchema, newIndex, 'newIndex');
 
-    const currentState = await roomManager.getQueueState(sessionId);
-    const queue = [...currentState.queue];
+    let resultSequence = 0;
+    let resultStateHash = '';
+    let resultStateHashOrdered = '';
 
-    // Validate indices are within bounds
-    if (oldIndex >= queue.length || newIndex >= queue.length) {
-      throw new Error(`Invalid index: queue has ${queue.length} items`);
-    }
+    await withQueueVersionRetry('reorderQueueItem', sessionId, async (currentState) => {
+      const queue = [...currentState.queue];
 
-    let resultSequence = currentState.sequence;
-    let resultStateHash = currentState.stateHash;
-    let resultStateHashOrdered = currentState.stateHashOrdered;
+      // Validate indices are within bounds
+      if (oldIndex >= queue.length || newIndex >= queue.length) {
+        throw new Error(`Invalid index: queue has ${queue.length} items`);
+      }
 
-    if (oldIndex >= 0 && oldIndex < queue.length && newIndex >= 0 && newIndex < queue.length) {
-      const [movedItem] = queue.splice(oldIndex, 1);
-      queue.splice(newIndex, 0, movedItem);
-      // Use updateQueueOnly to avoid overwriting currentClimbQueueItem
-      const result = await roomManager.updateQueueOnly(sessionId, queue);
-      resultSequence = result.sequence;
-      resultStateHash = result.stateHash;
-      resultStateHashOrdered = result.stateHashOrdered;
-    }
+      resultSequence = currentState.sequence;
+      resultStateHash = currentState.stateHash;
+      resultStateHashOrdered = currentState.stateHashOrdered;
+
+      if (oldIndex >= 0 && oldIndex < queue.length && newIndex >= 0 && newIndex < queue.length) {
+        const [movedItem] = queue.splice(oldIndex, 1);
+        queue.splice(newIndex, 0, movedItem);
+        // Use updateQueueOnly to avoid overwriting currentClimbQueueItem
+        const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version);
+        resultSequence = result.sequence;
+        resultStateHash = result.stateHash;
+        resultStateHashOrdered = result.stateHashOrdered;
+      }
+    });
 
     pubsub.publishQueueEvent(sessionId, {
       __typename: 'QueueReordered',
@@ -290,46 +285,46 @@ export const queueMutations = {
     await applyRateLimit(ctx, RATE_LIMIT_SESSION, RATE_LIMIT_SESSION_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
 
-    const currentState = await roomManager.getQueueState(sessionId);
-    let currentClimb = currentState.currentClimbQueueItem;
+    const mirrorResult = await withQueueVersionRetry('mirrorCurrentClimb', sessionId, async (currentState) => {
+      // No current climb means there's nothing to mirror. Don't publish a
+      // no-op ClimbMirrored event — it clutters logs, occupies bus
+      // bandwidth, and (because sequence/stateHash don't advance) is fragile
+      // under co-sequencing with FullSync replay.
+      if (!currentState.currentClimbQueueItem) {
+        return null;
+      }
 
-    // No current climb means there's nothing to mirror. Don't publish a
-    // no-op ClimbMirrored event — it clutters logs, occupies bus
-    // bandwidth, and (because sequence/stateHash don't advance) is fragile
-    // under co-sequencing with FullSync replay.
-    if (!currentClimb) {
+      // Update the mirrored state
+      const currentClimb: ClimbQueueItem = {
+        ...currentState.currentClimbQueueItem,
+        climb: { ...currentState.currentClimbQueueItem.climb, mirrored },
+      };
+
+      // Also update in queue if present
+      const queue = currentState.queue.map((i) =>
+        i.uuid === currentClimb.uuid ? { ...i, climb: { ...i.climb, mirrored } } : i,
+      );
+
+      const updated = await roomManager.updateQueueState(sessionId, queue, currentClimb, currentState.version);
+      return { currentClimb, ...updated };
+    });
+
+    if (!mirrorResult) {
       logMutationMetrics('mirrorCurrentClimb', performance.now() - startTime, sessionId);
       return null;
     }
 
-    // Update the mirrored state
-    currentClimb = {
-      ...currentClimb,
-      climb: { ...currentClimb.climb, mirrored },
-    };
-
-    // Also update in queue if present
-    const queue = currentState.queue.map((i) =>
-      i.uuid === currentClimb!.uuid ? { ...i, climb: { ...i.climb, mirrored } } : i,
-    );
-
-    const { sequence, stateHash, stateHashOrdered } = await roomManager.updateQueueState(
-      sessionId,
-      queue,
-      currentClimb,
-    );
-
     pubsub.publishQueueEvent(sessionId, {
       __typename: 'ClimbMirrored',
-      sequence,
-      stateHash,
-      stateHashOrdered,
-      uuid: currentClimb.uuid,
+      sequence: mirrorResult.sequence,
+      stateHash: mirrorResult.stateHash,
+      stateHashOrdered: mirrorResult.stateHashOrdered,
+      uuid: mirrorResult.currentClimb.uuid,
       mirrored,
     });
 
     logMutationMetrics('mirrorCurrentClimb', performance.now() - startTime, sessionId);
-    return currentClimb;
+    return mirrorResult.currentClimb;
   },
 
   /**
@@ -349,19 +344,26 @@ export const queueMutations = {
     validateInput(QueueItemIdSchema, uuid, 'uuid');
     validateInput(ClimbQueueItemSchema, item, 'item');
 
-    const currentState = await roomManager.getQueueState(sessionId);
-    const queue = currentState.queue.map((i) => (i.uuid === uuid ? item : i));
-    let currentClimb = currentState.currentClimbQueueItem;
-
-    // Update current climb if it was the replaced item
-    if (currentClimb?.uuid === uuid) {
-      currentClimb = item;
-    }
-
-    const { sequence, stateHash, stateHashOrdered } = await roomManager.updateQueueState(
+    const { sequence, stateHash, stateHashOrdered, queue, currentClimb } = await withQueueVersionRetry(
+      'replaceQueueItem',
       sessionId,
-      queue,
-      currentClimb,
+      async (currentState) => {
+        const nextQueue = currentState.queue.map((i) => (i.uuid === uuid ? item : i));
+        let nextCurrentClimb = currentState.currentClimbQueueItem;
+
+        // Update current climb if it was the replaced item
+        if (nextCurrentClimb?.uuid === uuid) {
+          nextCurrentClimb = item;
+        }
+
+        const updated = await roomManager.updateQueueState(
+          sessionId,
+          nextQueue,
+          nextCurrentClimb,
+          currentState.version,
+        );
+        return { ...updated, queue: nextQueue, currentClimb: nextCurrentClimb };
+      },
     );
 
     // Publish as FullSync since replace is less common
@@ -447,6 +449,18 @@ export const queueMutations = {
     // drift that wasn't there (issue #2387). v2 moves on a reorder, so gating
     // on both hashes lets a real reorder through silently while still catching
     // a true no-op.
+    //
+    // Deliberately NOT wrapped in withQueueVersionRetry, and deliberately
+    // passes no `expectedVersion` (issue #3906). Every other mutation derives
+    // its new queue from the current one, so a concurrent write has to be
+    // detected and recomputed against. setQueue's payload is entirely
+    // client-supplied — there is nothing to recompute, and replacing server
+    // state wholesale is the mutation's contract. All it needs is a sequence
+    // number nobody else is using, which the CAS now allocates atomically.
+    // Known consequence: a peer's addQueueItem landing inside this window is
+    // still overwritten. That is inherent to a full-state push (and web's
+    // drag-to-reorder takes this path), tracked separately rather than papered
+    // over here.
     const { sequence, stateHash, stateHashOrdered, previousStateHash, previousStateHashOrdered } =
       await roomManager.updateQueueState(sessionId, queue, currentClimbQueueItem);
 

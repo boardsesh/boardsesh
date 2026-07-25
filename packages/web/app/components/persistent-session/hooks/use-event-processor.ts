@@ -13,6 +13,8 @@ import type { ClimbQueueItem as LocalClimbQueueItem } from '../../queue-control/
 import { toWireEnvelope, type QueueStateEvent } from '../event-utils';
 import { type SharedRefs, DEBUG } from '../types';
 import { SESSION_DETAIL_QUERY_KEY } from '@/app/hooks/use-session-detail';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
+import { track } from '@/app/lib/analytics';
 
 type UseEventProcessorArgs = {
   /**
@@ -173,12 +175,33 @@ export function useEventProcessor({
       const decision = syncGate.evaluateIncoming(gateEvent);
 
       if (decision === 'ignore-stale') {
+        const lastSequence = syncGate.getLastSequence();
         if (DEBUG) {
           console.info(
             `[PersistentSession] Ignoring stale/duplicate event with sequence ${gateEvent.sequence} ` +
-              `(last received: ${syncGate.getLastSequence()})`,
+              `(last received: ${lastSequence})`,
           );
         }
+        // Mirrors mobile's QueueSyncStaleEventIgnored so both platforms report
+        // to one event. This is the only instrument that can see the #3906
+        // duplicate-sequence collision: unlike the interleaving that leaves a
+        // `sequence > version` gap on the Postgres row, two writers landing on
+        // the SAME sequence leave no server-side trace at all — the second
+        // event just gets dropped here, silently.
+        //
+        // `staleness` is what separates a collision from ordinary lateness:
+        //   'duplicate' — same sequence as the last applied event. Either a
+        //     collision, or the controller path's deliberate co-sequenced
+        //     FullSync + CurrentClimbChanged pair, which `eventType` tells
+        //     apart.
+        //   'behind'    — an older sequence, i.e. a redelivered frame after a
+        //     reconnect. Expected, not a defect.
+        track(SHARED_EVENTS.QueueSyncStaleEventIgnored, {
+          eventType: event.__typename,
+          sequence: gateEvent.sequence ?? null,
+          lastSequence: lastSequence ?? null,
+          staleness: gateEvent.sequence != null && gateEvent.sequence === lastSequence ? 'duplicate' : 'behind',
+        });
         return;
       }
 

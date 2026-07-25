@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vite-plus/test';
 import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
-import { roomManager } from '../services/room-manager';
+import { roomManager, VersionConflictError } from '../services/room-manager';
 import { db } from '../db/client';
 import { sessions, sessionQueues, boardSessionParticipants } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
@@ -926,7 +926,11 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
   });
 
   describe('Edge Cases and Error Handling', () => {
-    it('should handle version conflicts with retry logic', async () => {
+    // Two writers claiming the same version is the #3906 race. Exactly one may
+    // win; the loser must be told so it can recompute. This test used to assert
+    // only `queue.length > 0`, which passed while quietly documenting the lost
+    // write it was supposed to catch.
+    it('lets exactly one writer win a contended version and rejects the other', async () => {
       const sessionId = uuidv4();
       const boardPath = '/kilter/1/2/3/40';
 
@@ -937,15 +941,22 @@ describe('Session Persistence - Hybrid Redis + Postgres', () => {
       const climb1 = createTestClimb();
       const climb2 = createTestClimb();
 
-      // Both updates use same version - second should retry
-      await Promise.all([
+      const outcomes = await Promise.allSettled([
         roomManager.updateQueueState(sessionId, [climb1], null, currentState.version),
         roomManager.updateQueueState(sessionId, [climb2], null, currentState.version),
       ]);
 
-      // Final state should have one of them (retry logic should handle conflict)
+      const fulfilled = outcomes.filter((outcome) => outcome.status === 'fulfilled');
+      const rejected = outcomes.filter((outcome) => outcome.status === 'rejected');
+      expect(fulfilled).toHaveLength(1);
+      expect(rejected).toHaveLength(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(VersionConflictError);
+
+      // The winner's write is intact and the counters advanced exactly once.
       const finalState = await roomManager.getQueueState(sessionId);
-      expect(finalState.queue.length).toBeGreaterThan(0);
+      expect(finalState.queue).toHaveLength(1);
+      expect(finalState.version).toBe(currentState.version + 1);
+      expect(finalState.sequence).toBe(currentState.sequence + 1);
     });
 
     it('should handle Redis operations failing gracefully', async () => {

@@ -5,6 +5,7 @@ import {
   MARK_RECONNECTING_IF_IDLE_SCRIPT,
   EVICT_PARTICIPANT_IF_GHOST_SCRIPT,
 } from '../../services/distributed-state/lua-scripts';
+import { UPDATE_QUEUE_STATE_CAS_SCRIPT } from '../../services/redis-session-store';
 
 export type MockRedis = Redis & {
   _store: Map<string, string>;
@@ -265,6 +266,57 @@ export const createMockRedis = (): MockRedis => {
           cd.isLeader = 'false';
         }
       };
+
+      // Queue-state compare-and-swap (#3906). A faithful JS transcription of
+      // UPDATE_QUEUE_STATE_CAS_SCRIPT. Atomicity is free here: the mock runs on
+      // the JS event loop with no await between the read and the write, which
+      // is exactly the guarantee real Redis gives the Lua script. Numeric
+      // returns mirror ioredis' Lua-number -> JS-number conversion.
+      if (_script === UPDATE_QUEUE_STATE_CAS_SCRIPT) {
+        const sessionKey = args[0] as string;
+        const recentKey = args[1] as string;
+        const sessionId = args[2] as string;
+        const expectedVersion = args[3] as string;
+        const queueJson = args[4] as string;
+        const currentClimbJson = args[5] as string;
+        const stateHash = args[6] as string;
+        const stateHashOrdered = args[7] as string;
+        const now = args[9] as string;
+        const versionFloor = Number(args[10]) || 0;
+        const sequenceFloor = Number(args[11]) || 0;
+        const anySentinel = args[12] as string;
+        const floorsKnown = args[13] as string;
+
+        const stored = hashes.get(sessionKey);
+        if (stored?.version === undefined && floorsKnown !== '1') {
+          return ['NEEDS_FLOOR', 0, 0, '', ''];
+        }
+        const baseVersion = Math.max(Number(stored?.version) || 0, versionFloor);
+        const baseSequence = Math.max(Number(stored?.sequence) || 0, sequenceFloor);
+        const priorStateHash = stored?.stateHash ?? '';
+        const priorStateHashOrdered = stored?.stateHashOrdered ?? '';
+
+        if (expectedVersion !== anySentinel && baseVersion !== Number(expectedVersion)) {
+          return ['CONFLICT', baseVersion, baseSequence, priorStateHash, priorStateHashOrdered];
+        }
+
+        const newVersion = baseVersion + 1;
+        const newSequence = baseSequence + 1;
+        if (!hashes.has(sessionKey)) hashes.set(sessionKey, {});
+        Object.assign(hashes.get(sessionKey)!, {
+          sessionId,
+          queue: queueJson,
+          currentClimbQueueItem: currentClimbJson,
+          version: String(newVersion),
+          sequence: String(newSequence),
+          stateHash,
+          stateHashOrdered,
+          lastActivity: now,
+        });
+        await mockRedis.zadd(recentKey, Number(now), sessionId);
+
+        return ['OK', newVersion, newSequence, priorStateHash, priorStateHashOrdered];
+      }
 
       if (_script === MARK_RECONNECTING_IF_IDLE_SCRIPT) {
         const participantKey = args[0] as string;
