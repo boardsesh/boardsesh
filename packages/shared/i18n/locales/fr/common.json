@@ -622,5 +622,23 @@
     "description": "Cette version n’est plus en service. Installe la nouvelle Boardsesh : ton carnet, tes sessions et ta crew te suivent.",
     "cta": "Installer la nouvelle app",
     "fallbackCta": "Ouvrir la page du store"
+  },
+  "otaPreview": {
+    "metadata": {
+      "title": "Essayez la PR #{{number}} dans l’app",
+      "description": "Chargez la version d’essai Boardsesh de la pull request #{{number}} directement dans l’app."
+    },
+    "eyebrow": "Version d’essai",
+    "heading": "Essayez la PR #{{number}} dans Boardsesh",
+    "intro": "Cette pull request est publiée en version d’essai. Chargez-la dans l’app, malmenez-la, puis réinitialisez quand vous avez fini.",
+    "openInApp": "Ouvrir dans Boardsesh",
+    "openInAppHint": "Touchez ici depuis le téléphone où Boardsesh est installée. L’app demande confirmation avant de changer, puis redémarre sur la version d’essai.",
+    "qrDivider": "ou",
+    "qrHint": "Scannez avec votre téléphone pour ouvrir cette page dessus.",
+    "notesHeading": "Bon à savoir",
+    "noteBuild": "Les versions d’essai nécessitent une build TestFlight ou App Store. Une build de développement lancée depuis Metro ne peut pas changer de version.",
+    "noteNative": "Si cette pull request a touché au code natif, il n’y a pas de version d’essai à charger : celle-là demande une nouvelle build TestFlight ou Play.",
+    "noteManual": "À la main : Nouveautés → Essayer une préversion → <code>{{channel}}</code>.",
+    "viewPullRequest": "Lire la pull request #{{number}} sur GitHub"
   }
 }

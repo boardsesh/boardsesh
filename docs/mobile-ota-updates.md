@@ -715,6 +715,33 @@ was removed.)_
 - **Tester-only extras:** only the Sentry crash-test tools on the same screen still require the
   **`tester`** role (`UserProfile.isTester`; admin panel → Roles, admins implicitly count).
 
+### One-tap link from the PR (`/preview/<channel>`)
+
+Walking What's New → Try a preview → find the row is a lot to ask of a reviewer, so the sticky PR
+comment also carries **`https://www.boardsesh.com/preview/pr-<number>`**. It resolves three ways:
+
+| Where it's tapped  | What happens                                                                                                                                                                                                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iOS, app installed | Opens the app straight onto `app/preview/[channel].tsx`. The AASA (`packages/web/app/.well-known/apple-app-site-association/route.ts`) is wildcard (`'/*'`), so `/preview/*` needed no native change.                                                                                                                 |
+| Android, or no app | Lands on the web page (`packages/web/app/preview/[channel]`), which offers `com.boardsesh.app:///preview/pr-<n>` as a button. Android `intentFilters` are path-scoped, so a direct Android universal link needs a `/preview` prefix added in `app.config.ts` — a fingerprint change, hence a separate native release. |
+| Desktop            | Same web page; scan the QR to continue on a phone.                                                                                                                                                                                                                                                                    |
+
+- **Why https and not the scheme directly:** GitHub's markdown sanitiser only renders `http`/`https`
+  anchors, so a `com.boardsesh.app://` href in a comment would render as inert text.
+- **The route just pre-selects.** `app/preview/[channel].tsx` renders the same
+  `ChannelSwitcherScreen`, passing `requestedChannel`. The screen offers it through the **same
+  confirm dialog** a tapped row raises — a link never switches the app on its own — and waits for the
+  stored-override read plus the preview list first, so the dialog can name the PR and the revert
+  target is correct. On a Metro/dev build (`updatesUsable === false`) it prefills the manual field
+  instead.
+- **Channel names from a URL are whitelisted** in `src/lib/preview-link.ts` (`^pr-\d+$` plus the
+  presets) before they reach `performChannelSwitch`. The web half is
+  `packages/web/app/lib/ota-preview-link.ts` — the two are deliberately separate small files because
+  the third consumer of this grammar, the `github-script` step in the workflow, can't import TS.
+- **Scheme spelling:** emit the three-slash form (`com.boardsesh.app:///preview/…`). With two
+  slashes `preview` is the URL _host_, which Expo Router's prefix stripping drops; `+native-intent.ts`
+  normalises both, but don't rely on the rescue.
+
 ## Per-PR preview channels (self-hosted)
 
 Every PR with React Native changes can publish its JS bundle to its own self-hosted channel

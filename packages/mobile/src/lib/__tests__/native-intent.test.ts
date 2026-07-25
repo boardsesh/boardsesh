@@ -70,6 +70,40 @@ describe('redirectSystemPath', () => {
     expect(redirectSystemPath({ path: CALLBACK, initial: true })).toBe('');
   });
 
+  // The OTA-preview link from a PR comment. Written with two slashes, `preview`
+  // is the URL host rather than the first path segment, so Expo Router's prefix
+  // stripping drops it and app/preview/[channel].tsx never matches.
+  it('normalises the two-slash preview scheme link to the bare route path', () => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: 'com.boardsesh.app://preview/pr-1234', initial: true })).toBe('/preview/pr-1234');
+  });
+
+  it('normalises the three-slash preview scheme link (what Linking.createURL emits)', () => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: 'com.boardsesh.app:///preview/pr-1234', initial: false })).toBe(
+      '/preview/pr-1234',
+    );
+  });
+
+  it('leaves the universal-link form (already a bare path) untouched', () => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: '/preview/pr-1234', initial: true })).toBe('/preview/pr-1234');
+  });
+
+  it('normalises the preview link even when getShareExtensionKey throws', () => {
+    getShareExtensionKeyMock.mockImplementation(() => {
+      throw new Error('native module not loaded');
+    });
+    expect(redirectSystemPath({ path: 'com.boardsesh.app://preview/pr-1234', initial: true })).toBe('/preview/pr-1234');
+  });
+
+  it('does not rewrite a scheme link that merely starts with the word preview', () => {
+    getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
+    expect(redirectSystemPath({ path: 'com.boardsesh.app://previews/pr-1234', initial: true })).toBe(
+      'com.boardsesh.app://previews/pr-1234',
+    );
+  });
+
   it('does not treat a non-callback deep link on the same scheme as the callback', () => {
     getShareExtensionKeyMock.mockReturnValue('SHAREKEY');
     expect(redirectSystemPath({ path: 'com.boardsesh.app://join/some-session', initial: true })).toBe(

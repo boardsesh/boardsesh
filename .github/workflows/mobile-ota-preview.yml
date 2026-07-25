@@ -549,9 +549,21 @@ jobs:
               deployState = 'failure';
               deployDesc = `OTA preview ${channel} failed`;
             }
+            // The one-tap route in. GitHub's markdown sanitiser only renders http/https
+            // anchors, so this can't be a com.boardsesh.app:// URL — it points at the web
+            // page (packages/web/app/preview/[channel]), which iOS resolves straight into
+            // the app via the wildcard AASA and everywhere else offers the scheme link + a QR.
+            // Gated on `switchable`, not `anyPublished`: until the map job binds the channel
+            // to its branch the link would land testers on "No branch mapping found".
             const howto = switchable
-              ? ['', '**What\'s New → Try a preview → pick this PR** → it downloads and reloads. Reset on the ' +
-                 'same screen (back to `production`).', '']
+              ? ['',
+                 `**[📱 Open this preview in Boardsesh →](https://www.boardsesh.com/preview/${channel})**`,
+                 '',
+                 '<sub>Tap it on your phone. Reading this on a desktop? Open it there and scan the QR.</sub>',
+                 '',
+                 'By hand: **What\'s New → Try a preview → pick this PR** → it downloads and reloads. ' +
+                   'Reset on the same screen (back to `production`).',
+                 '']
               : [''];
 
             const body = [

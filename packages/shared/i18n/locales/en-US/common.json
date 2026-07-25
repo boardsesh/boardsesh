@@ -622,5 +622,23 @@
     "description": "This version is retired. Grab the rebuilt Boardsesh and your logbook, sessions, and crew come with you.",
     "cta": "Get the new app",
     "fallbackCta": "Open the store page instead"
+  },
+  "otaPreview": {
+    "metadata": {
+      "title": "Try PR #{{number}} in the app",
+      "description": "Load the Boardsesh preview build for pull request #{{number}} straight into the app."
+    },
+    "eyebrow": "App preview",
+    "heading": "Try PR #{{number}} in Boardsesh",
+    "intro": "This pull request is published as a preview build. Load it in the app, give it a beating, and reset when you're done.",
+    "openInApp": "Open in Boardsesh",
+    "openInAppHint": "Tap this on the phone that has Boardsesh installed. The app asks before it switches, then restarts on the preview.",
+    "qrDivider": "or",
+    "qrHint": "Scan with your phone to open this page there.",
+    "notesHeading": "Good to know",
+    "noteBuild": "Previews need a TestFlight or App Store build. A dev build running off Metro can't switch.",
+    "noteNative": "If this pull request changed native code there's no preview to load — that one needs a fresh TestFlight or Play build.",
+    "noteManual": "Doing it by hand: What's New → Try a preview → <code>{{channel}}</code>.",
+    "viewPullRequest": "Read pull request #{{number}} on GitHub"
   }
 }

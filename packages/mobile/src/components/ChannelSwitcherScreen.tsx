@@ -27,13 +27,20 @@ import type { SwitcherFormModel, SwitcherRow, SwitcherSection } from './Switcher
 // stable `data` ref once resolved.
 const EMPTY_PREVIEW_CHANNELS: NonNullable<ReturnType<typeof useOtaPreviewChannels>['data']> = [];
 
+type ChannelSwitcherScreenProps = {
+  // Channel the user arrived on via the /preview/<channel> deep link in a PR's
+  // OTA-preview comment. Already validated by parsePreviewChannel. Offered once,
+  // through the same confirm dialog a tapped row uses.
+  requestedChannel?: string;
+};
+
 // The OTA preview-channel switcher, rendered as a single native @expo/ui form
 // (SwiftUI `Form` on iOS, Jetpack Compose `LazyColumn` on Android) via the shared
 // <SwitcherForm />. This component owns every hook, route data, `t()` call,
 // confirm dialog, Alert, haptic, and the `channel-switch.ts` state machine, then
 // builds a plain view-model the native tree renders. Mirrors the
 // FeatureFlagsScreen → FeatureFlagsForm split.
-export function ChannelSwitcherScreen() {
+export function ChannelSwitcherScreen({ requestedChannel }: ChannelSwitcherScreenProps) {
   const { t } = useTranslation('common');
   const confirm = useConfirm();
   const { data: profile } = useProfile();
@@ -47,6 +54,10 @@ export function ChannelSwitcherScreen() {
   const isTester = Boolean(profile?.isTester);
 
   const [override, setOverride] = useState<string | null>(null);
+  // Whether the stored override has been read back. The deep-link auto-offer
+  // waits on this: switchToChannel captures overrideRef.current as the channel to
+  // revert to, so firing before the load lands would revert to the wrong one.
+  const [overrideLoaded, setOverrideLoaded] = useState(false);
   const [customChannel, setCustomChannel] = useState('');
   const [switchingChannel, setSwitchingChannel] = useState<string | null>(null);
   // Synchronous re-entrancy guard: `switchingChannel` only updates after the async
@@ -57,12 +68,22 @@ export function ChannelSwitcherScreen() {
   // from a ref avoids reverting to a stale render-closure value if the mount load
   // resolved after this callback was created.
   const overrideRef = useRef<string | null>(null);
+  // One-shot guard for the deep-link offer, so the re-renders the switch itself
+  // causes can't re-raise the dialog.
+  const offeredRequestRef = useRef(false);
 
   useEffect(() => {
     let active = true;
-    void getPreference<string>(OTA_CHANNEL_OVERRIDE_KEY).then((stored) => {
-      if (active) setOverride(stored);
-    });
+    void getPreference<string>(OTA_CHANNEL_OVERRIDE_KEY)
+      .then((stored) => {
+        if (active) setOverride(stored);
+      })
+      .catch(reportHandledError)
+      .finally(() => {
+        // Either way the read is done — a failed mirror read means "no override",
+        // which is what the null initial state already says. Unblock the offer.
+        if (active) setOverrideLoaded(true);
+      });
     return () => {
       active = false;
     };
@@ -140,6 +161,38 @@ export function ChannelSwitcherScreen() {
     },
     [confirm, runtimeVersion, makeDeps, t],
   );
+
+  // Deep link (/preview/<channel>): offer the linked channel as soon as we know
+  // enough to do it well. This goes through switchToChannel, so the same confirm
+  // dialog a tapped row raises still gates it — a link never switches the app on
+  // its own.
+  useEffect(() => {
+    if (offeredRequestRef.current || !requestedChannel || !overrideLoaded) return;
+    // Wait for the preview list so the dialog can name the PR ("Load “Fix the
+    // queue jump”…") rather than the bare channel. isLoading goes false on error
+    // too, so a failed list degrades to the channel name instead of hanging.
+    if (previewQuery.isLoading) return;
+
+    offeredRequestRef.current = true;
+    if (!updatesUsable) {
+      // Metro / Expo Go: switching is inert, so prefill the manual field instead
+      // of raising a dialog that can't go anywhere. The section footer already
+      // explains why nothing is tappable.
+      setCustomChannel(requestedChannel);
+      return;
+    }
+    if (requestedChannel === activeChannel) return;
+    const title = previewChannels.find((preview) => preview.channel === requestedChannel)?.title;
+    void switchToChannel(requestedChannel, title ?? requestedChannel);
+  }, [
+    requestedChannel,
+    overrideLoaded,
+    previewQuery.isLoading,
+    previewChannels,
+    updatesUsable,
+    activeChannel,
+    switchToChannel,
+  ]);
 
   const resetToBuildChannel = useCallback(async () => {
     if (inFlightRef.current) return;
