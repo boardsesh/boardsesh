@@ -144,7 +144,7 @@ export const ticksTypeDefs = /* GraphQL */ `
     comment: String
     "When the climb was attempted (ISO 8601)"
     climbedAt: String
-    "Board angle to move this ascent to. Recomputes board_climb_stats at BOTH the old and new angle — the two are independent aggregation buckets."
+    "Board angle to move this ascent to"
     angle: Int
   }
 
