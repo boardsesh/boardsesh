@@ -2,7 +2,7 @@ import { useContext, useEffect } from 'react';
 import { AppState } from 'react-native';
 import { QueryClientContext } from '@tanstack/react-query';
 import { computeQueueStateHash, computeQueueStateHashOrdered } from '@boardsesh/queue';
-import type { QueueAction, QueueState } from '@boardsesh/queue';
+import type { ClimbQueueItem, QueueAction, QueueState } from '@boardsesh/queue';
 import {
   applySessionRuntimeEvent,
   createQueueSyncGate,
@@ -117,6 +117,20 @@ type UseSessionRealtimeParams = {
   sessionIdRef: React.RefObject<string | null>;
   participantIdRef: React.RefObject<string | null>;
   stateRef: React.RefObject<QueueState>;
+  /**
+   * Set by createSessionWithConfig to the id of a session whose local-queue seed
+   * failed. While it matches this session, the empty-room FullSync is treated as
+   * a stale artefact of the failed seed rather than authoritative: it's skipped
+   * (dispatch AND gate tracking) so it can't wipe the live queue, and a re-seed
+   * via `reSeedQueueRef` re-pushes the local queue (#3878).
+   */
+  seedFailedSessionIdRef: React.RefObject<string | null>;
+  /** `mutations.setQueue` — re-pushes the whole local queue when the empty-room
+   *  FullSync guard fires, so the server catches up to local instead of local
+   *  being clobbered down to the empty room. Self-joins via ensureReady. */
+  reSeedQueueRef: React.RefObject<
+    (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => Promise<void>
+  >;
   activeBoardRef: React.RefObject<UserBoard | null | undefined>;
   setActiveBoardRef: React.RefObject<(board: UserBoard) => Promise<void>>;
   showToastRef: React.RefObject<(message: string, variant?: ToastVariant, duration?: number) => void>;
@@ -154,6 +168,8 @@ export function useSessionRealtime({
   sessionIdRef,
   participantIdRef,
   stateRef,
+  seedFailedSessionIdRef,
+  reSeedQueueRef,
   activeBoardRef,
   setActiveBoardRef,
   showToastRef,
@@ -332,6 +348,52 @@ export function useSessionRealtime({
             // returning here keeps this path a true no-op, matching pre-gate
             // behaviour exactly).
             if (queueEvent.__typename === 'PlaybackStateChanged') return;
+
+            // A brand-new session whose local-queue seed failed
+            // (createSessionWithConfig — a network blip, a rate limit, a
+            // validation reject, a timeout) still gets an initial FullSync for
+            // the empty server room. Applying it would wipe the live local queue
+            // via INITIAL_QUEUE_DATA; letting the sync gate adopt the empty
+            // room's hash would then have the 60s watchdog resync-to-empty
+            // seconds later. While the seed is known-failed for THIS session and
+            // local state is still non-empty, treat the local queue as
+            // authoritative: skip the empty FullSync entirely (dispatch AND gate
+            // tracking, so `lastServerStateHash` stays null and the watchdog
+            // stays quiet), and re-push the whole queue so the server catches up.
+            // On a successful re-seed clear the flag; on failure leave it set so
+            // the next reconnect's empty FullSync retries. `reSeedQueueRef`
+            // (mutations.setQueue) self-joins, so calling it from here is safe.
+            if (event.__typename === 'FullSync' && seedFailedSessionIdRef.current === sessionId) {
+              const isEmptyRoom = event.state.queue.length === 0 && event.state.currentClimbQueueItem == null;
+              const { queue: localQueue, currentClimbQueueItem: localCurrent } = stateRef.current;
+              const hasLocalQueue = localQueue.length > 0 || localCurrent != null;
+              if (isEmptyRoom && hasLocalQueue) {
+                if (__DEV__) console.warn('[queue] guarding empty FullSync after failed seed; re-seeding');
+                track(SHARED_EVENTS.QueueSeedFullSyncGuarded, {
+                  boardName: activeBoardRef.current?.boardType,
+                  layoutId: activeBoardRef.current?.layoutId,
+                  localQueueLength: localQueue.length,
+                });
+                void reSeedQueueRef
+                  .current(localQueue, localCurrent ?? undefined)
+                  .then(() => {
+                    // Clear only once the re-seed lands, and only if we're still
+                    // on the same session — the server now holds the real queue,
+                    // so subsequent (non-empty) FullSyncs apply normally.
+                    if (sessionIdRef.current === sessionId) seedFailedSessionIdRef.current = null;
+                  })
+                  .catch((reSeedError) => {
+                    if (__DEV__) console.warn('[queue] session queue re-seed failed', reSeedError);
+                    reportHandledError(reSeedError, { tags: { source: 'startSessionSeed', op: 'reseed' } });
+                    // Flag stays set: the next reconnect's empty FullSync retries.
+                  });
+                return;
+              }
+              // Local is also empty (nothing to protect) or the room isn't empty
+              // (the seed actually landed, or a peer populated it before this
+              // FullSync) — drop the guard and apply the FullSync normally.
+              seedFailedSessionIdRef.current = null;
+            }
 
             // Sequence-gate every other event before touching the reducer. A
             // stale duplicate (already-applied or older sequence — e.g. a

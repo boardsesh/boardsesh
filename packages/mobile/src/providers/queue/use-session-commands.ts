@@ -30,6 +30,13 @@ type UseSessionCommandsParams = {
   ensureJoined: (sessionIdToJoin: string) => Promise<unknown>;
   /** `mutations.setQueue` — the party-sync seed used by createSessionWithConfig. */
   setQueueMutation: (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => Promise<void>;
+  /**
+   * Holds the id of a session whose local-queue seed threw. Set here on seed
+   * failure and read by useSessionRealtime, which then refuses to let the empty
+   * room's FullSync wipe the live queue and re-seeds instead (#3878). Cleared at
+   * the clearSession teardown boundary.
+   */
+  seedFailedSessionIdRef: React.RefObject<string | null>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   sessionIdRef: React.RefObject<string | null>;
   dispatch: React.Dispatch<QueueAction>;
@@ -63,6 +70,7 @@ export function useSessionCommands({
   stateRef,
   ensureJoined,
   setQueueMutation,
+  seedFailedSessionIdRef,
   setSessionId,
   sessionIdRef,
   dispatch,
@@ -135,6 +143,14 @@ export function useSessionCommands({
               // surviving copy and a relaunch can still recover the queue.
               await clearStoredQueueSnapshot();
             } catch (seedError) {
+              // The seed never landed server-side, so the room is empty while
+              // the local queue is the truth. Flag it BEFORE setSessionId mounts
+              // the subscription: its empty-room FullSync would otherwise wipe
+              // the live queue via INITIAL_QUEUE_DATA. useSessionRealtime reads
+              // this ref, skips that FullSync, and re-seeds instead (#3878). The
+              // local snapshot is untouched (clearStoredQueueSnapshot only runs
+              // on success above), so a relaunch can still recover regardless.
+              seedFailedSessionIdRef.current = newId;
               if (__DEV__) console.warn('[queue] session queue seed failed', seedError);
               reportHandledError(seedError, { tags: { source: 'startSessionSeed' } });
             }
@@ -205,6 +221,10 @@ export function useSessionCommands({
     // Same for the coalesced-rerun flag: a pending rerun belongs to the old
     // session and must not fire a fetch into the next one.
     resyncPendingRef.current = false;
+    // Any pending seed-failure guard belongs to the session we're tearing down
+    // (it's keyed by id, so a stale value can't match the next session anyway —
+    // this just keeps the ref tidy).
+    seedFailedSessionIdRef.current = null;
     sessionIdRef.current = null;
     setSessionId(null);
     dispatch({

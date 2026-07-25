@@ -58,6 +58,11 @@ export const SHARED_EVENTS = {
   // field (#2860). Its volume gates the deferred periodic-resnapshot healer:
   // if this rarely fires, seed-on-subscribe alone is enough.
   SessionRosterReconciled: 'Session Roster Reconciled',
+  // Fired when a brand-new session's empty-room FullSync is skipped because the
+  // local-queue seed failed (createSessionWithConfig) — the guard that stops a
+  // failed seed from wiping the live queue, plus the re-seed it kicks off. Lets
+  // us measure how often the seed lifecycle degrades in the field (#3878).
+  QueueSeedFullSyncGuarded: 'Queue Seed FullSync Guarded',
   // Climb actions
   // Fired when the climb reaction/actions menu is opened, with a `source` prop
   // ('long_press' | 'more_button'). Powers the ⋮-button discoverability experiment:

@@ -362,6 +362,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const clearSessionRef = useRef<(options?: { notifyServer?: boolean }) => Promise<void>>(async () => {});
   const locallyEndingSessionIdRef = useRef<string | null>(null);
   const suppressedRemoteEndSessionIdRef = useRef<string | null>(null);
+  // Set by createSessionWithConfig when a new session's local-queue seed throws;
+  // read by useSessionRealtime to stop the empty-room FullSync from wiping the
+  // live queue and to trigger a re-seed instead (#3878).
+  const seedFailedSessionIdRef = useRef<string | null>(null);
 
   // Transient queue-event listeners. PlaybackStateChanged (route playback
   // party-sync) doesn't mutate queue state, so the play-drawer orchestrator
@@ -404,6 +408,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  // Stable handle to the whole-queue seed for useSessionRealtime's re-seed after
+  // a guarded empty FullSync (#3878). A ref (not an effect dep) so a new
+  // `mutations` identity never tears down and rebuilds the subscription effect.
+  const reSeedQueueRef = useRef(mutations.setQueue);
+  reSeedQueueRef.current = mutations.setQueue;
+
   // Broadcast the session's boardPath (angle/board) to party members. The
   // shared mutation already swallows transport errors and is a true no-op in
   // solo (never lazily creates a session), so callers can fire it freely.
@@ -431,6 +441,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     stateRef,
     ensureJoined,
     setQueueMutation: mutations.setQueue,
+    seedFailedSessionIdRef,
     setSessionId,
     sessionIdRef,
     dispatch,
@@ -580,6 +591,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     sessionIdRef,
     participantIdRef,
     stateRef,
+    seedFailedSessionIdRef,
+    reSeedQueueRef,
     activeBoardRef,
     setActiveBoardRef,
     showToastRef,
