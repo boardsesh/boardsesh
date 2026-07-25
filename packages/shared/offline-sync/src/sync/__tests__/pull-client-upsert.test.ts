@@ -23,6 +23,7 @@ vi.mock('../checkpoints', () => ({
 
 import { pullSync, toSqliteValue, multiRowChunkSize } from '../pull-client';
 import { TABLE_CONFIGS } from '../table-config';
+import { OFFLINE_DB_BUSY_TIMEOUT_MS } from '../../db/pragmas';
 
 // --- Pure helpers ------------------------------------------------------------
 
@@ -132,6 +133,7 @@ type GraphqlFetchMock = ReturnType<typeof vi.fn> &
 describe('upsertDocuments batching (via pullSync)', () => {
   let db: OfflineDatabase;
   let sqlCalls: SqlCall[];
+  let mockTxn: ReturnType<typeof createMockDb>['mockTxn'];
   let queryClient: QueryInvalidator;
   let graphqlFetch: GraphqlFetchMock;
 
@@ -140,6 +142,7 @@ describe('upsertDocuments batching (via pullSync)', () => {
     const mock = createMockDb();
     db = mock.db;
     sqlCalls = mock.sqlCalls;
+    mockTxn = mock.mockTxn;
     queryClient = createMockQueryClient();
     graphqlFetch = vi.fn() as unknown as GraphqlFetchMock;
   });
@@ -154,6 +157,20 @@ describe('upsertDocuments batching (via pullSync)', () => {
       throw new Error(`Unexpected query: ${query}`);
     });
   }
+
+  it('sets busy_timeout on the transaction connection before inserting', async () => {
+    fetchServingOnly('syncTicks', [{ uuid: 'tick-1', attempt_count: 1 }]);
+
+    await pullSync(db, queryClient, graphqlFetch);
+
+    expect(mockTxn.execAsync).toHaveBeenCalledWith(`PRAGMA busy_timeout = ${OFFLINE_DB_BUSY_TIMEOUT_MS}`);
+    // Must run before the insert: a fresh transaction connection starts at
+    // busy_timeout = 0, so setting it after the first INSERT is too late to
+    // protect that statement from an instant SQLITE_BUSY.
+    const execOrder = mockTxn.execAsync.mock.invocationCallOrder[0];
+    const runOrder = mockTxn.runAsync.mock.invocationCallOrder[0];
+    expect(execOrder).toBeLessThan(runOrder);
+  });
 
   it('binds NULL for a document missing a page-wide column another document has', async () => {
     // doc1 carries `quality`; doc2 omits it entirely. The page-wide column
