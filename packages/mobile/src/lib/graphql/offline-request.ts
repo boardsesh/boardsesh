@@ -168,6 +168,14 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
  * local while ONLINE (a latency optimization); with it off, an online request is
  * a straight network passthrough that never even probes local, so the majority
  * who never enabled the engine keep exactly the pre-offline behavior and its cost.
+ *
+ * Belt-and-braces for a lying connection: `onlineManager` can read "online" when
+ * the network can't actually serve the request — its NetInfo seed is async and
+ * defaults true (a cold start can lose that race), and it tracks `isConnected`,
+ * not `isInternetReachable`, so gym wifi with a dead upstream / a captive portal /
+ * no cellular data all look online. So when a request that reached the network
+ * throws, we make the SAME downloaded-board local fallback one more time before
+ * giving up; a real online error with no local data still propagates untouched.
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
   const operation = OFFLINE_OPERATIONS.get(document);
@@ -193,5 +201,21 @@ export async function offlineAwareRequest<TResponse>(document: string, variables
       }
     }
   }
-  return getHttpClient().request<TResponse>(document, variables);
+
+  try {
+    return await getHttpClient().request<TResponse>(document, variables);
+  } catch (networkError) {
+    // The request reached the network and failed. If it's a registered op whose
+    // board is downloaded, serve local instead — this catches the "connected but
+    // unreachable" and cold-start-race cases that `onlineManager` still reports as
+    // online (see the doc above). Flag-independent, like every other on-disk read.
+    // Nothing local to serve → rethrow the real error unchanged.
+    if (operation && variables !== undefined) {
+      const db = getDatabaseHandle();
+      if (db && (await operation.canServeLocal(db, variables as never))) {
+        return (await operation.resolveLocal(db, variables as never)) as TResponse;
+      }
+    }
+    throw networkError;
+  }
 }

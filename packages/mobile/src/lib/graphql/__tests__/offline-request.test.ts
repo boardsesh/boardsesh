@@ -443,6 +443,56 @@ describe('offlineAwareRequest — unregistered document', () => {
   });
 });
 
+describe('offlineAwareRequest — network-failure recovery (connected-but-unreachable)', () => {
+  // onlineManager can read "online" when the network can't serve the request: its
+  // NetInfo seed is async + defaults true (a cold start can lose the race), and it
+  // tracks isConnected, not isInternetReachable. So a request that reaches the
+  // network and THROWS must still fall back to local for a downloaded board — the
+  // gym-wifi-with-a-dead-upstream / captive-portal case, which is the issue's
+  // literal scenario when the flag hasn't resolved yet.
+
+  it('serves a downloaded board from local SQLite when an online request throws (flag off — the cold-start race)', async () => {
+    setOfflineEngineEnabled(false);
+    setOnline(true); // onlineManager stale-true; the flag never resolved
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    request.mockRejectedValue(new Error('Network request failed'));
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(result).toEqual({ searchClimbs: { climbs: [{ uuid: 'local' }], hasMore: false } });
+    expect(searchClimbsLocal).toHaveBeenCalledWith(fakeDb, searchInput);
+  });
+
+  it('serves a downloaded board from local SQLite when an online request throws (flag on, detail miss-retry)', async () => {
+    // Flag on + online: search serves local before the network, so the only
+    // network-reaching path for a downloaded board is the detail miss-retry. On a
+    // dead network it recovers to the local (null) result instead of the throw.
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    getClimbLocal.mockResolvedValue(null); // local miss → retry over network
+    request.mockRejectedValue(new Error('Network request failed'));
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+    expect(result).toEqual({ climb: null });
+  });
+
+  it('rethrows the network error when nothing is downloaded (not swallowed into an empty fallback)', async () => {
+    setOnline(true);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    request.mockRejectedValue(new Error('Network request failed'));
+    await expect(offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow(
+      'Network request failed',
+    );
+    expect(searchClimbsLocal).not.toHaveBeenCalled();
+  });
+
+  it('rethrows an online network error for an unregistered document untouched', async () => {
+    setOnline(true);
+    request.mockRejectedValue(new Error('Network request failed'));
+    await expect(offlineAwareRequest<{ ping: string }>('query Ping { ping }', {})).rejects.toThrow(
+      'Network request failed',
+    );
+    expect(getDatabaseHandle).not.toHaveBeenCalled();
+  });
+});
+
 describe('offlineAwareRequest — offline-engine flag OFF', () => {
   beforeEach(() => {
     setOfflineEngineEnabled(false);
