@@ -102,7 +102,7 @@ type RawQueueEvent =
     };
 
 type RawSessionEvent =
-  | { __typename: 'SessionRosterSnapshot'; users: SessionUserView[]; boardPath: string | null }
+  | { __typename: 'SessionRosterSnapshot'; users: SessionUserView[]; boardPath: string }
   | { __typename: 'UserJoined'; user: SessionUserView }
   | { __typename: 'UserLeft'; userId: string }
   | { __typename: 'UserPresenceChanged'; user: SessionUserView }
@@ -503,9 +503,10 @@ export class HeadlessParticipant {
     switch (event.__typename) {
       case 'SessionRosterSnapshot':
         // Full authoritative roster seeded on subscribe — REPLACE, matching the
-        // production client's applySessionRuntimeEvent handling.
+        // production client's applySessionRuntimeEvent handling. boardPath is
+        // String! on the wire (empty-string sentinel, never null).
         this.users = event.users;
-        if (event.boardPath !== null) this.boardPath = event.boardPath;
+        if (event.boardPath) this.boardPath = event.boardPath;
         this.rosterSnapshotUsers = event.users;
         break;
       case 'UserJoined':

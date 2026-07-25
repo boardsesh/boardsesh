@@ -141,6 +141,19 @@ describe('applySessionRuntimeEvent', () => {
       expect(next?.boardPath).toBe('/kilter/1/10/1,2/40/list');
     });
 
+    it('treats the empty-string boardPath sentinel as "keep current"', () => {
+      // The wire field is String!; the backend emits '' (not null) when the
+      // session row vanished mid-subscribe. The applier must keep the prior
+      // boardPath rather than blanking it.
+      const prev = session({ boardPath: '/kilter/1/10/1,2/40/list' });
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: prev.users,
+        boardPath: '',
+      });
+      expect(next?.boardPath).toBe('/kilter/1/10/1,2/40/list');
+    });
+
     it('coerces snapshot users through the injected coerceUser callback', () => {
       const prev = session({ clientId: 'participant-1' });
       const next = applySessionRuntimeEvent(

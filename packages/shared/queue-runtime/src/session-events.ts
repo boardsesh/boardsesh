@@ -100,11 +100,13 @@ export function applySessionRuntimeEvent<
     case 'SessionEnded':
       return prev;
     default: {
-      // Exhaustiveness guard. A new RuntimeSessionEvent member that a mapper
-      // can emit but this switch doesn't handle is a COMPILE error here — not a
-      // silent roster wipe at the call sites, which both treat a missing return
-      // as "clear the roster" (mobile `?? createEmptySessionRuntimeState()`,
-      // web `setSession(undefined)`).
+      // Exhaustiveness guard — its value is the COMPILE-TIME trap: a new
+      // RuntimeSessionEvent member that a mapper can emit but this switch doesn't
+      // handle fails to typecheck here (the `never` assignment), so an unhandled
+      // event can't slip through. At runtime this default just returns prev
+      // unchanged — the same safe no-op both call sites already fall back to on
+      // the null path — so it's belt-and-suspenders; the compile error is the
+      // real protection.
       const unhandled: never = event;
       void unhandled;
       return prev;

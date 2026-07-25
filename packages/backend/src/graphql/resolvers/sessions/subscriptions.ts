@@ -37,6 +37,13 @@ export const sessionSubscriptions = {
       const eagerIterator = asyncIterable[Symbol.asyncIterator]();
 
       try {
+        // Seed compute. This is a NEW failure surface: if getSessionUsers /
+        // getSessionById reject (they run after requireSessionMember passed), the
+        // generator throws and the subscription errors with NO in-place retry.
+        // That's a deliberate non-goal for this PR — the client's graphql-ws
+        // reconnect re-runs JOIN_SESSION + resubscribe, which re-seeds the roster,
+        // so a failed seed self-heals on the next reconnect rather than needing a
+        // bespoke retry here.
         const [users, session] = await Promise.all([
           roomManager.getSessionUsers(sessionId),
           roomManager.getSessionById(sessionId),
@@ -45,7 +52,12 @@ export const sessionSubscriptions = {
           sessionUpdates: {
             __typename: 'SessionRosterSnapshot',
             users,
-            boardPath: session?.boardPath ?? null,
+            // boardPath is String! on the wire. Emit the empty-string sentinel
+            // (not null) in the unreachable session-vanished-mid-subscribe case:
+            // a null would raise a non-null-field violation that nulls the entire
+            // sessionUpdates payload and silently drops the seed. Clients treat ''
+            // as "keep current" (applySessionRuntimeEvent's `|| prev.boardPath`).
+            boardPath: session?.boardPath ?? '',
           } as SessionEvent,
         };
 
