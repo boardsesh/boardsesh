@@ -247,18 +247,25 @@ export function useSessionRealtime({
     // resurrect the pre-session queue on a later cold start. Effect-scoped, so it
     // survives subscription restarts within the session and resets per session.
     let reSeedInFlight = false;
-    const reSeedQueueAfterFailedSeed = () => {
+    // `triggeredByFullSync` keeps `Queue Seed FullSync Guarded` faithful to its
+    // name: exactly one event per empty FullSync we actually guarded and turned
+    // into a write. Only the FullSync handler below passes `true`. It is checked
+    // AFTER the single-flight and empty-queue guards, so a second empty FullSync
+    // arriving mid-re-seed — which correctly no-ops the write — no longer counts.
+    // The internal convergence re-push at the `.then` below passes nothing: no
+    // FullSync triggered it, so counting it would overcount by one per local
+    // queue edit that lands mid-push.
+    const reSeedQueueAfterFailedSeed = (triggeredByFullSync = false) => {
       if (reSeedInFlight) return;
       const { queue, currentClimbQueueItem } = stateRef.current;
       if (queue.length === 0 && currentClimbQueueItem == null) return;
-      // Track only here, right before the write is actually dispatched — the
-      // call site above no-ops on a second empty FullSync arriving while a
-      // re-seed is already in flight, and a track() there would overcount.
-      track(SHARED_EVENTS.QueueSeedFullSyncGuarded, {
-        boardName: activeBoardRef.current?.boardType,
-        layoutId: activeBoardRef.current?.layoutId,
-        localQueueLength: queue.length,
-      });
+      if (triggeredByFullSync) {
+        track(SHARED_EVENTS.QueueSeedFullSyncGuarded, {
+          boardName: activeBoardRef.current?.boardType,
+          layoutId: activeBoardRef.current?.layoutId,
+          localQueueLength: queue.length,
+        });
+      }
       reSeedInFlight = true;
       const pushedHash = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid ?? null);
       void reSeedQueueRef
@@ -270,7 +277,8 @@ export function useSessionRealtime({
           const latestHash = computeQueueStateHashOrdered(latestQueue, latestCurrent?.uuid ?? null);
           if (latestHash !== pushedHash) {
             // Local changed while the push was in flight — re-push the latest and
-            // keep the guard armed until a push reflects the current queue.
+            // keep the guard armed until a push reflects the current queue. No
+            // FullSync drove this re-push, so it stays untracked (see above).
             reSeedQueueAfterFailedSeed();
             return;
           }
@@ -482,7 +490,7 @@ export function useSessionRealtime({
               const hasLocalQueue = localQueue.length > 0 || localCurrent != null;
               if (isEmptyRoom && hasLocalQueue) {
                 if (__DEV__) console.warn('[queue] guarding empty FullSync after failed seed; re-seeding');
-                reSeedQueueAfterFailedSeed();
+                reSeedQueueAfterFailedSeed(true);
                 return;
               }
               // Local is also empty (nothing to protect) or the room isn't empty

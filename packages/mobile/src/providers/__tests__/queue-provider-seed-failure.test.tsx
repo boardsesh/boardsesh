@@ -388,6 +388,16 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
     return snapshots;
   }
 
+  // Every `Queue Seed FullSync Guarded` emitted so far. The event is meant to
+  // count guarded empty FullSyncs one-for-one, so the re-seed tests assert an
+  // exact count rather than "was called" — a bare toHaveBeenCalledWith passes
+  // just as happily at 2 events as at 1 and hides both overcount regressions.
+  function guardedTrackCalls(): unknown[][] {
+    return (analytics.track.mock.calls as unknown as unknown[][]).filter(
+      (call) => call[0] === 'Queue Seed FullSync Guarded',
+    );
+  }
+
   it('keeps the live queue and re-seeds when the seed rejects and an empty FullSync arrives', async () => {
     // Seed (setQueue call #1) rejects; the re-seed (call #2) succeeds.
     queueMutations.setQueue.mockReset();
@@ -648,6 +658,11 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
     // add a third write.
     expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
+    // ...and it did not add a second analytics event either. Two empty FullSyncs
+    // arrived but only one became a write, so only one is counted. Tracking at
+    // the FullSync call site (before the single-flight guard) counts both and
+    // overstates re-seeds in production.
+    expect(guardedTrackCalls()).toHaveLength(1);
 
     // Let the held re-seed resolve: local still matches, so it converges.
     await act(async () => {
@@ -656,6 +671,7 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
       await Promise.resolve();
     });
     expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
+    expect(guardedTrackCalls()).toHaveLength(1);
     expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
   });
 
@@ -716,6 +732,12 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
       [ClimbQueueItem[], ClimbQueueItem | null | undefined]
     >;
     expect(setQueueCalls[2][0].map((item) => item.uuid)).toEqual(['q1', 'q2', 'q3']);
+    // Still exactly ONE analytics event across all three writes. Only one empty
+    // FullSync ever arrived; the convergence re-push (#2) was driven by a local
+    // queue edit, not by a FullSync. Firing the event unconditionally inside
+    // reSeedQueueAfterFailedSeed counts it too, so a user adding climbs while
+    // the session starts inflates the metric by one per mid-flight edit.
+    expect(guardedTrackCalls()).toHaveLength(1);
     // Converged on the latest snapshot — snapshot dropped, queue intact.
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2', 'q3']);
     expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
