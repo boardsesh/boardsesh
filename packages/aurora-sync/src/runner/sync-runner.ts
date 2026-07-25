@@ -487,12 +487,27 @@ export class SyncRunner {
     // returns no circuit rows and would clear a per-cycle flag straight back to
     // null — the message would flash once and vanish. This version persists
     // while the duplicate link does, and clears itself when it's resolved.
+    //
+    // Fail-open, and deliberately so. Every row this cycle wrote is already
+    // committed; the only thing left is a cosmetic status field. Letting this
+    // read throw would hand the whole cycle to the catch at syncNextUser —
+    // bumping consecutive_failures, widening the backoff, writing a
+    // last_sync_error and leaving last_sync_at un-advanced — so a successful
+    // sync would be recorded as a failure over a message. Swallow it, log it,
+    // and report no duplicate; the next cycle re-reads the same state anyway.
     const hasDuplicateCircuitOwner = await hasForeignOwnedCircuitPlaylists(
       db,
       boardType,
       cred.auroraUserId,
       cred.userId,
-    );
+    ).catch((error: unknown) => {
+      this.log(
+        `[SyncRunner] Duplicate-circuit-owner check failed for user ${cred.userId} (${boardType}); treating as no duplicate: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    });
     const duplicateCircuitOwnerError = hasDuplicateCircuitOwner
       ? upstreamPlaylistSyncErrorMessage(formatBoardDisplayName(boardType))
       : null;

@@ -49,7 +49,12 @@ async function getNextAuthUserId(
   return result[0]?.userId || null;
 }
 
-async function upsertTableData(
+/**
+ * Exported for unit tests: the circuits branch carries the duplicate-account
+ * ownership guard (#3526) and there is no other seam to drive it through
+ * without a live Aurora API.
+ */
+export async function upsertTableData(
   db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
   boardName: AuroraBoardName,
   tableName: string,

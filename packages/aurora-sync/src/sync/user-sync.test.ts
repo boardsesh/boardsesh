@@ -1,8 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { drizzle } from 'drizzle-orm/postgres-js';
+
+/** Driverless drizzle handle — `.toSQL()` renders without a connection. */
+const renderOnlyDb = drizzle({} as never);
 import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
-import { foreignPlaylistOwnerGuard, buildUpstreamPlaylistOwnersQuery } from '@boardsesh/db/queries';
-import { upsertTableData, DUPLICATE_CIRCUIT_OWNER_SKIP_REASON } from './user-sync';
+import { boardCircuits } from '@boardsesh/db/schema';
+import { and, eq, ne } from 'drizzle-orm';
+import { foreignPlaylistOwnerGuard, upstreamPlaylistOwnersQuery } from '@boardsesh/db/queries';
+import { upsertTableData, hasForeignOwnedCircuitPlaylists, DUPLICATE_CIRCUIT_OWNER_SKIP_REASON } from './user-sync';
 
 /**
  * Hand-rolled Drizzle shim, not a real DB — same philosophy as kilter-sync's
@@ -298,14 +304,61 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
     // The shim ignores SQL entirely, so without this the owner lookup — which
     // decides every case above — has no coverage: dropping `role = 'owner'` or
     // swapping the join keeps every other test green.
-    const rendered = new PgDialect().sqlToQuery(
-      buildUpstreamPlaylistOwnersQuery(playlists.auroraId, ['circuit-1']).getSQL(),
-    );
+    // Renders the query selectUpstreamPlaylistOwners actually awaits — a
+    // driverless drizzle handle is enough, .toSQL() never touches a connection.
+    const rendered = upstreamPlaylistOwnersQuery(renderOnlyDb, playlists.auroraId, ['circuit-1']).toSQL();
     expect(rendered.sql).toContain('from "playlists"');
     expect(rendered.sql).toContain('left join "playlist_ownership"');
     expect(rendered.sql).toContain('"playlist_ownership"."role" =');
     expect(rendered.sql).toContain('"playlists"."aurora_id" in');
     expect(rendered.params).toContain('owner');
     expect(rendered.params).toContain('circuit-1');
+  });
+});
+
+/**
+ * The state query behind the user-facing sync_error. Validated against prod
+ * too: it flags both halves of the known duplicate Tension pair and none of the
+ * other 110 Tension users.
+ */
+describe('hasForeignOwnedCircuitPlaylists (#3526)', () => {
+  /** Stub for `.select().from().innerJoin().innerJoin().where().limit()`. */
+  function stubDb(rows: Array<Record<string, unknown>>) {
+    const captured: { where?: unknown } = {};
+    const source = {
+      innerJoin: (_table: unknown, _on: unknown) => source,
+      where: (condition: unknown) => {
+        captured.where = condition;
+        return { limit: (_n: number) => Promise.resolve(rows) };
+      },
+    };
+    return { db: { select: () => ({ from: () => source }) }, captured };
+  }
+
+  it("reports a duplicate when a foreign owner holds one of the account's circuits", async () => {
+    const { db } = stubDb([{ playlistId: BigInt(1) }]);
+    await expect(hasForeignOwnedCircuitPlaylists(db as never, 'tension', 144574, 'user-1')).resolves.toBe(true);
+  });
+
+  it('reports no duplicate when nothing conflicts', async () => {
+    const { db } = stubDb([]);
+    await expect(hasForeignOwnedCircuitPlaylists(db as never, 'tension', 49399, 'user-1')).resolves.toBe(false);
+  });
+
+  it('scopes to this board, this Aurora account, and OTHER owners only', () => {
+    // A `<>` flipped to `=` here would give every healthy user a permanent
+    // "circuits aren't syncing" banner; a missing board/user filter would leak
+    // another account's circuits into the check.
+    const rendered = new PgDialect().sqlToQuery(
+      and(
+        eq(boardCircuits.boardType, 'tension'),
+        eq(boardCircuits.userId, 144574),
+        ne(playlistOwnership.userId, 'user-1'),
+      )!,
+    );
+    expect(rendered.sql).toContain('"board_circuits"."board_type" =');
+    expect(rendered.sql).toContain('"board_circuits"."user_id" =');
+    expect(rendered.sql).toContain('"playlist_ownership"."user_id" <>');
+    expect(rendered.params).toEqual(['tension', 144574, 'user-1']);
   });
 });

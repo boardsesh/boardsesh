@@ -1040,7 +1040,20 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
 // ---------------------------------------------------------------------------
 
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { foreignPlaylistOwnerGuard, buildUpstreamPlaylistOwnersQuery } from '@boardsesh/db/queries';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { exists, and, eq } from 'drizzle-orm';
+import {
+  foreignPlaylistOwnerGuard,
+  myPlaylistOwnerEdge,
+  selectUpstreamPlaylistOwners,
+  upstreamPlaylistOwnersQuery,
+} from '@boardsesh/db/queries';
+
+/**
+ * Driverless drizzle handle. `.toSQL()` renders without ever opening a
+ * connection, so query-shape assertions need no database.
+ */
+const renderOnlyDb = drizzle({} as never);
 import { applyCircuits, applyClimbRatings, sanitizeKilterRating } from './user-sync';
 
 describe('sanitizeKilterRating', () => {
@@ -1798,15 +1811,68 @@ describe('applyCircuits — foreign-owner guard (#3526)', () => {
     // lookup — which decides every case above — would have no coverage:
     // dropping `role = 'owner'` or swapping the join keeps every other test
     // green.
-    const rendered = new PgDialect().sqlToQuery(
-      buildUpstreamPlaylistOwnersQuery(playlists.kilterId, ['circuit-1']).getSQL(),
-    );
+    // Renders the query selectUpstreamPlaylistOwners actually awaits — a
+    // driverless drizzle handle is enough, .toSQL() never touches a connection.
+    const rendered = upstreamPlaylistOwnersQuery(renderOnlyDb, playlists.kilterId, ['circuit-1']).toSQL();
     expect(rendered.sql).toContain('from "playlists"');
     expect(rendered.sql).toContain('left join "playlist_ownership"');
     expect(rendered.sql).toContain('"playlist_ownership"."role" =');
     expect(rendered.sql).toContain('"playlists"."kilter_id" in');
     expect(rendered.params).toContain('owner');
     expect(rendered.params).toContain('circuit-1');
+  });
+
+  it('renders the REMOVE ownership guard as sole-ownership, not mere membership', () => {
+    // The pre-fix DELETE only asked "do I have an ownership row", which is true
+    // for BOTH co-owners of a cross-linked playlist — so either user's circuit
+    // delete destroyed the other's. The composed WHERE has to assert both
+    // halves: I own it AND nobody else does. Neither the transaction stub nor
+    // any behavioural test can see this, so render it.
+    const removeGuard = and(
+      eq(playlists.kilterId, 'circuit-X'),
+      exists(myPlaylistOwnerEdge('user-1')),
+      foreignPlaylistOwnerGuard('user-1'),
+    );
+    const rendered = new PgDialect().sqlToQuery(removeGuard!);
+    // "I own it"
+    expect(rendered.sql).toContain('exists');
+    expect(rendered.sql).toContain('"playlist_ownership"."user_id" =');
+    // "...and nobody else does"
+    expect(rendered.sql).toContain('not exists');
+    expect(rendered.sql).toContain('"playlist_ownership"."user_id" <>');
+    // Both correlated to the row being deleted.
+    expect(rendered.sql).toContain('"playlist_ownership"."playlist_id" = "playlists"."id"');
+    expect(rendered.params.filter((param) => param === 'owner')).toHaveLength(2);
+    expect(rendered.params.filter((param) => param === 'user-1')).toHaveLength(2);
+  });
+
+  it('chunks the owner lookup so a huge circuit batch stays under the parameter ceiling', async () => {
+    // 1200 circuits → 3 statements of 500/500/200, and every uuid must still be
+    // probed. An off-by-one in the slice silently drops owners, which reads as
+    // 'adopt' and re-opens the cross-link.
+    const circuitUuids = Array.from({ length: 1200 }, (_, index) => `circuit-${index}`);
+    const seenIds: string[][] = [];
+    const stubDb = {
+      select: () => ({
+        from: () => {
+          const source = {
+            leftJoin: () => source,
+            where: (condition: unknown) => {
+              // Pull the bound ids back out of the rendered statement.
+              const { params } = new PgDialect().sqlToQuery(condition as never);
+              seenIds.push(params.filter((param): param is string => typeof param === 'string' && param !== 'owner'));
+              return Promise.resolve([]);
+            },
+          };
+          return source;
+        },
+      }),
+    };
+
+    await selectUpstreamPlaylistOwners(stubDb as never, playlists.kilterId, circuitUuids);
+
+    expect(seenIds.map((ids) => ids.length)).toEqual([500, 500, 200]);
+    expect(seenIds.flat()).toEqual(circuitUuids);
   });
 
   it('refuses a Boardsesh-origin playlist that push-back stamped for the OTHER user (#3525 landmine)', async () => {

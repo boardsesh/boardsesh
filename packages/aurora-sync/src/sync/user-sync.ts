@@ -26,8 +26,11 @@ type OwnerQueryDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 /**
  * Machine-stable marker on `SyncTableResult.skippedReason` for circuits refused
- * because another Boardsesh user owns the playlist. The runner matches on it to
- * decide whether to write a user-facing `sync_error`.
+ * because another Boardsesh user owns the playlist.
+ *
+ * Reporting only — it rides out in the per-table result and the daemon log. The
+ * user-facing `sync_error` is NOT derived from it: see
+ * hasForeignOwnedCircuitPlaylists for why that has to be a state question.
  */
 export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = 'duplicate-board-account-link:circuits';
 
@@ -45,9 +48,11 @@ export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = 'duplicate-board-account-link
  * explanation. Reading state instead means the message persists while the
  * duplicate link persists, and disappears on its own once it's resolved.
  *
- * `board_circuits` is cumulative (upserted, never pruned) and keyed by the
- * Aurora numeric user id, so it holds the account's full circuit set regardless
- * of what arrived in this delta.
+ * `board_circuits` accumulates across cycles (upserted, never pruned per-sync)
+ * and is keyed by the Aurora numeric user id, so it holds the account's full
+ * circuit set regardless of what arrived in this delta. `clearAuroraBoardData`
+ * does wipe it board-wide, but that also clears `board_user_syncs` in the same
+ * transaction, so the next sync refills both and the check self-heals.
  */
 export async function hasForeignOwnedCircuitPlaylists(
   db: OwnerQueryDb,

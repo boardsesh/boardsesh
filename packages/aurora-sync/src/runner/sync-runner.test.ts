@@ -252,8 +252,8 @@ describe('SyncRunner login failure handling', () => {
   });
 
   it('leaves sync_error null when circuits synced cleanly', async () => {
-    // Guards the undefined-equals-undefined trap: if the skippedReason
-    // comparison ever ran against an absent constant it would fire here.
+    // The negative case for the state check: a healthy account must never see
+    // the duplicate-account message.
     const runner = new SyncRunner();
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
 

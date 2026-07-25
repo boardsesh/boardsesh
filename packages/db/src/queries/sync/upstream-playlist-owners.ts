@@ -1,9 +1,17 @@
 import { and, eq, inArray, ne, notExists, type SQL } from 'drizzle-orm';
-import { QueryBuilder, type PgColumn, type PgDatabase, type PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import { QueryBuilder, type PgDatabase, type PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import { playlists, playlistOwnership } from '../../schema/app/playlists';
 
 type OwnerQueryDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
+/**
+ * The only two columns these helpers may key on. Narrower than `PgColumn` on
+ * purpose: a bare column type also accepts `playlists.id` (and types the
+ * selected value as `unknown`), which would compile fine and silently look up
+ * the wrong thing.
+ */
+type UpstreamIdColumn = typeof playlists.kilterId | typeof playlists.auroraId;
 
 /**
  * Shared ownership arbitration for playlists that carry an UPSTREAM circuit id
@@ -93,7 +101,7 @@ export function myPlaylistOwnerEdge(userId: string) {
  */
 export async function selectUpstreamPlaylistOwners(
   db: OwnerQueryDb,
-  upstreamIdColumn: PgColumn,
+  upstreamIdColumn: UpstreamIdColumn,
   upstreamIds: string[],
 ): Promise<Map<string, string[]>> {
   const ownersByUpstreamId = new Map<string, string[]>();
@@ -107,14 +115,13 @@ export async function selectUpstreamPlaylistOwners(
   // that PgBouncer (transaction pooling, our prod shape) cannot multiplex.
   for (let offset = 0; offset < upstreamIds.length; offset += OWNER_LOOKUP_CHUNK) {
     const chunk = upstreamIds.slice(offset, offset + OWNER_LOOKUP_CHUNK);
-    const rows = await db
-      .select({ upstreamId: upstreamIdColumn, ownerUserId: playlistOwnership.userId })
-      .from(playlists)
-      .leftJoin(
-        playlistOwnership,
-        and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.role, 'owner')),
-      )
-      .where(inArray(upstreamIdColumn, chunk));
+    // Awaits the SAME expression the tests render — see
+    // upstreamPlaylistOwnersQuery. Deliberately not a hand-written copy of the
+    // query alongside a lookalike test double: an identical-by-inspection twin
+    // drifts the moment someone edits one side, and the drift tests would miss
+    // is exactly the dangerous one (dropping `role = 'owner'`, or turning the
+    // LEFT JOIN into an INNER JOIN, silently empties or widens the owner set).
+    const rows = await upstreamPlaylistOwnersQuery(db, upstreamIdColumn, chunk);
 
     for (const row of rows) {
       if (typeof row.upstreamId !== 'string') continue;
@@ -131,14 +138,21 @@ export async function selectUpstreamPlaylistOwners(
 }
 
 /**
- * Renders the owner lookup for one chunk without executing it. Exists so the
- * sync packages' unit tests — which drive `selectUpstreamPlaylistOwners`
- * through a hand-rolled stub that ignores SQL entirely — can still assert the
- * `role = 'owner'` filter, the LEFT JOIN and the column actually reach the
- * statement.
+ * The owner lookup for one chunk. `selectUpstreamPlaylistOwners` awaits exactly
+ * this — it is the executed query, not a test double.
+ *
+ * Split out so unit tests can render it. The sync packages drive the select
+ * through hand-rolled stubs that ignore SQL entirely, so without a seam like
+ * this the `role = 'owner'` filter, the LEFT JOIN and the upstream column have
+ * no coverage at all: deleting any of them keeps every stub-based test green.
+ * A test passes a driverless drizzle handle and calls `.toSQL()`.
  */
-export function buildUpstreamPlaylistOwnersQuery(upstreamIdColumn: PgColumn, upstreamIds: string[]) {
-  return new QueryBuilder()
+export function upstreamPlaylistOwnersQuery(
+  db: OwnerQueryDb,
+  upstreamIdColumn: UpstreamIdColumn,
+  upstreamIds: string[],
+) {
+  return db
     .select({ upstreamId: upstreamIdColumn, ownerUserId: playlistOwnership.userId })
     .from(playlists)
     .leftJoin(
