@@ -152,16 +152,21 @@ function QueueItemRowComponent({
     () =>
       Gesture.Pan()
         .enabled(swipeEnabled)
-        // Activate once the drag is clearly horizontal (10px), and bail once it's
-        // clearly vertical (14px). A tighter [-5, 5] Y bail was so narrow that the
-        // normal vertical wobble of a horizontal swipe tripped it before the 10px X
-        // activation — the Pan failed, never engaged, and the row's tap fell through
-        // and just selected the climb instead of revealing Delete (#3295). 14px
-        // tolerates that wobble while still ceding to a real vertical scroll (which
-        // crosses 14px in Y well before 10px in X). Mirrors SwipeableRow, extracted
-        // from this component, which already widened this exact value for the same
-        // reason.
-        .activeOffsetX([-10, 10])
+        // Activate only on a leftward drag past 10px — the swipe is left-only (a
+        // rightward drag is discarded in onUpdate below), so it must never claim a
+        // rightward or right-diagonal gesture. A symmetric [-10, 10] activated on
+        // right-and-down drags too, and once the Y bail widened to 14px (#3295) a
+        // +11px-X/+13px-Y drag would cross +10px X before 14px Y and capture the Pan
+        // as a no-op, blocking the list from scrolling. Single-negative activeOffsetX
+        // sets only the leftward threshold, so rightward motion yields to the scroll.
+        // Bail once the drag is clearly vertical (14px). A tighter [-5, 5] Y bail was
+        // so narrow that the normal vertical wobble of a horizontal swipe tripped it
+        // before the 10px X activation — the Pan failed, never engaged, and the row's
+        // tap fell through and just selected the climb instead of revealing Delete
+        // (#3295). 14px tolerates that wobble while still ceding to a real vertical
+        // scroll (which crosses 14px in Y well before 10px in X). Mirrors SwipeableRow,
+        // extracted from this component.
+        .activeOffsetX(-10)
         .failOffsetY([-14, 14])
         .onUpdate((event: GestureUpdateEvent<PanGestureHandlerEventPayload>) => {
           // Only allow swiping left

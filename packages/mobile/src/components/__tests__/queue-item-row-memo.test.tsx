@@ -314,9 +314,36 @@ describe('QueueItemRow React.memo', () => {
     expect(gestureCalls.panLogs).toHaveLength(1);
     const swipeCalls = gestureCalls.panLogs[0];
 
-    const activeOffsetX = swipeCalls.find((call) => call.method === 'activeOffsetX');
     const failOffsetY = swipeCalls.find((call) => call.method === 'failOffsetY');
-    expect(activeOffsetX?.args).toEqual([[-10, 10]]);
     expect(failOffsetY?.args).toEqual([[-14, 14]]);
+  });
+
+  // Regression guard for the #3900 Codex follow-up: the swipe is left-only (onUpdate
+  // discards positive-X motion), so its Pan must activate on leftward drag ONLY. A
+  // symmetric `activeOffsetX([-10, 10])` also activated on right-and-down diagonals,
+  // and once the Y bail widened to 14px a +11px-X/+13px-Y drag would cross +10px X
+  // before 14px Y and capture the Pan as a no-op — blocking the BottomSheetFlatList
+  // from scrolling. Single-negative `activeOffsetX(-10)` sets only the leftward
+  // threshold (verified against RNGH's panGesture source), so rightward motion yields
+  // to the scroll. Assert the single-negative form, never the symmetric array.
+  it('activates the swipe Pan on leftward drag only, so right-diagonal drags do not snag the scroll', () => {
+    const item = makeItem('a', 'Crimp Master');
+    render(
+      <QueueItemRow
+        item={item}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+      />,
+    );
+
+    expect(gestureCalls.panLogs).toHaveLength(1);
+    const activeOffsetX = gestureCalls.panLogs[0].find((call) => call.method === 'activeOffsetX');
+    // Single negative number = leftward-only activation; NOT a symmetric [-10, 10]
+    // array (which would also activate on rightward / right-diagonal drags).
+    expect(activeOffsetX?.args).toEqual([-10]);
   });
 });
