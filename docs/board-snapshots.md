@@ -275,8 +275,10 @@ pre-import empty result set.
   before ramping the flag. `EXPO_PUBLIC_*` vars are inlined at build time, not read at runtime, so this
   needs a new build to take effect, not just a config change.
 - **PostHog flags** (`packages/mobile/src/providers/feature-flags-provider.tsx`):
-  - `offline-board-downloads` — the whole offline engine (downloads, local-first reads, queued
-    offline writes, background sync). Missing/undefined reads as **off**.
+  - `offline-board-downloads` — the offline engine's _new_ work: downloads, the **online** local-first
+    read optimization, queued offline writes, and background sync. Missing/undefined reads as **off**.
+    Reading an already-downloaded board while the network is unavailable is NOT gated by this flag — see
+    the flag-gate section in `docs/offline-sync-plan.md` and issue #3888.
   - `offline-snapshot-bootstrap-v2` — nested under the flag above: whether a freshly-enabled scope warms
     from the snapshot at all. With `offline-board-downloads` on and `offline-snapshot-bootstrap-v2` off, a
     fresh board still downloads — just via the paged crawl. `OfflineSyncBridge`
