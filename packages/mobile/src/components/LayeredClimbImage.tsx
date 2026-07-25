@@ -122,7 +122,8 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           BoardDiscoveryCard's fixed-square thumb needed an aspect-fit inner box,
           see its thumbFit; ClimbListThumbnail's 76×96 portrait cell has a
           pre-existing, deliberately-unfit ~7px margin on MoonBoard's narrower
-          0.65 aspect — negligible at that size, left as-is). */}
+          0.65 aspect — negligible at that size, left as-is; tracked in
+          issue #3913). */}
       {isMoonBoard && (
         <View testID="layered-climb-image-moonboard-backdrop" style={[styles.layer, styles.moonboardBackdrop]} />
       )}

@@ -93,6 +93,9 @@ export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
       style={[animatedStyle, styles.container]}
     >
       <View testID="board-card" style={[styles.thumb, thumbStyle]}>
+        {/* thumbFit is only null when render is — checking both (rather than just
+            render) is pure TS narrowing so `style={thumbFit}` below doesn't need a
+            non-null assertion; they can't disagree (see the thumbFit memo above). */}
         {render && thumbFit ? (
           <BoardImageNative
             frames=""

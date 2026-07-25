@@ -174,8 +174,11 @@ describe('LayeredClimbImage', () => {
       const backgroundImage = container.querySelector('img[src="file:///bundled/moonboard-bg.webp"]');
       expect(backdrop).toBeTruthy();
       expect(backgroundImage).toBeTruthy();
-      // DOCUMENT_POSITION_FOLLOWING (4) means `backgroundImage` comes after
-      // `backdrop` in the tree, i.e. paints on top of it.
+      // compareDocumentPosition returns a bitmask, not a single enum value (it can
+      // combine e.g. FOLLOWING with DISCONNECTED/IMPLEMENTATION_SPECIFIC bits), so
+      // the correct check is masking for the FOLLOWING bit rather than an equality
+      // check against a specific combined value. FOLLOWING set means `backgroundImage`
+      // comes after `backdrop` in the tree, i.e. paints on top of it.
       // eslint-disable-next-line no-bitwise
       expect(
         (backdrop?.compareDocumentPosition(backgroundImage as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
