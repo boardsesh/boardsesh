@@ -70,6 +70,7 @@ const ClimbListThumbnail = React.memo(function ClimbListThumbnail({
       <LayeredClimbImage
         overlayUri={overlayUri}
         backgroundPaths={backgroundPaths}
+        boardName={boardName}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={frames}

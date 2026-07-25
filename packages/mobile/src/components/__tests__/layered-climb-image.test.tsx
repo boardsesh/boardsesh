@@ -12,6 +12,10 @@ vi.mock('react-native', () => ({
       return platform.os;
     },
   },
+  // theme/colors.ts (imported for moonboardWallBackdrop) computes
+  // iosSystemColors at module-load time via PlatformColor — must be stubbed
+  // or the import throws before any test body runs.
+  PlatformColor: (colorName: string) => colorName,
   View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));
@@ -119,5 +123,63 @@ describe('LayeredClimbImage', () => {
 
     const overlay = container.querySelector('img[src="file:///overlay.png"]');
     expect(overlay?.getAttribute('data-recycling-key')).toBe('climb-frames-abc');
+  });
+
+  // MoonBoard board art (moonboard-bg + holdset webps) is a near-fully-transparent
+  // schematic with no filled wall behind it, so without a fixed backdrop dark-mode
+  // chrome shows through and swallows the holds (issue #3885, #1449).
+  describe('MoonBoard backdrop (issue #3885)', () => {
+    it('paints the fixed backdrop layer for boardName="moonboard"', () => {
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: ['/bundled/moonboard-bg.webp', '/bundled/holdseta.webp'],
+          boardName: 'moonboard',
+        }),
+      );
+
+      expect(container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]')).toBeTruthy();
+    });
+
+    it('does not paint the backdrop for other boards', () => {
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: ['/bundled/kilter.webp'],
+          boardName: 'kilter',
+        }),
+      );
+
+      expect(container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]')).toBeNull();
+    });
+
+    it('does not paint the backdrop when boardName is omitted (existing call sites/tests)', () => {
+      const { container } = render(
+        createElement(LayeredClimbImage, { overlayUri: null, backgroundPaths: ['/bundled/kilter.webp'] }),
+      );
+
+      expect(container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]')).toBeNull();
+    });
+
+    it('sits behind (renders before) the board background image layers', () => {
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: ['/bundled/moonboard-bg.webp'],
+          boardName: 'moonboard',
+        }),
+      );
+
+      const backdrop = container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]');
+      const backgroundImage = container.querySelector('img[src="file:///bundled/moonboard-bg.webp"]');
+      expect(backdrop).toBeTruthy();
+      expect(backgroundImage).toBeTruthy();
+      // DOCUMENT_POSITION_FOLLOWING (4) means `backgroundImage` comes after
+      // `backdrop` in the tree, i.e. paints on top of it.
+      // eslint-disable-next-line no-bitwise
+      expect(
+        (backdrop?.compareDocumentPosition(backgroundImage as Node) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
   });
 });

@@ -6,6 +6,11 @@ import { createElement, type ReactNode } from 'react';
 type ViewMockProps = { children?: ReactNode; testID?: string };
 
 vi.mock('react-native', () => ({
+  Platform: { OS: 'ios' },
+  // theme/colors.ts (imported for moonboardWallBackdrop) computes
+  // iosSystemColors at module-load time via PlatformColor — must be stubbed
+  // or the import throws before any test body runs.
+  PlatformColor: (colorName: string) => colorName,
   View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
 }));

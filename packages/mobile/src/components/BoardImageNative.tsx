@@ -110,6 +110,7 @@ const BoardImageNative = React.memo(function BoardImageNative({
       <LayeredClimbImage
         overlayUri={overlayUri}
         backgroundPaths={backgroundPaths}
+        boardName={boardName}
         missingBackgroundCount={missingBackgroundCount}
         mirrored={mirrored}
         recyclingKey={recyclingKey}

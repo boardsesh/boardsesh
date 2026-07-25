@@ -102,6 +102,28 @@ export const playDrawerMaterialTint = {
 } as const;
 
 /**
+ * Fixed backdrop painted behind every MoonBoard render (LayeredClimbImage),
+ * regardless of light/dark mode (issue #3885, and the older #1449). MoonBoard
+ * board art (moonboard-bg.webp + the holdset webps) is a near-fully-transparent
+ * schematic — grid labels and hold icons only, no filled wall behind them — so
+ * without an explicit backdrop it shows whatever's behind the image stack. In
+ * the play view that's the modal's themed system background (app/play.tsx),
+ * which turns near-black in dark mode and swallows the pale/neutral-toned
+ * holds.
+ *
+ * Deliberately NOT keyed by colorScheme like `playDrawerMaterialTint` above:
+ * MoonBoard panels are painted a real-world yellow (RAL 1023 "Traffic
+ * Yellow" per Moon Climbing's panel spec), so a fixed warm tone reads as the
+ * actual board in both modes rather than as a theme artifact — and it keeps
+ * LayeredClimbImage (used everywhere a board renders: thumbnails, discovery
+ * cards, the play view) free of a useTheme() dependency. Toned down from the
+ * saturated RAL swatch to a paler, muted cream-yellow so a full-screen fill
+ * behind grey/beige hold icons stays comfortable to look at rather than
+ * traffic-cone bright.
+ */
+export const moonboardWallBackdrop = '#E9DBA0';
+
+/**
  * M3 surface-tint percentages for the elevation overlay (levels 1–5). The brand
  * primary is alpha-composited over the base surface at these alphas to build the
  * tonal surface-container ramp — this IS M3's mechanism for expressing depth

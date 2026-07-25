@@ -1,12 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
 import { Image } from 'expo-image';
+import type { BoardName } from '@boardsesh/shared-schema';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 import { useBoardArtVisible } from './board-art-visibility-context';
+import { moonboardWallBackdrop } from '../theme/colors';
 
 type LayeredClimbImageProps = {
   overlayUri: string | null;
   backgroundPaths: string[];
+  /**
+   * Which board is rendering. Only consumed to decide whether to paint the
+   * fixed MoonBoard wall backdrop (see `moonboardWallBackdrop` in
+   * theme/colors.ts for why it's theme-independent) — every other board
+   * renders unchanged. Optional so call sites (and tests) that don't care
+   * about the backdrop keep working.
+   */
+  boardName?: BoardName;
   /**
    * Number of background layers the cache couldn't resolve. Each missing
    * layer is rendered as a visible neutral-gray block so the bug is
@@ -60,6 +70,7 @@ export function backgroundImageUri(path: string): string {
 const LayeredClimbImage = React.memo(function LayeredClimbImage({
   overlayUri,
   backgroundPaths,
+  boardName,
   missingBackgroundCount = 0,
   mirrored,
   dimBackground,
@@ -68,6 +79,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
   overlayTestID,
 }: LayeredClimbImageProps) {
   const shouldShowEmptyFallback = backgroundPaths.length === 0 && missingBackgroundCount === 0;
+  const isMoonBoard = boardName === 'moonboard';
   // Only relevant when overlayTestID is set (the play-drawer board): expose the
   // testID anchor on a marker that mounts AFTER the overlay image has actually
   // painted, not when the <Image> first mounts. expo-image reports "visible" to
@@ -99,6 +111,13 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
 
   return (
     <View style={[styles.stack, mirrored && styles.mirrored]}>
+      {/* MoonBoard's board-art webps (moonboard-bg + the holdset image) are a
+          near-fully-transparent schematic — grid labels and hold icons only,
+          no filled wall. Painted first so it sits behind every other layer;
+          see moonboardWallBackdrop for why this is theme-independent. */}
+      {isMoonBoard && (
+        <View testID="layered-climb-image-moonboard-backdrop" style={[styles.layer, styles.moonboardBackdrop]} />
+      )}
       {shouldShowEmptyFallback && (
         <View testID="layered-climb-image-empty-fallback" style={[styles.layer, styles.emptyLayer]} />
       )}
@@ -180,6 +199,9 @@ const styles = StyleSheet.create({
   },
   emptyLayer: {
     backgroundColor: 'rgba(120, 120, 128, 0.28)',
+  },
+  moonboardBackdrop: {
+    backgroundColor: moonboardWallBackdrop,
   },
   // Subtle list-only board scrim. Tunable: drop dimBackground if the filled
   // hold style already separates the climb on a given board / in light mode.
