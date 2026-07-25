@@ -169,17 +169,27 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // gate rather than one captured in a stale closure.
   const queueSyncGateRef = useRef<QueueSyncGate | null>(null);
 
-  // The queue-slot uuid of a current-climb change whose broadcast was skipped
-  // because the target climb was still unresolved (a thin peer item advanced
-  // onto by next/previousClimb — see dispatchSetCurrent, #3868). We can't send a
-  // placeholder ClimbInput (uuid may be empty; name/frames are `String!`
-  // server-side), so we defer: when useQueueResolveClimbs hydrates that slot
-  // WHILE IT'S STILL CURRENT, the effect below fires the real setCurrentClimb so
-  // peers, late joiners, and a peer-held wall LED link finally advance. Cleared
-  // by any other broadcastable change (a resolved setCurrentClimb, setQueue,
-  // clearQueue) and by the effect when current moves off this slot, so a stale
-  // hydrate can never re-broadcast an item the session already moved past.
-  const pendingUnsyncedCurrentRef = useRef<string | null>(null);
+  // A current-climb change whose broadcast was skipped because the target climb
+  // was still unresolved (a thin peer item advanced onto by next/previousClimb —
+  // see dispatchSetCurrent, #3868). We can't send a placeholder ClimbInput (uuid
+  // may be empty; name/frames are `String!` server-side), so we defer: when
+  // useQueueResolveClimbs hydrates that slot WHILE IT'S STILL CURRENT, the effect
+  // below fires the real setCurrentClimb so peers, late joiners, and a peer-held
+  // wall LED link finally advance. Cleared by any other broadcastable change (a
+  // resolved setCurrentClimb, setQueue, clearQueue) and by the effect when
+  // current moves off this slot, so a stale hydrate can never re-broadcast an
+  // item the session already moved past.
+  //
+  // The deferral carries the session it was captured in (`sessionId`) so the
+  // re-broadcast effect can bail SYNCHRONOUSLY if we've since switched rooms
+  // (PR #3894 Codex thread 3). The `[sessionId]` clear below is a passive effect,
+  // but joinSession / createSessionWithConfig write `sessionIdRef.current`
+  // synchronously before setSessionId — so a hydration-re-broadcast effect still
+  // pending from the prior commit can flush (with sessionIdRef already pointing
+  // at the new room) before that clear runs, and broadcast the old room's climb
+  // into the new one. Comparing `deferred.sessionId` to `sessionIdRef.current` at
+  // fire time closes that window; the effect-based clear stays as a backstop.
+  const pendingUnsyncedCurrentRef = useRef<{ queueItemUuid: string; sessionId: string | null } | null>(null);
 
   // The active board is the angle source of truth. Read it here so the
   // self-healing re-grade effect can compare each queued climb's display angle
@@ -342,11 +352,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
-    // Any session change — start, join, leave, or a direct A→B switch — drops a
-    // deferred re-broadcast (#3868). The pending ref holds only a queue-slot
-    // uuid, which is meaningless in a different session, and the new session's
-    // FullSync is authoritative; without this a late hydrate could push session
-    // A's current climb into session B for every peer.
+    // Backstop clear on any session change — start, join, leave, or a direct A→B
+    // switch (#3868). The primary guard is the re-broadcast effect's synchronous
+    // deferred.sessionId vs sessionIdRef.current check (PR #3894 Codex thread 3);
+    // this passive-effect clear can't fire before an already-pending re-broadcast
+    // effect flushes, so it's defence-in-depth, not the race fix.
     pendingUnsyncedCurrentRef.current = null;
   }, [sessionId]);
 
@@ -820,12 +830,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // required server-side), and next/previousClimb can navigate onto a
       // not-yet-hydrated peer item. The local reducer already applied the change,
       // and useQueueResolveClimbs hydrates the item within a tick. No pending
-      // correlation is tracked since no server echo will arrive. Remember the
-      // slot so the re-broadcast effect fires once it hydrates while still
-      // current (#3868).
+      // correlation is tracked since no server echo will arrive. Remember the slot
+      // AND the session it belongs to so the re-broadcast effect fires once it
+      // hydrates while still current, but only back into the same room (#3868).
       if (!isClimbResolved(item.climb)) {
         if (__DEV__) console.warn('[queue] skipping setCurrentClimb sync for an unresolved climb. See #2527.');
-        pendingUnsyncedCurrentRef.current = item.uuid;
+        pendingUnsyncedCurrentRef.current = { queueItemUuid: item.uuid, sessionId: sessionIdRef.current };
         return;
       }
       // A real broadcast supersedes any deferred one — drop it so a late hydrate
@@ -858,13 +868,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // our broadcast) to advance. Without it they stay on the old climb until the
   // next navigation.
   useEffect(() => {
-    const pendingUuid = pendingUnsyncedCurrentRef.current;
-    if (!pendingUuid) return;
+    const pending = pendingUnsyncedCurrentRef.current;
+    if (!pending) return;
+    // Room changed since we deferred (a session join/switch/leave). Read
+    // sessionIdRef, not `sessionId` state: joinSession / createSessionWithConfig
+    // write the ref synchronously before setSessionId, so this pending effect can
+    // flush after the ref already points at the new room but before the
+    // [sessionId] backstop clear runs (PR #3894 Codex thread 3). Bailing on the
+    // synchronous ref value stops the old room's climb leaking into the new one.
+    if (pending.sessionId !== sessionIdRef.current) {
+      pendingUnsyncedCurrentRef.current = null;
+      return;
+    }
     const current = state.currentClimbQueueItem;
     // Current moved off the deferred slot (local nav, a peer's server-driven
     // CurrentClimbChanged, or a removal) — drop the deferral so a stale hydrate
     // can't re-broadcast an item the session already moved past.
-    if (!current || current.uuid !== pendingUuid) {
+    if (!current || current.uuid !== pending.queueItemUuid) {
       pendingUnsyncedCurrentRef.current = null;
       return;
     }

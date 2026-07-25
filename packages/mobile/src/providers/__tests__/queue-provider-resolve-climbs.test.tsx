@@ -105,6 +105,7 @@ type Snapshot = {
   dispatch: QueueApi['dispatch'];
   setQueue: QueueApi['setQueue'];
   setCurrentClimb: QueueApi['setCurrentClimb'];
+  setSessionId: QueueApi['setSessionId'];
 };
 
 // A fully-resolved climb (uuid + name + frames): renderable and syncable.
@@ -154,8 +155,9 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       dispatch: queue.dispatch,
       setQueue: queue.setQueue,
       setCurrentClimb: queue.setCurrentClimb,
+      setSessionId: queue.setSessionId,
     });
-  }, [queue.state, queue.dispatch, queue.setQueue, queue.setCurrentClimb, onSnapshot]);
+  }, [queue.state, queue.dispatch, queue.setQueue, queue.setCurrentClimb, queue.setSessionId, onSnapshot]);
   return null;
 }
 
@@ -565,6 +567,48 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
 
       // The late echo is suppressed — current stays X, never reverts to q-thin.
       expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('q-x');
+    });
+
+    // PR #3894 Codex thread 3: the deferral records the session it was captured
+    // in, and the re-broadcast effect bails when the room changed, so a hydrate
+    // that completes after a session switch never leaks the old room's climb into
+    // the new one. (The precise flush-ordering window — a pending re-broadcast
+    // effect flushing after joinSession's synchronous sessionIdRef write but
+    // before the [sessionId] backstop clear — isn't reproducible under RTL, which
+    // serialises effects at act() boundaries; this locks in the session-scoped
+    // contract that closes it.)
+    it('does not re-broadcast a deferral after the session changes (session-scoped)', async () => {
+      let releaseFetch: (() => void) | undefined;
+      http.request.mockImplementation(
+        async (_query: string, variables: { climbUuid: string; angle: number }) =>
+          new Promise<{ climb: Climb }>((resolve) => {
+            releaseFetch = () => resolve({ climb: makeClimb(variables.climbUuid, 25, 'V5') });
+          }),
+      );
+
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+      // In session A, advance onto a thin item — the deferral captures session A.
+      await act(async () => {
+        snapshots.at(-1)?.setSessionId('session-A');
+      });
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-thin', makeThinClimb('climb-thin')));
+      });
+      await waitFor(() => expect(http.request).toHaveBeenCalled());
+
+      // The room changes before hydration finishes.
+      await act(async () => {
+        snapshots.at(-1)?.setSessionId('session-B');
+      });
+
+      // Hydration completes — the deferral belonged to session A, so it must NOT
+      // broadcast into session B.
+      await act(async () => {
+        releaseFetch?.();
+      });
+      expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
     });
   });
 });
