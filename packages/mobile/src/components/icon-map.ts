@@ -1,10 +1,23 @@
 import type { SymbolViewProps } from 'expo-symbols';
 
-type IconMapping = {
+export type IconMapping = {
   // SFSymbol union (from sf-symbols-typescript via expo-symbols) — every name is
   // validated at compile time, so a typo fails `vp run typecheck:mobile`.
   ios: SymbolViewProps['name'];
   android: string;
+  /**
+   * Downward nudge applied to the SF Symbol, as a fraction of its point size, so
+   * the glyph's *ink* lands on the centre line rather than its bounding box.
+   *
+   * A handful of SF Symbols reserve vertical space they never draw into, so
+   * `.scaleAspectFit` centres a box whose ink sits high. Every consumer of such
+   * a glyph is off by the same proportion, which is why the correction lives
+   * here with the glyph instead of at one call site — a per-call-site nudge
+   * drifts the moment another screen renders the same symbol.
+   *
+   * iOS-only: the MaterialCommunityIcons glyphs are already ink-centred.
+   */
+  iosOpticalCenterRatio?: number;
 };
 
 export const iconMap = {
@@ -61,7 +74,9 @@ export const iconMap = {
   'pin.fill': { ios: 'pin.fill', android: 'pin' },
   transfer: { ios: 'arrow.left.arrow.right', android: 'swap-horizontal' },
   tag: { ios: 'tag', android: 'tag-outline' },
-  'check.small': { ios: 'checkmark', android: 'check' },
+  // `checkmark` draws entirely above the baseline but reserves descender space
+  // below it, so the box centres ~9% of its point size higher than the ink does.
+  'check.small': { ios: 'checkmark', android: 'check', iosOpticalCenterRatio: 0.09 },
   flash: { ios: 'bolt.fill', android: 'flash' },
   // What's New / changelog. Mirrors the More tab's native changelog glyph
   // (sparkles on iOS) so the same feature reads consistently across surfaces.

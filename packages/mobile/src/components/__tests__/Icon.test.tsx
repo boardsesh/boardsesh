@@ -16,8 +16,21 @@ vi.mock('react-native', () => ({
 
 // Stand-ins that surface the glyph name + colour so we can assert which renderer ran.
 vi.mock('expo-symbols', () => ({
-  SymbolView: ({ name, tintColor }: { name: string; tintColor?: string }) =>
-    createElement('div', { 'data-testid': 'symbol-view', 'data-name': name, 'data-tint': tintColor }),
+  SymbolView: ({
+    name,
+    tintColor,
+    style,
+  }: {
+    name: string;
+    tintColor?: string;
+    style?: { transform?: { translateY: number }[] };
+  }) =>
+    createElement('div', {
+      'data-testid': 'symbol-view',
+      'data-name': name,
+      'data-tint': tintColor,
+      'data-translate-y': style?.transform?.[0]?.translateY,
+    }),
 }));
 
 vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
@@ -50,6 +63,37 @@ describe('Icon platform rendering', () => {
     expect(queryByTestId('symbol-view')).toBeNull();
     expect(mci?.getAttribute('data-name')).toBe(iconMap['skip.next'].android);
     expect(mci?.getAttribute('data-color')).toBe('#00FF00');
+  });
+
+  it('shifts an ink-off-centre SF Symbol down by its recorded fraction of the point size', () => {
+    const ratio = iconMap['check.small'].iosOpticalCenterRatio;
+    expect(ratio).toBeGreaterThan(0);
+
+    const { queryByTestId } = render(<Icon name="check.small" size={26} />);
+    expect(queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBe(String(26 * ratio));
+  });
+
+  it('scales the shift with the icon size so every call site lands the same', () => {
+    const ratio = iconMap['check.small'].iosOpticalCenterRatio;
+
+    const small = render(<Icon name="check.small" size={18} />);
+    expect(small.queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBe(String(18 * ratio));
+    small.unmount();
+
+    const large = render(<Icon name="check.small" size={26} />);
+    expect(large.queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBe(String(26 * ratio));
+  });
+
+  it('leaves glyphs without a recorded correction untransformed', () => {
+    const { queryByTestId } = render(<Icon name="skip.next" size={26} />);
+    expect(queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBeNull();
+  });
+
+  it('never shifts the Android glyph, which is already ink-centred', () => {
+    ctrl.os = 'android';
+    const { queryByTestId } = render(<Icon name="check.small" size={26} />);
+    expect(queryByTestId('mci')?.getAttribute('data-translate-y')).toBeNull();
+    expect(queryByTestId('symbol-view')).toBeNull();
   });
 
   it('maps every transport glyph to its platform-specific name', () => {

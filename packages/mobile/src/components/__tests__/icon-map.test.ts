@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { iconMap, type IconName } from '../icon-map';
+import { iconMap, type IconMapping, type IconName } from '../icon-map';
 
 describe('iconMap', () => {
   it('every entry has both ios and android string values', () => {
@@ -8,6 +8,16 @@ describe('iconMap', () => {
       expect(mapping.ios.length).toBeGreaterThan(0);
       expect(typeof mapping.android).toBe('string');
       expect(mapping.android.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('keeps every optical-centre correction a small downward fraction', () => {
+    for (const mapping of Object.values<IconMapping>(iconMap)) {
+      if (mapping.iosOpticalCenterRatio === undefined) continue;
+      // A nudge, not a relayout: anything beyond a fifth of the point size means
+      // the glyph is wrong for the slot, not merely off-centre.
+      expect(mapping.iosOpticalCenterRatio).toBeGreaterThan(0);
+      expect(mapping.iosOpticalCenterRatio).toBeLessThanOrEqual(0.2);
     }
   });
 
