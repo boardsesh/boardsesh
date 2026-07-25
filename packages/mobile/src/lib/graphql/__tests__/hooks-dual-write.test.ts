@@ -53,7 +53,7 @@ vi.mock('../hooks/use-social', () => ({
 }));
 vi.mock('../hooks/use-session-detail', () => ({ useSessionDetail: vi.fn(), useSessionPreview: vi.fn() }));
 
-import { useToggleFavorite } from '../hooks';
+import { useToggleFavorite, useDeleteDraftClimb } from '../hooks';
 import { runMigrations } from '@boardsesh/offline-sync';
 import { createTestDatabase, __resetDrainerStateForTests, type TestSqliteDb } from '@boardsesh/offline-sync/testing';
 
@@ -176,5 +176,65 @@ describe('useToggleFavorite dual-write', () => {
     const localWrites = await db.getAllAsync<Row>('SELECT * FROM user_favorites');
     expect(localWrites).toHaveLength(0);
     expect(await db.getAllAsync<Row>('SELECT * FROM pending_mutations')).toHaveLength(0);
+  });
+});
+
+// #3471: the infinite Climbs-tab list (['infiniteSearchClimbs']) must self-heal
+// on the same completion paths as the plain ['searchClimbs'] cache, not just on
+// a board sync — otherwise a favorited/deleted climb keeps showing stale rows
+// until staleTime expires.
+describe('useToggleFavorite onSuccess invalidation', () => {
+  it('online path: invalidates searchClimbs, infiniteSearchClimbs, and favoriteStatus', async () => {
+    request.mockResolvedValue({ toggleFavorite: { favorited: true } });
+    const { mutationFn, onSuccess } = asConfig<ToggleVariables>(useToggleFavorite());
+    const variables: ToggleVariables = {
+      input: { boardName: 'kilter', climbUuid: 'climb-online-fav', angle: 40 },
+      currentlyFavorited: false,
+    };
+
+    const data = await mutationFn(variables);
+    onSuccess?.(data, variables);
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ['favoriteStatus', 'kilter', 'climb-online-fav', 40],
+    });
+  });
+
+  it('local-queue path: invalidates searchClimbs + infiniteSearchClimbs, skips favoriteStatus', async () => {
+    request.mockImplementation(parkedRequest);
+    const { mutationFn, onSuccess } = asConfig<ToggleVariables>(useToggleFavorite());
+    const variables: ToggleVariables = {
+      input: { boardName: 'kilter', climbUuid: 'climb-fav-queued', angle: 40 },
+      currentlyFavorited: false,
+    };
+
+    const data = await mutationFn(variables);
+    onSuccess?.(data, variables);
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+    // The server doesn't know about the toggle yet on the local-queue path — the
+    // optimistic setQueryData holds until the drainer's post-landing invalidation.
+    expect(invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: ['favoriteStatus', 'kilter', 'climb-fav-queued', 40],
+    });
+  });
+});
+
+describe('useDeleteDraftClimb onSuccess invalidation', () => {
+  it('invalidates searchClimbs, infiniteSearchClimbs, and searchClimbsCount', async () => {
+    request.mockResolvedValue({ deleteDraftClimb: true });
+    type DeleteDraftVariables = { uuid: string; boardType: string };
+    const { mutationFn, onSuccess } = asConfig<DeleteDraftVariables>(useDeleteDraftClimb());
+    const variables: DeleteDraftVariables = { uuid: 'draft-1', boardType: 'kilter' };
+
+    const data = await mutationFn(variables);
+    onSuccess?.(data, variables);
+
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
   });
 });

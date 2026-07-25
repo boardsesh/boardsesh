@@ -752,6 +752,7 @@ export function useDeleteDraftClimb() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
     },
   });
@@ -867,6 +868,7 @@ export function useToggleFavorite() {
     },
     onSuccess: (data, variables) => {
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       // Bust the per-climb favorite-status cache so a re-open reflects the new
       // state from the server, not a stale 5-min-cached value. Skipped on the
       // local-queue path, where the server does not know about the toggle yet —
