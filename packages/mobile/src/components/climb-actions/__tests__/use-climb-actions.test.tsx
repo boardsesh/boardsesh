@@ -25,6 +25,10 @@ vi.mock('@boardsesh/analytics', () => ({ SHARED_EVENTS: {} }));
 vi.mock('../../../providers/drawer-host-provider', () => ({
   useDrawerHost: () => ({
     openPlayDrawer: openers.openPlayDrawer,
+    // Still surfaced by the real provider (the climb-list row / board sheet open
+    // it directly), but the hook no longer consumes it — the playlist action is
+    // structurally inline-only. Kept here so the "never opens the sheet" assertion
+    // has something to prove.
     openAddToPlaylist: openers.openAddToPlaylist,
     openLogAscent: openers.openLogAscent,
     openAddBetaVideo: openers.openAddBetaVideo,
@@ -63,8 +67,20 @@ const ownerClimb = { ...climb, userId: 'user-1', is_draft: true } as unknown as 
 const kilterBoard = { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 40 };
 const tensionBoard = { ...kilterBoard, boardName: 'tension' };
 
-function ids(args: Parameters<typeof useClimbActions>[0]): ClimbActionId[] {
-  const { result } = renderHook(() => useClimbActions(args));
+// `onSelectPlaylist` is required on the hook — it MUST host the playlist picker
+// inline (no root AddToPlaylistSheet, no flash-close over a modal route; see
+// use-climb-actions.ts). Default it here so every call site is valid; the playlist
+// dispatch test overrides it with a spy.
+type ActionArgs = Omit<Parameters<typeof useClimbActions>[0], 'onSelectPlaylist'> & {
+  onSelectPlaylist?: () => void;
+};
+const noopSelectPlaylist = () => {};
+function renderActions(args: ActionArgs) {
+  return renderHook(() => useClimbActions({ onSelectPlaylist: noopSelectPlaylist, ...args }));
+}
+
+function ids(args: ActionArgs): ClimbActionId[] {
+  const { result } = renderActions(args);
   return result.current.map((action) => action.id);
 }
 
@@ -120,7 +136,7 @@ describe('useClimbActions gating', () => {
 
 describe('useClimbActions colours and dispatch', () => {
   it('colours queue/favorite by role and the rest with the accent', () => {
-    const { result } = renderHook(() => useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false }));
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
     const byId = Object.fromEntries(result.current.map((action) => [action.id, action.color]));
     expect(byId.queue).toBe('#0a0');
     expect(byId.favorite).toBe('#f00');
@@ -129,38 +145,34 @@ describe('useClimbActions colours and dispatch', () => {
 
   it('queue.run enqueues the climb and fires onAfterAction', () => {
     const onAfterAction = vi.fn();
-    const { result } = renderHook(() =>
-      useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onAfterAction }),
-    );
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onAfterAction });
     result.current.find((action) => action.id === 'queue')?.run();
     expect(openers.addToQueue).toHaveBeenCalledWith({ uuid: 'queue-uuid', climb });
     expect(onAfterAction).toHaveBeenCalledTimes(1);
   });
 
-  it('playlist.run opens the playlist picker for the climb + board config', () => {
-    const { result } = renderHook(() => useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false }));
-    result.current.find((action) => action.id === 'playlist')?.run();
-    expect(openers.openAddToPlaylist).toHaveBeenCalledWith(climb, kilterBoard);
-  });
-
-  it('playlist.run calls onSelectPlaylist (inline) instead of opening the sheet when provided', () => {
+  it('playlist.run always hosts the picker inline (onSelectPlaylist), never the root sheet, and does not dismiss', () => {
     const onSelectPlaylist = vi.fn();
     const onAfterAction = vi.fn();
-    const { result } = renderHook(() =>
-      useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onSelectPlaylist, onAfterAction }),
-    );
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      onSelectPlaylist,
+      onAfterAction,
+    });
     result.current.find((action) => action.id === 'playlist')?.run();
     expect(onSelectPlaylist).toHaveBeenCalledTimes(1);
-    // Inline host keeps the overlay up — no sheet, no dismiss.
+    // Structural guarantee: the action can never open the root AddToPlaylistSheet
+    // (which would flash closed over a modal route — the #3335 / #3294 class), and
+    // it keeps the reaction overlay up (no dismiss).
     expect(openers.openAddToPlaylist).not.toHaveBeenCalled();
     expect(onAfterAction).not.toHaveBeenCalled();
   });
 
   it('betaVideo.run opens the root beta sheet and fires onAfterAction by default', () => {
     const onAfterAction = vi.fn();
-    const { result } = renderHook(() =>
-      useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: true, onAfterAction }),
-    );
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: true, onAfterAction });
     result.current.find((action) => action.id === 'betaVideo')?.run();
     expect(openers.openAddBetaVideo).toHaveBeenCalledWith(climb, kilterBoard);
     expect(onAfterAction).toHaveBeenCalledTimes(1);
@@ -169,9 +181,13 @@ describe('useClimbActions colours and dispatch', () => {
   it('betaVideo.run calls onAddBetaVideo (in-tree) instead of the root sheet when provided', () => {
     const onAddBetaVideo = vi.fn();
     const onAfterAction = vi.fn();
-    const { result } = renderHook(() =>
-      useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: true, onAddBetaVideo, onAfterAction }),
-    );
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: true,
+      onAddBetaVideo,
+      onAfterAction,
+    });
     result.current.find((action) => action.id === 'betaVideo')?.run();
     // Same climb/board snapshot the root path uses, so a live queue change can't retarget it.
     expect(onAddBetaVideo).toHaveBeenCalledWith(climb, kilterBoard);
@@ -183,9 +199,7 @@ describe('useClimbActions colours and dispatch', () => {
 
   it('tick.run opens the root LogAscent sheet and fires onAfterAction by default', () => {
     const onAfterAction = vi.fn();
-    const { result } = renderHook(() =>
-      useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onAfterAction }),
-    );
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onAfterAction });
     result.current.find((action) => action.id === 'tick')?.run();
     expect(openers.openLogAscent).toHaveBeenCalledWith(
       expect.objectContaining({ climbUuid: 'climb-1', boardName: 'kilter', angle: 40 }),
@@ -196,9 +210,13 @@ describe('useClimbActions colours and dispatch', () => {
   it('tick.run calls onTick (in-tree) instead of the root sheet when provided', () => {
     const onTick = vi.fn();
     const onAfterAction = vi.fn();
-    const { result } = renderHook(() =>
-      useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onTick, onAfterAction }),
-    );
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      onTick,
+      onAfterAction,
+    });
     result.current.find((action) => action.id === 'tick')?.run();
     // Same climb/board snapshot the root path uses, so a live queue change can't retarget it.
     expect(onTick).toHaveBeenCalledWith(climb, kilterBoard);
@@ -209,13 +227,13 @@ describe('useClimbActions colours and dispatch', () => {
   });
 
   it('share.run opens the native share sheet', () => {
-    const { result } = renderHook(() => useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false }));
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
     result.current.find((action) => action.id === 'share')?.run();
     expect(openers.shareClimb).toHaveBeenCalledTimes(1);
   });
 
   it('preview.run opens the climb view-only in the play drawer', () => {
-    const { result } = renderHook(() => useClimbActions({ climb, boardConfig: kilterBoard, isAuthenticated: false }));
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
     result.current.find((action) => action.id === 'preview')?.run();
     expect(openers.openPlayDrawer).toHaveBeenCalledTimes(1);
     expect(openers.openPlayDrawer).toHaveBeenCalledWith(climb, expect.objectContaining({ source: 'climb_view' }));

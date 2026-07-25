@@ -3,12 +3,12 @@
 // colour) plus a `run()` that performs the action and then calls `onAfterAction` (the
 // reaction menu passes its animated dismiss).
 //
-// The hook self-sources every opener (preview / queue / playlist / tick / beta video)
-// from `useDrawerHost`, the favourite state + mutation from `useFavoriteStatus` /
+// The hook self-sources most openers (preview / queue / tick / beta video) from
+// `useDrawerHost`, the favourite state + mutation from `useFavoriteStatus` /
 // `useToggleFavorite`, the native share from `useShareClimb`, and the create-climb
-// routes from the router, so a caller only
-// supplies the climb, its board config, and the two contextual flags (`currentUserId`,
-// `isAuthenticated`) plus the logbook-only `onEditEntry`.
+// routes from the router, so a caller supplies the climb, its board config, the two
+// contextual flags (`currentUserId`, `isAuthenticated`), the required inline playlist
+// host (`onSelectPlaylist`), and the logbook-only `onEditEntry`.
 
 import { useCallback, useMemo } from 'react';
 import type { OpaqueColorValue } from 'react-native';
@@ -66,12 +66,18 @@ type UseClimbActionsArgs = {
   /** Run after any action fires. The sheet passes its `onClose`; the native menu omits it. */
   onAfterAction?: () => void;
   /**
-   * When provided, the "Add to playlist" action runs this INSTEAD of opening the
-   * `AddToPlaylistSheet` (and does NOT dismiss). The reaction overlay passes a
-   * view-switcher so it can host the picker inline — stacking a second native
-   * sheet dismisses the first (#3294). Omit it and playlist opens the sheet.
+   * Required in-place host for the "Add to playlist" action: `run()` calls this
+   * and does NOT dismiss the menu, so the picker renders inline (a view switch in
+   * the reaction overlay's `FullWindowOverlay`) rather than opening a native
+   * sheet. Deliberately NOT optional: a fallback that opened the root
+   * `AddToPlaylistSheet` here would present a second native sheet off the root
+   * window and, from over a modal route (`/play`), flash open and vanish — the
+   * #3335 / #3294 bug (docs/mobile-sheets-vs-routes.md, rule 1 + the in-tree-opener
+   * trap). Surfaces that genuinely want the standalone sheet (the climb-list row,
+   * the board sheet) call `useDrawerHost().openAddToPlaylist` directly, off the
+   * player, instead of going through this hook.
    */
-  onSelectPlaylist?: () => void;
+  onSelectPlaylist: () => void;
   /**
    * When provided, the "Add beta video" action runs this INSTEAD of opening the
    * root `AddBetaVideoSheet`. The play drawer passes its own in-tree sheet opener
@@ -116,13 +122,7 @@ export function useClimbActions({
   const { actionColors } = useTheme();
   const { addToQueue } = useQueueActions();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
-  const {
-    openPlayDrawer,
-    openAddToPlaylist,
-    openLogAscent,
-    openAddBetaVideo,
-    boardConfig: activeBoardConfig,
-  } = useDrawerHost();
+  const { openPlayDrawer, openLogAscent, openAddBetaVideo, boardConfig: activeBoardConfig } = useDrawerHost();
   // Native share sheet — the same action the play drawer uses.
   const shareClimb = useShareClimb({
     climb,
@@ -205,15 +205,12 @@ export function useClimbActions({
       title: t('actions.playlist.popover.title'),
       icon: 'playlist',
       color: accentColor,
+      // Always the inline host: swap the reaction overlay to its playlist view
+      // (no dismiss, no second native sheet). `onSelectPlaylist` is required so
+      // this action can never fall back to opening the root AddToPlaylistSheet
+      // over a modal route and flash closed — the #3335 / #3294 class.
       run: () => {
-        // Inline host (reaction overlay) keeps the overlay up and swaps to its
-        // playlist view; otherwise fall back to the bottom sheet.
-        if (onSelectPlaylist) {
-          onSelectPlaylist();
-          return;
-        }
-        openAddToPlaylist(climb, boardConfig);
-        after();
+        onSelectPlaylist();
       },
     });
 
@@ -397,7 +394,6 @@ export function useClimbActions({
     toggleFavoriteMutate,
     isFavorited,
     openPlayDrawer,
-    openAddToPlaylist,
     openLogAscent,
     openAddBetaVideo,
     activeBoardConfig,
