@@ -72,6 +72,9 @@ const defer = (): Deferred => {
  * therefore use `createDurableSession`, which seeds the hash the way a live
  * party session always has one.
  */
+/** How many not-yet-created release slots `releaseFrom` pre-resolves. */
+const GATE_LOOKAHEAD = 12;
+
 function gateCasEval(mockRedis: MockRedis) {
   const original = mockRedis.eval.bind(mockRedis) as (...args: unknown[]) => Promise<unknown>;
   const arrivals: Deferred[] = [];
@@ -94,9 +97,19 @@ function gateCasEval(mockRedis: MockRedis) {
     whenArrived: (index: number) => slot(arrivals, index).promise,
     /** Let exactly the Nth CAS call proceed, leaving every other one parked. */
     release: (index: number) => slot(releases, index).resolve(),
-    /** Let the Nth CAS call, and every later one, proceed. */
+    /**
+     * Let the Nth CAS call, and every later one, proceed.
+     *
+     * `releases` is sparse — a slot only exists once someone has asked for it —
+     * so "every later one" has to be a finite pre-resolve of slots that don't
+     * exist yet. `GATE_LOOKAHEAD` bounds that. It only has to cover the CAS
+     * calls a single test can still issue after this point: at most one per
+     * parked mutation plus its retries (`MAX_RETRIES` is 3), so 12 is a wide
+     * margin over the 2-3 these tests actually reach. A test that exceeded it
+     * would hang rather than pass wrongly.
+     */
     releaseFrom: (index: number) => {
-      for (let cursor = index; cursor < index + 12; cursor++) {
+      for (let cursor = index; cursor < index + GATE_LOOKAHEAD; cursor++) {
         slot(releases, cursor).resolve();
       }
     },
@@ -500,6 +513,69 @@ describe('queue state atomicity (#3906)', () => {
       // Restarting at 1 here would rewind the sequence clients gap-check on.
       expect(revived.sequence).toBe(beforeEviction.sequence + 1);
       expect(revived.version).toBe(beforeEviction.version + 1);
+    });
+
+    // Three-party race: reviving a dormant session takes TWO CAS calls
+    // (NEEDS_FLOOR, then the floored write), and a third process can seed the
+    // Redis hash in the gap between them. The floored attempt must then lose
+    // its CAS rather than write over the newcomer, and the retry must pick up
+    // the seeded state.
+    it('a write landing between NEEDS_FLOOR and the floored retry still wins', async () => {
+      const sessionId = uuidv4();
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
+
+      const existing = createTestClimb('already-there');
+      await roomManager.updateQueueStateImmediate(sessionId, [existing], null, undefined);
+      const durable = await roomManager.getQueueState(sessionId);
+
+      // The 4h TTL expires; Postgres keeps the counters.
+      await mockRedis.del(`boardsesh:session:${sessionId}`);
+
+      const gate = gateCasEval(mockRedis);
+      const newClimb = createTestClimb('revives-the-session');
+      const reviving = queueMutations.addQueueItem({}, { item: newClimb }, mockCtx('client-1', sessionId));
+
+      // CAS #0 is the probe that returns NEEDS_FLOOR.
+      await gate.whenArrived(0);
+      gate.release(0);
+
+      // CAS #1 is the floored write. Park it, and let a third party seed the
+      // hash underneath — writing the fields directly rather than through a
+      // mutation so it doesn't consume a gate index.
+      await gate.whenArrived(1);
+      const intruderClimb = createTestClimb('intruder');
+      await mockRedis.hset(
+        `boardsesh:session:${sessionId}`,
+        'sessionId',
+        sessionId,
+        'queue',
+        JSON.stringify([existing, intruderClimb]),
+        'currentClimbQueueItem',
+        'null',
+        'version',
+        String(durable.version + 7),
+        'sequence',
+        String(durable.sequence + 7),
+        'stateHash',
+        'seeded',
+        'stateHashOrdered',
+        'seeded-ordered',
+        'lastActivity',
+        String(Date.now()),
+      );
+
+      gate.releaseFrom(1);
+      await reviving;
+
+      const finalState = await roomManager.getQueueState(sessionId);
+      const uuids = finalState.queue.map((item) => item.uuid);
+      // Neither write is lost: the intruder's climb survives and the reviving
+      // mutation's climb was re-applied on top of it.
+      expect(uuids).toContain(intruderClimb.uuid);
+      expect(uuids).toContain(newClimb.uuid);
+      expect(uuids).toContain(existing.uuid);
+      // The retry built on the seeded version rather than the stale floor.
+      expect(finalState.version).toBe(durable.version + 8);
     });
   });
 });
