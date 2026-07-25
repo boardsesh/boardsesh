@@ -116,8 +116,14 @@ describe('analytics wrapper', () => {
 
   it('falls back to direct PostHog ingestion when the proxy URL cannot be derived', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', '');
-    vi.stubEnv('NEXT_PUBLIC_WS_URL', '');
-    setWindowLocation('https://app.boardsesh.com/b/kilter');
+    // Every host in the production allowlist (boardsesh.com, www.boardsesh.com)
+    // is resolvable by backend-url.ts's deriveWsUrlFromHost, so "production
+    // host + no derivable proxy" isn't reachable via a real hostname anymore
+    // (it was previously only reachable through app.boardsesh.com, which the
+    // old substring-matching gate wrongly treated as production — see #3814).
+    // Mock the resolver directly to exercise analytics.ts's own defensive
+    // fallback/warning in isolation from backend-url.ts's host table.
+    vi.doMock('../backend-url', () => ({ getBackendHttpUrl: () => null }));
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { track } = await import('../analytics');
 
@@ -137,6 +143,7 @@ describe('analytics wrapper', () => {
     );
 
     consoleWarn.mockRestore();
+    vi.doUnmock('../backend-url');
   });
 
   it('does not warn about a missing key outside production hosts', async () => {
@@ -152,6 +159,21 @@ describe('analytics wrapper', () => {
 
   it('keeps Vercel tracking in previews while PostHog remains production-gated', async () => {
     setWindowLocation('https://boardsesh-preview.vercel.app/b/kilter');
+    const { track } = await import('../analytics');
+
+    track('Preview Event');
+
+    expect(mocks.vercelTrack).toHaveBeenCalledWith('Preview Event', undefined, undefined);
+    expect(mocks.PostHog).not.toHaveBeenCalled();
+    expect(mocks.posthog.capture).not.toHaveBeenCalled();
+  });
+
+  it('regression #3814: does not leak PR-preview sessions into prod PostHog', async () => {
+    // <pr>.preview.boardsesh.com (branch-deploy.yml) CONTAINS "boardsesh.com"
+    // as a substring — the exact host that leaked into prod PostHog under the
+    // old `.includes('boardsesh.com')` gate. Vercel tracking still fires;
+    // only PostHog must stay gated.
+    setWindowLocation('https://123.preview.boardsesh.com/b/kilter');
     const { track } = await import('../analytics');
 
     track('Preview Event');

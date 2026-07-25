@@ -3,15 +3,16 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from '@sentry/nextjs';
+import { isProductionHost } from './app/lib/production-hosts';
 
-// Only enable Sentry on the production boardsesh.com hosts. Exact-host match, NOT
-// a substring: preview deploys run at `<pr>.preview.boardsesh.com`
-// (branch-deploy.yml), which contains "boardsesh.com" and would pass an
-// `.includes()` check — so every PR-preview browser session (and any browser test
-// pointed at a preview host via PLAYWRIGHT_TEST_BASE_URL) leaked into the prod
-// project. Listing apex + www covers whichever the live host redirects to.
-const PRODUCTION_HOSTS = new Set(['boardsesh.com', 'www.boardsesh.com']);
-const isProductionDomain = typeof window !== 'undefined' && PRODUCTION_HOSTS.has(window.location.hostname);
+// Only enable Sentry on the production boardsesh.com hosts. Exact-host match
+// (see production-hosts.ts for why), NOT a substring: preview deploys run at
+// `<pr>.preview.boardsesh.com` (branch-deploy.yml), which contains
+// "boardsesh.com" and would pass an `.includes()` check — so every
+// PR-preview browser session (and any browser test pointed at a preview host
+// via PLAYWRIGHT_TEST_BASE_URL) leaked into the prod project. Shared with
+// analytics.ts's PostHog gate so the two production-checks can't drift apart.
+const isProductionDomain = typeof window !== 'undefined' && isProductionHost(window.location.hostname);
 
 Sentry.init({
   dsn: 'https://f55e6626faf787ae5291ad75b010ea14@o4510644927660032.ingest.us.sentry.io/4510644930150400',
