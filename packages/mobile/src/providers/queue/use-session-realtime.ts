@@ -27,6 +27,7 @@ import {
   type SessionLiveStatsEvent,
 } from '../../lib/graphql/operations';
 import { getStoredActiveBoard } from '../../lib/active-board-store';
+import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
 import { toClimbQueueItem, type SubscriptionQueueItem } from '../../lib/queue-conversion';
 import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
 import { track } from '../../lib/analytics';
@@ -225,6 +226,48 @@ export function useSessionRealtime({
     let joinRetryCount = 0;
     let authRefreshRejoinInProgress = false;
 
+    // Single-flight, snapshot-checked recovery for a failed session seed. The
+    // empty-room FullSync guard (below) calls this to re-push the local queue so
+    // the server catches up. Serialised so a live queue edit or a second empty
+    // FullSync mid-flight can't race two whole-queue writes — an older setQueue
+    // landing last would regress newer state. The seed-failed flag clears only
+    // once the pushed snapshot still matches local (else the latest state is
+    // re-pushed), and a converged re-seed also drops the solo snapshot, mirroring
+    // the happy-path seed in createSessionWithConfig so a stale copy can't
+    // resurrect the pre-session queue on a later cold start. Effect-scoped, so it
+    // survives subscription restarts within the session and resets per session.
+    let reSeedInFlight = false;
+    const reSeedQueueAfterFailedSeed = () => {
+      if (reSeedInFlight) return;
+      const { queue, currentClimbQueueItem } = stateRef.current;
+      if (queue.length === 0 && currentClimbQueueItem == null) return;
+      reSeedInFlight = true;
+      const pushedHash = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid ?? null);
+      void reSeedQueueRef
+        .current(queue, currentClimbQueueItem ?? undefined)
+        .then(() => {
+          reSeedInFlight = false;
+          if (sessionIdRef.current !== sessionId) return;
+          const { queue: latestQueue, currentClimbQueueItem: latestCurrent } = stateRef.current;
+          const latestHash = computeQueueStateHashOrdered(latestQueue, latestCurrent?.uuid ?? null);
+          if (latestHash !== pushedHash) {
+            // Local changed while the push was in flight — re-push the latest and
+            // keep the guard armed until a push reflects the current queue.
+            reSeedQueueAfterFailedSeed();
+            return;
+          }
+          // Server now matches local: retire the guard and drop the solo snapshot.
+          seedFailedSessionIdRef.current = null;
+          void clearStoredQueueSnapshot();
+        })
+        .catch((reSeedError) => {
+          reSeedInFlight = false;
+          if (__DEV__) console.warn('[queue] session queue re-seed failed', reSeedError);
+          reportHandledError(reSeedError, { tags: { source: 'startSessionSeed', op: 'reseed' } });
+          // Flag stays set: the next reconnect's empty FullSync retries.
+        });
+    };
+
     // iOS suspends the WebSocket while the app is backgrounded, so a
     // JOIN_SESSION fired now never completes and trips execute()'s 30s timeout
     // — reported as a noisy `queue-sync/join` error even though it's expected
@@ -360,9 +403,11 @@ export function useSessionRealtime({
             // authoritative: skip the empty FullSync entirely (dispatch AND gate
             // tracking, so `lastServerStateHash` stays null and the watchdog
             // stays quiet), and re-push the whole queue so the server catches up.
-            // On a successful re-seed clear the flag; on failure leave it set so
-            // the next reconnect's empty FullSync retries. `reSeedQueueRef`
-            // (mutations.setQueue) self-joins, so calling it from here is safe.
+            // The re-seed (reSeedQueueAfterFailedSeed) is single-flight and
+            // snapshot-checked: it clears the flag only when the pushed snapshot
+            // still matches local, else re-pushes the latest — so a live edit or
+            // a second empty FullSync mid-flight can't race two whole-queue
+            // writes. `reSeedQueueRef` (mutations.setQueue) self-joins.
             if (event.__typename === 'FullSync' && seedFailedSessionIdRef.current === sessionId) {
               const isEmptyRoom = event.state.queue.length === 0 && event.state.currentClimbQueueItem == null;
               const { queue: localQueue, currentClimbQueueItem: localCurrent } = stateRef.current;
@@ -374,19 +419,7 @@ export function useSessionRealtime({
                   layoutId: activeBoardRef.current?.layoutId,
                   localQueueLength: localQueue.length,
                 });
-                void reSeedQueueRef
-                  .current(localQueue, localCurrent ?? undefined)
-                  .then(() => {
-                    // Clear only once the re-seed lands, and only if we're still
-                    // on the same session — the server now holds the real queue,
-                    // so subsequent (non-empty) FullSyncs apply normally.
-                    if (sessionIdRef.current === sessionId) seedFailedSessionIdRef.current = null;
-                  })
-                  .catch((reSeedError) => {
-                    if (__DEV__) console.warn('[queue] session queue re-seed failed', reSeedError);
-                    reportHandledError(reSeedError, { tags: { source: 'startSessionSeed', op: 'reseed' } });
-                    // Flag stays set: the next reconnect's empty FullSync retries.
-                  });
+                reSeedQueueAfterFailedSeed();
                 return;
               }
               // Local is also empty (nothing to protect) or the room isn't empty

@@ -434,6 +434,10 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
       'Queue Seed FullSync Guarded',
       expect.objectContaining({ localQueueLength: 2 }),
     );
+    // Queue ownership moved to the session once the re-seed landed, so the solo
+    // snapshot is dropped — mirroring the happy-path seed — so a later cold start
+    // can't resurrect the pre-session queue.
+    expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
   });
 
   it('applies an empty FullSync normally when the seed failed but the local queue is empty', async () => {
@@ -598,5 +602,122 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
     // re-seeded. setQueue was called once only: the original failed seed.
     expect(queueMutations.setQueue).toHaveBeenCalledTimes(1);
     expect(analytics.track).not.toHaveBeenCalledWith('Queue Seed FullSync Guarded', expect.anything());
+  });
+
+  it('serialises the re-seed: a second empty FullSync mid-flight does not fire a duplicate write', async () => {
+    // Single-flight recovery. A second empty FullSync (e.g. a reconnect) arriving
+    // while a re-seed is still in flight must NOT start a second whole-queue
+    // write — two racing setQueue snapshots could let an older one land last.
+    let resolveReSeed: (() => void) | undefined;
+    queueMutations.setQueue.mockReset();
+    queueMutations.setQueue.mockRejectedValueOnce(new Error('seed failed')); // the seed
+    queueMutations.setQueue.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReSeed = resolve;
+        }),
+    ); // the re-seed — held open
+    queueMutations.setQueue.mockResolvedValue(undefined);
+
+    const snapshots = await renderWithLocalQueue(['q1', 'q2']);
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    // First empty FullSync starts the (held-open) re-seed.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'empty-hash') } });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    // Second empty FullSync while the re-seed is in flight — must be a no-op push.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(2, 'empty-hash-2') } });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // seed (1) + exactly one re-seed (1) = 2. The second empty FullSync did NOT
+    // add a third write.
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
+
+    // Let the held re-seed resolve: local still matches, so it converges.
+    await act(async () => {
+      resolveReSeed?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
+    expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
+  });
+
+  it('re-pushes the latest queue when a live edit lands while the re-seed is in flight', async () => {
+    // Snapshot check. If the user edits the queue while the re-seed is in flight,
+    // clearing the guard on the stale snapshot's success would let a later
+    // FullSync drop the new edit. The re-seed must re-push the latest state and
+    // keep the guard armed until a push reflects the current queue.
+    let resolveReSeed: (() => void) | undefined;
+    queueMutations.setQueue.mockReset();
+    queueMutations.setQueue.mockRejectedValueOnce(new Error('seed failed')); // the seed
+    queueMutations.setQueue.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReSeed = resolve;
+        }),
+    ); // re-seed #1 (snapshot [q1, q2]) — held open
+    queueMutations.setQueue.mockResolvedValue(undefined); // re-seed #2 (latest) resolves
+
+    const snapshots = await renderWithLocalQueue(['q1', 'q2']);
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    // Empty FullSync starts re-seed #1, capturing snapshot [q1, q2].
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'empty-hash') } });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // The user adds a climb while re-seed #1 is still in flight.
+    await act(async () => {
+      snapshots.at(-1)?.addToQueue(makeQueueItem('q3'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2', 'q3']);
+    });
+
+    // Resolve re-seed #1: local has drifted, so it re-pushes the latest instead
+    // of clearing the guard on the stale snapshot.
+    await act(async () => {
+      resolveReSeed?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // seed (1) + re-seed #1 (stale) + re-seed #2 (latest) = 3, and the last push
+    // carried the edited queue.
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(3);
+    const setQueueCalls = queueMutations.setQueue.mock.calls as unknown as Array<
+      [ClimbQueueItem[], ClimbQueueItem | null | undefined]
+    >;
+    expect(setQueueCalls[2][0].map((item) => item.uuid)).toEqual(['q1', 'q2', 'q3']);
+    // Converged on the latest snapshot — snapshot dropped, queue intact.
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2', 'q3']);
+    expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
   });
 });
