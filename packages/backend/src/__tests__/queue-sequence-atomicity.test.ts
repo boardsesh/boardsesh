@@ -21,10 +21,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { roomManager, VersionConflictError } from '../services/room-manager';
 import { UPDATE_QUEUE_STATE_CAS_SCRIPT, CAS_ANY_VERSION, RedisSessionStore } from '../services/redis-session-store';
 import { queueMutations } from '../graphql/resolvers/queue/mutations';
+import { controllerMutations } from '../graphql/resolvers/controller/mutations';
+import { pubsub } from '../pubsub';
 import { WriteScheduler, writeQueueStateToPostgres } from '../services/room-manager/write-scheduler';
 import { db } from '../db/client';
 import { sessionQueues } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { createMockRedis, type MockRedis } from './helpers/mock-redis';
 
@@ -125,6 +127,60 @@ const mockCtx = (connectionId: string, sessionId: string) => ({
   rateLimitLastReset: Date.now(),
 });
 
+/** Most recent event of a given `__typename` handed to `publishQueueEvent`. */
+const lastPublishedEvent = (
+  publishSpy: { mock: { calls: unknown[][] } },
+  typename: string,
+): { __typename: string; sequence: number } | undefined => {
+  const matching = publishSpy.mock.calls
+    .map((call) => call[1] as { __typename: string; sequence: number })
+    .filter((event) => event.__typename === typename);
+  return matching[matching.length - 1];
+};
+
+const CONTROLLER_TEST_USER_ID = 'test-user-queue-atomicity';
+
+/**
+ * Register an ESP32 controller and authorize it for `sessionId`, returning a
+ * connection context that passes `requireControllerAuthorizedForSession`.
+ * `navigateQueue` verifies the controller row really exists, so this has to be
+ * a genuine DB row rather than a hand-built context.
+ */
+const registerControllerFor = async (sessionId: string) => {
+  await db.execute(sql`
+    INSERT INTO users (id, email, name, created_at, updated_at)
+    VALUES (${CONTROLLER_TEST_USER_ID}, 'test@queue-atomicity.test', 'Test User', now(), now())
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  const ownerCtx = {
+    connectionId: `owner-${Date.now()}`,
+    isAuthenticated: true,
+    userId: CONTROLLER_TEST_USER_ID,
+  } as unknown as Parameters<typeof controllerMutations.registerController>[2];
+
+  const registered = await controllerMutations.registerController(
+    undefined,
+    { input: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2,3', name: 'Atomicity Controller' } },
+    ownerCtx,
+  );
+
+  await controllerMutations.authorizeControllerForSession(
+    undefined,
+    { controllerId: registered.controllerId, sessionId },
+    ownerCtx,
+  );
+
+  return {
+    connectionId: `controller-${Date.now()}`,
+    isAuthenticated: false,
+    controllerId: registered.controllerId,
+    controllerApiKey: registered.apiKey,
+    rateLimitTokens: 60,
+    rateLimitLastReset: Date.now(),
+  } as unknown as Parameters<typeof controllerMutations.navigateQueue>[2];
+};
+
 describe('queue state atomicity (#3906)', () => {
   let mockRedis: MockRedis;
 
@@ -134,8 +190,12 @@ describe('queue state atomicity (#3906)', () => {
     await roomManager.initialize(mockRedis);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Restores the `pubsub.publishQueueEvent` spies the interleaving tests
+    // install, so a later test can't inherit a silenced publisher.
+    vi.restoreAllMocks();
     vi.clearAllTimers();
+    await db.execute(sql`DELETE FROM esp32_controllers WHERE user_id = ${CONTROLLER_TEST_USER_ID}`);
   });
 
   describe('expectedVersion is actually enforced', () => {
@@ -278,6 +338,120 @@ describe('queue state atomicity (#3906)', () => {
 
       const finalState = await roomManager.getQueueState(sessionId);
       expect(finalState.queue.map((item) => item.uuid)).toEqual([climbC.uuid]);
+    });
+
+    // The three mutations below are wrapped in `withQueueVersionRetry` too, but
+    // each plumbs the retried result back to its published event differently —
+    // `reorderQueueItem` through mutable `result*` locals, `mirrorCurrentClimb`
+    // through a spread return, `navigateQueue` through an `{ item, update }`
+    // pair. A retry that recomputes the queue correctly but publishes the FIRST
+    // attempt's sequence is still broken, and only a pinned interleaving with a
+    // concurrent writer catches that.
+    it('reorderQueueItem: retried reorder applies to the post-add queue and publishes the retry sequence', async () => {
+      const sessionId = uuidv4();
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
+
+      const climbA = createTestClimb('climb-A');
+      const climbB = createTestClimb('climb-B');
+      const climbC = createTestClimb('climb-C');
+      const seeded = await roomManager.getQueueState(sessionId);
+      await roomManager.updateQueueState(sessionId, [climbA, climbB], null, seeded.version);
+
+      const publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+      const gate = gateCasEval(mockRedis);
+
+      // Reorder parks at its CAS holding a two-item snapshot.
+      const reorder = queueMutations.reorderQueueItem(
+        {},
+        { uuid: climbA.uuid, oldIndex: 0, newIndex: 1 },
+        mockCtx('client-1', sessionId),
+      );
+      await gate.whenArrived(0);
+
+      // An add lands underneath it, making the queue three items long.
+      const add = queueMutations.addQueueItem({}, { item: climbC }, mockCtx('client-1', sessionId));
+      await gate.whenArrived(1);
+      gate.release(1);
+      await add;
+
+      // The parked reorder now loses its CAS and recomputes against 3 items.
+      gate.releaseFrom(0);
+      await reorder;
+
+      const finalState = await roomManager.getQueueState(sessionId);
+      // The add is not lost, and the reorder still moved A behind B.
+      expect(finalState.queue.map((item) => item.uuid)).toEqual([climbB.uuid, climbA.uuid, climbC.uuid]);
+
+      const reorderEvent = lastPublishedEvent(publishSpy, 'QueueReordered');
+      // Fails if the retry published the pre-retry locals.
+      expect(reorderEvent?.sequence).toBe(finalState.sequence);
+    });
+
+    it('mirrorCurrentClimb: retried mirror survives a concurrent add and publishes the retry sequence', async () => {
+      const sessionId = uuidv4();
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
+
+      const climbA = createTestClimb('climb-A');
+      const climbB = createTestClimb('climb-B');
+      const seeded = await roomManager.getQueueState(sessionId);
+      await roomManager.updateQueueState(sessionId, [climbA], climbA, seeded.version);
+
+      const publishSpy = vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+      const gate = gateCasEval(mockRedis);
+
+      const mirror = queueMutations.mirrorCurrentClimb({}, { mirrored: true }, mockCtx('client-1', sessionId));
+      await gate.whenArrived(0);
+
+      const add = queueMutations.addQueueItem({}, { item: climbB }, mockCtx('client-1', sessionId));
+      await gate.whenArrived(1);
+      gate.release(1);
+      await add;
+
+      gate.releaseFrom(0);
+      const mirrored = await mirror;
+
+      const finalState = await roomManager.getQueueState(sessionId);
+      // Mirror stuck, and the concurrently-added climb was not clobbered.
+      expect(finalState.currentClimbQueueItem?.climb.mirrored).toBe(true);
+      expect(finalState.queue.map((item) => item.uuid)).toContain(climbB.uuid);
+      expect(finalState.queue).toHaveLength(2);
+      expect(mirrored?.climb.mirrored).toBe(true);
+
+      const mirrorEvent = lastPublishedEvent(publishSpy, 'ClimbMirrored');
+      expect(mirrorEvent?.sequence).toBe(finalState.sequence);
+    });
+
+    it('navigateQueue: retried navigation targets the post-add queue', async () => {
+      const sessionId = uuidv4();
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
+      const controllerCtx = await registerControllerFor(sessionId);
+
+      const climbA = createTestClimb('climb-A');
+      const climbB = createTestClimb('climb-B');
+      const climbC = createTestClimb('climb-C');
+      const seeded = await roomManager.getQueueState(sessionId);
+      await roomManager.updateQueueState(sessionId, [climbA, climbB], climbA, seeded.version);
+
+      vi.spyOn(pubsub, 'publishQueueEvent').mockImplementation(() => {});
+      const gate = gateCasEval(mockRedis);
+
+      // Controller navigates "next" from A, parking at its CAS.
+      const navigate = controllerMutations.navigateQueue({}, { sessionId, direction: 'next' }, controllerCtx);
+      await gate.whenArrived(0);
+
+      const add = queueMutations.addQueueItem({}, { item: climbC }, mockCtx('client-1', sessionId));
+      await gate.whenArrived(1);
+      gate.release(1);
+      await add;
+
+      gate.releaseFrom(0);
+      const landedOn = await navigate;
+
+      const finalState = await roomManager.getQueueState(sessionId);
+      // Navigation still lands on B, and the add survives.
+      expect(landedOn?.uuid).toBe(climbB.uuid);
+      expect(finalState.currentClimbQueueItem?.uuid).toBe(climbB.uuid);
+      expect(finalState.queue.map((item) => item.uuid)).toEqual([climbA.uuid, climbB.uuid, climbC.uuid]);
     });
   });
 
