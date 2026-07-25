@@ -232,6 +232,7 @@ type Snapshot = {
   confirmClimbOnWall: ReturnType<typeof useQueue>['confirmClimbOnWall'];
   reportWallDisconnect: ReturnType<typeof useQueue>['reportWallDisconnect'];
   setSessionBoardSerial: ReturnType<typeof useQueue>['setSessionBoardSerial'];
+  setSessionBoardPath: ReturnType<typeof useQueue>['setSessionBoardPath'];
 };
 
 type SelectorSnapshot = {
@@ -327,6 +328,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       confirmClimbOnWall: queue.confirmClimbOnWall,
       reportWallDisconnect: queue.reportWallDisconnect,
       setSessionBoardSerial: queue.setSessionBoardSerial,
+      setSessionBoardPath: queue.setSessionBoardPath,
     });
   }, [
     queue.sessionId,
@@ -346,6 +348,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     queue.confirmClimbOnWall,
     queue.reportWallDisconnect,
     queue.setSessionBoardSerial,
+    queue.setSessionBoardPath,
     onSnapshot,
   ]);
   return null;
@@ -1224,6 +1227,75 @@ describe('QueueProvider session update subscription', () => {
       expect(snapshots.at(-1)?.lastConnectedBoardSerial).toBe('AURORA-1');
       expect(activeBoard.setActiveBoard).toHaveBeenCalledWith({ ...activeBoard.stored, angle: 30 });
     });
+  });
+
+  it('follows the angle carried by a roster snapshot (heals a dropped board-path change)', async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    // The seed/reconcile snapshot carries the session's authoritative boardPath;
+    // with no local change pending, its angle is applied to the wall.
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'SessionRosterSnapshot',
+            users: [user({ id: 'participant-self' })],
+            boardPath: '/kilter/1/10/1,2/30/list',
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(activeBoard.setActiveBoard).toHaveBeenCalledWith({ ...activeBoard.stored, angle: 30 });
+    });
+  });
+
+  it('suppresses the snapshot angle-follow while a local board-path change is in flight', async () => {
+    // A local angle change whose broadcast never settles keeps the pending ref
+    // set, so a snapshot seeded before it landed must NOT revert the wall.
+    queueMutations.setSessionBoardPath.mockImplementationOnce(() => new Promise<void>(() => {}));
+
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getSessionUpdatesSink()).not.toBeNull();
+    });
+    const sessionUpdatesSink = ws.getSessionUpdatesSink();
+    if (!sessionUpdatesSink) throw new Error('session updates sink was not captured');
+
+    // Fire the local change (don't await — the hung mutation keeps it in flight).
+    act(() => {
+      void snapshots.at(-1)?.setSessionBoardPath('/kilter/1/10/1,2/30/list');
+    });
+    activeBoard.setActiveBoard.mockClear();
+
+    // A reconnect snapshot arrives carrying the session's STALE (pre-change) angle.
+    act(() => {
+      sessionUpdatesSink.next({
+        data: {
+          sessionUpdates: {
+            __typename: 'SessionRosterSnapshot',
+            users: [user({ id: 'participant-self' })],
+            boardPath: '/kilter/1/10/1,2/20/list',
+          },
+        },
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Guard held: the in-flight local change is not clobbered by the stale seed.
+    expect(activeBoard.setActiveBoard).not.toHaveBeenCalledWith({ ...activeBoard.stored, angle: 20 });
   });
 
   it('ignores stale events from a previous session subscription after switching sessions', async () => {
