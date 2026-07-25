@@ -1,5 +1,6 @@
 import { gql } from 'graphql-request';
 import type { Tick, SaveTickInput, GetTicksInput } from '@boardsesh/shared-schema';
+import type { UpdateTickInput as GeneratedUpdateTickInput } from '../generated/graphql';
 
 export const GET_TICKS = gql`
   query GetTicks($input: GetTicksInput!) {
@@ -561,6 +562,39 @@ export type UpdateTickInput = {
   climbedAt?: string;
   angle?: number;
 };
+
+// Compile-time drift guard: this hand-written UpdateTickInput must stay in step
+// with the codegen-generated input (which the `codegen-drift` CI job keeps
+// locked to the GraphQL SDL + its Zod validation gate). A field added to the
+// SDL but forgotten here would otherwise type-check fine and silently never be
+// sent on an edit. Mirrors the offline-sync UPDATE_TICK_INPUT_FIELDS guard
+// (handlers.test.ts). Three checks:
+//   1. no field the generated input has is missing here (the silent-drop risk);
+//   2. no field here is unknown to the generated input (would fail GraphQL
+//      validation at runtime);
+//   3. every hand-written field is assignable INTO the generated field, which
+//      key-set equality alone can't see — it catches an Int→String or an
+//      optional→required drift.
+// Only ONE direction of assignability is asserted. The reverse (generated →
+// hand-written) is intentionally NOT: the generated type marks every field
+// `T | null` (InputMaybe), while this type keeps the tighter, Zod-aligned shape
+// (only quality/difficulty nullable), so the two are deliberately not mutually
+// assignable. Residual gap this can't catch: a hand-written field widened
+// toward the generated shape (e.g. adding `| null`) — the Zod schema stays the
+// runtime gate for that.
+type _NoMissingUpdateTickField = [Exclude<keyof GeneratedUpdateTickInput, keyof UpdateTickInput>] extends [never]
+  ? true
+  : never;
+type _NoExtraUpdateTickField = [Exclude<keyof UpdateTickInput, keyof GeneratedUpdateTickInput>] extends [never]
+  ? true
+  : never;
+type _UpdateTickValueCompat = [UpdateTickInput] extends [GeneratedUpdateTickInput] ? true : never;
+const _noMissingUpdateTickField: _NoMissingUpdateTickField = true;
+const _noExtraUpdateTickField: _NoExtraUpdateTickField = true;
+const _updateTickValueCompat: _UpdateTickValueCompat = true;
+void _noMissingUpdateTickField;
+void _noExtraUpdateTickField;
+void _updateTickValueCompat;
 
 export type UpdateTickVariables = {
   uuid: string;
