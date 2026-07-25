@@ -80,7 +80,7 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       // and web's CLIMB_FIELDS) doesn't select them, so peers would rebuild the climb
       // without them and the next peer-side setQueue would write the gap back. Widening
       // this boundary has to land together with both selection sets and
-      // `toClimbQueueItem` — see the follow-up issue.
+      // `toClimbQueueItem` — see #3927.
       angle: climb.angle,
       ascensionist_count: climb.ascensionist_count,
       difficulty: climb.difficulty,

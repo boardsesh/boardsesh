@@ -223,7 +223,7 @@ describe('climbToQueueItem board identity at the queue boundary', () => {
   // because the subscription selection sets (SUBSCRIPTION_CLIMB_FIELDS, and web's
   // CLIMB_FIELDS) don't select them either, so the local copy and the peer copy agree.
   // Carrying them here alone would make a peer's rebuild disagree with the creator's
-  // and let the next peer-side setQueue write the gap back. When that follow-up lands,
+  // and let the next peer-side setQueue write the gap back. When #3927 lands,
   // this expectation flips to `toMatchObject` — it is here so the boundary can't be
   // widened by halves without someone reading this comment.
   it('does not yet carry ownership / draft state (blocked on the subscription set)', () => {
