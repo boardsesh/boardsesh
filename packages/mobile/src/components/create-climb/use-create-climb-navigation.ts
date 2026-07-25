@@ -70,5 +70,7 @@ export function useCreateClimbNavigation() {
     [navigateToCreate],
   );
 
-  return { navigateToCreate, openRemix, openEdit };
+  // Only the two semantic wrappers are exposed. `navigateToCreate` stays internal so a
+  // caller can't hand-roll params and skip the dismiss reasoning that lives here.
+  return { openRemix, openEdit };
 }

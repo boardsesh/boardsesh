@@ -138,10 +138,10 @@ function ClimbActionsSheet({
     }
   }, [climb, boardName, layoutId, sizeId, setIds, angle, onClose, showToast, t]);
 
-  // Close this sub-sheet, then navigate. This sheet only ever renders inside the play
-  // drawer, so `openRemix`/`openEdit` dismiss the player route first (when it IS a
-  // route — on an iPad detail pane there's nothing to dismiss) and create opens as the
-  // sole top surface instead of stacking underneath.
+  // Close this sub-sheet, then navigate. `openRemix`/`openEdit` decide for themselves
+  // whether a player route needs dismissing first (it does from `/play`; it doesn't from
+  // an iPad detail pane, or anywhere else this sheet might later be reused), so create
+  // opens as the sole top surface instead of stacking underneath.
   const handleFork = useCallback(() => {
     if (!climb) return;
     onClose();
