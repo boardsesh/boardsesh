@@ -251,6 +251,14 @@ export function useSessionRealtime({
       if (reSeedInFlight) return;
       const { queue, currentClimbQueueItem } = stateRef.current;
       if (queue.length === 0 && currentClimbQueueItem == null) return;
+      // Track only here, right before the write is actually dispatched — the
+      // call site above no-ops on a second empty FullSync arriving while a
+      // re-seed is already in flight, and a track() there would overcount.
+      track(SHARED_EVENTS.QueueSeedFullSyncGuarded, {
+        boardName: activeBoardRef.current?.boardType,
+        layoutId: activeBoardRef.current?.layoutId,
+        localQueueLength: queue.length,
+      });
       reSeedInFlight = true;
       const pushedHash = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid ?? null);
       void reSeedQueueRef
@@ -474,11 +482,6 @@ export function useSessionRealtime({
               const hasLocalQueue = localQueue.length > 0 || localCurrent != null;
               if (isEmptyRoom && hasLocalQueue) {
                 if (__DEV__) console.warn('[queue] guarding empty FullSync after failed seed; re-seeding');
-                track(SHARED_EVENTS.QueueSeedFullSyncGuarded, {
-                  boardName: activeBoardRef.current?.boardType,
-                  layoutId: activeBoardRef.current?.layoutId,
-                  localQueueLength: localQueue.length,
-                });
                 reSeedQueueAfterFailedSeed();
                 return;
               }

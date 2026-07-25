@@ -720,4 +720,58 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2', 'q3']);
     expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
   });
+
+  it('keeps the guard armed and reports the error when the re-seed itself rejects', async () => {
+    // The .catch path: reSeedQueueRef.current rejecting must not clear the
+    // seed-failed flag — the guard stays armed so the NEXT reconnect's empty
+    // FullSync retries the whole-queue push instead of silently giving up.
+    queueMutations.setQueue.mockReset();
+    queueMutations.setQueue.mockRejectedValueOnce(new Error('seed failed')); // the seed
+    queueMutations.setQueue.mockRejectedValueOnce(new Error('re-seed failed')); // re-seed attempt #1
+    queueMutations.setQueue.mockResolvedValue(undefined); // re-seed attempt #2 (retry) succeeds
+
+    const snapshots = await renderWithLocalQueue(['q1', 'q2']);
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    // First empty FullSync: guarded, re-seed attempt #1 rejects.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'empty-hash') } });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The rejection is reported, not swallowed silently.
+    expect(errorReporter.reportHandledError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: { source: 'startSessionSeed', op: 'reseed' } }),
+    );
+    // The queue was never wiped, and the flag was never cleared on failure —
+    // no clearStoredQueueSnapshot call yet.
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
+    expect(queueSnapshotStore.clearStoredQueueSnapshot).not.toHaveBeenCalled();
+
+    // A later reconnect's empty FullSync retries the push, since the guard is
+    // still armed for this session.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(2, 'empty-hash-2') } });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(3);
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
+    expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
+  });
 });
