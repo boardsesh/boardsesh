@@ -516,9 +516,12 @@ export function useCreateClimbScreen({
         syncSavedToQueue(result.uuid, frames);
       }
       await clearDraft(draftKey);
-      // Refresh the inline Open Drafts table so the just-saved climb appears /
-      // updates (delete already invalidates these keys; save must too).
+      // Refresh the inline Open Drafts table AND the Climbs tab's infinite list
+      // so the just-saved climb appears / updates (mirrors useDeleteDraftClimb's
+      // key set in lib/graphql/hooks/index.ts — create, edit, and publish-draft
+      // all fall through to this same success path).
       void queryClient.invalidateQueries({ queryKey: ['searchClimbs'] });
+      void queryClient.invalidateQueries({ queryKey: ['infiniteSearchClimbs'] });
       void queryClient.invalidateQueries({ queryKey: ['searchClimbsCount'] });
       setJustSaved(true);
       showToast(isDraft ? t('mobile.create.save.draftToast') : t('mobile.create.save.publishedToast'), 'success');

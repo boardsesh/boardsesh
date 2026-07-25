@@ -4,6 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // --- Hoisted mock state the test drives between cases. ---------------------
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+// A single shared invalidateQueries spy (unlike a fresh `vi.fn()` per render)
+// so tests can assert on it: useQueryClient() is called once per render, and a
+// per-render mock would give the closure a different identity than the one the
+// test holds.
+const reactQuery = vi.hoisted(() => ({ invalidateQueries: vi.fn() }));
 
 const board = vi.hoisted(() => ({
   isAuthenticated: true,
@@ -51,7 +56,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => 'preview-uuid' }));
 vi.mock('expo-router', () => ({ useRouter: () => router }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@tanstack/react-query', () => ({
-  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueryClient: () => reactQuery,
 }));
 
 vi.mock('@boardsesh/shared-schema', () => ({
@@ -142,6 +147,7 @@ beforeEach(() => {
   toast.showToast.mockClear();
   queue.setCurrentClimb.mockClear();
   router.push.mockClear();
+  reactQuery.invalidateQueries.mockClear();
   board.isAuthenticated = true;
   board.isDuplicateClimbError.mockReturnValue(false);
   board.saveClimb.mockReset();
@@ -170,6 +176,12 @@ describe('useCreateClimbScreen analytics', () => {
       holdCount: 3,
     });
     expect(analytics.track).not.toHaveBeenCalledWith('Climb Create Failed', expect.anything());
+    // #3471: create/edit/publish share one success path with useDeleteDraftClimb's
+    // key set — the Open Drafts table AND the Climbs tab's infinite list must both
+    // refresh, not just the plain searchClimbs cache.
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
   });
 
   it('fires "Climb Updated" when saving an existing climb in edit mode', async () => {
@@ -204,6 +216,9 @@ describe('useCreateClimbScreen analytics', () => {
       isDraft: false,
       holdCount: 3,
     });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['infiniteSearchClimbs'] });
+    expect(reactQuery.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['searchClimbsCount'] });
   });
 
   it('fires "Climb Create Failed" with error_reason "duplicate" on a duplicate rejection', async () => {
