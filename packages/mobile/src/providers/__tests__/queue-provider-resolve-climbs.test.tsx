@@ -338,4 +338,138 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
     });
     expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q1')?.climb.name).toBe('Climb climb-thin');
   });
+
+  // #3868: when setCurrentClimb lands on a thin item the broadcast is skipped
+  // (a placeholder ClimbInput can't be sent). Once the resolve hook hydrates that
+  // slot while it's still current, the provider must re-broadcast the now-resolved
+  // climb so peers, late joiners, and a peer-held wall LED link advance.
+  describe('re-broadcasts a deferred current climb after hydration (#3868)', () => {
+    it('fires setCurrentClimb once the still-current thin item hydrates', async () => {
+      http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => {
+        if (variables.climbUuid === 'climb-thin' && variables.angle === 25) {
+          return { climb: makeClimb('climb-thin', 25, 'V5') };
+        }
+        return { climb: null };
+      });
+
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-thin', makeThinClimb('climb-thin')));
+      });
+
+      // The broadcast is deferred while thin, then fires exactly once with the
+      // resolved climb and shouldAddToQueue=false (the slot is already queued).
+      await waitFor(() => expect(queueMutations.setCurrentClimb).toHaveBeenCalledTimes(1));
+      const [broadcastItem, shouldAddToQueue] = queueMutations.setCurrentClimb.mock.calls.at(-1) as unknown as [
+        ClimbQueueItem,
+        boolean,
+      ];
+      expect(broadcastItem.uuid).toBe('q-thin');
+      expect(broadcastItem.climb.uuid).toBe('climb-thin');
+      expect(broadcastItem.climb.frames).toBe('p1r12');
+      expect(shouldAddToQueue).toBe(false);
+    });
+
+    it('holds the broadcast while the item is still thin, then fires on resolve', async () => {
+      // Hold the resolve fetch open so the deferral window is observable: the
+      // mutation must NOT fire while the current climb is still a placeholder.
+      let releaseFetch: (() => void) | undefined;
+      http.request.mockImplementation(
+        async (_query: string, variables: { climbUuid: string; angle: number }) =>
+          new Promise<{ climb: Climb }>((resolve) => {
+            releaseFetch = () => resolve({ climb: makeClimb(variables.climbUuid, 25, 'V5') });
+          }),
+      );
+
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-thin', makeThinClimb('climb-thin')));
+      });
+
+      // Current is the thin item locally, but nothing was broadcast yet.
+      await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('q-thin'));
+      await waitFor(() => expect(http.request).toHaveBeenCalled());
+      expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
+
+      // Hydration lands → the deferred broadcast fires exactly once.
+      await act(async () => {
+        releaseFetch?.();
+      });
+      await waitFor(() => expect(queueMutations.setCurrentClimb).toHaveBeenCalledTimes(1));
+    });
+
+    it('does not re-broadcast when current moved to another climb before hydration', async () => {
+      // Hold the thin item's fetch open; a resolved climb is activated meanwhile.
+      let releaseFetch: (() => void) | undefined;
+      http.request.mockImplementation(
+        async (_query: string, variables: { climbUuid: string; angle: number }) =>
+          new Promise<{ climb: Climb }>((resolve) => {
+            releaseFetch = () => resolve({ climb: makeClimb(variables.climbUuid, 25, 'V5') });
+          }),
+      );
+
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-thin', makeThinClimb('climb-thin')));
+      });
+      await waitFor(() => expect(http.request).toHaveBeenCalled());
+
+      // Activate a resolved climb — this broadcasts it and supersedes the deferral.
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-ok', makeClimb('climb-ok', 25, 'V4')));
+      });
+      await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('q-ok'));
+
+      // Let the thin item hydrate. It's no longer current, so no second broadcast.
+      await act(async () => {
+        releaseFetch?.();
+      });
+      await waitFor(() =>
+        expect(snapshots.at(-1)?.state.queue.find((item) => item.uuid === 'q-thin')?.climb.frames).toBe('p1r12'),
+      );
+
+      // Exactly one broadcast total — the resolved q-ok activation, never q-thin.
+      expect(queueMutations.setCurrentClimb).toHaveBeenCalledTimes(1);
+      // The mock is untyped (vi.fn with no declared params); bridge through
+      // `unknown` to read each call's first arg as the broadcast item.
+      const broadcastCalls = queueMutations.setCurrentClimb.mock.calls as unknown as Array<[ClimbQueueItem, boolean]>;
+      expect(broadcastCalls.map(([broadcastItem]) => broadcastItem.uuid)).toEqual(['q-ok']);
+    });
+
+    it('does not re-broadcast when the deferred item is removed before hydration', async () => {
+      let releaseFetch: (() => void) | undefined;
+      http.request.mockImplementation(
+        async (_query: string, variables: { climbUuid: string; angle: number }) =>
+          new Promise<{ climb: Climb }>((resolve) => {
+            releaseFetch = () => resolve({ climb: makeClimb(variables.climbUuid, 25, 'V5') });
+          }),
+      );
+
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-thin', makeThinClimb('climb-thin')));
+      });
+      await waitFor(() => expect(http.request).toHaveBeenCalled());
+
+      // Remove the deferred item — the reducer nulls the current climb.
+      await act(async () => {
+        snapshots.at(-1)?.dispatch({ type: 'DELTA_REMOVE_QUEUE_ITEM', payload: { uuid: 'q-thin' } });
+      });
+      await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBeNull());
+
+      // The held fetch settles against an item that's gone — nothing is broadcast.
+      await act(async () => {
+        releaseFetch?.();
+      });
+      expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
+    });
+  });
 });

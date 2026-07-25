@@ -165,6 +165,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // gate rather than one captured in a stale closure.
   const queueSyncGateRef = useRef<QueueSyncGate | null>(null);
 
+  // The queue-slot uuid of a current-climb change whose broadcast was skipped
+  // because the target climb was still unresolved (a thin peer item advanced
+  // onto by next/previousClimb — see dispatchSetCurrent, #3868). We can't send a
+  // placeholder ClimbInput (uuid may be empty; name/frames are `String!`
+  // server-side), so we defer: when useQueueResolveClimbs hydrates that slot
+  // WHILE IT'S STILL CURRENT, the effect below fires the real setCurrentClimb so
+  // peers, late joiners, and a peer-held wall LED link finally advance. Cleared
+  // by any other broadcastable change (a resolved setCurrentClimb, setQueue,
+  // clearQueue) and by the effect when current moves off this slot, so a stale
+  // hydrate can never re-broadcast an item the session already moved past.
+  const pendingUnsyncedCurrentRef = useRef<string | null>(null);
+
   // The active board is the angle source of truth. Read it here so the
   // self-healing re-grade effect can compare each queued climb's display angle
   // to the live angle, and so inbound SessionBoardPathChanged events can write
@@ -709,6 +721,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   const clearQueue = useCallback(() => {
     const itemsToRemove = stateRef.current.queue;
+    // A whole-queue clear supersedes any deferred current re-broadcast (#3868).
+    pendingUnsyncedCurrentRef.current = null;
     dispatch({ type: 'CLEAR_QUEUE' });
     track(SHARED_EVENTS.QueueCleared, { layoutId: activeBoardRef.current?.layoutId, totalCount: itemsToRemove.length });
     setPlaylistSuggestionSourceState(null);
@@ -730,6 +744,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // session mutations.
   const setQueue = useCallback(
     (queue: ClimbQueueItem[], currentClimbQueueItem?: ClimbQueueItem | null) => {
+      // A whole-queue replace sets its own current; it supersedes any deferred
+      // current re-broadcast (#3868).
+      pendingUnsyncedCurrentRef.current = null;
       dispatch({ type: 'UPDATE_QUEUE', payload: { queue, currentClimbQueueItem: currentClimbQueueItem ?? null } });
       // Keep the full queue locally, but never broadcast a placeholder/thin item
       // to peers (#2527): drop unresolved items from the wire payload (they can't
@@ -788,11 +805,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // required server-side), and next/previousClimb can navigate onto a
       // not-yet-hydrated peer item. The local reducer already applied the change,
       // and useQueueResolveClimbs hydrates the item within a tick. No pending
-      // correlation is tracked since no server echo will arrive.
+      // correlation is tracked since no server echo will arrive. Remember the
+      // slot so the re-broadcast effect fires once it hydrates while still
+      // current (#3868).
       if (!isClimbResolved(item.climb)) {
         if (__DEV__) console.warn('[queue] skipping setCurrentClimb sync for an unresolved climb. See #2527.');
+        pendingUnsyncedCurrentRef.current = item.uuid;
         return;
       }
+      // A real broadcast supersedes any deferred one — drop it so a late hydrate
+      // of the previously-skipped slot can't re-broadcast an item we've moved off.
+      pendingUnsyncedCurrentRef.current = null;
       coordinator.trackPendingMutation(correlationId);
       mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch(() => {
         // In a party session the current-climb change never reached peers —
@@ -808,6 +831,49 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     },
     [coordinator, mutations, resyncQueueAfterMutationFailure, showToast, t],
   );
+
+  // Re-broadcast the current climb once a deferred thin item hydrates (#3868).
+  // dispatchSetCurrent skips the broadcast when it lands on an unresolved climb
+  // (a peer item advanced onto before it synced), recording the slot in
+  // pendingUnsyncedCurrentRef. useQueueResolveClimbs then hydrates that slot via
+  // DELTA_REPLACE_QUEUE_ITEM, which the reducer also writes onto the current
+  // climb (new identity, real name/frames) — this effect re-runs on that change.
+  // Firing the real setCurrentClimb here is the only path that tells peers, late
+  // joiners, and a peer-held wall LED link (which follows THEIR local current,
+  // updated solely by our broadcast) to advance. Without it they stay on the old
+  // climb until the next navigation.
+  useEffect(() => {
+    const pendingUuid = pendingUnsyncedCurrentRef.current;
+    if (!pendingUuid) return;
+    const current = state.currentClimbQueueItem;
+    // Current moved off the deferred slot (local nav, a peer's server-driven
+    // CurrentClimbChanged, or a removal) — drop the deferral so a stale hydrate
+    // can't re-broadcast an item the session already moved past.
+    if (!current || current.uuid !== pendingUuid) {
+      pendingUnsyncedCurrentRef.current = null;
+      return;
+    }
+    // Still thin — wait for hydration. isClimbResolved mirrors dispatchSetCurrent's
+    // skip guard exactly (a still-unresolved item can't form a valid ClimbInput).
+    if (!isClimbResolved(current.climb)) return;
+
+    // Hydrated while still current: broadcast the now-resolved climb. Fire once
+    // (clear before firing), track a fresh correlationId so the server echo is
+    // suppressed like any other of our own updates, and reuse the same failure
+    // handling as dispatchSetCurrent. Not session-gated — the shared coalescer's
+    // ensureReady no-ops in solo, matching dispatchSetCurrent. shouldAddToQueue
+    // is false: the slot is already in the queue.
+    pendingUnsyncedCurrentRef.current = null;
+    const correlationId = coordinator.generateCorrelationId();
+    coordinator.trackPendingMutation(correlationId);
+    mutations.setCurrentClimb(current, false, correlationId).catch(() => {
+      if (sessionIdRef.current) {
+        void resyncQueueAfterMutationFailure();
+      } else {
+        showToast(t('mobile.queue.actionFailed'), 'error');
+      }
+    });
+  }, [state.currentClimbQueueItem, coordinator, mutations, resyncQueueAfterMutationFailure, showToast, t]);
 
   const setCurrentClimb = useCallback(
     (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => {
