@@ -6257,6 +6257,7 @@ export type SessionEvent =
   | SessionBoardSerialChanged
   | SessionEnded
   | SessionNameChanged
+  | SessionRosterSnapshot
   | SessionStatsUpdated
   | UserJoined
   | UserLeft
@@ -6475,6 +6476,28 @@ export type SessionParticipant = {
   sends: Scalars['Int']['output'];
   /** User ID */
   userId: Scalars['String']['output'];
+};
+
+/**
+ * Full roster snapshot yielded as the FIRST event of every `sessionUpdates`
+ * subscription (the session counterpart to `queueUpdates`' `FullSync`). The
+ * roster-delta events (`UserJoined`/`UserLeft`/`UserPresenceChanged`/
+ * `LeaderChanged`/`SessionBoardPathChanged`) carry no sequence number and have
+ * no replay buffer, so a single dropped delta silently diverges a party
+ * member's crew list until they fully rejoin. This snapshot re-baselines the
+ * roster on every (re)subscribe, closing the JOIN-to-subscribe race and giving
+ * reconnects a fresh authoritative crew list. Clients apply it as a REPLACE
+ * (preserving their own connection identity + re-deriving their leadership).
+ * Additive: a stale client whose `sessionUpdates` document lacks the
+ * `... on SessionRosterSnapshot` fragment drops it via its mapper's
+ * unknown-`__typename` default and keeps using the JOIN roster.
+ */
+export type SessionRosterSnapshot = {
+  __typename?: 'SessionRosterSnapshot';
+  /** Session's current stored boardPath. Non-null to match SessionBoardPathChanged.boardPath so the two can be selected together in one sessionUpdates document without a field-merge conflict; empty string in the unreachable case where the session row vanished mid-subscribe (clients treat empty as 'keep current'). */
+  boardPath: Scalars['String']['output'];
+  /** Complete participant roster at subscribe time (each entry carries its own isLeader flag) */
+  users: Array<SessionUser>;
 };
 
 /** Event when session stats change due to logged attempts/sends. */
@@ -7747,6 +7770,7 @@ export type ResolversUnionTypes<_RefType extends Record<string, unknown>> = Reso
     | SessionBoardSerialChanged
     | SessionEnded
     | SessionNameChanged
+    | SessionRosterSnapshot
     | SessionStatsUpdated
     | UserJoined
     | UserLeft
@@ -8047,6 +8071,7 @@ export type ResolversTypes = ResolversObject<{
   SessionHealthExportLap: ResolverTypeWrapper<SessionHealthExportLap>;
   SessionNameChanged: ResolverTypeWrapper<SessionNameChanged>;
   SessionParticipant: ResolverTypeWrapper<SessionParticipant>;
+  SessionRosterSnapshot: ResolverTypeWrapper<SessionRosterSnapshot>;
   SessionStatsUpdated: ResolverTypeWrapper<SessionStatsUpdated>;
   SessionStatus: SessionStatus;
   SessionSummary: ResolverTypeWrapper<SessionSummary>;
@@ -8386,6 +8411,7 @@ export type ResolversParentTypes = ResolversObject<{
   SessionHealthExportLap: SessionHealthExportLap;
   SessionNameChanged: SessionNameChanged;
   SessionParticipant: SessionParticipant;
+  SessionRosterSnapshot: SessionRosterSnapshot;
   SessionStatsUpdated: SessionStatsUpdated;
   SessionSummary: SessionSummary;
   SessionUser: SessionUser;
@@ -11852,6 +11878,7 @@ export type SessionEventResolvers<
     | 'SessionBoardSerialChanged'
     | 'SessionEnded'
     | 'SessionNameChanged'
+    | 'SessionRosterSnapshot'
     | 'SessionStatsUpdated'
     | 'UserJoined'
     | 'UserLeft'
@@ -12047,6 +12074,15 @@ export type SessionParticipantResolvers<
   flashes?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   sends?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   userId?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type SessionRosterSnapshotResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['SessionRosterSnapshot'] = ResolversParentTypes['SessionRosterSnapshot'],
+> = ResolversObject<{
+  boardPath?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  users?: Resolver<Array<ResolversTypes['SessionUser']>, ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12741,6 +12777,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   SessionHealthExportLap?: SessionHealthExportLapResolvers<ContextType>;
   SessionNameChanged?: SessionNameChangedResolvers<ContextType>;
   SessionParticipant?: SessionParticipantResolvers<ContextType>;
+  SessionRosterSnapshot?: SessionRosterSnapshotResolvers<ContextType>;
   SessionStatsUpdated?: SessionStatsUpdatedResolvers<ContextType>;
   SessionSummary?: SessionSummaryResolvers<ContextType>;
   SessionUser?: SessionUserResolvers<ContextType>;

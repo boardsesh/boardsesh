@@ -16,6 +16,7 @@ export type RuntimeSessionState<TUser extends RuntimeSessionUser = RuntimeSessio
 };
 
 export type RuntimeSessionEvent<TUser extends RuntimeSessionUser = RuntimeSessionUser> =
+  | { __typename: 'SessionRosterSnapshot'; users: TUser[]; boardPath?: string | null }
   | { __typename: 'UserJoined'; user: TUser }
   | { __typename: 'UserPresenceChanged'; user: TUser }
   | { __typename: 'UserLeft'; userId: string }
@@ -41,6 +42,31 @@ export function applySessionRuntimeEvent<
   if (!prev) return prev;
 
   switch (event.__typename) {
+    case 'SessionRosterSnapshot': {
+      // REPLACE, not merge: this is an authoritative full roster, so members
+      // who dropped while we weren't watching are gone and new members appear.
+      const snapshotUsers = event.users.map((user) => coerceRuntimeUser(user, options));
+      // Re-inject our own connection row if the snapshot was computed a beat
+      // before the backend registered our JOIN — otherwise a fresh subscribe
+      // would erase us from our own crew list until the next delta. Anchored on
+      // our stable connection id (`clientId`), which the snapshot preserves.
+      const selfInSnapshot = snapshotUsers.find((user) => user.id === prev.clientId);
+      const selfRow = prev.users.find((user) => user.id === prev.clientId);
+      const users = selfInSnapshot || !selfRow ? snapshotUsers : [...snapshotUsers, selfRow];
+      return {
+        ...prev,
+        users,
+        // Re-derive top-level leadership from the snapshot's own self entry
+        // (mirrors the LeaderChanged handler's clientId check). When the snapshot
+        // omits us it has no opinion on our leadership — it raced our JOIN — so
+        // keep the prior value rather than silently demoting on incomplete data.
+        isLeader: selfInSnapshot ? selfInSnapshot.isLeader : prev.isLeader,
+        // Falsy (empty/absent) boardPath keeps the current one — a real boardPath
+        // is always a non-empty route, so `||` only ever falls through on the
+        // unreachable session-vanished-mid-subscribe case the seed guards.
+        boardPath: event.boardPath || prev.boardPath,
+      };
+    }
     case 'UserJoined':
     case 'UserPresenceChanged':
       return {
@@ -73,6 +99,16 @@ export function applySessionRuntimeEvent<
       return prev;
     case 'SessionEnded':
       return prev;
+    default: {
+      // Exhaustiveness guard. A new RuntimeSessionEvent member that a mapper
+      // can emit but this switch doesn't handle is a COMPILE error here — not a
+      // silent roster wipe at the call sites, which both treat a missing return
+      // as "clear the roster" (mobile `?? createEmptySessionRuntimeState()`,
+      // web `setSession(undefined)`).
+      const unhandled: never = event;
+      void unhandled;
+      return prev;
+    }
   }
 }
 

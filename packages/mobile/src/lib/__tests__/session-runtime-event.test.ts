@@ -50,9 +50,40 @@ describe('toMobileSessionRuntimeEvent', () => {
     });
   });
 
+  it('adapts a SessionRosterSnapshot into a full-roster replace event', () => {
+    const second: SessionUser = { ...user, id: 'participant-2', username: 'Blake', isLeader: true };
+    expect(
+      toMobileSessionRuntimeEvent({
+        __typename: 'SessionRosterSnapshot',
+        users: [user, second],
+        boardPath: '/kilter/1/10/1,2/40/list',
+      }),
+    ).toEqual({
+      __typename: 'SessionRosterSnapshot',
+      users: [user, second],
+      boardPath: '/kilter/1/10/1,2/40/list',
+    });
+  });
+
+  it('maps a SessionRosterSnapshot with no users/boardPath to empty defaults', () => {
+    expect(toMobileSessionRuntimeEvent({ __typename: 'SessionRosterSnapshot' })).toEqual({
+      __typename: 'SessionRosterSnapshot',
+      users: [],
+      boardPath: null,
+    });
+  });
+
   it('ignores stats and incomplete events', () => {
     expect(toMobileSessionRuntimeEvent({ __typename: 'SessionStatsUpdated', totalSends: 1 })).toBeNull();
     expect(toMobileSessionRuntimeEvent({ __typename: 'UserJoined' })).toBeNull();
     expect(toMobileSessionRuntimeEvent({ __typename: 'SessionBoardPathChanged' })).toBeNull();
+  });
+
+  it('drops an unknown __typename (old client receiving a newer union member)', () => {
+    // Additive-safety contract: a stale bundle whose mapper predates a new
+    // SessionEvent member falls through the `default: null` guard and keeps the
+    // JOIN roster instead of crashing — the reason SessionRosterSnapshot could
+    // ship without breaking un-OTA'd clients.
+    expect(toMobileSessionRuntimeEvent({ __typename: 'SomeFutureSessionEvent' })).toBeNull();
   });
 });

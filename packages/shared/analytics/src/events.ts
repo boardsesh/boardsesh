@@ -51,6 +51,13 @@ export const SHARED_EVENTS = {
   QueueSyncStaleEventIgnored: 'Queue Sync Stale Event Ignored',
   QueueSyncGapResync: 'Queue Sync Gap Resync',
   QueueSyncHashDrift: 'Queue Sync Hash Drift',
+  // Fired when a SessionRosterSnapshot (seeded first on every sessionUpdates
+  // subscribe) actually CHANGES the local crew list — i.e. a roster delta had
+  // been dropped and the snapshot reconciled it. The roster deltas carry no
+  // sequence, so this is the only signal that presence drift happened in the
+  // field (#2860). Its volume gates the deferred periodic-resnapshot healer:
+  // if this rarely fires, seed-on-subscribe alone is enough.
+  SessionRosterReconciled: 'Session Roster Reconciled',
   // Climb actions
   // Fired when the climb reaction/actions menu is opened, with a `source` prop
   // ('long_press' | 'more_button'). Powers the ⋮-button discoverability experiment:

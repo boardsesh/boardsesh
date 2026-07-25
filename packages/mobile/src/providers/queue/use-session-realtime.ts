@@ -92,6 +92,21 @@ export const createEmptySessionRuntimeState = (): MobileSessionRuntimeState => (
   boardPath: '',
 });
 
+/**
+ * Order-insensitive signature of the roster fields a SessionRosterSnapshot can
+ * change (crew membership + per-user leadership + display name, own leadership,
+ * boardPath). Used only to decide whether a seed/reconcile snapshot actually
+ * healed dropped roster drift, so we emit `Session Roster Reconciled` telemetry
+ * only when the crew list really moved — not on every (re)subscribe.
+ */
+function rosterStateSignature(state: MobileSessionRuntimeState): string {
+  const users = state.users
+    .map((user) => `${user.id}:${user.isLeader ? 1 : 0}:${user.username}`)
+    .sort()
+    .join('|');
+  return `${users}#${state.isLeader ? 1 : 0}#${state.boardPath}`;
+}
+
 type UseSessionRealtimeParams = {
   authTransportRevision: number;
   sessionId: string | null;
@@ -114,6 +129,7 @@ type UseSessionRealtimeParams = {
   resyncQueueFromServerRef: React.RefObject<() => Promise<boolean>>;
   setLiveStats: React.Dispatch<React.SetStateAction<SessionLiveStatsEvent | null>>;
   setSessionRuntimeState: React.Dispatch<React.SetStateAction<MobileSessionRuntimeState>>;
+  sessionRuntimeStateRef: React.RefObject<MobileSessionRuntimeState>;
   setIsSessionWallLit: React.Dispatch<React.SetStateAction<boolean>>;
   setParticipantId: React.Dispatch<React.SetStateAction<string | null>>;
   locallyEndingSessionIdRef: React.RefObject<string | null>;
@@ -150,6 +166,7 @@ export function useSessionRealtime({
   resyncQueueFromServerRef,
   setLiveStats,
   setSessionRuntimeState,
+  sessionRuntimeStateRef,
   setIsSessionWallLit,
   setParticipantId,
   locallyEndingSessionIdRef,
@@ -497,9 +514,28 @@ export function useSessionRealtime({
 
             const runtimeEvent = toMobileSessionRuntimeEvent(event);
             if (runtimeEvent) {
+              // Keep the functional updater so rapid consecutive deltas each
+              // apply on the truly-latest roster (not a stale render snapshot).
               setSessionRuntimeState(
                 (prev) => applySessionRuntimeEvent(prev, runtimeEvent) ?? createEmptySessionRuntimeState(),
               );
+              // Best-effort drift telemetry: a SessionRosterSnapshot is the only
+              // event that can silently heal a dropped roster delta. Detect a
+              // real change against the latest-committed mirror (the functional
+              // updater's result isn't observable here) and emit only then, so
+              // this counts genuine presence-drift heals, not routine reseeds.
+              if (runtimeEvent.__typename === 'SessionRosterSnapshot') {
+                const prevRoster = sessionRuntimeStateRef.current ?? createEmptySessionRuntimeState();
+                const nextRoster =
+                  applySessionRuntimeEvent(prevRoster, runtimeEvent) ?? createEmptySessionRuntimeState();
+                if (rosterStateSignature(prevRoster) !== rosterStateSignature(nextRoster)) {
+                  track(SHARED_EVENTS.SessionRosterReconciled, {
+                    userCount: nextRoster.users.length,
+                    boardName: activeBoardRef.current?.boardType,
+                    layoutId: activeBoardRef.current?.layoutId,
+                  });
+                }
+              }
             }
 
             if (event.__typename !== 'SessionBoardPathChanged' || !event.boardPath) return;

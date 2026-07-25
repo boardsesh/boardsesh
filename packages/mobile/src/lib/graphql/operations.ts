@@ -1037,6 +1037,10 @@ export const SESSION_UPDATES_SUBSCRIPTION = `
   subscription SessionUpdates($sessionId: ID!) {
     sessionUpdates(sessionId: $sessionId) {
       __typename
+      ... on SessionRosterSnapshot {
+        users { id username isLeader avatarUrl userId connectionState }
+        boardPath
+      }
       ... on UserJoined {
         user { id username isLeader avatarUrl userId connectionState }
       }
@@ -1137,6 +1141,8 @@ export type SessionUpdateEvent = {
   name?: string | null;
   // UserJoined / UserPresenceChanged
   user?: SessionUser;
+  // SessionRosterSnapshot — full authoritative roster seeded on subscribe
+  users?: SessionUser[];
   // UserLeft
   userId?: string;
   // LeaderChanged

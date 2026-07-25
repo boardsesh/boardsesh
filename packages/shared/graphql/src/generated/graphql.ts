@@ -6254,6 +6254,7 @@ export type SessionEvent =
   | SessionBoardSerialChanged
   | SessionEnded
   | SessionNameChanged
+  | SessionRosterSnapshot
   | SessionStatsUpdated
   | UserJoined
   | UserLeft
@@ -6472,6 +6473,28 @@ export type SessionParticipant = {
   sends: Scalars['Int']['output'];
   /** User ID */
   userId: Scalars['String']['output'];
+};
+
+/**
+ * Full roster snapshot yielded as the FIRST event of every `sessionUpdates`
+ * subscription (the session counterpart to `queueUpdates`' `FullSync`). The
+ * roster-delta events (`UserJoined`/`UserLeft`/`UserPresenceChanged`/
+ * `LeaderChanged`/`SessionBoardPathChanged`) carry no sequence number and have
+ * no replay buffer, so a single dropped delta silently diverges a party
+ * member's crew list until they fully rejoin. This snapshot re-baselines the
+ * roster on every (re)subscribe, closing the JOIN-to-subscribe race and giving
+ * reconnects a fresh authoritative crew list. Clients apply it as a REPLACE
+ * (preserving their own connection identity + re-deriving their leadership).
+ * Additive: a stale client whose `sessionUpdates` document lacks the
+ * `... on SessionRosterSnapshot` fragment drops it via its mapper's
+ * unknown-`__typename` default and keeps using the JOIN roster.
+ */
+export type SessionRosterSnapshot = {
+  __typename?: 'SessionRosterSnapshot';
+  /** Session's current stored boardPath. Non-null to match SessionBoardPathChanged.boardPath so the two can be selected together in one sessionUpdates document without a field-merge conflict; empty string in the unreachable case where the session row vanished mid-subscribe (clients treat empty as 'keep current'). */
+  boardPath: Scalars['String']['output'];
+  /** Complete participant roster at subscribe time (each entry carries its own isLeader flag) */
+  users: Array<SessionUser>;
 };
 
 /** Event when session stats change due to logged attempts/sends. */

@@ -70,6 +70,94 @@ describe('applySessionRuntimeEvent', () => {
     expect(next?.users[1].custom).toBe('kept');
   });
 
+  describe('SessionRosterSnapshot (seed / reconcile REPLACE)', () => {
+    it('replaces the whole roster and applies boardPath while preserving own clientId', () => {
+      const prev = session({
+        clientId: 'participant-1',
+        users: [user({ id: 'participant-1' }), user({ id: 'ghost-participant' })],
+        boardPath: '/kilter/1/10/1,2/40/list',
+      });
+
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        // ghost-participant left while we weren't watching; participant-3 joined.
+        users: [user({ id: 'participant-1' }), user({ id: 'participant-3' })],
+        boardPath: '/kilter/1/10/1,2/30/list',
+      });
+
+      expect(next?.users.map((entry) => entry.id)).toEqual(['participant-1', 'participant-3']);
+      expect(next?.clientId).toBe('participant-1');
+      expect(next?.boardPath).toBe('/kilter/1/10/1,2/30/list');
+    });
+
+    it('re-injects the known-self row when the snapshot omits it (raced our JOIN)', () => {
+      const prev = session({
+        clientId: 'participant-1',
+        users: [user({ id: 'participant-1', username: 'me' })],
+      });
+
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'participant-2' })],
+      });
+
+      // We are never erased from our own crew list.
+      expect(next?.users.map((entry) => entry.id).sort()).toEqual(['participant-1', 'participant-2']);
+      expect(next?.users.find((entry) => entry.id === 'participant-1')?.username).toBe('me');
+    });
+
+    it('re-derives own leadership from the snapshot leader flags', () => {
+      const prev = session({ clientId: 'participant-1', isLeader: false });
+
+      const promoted = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'participant-1', isLeader: true }), user({ id: 'participant-2', isLeader: false })],
+      });
+      expect(promoted?.isLeader).toBe(true);
+
+      const demoted = applySessionRuntimeEvent(session({ clientId: 'participant-1', isLeader: true }), {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'participant-1', isLeader: false }), user({ id: 'participant-2', isLeader: true })],
+      });
+      expect(demoted?.isLeader).toBe(false);
+    });
+
+    it('keeps prior leadership when the snapshot omits our own row', () => {
+      const prev = session({ clientId: 'participant-1', isLeader: true });
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'participant-2', isLeader: true })],
+      });
+      // Self re-injected with its prior isLeader, top-level isLeader unchanged.
+      expect(next?.isLeader).toBe(true);
+    });
+
+    it('keeps the prior boardPath when the snapshot carries none', () => {
+      const prev = session({ boardPath: '/kilter/1/10/1,2/40/list' });
+      const next = applySessionRuntimeEvent(prev, {
+        __typename: 'SessionRosterSnapshot',
+        users: prev.users,
+      });
+      expect(next?.boardPath).toBe('/kilter/1/10/1,2/40/list');
+    });
+
+    it('coerces snapshot users through the injected coerceUser callback', () => {
+      const prev = session({ clientId: 'participant-1' });
+      const next = applySessionRuntimeEvent(
+        prev,
+        {
+          __typename: 'SessionRosterSnapshot',
+          users: [user({ id: 'participant-1', custom: 'kept', avatarUrl: null })],
+        },
+        {
+          coerceUser: (incoming): TestUser => ({ ...incoming, avatarUrl: incoming.avatarUrl ?? undefined }),
+        },
+      );
+      expect(next?.users[0].avatarUrl).toBeUndefined();
+      expect(next?.users[0].custom).toBe('kept');
+    });
+  });
+
   it('removes users by participant id', () => {
     const prev = session({ users: [user({ id: 'participant-1' }), user({ id: 'participant-2' })] });
     const next = applySessionRuntimeEvent(prev, { __typename: 'UserLeft', userId: 'participant-1' });

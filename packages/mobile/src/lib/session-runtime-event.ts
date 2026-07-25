@@ -4,6 +4,16 @@ import type { SessionUpdateEvent } from './graphql/operations';
 
 export function toMobileSessionRuntimeEvent(event: SessionUpdateEvent): RuntimeSessionEvent<SessionUser> | null {
   switch (event.__typename) {
+    case 'SessionRosterSnapshot':
+      // Seed/reconcile event: full authoritative roster. Applied as a REPLACE
+      // by applySessionRuntimeEvent (self-preserving). `users` is required on
+      // the wire type, but default to [] so a malformed payload empties rather
+      // than throws.
+      return {
+        __typename: 'SessionRosterSnapshot',
+        users: event.users ?? [],
+        boardPath: event.boardPath ?? null,
+      };
     case 'UserJoined':
     case 'UserPresenceChanged':
       return event.user ? { __typename: event.__typename, user: event.user } : null;

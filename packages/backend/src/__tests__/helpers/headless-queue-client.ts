@@ -102,6 +102,7 @@ type RawQueueEvent =
     };
 
 type RawSessionEvent =
+  | { __typename: 'SessionRosterSnapshot'; users: SessionUserView[]; boardPath: string | null }
   | { __typename: 'UserJoined'; user: SessionUserView }
   | { __typename: 'UserLeft'; userId: string }
   | { __typename: 'UserPresenceChanged'; user: SessionUserView }
@@ -273,6 +274,11 @@ export class HeadlessParticipant {
 
   // Session-level view, fed by the SESSION_UPDATES subscription
   users: SessionUserView[] = [];
+  // Ordered __typename log of received session events (seed-first assertions).
+  sessionEventTypes: string[] = [];
+  // Users carried by the most recent SessionRosterSnapshot seed, or null before
+  // one arrives — lets a test assert the SEED payload (not the JOIN response).
+  rosterSnapshotUsers: SessionUserView[] | null = null;
   boardSerial: string | null = null;
   boardPath: string;
   wallConfirmations: Array<{ climbUuid: string; queueItemUuid: string | null }> = [];
@@ -340,6 +346,17 @@ export class HeadlessParticipant {
    *  the first FullSync proves the subscription is live. */
   async join(): Promise<void> {
     await this.connectAndJoin();
+  }
+
+  /** Wait until the SESSION_UPDATES subscription's roster seed
+   *  (SessionRosterSnapshot) has arrived. `join()` only gates on the queue
+   *  FullSync, so the session seed can land a beat later — poll for it before
+   *  asserting on the seeded roster. */
+  async waitForRosterSnapshot(timeoutMs = 5000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (this.rosterSnapshotUsers === null && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 
   /**
@@ -480,7 +497,17 @@ export class HeadlessParticipant {
   }
 
   private handleSessionEvent(event: RawSessionEvent): void {
+    // Ordered log of every session event received, so tests can assert the
+    // roster seed lands first (before any delta).
+    this.sessionEventTypes.push(event.__typename);
     switch (event.__typename) {
+      case 'SessionRosterSnapshot':
+        // Full authoritative roster seeded on subscribe — REPLACE, matching the
+        // production client's applySessionRuntimeEvent handling.
+        this.users = event.users;
+        if (event.boardPath !== null) this.boardPath = event.boardPath;
+        this.rosterSnapshotUsers = event.users;
+        break;
       case 'UserJoined':
         if (!this.users.some((u) => u.id === event.user.id)) this.users = [...this.users, event.user];
         else this.users = this.users.map((u) => (u.id === event.user.id ? event.user : u));

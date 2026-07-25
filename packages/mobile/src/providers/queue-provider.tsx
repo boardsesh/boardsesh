@@ -122,6 +122,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const [liveStats, setLiveStats] = useState<SessionLiveStatsEvent | null>(null);
   const [sessionRuntimeState, setSessionRuntimeState] =
     useState<MobileSessionRuntimeState>(createEmptySessionRuntimeState);
+  // Latest-committed mirror, read by the realtime engine's snapshot-reconcile
+  // telemetry (which can't observe the functional state updater's result).
+  const sessionRuntimeStateRef = useRef(sessionRuntimeState);
+  sessionRuntimeStateRef.current = sessionRuntimeState;
   const sessionUsers = sessionRuntimeState.users;
   const lastConnectedBoardSerial = sessionRuntimeState.lastConnectedBoardSerial;
   // Session-scoped "the current climb is lit on a wall" indicator. Flipped on by
@@ -566,6 +570,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     resyncQueueFromServerRef,
     setLiveStats,
     setSessionRuntimeState,
+    sessionRuntimeStateRef,
     setIsSessionWallLit,
     setParticipantId,
     locallyEndingSessionIdRef,

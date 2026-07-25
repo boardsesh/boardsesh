@@ -101,6 +101,14 @@ type WebRuntimeSessionUser = Parameters<typeof coerceSessionUser>[0];
 
 function toWebSessionRuntimeEvent(event: SessionEvent): RuntimeSessionEvent<WebRuntimeSessionUser> | null {
   switch (event.__typename) {
+    case 'SessionRosterSnapshot':
+      // Full authoritative roster seeded on subscribe. `applySessionRuntimeEvent`
+      // applies it as a REPLACE and coerces each user via `coerceSessionUser`.
+      return {
+        __typename: 'SessionRosterSnapshot',
+        users: (event.users ?? []) as unknown as WebRuntimeSessionUser[],
+        boardPath: event.boardPath ?? null,
+      };
     case 'UserJoined':
     case 'UserPresenceChanged':
       return { __typename: event.__typename, user: event.user as unknown as WebRuntimeSessionUser };
