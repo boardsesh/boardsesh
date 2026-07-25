@@ -15,8 +15,16 @@ const loggerMocks = vi.hoisted(() => ({
   },
 }));
 
+const betaMocks = vi.hoisted(() => ({
+  invalidateRecentBetaLinksCache: vi.fn(() => Promise.resolve()),
+}));
+
 vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => queueMocks);
 vi.mock('../utils/logger', () => loggerMocks);
+// updateTick busts the recent-beta strip cache when a linked beta's angle moves.
+// Stub the cache module so the assertions don't depend on Redis, and provide
+// only the export mutations.ts consumes.
+vi.mock('../graphql/resolvers/beta-videos/queries', () => betaMocks);
 
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
@@ -38,9 +46,11 @@ const describeWithDatabase = process.env.SKIP_TEST_INFRA === '1' ? describe.skip
 beforeEach(() => {
   queueMocks.queueClimbStatsRecompute.mockClear();
   loggerMocks.logger.warn.mockClear();
+  betaMocks.invalidateRecentBetaLinksCache.mockClear();
 });
 
 async function cleanupTickValidationRows() {
+  await db.execute(sql`DELETE FROM board_beta_links WHERE climb_uuid = ${TEST_CLIMB_UUID}`);
   await db.execute(sql`DELETE FROM boardsesh_ticks WHERE uuid LIKE ${TEST_TICK_UUID_PREFIX + '%'}`);
   await db.execute(sql`DELETE FROM users WHERE id = ${TEST_USER_ID}`);
 }
@@ -88,6 +98,15 @@ async function insertTickValidationTick(params: {
       '',
       ${params.climbedAt ?? '2026-06-01T10:30:00.000Z'}
     )
+  `);
+}
+
+// A beta video directly linked to a tick (board_beta_links.tick_uuid), carrying
+// the tick's angle the way saveTick / attachBetaLink write it.
+async function insertTickValidationBetaLink(params: { tickUuid: string; angle: number }) {
+  await db.execute(sql`
+    INSERT INTO board_beta_links (board_type, climb_uuid, link, angle, tick_uuid, is_listed)
+    VALUES ('kilter', ${TEST_CLIMB_UUID}, ${'https://instagram.com/reel/' + params.tickUuid}, ${params.angle}, ${params.tickUuid}, true)
   `);
 }
 
@@ -288,5 +307,50 @@ describeWithDatabase('tickMutations.updateTick', () => {
 
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledTimes(1);
     expect(queueMocks.queueClimbStatsRecompute).toHaveBeenCalledWith('kilter', TEST_CLIMB_UUID, 40);
+  });
+
+  it('an angle edit follows through to a directly linked beta video', async () => {
+    const tickUuid = `${TEST_TICK_UUID_PREFIX}-beta-angle-move`;
+    await insertTickValidationTick({ uuid: tickUuid, attemptCount: 1, status: 'send' });
+    await insertTickValidationBetaLink({ tickUuid, angle: 40 });
+
+    await tickMutations.updateTick(null, { uuid: tickUuid, input: { angle: 25 } }, authenticatedContext);
+
+    const [betaLink] = await db
+      .select({ angle: dbSchema.boardBetaLinks.angle })
+      .from(dbSchema.boardBetaLinks)
+      .where(eq(dbSchema.boardBetaLinks.tickUuid, tickUuid));
+
+    // The linked beta must move to the tick's new angle, and the home-strip
+    // cache must be busted so the correction shows up on the next read.
+    expect(betaLink?.angle).toBe(25);
+    expect(betaMocks.invalidateRecentBetaLinksCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('an angle edit with no linked beta leaves the recent-beta cache alone', async () => {
+    const tickUuid = `${TEST_TICK_UUID_PREFIX}-beta-none`;
+    await insertTickValidationTick({ uuid: tickUuid, attemptCount: 1, status: 'send' });
+
+    await tickMutations.updateTick(null, { uuid: tickUuid, input: { angle: 25 } }, authenticatedContext);
+
+    // No linked beta row moved, so no cache churn.
+    expect(betaMocks.invalidateRecentBetaLinksCache).not.toHaveBeenCalled();
+  });
+
+  it('a non-angle edit leaves a linked beta video untouched', async () => {
+    const tickUuid = `${TEST_TICK_UUID_PREFIX}-beta-non-angle`;
+    await insertTickValidationTick({ uuid: tickUuid, attemptCount: 1, status: 'send' });
+    await insertTickValidationBetaLink({ tickUuid, angle: 40 });
+
+    await tickMutations.updateTick(null, { uuid: tickUuid, input: { comment: 'nice send' } }, authenticatedContext);
+
+    const [betaLink] = await db
+      .select({ angle: dbSchema.boardBetaLinks.angle })
+      .from(dbSchema.boardBetaLinks)
+      .where(eq(dbSchema.boardBetaLinks.tickUuid, tickUuid));
+
+    // The comment edit didn't move the angle, so the beta row and cache stay put.
+    expect(betaLink?.angle).toBe(40);
+    expect(betaMocks.invalidateRecentBetaLinksCache).not.toHaveBeenCalled();
   });
 });

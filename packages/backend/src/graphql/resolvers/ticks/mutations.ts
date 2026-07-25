@@ -905,6 +905,26 @@ export const tickMutations = {
       queueClimbStatsRecompute(updated.boardType, updated.climbUuid, existing[0].angle);
     }
 
+    // A tick with a directly linked beta video stamps its angle onto that
+    // board_beta_links row — saveTick and attachBetaLink both persist the tick's
+    // angle there alongside tick_uuid. The mobile home feed opens the video at
+    // the beta row's angle, so correcting a tick from 40° to 25° must move its
+    // beta with it or the video keeps opening at the old angle. Only touch the
+    // row (and bust the recent-beta strip cache) when the angle actually moved
+    // and a linked beta exists.
+    if (updated.angle !== existing[0].angle) {
+      const [movedBetaLink] = await db
+        .update(dbSchema.boardBetaLinks)
+        .set({ angle: updated.angle })
+        .where(eq(dbSchema.boardBetaLinks.tickUuid, uuid))
+        .returning({ link: dbSchema.boardBetaLinks.link });
+      if (movedBetaLink) {
+        invalidateRecentBetaLinksCache().catch((err) => {
+          logger.error('[updateTick] recent-beta-links cache invalidation failed:', err);
+        });
+      }
+    }
+
     // Board presence: an edited tick on a connected wall can change that
     // wall's durable stats (e.g. attempt -> send). See the longer comment on
     // the saveTick call site above.
