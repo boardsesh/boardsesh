@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { useColorScheme } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { listOverlayCacheEntries, onOverlayCacheHydrated } from './overlay-cache-warmup';
 import { RENDERER_VERSION } from './renderer-version';
-import { HOLD_STATE_MAP, getBoardStrokeWidthMultiplier } from '@boardsesh/board-constants/hold-states';
+import {
+  HOLD_STATE_MAP,
+  getBoardStrokeWidthMultiplier,
+  getHoldDisplayColor,
+  type HoldColorScheme,
+} from '@boardsesh/board-constants/hold-states';
 import { getBoardRenderData } from '../lib/board-details';
 import {
   ensureBackgroundsCached,
   tryGetBackgroundPathsSync,
+  type BackgroundColorScheme,
   type BackgroundVariant,
 } from '../lib/background-image-cache';
 import { reportError } from '../lib/error-reporting';
@@ -346,11 +353,17 @@ export function buildBoardKey(
   sizeId: number,
   setIds: string,
   variant: BackgroundVariant = 'full',
+  colorScheme: BackgroundColorScheme = 'light',
 ): string {
   // Variant is part of the identity so a FlashList row recycled between a
   // thumb context (list) and a full context can't surface the wrong-size
   // background paths from the previous climb.
-  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}`;
+  //
+  // Colour scheme is part of it for the same reason across a theme flip: the
+  // near-black MoonBoard layers resolve to `.dark.webp` siblings in dark mode
+  // (see background-image-cache.ts), so without this term a flip would leave
+  // the previous scheme's paths on screen until some other prop changed.
+  return `${boardName}-${layoutId}-${sizeId}-${setIds}-${variant}-${colorScheme}`;
 }
 
 function getBoardConfig(
@@ -365,6 +378,7 @@ function getBoardConfig(
   brushThickness = DEFAULT_HOLD_BRUSH_THICKNESS,
   shapeSize = DEFAULT_HOLD_SHAPE_SIZE,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
+  colorScheme: HoldColorScheme = 'light',
 ) {
   const widthKey = renderWidth != null ? `${renderWidth}` : 'full';
   const configKey = `${boardName}-${layoutId}-${sizeId}-${setIds}-${filledStyle ? 'f' : 's'}-w${widthKey}-${renderSignature}`;
@@ -382,13 +396,16 @@ function getBoardConfig(
   // color — the LED color is only correct for driving physical board
   // hardware over BLE, not for what a viewer sees on screen (issue #2202:
   // raw LED blue renders far too dark against a busy board photo). Boards
-  // without a displayColor (e.g. Kilter) render unchanged.
+  // without a displayColor (e.g. Kilter) render unchanged. A role may also
+  // carry a dark-mode-only value (displayColorDark); getHoldDisplayColor
+  // picks it, and the scheme is folded into renderSignature by the caller so
+  // the two schemes never share a cached config or a cached overlay PNG.
   const stateMap = HOLD_STATE_MAP[boardName];
   const holdStateMap: Record<number, { color: string; render_style?: string; shape?: string }> = {};
   for (const [codeStr, stateInfo] of Object.entries(stateMap)) {
     const shape = getEffectiveHoldStateShape(stateInfo.name, shapeOverrides);
     holdStateMap[Number(codeStr)] = {
-      color: getEffectiveHoldStateColor(stateInfo.name, stateInfo.displayColor ?? stateInfo.color, colorOverrides),
+      color: getEffectiveHoldStateColor(stateInfo.name, getHoldDisplayColor(stateInfo, colorScheme), colorOverrides),
       ...(stateInfo.renderStyle ? { render_style: stateInfo.renderStyle } : {}),
       ...(shape !== DEFAULT_HOLD_MARKER_SHAPE ? { shape } : {}),
     };
@@ -452,6 +469,7 @@ export function _getBoardConfigForTests(
   brushThickness = DEFAULT_HOLD_BRUSH_THICKNESS,
   shapeSize = DEFAULT_HOLD_SHAPE_SIZE,
   renderSignature = DEFAULT_HOLD_COLOR_SIGNATURE,
+  colorScheme: HoldColorScheme = 'light',
 ): ReturnType<typeof getBoardConfig> {
   return getBoardConfig(
     boardName,
@@ -465,6 +483,7 @@ export function _getBoardConfigForTests(
     brushThickness,
     shapeSize,
     renderSignature,
+    colorScheme,
   );
 }
 
@@ -541,6 +560,23 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // crisp on the full-screen board.
   const variant: BackgroundVariant = backgroundVariant ?? (renderWidth != null ? 'thumb' : 'full');
 
+  // Deliberately RN's useColorScheme() rather than useTheme(): this hook runs in
+  // every FlashList row, and the theme context value also carries UI variant,
+  // spacing and animation config, so consuming it would re-render every mounted
+  // row whenever any of those change. The theme provider mirrors the in-app
+  // theme override into Appearance.setColorScheme, so this already reflects the
+  // user's app setting and not just the OS.
+  const colorScheme: BackgroundColorScheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+
+  // Some roles carry a dark-mode-only marker colour (displayColorDark), so the
+  // scheme changes the rendered pixels for a config that would otherwise hash
+  // identically. Fold it into the render signature rather than adding a
+  // parameter to buildCacheKey/getBoardConfig: the signature is already the
+  // "what makes these markers look different" token, so both the overlay PNG
+  // cache and the board-config memo pick the split up for free. Left untouched
+  // in light mode so every existing key keeps its current value.
+  const renderSignature = colorScheme === 'dark' ? `${holdRenderSignature}|dark` : holdRenderSignature;
+
   // Run the disk-cache scan once per JS context. Safe to call on every
   // render — the function self-guards via `warmupRun`.
   warmupRenderedOverlaysOnce();
@@ -549,12 +585,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // runs an fnv1a char-loop over the frames string. Memoize on exactly the
   // builders' inputs — a stale key would collide two climbs' overlays.
   const currentCacheKey = useMemo(
-    () => buildCacheKey(boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, holdRenderSignature),
-    [boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, holdRenderSignature],
+    () => buildCacheKey(boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, renderSignature),
+    [boardName, layoutId, sizeId, setIds, frames, filledStyle, renderWidth, renderSignature],
   );
   const currentBoardKey = useMemo(
-    () => buildBoardKey(boardName, layoutId, sizeId, setIds, variant),
-    [boardName, layoutId, sizeId, setIds, variant],
+    () => buildBoardKey(boardName, layoutId, sizeId, setIds, variant, colorScheme),
+    [boardName, layoutId, sizeId, setIds, variant, colorScheme],
   );
 
   // Parsed set ids, reused by the lazy background initializer and the
@@ -589,6 +625,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       sizeId,
       setIds: setIdsArray,
       variant,
+      colorScheme,
     });
     if (!sync) return null;
     return { key: currentBoardKey, paths: sync.paths, missingCount: sync.missingCount };
@@ -629,6 +666,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         sizeId,
         setIds: setIdsArray,
         variant,
+        colorScheme,
       });
       if (sync) {
         setStoredBackgrounds({
@@ -647,6 +685,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
         sizeId,
         setIds: setIdsArray,
         variant,
+        colorScheme,
       });
       if (cancelled || !mountedRef.current) return;
       // Null = getBoardRenderData failed; leave existing state alone.
@@ -655,7 +694,7 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       // clobbering the current climb's state. mountedRef alone isn't
       // enough — the hook instance is still mounted, just on different
       // props now.
-      const latestBoardKey = buildBoardKey(boardName, layoutId, sizeId, setIds, variant);
+      const latestBoardKey = buildBoardKey(boardName, layoutId, sizeId, setIds, variant, colorScheme);
       if (latestBoardKey !== currentBoardKey) return;
       setStoredBackgrounds((prev) => {
         // Skip the state update when nothing actually changed, to avoid
@@ -717,7 +756,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
       holdShapeOverrides,
       brushThickness,
       shapeSize,
-      holdRenderSignature,
+      renderSignature,
+      colorScheme,
     );
     if (!boardConfig) return;
 
@@ -786,6 +826,8 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     brushThickness,
     shapeSize,
     holdRenderSignature,
+    renderSignature,
+    colorScheme,
   ]);
 
   // Only surface the native URI if it matches the *current* cache key —

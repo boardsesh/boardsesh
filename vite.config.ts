@@ -348,6 +348,10 @@ export default defineConfig({
         command: 'node --import tsx scripts/fetch-acknowledgements.ts',
         cache: false,
       },
+      'generate:dark-board-art': {
+        command: 'node --import tsx scripts/generate-dark-board-art.ts',
+        cache: false,
+      },
       'generate:oss-licenses': {
         command: 'node --import tsx scripts/generate-oss-licenses.ts',
         cache: false,

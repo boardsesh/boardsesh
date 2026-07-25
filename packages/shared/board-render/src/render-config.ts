@@ -1,5 +1,5 @@
 import type { BoardName } from '@boardsesh/shared-schema';
-import { getBoardStrokeWidthMultiplier } from '@boardsesh/board-constants/hold-states';
+import { getBoardStrokeWidthMultiplier, getHoldDisplayColor } from '@boardsesh/board-constants/hold-states';
 import { OG_BOARD_PADDING_X, OG_BOARD_PADDING_Y } from './background';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from './headers';
 import type { HoldStateRecord, RenderableBoardDetails, WasmRenderConfig } from './types';
@@ -59,10 +59,15 @@ export function buildRenderConfig({
   // sees on screen (issue #2202: raw LED blue renders far too dark against a
   // busy board photo). Boards without a displayColor (e.g. Kilter) render
   // unchanged.
+  //
+  // Always the light-mode value: this builder serves the web SSR route and the
+  // OG share cards, both of which composite onto a light background. The
+  // dark-mode variant (displayColorDark) is resolved by the mobile config
+  // builder, which knows the device's colour scheme.
   const holdStateMap: Record<number, { color: string; renderStyle?: string }> = {};
   for (const [code, info] of Object.entries(boardStates)) {
     holdStateMap[Number(code)] = {
-      color: info.displayColor ?? info.color,
+      color: getHoldDisplayColor(info, 'light'),
       ...(info.renderStyle ? { renderStyle: info.renderStyle } : {}),
     };
   }

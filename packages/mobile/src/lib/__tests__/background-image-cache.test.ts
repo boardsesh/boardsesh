@@ -35,8 +35,24 @@ vi.mock('../board-backgrounds-manifest', () => ({
     // `resolvedPaths` cache in background-image-cache.ts can't short-circuit
     // it with a stale success from an earlier test in this file.
     'kilter/product_sizes_layouts_sets/999-failure-test.webp': 999,
+    // MoonBoard 2016: the frame and the black hold sheet ship `.dark.webp`
+    // siblings (issue #3885); the pale set A deliberately does not, so the
+    // "no sibling => unchanged" fallback is exercised in the same board.
+    'moonboard/moonboard-bg.webp': 400,
+    'moonboard/moonboard-bg.dark.webp': 401,
+    'moonboard/thumbs/moonboard-bg.webp': 402,
+    'moonboard/thumbs/moonboard-bg.dark.webp': 403,
+    'moonboard/moonboard2016/holdsetb.webp': 410,
+    'moonboard/moonboard2016/holdsetb.dark.webp': 411,
+    'moonboard/moonboard2016/holdseta.webp': 420,
   },
 }));
+
+const MOONBOARD_2016_LAYERS = [
+  'moonboard/moonboard-bg.webp',
+  'moonboard/moonboard2016/holdseta.webp',
+  'moonboard/moonboard2016/holdsetb.webp',
+];
 
 const { toFilesystemPath, ensureBackgroundsCached, tryGetBackgroundPathsSync } =
   await import('../background-image-cache');
@@ -345,5 +361,99 @@ describe('thumb variant', () => {
 
     // Graceful fallback to the full-res key (module 200), no missing gap.
     expect(result).toEqual({ paths: ['/bundled/200.webp'], missingCount: 0 });
+  });
+});
+
+// Issue #3885. MoonBoard is the only board whose art is drawn for a WHITE wall:
+// its grid frame + A-K/1-18 labels are pure #000000 and its "set B" sheet is
+// black plastic, so over the dark play field (#181225) they measure ~1.1:1 and
+// vanish. Dark-mode siblings (scripts/generate-dark-board-art.ts) lift just
+// those layers. Everything without a sibling — and all of light mode — must
+// resolve exactly what it resolved before the feature existed.
+describe('dark-mode art variants', () => {
+  beforeEach(() => {
+    vi.mocked(getBoardRenderData).mockReset();
+    vi.mocked(getBoardRenderData).mockReturnValue({
+      boardWidth: 650,
+      boardHeight: 1000,
+      edgeLeft: 0,
+      edgeRight: 11,
+      edgeBottom: 0,
+      edgeTop: 18,
+      holdsData: [],
+      backgroundImageKeys: MOONBOARD_2016_LAYERS,
+    } as ReturnType<typeof getBoardRenderData>);
+  });
+
+  const moonboardParams = { boardName: 'moonboard' as const, layoutId: 1, sizeId: 10, setIds: [1] };
+
+  it('swaps only the layers that have a .dark.webp sibling', () => {
+    const result = tryGetBackgroundPathsSync({ ...moonboardParams, colorScheme: 'dark' });
+
+    // 401 = frame dark, 420 = pale set A (NO sibling, unchanged), 411 = set B dark.
+    expect(result).toEqual({ paths: ['/bundled/401.webp', '/bundled/420.webp', '/bundled/411.webp'], missingCount: 0 });
+  });
+
+  it('leaves light mode byte-identical to before the feature existed', () => {
+    const explicitLight = tryGetBackgroundPathsSync({ ...moonboardParams, colorScheme: 'light' });
+    const omitted = tryGetBackgroundPathsSync(moonboardParams);
+
+    expect(omitted).toEqual({
+      paths: ['/bundled/400.webp', '/bundled/420.webp', '/bundled/410.webp'],
+      missingCount: 0,
+    });
+    // Omitting the param must behave exactly like passing 'light' — this is what
+    // keeps the callers that never pass it (PlaylistBoardBackdrop, the climbs-tab
+    // prefetch, the Live Activity thumbnail builder) rendering as they do today.
+    expect(explicitLight).toEqual(omitted);
+  });
+
+  it('resolves the dark sibling of the THUMB variant, not the full-res one', () => {
+    vi.mocked(getBoardRenderData).mockReturnValue({
+      boardWidth: 650,
+      boardHeight: 1000,
+      edgeLeft: 0,
+      edgeRight: 11,
+      edgeBottom: 0,
+      edgeTop: 18,
+      holdsData: [],
+      backgroundImageKeys: ['moonboard/moonboard-bg.webp'],
+    } as ReturnType<typeof getBoardRenderData>);
+
+    // Thumb resolution has to happen FIRST, then the dark swap on the result —
+    // otherwise a list cell would load the full-res dark frame (403, not 401).
+    expect(tryGetBackgroundPathsSync({ ...moonboardParams, variant: 'thumb', colorScheme: 'dark' })).toEqual({
+      paths: ['/bundled/403.webp'],
+      missingCount: 0,
+    });
+  });
+
+  it('never treats a missing dark sibling as a missing layer', () => {
+    vi.mocked(getBoardRenderData).mockReturnValue({
+      boardWidth: 100,
+      boardHeight: 100,
+      edgeLeft: 0,
+      edgeRight: 11,
+      edgeBottom: 0,
+      edgeTop: 18,
+      holdsData: [],
+      backgroundImageKeys: ['kilter/product_sizes_layouts_sets/36-1.webp'],
+    } as ReturnType<typeof getBoardRenderData>);
+
+    // Kilter art is mid-tone and already reads on a dark field, so it ships no
+    // dark sibling. A dark render must fall through to the normal key rather
+    // than counting a gap and painting the grey missing-layer placeholder.
+    expect(
+      tryGetBackgroundPathsSync({ boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: [24], colorScheme: 'dark' }),
+    ).toEqual({
+      paths: ['/bundled/100.webp'],
+      missingCount: 0,
+    });
+  });
+
+  it('applies the same swap on the async path', async () => {
+    const result = await ensureBackgroundsCached({ ...moonboardParams, colorScheme: 'dark' });
+
+    expect(result).toEqual({ paths: ['/bundled/401.webp', '/bundled/420.webp', '/bundled/411.webp'], missingCount: 0 });
   });
 });

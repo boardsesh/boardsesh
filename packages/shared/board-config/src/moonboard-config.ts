@@ -131,9 +131,11 @@ export const MOONBOARD_SIZE = {
 
 // MoonBoard hold states (different color scheme from Aurora)
 // Green for start holds, Blue for hand/intermediate holds, Red for finish holds
+// Kept byte-for-byte in sync with codes 42/43/44 of HOLD_STATE_MAP.moonboard in
+// @boardsesh/board-constants — a drift test in that package enforces it.
 export const MOONBOARD_HOLD_STATES = {
   start: { name: 'STARTING' as const, color: '#00FF00', displayColor: '#44FF44' },
-  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF' },
+  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF', displayColorDark: '#6E7DFF' },
   finish: { name: 'FINISH' as const, color: '#FF0000', displayColor: '#FF3333' },
 } as const;
 

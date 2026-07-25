@@ -24,6 +24,20 @@ export function toFilesystemPath(fileUri: string): string {
 export type BackgroundVariant = 'full' | 'thumb';
 
 /**
+ * Which colour scheme the art is being rendered into. Only `dark` can change
+ * which file resolves; `light` (the default) always resolves exactly what it
+ * resolved before dark variants existed.
+ */
+export type BackgroundColorScheme = 'light' | 'dark';
+
+/**
+ * Suffix marking a dark-mode sibling, e.g.
+ * `moonboard/moonboard2016/holdsetb.webp` -> `moonboard/moonboard2016/holdsetb.dark.webp`.
+ * Written by scripts/generate-dark-board-art.ts; keep the two in sync.
+ */
+const DARK_VARIANT_SUFFIX = '.dark.webp';
+
+/**
  * Map a full-resolution background manifest key produced by getBoardRenderData
  * to the requested bundled variant. The manifest stores .webp variants —
  * full-quality webp is what we bundle into the IPA/APK for every board
@@ -42,17 +56,36 @@ function manifestKeyForVariant(backgroundImageKey: string, variant: BackgroundVa
 }
 
 /**
- * Resolve the best bundled manifest key for a background key + variant.
+ * Resolve the best bundled manifest key for a background key + variant + scheme.
  * When `thumb` is requested but no thumb was bundled (e.g. a board that
  * ships only a full-res webp), fall back to the full-res key — never to
  * the backend.
+ *
+ * In dark mode, prefer a `.dark.webp` sibling when one is bundled. Only the
+ * handful of MoonBoard layers that are drawn in near-black have one (see
+ * scripts/generate-dark-board-art.ts for which, and why): MoonBoard's art is
+ * drawn for a white wall, so its grid frame, its A-K / 1-18 labels and its
+ * black plastic hold sheets measure ~1.1:1 against the dark play field and
+ * disappear (issue #3885). Every other board draws mid-tone art that already
+ * reads, has no sibling, and so falls through here unchanged — as does every
+ * layer in light mode. That fallback is what keeps this from being a per-board
+ * special case.
  */
-function resolveManifestKey(backgroundImageKey: string, variant: BackgroundVariant): string {
+function resolveManifestKey(
+  backgroundImageKey: string,
+  variant: BackgroundVariant,
+  colorScheme: BackgroundColorScheme,
+): string {
+  let manifestKey = backgroundImageKey;
   if (variant === 'thumb') {
     const thumbKey = manifestKeyForVariant(backgroundImageKey, 'thumb');
-    if (BOARD_BACKGROUND_ASSETS[thumbKey] !== undefined) return thumbKey;
+    if (BOARD_BACKGROUND_ASSETS[thumbKey] !== undefined) manifestKey = thumbKey;
   }
-  return backgroundImageKey;
+  if (colorScheme === 'dark') {
+    const darkKey = `${manifestKey.replace(/\.webp$/, '')}${DARK_VARIANT_SUFFIX}`;
+    if (BOARD_BACKGROUND_ASSETS[darkKey] !== undefined) return darkKey;
+  }
+  return manifestKey;
 }
 
 /**
@@ -173,6 +206,13 @@ type BackgroundParams = {
   setIds: number[];
   /** Which bundled variant to resolve. Defaults to `full`. */
   variant?: BackgroundVariant;
+  /**
+   * Colour scheme the art will be composited into. Defaults to `light`, which
+   * resolves exactly what every caller resolved before dark variants existed —
+   * so the callers that don't pass it (PlaylistBoardBackdrop, the climbs-tab
+   * prefetch, the Live Activity thumbnail builder) keep their current output.
+   */
+  colorScheme?: BackgroundColorScheme;
 };
 
 /**
@@ -206,10 +246,11 @@ export function tryGetBackgroundPathsSync(params: BackgroundParams): BackgroundL
   if (!renderData) return null;
 
   const variant = params.variant ?? 'full';
+  const colorScheme = params.colorScheme ?? 'light';
   const paths: string[] = [];
   let missingCount = 0;
   for (const backgroundImageKey of renderData.backgroundImageKeys) {
-    const manifestKey = resolveManifestKey(backgroundImageKey, variant);
+    const manifestKey = resolveManifestKey(backgroundImageKey, variant, colorScheme);
     const path = tryResolveBundledPathSync(manifestKey);
     if (!path) {
       // Sync miss: could be a true manifest miss OR just the dev-mode
@@ -239,10 +280,11 @@ export async function ensureBackgroundsCached(params: BackgroundParams): Promise
   if (!renderData) return null;
 
   const variant = params.variant ?? 'full';
+  const colorScheme = params.colorScheme ?? 'light';
   const paths: string[] = [];
   let missingCount = 0;
   for (const backgroundImageKey of renderData.backgroundImageKeys) {
-    const manifestKey = resolveManifestKey(backgroundImageKey, variant);
+    const manifestKey = resolveManifestKey(backgroundImageKey, variant, colorScheme);
     const path = await resolveBundledPathAsync(manifestKey);
     if (path) {
       paths.push(path);

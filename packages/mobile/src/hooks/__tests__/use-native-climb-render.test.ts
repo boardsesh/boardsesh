@@ -2,6 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 
+// react-native ships Flow-typed source that Rolldown can't parse, so anything
+// importing it transitively has to stub it. The hook reads useColorScheme() to
+// pick the dark-mode board art (issue #3885); the pure helpers exercised here
+// take the scheme as an argument, so a fixed 'light' is enough.
+vi.mock('react-native', () => ({
+  useColorScheme: () => 'light',
+  Platform: { OS: 'ios' },
+}));
+
 // expo-file-system: stub Directory/Paths so the eager warm-up's
 // `new Directory(Paths.cache, 'board-thumbnails').list()` runs without
 // hitting a real filesystem. The default mock returns an empty list.
@@ -101,12 +110,14 @@ describe('buildCacheKey', () => {
     expect(small).not.toBe(full);
   });
 
-  it('uses RENDERER_VERSION v4 to invalidate stale overlay PNGs', () => {
-    // v4 (issue #2202) switches hold colors to each role's calibrated
+  it('uses RENDERER_VERSION v5 to invalidate stale overlay PNGs', () => {
+    // v5 (issue #3885) adds dark-mode-only marker colors: MoonBoard's hand ring
+    // is a different hex in dark mode, so a v4 PNG cached in one scheme would be
+    // wrong in the other. v4 (issue #2202) switched hold colors to each role's calibrated
     // displayColor and boosts Grasshopper's default stroke width. The
     // version prefix guarantees pre-fix v3 cache files (rendered with the
     // raw, too-dark LED colors) cannot be reused.
-    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v4_/);
+    expect(buildCacheKey('kilter', 1, 10, '24', 'p1r42')).toMatch(/^v5_/);
   });
 
   it('uses a distinct style token so filled (list) and stroke (play view) never collide', () => {
@@ -280,6 +291,35 @@ describe('_getBoardConfigForTests', () => {
     const configBase = asRecord(boardConfig?.configBase);
     expect(configBase.stroke_width_multiplier).toBe(1.5);
   });
+
+  it('issue #3885: MoonBoard HAND uses its dark-mode display colour in dark mode only', () => {
+    // renderSignature must differ between the two calls or the second collides
+    // with the first in the (board, layout, size, setIds, style, width,
+    // renderSignature)-keyed config memo. The hook folds the scheme into the
+    // signature for exactly this reason.
+    const light = _getBoardConfigForTests('moonboard', 1, 10, '1', false, undefined, {}, {}, 1, 1, 'sig', 'light');
+    const dark = _getBoardConfigForTests('moonboard', 1, 10, '1', false, undefined, {}, {}, 1, 1, 'sig|dark', 'dark');
+
+    const lightMap = asRecord(asRecord(light?.configBase).hold_state_map);
+    const darkMap = asRecord(asRecord(dark?.configBase).hold_state_map);
+
+    expect(asRecord(lightMap[43])?.color).toBe('#4444FF');
+    // #4444FF is only 3.05:1 against the dark play field and collides with the
+    // lightened black hold art; #6E7DFF clears both.
+    expect(asRecord(darkMap[43])?.color).toBe('#6E7DFF');
+    // Roles without a dark override are identical in both schemes.
+    expect(asRecord(darkMap[42])?.color).toBe(asRecord(lightMap[42])?.color);
+    expect(asRecord(darkMap[44])?.color).toBe(asRecord(lightMap[44])?.color);
+  });
+
+  it('issue #3885: boards with no dark override render identically in both schemes', () => {
+    const light = _getBoardConfigForTests('kilter', 1, 10, '24', false, undefined, {}, {}, 1, 1, 'k', 'light');
+    const dark = _getBoardConfigForTests('kilter', 1, 10, '24', false, undefined, {}, {}, 1, 1, 'k|dark', 'dark');
+
+    expect(asRecord(asRecord(dark?.configBase).hold_state_map)).toEqual(
+      asRecord(asRecord(light?.configBase).hold_state_map),
+    );
+  });
 });
 
 // The background-paths state in useNativeClimbRender is keyed by
@@ -326,6 +366,19 @@ describe('buildBoardKey', () => {
 
   it('defaults to the full variant', () => {
     expect(buildBoardKey('kilter', 1, 10, '24')).toBe(buildBoardKey('kilter', 1, 10, '24', 'full'));
+  });
+
+  it('differs by colour scheme so a theme flip re-resolves the art (issue #3885)', () => {
+    // The near-black MoonBoard layers resolve to `.dark.webp` siblings in dark
+    // mode. Without this term, flipping the theme mid-session would leave the
+    // previous scheme's paths on screen until some other prop happened to change.
+    expect(buildBoardKey('moonboard', 1, 10, '1', 'full', 'dark')).not.toBe(
+      buildBoardKey('moonboard', 1, 10, '1', 'full', 'light'),
+    );
+  });
+
+  it('defaults to the light scheme', () => {
+    expect(buildBoardKey('kilter', 1, 10, '24')).toBe(buildBoardKey('kilter', 1, 10, '24', 'full', 'light'));
   });
 });
 
@@ -412,33 +465,32 @@ describe('renderedOverlays warm-up from disk cache', () => {
 
   it('exposes the populated map so a fresh hook init can hit it synchronously', () => {
     expect(_renderedOverlaysForTests).toBeInstanceOf(Map);
-    _renderedOverlaysForTests.set('v4_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
-    expect(_renderedOverlaysForTests.get('v4_kilter_1_10_24_deadbeef')).toBe('file:///prior/session.png');
-    _renderedOverlaysForTests.delete('v4_kilter_1_10_24_deadbeef');
+    _renderedOverlaysForTests.set('v5_kilter_1_10_24_deadbeef', 'file:///prior/session.png');
+    expect(_renderedOverlaysForTests.get('v5_kilter_1_10_24_deadbeef')).toBe('file:///prior/session.png');
+    _renderedOverlaysForTests.delete('v5_kilter_1_10_24_deadbeef');
   });
 
   it('only loads PNGs whose name starts with the current RENDERER_VERSION prefix', () => {
-    // Mix of v1/v2/v3 leftovers from previous app sessions and current v4
-    // entries. The warm-up should only surface v4 keys; older keys would
-    // never match any cacheKey lookup (all current keys are v4_*) so
-    // loading them just bloats memory. v3 leftovers matter for issue #2202:
-    // they were rendered with the raw, too-dark LED colors and must not be
-    // reused post-fix.
+    // Mix of v1/v2/v3 leftovers from previous app sessions and current v5
+    // entries. The warm-up should only surface v5 keys; older keys would
+    // never match any cacheKey lookup (all current keys are v5_*) so
+    // loading them just bloats memory. v4 leftovers matter for issue #3885:
+    // they were rendered with one scheme's marker colors baked in.
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
     const v3Entry = makeMockEntry('v3_kilter_1_10_24_eeeeeeee.png');
-    const v4EntryA = makeMockEntry('v4_kilter_1_10_24_cccccccc.png');
-    const v4EntryB = makeMockEntry('v4_tension_2_8_15_dddddddd.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3Entry, v4EntryA, v4EntryB]);
+    const v5EntryA = makeMockEntry('v5_kilter_1_10_24_cccccccc.png');
+    const v5EntryB = makeMockEntry('v5_tension_2_8_15_dddddddd.png');
+    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v3Entry, v5EntryA, v5EntryB]);
 
     _runWarmupForTests();
 
-    expect(_renderedOverlaysForTests.has('v4_kilter_1_10_24_cccccccc')).toBe(true);
-    expect(_renderedOverlaysForTests.has('v4_tension_2_8_15_dddddddd')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v5_kilter_1_10_24_cccccccc')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v5_tension_2_8_15_dddddddd')).toBe(true);
     expect(_renderedOverlaysForTests.has('v1_kilter_1_10_24_aaaaaaaa')).toBe(false);
     expect(_renderedOverlaysForTests.has('v2_kilter_1_10_24_bbbbbbbb')).toBe(false);
     expect(_renderedOverlaysForTests.has('v3_kilter_1_10_24_eeeeeeee')).toBe(false);
-    // Only the two v4 entries should be present — no stragglers from
+    // Only the two v5 entries should be present — no stragglers from
     // future-version PNGs slipping in either.
     expect(_renderedOverlaysForTests.size).toBe(2);
   });
@@ -446,8 +498,8 @@ describe('renderedOverlays warm-up from disk cache', () => {
   it('opportunistically deletes stale-version PNG files to reclaim disk', () => {
     const v1Entry = makeMockEntry('v1_kilter_1_10_24_aaaaaaaa.png');
     const v2Entry = makeMockEntry('v2_kilter_1_10_24_bbbbbbbb.png');
-    const v4Entry = makeMockEntry('v4_kilter_1_10_24_cccccccc.png');
-    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v4Entry]);
+    const v5Entry = makeMockEntry('v5_kilter_1_10_24_cccccccc.png');
+    directoryListSpy.mockReturnValue([v1Entry, v2Entry, v5Entry]);
 
     _runWarmupForTests();
 
@@ -455,7 +507,7 @@ describe('renderedOverlays warm-up from disk cache', () => {
     expect(v2Entry.delete).toHaveBeenCalledTimes(1);
     // Current-version files must never be deleted — they're the cache hits
     // the warm-up exists to surface.
-    expect(v4Entry.delete).not.toHaveBeenCalled();
+    expect(v5Entry.delete).not.toHaveBeenCalled();
   });
 
   it('keeps loading remaining entries when a delete throws', () => {
@@ -465,10 +517,10 @@ describe('renderedOverlays warm-up from disk cache', () => {
     v1Entry.delete.mockImplementation(() => {
       throw new Error('EACCES');
     });
-    const v4Entry = makeMockEntry('v4_kilter_1_10_24_bbbbbbbb.png');
-    directoryListSpy.mockReturnValue([v1Entry, v4Entry]);
+    const v5Entry = makeMockEntry('v5_kilter_1_10_24_bbbbbbbb.png');
+    directoryListSpy.mockReturnValue([v1Entry, v5Entry]);
 
     expect(() => _runWarmupForTests()).not.toThrow();
-    expect(_renderedOverlaysForTests.has('v4_kilter_1_10_24_bbbbbbbb')).toBe(true);
+    expect(_renderedOverlaysForTests.has('v5_kilter_1_10_24_bbbbbbbb')).toBe(true);
   });
 });
