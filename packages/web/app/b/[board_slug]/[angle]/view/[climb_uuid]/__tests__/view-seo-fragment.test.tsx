@@ -64,16 +64,26 @@ vi.mock('@/app/components/board-page/board-page-climbs-list', () => ({ default: 
 
 const pageModule = await import('../page');
 
+/**
+ * Search the whole server-rendered element tree (not just the root's direct
+ * children) for an element of `type`, so the assertion survives A2 wrapping the
+ * fragment in a layout/fragment/conditional.
+ */
+function treeContainsElementOfType(node: React.ReactNode, type: React.ElementType): boolean {
+  return React.Children.toArray(node).some((child) => {
+    if (!React.isValidElement(child)) return false;
+    if (child.type === type) return true;
+    const { children } = child.props as { children?: React.ReactNode };
+    return treeContainsElementOfType(children, type);
+  });
+}
+
 describe('board slug climb view SEO fragment', () => {
   it('SSR-emits ClimbViewSeoFragment in the server output', async () => {
     const element = (await pageModule.default({
       params: Promise.resolve({ board_slug: 'my-board', angle: '40', climb_uuid: 'test-climb' }),
-    })) as React.ReactElement<{ children?: React.ReactNode }>;
+    })) as React.ReactElement;
 
-    const children = React.Children.toArray(element.props.children);
-    const emitsSeoFragment = children.some(
-      (child) => React.isValidElement(child) && child.type === ClimbViewSeoFragment,
-    );
-    expect(emitsSeoFragment).toBe(true);
+    expect(treeContainsElementOfType(element, ClimbViewSeoFragment)).toBe(true);
   });
 });
