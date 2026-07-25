@@ -1846,6 +1846,9 @@ describe('QueueProvider mutation-failure resync', () => {
     // boulder, and must not fire a query into the limiter that throttled us.
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('local-current');
     expect(queueStateCalls).toBe(0);
+    // Recovering the slot doesn't hide the pacing: the climber still gets the
+    // "slow down" toast, just not a queue-refreshed one.
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
   });
 
@@ -1918,6 +1921,14 @@ describe('QueueProvider mutation-failure resync', () => {
     });
     expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-current']);
+    // Two toasts, deliberately: "slow down" lands immediately on the throttle,
+    // and the refresh notice follows only once reconciliation has actually
+    // replaced the queue. Collapsing them would either delay the pacing hint or
+    // leave the queue silently swapped underneath the climber.
+    expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual([
+      'mobile.queue.rateLimited',
+      'mobile.queue.outOfSyncRefreshed',
+    ]);
   });
 
   it('skips the re-send when the throttled climb left the queue while the mutation was in flight', async () => {
