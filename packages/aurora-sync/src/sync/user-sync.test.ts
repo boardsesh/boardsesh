@@ -5,8 +5,6 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 /** Driverless drizzle handle — `.toSQL()` renders without a connection. */
 const renderOnlyDb = drizzle({} as never);
 import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
-import { boardCircuits } from '@boardsesh/db/schema';
-import { and, eq, ne } from 'drizzle-orm';
 import { foreignPlaylistOwnerGuard, upstreamPlaylistOwnersQuery } from '@boardsesh/db/queries';
 import { upsertTableData, hasForeignOwnedCircuitPlaylists, DUPLICATE_CIRCUIT_OWNER_SKIP_REASON } from './user-sync';
 
@@ -322,7 +320,15 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
  * other 110 Tension users.
  */
 describe('hasForeignOwnedCircuitPlaylists (#3526)', () => {
-  /** Stub for `.select().from().innerJoin().innerJoin().where().limit()`. */
+  /**
+   * Stub for `.select().from().innerJoin().innerJoin().where().limit()`.
+   *
+   * `captured.where` holds the REAL predicate the production code passed.
+   * Always render that — never rebuild the condition in the test. A rebuilt
+   * copy only proves drizzle renders `eq` as `=`, and drifts silently the
+   * moment production changes (see upstreamPlaylistOwnersQuery for the same
+   * lesson learned the hard way).
+   */
   function stubDb(rows: Array<Record<string, unknown>>) {
     const captured: { where?: unknown } = {};
     const source = {
@@ -345,20 +351,23 @@ describe('hasForeignOwnedCircuitPlaylists (#3526)', () => {
     await expect(hasForeignOwnedCircuitPlaylists(db as never, 'tension', 49399, 'user-1')).resolves.toBe(false);
   });
 
-  it('scopes to this board, this Aurora account, and OTHER owners only', () => {
-    // A `<>` flipped to `=` here would give every healthy user a permanent
-    // "circuits aren't syncing" banner; a missing board/user filter would leak
-    // another account's circuits into the check.
-    const rendered = new PgDialect().sqlToQuery(
-      and(
-        eq(boardCircuits.boardType, 'tension'),
-        eq(boardCircuits.userId, 144574),
-        ne(playlistOwnership.userId, 'user-1'),
-      )!,
-    );
+  it('scopes to this board, this Aurora account, and OTHER owners only', async () => {
+    // Renders the predicate PRODUCTION passed, pulled out of the stub. Flipping
+    // `ne(playlistOwnership.userId, ...)` to `eq` in user-sync.ts is the
+    // loudest failure mode in this change — every healthy Aurora user would get
+    // a permanent, false "circuits aren't syncing" banner — and a predicate
+    // rebuilt here would not notice.
+    const { db, captured } = stubDb([]);
+
+    await hasForeignOwnedCircuitPlaylists(db as never, 'tension', 144574, 'user-1');
+
+    expect(captured.where).toBeDefined();
+    const rendered = new PgDialect().sqlToQuery(captured.where as never);
     expect(rendered.sql).toContain('"board_circuits"."board_type" =');
     expect(rendered.sql).toContain('"board_circuits"."user_id" =');
+    // The load-bearing character in the whole predicate.
     expect(rendered.sql).toContain('"playlist_ownership"."user_id" <>');
+    expect(rendered.sql).not.toContain('"playlist_ownership"."user_id" =');
     expect(rendered.params).toEqual(['tension', 144574, 'user-1']);
   });
 });

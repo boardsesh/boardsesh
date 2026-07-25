@@ -251,6 +251,31 @@ describe('SyncRunner login failure handling', () => {
     expect(errorMessage).toContain("circuits aren't syncing");
   });
 
+  it('still marks the cycle successful when the duplicate-owner check itself fails (#3526)', async () => {
+    // Fail-open. By this point every row the cycle wrote is committed and the
+    // only thing left is a cosmetic status field, so a failed read here must
+    // not drag the whole cycle into the failure path — that would bump
+    // consecutive_failures, widen the backoff and leave last_sync_at
+    // un-advanced, i.e. record a successful sync as a failure over a message.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+    mockHasForeignOwnedCircuitPlaylists.mockRejectedValue(new Error('relation "board_circuits" does not exist'));
+
+    // Must not throw — the cycle succeeded.
+    await expect(runnerPrivates.syncSingleCredential(createCredential())).resolves.toBeUndefined();
+
+    const [, , status, errorMessage] = updateCredentialStatus.mock.calls[0];
+    expect(status).toBe('active');
+    // No duplicate reported, since we could not determine one.
+    expect(errorMessage).toBeNull();
+  });
+
   it('leaves sync_error null when circuits synced cleanly', async () => {
     // The negative case for the state check: a healthy account must never see
     // the duplicate-account message.

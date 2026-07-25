@@ -494,7 +494,8 @@ export class SyncRunner {
     // bumping consecutive_failures, widening the backoff, writing a
     // last_sync_error and leaving last_sync_at un-advanced — so a successful
     // sync would be recorded as a failure over a message. Swallow it, log it,
-    // and report no duplicate; the next cycle re-reads the same state anyway.
+    // and report no duplicate; the check is a pure state read, so the next
+    // cycle re-evaluates it from scratch and self-heals.
     const hasDuplicateCircuitOwner = await hasForeignOwnedCircuitPlaylists(
       db,
       boardType,

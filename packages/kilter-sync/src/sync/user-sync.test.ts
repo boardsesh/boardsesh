@@ -1041,10 +1041,8 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
 
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { exists, and, eq } from 'drizzle-orm';
 import {
   foreignPlaylistOwnerGuard,
-  myPlaylistOwnerEdge,
   selectUpstreamPlaylistOwners,
   upstreamPlaylistOwnersQuery,
 } from '@boardsesh/db/queries';
@@ -1822,18 +1820,31 @@ describe('applyCircuits — foreign-owner guard (#3526)', () => {
     expect(rendered.params).toContain('circuit-1');
   });
 
-  it('renders the REMOVE ownership guard as sole-ownership, not mere membership', () => {
+  it('renders the REMOVE ownership guard as sole-ownership, not mere membership', async () => {
     // The pre-fix DELETE only asked "do I have an ownership row", which is true
     // for BOTH co-owners of a cross-linked playlist — so either user's circuit
     // delete destroyed the other's. The composed WHERE has to assert both
-    // halves: I own it AND nobody else does. Neither the transaction stub nor
-    // any behavioural test can see this, so render it.
-    const removeGuard = and(
-      eq(playlists.kilterId, 'circuit-X'),
-      exists(myPlaylistOwnerEdge('user-1')),
-      foreignPlaylistOwnerGuard('user-1'),
+    // halves: I own it AND nobody else does.
+    //
+    // Rendered from the condition PRODUCTION passed to .delete().where(), NOT
+    // rebuilt here: a rebuilt copy stays green when someone drops
+    // foreignPlaylistOwnerGuard from user-sync.ts, silently restoring the
+    // destructive half of #3526.
+    const { tx, calls } = createRichTx({
+      selectResults: [[{ upstreamId: 'circuit-X', ownerUserId: 'user-1' }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [{ op_id: '1', op: 'REMOVE', object_type: 'circuits', object_id: 'circuit-X' }],
+      [],
+      new Map(),
     );
-    const rendered = new PgDialect().sqlToQuery(removeGuard!);
+
+    const deleteCondition = calls.find((c) => c.kind === 'delete')?.args[0];
+    expect(deleteCondition).toBeDefined();
+    const rendered = new PgDialect().sqlToQuery(deleteCondition as never);
     // "I own it"
     expect(rendered.sql).toContain('exists');
     expect(rendered.sql).toContain('"playlist_ownership"."user_id" =');
