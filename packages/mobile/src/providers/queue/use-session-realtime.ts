@@ -150,6 +150,9 @@ type UseSessionRealtimeParams = {
   setLiveStats: React.Dispatch<React.SetStateAction<SessionLiveStatsEvent | null>>;
   setSessionRuntimeState: React.Dispatch<React.SetStateAction<MobileSessionRuntimeState>>;
   sessionRuntimeStateRef: React.RefObject<MobileSessionRuntimeState>;
+  /** Requested boardPath of a local angle change whose broadcast is still in
+   *  flight, else null. Gates the snapshot angle-follow (see below). */
+  pendingLocalBoardPathRef: React.RefObject<string | null>;
   setIsSessionWallLit: React.Dispatch<React.SetStateAction<boolean>>;
   setParticipantId: React.Dispatch<React.SetStateAction<string | null>>;
   locallyEndingSessionIdRef: React.RefObject<string | null>;
@@ -189,6 +192,7 @@ export function useSessionRealtime({
   setLiveStats,
   setSessionRuntimeState,
   sessionRuntimeStateRef,
+  pendingLocalBoardPathRef,
   setIsSessionWallLit,
   setParticipantId,
   locallyEndingSessionIdRef,
@@ -689,7 +693,19 @@ export function useSessionRealtime({
                 // authoritative boardPath, so re-run the angle-follow. Empty is the
                 // "keep current" sentinel — skip it. No echo suppression needed:
                 // a reconcile snapshot has no originating participant.
-                if (runtimeEvent.boardPath) followSessionBoardPath(runtimeEvent.boardPath);
+                //
+                // BUT skip while a local angle change is still broadcasting: the
+                // snapshot may have been seeded before our setSessionBoardPath
+                // landed, so it carries the OLD boardPath and would revert the wall
+                // off the angle we just picked — and our own SessionBoardPathChanged
+                // echo is self-suppressed, leaving us stuck. Once the broadcast
+                // settles the backend holds our value and later snapshots agree, so
+                // the follow resumes. (A snapshot seeded pre-persist but delivered
+                // post-settle is a narrower race that needs a roster epoch to
+                // resolve — deferred with the periodic-resnapshot healer, #3905.)
+                if (runtimeEvent.boardPath && !pendingLocalBoardPathRef.current) {
+                  followSessionBoardPath(runtimeEvent.boardPath);
+                }
               }
             }
 

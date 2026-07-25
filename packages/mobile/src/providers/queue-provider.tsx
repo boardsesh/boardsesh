@@ -126,6 +126,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // telemetry (which can't observe the functional state updater's result).
   const sessionRuntimeStateRef = useRef(sessionRuntimeState);
   sessionRuntimeStateRef.current = sessionRuntimeState;
+  // The boardPath of a local angle change whose setSessionBoardPath broadcast is
+  // still in flight, else null. While set, the reconnect roster-snapshot's
+  // angle-follow is suppressed (see useSessionRealtime) so a snapshot carrying
+  // the session's not-yet-updated boardPath can't drag the wall back off the
+  // angle we just picked.
+  const pendingLocalBoardPathRef = useRef<string | null>(null);
   const sessionUsers = sessionRuntimeState.users;
   const lastConnectedBoardSerial = sessionRuntimeState.lastConnectedBoardSerial;
   // Session-scoped "the current climb is lit on a wall" indicator. Flipped on by
@@ -432,7 +438,26 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // Broadcast the session's boardPath (angle/board) to party members. The
   // shared mutation already swallows transport errors and is a true no-op in
   // solo (never lazily creates a session), so callers can fire it freely.
-  const setSessionBoardPath = useCallback((boardPath: string) => mutations.setSessionBoardPath(boardPath), [mutations]);
+  //
+  // Record the requested boardPath as pending while the broadcast is in flight
+  // so the reconnect roster-snapshot's angle-follow doesn't revert us: until the
+  // mutation lands, the backend still holds the OLD boardPath, so a snapshot
+  // seeded in that window carries it — and our own SessionBoardPathChanged echo
+  // is self-suppressed (changedByParticipantId === us), which would otherwise
+  // leave us stuck on the old angle. Clear on settle (success OR failure — on
+  // failure the server's value is authoritative again), but only if a newer
+  // local change hasn't already superseded this one.
+  const setSessionBoardPath = useCallback(
+    async (boardPath: string) => {
+      pendingLocalBoardPathRef.current = boardPath;
+      try {
+        return await mutations.setSessionBoardPath(boardPath);
+      } finally {
+        if (pendingLocalBoardPathRef.current === boardPath) pendingLocalBoardPathRef.current = null;
+      }
+    },
+    [mutations],
+  );
   // Solo-queue persistence: cold-start restore (explicit session first, then the
   // local snapshot) + the debounced solo snapshot save. See useQueuePersistence.
   useQueuePersistence({
@@ -621,6 +646,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     setLiveStats,
     setSessionRuntimeState,
     sessionRuntimeStateRef,
+    pendingLocalBoardPathRef,
     setIsSessionWallLit,
     setParticipantId,
     locallyEndingSessionIdRef,
