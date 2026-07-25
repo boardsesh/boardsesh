@@ -74,6 +74,14 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       name: climb.name,
       frames: climb.frames,
       setter_username: climb.setter_username,
+      // Ownership + draft state. `toClimbInput` sends all five on to party peers, and
+      // the climb-actions menu gates its owner-only Edit action on `userId` — but they
+      // were being stripped here, at the queue boundary, so a queued climb lost them.
+      userId: climb.userId,
+      description: climb.description,
+      mirrored: climb.mirrored,
+      is_draft: climb.is_draft,
+      published_at: climb.published_at,
       angle: climb.angle,
       ascensionist_count: climb.ascensionist_count,
       difficulty: climb.difficulty,
