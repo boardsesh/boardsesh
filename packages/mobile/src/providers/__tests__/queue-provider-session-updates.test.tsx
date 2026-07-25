@@ -1797,6 +1797,129 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
   });
 
+  it('re-sends the queue add when a rate-limited setCurrentClimb also queued the climb', async () => {
+    const snapshots: Snapshot[] = [];
+    const alreadyQueued = makeQueueItem('item-1', 'climb-1');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([alreadyQueued], alreadyQueued), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    // Seed one queued climb and make it current, so the activation below has a
+    // current climb to slot in behind.
+    act(() => {
+      snapshots.at(-1)?.setQueue([alreadyQueued], alreadyQueued);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+    queueMutations.addQueueItem.mockClear();
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.setCurrentClimb(makeQueueItem('local-current', 'climb-local-current'));
+    });
+
+    // Activating a fresh climb moves the pointer AND adds a queue slot. The
+    // throttled mutation carried both, so the slot has to be re-sent on its own
+    // or it stays in this climber's queue and nobody else's.
+    await waitFor(() => {
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
+    });
+    const [recoveredItem, recoveredPosition] = queueMutations.addQueueItem.mock.calls[0] as unknown as [
+      ClimbQueueItem,
+      number,
+    ];
+    expect(recoveredItem.uuid).toBe('local-current');
+    // Insert-after-current (#2217): index 1, right behind the climb that was
+    // current when the activation landed.
+    expect(recoveredPosition).toBe(1);
+    // Recovering the content must not drag the pointer back to the previous
+    // boulder, and must not fire a query into the limiter that throttled us.
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('local-current');
+    expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  it('does not re-send a queue add when a rate-limited setCurrentClimb only moved the pointer', async () => {
+    const snapshots: Snapshot[] = [];
+    const first = makeQueueItem('item-1', 'climb-1');
+    const second = makeQueueItem('item-2', 'climb-2');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([first, second], first), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([first, second], first);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(2);
+    });
+    queueMutations.addQueueItem.mockClear();
+    toast.showToast.mockClear();
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+
+    act(() => {
+      snapshots.at(-1)?.nextClimb();
+    });
+
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    });
+    // Swiping to the next queued climb changes no content — both slots are
+    // already on the server, so there is nothing to re-send and nothing to
+    // reconcile.
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
+    expect(queueStateCalls).toBe(0);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-2');
+  });
+
+  it('reconciles when the re-sent queue add is throttled too', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverCurrent = makeQueueItem('server-current', 'climb-server-current');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverCurrent], serverCurrent), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+    queueMutations.addQueueItem.mockRejectedValueOnce(makeRateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.setCurrentClimb(makeQueueItem('local-current', 'climb-local-current'));
+    });
+
+    // Both halves failed even with their own back-off budgets, so the climb
+    // really is local-only. A refreshed queue beats a permanently diverged one.
+    await waitFor(() => {
+      expect(queueStateCalls).toBe(1);
+    });
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-current']);
+  });
+
   it('toasts "slow down" rather than the generic failure when reorderQueue is rate-limited', async () => {
     const snapshots: Snapshot[] = [];
     const first = makeQueueItem('item-1', 'climb-1');

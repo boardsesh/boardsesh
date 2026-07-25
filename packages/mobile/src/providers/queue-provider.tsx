@@ -676,8 +676,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // and absent from your crew's — permanently and silently. `setCurrentClimb`
   // deliberately does NOT resync when throttled: it moves a pointer that
   // self-heals on the next activation or peer broadcast, so reconciling there
-  // only yanked the climber off the boulder they just picked. `reorderQueue`
-  // never reaches this path at all — it rolls back locally instead.
+  // only yanked the climber off the boulder they just picked. When that
+  // throttled call also carried a queue-add it recovers the content half
+  // through recoverThrottledQueueAdd below — and falls back here if even that
+  // re-send fails. `reorderQueue` never reaches this path at all — it rolls
+  // back locally instead.
   const resyncQueueAfterMutationFailure = useCallback(async () => {
     if (!sessionIdRef.current) return;
     const refreshed = await resyncQueueFromServerRef.current();
@@ -877,6 +880,39 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     [setQueue],
   );
 
+  // A throttled setCurrentClimb that carried `shouldAddToQueue` lost two
+  // changes, not one. The pointer move self-heals (the next activation or any
+  // peer broadcast re-establishes it), but the brand-new queue slot the reducer
+  // optimistically inserted does not: no later activation retroactively adds
+  // the skipped item, so it would sit in this climber's queue and nobody
+  // else's, forever. Re-send just the content half as its own ADD_QUEUE_ITEM —
+  // `execute` gives it a fresh rate-limit back-off budget, the server's add is
+  // idempotent by uuid, and it leaves the current pointer alone, so the climb
+  // reaches the crew without the yank-back a resync would cause (#2763).
+  const recoverThrottledQueueAdd = useCallback(
+    async (item: ClimbQueueItem) => {
+      if (!sessionIdRef.current) return;
+      // Position the re-send where the optimistic insert actually landed
+      // (insert-after-current, #2217) so peers see the same order we do. The
+      // server clamps an out-of-range position to an append.
+      const position = stateRef.current.queue.findIndex((queueItem) => queueItem.uuid === item.uuid);
+      // Already gone locally — removed, cleared, or replaced by a server sync
+      // while the throttled mutation was in flight. Don't resurrect it.
+      if (position === -1) return;
+      try {
+        await mutations.addQueueItem(item, position);
+      } catch (error) {
+        if (__DEV__) console.warn('[queue] throttled setCurrentClimb queue-add recovery failed', error);
+        // The slot never reached the server even with its own retry budget, so
+        // this client really has diverged. Fall back to the same reconciliation
+        // every other content mutation uses — a refreshed queue beats one
+        // that's permanently local-only.
+        void resyncQueueAfterMutationFailure();
+      }
+    },
+    [mutations, resyncQueueAfterMutationFailure],
+  );
+
   // Optimistic local dispatch + correlated SET_CURRENT_CLIMB mutation. The
   // reducer stores `correlationId` in pendingCurrentClimbUpdates so the echoed
   // CurrentClimbChanged event (same id in `serverCorrelationId`) is suppressed
@@ -924,26 +960,34 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       pendingUnsyncedCurrentRef.current = null;
       coordinator.trackPendingMutation(correlationId);
       mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch((error: unknown) => {
-        // A throttled current-climb change is not a divergence: the rate-limit
-        // gate throws before the resolver runs, so the server still holds the
-        // climb it held a moment ago and the next activation (or any peer's
+        // A throttled POINTER move is not a divergence: the rate-limit gate
+        // throws before the resolver runs, so the server still holds the climb
+        // it held a moment ago and the next activation (or any peer's
         // broadcast) re-establishes it. Resyncing here would yank the user back
         // to the previous boulder mid-swipe and fire another query into the
         // limiter that just throttled us — which is what #2763 was reported as
         // ("the connection fails every time we try to switch boulders"). Show
         // the gentle "slow down" toast instead and leave the local pointer put.
-        if (sessionIdRef.current && !isRateLimitedError(error)) {
+        const throttled = isRateLimitedError(error);
+        if (sessionIdRef.current && !throttled) {
           // Any other party-session failure means peers really did diverge —
           // reconcile against the server (and toast that we refreshed).
           void resyncQueueAfterMutationFailure();
-        } else {
-          // Solo (no server to reconcile) and the rate-limited party case both
-          // land here: toast only, no resync.
-          showQueueMutationErrorToast(error, t, showToast);
+          return;
         }
+        // Throttled while ALSO adding a fresh climb to the queue: the pointer
+        // half self-heals, the new slot doesn't. Re-send it on its own so the
+        // content change isn't stranded locally (solo no-ops — its queue is
+        // authoritative and there's no server to fall behind).
+        if (throttled && shouldAddToQueue) {
+          void recoverThrottledQueueAdd(item);
+        }
+        // Solo (no server to reconcile) and the rate-limited party case both
+        // land here: toast only, no resync.
+        showQueueMutationErrorToast(error, t, showToast);
       });
     },
-    [coordinator, mutations, resyncQueueAfterMutationFailure, showToast, t],
+    [coordinator, mutations, recoverThrottledQueueAdd, resyncQueueAfterMutationFailure, showToast, t],
   );
 
   // Re-broadcast the current climb once a deferred thin item hydrates (#3868).
