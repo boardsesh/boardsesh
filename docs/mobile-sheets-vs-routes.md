@@ -206,6 +206,47 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    e.g. the board sheet / queue list) owns this itself: add `insets.bottom + spacing[N]`. Apply on
    both platforms — `insets.bottom` is 0 when there's nothing to clear, so there's no double-inset.
 
+## Pushing a route from INSIDE a modal route (the cross-navigator trap)
+
+The in-tree-opener rule above is about sheets. Routes have their own version of it, and it
+bites the other way round.
+
+`/play` is a `transparentModal` in the **root** stack. `/(tabs)/climbs/create` is also a
+`transparentModal`, but it lives in the **climbs-tab** stack — a different navigator, mounted
+_beneath_ the root modal. So a `router.push('/(tabs)/climbs/create')` fired from inside the
+player pushes create into a navigator that is already covered: create stacks **under** the
+still-live player (two drawers visible at once), and `CreateDrawer`'s root-window
+`BottomSheet` strands a scrim over the search list once you navigate away.
+
+**The fix: dismiss the modal route first, then push.**
+
+```ts
+if (isPlayerRoute(segments)) router.dismiss();
+router.push({ pathname: '/(tabs)/climbs/create', params });
+```
+
+The precedent is `handleSwitchBoardFromDrawer` in `drawer-host-provider.tsx`, which does the
+same `router.dismiss()` → `router.push('/boards')` when the play drawer's board-mismatch
+overlay routes to the board picker. `useCreateClimbNavigation`
+(`src/components/create-climb/use-create-climb-navigation.ts`) is the shared version for
+remix/edit, and both entry points (the reaction menu's `useClimbActions`, the in-player
+`ClimbActionsSheet`) go through it.
+
+Two things that are easy to get wrong:
+
+- **Gate the dismiss.** The same menu opens from the climbs list and the board sheet, where
+  there is no modal to close — and on an **iPad regular-width layout the player renders in the
+  detail pane, not the `/play` route** at all. An ungated `router.dismiss()` pops the wrong
+  screen. Gate on `isPlayerRoute(segments)` (`src/lib/route-segments.ts`).
+- **Read the segments from a ref, not a dep.** `useSegments()` hands back a fresh array on
+  every navigation, so listing it in a `useCallback` dep array churns the callback identity and
+  rebuilds any memoised list built on top of it (here, `useClimbActions`' action list). Mirror
+  it with the repo's latest-ref idiom (`segmentsRef.current = segments`) and read it inside the
+  handler.
+
+The rule of thumb: **before pushing a route, ask which navigator it lands in.** Same navigator
+is fine. A navigator _below_ the modal you're standing in needs the dismiss first.
+
 ## A latency footgun (any route)
 
 A modal route's present animation can't START until React commits the route's first frame. If

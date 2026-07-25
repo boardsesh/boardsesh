@@ -1,7 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
@@ -9,6 +8,7 @@ import { buildReadableClimbViewPath } from '@boardsesh/play-view/readable-url-ut
 import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { ModalSheet } from './ModalSheet';
+import { useCreateClimbNavigation } from './create-climb/use-create-climb-navigation';
 import { ClimbPreviewCard } from './ClimbPreviewCard';
 import { ListRow } from './ListRow';
 import { Icon } from './Icon';
@@ -66,9 +66,9 @@ function ClimbActionsSheet({
   onClose,
 }: ClimbActionsSheetProps) {
   const { t } = useTranslation('climbs');
+  const { openRemix, openEdit } = useCreateClimbNavigation();
   const { showToast } = useToast();
   const theme = useTheme();
-  const router = useRouter();
 
   const handleAddToQueue = useCallback(() => {
     onAddToQueue?.();
@@ -138,39 +138,21 @@ function ClimbActionsSheet({
     }
   }, [climb, boardName, layoutId, sizeId, setIds, angle, onClose, showToast, t]);
 
+  // Close this sub-sheet, then navigate. This sheet only ever renders inside the play
+  // drawer, so `openRemix`/`openEdit` dismiss the player route first (when it IS a
+  // route — on an iPad detail pane there's nothing to dismiss) and create opens as the
+  // sole top surface instead of stacking underneath.
   const handleFork = useCallback(() => {
     if (!climb) return;
     onClose();
-    router.push({
-      pathname: '/(tabs)/climbs/create',
-      params: {
-        forkFrames: climb.frames,
-        forkName: climb.name,
-        forkDescription: climb.description ?? '',
-        boardName,
-        layoutId: String(layoutId),
-        sizeId: String(sizeId),
-        setIds,
-        angle: String(angle),
-      },
-    });
-  }, [climb, boardName, layoutId, sizeId, setIds, angle, router, onClose]);
+    openRemix(climb, { boardName, layoutId, sizeId, setIds, angle });
+  }, [climb, boardName, layoutId, sizeId, setIds, angle, openRemix, onClose]);
 
   const handleEdit = useCallback(() => {
     if (!climb) return;
     onClose();
-    router.push({
-      pathname: '/(tabs)/climbs/create',
-      params: {
-        editClimbUuid: climb.uuid,
-        boardName,
-        layoutId: String(layoutId),
-        sizeId: String(sizeId),
-        setIds,
-        angle: String(angle),
-      },
-    });
-  }, [climb, boardName, layoutId, sizeId, setIds, angle, router, onClose]);
+    openEdit(climb, { boardName, layoutId, sizeId, setIds, angle });
+  }, [climb, boardName, layoutId, sizeId, setIds, angle, openEdit, onClose]);
 
   // Edit is owner-only, and only while the climb is still a draft OR within
   // 24h of first publish (the backend enforces the same window). `userId`

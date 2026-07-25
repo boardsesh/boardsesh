@@ -9,7 +9,14 @@ import type { Climb } from '@boardsesh/shared-schema';
 // The mock captures the latest `visible` it was handed.
 const sheet = vi.hoisted(() => ({ visible: undefined as boolean | undefined }));
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
-const ctrl = vi.hoisted(() => ({ variant: 'liquidGlass' as 'liquidGlass' | 'material', canUpdate: false }));
+// `segments` drives the real `useCreateClimbNavigation` (deliberately NOT mocked, so the
+// Remix/Edit rows are covered end-to-end through the hook that owns the player dismiss).
+const ctrl = vi.hoisted(() => ({
+  variant: 'liquidGlass' as 'liquidGlass' | 'material',
+  canUpdate: false,
+  segments: ['play'] as readonly string[],
+}));
+const nav = vi.hoisted(() => ({ push: vi.fn(), dismiss: vi.fn() }));
 const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn() }));
 const urlBuilder = vi.hoisted(() => ({ buildReadableClimbViewPath: vi.fn(() => '/readable/view/x') }));
 
@@ -43,7 +50,10 @@ vi.mock('../Icon', () => ({
     createElement('span', { 'data-icon': name, 'data-color': typeof color === 'string' ? color : '' }),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ push: nav.push, dismiss: nav.dismiss }),
+  useSegments: () => ctrl.segments,
+}));
 vi.mock('expo-clipboard', () => ({ setStringAsync: clipboard.setStringAsync }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn() }));
 vi.mock('@boardsesh/play-view/readable-url-utils', () => ({
@@ -105,6 +115,10 @@ beforeEach(() => {
   preview.props = null;
   ctrl.variant = 'liquidGlass';
   ctrl.canUpdate = false;
+  // This sheet only ever renders inside the play drawer, so /play is the realistic default.
+  ctrl.segments = ['play'];
+  nav.push.mockClear();
+  nav.dismiss.mockClear();
 });
 
 describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
@@ -252,5 +266,66 @@ describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
 
     expect(onEditEntry).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
+  // Both /play and /(tabs)/climbs/create are transparentModals, but in different
+  // navigators — create lives under the player, so it must not be pushed while the
+  // player is still up.
+  it('closes the sheet, dismisses the player, then pushes create with the fork params', () => {
+    const onClose = vi.fn();
+    render(<ClimbActionsSheet visible={true} {...baseProps} onClose={onClose} />);
+
+    fireEvent.click(screen.getByText('mobile.climbActions.fork'));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(nav.dismiss).toHaveBeenCalledTimes(1);
+    expect(nav.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/create',
+      params: {
+        forkFrames: 'p1r12',
+        forkName: 'Test Climb',
+        forkDescription: '',
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        angle: '40',
+      },
+    });
+  });
+
+  it('pushes create in edit mode from the owner-only Edit row', () => {
+    ctrl.canUpdate = true;
+    render(<ClimbActionsSheet visible={true} {...baseProps} climb={ownerClimb} currentUserId="user-1" />);
+
+    fireEvent.click(screen.getByText('mobile.climbActions.edit'));
+
+    expect(nav.dismiss).toHaveBeenCalledTimes(1);
+    expect(nav.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/create',
+      params: {
+        editClimbUuid: 'climb-1',
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        angle: '40',
+      },
+    });
+  });
+
+  // On an iPad regular-width layout the player renders in the detail PANE, not the
+  // /play route — there is no modal to dismiss, and popping one would take the wrong
+  // screen with it.
+  it('does not dismiss when the player is a pane rather than the /play route', () => {
+    ctrl.segments = ['(tabs)', 'climbs'];
+    render(<ClimbActionsSheet visible={true} {...baseProps} />);
+
+    fireEvent.click(screen.getByText('mobile.climbActions.fork'));
+
+    expect(nav.dismiss).not.toHaveBeenCalled();
+    expect(nav.push).toHaveBeenCalledTimes(1);
   });
 });

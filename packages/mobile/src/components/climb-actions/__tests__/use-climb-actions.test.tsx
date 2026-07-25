@@ -4,7 +4,9 @@ import { renderHook } from '@testing-library/react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbActionId } from '../use-climb-actions';
 
-const ctrl = vi.hoisted(() => ({ canUpdate: false }));
+// `segments` drives the real `useCreateClimbNavigation` (deliberately NOT mocked here,
+// so fork/edit get end-to-end coverage through the hook that owns the player dismiss).
+const ctrl = vi.hoisted(() => ({ canUpdate: false, segments: ['(tabs)', 'climbs'] as readonly string[] }));
 const openers = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
   openAddToPlaylist: vi.fn(),
@@ -13,11 +15,15 @@ const openers = vi.hoisted(() => ({
   addToQueue: vi.fn(),
   toggleFavoriteMutate: vi.fn(),
   push: vi.fn(),
+  dismiss: vi.fn(),
   shareClimb: vi.fn(async () => {}),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('expo-router', () => ({ useRouter: () => ({ push: openers.push }) }));
+vi.mock('expo-router', () => ({
+  useRouter: () => ({ push: openers.push, dismiss: openers.dismiss }),
+  useSegments: () => ctrl.segments,
+}));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }));
 vi.mock('@boardsesh/create-climb-react', () => ({ computeCanUpdate: () => ctrl.canUpdate }));
@@ -86,6 +92,7 @@ function ids(args: ActionArgs): ClimbActionId[] {
 
 beforeEach(() => {
   ctrl.canUpdate = false;
+  ctrl.segments = ['(tabs)', 'climbs'];
   Object.values(openers).forEach((fn) => fn.mockClear?.());
 });
 
@@ -237,5 +244,72 @@ describe('useClimbActions colours and dispatch', () => {
     result.current.find((action) => action.id === 'preview')?.run();
     expect(openers.openPlayDrawer).toHaveBeenCalledTimes(1);
     expect(openers.openPlayDrawer).toHaveBeenCalledWith(climb, expect.objectContaining({ source: 'climb_view' }));
+  });
+});
+
+describe('useClimbActions create-climb navigation (fork / edit)', () => {
+  it('fork.run dismisses the overlay, then pushes create with the fork params', () => {
+    const onAfterAction = vi.fn();
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false, onAfterAction });
+    result.current.find((action) => action.id === 'fork')?.run();
+
+    expect(onAfterAction).toHaveBeenCalledTimes(1);
+    expect(openers.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/create',
+      params: {
+        forkFrames: 'p1r12',
+        forkName: 'Test Climb',
+        forkDescription: '',
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        angle: '40',
+      },
+    });
+  });
+
+  it('edit.run pushes create with the climb uuid, not the fork frames', () => {
+    ctrl.canUpdate = true;
+    const { result } = renderActions({
+      climb: ownerClimb,
+      boardConfig: kilterBoard,
+      isAuthenticated: true,
+      currentUserId: 'user-1',
+    });
+    result.current.find((action) => action.id === 'edit')?.run();
+
+    expect(openers.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/create',
+      params: {
+        editClimbUuid: 'climb-1',
+        boardName: 'kilter',
+        layoutId: '1',
+        sizeId: '10',
+        setIds: '1,2',
+        angle: '40',
+      },
+    });
+  });
+
+  // The player is a transparentModal in the ROOT stack; create is a transparentModal in
+  // the CLIMBS-TAB stack underneath it. Pushing without dismissing stacks create under
+  // the live player (two drawers + a stranded scrim).
+  it('dismisses the player route first when the menu was opened from /play', () => {
+    ctrl.segments = ['play'];
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
+    result.current.find((action) => action.id === 'fork')?.run();
+
+    expect(openers.dismiss).toHaveBeenCalledTimes(1);
+    expect(openers.push).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not dismiss anything when remixing from the climbs list', () => {
+    ctrl.segments = ['(tabs)', 'climbs'];
+    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
+    result.current.find((action) => action.id === 'fork')?.run();
+
+    expect(openers.dismiss).not.toHaveBeenCalled();
+    expect(openers.push).toHaveBeenCalledTimes(1);
   });
 });

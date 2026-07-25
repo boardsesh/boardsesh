@@ -6,20 +6,20 @@
 // The hook self-sources most openers (preview / queue / tick / beta video) from
 // `useDrawerHost`, the favourite state + mutation from `useFavoriteStatus` /
 // `useToggleFavorite`, the native share from `useShareClimb`, and the create-climb
-// routes from the router, so a caller supplies the climb, its board config, the two
-// contextual flags (`currentUserId`, `isAuthenticated`), the required inline playlist
-// host (`onSelectPlaylist`), and the logbook-only `onEditEntry`.
+// routes from `useCreateClimbNavigation`, so a caller supplies the climb, its board
+// config, the two contextual flags (`currentUserId`, `isAuthenticated`), the required
+// inline playlist host (`onSelectPlaylist`), and the logbook-only `onEditEntry`.
 
 import { useCallback, useMemo } from 'react';
 import type { OpaqueColorValue } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { useRouter } from 'expo-router';
 import { randomUUID } from 'expo-crypto';
 import * as WebBrowser from 'expo-web-browser';
 import type { Climb } from '@boardsesh/shared-schema';
 import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
+import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
 import { useDrawerHost, boardConfigsMatch, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
@@ -118,7 +118,7 @@ export function useClimbActions({
   onTick,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
-  const router = useRouter();
+  const { openRemix, openEdit } = useCreateClimbNavigation();
   const { actionColors } = useTheme();
   const { addToQueue } = useQueueActions();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
@@ -298,19 +298,11 @@ export function useClimbActions({
         title: t('mobile.climbActions.edit'),
         icon: 'edit',
         color: accentColor,
+        // Dismiss the overlay, then navigate. `openEdit` closes the player route
+        // first when we're inside it, so create doesn't stack under `/play`.
         run: () => {
           after();
-          router.push({
-            pathname: '/(tabs)/climbs/create',
-            params: {
-              editClimbUuid: climb.uuid,
-              boardName,
-              layoutId: String(layoutId),
-              sizeId: String(sizeId),
-              setIds,
-              angle: String(angle),
-            },
-          });
+          openEdit(climb, boardConfig);
         },
       });
     }
@@ -320,21 +312,10 @@ export function useClimbActions({
       title: t('mobile.climbActions.fork'),
       icon: 'branch',
       color: accentColor,
+      // Same as edit: `openRemix` closes the player route first when we're inside it.
       run: () => {
         after();
-        router.push({
-          pathname: '/(tabs)/climbs/create',
-          params: {
-            forkFrames: climb.frames,
-            forkName: climb.name,
-            forkDescription: climb.description ?? '',
-            boardName,
-            layoutId: String(layoutId),
-            sizeId: String(sizeId),
-            setIds,
-            angle: String(angle),
-          },
-        });
+        openRemix(climb, boardConfig);
       },
     });
 
@@ -388,7 +369,8 @@ export function useClimbActions({
     after,
     t,
     actionColors,
-    router,
+    openRemix,
+    openEdit,
     shareClimb,
     addToQueue,
     toggleFavoriteMutate,
