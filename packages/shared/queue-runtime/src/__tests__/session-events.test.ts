@@ -25,11 +25,16 @@ const user = (overrides: Partial<TestUser> = {}): TestUser => ({
   ...overrides,
 });
 
+// Default fixture is an ANONYMOUS session: participantId === clientId (the
+// connection id), and the roster is keyed by that same id. Authenticated
+// sessions — where participantId is a user UUID distinct from clientId — are
+// exercised explicitly in the dedicated test below.
 const session = (overrides: Partial<TestSession> = {}): TestSession => ({
   id: 'session-1',
   users: [user({ id: 'participant-1' })],
   isLeader: false,
   clientId: 'participant-1',
+  participantId: 'participant-1',
   lastConnectedBoardSerial: null,
   boardPath: '/kilter/1/10/1,2/40/list',
   ...overrides,
@@ -168,6 +173,43 @@ describe('applySessionRuntimeEvent', () => {
       );
       expect(next?.users[0].avatarUrl).toBeUndefined();
       expect(next?.users[0].custom).toBe('kept');
+    });
+
+    // Regression coverage for the id-space bug (PR #3907 Codex thread): in an
+    // AUTHENTICATED session the roster is keyed by participant id (a user UUID)
+    // while `clientId` is the WebSocket connection id, so the two DIFFER. The
+    // original applier matched self by `clientId` and never found it — leadership
+    // never re-derived and self never re-injected. The default fixture hid this
+    // because it's anonymous (participantId === clientId). Match on participantId.
+    it('matches self by participant id when it differs from clientId (authenticated session)', () => {
+      const authSession = (overrides: Partial<TestSession> = {}): TestSession =>
+        session({
+          clientId: 'conn-abc', // WebSocket connection id
+          participantId: 'user-uuid-1', // stable DB user UUID — what the roster is keyed by
+          users: [user({ id: 'user-uuid-1', userId: 'user-uuid-1', username: 'me' })],
+          ...overrides,
+        });
+
+      // Re-derives OWN leadership from the snapshot even though id !== clientId.
+      const promoted = applySessionRuntimeEvent(authSession({ isLeader: false }), {
+        __typename: 'SessionRosterSnapshot',
+        users: [
+          user({ id: 'user-uuid-1', userId: 'user-uuid-1', isLeader: true }),
+          user({ id: 'user-uuid-2', userId: 'user-uuid-2', isLeader: false }),
+        ],
+      });
+      expect(promoted?.isLeader).toBe(true);
+
+      // Re-injects OUR row when a JOIN-racing snapshot omits it (keyed by
+      // participant id, not the connection id).
+      const reinjected = applySessionRuntimeEvent(authSession(), {
+        __typename: 'SessionRosterSnapshot',
+        users: [user({ id: 'user-uuid-2', userId: 'user-uuid-2' })],
+      });
+      expect(reinjected?.users.map((entry) => entry.id).sort()).toEqual(['user-uuid-1', 'user-uuid-2']);
+      expect(reinjected?.users.find((entry) => entry.id === 'user-uuid-1')?.username).toBe('me');
+      expect(reinjected?.clientId).toBe('conn-abc');
+      expect(reinjected?.participantId).toBe('user-uuid-1');
     });
   });
 

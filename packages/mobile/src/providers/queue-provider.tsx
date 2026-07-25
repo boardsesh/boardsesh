@@ -288,6 +288,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
             users: joined?.users ?? [],
             isLeader: joined?.isLeader ?? false,
             clientId: joined?.clientId ?? joined?.participantId ?? '',
+            // Stable participant id — the roster is keyed by this (a user UUID for
+            // signed-in members, the connection id for anonymous ones). Roster
+            // self-matching in applySessionRuntimeEvent compares against this, NOT
+            // clientId, so the snapshot handler works in authenticated sessions.
+            participantId: joined?.participantId ?? joined?.clientId ?? '',
             lastConnectedBoardSerial: joined?.lastConnectedBoardSerial ?? null,
             boardPath: joined?.boardPath ?? boardPath,
           });

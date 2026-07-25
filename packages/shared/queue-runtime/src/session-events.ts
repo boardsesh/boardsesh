@@ -10,7 +10,17 @@ export type RuntimeSessionUser = {
 export type RuntimeSessionState<TUser extends RuntimeSessionUser = RuntimeSessionUser> = {
   users: TUser[];
   isLeader: boolean;
+  /** This connection's WebSocket connection id (the JOIN response's `clientId`). */
   clientId: string;
+  /**
+   * This connection's stable participant id — the key roster entries are
+   * identified by. For authenticated users it's their database user UUID; for
+   * anonymous users it equals `clientId` (the connection id). Roster
+   * `RuntimeSessionUser.id` is this participant id, NOT the connection id, so
+   * self-matching against a roster (e.g. the snapshot handler) must compare
+   * against `participantId`, not `clientId` — those diverge for signed-in users.
+   */
+  participantId: string;
   lastConnectedBoardSerial: string | null;
   boardPath: string;
 };
@@ -46,20 +56,24 @@ export function applySessionRuntimeEvent<
       // REPLACE, not merge: this is an authoritative full roster, so members
       // who dropped while we weren't watching are gone and new members appear.
       const snapshotUsers = event.users.map((user) => coerceRuntimeUser(user, options));
-      // Re-inject our own connection row if the snapshot was computed a beat
-      // before the backend registered our JOIN — otherwise a fresh subscribe
-      // would erase us from our own crew list until the next delta. Anchored on
-      // our stable connection id (`clientId`), which the snapshot preserves.
-      const selfInSnapshot = snapshotUsers.find((user) => user.id === prev.clientId);
-      const selfRow = prev.users.find((user) => user.id === prev.clientId);
+      // Re-inject our own row if the snapshot was computed a beat before the
+      // backend registered our JOIN — otherwise a fresh subscribe would erase us
+      // from our own crew list until the next delta. Match on `participantId`,
+      // NOT `clientId`: roster entries are keyed by participant id, which equals
+      // the connection id only for anonymous users. Matching by `clientId` here
+      // silently failed for every signed-in session (their participant id is a
+      // user UUID, distinct from the connection id), so self was never found —
+      // the bug this fixes (PR #3907 Codex thread).
+      const selfInSnapshot = snapshotUsers.find((user) => user.id === prev.participantId);
+      const selfRow = prev.users.find((user) => user.id === prev.participantId);
       const users = selfInSnapshot || !selfRow ? snapshotUsers : [...snapshotUsers, selfRow];
       return {
         ...prev,
         users,
-        // Re-derive top-level leadership from the snapshot's own self entry
-        // (mirrors the LeaderChanged handler's clientId check). When the snapshot
-        // omits us it has no opinion on our leadership — it raced our JOIN — so
-        // keep the prior value rather than silently demoting on incomplete data.
+        // Re-derive top-level leadership from the snapshot's own self entry (keyed
+        // by participant id). When the snapshot omits us it has no opinion on our
+        // leadership — it raced our JOIN — so keep the prior value rather than
+        // silently demoting on incomplete data.
         isLeader: selfInSnapshot ? selfInSnapshot.isLeader : prev.isLeader,
         // Falsy (empty/absent) boardPath keeps the current one — a real boardPath
         // is always a non-empty route, so `||` only ever falls through on the

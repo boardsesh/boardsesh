@@ -88,20 +88,25 @@ export const createEmptySessionRuntimeState = (): MobileSessionRuntimeState => (
   users: [],
   isLeader: false,
   clientId: '',
+  participantId: '',
   lastConnectedBoardSerial: null,
   boardPath: '',
 });
 
 /**
  * Order-insensitive signature of the roster fields a SessionRosterSnapshot can
- * change (crew membership + per-user leadership + display name, own leadership,
- * boardPath). Used only to decide whether a seed/reconcile snapshot actually
- * healed dropped roster drift, so we emit `Session Roster Reconciled` telemetry
- * only when the crew list really moved — not on every (re)subscribe.
+ * change (crew membership + per-user leadership + display name + connection
+ * state, own leadership, boardPath). Used only to decide whether a seed/reconcile
+ * snapshot actually healed dropped roster drift, so we emit `Session Roster
+ * Reconciled` telemetry only when the crew list really moved — not on every
+ * (re)subscribe. `connectionState` is included so a snapshot that heals a
+ * presence-only drift (e.g. a dropped UserPresenceChanged flipping
+ * CONNECTED↔RECONNECTING) still registers — the gating metric would otherwise
+ * miss exactly the drift it exists to measure.
  */
 function rosterStateSignature(state: MobileSessionRuntimeState): string {
   const users = state.users
-    .map((user) => `${user.id}:${user.isLeader ? 1 : 0}:${user.username}`)
+    .map((user) => `${user.id}:${user.isLeader ? 1 : 0}:${user.username}:${user.connectionState ?? ''}`)
     .sort()
     .join('|');
   return `${users}#${state.isLeader ? 1 : 0}#${state.boardPath}`;
@@ -236,6 +241,56 @@ export function useSessionRealtime({
 
     const logJoinFailure = (err: unknown) => {
       if (__DEV__) console.warn('[queue] joinSession failed', err);
+    };
+
+    // Follow a session boardPath's angle onto our own active board. Shared by the
+    // SessionBoardPathChanged delta AND the SessionRosterSnapshot seed so a
+    // dropped path change is healed on the next (re)subscribe, not left stale on
+    // the wall until another peer changes the angle (PR #3907 Codex thread).
+    // Idempotent: every branch no-ops when the stored angle already matches, when
+    // the board is fixed-angle, or when the peer is on a different board — so
+    // calling it on every snapshot is safe.
+    const followSessionBoardPath = (boardPath: string) => {
+      // Named-board hosts (`/b/{slug}`) broadcast a slug path the tuple parser
+      // rejects. Follow the angle when we're on the SAME named board (slug match)
+      // — the angle table differs per board, so never cross boards.
+      const named = parseNamedBoardPath(boardPath);
+      if (named) {
+        if (named.angle == null) return;
+        const nextNamedAngle = named.angle;
+        void (async () => {
+          const stored = await getStoredActiveBoard();
+          if (sessionIdRef.current !== sessionId) return;
+          if (!stored || stored.angle === nextNamedAngle) return;
+          if (stored.isAngleAdjustable === false) return;
+          if (!stored.slug || stored.slug !== named.slug) return;
+          await setActiveBoardRef.current({ ...stored, angle: nextNamedAngle });
+        })();
+        return;
+      }
+      const parsed = parseBoardPath(boardPath);
+      if (!parsed || parsed.angle == null) return;
+      const nextAngle = parsed.angle;
+      void (async () => {
+        const stored = await getStoredActiveBoard();
+        if (sessionIdRef.current !== sessionId) return;
+        if (!stored || stored.angle === nextAngle) return;
+        // Never override a fixed-angle board (mirrors handleAngleChange's local
+        // guard) — a peer can't change an angle the board can't be set to.
+        if (stored.isAngleAdjustable === false) return;
+        // Follow ONLY the angle, and only when the peer is on the SAME board. A
+        // mixed-board session must not push a foreign angle (board angle tables
+        // differ, e.g. MoonBoard only allows 25°/40°).
+        if (
+          parsed.boardName !== stored.boardType ||
+          parsed.layoutId !== stored.layoutId ||
+          parsed.sizeId !== stored.sizeId ||
+          parsed.setIds !== stored.setIds
+        ) {
+          return;
+        }
+        await setActiveBoardRef.current({ ...stored, angle: nextAngle });
+      })();
     };
 
     const scheduleJoinRetry = (failedStartToken: number, preserveExistingSubscriptions = false) => {
@@ -535,57 +590,22 @@ export function useSessionRealtime({
                     layoutId: activeBoardRef.current?.layoutId,
                   });
                 }
+                // Heal a dropped SessionBoardPathChanged: the snapshot carries the
+                // authoritative boardPath, so re-run the angle-follow. Empty is the
+                // "keep current" sentinel — skip it. No echo suppression needed:
+                // a reconcile snapshot has no originating participant.
+                if (runtimeEvent.boardPath) followSessionBoardPath(runtimeEvent.boardPath);
               }
             }
 
-            if (event.__typename !== 'SessionBoardPathChanged' || !event.boardPath) return;
-            // Echo of our own change — we already applied it locally before
-            // broadcasting. A null local participant id (peer event before our
-            // JOIN_SESSION resolved) can't be the originator, so we apply it.
-            if (event.changedByParticipantId && event.changedByParticipantId === participantIdRef.current) return;
-            // Named-board hosts (`/b/{slug}`) broadcast a slug path the tuple
-            // parser rejects. Follow the angle when we're on the SAME named board
-            // (slug match) — the angle table differs per board, so never cross
-            // boards (mirrors the tuple-identity guard below).
-            const named = parseNamedBoardPath(event.boardPath);
-            if (named) {
-              if (named.angle == null) return;
-              const nextNamedAngle = named.angle;
-              void (async () => {
-                const stored = await getStoredActiveBoard();
-                if (sessionIdRef.current !== sessionId) return;
-                if (!stored || stored.angle === nextNamedAngle) return;
-                if (stored.isAngleAdjustable === false) return;
-                if (!stored.slug || stored.slug !== named.slug) return;
-                await setActiveBoardRef.current({ ...stored, angle: nextNamedAngle });
-              })();
-              return;
+            // Follow a peer's angle change directly from the delta.
+            if (event.__typename === 'SessionBoardPathChanged' && event.boardPath) {
+              // Echo of our own change — we already applied it locally before
+              // broadcasting. A null local participant id (peer event before our
+              // JOIN_SESSION resolved) can't be the originator, so we apply it.
+              if (event.changedByParticipantId && event.changedByParticipantId === participantIdRef.current) return;
+              followSessionBoardPath(event.boardPath);
             }
-            const parsed = parseBoardPath(event.boardPath);
-            if (!parsed || parsed.angle == null) return;
-            const nextAngle = parsed.angle;
-            void (async () => {
-              const stored = await getStoredActiveBoard();
-              if (sessionIdRef.current !== sessionId) return;
-              if (!stored || stored.angle === nextAngle) return;
-              // Never override a fixed-angle board (mirrors handleAngleChange's
-              // local guard) — a peer can't change an angle the board can't be
-              // set to.
-              if (stored.isAngleAdjustable === false) return;
-              // Follow ONLY the angle, and only when the peer is on the SAME
-              // board. A mixed-board session must not push a foreign angle (board
-              // angle tables differ, e.g. MoonBoard only allows 25°/40°). Compare
-              // the parsed board identity to our stored board before applying.
-              if (
-                parsed.boardName !== stored.boardType ||
-                parsed.layoutId !== stored.layoutId ||
-                parsed.sizeId !== stored.sizeId ||
-                parsed.setIds !== stored.setIds
-              ) {
-                return;
-              }
-              await setActiveBoardRef.current({ ...stored, angle: nextAngle });
-            })();
           },
           error: (sessionSubscriptionError) => {
             // Session-update stream errors were swallowed. Surface them for
