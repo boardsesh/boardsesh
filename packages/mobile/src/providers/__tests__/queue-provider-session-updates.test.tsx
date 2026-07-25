@@ -1801,7 +1801,10 @@ describe('QueueProvider mutation-failure resync', () => {
     const snapshots: Snapshot[] = [];
     const first = makeQueueItem('item-1', 'climb-1');
     const second = makeQueueItem('item-2', 'climb-2');
-    routeHttpRequest(queueStateResponse([first, second], first));
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([first, second], first), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
     queueMutations.reorderQueueItem.mockRejectedValueOnce(makeRateLimitedError());
 
     renderProvider((snapshot) => snapshots.push(snapshot));
@@ -1828,6 +1831,46 @@ describe('QueueProvider mutation-failure resync', () => {
     await waitFor(() => {
       expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
     });
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+    // reorderQueue rolls back locally and never reaches
+    // resyncQueueAfterMutationFailure — assert the refetch stays at zero so
+    // that stays true if the handler is ever rewritten.
+    expect(queueStateCalls).toBe(0);
+  });
+
+  it('toasts "slow down" when a solo setCurrentClimb is rate-limited', async () => {
+    const snapshots: Snapshot[] = [];
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    // End the session so the next activation runs with no active session.
+    await act(async () => {
+      await snapshots.at(-1)?.endSession();
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBeNull();
+    });
+    toast.showToast.mockClear();
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.setCurrentClimb(makeQueueItem('solo-current', 'climb-solo-current'));
+    });
+
+    // Solo used to get a blanket "Action failed" here; a throttled solo call is
+    // still a rate limit, so it gets the same gentle wording as a party one.
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    });
+    expect(queueStateCalls).toBe(0);
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
   });
 
