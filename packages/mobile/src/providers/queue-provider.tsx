@@ -908,7 +908,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         // every other content mutation uses — a refreshed queue beats one
         // that's permanently local-only.
         void resyncQueueAfterMutationFailure();
+        return;
       }
+      // The add can sit in `execute`'s rate-limit back-off for seconds. If the
+      // climber dropped the climb inside that window their remove raced ahead
+      // of this add, so the slot we just landed is back on the whole crew's
+      // queue. The local queue is the record of intent — undo it rather than
+      // leave a climb nobody asked for.
+      if (stateRef.current.queue.some((queueItem) => queueItem.uuid === item.uuid)) return;
+      mutations.removeQueueItem(item.uuid).catch((error) => {
+        if (__DEV__) console.warn('[queue] undoing a resurrected queue-add failed', error);
+        void resyncQueueAfterMutationFailure();
+      });
     },
     [mutations, resyncQueueAfterMutationFailure],
   );

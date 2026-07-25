@@ -1987,6 +1987,64 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(queueStateCalls).toBe(0);
   });
 
+  it('undoes the re-sent queue add when the climb is removed while that add is in flight', async () => {
+    const snapshots: Snapshot[] = [];
+    const alreadyQueued = makeQueueItem('item-1', 'climb-1');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([alreadyQueued], alreadyQueued), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+    // Hold the recovery add open — this is the rate-limit back-off window where
+    // `execute` can sit for seconds before the add actually lands.
+    const inFlightAdd = createDeferred<void>();
+    queueMutations.addQueueItem.mockReturnValueOnce(inFlightAdd.promise);
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([alreadyQueued], alreadyQueued);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+    queueMutations.removeQueueItem.mockClear();
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('local-current', 'climb-local-current'));
+    });
+    await waitFor(() => {
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
+    });
+
+    // Climber drops the climb while the recovery add is still backing off, so
+    // their remove reaches the server first.
+    act(() => {
+      snapshots.at(-1)?.removeFromQueue('local-current');
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['item-1']);
+    });
+    expect(queueMutations.removeQueueItem).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      inFlightAdd.resolve();
+      await Promise.resolve();
+    });
+
+    // The add landed after the remove, so it put the climb back on every peer's
+    // queue. Undo it instead of leaving a climb nobody asked for.
+    await waitFor(() => {
+      expect(queueMutations.removeQueueItem).toHaveBeenCalledTimes(2);
+    });
+    expect(queueMutations.removeQueueItem.mock.calls.at(-1)).toEqual(['local-current']);
+    expect(queueStateCalls).toBe(0);
+  });
+
   it('toasts "slow down" rather than the generic failure when reorderQueue is rate-limited', async () => {
     const snapshots: Snapshot[] = [];
     const first = makeQueueItem('item-1', 'climb-1');
