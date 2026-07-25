@@ -316,32 +316,56 @@ export async function updateQueueOnly(
   sessionId: string,
   queue: ClimbQueueItem[],
   expectedVersion: number | undefined,
+  knownState?: Pick<QueueState, 'currentClimbQueueItem'>,
 ): Promise<{ version: number; sequence: number; stateHash: string; stateHashOrdered: string }> {
   const { redisStore, writeScheduler, distributedState } = deps;
 
-  // The current climb is carried through untouched, so it still has to be read
-  // to recompute the hashes. Any concurrent change to it bumps the version,
-  // which the CAS below rejects — so a stale read here can never be written.
-  const currentState = await getQueueState(sessionId, redisStore);
-  const currentClimbQueueItem = currentState.currentClimbQueueItem;
+  if (!redisStore) {
+    // No Redis - Postgres is the only read source, so read it. Deliberately
+    // ignores `knownState` for the version comparison: the caller's
+    // `expectedVersion` came out of that same snapshot, so comparing the two
+    // would always agree and the guard would be vacuous. Only the Redis path,
+    // where the CAS re-reads the authoritative version itself, can safely take
+    // the caller's word for anything.
+    const pgState = await getQueueState(sessionId, null);
+    const currentClimbUuid = pgState.currentClimbQueueItem?.uuid || null;
+    if (expectedVersion !== undefined && pgState.version !== expectedVersion) {
+      throw new VersionConflictError(sessionId, expectedVersion);
+    }
+    const newVersion = pgState.version + 1;
+    const newSequence = pgState.sequence + 1;
+    await writeQueueStateToPostgres(
+      sessionId,
+      {
+        queue,
+        currentClimbQueueItem: pgState.currentClimbQueueItem,
+        version: newVersion,
+        sequence: newSequence,
+      },
+      writeScheduler,
+    );
+    return {
+      version: newVersion,
+      sequence: newSequence,
+      stateHash: computeQueueStateHash(queue, currentClimbUuid),
+      stateHashOrdered: computeQueueStateHashOrdered(queue, currentClimbUuid),
+    };
+  }
+
+  // The current climb is carried through untouched, so it still has to be known
+  // to recompute the hashes. Callers inside `withQueueVersionRetry` already hold
+  // freshly-read state and pass it in, rather than making this a second Redis
+  // read per attempt. A stale current climb can never be written either way:
+  // changing it bumps the version, which the CAS below rejects.
+  // Branch on whether the caller supplied state at all, not on the climb being
+  // truthy — `null` is a legitimate value (no current climb) and `??` would
+  // send that case back for a pointless second read.
+  const currentClimbQueueItem = knownState
+    ? knownState.currentClimbQueueItem
+    : (await getQueueState(sessionId, redisStore)).currentClimbQueueItem;
 
   const stateHash = computeQueueStateHash(queue, currentClimbQueueItem?.uuid || null);
   const stateHashOrdered = computeQueueStateHashOrdered(queue, currentClimbQueueItem?.uuid || null);
-
-  if (!redisStore) {
-    // No Redis - write to Postgres immediately since it's the only read source
-    if (expectedVersion !== undefined && currentState.version !== expectedVersion) {
-      throw new VersionConflictError(sessionId, expectedVersion);
-    }
-    const newVersion = currentState.version + 1;
-    const newSequence = currentState.sequence + 1;
-    await writeQueueStateToPostgres(
-      sessionId,
-      { queue, currentClimbQueueItem, version: newVersion, sequence: newSequence },
-      writeScheduler,
-    );
-    return { version: newVersion, sequence: newSequence, stateHash, stateHashOrdered };
-  }
 
   const result = await casWithDormancyFloor(redisStore, sessionId, {
     queue,

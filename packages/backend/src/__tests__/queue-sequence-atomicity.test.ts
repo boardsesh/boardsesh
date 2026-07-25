@@ -63,6 +63,12 @@ const defer = (): Deferred => {
  * Pause individual compare-and-swap calls so a test can pin the exact order of
  * two concurrent mutations. Only the queue CAS script is gated; every other
  * `eval` (distributed-state join/leave scripts) passes straight through.
+ *
+ * Gate indices count CAS calls, and a mutation only issues one of those when
+ * the session already has a Redis hash — otherwise the script bails out with
+ * NEEDS_FLOOR first and the same mutation burns two indices. Gated tests must
+ * therefore use `createDurableSession`, which seeds the hash the way a live
+ * party session always has one.
  */
 function gateCasEval(mockRedis: MockRedis) {
   const original = mockRedis.eval.bind(mockRedis) as (...args: unknown[]) => Promise<unknown>;
@@ -84,6 +90,8 @@ function gateCasEval(mockRedis: MockRedis) {
   return {
     /** Resolves once the Nth (0-based) CAS call has reached the gate. */
     whenArrived: (index: number) => slot(arrivals, index).promise,
+    /** Let exactly the Nth CAS call proceed, leaving every other one parked. */
+    release: (index: number) => slot(releases, index).resolve(),
     /** Let the Nth CAS call, and every later one, proceed. */
     releaseFrom: (index: number) => {
       for (let cursor = index; cursor < index + 12; cursor++) {
@@ -180,7 +188,7 @@ describe('queue state atomicity (#3906)', () => {
     // proved 23 production sessions had hit this.
     it('A.read -> B.read/write -> A.write: A retries instead of clobbering B', async () => {
       const sessionId = uuidv4();
-      await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
 
       const climbA = createTestClimb('climb-A');
       const climbB = createTestClimb('climb-B');
@@ -214,21 +222,28 @@ describe('queue state atomicity (#3906)', () => {
     // leaves no trace in Postgres at all.
     it('A.read -> B.read -> B.write -> A.write: no duplicate sequence, no lost climb', async () => {
       const sessionId = uuidv4();
-      await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
 
       const climbA = createTestClimb('climb-A');
       const climbB = createTestClimb('climb-B');
       const gate = gateCasEval(mockRedis);
 
-      // Both mutations reach their CAS before either is allowed through.
+      // Both mutations reach their CAS before either is allowed through — this
+      // is the ordering that used to hand two writers the SAME sequence number.
       const mutationA = queueMutations.addQueueItem({}, { item: climbA }, mockCtx('client-1', sessionId));
       await gate.whenArrived(0);
       const mutationB = queueMutations.addQueueItem({}, { item: climbB }, mockCtx('client-1', sessionId));
       await gate.whenArrived(1);
 
-      // B's write lands first, then A's.
+      // Release B's write alone and let it finish, so the ordering is actually
+      // pinned rather than left to microtask scheduling.
+      gate.release(1);
+      await mutationB;
+
+      // Only now does A's write — computed from a pre-B snapshot — get to run.
+      // It must lose the CAS and retry rather than overwrite B.
       gate.releaseFrom(0);
-      await Promise.all([mutationA, mutationB]);
+      await mutationA;
 
       const finalState = await roomManager.getQueueState(sessionId);
       const uuids = finalState.queue.map((item) => item.uuid);
@@ -240,7 +255,7 @@ describe('queue state atomicity (#3906)', () => {
 
     it('concurrent removes do not resurrect each other', async () => {
       const sessionId = uuidv4();
-      await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
 
       const climbA = createTestClimb('climb-A');
       const climbB = createTestClimb('climb-B');
@@ -255,8 +270,11 @@ describe('queue state atomicity (#3906)', () => {
       const removeB = queueMutations.removeQueueItem({}, { uuid: climbB.uuid }, mockCtx('client-1', sessionId));
       await gate.whenArrived(1);
 
+      // Same pinned ordering as above: B commits, then A's stale removal runs.
+      gate.release(1);
+      await removeB;
       gate.releaseFrom(0);
-      await Promise.all([removeA, removeB]);
+      await removeA;
 
       const finalState = await roomManager.getQueueState(sessionId);
       expect(finalState.queue.map((item) => item.uuid)).toEqual([climbC.uuid]);

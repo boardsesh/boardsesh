@@ -85,7 +85,7 @@ export const queueMutations = {
       }
 
       // Use updateQueueOnly with version check to avoid race conditions
-      const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version);
+      const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version, currentState);
       itemWasAdded = true;
       resultSequence = result.sequence;
       resultStateHash = result.stateHash;
@@ -193,7 +193,7 @@ export const queueMutations = {
         const [movedItem] = queue.splice(oldIndex, 1);
         queue.splice(newIndex, 0, movedItem);
         // Use updateQueueOnly to avoid overwriting currentClimbQueueItem
-        const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version);
+        const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version, currentState);
         resultSequence = result.sequence;
         resultStateHash = result.stateHash;
         resultStateHashOrdered = result.stateHashOrdered;

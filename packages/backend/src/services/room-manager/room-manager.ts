@@ -580,8 +580,9 @@ class RoomManager {
     sessionId: string,
     queue: ClimbQueueItem[],
     expectedVersion?: number,
+    knownState?: Pick<QueueState, 'currentClimbQueueItem'>,
   ): Promise<{ version: number; sequence: number; stateHash: string; stateHashOrdered: string }> {
-    return updateQueueOnlyFn(this.deps(), sessionId, queue, expectedVersion);
+    return updateQueueOnlyFn(this.deps(), sessionId, queue, expectedVersion, knownState);
   }
 
   async getQueueState(sessionId: string): Promise<QueueState> {
