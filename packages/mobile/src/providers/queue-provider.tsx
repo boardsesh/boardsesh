@@ -17,7 +17,7 @@ import type {
 import { createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { SubscriptionQueueEvent, SessionUser } from '@boardsesh/shared-schema';
-import { execute, GraphQLOperationError, isRateLimitedExtension } from '@boardsesh/graphql-client';
+import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
 import { buildBoardPath } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { JOIN_SESSION, UPDATE_USERNAME } from '@boardsesh/graphql/operations/queue-session';
@@ -95,7 +95,11 @@ function showQueueMutationErrorToast(
   t: (key: string) => string,
   showToast: (message: string, variant: 'error') => void,
 ): void {
-  if (error instanceof GraphQLOperationError && isRateLimitedExtension(error.extensions)) {
+  // Classify via the shared `isRateLimitedError` so every caller agrees on what
+  // counts as a rate limit. It also catches the nested-`graphqlErrors` and
+  // legacy message-only shapes that a bare `extensions.code` check misses, so a
+  // pre-#2777 server still gets the gentle toast instead of "Action failed".
+  if (isRateLimitedError(error)) {
     // Rate-limiting is expected user-pacing, not a bug — toast only, no report.
     showToast(t('mobile.queue.rateLimited'), 'error');
   } else {
@@ -894,15 +898,23 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // of the previously-skipped slot can't re-broadcast an item we've moved off.
       pendingUnsyncedCurrentRef.current = null;
       coordinator.trackPendingMutation(correlationId);
-      mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch(() => {
-        // In a party session the current-climb change never reached peers —
-        // reconcile against the server (and toast that we refreshed) so this
-        // client's current climb can't silently diverge. Solo keeps the prior
-        // best-effort "Action failed" toast (there's no server to reconcile).
-        if (sessionIdRef.current) {
+      mutations.setCurrentClimb(item, shouldAddToQueue, correlationId).catch((error: unknown) => {
+        // A throttled current-climb change is not a divergence: the rate-limit
+        // gate throws before the resolver runs, so the server still holds the
+        // climb it held a moment ago and the next activation (or any peer's
+        // broadcast) re-establishes it. Resyncing here would yank the user back
+        // to the previous boulder mid-swipe and fire another query into the
+        // limiter that just throttled us — which is what #2763 was reported as
+        // ("the connection fails every time we try to switch boulders"). Show
+        // the gentle "slow down" toast instead and leave the local pointer put.
+        if (sessionIdRef.current && !isRateLimitedError(error)) {
+          // Any other party-session failure means peers really did diverge —
+          // reconcile against the server (and toast that we refreshed).
           void resyncQueueAfterMutationFailure();
         } else {
-          showToast(t('mobile.queue.actionFailed'), 'error');
+          // Solo (no server to reconcile) and the rate-limited party case both
+          // land here: toast only, no resync.
+          showQueueMutationErrorToast(error, t, showToast);
         }
       });
     },
