@@ -338,9 +338,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
-    // Session teardown / switch: there's no party to re-broadcast a deferred
-    // hydrated current climb to, so drop the deferral (#3868).
-    if (!sessionId) pendingUnsyncedCurrentRef.current = null;
+    // Any session change — start, join, leave, or a direct A→B switch — drops a
+    // deferred re-broadcast (#3868). The pending ref holds only a queue-slot
+    // uuid, which is meaningless in a different session, and the new session's
+    // FullSync is authoritative; without this a late hydrate could push session
+    // A's current climb into session B for every peer.
+    pendingUnsyncedCurrentRef.current = null;
   }, [sessionId]);
 
   // showToast and t aren't stable callbacks — capture via refs so the WS
