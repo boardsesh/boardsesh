@@ -434,8 +434,7 @@
       "gradeOverride": "Grade override",
       "clearGradeOverride": "Clear grade override",
       "consensusSuffix": "consensus",
-      "attemptCount": "Attempt count",
-      "angleSelector": "Angle"
+      "attemptCount": "Attempt count"
     },
     "bar": {
       "logAscent": "Log ascent",

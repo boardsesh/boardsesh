@@ -12,7 +12,7 @@ import { useGradeFormat } from '@/app/hooks/use-grade-format';
 import { useIsDarkMode } from '@/app/hooks/use-is-dark-mode';
 import styles from './tick-controls.module.css';
 
-export type ExpandedControl = 'grade' | 'stars' | 'tries' | 'angle' | null;
+export type ExpandedControl = 'grade' | 'stars' | 'tries' | null;
 
 /**
  * Stops horizontal touch events from propagating to parent swipeable handlers,
@@ -371,49 +371,6 @@ export const InlineTriesPicker: React.FC<{
             role="option"
           >
             <span className={styles.pickerNumber}>{n}</span>
-          </ButtonBase>
-        ))}
-      </div>
-    </ScrollIndicatorWrapper>
-  );
-};
-
-/**
- * Board angle picker — same horizontally-scrollable shape as
- * InlineTriesPicker, but the option set comes from the board's static angle
- * table (ANGLES in @boardsesh/board-config) instead of a fixed numeric range,
- * since valid angles vary per board and aren't evenly spaced (MoonBoard).
- */
-export const InlineAnglePicker: React.FC<{
-  angles: readonly number[];
-  angle: number;
-  onSelect: (value: number) => void;
-}> = ({ angles, angle, onSelect }) => {
-  const { t } = useTranslation('climbs');
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useStopHorizontalTouchPropagation(containerRef);
-  const { canScrollLeft, canScrollRight } = useScrollIndicators(containerRef);
-
-  return (
-    <ScrollIndicatorWrapper canScrollLeft={canScrollLeft} canScrollRight={canScrollRight}>
-      <div
-        ref={containerRef}
-        className={styles.pickerRowScrollable}
-        role="listbox"
-        aria-label={t('tick.controls.angleSelector')}
-        data-scrollable-picker
-      >
-        {angles.map((option) => (
-          <ButtonBase
-            key={option}
-            onClick={() => onSelect(option)}
-            className={`${styles.pickerItem} ${option === angle ? styles.pickerItemSelected : ''}`}
-            aria-label={`${option}°`}
-            aria-selected={option === angle}
-            role="option"
-          >
-            <span className={styles.pickerNumber}>{option}°</span>
           </ButtonBase>
         ))}
       </div>

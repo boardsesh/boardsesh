@@ -434,8 +434,7 @@
       "gradeOverride": "Cotation personnalisée",
       "clearGradeOverride": "Effacer la cotation personnalisée",
       "consensusSuffix": "consensus",
-      "attemptCount": "Nombre d'essais",
-      "angleSelector": "Angle"
+      "attemptCount": "Nombre d'essais"
     },
     "bar": {
       "logAscent": "Enregistrer la croix",

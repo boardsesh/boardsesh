@@ -155,7 +155,6 @@
       "grade": "grado",
       "tries": "intentos",
       "selectGrade": "Selecciona el grado registrado",
-      "selectAngle": "Selecciona el ángulo",
       "status": {
         "flash": "Flash",
         "send": "Encadene",

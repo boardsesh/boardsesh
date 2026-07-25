@@ -43,15 +43,9 @@ import { formatBoardDisplayName } from '@/app/lib/string-utils';
 import { getDefaultBoardConfig } from '@/app/lib/default-board-configs';
 import { getBoardDetailsForBoard } from '@/app/lib/board-utils';
 import { getExcludedClimbActions } from '@/app/lib/climb-action-utils';
-import { getGradesForBoard, ANGLES } from '@/app/lib/board-data';
+import { getGradesForBoard } from '@/app/lib/board-data';
 import AscentThumbnail from '@/app/components/activity-feed/ascent-thumbnail';
-import {
-  InlineStarPicker,
-  InlineGradePicker,
-  InlineTriesPicker,
-  InlineAnglePicker,
-  type ExpandedControl,
-} from '../logbook/tick-controls';
+import { InlineStarPicker, InlineGradePicker, InlineTriesPicker, type ExpandedControl } from '../logbook/tick-controls';
 import ClimbIcons from '@/app/components/climb-card/climb-icons';
 import { ascentFeedItemToClimb } from './ascent-to-climb';
 import ascentStyles from '@/app/components/climb-card/ascent-status.module.css';
@@ -336,7 +330,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
     const [editQuality, setEditQuality] = useState<number | null>(null);
     const [editDifficulty, setEditDifficulty] = useState<number | undefined>(undefined);
     const [editAttemptCount, setEditAttemptCount] = useState(1);
-    const [editAngle, setEditAngle] = useState(0);
     const [expandedControl, setExpandedControl] = useState<ExpandedControl>(null);
     const [lastExpandedControl, setLastExpandedControl] = useState<ExpandedControl>(null);
     const [pickerVisible, setPickerVisible] = useState(false);
@@ -344,10 +337,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
 
     const gradeButtonRef = useRef<HTMLButtonElement>(null);
     const triesButtonRef = useRef<HTMLButtonElement>(null);
-
-    // Valid angles for this ascent's board — static per-board table (same
-    // source the create-tick form and mobile use), robust and offline.
-    const angleOptions = useMemo(() => ANGLES[item.boardType as BoardName] ?? [], [item.boardType]);
 
     // Initialize edit state from item only when transitioning into edit mode
     const wasEditingRef = useRef(false);
@@ -359,7 +348,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
         setEditQuality(item.quality ?? null);
         setEditDifficulty(item.difficulty ?? undefined);
         setEditAttemptCount(item.attemptCount);
-        setEditAngle(item.angle);
         setExpandedControl(null);
         setLastExpandedControl(null);
         setPickerVisible(false);
@@ -399,15 +387,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
       setExpandedControl(null);
     }, []);
 
-    const handleAngleSelect = useCallback((value: number) => {
-      setEditAngle(value);
-      setExpandedControl(null);
-    }, []);
-
-    const handleAngleToggle = useCallback(() => {
-      setExpandedControl((current) => (current === 'angle' ? null : 'angle'));
-    }, []);
-
     const handleCommentFocus = useCallback(() => {
       setExpandedControl(null);
       setCommentFocused(true);
@@ -427,7 +406,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
             quality: editQuality ?? null,
             difficulty: editDifficulty ?? null,
             comment: editComment,
-            angle: editAngle,
           },
         });
         onCancelEdit?.();
@@ -436,7 +414,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
       }
     }, [
       editStatus,
-      editAngle,
       editAttemptCount,
       editComment,
       editDifficulty,
@@ -524,15 +501,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
       }
       return parts.join(' \u00b7 ');
     }, [item.climbedAt, item.angle, showBoardType, item.boardType, item.layoutId]);
-
-    // Edit-mode subtitle pieces: same "time . angle . board" shape as `subtitle`
-    // above, but the angle segment becomes a tappable chip that opens the same
-    // inline picker panel used for grade/stars/tries.
-    const subtitleRelativeTime = useMemo(() => formatTickRelativeTime(item.climbedAt), [item.climbedAt]);
-    const subtitleBoardName = useMemo(
-      () => (showBoardType ? getLayoutDisplayName(item.boardType, item.layoutId) : null),
-      [showBoardType, item.boardType, item.layoutId],
-    );
 
     // --- Swipe actions ---
     const handleSwipeLeft = useCallback(() => {
@@ -700,25 +668,7 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
                   <ClimbIcons isNoMatch={!!item.isNoMatch} isBenchmark={!!item.isBenchmark} />
                 </Typography>
                 <Typography variant="body2" component="div" color="text.secondary" sx={subtitleSx}>
-                  {isEditing ? (
-                    <span>
-                      {subtitleRelativeTime}
-                      {' · '}
-                      <ButtonBase
-                        onClick={handleAngleToggle}
-                        aria-label={tProfile('logbook.feed.selectAngle')}
-                        aria-haspopup="listbox"
-                        aria-expanded={expandedControl === 'angle'}
-                        className={`${styles.angleChip} ${expandedControl === 'angle' ? styles.angleChipActive : ''}`}
-                        disableRipple
-                      >
-                        {editAngle}°
-                      </ButtonBase>
-                      {subtitleBoardName ? ` · ${subtitleBoardName}` : null}
-                    </span>
-                  ) : (
-                    <span>{subtitle}</span>
-                  )}
+                  <span>{subtitle}</span>
                 </Typography>
 
                 {/* Picker panel (edit mode only) */}
@@ -729,9 +679,6 @@ const LogbookFeedItem: React.FC<LogbookFeedItemProps> = React.memo(
                         <div className={styles.compactStarPicker}>
                           <InlineStarPicker quality={editQuality} onSelect={handleStarSelect} />
                         </div>
-                      )}
-                      {renderedControl === 'angle' && (
-                        <InlineAnglePicker angles={angleOptions} angle={editAngle} onSelect={handleAngleSelect} />
                       )}
                       {renderedControl === 'grade' && (
                         <InlineGradePicker

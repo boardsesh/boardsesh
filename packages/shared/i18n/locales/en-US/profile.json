@@ -155,7 +155,6 @@
       "grade": "grade",
       "tries": "tries",
       "selectGrade": "Select logged grade",
-      "selectAngle": "Select angle",
       "status": {
         "flash": "Flash",
         "send": "Send",

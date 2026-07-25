@@ -112,24 +112,6 @@
   gap: 2px;
 }
 
-/* Tappable angle chip in the subtitle line (edit mode only) */
-.angleChip {
-  display: inline-flex;
-  align-items: baseline;
-  font: inherit;
-  color: inherit;
-  padding: 0 2px;
-  border-radius: 4px;
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-}
-
-.angleChipActive {
-  color: var(--color-primary);
-  font-weight: 700;
-  text-decoration: none;
-}
-
 /* Grade row — horizontal bar of stat cells */
 .gradeRow {
   display: flex;

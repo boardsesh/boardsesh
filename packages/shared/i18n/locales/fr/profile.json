@@ -155,7 +155,6 @@
       "grade": "cotation",
       "tries": "essais",
       "selectGrade": "Choisir la cotation enregistrée",
-      "selectAngle": "Choisir l'angle",
       "status": {
         "flash": "Flash",
         "send": "Enchaîné",
