@@ -52,6 +52,26 @@
           "title": "Aperçu",
           "caption": "Tes marqueurs sur ta board. Les couleurs sont affichées telles quelles ici — utilise la vérification ci-dessous pour voir comment elles se distinguent."
         },
+        "wall": {
+          "title": "Mur MoonBoard",
+          "subtitle": "La quantité de jaune derrière les prises. Ne concerne que le MoonBoard.",
+          "optionAccessibilitySelected": "{{label}}, sélectionné",
+          "options": {
+            "gold": {
+              "label": "Or chaud",
+              "description": "Lumineux le jour, atténué la nuit. Le réglage par défaut, confortable pour les yeux."
+            },
+            "classic": {
+              "label": "Jaune classique",
+              "description": "Le jaune vif de la peinture, dans les deux modes."
+            },
+            "dim": {
+              "label": "Ocre sombre",
+              "description": "L'or le plus sombre, pour les longues sessions nocturnes."
+            },
+            "neutral": { "label": "Gris neutre", "description": "Aucun jaune : le plus doux pour les yeux sensibles." }
+          }
+        },
         "cvd": {
           "title": "Vérification daltonisme",
           "subtitle": "Regarde comment tes marqueurs apparaissent avec différents types de daltonisme, pour que les quatre rôles restent faciles à distinguer.",

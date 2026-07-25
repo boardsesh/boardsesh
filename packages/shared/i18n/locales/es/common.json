@@ -269,6 +269,26 @@
           "title": "Vista previa",
           "caption": "Tus marcadores en tu plafón. Aquí los colores se ven tal cual; usa la comprobación de abajo para ver cómo se distinguen."
         },
+        "wall": {
+          "title": "Pared del MoonBoard",
+          "subtitle": "Cuánto amarillo se ve detrás de las presas. Solo afecta al plafón MoonBoard.",
+          "optionAccessibilitySelected": "{{label}}, seleccionado",
+          "options": {
+            "gold": {
+              "label": "Dorado cálido",
+              "description": "Brillante de día, atenuado de noche. La opción por defecto, cómoda para la vista."
+            },
+            "classic": {
+              "label": "Amarillo clásico",
+              "description": "El amarillo intenso de la pintura, en ambos modos."
+            },
+            "dim": { "label": "Ocre tenue", "description": "El dorado más oscuro, para largas sesiones nocturnas." },
+            "neutral": {
+              "label": "Gris neutro",
+              "description": "Sin nada de amarillo: lo más suave para ojos sensibles."
+            }
+          }
+        },
         "cvd": {
           "title": "Comprobación de daltonismo",
           "subtitle": "Mira cómo se ven tus marcadores con distintos tipos de daltonismo, para que los cuatro roles sigan siendo fáciles de distinguir.",

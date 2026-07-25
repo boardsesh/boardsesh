@@ -52,6 +52,17 @@
           "title": "Preview",
           "caption": "Your markers on your board. Colours show as-is here — use the check below to see how they read."
         },
+        "wall": {
+          "title": "MoonBoard wall",
+          "subtitle": "How yellow the wall looks behind the holds. Only affects MoonBoard renders.",
+          "optionAccessibilitySelected": "{{label}}, selected",
+          "options": {
+            "gold": { "label": "Warm gold", "description": "Bright by day, dimmed at night. The comfortable default." },
+            "classic": { "label": "Classic yellow", "description": "Full paint-bright yellow in both modes." },
+            "dim": { "label": "Dim ochre", "description": "Deepest gold for long night sessions." },
+            "neutral": { "label": "Neutral grey", "description": "No yellow at all — easiest on sensitive eyes." }
+          }
+        },
         "cvd": {
           "title": "Colour-blind check",
           "subtitle": "See how your markers look with different types of colour blindness, so the four roles stay easy to tell apart.",
