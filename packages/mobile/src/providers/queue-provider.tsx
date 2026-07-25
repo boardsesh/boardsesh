@@ -669,6 +669,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // server and tell the user their queue was refreshed. In solo (no session)
   // the local queue is authoritative, so keep the existing best-effort
   // behaviour: dev-log only, no resync, no toast.
+  //
+  // Callers here (add/remove/setQueue/clearQueue) reconcile on ANY error,
+  // rate limits included. They change queue *content* and have no local
+  // rollback, so skipping reconciliation would leave the item in your queue
+  // and absent from your crew's — permanently and silently. `setCurrentClimb`
+  // deliberately does NOT resync when throttled: it moves a pointer that
+  // self-heals on the next activation or peer broadcast, so reconciling there
+  // only yanked the climber off the boulder they just picked. `reorderQueue`
+  // never reaches this path at all — it rolls back locally instead.
   const resyncQueueAfterMutationFailure = useCallback(async () => {
     if (!sessionIdRef.current) return;
     const refreshed = await resyncQueueFromServerRef.current();
