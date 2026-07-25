@@ -112,16 +112,42 @@ export const playDrawerMaterialTint = {
  * holds.
  *
  * Deliberately NOT keyed by colorScheme like `playDrawerMaterialTint` above:
- * MoonBoard panels are painted a real-world yellow (RAL 1023 "Traffic
- * Yellow" per Moon Climbing's panel spec), so a fixed warm tone reads as the
- * actual board in both modes rather than as a theme artifact — and it keeps
- * LayeredClimbImage (used everywhere a board renders: thumbnails, discovery
- * cards, the play view) free of a useTheme() dependency. Toned down from the
- * saturated RAL swatch to a paler, muted cream-yellow so a full-screen fill
- * behind grey/beige hold icons stays comfortable to look at rather than
- * traffic-cone bright.
+ * MoonBoard panels are painted a real-world yellow, so a fixed tone reads as
+ * the actual board in both modes rather than as a theme artifact — and it
+ * keeps LayeredClimbImage (used everywhere a board renders: thumbnails,
+ * discovery cards, the play view) free of a useTheme() dependency. Depicting
+ * a compatible physical product's paint colour is fine (the same basis as
+ * the board-art assets we already ship); no Moon branding/logo is used here.
+ *
+ * Value: RAL 1023 "Traffic Yellow" (#FAD201), the RAL code Moon Climbing
+ * lists for MoonBoard panels. Cross-checked against
+ * packages/moonboard-ocr/src/__tests__/fixtures/moonboard-grid-reference.jpg
+ * (Moon's own board-art reference graphic, in-repo) — sampling its plain
+ * background pixels averages ~#EEDF50, the same "golden yellow" family
+ * (hue ~54° vs RAL 1023's ~50°) but lighter/less saturated, consistent with
+ * print/JPEG reproduction rather than raw paint. Went with the RAL value:
+ * closer to the paint spec, and its hue sits slightly further from the
+ * MoonBoard start-hold green (see below), which is the pairing that matters
+ * most for on-screen contrast.
+ *
+ * Hold-state contrast (WCAG relative-luminance ratio, MOONBOARD_HOLD_STATES
+ * displayColor in moonboard-config.ts) at this value:
+ *   - hand (#4444FF): 4.06:1 — passes WCAG AA for large-scale graphics (3:1).
+ *   - finish (#FF3333): 2.47:1 — below 3:1, readable but not high-contrast.
+ *   - start (#44FF44): 1.09:1 — effectively unreadable stroke-on-backdrop.
+ * The green pairing is not fixable by tuning this hex: green and yellow are
+ * adjacent, similarly-bright hues, so WCAG contrast stays under ~1.35:1 for
+ * ANY backdrop light/saturated enough to still read as "yellow" — reaching
+ * even 3:1 needs a backdrop luminance dark enough to look olive/khaki, which
+ * defeats the fix. Verified darkening/desaturating from RAL 1023 does not
+ * help here and actively worsens hand/finish contrast (a lighter backdrop
+ * has MORE headroom against both blue and red), so this value is the local
+ * optimum, not a compromise pending further tuning. The real fix for the
+ * green pairing is a fixed dark outline on hold markers (a renderer-level
+ * change, packages/board-renderer/core/src/renderer.rs) — out of scope here,
+ * tracked as a follow-up rather than solved by backdrop colour alone.
  */
-export const moonboardWallBackdrop = '#E9DBA0';
+export const moonboardWallBackdrop = '#FAD201';
 
 /**
  * M3 surface-tint percentages for the elevation overlay (levels 1–5). The brand
