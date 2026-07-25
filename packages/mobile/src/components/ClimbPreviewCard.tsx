@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { ClimbListItemContent, type ClimbListItemClimb } from './ClimbListItemContent';
@@ -22,8 +23,13 @@ type ClimbPreviewCardProps = {
  * `ClimbListRow`, not here. The row sits transparent on the sheet's glass so it
  * stays cohesive with the action rows below; a hairline separator divides it from
  * them.
+ *
+ * Memoized: its host sheets subscribe to route info (`ClimbActionsSheet` reaches
+ * `useSegments` through `useCreateClimbNavigation`), so the sheet re-renders on every
+ * navigation in the app. Props here are the climb plus primitives, so a shallow compare
+ * keeps the board thumbnail out of that churn.
  */
-export function ClimbPreviewCard({ climb, boardName, layoutId, sizeId, setIds, angle }: ClimbPreviewCardProps) {
+function ClimbPreviewCardComponent({ climb, boardName, layoutId, sizeId, setIds, angle }: ClimbPreviewCardProps) {
   const { systemColors } = useTheme();
   return (
     <View>
@@ -41,3 +47,5 @@ export function ClimbPreviewCard({ climb, boardName, layoutId, sizeId, setIds, a
     </View>
   );
 }
+
+export const ClimbPreviewCard = memo(ClimbPreviewCardComponent);
