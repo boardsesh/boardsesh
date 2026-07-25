@@ -21,6 +21,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { roomManager, VersionConflictError } from '../services/room-manager';
 import { UPDATE_QUEUE_STATE_CAS_SCRIPT, CAS_ANY_VERSION, RedisSessionStore } from '../services/redis-session-store';
 import { queueMutations } from '../graphql/resolvers/queue/mutations';
+import { WriteScheduler, writeQueueStateToPostgres } from '../services/room-manager/write-scheduler';
+import { db } from '../db/client';
+import { sessionQueues } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { createMockRedis, type MockRedis } from './helpers/mock-redis';
 
@@ -92,6 +96,18 @@ function gateCasEval(mockRedis: MockRedis) {
 const registerAndJoinSession = async (clientId: string, sessionId: string, boardPath: string, username: string) => {
   await roomManager.registerClient(clientId);
   return roomManager.joinSession(clientId, sessionId, boardPath, username);
+};
+
+/**
+ * Join a session AND give it a durable `board_sessions` row. Plain
+ * `joinSession` only materialises the session in Redis/local state, but
+ * `board_session_queues` has an FK to `board_sessions` and
+ * `writeQueueStateToPostgres` skips sessions it can't find — so any test that
+ * touches the durable row needs this.
+ */
+const createDurableSession = async (clientId: string, sessionId: string, boardPath: string) => {
+  await roomManager.createDiscoverableSession(sessionId, boardPath, 'user-123', 37.7749, -122.4194, 'Test Session');
+  await registerAndJoinSession(clientId, sessionId, boardPath, 'User1');
 };
 
 const mockCtx = (connectionId: string, sessionId: string) => ({
@@ -272,7 +288,7 @@ describe('queue state atomicity (#3906)', () => {
   describe('dormant sessions keep their durable counters', () => {
     it('does not rewind the sequence when Redis has no hash but Postgres does', async () => {
       const sessionId = uuidv4();
-      await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+      await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
 
       // Advance the durable counters. `updateQueueStateImmediate` writes
       // straight through to Postgres, unlike the 30s-debounced normal path —
@@ -451,5 +467,48 @@ describe.skipIf(!redisAvailable)('queue CAS Lua script against real Redis (#3906
       previousStateHash: 'hash-one',
       previousStateHashOrdered: 'ordered-one',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Postgres snapshot monotonicity. Each backend instance debounces its own
+// pending-write map, so two instances flushing the same session race — the
+// durable row must keep the newer snapshot regardless of arrival order.
+// ---------------------------------------------------------------------------
+
+describe('debounced Postgres writes never rewind the durable snapshot (#3906)', () => {
+  let mockRedis: MockRedis;
+
+  beforeEach(async () => {
+    mockRedis = createMockRedis();
+    roomManager.reset();
+    await roomManager.initialize(mockRedis);
+  });
+
+  it('keeps the newer snapshot when an older flush lands last', async () => {
+    const sessionId = uuidv4();
+    await createDurableSession('client-1', sessionId, '/kilter/1/2/3/40');
+
+    const scheduler = new WriteScheduler();
+    const newer = [createTestClimb('newer-a'), createTestClimb('newer-b')];
+    const older = [createTestClimb('older')];
+
+    await writeQueueStateToPostgres(
+      sessionId,
+      { queue: newer, currentClimbQueueItem: null, version: 9, sequence: 9 },
+      scheduler,
+    );
+
+    // A straggler flush from another instance, carrying an older sequence.
+    await writeQueueStateToPostgres(
+      sessionId,
+      { queue: older, currentClimbQueueItem: null, version: 4, sequence: 4 },
+      scheduler,
+    );
+
+    const rows = await db.select().from(sessionQueues).where(eq(sessionQueues.sessionId, sessionId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].sequence).toBe(9);
+    expect(rows[0].queue).toHaveLength(2);
   });
 });

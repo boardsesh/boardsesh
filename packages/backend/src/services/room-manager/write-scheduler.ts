@@ -1,7 +1,7 @@
 import type { ClimbQueueItem } from '@boardsesh/shared-schema';
 import { db } from '../../db/client';
 import { sessions, sessionQueues } from '../../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { DistributedStateManager } from '../distributed-state';
 import { isForeignKeyViolation, type PendingWrite } from './types';
 import { logger } from '../../utils/logger';
@@ -265,6 +265,18 @@ export async function writeQueueStateToPostgres(
           sequence: state.sequence,
           updatedAt: now,
         },
+        // Never let an older snapshot overwrite a newer one. Each instance
+        // debounces its own `pendingWrites` map, so when a session is touched
+        // on two backend instances (a rolling deploy, or any multi-replica
+        // window) their 30s flushes race and the loser could rewind the
+        // durable row's counters. `sequence` is the right guard: it advances
+        // on every write path, and unlike `version` it has no historical
+        // divergence to trip over on rows that predate #3906.
+        //
+        // Raw `sql` because Drizzle's `setWhere` needs to reference the
+        // `excluded` pseudo-table, which the query builder has no typed
+        // representation for.
+        setWhere: sql`${sessionQueues.sequence} < excluded.sequence`,
       });
 
     await tx.update(sessions).set({ lastActivity: now }).where(eq(sessions.id, sessionId));
