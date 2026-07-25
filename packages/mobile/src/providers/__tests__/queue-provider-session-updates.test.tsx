@@ -1920,6 +1920,62 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-current']);
   });
 
+  it('skips the re-send when the throttled climb left the queue while the mutation was in flight', async () => {
+    const snapshots: Snapshot[] = [];
+    const alreadyQueued = makeQueueItem('item-1', 'climb-1');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([alreadyQueued], alreadyQueued), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    // Hold the mutation open so the removal below lands before it settles.
+    const inFlightSetCurrent = createDeferred<void>();
+    // The provider attaches its handler a tick later; keep node from flagging an
+    // unhandled rejection in the meantime.
+    inFlightSetCurrent.promise.catch(() => {});
+    queueMutations.setCurrentClimb.mockReturnValueOnce(inFlightSetCurrent.promise);
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([alreadyQueued], alreadyQueued);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+    queueMutations.addQueueItem.mockClear();
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('local-current', 'climb-local-current'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(2);
+    });
+
+    // Climber changes their mind and drops the climb before the throttle lands.
+    act(() => {
+      snapshots.at(-1)?.removeFromQueue('local-current');
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['item-1']);
+    });
+
+    await act(async () => {
+      inFlightSetCurrent.reject(makeRateLimitedError());
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    });
+    // Recovering the slot now would resurrect a climb the user just deleted.
+    expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
+    expect(queueStateCalls).toBe(0);
+  });
+
   it('toasts "slow down" rather than the generic failure when reorderQueue is rate-limited', async () => {
     const snapshots: Snapshot[] = [];
     const first = makeQueueItem('item-1', 'climb-1');
