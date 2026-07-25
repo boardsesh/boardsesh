@@ -14,6 +14,7 @@ import {
   DEFAULT_DAEMON_OPTIONS,
   resolveDaemonOptions,
   runDaemonLoop,
+  upstreamPlaylistSyncErrorMessage,
   type ResolvedDaemonOptions,
   type DaemonOptions,
 } from '@boardsesh/sync-runtime';
@@ -234,7 +235,7 @@ export class SyncRunner {
   private async runCycleForCredential(db: RunnerDb, cred: KilterCredentialRecord): Promise<void> {
     const accessToken = await this.refreshTokenFor(cred, db);
 
-    await syncKilterUserData({
+    const { skippedForeignCircuits } = await syncKilterUserData({
       db,
       userId: cred.userId,
       accessToken,
@@ -254,14 +255,28 @@ export class SyncRunner {
     // Success: advance BOTH clocks. last_sync_at is the user-facing "last
     // successful sync"; last_sync_attempt_at is the scheduler's fairness
     // clock (also advanced on failure). On a clean cycle they coincide.
+    //
+    // The cycle still counts as a success when circuits were skipped — logs,
+    // ratings and every other object type synced fine, and flipping the
+    // credential to 'error' would stop the daemon re-picking it. But we do
+    // write a user-facing sync_error: an empty playlist list with no
+    // explanation is indistinguishable from "I have no circuits", and this
+    // user has no way to know another Boardsesh account holds the same board
+    // login (#3526).
     const now = new Date();
+    const duplicateCircuitOwnerError = skippedForeignCircuits > 0 ? upstreamPlaylistSyncErrorMessage('Kilter') : null;
+    if (duplicateCircuitOwnerError) {
+      this.log(
+        `[KilterSyncRunner] User ${cred.userId}: ${skippedForeignCircuits} circuit(s) skipped — the Kilter account is linked to another Boardsesh user (see #3526)`,
+      );
+    }
     await db
       .update(auroraCredentials)
       .set({
         lastSyncAt: now,
         lastSyncAttemptAt: now,
         syncStatus: 'active',
-        syncError: null,
+        syncError: duplicateCircuitOwnerError,
         // Success clears the failure counters so backoff resets and the
         // observability field stops showing a stale error.
         consecutiveFailures: 0,

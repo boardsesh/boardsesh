@@ -1,14 +1,83 @@
 import { userSync } from '../api/user-sync-api';
 import { type SyncOptions, type UserSyncData, type AuroraBoardName, USER_TABLES } from '../api/types';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, ne, sql } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type postgres from 'postgres';
+import {
+  resolveUpstreamPlaylistWrite,
+  canWriteUpstreamPlaylist,
+  upstreamPlaylistSkipLogLine,
+} from '@boardsesh/sync-runtime';
+import { foreignPlaylistOwnerGuard, selectUpstreamPlaylistOwners } from '@boardsesh/db/queries';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { UNIFIED_TABLES } from '../db/table-select';
 import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
 import { formatDbError } from './db-error';
 import { applyAuroraAscents, applyAuroraBids } from './apply-user-logbook';
 
 const BATCH_SIZE = 100;
+
+/**
+ * The generic Drizzle shape `hasForeignOwnedCircuitPlaylists` accepts. Wider
+ * than this module's `DrizzleDb` (which pins the postgres-js driver) so the
+ * runner can hand over its own client without a cast.
+ */
+type OwnerQueryDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+
+/**
+ * Machine-stable marker on `SyncTableResult.skippedReason` for circuits refused
+ * because another Boardsesh user owns the playlist. The runner matches on it to
+ * decide whether to write a user-facing `sync_error`.
+ */
+export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = 'duplicate-board-account-link:circuits';
+
+/**
+ * Does any playlist mirroring one of THIS Aurora account's circuits belong to a
+ * different Boardsesh user?
+ *
+ * Drives the user-facing `sync_error`, and it is deliberately a STATE query
+ * rather than a count of what this cycle refused. Aurora's user sync is
+ * incremental — `syncUserData` sends per-table `last_synchronized_at` and
+ * advances the watermark even on a cycle where every circuit was refused — so a
+ * per-cycle counter reports the problem once and then silently clears itself on
+ * the next cycle, when Aurora returns no circuit rows at all. That would leave
+ * the second user back where they started: an empty playlist list and no
+ * explanation. Reading state instead means the message persists while the
+ * duplicate link persists, and disappears on its own once it's resolved.
+ *
+ * `board_circuits` is cumulative (upserted, never pruned) and keyed by the
+ * Aurora numeric user id, so it holds the account's full circuit set regardless
+ * of what arrived in this delta.
+ */
+export async function hasForeignOwnedCircuitPlaylists(
+  db: OwnerQueryDb,
+  boardName: AuroraBoardName,
+  auroraUserId: number,
+  nextAuthUserId: string,
+): Promise<boolean> {
+  const circuitsSchema = UNIFIED_TABLES.circuits;
+  const conflicting = await db
+    .select({ playlistId: playlistOwnership.playlistId })
+    .from(circuitsSchema)
+    .innerJoin(
+      playlists,
+      and(eq(playlists.auroraId, circuitsSchema.uuid), eq(playlists.boardType, circuitsSchema.boardType)),
+    )
+    .innerJoin(
+      playlistOwnership,
+      and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.role, 'owner')),
+    )
+    .where(
+      and(
+        eq(circuitsSchema.boardType, boardName),
+        eq(circuitsSchema.userId, auroraUserId),
+        ne(playlistOwnership.userId, nextAuthUserId),
+      ),
+    )
+    .limit(1);
+
+  return conflicting.length > 0;
+}
 
 async function processBatches<T>(
   data: T[],
@@ -31,7 +100,12 @@ type AuroraApiRow = Record<string, string>;
 
 type DrizzleDb = PostgresJsDatabase<Record<string, never>>;
 
-async function upsertTableData(
+/**
+ * Exported for unit tests: the circuits branch carries the duplicate-account
+ * ownership guard (#3526) and there is no other seam to drive it through
+ * without a live Aurora API.
+ */
+export async function upsertTableData(
   db: DrizzleDb,
   boardName: AuroraBoardName,
   tableName: string,
@@ -244,7 +318,42 @@ async function upsertTableData(
       });
 
       if (nextAuthUserId) {
+        // Who already owns the playlists behind these circuit uuids?
+        // `playlists_aurora_id_idx` is a GLOBAL unique index, so the
+        // `ON CONFLICT (aurora_id) DO UPDATE` below lands on whichever
+        // Boardsesh user's row got there first — and the ownership insert then
+        // hands this user an `owner` edge on it. That is how the 8 cross-linked
+        // tension playlists in prod were created (#3526 / #3541). Same
+        // partition-and-skip shape as the foreignAuroraIds guard in
+        // apply-user-logbook.ts.
+        const ownersByAuroraId = await selectUpstreamPlaylistOwners(
+          db,
+          playlists.auroraId,
+          data.map((item) => item.uuid).filter((uuid): uuid is string => typeof uuid === 'string'),
+        );
+        // Distinct circuit uuids, not items: a duplicated uuid in one payload
+        // must not inflate the count the log line and the result report.
+        const refusedCircuitUuids = new Set<string>();
+
         for (const item of data) {
+          const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
+          if (!canWriteUpstreamPlaylist(decision)) {
+            // Refuse the whole item — upsert, ownership grant AND the
+            // playlist_climbs replace below. Skipping only the upsert would
+            // still wipe the other user's climbs further down.
+            refusedCircuitUuids.add(item.uuid);
+            log(
+              upstreamPlaylistSkipLogLine({
+                syncTag: 'aurora-sync',
+                upstreamIdColumn: 'aurora_id',
+                upstreamId: item.uuid,
+                syncingUserId: nextAuthUserId,
+                decision,
+              }),
+            );
+            continue;
+          }
+
           const formattedColor = item.color ? `#${item.color}` : null;
 
           const [playlist] = await db
@@ -273,8 +382,18 @@ async function upsertTableData(
                 updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
                 auroraSyncedAt: new Date(),
               },
+              // SQL-level twin of the decision gate above, evaluated at
+              // statement time against the conflicting row — closes the window
+              // where two daemons syncing two Boardsesh users on the SAME
+              // Aurora account both read "no playlist yet" and both INSERT.
+              // Widened by #3539 (no cross-instance mutual exclusion). When it
+              // bites, DO UPDATE matches nothing and `.returning()` comes back
+              // empty, so the guard below skips the item.
+              setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
             })
             .returning({ id: playlists.id });
+
+          if (!playlist) continue;
 
           await db
             .insert(playlistOwnership)
@@ -305,7 +424,18 @@ async function upsertTableData(
             }
           }
         }
-        log(`  Synced ${data.length} circuits to playlists table`);
+        log(`  Synced ${data.length - refusedCircuitUuids.size} circuits to playlists table`);
+        if (refusedCircuitUuids.size > 0) {
+          // `synced` stays data.length: every row DID land in the `circuits`
+          // table above (that upsert is user-scoped by aurora_user_id and was
+          // never at risk). Only the playlists mirror was refused, and that's
+          // what `skipped` reports.
+          return {
+            synced: data.length,
+            skipped: refusedCircuitUuids.size,
+            skippedReason: DUPLICATE_CIRCUIT_OWNER_SKIP_REASON,
+          };
+        }
       }
       break;
     }

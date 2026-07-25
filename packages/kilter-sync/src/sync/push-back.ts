@@ -392,6 +392,23 @@ async function pushPendingCircuits(db: DrizzleDb, userId: string, _accessToken: 
 
   // Atomic back-fill — same data-integrity argument as ticks/ratings: a
   // partial back-fill would re-create the same circuit on Kilter next cycle.
+  //
+  // ⚠️ BEFORE UNSTUBBING THIS: read #3525. Stamping `kilter_id` onto a
+  // Boardsesh-ORIGIN playlist breaks the assumption applyCircuits' REMOVE
+  // branch rests on — that a row carrying a kilter_id came from Kilter and is
+  // fully reconstructable from the next PUT. Once this back-fill runs, a
+  // Kilter-side circuit delete hard-DELETEs a playlist the user built in
+  // Boardsesh, cascading its playlist_climbs, with no way to get it back. Same
+  // shape as the ratings hard-delete in #3525: an upstream-origin-only
+  // justification that stops being true the moment a local row adopts an
+  // upstream id. Settle the soft-detach (kilter_id := NULL) story there first.
+  //
+  // It also reaches #3526 from the other direction: two Boardsesh users on one
+  // Kilter account, the first pushes a playlist and gets a kilter_id, the
+  // second's pull then resolves that same circuit uuid. applyCircuits' owner
+  // guard refuses the adoption — asserted by the push-back landmine test in
+  // user-sync.test.ts — so the cross-link stays closed, but the second user
+  // silently gets no circuits and only the credential's sync_error says why.
   if (successful.length > 0) {
     await db.transaction(async (tx) => {
       await tx.execute(sql`

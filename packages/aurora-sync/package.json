@@ -65,6 +65,7 @@
     "@boardsesh/db": "*",
     "@boardsesh/location-sync": "*",
     "@boardsesh/shared-schema": "*",
+    "@boardsesh/sync-runtime": "*",
     "commander": "^14.0.3",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",

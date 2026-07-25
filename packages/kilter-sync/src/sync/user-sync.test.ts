@@ -44,7 +44,9 @@ function recomputedKeys(): Array<{ climbUuid: string; angle: number }> {
  */
 
 type CallRecord = {
-  kind: 'select' | 'delete' | 'execute' | 'insert' | 'update';
+  // `conflict` records the ON CONFLICT clause an insert was given, so a test
+  // can assert the ownership `setWhere` guard was attached.
+  kind: 'select' | 'delete' | 'execute' | 'insert' | 'update' | 'conflict';
   args: unknown[];
 };
 
@@ -1037,6 +1039,8 @@ describe('applyLogs — PR4 offset inference + edit guard', () => {
 // hand-fed select results, assert exact statement counts.
 // ---------------------------------------------------------------------------
 
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { foreignPlaylistOwnerGuard, buildUpstreamPlaylistOwnersQuery } from '@boardsesh/db/queries';
 import { applyCircuits, applyClimbRatings, sanitizeKilterRating } from './user-sync';
 
 describe('sanitizeKilterRating', () => {
@@ -1090,11 +1094,16 @@ function createRichTx(
         Object.assign(Promise.resolve(rows), {
           orderBy: (..._cols: unknown[]) => Promise.resolve(rows),
         });
+      // applyCircuits' owner lookup chains .leftJoin(...) before .where(...),
+      // so the join step has to return the same awaitable shape.
+      const source = {
+        where: (_cond: unknown) => orderable(next),
+        orderBy: (..._cols: unknown[]) => Promise.resolve(next),
+        leftJoin: (_table: unknown, _on: unknown) => source,
+        innerJoin: (_table: unknown, _on: unknown) => source,
+      };
       return {
-        from: (_table: unknown) => ({
-          where: (_cond: unknown) => orderable(next),
-          orderBy: (..._cols: unknown[]) => Promise.resolve(next),
-        }),
+        from: (_table: unknown) => source,
       };
     },
     delete(_table: unknown) {
@@ -1112,6 +1121,7 @@ function createRichTx(
           insertValues.push(rows);
           const conflictChain = {
             onConflictDoUpdate: (_args: unknown) => {
+              calls.push({ kind: 'conflict', args: [_args] });
               const ret = (_args2?: unknown) =>
                 Promise.resolve(returningQueue[returningIdx++] ?? [{ id: BigInt(insertValues.length) }]);
               const promise = Promise.resolve();
@@ -1332,8 +1342,9 @@ describe('applyCircuits — playlist upsert + diff-and-replace', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('REMOVE op deletes the playlist only when the user owns it (EXISTS subquery)', async () => {
-    const { tx, calls } = createRichTx();
+  it('REMOVE op deletes the playlist when the user is its sole owner (EXISTS subquery)', async () => {
+    // SELECT #1 = the owner lookup: this user, and only this user, owns it.
+    const { tx, calls } = createRichTx({ selectResults: [[{ upstreamId: 'circuit-X', ownerUserId: 'user-1' }]] });
     const ops: PowerSyncOp[] = [{ op_id: '1', op: 'REMOVE', object_type: 'circuits', object_id: 'circuit-X' }];
 
     await applyCircuits(tx as unknown as ApplyCircuitsTx, 'user-1', ops, [], new Map());
@@ -1351,9 +1362,10 @@ describe('applyCircuits — playlist upsert + diff-and-replace', () => {
   });
 
   it('PUT inserts a new playlist + ownership row + diff-applies its climbs', async () => {
-    // SELECT #1 = existing playlist_climbs for this playlist (empty: brand new).
+    // SELECT #1 = owner lookup (no playlist yet), #2 = existing
+    // playlist_climbs for this playlist (empty: brand new).
     const { tx, calls, insertValues } = createRichTx({
-      selectResults: [[]],
+      selectResults: [[], []],
       returningRows: [[{ id: BigInt(99) }]],
     });
 
@@ -1396,7 +1408,8 @@ describe('applyCircuits — playlist upsert + diff-and-replace', () => {
       { climbUuid: 'climb-B', angle: null, position: 1 },
     ];
     const { tx, calls } = createRichTx({
-      selectResults: [existing],
+      // SELECT #1 = owner lookup (ours), #2 = existing playlist_climbs.
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }], existing],
       returningRows: [[{ id: BigInt(99) }]],
     });
 
@@ -1434,7 +1447,8 @@ describe('applyCircuits — playlist upsert + diff-and-replace', () => {
       { climbUuid: 'climb-B', angle: 25, position: 1 },
     ];
     const { tx, calls } = createRichTx({
-      selectResults: [existing],
+      // SELECT #1 = owner lookup (ours), #2 = existing playlist_climbs.
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }], existing],
       returningRows: [[{ id: BigInt(99) }]],
     });
 
@@ -1461,5 +1475,365 @@ describe('applyCircuits — playlist upsert + diff-and-replace', () => {
       return (rows as Array<Record<string, unknown>>).some((r) => 'climbUuid' in r);
     });
     expect(climbsInsertCalls).toHaveLength(1);
+  });
+});
+
+/**
+ * #3526: one Kilter account linked to two Boardsesh accounts. `kilter_id` is a
+ * GLOBAL unique index, so user B's `ON CONFLICT (kilter_id) DO UPDATE` used to
+ * land on user A's playlist row — overwriting its name/description/visibility,
+ * wiping and re-inserting its climbs, and handing B an `owner` edge. From there
+ * a circuit delete on either Kilter stream destroyed the playlist for both.
+ */
+describe('applyCircuits — foreign-owner guard (#3526)', () => {
+  /** Every write applyCircuits can make. A refusal must produce none of them. */
+  const writeCalls = (calls: CallRecord[]) => calls.filter((c) => c.kind !== 'select' && c.kind !== 'conflict');
+
+  it('PUT on a circuit owned by ANOTHER Boardsesh user issues no insert, no update and no delete', async () => {
+    const logged: string[] = [];
+    const { tx, calls } = createRichTx({
+      // Owner lookup: circuit-1's playlist belongs to user-2.
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: 'user-2' }]],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Renamed By User 1' })],
+      [makeCircuitClimbPutOp({ circuit_uuid: 'circuit-1', climb_uuid: 'climb-A', position: 0 })],
+      aliasCacheFor(['climb-A']),
+      (msg) => logged.push(msg),
+    );
+
+    // All three write kinds, asserted separately — the upsert is only one of
+    // the ways this used to corrupt the other user's playlist. The ownership
+    // INSERT is what granted the second owner; the playlist_climbs DELETE is
+    // what wiped their climb list.
+    expect(calls.filter((c) => c.kind === 'insert')).toHaveLength(0);
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    expect(calls.filter((c) => c.kind === 'execute')).toHaveLength(0);
+    expect(writeCalls(calls)).toHaveLength(0);
+
+    expect(result.skippedForeignCircuits).toBe(1);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain('circuit-1');
+    expect(logged[0]).toContain('user-1');
+    expect(logged[0]).toContain('already owned by a different Boardsesh user');
+  });
+
+  it('PUT on an already cross-linked playlist this user co-owns is refused as ambiguous', async () => {
+    // The 44 legacy prod rows: two `owner` edges on one playlist. Neither
+    // co-owner may write it until a human resolves the duplicate accounts.
+    const logged: string[] = [];
+    const { tx, calls } = createRichTx({
+      selectResults: [
+        [
+          { upstreamId: 'circuit-1', ownerUserId: 'user-1' },
+          { upstreamId: 'circuit-1', ownerUserId: 'user-2' },
+        ],
+      ],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Liked Climbs' })],
+      [],
+      new Map(),
+      (msg) => logged.push(msg),
+    );
+
+    expect(writeCalls(calls)).toHaveLength(0);
+    expect(result.skippedForeignCircuits).toBe(1);
+    expect(logged[0]).toContain('two owners');
+  });
+
+  it('PUT still writes when the same user owns the playlist twice over (join fan-out)', async () => {
+    // A duplicated row from the join must read as `own`, not `ambiguous`.
+    const { tx, calls } = createRichTx({
+      selectResults: [
+        [
+          { upstreamId: 'circuit-1', ownerUserId: 'user-1' },
+          { upstreamId: 'circuit-1', ownerUserId: 'user-1' },
+        ],
+        [],
+      ],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Liked Climbs' })],
+      [],
+      new Map(),
+    );
+
+    expect(result.skippedForeignCircuits).toBe(0);
+    expect(calls.filter((c) => c.kind === 'insert').length).toBeGreaterThan(0);
+  });
+
+  it('REMOVE for a circuit owned by another user does not delete their playlist', async () => {
+    const logged: string[] = [];
+    const { tx, calls } = createRichTx({
+      selectResults: [[{ upstreamId: 'circuit-X', ownerUserId: 'user-2' }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [{ op_id: '1', op: 'REMOVE', object_type: 'circuits', object_id: 'circuit-X' }],
+      [],
+      new Map(),
+      (msg) => logged.push(msg),
+    );
+
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    expect(result.skippedForeignCircuits).toBe(1);
+    expect(logged).toHaveLength(1);
+  });
+
+  it('REMOVE on a co-owned playlist does not delete it for either owner', async () => {
+    // The pre-fix EXISTS guard passed for BOTH co-owners, so whichever user
+    // deleted the circuit on Kilter destroyed it for the other one too.
+    const logged: string[] = [];
+    const { tx, calls } = createRichTx({
+      selectResults: [
+        [
+          { upstreamId: 'circuit-X', ownerUserId: 'user-1' },
+          { upstreamId: 'circuit-X', ownerUserId: 'user-2' },
+        ],
+      ],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [{ op_id: '1', op: 'REMOVE', object_type: 'circuits', object_id: 'circuit-X' }],
+      [],
+      new Map(),
+      (msg) => logged.push(msg),
+    );
+
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    expect(result.skippedForeignCircuits).toBe(1);
+    expect(logged[0]).toContain('two owners');
+  });
+
+  it('REMOVE for a circuit we never had is skipped quietly (not a duplicate-account signal)', async () => {
+    const logged: string[] = [];
+    const { tx, calls } = createRichTx({ selectResults: [[]] });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [{ op_id: '1', op: 'REMOVE', object_type: 'circuits', object_id: 'circuit-gone' }],
+      [],
+      new Map(),
+      (msg) => logged.push(msg),
+    );
+
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    expect(result.skippedForeignCircuits).toBe(0);
+    expect(logged).toHaveLength(0);
+  });
+
+  it('claims an orphaned playlist that has no owner edge at all', async () => {
+    // LEFT join: the playlist row exists but every ownership row is gone.
+    // Claimable, not foreign.
+    const { tx, calls } = createRichTx({
+      selectResults: [[{ upstreamId: 'circuit-1', ownerUserId: null }], []],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Orphan' })],
+      [],
+      new Map(),
+    );
+
+    expect(result.skippedForeignCircuits).toBe(0);
+    const ownershipInsert = calls.find((c) => {
+      if (c.kind !== 'insert') return false;
+      const arg = c.args[0];
+      const rows = Array.isArray(arg) ? arg : [arg];
+      return (rows as Array<Record<string, unknown>>).some((r) => 'role' in r);
+    });
+    expect(ownershipInsert).toBeDefined();
+  });
+
+  it('counts every refused circuit in a mixed batch and writes only the owned one', async () => {
+    const logged: string[] = [];
+    const { tx } = createRichTx({
+      selectResults: [
+        [
+          { upstreamId: 'mine', ownerUserId: 'user-1' },
+          { upstreamId: 'theirs', ownerUserId: 'user-2' },
+          { upstreamId: 'shared', ownerUserId: 'user-1' },
+          { upstreamId: 'shared', ownerUserId: 'user-2' },
+        ],
+        [],
+      ],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [
+        makeCircuitPutOp({ circuit_uuid: 'mine', name: 'Mine' }),
+        makeCircuitPutOp({ circuit_uuid: 'theirs', name: 'Theirs' }),
+        makeCircuitPutOp({ circuit_uuid: 'shared', name: 'Shared' }),
+      ],
+      [],
+      new Map(),
+      (msg) => logged.push(msg),
+    );
+
+    expect(result.skippedForeignCircuits).toBe(2);
+    expect(logged).toHaveLength(2);
+  });
+
+  it('renders a correlated NOT EXISTS ownership guard for the ON CONFLICT clause', () => {
+    // The JS decision gate takes a consistent read inside the transaction, but
+    // two daemons syncing two Boardsesh users on the SAME Kilter account can
+    // both read "no playlist yet" and both INSERT — the loser's ON CONFLICT
+    // would adopt the winner's row. #3539 (no cross-instance mutual exclusion)
+    // widens that window, so the SQL-level guard is load-bearing. Render the
+    // production fragment rather than trusting the query builder.
+    const rendered = new PgDialect().sqlToQuery(foreignPlaylistOwnerGuard('user-b'));
+    expect(rendered.sql).toContain('not exists');
+    expect(rendered.sql).toContain('from "playlist_ownership"');
+    // Correlated to the CONFLICTING row, which is what makes it valid inside
+    // ON CONFLICT DO UPDATE … WHERE.
+    expect(rendered.sql).toContain('"playlist_ownership"."playlist_id" = "playlists"."id"');
+    expect(rendered.sql).toContain('"playlist_ownership"."user_id" <>');
+    expect(rendered.params).toContain('owner');
+    expect(rendered.params).toContain('user-b');
+  });
+
+  it('attaches that guard to the playlist upsert, not just to a helper nobody calls', async () => {
+    const { tx, calls } = createRichTx({
+      selectResults: [[], []],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Liked Climbs' })],
+      [],
+      new Map(),
+    );
+
+    const conflictClause = calls.find((c) => c.kind === 'conflict')?.args[0] as
+      | { target?: unknown; setWhere?: unknown }
+      | undefined;
+    expect(conflictClause).toBeDefined();
+    expect(conflictClause?.setWhere).toBeDefined();
+  });
+
+  it('still deletes when a PUT and a REMOVE for the same circuit arrive in one batch', async () => {
+    // The owner map is snapshotted before the loop, so the PUT's freshly
+    // created ownership edge has to be written back into it — otherwise the
+    // REMOVE reads a stale 'adopt', skips the delete, and leaves a row upstream
+    // has tombstoned. PowerSync never replays tombstones, so that divergence
+    // would be permanent.
+    const { tx, calls } = createRichTx({
+      // Owner lookup: nothing exists yet. Then the playlist_climbs read.
+      selectResults: [[], []],
+      returningRows: [[{ id: BigInt(99) }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [
+        makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Created then deleted' }),
+        { op_id: '2', op: 'REMOVE', object_type: 'circuits', object_id: 'circuit-1' },
+      ],
+      [],
+      new Map(),
+    );
+
+    // Exactly one delete: the playlists delete from the REMOVE. (The climbs
+    // diff short-circuits — incoming and existing are both empty.)
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(1);
+    expect(result.skippedForeignCircuits).toBe(0);
+  });
+
+  it('does not touch climbs or ownership when the SQL race guard suppresses the upsert', async () => {
+    // setWhere matched nothing → DO UPDATE was a no-op → .returning() is empty.
+    // The rest of the op must be abandoned, not run against an undefined id.
+    const { tx, calls } = createRichTx({
+      selectResults: [[], []],
+      returningRows: [[]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-1',
+      [makeCircuitPutOp({ circuit_uuid: 'circuit-1', name: 'Lost the race' })],
+      [makeCircuitClimbPutOp({ circuit_uuid: 'circuit-1', climb_uuid: 'climb-A', position: 0 })],
+      aliasCacheFor(['climb-A']),
+    );
+
+    // The playlist upsert itself fired; nothing after it did.
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    const ownershipOrClimbInserts = calls.filter((c) => {
+      if (c.kind !== 'insert') return false;
+      const arg = c.args[0];
+      const rows = Array.isArray(arg) ? arg : [arg];
+      return (rows as Array<Record<string, unknown>>).some((r) => 'role' in r || 'climbUuid' in r);
+    });
+    expect(ownershipOrClimbInserts).toHaveLength(0);
+    expect(result.skippedForeignCircuits).toBe(0);
+  });
+
+  it('renders the owner lookup with the role filter, LEFT JOIN and kilter_id column', () => {
+    // The transaction stub ignores SQL entirely, so without this the owner
+    // lookup — which decides every case above — would have no coverage:
+    // dropping `role = 'owner'` or swapping the join keeps every other test
+    // green.
+    const rendered = new PgDialect().sqlToQuery(
+      buildUpstreamPlaylistOwnersQuery(playlists.kilterId, ['circuit-1']).getSQL(),
+    );
+    expect(rendered.sql).toContain('from "playlists"');
+    expect(rendered.sql).toContain('left join "playlist_ownership"');
+    expect(rendered.sql).toContain('"playlist_ownership"."role" =');
+    expect(rendered.sql).toContain('"playlists"."kilter_id" in');
+    expect(rendered.params).toContain('owner');
+    expect(rendered.params).toContain('circuit-1');
+  });
+
+  it('refuses a Boardsesh-origin playlist that push-back stamped for the OTHER user (#3525 landmine)', async () => {
+    // pushPendingCircuits is stubbed behind pushNotWired today, but the moment
+    // it is wired it starts stamping kilter_id onto Boardsesh-ORIGIN playlists.
+    // Then user A pushes their hand-built playlist, Kilter hands back a
+    // circuit_uuid, and user B — same Kilter login — pulls that circuit. This
+    // asserts the guard holds for that direction too: B must not adopt, must
+    // not rename, must not wipe A's climbs, and must not be granted ownership
+    // of a playlist A built by hand.
+    const logged: string[] = [];
+    const { tx, calls } = createRichTx({
+      selectResults: [[{ upstreamId: 'pushed-circuit', ownerUserId: 'user-a' }]],
+      returningRows: [[{ id: BigInt(42) }]],
+    });
+
+    const result = await applyCircuits(
+      tx as unknown as ApplyCircuitsTx,
+      'user-b',
+      [makeCircuitPutOp({ circuit_uuid: 'pushed-circuit', name: "A's hand-built list" })],
+      [makeCircuitClimbPutOp({ circuit_uuid: 'pushed-circuit', climb_uuid: 'climb-A', position: 0 })],
+      aliasCacheFor(['climb-A']),
+      (msg) => logged.push(msg),
+    );
+
+    expect(writeCalls(calls)).toHaveLength(0);
+    expect(result.skippedForeignCircuits).toBe(1);
+    expect(logged[0]).toContain('already owned by a different Boardsesh user');
   });
 });

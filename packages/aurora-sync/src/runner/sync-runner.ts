@@ -4,7 +4,9 @@ import { eq, ne, and, or, isNotNull, sql } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema/auth';
 import { credentialBackoffMs, credentialRetryReadySql, selfHealStaleClimbStats } from '@boardsesh/db/queries';
-import { syncUserData } from '../sync/user-sync';
+import { upstreamPlaylistSyncErrorMessage } from '@boardsesh/sync-runtime';
+import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
 import {
   AURORA_LOCATION_BOARDS,
@@ -467,11 +469,40 @@ export class SyncRunner {
 
     await this.updateStoredToken(cred.userId, cred.boardType, token);
 
-    const { client } = this.getClient();
+    const { client, db } = this.getClient();
     this.log(`[SyncRunner] Syncing user ${cred.userId} for ${boardType}...`);
     await syncUserData(client, boardType, token, cred.auroraUserId, cred.userId, undefined, this.log.bind(this));
     const succeededAt = new Date();
-    await this.updateCredentialStatus(cred.userId, cred.boardType, 'active', null, succeededAt, {
+
+    // Circuits whose playlist belongs to another Boardsesh user get refused by
+    // the ownership guard in upsertTableData. The cycle still counts as a
+    // success — logs, bids and everything else synced fine, and flipping to
+    // 'error' would stop the daemon re-picking this credential. But surface it:
+    // an empty playlist list with no explanation is indistinguishable from "I
+    // have no circuits", and this user has no way to know another account holds
+    // the same board login (#3526).
+    //
+    // Asked as a STATE question, not "did this cycle refuse anything". Aurora's
+    // user sync is incremental, so a cycle where nothing changed upstream
+    // returns no circuit rows and would clear a per-cycle flag straight back to
+    // null — the message would flash once and vanish. This version persists
+    // while the duplicate link does, and clears itself when it's resolved.
+    const hasDuplicateCircuitOwner = await hasForeignOwnedCircuitPlaylists(
+      db,
+      boardType,
+      cred.auroraUserId,
+      cred.userId,
+    );
+    const duplicateCircuitOwnerError = hasDuplicateCircuitOwner
+      ? upstreamPlaylistSyncErrorMessage(formatBoardDisplayName(boardType))
+      : null;
+    if (duplicateCircuitOwnerError) {
+      this.log(
+        `[SyncRunner] User ${cred.userId}: circuits not syncing — the ${boardType} account is linked to another Boardsesh user who owns the playlists (see #3526)`,
+      );
+    }
+
+    await this.updateCredentialStatus(cred.userId, cred.boardType, 'active', duplicateCircuitOwnerError, succeededAt, {
       credentialFailureCount: 0,
       lastCredentialFailureAt: null,
       // Success advances the attempt clock too (they coincide on a clean

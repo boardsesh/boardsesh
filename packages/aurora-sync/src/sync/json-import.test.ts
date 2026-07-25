@@ -5,6 +5,7 @@ import {
   buildJsonImportAscentTickRow,
   exportAscentToAttempt,
   generateJsonImportAuroraId,
+  generateJsonImportCircuitAuroraId,
   importedPlaceholderConflictPolicy,
   isExportAscentActuallyAttempt,
   publishedClimbKey,
@@ -188,5 +189,39 @@ describe('publishedClimbKey (layout-aware skip list)', () => {
     expect(publishedClimbKey(1, 'Route A')).not.toBe(publishedClimbKey(1, 'Route B'));
     // The delimiter keeps numeric prefixes unambiguous (1 + ':1x' vs 11 + 'x').
     expect(publishedClimbKey(1, ':1x')).not.toBe(publishedClimbKey(11, 'x'));
+  });
+});
+
+describe('generateJsonImportCircuitAuroraId (#3526 / #3541)', () => {
+  const CIRCUIT = 'Warmups';
+  const CREATED_AT = '2022-02-05 08:48:20';
+
+  it('gives two different users different ids for an identical circuit', () => {
+    // The regression that matters. The original importer hashed only
+    // `${boardType}:${name}:${created_at}`, so two people importing a circuit
+    // with the same name and timestamp collided on the global
+    // `playlists_aurora_id_idx` — the second one adopted the first's playlist
+    // and took an `owner` edge on it. 36 such rows are still in prod.
+    const forUserA = generateJsonImportCircuitAuroraId('user-a', 'kilter', CIRCUIT, CREATED_AT);
+    const forUserB = generateJsonImportCircuitAuroraId('user-b', 'kilter', CIRCUIT, CREATED_AT);
+    expect(forUserA).not.toBe(forUserB);
+  });
+
+  it('is stable for the same user so a re-import updates in place', () => {
+    expect(generateJsonImportCircuitAuroraId('user-a', 'kilter', CIRCUIT, CREATED_AT)).toBe(
+      generateJsonImportCircuitAuroraId('user-a', 'kilter', CIRCUIT, CREATED_AT),
+    );
+  });
+
+  it('separates the same circuit name across boards', () => {
+    expect(generateJsonImportCircuitAuroraId('user-a', 'kilter', CIRCUIT, CREATED_AT)).not.toBe(
+      generateJsonImportCircuitAuroraId('user-a', 'tension', CIRCUIT, CREATED_AT),
+    );
+  });
+
+  it('keeps the json-import-circuit- prefix the existing prod rows carry', () => {
+    expect(generateJsonImportCircuitAuroraId('user-a', 'kilter', CIRCUIT, CREATED_AT)).toMatch(
+      /^json-import-circuit-[0-9a-f]{32}$/,
+    );
   });
 });

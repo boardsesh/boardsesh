@@ -1,4 +1,9 @@
-export { syncKilterUserData, type SyncKilterUserDataArgs } from './user-sync';
+export {
+  syncKilterUserData,
+  type SyncKilterUserDataArgs,
+  type SyncKilterUserDataResult,
+  type ApplyCircuitsResult,
+} from './user-sync';
 export { fingerprintFromHolds, type HoldTuple } from './fingerprint';
 export { pushKilterUserData, type PushBackArgs } from './push-back';
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import {
@@ -16,9 +16,19 @@ import {
   inferUserUtcOffsetSeconds,
   adoptionMatchScoreSeconds,
   MAX_USER_UTC_OFFSET_SECONDS,
+  foreignPlaylistOwnerGuard,
+  myPlaylistOwnerEdge,
+  selectUpstreamPlaylistOwners,
   type ClimbStatsKey,
   type TickTimeSample,
 } from '@boardsesh/db/queries';
+
+import {
+  resolveUpstreamPlaylistWrite,
+  canWriteUpstreamPlaylist,
+  upstreamPlaylistSkipLogLine,
+  type UpstreamPlaylistWriteDecision,
+} from '@boardsesh/sync-runtime';
 
 import { KILTER_BOARD_TYPE } from '../api/types';
 import { KilterApiError } from '../api/errors';
@@ -97,6 +107,11 @@ export type SyncKilterUserDataArgs = {
    * surfacing to the daemon's log.
    */
   log?: (msg: string) => void;
+};
+
+export type SyncKilterUserDataResult = {
+  /** @see ApplyCircuitsResult.skippedForeignCircuits */
+  skippedForeignCircuits: number;
 };
 
 /**
@@ -197,7 +212,7 @@ export async function syncKilterUserData({
   userId,
   accessToken,
   log = (msg) => console.warn(msg),
-}: SyncKilterUserDataArgs): Promise<void> {
+}: SyncKilterUserDataArgs): Promise<SyncKilterUserDataResult> {
   // Buffer ops by object_type so we can apply them in dependency order.
   // PowerSync delivers ops as a snapshot; each PUT carries the full row,
   // so we don't need to preserve the wire ordering — only the FK
@@ -345,7 +360,7 @@ export async function syncKilterUserData({
   }
   await primeAliasCache(db, aliasCache, circuitClimbUuids);
 
-  await db.transaction((tx) => applyCircuits(tx, userId, buffer.circuits, filteredCircuitClimbs, aliasCache));
+  return db.transaction((tx) => applyCircuits(tx, userId, buffer.circuits, filteredCircuitClimbs, aliasCache, log));
 }
 
 function extractLogClimbUuid(op: PowerSyncOp): string | undefined {
@@ -1078,13 +1093,39 @@ export async function applyClimbRatings(
     });
 }
 
+export type ApplyCircuitsResult = {
+  /**
+   * Circuits refused because their playlist belongs to another Boardsesh user
+   * (or is already cross-linked). Non-zero means one Kilter account is linked
+   * to two Boardsesh accounts; the runner turns it into a user-facing
+   * `sync_error` so the second user isn't left staring at an empty, silent
+   * playlist list.
+   */
+  skippedForeignCircuits: number;
+};
+
+/** Every circuit uuid this batch references, PUT (payload) or REMOVE (object_id). */
+function collectCircuitUuids(circuitOps: PowerSyncOp[]): string[] {
+  const uuids = new Set<string>();
+  for (const op of circuitOps) {
+    if (op.op === 'REMOVE') {
+      uuids.add(op.object_id);
+      continue;
+    }
+    const raw = op.data as RawCircuit | undefined;
+    if (raw?.circuit_uuid) uuids.add(raw.circuit_uuid);
+  }
+  return Array.from(uuids);
+}
+
 export async function applyCircuits(
   tx: DrizzleDb,
   userId: string,
   circuitOps: PowerSyncOp[],
   circuitClimbOps: PowerSyncOp[],
   aliasCache: Map<string, string>,
-): Promise<void> {
+  log: (message: string) => void = (msg) => console.warn(msg),
+): Promise<ApplyCircuitsResult> {
   // Group circuit_climbs by their parent circuit_uuid so we can diff
   // against the current playlist contents. REMOVE ops on circuit_climbs
   // are ignored — the full-snapshot diff below replaces the
@@ -1102,31 +1143,104 @@ export async function applyCircuits(
     list.push(raw);
   }
 
+  // One GLOBAL owner lookup for every circuit uuid this batch touches, PUTs
+  // and REMOVEs alike. Deliberately NOT user-scoped: `playlists_kilter_id_idx`
+  // is a global unique index, so a circuit uuid resolves to at most one
+  // playlist row table-wide and the whole point is to find out WHOSE. Without
+  // it the `ON CONFLICT (kilter_id) DO UPDATE` below silently lands on another
+  // Boardsesh user's playlist when one Kilter account is linked to two
+  // Boardsesh accounts, and the ownership insert then hands this user an
+  // `owner` edge on it (#3526). Same partition-and-skip shape applyLogs uses
+  // for foreignKilterIds.
+  const ownersByCircuitUuid = await selectUpstreamPlaylistOwners(
+    tx,
+    playlists.kilterId,
+    collectCircuitUuids(circuitOps),
+  );
+  // Distinct circuit uuids, not ops: a batch can carry several ops for one
+  // circuit, and counting each would inflate the number the runner logs.
+  const refusedCircuitUuids = new Set<string>();
+
+  const decisionFor = (circuitUuid: string): UpstreamPlaylistWriteDecision =>
+    resolveUpstreamPlaylistWrite(ownersByCircuitUuid.get(circuitUuid) ?? [], userId);
+
+  const refuse = (circuitUuid: string, decision: UpstreamPlaylistWriteDecision): void => {
+    refusedCircuitUuids.add(circuitUuid);
+    log(
+      upstreamPlaylistSkipLogLine({
+        syncTag: 'kilter-sync',
+        upstreamIdColumn: 'kilter_id',
+        upstreamId: circuitUuid,
+        syncingUserId: userId,
+        decision,
+      }),
+    );
+  };
+
   for (const op of circuitOps) {
     if (op.op === 'REMOVE') {
-      // Only delete the playlist when *this* user owns it. REMOVE ops
-      // don't carry the data payload, so the buffer-time user_uuid
-      // guard can't filter them — a server-side scope drift could
-      // otherwise send another user's REMOVE and we'd delete their
-      // playlist row (kilter_id is globally unique, so the WHERE
-      // alone would match the other user's playlist). The EXISTS
-      // subquery against playlist_ownership locks the delete to rows
-      // we have an ownership edge for.
+      // Sole-ownership gate. The EXISTS below only asks "do I have an
+      // ownership row", which passes for BOTH co-owners of an already
+      // cross-linked playlist — so either user's circuit delete would destroy
+      // the other's playlist (#3526, and the 44 legacy rows on #3541). Require
+      // `own`: exactly one owner, and it's us.
+      const decision = decisionFor(op.object_id);
+      if (decision !== 'own') {
+        if (decision !== 'adopt') refuse(op.object_id, decision);
+        // `adopt` here means we never had this playlist (nothing to delete) —
+        // not a duplicate-account situation, so it isn't counted or logged.
+        continue;
+      }
+      // Only delete the playlist when *this* user solely owns it. REMOVE ops
+      // don't carry the data payload, so the buffer-time user_uuid guard can't
+      // filter them — a server-side scope drift could otherwise send another
+      // user's REMOVE and we'd delete their playlist row (kilter_id is globally
+      // unique, so the WHERE alone would match it).
+      //
+      // Two correlated subqueries, both statement-time re-checks of what the
+      // `decision` gate above already read inside this transaction. They are
+      // the race guard: a concurrent claim landing between the owner SELECT and
+      // this DELETE must not let us destroy a row we don't solely own.
+      //   - exists(my owner edge): I still own it.
+      //   - foreignPlaylistOwnerGuard: nobody ELSE owns it. Without this half
+      //     the DELETE is strictly weaker than the upsert's guard — a
+      //     co-owner's freshly inserted edge wouldn't stop us cascading their
+      //     playlist_climbs away.
       await tx
         .delete(playlists)
         .where(
           and(
             eq(playlists.kilterId, op.object_id),
-            sql`EXISTS (SELECT 1 FROM ${playlistOwnership} WHERE ${playlistOwnership.playlistId} = ${playlists.id} AND ${playlistOwnership.userId} = ${userId})`,
+            exists(myPlaylistOwnerEdge(userId)),
+            foreignPlaylistOwnerGuard(userId),
           ),
         );
       // playlist_climbs + playlist_ownership cascade via FK on
       // playlist_id; nothing else to clean up here.
+      //
+      // Keep the in-memory owner map in step with what we just did. It was
+      // snapshotted before the loop, and one batch can legitimately carry both
+      // a PUT and a REMOVE for the same circuit_uuid (buffer.circuits preserves
+      // wire order and isn't deduped). Without this, a PUT-then-REMOVE pair
+      // would create the playlist and then read the stale 'adopt' decision on
+      // the REMOVE, skip the delete, and leave a row upstream has tombstoned —
+      // permanently, since PowerSync doesn't replay tombstones.
+      ownersByCircuitUuid.delete(op.object_id);
       continue;
     }
 
     const raw = op.data as RawCircuit | undefined;
     if (!raw) continue;
+
+    // Refuse the whole op — upsert, ownership grant AND the playlist_climbs
+    // replace below — when this circuit's playlist belongs to someone else, or
+    // is already cross-linked. Skipping only the upsert would still wipe the
+    // other user's climbs at the delete-and-reinsert further down.
+    const decision = decisionFor(raw.circuit_uuid);
+    if (!canWriteUpstreamPlaylist(decision)) {
+      refuse(raw.circuit_uuid, decision);
+      continue;
+    }
 
     const playlistUuid = randomUUID();
     const now = new Date();
@@ -1157,6 +1271,16 @@ export async function applyCircuits(
           kilterSyncedAt: now,
           updatedAt: now,
         },
+        // SQL-level twin of the `decision` gate above, evaluated at statement
+        // time against the conflicting row. Closes the window the JS check
+        // can't: two daemons syncing two Boardsesh users linked to the SAME
+        // Kilter account both read "no playlist yet", both INSERT, and the
+        // loser's ON CONFLICT adopts the winner's row. Widened by #3539 (no
+        // cross-instance mutual exclusion), so it is load-bearing until that
+        // lands. When it bites, DO UPDATE matches nothing, `.returning()` comes
+        // back empty and the `playlistId === undefined` guard below skips the
+        // op — the same outcome as the JS refusal, minus the log line.
+        setWhere: foreignPlaylistOwnerGuard(userId),
       })
       .returning({ id: playlists.id });
 
@@ -1164,8 +1288,16 @@ export async function applyCircuits(
     if (playlistId === undefined) continue;
 
     // Ensure ownership row exists. Idempotent: unique on
-    // (playlist_id, user_id) keeps repeated syncs safe.
+    // (playlist_id, user_id) keeps repeated syncs safe. Only reached once the
+    // decision gate cleared this circuit as unowned or ours — this insert is
+    // what handed a second Boardsesh user an `owner` edge in #3526.
     await tx.insert(playlistOwnership).values({ playlistId, userId, role: 'owner' }).onConflictDoNothing();
+
+    // Keep the snapshotted owner map in step: we now own this circuit's
+    // playlist. Matters when one batch carries a PUT and a later REMOVE for the
+    // same circuit_uuid — the REMOVE's sole-owner gate has to see the edge this
+    // PUT just created, or upstream's delete is silently dropped.
+    ownersByCircuitUuid.set(raw.circuit_uuid, [userId]);
 
     // Diff existing vs incoming so we only touch playlist_climbs when
     // the snapshot actually changed. Avoids the wipe-and-reinsert churn
@@ -1233,4 +1365,6 @@ export async function applyCircuits(
       }
     }
   }
+
+  return { skippedForeignCircuits: refusedCircuitUuids.size };
 }

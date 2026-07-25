@@ -14,7 +14,17 @@ import { fontGradeToDifficultyId } from '@boardsesh/board-config';
 import { LAYOUTS, HOLE_PLACEMENTS } from '@boardsesh/board-constants/product-sizes';
 import type { AuroraBoardName } from '@boardsesh/shared-schema';
 import { isNoMatchClimb, CLIMB_CHARACTERISTICS, convertQuality } from '@boardsesh/shared-schema';
-import { populateDenormalizedColumns, recomputeClimbStatsBulk, type ClimbStatsKey } from '@boardsesh/db/queries';
+import {
+  populateDenormalizedColumns,
+  recomputeClimbStatsBulk,
+  foreignPlaylistOwnerGuard,
+  type ClimbStatsKey,
+} from '@boardsesh/db/queries';
+import {
+  resolveUpstreamPlaylistWrite,
+  canWriteUpstreamPlaylist,
+  upstreamPlaylistSkipLogLine,
+} from '@boardsesh/sync-runtime';
 import { normalizeTimestamp } from './normalize-timestamp';
 
 // Re-exported so existing importers (`@boardsesh/aurora-sync/json-import`, and
@@ -171,6 +181,29 @@ export function generateJsonImportAuroraId(
     .digest('hex')
     .slice(0, 32);
   return `json-import-${hash}`;
+}
+
+/**
+ * Deterministic `playlists.aurora_id` for an imported circuit. USER-SCOPED, and
+ * that is the whole point: the original importer (8fe79f60d) hashed only
+ * `${boardType}:${name}:${created_at}`, so two people importing a circuit with
+ * the same name and creation timestamp collided on the global
+ * `playlists_aurora_id_idx` — the second importer's ON CONFLICT adopted the
+ * first's playlist and took an `owner` edge on it. 45cef340a added the user id;
+ * 36 cross-linked playlists from that window are still in prod (#3526/#3541).
+ * Never remove `userId` from this key.
+ */
+export function generateJsonImportCircuitAuroraId(
+  userId: string,
+  boardType: BoardType,
+  circuitName: string,
+  createdAt: string,
+): string {
+  const hash = createHash('sha256')
+    .update(`${userId}:${boardType}:${circuitName}:${createdAt}`)
+    .digest('hex')
+    .slice(0, 32);
+  return `json-import-circuit-${hash}`;
 }
 
 export type JsonImportTickRow = typeof boardseshTicks.$inferInsert;
@@ -1399,16 +1432,46 @@ export async function importJsonExportData(
       .map((name) => nameToUuid.get(name))
       .filter((uuid): uuid is string => uuid != null);
 
-    const circuitHash = createHash('sha256')
-      .update(`${userId}:${boardType}:${circuit.name}:${circuit.created_at}`)
-      .digest('hex')
-      .slice(0, 32);
-    const circuitAuroraId = `json-import-circuit-${circuitHash}`;
+    // The key is user-scoped (see generateJsonImportCircuitAuroraId), so two
+    // importers can no longer collide on the global `playlists_aurora_id_idx`.
+    // The ownership guard below is defence in depth for the same class of bug
+    // (#3526) — cheap, and the only thing standing between a future
+    // key-derivation change and a silent re-run of the 2026-03 incident.
+    const circuitAuroraId = generateJsonImportCircuitAuroraId(userId, boardType, circuit.name, circuit.created_at);
     const formattedColor = circuit.color ? `#${circuit.color}` : null;
     const circuitNow = new Date();
 
     try {
-      await db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx): Promise<'imported' | 'refused'> => {
+        const owners = await tx
+          .select({ ownerUserId: playlistOwnership.userId })
+          .from(playlists)
+          .innerJoin(
+            playlistOwnership,
+            and(eq(playlistOwnership.playlistId, playlists.id), eq(playlistOwnership.role, 'owner')),
+          )
+          .where(eq(playlists.auroraId, circuitAuroraId));
+
+        const decision = resolveUpstreamPlaylistWrite(
+          owners.map((row) => row.ownerUserId),
+          userId,
+        );
+        if (!canWriteUpstreamPlaylist(decision)) {
+          console.warn(
+            upstreamPlaylistSkipLogLine({
+              syncTag: 'aurora-import',
+              upstreamIdColumn: 'aurora_id',
+              upstreamId: circuitAuroraId,
+              syncingUserId: userId,
+              decision,
+            }),
+          );
+          // Not a throw: a refusal is an expected outcome, not an import
+          // failure, and the transaction has only read so far — there is
+          // nothing to roll back.
+          return 'refused';
+        }
+
         const [playlist] = await tx
           .insert(playlists)
           .values({
@@ -1435,8 +1498,16 @@ export async function importJsonExportData(
               updatedAt: circuitNow,
               auroraSyncedAt: circuitNow,
             },
+            // SQL-level twin of the decision gate above — see the identical
+            // guard on the aurora user-sync circuits upsert.
+            setWhere: foreignPlaylistOwnerGuard(userId),
           })
           .returning({ id: playlists.id });
+
+        // Empty when the ON CONFLICT guard suppressed the DO UPDATE (a
+        // concurrent claim won the race). Same outcome as the decision gate
+        // above, so it lands in the same bucket.
+        if (!playlist) return 'refused';
 
         await tx
           .insert(playlistOwnership)
@@ -1465,8 +1536,18 @@ export async function importJsonExportData(
             await tx.insert(playlistClimbs).values(climbValues.slice(i, i + BATCH_SIZE));
           }
         }
+
+        return 'imported';
       });
-      result.circuits.imported++;
+      // `skipped`, not `failed`: a refusal is a deliberate decision, already
+      // logged with full context by the guard. Telling the climber their import
+      // FAILED when we chose not to overwrite someone else's playlist would be
+      // wrong, and the UI renders all three counts.
+      if (outcome === 'refused') {
+        result.circuits.skipped++;
+      } else {
+        result.circuits.imported++;
+      }
     } catch (error) {
       console.error(`Failed to import circuit "${circuit.name}":`, error);
       result.circuits.failed++;

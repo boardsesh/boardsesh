@@ -29,15 +29,23 @@ type SyncRunnerPrivates = {
   getSyncHealthSnapshot: () => Promise<SyncHealthSnapshot>;
 };
 
-const { mockDecrypt, mockEncrypt, mockSignIn, mockSyncUserData, mockSyncSharedData, mockSyncAuroraBoardLocations } =
-  vi.hoisted(() => ({
-    mockDecrypt: vi.fn(),
-    mockEncrypt: vi.fn(),
-    mockSignIn: vi.fn(),
-    mockSyncUserData: vi.fn(),
-    mockSyncSharedData: vi.fn(),
-    mockSyncAuroraBoardLocations: vi.fn(),
-  }));
+const {
+  mockDecrypt,
+  mockEncrypt,
+  mockSignIn,
+  mockSyncUserData,
+  mockHasForeignOwnedCircuitPlaylists,
+  mockSyncSharedData,
+  mockSyncAuroraBoardLocations,
+} = vi.hoisted(() => ({
+  mockDecrypt: vi.fn(),
+  mockEncrypt: vi.fn(),
+  mockSignIn: vi.fn(),
+  mockSyncUserData: vi.fn(),
+  mockHasForeignOwnedCircuitPlaylists: vi.fn(),
+  mockSyncSharedData: vi.fn(),
+  mockSyncAuroraBoardLocations: vi.fn(),
+}));
 
 vi.mock('@boardsesh/crypto', () => ({
   decrypt: mockDecrypt,
@@ -46,6 +54,7 @@ vi.mock('@boardsesh/crypto', () => ({
 
 vi.mock('../sync/user-sync', () => ({
   syncUserData: mockSyncUserData,
+  hasForeignOwnedCircuitPlaylists: mockHasForeignOwnedCircuitPlaylists,
 }));
 
 vi.mock('../sync/shared-sync', () => ({
@@ -70,10 +79,12 @@ describe('SyncRunner login failure handling', () => {
     mockEncrypt.mockReset();
     mockSignIn.mockReset();
     mockSyncUserData.mockReset();
+    mockHasForeignOwnedCircuitPlaylists.mockReset();
 
     mockDecrypt.mockImplementation((value: string) => `decrypted-${value}`);
     mockEncrypt.mockReturnValue('encrypted-token');
-    mockSyncUserData.mockResolvedValue(undefined);
+    mockSyncUserData.mockResolvedValue({});
+    mockHasForeignOwnedCircuitPlaylists.mockResolvedValue(false);
     process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
   });
 
@@ -190,6 +201,75 @@ describe('SyncRunner login failure handling', () => {
       consecutiveFailures: 0,
       lastSyncError: null,
     });
+  });
+
+  it('surfaces a sync_error when circuits were skipped, without failing the cycle (#3526)', async () => {
+    // Only the circuits were refused — the Aurora account is linked to another
+    // Boardsesh user who owns the playlists. Everything else synced, so the
+    // credential stays 'active' (a failed status would stop the daemon
+    // re-picking it) but carries a user-facing message: an empty playlist list
+    // with no explanation reads as "I have no circuits".
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+    mockHasForeignOwnedCircuitPlaylists.mockResolvedValue(true);
+
+    await runnerPrivates.syncSingleCredential(createCredential());
+
+    const [, , status, errorMessage] = updateCredentialStatus.mock.calls[0];
+    expect(status).toBe('active');
+    expect(errorMessage).toContain('Decoy');
+    expect(errorMessage).toContain("circuits aren't syncing");
+  });
+
+  it('keeps the sync_error on a later cycle where Aurora returned no circuits at all (#3526)', async () => {
+    // Aurora's user sync is incremental: once the watermark has advanced, a
+    // cycle where nothing changed upstream carries no circuit rows. Deriving
+    // the flag from "what did this cycle refuse" would clear the message right
+    // back to null and leave the second user with a silent empty list again.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+    // No circuits in this delta at all...
+    mockSyncUserData.mockResolvedValue({ circuits: { synced: 0 } });
+    // ...but the duplicate link is still there in the data.
+    mockHasForeignOwnedCircuitPlaylists.mockResolvedValue(true);
+
+    await runnerPrivates.syncSingleCredential(createCredential());
+
+    const [, , , errorMessage] = updateCredentialStatus.mock.calls[0];
+    expect(errorMessage).toContain("circuits aren't syncing");
+  });
+
+  it('leaves sync_error null when circuits synced cleanly', async () => {
+    // Guards the undefined-equals-undefined trap: if the skippedReason
+    // comparison ever ran against an absent constant it would fire here.
+    const runner = new SyncRunner();
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    const updateCredentialStatus = vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+    mockSyncUserData.mockResolvedValue({ circuits: { synced: 3 } });
+    mockHasForeignOwnedCircuitPlaylists.mockResolvedValue(false);
+
+    await runnerPrivates.syncSingleCredential(createCredential());
+
+    const [, , status, errorMessage] = updateCredentialStatus.mock.calls[0];
+    expect(status).toBe('active');
+    expect(errorMessage).toBeNull();
   });
 
   it('does not increment credential failure counters for non-auth login errors', async () => {

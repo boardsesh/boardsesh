@@ -61,6 +61,7 @@
     "@boardsesh/queue-react": "*",
     "@boardsesh/queue-runtime": "*",
     "@boardsesh/shared-schema": "*",
+    "@boardsesh/sync-runtime": "*",
     "@boardsesh/velvet-tokens": "*",
     "@boardsesh/watch-pairing": "*",
     "@emoji-mart/data": "^1.2.1",

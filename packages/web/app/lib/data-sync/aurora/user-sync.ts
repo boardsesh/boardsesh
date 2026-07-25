@@ -6,8 +6,14 @@ import {
   type AuroraBoardName,
   USER_TABLES,
 } from '../../api-wrappers/aurora/types';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, asc } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import { foreignPlaylistOwnerGuard, selectUpstreamPlaylistOwners } from '@boardsesh/db/queries';
+import {
+  resolveUpstreamPlaylistWrite,
+  canWriteUpstreamPlaylist,
+  upstreamPlaylistSkipLogLine,
+} from '@boardsesh/sync-runtime';
 import { UNIFIED_TABLES } from '../../db/queries/util/table-select';
 import { auroraCredentials, playlists, playlistClimbs, playlistOwnership } from '../../db/schema';
 // Narrow subpath import (not the `./sync` barrel) so the web bundle doesn't
@@ -16,7 +22,17 @@ import { auroraCredentials, playlists, playlistClimbs, playlistOwnership } from 
 import { applyAuroraAscents, applyAuroraBids } from '@boardsesh/aurora-sync/apply-user-logbook';
 
 /**
- * Get NextAuth user ID from Aurora user ID
+ * Get NextAuth user ID from Aurora user ID.
+ *
+ * When one Aurora account is linked to two Boardsesh users this is inherently
+ * ambiguous — there is no "the" user. It used to be an unordered LIMIT 1, so
+ * the winner was whatever the planner handed back and could differ between
+ * calls; ordering by created_at at least makes it the ORIGINAL claimant every
+ * time. It is not a fix for the ambiguity: the ownership guard in the circuits
+ * branch below is what stops the wrong answer corrupting the other user's
+ * playlists (#3526). The real remedy is the duplicate-link rejection in
+ * `packages/backend/src/services/aurora-credentials.ts`, which blocks new
+ * duplicates at link time.
  */
 async function getNextAuthUserId(
   db: PgDatabase<PgQueryResultHKT, Record<string, unknown>>,
@@ -27,6 +43,7 @@ async function getNextAuthUserId(
     .select({ userId: auroraCredentials.userId })
     .from(auroraCredentials)
     .where(and(eq(auroraCredentials.boardType, boardName), eq(auroraCredentials.auroraUserId, auroraUserId)))
+    .orderBy(asc(auroraCredentials.createdAt), asc(auroraCredentials.userId))
     .limit(1);
 
   return result[0]?.userId || null;
@@ -197,6 +214,22 @@ async function upsertTableData(
 
     case 'circuits': {
       const circuitsSchema = UNIFIED_TABLES.circuits;
+      // Who already owns the playlists behind these circuit uuids?
+      // `playlists_aurora_id_idx` is a GLOBAL unique index, so the
+      // `ON CONFLICT (aurora_id) DO UPDATE` below lands on whichever Boardsesh
+      // user's row got there first, and the ownership insert then hands this
+      // user an `owner` edge on it. That is how the 8 cross-linked tension
+      // playlists in prod were created (#3526 / #3541), and this legacy proxy
+      // route is the third writer of that shape — the other two live in
+      // `@boardsesh/aurora-sync`. Same guard, same helper.
+      const ownersByAuroraId = nextAuthUserId
+        ? await selectUpstreamPlaylistOwners(
+            db,
+            playlists.auroraId,
+            data.map((item) => item.uuid).filter((uuid): uuid is string => typeof uuid === 'string'),
+          )
+        : new Map<string, string[]>();
+
       for (const item of data) {
         // 1. Write to unified circuits table
         await db
@@ -225,6 +258,23 @@ async function upsertTableData(
 
         // 2. Dual write to playlists table (only if NextAuth user exists)
         if (nextAuthUserId) {
+          const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
+          if (!canWriteUpstreamPlaylist(decision)) {
+            // Refuse the whole dual-write — upsert, ownership grant AND the
+            // playlist_climbs replace below. Skipping only the upsert would
+            // still wipe the other user's climbs further down.
+            console.warn(
+              upstreamPlaylistSkipLogLine({
+                syncTag: 'aurora-proxy',
+                upstreamIdColumn: 'aurora_id',
+                upstreamId: item.uuid,
+                syncingUserId: nextAuthUserId,
+                decision,
+              }),
+            );
+            continue;
+          }
+
           // Format color - Aurora uses hex without #, we store with #
           const formattedColor = item.color ? `#${item.color}` : null;
 
@@ -255,8 +305,15 @@ async function upsertTableData(
                 updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
                 auroraSyncedAt: new Date(),
               },
+              // SQL-level twin of the decision gate above, evaluated at
+              // statement time against the conflicting row.
+              setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
             })
             .returning({ id: playlists.id });
+
+          // Empty when the guard suppressed the DO UPDATE — abandon the item
+          // rather than dereferencing an undefined id.
+          if (!playlist) continue;
 
           // 3. Create ownership if not exists
           await db
