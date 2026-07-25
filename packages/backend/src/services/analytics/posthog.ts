@@ -26,6 +26,7 @@ const POSTHOG_FLUSH_INTERVAL_MS = 10_000;
 let posthogClient: PostHog | null = null;
 let initAttempted = false;
 let missingProjectKeyLogged = false;
+let nonProductionEnvironmentLogged = false;
 const loggedQueuedEvents = new Set<BackendAnalyticsEvent>();
 
 function readOptionalEnv(envName: string): string | null {
@@ -73,6 +74,30 @@ function getPosthogClient(): PostHog | null {
     }
     return null;
   }
+  // Only the production environment sends. Without this, a key present in ANY
+  // non-prod runtime — a Railway "shared variable" wired to a future preview/
+  // staging service, or a local .env with a real key — would silently pollute
+  // the prod PostHog project (#3814), the same class of bug #3808 fixed for
+  // Sentry (`isProductionSentryEnvironment()` gating `Sentry.init({ enabled })`
+  // in instrument.ts). Historically this backend has been safe only because
+  // branch-deploy.yml's PR-preview containers never set a PostHog key — that's
+  // an absence-of-key accident, not a gate, so it's fixed here regardless of
+  // whether any leak has actually been observed. Preview/staging backends
+  // already declare SENTRY_ENVIRONMENT=preview (#3808, branch-deploy.yml), and
+  // getAnalyticsEnvironment() falls back through that var, so this opt-out is
+  // free — no new env var or workflow change needed. Checked before
+  // initAttempted (like the missing-key branch above) so the decision isn't
+  // permanently cached the one time this function runs before env vars settle.
+  const resolvedEnvironment = getAnalyticsEnvironment();
+  if (resolvedEnvironment !== 'production') {
+    if (!nonProductionEnvironmentLogged) {
+      nonProductionEnvironmentLogged = true;
+      logger.info(
+        `[PostHog] Resolved environment '${resolvedEnvironment}' is not production; backend analytics disabled`,
+      );
+    }
+    return null;
+  }
   if (initAttempted) return null;
   initAttempted = true;
 
@@ -97,6 +122,16 @@ function getPosthogClient(): PostHog | null {
   return client;
 }
 
+// Deliberately its own resolution, not a reuse of @boardsesh/db/client/config's
+// isProductionSentryEnvironment()/resolveSentryEnvironment(): those are Sentry's
+// helpers, and this one checks POSTHOG_ENVIRONMENT first — a pre-existing degree
+// of freedom that lets PostHog's environment diverge from Sentry's if that's
+// ever needed (e.g. testing PostHog's environment tagging in isolation without
+// also flipping Sentry's). Collapsing this into the Sentry-named helper would
+// quietly remove that override. Falls back through SENTRY_ENVIRONMENT so
+// preview/staging backends (which already set that per #3808) get the
+// production opt-out below for free without a new var. Do NOT "simplify" this
+// by deleting the POSTHOG_ENVIRONMENT check or delegating to the Sentry helper.
 function getAnalyticsEnvironment(): string {
   return (
     readOptionalEnv('POSTHOG_ENVIRONMENT') ??

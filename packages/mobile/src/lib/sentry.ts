@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { installGlobalErrorCapture } from './global-error-capture';
+import { resolveAppEnvironment } from './app-environment';
 
 /**
  * Triage context attached to a reported error. Defined here (not in
@@ -21,21 +22,6 @@ const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
  * (TestFlight / internal) and production builds are both `!__DEV__`.
  */
 export const isSentryEnabled = !!sentryDsn && !__DEV__;
-
-/**
- * The Sentry `environment` for this build. Preview OTA bundles (the `pr-*`
- * channels) are published with EXPO_PUBLIC_SENTRY_ENVIRONMENT=preview
- * (mobile-ota-preview.yml) — the value is inlined into that JS bundle, so a
- * tester who switches to a pr channel reports `environment: preview` and their
- * crashes stay out of the production view. Store / production builds leave it
- * unset and default to 'production'. `environment` is init-only in this SDK
- * (there's no runtime setter), so it can't be derived from Updates.channel after
- * launch; the build-time env var is the equivalent signal. Exported as a pure
- * function so the mapping is unit-testable behind the isSentryEnabled init gate.
- */
-export function resolveSentryEnvironment(): string {
-  return process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT || 'production';
-}
 
 // @expo/ui's Android bottom sheet fires `sheetRef.partialExpand()` / `expand()`
 // fire-and-forget inside `snapToIndex` (community/bottom-sheet/BottomSheet.android.tsx).
@@ -78,8 +64,9 @@ if (isSentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
     // production for store/TestFlight bundles; 'preview' for pr-* OTA bundles so
-    // their crashes are filterable out of the prod view. See resolveSentryEnvironment.
-    environment: resolveSentryEnvironment(),
+    // their crashes are filterable out of the prod view. See resolveAppEnvironment
+    // (shared with PostHog — app-environment.ts).
+    environment: resolveAppEnvironment(),
     tracesSampleRate: 0.1,
     // Drop the benign @expo/ui Android sheet "No handler registered" unhandled rejection
     // (partialExpand/expand on a binary whose native layer predates the method). Scoped

@@ -88,10 +88,16 @@ describe('OtaUpdateTracker', () => {
       runtimeVersion: 'abcdef123456',
       createdAtIso: '2026-06-20T07:53:51.000Z',
     });
+    // ota_channel (#3814): previously stamped only on this one-off event, not as
+    // a super property, so pr-* preview traffic had no way to be identified on
+    // any OTHER event. Registering it here makes preview traffic filterable in
+    // its own right, independent of the environment super property
+    // (registerAppEnvironment, posthog-client.ts) which only says prod-vs-preview.
     expect(analytics.registerSuperProperties).toHaveBeenCalledWith({
       ota_update_id: 'a1b2c3d4-0000-0000-0000-000000000000',
       ota_is_embedded: false,
       ota_runtime_version: 'abcdef123456',
+      ota_channel: 'production',
     });
   });
 

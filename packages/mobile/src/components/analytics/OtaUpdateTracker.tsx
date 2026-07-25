@@ -76,6 +76,11 @@ export function OtaUpdateTracker(): null {
       ota_update_id: properties.updateId,
       ota_is_embedded: properties.isEmbeddedLaunch,
       ota_runtime_version: properties.runtimeVersion,
+      // Was previously stamped only on this one-off event, not as a super
+      // property, so pr-* preview traffic had no way to be identified on any
+      // OTHER event (#3814) — the environment super property (registerAppEnvironment,
+      // posthog-client.ts) covers prod-vs-preview; this covers WHICH preview.
+      ota_channel: properties.channel,
     });
   }, []);
 

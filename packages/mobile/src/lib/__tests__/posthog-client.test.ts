@@ -1,5 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
-import { MOBILE_USER_AGENT, registerMobileUserAgent, buildPostHogOptions } from '../posthog-client';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import {
+  MOBILE_USER_AGENT,
+  registerMobileUserAgent,
+  registerAppEnvironment,
+  buildPostHogOptions,
+} from '../posthog-client';
 
 // The whole point of MOBILE_USER_AGENT is to give mobile events a User-Agent that
 // PostHog's classifier reads as "Regular" rather than the bot it assigns to an
@@ -31,6 +36,41 @@ describe('registerMobileUserAgent', () => {
       throw new Error('boom');
     });
     expect(() => registerMobileUserAgent({ register })).not.toThrow();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+// #3814: without this, mobile PostHog events carried no environment tag at all,
+// so `pr-*` OTA preview traffic was indistinguishable from production in every
+// event but the once-per-launch OTA Update Status one.
+describe('registerAppEnvironment', () => {
+  const previous = process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT;
+  afterEach(() => {
+    if (previous === undefined) delete process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT;
+    else process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT = previous;
+  });
+
+  it("registers 'production' as the environment super property when unset", () => {
+    delete process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT;
+    const register = vi.fn();
+    registerAppEnvironment({ register });
+    expect(register).toHaveBeenCalledWith({ environment: 'production' });
+  });
+
+  it('registers the preview value published onto pr-* OTA bundles', () => {
+    process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT = 'preview';
+    const register = vi.fn();
+    registerAppEnvironment({ register });
+    expect(register).toHaveBeenCalledWith({ environment: 'preview' });
+  });
+
+  it('never throws and logs when register() fails (must not block analytics init)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const register = vi.fn(() => {
+      throw new Error('boom');
+    });
+    expect(() => registerAppEnvironment({ register })).not.toThrow();
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });

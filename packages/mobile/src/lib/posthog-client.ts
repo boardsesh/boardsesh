@@ -1,5 +1,6 @@
 import { PostHog, type PostHogOptions } from 'posthog-react-native';
 import { getAnalyticsBootstrapId } from './analytics-bootstrap-id';
+import { resolveAppEnvironment } from './app-environment';
 
 // PostHog flags events with an empty User-Agent as bots, and the RN SDK sends no
 // UA it stores — so without this, real mobile traffic hides behind the bot filter.
@@ -19,6 +20,23 @@ export function registerMobileUserAgent(client: Pick<PostHog, 'register'>): void
     });
   } catch (error) {
     if (__DEV__) console.warn('[analytics] failed to register $raw_user_agent super property', error);
+  }
+}
+
+// Registers the resolved app environment ('production' / 'preview', shared with
+// Sentry — see app-environment.ts) as a super property on every event. Without
+// this, mobile PostHog events carried no environment tag at all — `pr-*` OTA
+// preview traffic was indistinguishable from real production usage in every
+// event except the once-per-launch `OTA Update Status` event (#3814). Exported
+// like registerMobileUserAgent so the call site is unit-testable; same
+// best-effort contract (a failure here must never block analytics init).
+export function registerAppEnvironment(client: Pick<PostHog, 'register'>): void {
+  try {
+    void Promise.resolve(client.register({ environment: resolveAppEnvironment() })).catch((error: unknown) => {
+      if (__DEV__) console.warn('[analytics] failed to register environment super property', error);
+    });
+  } catch (error) {
+    if (__DEV__) console.warn('[analytics] failed to register environment super property', error);
   }
 }
 
@@ -80,6 +98,7 @@ export function getPostHogClient(): PostHog | null {
   const bootstrapDistinctId = getAnalyticsBootstrapId();
   client = new PostHog(apiKey, buildPostHogOptions(host, bootstrapDistinctId));
   registerMobileUserAgent(client);
+  registerAppEnvironment(client);
   return client;
 }
 

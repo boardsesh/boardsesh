@@ -150,7 +150,13 @@ APNS_PRODUCTION=true                 # true = production APNs (matches the app's
 # Optional server-side product analytics for Live Activity usage
 POSTHOG_PROJECT_KEY=phc_...          # Backend PostHog project key (preferred; falls back to NEXT_PUBLIC_POSTHOG_KEY)
 POSTHOG_HOST=https://us.i.posthog.com
-POSTHOG_ENVIRONMENT=production       # Defaults to SENTRY_ENVIRONMENT, then NODE_ENV, then development
+# getPosthogClient() only sends when the resolved environment is 'production' (#3814) —
+# a real backend PostHog project key is prod-only, so setting POSTHOG_ENVIRONMENT=production
+# here would send your local test events into the real prod project, indistinguishable
+# from Railway. Leave this UNSET for local testing (falls back to SENTRY_ENVIRONMENT, then
+# NODE_ENV, then 'development' — none of which is 'production' locally), or set it to
+# something else entirely, e.g. POSTHOG_ENVIRONMENT=local-dev, if you want to confirm
+# events would have sent by temporarily pointing POSTHOG_HOST at a non-prod project.
 ```
 
 When the backend starts, you should see:

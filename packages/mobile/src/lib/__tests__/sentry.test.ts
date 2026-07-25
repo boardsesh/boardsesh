@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ComponentType } from 'react';
 
 // Spy on the SDK so we can assert the disabled-build contract. Under vitest
@@ -27,36 +27,12 @@ import {
   setOtaSentryTags,
   wrapWithSentry,
   isSentryEnabled,
-  resolveSentryEnvironment,
   toSentryTag,
 } from '../sentry';
 
 describe('isSentryEnabled', () => {
   it('is false in dev / test (no DSN + __DEV__)', () => {
     expect(isSentryEnabled).toBe(false);
-  });
-});
-
-describe('resolveSentryEnvironment', () => {
-  const previous = process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT;
-  afterEach(() => {
-    if (previous === undefined) delete process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT;
-    else process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT = previous;
-  });
-
-  it("defaults to 'production' when EXPO_PUBLIC_SENTRY_ENVIRONMENT is unset", () => {
-    delete process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT;
-    expect(resolveSentryEnvironment()).toBe('production');
-  });
-
-  it("defaults to 'production' when EXPO_PUBLIC_SENTRY_ENVIRONMENT is empty", () => {
-    process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT = '';
-    expect(resolveSentryEnvironment()).toBe('production');
-  });
-
-  it('uses the preview value published onto pr-* OTA bundles', () => {
-    process.env.EXPO_PUBLIC_SENTRY_ENVIRONMENT = 'preview';
-    expect(resolveSentryEnvironment()).toBe('preview');
   });
 });
 
