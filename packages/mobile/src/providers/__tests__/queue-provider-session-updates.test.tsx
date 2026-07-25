@@ -3,6 +3,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect, type ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { isPlaylistPeekQueueItemUuid } from '@boardsesh/queue';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 
@@ -1890,6 +1891,68 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(queueMutations.addQueueItem).not.toHaveBeenCalled();
     expect(queueStateCalls).toBe(0);
     expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('item-2');
+  });
+
+  it('re-sends the queue add when a rate-limited nextClimb promoted a playlist peek', async () => {
+    const snapshots: Snapshot[] = [];
+    const activated = makeQueueItem('item-1', 'climb-1');
+    // Second playlist climb, deliberately NOT in the queue: at the queue tail
+    // nextClimb falls through to the playlist and offers it as a transient peek.
+    const peekClimb = makeQueueItem('peek-source', 'climb-2').climb;
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([activated], activated), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([activated], activated);
+      snapshots.at(-1)?.setPlaylistSuggestionSource({
+        playlistUuid: 'playlist-1',
+        activatedClimbUuid: activated.climb.uuid,
+        boardKey: 'kilter:1:10:1,2',
+        climbs: [activated.climb, peekClimb],
+      });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+      expect(snapshots.at(-1)?.playlistSuggestionSource?.climbs).toHaveLength(2);
+    });
+    queueMutations.addQueueItem.mockClear();
+    toast.showToast.mockClear();
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+
+    act(() => {
+      snapshots.at(-1)?.nextClimb();
+    });
+
+    // Swiping past the queue tail commits the peek: nextClimb turns it into a
+    // real queue item and passes shouldAddToQueue: true, so this pointer move
+    // carries a content change just like an activation from search does. It has
+    // to be recovered the same way — the promoted slot exists nowhere but here.
+    await waitFor(() => {
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
+    });
+    const [recoveredItem, recoveredPosition] = queueMutations.addQueueItem.mock.calls[0] as unknown as [
+      ClimbQueueItem,
+      number,
+    ];
+    expect(recoveredItem.climb.uuid).toBe('climb-2');
+    // The synthetic `playlist-peek:` uuid must never reach the wire (#2217's
+    // sibling constraint) — the committed item carries a fresh one.
+    expect(isPlaylistPeekQueueItemUuid(recoveredItem.uuid)).toBe(false);
+    // suggestion-origin is preserved so pruning still treats it as suggested.
+    expect(recoveredItem.suggested).toBe(true);
+    expect(recoveredPosition).toBe(1);
+    expect(snapshots.at(-1)?.state.currentClimbQueueItem?.climb.uuid).toBe('climb-2');
+    expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
   });
 
   it('reconciles when the re-sent queue add is throttled too', async () => {
