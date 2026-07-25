@@ -522,4 +522,81 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
       expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2', 'q3', 'q4']);
     });
   });
+
+  it('applies a later empty FullSync normally once the successful re-seed cleared the flag', async () => {
+    // The guard must not outlive its purpose. Once the re-seed lands, the .then
+    // clears the flag, so a SUBSEQUENT empty FullSync (the room really was
+    // emptied) is applied as usual instead of being skipped forever.
+    queueMutations.setQueue.mockReset();
+    queueMutations.setQueue.mockRejectedValueOnce(new Error('seed failed'));
+    queueMutations.setQueue.mockResolvedValue(undefined);
+
+    const snapshots = await renderWithLocalQueue(['q1', 'q2']);
+
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    // First empty FullSync: guarded, re-seed resolves, flag cleared in the .then.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'empty-hash') } });
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
+
+    // Second empty FullSync: the flag is gone, so it applies normally — the queue
+    // is now legitimately cleared, and no extra re-seed fires.
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(2, 'empty-hash-2') } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toEqual([]);
+    });
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('applies a non-empty FullSync (no skip, no re-seed) while the seed-failed flag is still set', async () => {
+    // isEmptyRoom narrowing: the guard fires ONLY for the empty room. With the
+    // flag set but the FullSync NON-empty, that FullSync is authoritative server
+    // state and must apply — dropping the isEmptyRoom check would wrongly skip it
+    // and re-seed on top of real server state.
+    queueMutations.setQueue.mockReset();
+    queueMutations.setQueue.mockRejectedValueOnce(new Error('seed failed'));
+    queueMutations.setQueue.mockResolvedValue(undefined);
+
+    const snapshots = await renderWithLocalQueue(['q1', 'q2']);
+
+    await act(async () => {
+      await snapshots.at(-1)?.startSession();
+    });
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    // No empty FullSync was delivered, so the seed-failed flag is still set when
+    // this non-empty FullSync lands.
+    act(() => {
+      queueUpdatesSink.next({
+        data: { queueUpdates: wireFullSync(1, 'server-hash', [wireItem('s1'), wireItem('s2'), wireItem('s3')]) },
+      });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['s1', 's2', 's3']);
+    });
+    // The FullSync won (server state applied) — the guard neither skipped it nor
+    // re-seeded. setQueue was called once only: the original failed seed.
+    expect(queueMutations.setQueue).toHaveBeenCalledTimes(1);
+    expect(analytics.track).not.toHaveBeenCalledWith('Queue Seed FullSync Guarded', expect.anything());
+  });
 });
