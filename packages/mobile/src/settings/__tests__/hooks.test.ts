@@ -37,6 +37,7 @@ describe('settings', () => {
       expect(getSetting('theme')).toBe('system');
       expect(getSetting('defaultBoardUuid')).toBeNull();
       expect(getSetting('syncEnabledBoards')).toEqual([]);
+      expect(getSetting('moonboardBackdrop')).toBe('gold');
     });
 
     it('returns stored value parsed from JSON', () => {
@@ -112,6 +113,7 @@ describe('settings', () => {
       expect(settings.notifyClimbComments).toBe(DEFAULT_SETTINGS.notifyClimbComments);
       expect(settings.defaultBoardUuid).toBe(DEFAULT_SETTINGS.defaultBoardUuid);
       expect(settings.syncEnabledBoards).toEqual(DEFAULT_SETTINGS.syncEnabledBoards);
+      expect(settings.moonboardBackdrop).toBe(DEFAULT_SETTINGS.moonboardBackdrop);
     });
 
     it('ignores invalid JSON entries and uses defaults', () => {
@@ -198,6 +200,11 @@ describe('settings', () => {
     it('roundtrips a string', () => {
       setSetting('theme', 'light');
       expect(getSetting('theme')).toBe('light');
+    });
+
+    it('roundtrips a MoonBoard backdrop preset', () => {
+      setSetting('moonboardBackdrop', 'neutral');
+      expect(getSetting('moonboardBackdrop')).toBe('neutral');
     });
 
     it('roundtrips an array', () => {

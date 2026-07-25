@@ -102,52 +102,82 @@ export const playDrawerMaterialTint = {
 } as const;
 
 /**
- * Fixed backdrop painted behind every MoonBoard render (LayeredClimbImage),
- * regardless of light/dark mode (issue #3885, and the older #1449). MoonBoard
- * board art (moonboard-bg.webp + the holdset webps) is a near-fully-transparent
- * schematic — grid labels and hold icons only, no filled wall behind them — so
- * without an explicit backdrop it shows whatever's behind the image stack. In
- * the play view that's the modal's themed system background (app/play.tsx),
- * which turns near-black in dark mode and swallows the pale/neutral-toned
- * holds.
+ * Backdrop painted behind every MoonBoard render (LayeredClimbImage), keyed by
+ * {@link MoonboardBackdropPreset} and light/dark mode (issue #3885, and the
+ * older #1449). MoonBoard board art (moonboard-bg.webp + the holdset webps)
+ * is a near-fully-transparent schematic — grid labels and hold icons only, no
+ * filled wall behind them — so without an explicit backdrop it shows
+ * whatever's behind the image stack. In the play view that's the modal's
+ * themed system background (app/play.tsx), which turns near-black in dark
+ * mode and swallows the pale/neutral-toned holds.
  *
- * Deliberately NOT keyed by colorScheme like `playDrawerMaterialTint` above:
- * MoonBoard panels are painted a real-world yellow, so a fixed tone reads as
- * the actual board in both modes rather than as a theme artifact — and it
- * keeps LayeredClimbImage (used everywhere a board renders: thumbnails,
- * discovery cards, the play view) free of a useTheme() dependency. Depicting
- * a compatible physical product's paint colour is fine (the same basis as
- * the board-art assets we already ship); no Moon branding/logo is used here.
+ * Depicting a compatible physical product's paint colour is fine (the same
+ * basis as the board-art assets we already ship); no Moon branding/logo is
+ * used here.
  *
- * Value: RAL 1023 "Traffic Yellow" (#FAD201), the RAL code Moon Climbing
- * lists for MoonBoard panels. Cross-checked against
+ * Base value (the `gold`/`classic` presets' light hex, and `classic`'s dark
+ * hex): RAL 1023 "Traffic Yellow" (#FAD201), the RAL code Moon Climbing lists
+ * for MoonBoard panels. Cross-checked against
  * packages/moonboard-ocr/src/__tests__/fixtures/moonboard-grid-reference.jpg
  * (Moon's own board-art reference graphic, in-repo) — sampling its plain
- * background pixels averages ~#EEDF50, the same "golden yellow" family
- * (hue ~54° vs RAL 1023's ~50°) but lighter/less saturated, consistent with
- * print/JPEG reproduction rather than raw paint. Went with the RAL value:
- * closer to the paint spec, and its hue sits slightly further from the
- * MoonBoard start-hold green (see below), which is the pairing that matters
- * most for on-screen contrast.
+ * background pixels averages ~#EEDF50, the same "golden yellow" family (hue
+ * ~54° vs RAL 1023's ~50°) but lighter/less saturated, consistent with
+ * print/JPEG reproduction rather than raw paint.
  *
  * Hold-state contrast (WCAG relative-luminance ratio, MOONBOARD_HOLD_STATES
- * displayColor in moonboard-config.ts) at this value:
- *   - hand (#4444FF): 4.06:1 — passes WCAG AA for large-scale graphics (3:1).
- *   - finish (#FF3333): 2.47:1 — below 3:1, readable but not high-contrast.
- *   - start (#44FF44): 1.09:1 — effectively unreadable stroke-on-backdrop.
- * The green pairing is not fixable by tuning this hex: green and yellow are
- * adjacent, similarly-bright hues, so WCAG contrast stays under ~1.35:1 for
- * ANY backdrop light/saturated enough to still read as "yellow" — reaching
- * even 3:1 needs a backdrop luminance dark enough to look olive/khaki, which
- * defeats the fix. Verified darkening/desaturating from RAL 1023 does not
- * help here and actively worsens hand/finish contrast (a lighter backdrop
- * has MORE headroom against both blue and red), so this value is the local
- * optimum, not a compromise pending further tuning. The real fix for the
- * green pairing is a fixed dark outline on hold markers (a renderer-level
+ * displayColor in moonboard-config.ts) is not fixable by backdrop tuning for
+ * every ring simultaneously: green and yellow are adjacent, similarly-bright
+ * hues, so the start ring (#44FF44) stays under ~1.35:1 contrast for ANY
+ * backdrop light/saturated enough to still read as "yellow" — reaching even
+ * 3:1 needs a backdrop luminance dark enough to look olive/khaki, which
+ * defeats the point of a yellow wall. This is true across every preset below
+ * (see the contrast table in PR #3899's description); the real fix for the
+ * green ring is a fixed dark outline on hold markers (a renderer-level
  * change, packages/board-renderer/core/src/renderer.rs) — out of scope here,
- * tracked as a follow-up rather than solved by backdrop colour alone.
+ * tracked as a follow-up (issue #3913) rather than solved by backdrop colour
+ * alone.
+ *
+ * Light vs. dark ARE deliberately different per preset (unlike the old
+ * single-value constant this replaced) — a comfort problem, not a taste one.
+ * `#FAD201` is a max-chroma field at ~103× the luminance of the dark-mode
+ * chrome (`#141218`) once it fills most of a dark screen: a disability-glare
+ * source for a dark-adapted eye. Light mode is glare-immune (bright
+ * surround), so it keeps the literal RAL value with the best ring headroom;
+ * dark mode's `gold` default (`#C0932E`) roughly halves that glare (103×→50×)
+ * and, as a second comfort lever, warms the hue off yellow's 555 nm luminance
+ * peak (91°→83°) so it reads as a warm painted wall rather than an electric
+ * glow — while still roughly doubling the two holds the backdrop exists to
+ * reveal (white plastic 1.20:1→2.30:1, the start ring 1.09:1→2.10:1).
+ * Precedent for a light/dark split: `playDrawerMaterialTint` above.
+ *
+ * The dark values below are hand-tuned per preset, not derived from the light
+ * value via `blendOpaque` — a pure blend toward the dark chrome can't warm
+ * the hue off the 555 nm peak (it stays at RAL's 91°), and that hue shift is
+ * a real, independently-useful comfort lever alongside luminance. Two
+ * hand-specified hexes per preset (rather than one derived from the other)
+ * is an accepted drift risk in exchange for that extra control.
  */
-export const moonboardWallBackdrop = '#FAD201';
+export type MoonboardBackdropPreset = 'classic' | 'gold' | 'dim' | 'neutral';
+
+/**
+ * Per-preset {light, dark} hex pairs. `neutral` is a genuine mid-grey FIELD —
+ * never "no backdrop" — because falling back to the theme surface reintroduces
+ * the exact #3885/#1449 pale-hold-swallow bug for the user who needs zero
+ * chroma (CVD, migraine/light sensitivity) AND visible holds. `#524E47` keeps
+ * white plastic at 6.74:1 and the start ring at 6.16:1 (both pass WCAG AA)
+ * while removing the yellow-green colour confound entirely.
+ */
+export const MOONBOARD_BACKDROP_PRESETS: Record<MoonboardBackdropPreset, { light: string; dark: string }> = {
+  gold: { light: '#FAD201', dark: '#C0932E' },
+  classic: { light: '#FAD201', dark: '#FAD201' },
+  dim: { light: '#E3B23C', dark: '#9E7F30' },
+  neutral: { light: '#E7E2D8', dark: '#524E47' },
+};
+
+/** Resolves a MoonBoard backdrop preset + color scheme to its hex value. */
+export function resolveMoonboardBackdrop(preset: MoonboardBackdropPreset, colorScheme: 'light' | 'dark'): string {
+  return MOONBOARD_BACKDROP_PRESETS[preset][colorScheme];
+}
 
 /**
  * M3 surface-tint percentages for the elevation overlay (levels 1–5). The brand

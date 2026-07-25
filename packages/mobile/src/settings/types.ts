@@ -1,3 +1,5 @@
+import type { MoonboardBackdropPreset } from '../theme/colors';
+
 export type AppSettings = {
   defaultBoardUuid: string | null;
   syncEnabledBoards: string[];
@@ -11,6 +13,12 @@ export type AppSettings = {
   notifyClimbComments: boolean;
   /** One-shot: the "kiosk setup lives on the big screen" hint has been seen on My gyms. */
   kioskHintSeen: boolean;
+  /**
+   * MoonBoard wall backdrop preset (More → Accessibility → MoonBoard wall).
+   * Stored as the preset key, not a hex, so `resolveMoonboardBackdrop` in
+   * theme/colors.ts can be retuned later with no migration.
+   */
+  moonboardBackdrop: MoonboardBackdropPreset;
 };
 
 export type SettingsKey = keyof AppSettings;

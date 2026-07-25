@@ -1,10 +1,31 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
-type ViewMockProps = { children?: ReactNode; testID?: string };
+type ViewMockProps = { children?: ReactNode; testID?: string; style?: unknown };
 const platform = vi.hoisted(() => ({ os: 'ios' as 'ios' | 'web' }));
+// Drives the react-native useColorScheme() mock below — tests flip this to
+// exercise both the light and dark backdrop resolution.
+const colorSchemeCtrl = vi.hoisted(() => ({ scheme: 'light' as 'light' | 'dark' }));
+
+// RN style props are arrays of objects (StyleSheet entries mixed with inline
+// overrides); flatten and pull backgroundColor so tests can assert on the
+// resolved MoonBoard backdrop color without a real style engine.
+function readBackgroundColor(style: unknown): string {
+  if (Array.isArray(style)) {
+    for (let index = style.length - 1; index >= 0; index -= 1) {
+      const color = readBackgroundColor(style[index]);
+      if (color) return color;
+    }
+    return '';
+  }
+  if (style != null && typeof style === 'object' && 'backgroundColor' in style) {
+    const { backgroundColor } = style as { backgroundColor?: unknown };
+    return typeof backgroundColor === 'string' ? backgroundColor : '';
+  }
+  return '';
+}
 
 vi.mock('react-native', () => ({
   Platform: {
@@ -12,12 +33,22 @@ vi.mock('react-native', () => ({
       return platform.os;
     },
   },
-  // theme/colors.ts (imported for moonboardWallBackdrop) computes
+  // theme/colors.ts (imported for resolveMoonboardBackdrop) computes
   // iosSystemColors at module-load time via PlatformColor — must be stubbed
   // or the import throws before any test body runs.
   PlatformColor: (colorName: string) => colorName,
-  View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
+  useColorScheme: () => colorSchemeCtrl.scheme,
+  View: ({ children, testID, style }: ViewMockProps) =>
+    createElement('div', { 'data-testid': testID, 'data-bg': readBackgroundColor(style) }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+}));
+
+// LayeredClimbImage reads the backdrop preset via useSetting('moonboardBackdrop')
+// (MMKV-backed) — mock the settings module directly rather than react-native-mmkv,
+// per the same "add `useSetting` to each mock" fix noted in the other backdrop tests.
+const settingsCtrl = vi.hoisted(() => ({ preset: 'gold' as 'classic' | 'gold' | 'dim' | 'neutral' }));
+vi.mock('../../settings', () => ({
+  useSetting: () => [settingsCtrl.preset, vi.fn()],
 }));
 
 vi.mock('expo-image', () => ({
@@ -126,10 +157,15 @@ describe('LayeredClimbImage', () => {
   });
 
   // MoonBoard board art (moonboard-bg + holdset webps) is a near-fully-transparent
-  // schematic with no filled wall behind it, so without a fixed backdrop dark-mode
+  // schematic with no filled wall behind it, so without a backdrop dark-mode
   // chrome shows through and swallows the holds (issue #3885, #1449).
   describe('MoonBoard backdrop (issue #3885)', () => {
-    it('paints the fixed backdrop layer for boardName="moonboard"', () => {
+    afterEach(() => {
+      settingsCtrl.preset = 'gold';
+      colorSchemeCtrl.scheme = 'light';
+    });
+
+    it('paints the backdrop layer for boardName="moonboard"', () => {
       const { container } = render(
         createElement(LayeredClimbImage, {
           overlayUri: null,
@@ -139,6 +175,52 @@ describe('LayeredClimbImage', () => {
       );
 
       expect(container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]')).toBeTruthy();
+    });
+
+    it('resolves gold+light (the default) to #FAD201', () => {
+      settingsCtrl.preset = 'gold';
+      colorSchemeCtrl.scheme = 'light';
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: [],
+          boardName: 'moonboard',
+        }),
+      );
+
+      const backdrop = container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]');
+      expect(backdrop?.getAttribute('data-bg')).toBe('#FAD201');
+    });
+
+    it('resolves gold+dark to the dimmed #C0932E, not the light-mode hex', () => {
+      settingsCtrl.preset = 'gold';
+      colorSchemeCtrl.scheme = 'dark';
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: [],
+          boardName: 'moonboard',
+        }),
+      );
+
+      const backdrop = container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]');
+      expect(backdrop?.getAttribute('data-bg')).toBe('#C0932E');
+    });
+
+    it('renders neutral+dark as the mid-grey field, not "no backdrop" (swallow-bug guard)', () => {
+      settingsCtrl.preset = 'neutral';
+      colorSchemeCtrl.scheme = 'dark';
+      const { container } = render(
+        createElement(LayeredClimbImage, {
+          overlayUri: null,
+          backgroundPaths: [],
+          boardName: 'moonboard',
+        }),
+      );
+
+      const backdrop = container.querySelector('[data-testid="layered-climb-image-moonboard-backdrop"]');
+      expect(backdrop).toBeTruthy();
+      expect(backdrop?.getAttribute('data-bg')).toBe('#524E47');
     });
 
     it('does not paint the backdrop for other boards', () => {

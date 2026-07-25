@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 // colors.ts touches Platform/PlatformColor at import; Android skips the iOS branch.
 vi.mock('react-native', () => ({ Platform: { OS: 'android' }, PlatformColor: (name: string) => name }));
 
-import { blendOpaque, withAlpha } from '../colors';
+import { blendOpaque, withAlpha, resolveMoonboardBackdrop, type MoonboardBackdropPreset } from '../colors';
 
 describe('withAlpha', () => {
   it('emits rgba() for hex input', () => {
@@ -33,5 +33,25 @@ describe('blendOpaque', () => {
 
   it('returns the background unchanged when an input is not hex', () => {
     expect(blendOpaque('rgba(0,0,0,1)', '#1F1A1B', 0.2)).toBe('#1F1A1B');
+  });
+});
+
+describe('resolveMoonboardBackdrop', () => {
+  // Every preset × colorScheme combination — exact hexes from the design spec
+  // (issue #3885 follow-up). `neutral` is a genuine mid-grey field, never
+  // "no backdrop", so its two values are covered here like every other preset.
+  const cases: Array<[MoonboardBackdropPreset, 'light' | 'dark', string]> = [
+    ['gold', 'light', '#FAD201'],
+    ['gold', 'dark', '#C0932E'],
+    ['classic', 'light', '#FAD201'],
+    ['classic', 'dark', '#FAD201'],
+    ['dim', 'light', '#E3B23C'],
+    ['dim', 'dark', '#9E7F30'],
+    ['neutral', 'light', '#E7E2D8'],
+    ['neutral', 'dark', '#524E47'],
+  ];
+
+  it.each(cases)('resolves %s + %s to %s', (preset, colorScheme, expectedHex) => {
+    expect(resolveMoonboardBackdrop(preset, colorScheme)).toBe(expectedHex);
   });
 });

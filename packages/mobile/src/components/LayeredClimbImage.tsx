@@ -1,20 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet, useColorScheme } from 'react-native';
 import { Image } from 'expo-image';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 import { useBoardArtVisible } from './board-art-visibility-context';
-import { moonboardWallBackdrop } from '../theme/colors';
+import { useSetting } from '../settings';
+import { resolveMoonboardBackdrop } from '../theme/colors';
 
 type LayeredClimbImageProps = {
   overlayUri: string | null;
   backgroundPaths: string[];
   /**
    * Which board is rendering. Only consumed to decide whether to paint the
-   * fixed MoonBoard wall backdrop (see `moonboardWallBackdrop` in
-   * theme/colors.ts for why it's theme-independent) — every other board
-   * renders unchanged. Optional so call sites (and tests) that don't care
-   * about the backdrop keep working.
+   * MoonBoard wall backdrop (see `resolveMoonboardBackdrop` in theme/colors.ts
+   * for the preset/light-dark resolution) — every other board renders
+   * unchanged. Optional so call sites (and tests) that don't care about the
+   * backdrop keep working.
    */
   boardName?: BoardName;
   /**
@@ -80,6 +81,24 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
 }: LayeredClimbImageProps) {
   const shouldShowEmptyFallback = backgroundPaths.length === 0 && missingBackgroundCount === 0;
   const isMoonBoard = boardName === 'moonboard';
+  // Single read point for the MoonBoard backdrop preset — covers every surface
+  // that renders a board (play view, thumbnails, discovery cards, accessory
+  // bar, kiosk, reaction menu, BLE cards) with no prop-threading. MMKV's
+  // useSetting is synchronous (no flash-of-default on cold open) and returns a
+  // reference-stable primitive string, safe inside this React.memo'd leaf.
+  // Deliberately NOT useTheme(): that's a big memoized object, exactly what
+  // this perf-sensitive virtualized-list leaf avoids — RN's provider-free
+  // useColorScheme() is correct here because the theme provider mirrors the
+  // user's in-app theme override into Appearance.setColorScheme (not just the
+  // OS setting), so useColorScheme() already reflects it.
+  const [backdropPreset] = useSetting('moonboardBackdrop');
+  // useColorScheme()'s type is 'light' | 'dark' | 'unspecified' | null | undefined
+  // (the extra Android-origin 'unspecified' isn't nullish) — treat anything but
+  // an explicit 'dark' as light, same default the theme provider itself falls
+  // back to.
+  const rawColorScheme = useColorScheme();
+  const colorScheme: 'light' | 'dark' = rawColorScheme === 'dark' ? 'dark' : 'light';
+  const backdropColor = resolveMoonboardBackdrop(backdropPreset, colorScheme);
   // Only relevant when overlayTestID is set (the play-drawer board): expose the
   // testID anchor on a marker that mounts AFTER the overlay image has actually
   // painted, not when the <Image> first mounts. expo-image reports "visible" to
@@ -114,7 +133,7 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       {/* MoonBoard's board-art webps (moonboard-bg + the holdset image) are a
           near-fully-transparent schematic — grid labels and hold icons only,
           no filled wall. Painted first so it sits behind every other layer;
-          see moonboardWallBackdrop for why this is theme-independent.
+          see resolveMoonboardBackdrop for the preset/light-dark resolution.
           This layer fills its immediate parent edge-to-edge (no contentFit
           awareness, unlike the <Image> layers below) — callers whose parent
           isn't sized to the board's real aspect ratio will see the backdrop
@@ -125,7 +144,10 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
           0.65 aspect — negligible at that size, left as-is; tracked in
           issue #3913). */}
       {isMoonBoard && (
-        <View testID="layered-climb-image-moonboard-backdrop" style={[styles.layer, styles.moonboardBackdrop]} />
+        <View
+          testID="layered-climb-image-moonboard-backdrop"
+          style={[styles.layer, { backgroundColor: backdropColor }]}
+        />
       )}
       {shouldShowEmptyFallback && (
         <View testID="layered-climb-image-empty-fallback" style={[styles.layer, styles.emptyLayer]} />
@@ -208,9 +230,6 @@ const styles = StyleSheet.create({
   },
   emptyLayer: {
     backgroundColor: 'rgba(120, 120, 128, 0.28)',
-  },
-  moonboardBackdrop: {
-    backgroundColor: moonboardWallBackdrop,
   },
   // Subtle list-only board scrim. Tunable: drop dimBackground if the filled
   // hold style already separates the climb on a given board / in light mode.

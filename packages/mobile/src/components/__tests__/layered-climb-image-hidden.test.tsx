@@ -7,12 +7,19 @@ type ViewMockProps = { children?: ReactNode; testID?: string };
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
-  // theme/colors.ts (imported by LayeredClimbImage for moonboardWallBackdrop)
+  // theme/colors.ts (imported by LayeredClimbImage for resolveMoonboardBackdrop)
   // computes iosSystemColors at module-load time via PlatformColor — must be
   // stubbed or the import throws before any test body runs.
   PlatformColor: (colorName: string) => colorName,
+  useColorScheme: () => 'light',
   View: ({ children, testID }: ViewMockProps) => createElement('div', { 'data-testid': testID }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles },
+}));
+
+// LayeredClimbImage reads the backdrop preset via useSetting('moonboardBackdrop')
+// (MMKV-backed) — mock the settings module directly rather than react-native-mmkv.
+vi.mock('../../settings', () => ({
+  useSetting: () => ['gold', vi.fn()],
 }));
 
 vi.mock('expo-image', () => ({

@@ -27,6 +27,9 @@ import { useActiveBoard } from '../../lib/graphql/use-active-board';
 import { useInfiniteSearchClimbs } from '../../lib/graphql/hooks/use-infinite-search-climbs';
 import { getBoardRenderData } from '../../lib/board-details';
 import { simulateCvd, type CvdType } from '../../lib/cvd-simulation';
+import { hapticSelection } from '../../lib/haptics';
+import { useSetting } from '../../settings';
+import { MOONBOARD_BACKDROP_PRESETS, type MoonboardBackdropPreset } from '../../theme/colors';
 import { OkhslColorPicker } from './OkhslColorPicker';
 import {
   DEFAULT_HOLD_COLOR_SIGNATURE,
@@ -123,6 +126,57 @@ function MarkerSwatch({
   );
 }
 
+// Table order from the design spec: default first, then progressively less
+// yellow.
+const MOONBOARD_BACKDROP_OPTIONS: MoonboardBackdropPreset[] = ['gold', 'classic', 'dim', 'neutral'];
+
+function labelForMoonboardBackdrop(t: TFunction<'common'>, preset: MoonboardBackdropPreset): string {
+  switch (preset) {
+    case 'gold':
+      return t('mobile.more.accessibility.wall.options.gold.label');
+    case 'classic':
+      return t('mobile.more.accessibility.wall.options.classic.label');
+    case 'dim':
+      return t('mobile.more.accessibility.wall.options.dim.label');
+    case 'neutral':
+      return t('mobile.more.accessibility.wall.options.neutral.label');
+  }
+}
+
+function descriptionForMoonboardBackdrop(t: TFunction<'common'>, preset: MoonboardBackdropPreset): string {
+  switch (preset) {
+    case 'gold':
+      return t('mobile.more.accessibility.wall.options.gold.description');
+    case 'classic':
+      return t('mobile.more.accessibility.wall.options.classic.description');
+    case 'dim':
+      return t('mobile.more.accessibility.wall.options.dim.description');
+    case 'neutral':
+      return t('mobile.more.accessibility.wall.options.neutral.description');
+  }
+}
+
+/**
+ * Two-tone swatch chip for a MoonBoard backdrop preset row: top half the
+ * preset's light-mode hex, bottom half its dark-mode hex, so the row shows
+ * both without needing the device's current theme. Mirrors MarkerSwatch's
+ * decorative-only accessibility treatment — the row itself carries the label.
+ */
+function MoonboardBackdropSwatch({ preset }: { preset: MoonboardBackdropPreset }) {
+  const { systemColors } = useTheme();
+  const { light, dark } = MOONBOARD_BACKDROP_PRESETS[preset];
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[styles.wallSwatch, { borderColor: systemColors.separator }]}
+    >
+      <View style={[styles.wallSwatchHalf, { backgroundColor: light }]} />
+      <View style={[styles.wallSwatchHalf, { backgroundColor: dark }]} />
+    </View>
+  );
+}
+
 export function AccessibilitySettingsScreen() {
   const { t } = useTranslation('common');
   const { systemColors } = useTheme();
@@ -144,6 +198,7 @@ export function AccessibilitySettingsScreen() {
   const [thicknessSheetOpen, setThicknessSheetOpen] = useState(false);
   const [sizeSheetOpen, setSizeSheetOpen] = useState(false);
   const [cvdMode, setCvdMode] = useState<CvdMode>('none');
+  const [moonboardBackdrop, setMoonboardBackdrop] = useSetting('moonboardBackdrop');
   // renderSignature is buildHoldRenderOverrideSignature(markerOverrides), so this
   // alone is equivalent to hasHoldMarkerOverrides(markerOverrides).
   const hasOverrides = renderSignature !== DEFAULT_HOLD_COLOR_SIGNATURE;
@@ -209,6 +264,14 @@ export function AccessibilitySettingsScreen() {
     [setRoleMarkerOverride],
   );
 
+  const handleSelectMoonboardBackdrop = useCallback(
+    (preset: MoonboardBackdropPreset) => {
+      hapticSelection();
+      setMoonboardBackdrop(preset);
+    },
+    [setMoonboardBackdrop],
+  );
+
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
@@ -241,6 +304,37 @@ export function AccessibilitySettingsScreen() {
           </View>
         </View>
       ) : null}
+
+      <View style={styles.section}>
+        <SectionHeader title={t('mobile.more.accessibility.wall.title')} />
+        <View style={[styles.card, { backgroundColor: systemColors.secondaryBackground }]}>
+          <View style={styles.cardPadded}>
+            <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.description}>
+              {t('mobile.more.accessibility.wall.subtitle')}
+            </Text>
+          </View>
+          {MOONBOARD_BACKDROP_OPTIONS.map((preset, index) => {
+            const selected = moonboardBackdrop === preset;
+            const label = labelForMoonboardBackdrop(t, preset);
+            return (
+              <ListRow
+                key={preset}
+                title={label}
+                subtitle={descriptionForMoonboardBackdrop(t, preset)}
+                accessibilityLabel={
+                  selected ? t('mobile.more.accessibility.wall.optionAccessibilitySelected', { label }) : label
+                }
+                leading={<MoonboardBackdropSwatch preset={preset} />}
+                trailing={selected ? <Icon name="check.small" size={20} color={systemColors.accent} /> : undefined}
+                showChevron={false}
+                showSeparator={index < MOONBOARD_BACKDROP_OPTIONS.length - 1}
+                haptic={false}
+                onPress={() => handleSelectMoonboardBackdrop(preset)}
+              />
+            );
+          })}
+        </View>
+      </View>
 
       <View style={styles.section}>
         <SectionHeader title={t('mobile.more.accessibility.cvd.title')} />
@@ -817,6 +911,18 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Rounded SQUARE (not the circular `swatch` above) — reads as a little wall
+  // swatch chip, not a hold marker.
+  wallSwatch: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  wallSwatchHalf: {
+    flex: 1,
   },
   pickerBody: {
     paddingHorizontal: spacing[4],
