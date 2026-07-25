@@ -353,6 +353,40 @@ describe('DELTA_UPDATE_CURRENT_CLIMB', () => {
     expect(result.currentClimbQueueItem?.uuid).toBe('new-climb');
   });
 
+  // #3868: a LOCAL re-dispatch of the ALREADY-current climb (re-asserting it to
+  // re-light a peer's wall, or the re-broadcast of a now-hydrated current) hits
+  // the same-uuid early return. It must still seed the correlationId so the echo
+  // of the mutation being sent for it is suppressed instead of re-applied.
+  it('seeds the correlationId when a local re-dispatch targets the already-current climb', () => {
+    const item = makeClimbQueueItem({ uuid: 'climb-1' });
+    const state = makeState({ currentClimbQueueItem: item, pendingCurrentClimbUpdates: [] });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: {
+        item,
+        correlationId: 'reassert-corr-1',
+      },
+    });
+    // The id is recorded so a later server echo with this correlationId is dropped...
+    expect(result.pendingCurrentClimbUpdates).toContain('reassert-corr-1');
+    // ...and nothing about the current climb (or queue) churns.
+    expect(result.currentClimbQueueItem).toBe(state.currentClimbQueueItem);
+    expect(result.queue).toBe(state.queue);
+  });
+
+  it('leaves state untouched for a local re-tap of the current climb with no correlationId', () => {
+    const item = makeClimbQueueItem({ uuid: 'climb-1' });
+    const state = makeState({ currentClimbQueueItem: item });
+
+    const result = queueReducer(state, {
+      type: 'DELTA_UPDATE_CURRENT_CLIMB',
+      payload: { item },
+    });
+    // No broadcast id ⇒ pure local no-op: same state reference back.
+    expect(result).toBe(state);
+  });
+
   // Issue #2217: a peer (or the local light bulb) activating a NEW climb should
   // slot it right after the current climb, pushing the current climb into
   // history — not append it to the end and jump the current pointer there.

@@ -338,6 +338,9 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
+    // Session teardown / switch: there's no party to re-broadcast a deferred
+    // hydrated current climb to, so drop the deferral (#3868).
+    if (!sessionId) pendingUnsyncedCurrentRef.current = null;
   }, [sessionId]);
 
   // showToast and t aren't stable callbacks — capture via refs so the WS
@@ -502,6 +505,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         }
         return true;
       }
+      // The authoritative snapshot resets the current climb — drop any deferred
+      // re-broadcast (#3868) so a late hydrate can't re-assert a climb the server
+      // no longer has as current.
+      pendingUnsyncedCurrentRef.current = null;
       dispatch({
         type: 'INITIAL_QUEUE_DATA',
         payload: {
@@ -838,10 +845,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // pendingUnsyncedCurrentRef. useQueueResolveClimbs then hydrates that slot via
   // DELTA_REPLACE_QUEUE_ITEM, which the reducer also writes onto the current
   // climb (new identity, real name/frames) — this effect re-runs on that change.
-  // Firing the real setCurrentClimb here is the only path that tells peers, late
-  // joiners, and a peer-held wall LED link (which follows THEIR local current,
-  // updated solely by our broadcast) to advance. Without it they stay on the old
-  // climb until the next navigation.
+  // Re-broadcasting here is the only path that tells peers, late joiners, and a
+  // peer-held wall LED link (which follows THEIR local current, updated solely by
+  // our broadcast) to advance. Without it they stay on the old climb until the
+  // next navigation.
   useEffect(() => {
     const pendingUuid = pendingUnsyncedCurrentRef.current;
     if (!pendingUuid) return;
@@ -857,23 +864,18 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // skip guard exactly (a still-unresolved item can't form a valid ClimbInput).
     if (!isClimbResolved(current.climb)) return;
 
-    // Hydrated while still current: broadcast the now-resolved climb. Fire once
-    // (clear before firing), track a fresh correlationId so the server echo is
-    // suppressed like any other of our own updates, and reuse the same failure
-    // handling as dispatchSetCurrent. Not session-gated — the shared coalescer's
-    // ensureReady no-ops in solo, matching dispatchSetCurrent. shouldAddToQueue
-    // is false: the slot is already in the queue.
-    pendingUnsyncedCurrentRef.current = null;
-    const correlationId = coordinator.generateCorrelationId();
-    coordinator.trackPendingMutation(correlationId);
-    mutations.setCurrentClimb(current, false, correlationId).catch(() => {
-      if (sessionIdRef.current) {
-        void resyncQueueAfterMutationFailure();
-      } else {
-        showToast(t('mobile.queue.actionFailed'), 'error');
-      }
-    });
-  }, [state.currentClimbQueueItem, coordinator, mutations, resyncQueueAfterMutationFailure, showToast, t]);
+    // Hydrated while still current: re-broadcast through the normal local path.
+    // dispatchSetCurrent dispatches a LOCAL DELTA_UPDATE_CURRENT_CLIMB with a
+    // fresh correlationId FIRST — for an already-current item that lands in the
+    // reducer's same-uuid branch, which now seeds the id into
+    // pendingCurrentClimbUpdates so the server echo of THIS re-broadcast is
+    // suppressed instead of re-applied. (A raw mutation with only
+    // trackPendingMutation would never seed the id, so the echo would apply
+    // unsuppressed and could revert a newer navigation.) It also clears the
+    // deferral ref, no-ops in solo via the shared coalescer, and reuses the same
+    // failure handling. shouldAddToQueue is false: the slot is already queued.
+    dispatchSetCurrent(current, false);
+  }, [state.currentClimbQueueItem, dispatchSetCurrent]);
 
   const setCurrentClimb = useCallback(
     (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => {

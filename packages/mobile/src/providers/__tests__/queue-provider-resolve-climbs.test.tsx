@@ -471,5 +471,100 @@ describe('QueueProvider self-healing resolve of partially-synced climbs (#2527)'
       });
       expect(queueMutations.setCurrentClimb).not.toHaveBeenCalled();
     });
+
+    it('suppresses the echo of its own re-broadcast (no current-climb churn)', async () => {
+      http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => {
+        if (variables.climbUuid === 'climb-thin' && variables.angle === 25) {
+          return { climb: makeClimb('climb-thin', 25, 'V5') };
+        }
+        return { climb: null };
+      });
+
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-thin', makeThinClimb('climb-thin')));
+      });
+      await waitFor(() => expect(queueMutations.setCurrentClimb).toHaveBeenCalledTimes(1));
+
+      // The re-broadcast carries a correlationId that the provider must have
+      // seeded into pendingCurrentClimbUpdates (via the reducer same-uuid branch).
+      const [broadcastItem, , correlationId] = queueMutations.setCurrentClimb.mock.calls.at(-1) as unknown as [
+        ClimbQueueItem,
+        boolean,
+        string,
+      ];
+      const currentBefore = snapshots.at(-1)?.state.currentClimbQueueItem;
+      expect(currentBefore?.uuid).toBe('q-thin');
+      expect(currentBefore?.climb.frames).toBe('p1r12');
+
+      // Deliver the server echo: same correlationId, a FRESH item reference, and a
+      // FOREIGN clientId — so only the correlationId guard (not the dead clientId
+      // fallback) can suppress it.
+      await act(async () => {
+        snapshots.at(-1)?.dispatch({
+          type: 'DELTA_UPDATE_CURRENT_CLIMB',
+          payload: {
+            item: { ...broadcastItem, climb: { ...broadcastItem.climb } },
+            isServerEvent: true,
+            serverCorrelationId: correlationId,
+            eventClientId: 'server-side-client',
+            myClientId: 'our-local-client',
+          },
+        });
+      });
+
+      // Suppressed → the current climb identity did not churn on the echo.
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem).toBe(currentBefore);
+    });
+
+    it('does not let a late deferred echo revert a newer navigation (revert race)', async () => {
+      http.request.mockImplementation(async (_query: string, variables: { climbUuid: string; angle: number }) => {
+        if (variables.climbUuid === 'climb-thin' && variables.angle === 25) {
+          return { climb: makeClimb('climb-thin', 25, 'V5') };
+        }
+        return { climb: null };
+      });
+
+      const snapshots = renderProvider();
+      await waitFor(() => expect(snapshots.at(-1)).toBeTruthy());
+
+      // 1) Advance onto the thin item; once it hydrates the effect re-broadcasts it.
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-thin', makeThinClimb('climb-thin')));
+      });
+      await waitFor(() => {
+        const calls = queueMutations.setCurrentClimb.mock.calls as unknown as Array<[ClimbQueueItem, boolean, string]>;
+        expect(calls.some(([broadcastItem]) => broadcastItem.uuid === 'q-thin')).toBe(true);
+      });
+      const thinCalls = queueMutations.setCurrentClimb.mock.calls as unknown as Array<
+        [ClimbQueueItem, boolean, string]
+      >;
+      const [thinItem, , thinCorrelationId] = thinCalls.find(([broadcastItem]) => broadcastItem.uuid === 'q-thin')!;
+
+      // 2) The user swipes to a fully-resolved climb X — current is now X.
+      await act(async () => {
+        snapshots.at(-1)?.setCurrentClimb(makeItem('q-x', makeClimb('climb-x', 25, 'V7')));
+      });
+      await waitFor(() => expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('q-x'));
+
+      // 3) q-thin's echo lands late (same correlationId, foreign clientId).
+      await act(async () => {
+        snapshots.at(-1)?.dispatch({
+          type: 'DELTA_UPDATE_CURRENT_CLIMB',
+          payload: {
+            item: { ...thinItem, climb: { ...thinItem.climb } },
+            isServerEvent: true,
+            serverCorrelationId: thinCorrelationId,
+            eventClientId: 'server-side-client',
+            myClientId: 'our-local-client',
+          },
+        });
+      });
+
+      // The late echo is suppressed — current stays X, never reverts to q-thin.
+      expect(snapshots.at(-1)?.state.currentClimbQueueItem?.uuid).toBe('q-x');
+    });
   });
 });

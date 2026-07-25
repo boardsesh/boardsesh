@@ -245,7 +245,20 @@ export function queueReducer<TSearchParams extends QueueSearchParams>(
       // board on every broadcast, even when the wall climb's uuid hasn't
       // changed — e.g. a member re-asserting the same climb to re-light the wall).
       if (!isServerEvent && item && state.currentClimbQueueItem?.uuid === item.uuid) {
-        return state;
+        // Nothing about the current climb changes, but when this local
+        // re-dispatch carries a correlationId a server mutation IS being sent for
+        // it (re-asserting the current climb to re-light a peer's wall, or the
+        // #3868 re-broadcast of a now-hydrated current). Record the id so the
+        // echoed CurrentClimbChanged is suppressed by the correlationId guard
+        // above instead of re-applied — an unsuppressed echo would revert a newer
+        // navigation back onto this climb. The seeding block below is unreachable
+        // from this early return, so seed here. No id ⇒ a pure local re-tap with
+        // no broadcast: leave state untouched.
+        if (!correlationId) return state;
+        return {
+          ...state,
+          pendingCurrentClimbUpdates: [...state.pendingCurrentClimbUpdates, correlationId].slice(-50),
+        };
       }
 
       let newQueue = state.queue;
