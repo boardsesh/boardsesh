@@ -225,12 +225,14 @@ if (isPlayerRoute(segments)) router.dismiss();
 router.push({ pathname: '/(tabs)/climbs/create', params });
 ```
 
-The precedent is `handleSwitchBoardFromDrawer` in `drawer-host-provider.tsx`, which does the
-same `router.dismiss()` → `router.push('/boards')` when the play drawer's board-mismatch
-overlay routes to the board picker. `useCreateClimbNavigation`
-(`src/components/create-climb/use-create-climb-navigation.ts`) is the shared version for
-remix/edit, and both entry points (the reaction menu's `useClimbActions`, the in-player
-`ClimbActionsSheet`) go through it.
+`handleSwitchBoardFromDrawer` in `drawer-host-provider.tsx` does the same
+`router.dismiss()` → `router.push('/boards')` when the play drawer's board-mismatch overlay
+routes to the board picker — but copy the shape, not the code: it is **ungated**, so on an
+iPad pane (where there is no `/play` route) it pops whatever is focused instead. The gated
+version is `useCreateClimbNavigation`
+(`src/components/create-climb/use-create-climb-navigation.ts`), and both remix/edit entry
+points (the reaction menu's `useClimbActions`, the in-player `ClimbActionsSheet`) go through
+it.
 
 Two things that are easy to get wrong:
 

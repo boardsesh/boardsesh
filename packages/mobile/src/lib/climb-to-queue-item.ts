@@ -74,14 +74,13 @@ export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; 
       name: climb.name,
       frames: climb.frames,
       setter_username: climb.setter_username,
-      // Ownership + draft state. `toClimbInput` sends all five on to party peers, and
-      // the climb-actions menu gates its owner-only Edit action on `userId` — but they
-      // were being stripped here, at the queue boundary, so a queued climb lost them.
-      userId: climb.userId,
-      description: climb.description,
-      mirrored: climb.mirrored,
-      is_draft: climb.is_draft,
-      published_at: climb.published_at,
+      // NOTE: userId / description / mirrored / is_draft / published_at are deliberately
+      // NOT carried here yet. `toClimbInput` would send them to party peers, but the
+      // subscription selection set (SUBSCRIPTION_CLIMB_FIELDS in lib/graphql/operations.ts,
+      // and web's CLIMB_FIELDS) doesn't select them, so peers would rebuild the climb
+      // without them and the next peer-side setQueue would write the gap back. Widening
+      // this boundary has to land together with both selection sets and
+      // `toClimbQueueItem` — see the follow-up issue.
       angle: climb.angle,
       ascensionist_count: climb.ascensionist_count,
       difficulty: climb.difficulty,

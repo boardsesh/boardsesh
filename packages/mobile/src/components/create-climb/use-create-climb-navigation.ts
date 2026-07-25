@@ -30,6 +30,11 @@ function boardParams(board: BoardConfig): Record<string, string> {
  * sheet, and on an iPad regular-width layout the player renders in the detail PANE
  * rather than the `/play` route. Neither has a modal to close, so gate the dismiss on
  * `isPlayerRoute` — otherwise we'd pop the wrong screen.
+ *
+ * The back-to-back `dismiss()` + `push()` is not a race: both enqueue onto expo-router's
+ * single `routingQueue` (`POP` then the navigate), so they drain in order. And `dismiss()`
+ * only enqueues — unlike `goBack()` it does not `assertIsReady()` — so an over-eager gate
+ * would pop a screen, never throw.
  */
 export function useCreateClimbNavigation() {
   const router = useRouter();

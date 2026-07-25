@@ -379,16 +379,16 @@ export function useCreateClimbScreen({
   // report, and the BLE auto-sender reads it to tell a board/layout "spill" from a
   // sendable climb. Omitting it left a freshly created climb board-less on the wire —
   // peers received a climb they couldn't place, and the presence row lost its board.
-  // Carry the create board plus the rest of the climb's identity so a just-saved climb
-  // is as complete a queue item as a searched one.
+  //
+  // Only fields `climbToQueueItem` actually forwards are set here; adding ones it
+  // strips (userId / description / mirrored / is_draft) would be dead weight until
+  // that boundary and both subscription selection sets widen together.
   const buildProvisionalClimb = useCallback(
     (uuid: string, frames: string): Climb => ({
       uuid,
       boardType: board.boardName,
       layoutId: board.layoutId,
-      userId: profile?.id ?? null,
       name: name.trim() || t('createClimbForm.draftBadge'),
-      description: withNoMatch(description, noMatch),
       frames,
       setter_username: profile?.displayName ?? '',
       angle: board.angle,
@@ -398,16 +398,14 @@ export function useCreateClimbScreen({
       stars: 0,
       difficulty_error: '0',
       benchmark_difficulty: null,
-      mirrored: false,
       is_no_match: noMatch,
-      is_draft: isDraft,
       userAscents: 0,
       userAttempts: 0,
       // The editor emits a single static frame (no multi-frame playback).
       framesCount: 1,
       framesPace: null,
     }),
-    [name, description, noMatch, isDraft, profile, board.angle, board.boardName, board.layoutId, t],
+    [name, noMatch, profile, board.angle, board.boardName, board.layoutId, t],
   );
 
   // Push the freshly saved climb into the queue as the current climb so the

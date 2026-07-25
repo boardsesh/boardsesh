@@ -4,15 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Guards the board identity a freshly created climb carries into the queue.
 //
-// `buildProvisionalClimb` used to omit boardType/layoutId (and most of the climb's
-// identity), so a just-saved climb — a remix, typically — round-tripped BOARD-LESS to
-// party peers via `toClimbInput` and into the board-presence report, and the owner-only
-// Edit action lost the `userId` it gates on.
+// `buildProvisionalClimb` used to omit boardType/layoutId, so a just-saved climb — a
+// remix, typically — round-tripped BOARD-LESS to party peers via `toClimbInput` and
+// into the board-presence report.
 //
 // The important part of this file: it runs the REAL `climbToQueueItem`. Every other
-// create-screen test mocks it as a pass-through, and that pass-through is exactly what
-// hid the second half of the bug — the queue boundary was silently stripping fields the
-// provisional climb did carry. Mock it here and this test proves nothing.
+// create-screen test mocks it as a pass-through, which would let this suite pass on a
+// provisional climb whose fields never actually survive the queue boundary. Mock it
+// here and these assertions prove nothing about what a peer receives.
 
 const cryptoMock = vi.hoisted(() => {
   let counter = 0;
@@ -142,16 +141,16 @@ describe('create-climb queue hand-off carries board identity', () => {
     expect(climb.frames).toBe('p1r12p2r13p3r14');
   });
 
-  it('carries ownership + draft state so the owner-only Edit action can gate on it', () => {
+  it('carries the setter and the no-match flag through the real boundary', () => {
     const { result } = renderHook(() => useCreateClimbScreen({ board: kilterBoard }));
 
     act(() => result.current.setName('Draft Project'));
+    act(() => result.current.setNoMatch(true));
     act(() => result.current.handleSetActive());
 
     const { climb } = lastQueuedItem();
-    expect(climb.userId).toBe('user-1');
-    expect(climb.is_draft).toBe(true);
     expect(climb.setter_username).toBe('Tester');
+    expect(climb.is_no_match).toBe(true);
   });
 
   it('survives toClimbInput with its board identity intact (the party-peer wire shape)', () => {
@@ -163,8 +162,6 @@ describe('create-climb queue hand-off carries board identity', () => {
     const input = toClimbInput(lastQueuedItem().climb);
     expect(input.boardType).toBe('kilter');
     expect(input.layoutId).toBe(8);
-    expect(input.userId).toBe('user-1');
-    expect(input.is_draft).toBe(true);
   });
 
   it('keeps the board identity after a save syncs the server uuid into the queue', async () => {
@@ -194,38 +191,46 @@ describe('create-climb queue hand-off carries board identity', () => {
   });
 });
 
-describe('climbToQueueItem field retention (the boundary that was stripping)', () => {
-  it('does not drop ownership / draft fields a climb already carries', () => {
-    // A direct guard on the queue boundary itself, independent of the create screen:
-    // these five were being stripped even when the source climb had them.
-    const source = {
-      uuid: 'climb-1',
-      boardType: 'tension',
-      layoutId: 9,
-      name: 'Peer Climb',
-      frames: 'p1r12',
-      setter_username: 'Someone',
-      userId: 'user-2',
-      description: 'crimpy',
-      mirrored: true,
-      is_draft: false,
-      published_at: '2026-07-01T00:00:00Z',
-      angle: 40,
-      ascensionist_count: 3,
-      difficulty: 'V5',
-      quality_average: '3.0',
-      stars: 3,
-      difficulty_error: '0',
-      benchmark_difficulty: null,
-    } as unknown as Climb;
+describe('climbToQueueItem board identity at the queue boundary', () => {
+  const peerClimb = {
+    uuid: 'climb-1',
+    boardType: 'tension',
+    layoutId: 9,
+    name: 'Peer Climb',
+    frames: 'p1r12',
+    setter_username: 'Someone',
+    userId: 'user-2',
+    description: 'crimpy',
+    mirrored: true,
+    is_draft: false,
+    published_at: '2026-07-01T00:00:00Z',
+    angle: 40,
+    ascensionist_count: 3,
+    difficulty: 'V5',
+    quality_average: '3.0',
+    stars: 3,
+    difficulty_error: '0',
+    benchmark_difficulty: null,
+  } as unknown as Climb;
 
-    const { climb } = climbToQueueItem(source);
-    expect(climb).toMatchObject({
-      userId: 'user-2',
-      description: 'crimpy',
-      mirrored: true,
-      is_draft: false,
-      published_at: '2026-07-01T00:00:00Z',
-    });
+  it('forwards the board a climb belongs to', () => {
+    const { climb } = climbToQueueItem(peerClimb);
+    expect(climb.boardType).toBe('tension');
+    expect(climb.layoutId).toBe(9);
+  });
+
+  // Pins the CURRENT contract, deliberately. These five are droppable here only
+  // because the subscription selection sets (SUBSCRIPTION_CLIMB_FIELDS, and web's
+  // CLIMB_FIELDS) don't select them either, so the local copy and the peer copy agree.
+  // Carrying them here alone would make a peer's rebuild disagree with the creator's
+  // and let the next peer-side setQueue write the gap back. When that follow-up lands,
+  // this expectation flips to `toMatchObject` — it is here so the boundary can't be
+  // widened by halves without someone reading this comment.
+  it('does not yet carry ownership / draft state (blocked on the subscription set)', () => {
+    const { climb } = climbToQueueItem(peerClimb);
+    expect(climb.userId).toBeUndefined();
+    expect(climb.description).toBeUndefined();
+    expect(climb.is_draft).toBeUndefined();
+    expect(climb.published_at).toBeUndefined();
   });
 });
