@@ -1874,6 +1874,41 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
   });
 
+  it('still shows the generic failure when a solo setCurrentClimb fails for any other reason', async () => {
+    const snapshots: Snapshot[] = [];
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(new Error('set current failed'));
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    await act(async () => {
+      await snapshots.at(-1)?.endSession();
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBeNull();
+    });
+    toast.showToast.mockClear();
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.setCurrentClimb(makeQueueItem('solo-current', 'climb-solo-current'));
+    });
+
+    // Routing solo through showQueueMutationErrorToast must not change what a
+    // plain failure looks like — only the rate-limited case gets new wording.
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+    });
+    expect(queueStateCalls).toBe(0);
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+  });
+
   it('resyncs when setQueue fails in a session', async () => {
     const snapshots: Snapshot[] = [];
     const serverCurrent = makeQueueItem('server-current', 'climb-server-current');
