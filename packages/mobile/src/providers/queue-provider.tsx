@@ -132,6 +132,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // the session's not-yet-updated boardPath can't drag the wall back off the
   // angle we just picked.
   const pendingLocalBoardPathRef = useRef<string | null>(null);
+  // Monotonic token so an in-flight setSessionBoardPath only clears the guard
+  // when it's still the latest — two overlapping calls carrying the SAME
+  // boardPath string can't be told apart by value, so a token is what keeps a
+  // rapid same-value toggle from clearing the ref while a later call is live.
+  const boardPathBroadcastTokenRef = useRef(0);
   const sessionUsers = sessionRuntimeState.users;
   const lastConnectedBoardSerial = sessionRuntimeState.lastConnectedBoardSerial;
   // Session-scoped "the current climb is lit on a wall" indicator. Flipped on by
@@ -449,11 +454,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // local change hasn't already superseded this one.
   const setSessionBoardPath = useCallback(
     async (boardPath: string) => {
+      const token = ++boardPathBroadcastTokenRef.current;
       pendingLocalBoardPathRef.current = boardPath;
       try {
         return await mutations.setSessionBoardPath(boardPath);
       } finally {
-        if (pendingLocalBoardPathRef.current === boardPath) pendingLocalBoardPathRef.current = null;
+        // Clear only if a newer broadcast hasn't superseded us (token match) —
+        // robust against two overlapping calls with the same boardPath.
+        if (boardPathBroadcastTokenRef.current === token) pendingLocalBoardPathRef.current = null;
       }
     },
     [mutations],

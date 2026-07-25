@@ -215,6 +215,7 @@ export function useSessionRealtime({
       setSessionRuntimeState(createEmptySessionRuntimeState());
       setIsSessionWallLit(false);
       joinTracker.reset();
+      pendingLocalBoardPathRef.current = null;
       queueSyncGateRef.current = null;
       restartJoinedSubscriptionsRef.current = null;
       return;
@@ -818,6 +819,10 @@ export function useSessionRealtime({
       setParticipantId(null);
       participantIdRef.current = null;
       joinTracker.reset();
+      // Drop any pending board-path guard from the outgoing session: if its
+      // setSessionBoardPath hung on a wedged socket during an A→B switch, a stale
+      // ref would otherwise suppress every snapshot angle-follow in session B.
+      pendingLocalBoardPathRef.current = null;
     };
   }, [sessionId, coordinator, ensureJoined, joinTracker, authTransportRevision]);
 
