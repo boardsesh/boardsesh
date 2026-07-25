@@ -86,4 +86,21 @@ describe('BoardDiscoveryCard', () => {
     // thumb-variant background + small overlay instead of a full-res decode.
     expect(boardImageProps.last?.renderWidth).toBe(400);
   });
+
+  // Regression for the paired QA review on issue #3885's fix: the discovery
+  // card used to hand BoardImageNative a flat width:'100%'/height:'100%' style,
+  // which overrides its internal aspectRatio and stretches the art to fill the
+  // square 168×168 thumb — for MoonBoard's new opaque wall backdrop that read as
+  // a plain yellow square instead of a letterboxed board. The style must fit the
+  // board's real aspect ratio inside the square cell instead.
+  it('fits the board art to its real aspect ratio instead of stretching to the square thumb', () => {
+    render(createElement(BoardDiscoveryCard, { item, onPress: vi.fn() }));
+
+    const style = boardImageProps.last?.style as { width?: number; height?: number } | undefined;
+    // Mocked getBoardRenderData returns 1461x1144 (aspect ~1.277): width pins to
+    // the 168px cell, height shrinks below it — not a stretched 168x168 square.
+    expect(style?.width).toBe(168);
+    expect(style?.height).toBeCloseTo(168 / (1461 / 1144), 2);
+    expect(style?.height).not.toBe(168);
+  });
 });

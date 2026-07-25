@@ -62,6 +62,19 @@ export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
     [item.boardName, item.layoutId, item.sizeId, item.setIds],
   );
 
+  // Board art isn't square; fit it inside the square thumb at its native aspect
+  // (passing height:'100%' would override BoardImageNative's aspectRatio and
+  // stretch it — for MoonBoard that also stretched the wall backdrop into a flat
+  // yellow square instead of a letterboxed board, see issue #3885). Same pattern
+  // as BoardManageRow's thumbFit.
+  const thumbFit = useMemo(() => {
+    if (!render) return null;
+    const aspect = render.boardWidth / render.boardHeight;
+    return aspect >= 1
+      ? { width: DISCOVERY_CARD_WIDTH, height: DISCOVERY_CARD_WIDTH / aspect }
+      : { width: DISCOVERY_CARD_WIDTH * aspect, height: DISCOVERY_CARD_WIDTH };
+  }, [render]);
+
   const thumbStyle = {
     backgroundColor: systemColors.tertiaryBackground,
     borderColor: item.isActive ? brandColors.primary : systemColors.separator,
@@ -80,7 +93,7 @@ export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
       style={[animatedStyle, styles.container]}
     >
       <View testID="board-card" style={[styles.thumb, thumbStyle]}>
-        {render ? (
+        {render && thumbFit ? (
           <BoardImageNative
             frames=""
             boardName={item.boardName}
@@ -96,7 +109,7 @@ export function BoardDiscoveryCard({ item, onPress }: BoardDiscoveryCardProps) {
             // picker. Matches ClimbListThumbnail's renderWidth so the thumb
             // background and overlay cache entries are shared across surfaces.
             renderWidth={400}
-            style={styles.boardImage}
+            style={thumbFit}
           />
         ) : (
           <View style={styles.thumbFallback}>
@@ -144,10 +157,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing[2],
-  },
-  boardImage: {
-    width: '100%',
-    height: '100%',
   },
   thumbFallback: {
     flex: 1,

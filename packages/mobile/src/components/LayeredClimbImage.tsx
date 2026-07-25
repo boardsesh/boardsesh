@@ -114,7 +114,15 @@ const LayeredClimbImage = React.memo(function LayeredClimbImage({
       {/* MoonBoard's board-art webps (moonboard-bg + the holdset image) are a
           near-fully-transparent schematic — grid labels and hold icons only,
           no filled wall. Painted first so it sits behind every other layer;
-          see moonboardWallBackdrop for why this is theme-independent. */}
+          see moonboardWallBackdrop for why this is theme-independent.
+          This layer fills its immediate parent edge-to-edge (no contentFit
+          awareness, unlike the <Image> layers below) — callers whose parent
+          isn't sized to the board's real aspect ratio will see the backdrop
+          extend past where the letterboxed board art stops (issue #3885 review:
+          BoardDiscoveryCard's fixed-square thumb needed an aspect-fit inner box,
+          see its thumbFit; ClimbListThumbnail's 76×96 portrait cell has a
+          pre-existing, deliberately-unfit ~7px margin on MoonBoard's narrower
+          0.65 aspect — negligible at that size, left as-is). */}
       {isMoonBoard && (
         <View testID="layered-climb-image-moonboard-backdrop" style={[styles.layer, styles.moonboardBackdrop]} />
       )}
