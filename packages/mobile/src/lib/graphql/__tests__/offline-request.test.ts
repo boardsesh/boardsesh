@@ -6,9 +6,11 @@ import type { ClimbSearchInput } from '@boardsesh/shared-schema';
 // SQLite when the board is downloaded + filters supported (even online), to the
 // network otherwise (online), and to a per-op empty/null fallback when offline
 // with no local data. Any unregistered document is a straight network passthrough.
-// The whole interception is gated on the offline-engine flag (default OFF), so
-// every suite below runs with the engine explicitly enabled except the gating
-// describe at the end.
+// Reading downloaded data is NOT gated by the offline-engine flag — whenever the
+// network is down a downloaded board reads local regardless of the flag (issue
+// #3888); the flag only gates the ONLINE local-first optimization. The suites
+// below run with the engine explicitly enabled (exercising the online path)
+// except the final describe, which covers the flag-off online + offline paths.
 
 const {
   getDatabaseHandle,
@@ -441,11 +443,14 @@ describe('offlineAwareRequest — unregistered document', () => {
   });
 });
 
-describe('offlineAwareRequest — offline-engine flag OFF (pre-offline behavior)', () => {
+describe('offlineAwareRequest — offline-engine flag OFF', () => {
   beforeEach(() => {
     setOfflineEngineEnabled(false);
   });
 
+  // Online + flag off: the local-first optimization is disabled, so a registered
+  // document is a straight network passthrough that never even probes local
+  // (pre-offline behavior, and its cost, preserved for the majority).
   it('hits the network for a registered document even when the board is downloaded (online)', async () => {
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(true);
@@ -456,25 +461,7 @@ describe('offlineAwareRequest — offline-engine flag OFF (pre-offline behavior)
     expect(request).toHaveBeenCalledWith(SEARCH_CLIMBS, { input: searchInput });
   });
 
-  it('surfaces the network error offline instead of the empty fallback', async () => {
-    setOnline(false);
-    request.mockRejectedValue(new Error('Network request failed'));
-    await expect(offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput })).rejects.toThrow(
-      'Network request failed',
-    );
-    expect(searchClimbsLocal).not.toHaveBeenCalled();
-  });
-
-  it('surfaces the network error offline for climb detail too (no { climb: null } fallback)', async () => {
-    setOnline(false);
-    request.mockRejectedValue(new Error('Network request failed'));
-    await expect(offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars)).rejects.toThrow(
-      'Network request failed',
-    );
-    expect(getClimbLocal).not.toHaveBeenCalled();
-  });
-
-  it('is the default state: without an explicit enable, interception never engages', async () => {
+  it('is the default state: without an explicit enable, the online optimization never engages', async () => {
     __resetOfflineEngineForTests();
     setOnline(true);
     isBoardDownloadedLocally.mockResolvedValue(true);
@@ -483,5 +470,53 @@ describe('offlineAwareRequest — offline-engine flag OFF (pre-offline behavior)
     });
     expect(result.searchClimbs.totalCount).toBe(99);
     expect(countClimbsLocal).not.toHaveBeenCalled();
+  });
+
+  // Reading data already on disk is NOT gated by the flag (issue #3888): a
+  // downloaded board must open offline even for a user whose flag never resolved
+  // — e.g. a cold start with no signal, where PostHog can't deliver the flag.
+  it('serves a downloaded board from local SQLite while offline (the #3888 fix)', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(result).toEqual({ searchClimbs: { climbs: [{ uuid: 'local' }], hasMore: false } });
+    expect(searchClimbsLocal).toHaveBeenCalledWith(fakeDb, searchInput);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('counts a downloaded board locally while offline with the flag off', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<SearchClimbsCountQueryResponse>(SEARCH_CLIMBS_COUNT, {
+      input: searchInput,
+    });
+    expect(result).toEqual({ searchClimbs: { totalCount: 7 } });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('reads climb detail from local SQLite while offline with the flag off', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(true);
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+    expect(result).toEqual({ climb: { uuid: 'local-detail' } });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  // Nothing downloaded + offline → the per-op empty/null fallback (an answer, not
+  // a doomed network call), also flag-independent.
+  it('returns the empty fallback offline when nothing is downloaded', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<SearchClimbsQueryResponse>(SEARCH_CLIMBS, { input: searchInput });
+    expect(result).toEqual({ searchClimbs: { climbs: [], hasMore: false } });
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('returns { climb: null } offline when nothing is downloaded (no doomed network call)', async () => {
+    setOnline(false);
+    isBoardDownloadedLocally.mockResolvedValue(false);
+    const result = await offlineAwareRequest<GetClimbQueryResponse>(GET_CLIMB, climbVars);
+    expect(result).toEqual({ climb: null });
+    expect(request).not.toHaveBeenCalled();
   });
 });

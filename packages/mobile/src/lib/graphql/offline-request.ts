@@ -158,27 +158,39 @@ registerOfflineOperation<BoardseshGradesForAnglesVariables, BoardseshGradesForAn
  * registered and the active board can serve it, otherwise hit the network. Falls
  * through to plain HTTP for any unregistered document, so it's a safe drop-in for
  * `getHttpClient().request`.
+ *
+ * Reading data that's ALREADY on disk is never gated by the
+ * `offline-board-downloads` flag — the same rule the mutation drainer follows
+ * (offline-sync-bridge.tsx: the flag gates NEW offline work, never the draining
+ * of existing work). So whenever the network is down we serve a downloaded board
+ * from local SQLite — or the per-op empty fallback when nothing is downloaded —
+ * regardless of the flag. The flag only decides whether we ALSO short-circuit to
+ * local while ONLINE (a latency optimization); with it off, an online request is
+ * a straight network passthrough that never even probes local, so the majority
+ * who never enabled the engine keep exactly the pre-offline behavior and its cost.
  */
 export async function offlineAwareRequest<TResponse>(document: string, variables?: Variables): Promise<TResponse> {
-  // Feature-flag gate: with `offline-board-downloads` off, every registered
-  // document degrades to plain HTTP — no local-first read, and no offline
-  // empty-result fallback (an offline request errors, exactly as pre-offline).
-  const operation = isOfflineEngineEnabled() ? OFFLINE_OPERATIONS.get(document) : undefined;
+  const operation = OFFLINE_OPERATIONS.get(document);
   if (operation) {
-    const db = getDatabaseHandle();
-    // The `variables !== undefined` guard makes a registered document called
-    // without variables degrade to HTTP rather than throw in a destructure;
-    // the offline fallback below still applies either way. `as never` re-narrows
-    // the storage-erased generics — see the OFFLINE_OPERATIONS declaration.
-    if (db && variables !== undefined && (await operation.canServeLocal(db, variables as never))) {
-      const localResponse = (await operation.resolveLocal(db, variables as never)) as TResponse;
-      // A known-key miss falls through to the network while online — the row
-      // may simply not have synced yet. Offline, the miss stands (it has the
-      // same shape as offlineFallback).
-      const retryOverNetwork = operation.isLocalMiss?.(localResponse) === true && onlineManager.isOnline();
-      if (!retryOverNetwork) return localResponse;
-    } else if (!onlineManager.isOnline()) {
-      return operation.offlineFallback() as TResponse;
+    const isOnline = onlineManager.isOnline();
+    // Consult local sources when OFFLINE (always) or, while ONLINE, only when the
+    // flag enables the local-first optimization.
+    if (!isOnline || isOfflineEngineEnabled()) {
+      const db = getDatabaseHandle();
+      // The `variables !== undefined` guard makes a registered document called
+      // without variables degrade to HTTP rather than throw in a destructure;
+      // the offline fallback below still applies either way. `as never` re-narrows
+      // the storage-erased generics — see the OFFLINE_OPERATIONS declaration.
+      if (db && variables !== undefined && (await operation.canServeLocal(db, variables as never))) {
+        const localResponse = (await operation.resolveLocal(db, variables as never)) as TResponse;
+        // A known-key miss falls through to the network while online — the row
+        // may simply not have synced yet. Offline, the miss stands (it has the
+        // same shape as offlineFallback).
+        const retryOverNetwork = operation.isLocalMiss?.(localResponse) === true && isOnline;
+        if (!retryOverNetwork) return localResponse;
+      } else if (!isOnline) {
+        return operation.offlineFallback() as TResponse;
+      }
     }
   }
   return getHttpClient().request<TResponse>(document, variables);
