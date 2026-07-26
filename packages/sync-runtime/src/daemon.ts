@@ -5,6 +5,7 @@ export type DaemonOptions = {
   quietPollMs?: number;
   minDelayMinutes?: number;
   maxDelayMinutes?: number;
+  standbyPollMs?: number;
 };
 
 export type ResolvedDaemonOptions = {
@@ -14,6 +15,7 @@ export type ResolvedDaemonOptions = {
   quietPollMs: number;
   minDelayMinutes: number;
   maxDelayMinutes: number;
+  standbyPollMs: number;
 };
 
 export type DaemonLoopRuntime = {
@@ -23,6 +25,19 @@ export type DaemonLoopRuntime = {
   signal?: AbortSignal;
   onLog?: (message: string) => void;
   onCycleError?: (error: unknown) => void;
+  /**
+   * Optional gate asked before every cycle. `false` puts the loop into standby:
+   * it skips the cycle, sleeps `standbyPollMs` instead of the usual jittered
+   * delay, and tries again — it never throws and never exits, because a
+   * crash-looping loser during a rolling deploy is worse than the duplicate
+   * work this gate exists to avoid.
+   *
+   * A rejection is treated as "don't run" (fail closed). The gate is backed by
+   * Postgres, and a daemon that can't reach Postgres can't sync anyway, so
+   * failing closed costs nothing and avoids resurrecting the duplicate-work bug
+   * during a database blip.
+   */
+  acquireSlot?: () => Promise<boolean>;
 };
 
 export const DEFAULT_DAEMON_OPTIONS: ResolvedDaemonOptions = {
@@ -32,9 +47,20 @@ export const DEFAULT_DAEMON_OPTIONS: ResolvedDaemonOptions = {
   quietPollMs: 60_000,
   minDelayMinutes: 1,
   maxDelayMinutes: 15,
+  // Standby is deliberately much shorter than the 1-15 minute working delay:
+  // when the active instance goes away, the standby one should take over in
+  // seconds, not in a random fraction of a quarter-hour.
+  standbyPollMs: 30_000,
 };
 
 const HOUR_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * Emit a "still on standby" line every N standby polls (at the 30s default,
+ * every 10 minutes) so a passive instance stays visibly alive in the logs
+ * without producing a line every poll.
+ */
+const STANDBY_KEEPALIVE_EVERY = 20;
 
 export function resolveDaemonOptions(options: DaemonOptions = {}): ResolvedDaemonOptions {
   const resolved: ResolvedDaemonOptions = {
@@ -44,6 +70,7 @@ export function resolveDaemonOptions(options: DaemonOptions = {}): ResolvedDaemo
     quietPollMs: options.quietPollMs ?? DEFAULT_DAEMON_OPTIONS.quietPollMs,
     minDelayMinutes: options.minDelayMinutes ?? DEFAULT_DAEMON_OPTIONS.minDelayMinutes,
     maxDelayMinutes: options.maxDelayMinutes ?? DEFAULT_DAEMON_OPTIONS.maxDelayMinutes,
+    standbyPollMs: options.standbyPollMs ?? DEFAULT_DAEMON_OPTIONS.standbyPollMs,
   };
 
   // Hours must be valid clock hours — out-of-range values would never match the
@@ -80,6 +107,12 @@ export function resolveDaemonOptions(options: DaemonOptions = {}): ResolvedDaemo
   // A non-positive quiet poll would busy-loop while waiting out quiet hours.
   if (resolved.quietPollMs <= 0) {
     throw new Error(`Daemon quietPollMs must be > 0 (got ${resolved.quietPollMs}).`);
+  }
+
+  // Same reasoning for standby: a non-positive value would spin on the lease
+  // gate instead of waiting for the active instance to go away.
+  if (resolved.standbyPollMs <= 0) {
+    throw new Error(`Daemon standbyPollMs must be > 0 (got ${resolved.standbyPollMs}).`);
   }
 
   return resolved;
@@ -146,6 +179,12 @@ export async function runDaemonLoop(
   const signal = runtime.signal;
   const log = runtime.onLog ?? (() => {});
   const onCycleError = runtime.onCycleError ?? (() => {});
+  const acquireSlot = runtime.acquireSlot;
+  // Standby is usually long-lived (the passive instance of a two-container
+  // deploy can sit here for hours), so log the transitions and then only a
+  // periodic keepalive rather than a line every 30 seconds.
+  let inStandby = false;
+  let standbyCycles = 0;
 
   while (!signal?.aborted) {
     if (isWithinQuietHours(now(), resolved)) {
@@ -163,6 +202,47 @@ export async function runDaemonLoop(
       }
 
       continue;
+    }
+
+    if (acquireSlot) {
+      let holdsSlot: boolean;
+      try {
+        holdsSlot = await acquireSlot();
+      } catch (error) {
+        // Fail closed — see the acquireSlot docs. Report it so the failure is
+        // visible, then stand by rather than running unguarded.
+        onCycleError(error);
+        holdsSlot = false;
+      }
+
+      if (!holdsSlot) {
+        if (!inStandby) {
+          inStandby = true;
+          standbyCycles = 0;
+          log(
+            `[SyncRunner] Another instance holds the daemon lease; standing by (re-checking every ${Math.round(resolved.standbyPollMs / 1000)}s)`,
+          );
+        } else if (++standbyCycles % STANDBY_KEEPALIVE_EVERY === 0) {
+          const standbyMinutes = Math.round((standbyCycles * resolved.standbyPollMs) / 60_000);
+          log(`[SyncRunner] Still on standby after ~${standbyMinutes} minute(s); another instance holds the lease`);
+        }
+
+        try {
+          await sleep(resolved.standbyPollMs, signal);
+        } catch (error) {
+          if (isAbortError(error)) {
+            return;
+          }
+          throw error;
+        }
+
+        continue;
+      }
+
+      if (inStandby) {
+        inStandby = false;
+        log('[SyncRunner] Took over the daemon lease; resuming sync cycles');
+      }
     }
 
     try {

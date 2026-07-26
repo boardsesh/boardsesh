@@ -1,7 +1,7 @@
-import { randomUUID } from 'crypto';
 import { inArray } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { setterFollows, userBoardMappings, userFollows, notifications } from '@boardsesh/db/schema';
+import { setterSyncNotificationUuid } from '@boardsesh/db/queries';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
@@ -83,17 +83,23 @@ export async function createSetterSyncNotifications(
     if (recipientIds.size === 0) continue;
 
     const firstClimbUuid = climbs[0].uuid;
+    const actorId = linkedUserId ?? null;
+    // Deterministic uuid so a repeat of this exact notification collides on
+    // notifications.uuid (already NOT NULL UNIQUE) rather than landing twice —
+    // two catalog syncs running at once both classify the same climbs as new.
+    // See setterSyncNotificationUuid.
     const values = [...recipientIds].map((recipientId) => ({
-      uuid: randomUUID(),
+      uuid: setterSyncNotificationUuid({ recipientId, entityId: firstClimbUuid, actorId }),
       recipientId,
-      actorId: linkedUserId ?? null,
+      actorId,
       type: 'new_climbs_synced' as const,
       entityType: 'climb' as const,
       entityId: firstClimbUuid,
     }));
 
     await chunked(values, async (chunk) => {
-      await db.insert(notifications).values(chunk);
+      // No conflict target: `uuid` is the only unique constraint on the table.
+      await db.insert(notifications).values(chunk).onConflictDoNothing();
     });
     log(`[kilter-catalog] ${values.length} notifications for setter "${setterUsername}" (${climbs.length} new climbs)`);
   }

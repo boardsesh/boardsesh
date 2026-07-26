@@ -1,9 +1,23 @@
+import { hostname } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, ne, and, or, isNotNull, sql } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema/auth';
-import { credentialBackoffMs, credentialRetryReadySql, selfHealStaleClimbStats } from '@boardsesh/db/queries';
+import {
+  AURORA_SYNC_DAEMON,
+  SHARED_SYNC_COOLDOWN_CURSOR,
+  acquireOrRenewDaemonLease,
+  claimNextCredentialForSync,
+  claimSharedSyncSlot,
+  credentialBackoffMs,
+  credentialRetryReadySql,
+  readSharedSyncCursor,
+  releaseDaemonLease,
+  selfHealStaleClimbStats,
+  stampSharedSyncFinished,
+} from '@boardsesh/db/queries';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
@@ -18,7 +32,7 @@ import { isAuroraRequestError, isTransientAuroraError } from '../api/errors';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
-import { resolveDaemonOptions, runDaemonLoop } from '@boardsesh/sync-runtime';
+import { DaemonLease, resolveDaemonOptions, runDaemonLoop } from '@boardsesh/sync-runtime';
 import type { SyncRunnerConfig, SyncSummary, CredentialRecord, DaemonOptions, SyncErrorContext } from './types';
 
 type RunnerClient = ReturnType<typeof postgres>;
@@ -114,7 +128,10 @@ export class SyncRunner {
   private daemonController: AbortController | null = null;
   private client: RunnerClient | null = null;
   private db: RunnerDb | null = null;
-  private lastSharedSyncAt = new Map<string, number>();
+  private lease: DaemonLease | null = null;
+  // Per-process identity for the daemon lease. Minted once per SyncRunner so a
+  // renewal is recognised as "still us" rather than a takeover.
+  private readonly leaseHolderId = randomUUID();
   // In-memory hourly gate for the recompute self-heal. Resets to 0 on process
   // start, so the FIRST daemon cycle after a deploy runs the self-heal
   // immediately — exactly catching the debounced recomputes that the deploy's
@@ -342,6 +359,7 @@ export class SyncRunner {
     const resolved = resolveDaemonOptions(options);
     const controller = new AbortController();
     this.daemonController = controller;
+    const lease = this.getLease();
 
     this.log(
       `[SyncRunner] Starting daemon mode (${resolved.timeZone}, quiet ${resolved.quietHoursStart}:00-${resolved.quietHoursEnd}:00, random interval ${resolved.minDelayMinutes}-${resolved.maxDelayMinutes} minutes)`,
@@ -351,10 +369,16 @@ export class SyncRunner {
       await runDaemonLoop(
         async () => {
           await this.syncNextUser();
+          // Checkpoint between units of work: if a heartbeat observed another
+          // instance taking the lease over while the user sync was running, stop
+          // here rather than carrying on alongside the new holder. The loop
+          // reports it via onCycleError and drops into standby.
+          lease.assertStillHeld();
           // Self-heal is a daemon-wide concern (not per-credential), gated
           // hourly. Runs after the per-user sync so a fresh tick's recompute
           // has had its chance first.
           await this.maybeSelfHealRecomputes();
+          lease.assertStillHeld();
           // Hourly read-only fleet health summary so stuck/quarantined/backing-off
           // credentials are visible in the daemon logs without a manual DB query.
           await this.maybeLogSyncHealth();
@@ -363,6 +387,7 @@ export class SyncRunner {
         {
           signal: controller.signal,
           onLog: this.log.bind(this),
+          acquireSlot: lease.acquire,
           onCycleError: (error) => {
             const err = error instanceof Error ? error : new Error(String(error));
             this.handleError(err, {});
@@ -371,9 +396,43 @@ export class SyncRunner {
         },
       );
     } finally {
+      await lease.stop();
       this.daemonController = null;
       this.log('[SyncRunner] Daemon mode stopped');
     }
+  }
+
+  /**
+   * Best-effort single-active-instance lease, so a rolling deploy's overlapping
+   * containers stop running every sync twice. NOT mutual exclusion: a holder
+   * that stalls past the TTL loses the lease while still running, which is why
+   * the credential claim, the shared-sync compare-and-set and the deterministic
+   * notification uuid each have to be safe on their own.
+   */
+  private getLease(): DaemonLease {
+    if (!this.lease) {
+      this.lease = new DaemonLease(
+        AURORA_SYNC_DAEMON,
+        {
+          acquireOrRenew: () =>
+            acquireOrRenewDaemonLease(this.getClient().db, {
+              daemonName: AURORA_SYNC_DAEMON,
+              holderId: this.leaseHolderId,
+              hostname: hostname(),
+            }),
+          release: () =>
+            releaseDaemonLease(this.getClient().db, {
+              daemonName: AURORA_SYNC_DAEMON,
+              holderId: this.leaseHolderId,
+            }),
+        },
+        {
+          onLog: this.log.bind(this),
+          onError: (error) => this.handleError(error instanceof Error ? error : new Error(String(error)), {}),
+        },
+      );
+    }
+    return this.lease;
   }
 
   private syncableCredentialsFilter() {
@@ -396,25 +455,30 @@ export class SyncRunner {
     return credentials as CredentialRecord[];
   }
 
+  /**
+   * Claim the next credential to sync. The fairness ordering (attempt clock,
+   * NULLS FIRST) and the backoff predicate live in claimNextCredentialForSync
+   * so aurora and kilter cannot drift; only the board-specific eligibility
+   * filter is supplied here.
+   *
+   * Ordering by the ATTEMPT clock rather than last_sync_at is load-bearing: a
+   * persistently-failing credential whose last_sync_at never advances used to
+   * sort to the FRONT every cycle and monopolise the single-user-per-cycle
+   * queue, wedging every other user's sync — and, via the shared-sync
+   * piggyback, the whole board's catalog (Touchstone went 5 months stale).
+   *
+   * The claim is what stops two overlapping daemon instances syncing the SAME
+   * user twice: the winner locks the row with FOR UPDATE SKIP LOCKED and stamps
+   * the attempt clock before committing, so the other instance skips past it to
+   * the next candidate (or gets nothing and idles this cycle).
+   */
   private async getNextCredentialToSync(): Promise<CredentialRecord | null> {
     const { db } = this.getClient();
-    const credentials = await db
-      .select()
-      .from(auroraCredentials)
-      // Order by the ATTEMPT clock (bumped on EVERY attempt), not last_sync_at
-      // (bumped only on success). Ordering by last_sync_at let one
-      // persistently-failing credential — whose last_sync_at never advances —
-      // sort to the FRONT every cycle and monopolise the single-user-per-cycle
-      // queue, wedging every other user's sync (and, via the shared-sync
-      // piggyback, the whole board's catalog: Touchstone went 5 months stale).
-      // With the attempt clock a failure rotates to the back, and the backoff
-      // predicate below skips it entirely until its window elapses, so a
-      // healthy credential is picked next and its token drives shared sync.
-      .where(and(this.syncableCredentialsFilter(), credentialRetryReadySql()))
-      .orderBy(sql`${auroraCredentials.lastSyncAttemptAt} ASC NULLS FIRST`)
-      .limit(1);
+    const claimed = await claimNextCredentialForSync(db, {
+      candidateFilter: this.syncableCredentialsFilter(),
+    });
 
-    return credentials.length > 0 ? (credentials[0] as CredentialRecord) : null;
+    return claimed as CredentialRecord | null;
   }
 
   private async syncSingleCredential(cred: CredentialRecord): Promise<void> {
@@ -538,37 +602,71 @@ export class SyncRunner {
     await this.maybeRunSharedSync(boardType, token, cred.userId);
   }
 
+  /**
+   * Shared sync, throttled per board so N consecutive user-syncs on the same
+   * board don't fire N shared-sync loops (and N copies of setter notifications
+   * for the same pre-existing climbs).
+   *
+   * The cooldown lives in `board_shared_syncs` under a synthetic `__local_*`
+   * cursor, claimed with a single-statement compare-and-set. It used to be an
+   * in-memory Map, which failed two ways: a restart emptied it, so the first
+   * cycle after every deploy re-fired a full shared sync per board; and two
+   * overlapping containers each had their own, so both ran the same board-wide
+   * sync at once — which is how followers got a second full set of "new climbs
+   * from <setter>" notifications (new-climb detection is a pre-read of existing
+   * uuids, and neither run has committed when the other reads).
+   *
+   * This CAS — not the daemon lease — is what makes that safe: the lease is
+   * best-effort and can be held by two instances at once during a stall.
+   */
   private async maybeRunSharedSync(boardType: AuroraBoardName, token: string, userId: string): Promise<void> {
     const cooldownMs = this.getSharedSyncCooldownMs();
-    const lastRunAt = this.lastSharedSyncAt.get(boardType);
-    const now = Date.now();
+    const { client, db } = this.getClient();
+    const cursor = { boardType, cursorName: SHARED_SYNC_COOLDOWN_CURSOR };
 
-    if (lastRunAt !== undefined && now - lastRunAt < cooldownMs) {
-      const remainingMs = cooldownMs - (now - lastRunAt);
-      this.log(
-        `[SyncRunner] Skipping shared sync for ${boardType} (last run ${Math.round(
-          (now - lastRunAt) / 1000,
-        )}s ago; cooldown ${Math.round(cooldownMs / 1000)}s, ${Math.round(remainingMs / 1000)}s remaining)`,
-      );
+    // Claiming stamps the cursor, so a concurrent caller (another instance, or
+    // the next user-sync landing while we're still working) is turned away.
+    // A DB error here must not escape: the user-half of this cycle has already
+    // committed and been marked active, and letting the claim throw would
+    // bubble into syncSingleCredential's caller and record a spurious
+    // credential failure for a user whose sync actually succeeded.
+    let claimed = false;
+    try {
+      claimed = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+      if (!claimed) {
+        const lastRunAt = await readSharedSyncCursor(db, cursor);
+        const agoSeconds = lastRunAt ? Math.round((Date.now() - lastRunAt.getTime()) / 1000) : null;
+        this.log(
+          `[SyncRunner] Skipping shared sync for ${boardType} (last run ${
+            agoSeconds === null ? 'unknown' : `${agoSeconds}s`
+          } ago; cooldown ${Math.round(cooldownMs / 1000)}s)`,
+        );
+      }
+    } catch (claimError) {
+      const claimErrorMessage = this.formatErrorMessage(claimError);
+      this.handleError(claimError instanceof Error ? claimError : new Error(claimErrorMessage), {
+        board: boardType,
+        userId,
+      });
+      this.log(`[SyncRunner] Could not claim the shared-sync slot for ${boardType}: ${claimErrorMessage}`);
       return;
     }
 
-    // Stamp the timestamp before running so a concurrent caller (or the next
-    // user-sync that lands while we're still working) doesn't also fire. Stamp
-    // again on success/failure so partial work counts toward the cooldown
-    // either way — a permanent failure shouldn't loop on every cycle.
-    this.lastSharedSyncAt.set(boardType, now);
+    if (!claimed) return;
 
-    const { client, db } = this.getClient();
     try {
       this.log(`[SyncRunner] Running shared sync for ${boardType} using ${userId}'s token...`);
       await syncSharedData(client, boardType, token, this.log.bind(this));
       if (this.isLocationBoard(boardType)) {
         await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this) });
       }
-      this.lastSharedSyncAt.set(boardType, Date.now());
+      // Re-stamp so the cooldown runs from the END of the work, matching what
+      // the in-memory version did.
+      await stampSharedSyncFinished(db, cursor);
     } catch (sharedError) {
-      this.lastSharedSyncAt.set(boardType, Date.now());
+      // Stamp on failure too — a permanently failing shared sync must not
+      // re-fire on every cycle.
+      await stampSharedSyncFinished(db, cursor);
       const sharedErrorMessage = this.formatErrorMessage(sharedError);
       this.handleError(sharedError instanceof Error ? sharedError : new Error(sharedErrorMessage), {
         board: boardType,
@@ -776,6 +874,11 @@ export class SyncRunner {
 
   async close(): Promise<void> {
     this.daemonController?.abort();
+    // Release the lease BEFORE the pool closes, so a rolling deploy hands over
+    // in milliseconds instead of idling out the TTL. runDaemon's finally also
+    // calls stop(); it is idempotent. Racing this against client.end() would
+    // lose the release to a CONNECTION_ENDED error.
+    await this.lease?.stop();
     if (this.client) {
       try {
         await this.client.end();

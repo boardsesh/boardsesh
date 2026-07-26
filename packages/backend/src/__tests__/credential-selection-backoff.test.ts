@@ -3,7 +3,7 @@ import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 
 import { db } from '../db/client';
 import { auroraCredentials } from '@boardsesh/db/schema';
-import { credentialRetryReadySql } from '@boardsesh/db/queries';
+import { claimNextCredentialForSync } from '@boardsesh/db/queries';
 
 // ---------------------------------------------------------------------------
 // Credential selection + exponential backoff (real DB)
@@ -56,26 +56,30 @@ async function seedCredential(opts: {
   `);
 }
 
-/** The runner's getNextCredentialToSync selection, expressed once here. */
+/**
+ * Runs the REAL selection both runners run — claimNextCredentialForSync from
+ * @boardsesh/db — instead of re-expressing the predicate here. Only the
+ * board-specific eligibility filter is supplied, exactly as kilter-sync's
+ * syncableCredentialsFilter() does; the fairness ordering and the backoff
+ * predicate come from the shared helper. Rebuilding those in the test would
+ * make it a tautology that stays green while the runner drifts.
+ *
+ * Note this now CLAIMS: the pick stamps last_sync_attempt_at as part of the
+ * same transaction, which is what makes two instances take disjoint work.
+ */
 async function pickNextKilterCredential(): Promise<string | null> {
-  const rows = await db
-    .select({ userId: auroraCredentials.userId })
-    .from(auroraCredentials)
-    .where(
-      and(
-        eq(auroraCredentials.boardType, 'kilter'),
-        isNotNull(auroraCredentials.encryptedRefreshToken),
-        or(
-          eq(auroraCredentials.syncStatus, 'pending'),
-          eq(auroraCredentials.syncStatus, 'active'),
-          eq(auroraCredentials.syncStatus, 'error'),
-        ),
-        credentialRetryReadySql(),
+  const claimed = await claimNextCredentialForSync(db, {
+    candidateFilter: and(
+      eq(auroraCredentials.boardType, 'kilter'),
+      isNotNull(auroraCredentials.encryptedRefreshToken),
+      or(
+        eq(auroraCredentials.syncStatus, 'pending'),
+        eq(auroraCredentials.syncStatus, 'active'),
+        eq(auroraCredentials.syncStatus, 'error'),
       ),
-    )
-    .orderBy(sql`${auroraCredentials.lastSyncAttemptAt} ASC NULLS FIRST`)
-    .limit(1);
-  return rows[0]?.userId ?? null;
+    ),
+  });
+  return claimed?.userId ?? null;
 }
 
 async function clearFixtures(): Promise<void> {

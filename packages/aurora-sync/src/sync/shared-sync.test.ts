@@ -23,11 +23,17 @@ vi.mock('../api/shared-sync-api', () => ({
   sharedSync: mockSharedSync,
 }));
 
-vi.mock('@boardsesh/db/queries', () => ({
-  populateDenormalizedColumns: mockPopulateDenormalizedColumns,
-  blendedQualityAverageSql: mockBlendedQualityAverageSql,
-  snapshotClimbStatsHistoryIfDue: mockSnapshotHistory,
-}));
+vi.mock('@boardsesh/db/queries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/db/queries')>();
+  return {
+    populateDenormalizedColumns: mockPopulateDenormalizedColumns,
+    blendedQualityAverageSql: mockBlendedQualityAverageSql,
+    snapshotClimbStatsHistoryIfDue: mockSnapshotHistory,
+    // Real implementation, not a stub: the deterministic uuid IS the duplicate
+    // -notification backstop, so stubbing it would stop covering it.
+    setterSyncNotificationUuid: actual.setterSyncNotificationUuid,
+  };
+});
 
 vi.mock('@boardsesh/board-constants/hold-states', () => ({
   convertLitUpHoldsStringToMap: mockConvertLitUpHolds,

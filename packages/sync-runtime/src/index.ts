@@ -13,3 +13,5 @@ export {
   upstreamPlaylistSkipLogLine,
 } from './upstream-playlist-ownership';
 export type { UpstreamPlaylistWriteDecision } from './upstream-playlist-ownership';
+export { DaemonLease, DaemonLeaseLostError } from './lease';
+export type { DaemonLeaseIo, DaemonLeaseRuntime } from './lease';

@@ -1,17 +1,28 @@
+import { hostname } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema';
 import {
+  CATALOG_SYNC_COOLDOWN_CURSOR,
+  KILTER_SYNC_DAEMON,
+  acquireOrRenewDaemonLease,
+  claimNextCredentialForSync,
+  claimSharedSyncSlot,
   credentialRetryReadySql,
+  readSharedSyncCursor,
+  releaseDaemonLease,
   snapshotClimbStatsHistoryIfDue,
+  stampSharedSyncFinished,
   isWeeklyCursorDue,
   markWeeklyCursorDone,
 } from '@boardsesh/db/queries';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import {
   DEFAULT_DAEMON_OPTIONS,
+  DaemonLease,
   resolveDaemonOptions,
   runDaemonLoop,
   type ResolvedDaemonOptions,
@@ -32,8 +43,9 @@ import { syncKilterLocations, pullKilterReference } from '../sync';
 import type { RunnerClient, RunnerDb, SyncRunnerConfig, SyncSummary, KilterCredentialRecord } from './types';
 
 // Catalog cooldown: a full per-cycle catalog pull is expensive, so the daemon
-// piggyback runs it at most once per window. In-memory (per-process), mirroring
-// aurora-sync's shared-sync cooldown; overridable via config.sharedSyncCooldownMs.
+// piggyback runs it at most once per window. Persisted in board_shared_syncs
+// (compare-and-set), mirroring aurora-sync's shared-sync cooldown; overridable
+// via config.sharedSyncCooldownMs.
 const DEFAULT_CATALOG_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
 
 export class SyncRunner {
@@ -41,8 +53,10 @@ export class SyncRunner {
   private daemonController: AbortController | null = null;
   private client: RunnerClient | null = null;
   private db: RunnerDb | null = null;
-  // Per-process catalog cooldown, keyed by board (only 'kilter' today).
-  private lastCatalogSyncAt = new Map<string, number>();
+  private lease: DaemonLease | null = null;
+  // Per-process identity for the daemon lease, minted once so a renewal reads
+  // as "still us" rather than a takeover.
+  private readonly leaseHolderId = randomUUID();
 
   constructor(config: SyncRunnerConfig = {}) {
     this.config = config;
@@ -295,23 +309,47 @@ export class SyncRunner {
   }
 
   /**
-   * Catalog refresh ridden in after a user sync. In-memory cooldown, stamped
-   * before AND after (success or failure) so a slow/erroring catalog can't
-   * monopolise cycles. A catalog failure never poisons the user's credential —
-   * the user-half already committed.
+   * Catalog refresh ridden in after a user sync. Cooldown is claimed with a
+   * single-statement compare-and-set on a synthetic `board_shared_syncs` cursor
+   * and re-stamped after the run (success or failure) so a slow or erroring
+   * catalog can't monopolise cycles. A catalog failure never poisons the user's
+   * credential — the user-half already committed.
+   *
+   * Persisting the cooldown (it used to be a per-process Map) is what stops two
+   * overlapping daemon instances running the same catalog pull at once and
+   * emitting a second full set of setter notifications, and stops every restart
+   * re-firing a full catalog pull on its first cycle. The daemon lease is only
+   * an optimisation — it can legitimately be held by two instances during a
+   * stall — so this claim carries the guarantee.
    */
   private async maybeRunCatalogSync(db: RunnerDb, cred: KilterCredentialRecord, currentToken: string): Promise<void> {
     const board = KILTER_BOARD_TYPE;
     const cooldownMs = this.getCatalogSyncCooldownMs();
-    const lastRun = this.lastCatalogSyncAt.get(board);
-    const now = Date.now();
-    if (lastRun !== undefined && now - lastRun < cooldownMs) {
-      this.log(
-        `[kilter-catalog] skipped — within cooldown (${Math.round((cooldownMs - (now - lastRun)) / 60000)}m left)`,
-      );
+    const cursor = { boardType: board, cursorName: CATALOG_SYNC_COOLDOWN_CURSOR };
+
+    // A DB error here must not escape: the user-half of this cycle has already
+    // committed and been marked active, so letting the claim throw would record
+    // a spurious credential failure for a user whose sync actually succeeded.
+    let claimed = false;
+    try {
+      claimed = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+      if (!claimed) {
+        const lastRun = await readSharedSyncCursor(db, cursor);
+        const remainingMinutes = lastRun
+          ? Math.max(0, Math.round((cooldownMs - (Date.now() - lastRun.getTime())) / 60000))
+          : null;
+        this.log(
+          `[kilter-catalog] skipped — within cooldown (${
+            remainingMinutes === null ? 'held by another instance' : `${remainingMinutes}m left`
+          })`,
+        );
+      }
+    } catch (claimError) {
+      this.handleError(claimError instanceof Error ? claimError : new Error(String(claimError)), { board });
       return;
     }
-    this.lastCatalogSyncAt.set(board, now);
+
+    if (!claimed) return;
 
     // Reuse the just-minted user token first, then re-mint on demand (the
     // catalog pull can outlast a single access-token TTL).
@@ -345,7 +383,8 @@ export class SyncRunner {
     } catch (error) {
       this.handleError(error instanceof Error ? error : new Error(String(error)), { board });
     } finally {
-      this.lastCatalogSyncAt.set(board, Date.now());
+      // Re-stamp so the cooldown runs from the END of the work, success or not.
+      await stampSharedSyncFinished(db, cursor);
     }
   }
 
@@ -505,52 +544,39 @@ export class SyncRunner {
    * scoped, refresh token present, syncStatus ∈ {pending, active, error}
    * (skip disabled + expired).
    */
-  private async getNextCredentialToSync(db: RunnerDb): Promise<KilterCredentialRecord | null> {
-    const rows = await db
-      .select({
-        userId: auroraCredentials.userId,
-        boardType: auroraCredentials.boardType,
-        encryptedRefreshToken: auroraCredentials.encryptedRefreshToken,
-        syncStatus: auroraCredentials.syncStatus,
-        syncError: auroraCredentials.syncError,
-        lastSyncAt: auroraCredentials.lastSyncAt,
-        consecutiveFailures: auroraCredentials.consecutiveFailures,
-      })
-      .from(auroraCredentials)
-      .where(
-        and(
-          eq(auroraCredentials.boardType, KILTER_BOARD_TYPE),
-          // Dead password-era links (encrypted_refresh_token IS NULL) are the
-          // pre-OAuth credentials that can no longer sync. Migration 0171
-          // reconciled the existing ones to sync_status='expired' with an
-          // accurate re-link message; this filter is the explicit, permanent
-          // skip so they never re-enter the hot selection path (and never
-          // spam a per-cycle log). Surfacing a re-link prompt in the UI is a
-          // separate product follow-up.
-          isNotNull(auroraCredentials.encryptedRefreshToken),
-          // The allowed set is positive (pending/active/error). 'expired'
-          // and 'disabled' are excluded by omission — adding explicit
-          // ne() clauses for them would be dead code given the or().
-          or(
-            eq(auroraCredentials.syncStatus, 'pending'),
-            eq(auroraCredentials.syncStatus, 'active'),
-            eq(auroraCredentials.syncStatus, 'error'),
-          ),
-          // Exponential backoff: skip a credential still inside its
-          // consecutive-failure window so a deterministically-failing user
-          // can't burn a cycle every rotation. See credentialRetryReadySql.
-          credentialRetryReadySql(),
-        ),
-      )
-      // Order by the ATTEMPT clock, not last_sync_at: a credential that
-      // fails (incl. the fail-open DB-error case) advances last_sync_attempt_at
-      // but not last_sync_at, so it rotates to the back instead of being
-      // re-picked first every cycle. NULLS FIRST keeps never-attempted
-      // credentials at the front. Served by syncAttemptPriorityIdx.
-      .orderBy(sql`${auroraCredentials.lastSyncAttemptAt} ASC NULLS FIRST`)
-      .limit(1);
+  private syncableCredentialsFilter() {
+    return and(
+      eq(auroraCredentials.boardType, KILTER_BOARD_TYPE),
+      // Dead password-era links (encrypted_refresh_token IS NULL) are the
+      // pre-OAuth credentials that can no longer sync. Migration 0171
+      // reconciled the existing ones to sync_status='expired' with an
+      // accurate re-link message; this filter is the explicit, permanent
+      // skip so they never re-enter the hot selection path (and never
+      // spam a per-cycle log). Surfacing a re-link prompt in the UI is a
+      // separate product follow-up.
+      isNotNull(auroraCredentials.encryptedRefreshToken),
+      // The allowed set is positive (pending/active/error). 'expired'
+      // and 'disabled' are excluded by omission — adding explicit
+      // ne() clauses for them would be dead code given the or().
+      or(
+        eq(auroraCredentials.syncStatus, 'pending'),
+        eq(auroraCredentials.syncStatus, 'active'),
+        eq(auroraCredentials.syncStatus, 'error'),
+      ),
+    );
+  }
 
-    return rows[0] ?? null;
+  /**
+   * Claim the next credential. The fairness ordering (attempt clock, NULLS
+   * FIRST) and the exponential-backoff predicate live in
+   * claimNextCredentialForSync, shared with aurora-sync so the two can't drift.
+   *
+   * The claim — FOR UPDATE SKIP LOCKED plus an attempt-clock stamp inside one
+   * short transaction — is what stops two overlapping daemon instances picking
+   * the same user and syncing them twice.
+   */
+  private async getNextCredentialToSync(db: RunnerDb): Promise<KilterCredentialRecord | null> {
+    return claimNextCredentialForSync(db, { candidateFilter: this.syncableCredentialsFilter() });
   }
 
   private async getCredential(db: RunnerDb, userId: string): Promise<KilterCredentialRecord | null> {
@@ -574,15 +600,21 @@ export class SyncRunner {
   async runDaemon(options: DaemonOptions = {}): Promise<void> {
     const resolved: ResolvedDaemonOptions = resolveDaemonOptions(options);
     this.daemonController = new AbortController();
+    const lease = this.getLease();
     try {
       await runDaemonLoop(
         async () => {
           await this.syncNextUser();
+          // Checkpoint: if a heartbeat saw another instance take the lease over
+          // while this cycle ran, stop here instead of continuing alongside the
+          // new holder. The loop reports it and drops into standby.
+          lease.assertStillHeld();
         },
         resolved,
         {
           signal: this.daemonController.signal,
           onLog: (m: string) => this.log(m),
+          acquireSlot: lease.acquire,
           // syncNextUser handles per-credential failures internally; this
           // catches anything that escapes a cycle (e.g. an unexpected throw)
           // so it's logged + reported to Sentry instead of silently dropped.
@@ -594,12 +626,53 @@ export class SyncRunner {
         },
       );
     } finally {
+      await lease.stop();
       this.daemonController = null;
     }
   }
 
+  /**
+   * Best-effort single-active-instance lease so overlapping deploy containers
+   * stop doing every sync twice. NOT mutual exclusion — a stalled holder loses
+   * the lease while still running, which is why the credential claim, the
+   * catalog compare-and-set and the deterministic notification uuid each stand
+   * on their own.
+   */
+  private getLease(): DaemonLease {
+    if (!this.lease) {
+      this.lease = new DaemonLease(
+        KILTER_SYNC_DAEMON,
+        {
+          acquireOrRenew: () =>
+            acquireOrRenewDaemonLease(this.getClient().db, {
+              daemonName: KILTER_SYNC_DAEMON,
+              holderId: this.leaseHolderId,
+              hostname: hostname(),
+            }),
+          release: () =>
+            releaseDaemonLease(this.getClient().db, {
+              daemonName: KILTER_SYNC_DAEMON,
+              holderId: this.leaseHolderId,
+            }),
+        },
+        {
+          onLog: (message) => this.log(message),
+          onError: (error) =>
+            this.handleError(error instanceof Error ? error : new Error(String(error)), {
+              board: KILTER_BOARD_TYPE,
+            }),
+        },
+      );
+    }
+    return this.lease;
+  }
+
   async stop(): Promise<void> {
     this.daemonController?.abort();
+    // Release before the pool closes so a rolling deploy hands over in
+    // milliseconds instead of idling out the TTL. stop() is idempotent, so
+    // runDaemon's finally calling it too is harmless.
+    await this.lease?.stop();
     if (this.client) {
       await this.client.end({ timeout: 5 });
       this.client = null;
