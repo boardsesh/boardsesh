@@ -35,14 +35,11 @@ export type SyncRunnerConfig = {
   sharedSyncCooldownMs?: number;
 };
 
-export type DaemonOptions = {
-  timeZone?: string;
-  quietHoursStart?: number;
-  quietHoursEnd?: number;
-  quietPollMs?: number;
-  minDelayMinutes?: number;
-  maxDelayMinutes?: number;
-};
+// The daemon loop itself lives in @boardsesh/sync-runtime (shared with
+// kilter-sync). This package used to carry a forked copy of both the type and
+// the loop; re-exporting keeps `@boardsesh/aurora-sync`'s public surface
+// unchanged while there is only one implementation to maintain.
+export type { DaemonOptions } from '@boardsesh/sync-runtime';
 
 export type SyncSummary = {
   total: number;

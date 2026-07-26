@@ -18,7 +18,7 @@ import { isAuroraRequestError, isTransientAuroraError } from '../api/errors';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
-import { resolveDaemonOptions, runDaemonLoop } from './daemon';
+import { resolveDaemonOptions, runDaemonLoop } from '@boardsesh/sync-runtime';
 import type { SyncRunnerConfig, SyncSummary, CredentialRecord, DaemonOptions, SyncErrorContext } from './types';
 
 type RunnerClient = ReturnType<typeof postgres>;
