@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema';
 import { SyncRunner } from '../runner';
+import { loadBacklog } from '../sync';
 import { KILTER_BOARD_TYPE } from '../api/types';
 
 const program = new Command();
@@ -168,6 +169,51 @@ program
       process.exitCode = 1;
     } finally {
       await runner.stop();
+    }
+  });
+
+program
+  .command('backlog')
+  .description('Report climbs the catalog sync could not ingest (board_climb_ingest_skips)')
+  .option('--reason <reason>', 'filter to one reason: unplaceable_hole | unparsable_concat | frame_out_of_range')
+  .option('--limit <n>', 'maximum rows to print (default 50)', '50')
+  .option('--include-resolved', 'also show climbs a later run recovered')
+  .option('--raw', 'print each climb’s verbatim upstream hold string')
+  .action(async (opts: { reason?: string; limit: string; includeResolved?: boolean; raw?: boolean }) => {
+    const limit = Number(opts.limit);
+    if (!Number.isInteger(limit) || limit <= 0) {
+      console.error(`Invalid --limit value: ${opts.limit}. Expected a positive integer.`);
+      process.exitCode = 1;
+      return;
+    }
+    const client = postgres(getDatabaseUrl(), { max: 1, prepare: false });
+    try {
+      const rows = await loadBacklog(drizzle(client), {
+        boardType: KILTER_BOARD_TYPE,
+        reason: opts.reason,
+        limit,
+        includeResolved: opts.includeResolved ?? false,
+      });
+      if (rows.length === 0) {
+        console.log('No unmapped climbs recorded. Nothing is being silently dropped.');
+        return;
+      }
+      const counts = new Map<string, number>();
+      for (const row of rows) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1);
+      console.log(`${rows.length} climb(s): ${[...counts].map(([reason, count]) => `${count} ${reason}`).join(', ')}`);
+      for (const row of rows) {
+        const status = row.resolvedAt ? `resolved ${row.resolvedAt.toISOString()}` : 'open';
+        console.log(
+          `  ${row.climbUuid}  ${row.reason}${row.detail ? ` (${row.detail})` : ''}  frames=${row.framesCount ?? '?'}  layout=${row.layoutId ?? '?'}/${row.sourceLayoutUuid ?? '?'}  ${status}`,
+        );
+        console.log(`      ${row.climbName ?? '(unnamed)'} — ${row.setterUsername ?? 'unknown setter'}`);
+        if (opts.raw) console.log(`      ${row.rawHolds}`);
+      }
+    } catch (err) {
+      console.error('✗ Failed to read the ingest backlog:', err instanceof Error ? err.message : err);
+      process.exitCode = 1;
+    } finally {
+      await client.end();
     }
   });
 

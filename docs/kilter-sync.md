@@ -143,7 +143,7 @@ Implemented in [`packages/kilter-sync/src/sync/catalog-sync.ts`](../packages/kil
 1. **Reference pull** (`sync/reference-pull.ts`) over PowerSync `global` + `global_gyms` → `products`, `product_layouts`, `holds`, `difficulty_grades`. The `product_layouts` list is the set of `productLayoutUuid`s to fetch; the others drive a reconcile/verify pass.
 2. **Layout resolve** (`sync/layout-resolver.ts`): each Grips `productLayoutUuid` (a small int-string like `"27"`) → the integer `board_layouts.id`, by product name. Grips ships finer layout granularity than the legacy catalog, so many Grips layouts collapse onto one `board_layouts` row (six "Kilter Board Original" variants → `layout_id=1`). Resolutions persist to `board_layout_aliases`. Products with multiple board layouts (Tycho) or unknown to board\_\* ("UP Board") resolve to null → skipped and reported.
 3. **Catalog REST pull**, grouped by resolved `board_layouts.id` so the existing catalog loads once per board layout: `GET /api/climbs/all/{productLayoutUuid}` (full per-layout array, no pagination) + `GET /api/climb-stat/all/{productLayoutUuid}`.
-4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
+4. **Parse + remap** (`sync/catalog-parse.ts`): Grips `climb_concat` is `h{holeId}p{code}[s{start}][e{end}]`; the legacy catalog stores `frames` as `p{placementId}r{code}`. `board_placements(layout_id, hole_id) → id` (unique per layout) bridges the two, so `climb_concat` is rewritten to the canonical Aurora frames format and routed through the existing `convertLitUpHoldsStringToMap`. This guarantees byte-identical `board_climb_holds` / `hold_fingerprint` to the legacy data (verified 366/366 in Phase 0).
 5. **Dedup** (see [Climb dedup](#climb-dedup)) — **UUID-first** (Grips inherited Aurora's climb UUIDs, so ~80% of climbs already exist as their own canonical), then hold-fingerprint for new UUIDs.
 6. **Upsert** `board_climbs` (new canonicals only) + `board_climb_holds` + `board_climb_aliases`, then `board_climb_stats`, writing the Grips count into `upstream_ascensionist_count` (see below). Setter notifications fire for newly-inserted canonicals (`sync/notifications.ts`, ported from aurora-sync).
 7. **Deletion reconciliation** (`sync/deletions.ts`) via `GET /api/climbs/delteduuids` — gated, report-only by default.
@@ -175,12 +175,49 @@ bun packages/db/scripts/backfill-hold-fingerprints.ts --board kilter
 
 Idempotent (re-running writes the same fingerprints; self-aliases use `ON CONFLICT DO UPDATE`).
 
-### Known limitations (climbs skipped + reported, never silently dropped)
+### The `climb_concat` encoding
 
-A full run reports a small `climbsUnmapped` count (~0.01% after the UUID-first match). Two causes:
+Every hold in a Grips `climb_concat` is one token:
 
-- **New multi-frame animated climbs.** Kilter's animated (`frame_count > 1`) climbs encode `climb_concat` as `h{hole}p{code}s{startFrame}e{endFrame}` rather than the comma-frame format, which the parser doesn't decode. Existing animated climbs match by UUID (so they still get stats); only a _new_ animated climb (unseen UUID) is skipped. Decoding the `s`/`e` format is a follow-up.
-- **Post-2024 hold-set placements.** A handful of climbs use holds whose `board_placements` rows postdate the legacy snapshot (`board_shared_syncs` shows placements last synced 2024-06-22). The holds exist in `board_holes` but aren't placed on the layout, so the hole→placement remap fails. Refreshing `board_placements` (needs the `mounting_holes` PowerSync bucket) is a follow-up.
+```
+h{holeId} p{roleCode} [s{startFrame}] [e{endFrame}]
+```
+
+`s`/`e` are **1-based and inclusive**, and are omitted when they equal their default (`s` → frame 1, `e` → the climb's last frame). A bare `h1180p12` on a 15-frame climb is therefore lit for all 15 frames. Animated (`frame_count > 1`) climbs are exactly the ones that carry `s`/`e`; single-frame climbs never do. The commas the Aurora `frames` format uses **never appear** in a `climb_concat`.
+
+`catalog-parse.ts` translates a hold lit over frames `s..e` into a `p{placementId}r{code}` token on frame `s` and, when `e` isn't the final frame, an `x{placementId}` token on frame `e + 1` — the Aurora delta format. A placement cleared and re-lit on the same frame keeps only the `p` token. Multi-frame output sorts each frame's tokens by placement id (the Aurora catalog's own convention); single-frame output preserves the incoming order.
+
+Verified against 100,513 live catalog rows across two product layouts (2026-07-25): every concat matches the grammar with no gaps, and no `s`/`e` index falls outside `1..frameCount`. Decoding every climb present in both catalogs and diffing against the legacy Aurora `frames` gives **141/141 semantic parity on multi-frame climbs** (78 of them byte-identical) over 86,054 climbs compared, with one divergence that is an upstream content edit rather than a decode fault. The captured samples backing the unit tests live in `packages/kilter-sync/src/sync/__fixtures__/grips-multiframe.json`, with their provenance recorded in the file.
+
+### The skip backlog (`board_climb_ingest_skips`)
+
+A climb the sync reads but cannot turn into a `board_climbs` row is recorded in `board_climb_ingest_skips` with its **verbatim** `climb_concat`, so an encoding change is visible instead of silent. Before this table existed such a climb was counted, logged once, and then missing from Boardsesh forever — including its stats, which get dropped along with it (issue #3523).
+
+| `reason`             | Meaning                                                                     |
+| -------------------- | --------------------------------------------------------------------------- |
+| `unplaceable_hole`   | A hole in the concat has no `board_placements` row on the resolved layout.  |
+| `unparsable_concat`  | The token scan didn't consume the whole string — an encoding we don't know. |
+| `frame_out_of_range` | An `s`/`e` index falls outside `1..frameCount`, or the range is inverted.   |
+
+Rows are upserted on `(board_type, climb_uuid)`: re-skipping refreshes `last_seen_at` and re-opens the row, and a climb a later run manages to ingest gets `resolved_at` stamped. Nothing is ever deleted, so the table doubles as the record of what a parser fix recovered. `climbsUnmapped`, `skipsRecorded`, and `skipsResolved` all land in the per-run summary log.
+
+Read it with:
+
+```bash
+bunx kilter-sync backlog                                    # open skips, grouped by reason
+bunx kilter-sync backlog --reason unparsable_concat --raw   # with the raw payloads
+bunx kilter-sync backlog --include-resolved
+```
+
+A non-zero `unparsable_concat` count is the signal that Kilter changed the encoding — and the raw payloads needed to decode the new form are already sitting in the table.
+
+### Remaining known gap
+
+- **Post-2024 hold-set placements.** A handful of climbs use holds whose `board_placements` rows postdate the legacy snapshot (`board_shared_syncs` shows placements last synced 2024-06-22). The holds exist in `board_holes` but aren't placed on the layout, so the hole→placement remap fails and the climb lands in the backlog as `unplaceable_hole`. Refreshing `board_placements` (needs the `mounting_holes` PowerSync bucket) is a follow-up.
+
+### Setter notifications and recovered climbs
+
+A newly-inserted canonical notifies followers of its setter only when the upstream `createdAt` is recent (30 days). Any ingest that recovers a backlog — the multi-frame decoder picks up animated climbs first published as far back as 2021 — would otherwise present years-old climbs to followers as brand new.
 
 ## Public board locations
 

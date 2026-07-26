@@ -1,90 +1,185 @@
-import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
+import { HOLD_STATE_MAP } from '@boardsesh/board-constants/hold-states';
 
-import { fingerprintFromHolds, type HoldTuple } from './fingerprint';
+import { type HoldTuple } from './fingerprint';
 
 const KILTER_BOARD = 'kilter' as const;
 
 /**
- * Kilter Grips encodes a climb's holds in `climb_concat` as
- * `h{holeId}p{placementCode}` (comma-separated per frame). The legacy
- * Boardsesh catalog — synced from the pre-split Aurora backend — encodes the
- * same climb in `board_climbs.frames` as `p{placementId}r{roleCode}`, where
- * the integer is the **placement id**, not the hole id. Verified live
- * (2026-06-02): for a given layout, `board_placements(layout_id, hole_id)`
- * maps each Grips hole id onto exactly one Aurora placement id, and the role
- * codes are identical (12=start, 13=middle, 14=finish, 15=foot, 36–41 colour).
+ * One hold in a Kilter Grips `climb_concat`:
  *
- * Rather than re-implement the hold-state decode, we translate `climb_concat`
- * into the canonical Aurora frames string and route everything through the
- * existing `convertLitUpHoldsStringToMap`. That guarantees byte-identical
- * `board_climb_holds` and `hold_fingerprint` values to what the legacy
- * catalog already produced — so a Grips climb dedupes against its Aurora twin,
- * and `board_climbs.frames` stays in the one format the LED protocol and the
- * renderer understand. Proven 366/366 fingerprint parity in Phase 0.
+ *   h{holeId} p{roleCode} [s{startFrame}] [e{endFrame}]
  *
- * Returns `null` if any hole has no placement on this layout (a hold we can't
- * place) — the caller skips the climb and counts it as unmapped.
+ * `s`/`e` are 1-based and inclusive, and are omitted when they equal their
+ * default (`s` → frame 1, `e` → the climb's last frame).
  */
-export function gripsClimbConcatToFrames(climbConcat: string, holeToPlacement: Map<number, number>): string | null {
-  const frames = climbConcat.split(',');
-  const out: string[] = [];
-  for (const frame of frames) {
-    if (frame === '') {
-      out.push('');
-      continue;
-    }
-    const holdRe = /h(\d+)p(\d+)/g;
-    let frameStr = '';
-    let consumed = 0;
-    let match: RegExpExecArray | null;
-    while ((match = holdRe.exec(frame)) !== null) {
-      consumed += match[0].length;
-      const holeId = Number(match[1]);
-      const placementId = holeToPlacement.get(holeId);
-      if (placementId === undefined) return null;
-      frameStr += `p${placementId}r${match[2]}`;
-    }
-    // Defend against an encoding we don't understand: if the regex didn't
-    // consume the whole non-empty frame, bail rather than silently dropping
-    // holds (which would corrupt the fingerprint).
-    if (consumed !== frame.length) return null;
-    out.push(frameStr);
-  }
-  return out.join(',');
-}
+const HOLD_TOKEN = /h(\d+)p(\d+)(?:s(\d+))?(?:e(\d+))?/g;
+
+/** Why a `climb_concat` could not be turned into a board_climbs row. */
+export type KilterSkipReason = 'unplaceable_hole' | 'unparsable_concat' | 'frame_out_of_range';
+
+export type GripsDecodeResult =
+  | { ok: true; frames: string; holds: HoldTuple[] }
+  /** A hole in the concat has no placement on the resolved layout. */
+  | { ok: false; reason: 'unplaceable_hole'; holeId: number }
+  /** The token scan didn't consume the whole string — an encoding we don't know. */
+  | { ok: false; reason: 'unparsable_concat'; offset: number }
+  /** An s/e frame index falls outside 1..frameCount, or the range is inverted. */
+  | { ok: false; reason: 'frame_out_of_range'; frame: number };
 
 /**
- * Diagnostic-only: the first holeId in `climb_concat` with no placement on this
- * layout — i.e. why `gripsClimbConcatToFrames` returned null. Called only on the
- * (rare) unmapped path to make the climbsUnmapped counter diagnosable in logs.
- * Returns null when the failure wasn't a missing hole (e.g. a malformed frame).
+ * Decode a Kilter Grips `climb_concat` into the canonical Aurora frames
+ * string plus the per-frame hold tuples that back `board_climb_holds` and the
+ * dedup fingerprint.
+ *
+ * ## The two encodings
+ *
+ * Grips encodes every hold as `h{holeId}p{roleCode}[s{start}][e{end}]`, where
+ * the integer after `h` is the **hole id**. The Boardsesh catalog — synced
+ * from the pre-split Aurora backend — stores the same climb in
+ * `board_climbs.frames` as comma-separated per-frame deltas, where the
+ * integer is the **placement id**: `p{placementId}r{roleCode}` lights a hold,
+ * `x{placementId}` clears one, and every frame after the first carries a
+ * literal `"` prefix.
+ *
+ * `board_placements(layout_id, hole_id)` maps each Grips hole id onto exactly
+ * one Aurora placement id per layout, and the role codes are shared
+ * (12=start, 13=middle, 14=finish, 15=foot). Translating into the Aurora
+ * format rather than inventing a third one keeps `board_climbs.frames` in the
+ * single format the LED protocol and the renderer already understand.
+ *
+ * ## The animated (multi-frame) form
+ *
+ * `s{start}`/`e{end}` are 1-based, inclusive, and omitted when they equal
+ * their default — so a bare `h1180p12` on a 15-frame climb is lit for all 15
+ * frames. A hold lit over frames `s..e` becomes a `p` token on frame `s` and,
+ * when `e` is not the final frame, an `x` token on frame `e + 1`. The same
+ * hole may appear twice with disjoint ranges (a hold that goes out and comes
+ * back in a different role); when a placement is cleared and re-lit on the
+ * same frame the `p` token wins and the redundant `x` is dropped, matching
+ * what the Aurora catalog emits.
+ *
+ * Verified against 100,513 live catalog rows across two product layouts
+ * (2026-07-25): every concat matches this grammar with no gaps, commas never
+ * appear, `s`/`e` never appear on a single-frame climb, and no s/e index ever
+ * falls outside 1..frameCount. Cross-checking the decode against the legacy
+ * Aurora catalog's own `frames` strings for the climbs present in both gives
+ * 141/141 semantic parity on multi-frame climbs (78 of them byte-identical;
+ * the rest differ only where Aurora re-states a frame as an absolute snapshot
+ * instead of a delta). See docs/kilter-sync.md.
+ *
+ * Multi-frame output sorts each frame's tokens by placement id, which is the
+ * Aurora catalog's own convention and what makes those 78 byte-identical.
+ * Single-frame output keeps the incoming order untouched, so the ~99% of
+ * climbs that take that path decode exactly as they did before.
  */
-export function firstUnplaceableHole(climbConcat: string, holeToPlacement: Map<number, number>): number | null {
-  const holdRe = /h(\d+)p(\d+)/g;
+export function decodeGripsClimbConcat(
+  climbConcat: string,
+  holeToPlacement: Map<number, number>,
+  frameCount: number,
+): GripsDecodeResult {
+  // The wire always sends frameCount >= 1; clamp so a bad value can't produce
+  // a zero-frame climb (which would silently drop every hold).
+  const totalFrames = Number.isFinite(frameCount) && frameCount > 1 ? Math.floor(frameCount) : 1;
+
+  // 0-based frame index → placement id → role code, for holds lit on that frame.
+  const setsByFrame = new Map<number, Map<number, number>>();
+  // 0-based frame index → placement ids cleared as that frame begins.
+  const clearsByFrame = new Map<number, Set<number>>();
+
+  const tokens = new RegExp(HOLD_TOKEN.source, 'g');
+  let consumed = 0;
   let match: RegExpExecArray | null;
-  while ((match = holdRe.exec(climbConcat)) !== null) {
+  while ((match = tokens.exec(climbConcat)) !== null) {
+    // A gap between tokens means an encoding we don't understand. Stop and let
+    // the full-consumption check below reject it rather than dropping holds.
+    if (match.index !== consumed) break;
+    consumed = tokens.lastIndex;
+
     const holeId = Number(match[1]);
-    if (!holeToPlacement.has(holeId)) return holeId;
+    const placementId = holeToPlacement.get(holeId);
+    if (placementId === undefined) return { ok: false, reason: 'unplaceable_hole', holeId };
+
+    // s/e are 1-based on the wire; frames are 0-based everywhere below.
+    const startFrame = match[3] === undefined ? 1 : Number(match[3]);
+    const endFrame = match[4] === undefined ? totalFrames : Number(match[4]);
+    if (startFrame < 1 || startFrame > totalFrames) {
+      return { ok: false, reason: 'frame_out_of_range', frame: startFrame };
+    }
+    if (endFrame < startFrame || endFrame > totalFrames) {
+      return { ok: false, reason: 'frame_out_of_range', frame: endFrame };
+    }
+
+    const startIndex = startFrame - 1;
+    let sets = setsByFrame.get(startIndex);
+    if (!sets) {
+      sets = new Map<number, number>();
+      setsByFrame.set(startIndex, sets);
+    }
+    sets.set(placementId, Number(match[2]));
+
+    if (endFrame < totalFrames) {
+      // (endFrame - 1) + 1 — the frame after the last one this hold is lit on.
+      const clearIndex = endFrame;
+      let clears = clearsByFrame.get(clearIndex);
+      if (!clears) {
+        clears = new Set<number>();
+        clearsByFrame.set(clearIndex, clears);
+      }
+      clears.add(placementId);
+    }
   }
-  return null;
+
+  // If the scan didn't consume the whole string, bail rather than silently
+  // dropping holds — that would corrupt the fingerprint and light the wrong
+  // holds on the wall.
+  if (consumed !== climbConcat.length) return { ok: false, reason: 'unparsable_concat', offset: consumed };
+
+  const holds: HoldTuple[] = [];
+  const frameStrings: string[] = [];
+  for (let frameNumber = 0; frameNumber < totalFrames; frameNumber += 1) {
+    const sets = setsByFrame.get(frameNumber);
+    const clears = clearsByFrame.get(frameNumber);
+    const entries: Array<{ placementId: number; roleCode: number | null }> = [];
+    if (clears) {
+      for (const placementId of clears) {
+        // A placement re-lit on the same frame it would go out stays lit —
+        // emitting the `x` too would be noise the Aurora catalog omits.
+        if (!sets?.has(placementId)) entries.push({ placementId, roleCode: null });
+      }
+    }
+    if (sets) {
+      for (const [placementId, roleCode] of sets) entries.push({ placementId, roleCode });
+    }
+    if (totalFrames > 1) entries.sort((left, right) => left.placementId - right.placementId);
+
+    let frameString = '';
+    for (const entry of entries) {
+      if (entry.roleCode === null) {
+        frameString += `x${entry.placementId}`;
+        continue;
+      }
+      frameString += `p${entry.placementId}r${entry.roleCode}`;
+      holds.push({
+        holdId: entry.placementId,
+        frameNumber,
+        holdState: holdStateName(entry.placementId, entry.roleCode),
+      });
+    }
+    frameStrings.push(frameString);
+  }
+
+  // Aurora prefixes every frame after the first with a literal `"`.
+  const frames = frameStrings.map((frameString, index) => (index === 0 ? frameString : `,"${frameString}`)).join('');
+  return { ok: true, frames, holds };
 }
 
 /**
- * Flatten an Aurora-format frames string into fingerprint tuples — identical
- * to aurora-sync `shared-sync.ts` so board_climb_holds rows match exactly.
+ * Role code → hold-state name, mirroring `convertLitUpHoldsStringToMap` so a
+ * decoded climb produces the same `board_climb_holds.hold_state` values the
+ * rest of the catalog already stores. Unknown codes keep that function's
+ * `{holdId}={code}` sentinel, which downstream readers (the fingerprint
+ * backfill, the duplicate gate) already recognise and skip.
  */
-export function framesToHolds(frames: string): HoldTuple[] {
-  const byFrame = convertLitUpHoldsStringToMap(frames, KILTER_BOARD);
-  return Object.entries(byFrame).flatMap(([frameNumber, holds]) =>
-    Object.entries(holds).map(([holdId, { state }]) => ({
-      holdId: Number(holdId),
-      holdState: state,
-      frameNumber: Number(frameNumber),
-    })),
-  );
-}
-
-/** Convenience: frames string → hold fingerprint. */
-export function fingerprintFrames(frames: string): string {
-  return fingerprintFromHolds(framesToHolds(frames));
+function holdStateName(placementId: number, roleCode: number): string {
+  return HOLD_STATE_MAP[KILTER_BOARD]?.[roleCode]?.name ?? `${placementId}=${roleCode}`;
 }

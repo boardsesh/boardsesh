@@ -23,7 +23,16 @@ import { KilterApiError } from '../api/errors';
 import { pullKilterReference, type KilterReferencePull } from './reference-pull';
 import { correctGripsQualityAverage } from './quality-scale';
 import { buildLayoutResolver } from './layout-resolver';
-import { gripsClimbConcatToFrames, framesToHolds, firstUnplaceableHole } from './catalog-parse';
+import { decodeGripsClimbConcat } from './catalog-parse';
+import {
+  buildSkipRow,
+  describeSkip,
+  loadOpenSkipUuids,
+  markSkipsResolved,
+  persistSkips,
+  summarizeSkipReasons,
+  type ClimbIngestSkip,
+} from './catalog-backlog';
 import { fingerprintFromHolds } from './fingerprint';
 import { createSetterSyncNotifications, type NewClimbInfo } from './notifications';
 import { reconcileDeletions, type DeletionReport } from './deletions';
@@ -71,6 +80,10 @@ export type KilterCatalogSummary = {
   statsUpserted: number;
   selfAliasesBackfilled: number;
   canonicalsRelisted: number;
+  /** Skipped climbs written to board_climb_ingest_skips this run. */
+  skipsRecorded: number;
+  /** Previously-skipped climbs this run managed to ingest. */
+  skipsResolved: number;
   locations: LocationSyncSummary | null;
   deletions: DeletionReport;
 };
@@ -111,8 +124,6 @@ async function loadHoleToPlacement(db: DrizzleDb, layoutId: number): Promise<Map
   return map;
 }
 
-type UnmappedClimbSample = { climbUuid: string; holeId: number | null };
-
 type GroupResult = {
   climbsSeen: number;
   climbsUnmapped: number;
@@ -124,8 +135,10 @@ type GroupResult = {
   /** Unlisted synced canonicals re-listed because a listed Grips climb folded on. */
   canonicalsRelisted: number;
   newCanonicals: NewClimbInfo[];
-  /** A few unmapped climbs (uuid + offending holeId) for a diagnostic log line. */
-  unmappedSamples: UnmappedClimbSample[];
+  /** Every climb this group couldn't ingest, for board_climb_ingest_skips. */
+  skips: ClimbIngestSkip[];
+  /** Climbs that were in the backlog and ingested successfully this run. */
+  resolvedSkipUuids: string[];
 };
 
 /**
@@ -146,8 +159,28 @@ export function shouldRelistFoldedCanonical(
   return canonicalMeta !== undefined && canonicalMeta.userId === null && canonicalMeta.isListed !== true;
 }
 
-// Cap the diagnostic sample so a systemic mapping break can't balloon the log.
+// Cap the uuids named in the log line — the full set is in the skips table, so
+// a systemic mapping break can't balloon the log.
 const UNMAPPED_SAMPLE_LIMIT = 10;
+
+// A newly-ingested climb only fires "your setter posted a new climb" if it was
+// actually created upstream recently. Without this, any ingest that recovers a
+// backlog — like the multi-frame decoder landing in #3523, which picks up
+// animated climbs first published as far back as 2021 — would spam every
+// follower of those setters with years-old climbs presented as new.
+const NOTIFY_MAX_CLIMB_AGE_DAYS = 30;
+
+/**
+ * Whether a newly-inserted canonical should notify the setter's followers.
+ * A climb with no parseable upstream `createdAt` is treated as new, matching
+ * the behaviour before this gate existed. Pure + exported for unit testing.
+ */
+export function shouldNotifyForNewCanonical(createdAt: string | null | undefined, now: Date): boolean {
+  if (!createdAt) return true;
+  const createdMs = Date.parse(createdAt);
+  if (Number.isNaN(createdMs)) return true;
+  return now.getTime() - createdMs <= NOTIFY_MAX_CLIMB_AGE_DAYS * 24 * 60 * 60 * 1000;
+}
 
 // Mutable per-(canonical, angle) stat accumulator. kilterCount is summed across
 // every source UUID that resolves to the canonical; the display fields are
@@ -270,6 +303,7 @@ async function syncBoardLayoutGroup(
   state: TokenState,
   boardLayoutId: number,
   gripsLayoutUuids: string[],
+  openSkipUuids: Set<string>,
   log: (message: string) => void,
 ): Promise<GroupResult> {
   const result: GroupResult = {
@@ -281,8 +315,11 @@ async function syncBoardLayoutGroup(
     selfAliasesBackfilled: 0,
     canonicalsRelisted: 0,
     newCanonicals: [],
-    unmappedSamples: [],
+    skips: [],
+    resolvedSkipUuids: [],
   };
+  // Stamped once per group so every climb in it is aged against the same clock.
+  const groupStartedAt = new Date();
 
   // Existing catalog for this layout: uuid identity + fingerprint → canonical,
   // carrying listing/ownership so the fold path can re-list a synced canonical
@@ -364,14 +401,13 @@ async function syncBoardLayoutGroup(
       //    most incoming climbs already exist as their own canonical. Match on
       //    UUID *before* parsing climb_concat: existing climbs keep their
       //    backfilled holds + fingerprint (no need to re-derive), it skips
-      //    parsing for the ~80% UUID-matched majority, and it lets multi-frame
-      //    animated climbs — whose climb_concat uses an s{frame}/e{frame}
-      //    encoding we don't fully decode — still resolve and receive stats.
-      //    The fingerprint dedup map is pre-seeded from the DB load below, so
-      //    nothing is lost by not re-fingerprinting existing rows here.
+      //    parsing for the ~80% UUID-matched majority. The fingerprint dedup
+      //    map is pre-seeded from the DB load below, so nothing is lost by not
+      //    re-fingerprinting existing rows here.
       const existingUuid = existingByLowerUuid.get(lowerUuid);
       if (existingUuid) {
         climbUuidToCanonical.set(lowerUuid, existingUuid);
+        if (openSkipUuids.has(lowerUuid)) result.resolvedSkipUuids.push(climb.climbUuid);
         // Self-heal the self-alias gap (~6k kilter climbs reached the catalog
         // via a path that never wrote one, leaving them invisible to deletion
         // reconciliation). Only write the missing ones so steady-state runs add
@@ -384,19 +420,25 @@ async function syncBoardLayoutGroup(
         continue;
       }
 
-      // New UUID — parse holds to fingerprint (and, if canonical, to insert).
-      const frames = gripsClimbConcatToFrames(climb.climbConcat, holeToPlacement);
-      if (frames === null) {
+      // New UUID — decode holds to fingerprint (and, if canonical, to insert).
+      // Handles both the single-frame form and the animated s{start}/e{end}
+      // form; anything else lands in the skips backlog with its raw payload
+      // rather than disappearing (issue #3523).
+      const decoded = decodeGripsClimbConcat(climb.climbConcat, holeToPlacement, climb.frameCount);
+      if (!decoded.ok) {
         result.climbsUnmapped += 1;
-        if (result.unmappedSamples.length < UNMAPPED_SAMPLE_LIMIT) {
-          result.unmappedSamples.push({
-            climbUuid: climb.climbUuid,
-            holeId: firstUnplaceableHole(climb.climbConcat, holeToPlacement),
-          });
-        }
+        result.skips.push(
+          buildSkipRow(climb, decoded, {
+            boardType: KILTER,
+            layoutId: boardLayoutId,
+            sourceLayoutUuid: gripsLayoutUuid,
+          }),
+        );
         continue;
       }
-      const fingerprint = fingerprintFromHolds(framesToHolds(frames));
+      const { frames, holds } = decoded;
+      const fingerprint = fingerprintFromHolds(holds);
+      if (openSkipUuids.has(lowerUuid)) result.resolvedSkipUuids.push(climb.climbUuid);
 
       // 2. Fingerprint dedup — a new UUID whose holds match an existing (or
       //    already-seen-this-run) canonical becomes an alias, not a new row.
@@ -444,7 +486,7 @@ async function syncBoardLayoutGroup(
         createdAt: climb.createdAt,
         holdFingerprint: fingerprint,
       });
-      for (const hold of framesToHolds(frames)) {
+      for (const hold of holds) {
         newHoldRows.push({
           boardType: KILTER,
           climbUuid: climb.climbUuid,
@@ -454,12 +496,16 @@ async function syncBoardLayoutGroup(
         });
       }
       aliasRows.push({ boardType: KILTER, aliasUuid: climb.climbUuid, canonicalUuid: climb.climbUuid, source: KILTER });
-      result.newCanonicals.push({
-        uuid: climb.climbUuid,
-        setterUsername: climb.username,
-        layoutId: boardLayoutId,
-        name: climb.name,
-      });
+      // Only genuinely-new upstream climbs notify followers — an ingest that
+      // recovers a backlog of older climbs must not present them as new.
+      if (shouldNotifyForNewCanonical(climb.createdAt, groupStartedAt)) {
+        result.newCanonicals.push({
+          uuid: climb.climbUuid,
+          setterUsername: climb.username,
+          layoutId: boardLayoutId,
+          name: climb.name,
+        });
+      }
     }
 
     // Flush this Grips layout. Order matters: climbs before holds (FK) before
@@ -679,6 +725,8 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     statsUpserted: 0,
     selfAliasesBackfilled: 0,
     canonicalsRelisted: 0,
+    skipsRecorded: 0,
+    skipsResolved: 0,
     locations: null,
     deletions: {
       reported: 0,
@@ -697,10 +745,15 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     },
   };
   const allNewCanonicals: NewClimbInfo[] = [];
-  const unmappedSamples: UnmappedClimbSample[] = [];
+  const allSkips: ClimbIngestSkip[] = [];
+  const allResolvedSkipUuids: string[] = [];
+
+  // The climbs already sitting unresolved in the backlog, so a run that finally
+  // ingests one can stamp it resolved without scanning every climb it saw.
+  const openSkipUuids = await loadOpenSkipUuids(args.db, KILTER);
 
   for (const [boardLayoutId, gripsLayoutUuids] of byBoardLayout) {
-    const groupResult = await syncBoardLayoutGroup(args.db, state, boardLayoutId, gripsLayoutUuids, log);
+    const groupResult = await syncBoardLayoutGroup(args.db, state, boardLayoutId, gripsLayoutUuids, openSkipUuids, log);
     summary.gripsLayoutsProcessed += gripsLayoutUuids.length;
     summary.climbsSeen += groupResult.climbsSeen;
     summary.climbsUnmapped += groupResult.climbsUnmapped;
@@ -710,18 +763,31 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     summary.selfAliasesBackfilled += groupResult.selfAliasesBackfilled;
     summary.canonicalsRelisted += groupResult.canonicalsRelisted;
     allNewCanonicals.push(...groupResult.newCanonicals);
-    for (const sample of groupResult.unmappedSamples) {
-      if (unmappedSamples.length < UNMAPPED_SAMPLE_LIMIT) unmappedSamples.push(sample);
-    }
+    allSkips.push(...groupResult.skips);
+    allResolvedSkipUuids.push(...groupResult.resolvedSkipUuids);
   }
 
-  // Surface a sample of unmapped climbs so climbsUnmapped is diagnosable (holds
-  // that have no placement on the resolved layout — usually a fringe variant).
-  if (summary.climbsUnmapped > 0) {
-    const sample = unmappedSamples
-      .map((entry) => (entry.holeId != null ? `${entry.climbUuid}(hole ${entry.holeId})` : entry.climbUuid))
-      .join(', ');
-    log(`[kilter-catalog] ${summary.climbsUnmapped} climb(s) unmapped; sample: ${sample}`);
+  // Persist the backlog. A skipped climb used to leave nothing behind but a
+  // counter, so it could be missing from Boardsesh forever with no record of
+  // it; now every skip keeps its verbatim upstream payload for decoding later.
+  // A failure here must not fail the catalog run — the climbs are already in.
+  try {
+    if (allSkips.length > 0) {
+      await persistSkips(args.db, allSkips);
+      summary.skipsRecorded = allSkips.length;
+      const byReason = summarizeSkipReasons(allSkips)
+        .map((entry) => `${entry.count} ${entry.reason}`)
+        .join(', ');
+      const sample = allSkips.slice(0, UNMAPPED_SAMPLE_LIMIT).map(describeSkip).join(', ');
+      log(`[kilter-catalog] ${allSkips.length} climb(s) unmapped (${byReason}); sample: ${sample}`);
+    }
+    if (allResolvedSkipUuids.length > 0) {
+      await markSkipsResolved(args.db, KILTER, allResolvedSkipUuids);
+      summary.skipsResolved = allResolvedSkipUuids.length;
+      log(`[kilter-catalog] recovered ${allResolvedSkipUuids.length} previously-unmapped climb(s)`);
+    }
+  } catch (error) {
+    log(`[kilter-catalog] skip backlog write failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // Persist the layout uuid → layout_id mappings discovered this run.
