@@ -92,14 +92,21 @@ describe('Icon platform rendering', () => {
   });
 
   it('leaves glyphs without a recorded correction untransformed', () => {
-    const { queryByTestId } = render(<Icon name="skip.next" size={26} />);
-    expect(queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBeNull();
+    const plain = render(<Icon name="skip.next" size={26} />);
+    expect(plain.queryByTestId('symbol-view')?.hasAttribute('data-translate-y')).toBe(false);
+    plain.unmount();
+
+    // Same renderer, same size, a glyph that does carry a correction — so the
+    // assertion above fails if the transform stopped being applied at all,
+    // rather than passing because nothing ever sets the attribute.
+    const corrected = render(<Icon name="check.small" size={26} />);
+    expect(corrected.queryByTestId('symbol-view')?.hasAttribute('data-translate-y')).toBe(true);
   });
 
   it('never shifts the Android glyph, which is already ink-centred', () => {
     ctrl.os = 'android';
     const { queryByTestId } = render(<Icon name="check.small" size={26} />);
-    expect(queryByTestId('mci')?.getAttribute('data-translate-y')).toBeNull();
+    expect(queryByTestId('mci')?.hasAttribute('data-translate-y')).toBe(false);
     expect(queryByTestId('symbol-view')).toBeNull();
   });
 
