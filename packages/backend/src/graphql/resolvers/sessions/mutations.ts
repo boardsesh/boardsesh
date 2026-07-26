@@ -351,6 +351,8 @@ export const sessionMutations = {
           endedAt: null,
           isPermanent: input.isPermanent || false,
           color: input.color || null,
+          // We are the creator by construction on both createSession paths.
+          createdByUserId: ctx.userId ?? null,
         };
       }
 
@@ -378,6 +380,7 @@ export const sessionMutations = {
         endedAt: null,
         isPermanent: input.isPermanent || false,
         color: input.color || null,
+        createdByUserId: ctx.userId ?? null,
       };
     } catch (err) {
       // Rate-limit hits are expected abuse-protection noise, not a session-start
@@ -678,6 +681,10 @@ export const sessionMutations = {
       endedAt: sessionData.endedAt?.toISOString() || null,
       isPermanent: sessionData.isPermanent ?? false,
       color: sessionData.color || null,
+      // `requireSessionMember` gated this mutation, so the caller is a member
+      // and gets the un-redacted creator id (see the `session` query for the
+      // non-member redaction).
+      createdByUserId: sessionData.createdByUserId ?? null,
     };
   },
 

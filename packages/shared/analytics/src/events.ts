@@ -36,6 +36,12 @@ export const SHARED_EVENTS = {
   PlayDrawerOpened: 'Play Drawer Opened',
   SessionStarted: 'Session Started',
   SessionEnded: 'Session Ended',
+  // A climber dropped out of a session WITHOUT ending it for everyone else —
+  // the non-destructive exit added in #3502. Props: { startedOnThisDevice,
+  // couldHaveEnded } so the split between "left my own party from a second
+  // phone" and "left someone else's party" is measurable. Ending still fires
+  // Session Ended; the two are mutually exclusive per exit.
+  SessionLeft: 'Session Left',
   SessionCommentAdded: 'Session Comment Added',
   // A session's title was edited (both platforms). Props: { source:
   // 'record_chrome' | 'session_detail', nameLength } — counts only, never the

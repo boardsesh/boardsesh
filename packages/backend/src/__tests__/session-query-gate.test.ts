@@ -249,6 +249,33 @@ describe('session query — membership gate compat matrix', () => {
     expect(distributedState.isConnectionInSession).not.toHaveBeenCalled();
   });
 
+  // #3502: mobile reads createdByUserId in-session to decide whether to offer
+  // the destructive End action. Members must get it (otherwise a creator loses
+  // the ability to end their own zero-tick session); non-members must not.
+  // Deleting the redaction in queries.session fails the second half.
+  it('exposes createdByUserId to members and withholds it from the stranger preview', async () => {
+    dbMock.limit.mockResolvedValueOnce([{ sessionId: 'session-1' }]);
+    const memberCtx = makeCtx({
+      connectionId: 'http-99999999-9999-9999-9999-999999999999',
+      transport: 'http',
+      userId: 'user-42',
+      isAuthenticated: true,
+    });
+    const memberResult = await sessionQueries.session(undefined, { sessionId: 'session-1' }, memberCtx);
+    expect(memberResult!.createdByUserId).toBe(sampleSessionData.createdByUserId);
+
+    const strangerCtx = makeCtx({
+      connectionId: 'http-88888888-8888-8888-8888-888888888888',
+      transport: 'http',
+      userId: undefined,
+      isAuthenticated: false,
+    });
+    const strangerResult = await sessionQueries.session(undefined, { sessionId: 'session-1' }, strangerCtx);
+    expect(strangerResult!.createdByUserId).toBeNull();
+    // The roster is still un-redacted — that contract is unchanged.
+    expect(strangerResult!.users).toEqual(sampleUsers);
+  });
+
   it('anonymous HTTP caller for a live session they were "in" gets a preview — accepted degradation, no stable identity to check durably', async () => {
     const ctx = makeCtx({
       connectionId: 'http-22222222-2222-2222-2222-222222222222',
@@ -299,6 +326,11 @@ describe('session query — membership gate compat matrix', () => {
       endedAt: null,
       isPermanent: false,
       color: '#ff00aa',
+      // Redacted for non-members (#3502). The roster above DOES carry present
+      // members' user ids by design, but that set diverges from the creator the
+      // moment they disconnect — a stranger holding only the session UUID has
+      // no business learning who started it.
+      createdByUserId: null,
     });
   });
 

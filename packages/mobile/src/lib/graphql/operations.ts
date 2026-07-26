@@ -705,6 +705,35 @@ export type GetSessionQueryResponse = {
   session: SessionPreview | null;
 };
 
+// Who started the active session, read in-session to decide whether to offer
+// the destructive End action at all (#3502). Deliberately its OWN document
+// rather than another field on GET_SESSION: that query also backs the
+// join-by-link screen (app/join/[sessionId].tsx), and GraphQL validates whole
+// documents — a new-bundle/old-backend skew would fail the entire query and
+// break joining, which is far worse than the bug this fixes. Isolated here, the
+// same skew just leaves ownership unknown and the exit UI falls back to its
+// permissive default.
+//
+// `createdByUserId` is redacted to null for non-members server-side, and it is
+// NOT an authorization signal — endSession re-checks creator/leader.
+export const GET_SESSION_OWNER = gql`
+  query GetSessionOwner($sessionId: ID!) {
+    session(sessionId: $sessionId) {
+      id
+      createdByUserId
+    }
+  }
+`;
+
+export type SessionOwner = {
+  id: string;
+  createdByUserId: string | null;
+};
+
+export type GetSessionOwnerQueryResponse = {
+  session: SessionOwner | null;
+};
+
 // Presence-independent lifecycle check, read on cold start to decide whether a
 // persisted session id should be restored or dropped (#2683). Unlike GET_SESSION
 // (gated on live roster, so an ended session and a dormant-but-active solo

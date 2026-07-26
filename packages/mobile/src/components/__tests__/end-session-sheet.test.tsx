@@ -116,6 +116,7 @@ vi.mock('../../providers/theme-provider', () => ({
       label: '#000',
       tertiaryLabel: '#aaa',
     },
+    brandColors: { error: '#f00' },
   }),
 }));
 
@@ -124,14 +125,23 @@ vi.mock('../Text', () => ({
   Text: ({ children }: TextMockProps) => createElement('span', { 'data-text': 'true' }, children),
 }));
 
-type ButtonMockProps = { title: string; onPress?: () => void; variant?: string; loading?: boolean };
+type ButtonMockProps = {
+  title: string;
+  onPress?: () => void;
+  variant?: string;
+  loading?: boolean;
+  role?: string;
+  disabled?: boolean;
+};
 vi.mock('../Button', () => ({
-  Button: ({ title, onPress, variant, loading }: ButtonMockProps) =>
+  Button: ({ title, onPress, variant, loading, role, disabled }: ButtonMockProps) =>
     createElement('button', {
       onClick: onPress,
       'data-button': title,
       'data-variant': variant ?? 'filled',
       'data-loading': loading ? 'true' : 'false',
+      'data-role': role ?? 'default',
+      'data-disabled': disabled ? 'true' : 'false',
     }),
 }));
 
@@ -152,10 +162,16 @@ function makeProps(over: Partial<Parameters<typeof EndSessionSheet>[0]> = {}) {
     visible: true,
     onDismiss: vi.fn(),
     onConfirm: vi.fn(),
+    onLeave: vi.fn(),
     isEnding: false,
+    isLeaving: false,
     climbCount: 3,
     notes: '',
     onNotesChange: vi.fn(),
+    // The pre-#3502 sheet was end-only, so the cases below keep asserting that
+    // shape by defaulting to the end mode.
+    defaultMode: 'end' as const,
+    canEnd: true,
     ...over,
   };
 }
@@ -244,5 +260,80 @@ describe('EndSessionSheet', () => {
     expect(endButton?.getAttribute('data-loading')).toBe('false');
     fireEvent.click(endButton!);
     expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  // --- #3502: leave-vs-end ---------------------------------------------------
+
+  describe('leave mode', () => {
+    const leaveProps = (over: Partial<Parameters<typeof EndSessionSheet>[0]> = {}) =>
+      makeProps({ defaultMode: 'leave', ...over });
+
+    it('leads with Leave — not End — and calls onLeave', () => {
+      const onLeave = vi.fn();
+      const onConfirm = vi.fn();
+      const { container } = render(<EndSessionSheet {...leaveProps({ onLeave, onConfirm })} />);
+      expect(container.querySelector('[data-icon="leave.session"]')).not.toBeNull();
+      expect(container.textContent).toContain('mobile.queue.leaveSessionConfirm');
+      expect(button(container, 'mobile.queue.endSession')).toBeNull();
+
+      fireEvent.click(button(container, 'mobile.queue.leaveSessionAction')!);
+      expect(onLeave).toHaveBeenCalledTimes(1);
+      expect(onConfirm).not.toHaveBeenCalled();
+    });
+
+    it('hides the recap field — leaving produces no summary for it to land in', () => {
+      const { container } = render(<EndSessionSheet {...leaveProps()} />);
+      expect(textInput(container)).toBeNull();
+    });
+
+    // The regression this whole issue is about: before #3502 the second phone's
+    // only exit ended the party for everyone. End must stay REACHABLE for a
+    // creator (it's their session) but must never be the default here.
+    it('keeps End reachable for a creator via the destructive switch link', () => {
+      const onConfirm = vi.fn();
+      const { container } = render(<EndSessionSheet {...leaveProps({ onConfirm, canEnd: true })} />);
+      const switchLink = button(container, 'mobile.queue.endForEveryone');
+      expect(switchLink).not.toBeNull();
+      expect(switchLink?.getAttribute('data-variant')).toBe('text');
+      expect(switchLink?.getAttribute('data-role')).toBe('destructive');
+
+      fireEvent.click(switchLink!);
+      // Now in end mode: the recap appears and End is the primary action.
+      expect(textInput(container)).not.toBeNull();
+      fireEvent.click(button(container, 'mobile.queue.endSession')!);
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    });
+
+    // Deleting the `canEnd` gate makes this render the destructive switch to a
+    // participant the server would refuse anyway — the foreign-joiner half of
+    // the bug, which used to eject them with a generic "Action failed".
+    it('offers no End affordance at all when canEnd is false', () => {
+      const { container } = render(<EndSessionSheet {...leaveProps({ canEnd: false })} />);
+      expect(button(container, 'mobile.queue.endForEveryone')).toBeNull();
+      expect(button(container, 'mobile.queue.endSession')).toBeNull();
+      expect(button(container, 'mobile.queue.leaveSessionAction')).not.toBeNull();
+    });
+
+    it('forces leave mode when canEnd is false even if the caller asked for end', () => {
+      const { container } = render(<EndSessionSheet {...makeProps({ defaultMode: 'end', canEnd: false })} />);
+      expect(button(container, 'mobile.queue.endSession')).toBeNull();
+      expect(button(container, 'mobile.queue.leaveSessionAction')).not.toBeNull();
+    });
+
+    it('reflects the leaving state on the Leave button', () => {
+      const { container } = render(<EndSessionSheet {...leaveProps({ isLeaving: true })} />);
+      expect(button(container, 'mobile.queue.leaveSessionAction')?.getAttribute('data-loading')).toBe('true');
+    });
+  });
+
+  it('offers "just leave instead" from end mode, so ending is never the only exit', () => {
+    const onLeave = vi.fn();
+    const { container } = render(<EndSessionSheet {...makeProps({ onLeave })} />);
+    const switchLink = button(container, 'mobile.queue.leaveInsteadAction');
+    expect(switchLink).not.toBeNull();
+
+    fireEvent.click(switchLink!);
+    fireEvent.click(button(container, 'mobile.queue.leaveSessionAction')!);
+    expect(onLeave).toHaveBeenCalledTimes(1);
   });
 });

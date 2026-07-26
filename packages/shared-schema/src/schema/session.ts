@@ -66,6 +66,8 @@ export const sessionTypeDefs = /* GraphQL */ `
     isPermanent: Boolean!
     "Hex color for multi-session display"
     color: String
+    "Database user UUID of the climber who started this session. Null for non-members (the session query redacts it — see that resolver), for anonymously created sessions, and during the brief cleanup window where the live session outlives its durable row. Clients use it to tell a session they own from one they merely joined, so the destructive End action can be withheld from participants the server would reject anyway. It is NOT an authorization signal: endSession re-checks creator/leader server-side."
+    createdByUserId: ID
   }
 
   """

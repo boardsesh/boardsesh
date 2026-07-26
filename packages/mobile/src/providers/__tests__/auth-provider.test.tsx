@@ -165,6 +165,10 @@ vi.mock('../../lib/auth', () => ({
 const clearStoredSessionIdMock = vi.fn();
 vi.mock('../../lib/session-store', () => ({
   clearStoredSessionId: (...args: unknown[]) => clearStoredSessionIdMock(...args),
+  // Device provenance for the leave-vs-end emphasis (#3502).
+  getStoredCreatedSessionId: vi.fn(async () => null),
+  setStoredCreatedSessionId: vi.fn(async () => {}),
+  clearStoredCreatedSessionId: vi.fn(async () => {}),
 }));
 
 const clearStoredActiveBoardMock = vi.fn();

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, KeyboardAvoidingView, StyleSheet } from 'react-native';
 import BottomSheet, {
   BottomSheetView,
@@ -14,31 +14,71 @@ import { Icon } from './Icon';
 import { useTheme } from '../providers/theme-provider';
 import { useManagedSheet } from '../providers/sheet-presentation-provider';
 import { spacing, borderRadius, sheetStyles } from '../theme/tokens';
+import type { SessionExitMode } from './session-screen/use-session-exit-options';
 
 type EndSessionSheetProps = {
   visible: boolean;
   onDismiss: () => void;
   onConfirm: () => void;
+  /** Drop out of the session without ending it for anyone else. */
+  onLeave: () => void;
   isEnding: boolean;
+  isLeaving: boolean;
   climbCount: number;
   /** Current recap text. Optional — an empty field never blocks or validates End. */
   notes: string;
   onNotesChange: (text: string) => void;
+  /**
+   * Which action the sheet opens on. The other stays one tap away via the
+   * switch link below the buttons, so this is emphasis, never availability.
+   */
+  defaultMode: SessionExitMode;
+  /** Whether to offer "end for everyone" at all (false for a known non-creator). */
+  canEnd: boolean;
 };
 
+/**
+ * The session exit confirmation. Two modes over one sheet:
+ *
+ * - `end` — terminates the session for every member and produces the summary.
+ * - `leave` — this device drops out; everyone else keeps climbing.
+ *
+ * Before #3502 only `end` existed, and it was the ONLY exit on mobile — so a
+ * climber who joined their own party from a second phone had to kill it for
+ * everyone (the HTTP endSession branch authorizes on creator user id, which
+ * their second phone passes) just to get out. Both actions are now always
+ * reachable when they're legal; `defaultMode` only decides which one leads.
+ */
 export function EndSessionSheet({
   visible,
   onDismiss,
   onConfirm,
+  onLeave,
   isEnding,
+  isLeaving,
   climbCount,
   notes,
   onNotesChange,
+  defaultMode,
+  canEnd,
 }: EndSessionSheetProps) {
   const { t } = useTranslation('session');
-  const { systemColors } = useTheme();
+  const { systemColors, brandColors } = useTheme();
   const insets = useSafeAreaInsets();
   const sheetRef = useRef<BottomSheetMethods>(null);
+
+  // Resolved mode. A known non-creator can never reach `end`, whatever mode
+  // was selected — that request would be refused server-side anyway.
+  const [mode, setMode] = useState<SessionExitMode>(defaultMode);
+  const effectiveMode = canEnd ? mode : 'leave';
+  // Re-arm on every open (and if capability resolves late) so a climber who
+  // switched modes last time doesn't inherit that choice on the next exit.
+  useEffect(() => {
+    if (visible) setMode(defaultMode);
+  }, [visible, defaultMode]);
+
+  const isEndMode = effectiveMode === 'end';
+  const busy = isEnding || isLeaving;
 
   // Present/dismiss route through the coordinator (serialized, no overlapping
   // native transitions). Always mounted by InSessionView and toggled via
@@ -66,14 +106,14 @@ export function EndSessionSheet({
             on both platforms (mirrors Sheet.tsx). BottomSheetView stays the
             sheet's single child. */}
         <KeyboardAvoidingView behavior="padding" style={styles.avoider}>
-          <Icon name="end.session" size={40} color={systemColors.secondaryLabel} />
+          <Icon name={isEndMode ? 'end.session' : 'leave.session'} size={40} color={systemColors.secondaryLabel} />
 
           <Text variant="title2" style={styles.title}>
-            {t('mobile.queue.endSession')}
+            {isEndMode ? t('mobile.queue.endSession') : t('mobile.queue.leaveSession')}
           </Text>
 
           <Text variant="body" color={systemColors.secondaryLabel} style={styles.subtitle}>
-            {t('mobile.queue.endSessionConfirm')}
+            {isEndMode ? t('mobile.queue.endSessionConfirm') : t('mobile.queue.leaveSessionConfirm')}
           </Text>
 
           <View style={styles.statRow}>
@@ -84,27 +124,68 @@ export function EndSessionSheet({
           </View>
 
           {/* Optional Strava-style recap. Typing never gates End — an empty field
-              behaves exactly as before. */}
-          <BottomSheetTextInput
-            style={[styles.notesInput, { backgroundColor: systemColors.fill, color: systemColors.label }]}
-            placeholder={t('mobile.queue.endSessionCommentPlaceholder')}
-            placeholderTextColor={systemColors.tertiaryLabel}
-            accessibilityLabel={t('mobile.queue.endSessionCommentAria')}
-            value={notes}
-            onChangeText={onNotesChange}
-            maxLength={SESSION_NOTES_MAX_LENGTH}
-            multiline
-          />
+              behaves exactly as before. Leaving produces no summary, so the recap
+              has nowhere to land and is hidden in that mode. */}
+          {isEndMode ? (
+            <BottomSheetTextInput
+              style={[styles.notesInput, { backgroundColor: systemColors.fill, color: systemColors.label }]}
+              placeholder={t('mobile.queue.endSessionCommentPlaceholder')}
+              placeholderTextColor={systemColors.tertiaryLabel}
+              accessibilityLabel={t('mobile.queue.endSessionCommentAria')}
+              value={notes}
+              onChangeText={onNotesChange}
+              maxLength={SESSION_NOTES_MAX_LENGTH}
+              multiline
+            />
+          ) : null}
 
           <View style={styles.buttonRow}>
             <Button
               title={t('mobile.queue.endSessionCancel')}
               variant="outlined"
               onPress={onDismiss}
+              disabled={busy}
               style={styles.button}
             />
-            <Button title={t('mobile.queue.endSession')} onPress={onConfirm} loading={isEnding} style={styles.button} />
+            {isEndMode ? (
+              <Button
+                title={t('mobile.queue.endSession')}
+                onPress={onConfirm}
+                loading={isEnding}
+                role="destructive"
+                style={styles.button}
+              />
+            ) : (
+              <Button
+                title={t('mobile.queue.leaveSessionAction')}
+                onPress={onLeave}
+                loading={isLeaving}
+                style={styles.button}
+              />
+            )}
           </View>
+
+          {/* The other exit, always one tap away when it's legal. Low emphasis:
+              this is the deliberate second step, not a second primary CTA. */}
+          {isEndMode ? (
+            <Button
+              title={t('mobile.queue.leaveInsteadAction')}
+              variant="text"
+              size="small"
+              onPress={() => setMode('leave')}
+              disabled={busy}
+            />
+          ) : canEnd ? (
+            <Button
+              title={t('mobile.queue.endForEveryone')}
+              variant="text"
+              size="small"
+              role="destructive"
+              tintColor={brandColors.error}
+              onPress={() => setMode('end')}
+              disabled={busy}
+            />
+          ) : null}
         </KeyboardAvoidingView>
       </BottomSheetView>
     </BottomSheet>

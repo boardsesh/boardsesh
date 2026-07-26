@@ -15,7 +15,12 @@ import {
   type EndSessionMutationResponse,
 } from '../../lib/graphql/operations';
 import { getDeviceTimezone } from '../../lib/device-timezone';
-import { clearStoredSessionId, setStoredSessionId } from '../../lib/session-store';
+import {
+  clearStoredCreatedSessionId,
+  clearStoredSessionId,
+  setStoredCreatedSessionId,
+  setStoredSessionId,
+} from '../../lib/session-store';
 import { clearStoredQueueSnapshot } from '../../lib/queue-snapshot-store';
 import { track } from '../../lib/analytics';
 import { reportError, reportHandledError } from '../../lib/error-reporting';
@@ -127,6 +132,18 @@ export function useSessionCommands({
           const newId = response.createSession.id;
           sessionIdRef.current = newId;
           await setStoredSessionId(newId);
+          // Device provenance: this phone STARTED the party, as opposed to
+          // joining one. The in-session exit UI leads with End here and with
+          // Leave everywhere else, which is the whole point of #3502 — the
+          // same climber's second phone has no way to know it's the second
+          // phone from the roster alone (see session-store.ts for why).
+          // Best-effort: a failed write only costs this device the End-first
+          // emphasis, never the End action itself.
+          try {
+            await setStoredCreatedSessionId(newId);
+          } catch (provenanceError) {
+            if (__DEV__) console.warn('[queue] created-session provenance write failed', provenanceError);
+          }
           // Seed the session with the locally-built queue BEFORE setSessionId
           // mounts the queueUpdates subscription — the subscription's FullSync
           // for an empty room would wipe the local queue via INITIAL_QUEUE_DATA.
@@ -233,6 +250,10 @@ export function useSessionCommands({
     });
     setPlaylistSuggestionSourceState(null);
     await clearStoredSessionId();
+    // Provenance belongs to the session we're tearing down. It's keyed by
+    // session id so a stale value could never match the next one anyway —
+    // this just keeps the store tidy.
+    await clearStoredCreatedSessionId();
   }, []);
 
   const endSession = useCallback(
@@ -274,11 +295,24 @@ export function useSessionCommands({
         const remoteEndAlreadyApplied = suppressedRemoteEndSessionIdRef.current === currentSessionId;
         locallyEndingSessionIdRef.current = null;
         suppressedRemoteEndSessionIdRef.current = null;
-        await clearSession();
+        // A failed end still drops us out of the session locally, so tell the
+        // server we left rather than leaving peers to discover it after the
+        // 60s disconnect grace. This path is reached most often by a
+        // participant who isn't the creator (the HTTP endSession branch
+        // authorizes on createdByUserId alone), and until #3502 they were
+        // silently ejected AND left as a ghost in everyone else's roster.
+        // Best-effort with its own timeout; when the remote end already
+        // applied, LEAVE_SESSION is a no-op server-side (no ctx.sessionId).
+        await clearSession({ notifyServer: true });
         if (remoteEndAlreadyApplied) {
           showToast(t('mobile.toast.sessionEnded'), 'success');
         } else {
-          showToast(t('mobile.queue.actionFailed'), 'error');
+          // Production masks GraphQL errors to "Unexpected error", so we
+          // genuinely cannot tell an authorization refusal from a dropped
+          // network here. This message is true either way — and unlike the
+          // old generic `actionFailed` it tells the climber what actually
+          // happened to their session membership.
+          showToast(t('mobile.queue.endSessionFailedLeft'), 'error');
         }
         return null;
       }

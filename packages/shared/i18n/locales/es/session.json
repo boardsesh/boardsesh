@@ -416,7 +416,13 @@
       "sentAtAngle": "Encadenado a {{angle}}°",
       "endSessionCommentPlaceholder": "Añade un resumen: ¿qué tal ha ido?",
       "endSessionCommentAria": "Resumen de la sesión",
-      "endSessionCancel": "Sigue escalando"
+      "endSessionCancel": "Sigue escalando",
+      "leaveSession": "Salir de la sesión",
+      "leaveSessionConfirm": "Saldrás de esta sesión. Sigue en marcha para quien se quede.",
+      "leaveSessionAction": "Salir",
+      "endForEveryone": "Terminarla para todos",
+      "leaveInsteadAction": "Solo salir",
+      "endSessionFailedLeft": "No se pudo terminar la sesión: has salido de ella."
     },
     "queueSheet": {
       "emptyQueue": "Tu cola está vacía",
@@ -497,7 +503,8 @@
       }
     },
     "toast": {
-      "sessionEnded": "Sesión terminada"
+      "sessionEnded": "Sesión terminada",
+      "leftSession": "Saliste de la sesión"
     },
     "session": {
       "headerStart": "Empezar sesión",
@@ -567,6 +574,7 @@
       "historyRowAria": "{{name}}, {{status}}",
       "inEndSession": "Terminar sesión",
       "inStop": "Parar",
+      "inLeave": "Salir",
       "notification": {
         "channelName": "Sesión de escalada activa",
         "channelDescription": "Mantiene tu plafón conectado y muestra los controles de la sesión mientras Boardsesh está en segundo plano.",

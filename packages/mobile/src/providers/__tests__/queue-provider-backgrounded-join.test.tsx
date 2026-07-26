@@ -55,6 +55,10 @@ const sessionStore = vi.hoisted(() => ({
   getStoredSessionId: vi.fn(async () => 'session-1' as string | null),
   setStoredSessionId: vi.fn(async () => {}),
   clearStoredSessionId: vi.fn(async () => {}),
+  // Device provenance for the leave-vs-end emphasis (#3502).
+  getStoredCreatedSessionId: vi.fn(async () => null as string | null),
+  setStoredCreatedSessionId: vi.fn(async () => {}),
+  clearStoredCreatedSessionId: vi.fn(async () => {}),
 }));
 
 const queueSnapshotStore = vi.hoisted(() => ({

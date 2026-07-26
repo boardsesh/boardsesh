@@ -122,6 +122,7 @@ describe('buildSessionPayload — defaults (no overrides)', () => {
       endedAt: null,
       isPermanent: false,
       color: '#ff00aa',
+      createdByUserId: 'user-1',
     });
   });
 
@@ -255,5 +256,36 @@ describe('buildSessionPayload — name / boardPath / participantId fallthrough',
 
     const fromCtx = await buildSessionPayload('session-1', makeCtx({ connectionId: 'conn-xyz' }));
     expect(fromCtx.clientId).toBe('conn-xyz');
+  });
+
+  // #3502: mobile reads this to decide whether to offer the destructive End
+  // action at all. It is NOT an authorization signal (endSession re-checks
+  // creator/leader server-side) — but a wrong value here either strands a
+  // creator or dangles an action the server will refuse.
+  describe('createdByUserId', () => {
+    it('comes from the session row by default', async () => {
+      const payload = await buildSessionPayload('session-1', makeCtx());
+      expect(payload.createdByUserId).toBe('user-1');
+    });
+
+    it('is null when the session row has vanished (cleanup race) or the creator was anonymous', async () => {
+      getSessionByIdMock.mockResolvedValue(null);
+      const vanished = await buildSessionPayload('session-1', makeCtx());
+      expect(vanished.createdByUserId).toBeNull();
+
+      getSessionByIdMock.mockResolvedValue({ ...sampleSessionData, createdByUserId: null });
+      const anonymous = await buildSessionPayload('session-1', makeCtx());
+      expect(anonymous.createdByUserId).toBeNull();
+    });
+
+    // The redaction queries.session relies on for its non-member preview: the
+    // un-redacted roster only ever carries PRESENT members' user ids, and those
+    // diverge from the creator the moment they disconnect.
+    it('honours an explicit null override without consulting the session row', async () => {
+      const payload = await buildSessionPayload('session-1', makeCtx(), { createdByUserId: null });
+      expect(payload.createdByUserId).toBeNull();
+      // Other fields still resolve normally — the override is field-scoped.
+      expect(payload.name).toBe('Tuesday sesh');
+    });
   });
 });

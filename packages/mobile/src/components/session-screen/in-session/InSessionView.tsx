@@ -13,6 +13,7 @@ import type { SessionDetailTick, SessionFeedParticipant } from '@boardsesh/share
 import { getGradeTextColor } from '@boardsesh/play-view';
 import { formatTickRelativeTime, tickTimeMs } from '@boardsesh/profile-stats';
 import { countDistinctSessionUsers } from '@boardsesh/queue-runtime';
+import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { Card } from '../../Card';
 import { ClimbListItemContent } from '../../ClimbListItemContent';
 import { EndSessionSheet } from '../../EndSessionSheet';
@@ -42,8 +43,11 @@ import { borderRadius, spacing } from '../../../theme/tokens';
 import { gradeBadgeColor } from '../../you/profile-chart-colors';
 import { hapticSelection, hapticMedium } from '../../../lib/haptics';
 import { reportHandledError } from '../../../lib/error-reporting';
+import { track } from '../../../lib/analytics';
+import { useToast } from '../../../providers/toast-provider';
 import { RecordTopChrome } from '../RecordTopChrome';
 import { SessionTitleSheet } from '../SessionTitleSheet';
+import { useSessionExitOptions } from '../use-session-exit-options';
 import { SessionAnalytics } from './SessionAnalytics';
 import { SessionLeaderboard } from './SessionLeaderboard';
 import { SessionPresenceRow } from './SessionPresenceRow';
@@ -255,9 +259,13 @@ export function InSessionView({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { openPlayDrawer } = useDrawerHost();
+  const { showToast } = useToast();
   const { sessionId, participantId } = useQueueSessionControls();
-  const { setCurrentClimb, endSession } = useQueueActions();
+  const { setCurrentClimb, endSession, clearSession } = useQueueActions();
   const { liveStats, sessionUsers } = useQueueLiveStats();
+  // End-for-everyone vs. drop-out-quietly, and which of the two this device
+  // leads with. See use-session-exit-options for the id-space reasoning.
+  const { canEnd, startedOnThisDevice, defaultMode } = useSessionExitOptions();
 
   // Seed the live view from the full session detail (rich grade split, flashes,
   // per-participant flashes, and the tick list used for hardest-send names and
@@ -458,6 +466,7 @@ export function InSessionView({
   }, [translateY, screenHeight, scrollOffset, startedAtTop]);
 
   const [isEnding, setIsEnding] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   // Optional end-of-session recap. Cleared whenever the active session changes
   // (start / join / end) so a new session never inherits the previous draft.
   const [endNotes, setEndNotes] = useState('');
@@ -510,6 +519,28 @@ export function InSessionView({
       setIsEnding(false);
     }
   }, [endSession, router, onEndDismiss, endNotes, sessionId]);
+
+  // Drop out WITHOUT ending the session for anyone else (#3502). Deliberately
+  // NOT `clearSession()`: `notifyServer` emits LEAVE_SESSION so peers see the
+  // departure now instead of after the 60s disconnect grace, and the driver /
+  // presence release happens immediately. No summary, no navigation, no
+  // Apple Health export — none of those belong to a member who merely left.
+  const handleConfirmLeave = useCallback(async () => {
+    setIsLeaving(true);
+    try {
+      await clearSession({ notifyServer: true });
+      track(SHARED_EVENTS.SessionLeft, { startedOnThisDevice, couldHaveEnded: canEnd });
+      onEndDismiss?.();
+      showToast(t('mobile.toast.leftSession'), 'success');
+    } catch (error) {
+      // clearSession swallows its own LEAVE_SESSION failure, so reaching here
+      // means local teardown itself threw — surface it rather than leaving the
+      // climber stuck in a session they asked to leave.
+      reportHandledError(error, { tags: { source: 'leaveSession' } });
+    } finally {
+      setIsLeaving(false);
+    }
+  }, [clearSession, onEndDismiss, showToast, t, startedOnThisDevice, canEnd]);
 
   // Stable dismiss handler so the always-mounted EndSessionSheet doesn't get a fresh
   // onDismiss ref every render (onEndDismiss is optional, hence the wrapper).
@@ -668,6 +699,7 @@ export function InSessionView({
           onHeightChange={setChromeHeight}
           onShare={onShare}
           onEndSession={onRequestEndSession}
+          exitVariant={defaultMode}
         />
       ) : null}
 
@@ -682,10 +714,14 @@ export function InSessionView({
         visible={endVisible}
         onDismiss={handleEndDismiss}
         onConfirm={() => void handleConfirmEnd()}
+        onLeave={() => void handleConfirmLeave()}
         isEnding={isEnding}
+        isLeaving={isLeaving}
         climbCount={sessionHistoryTicks.length}
         notes={endNotes}
         onNotesChange={setEndNotes}
+        defaultMode={defaultMode}
+        canEnd={canEnd}
       />
     </View>
   );

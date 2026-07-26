@@ -504,6 +504,19 @@ The main Traefik instance routes `*.preview.boardsesh.com` and `*.ws.preview.boa
 
 Explicit UI actions still leave or end sessions immediately: `leaveSession` removes the participant and emits `UserLeft`; `endSession` is restricted to the session creator or current leader. Passive WebSocket disconnects emit `UserPresenceChanged` first and only emit `UserLeft` if the reconnect timer expires.
 
+#### Leave vs. end on the client (#3502)
+
+Both platforms expose leave and end as distinct actions. Which one a surface *leads with* is a client concern — the server authorizes each independently.
+
+The subtlety: **one signed-in climber on two devices is a single participant.** `joinSession` resolves `participantId = client.userId || connectionId` (`room-manager/client-lifecycle.ts`), so two phones share one participant entry and one roster row. Every roster-derived signal is therefore participant-scoped and structurally cannot see the second device:
+
+- `SessionUser.isLeader` is the OR of leadership across a participant's connections (`upsertLocalParticipant` keeps it sticky-true), and the `SessionRosterSnapshot` branch in `@boardsesh/queue-runtime` re-derives the client's own `isLeader` from that row. A second device is therefore told `isLeader: true` by its very first roster snapshot, even though its connection is not the leader. **Do not build device-level UI on `isLeader`.**
+- `LocalSessionParticipant.connectionIds` (and its Redis equivalent) does distinguish connections, but is deliberately not exposed over GraphQL. It answers "how many sockets does this human hold right now", which flaps with screen locks and reconnects — and a stale value degrades toward offering the *destructive* action.
+
+Mobile instead keys the **emphasis** on device provenance (`session-store.ts` records the id of the session this device created) and the **availability** of End on `Session.createdByUserId` (member-only; redacted for the non-member preview). Provenance decides which action leads, never which actions exist — so losing it to a reinstall costs a creator the End-first default and nothing else.
+
+Mobile reads `createdByUserId` through its own `GET_SESSION_OWNER` document rather than as another field on `GET_SESSION`: that query also backs the join-by-link screen, and GraphQL validates whole documents, so a new-bundle/old-backend skew would otherwise break joining outright instead of just leaving ownership unknown.
+
 If the grace period expires, the session is evicted from memory but remains restorable from Redis until the 4-hour TTL expires. After Redis TTL expiry, the session is still not ended; the next join restores it from Postgres as long as the durable row has not been explicitly marked `ended`.
 
 **Multi-instance grace handling:** Because each instance tracks its own local clients, "the last user disconnected" is a per-instance event — another instance may still host active members. Before tearing down session state (cancelling pending Postgres writes, marking the session inactive in Redis), `leaveSession` in `room-manager/client-lifecycle.ts` queries `distributedState.getSessionMembers(sessionId)` and filters out the leaving connection. The dangerous side-effects (`writeScheduler.cancelPendingWrites`, `redisStore.markInactive`) only fire when no other instance has members. The local grace timer (memory cleanup for this instance's `sessionsMap`) still runs regardless. The filter relies on the invariant that `SessionUser.id` returned by `getSessionMembers` is the connection ID (see `distributed-state/session-ops.ts:181`); the regression test `leave-session-multi-instance.test.ts` pins this.

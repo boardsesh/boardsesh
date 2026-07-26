@@ -65,6 +65,10 @@ const sessionStore = vi.hoisted(() => ({
   getStoredSessionId: vi.fn(async () => 'session-1'),
   setStoredSessionId: vi.fn(async () => {}),
   clearStoredSessionId: vi.fn(async () => {}),
+  // Device provenance for the leave-vs-end emphasis (#3502).
+  getStoredCreatedSessionId: vi.fn(async () => null as string | null),
+  setStoredCreatedSessionId: vi.fn(async () => {}),
+  clearStoredCreatedSessionId: vi.fn(async () => {}),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -106,6 +110,7 @@ type Snapshot = {
   clearSession: ReturnType<typeof useQueue>['clearSession'];
   joinSession: ReturnType<typeof useQueue>['joinSession'];
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
+  endSession: ReturnType<typeof useQueue>['endSession'];
 };
 
 function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
@@ -117,8 +122,9 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       clearSession: queue.clearSession,
       joinSession: queue.joinSession,
       addToQueue: queue.addToQueue,
+      endSession: queue.endSession,
     });
-  }, [sessionId, queue.clearSession, queue.joinSession, queue.addToQueue, onSnapshot]);
+  }, [sessionId, queue.clearSession, queue.joinSession, queue.addToQueue, queue.endSession, onSnapshot]);
   return null;
 }
 
@@ -200,7 +206,7 @@ describe('QueueProvider clearSession notifyServer', () => {
     await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBeNull());
   });
 
-  it('does NOT emit LEAVE_SESSION for a plain clearSession (remote end / endSession callers)', async () => {
+  it('does NOT emit LEAVE_SESSION for a plain clearSession (remote end / successful endSession)', async () => {
     const snapshots: Snapshot[] = [];
     render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snap) => snapshots.push(snap) })));
 
@@ -294,5 +300,32 @@ describe('QueueProvider clearSession notifyServer', () => {
       snapshots.at(-1)?.addToQueue(queueItem);
     });
     await waitFor(() => expect(queueStateCalls()).toHaveLength(2));
+  });
+
+  // #3502: a failed endSession still drops us out of the session locally. The
+  // most common way to get here is a participant who ISN'T the creator — the
+  // HTTP endSession branch authorizes on createdByUserId alone — and until this
+  // fix they were ejected silently AND left as a ghost in everyone else's
+  // roster until the 60s disconnect grace expired.
+  it('emits LEAVE_SESSION when endSession fails, instead of leaving peers on the disconnect grace', async () => {
+    const snapshots: Snapshot[] = [];
+    render(createElement(QueueProvider, null, createElement(Probe, { onSnapshot: (snap) => snapshots.push(snap) })));
+
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBe('session-1'));
+
+    http.request.mockImplementation(async (operation: unknown) => {
+      if (operationText(operation).includes('SessionStatus')) return { sessionStatus: 'active' };
+      if (operationText(operation).includes('endSession')) throw new Error('Only the session creator can end this');
+      return {};
+    });
+
+    let summary: unknown = 'unset';
+    await act(async () => {
+      summary = await snapshots.at(-1)?.endSession();
+    });
+
+    expect(summary).toBeNull();
+    expect(leaveSessionCalls()).toHaveLength(1);
+    await waitFor(() => expect(snapshots.at(-1)?.sessionId).toBeNull());
   });
 });

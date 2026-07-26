@@ -39,9 +39,16 @@ export const sessionQueries = {
     // session UUID — gets a redacted invite-preview: metadata plus the full
     // roster (mobile's join-confirmation screen shows who's climbing before
     // the user commits — see GET_SESSION), but no queue contents, leader
-    // status, or board serial. `isSessionMember` is the single-shot,
-    // non-throwing counterpart of `requireSessionMember` (no retry/backoff —
-    // this is a read, not a race against `joinSession` context propagation).
+    // status, board serial, or creator id. `isSessionMember` is the
+    // single-shot, non-throwing counterpart of `requireSessionMember` (no
+    // retry/backoff — this is a read, not a race against `joinSession`
+    // context propagation).
+    //
+    // `createdByUserId` is redacted for non-members even though the
+    // un-redacted roster below already carries every *present* member's
+    // `userId`: those two sets diverge the moment the creator disconnects
+    // while the session lives on, and a stranger holding only the session
+    // UUID has no business learning who started it.
     const isMember = await isSessionMember(ctx, sessionId);
 
     // `isLeader` is always false and `clientId` is empty for both branches:
@@ -53,7 +60,7 @@ export const sessionQueries = {
       users,
       isLeader: false,
       clientId: '',
-      ...(isMember ? {} : { queueState: null, lastConnectedBoardSerial: null }),
+      ...(isMember ? {} : { queueState: null, lastConnectedBoardSerial: null, createdByUserId: null }),
     });
   },
 

@@ -6,6 +6,7 @@ import type { SharedValue } from 'react-native-reanimated';
 import { countDistinctSessionUsers } from '@boardsesh/queue-runtime';
 import { useQueueSessionId, useQueueLiveStats } from '../../providers/queue-provider';
 import { SessionScreenHeader } from './SessionScreenHeader';
+import { useSessionExitOptions } from './use-session-exit-options';
 import { PreSessionView } from './pre-session/PreSessionView';
 import { InSessionView } from './in-session/InSessionView';
 import { InviteSheet } from './InviteSheet';
@@ -38,6 +39,10 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
   const { sessionUsers } = useQueueLiveStats();
   const insets = useSafeAreaInsets();
   const [showInvite, setShowInvite] = useState(false);
+  // Overlay mode owns its own header strip, so it needs the same exit read
+  // InSessionView makes for the tab chrome — otherwise the two entry points
+  // into one sheet would disagree about whether the button ends or leaves.
+  const { defaultMode: exitVariant } = useSessionExitOptions();
 
   const sessionActive = sessionId !== null;
   // Teach the share affordance while solo; once a friend joins, the label drops
@@ -74,6 +79,7 @@ export function SessionScreen({ onClose, headerGesture, translateY, screenHeight
           sessionActive={sessionActive}
           onShare={onShare}
           onEndSession={onEndSession}
+          exitVariant={exitVariant}
           inviteHint={soloInvite}
           dragGesture={headerGesture}
         />

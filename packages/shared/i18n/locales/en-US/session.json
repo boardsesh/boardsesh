@@ -416,7 +416,13 @@
       "sentAtAngle": "Sent at {{angle}}°",
       "endSessionCommentPlaceholder": "Add a recap — how did it go?",
       "endSessionCommentAria": "Session recap",
-      "endSessionCancel": "Keep climbing"
+      "endSessionCancel": "Keep climbing",
+      "leaveSession": "Leave session",
+      "leaveSessionConfirm": "You'll drop out of this session. It keeps running for everyone still in it.",
+      "leaveSessionAction": "Leave",
+      "endForEveryone": "End it for everyone",
+      "leaveInsteadAction": "Just leave instead",
+      "endSessionFailedLeft": "Couldn't end the session — you've left it instead."
     },
     "queueSheet": {
       "emptyQueue": "Your queue is empty",
@@ -497,7 +503,8 @@
       }
     },
     "toast": {
-      "sessionEnded": "Session ended"
+      "sessionEnded": "Session ended",
+      "leftSession": "You left the session"
     },
     "session": {
       "headerStart": "Start a session",
@@ -567,6 +574,7 @@
       "historyRowAria": "{{name}}, {{status}}",
       "inEndSession": "End session",
       "inStop": "Stop",
+      "inLeave": "Leave",
       "notification": {
         "channelName": "Active climbing session",
         "channelDescription": "Keeps your board connected and shows session controls while Boardsesh runs in the background.",

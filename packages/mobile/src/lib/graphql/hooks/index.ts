@@ -1281,7 +1281,7 @@ export {
   useComments,
   useAddComment,
 } from './use-social';
-export { useSessionDetail, useSessionPreview } from './use-session-detail';
+export { useSessionDetail, useSessionPreview, useSessionOwnerUserId } from './use-session-detail';
 export { useDeleteAccountInfo, useDeleteAccount } from './use-delete-account';
 export {
   useIntegrationStatuses,

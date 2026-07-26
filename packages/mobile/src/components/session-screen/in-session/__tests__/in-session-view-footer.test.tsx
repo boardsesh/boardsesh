@@ -134,12 +134,20 @@ vi.mock('../../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../../../providers/queue-provider', () => ({
-  useQueueActions: () => ({ endSession: queue.endSession, setCurrentClimb: vi.fn() }),
+  useQueueActions: () => ({ endSession: queue.endSession, clearSession: vi.fn(), setCurrentClimb: vi.fn() }),
   useQueueLiveStats: () => ({ liveStats: null, sessionUsers: [] }),
   useQueueSessionControls: () => ({
     participantId: 'participant-1',
     sessionId: 'session-1',
   }),
+}));
+vi.mock('../../../../providers/toast-provider', () => ({ useToast: () => ({ showToast: vi.fn() }) }));
+vi.mock('../../../../lib/analytics', () => ({ track: vi.fn() }));
+// The exit capability itself is covered by in-session-view-exit.test.tsx, which
+// drives the real hook. This file only cares about list padding, so pin the
+// capability to the pre-#3502 shape and keep the assertions here about layout.
+vi.mock('../../use-session-exit-options', () => ({
+  useSessionExitOptions: () => ({ canEnd: true, startedOnThisDevice: true, defaultMode: 'end' }),
 }));
 vi.mock('../../../../providers/drawer-host-provider', () => ({ useDrawerHost: () => ({ openPlayDrawer: vi.fn() }) }));
 vi.mock('../../../../lib/graphql/hooks', () => ({

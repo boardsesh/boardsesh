@@ -78,6 +78,10 @@ vi.mock('../../lib/session-store', () => ({
   getStoredSessionId: vi.fn(async () => null),
   setStoredSessionId: vi.fn(async () => {}),
   clearStoredSessionId: vi.fn(async () => {}),
+  // Device provenance for the leave-vs-end emphasis (#3502).
+  getStoredCreatedSessionId: vi.fn(async () => null),
+  setStoredCreatedSessionId: vi.fn(async () => {}),
+  clearStoredCreatedSessionId: vi.fn(async () => {}),
 }));
 vi.mock('../../lib/queue-snapshot-store', () => ({
   getStoredQueueSnapshot: vi.fn(async () => null),

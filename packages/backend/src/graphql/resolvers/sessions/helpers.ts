@@ -39,6 +39,12 @@ export type SessionPayloadInputs = {
   isLeader?: boolean;
   clientId?: string | null;
   participantId?: string;
+  // `null` is a real override — used by the `session` query's non-member
+  // preview path to redact the creator's user id. Members otherwise get it
+  // from `sessionData.createdByUserId`. See the field's SDL description for
+  // why the redaction is worth the extra input key even though the
+  // non-member roster already carries every *present* member's `userId`.
+  createdByUserId?: string | null;
 };
 
 /**
@@ -117,5 +123,10 @@ export async function buildSessionPayload(
     endedAt: sessionData?.endedAt?.toISOString() || null,
     isPermanent: sessionData?.isPermanent ?? false,
     color: sessionData?.color || null,
+    // `??` (not `||`): the creator id is an opaque UUID, so there is no
+    // empty-string-means-absent convention to honour here the way `name` /
+    // `goal` have one.
+    createdByUserId:
+      inputs.createdByUserId !== undefined ? inputs.createdByUserId : (sessionData?.createdByUserId ?? null),
   };
 }

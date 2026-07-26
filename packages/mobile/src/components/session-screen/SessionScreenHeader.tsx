@@ -12,9 +12,16 @@ type SessionScreenHeaderProps = {
   sessionActive: boolean;
   /** When set, a share button floats at the trailing edge to invite climbers. */
   onShare?: () => void;
-  /** When set (session live), an End glyph docks beside share (destructive tint) so
-   *  the overlay's stop control matches the tab chrome's trailing End action. */
+  /** When set (session live), an exit glyph docks beside share so the overlay's
+   *  control matches the tab chrome's trailing exit action. */
   onEndSession?: () => void;
+  /**
+   * What this device's exit actually does — `end` (destructive red stop) or
+   * `leave` (neutral drop-out). Mirrors RecordTopChrome's prop of the same
+   * name so the overlay strip and the tab chrome can't disagree about what the
+   * button will do (#3502). Defaults to `end` for callers that don't know.
+   */
+  exitVariant?: 'end' | 'leave';
   /**
    * Show a short "Invite" label beside the share glyph to teach the affordance.
    * Set while the climber is solo; collapses to the icon alone once a friend
@@ -42,11 +49,13 @@ export function SessionScreenHeader({
   onEndSession,
   inviteHint,
   dragGesture,
+  exitVariant = 'end',
 }: SessionScreenHeaderProps) {
   const { t } = useTranslation('session');
   const { systemColors, brandColors } = useTheme();
 
   const title = sessionActive ? t('mobile.session.headerActive') : t('mobile.session.headerStart');
+  const isLeaveExit = exitVariant === 'leave';
 
   const row = (
     <View style={styles.row}>
@@ -89,10 +98,16 @@ export function SessionScreenHeader({
               onPress={onEndSession}
               hitSlop={12}
               accessibilityRole="button"
-              accessibilityLabel={t('mobile.session.inEndSession')}
+              accessibilityLabel={
+                isLeaveExit ? t('queueBar.ariaLabels.leaveSession') : t('mobile.session.inEndSession')
+              }
               style={styles.iconButton}
             >
-              <Icon name="flag" size={22} color={brandColors.error} />
+              <Icon
+                name={isLeaveExit ? 'leave.session' : 'flag'}
+                size={22}
+                color={isLeaveExit ? systemColors.label : brandColors.error}
+              />
             </Pressable>
           ) : null}
         </View>

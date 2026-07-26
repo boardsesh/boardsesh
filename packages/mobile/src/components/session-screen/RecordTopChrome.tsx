@@ -31,10 +31,19 @@ type RecordTopChromeProps = {
   /** Open the invite sheet. Provided only while a session is live; the share
    *  glyph then docks at the far right of the chrome's right toolbar. */
   onShare?: () => void;
-  /** Open the End-session confirmation. Provided only while a session is live; the
-   *  End glyph docks beside the share control (destructive tint) so the session's
-   *  stop lives in the nav-bar trailing slot, off the bottom edge. */
+  /** Open the session-exit confirmation. Provided only while a session is live; the
+   *  glyph docks beside the share control so the session's exit lives in the
+   *  nav-bar trailing slot, off the bottom edge. */
   onEndSession?: () => void;
+  /**
+   * What this device's exit actually does, which decides the control's label
+   * and tint: `end` is the destructive red Stop, `leave` is a neutral Leave.
+   * A red Stop that only drops you out of someone else's party is a lie, and
+   * it trains climbers to distrust the destructive colour on the one surface
+   * where that trust matters (#3502). Defaults to `end` so callers that don't
+   * know (and the existing tests) keep the original chrome.
+   */
+  exitVariant?: 'end' | 'leave';
 };
 
 /**
@@ -60,11 +69,20 @@ export function RecordTopChrome({
   onHeightChange,
   onShare,
   onEndSession,
+  exitVariant = 'end',
 }: RecordTopChromeProps) {
   const { t } = useTranslation('session');
   const { t: tBoards } = useTranslation('boards');
   const { brandColors, systemColors, variant } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Leaving is non-destructive, so it gets neither the red tint nor the stop
+  // glyph. The accessibility label reuses the string web's queue bar already
+  // ships for the same action, so the two surfaces read identically.
+  const isLeaveExit = exitVariant === 'leave';
+  const exitLabel = isLeaveExit ? t('queueBar.ariaLabels.leaveSession') : t('mobile.session.inEndSession');
+  const exitTint = isLeaveExit ? systemColors.label : brandColors.error;
+  const exitIcon = isLeaveExit ? 'leave.session' : 'flag';
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => onHeightChange(event.nativeEvent.layout.height),
@@ -125,10 +143,13 @@ export function RecordTopChrome({
           ) : null}
           {onEndSession ? (
             <Appbar.Action
-              icon={iconMap['flag'].android}
-              color={brandColors.error}
+              icon={iconMap[exitIcon].android}
+              // Cast matches the sibling Appbar props: Paper types `color` as a
+              // plain string, while the iOS-flavoured tokens are a dynamic-colour
+              // union.
+              color={exitTint as string}
               onPress={onEndSession}
-              accessibilityLabel={t('mobile.session.inEndSession')}
+              accessibilityLabel={exitLabel}
             />
           ) : null}
         </Appbar.Header>
@@ -137,10 +158,11 @@ export function RecordTopChrome({
   }
 
   // Liquid-glass variant: the shared collapsing chrome. While a session is live the
-  // invite/share control docks on the LEFT and a single destructive Stop control on
-  // the RIGHT, with no lightbulb — so the active header reads invite | title | stop.
-  // End sits up here rather than as a bottom bar, keeping the bottom edge to the tab
-  // bar + climb accessory.
+  // invite/share control docks on the LEFT and a single exit control on the RIGHT,
+  // with no lightbulb — so the active header reads invite | title | exit. The exit
+  // is a destructive Stop on the device that started the session and a neutral Leave
+  // everywhere else (see `exitVariant`). It sits up here rather than as a bottom bar,
+  // keeping the bottom edge to the tab bar + climb accessory.
   const inSession = onEndSession !== undefined;
   const leadingAction = onShare ? (
     <GlassToolbarAction onPress={onShare} accessibilityLabel={t('mobile.session.invite')}>
@@ -156,12 +178,12 @@ export function RecordTopChrome({
       feedback="opacity"
       hitSlop={4}
       accessibilityRole="button"
-      accessibilityLabel={t('mobile.session.inEndSession')}
+      accessibilityLabel={exitLabel}
       style={styles.stopAction}
     >
-      <Icon name="flag" size={20} color={brandColors.error} />
-      <Text variant="subheadline" color={brandColors.error} style={styles.stopLabel}>
-        {t('mobile.session.inStop')}
+      <Icon name={exitIcon} size={20} color={exitTint} />
+      <Text variant="subheadline" color={exitTint} style={styles.stopLabel}>
+        {isLeaveExit ? t('mobile.session.inLeave') : t('mobile.session.inStop')}
       </Text>
     </PressableSurface>
   ) : undefined;

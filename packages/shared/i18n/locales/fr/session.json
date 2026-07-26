@@ -416,7 +416,13 @@
       "sentAtAngle": "Enchaîné à {{angle}}°",
       "endSessionCommentPlaceholder": "Ajoute un récap — ça a donné quoi ?",
       "endSessionCommentAria": "Récap de la session",
-      "endSessionCancel": "Continue à grimper"
+      "endSessionCancel": "Continue à grimper",
+      "leaveSession": "Quitter la session",
+      "leaveSessionConfirm": "Tu quittes cette session. Elle continue pour ceux qui restent.",
+      "leaveSessionAction": "Quitter",
+      "endForEveryone": "La terminer pour tout le monde",
+      "leaveInsteadAction": "Juste quitter",
+      "endSessionFailedLeft": "Impossible de terminer la session — tu l'as quittée."
     },
     "queueSheet": {
       "emptyQueue": "Votre file est vide",
@@ -497,7 +503,8 @@
       }
     },
     "toast": {
-      "sessionEnded": "Session terminée"
+      "sessionEnded": "Session terminée",
+      "leftSession": "Tu as quitté la session"
     },
     "session": {
       "headerStart": "Démarrer une session",
@@ -567,6 +574,7 @@
       "historyRowAria": "{{name}}, {{status}}",
       "inEndSession": "Terminer la session",
       "inStop": "Arrêter",
+      "inLeave": "Quitter",
       "notification": {
         "channelName": "Session d'escalade active",
         "channelDescription": "Garde ta board connectée et affiche les commandes de session quand Boardsesh est en arrière-plan.",

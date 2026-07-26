@@ -68,6 +68,10 @@ const sessionStore = vi.hoisted(() => ({
   getStoredSessionId: vi.fn(async () => 'session-1' as string | null),
   setStoredSessionId: vi.fn(async () => {}),
   clearStoredSessionId: vi.fn(async () => {}),
+  // Device provenance for the leave-vs-end emphasis (#3502).
+  getStoredCreatedSessionId: vi.fn(async () => null as string | null),
+  setStoredCreatedSessionId: vi.fn(async () => {}),
+  clearStoredCreatedSessionId: vi.fn(async () => {}),
 }));
 
 const queueSnapshotStore = vi.hoisted(() => ({
@@ -1559,7 +1563,9 @@ describe('QueueProvider session update subscription', () => {
       expect(latestSnapshot?.playlistSuggestionSource).toBeNull();
     });
     expect(clearStoredSessionId).toHaveBeenCalledTimes(1);
-    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+    // A failed end drops us out locally and notifies the server we left (#3502),
+    // so the copy is specific about that rather than the old generic failure.
+    expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.endSessionFailedLeft', 'error');
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.toast.sessionEnded', 'success');
   });
 

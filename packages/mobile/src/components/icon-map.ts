@@ -134,6 +134,9 @@ export const iconMap = {
   pause: { ios: 'pause', android: 'pause' },
   'minus.circle': { ios: 'minus.circle', android: 'minus-circle-outline' },
   'end.session': { ios: 'stop.circle', android: 'stop-circle-outline' },
+  // Dropping out of a session without ending it — deliberately a door-out
+  // glyph, not a stop sign, so it never reads as the destructive action.
+  'leave.session': { ios: 'rectangle.portrait.and.arrow.right', android: 'exit-to-app' },
   'skip.previous': { ios: 'backward.end', android: 'skip-previous' },
   'skip.next': { ios: 'forward.end', android: 'skip-next' },
   'drag.handle': { ios: 'line.3.horizontal', android: 'drag-horizontal-variant' },

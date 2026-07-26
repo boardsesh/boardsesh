@@ -6111,6 +6111,8 @@ export type Session = {
   clientId: Scalars['ID']['output'];
   /** Hex color for multi-session display */
   color?: Maybe<Scalars['String']['output']>;
+  /** Database user UUID of the climber who started this session. Null for non-members (the session query redacts it — see that resolver), for anonymously created sessions, and during the brief cleanup window where the live session outlives its durable row. Clients use it to tell a session they own from one they merely joined, so the destructive End action can be withheld from participants the server would reject anyway. It is NOT an authorization signal: endSession re-checks creator/leader server-side. */
+  createdByUserId?: Maybe<Scalars['ID']['output']>;
   /**
    * Deprecated. Sessions are always-live; there is no driver. Always null. Removal of this field is DEFERRED pending the stale-bundle drain (workstream B7, reduced variant, 2026-07): a telemetry check found ~15-20 users/14d on cached mobile JS bundles whose JoinSession documents still select this field, and whole-document GraphQL validation means removing it would break join entirely for those clients. Re-check via last-14d Session Joined/Started events grouped by $app_build + ota_is_embedded; safe to remove once pre-2026-06-15 builds are ≈ 0. Do not remove without re-running that check.
    * @deprecated Sessions are always-live; there is no driver. Always null. Kept for stale clients (cached web bundles, un-OTA'd native apps); removal is telemetry-gated, see field description.
