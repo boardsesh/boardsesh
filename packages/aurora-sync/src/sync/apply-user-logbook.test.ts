@@ -871,3 +871,54 @@ describe('logbook_sync_skips reconciliation (#3871)', () => {
     }
   });
 });
+
+describe('applyLogbookChunk — claim UPDATE isolation (#3871)', () => {
+  it('isolates a refused row in the cross-source claim UPDATE, the third write path', async () => {
+    // The claim path binds only {uuid, aurora_id}, so it looks harmless — but
+    // it is a batched statement like the other two and fails the same way.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { tx, calls, skipRows } = createTx({
+        selectResults: [
+          [], // byAuroraId: both incoming rows are misses
+          [
+            // Claimable json_import originals at the same instant.
+            {
+              uuid: 'tick-ok',
+              climbUuid: 'climb-1',
+              angle: 40,
+              climbedAt: '2026-05-01T22:00:00.000Z',
+              status: 'send',
+            },
+            {
+              uuid: 'tick-poison',
+              climbUuid: 'climb-2',
+              angle: 40,
+              climbedAt: '2026-05-01T22:00:00.000Z',
+              status: 'send',
+            },
+          ],
+        ],
+        rejectTickWritesContaining: 'aur-poison',
+      });
+
+      await applyAuroraAscents(tx as unknown as Db, 'kilter', 'user-1', [
+        ascent({ uuid: 'aur-ok', climb_uuid: 'climb-1' }),
+        ascent({ uuid: 'aur-poison', climb_uuid: 'climb-2' }),
+      ]);
+
+      // Batched claim refused, then replayed per row: the clean claim lands.
+      expect(calls.filter((c) => c.kind === 'rollback')).toHaveLength(2);
+      expect(skipRows).toHaveLength(1);
+      expect(skipRows[0]).toMatchObject({ auroraId: 'aur-poison', reason: 'db_write_rejected' });
+      // The quarantined payload carries the whole row, not just the link —
+      // {uuid, aurora_id} alone could never be replayed into a tick.
+      expect(skipRows[0].payload).toMatchObject({
+        claimedTickUuid: 'tick-poison',
+        row: { auroraId: 'aur-poison', climbUuid: 'climb-2', angle: 40 },
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});

@@ -890,9 +890,13 @@ async function applyLogbookChunk(
       }
     };
 
+    // Quarantine the FULL normalized row, not just the {uuid, aurora_id} link
+    // the claim statement happens to bind: the link alone can't be replayed
+    // into a tick, and triage needs to see what the row actually was.
+    const incomingByAuroraId = new Map(incoming.map((row) => [row.auroraId, row]));
     await replay(claimEntries, writeClaims, ([auroraId, uuid]) => ({
       auroraId,
-      payload: { uuid, aurora_id: auroraId },
+      payload: { claimedTickUuid: uuid, row: incomingByAuroraId.get(auroraId) ?? null },
     }));
     await replay(updates, writeUpdates, ({ row }) => ({ auroraId: row.auroraId, payload: row }));
     await replay(inserts, writeInserts, (row) => ({ auroraId: row.auroraId, payload: row }));
