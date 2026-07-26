@@ -15,22 +15,9 @@ const ctrl = vi.hoisted(() => ({
 // Minimal RN surface. View renders a <div> exposing its background colour, its
 // clip and its elevation so the solid path, the tint overlays and the hoisted
 // clip wrapper are all inspectable.
-vi.mock('react-native', () => {
-  // Resolve a (possibly nested) RN style array down to one object, like the real
-  // StyleSheet.flatten — later entries win, falsy entries are skipped.
-  const flattenStyle = (style: unknown): Record<string, unknown> => {
-    const out: Record<string, unknown> = {};
-    const walk = (entry: unknown) => {
-      if (!entry) return;
-      if (Array.isArray(entry)) {
-        for (const item of entry) walk(item);
-        return;
-      }
-      Object.assign(out, entry);
-    };
-    walk(style);
-    return out;
-  };
+vi.mock('react-native', async () => {
+  // Dynamic import: Vitest hoists this factory above the file's imports.
+  const { flattenStyle } = await import('../../../test/flatten-style');
   return {
     Platform: {
       get OS() {
@@ -237,6 +224,17 @@ describe('GlassSurface Material elevation cast vs. a consumer clip', () => {
     expect(clip).not.toBeNull();
     expect(elevated?.contains(clip as Node)).toBe(true);
     expect(clip?.querySelector('[data-testid="card-content"]')).not.toBeNull();
+  });
+
+  it("hoists overflow: 'scroll' too — it clips the cast on Android just like 'hidden'", () => {
+    const { container } = render(
+      <GlassSurface role="high" level="level3" borderRadius={16} style={{ borderRadius: 16, overflow: 'scroll' }}>
+        <div data-testid="card-content" />
+      </GlassSurface>,
+    );
+    const elevated = container.querySelector('[data-elevation="3"]');
+    expect(elevated?.getAttribute('data-overflow')).toBe('visible');
+    expect(container.querySelector('[data-overflow="hidden"] [data-testid="card-content"]')).not.toBeNull();
   });
 
   it('adds no wrapper when the consumer does not ask for a clip', () => {

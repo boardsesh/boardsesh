@@ -92,15 +92,23 @@ const MENU_FADE_COLORS = {
   light: ['rgba(255, 255, 255, 0)', `rgba(255, 255, 255, ${MENU_FADE_END_ALPHA})`],
 } as const;
 
-// A real blur under the scrim (iOS 26 Liquid Glass, or its < 26 blur fallback) already
-// makes the busy board-art grid recede, so a light tint finishes the dim. With no blur
-// — Android, Reduce Transparency, or the Material variant on iOS — the tint alone lets
-// the grid bleed through and the overlay stops reading as focused, so the scrim has to
-// do the receding itself. Gated on the surface mode GlassSurface switches on, so the
-// scrim and the card never disagree about which material is underneath.
+// Backdrop dim, by scheme and by whether a real blur sits underneath. A blur (iOS 26
+// Liquid Glass, or its < 26 fallback) already makes the busy board-art grid recede, so
+// a light tint finishes the dim. With no blur — Android, Reduce Transparency, or the
+// Material variant on iOS — the tint alone lets the grid bleed through and the overlay
+// stops reading as focused, so the scrim has to do the receding itself: the app's
+// shared scrim token in dark, and a deliberately lighter value in light, where 0.6 over
+// an already high-contrast screen reads as an accidental dark mode.
+const SCRIM_COLORS = {
+  blurred: { dark: 'rgba(0, 0, 0, 0.5)', light: 'rgba(0, 0, 0, 0.35)' },
+  flat: { dark: overlays.scrim, light: 'rgba(0, 0, 0, 0.4)' },
+} as const;
+
+// Gated on the surface mode GlassSurface switches on, so the scrim and the card never
+// disagree about which material is underneath.
 function resolveScrimColor(hasBlur: boolean, isDark: boolean): string {
-  if (hasBlur) return isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.35)';
-  return isDark ? overlays.scrim : 'rgba(0,0,0,0.4)';
+  const scheme = hasBlur ? SCRIM_COLORS.blurred : SCRIM_COLORS.flat;
+  return isDark ? scheme.dark : scheme.light;
 }
 
 // iOS portals above the persistent queue bar / tab bar via a native window overlay;

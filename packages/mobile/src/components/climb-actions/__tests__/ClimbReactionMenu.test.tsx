@@ -16,25 +16,18 @@ const captured = vi.hoisted(() => ({
   fadeColors: null as readonly string[] | null,
 }));
 
-// Drives the rendering branches: which material sits under the overlay, and how
-// tall the window is (a short window forces the action list to scroll, which is
-// what mounts the bottom fade).
-const ctrl = vi.hoisted(() => ({ surfaceMode: 'material' as string, windowHeight: 800 }));
+// Drives the rendering branches: which material sits under the overlay, which
+// scheme, and how tall the window is (a short window forces the action list to
+// scroll, which is what mounts the bottom fade).
+const ctrl = vi.hoisted(() => ({
+  surfaceMode: 'material' as string,
+  colorScheme: 'dark' as 'dark' | 'light',
+  windowHeight: 800,
+}));
 
-vi.mock('react-native', () => {
-  const flattenStyle = (style: unknown): Record<string, unknown> => {
-    const out: Record<string, unknown> = {};
-    const walk = (entry: unknown) => {
-      if (!entry) return;
-      if (Array.isArray(entry)) {
-        for (const item of entry) walk(item);
-        return;
-      }
-      Object.assign(out, entry);
-    };
-    walk(style);
-    return out;
-  };
+vi.mock('react-native', async () => {
+  // Dynamic import: Vitest hoists this factory above the file's imports.
+  const { flattenStyle } = await import('../../../../test/flatten-style');
   return {
     Platform: { OS: 'android', select: (o: Record<string, unknown>) => o.android },
     Keyboard: { addListener: () => ({ remove: () => {} }) },
@@ -135,7 +128,7 @@ vi.mock('../../../lib/format-climb-stats', () => ({ formatSends: () => '', forma
 vi.mock('../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ formatGrade: () => 'V4' }) }));
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
-    colorScheme: 'dark',
+    colorScheme: ctrl.colorScheme,
     systemColors: { fill: '#222', label: '#fff' },
     m3SurfaceContainers: { lowest: '#101018', low: '#202028', base: '#303038', high: '#404048', highest: '#505058' },
   }),
@@ -204,6 +197,7 @@ describe('ClimbReactionMenu view switching', () => {
     captured.glassSurfaceProps = null;
     captured.fadeColors = null;
     ctrl.surfaceMode = 'material';
+    ctrl.colorScheme = 'dark';
     ctrl.windowHeight = 800;
   });
 
@@ -309,6 +303,7 @@ describe('ClimbReactionMenu surface treatment', () => {
     captured.glassSurfaceProps = null;
     captured.fadeColors = null;
     ctrl.surfaceMode = 'material';
+    ctrl.colorScheme = 'dark';
     ctrl.windowHeight = 800;
   });
 
@@ -340,9 +335,20 @@ describe('ClimbReactionMenu surface treatment', () => {
       ctrl.surfaceMode = mode;
       const { container, unmount } = renderMenu();
       expect(container.querySelector('[data-testid="blur-view"]')).not.toBeNull();
-      expect(container.querySelector('[data-bg="rgba(0,0,0,0.5)"]')).not.toBeNull();
+      expect(container.querySelector('[data-bg="rgba(0, 0, 0, 0.5)"]')).not.toBeNull();
       unmount();
     }
+  });
+
+  it('stays lighter in light mode, where a 0.6 scrim would read as an accidental dark mode', () => {
+    ctrl.colorScheme = 'light';
+    const { container, unmount } = renderMenu();
+    expect(container.querySelector('[data-bg="rgba(0, 0, 0, 0.4)"]')).not.toBeNull();
+    unmount();
+
+    ctrl.surfaceMode = 'glass';
+    const blurred = renderMenu();
+    expect(blurred.container.querySelector('[data-bg="rgba(0, 0, 0, 0.35)"]')).not.toBeNull();
   });
 
   it('builds the list fade from the very tone the card is painted with on Material', () => {

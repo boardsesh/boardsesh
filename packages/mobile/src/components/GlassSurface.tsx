@@ -133,7 +133,11 @@ export function GlassSurface({
   if (mode === 'material') {
     const materialBg = role ? m3SurfaceContainers[role] : baseColor;
     const elevationStyle = level ? materialElevation[level] : shadows.sm;
-    const clipsChildren = StyleSheet.flatten(style)?.overflow === 'hidden';
+    // `'scroll'` clips on Android exactly like `'hidden'` (a plain View never
+    // scrolls — that needs a ScrollView), so it swallows the cast the same way and
+    // collapses to the same clip on the wrapper.
+    const consumerOverflow = StyleSheet.flatten(style)?.overflow;
+    const clipsChildren = consumerOverflow === 'hidden' || consumerOverflow === 'scroll';
     // When a `role` tone is given it IS the surface — an opaque `fallbackColor`
     // would paint over and hide it, so skip the fallback layer (the translucent
     // `tint` still composites). Without a role, keep the legacy fallback-over-base.
