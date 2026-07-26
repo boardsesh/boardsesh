@@ -135,7 +135,9 @@ if (Date.parse(until) <= Date.parse(since)) {
   fail(`--until (${until}) must be after --since (${since})`);
 }
 
-const outPath = flag('--out') ?? `./clamped-send-attempts-${since}.json`;
+// Date portion only: `since` is a normalised ISO instant, and its colons are
+// illegal in Windows filenames.
+const outPath = flag('--out') ?? `./clamped-send-attempts-${since.slice(0, 10)}.json`;
 
 type TickEvent = { email: string; climbUuid: string; eventTs: Date };
 type SuspectRow = { uuid: string; userId: string; climbUuid: string; climbedAt: string; attemptCount: number };
@@ -157,8 +159,16 @@ function parseEvents(path: string): TickEvent[] {
   const isJsonl = lines[0].trimStart().startsWith('{');
 
   if (isJsonl) {
-    return lines.map((line) => {
-      const parsed = JSON.parse(line) as Record<string, string>;
+    return lines.map((line, index) => {
+      let parsed: Record<string, string>;
+      try {
+        parsed = JSON.parse(line) as Record<string, string>;
+      } catch (error) {
+        // Point at the offending line — a bare SyntaxError against a 4k-line
+        // export tells the operator nothing about where to look.
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`${path}:${index + 1} is not valid JSON — ${detail}`);
+      }
       return {
         email: (parsed.email ?? '').trim().toLowerCase(),
         climbUuid: (parsed.climb_uuid ?? parsed.climbUuid ?? '').trim(),
@@ -197,17 +207,22 @@ async function revert(snapshotPath: string) {
       console.log('Dry run — nothing written.');
       return;
     }
-    let reverted = 0;
-    for (const entry of snapshot.entries) {
-      // Only revert rows still holding the value we wrote, so a later manual
-      // correction by the climber is never clobbered.
-      const rows = await db
-        .update(boardseshTicks)
-        .set({ attemptCount: entry.oldAttemptCount, updatedAt: new Date().toISOString() })
-        .where(and(eq(boardseshTicks.uuid, entry.uuid), eq(boardseshTicks.attemptCount, entry.newAttemptCount)))
-        .returning({ uuid: boardseshTicks.uuid });
-      reverted += rows.length;
-    }
+    // Atomic, same reasoning as the forward pass: a half-reverted logbook is
+    // the one state with no clean recovery path.
+    const reverted = await db.transaction(async (txn) => {
+      let restored = 0;
+      for (const entry of snapshot.entries) {
+        // Only revert rows still holding the value we wrote, so a later manual
+        // correction by the climber is never clobbered.
+        const rows = await txn
+          .update(boardseshTicks)
+          .set({ attemptCount: entry.oldAttemptCount, updatedAt: new Date().toISOString() })
+          .where(and(eq(boardseshTicks.uuid, entry.uuid), eq(boardseshTicks.attemptCount, entry.newAttemptCount)))
+          .returning({ uuid: boardseshTicks.uuid });
+        restored += rows.length;
+      }
+      return restored;
+    });
     console.log(`Reverted ${reverted}/${snapshot.entries.length} rows (skipped rows edited since).`);
   } finally {
     await close();
@@ -339,24 +354,32 @@ async function main() {
     console.log(`Snapshot written to ${outPath} — revert with --revert ${outPath}`);
 
     const uuids = entries.map((entry) => entry.uuid);
-    let updated = 0;
     const batchSize = 500;
-    for (let offset = 0; offset < uuids.length; offset += batchSize) {
-      const batch = uuids.slice(offset, offset + batchSize);
-      const rows = await db
-        .update(boardseshTicks)
-        .set({ attemptCount: 1, updatedAt: new Date().toISOString() })
-        .where(
-          and(
-            inArray(boardseshTicks.uuid, batch),
-            eq(boardseshTicks.status, 'send'),
-            eq(boardseshTicks.attemptCount, 2),
-          ),
-        )
-        .returning({ uuid: boardseshTicks.uuid });
-      updated += rows.length;
-      console.log(`  ${Math.min(offset + batchSize, uuids.length)}/${uuids.length}`);
-    }
+    // One transaction across every batch. Batching keeps each statement's
+    // parameter list sane, but a run interrupted between batches would
+    // otherwise leave the logbook half-rewritten — recoverable from the
+    // snapshot, but only if the operator still has it. All-or-nothing is
+    // cheap at this size and makes the state after a crash unambiguous.
+    const updated = await db.transaction(async (txn) => {
+      let applied = 0;
+      for (let offset = 0; offset < uuids.length; offset += batchSize) {
+        const batch = uuids.slice(offset, offset + batchSize);
+        const rows = await txn
+          .update(boardseshTicks)
+          .set({ attemptCount: 1, updatedAt: new Date().toISOString() })
+          .where(
+            and(
+              inArray(boardseshTicks.uuid, batch),
+              eq(boardseshTicks.status, 'send'),
+              eq(boardseshTicks.attemptCount, 2),
+            ),
+          )
+          .returning({ uuid: boardseshTicks.uuid });
+        applied += rows.length;
+        console.log(`  ${Math.min(offset + batchSize, uuids.length)}/${uuids.length}`);
+      }
+      return applied;
+    });
 
     console.log('');
     console.log(`Updated ${updated} rows to 1 try.`);
