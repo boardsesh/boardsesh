@@ -532,7 +532,15 @@ export const tickMutations = {
     }
 
     // Observation only — never rejects, never throws. See the function's docs.
-    await reportTickClimbCatalogPresence(
+    //
+    // Started here but settled at the bottom of the resolver, so its lookup
+    // overlaps the board/session resolution and the insert that follow instead
+    // of adding a serial round-trip to the hot path. Deliberately not
+    // fire-and-forget: settling it keeps the counter deterministic (a test can
+    // assert the event fired, or didn't, without polling) and leaves no promise
+    // dangling past the request. It self-catches, so awaiting it cannot fail
+    // the tick.
+    const catalogPresenceReport = reportTickClimbCatalogPresence(
       userId,
       validatedInput.boardType,
       validatedInput.climbUuid,
@@ -735,6 +743,13 @@ export const tickMutations = {
 
       return [createdTick];
     });
+
+    // Settle the catalog observation started before the board/session lookups.
+    // By now it has overlapped every round-trip above, so this is a no-op wait
+    // in practice — it exists so the counter is deterministic and no promise
+    // outlives the request. Placed before the early returns below so it covers
+    // every exit path from here on.
+    await catalogPresenceReport;
 
     if (!tick) {
       const [existingTick] = await db
