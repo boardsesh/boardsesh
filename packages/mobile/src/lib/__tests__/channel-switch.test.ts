@@ -6,6 +6,7 @@ import {
   deriveChannelRowState,
   performChannelSwitch,
   performChannelReset,
+  resolveRequestedChannelAction,
   type ChannelSwitchDeps,
 } from '../channel-switch';
 
@@ -202,5 +203,61 @@ describe('performChannelReset', () => {
     expect(deps.applyOverride).toHaveBeenCalledTimes(1);
     expect(deps.applyOverride).toHaveBeenCalledWith(null);
     expect(deps.clearMirror).toHaveBeenCalledOnce();
+  });
+});
+
+// The guard set behind the /preview/<channel> deep link. This lives here rather
+// than in ChannelSwitcherScreen.test.tsx because that suite runs with `__DEV__`
+// inlined true (a vite `define`, not a global), so `updatesUsable` is always
+// false there and the 'switch' branch is unreachable from a rendered test.
+describe('resolveRequestedChannelAction', () => {
+  const ready = {
+    requestedChannel: 'pr-100',
+    alreadyOffered: false,
+    overrideLoaded: true,
+    previewsLoading: false,
+    updatesUsable: true,
+    activeChannel: 'production',
+  };
+
+  it('offers the switch once everything it needs has loaded', () => {
+    expect(resolveRequestedChannelAction(ready)).toBe('switch');
+  });
+
+  it('does nothing without a requested channel', () => {
+    expect(resolveRequestedChannelAction({ ...ready, requestedChannel: undefined })).toBe('none');
+  });
+
+  it('waits for the stored override before offering', () => {
+    // performChannelSwitch captures the previous override as its revert target;
+    // offering early would revert to the wrong channel if the switch failed.
+    expect(resolveRequestedChannelAction({ ...ready, overrideLoaded: false })).toBe('wait');
+  });
+
+  it('waits for the preview list so the dialog can name the PR', () => {
+    expect(resolveRequestedChannelAction({ ...ready, previewsLoading: true })).toBe('wait');
+  });
+
+  it('never offers twice — the one-shot guard wins over every other input', () => {
+    // The regression this exists for: the switch itself re-renders the screen, and
+    // a second dialog on top of the first would strand the flow.
+    expect(resolveRequestedChannelAction({ ...ready, alreadyOffered: true })).toBe('none');
+    expect(resolveRequestedChannelAction({ ...ready, alreadyOffered: true, overrideLoaded: false })).toBe('none');
+    expect(resolveRequestedChannelAction({ ...ready, alreadyOffered: true, updatesUsable: false })).toBe('none');
+  });
+
+  it('prefills instead of prompting when switching is inert (Metro / Expo Go)', () => {
+    expect(resolveRequestedChannelAction({ ...ready, updatesUsable: false })).toBe('prefill');
+  });
+
+  it('does nothing when the app is already on the requested channel', () => {
+    expect(resolveRequestedChannelAction({ ...ready, activeChannel: 'pr-100' })).toBe('none');
+  });
+
+  it("holds at 'wait' rather than 'prefill' while loading on a dev build", () => {
+    // 'wait' must outrank the inert-build branch: the caller burns its one-shot
+    // guard on anything that isn't 'wait', so prefilling early would swallow the
+    // request before the real state is known.
+    expect(resolveRequestedChannelAction({ ...ready, updatesUsable: false, overrideLoaded: false })).toBe('wait');
   });
 });

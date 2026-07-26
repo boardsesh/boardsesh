@@ -11,7 +11,10 @@
 
 import { PRESET_CHANNELS } from './channel-switch';
 
-const PR_CHANNEL_PATTERN = /^pr-\d+$/;
+// No leading zeros and no `pr-0`: GitHub numbers PRs from 1, and the web half
+// (packages/web/app/lib/ota-preview-link.ts) rejects both, so accepting them here
+// would 404 on the page while still switching the app.
+const PR_CHANNEL_PATTERN = /^pr-[1-9]\d*$/;
 
 /**
  * Narrow a route param to a channel we're willing to switch onto, or null.
@@ -23,9 +26,4 @@ export function parsePreviewChannel(raw: string | string[] | undefined): string 
   const channel = value.trim();
   if (PR_CHANNEL_PATTERN.test(channel)) return channel;
   return (PRESET_CHANNELS as readonly string[]).includes(channel) ? channel : null;
-}
-
-/** The in-app path for a channel — the tail of both link forms in the PR comment. */
-export function buildPreviewPath(channel: string): string {
-  return `/preview/${channel}`;
 }

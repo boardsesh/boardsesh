@@ -67,6 +67,51 @@ export function deriveChannelRowState(params: {
   return { isActive, isSwitching, isDisabled, isPressable };
 }
 
+// What the screen should do about a channel it was deep-linked to
+// (/preview/<channel>, the link in every PR's OTA-preview comment).
+export type RequestedChannelAction =
+  // Not enough known yet — the stored override or the preview list is still
+  // loading. Ask again on the next render; do NOT mark the request as handled.
+  | 'wait'
+  // Offer the switch (through the confirm dialog, same as a tapped row).
+  | 'switch'
+  // Switching is inert (Metro / Expo Go), so put the channel in the manual field
+  // rather than raising a dialog that can't go anywhere.
+  | 'prefill'
+  // Nothing to do: no request, already handled, or already on that channel.
+  | 'none';
+
+/**
+ * Decide what a deep-linked channel request should trigger. Extracted from the
+ * screen because the component test can't reach the interesting branches: the
+ * mobile vitest config inlines `__DEV__: true` as a build-time `define`, so
+ * `updatesUsable` is false in every rendered test and 'switch' is unreachable
+ * there. Taking `updatesUsable` as a parameter puts every branch under test.
+ *
+ * Order matters. 'wait' must be distinguishable from 'none' so the caller only
+ * burns its one-shot guard once it has actually acted.
+ */
+export function resolveRequestedChannelAction(params: {
+  requestedChannel: string | undefined;
+  // The caller's one-shot guard — true once a previous call returned something
+  // other than 'wait'.
+  alreadyOffered: boolean;
+  // The stored override has been read back. Switching before this lands would
+  // capture the wrong `previousOverride` to revert to.
+  overrideLoaded: boolean;
+  // The backend preview list is still in flight. Waiting lets the confirm dialog
+  // name the PR instead of the bare channel.
+  previewsLoading: boolean;
+  updatesUsable: boolean;
+  activeChannel: string;
+}): RequestedChannelAction {
+  const { requestedChannel, alreadyOffered, overrideLoaded, previewsLoading, updatesUsable, activeChannel } = params;
+  if (alreadyOffered || !requestedChannel) return 'none';
+  if (!overrideLoaded || previewsLoading) return 'wait';
+  if (!updatesUsable) return 'prefill';
+  return requestedChannel === activeChannel ? 'none' : 'switch';
+}
+
 export type ChannelSwitchDeps = {
   // Override the build's `expo-channel-name` request header (null clears it).
   applyOverride: (channel: string | null) => void;

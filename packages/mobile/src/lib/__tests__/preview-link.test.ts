@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePreviewChannel, buildPreviewPath } from '../preview-link';
+import { parsePreviewChannel } from '../preview-link';
 import { PRESET_CHANNELS } from '../channel-switch';
 
 describe('parsePreviewChannel', () => {
@@ -34,10 +34,12 @@ describe('parsePreviewChannel', () => {
     expect(parsePreviewChannel(undefined)).toBeNull();
     expect(parsePreviewChannel([])).toBeNull();
   });
-});
 
-describe('buildPreviewPath', () => {
-  it('matches the route file (app/preview/[channel].tsx) and the PR-comment link', () => {
-    expect(buildPreviewPath('pr-1234')).toBe('/preview/pr-1234');
+  it('agrees with the web half on pr-0 and leading zeros', () => {
+    // GitHub numbers PRs from 1. previewPullRequestNumber() on the web side
+    // rejects these, so accepting them here would 404 the page while still
+    // switching the app.
+    expect(parsePreviewChannel('pr-0')).toBeNull();
+    expect(parsePreviewChannel('pr-007')).toBeNull();
   });
 });

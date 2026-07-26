@@ -13,6 +13,12 @@ describe('previewPullRequestNumber', () => {
     }
   });
 
+  it('rejects leading zeros so one PR has exactly one URL', () => {
+    // Otherwise /preview/pr-007 and /preview/pr-7 are two pages for one PR — and
+    // the mobile whitelist would disagree with this half.
+    expect(previewPullRequestNumber('pr-007')).toBeNull();
+  });
+
   it('stays null past the safe-integer range rather than rounding', () => {
     expect(previewPullRequestNumber('pr-99999999999999999999')).toBeNull();
   });

@@ -15,6 +15,11 @@ import type { SwitcherFormModel, SwitcherTargetRow } from '../SwitcherForm.types
 // the switch flow itself are covered by `channel-switch.test.ts` +
 // `switcher-form-logic.test.ts` + manual on-device QA; this suite locks the
 // model-building, the signed-out preview list, and the tester gating.
+//
+// Same reason the deep-link (`requestedChannel`) guards live in
+// `resolveRequestedChannelAction` and are tested in `channel-switch.test.ts`:
+// 'switch' is unreachable here. What this suite CAN pin is that the inert case
+// stays inert — no dialog on a build that couldn't act on it anyway.
 const captured = vi.hoisted(() => ({ model: null as SwitcherFormModel | null }));
 const confirmMock = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 const hooksState = vi.hoisted(() => ({
@@ -147,6 +152,29 @@ describe('ChannelSwitcherScreen', () => {
       expect.objectContaining({ kind: 'target', key: 'production' }),
       expect.objectContaining({ kind: 'status', label: 'mobile.previewChannels.error' }),
     ]);
+  });
+
+  it('renders the same model with or without a deep-linked channel', () => {
+    // The route passes requestedChannel through; it must not disturb the sections
+    // a plain /channel-switcher visit builds.
+    render(createElement(ChannelSwitcherScreen));
+    const withoutRequest = captured.model;
+
+    render(createElement(ChannelSwitcherScreen, { requestedChannel: 'pr-100' }));
+    const withRequest = captured.model;
+
+    expect(withoutRequest).not.toBeNull();
+    expect(withRequest).not.toBeNull();
+    if (!withoutRequest || !withRequest) return;
+    expect(sectionKeys(withRequest)).toEqual(sectionKeys(withoutRequest));
+  });
+
+  it('raises no confirm dialog for a deep-linked channel when switching is inert', () => {
+    // updatesUsable is false under test (__DEV__ is inlined true), so the request
+    // must resolve to the prefill branch. A dialog here would be a prompt the user
+    // cannot act on.
+    render(createElement(ChannelSwitcherScreen, { requestedChannel: 'pr-100' }));
+    expect(confirmMock).not.toHaveBeenCalled();
   });
 
   it('adds the Sentry section for a tester (gated on the profile, not OTA usability)', () => {

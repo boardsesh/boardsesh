@@ -15,6 +15,7 @@ import {
   resolveBuildChannel,
   performChannelSwitch,
   performChannelReset,
+  resolveRequestedChannelAction,
   type ChannelSwitchDeps,
 } from '../lib/channel-switch';
 import { SwitcherForm } from './SwitcherForm';
@@ -163,25 +164,31 @@ export function ChannelSwitcherScreen({ requestedChannel }: ChannelSwitcherScree
   );
 
   // Deep link (/preview/<channel>): offer the linked channel as soon as we know
-  // enough to do it well. This goes through switchToChannel, so the same confirm
-  // dialog a tapped row raises still gates it — a link never switches the app on
-  // its own.
+  // enough to do it well. The guard ordering lives in resolveRequestedChannelAction
+  // so every branch is unit-testable (the rendered test can't reach 'switch' —
+  // `__DEV__` is inlined true there). Offering goes through switchToChannel, so the
+  // same confirm dialog a tapped row raises still gates it: a link never switches
+  // the app on its own.
   useEffect(() => {
-    if (offeredRequestRef.current || !requestedChannel || !overrideLoaded) return;
-    // Wait for the preview list so the dialog can name the PR ("Load “Fix the
-    // queue jump”…") rather than the bare channel. isLoading goes false on error
-    // too, so a failed list degrades to the channel name instead of hanging.
-    if (previewQuery.isLoading) return;
+    const action = resolveRequestedChannelAction({
+      requestedChannel,
+      alreadyOffered: offeredRequestRef.current,
+      overrideLoaded,
+      // isLoading goes false on error too, so a failed list degrades to the bare
+      // channel name in the dialog instead of hanging on 'wait' forever.
+      previewsLoading: previewQuery.isLoading,
+      updatesUsable,
+      activeChannel,
+    });
+    if (action === 'wait' || action === 'none' || !requestedChannel) return;
 
+    // Past 'wait', the request is handled however it resolved — don't re-raise.
     offeredRequestRef.current = true;
-    if (!updatesUsable) {
-      // Metro / Expo Go: switching is inert, so prefill the manual field instead
-      // of raising a dialog that can't go anywhere. The section footer already
-      // explains why nothing is tappable.
+    if (action === 'prefill') {
+      // The section footer already explains why nothing here is tappable.
       setCustomChannel(requestedChannel);
       return;
     }
-    if (requestedChannel === activeChannel) return;
     const title = previewChannels.find((preview) => preview.channel === requestedChannel)?.title;
     void switchToChannel(requestedChannel, title ?? requestedChannel);
   }, [

@@ -734,8 +734,9 @@ comment also carries **`https://www.boardsesh.com/preview/pr-<number>`**. It res
   stored-override read plus the preview list first, so the dialog can name the PR and the revert
   target is correct. On a Metro/dev build (`updatesUsable === false`) it prefills the manual field
   instead.
-- **Channel names from a URL are whitelisted** in `src/lib/preview-link.ts` (`^pr-\d+$` plus the
-  presets) before they reach `performChannelSwitch`. The web half is
+- **Channel names from a URL are whitelisted** in `src/lib/preview-link.ts` (`^pr-[1-9]\d*$` plus the
+  presets — no `pr-0`, no leading zeros, so one PR has exactly one URL) before they reach
+  `performChannelSwitch`. The web half is
   `packages/web/app/lib/ota-preview-link.ts` — the two are deliberately separate small files because
   the third consumer of this grammar, the `github-script` step in the workflow, can't import TS.
 - **Scheme spelling:** emit the three-slash form (`com.boardsesh.app:///preview/…`). With two
