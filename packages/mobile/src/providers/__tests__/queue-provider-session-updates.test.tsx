@@ -1988,6 +1988,17 @@ describe('QueueProvider mutation-failure resync', () => {
     // and the refresh notice follows only once reconciliation has actually
     // replaced the queue. Collapsing them would either delay the pacing hint or
     // leave the queue silently swapped underneath the climber.
+    //
+    // What this assertion actually guarantees: exactly these two toasts fire and
+    // nothing else. Deleting either one turns it red, so neither can regress.
+    //
+    // What it does NOT firmly guarantee, despite reading like it does: the
+    // ORDER. That holds only because the fallback resync awaits an HTTP
+    // round-trip, so anything toasted synchronously from dispatchSetCurrent's
+    // catch necessarily lands first. Rewriting the catch to toast from a .then()
+    // AFTER the recovery still passes this assertion. If reconciliation ever
+    // becomes synchronous, pin the order with explicit call-index assertions
+    // rather than trusting this one.
     expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual([
       'mobile.queue.rateLimited',
       'mobile.queue.outOfSyncRefreshed',
