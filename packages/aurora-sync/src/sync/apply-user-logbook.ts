@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
-import { boardseshTicks } from '@boardsesh/db/schema';
+import { boardseshTicks, logbookSyncSkips, type LogbookSyncSkipReason } from '@boardsesh/db/schema';
 import {
   recomputeClimbStatsBulk,
   inferUserUtcOffsetSeconds,
@@ -114,18 +114,117 @@ function toNumberOrNull(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// --- Pre-write validation (#3871) -------------------------------------------
+//
+// Everything below exists to stop a value that survives JS coercion from being
+// refused by Postgres inside a BATCHED statement. The row-by-row fallback in
+// applyLogbookChunk is the backstop for what this doesn't anticipate, but it is
+// NOT a substitute: `angle` also flows into recomputeClimbStatsBulk's own
+// `jsonb_to_recordset(...) AS k(..., angle integer)` + INSERT INTO
+// board_climb_stats, which runs AFTER the chunk loop and outside any write
+// fallback. Validation is the only thing standing between a NaN angle and that
+// second abort site. Deleting it does not just "lose a nicer error message".
+
+const INT4_MIN = -2147483648;
+const INT4_MAX = 2147483647;
+
+function isInt4(value: number): boolean {
+  return Number.isInteger(value) && value >= INT4_MIN && value <= INT4_MAX;
+}
+
+/** int4 or null. NaN, Infinity, 21.5 and out-of-range all become null. */
+function int4OrNull(value: unknown): number | null {
+  const parsed = toNumberOrNull(value);
+  return parsed !== null && isInt4(parsed) ? parsed : null;
+}
+
+/**
+ * Code points Postgres cannot store in `text`: a NUL byte, and an unpaired
+ * UTF-16 surrogate. Both abort the WHOLE batched statement — `::jsonb` rejects
+ * the escapes JSON.stringify emits for them ("unsupported Unicode escape
+ * sequence" / "invalid input syntax for type json"), and the text bind path
+ * rejects the raw bytes — which is exactly the deterministic chunk-killer this
+ * guard exists to stop.
+ */
+const UNSTORABLE_TEXT = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+function stripUnstorableText(value: string): string {
+  // String.replace resets a global regex's lastIndex itself, so this stays
+  // stateless despite the /g flag.
+  return value.replace(UNSTORABLE_TEXT, '');
+}
+
+/** A row Postgres could never accept, carrying the reason code for triage. */
+class LogbookRowRejected extends Error {
+  readonly reason: LogbookSyncSkipReason;
+
+  constructor(reason: LogbookSyncSkipReason, message: string) {
+    super(message);
+    this.name = 'LogbookRowRejected';
+    this.reason = reason;
+  }
+}
+
+/**
+ * An identity column (`aurora_id`, `climb_uuid`) must be present and storable.
+ * Unlike a comment these can't be scrubbed: they're what the row is keyed,
+ * deduped and re-synced by, so a corrupted one makes the row unusable.
+ */
+function requireStorableId(value: unknown, field: string): string {
+  const text = value === null || value === undefined ? '' : String(value);
+  if (text === '' || text === 'undefined' || text === 'null' || stripUnstorableText(text) !== text) {
+    throw new LogbookRowRejected(
+      'invalid_identity',
+      `${field} is missing or not storable (got ${JSON.stringify(value)})`,
+    );
+  }
+  return text;
+}
+
+/**
+ * `angle` is `integer NOT NULL` and there is no honest default — a tick at a
+ * guessed angle is wrong data — so an unusable angle is the one thing that
+ * costs the whole row. That drop is only acceptable because the row is
+ * quarantined in logbook_sync_skips with its payload intact and can be
+ * replayed; see the table's doc comment.
+ */
+function requireAngle(value: unknown): number {
+  const angle = int4OrNull(value);
+  if (angle === null) {
+    throw new LogbookRowRejected('invalid_angle', `angle is not a storable integer (got ${JSON.stringify(value)})`);
+  }
+  return angle;
+}
+
+/**
+ * `quality` carries a DB CHECK (boardsesh_ticks_quality_range: NULL or 1-5).
+ * convertQuality honours that today, but a future change to the star scale
+ * would re-poison the column silently — and losing a rating is much cheaper
+ * than losing the send, so out-of-range becomes NULL rather than a drop.
+ */
+function qualityWithinCheck(value: number | null): number | null {
+  if (value === null) return null;
+  return isInt4(value) && value >= 1 && value <= 5 ? value : null;
+}
+
 function normalizeAscent(item: AuroraApiRow): NormalizedLogbookRow {
   return {
-    auroraId: String(item.uuid),
-    climbUuid: String(item.climb_uuid),
-    angle: Number(item.angle),
+    auroraId: requireStorableId(item.uuid, 'uuid'),
+    climbUuid: requireStorableId(item.climb_uuid, 'climb_uuid'),
+    angle: requireAngle(item.angle),
     isMirror: toBool(item.is_mirror),
     status: Number(item.attempt_id) === 1 ? 'flash' : 'send',
-    attemptCount: Number(item.bid_count || 1),
-    quality: convertQuality(item.quality != null && item.quality !== '' ? Number(item.quality) : null),
-    difficulty: toNumberOrNull(item.difficulty),
+    // `attempt_count` is `integer NOT NULL DEFAULT 1`; fall back to that
+    // default rather than dropping a real send over a garbage bid_count.
+    attemptCount: int4OrNull(item.bid_count || 1) ?? 1,
+    quality: qualityWithinCheck(
+      convertQuality(item.quality != null && item.quality !== '' ? Number(item.quality) : null),
+    ),
+    // toNumberOrNull only guarantees finite — a fractional difficulty (21.5)
+    // is still "invalid input syntax for type integer" at the SQL layer.
+    difficulty: int4OrNull(item.difficulty),
     isBenchmark: toBool(item.is_benchmark),
-    comment: item.comment ? String(item.comment) : '',
+    comment: stripUnstorableText(item.comment ? String(item.comment) : ''),
     climbedAt: normalizeTimestamp(String(item.climbed_at)),
     createdAt: item.created_at
       ? normalizeTimestamp(String(item.created_at))
@@ -136,16 +235,16 @@ function normalizeAscent(item: AuroraApiRow): NormalizedLogbookRow {
 
 function normalizeBid(item: AuroraApiRow): NormalizedLogbookRow {
   return {
-    auroraId: String(item.uuid),
-    climbUuid: String(item.climb_uuid),
-    angle: Number(item.angle),
+    auroraId: requireStorableId(item.uuid, 'uuid'),
+    climbUuid: requireStorableId(item.climb_uuid, 'climb_uuid'),
+    angle: requireAngle(item.angle),
     isMirror: toBool(item.is_mirror),
     status: 'attempt',
-    attemptCount: Number(item.bid_count || 1),
+    attemptCount: int4OrNull(item.bid_count || 1) ?? 1,
     quality: null,
     difficulty: null,
     isBenchmark: false,
-    comment: item.comment ? String(item.comment) : '',
+    comment: stripUnstorableText(item.comment ? String(item.comment) : ''),
     climbedAt: normalizeTimestamp(String(item.climbed_at)),
     createdAt: item.created_at
       ? normalizeTimestamp(String(item.created_at))
@@ -158,6 +257,203 @@ function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
   return out;
+}
+
+// --- Skip quarantine (#3871) ------------------------------------------------
+
+/** One upstream row this sync refused, on its way to logbook_sync_skips. */
+type LogbookSkipRecord = {
+  auroraId: string;
+  auroraType: 'ascents' | 'bids';
+  reason: LogbookSyncSkipReason;
+  detail: string;
+  payload: unknown;
+};
+
+/** Params bound per DELETE when clearing resolved skips; well under PG's 65535. */
+const SKIP_RECONCILE_CHUNK_SIZE = 500;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Scrub a value into something `jsonb` will accept.
+ *
+ * The payload we quarantine is very often the row carrying the exact bytes
+ * Postgres refused, so serializing it naively would make the RECORD of the
+ * failure fail the same way — and that write lives in the caller's cross-table
+ * transaction, so it would recreate the very wedge this table reports.
+ */
+function storableJson(value: unknown): unknown {
+  if (typeof value === 'string') return stripUnstorableText(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(storableJson);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        stripUnstorableText(key),
+        storableJson(entry),
+      ]),
+    );
+  }
+  return value;
+}
+
+/**
+ * Persist this run's skips so a dropped row is quarantined-and-replayable
+ * rather than silently discarded. Best-effort by construction: wrapped in its
+ * own savepoint so a failure to RECORD the problem can never become a bigger
+ * problem than the one it was reporting.
+ */
+async function recordLogbookSyncSkips(
+  db: DrizzleDb,
+  boardName: AuroraBoardName,
+  userId: string,
+  skips: LogbookSkipRecord[],
+): Promise<void> {
+  if (skips.length === 0) return;
+
+  // ON CONFLICT DO UPDATE cannot touch the same row twice in one statement
+  // ("cannot affect row a second time"), and a duplicated upstream uuid whose
+  // copies BOTH fail is exactly the shape that produces that. Last wins.
+  const byAuroraId = new Map<string, LogbookSkipRecord>();
+  for (const skip of skips) byAuroraId.set(`${skip.auroraType} ${skip.auroraId}`, skip);
+
+  const now = new Date().toISOString();
+  try {
+    await db.transaction(async (sp) => {
+      await sp
+        .insert(logbookSyncSkips)
+        .values(
+          [...byAuroraId.values()].map((skip) => ({
+            userId,
+            boardType: boardName,
+            auroraType: skip.auroraType,
+            auroraId: skip.auroraId,
+            reason: skip.reason,
+            detail: stripUnstorableText(skip.detail).slice(0, 2000),
+            payload: storableJson(skip.payload),
+            firstSeenAt: now,
+            lastSeenAt: now,
+            seenCount: 1,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: [
+            logbookSyncSkips.userId,
+            logbookSyncSkips.boardType,
+            logbookSyncSkips.auroraType,
+            logbookSyncSkips.auroraId,
+          ],
+          set: {
+            reason: sql`excluded.reason`,
+            detail: sql`excluded.detail`,
+            payload: sql`excluded.payload`,
+            lastSeenAt: sql`excluded.last_seen_at`,
+            // first_seen_at deliberately NOT overwritten: "since when" is the
+            // question triage actually asks.
+            seenCount: sql`${logbookSyncSkips.seenCount} + 1`,
+          },
+        });
+    });
+  } catch (error) {
+    console.warn(
+      `[aurora-sync] could not record ${byAuroraId.size} logbook sync skip(s) for user ${userId} on ${boardName}: ${errorMessage(error)}`,
+    );
+  }
+}
+
+/**
+ * Drop quarantine rows for upstream ids that just synced cleanly, so the table
+ * answers "what is broken right now" instead of accumulating into "what ever
+ * broke" — the difference between state and a counter, and the reason this is
+ * queryable at all (see docs/aurora-sync.md).
+ */
+async function reconcileLogbookSyncSkips(
+  db: DrizzleDb,
+  boardName: AuroraBoardName,
+  userId: string,
+  auroraType: 'ascents' | 'bids',
+  handledIds: string[],
+  skips: LogbookSkipRecord[],
+): Promise<void> {
+  const stillSkipped = new Set(skips.filter((skip) => skip.auroraType === auroraType).map((skip) => skip.auroraId));
+  const resolved = [...new Set(handledIds.filter((id) => !stillSkipped.has(id)))];
+  if (resolved.length === 0) return;
+
+  try {
+    // One savepoint around every chunk: same "reporting must not wedge the
+    // sync" rule as recordLogbookSyncSkips, at one subtransaction per payload.
+    await db.transaction(async (sp) => {
+      for (const ids of chunk(resolved, SKIP_RECONCILE_CHUNK_SIZE)) {
+        await sp
+          .delete(logbookSyncSkips)
+          .where(
+            and(
+              eq(logbookSyncSkips.userId, userId),
+              eq(logbookSyncSkips.boardType, boardName),
+              eq(logbookSyncSkips.auroraType, auroraType),
+              inArray(logbookSyncSkips.auroraId, ids),
+            ),
+          );
+      }
+    });
+  } catch (error) {
+    console.warn(
+      `[aurora-sync] could not clear resolved logbook sync skips for user ${userId} on ${boardName}: ${errorMessage(error)}`,
+    );
+  }
+}
+
+/**
+ * Turn a normalize/validate throw into a quarantine record. A LogbookRowRejected
+ * carries its own triage code; anything else is the parse-time class PR #3872
+ * (issue #3520) skips-and-logs, recorded here so those skips stop being
+ * console-only too.
+ */
+function skipFromNormalizeError(
+  item: AuroraApiRow,
+  error: unknown,
+  auroraType: 'ascents' | 'bids',
+  userId: string,
+  boardName: AuroraBoardName,
+): LogbookSkipRecord {
+  const reason: LogbookSyncSkipReason = error instanceof LogbookRowRejected ? error.reason : 'normalize_failed';
+  console.warn(
+    `[aurora-sync] skipping malformed ${auroraType === 'ascents' ? 'ascent' : 'bid'} row (uuid=${String(item.uuid)}, user=${userId}, board=${boardName}, reason=${reason}): ${errorMessage(error)}`,
+  );
+  return {
+    // String() and not requireStorableId: the id may be the very thing that's
+    // broken, and a quarantine row with a scrubbed id still beats no record.
+    auroraId: stripUnstorableText(String(item.uuid ?? '')).slice(0, 255),
+    auroraType,
+    reason,
+    detail: errorMessage(error),
+    payload: item,
+  };
+}
+
+/**
+ * Last-write-wins dedupe on aurora_id.
+ *
+ * Two rows sharing an aurora_id are both "misses" (neither is stored yet), so
+ * both would be INSERTed and boardsesh_ticks_aurora_id_unique would abort the
+ * chunk — deterministically, every cycle, forever. Deduping at PAYLOAD level
+ * rather than per chunk matters: a chunk boundary between the two copies would
+ * hide the collision from a per-chunk guard and let it reach the index.
+ *
+ * Not a quarantine case: same id means same upstream row, so keeping the last
+ * copy loses nothing (it is what the DB would have converged on anyway).
+ */
+function dedupeByAuroraId(rows: NormalizedLogbookRow[]): NormalizedLogbookRow[] {
+  const byId = new Map<string, NormalizedLogbookRow>();
+  for (const row of rows) byId.set(row.auroraId, row);
+  if (byId.size !== rows.length) {
+    console.warn(`[aurora-sync] collapsed ${rows.length - byId.size} duplicate aurora_id row(s) in one payload`);
+  }
+  return [...byId.values()];
 }
 
 /**
@@ -250,6 +546,7 @@ async function applyLogbookChunk(
   now: string,
   auroraType: 'ascents' | 'bids',
   claimStatuses: Array<'flash' | 'send' | 'attempt'>,
+  skips: LogbookSkipRecord[],
 ): Promise<ClimbStatsKey[]> {
   const touched: ClimbStatsKey[] = [];
   const addKey = (climbUuid: string, angle: number) => touched.push({ boardType: boardName, climbUuid, angle });
@@ -404,12 +701,23 @@ async function applyLogbookChunk(
   // (d) Inserts: misses that weren't claimed.
   const inserts = misses.filter((m) => !claims.has(m.auroraId));
 
-  // --- Writes ---
-  if (claims.size > 0) {
-    const claimPayload = JSON.stringify(
-      [...claims.entries()].map(([auroraId, uuid]) => ({ uuid, aurora_id: auroraId })),
-    );
-    await db.execute(sql`
+  // Touched keys are collected BEFORE the writes and deliberately left as a
+  // superset: a row that the fallback below ends up skipping leaves its
+  // (climb, angle) in the list, and recomputing stats for it is idempotent —
+  // cheaper than threading write outcomes back through the key list.
+  for (const { row, stored } of updates) {
+    // A re-sync can move a log to a different climb/angle; recompute both.
+    addKey(stored.climbUuid, stored.angle);
+    addKey(row.climbUuid, row.angle);
+  }
+  for (const row of inserts) addKey(row.climbUuid, row.angle);
+
+  const claimEntries = [...claims.entries()];
+
+  const writeClaims = async (target: DrizzleDb, entries: Array<[string, string]>): Promise<void> => {
+    if (entries.length === 0) return;
+    const claimPayload = JSON.stringify(entries.map(([auroraId, uuid]) => ({ uuid, aurora_id: auroraId })));
+    await target.execute(sql`
       UPDATE boardsesh_ticks AS t SET
         aurora_id = u.aurora_id,
         aurora_type = ${auroraType}::aurora_table_type,
@@ -426,16 +734,15 @@ async function applyLogbookChunk(
       WHERE t.uuid = u.uuid
         AND t.user_id = ${userId}
     `);
-  }
+  };
 
-  if (updates.length > 0) {
-    for (const { row, stored } of updates) {
-      // A re-sync can move a log to a different climb/angle; recompute both.
-      addKey(stored.climbUuid, stored.angle);
-      addKey(row.climbUuid, row.angle);
-    }
+  const writeUpdates = async (
+    target: DrizzleDb,
+    rows: Array<{ row: NormalizedLogbookRow; stored: ComparedRow }>,
+  ): Promise<void> => {
+    if (rows.length === 0) return;
     const updatePayload = JSON.stringify(
-      updates.map(({ row }) => ({
+      rows.map(({ row }) => ({
         aurora_id: row.auroraId,
         climb_uuid: row.climbUuid,
         angle: row.angle,
@@ -451,7 +758,7 @@ async function applyLogbookChunk(
         updated_at: now,
       })),
     );
-    await db.execute(sql`
+    await target.execute(sql`
       UPDATE boardsesh_ticks AS t SET
         climb_uuid = u.climb_uuid,
         angle = u.angle,
@@ -487,38 +794,98 @@ async function applyLogbookChunk(
       WHERE t.aurora_id = u.aurora_id
         AND t.user_id = ${userId}
     `);
-  }
+  };
 
-  if (inserts.length > 0) {
-    await db.insert(boardseshTicks).values(
-      inserts.map((row) => {
-        addKey(row.climbUuid, row.angle);
-        return {
-          uuid: randomUUID(),
-          userId,
-          boardType: boardName,
-          climbUuid: row.climbUuid,
-          angle: row.angle,
-          isMirror: row.isMirror,
-          // Freshly pulled from the user's Aurora logbook — already inside
-          // upstream_ascensionist_count, so origin excludes it from the
-          // Boardsesh double-count guard.
-          origin: 'aurora_pull' as const,
-          status: row.status,
-          attemptCount: row.attemptCount,
-          quality: row.quality,
-          difficulty: row.difficulty,
-          isBenchmark: row.isBenchmark,
-          comment: row.comment,
-          climbedAt: row.climbedAt,
-          createdAt: row.createdAt,
-          updatedAt: now,
-          auroraType: row.auroraType,
-          auroraId: row.auroraId,
-          auroraSyncedAt: now,
-        };
-      }),
+  const writeInserts = async (target: DrizzleDb, rows: NormalizedLogbookRow[]): Promise<void> => {
+    if (rows.length === 0) return;
+    await target.insert(boardseshTicks).values(
+      rows.map((row) => ({
+        uuid: randomUUID(),
+        userId,
+        boardType: boardName,
+        climbUuid: row.climbUuid,
+        angle: row.angle,
+        isMirror: row.isMirror,
+        // Freshly pulled from the user's Aurora logbook — already inside
+        // upstream_ascensionist_count, so origin excludes it from the
+        // Boardsesh double-count guard.
+        origin: 'aurora_pull' as const,
+        status: row.status,
+        attemptCount: row.attemptCount,
+        quality: row.quality,
+        difficulty: row.difficulty,
+        isBenchmark: row.isBenchmark,
+        comment: row.comment,
+        climbedAt: row.climbedAt,
+        createdAt: row.createdAt,
+        updatedAt: now,
+        auroraType: row.auroraType,
+        auroraId: row.auroraId,
+        auroraSyncedAt: now,
+      })),
     );
+  };
+
+  // --- Writes ---
+  //
+  // ONE savepoint around the chunk's three batched writes (#3871). Without it,
+  // a single row Postgres refuses aborts the caller's transaction — and that
+  // transaction spans EVERY synced table plus the sync checkpoint, so one bad
+  // ascent rolls back bids, tags and circuits and stops the watermark
+  // advancing. The next cycle re-fetches the same row and re-crashes: the
+  // user's logbook stops updating permanently, with nothing surfaced.
+  //
+  // Rolling back to the savepoint leaves the outer transaction healthy, so the
+  // chunk can be replayed row by row and lose only the offending row. This is
+  // PR #3872's skip-and-log philosophy (issue #3520) one layer down, at
+  // DB-execution time instead of parse time.
+  //
+  // Cost bound: one open subtransaction per chunk (postgres.js does not RELEASE
+  // savepoints), and syncUserData opens a fresh transaction per Aurora PAGE, so
+  // the live count is (page size / WRITE_CHUNK_SIZE) — ~10 for a 1000-row page,
+  // comfortably under the 64-subxid backend cache threshold past which other
+  // backends fall back to pg_subtrans lookups. Raising the page size raises
+  // this: keep a page under ~6400 rows.
+  try {
+    await db.transaction(async (savepoint) => {
+      const sp = savepoint as unknown as DrizzleDb;
+      await writeClaims(sp, claimEntries);
+      await writeUpdates(sp, updates);
+      await writeInserts(sp, inserts);
+    });
+  } catch (batchError) {
+    console.warn(
+      `[aurora-sync] batched ${auroraType} write failed for user ${userId} on ${boardName} (${incoming.length} row(s)); retrying row by row: ${errorMessage(batchError)}`,
+    );
+
+    // The savepoint rolled back ALL THREE writes above, so the replay redoes
+    // all three — not just whichever one threw.
+    const replay = async <T>(
+      rows: T[],
+      write: (target: DrizzleDb, subset: T[]) => Promise<void>,
+      identify: (row: T) => { auroraId: string; payload: unknown },
+    ): Promise<void> => {
+      for (const row of rows) {
+        try {
+          await db.transaction(async (savepoint) => {
+            await write(savepoint as unknown as DrizzleDb, [row]);
+          });
+        } catch (rowError) {
+          const { auroraId, payload } = identify(row);
+          console.warn(
+            `[aurora-sync] skipping ${auroraType} row Postgres refused (aurora_id=${auroraId}, user=${userId}, board=${boardName}): ${errorMessage(rowError)}`,
+          );
+          skips.push({ auroraId, auroraType, reason: 'db_write_rejected', detail: errorMessage(rowError), payload });
+        }
+      }
+    };
+
+    await replay(claimEntries, writeClaims, ([auroraId, uuid]) => ({
+      auroraId,
+      payload: { uuid, aurora_id: auroraId },
+    }));
+    await replay(updates, writeUpdates, ({ row }) => ({ auroraId: row.auroraId, payload: row }));
+    await replay(inserts, writeInserts, (row) => ({ auroraId: row.auroraId, payload: row }));
   }
 
   return touched;
@@ -538,6 +905,8 @@ export async function applyAuroraAscents(
   const now = new Date().toISOString();
   const touchedKeys: ClimbStatsKey[] = [];
 
+  const skips: LogbookSkipRecord[] = [];
+
   const tombstoneIds: string[] = [];
   const live: NormalizedLogbookRow[] = [];
   for (const item of data) {
@@ -546,29 +915,41 @@ export async function applyAuroraAscents(
     } else {
       // A single row with an unparseable timestamp (missing/garbage
       // climbed_at, or a created_at so malformed the climbed_at fallback
-      // above doesn't save it) must not abort the whole payload: this runs
-      // inside syncUserData's one cross-table transaction, so an uncaught
-      // throw here rolls back every OTHER table that already synced this
-      // attempt AND blocks the checkpoint from advancing — the next attempt
-      // just re-fetches and re-crashes on the same poison row forever (#3520).
-      // Skip-and-log the one row; every other row in the payload still lands.
+      // above doesn't save it), or one carrying a value Postgres could never
+      // store, must not abort the whole payload: this runs inside
+      // syncUserData's one cross-table transaction, so an uncaught throw here
+      // rolls back every OTHER table that already synced this attempt AND
+      // blocks the checkpoint from advancing — the next attempt just re-fetches
+      // and re-crashes on the same poison row forever (#3520). Skip-and-record
+      // the one row; every other row in the payload still lands.
       try {
         live.push(normalizeAscent(item));
       } catch (error) {
-        console.warn(
-          `[aurora-sync] skipping malformed ascent row (uuid=${String(item.uuid)}, user=${userId}, board=${boardName}): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
+        skips.push(skipFromNormalizeError(item, error, 'ascents', userId, boardName));
       }
     }
   }
 
   touchedKeys.push(...(await applyAuroraTombstones(db, boardName, userId, tombstoneIds)));
 
-  for (const batch of chunk(live, WRITE_CHUNK_SIZE)) {
-    touchedKeys.push(...(await applyLogbookChunk(db, boardName, userId, batch, now, 'ascents', ['flash', 'send'])));
+  const unique = dedupeByAuroraId(live);
+  for (const batch of chunk(unique, WRITE_CHUNK_SIZE)) {
+    touchedKeys.push(
+      ...(await applyLogbookChunk(db, boardName, userId, batch, now, 'ascents', ['flash', 'send'], skips)),
+    );
   }
+
+  await recordLogbookSyncSkips(db, boardName, userId, skips);
+  // Tombstoned ids count as handled: a quarantined row deleted upstream is no
+  // longer a problem anyone can fix, so its record should go too.
+  await reconcileLogbookSyncSkips(
+    db,
+    boardName,
+    userId,
+    'ascents',
+    [...tombstoneIds, ...unique.map((row) => row.auroraId)],
+    skips,
+  );
 
   await recomputeClimbStatsBulk(db, touchedKeys);
 }
@@ -584,7 +965,9 @@ export async function applyAuroraBids(
   const now = new Date().toISOString();
   const touchedKeys: ClimbStatsKey[] = [];
 
-  // Same skip-and-log rationale as applyAuroraAscents above: one malformed
+  const skips: LogbookSkipRecord[] = [];
+
+  // Same skip-and-record rationale as applyAuroraAscents above: one malformed
   // bid must not throw out of the eager normalize pass and abort every other
   // table in the caller's transaction (#3520).
   const live: NormalizedLogbookRow[] = [];
@@ -592,16 +975,24 @@ export async function applyAuroraBids(
     try {
       live.push(normalizeBid(item));
     } catch (error) {
-      console.warn(
-        `[aurora-sync] skipping malformed bid row (uuid=${String(item.uuid)}, user=${userId}, board=${boardName}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      skips.push(skipFromNormalizeError(item, error, 'bids', userId, boardName));
     }
   }
-  for (const batch of chunk(live, WRITE_CHUNK_SIZE)) {
-    touchedKeys.push(...(await applyLogbookChunk(db, boardName, userId, batch, now, 'bids', ['attempt'])));
+
+  const unique = dedupeByAuroraId(live);
+  for (const batch of chunk(unique, WRITE_CHUNK_SIZE)) {
+    touchedKeys.push(...(await applyLogbookChunk(db, boardName, userId, batch, now, 'bids', ['attempt'], skips)));
   }
+
+  await recordLogbookSyncSkips(db, boardName, userId, skips);
+  await reconcileLogbookSyncSkips(
+    db,
+    boardName,
+    userId,
+    'bids',
+    unique.map((row) => row.auroraId),
+    skips,
+  );
 
   await recomputeClimbStatsBulk(db, touchedKeys);
 }

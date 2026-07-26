@@ -353,6 +353,57 @@ Failed to decrypt credentials
 - Verify user has `syncStatus: active` or `error` (not `disabled`)
 - Check Aurora API is accessible from the environment
 
+### Skipped logbook rows (`logbook_sync_skips`)
+
+Some upstream ascents/bids can't be written at all — a non-numeric `angle`, a
+comment carrying a NUL byte, or anything else Postgres refuses. Rather than let
+one of those abort the whole cross-table sync transaction and freeze the user's
+logbook forever (#3871, the DB-execution-time sibling of #3520), the sync skips
+the offending row and records it in `logbook_sync_skips` with its payload
+intact, so the send is quarantined and replayable rather than silently dropped.
+
+The table is **state, not a log**: a row is deleted the moment that `aurora_id`
+syncs cleanly, so anything still in it is currently broken.
+
+Who is affected, and why:
+
+```sql
+SELECT reason,
+       count(*)                AS rows_skipped,
+       count(DISTINCT user_id) AS users_affected,
+       max(last_seen_at)       AS last_hit
+  FROM logbook_sync_skips
+ GROUP BY reason
+ ORDER BY rows_skipped DESC;
+```
+
+Drill into one user (the payload is what you replay from):
+
+```sql
+SELECT aurora_type, aurora_id, reason, detail, seen_count, first_seen_at, payload
+  FROM logbook_sync_skips
+ WHERE user_id = '<user-id>' AND board_type = 'kilter'
+ ORDER BY last_seen_at DESC;
+```
+
+Reason codes:
+
+| `reason`            | What happened                                                              | Recovery                                                                       |
+| ------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `invalid_angle`     | `angle` isn't a storable integer. No honest default, so the row is dropped | Fix upstream (the row re-syncs on its next upstream edit), or replay `payload` |
+| `invalid_identity`  | `climb_uuid` / `aurora_id` missing or carrying an unstorable byte          | Usually an upstream data bug; replay from `payload` once corrected             |
+| `normalize_failed`  | The row threw during parsing (bad `climbed_at`/`created_at`) — see #3520   | Same as above                                                                  |
+| `db_write_rejected` | Parsed and validated, but Postgres still refused it                        | Read `detail` for the Postgres error; usually needs a code fix                 |
+
+A skipped row is **not** re-fetched automatically: Aurora's user sync is
+incremental and the checkpoint advances past it (not advancing is the wedge this
+fixes). It comes back when the user edits it upstream, when the watermark is
+reset (`clearAuroraBoardData` drops `board_user_syncs`, so the next sync starts
+from 1970), or via the JSON export import below, which ignores the watermark.
+
+A rising `seen_count` on the same row means it keeps being re-delivered and
+re-refused — worth a look at `detail`.
+
 ## JSON Export Import (Alternative to API Sync)
 
 Since the Kilter backend has been shut down, API-based sync is no longer available for Kilter users. As an alternative, users can import their data from Aurora's JSON export file.
