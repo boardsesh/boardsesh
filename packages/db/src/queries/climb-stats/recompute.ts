@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
-import { boardClimbStats } from '../../schema/boards/unified';
 import { rowsOf } from '../util/rows';
 import { blendedQualityAverageSql } from './quality-blend';
 
@@ -76,6 +75,28 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * kilter_pull / json_import) are already reflected in upstream_quality_average and
  * are deliberately excluded here so they are not double-counted. The recompute
  * never writes upstream_quality_average (the upstream syncs own it).
+ *
+ * The defensive seed is GUARDED on the climb existing in board_climbs (#3528).
+ * A tick can carry any string as its climb_uuid — saveTick's Zod schema is
+ * shape-only and boardsesh_ticks has no FK to board_climbs — so an unguarded
+ * seed minted a permanent board_climb_stats row for whatever key a tick landed
+ * on, and the non-owned branch below then wrote real counts into it (77 such
+ * orphan rows in prod). Both seeds now insert only when board_climbs has a row
+ * for (board_type, climb_uuid); the lookup rides board_climbs_pkey.
+ *
+ * Deliberately guarded on the CLIMB, not on (climb, angle): a tick at an angle
+ * the catalog has no stats row for is legitimate and must still seed — that is
+ * the whole reason the seed exists. Tightening this to (climb, angle) would
+ * break real ticks. (MoonBoard's wrong-angle rows, #3529, are an identity
+ * problem, not an existence one; they belong to the angle-dedup work.)
+ *
+ * Seeded rows carry quality_normalized = TRUE. Every value the row can ever
+ * hold is on the canonical 1-5 scale: the Boardsesh blend is built from native
+ * ticks (validated 1-5), and the only writers of the upstream side (Aurora
+ * shared-sync, Kilter catalog-sync / stats-repair, the MoonBoard importers) all
+ * set the flag TRUE on insert AND on conflict. Leaving it at the column default
+ * FALSE is what stranded 44 MoonBoard rows outside the "all normalized"
+ * invariant (#3529, seed half).
  */
 
 export type DiffRow = {
@@ -124,19 +145,31 @@ export async function recomputeClimbStats(
   await db.transaction(async (tx) => {
     // Defensive seed: set upstream/boardsesh counts to 0 explicitly so the
     // recompute and any later upstream sync both see a sensible baseline.
-    await tx
-      .insert(boardClimbStats)
-      .values({
-        boardType,
-        climbUuid,
-        angle,
-        ascensionistCount: 0,
-        upstreamAscensionistCount: 0,
-        boardseshAscensionistCount: 0,
-      })
-      .onConflictDoNothing({
-        target: [boardClimbStats.boardType, boardClimbStats.climbUuid, boardClimbStats.angle],
-      });
+    //
+    // INSERT ... SELECT FROM board_climbs makes the catalog lookup the guard
+    // itself: board_climbs.uuid is the primary key, so the SELECT yields
+    // exactly one row for a real climb and zero rows for a phantom one, and a
+    // phantom key seeds nothing. When nothing is seeded the UPDATE below simply
+    // matches no row and this function returns undefined — the documented
+    // "UPDATE matched no row" path.
+    //
+    // Raw SQL rather than the drizzle insert builder, and not for lack of
+    // trying: `.values()` cannot carry a WHERE at all, and `.insert().select()`
+    // throws at runtime on a partial column list ("selected fields are not the
+    // same or are in a different order compared to the table definition"), so
+    // it would force us to enumerate every column of board_climb_stats and
+    // re-enumerate them on every future column addition. Same statement shape
+    // as the bulk seed below, deliberately — the two guards should diff clean.
+    await tx.execute(sql`
+      INSERT INTO board_climb_stats (board_type, climb_uuid, angle,
+                                     ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
+                                     quality_normalized)
+      SELECT ${boardType}::text, ${climbUuid}::text, ${angle}::integer, 0, 0, 0, TRUE
+        FROM board_climbs bc
+       WHERE bc.uuid = ${climbUuid}
+         AND bc.board_type = ${boardType}
+      ON CONFLICT (board_type, climb_uuid, angle) DO NOTHING;
+    `);
 
     const result = await tx.execute(sql`
       WITH before AS (
@@ -362,12 +395,21 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
     );
 
     // Defensive seed for keys whose stats row doesn't exist yet (ticks can
-    // arrive at angles the saveClimb seed didn't cover).
+    // arrive at angles the saveClimb seed didn't cover). Guarded on the climb
+    // existing in board_climbs (#3528) — see the module doc. The EXISTS rides
+    // board_climbs_pkey, one probe per key.
     await db.execute(sql`
       INSERT INTO board_climb_stats (board_type, climb_uuid, angle,
-                                     ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count)
-      SELECT k.board_type, k.climb_uuid, k.angle, 0, 0, 0
+                                     ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
+                                     quality_normalized)
+      SELECT k.board_type, k.climb_uuid, k.angle, 0, 0, 0, TRUE
         FROM jsonb_to_recordset(${payload}::jsonb) AS k(board_type text, climb_uuid text, angle integer)
+       WHERE EXISTS (
+         SELECT 1
+           FROM board_climbs bc
+          WHERE bc.uuid = k.climb_uuid
+            AND bc.board_type = k.board_type
+       )
       ON CONFLICT (board_type, climb_uuid, angle) DO NOTHING;
     `);
 
@@ -403,8 +445,12 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
           FROM boardsesh_ticks bt
           JOIN keys k
             ON k.board_type = bt.board_type AND k.climb_uuid = bt.climb_uuid AND k.angle = bt.angle
-          -- Inner join is safe: the seed INSERT above created a stats row for
-          -- every key, so upstream_synced_at is always available here.
+          -- Inner join, and since #3528 it is also load-bearing: the seed above
+          -- only creates rows for keys whose climb exists in board_climbs, so a
+          -- phantom key has no stats row and drops out here. That is the
+          -- intended outcome — the UPDATE at the bottom would match nothing for
+          -- it anyway. For every surviving key the seed guarantees a row, so
+          -- upstream_synced_at is always available.
           JOIN board_climb_stats s
             ON s.board_type = bt.board_type AND s.climb_uuid = bt.climb_uuid AND s.angle = bt.angle
          -- Kilter-detached rows are upstream-deleted; they must not count nor

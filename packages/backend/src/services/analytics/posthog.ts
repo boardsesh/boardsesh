@@ -12,7 +12,12 @@ export type BackendAnalyticsEvent =
   | 'Live Activity Push Delivery Attribution Gap'
   | 'Live Activity Started'
   | 'Live Activity Widget Navigation'
-  | 'Live Activity Widget Navigation Attribution Gap';
+  | 'Live Activity Widget Navigation Attribution Gap'
+  // Counter behind the log-only climb-existence check in saveTick (#3528).
+  // Count DISTINCT USERS, not events — one looping client would otherwise read
+  // as a fleet-wide problem. A sustained zero is the signal to turn the check
+  // into a rejection (#3942).
+  | 'Tick Climb Not In Catalog';
 
 interface CaptureBackendEventOptions {
   distinctId: string;

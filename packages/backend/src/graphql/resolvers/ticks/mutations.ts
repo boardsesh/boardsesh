@@ -23,6 +23,8 @@ import {
 } from '../../../utils/instagram-beta-validation';
 import { cacheInstagramThumbnail, isS3Configured } from '../../../lib/beta-link-thumbnails';
 import { invalidateRecentBetaLinksCache } from '../beta-videos/queries';
+import { resolveClimbCatalogPresence } from '../../../db/queries/climbs';
+import { captureBackendEvent } from '../../../services/analytics/posthog';
 import { logger } from '../../../utils/logger';
 
 // Beta links are only attached on successful ascents (flash / send), never
@@ -38,6 +40,54 @@ export function videoUrlForTickStatus(status: TickStatus, videoUrl: string | nul
       return videoUrl;
     case 'attempt':
       return null;
+  }
+}
+
+/**
+ * Log-only catalog check for an incoming tick (#3528).
+ *
+ * `SaveTickInputSchema.climbUuid` is `ExternalUUIDSchema` — a 1-50 character
+ * string, not even a UUID shape — and `boardsesh_ticks` has no FK to
+ * `board_climbs`, so a tick can name a climb that does not exist. The permanent
+ * damage that used to cause (a phantom `board_climb_stats` row, minted by the
+ * recompute's defensive seed) is fixed at the seed itself in
+ * `@boardsesh/db/queries` recomputeClimbStats, which covers every tick writer.
+ *
+ * This is the observation half, and it deliberately does NOT reject. Every
+ * client-held climb UUID is believed to originate from `board_climbs`, so a
+ * rejection should never fire on a real send — but a non-retryable GraphQL error
+ * dead-letters immediately in the offline drainer, so being wrong about one path
+ * costs a climber a send while being right only avoids a few junk rows. We take
+ * the measurement first. #3942 flips this to a rejection once the counter has
+ * held at zero over a real observation window; until then, log-only is the
+ * finished state, not a half-finished one.
+ *
+ * The alias arm keeps the counter honest: the Kilter dedup path folds duplicate
+ * catalog UUIDs into `board_climb_aliases` and writes no `board_climbs` row for
+ * them, so an alias-borne tick is a legitimate send and must not read as a hit.
+ *
+ * Never throws: an observation must not be able to fail a real tick.
+ */
+async function reportTickClimbCatalogPresence(
+  userId: string,
+  boardType: string,
+  climbUuid: string,
+  angle: number,
+): Promise<void> {
+  try {
+    const presence = await resolveClimbCatalogPresence(boardType, climbUuid);
+    if (presence !== 'unknown') return;
+
+    logger.warn(
+      `[saveTick] climb not in catalog — saving anyway (#3528): ${boardType}/${climbUuid} angle=${angle} user=${userId}`,
+    );
+    captureBackendEvent('Tick Climb Not In Catalog', {
+      distinctId: userId,
+      properties: { boardType, angle },
+      processPersonProfile: false,
+    });
+  } catch (error) {
+    logger.error('[saveTick] climb catalog presence check failed:', error);
   }
 }
 
@@ -480,6 +530,14 @@ export const tickMutations = {
         return tickResult(existingTick);
       }
     }
+
+    // Observation only — never rejects, never throws. See the function's docs.
+    await reportTickClimbCatalogPresence(
+      userId,
+      validatedInput.boardType,
+      validatedInput.climbUuid,
+      validatedInput.angle,
+    );
 
     // Resolve the tick's board_id. Two explicit-board inputs feed the same FK,
     // each from a different surface:

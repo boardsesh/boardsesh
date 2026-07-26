@@ -33,7 +33,18 @@ void describe('recomputeClimbStatsBulk', () => {
     await recomputeClimbStatsBulk(db.handle, [{ boardType: 'kilter', climbUuid: 'A', angle: 40 }]);
 
     assert.equal(db.queries.length, 2);
-    assert.match(sqlText(db.queries[0]), /INSERT INTO board_climb_stats/);
+    const seedSql = sqlText(db.queries[0]);
+    assert.match(seedSql, /INSERT INTO board_climb_stats/);
+    // Smoke test only — the guard's BEHAVIOUR (phantom key seeds nothing; the
+    // real key beside it in the same chunk is untouched; a real climb ticked at
+    // a new angle still seeds) is asserted against real Postgres in
+    // packages/backend/src/__tests__/recompute-climb-stats.test.ts, because
+    // this package has no vitest project and CI never runs its tsx --test suite.
+    assert.match(seedSql, /WHERE EXISTS \(\s*SELECT 1\s*FROM board_climbs bc/);
+    assert.match(seedSql, /bc\.uuid = k\.climb_uuid/);
+    assert.match(seedSql, /bc\.board_type = k\.board_type/);
+    // Seeded rows are on the 1-5 scale from birth (#3529, seed half).
+    assert.match(seedSql, /quality_normalized/);
     const updateSql = sqlText(db.queries[1]);
     assert.match(updateSql, /UPDATE board_climb_stats/);
     // The counting rule + provenance guard must be present in the UPDATE. The

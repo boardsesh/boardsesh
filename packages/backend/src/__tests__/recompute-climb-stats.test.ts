@@ -30,43 +30,38 @@ describe('recomputeClimbStats', () => {
     vi.clearAllMocks();
   });
 
-  it('seeds the stats row with explicit upstream=0 and boardsesh=0', async () => {
-    let capturedSeedValues: unknown = null;
+  // The seed's behaviour is asserted end to end against real Postgres in the
+  // provenance-matrix block below (a phantom key seeds nothing; a real climb at
+  // a new angle still does; quality_normalized). What this one pins is the
+  // SHAPE: the seed must stay an INSERT ... SELECT FROM board_climbs so the
+  // catalog lookup IS the guard (#3528). A regression to a plain VALUES insert
+  // — which cannot carry a WHERE — silently un-guards it.
+  it('seeds via INSERT ... SELECT FROM board_climbs so the catalog lookup guards it', async () => {
+    const executed: unknown[] = [];
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
-      const insertChain = {
-        onConflictDoNothing: vi.fn(),
-      };
       const tx = {
-        insert: vi.fn(() => ({
-          values: vi.fn((values: unknown) => {
-            capturedSeedValues = values;
-            return insertChain;
-          }),
-        })),
-        execute: vi.fn(async () => []),
+        execute: vi.fn(async (query: unknown) => {
+          executed.push(query);
+          return [];
+        }),
       };
       await callback(tx);
     });
 
     await recomputeClimbStats('kilter', 'CLIMB-1', 40);
 
-    expect(capturedSeedValues).toMatchObject({
-      boardType: 'kilter',
-      climbUuid: 'CLIMB-1',
-      angle: 40,
-      ascensionistCount: 0,
-      upstreamAscensionistCount: 0,
-      boardseshAscensionistCount: 0,
-    });
+    const seedSql = sqlText(executed[0]);
+    expect(seedSql).toContain('INSERT INTO board_climb_stats');
+    expect(seedSql).toMatch(/SELECT[\s\S]*FROM board_climbs bc/);
+    expect(seedSql).toMatch(/WHERE bc\.uuid =/);
+    expect(seedSql).toMatch(/AND bc\.board_type =/);
+    expect(seedSql).toContain('quality_normalized');
   });
 
-  it('runs the recompute SQL inside a single transaction', async () => {
+  it('runs the seed + recompute SQL inside a single transaction', async () => {
     let executeCount = 0;
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({ onConflictDoNothing: vi.fn() })),
-        })),
         execute: vi.fn(async () => {
           executeCount += 1;
           return [];
@@ -78,7 +73,8 @@ describe('recomputeClimbStats', () => {
     await recomputeClimbStats('kilter', 'CLIMB-1', 40);
 
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
-    expect(executeCount).toBe(1);
+    // Seed + the aggregate recompute.
+    expect(executeCount).toBe(2);
   });
 
   // FRAGILE TEST WARNING — read before changing:
@@ -104,9 +100,6 @@ describe('recomputeClimbStats', () => {
     let capturedQuery: unknown = null;
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({ onConflictDoNothing: vi.fn() })),
-        })),
         execute: vi.fn(async (query: unknown) => {
           capturedQuery = query;
           return [];
@@ -149,9 +142,6 @@ describe('recomputeClimbStats', () => {
     let capturedQuery: unknown = null;
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({ onConflictDoNothing: vi.fn() })),
-        })),
         execute: vi.fn(async (query: unknown) => {
           capturedQuery = query;
           return [];
@@ -193,9 +183,6 @@ describe('recomputeClimbStats', () => {
     const loggerSpy = vi.spyOn(logger, 'info').mockImplementation(() => logger);
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({ onConflictDoNothing: vi.fn() })),
-        })),
         // The combined WITH … RETURNING query returns one diff row.
         execute: vi.fn(async () => [
           {
@@ -226,9 +213,6 @@ describe('recomputeClimbStats', () => {
     const loggerSpy = vi.spyOn(logger, 'info').mockImplementation(() => logger);
     mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
       const tx = {
-        insert: vi.fn(() => ({
-          values: vi.fn(() => ({ onConflictDoNothing: vi.fn() })),
-        })),
         execute: vi.fn(async () => []),
       };
       await callback(tx);
@@ -255,9 +239,6 @@ describe('recomputeClimbStats', () => {
       const loggerSpy = vi.spyOn(logger, 'info').mockImplementation(() => logger);
       mockDb.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<void>) => {
         const tx = {
-          insert: vi.fn(() => ({
-            values: vi.fn(() => ({ onConflictDoNothing: vi.fn() })),
-          })),
           execute: vi.fn(async () => [
             { prev_bs: 0, prev_total: 0, prev_fa: prev, new_bs: 0, new_total: 0, new_fa: next },
           ]),
@@ -1064,5 +1045,147 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(Number(single.bs)).toBe(1);
     expect(Number(single.total)).toBe(8); // upstream 7 + 1 native
     expect(single.fa).toBe('Mika');
+  });
+
+  // -------------------------------------------------------------------------
+  // Defensive-seed guard (#3528)
+  //
+  // A tick can name any string as its climb_uuid, so the seed must not mint a
+  // board_climb_stats row for a climb that doesn't exist. These assert the
+  // BEHAVIOUR against real Postgres — deleting the guard in recompute.ts must
+  // turn them red. (packages/db has no vitest project and nothing in CI runs
+  // its tsx --test suite, so a SQL-text assertion over there is a smoke test,
+  // not evidence.)
+  // -------------------------------------------------------------------------
+
+  async function statsRowCount(boardType: string, uuid: string, angle: number): Promise<number> {
+    const rows = (await db.execute(sql`
+      SELECT count(*)::int AS n
+        FROM board_climb_stats
+       WHERE board_type = ${boardType} AND climb_uuid = ${uuid} AND angle = ${angle}
+    `)) as unknown as Array<{ n: number }>;
+    const [row] = Array.isArray(rows) ? rows : (rows as { rows: Array<{ n: number }> }).rows;
+    return Number(row.n);
+  }
+
+  it('single-key: a tick on a climb missing from board_climbs seeds NO stats row', async () => {
+    await seedUser('u-ghost', 'Gia');
+    // Deliberately no seedClimb — this is the phantom-UUID case.
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'CLIMB-GHOST',
+      angle: 40,
+      userId: 'u-ghost',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    const diff = await recomputeClimbStatsCore(db, 'kilter', 'CLIMB-GHOST', 40);
+
+    expect(await statsRowCount('kilter', 'CLIMB-GHOST', 40)).toBe(0);
+    // No row to update → the documented "UPDATE matched no row" path. Must be a
+    // quiet undefined, not a throw: the debounced publisher logs any throw as an
+    // error, and this is an expected outcome rather than a failure.
+    expect(diff).toBeUndefined();
+  });
+
+  it('bulk: a phantom key in a chunk seeds nothing and does not disturb the real key beside it', async () => {
+    await seedUser('u-mixed-chunk', 'Mo');
+    await seedClimb('kilter', 'CLIMB-REAL', null);
+    await seedStats('kilter', 'CLIMB-REAL', 40, { upstream: 3 });
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'CLIMB-REAL',
+      angle: 40,
+      userId: 'u-mixed-chunk',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'CLIMB-GHOST',
+      angle: 40,
+      userId: 'u-mixed-chunk',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsBulk(db, [
+      { boardType: 'kilter', climbUuid: 'CLIMB-GHOST', angle: 40 },
+      { boardType: 'kilter', climbUuid: 'CLIMB-REAL', angle: 40 },
+    ]);
+
+    expect(await statsRowCount('kilter', 'CLIMB-GHOST', 40)).toBe(0);
+    // The guard must drop the phantom key WITHOUT collateral damage: the real
+    // key in the same chunk still counts correctly.
+    const real = await statsRow('kilter', 'CLIMB-REAL', 40);
+    expect(Number(real.bs)).toBe(1);
+    expect(Number(real.total)).toBe(4); // upstream 3 + 1 native
+  });
+
+  // KEEP: this passes both with and without the guard — it is not redundant, it
+  // is the tripwire against over-guarding. The seed exists precisely so a tick
+  // at an angle the catalog has no stats row for still gets one. Anyone who
+  // "hardens" the guard from (climb) to (climb, angle) breaks real ticks, and
+  // this is the test that tells them.
+  it('a real climb ticked at an angle with no stats row STILL seeds one', async () => {
+    await seedUser('u-newangle', 'Nia');
+    await seedClimb('kilter', 'CLIMB-ANGLES', null);
+    await seedStats('kilter', 'CLIMB-ANGLES', 40, { upstream: 5 });
+    await seedTick({
+      boardType: 'kilter',
+      climbUuid: 'CLIMB-ANGLES',
+      angle: 25,
+      userId: 'u-newangle',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'kilter', 'CLIMB-ANGLES', 25);
+
+    const seeded = await statsRow('kilter', 'CLIMB-ANGLES', 25);
+    expect(Number(seeded.bs)).toBe(1);
+    expect(Number(seeded.total)).toBe(1); // no upstream at 25° — 0 + 1 native
+  });
+
+  it('seeded rows are marked quality_normalized (the #3529 seed half)', async () => {
+    async function normalizedFlags(uuid: string, angle: number): Promise<boolean[]> {
+      const rows = (await db.execute(sql`
+        SELECT quality_normalized AS flag
+          FROM board_climb_stats
+         WHERE board_type = 'kilter' AND climb_uuid = ${uuid} AND angle = ${angle}
+      `)) as unknown as Array<{ flag: boolean }>;
+      const list = Array.isArray(rows) ? rows : (rows as { rows: Array<{ flag: boolean }> }).rows;
+      return list.map((entry) => entry.flag);
+    }
+
+    await seedUser('u-norm', 'Nils');
+    // Non-owned climbs (user_id null) — the branch that PRESERVES the seeded
+    // flag verbatim, so the seed's value is the value forever. Owned climbs
+    // self-heal via the owned branch's `quality_normalized = TRUE`.
+    await seedClimb('kilter', 'CLIMB-NORM-SINGLE', null);
+    await seedClimb('kilter', 'CLIMB-NORM-BULK', null);
+    for (const uuid of ['CLIMB-NORM-SINGLE', 'CLIMB-NORM-BULK']) {
+      await seedTick({
+        boardType: 'kilter',
+        climbUuid: uuid,
+        angle: 30,
+        userId: 'u-norm',
+        status: 'send',
+        origin: 'native',
+        quality: 4,
+        climbedAt: '2026-01-01 00:00:00',
+      });
+    }
+
+    await recomputeClimbStatsCore(db, 'kilter', 'CLIMB-NORM-SINGLE', 30);
+    await recomputeClimbStatsBulk(db, [{ boardType: 'kilter', climbUuid: 'CLIMB-NORM-BULK', angle: 30 }]);
+
+    expect(await normalizedFlags('CLIMB-NORM-SINGLE', 30)).toEqual([true]);
+    expect(await normalizedFlags('CLIMB-NORM-BULK', 30)).toEqual([true]);
   });
 });
