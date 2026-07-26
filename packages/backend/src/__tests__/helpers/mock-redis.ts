@@ -281,6 +281,9 @@ export const createMockRedis = (): MockRedis => {
         const currentClimbJson = args[5] as string;
         const stateHash = args[6] as string;
         const stateHashOrdered = args[7] as string;
+        // args[8] is the session TTL, which this mock has no use for — nothing
+        // here expires. The gap is intentional; keep these indices aligned with
+        // `casUpdateQueueState`'s ARGV order if that call signature changes.
         const now = args[9] as string;
         const versionFloor = Number(args[10]) || 0;
         const sequenceFloor = Number(args[11]) || 0;

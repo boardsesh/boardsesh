@@ -180,24 +180,22 @@ export const queueMutations = {
     await withQueueVersionRetry('reorderQueueItem', sessionId, async (currentState) => {
       const queue = [...currentState.queue];
 
-      // Validate indices are within bounds
+      // `QueueIndexSchema` already rejected negatives above, so an in-range
+      // upper bound is all that's left to check — and once it holds, the
+      // reorder always writes. There is deliberately no "compute, maybe skip"
+      // branch here: pre-seeding the result locals from `currentState` would
+      // let a skipped write publish the pre-write sequence.
       if (oldIndex >= queue.length || newIndex >= queue.length) {
         throw new Error(`Invalid index: queue has ${queue.length} items`);
       }
 
-      resultSequence = currentState.sequence;
-      resultStateHash = currentState.stateHash;
-      resultStateHashOrdered = currentState.stateHashOrdered;
-
-      if (oldIndex >= 0 && oldIndex < queue.length && newIndex >= 0 && newIndex < queue.length) {
-        const [movedItem] = queue.splice(oldIndex, 1);
-        queue.splice(newIndex, 0, movedItem);
-        // Use updateQueueOnly to avoid overwriting currentClimbQueueItem
-        const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version, currentState);
-        resultSequence = result.sequence;
-        resultStateHash = result.stateHash;
-        resultStateHashOrdered = result.stateHashOrdered;
-      }
+      const [movedItem] = queue.splice(oldIndex, 1);
+      queue.splice(newIndex, 0, movedItem);
+      // Use updateQueueOnly to avoid overwriting currentClimbQueueItem
+      const result = await roomManager.updateQueueOnly(sessionId, queue, currentState.version, currentState);
+      resultSequence = result.sequence;
+      resultStateHash = result.stateHash;
+      resultStateHashOrdered = result.stateHashOrdered;
     });
 
     pubsub.publishQueueEvent(sessionId, {

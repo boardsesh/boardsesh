@@ -12,9 +12,12 @@ import { writeQueueStateToPostgres } from './write-scheduler';
  * Postgres counters and retrying once when Redis holds no hash for the session
  * (a session dormant past the 4h TTL — see `UPDATE_QUEUE_STATE_CAS_SCRIPT`).
  *
- * The hot path is a single round trip: no read-before-write, because the
- * script does its own read. That is one fewer round trip than the
- * read-modify-write it replaces.
+ * This function is a single round trip on the hot path — the script does its
+ * own read, so there is no read-before-write *here*. That is not the same as
+ * the mutation being one round trip end to end: every caller goes through
+ * `withQueueVersionRetry`, which reads state first to compute the new queue,
+ * so a mutation is still two Redis round trips. Same count as the
+ * read-modify-write this replaces; the win is atomicity, not latency.
  */
 async function casWithDormancyFloor(
   redisStore: RedisSessionStore,
