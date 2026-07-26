@@ -89,16 +89,3 @@ export function upstreamPlaylistSkipLogLine(input: {
       : 'playlist already owned by a different Boardsesh user';
   return `[${input.syncTag}] ${input.upstreamIdColumn} ${input.upstreamId}: ${cause} — skipping for user ${input.syncingUserId} (duplicate board account link)`;
 }
-
-/**
- * User-facing `aurora_credentials.sync_error` for a cycle that skipped
- * circuits. Without it the second user just sees an empty playlist list and
- * can't tell "sync is broken" from "I have no circuits".
- *
- * Deliberately non-accusatory: neither account is doing anything wrong, and the
- * second user usually has no idea another account is linked to the same board
- * login.
- */
-export function upstreamPlaylistSyncErrorMessage(boardLabel: string): string {
-  return `Your circuits aren't syncing: this ${boardLabel} account is also connected to another Boardsesh account, which holds the synced playlists.`;
-}

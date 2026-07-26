@@ -38,6 +38,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Trans, useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AuroraBackendError,
   deleteAuroraCredential,
@@ -351,8 +352,18 @@ export function BoardCredentialCard({
           </div>
           {credential.syncError && (
             <div className={styles.errorRow}>
-              <Typography variant="body2" component="span" color="error">
-                {credential.syncError}
+              {/* Known codes get localised copy and a warning tone — the account is
+                  syncing, only its playlist mirror is paused (#3526). Anything else
+                  is legacy free text from an older path: render it verbatim rather
+                  than swallow it. */}
+              <Typography
+                variant="body2"
+                component="span"
+                color={credential.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR ? 'warning.main' : 'error'}
+              >
+                {credential.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR
+                  ? t('aurora.status.duplicateAccountCircuits')
+                  : credential.syncError}
               </Typography>
             </div>
           )}

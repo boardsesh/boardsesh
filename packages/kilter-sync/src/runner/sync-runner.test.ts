@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { KilterApiError } from '../api/errors';
 import type { KilterCredentialRecord, RunnerDb } from './types';
 
@@ -398,12 +399,12 @@ describe('SyncRunner.syncNextUser', () => {
     expect(activeUpdate?.set.lastSyncError).toBeNull();
   });
 
-  it('surfaces a sync_error when circuits were skipped, without failing the cycle (#3526)', async () => {
+  it('surfaces the duplicate-account sync_error CODE when circuits were skipped, without failing the cycle (#3526)', async () => {
     // Everything else synced; only the circuits were refused because another
     // Boardsesh account owns the playlists. The credential must stay 'active'
-    // (a failed status would stop the daemon re-picking it) but carry a
-    // user-facing message — an empty playlist list with no explanation reads
-    // as "I have no circuits".
+    // (a failed status would stop the daemon re-picking it) but carry the
+    // machine-readable code the board card localises — an empty playlist list
+    // with no explanation reads as "I have no circuits".
     const runner = new SyncRunner();
     const privates = runner as unknown as SyncRunnerPrivates;
     const { db, updates } = createDbShim();
@@ -419,8 +420,9 @@ describe('SyncRunner.syncNextUser', () => {
     expect(summary.failed).toBe(0);
     const activeUpdate = updates.find((u) => u.set.syncStatus === 'active');
     expect(activeUpdate?.set.syncStatus).toBe('active');
-    expect(activeUpdate?.set.syncError).toContain('Kilter');
-    expect(activeUpdate?.set.syncError).toContain("circuits aren't syncing");
+    // A code, not a sentence: `es` / `fr` users get their own wording, and a
+    // raw English string here is exactly what the board card can't localise.
+    expect(activeUpdate?.set.syncError).toBe(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
     // Observability field stays clean: this was not a sync failure.
     expect(activeUpdate?.set.lastSyncError).toBeNull();
   });

@@ -15,6 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
   parseAuroraExportJson,
@@ -1069,6 +1070,15 @@ function BoardAccountCard({
         : boardName;
   const totalUnsynced = unsyncedCounts.ascents + unsyncedCounts.climbs;
   const isExpired = credential?.syncStatus === 'expired';
+  // The sync daemons write a machine-readable code here for conditions the
+  // client is expected to explain in the viewer's language (#3526). Everything
+  // else in `sync_error` is still free text from an older path — those keep the
+  // generic error pill rather than being swallowed.
+  const hasDuplicateAccountCircuits = credential?.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR;
+  // A warning, not a failure: the credential is active and syncing, only the
+  // playlist mirror is paused. Red text here would tell a healthy account it is
+  // broken, with nothing to act on.
+  const hasSyncFailure = Boolean(credential?.syncError) && !hasDuplicateAccountCircuits;
   const connectedLabel = credential?.auroraUsername
     ? t('aurora.mobile.connectedAs', { name: credential.auroraUsername })
     : t('aurora.mobile.connected');
@@ -1111,10 +1121,18 @@ function BoardAccountCard({
             <Text variant="footnote" color={brandColors.error} style={styles.accountCopy}>
               {t('aurora.status.expired')}
             </Text>
-          ) : credential.syncError ? (
+          ) : hasSyncFailure ? (
             <Text variant="footnote" color={brandColors.error} style={styles.accountCopy}>
               {t('aurora.status.error')}
             </Text>
+          ) : null}
+          {!isExpired && hasDuplicateAccountCircuits ? (
+            <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryBackground }]}>
+              <Icon name="warning" size={18} color={brandColors.warning} />
+              <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.warningText}>
+                {t('aurora.status.duplicateAccountCircuits')}
+              </Text>
+            </View>
           ) : null}
           {totalUnsynced > 0 ? (
             <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryBackground }]}>

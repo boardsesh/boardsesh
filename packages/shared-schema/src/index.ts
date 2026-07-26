@@ -11,3 +11,4 @@ export * from './image-sizes';
 export * from './aurora-import';
 export * from './moonboard-import';
 export * from './instagram-caption-parse';
+export * from './sync-error-codes';

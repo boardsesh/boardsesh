@@ -191,7 +191,8 @@
       "connected": "Vinculado",
       "error": "Error",
       "expired": "Caducado",
-      "syncing": "Sincronizando"
+      "syncing": "Sincronizando",
+      "duplicateAccountCircuits": "Los circuitos no se están sincronizando: otra cuenta de Boardsesh usa este mismo inicio de sesión del plafón, así que la sincronización de playlists está en pausa para las dos. Tus encadenes y valoraciones siguen llegando."
     },
     "unsynced": {
       "title_one": "{{count}} elemento pendiente de sincronizar",

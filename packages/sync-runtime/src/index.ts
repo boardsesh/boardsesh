@@ -11,6 +11,5 @@ export {
   resolveUpstreamPlaylistWrite,
   canWriteUpstreamPlaylist,
   upstreamPlaylistSkipLogLine,
-  upstreamPlaylistSyncErrorMessage,
 } from './upstream-playlist-ownership';
 export type { UpstreamPlaylistWriteDecision } from './upstream-playlist-ownership';

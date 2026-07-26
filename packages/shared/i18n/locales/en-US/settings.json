@@ -191,7 +191,8 @@
       "connected": "Connected",
       "error": "Error",
       "expired": "Expired",
-      "syncing": "Syncing"
+      "syncing": "Syncing",
+      "duplicateAccountCircuits": "Circuits aren't syncing: another Boardsesh account is connected to this board login, so playlist sync is paused for both of you. Your sends and ratings still come through."
     },
     "unsynced": {
       "title_one": "{{count}} item pending sync",

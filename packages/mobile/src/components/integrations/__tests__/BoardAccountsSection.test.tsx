@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import type { AuroraCredentialStatus, AuroraCredentialsResponse } from '../../../lib/aurora-credentials';
 
 // --- Hoisted mock state, mutated per-test before render ---
@@ -384,5 +385,54 @@ describe('BoardAccountsSection — MoonBoard card', () => {
 
     fireEvent.click(button(container, 'actions.cancel')!);
     expect(button(container, 'aurora.import.dialog.confirm')).toBeNull();
+  });
+});
+
+describe('BoardAccountsSection — sync_error on a connected board card (#3526)', () => {
+  const connectedCredential = (syncError: string | null): AuroraCredentialStatus => ({
+    boardType: 'tension',
+    auroraUsername: 'climber',
+    auroraUserId: 144574,
+    lastSyncAt: '2026-07-25T00:00:00.000Z',
+    // Actively syncing. The circuits guard refuses the playlist mirror without
+    // failing the credential, so `active` + a sync_error is the normal shape.
+    syncStatus: 'active',
+    syncError,
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  beforeEach(() => {
+    mocks.flags = {};
+    mocks.credentials = [];
+  });
+
+  it('explains the duplicate board-account link instead of a bare red Error pill', () => {
+    mocks.credentials = [connectedCredential(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.duplicateAccountCircuits');
+    // The account is healthy and syncing — the generic failure copy would tell
+    // this climber their board login is broken, with nothing to act on.
+    expect(container.textContent).not.toContain('aurora.status.error');
+    // And it never leaks the raw code to the card.
+    expect(container.textContent).not.toContain(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
+  });
+
+  it('still shows the generic error copy for a sync_error it does not recognise', () => {
+    // Legacy free-text values are written by other paths; swallowing them would
+    // hide a real failure.
+    mocks.credentials = [connectedCredential('Refresh token rejected by Keycloak')];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.error');
+    expect(container.textContent).not.toContain('aurora.status.duplicateAccountCircuits');
+  });
+
+  it('shows no error affordance at all on a clean credential', () => {
+    mocks.credentials = [connectedCredential(null)];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).not.toContain('aurora.status.error');
+    expect(container.textContent).not.toContain('aurora.status.duplicateAccountCircuits');
   });
 });

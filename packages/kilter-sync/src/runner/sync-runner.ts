@@ -14,10 +14,10 @@ import {
   DEFAULT_DAEMON_OPTIONS,
   resolveDaemonOptions,
   runDaemonLoop,
-  upstreamPlaylistSyncErrorMessage,
   type ResolvedDaemonOptions,
   type DaemonOptions,
 } from '@boardsesh/sync-runtime';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 
 import { KILTER_BOARD_TYPE } from '../api/types';
@@ -263,8 +263,12 @@ export class SyncRunner {
     // explanation is indistinguishable from "I have no circuits", and this
     // user has no way to know another Boardsesh account holds the same board
     // login (#3526).
+    //
+    // A CODE, not a sentence. The board card is the surface that shows this,
+    // and it renders in the viewer's language — so the daemon states the
+    // condition and the client owns the wording.
     const now = new Date();
-    const duplicateCircuitOwnerError = skippedForeignCircuits > 0 ? upstreamPlaylistSyncErrorMessage('Kilter') : null;
+    const duplicateCircuitOwnerError = skippedForeignCircuits > 0 ? DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR : null;
     if (duplicateCircuitOwnerError) {
       this.log(
         `[KilterSyncRunner] User ${cred.userId}: ${skippedForeignCircuits} circuit(s) skipped — the Kilter account is linked to another Boardsesh user (see #3526)`,

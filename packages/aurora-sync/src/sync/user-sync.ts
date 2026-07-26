@@ -8,6 +8,7 @@ import {
   canWriteUpstreamPlaylist,
   upstreamPlaylistSkipLogLine,
 } from '@boardsesh/sync-runtime';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { foreignPlaylistOwnerGuard, selectUpstreamPlaylistOwners } from '@boardsesh/db/queries';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { UNIFIED_TABLES } from '../db/table-select';
@@ -28,11 +29,12 @@ type OwnerQueryDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * Machine-stable marker on `SyncTableResult.skippedReason` for circuits refused
  * because another Boardsesh user owns the playlist.
  *
- * Reporting only — it rides out in the per-table result and the daemon log. The
- * user-facing `sync_error` is NOT derived from it: see
+ * Same string the runners write to `aurora_credentials.sync_error`, so the
+ * per-table result, the daemon log and the board card all name one condition —
+ * but the runner does NOT derive the credential's value from this counter: see
  * hasForeignOwnedCircuitPlaylists for why that has to be a state question.
  */
-export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = 'duplicate-board-account-link:circuits';
+export const DUPLICATE_CIRCUIT_OWNER_SKIP_REASON = DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR;
 
 /**
  * Does any playlist mirroring one of THIS Aurora account's circuits belong to a

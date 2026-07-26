@@ -3,7 +3,6 @@ import {
   resolveUpstreamPlaylistWrite,
   canWriteUpstreamPlaylist,
   upstreamPlaylistSkipLogLine,
-  upstreamPlaylistSyncErrorMessage,
 } from './upstream-playlist-ownership';
 
 const USER_A = 'user-a';
@@ -79,16 +78,5 @@ describe('upstreamPlaylistSkipLogLine', () => {
     });
     expect(line).toContain('two owners');
     expect(line).not.toContain('already owned by a different Boardsesh user');
-  });
-});
-
-describe('upstreamPlaylistSyncErrorMessage', () => {
-  it('names the board and stays non-accusatory', () => {
-    const message = upstreamPlaylistSyncErrorMessage('Kilter');
-    expect(message).toContain('Kilter');
-    expect(message).toContain("circuits aren't syncing");
-    // No blame language aimed at either account.
-    expect(message.toLowerCase()).not.toContain('you must');
-    expect(message.toLowerCase()).not.toContain('invalid');
   });
 });

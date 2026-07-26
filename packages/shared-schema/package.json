@@ -26,6 +26,11 @@
       "import": "./src/schema.ts",
       "default": "./src/schema.ts"
     },
+    "./sync-error-codes": {
+      "types": "./src/sync-error-codes.ts",
+      "import": "./src/sync-error-codes.ts",
+      "default": "./src/sync-error-codes.ts"
+    },
     "./app-origins": {
       "types": "./src/app-origins.ts",
       "import": "./src/app-origins.ts",

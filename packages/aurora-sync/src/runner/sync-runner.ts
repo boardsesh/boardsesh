@@ -4,8 +4,7 @@ import { eq, ne, and, or, isNotNull, sql } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema/auth';
 import { credentialBackoffMs, credentialRetryReadySql, selfHealStaleClimbStats } from '@boardsesh/db/queries';
-import { upstreamPlaylistSyncErrorMessage } from '@boardsesh/sync-runtime';
-import { formatBoardDisplayName } from '@boardsesh/board-config';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
 import { syncSharedData } from '../sync/shared-sync';
 import {
@@ -509,9 +508,10 @@ export class SyncRunner {
       );
       return false;
     });
-    const duplicateCircuitOwnerError = hasDuplicateCircuitOwner
-      ? upstreamPlaylistSyncErrorMessage(formatBoardDisplayName(boardType))
-      : null;
+    // A CODE, not a sentence. The board card is the surface that shows this,
+    // and it renders in the viewer's language — so the daemon states the
+    // condition and the client owns the wording.
+    const duplicateCircuitOwnerError = hasDuplicateCircuitOwner ? DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR : null;
     if (duplicateCircuitOwnerError) {
       this.log(
         `[SyncRunner] User ${cred.userId}: circuits not syncing — the ${boardType} account is linked to another Boardsesh user who owns the playlists (see #3526)`,

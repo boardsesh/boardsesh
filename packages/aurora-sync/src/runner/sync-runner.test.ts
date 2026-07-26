@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { AuroraRequestError } from '../api/errors';
 import { CredentialSyncError, formatSyncHealthSummary, SyncRunner, type SyncHealthSnapshot } from './sync-runner';
 import type { AuroraBoardName } from '../api/types';
@@ -203,12 +204,13 @@ describe('SyncRunner login failure handling', () => {
     });
   });
 
-  it('surfaces a sync_error when circuits were skipped, without failing the cycle (#3526)', async () => {
+  it('surfaces the duplicate-account sync_error CODE when circuits were skipped, without failing the cycle (#3526)', async () => {
     // Only the circuits were refused — the Aurora account is linked to another
     // Boardsesh user who owns the playlists. Everything else synced, so the
     // credential stays 'active' (a failed status would stop the daemon
-    // re-picking it) but carries a user-facing message: an empty playlist list
-    // with no explanation reads as "I have no circuits".
+    // re-picking it) but carries the machine-readable code the board card
+    // localises: an empty playlist list with no explanation reads as "I have
+    // no circuits".
     const runner = new SyncRunner();
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
 
@@ -221,10 +223,11 @@ describe('SyncRunner login failure handling', () => {
 
     await runnerPrivates.syncSingleCredential(createCredential());
 
-    const [, , status, errorMessage] = updateCredentialStatus.mock.calls[0];
+    const [, , status, syncErrorCode] = updateCredentialStatus.mock.calls[0];
     expect(status).toBe('active');
-    expect(errorMessage).toContain('Decoy');
-    expect(errorMessage).toContain("circuits aren't syncing");
+    // A code, not a sentence: `es` / `fr` users get their own wording, and a
+    // raw English string here is exactly what the board card can't localise.
+    expect(syncErrorCode).toBe(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
   });
 
   it('keeps the sync_error on a later cycle where Aurora returned no circuits at all (#3526)', async () => {
@@ -247,8 +250,8 @@ describe('SyncRunner login failure handling', () => {
 
     await runnerPrivates.syncSingleCredential(createCredential());
 
-    const [, , , errorMessage] = updateCredentialStatus.mock.calls[0];
-    expect(errorMessage).toContain("circuits aren't syncing");
+    const [, , , syncErrorCode] = updateCredentialStatus.mock.calls[0];
+    expect(syncErrorCode).toBe(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
   });
 
   it('still marks the cycle successful when the duplicate-owner check itself fails (#3526)', async () => {

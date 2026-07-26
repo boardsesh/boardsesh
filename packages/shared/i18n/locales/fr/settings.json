@@ -191,7 +191,8 @@
       "connected": "Lié",
       "error": "Erreur",
       "expired": "Expiré",
-      "syncing": "Synchronisation"
+      "syncing": "Synchronisation",
+      "duplicateAccountCircuits": "Les circuits ne se synchronisent pas : un autre compte Boardsesh utilise les mêmes identifiants de board, donc la synchro des playlists est en pause des deux côtés. Vos croix et vos notes continuent d'arriver."
     },
     "unsynced": {
       "title_one": "{{count}} élément en attente de synchro",
