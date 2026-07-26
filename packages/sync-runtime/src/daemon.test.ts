@@ -52,6 +52,18 @@ describe('daemon scheduling', () => {
     expect(() => resolveDaemonOptions({ quietPollMs: -1000 })).toThrow(/quietPollMs must be > 0/);
   });
 
+  it('rejects a non-positive standby poll interval', () => {
+    // Same reasoning as quietPollMs: a standby instance would spin on the lease
+    // gate instead of waiting for the active instance to go away.
+    expect(() => resolveDaemonOptions({ standbyPollMs: 0 })).toThrow(/standbyPollMs must be > 0/);
+    expect(() => resolveDaemonOptions({ standbyPollMs: -1000 })).toThrow(/standbyPollMs must be > 0/);
+  });
+
+  it('defaults standbyPollMs well below the working delay so failover is quick', () => {
+    expect(resolveDaemonOptions({}).standbyPollMs).toBe(30_000);
+    expect(resolveDaemonOptions({ standbyPollMs: 5_000 }).standbyPollMs).toBe(5_000);
+  });
+
   it('runs a cycle immediately during active hours and then waits before retrying', async () => {
     const controller = new AbortController();
     const cycle = vi.fn(async () => {

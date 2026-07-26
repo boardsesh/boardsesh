@@ -11,7 +11,6 @@ import {
   acquireOrRenewDaemonLease,
   claimNextCredentialForSync,
   claimSharedSyncSlot,
-  credentialRetryReadySql,
   readSharedSyncCursor,
   releaseDaemonLease,
   snapshotClimbStatsHistoryIfDue,
@@ -384,7 +383,30 @@ export class SyncRunner {
       this.handleError(error instanceof Error ? error : new Error(String(error)), { board });
     } finally {
       // Re-stamp so the cooldown runs from the END of the work, success or not.
+      // Error-swallowing by design: this runs after the user-half has committed
+      // and been marked active, so a DB error here must not escape and record a
+      // credential failure for a user whose sync actually succeeded.
+      await this.stampCatalogSyncFinishedSafely(db, cursor);
+    }
+  }
+
+  /**
+   * Re-stamp the catalog cooldown cursor, swallowing (but reporting) any DB
+   * error. Never throws — the only cost of a missed stamp is that the cooldown
+   * is measured from the start of the run rather than its end. Mirrors
+   * aurora-sync's stampSharedSyncFinishedSafely so the two runners keep the
+   * same error-handling shape.
+   */
+  private async stampCatalogSyncFinishedSafely(
+    db: RunnerDb,
+    cursor: { boardType: string; cursorName: string },
+  ): Promise<void> {
+    try {
       await stampSharedSyncFinished(db, cursor);
+    } catch (stampError) {
+      this.handleError(stampError instanceof Error ? stampError : new Error(String(stampError)), {
+        board: KILTER_BOARD_TYPE,
+      });
     }
   }
 

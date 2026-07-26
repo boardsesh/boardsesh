@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { KilterApiError } from '../api/errors';
+import { CATALOG_SYNC_COOLDOWN_CURSOR } from '@boardsesh/db/queries';
+import { KILTER_BOARD_TYPE } from '../api/types';
 import type { KilterCredentialRecord, RunnerDb } from './types';
 
 /**
@@ -20,11 +22,24 @@ import type { KilterCredentialRecord, RunnerDb } from './types';
  * handle via spying.
  */
 
-const { mockDecrypt, mockEncrypt, mockRefreshAccessToken, mockSyncKilterUserData } = vi.hoisted(() => ({
+const {
+  mockDecrypt,
+  mockEncrypt,
+  mockRefreshAccessToken,
+  mockSyncKilterUserData,
+  mockSyncKilterCatalog,
+  mockClaimSharedSyncSlot,
+  mockStampSharedSyncFinished,
+  mockReadSharedSyncCursor,
+} = vi.hoisted(() => ({
   mockDecrypt: vi.fn(),
   mockEncrypt: vi.fn(),
   mockRefreshAccessToken: vi.fn(),
   mockSyncKilterUserData: vi.fn(),
+  mockSyncKilterCatalog: vi.fn(),
+  mockClaimSharedSyncSlot: vi.fn(),
+  mockStampSharedSyncFinished: vi.fn(),
+  mockReadSharedSyncCursor: vi.fn(),
 }));
 
 vi.mock('@boardsesh/crypto', () => ({
@@ -40,6 +55,26 @@ vi.mock('../sync/user-sync', () => ({
   syncKilterUserData: mockSyncKilterUserData,
 }));
 
+// The catalog cooldown lives in board_shared_syncs behind a compare-and-set
+// rather than an in-memory Map, so the tests below assert the runner DELEGATES
+// correctly: claims before running, honours a refusal, re-stamps whether the
+// run succeeded or failed, and never lets a cooldown DB error escape into the
+// credential's status. The CAS semantics themselves are covered against real
+// Postgres in packages/backend/src/__tests__/shared-sync-cooldown-cas.test.ts.
+vi.mock('@boardsesh/db/queries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/db/queries')>();
+  return {
+    ...actual,
+    claimSharedSyncSlot: mockClaimSharedSyncSlot,
+    stampSharedSyncFinished: mockStampSharedSyncFinished,
+    readSharedSyncCursor: mockReadSharedSyncCursor,
+  };
+});
+
+vi.mock('../sync/catalog-sync', () => ({
+  syncKilterCatalog: mockSyncKilterCatalog,
+}));
+
 // Import after the mocks are wired so the runner picks up the doubles.
 import { SyncRunner } from './sync-runner';
 
@@ -47,6 +82,7 @@ type SyncRunnerPrivates = {
   getNextCredentialToSync: (db: RunnerDb) => Promise<KilterCredentialRecord | null>;
   runCycleForCredential: (db: RunnerDb, cred: KilterCredentialRecord) => Promise<void>;
   getClient: () => { client: unknown; db: RunnerDb };
+  maybeRunCatalogSync: (db: RunnerDb, cred: KilterCredentialRecord, currentToken: string) => Promise<void>;
 };
 
 type UpdateCall = { table: unknown; set: Record<string, unknown> };
@@ -441,5 +477,113 @@ describe('SyncRunner.syncNextUser', () => {
 
     const activeUpdate = updates.find((u) => u.set.syncStatus === 'active');
     expect(activeUpdate?.set.syncError).toBeNull();
+  });
+});
+
+describe('SyncRunner catalog-sync cooldown claim', () => {
+  beforeEach(() => {
+    mockSyncKilterCatalog.mockReset();
+    mockSyncKilterCatalog.mockResolvedValue(undefined);
+    mockClaimSharedSyncSlot.mockReset();
+    mockStampSharedSyncFinished.mockReset();
+    mockStampSharedSyncFinished.mockResolvedValue(undefined);
+    mockReadSharedSyncCursor.mockReset();
+    mockReadSharedSyncCursor.mockResolvedValue(new Date(Date.now() - 60_000));
+    process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
+    process.env.KILTER_OAUTH_CLIENT_ID = 'kilter-test-client';
+  });
+
+  it('claims the persisted cooldown slot before pulling the catalog', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+
+    await privates.maybeRunCatalogSync(db, credential(), 'access-token');
+
+    expect(mockClaimSharedSyncSlot).toHaveBeenCalledTimes(1);
+    expect(mockClaimSharedSyncSlot.mock.calls[0][1]).toMatchObject({
+      boardType: KILTER_BOARD_TYPE,
+      cursorName: CATALOG_SYNC_COOLDOWN_CURSOR,
+      cooldownMs: 60_000,
+    });
+    expect(mockSyncKilterCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips the catalog pull entirely when another instance holds the slot', async () => {
+    // The refusal every instance-2 and every within-cooldown cycle gets. Before
+    // the cooldown was persisted, a second container had its own empty Map and
+    // would run a full catalog pull here.
+    mockClaimSharedSyncSlot.mockResolvedValue(false);
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+
+    await privates.maybeRunCatalogSync(db, credential(), 'access-token');
+
+    expect(mockSyncKilterCatalog).not.toHaveBeenCalled();
+    // Nothing to re-stamp: we never held the slot, and touching the cursor
+    // would extend the other instance's cooldown.
+    expect(mockStampSharedSyncFinished).not.toHaveBeenCalled();
+  });
+
+  it('re-stamps the cursor after a successful pull so the cooldown starts at the end', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+
+    await privates.maybeRunCatalogSync(db, credential(), 'access-token');
+
+    expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      boardType: KILTER_BOARD_TYPE,
+      cursorName: CATALOG_SYNC_COOLDOWN_CURSOR,
+    });
+  });
+
+  it('re-stamps when the pull failed, so a broken catalog does not loop every cycle', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockSyncKilterCatalog.mockRejectedValueOnce(new Error('kilter down'));
+    const onError = vi.fn();
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+
+    await privates.maybeRunCatalogSync(db, credential(), 'access-token');
+
+    expect(onError).toHaveBeenCalled();
+    expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
+  });
+
+  it('a claim DB error never escapes into the credential status', async () => {
+    // The user-half of the cycle has already committed and been marked active
+    // by this point, so an error from the cooldown query must not bubble out
+    // and record a credential failure for a user whose sync succeeded.
+    mockClaimSharedSyncSlot.mockRejectedValue(new Error('connection reset'));
+    const onError = vi.fn();
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+
+    await expect(privates.maybeRunCatalogSync(db, credential(), 'access-token')).resolves.toBeUndefined();
+
+    expect(onError).toHaveBeenCalled();
+    expect(mockSyncKilterCatalog).not.toHaveBeenCalled();
+  });
+
+  it('a re-stamp DB error never escapes either', async () => {
+    // Same reasoning for the finally-block stamp: the worst case of a missed
+    // stamp is that the cooldown measures from the start of the run.
+    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockStampSharedSyncFinished.mockRejectedValue(new Error('connection reset'));
+    const onError = vi.fn();
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+
+    await expect(privates.maybeRunCatalogSync(db, credential(), 'access-token')).resolves.toBeUndefined();
+
+    expect(onError).toHaveBeenCalled();
   });
 });

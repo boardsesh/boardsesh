@@ -660,19 +660,42 @@ export class SyncRunner {
       if (this.isLocationBoard(boardType)) {
         await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this) });
       }
-      // Re-stamp so the cooldown runs from the END of the work, matching what
-      // the in-memory version did.
-      await stampSharedSyncFinished(db, cursor);
     } catch (sharedError) {
-      // Stamp on failure too — a permanently failing shared sync must not
-      // re-fire on every cycle.
-      await stampSharedSyncFinished(db, cursor);
       const sharedErrorMessage = this.formatErrorMessage(sharedError);
       this.handleError(sharedError instanceof Error ? sharedError : new Error(sharedErrorMessage), {
         board: boardType,
         userId,
       });
       this.log(`[SyncRunner] Shared sync for ${boardType} failed (user sync was OK): ${sharedErrorMessage}`);
+    } finally {
+      // Stamp on success AND failure, so the cooldown runs from the END of the
+      // work and a permanently failing board doesn't re-fire every cycle. In a
+      // `finally` with its own error handling: this runs after the user-half has
+      // already committed and been marked active, so a DB error here must never
+      // escape into syncSingleCredential's caller and record a credential
+      // failure for a user whose sync actually succeeded.
+      await this.stampSharedSyncFinishedSafely(db, cursor, boardType);
+    }
+  }
+
+  /**
+   * Re-stamp the cooldown cursor, swallowing (but reporting) any DB error.
+   *
+   * Never throws by design — every caller is in a `finally` that runs after the
+   * user sync has committed, and the only cost of a missed stamp is that the
+   * cooldown is measured from the start of the run rather than its end.
+   */
+  private async stampSharedSyncFinishedSafely(
+    db: RunnerDb,
+    cursor: { boardType: string; cursorName: string },
+    boardType: string,
+  ): Promise<void> {
+    try {
+      await stampSharedSyncFinished(db, cursor);
+    } catch (stampError) {
+      const stampErrorMessage = this.formatErrorMessage(stampError);
+      this.handleError(stampError instanceof Error ? stampError : new Error(stampErrorMessage), { board: boardType });
+      this.log(`[SyncRunner] Could not re-stamp the shared-sync cooldown for ${boardType}: ${stampErrorMessage}`);
     }
   }
 

@@ -441,6 +441,42 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
   });
 
+  it('a claim DB error never escapes into the credential status', async () => {
+    // By this point the user-half of the cycle has committed and been marked
+    // active, so an error from a cooldown query must not bubble out of
+    // maybeRunSharedSync and record a credential failure for a user whose sync
+    // actually succeeded. The in-memory Map could never fail this way.
+    mockClaimSharedSyncSlot.mockRejectedValue(new Error('connection reset'));
+    const onError = vi.fn();
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await expect(runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u1')).resolves.toBeUndefined();
+
+    expect(onError).toHaveBeenCalled();
+    expect(mockSyncSharedData).not.toHaveBeenCalled();
+  });
+
+  it('a re-stamp DB error never escapes either, on the success path or the failure path', async () => {
+    // Same reasoning for the finally-block stamp. Worst case of a missed stamp
+    // is that the cooldown measures from the start of the run instead of its end.
+    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockStampSharedSyncFinished.mockRejectedValue(new Error('connection reset'));
+    const onError = vi.fn();
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await expect(runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u1')).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalled();
+
+    // And when the shared sync itself also failed — the path where the old code
+    // ran a second stamp from inside the catch, so a throwing stamp escaped.
+    onError.mockClear();
+    mockSyncSharedData.mockRejectedValueOnce(new Error('aurora down'));
+    await expect(runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u1')).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalled();
+  });
+
   it('claims per board independently', async () => {
     mockClaimSharedSyncSlot.mockResolvedValue(true);
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
