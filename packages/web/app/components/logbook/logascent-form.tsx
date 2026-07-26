@@ -183,10 +183,11 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({
       return tProfile('logbook.form.validation.flashOneAttempt');
     }
 
-    // Send requires attemptCount > 1
-    if (status === 'send' && values.attempts <= 1) {
-      return tProfile('logbook.form.validation.sendMoreAttempts');
-    }
+    // No lower bound on a send's attempt count. `SaveTickInputSchema` floors
+    // every status at 1 and constrains only flash: a send is any successful
+    // ascent that isn't a flash, so one try is valid (a redpoint logged as a
+    // single successful go). Requiring >1 here was the same misreading that
+    // silently rewrote mobile tick counts — see #2888 / #3938.
 
     return null; // Valid
   };

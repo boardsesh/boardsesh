@@ -137,8 +137,7 @@
         "howItFelt": "Cómo fue"
       },
       "validation": {
-        "flashOneAttempt": "El flash requiere exactamente 1 intento",
-        "sendMoreAttempts": "El encadene requiere más de 1 intento"
+        "flashOneAttempt": "El flash requiere exactamente 1 intento"
       }
     },
     "feed": {

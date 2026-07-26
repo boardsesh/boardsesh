@@ -137,8 +137,7 @@
         "howItFelt": "Ton ressenti"
       },
       "validation": {
-        "flashOneAttempt": "Le flash demande exactement 1 essai",
-        "sendMoreAttempts": "L'enchaînement demande plus d'un essai"
+        "flashOneAttempt": "Le flash demande exactement 1 essai"
       }
     },
     "feed": {

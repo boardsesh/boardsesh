@@ -137,8 +137,7 @@
         "howItFelt": "How it felt"
       },
       "validation": {
-        "flashOneAttempt": "Flash requires exactly 1 attempt",
-        "sendMoreAttempts": "Send requires more than 1 attempt"
+        "flashOneAttempt": "Flash requires exactly 1 attempt"
       }
     },
     "feed": {
