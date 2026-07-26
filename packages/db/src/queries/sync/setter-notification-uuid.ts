@@ -32,6 +32,21 @@ const SETTER_SYNC_NOTIFICATION_NAMESPACE = 'f0583582-bf46-4ba3-8ece-78edfde18aab
  *
  * Callers must pair this with `.onConflictDoNothing()`. `type` is folded into
  * the name so this can never dedup another notification type, even by accident.
+ *
+ * `entityId` is the batch's HEAD climb uuid, which makes this key stable
+ * exactly as long as two concurrent runs derive the same head — see the notes
+ * at both call sites. A sorted hash of the whole new-climb set was considered
+ * and rejected: it is more robust to reordering but strictly LESS robust to set
+ * difference, and set difference is the case that actually happens (a
+ * partially-committed instance makes the other one see a smaller "new" set).
+ * The head key still dedups whenever the head is unchanged; a set hash would
+ * produce a different uuid every time and therefore never dedup.
+ *
+ * Residual, for whoever gets here next: if duplicate setter notifications are
+ * ever observed in production DESPITE this, the next lever is a coarser key —
+ * `(recipientId, actorId)` plus a time bucket — which dedups regardless of set
+ * membership, at the cost of possibly suppressing a genuinely distinct second
+ * batch inside the same bucket.
  */
 export function setterSyncNotificationUuid(input: {
   recipientId: string;
