@@ -50,6 +50,10 @@ describe('recomputeClimbStats', () => {
 
     await recomputeClimbStats('kilter', 'CLIMB-1', 40);
 
+    // Seed + aggregate. Asserted before indexing so a mock that never invoked
+    // the transaction callback fails as "0 statements" rather than as an
+    // undefined-index error inside sqlText.
+    expect(executed).toHaveLength(2);
     const seedSql = sqlText(executed[0]);
     expect(seedSql).toContain('INSERT INTO board_climb_stats');
     expect(seedSql).toMatch(/SELECT[\s\S]*FROM board_climbs bc/);

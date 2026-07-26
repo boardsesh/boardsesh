@@ -555,8 +555,10 @@ export const tickMutations = {
     // UUID", not "an unknown-UUID tick was saved".
     //
     // Consequently, if something between here and the await throws, the promise
-    // is abandoned unsettled and the event may already have fired. Nothing
-    // leaks — the helper never rejects, so an abandoned promise is inert.
+    // is simply no longer awaited — it still runs to completion on its own, and
+    // the event may already have fired. Nothing leaks: the helper never
+    // rejects, so an un-awaited promise cannot surface as an unhandled
+    // rejection.
     const catalogPresenceReport = reportTickClimbCatalogPresence(
       userId,
       validatedInput.boardType,
