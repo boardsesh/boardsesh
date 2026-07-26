@@ -145,7 +145,11 @@ function int4OrNull(value: unknown): number | null {
  * sequence" / "invalid input syntax for type json"), and the text bind path
  * rejects the raw bytes — which is exactly the deterministic chunk-killer this
  * guard exists to stop.
+ *
+ * Matching the NUL control character is the entire purpose of the pattern, not
+ * an accident, hence the disable below.
  */
+// oxlint-disable-next-line no-control-regex
 const UNSTORABLE_TEXT = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 function stripUnstorableText(value: string): string {
@@ -359,8 +363,14 @@ async function recordLogbookSyncSkips(
         });
     });
   } catch (error) {
-    console.warn(
-      `[aurora-sync] could not record ${byAuroraId.size} logbook sync skip(s) for user ${userId} on ${boardName}: ${errorMessage(error)}`,
+    // console.ERROR, not warn: this is the double-failure case. The rows were
+    // already dropped from the sync, so losing the record too means they are
+    // gone with no trace and no way to replay them — strictly worse than the
+    // skips this function exists to make visible. Swallowing is still correct
+    // (throwing would abort the caller's cross-table transaction and recreate
+    // the #3871 wedge), so the log line is the only signal an operator gets.
+    console.error(
+      `[aurora-sync] FAILED to record ${byAuroraId.size} logbook sync skip(s) for user ${userId} on ${boardName} — those rows are now dropped with no quarantine record: ${errorMessage(error)}`,
     );
   }
 }
@@ -985,6 +995,11 @@ export async function applyAuroraBids(
   }
 
   await recordLogbookSyncSkips(db, boardName, userId, skips);
+  // No tombstone ids to add here (unlike ascents): Aurora does not tombstone
+  // bids, so this function has no is_listed=false path. If one is ever added,
+  // feed its ids in here too — otherwise a quarantined bid that upstream later
+  // deletes would sit in logbook_sync_skips forever, since a deleted row never
+  // comes back to resolve itself.
   await reconcileLogbookSyncSkips(
     db,
     boardName,
