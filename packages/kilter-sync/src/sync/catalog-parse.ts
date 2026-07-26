@@ -14,8 +14,18 @@ const KILTER_BOARD = 'kilter' as const;
  */
 const HOLD_TOKEN = /h(\d+)p(\d+)(?:s(\d+))?(?:e(\d+))?/g;
 
-/** Why a `climb_concat` could not be turned into a board_climbs row. */
-export type KilterSkipReason = 'unplaceable_hole' | 'unparsable_concat' | 'frame_out_of_range';
+/**
+ * Why a `climb_concat` could not be turned into a board_climbs row. Kept as a
+ * runtime list too, so callers that take a reason from outside the process (the
+ * CLI's --reason filter) can reject a typo instead of quietly matching nothing.
+ */
+export const KILTER_SKIP_REASONS = ['unplaceable_hole', 'unparsable_concat', 'frame_out_of_range'] as const;
+
+export type KilterSkipReason = (typeof KILTER_SKIP_REASONS)[number];
+
+export function isKilterSkipReason(value: string): value is KilterSkipReason {
+  return (KILTER_SKIP_REASONS as readonly string[]).includes(value);
+}
 
 export type GripsDecodeResult =
   | { ok: true; frames: string; holds: HoldTuple[] }

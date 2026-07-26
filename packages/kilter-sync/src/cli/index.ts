@@ -8,7 +8,7 @@ import { eq } from 'drizzle-orm';
 
 import { auroraCredentials } from '@boardsesh/db/schema';
 import { SyncRunner } from '../runner';
-import { loadBacklog } from '../sync';
+import { isKilterSkipReason, KILTER_SKIP_REASONS, loadBacklog } from '../sync';
 import { KILTER_BOARD_TYPE } from '../api/types';
 
 const program = new Command();
@@ -175,7 +175,7 @@ program
 program
   .command('backlog')
   .description('Report climbs the catalog sync could not ingest (board_climb_ingest_skips)')
-  .option('--reason <reason>', 'filter to one reason: unplaceable_hole | unparsable_concat | frame_out_of_range')
+  .option('--reason <reason>', `filter to one reason: ${KILTER_SKIP_REASONS.join(' | ')}`)
   .option('--limit <n>', 'maximum rows to print (default 50)', '50')
   .option('--include-resolved', 'also show climbs a later run recovered')
   .option('--raw', 'print each climb’s verbatim upstream hold string')
@@ -183,6 +183,13 @@ program
     const limit = Number(opts.limit);
     if (!Number.isInteger(limit) || limit <= 0) {
       console.error(`Invalid --limit value: ${opts.limit}. Expected a positive integer.`);
+      process.exitCode = 1;
+      return;
+    }
+    // Reject a typo outright — filtering on an unknown reason would otherwise
+    // print "nothing skipped", which is exactly the wrong answer to get wrong.
+    if (opts.reason !== undefined && !isKilterSkipReason(opts.reason)) {
+      console.error(`Unknown --reason "${opts.reason}". Expected one of: ${KILTER_SKIP_REASONS.join(', ')}.`);
       process.exitCode = 1;
       return;
     }

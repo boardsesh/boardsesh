@@ -27,7 +27,7 @@ import { decodeGripsClimbConcat } from './catalog-parse';
 import {
   buildSkipRow,
   describeSkip,
-  loadOpenSkipUuids,
+  loadOpenSkips,
   markSkipsResolved,
   persistSkips,
   summarizeSkipReasons,
@@ -84,6 +84,12 @@ export type KilterCatalogSummary = {
   skipsRecorded: number;
   /** Previously-skipped climbs this run managed to ingest. */
   skipsResolved: number;
+  /**
+   * The skip backlog write failed. Surfaced on the summary (not just the log)
+   * because a persistent failure here means climbs are being dropped silently
+   * again — the exact condition board_climb_ingest_skips exists to prevent.
+   */
+  skipsWriteFailed: boolean;
   locations: LocationSyncSummary | null;
   deletions: DeletionReport;
 };
@@ -303,7 +309,7 @@ async function syncBoardLayoutGroup(
   state: TokenState,
   boardLayoutId: number,
   gripsLayoutUuids: string[],
-  openSkipUuids: Set<string>,
+  openSkips: Map<string, string>,
   log: (message: string) => void,
 ): Promise<GroupResult> {
   const result: GroupResult = {
@@ -407,7 +413,8 @@ async function syncBoardLayoutGroup(
       const existingUuid = existingByLowerUuid.get(lowerUuid);
       if (existingUuid) {
         climbUuidToCanonical.set(lowerUuid, existingUuid);
-        if (openSkipUuids.has(lowerUuid)) result.resolvedSkipUuids.push(climb.climbUuid);
+        const resolvedByIdentity = openSkips.get(lowerUuid);
+        if (resolvedByIdentity) result.resolvedSkipUuids.push(resolvedByIdentity);
         // Self-heal the self-alias gap (~6k kilter climbs reached the catalog
         // via a path that never wrote one, leaving them invisible to deletion
         // reconciliation). Only write the missing ones so steady-state runs add
@@ -438,7 +445,8 @@ async function syncBoardLayoutGroup(
       }
       const { frames, holds } = decoded;
       const fingerprint = fingerprintFromHolds(holds);
-      if (openSkipUuids.has(lowerUuid)) result.resolvedSkipUuids.push(climb.climbUuid);
+      const resolvedByDecode = openSkips.get(lowerUuid);
+      if (resolvedByDecode) result.resolvedSkipUuids.push(resolvedByDecode);
 
       // 2. Fingerprint dedup — a new UUID whose holds match an existing (or
       //    already-seen-this-run) canonical becomes an alias, not a new row.
@@ -727,6 +735,7 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
     canonicalsRelisted: 0,
     skipsRecorded: 0,
     skipsResolved: 0,
+    skipsWriteFailed: false,
     locations: null,
     deletions: {
       reported: 0,
@@ -750,10 +759,10 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
 
   // The climbs already sitting unresolved in the backlog, so a run that finally
   // ingests one can stamp it resolved without scanning every climb it saw.
-  const openSkipUuids = await loadOpenSkipUuids(args.db, KILTER);
+  const openSkips = await loadOpenSkips(args.db, KILTER);
 
   for (const [boardLayoutId, gripsLayoutUuids] of byBoardLayout) {
-    const groupResult = await syncBoardLayoutGroup(args.db, state, boardLayoutId, gripsLayoutUuids, openSkipUuids, log);
+    const groupResult = await syncBoardLayoutGroup(args.db, state, boardLayoutId, gripsLayoutUuids, openSkips, log);
     summary.gripsLayoutsProcessed += gripsLayoutUuids.length;
     summary.climbsSeen += groupResult.climbsSeen;
     summary.climbsUnmapped += groupResult.climbsUnmapped;
@@ -787,7 +796,10 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
       log(`[kilter-catalog] recovered ${allResolvedSkipUuids.length} previously-unmapped climb(s)`);
     }
   } catch (error) {
-    log(`[kilter-catalog] skip backlog write failed: ${error instanceof Error ? error.message : String(error)}`);
+    summary.skipsWriteFailed = true;
+    log(
+      `[kilter-catalog] SKIP BACKLOG WRITE FAILED — ${allSkips.length} unmapped climb(s) went unrecorded: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   // Persist the layout uuid → layout_id mappings discovered this run.

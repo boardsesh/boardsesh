@@ -100,13 +100,18 @@ async function chunked<T>(rows: T[], run: (chunk: T[]) => Promise<void>): Promis
   }
 }
 
-/** The uuids currently sitting unresolved in the backlog, lowercased. */
-export async function loadOpenSkipUuids(db: DrizzleDb, boardType: string): Promise<Set<string>> {
+/**
+ * The climbs currently sitting unresolved in the backlog, keyed by lowercased
+ * uuid so a catalog row still matches if upstream changes the casing — mapped
+ * to the uuid *as stored*, which is what `markSkipsResolved` must match on for
+ * its primary-key lookup to hit.
+ */
+export async function loadOpenSkips(db: DrizzleDb, boardType: string): Promise<Map<string, string>> {
   const rows = await db
     .select({ climbUuid: boardClimbIngestSkips.climbUuid })
     .from(boardClimbIngestSkips)
     .where(and(eq(boardClimbIngestSkips.boardType, boardType), isNull(boardClimbIngestSkips.resolvedAt)));
-  return new Set(rows.map((row) => row.climbUuid.toLowerCase()));
+  return new Map(rows.map((row) => [row.climbUuid.toLowerCase(), row.climbUuid]));
 }
 
 /**
@@ -131,7 +136,7 @@ export async function persistSkips(db: DrizzleDb, skips: ClimbIngestSkip[]): Pro
           climbName: sql`excluded.climb_name`,
           setterUsername: sql`excluded.setter_username`,
           lastSeenAt: sql`now()`,
-          resolvedAt: sql`null`,
+          resolvedAt: null,
         },
       });
   });
@@ -158,7 +163,8 @@ export async function markSkipsResolved(db: DrizzleDb, boardType: string, climbU
 
 export type BacklogQuery = {
   boardType: string;
-  reason?: string;
+  /** Typed, so a misspelled reason is a compile error rather than an empty result. */
+  reason?: KilterSkipReason;
   limit: number;
   includeResolved: boolean;
 };

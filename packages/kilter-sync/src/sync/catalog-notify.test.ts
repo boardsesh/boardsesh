@@ -13,6 +13,13 @@ void describe('shouldNotifyForNewCanonical', () => {
     expect(shouldNotifyForNewCanonical('2026-06-27T12:00:00Z', NOW)).toBe(true);
   });
 
+  it('notifies at exactly the 30-day boundary, and stops one millisecond past it', () => {
+    // The window is inclusive; pinning both sides so an off-by-one can't slip
+    // through between the 29-day and 31-day cases either side of it.
+    expect(shouldNotifyForNewCanonical('2026-06-26T12:00:00.000Z', NOW)).toBe(true);
+    expect(shouldNotifyForNewCanonical('2026-06-26T11:59:59.999Z', NOW)).toBe(false);
+  });
+
   it('stays quiet for a climb published years ago', () => {
     // The multi-frame decoder recovers animated climbs first published as far
     // back as 2021. Presenting those to followers as "new" would be a worse
