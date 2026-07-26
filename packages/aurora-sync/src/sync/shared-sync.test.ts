@@ -26,12 +26,16 @@ vi.mock('../api/shared-sync-api', () => ({
 vi.mock('@boardsesh/db/queries', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/db/queries')>();
   return {
+    // Spread first so any other export from this module stays real. Listing
+    // only the stubs would leave every unlisted import silently undefined the
+    // moment shared-sync.ts reaches for one.
+    ...actual,
     populateDenormalizedColumns: mockPopulateDenormalizedColumns,
     blendedQualityAverageSql: mockBlendedQualityAverageSql,
     snapshotClimbStatsHistoryIfDue: mockSnapshotHistory,
-    // Real implementation, not a stub: the deterministic uuid IS the duplicate
-    // -notification backstop, so stubbing it would stop covering it.
-    setterSyncNotificationUuid: actual.setterSyncNotificationUuid,
+    // setterSyncNotificationUuid deliberately NOT stubbed: the deterministic
+    // uuid IS the duplicate-notification backstop, so a stub would stop
+    // covering it.
   };
 });
 

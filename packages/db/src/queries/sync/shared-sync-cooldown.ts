@@ -96,6 +96,9 @@ export async function readSharedSyncCursor(
 
   const raw = rows[0]?.lastSynchronizedAt;
   if (!raw) return null;
-  const parsed = Date.parse(`${raw}Z`);
+  // Stored as `YYYY-MM-DD HH:MM:SS.ffffff` (space-separated, no zone, UTC).
+  // Restore the 'T' before appending 'Z' so this is real ISO 8601 rather than
+  // relying on V8 accepting the space-separated form.
+  const parsed = Date.parse(`${raw.replace(' ', 'T')}Z`);
   return Number.isNaN(parsed) ? null : new Date(parsed);
 }
