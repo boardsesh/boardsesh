@@ -20,7 +20,11 @@ export const CATALOG_SYNC_COOLDOWN_CURSOR = '__local_catalog_sync__';
  * only ever sees values this module produced.
  */
 function nowCursorText(now: Date): string {
-  return now.toISOString().replace('T', ' ').replace('Z', '');
+  // toISOString() gives 3 fractional digits; Aurora writes 6. Pad so a
+  // `__local_*` row is byte-compatible with the Aurora-written rows sharing
+  // this column. Both parse identically — this is about not leaving two
+  // formats in one column for whoever reads it next.
+  return `${now.toISOString().replace('T', ' ').replace('Z', '')}000`;
 }
 
 /**
