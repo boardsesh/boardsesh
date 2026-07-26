@@ -34,8 +34,23 @@ vi.mock('expo-symbols', () => ({
 }));
 
 vi.mock('@expo/vector-icons/MaterialCommunityIcons', () => ({
-  default: ({ name, color }: { name: string; color?: string }) =>
-    createElement('div', { 'data-testid': 'mci', 'data-name': name, 'data-color': color }),
+  default: ({
+    name,
+    color,
+    style,
+  }: {
+    name: string;
+    color?: string;
+    // Surfaced so the "Android is never shifted" assertion is a real check: if
+    // the optical correction ever escaped the iOS branch, it would land here.
+    style?: { transform?: { translateY: number }[] };
+  }) =>
+    createElement('div', {
+      'data-testid': 'mci',
+      'data-name': name,
+      'data-color': color,
+      'data-translate-y': style?.transform?.[0]?.translateY,
+    }),
 }));
 
 import { Icon } from '../Icon';
@@ -65,23 +80,15 @@ describe('Icon platform rendering', () => {
     expect(mci?.getAttribute('data-color')).toBe('#00FF00');
   });
 
-  it('shifts an ink-off-centre SF Symbol down by its recorded fraction of the point size', () => {
+  // 18 and 26 are the smallest and largest sizes `check.small` is rendered at
+  // (YouFilterSheet / RadioGroup at the low end, LogAscentToolbarButton at the
+  // high end), so both ends of the range that has to stay centred are covered.
+  it.each([18, 26])('shifts an ink-off-centre SF Symbol down by its recorded fraction of %ipt', (size) => {
     const ratio = iconMap['check.small'].iosOpticalCenterRatio;
     expect(ratio).toBeGreaterThan(0);
 
-    const { queryByTestId } = render(<Icon name="check.small" size={26} />);
-    expect(queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBe(String(26 * ratio));
-  });
-
-  it('scales the shift with the icon size so every call site lands the same', () => {
-    const ratio = iconMap['check.small'].iosOpticalCenterRatio;
-
-    const small = render(<Icon name="check.small" size={18} />);
-    expect(small.queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBe(String(18 * ratio));
-    small.unmount();
-
-    const large = render(<Icon name="check.small" size={26} />);
-    expect(large.queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBe(String(26 * ratio));
+    const { queryByTestId } = render(<Icon name="check.small" size={size} />);
+    expect(queryByTestId('symbol-view')?.getAttribute('data-translate-y')).toBe(String(size * ratio));
   });
 
   it('leaves glyphs without a recorded correction untransformed', () => {
