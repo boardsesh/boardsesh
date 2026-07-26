@@ -891,7 +891,13 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // reaches the crew without the yank-back a resync would cause (#2763).
   const recoverThrottledQueueAdd = useCallback(
     async (item: ClimbQueueItem) => {
-      if (!sessionIdRef.current) return;
+      // Capture the session this slot belongs to. Every leg below runs after an
+      // await, and the undo leg in particular can wake up in a DIFFERENT session
+      // (the climber ended this one and joined another while the add was backing
+      // off) — a remove aimed at that session is aimed at the wrong crew's queue.
+      // Same discipline the coalescer applies to its own deferred sends.
+      const recoverySessionId = sessionIdRef.current;
+      if (!recoverySessionId) return;
       // Position the re-send where the optimistic insert actually landed
       // (insert-after-current, #2217) so peers see the same order we do. The
       // server clamps an out-of-range position to an append.
@@ -914,7 +920,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // climber dropped the climb inside that window their remove raced ahead
       // of this add, so the slot we just landed is back on the whole crew's
       // queue. The local queue is the record of intent — undo it rather than
-      // leave a climb nobody asked for.
+      // leave a climb nobody asked for. Only while we're still in the session
+      // the add went to: after a session swap the local queue describes the new
+      // room, and its lack of this item says nothing about the old one.
+      if (sessionIdRef.current !== recoverySessionId) return;
       if (stateRef.current.queue.some((queueItem) => queueItem.uuid === item.uuid)) return;
       mutations.removeQueueItem(item.uuid).catch((error) => {
         if (__DEV__) console.warn('[queue] undoing a resurrected queue-add failed', error);

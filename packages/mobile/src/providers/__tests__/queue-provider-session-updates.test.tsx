@@ -2108,6 +2108,58 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(queueStateCalls).toBe(0);
   });
 
+  it('does not undo the re-sent queue add once the climber has left that session', async () => {
+    const snapshots: Snapshot[] = [];
+    const alreadyQueued = makeQueueItem('item-1', 'climb-1');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([alreadyQueued], alreadyQueued), {
+      onQueueStateCall: () => (queueStateCalls += 1),
+    });
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+    const inFlightAdd = createDeferred<void>();
+    queueMutations.addQueueItem.mockReturnValueOnce(inFlightAdd.promise);
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([alreadyQueued], alreadyQueued);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+    queueMutations.removeQueueItem.mockClear();
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(makeQueueItem('local-current', 'climb-local-current'));
+    });
+    await waitFor(() => {
+      expect(queueMutations.addQueueItem).toHaveBeenCalledTimes(1);
+    });
+
+    // The climber leaves while the recovery add is still backing off. Ending a
+    // session clears the local queue, so the membership check on its own would
+    // read that as "they dropped the climb" and fire a compensating remove —
+    // against whatever session they are in by then, not the one that got the add.
+    await act(async () => {
+      await snapshots.at(-1)?.endSession();
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBeNull();
+    });
+
+    await act(async () => {
+      inFlightAdd.resolve();
+      await Promise.resolve();
+    });
+
+    expect(queueMutations.removeQueueItem).not.toHaveBeenCalled();
+    expect(queueStateCalls).toBe(0);
+  });
+
   it('toasts "slow down" rather than the generic failure when reorderQueue is rate-limited', async () => {
     const snapshots: Snapshot[] = [];
     const first = makeQueueItem('item-1', 'climb-1');
