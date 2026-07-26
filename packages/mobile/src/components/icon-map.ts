@@ -16,6 +16,12 @@ export type IconMapping = {
    * drifts the moment another screen renders the same symbol.
    *
    * iOS-only: the MaterialCommunityIcons glyphs are already ink-centred.
+   *
+   * Expected to be a small positive fraction — `icon-map.test.ts` holds it to
+   * `(0, 0.2]`, since anything larger means the glyph is wrong for the slot
+   * rather than merely off-centre. Omitting the field and setting it to `0` both
+   * mean "this glyph needs no correction"; `Icon` applies no transform for
+   * either, so the default costs nothing.
    */
   iosOpticalCenterRatio?: number;
 };
