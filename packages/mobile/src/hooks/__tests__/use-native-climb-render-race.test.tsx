@@ -7,12 +7,12 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 // to a different climb, or the key-match guard nulls overlayUri for the current
 // climb with nothing left to re-fire the effect.
 
-// react-native ships Flow-typed source that Rolldown can't parse, so anything
-// importing it transitively has to stub it. The hook reads useColorScheme() to
-// pick the dark-mode board art (issue #3885); this race test is scheme-agnostic.
-vi.mock('react-native', () => ({
-  useColorScheme: () => 'light',
-  Platform: { OS: 'ios' },
+// The hook asks the theme provider for the app's colour scheme (issue #3885) —
+// deliberately not react-native's useColorScheme(), which follows the OS. Stub
+// the provider so these tests don't need a rendered ThemeProvider; the pure
+// helpers exercised here take the scheme as an argument anyway.
+vi.mock('../../providers/theme-provider', () => ({
+  useAppColorScheme: () => 'light',
 }));
 
 vi.mock('expo-file-system', () => ({

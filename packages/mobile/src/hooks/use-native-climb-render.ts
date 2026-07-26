@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { useColorScheme } from 'react-native';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { listOverlayCacheEntries, onOverlayCacheHydrated } from './overlay-cache-warmup';
 import { RENDERER_VERSION } from './renderer-version';
@@ -16,6 +15,7 @@ import {
   type BackgroundColorScheme,
   type BackgroundVariant,
 } from '../lib/background-image-cache';
+import { useAppColorScheme } from '../providers/theme-provider';
 import { reportError } from '../lib/error-reporting';
 import {
   DEFAULT_HOLD_COLOR_SIGNATURE,
@@ -560,13 +560,14 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
   // crisp on the full-screen board.
   const variant: BackgroundVariant = backgroundVariant ?? (renderWidth != null ? 'thumb' : 'full');
 
-  // Deliberately RN's useColorScheme() rather than useTheme(): this hook runs in
-  // every FlashList row, and the theme context value also carries UI variant,
-  // spacing and animation config, so consuming it would re-render every mounted
-  // row whenever any of those change. The theme provider mirrors the in-app
-  // theme override into Appearance.setColorScheme, so this already reflects the
-  // user's app setting and not just the OS.
-  const colorScheme: BackgroundColorScheme = useColorScheme() === 'dark' ? 'dark' : 'light';
+  // The app's resolved scheme, NOT react-native's useColorScheme(): that follows
+  // the OS trait collection and on Android does not track
+  // Appearance.setColorScheme, so someone running the app's own Dark theme on a
+  // light-mode phone reads back 'light' and silently gets the light board art on
+  // a dark screen. useAppColorScheme is its own tiny context precisely so this
+  // hook — which runs in every virtualized list row — doesn't have to subscribe
+  // to the whole theme object to ask one question.
+  const colorScheme: BackgroundColorScheme = useAppColorScheme();
 
   // Some roles carry a dark-mode-only marker colour (displayColorDark), so the
   // scheme changes the rendered pixels for a config that would otherwise hash

@@ -155,6 +155,29 @@ type Theme = {
 const ThemeContext = createContext<Theme | null>(null);
 
 /**
+ * The resolved colour scheme on its own, so hot leaves can read it without
+ * subscribing to the whole theme object.
+ *
+ * Deliberately NOT react-native's `useColorScheme()`: that follows the OS trait
+ * collection, and on Android it does not track `Appearance.setColorScheme`, so a
+ * user running the app's own Dark theme on a light-mode phone reads back
+ * 'light'. Anything picking assets or colours by scheme must use this instead —
+ * see useNativeClimbRender, where getting it wrong silently served the light
+ * board art on a dark screen (issue #3885).
+ *
+ * A separate context rather than a field on `Theme` because the consumer is
+ * inside every virtualized list row: this value changes only when the user
+ * actually switches theme, whereas the theme object also carries variant,
+ * spacing and animation config.
+ */
+const ColorSchemeContext = createContext<ColorScheme>('light');
+
+/** The app's resolved colour scheme, honouring the in-app theme override. */
+export function useAppColorScheme(): ColorScheme {
+  return useContext(ColorSchemeContext);
+}
+
+/**
  * Resolve system colors for the current platform and color scheme.
  *
  * On iOS, PlatformColor handles dark mode automatically, so we just
@@ -365,7 +388,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   }, [colorScheme, variant, themeOverride, setThemeOverride, uiVariantPreference, setUiVariant, m3Colors]);
 
   // React 19 context provider syntax (Expo SDK 53+ / React 19)
-  return <ThemeContext value={theme}>{children}</ThemeContext>;
+  return (
+    <ThemeContext value={theme}>
+      <ColorSchemeContext value={colorScheme}>{children}</ColorSchemeContext>
+    </ThemeContext>
+  );
 }
 
 /**
