@@ -5,44 +5,11 @@ export type HoldColor = string;
 export type HoldRenderStyle = 'circle' | 'above-marker';
 
 export type HoldStateInfo = {
-  /**
-   * The LED colour. This is the ONLY field the Bluetooth encoders read (see
-   * packages/shared/ble-protocol/src/aurora.ts) — it is what the physical wall
-   * lights up, and climbers have strong expectations about it. Never retune it
-   * for on-screen legibility; tune `displayColor` / `displayColorDark` instead.
-   */
   name: HoldState;
   color: HoldColor;
-  /** Screen-tuned colour used by every renderer. Falls back to `color`. */
   displayColor?: HoldColor;
-  /**
-   * Screen-tuned colour used by every renderer in dark mode only. Falls back to
-   * `displayColor`, then `color`. Exists because a marker can need a different
-   * value against a dark field than against a light one — see the MoonBoard
-   * hand marker, which has to clear both the dark play field and the lightened
-   * black hold art (issue #3885).
-   */
-  displayColorDark?: HoldColor;
   renderStyle?: HoldRenderStyle;
 };
-
-/** Colour scheme a hold marker is being rendered into. */
-export type HoldColorScheme = 'light' | 'dark';
-
-/**
- * The colour a renderer should draw a hold marker in. Never returns the raw LED
- * `color` when a screen-tuned value exists — the LED value is only correct for
- * driving hardware over BLE (issue #2202).
- */
-export function getHoldDisplayColor(
-  // Structural rather than `HoldStateInfo` so the shared render-config builder,
-  // whose HoldStateRecord has an optional `name`, can call it too.
-  stateInfo: { color: HoldColor; displayColor?: HoldColor; displayColorDark?: HoldColor },
-  colorScheme: HoldColorScheme = 'light',
-): HoldColor {
-  if (colorScheme === 'dark' && stateInfo.displayColorDark) return stateInfo.displayColorDark;
-  return stateInfo.displayColor ?? stateInfo.color;
-}
 
 // Canonical mapping of board-specific hold role codes to their state and LED colors.
 // Each board product has its own set of role codes.
@@ -101,17 +68,7 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // Values 45-48 are additional live-BLE preview roles emitted by the ESP32 dev firmware.
   moonboard: {
     42: { name: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
-    // displayColorDark: a hand ring in dark mode has to read against FOUR things —
-    // the play field, the elevated card, the pale set A holds, and the black set B
-    // holds once they are lifted for dark mode (scripts/generate-dark-board-art.ts).
-    // No single blue clears them all: the best achievable worst case is 1.58:1,
-    // because a colour dark enough to sit against the pale sheets is too close to
-    // the field, and vice versa. #6C6CE8 is the blue that gets nearest to that
-    // ceiling (worst case 1.57:1, vs 1.12:1 for the light-mode #4444FF), so it is a
-    // strict improvement rather than a solution. Marker legibility is genuinely
-    // fixed by a two-tone casing that does not depend on the backdrop at all —
-    // tracked in #3913. The LED colour (#0000FF) is untouched.
-    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', displayColorDark: '#6C6CE8' },
+    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF' },
     44: { name: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
     45: { name: 'FOOT', color: '#00FFFF', displayColor: '#66F0FF' },
     46: { name: 'AUX', color: '#FFE066', displayColor: '#FFE066', renderStyle: 'above-marker' },

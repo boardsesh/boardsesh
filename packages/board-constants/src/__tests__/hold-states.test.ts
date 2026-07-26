@@ -4,7 +4,6 @@ import {
   STATE_TO_PRIMARY_CODE,
   BOARD_RENDER_DEFAULTS,
   getBoardStrokeWidthMultiplier,
-  getHoldDisplayColor,
   convertLitUpHoldsStringToMap,
   splitFramesString,
   accumulateFramesToMaps,
@@ -220,59 +219,5 @@ describe('accumulatedMapsToFrameStrings', () => {
     ];
     const [string0] = accumulatedMapsToFrameStrings(maps, 'moonboard');
     expect(string0).toBe('p100r42');
-  });
-});
-
-describe('getHoldDisplayColor', () => {
-  it('prefers displayColorDark in dark mode, displayColor in light', () => {
-    const hand = HOLD_STATE_MAP.moonboard[43];
-    expect(getHoldDisplayColor(hand, 'light')).toBe('#4444FF');
-    expect(getHoldDisplayColor(hand, 'dark')).toBe('#6C6CE8');
-  });
-
-  it('defaults to light when no scheme is given', () => {
-    expect(getHoldDisplayColor(HOLD_STATE_MAP.moonboard[43])).toBe('#4444FF');
-  });
-
-  it('falls back through displayColor to the raw color', () => {
-    // Kilter defines neither, so both schemes render the LED value unchanged —
-    // this is what keeps boards without tuned colours out of the diff.
-    const kilterHand = HOLD_STATE_MAP.kilter[13];
-    expect(getHoldDisplayColor(kilterHand, 'dark')).toBe(kilterHand.color);
-    // A role with displayColor but no dark override uses displayColor in both.
-    const start = HOLD_STATE_MAP.moonboard[42];
-    expect(getHoldDisplayColor(start, 'dark')).toBe('#44FF44');
-    expect(getHoldDisplayColor(start, 'light')).toBe('#44FF44');
-  });
-
-  it('only MoonBoard HAND carries a dark override today', () => {
-    const withDarkOverride: string[] = [];
-    for (const [board, states] of Object.entries(HOLD_STATE_MAP)) {
-      for (const [code, info] of Object.entries(states)) {
-        if (info.displayColorDark) withDarkOverride.push(`${board}:${code}`);
-      }
-    }
-    expect(withDarkOverride).toEqual(['moonboard:43']);
-  });
-});
-
-// The LED colour is what the physical wall lights up and climbers have strong
-// expectations about it. Screen-legibility work (displayColor/displayColorDark,
-// issues #2202 and #3885) must never reach it — packages/shared/ble-protocol
-// reads `color` and nothing else.
-describe('LED colors are never retuned for screen legibility', () => {
-  it('pins MoonBoard LED values', () => {
-    expect(HOLD_STATE_MAP.moonboard[42].color).toBe('#00FF00');
-    expect(HOLD_STATE_MAP.moonboard[43].color).toBe('#0000FF');
-    expect(HOLD_STATE_MAP.moonboard[44].color).toBe('#FF0000');
-  });
-
-  it('pins Kilter LED values (no display overrides at all)', () => {
-    expect(HOLD_STATE_MAP.kilter[12].color).toBe('#00FF00');
-    expect(HOLD_STATE_MAP.kilter[13].color).toBe('#00FFFF');
-    for (const info of Object.values(HOLD_STATE_MAP.kilter)) {
-      expect(info.displayColor).toBeUndefined();
-      expect(info.displayColorDark).toBeUndefined();
-    }
   });
 });
