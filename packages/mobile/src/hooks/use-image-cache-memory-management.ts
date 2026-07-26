@@ -1,19 +1,54 @@
 import { useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { useSegments } from 'expo-router';
 import { useIsAppBackgrounded } from '../lib/app-visibility';
 import { useDeviceLayout } from './use-device-layout';
 import { tabsActiveSegment } from '../lib/route-segments';
 
-// Sweep expo-image's in-memory decoded-bitmap cache on background and on OS
-// memory-pressure warnings. The foreground `memoryWarning` path is the direct
-// lever against the iOS OOM watchdog kill on low-RAM devices (#3479); the disk
-// cache is untouched, so foregrounding re-decodes from disk in tens of ms (no
-// network). LayeredClimbImage blanks its <Image> layers on background first,
-// returning their bitmaps to the pool this sweep then frees.
+/**
+ * Ceiling for expo-image's in-memory decoded-bitmap cache, in bytes.
+ *
+ * 256 MB ≈ 32 full-resolution board-art overlays (a native-width overlay decodes
+ * at roughly 8 MB of RGBA — `allowDownscaling={false}` on both LayeredClimbImage
+ * layers means the bitmap is never resampled down), or several hundred list
+ * thumbnails. That is far more than any surface holds at once — the play-drawer
+ * carousel's widest working set is three (previous, current, peek) — so the cap
+ * cannot evict art a live surface is about to swap to, while still bounding a
+ * multi-day session at a fraction of the per-app memory budget on the 4 GB
+ * iPhones where #3479 actually reproduced.
+ */
+export const IMAGE_MEMORY_CACHE_MAX_BYTES = 256 * 1024 * 1024;
+
+// Bound and reclaim expo-image's in-memory decoded-bitmap cache.
+//
+// The ceiling is the load-bearing part. SDWebImage ships `maxMemoryCost = 0`
+// (unlimited) and expo-image never overrides it, so until this hook set one the
+// app ran an UNBOUNDED image memory cache: every distinct board-art bitmap a
+// session decoded stayed resident until the app backgrounded or the OS fired a
+// memory warning — and on iOS that warning arrives only after an allocation has
+// already failed, which is the #3803 crash (SIGSEGV inside image decode) and the
+// same shape as the 4 GB-iPhone foreground OOM in #3479. NSCache enforces the cap
+// continuously, with no timer and no navigation seam to wait for, and eviction
+// drops only the CACHE's reference: a bitmap a mounted view still displays is
+// retained by that view (UIImageView.image + CALayer.contents), so trimming can
+// never blank on-screen art or trigger a reload.
+//
+// The two sweeps below stay as they are. They reclaim at moments the cap can't
+// see (going to background frees the whole working set, not just the excess) and
+// they cost nothing once the cap is in place. The disk cache is untouched
+// throughout, so anything evicted re-decodes from disk in tens of ms, no network.
 export function useImageCacheMemoryManagement(): void {
   const isBackgrounded = useIsAppBackgrounded();
+
+  // iOS-only: expo-image's Android module exposes no `configureCache`, so the
+  // call would throw. Android bounds Glide by its own device-RAM-derived policy
+  // plus the native `modules/memory-trim` full-clear (see
+  // docs/react-native-performance.md §7).
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    Image.configureCache({ maxMemoryCost: IMAGE_MEMORY_CACHE_MAX_BYTES });
+  }, []);
 
   useEffect(() => {
     if (isBackgrounded) void Image.clearMemoryCache();

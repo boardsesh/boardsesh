@@ -263,24 +263,43 @@ surface the previous size's bundled background paths.
 
 ---
 
-## 7. Board-art image memory: render at display size, recycle, release on background
+## 7. Board-art image memory: cap the cache, render at display size, recycle, release on background
 
 **Rule:** Board-art surfaces are the app's largest memory consumer (decoded bitmaps live in native
 heap + as GPU textures, not the JS heap) — on iOS a 4 GB device can hit the OS watchdog OOM kill in
-the foreground while browsing (#3479). Three contracts keep them in check:
+the foreground while browsing (#3479), and an iPad can SIGSEGV inside image decode after days of
+uptime (#3803). Four contracts keep them in check:
 
-- **Size the overlay to the display, keep the photo full-res.** The play-drawer board passes
-  `renderWidth` (display px × `PixelRatio.get()`) so the per-climb holds overlay rasterizes at the
-  shown size instead of the board's native ~1080px, plus `backgroundVariant="full"` so the _shared_
-  board photo (one decode per board-config, reused across every climb) stays crisp. `renderWidth`
-  alone would downgrade the photo to the 416px `thumb` — only the overlay should shrink.
+- **Cap the decoded-bitmap cache.** SDWebImage defaults `maxMemoryCost` to `0` — _unlimited_ — and
+  expo-image does not override it, so an app that never calls `Image.configureCache()` runs an
+  unbounded image memory cache and only ever reclaims at a background or `memoryWarning` seam.
+  `useImageCacheMemoryManagement` sets `maxMemoryCost` (`IMAGE_MEMORY_CACHE_MAX_BYTES`, 256 MB) once
+  at startup. iOS-only: expo-image's Android module exposes no `configureCache` and the call throws.
+  Prefer this over any periodic wipe — NSCache enforces it continuously, and because eviction drops
+  only the _cache's_ reference (a bitmap a mounted view displays is retained by
+  `UIImageView.image`/`CALayer.contents`), it can never blank on-screen art or force a reload.
+- **Size the overlay to the display, keep the photo full-res.** The play-drawer board and the wall
+  kiosk hero pass `renderWidth` (display px × `PixelRatio.get()`) so the per-climb holds overlay
+  rasterizes at the shown size instead of the board's native ~1080px, plus `backgroundVariant="full"`
+  so the _shared_ board photo (one decode per board-config, reused across every climb) stays crisp.
+  `renderWidth` alone would downgrade the photo to the 416px `thumb` — only the overlay should shrink.
+  This matters most where a surface swaps climbs without unmounting: both layers set
+  `allowDownscaling={false}`, so a native-width overlay decodes at ~8 MB of RGBA however small it is
+  drawn. `useNativeClimbRender` clamps to native width, so it never upscales.
 - **`recyclingKey` on always-mounted board surfaces that swap climbs.** The carousel boards key on the
-  climb's `frames` so swapping releases the previous overlay instead of holding both.
+  climb's `frames` so swapping releases the previous overlay instead of holding both. **Not a blanket
+  rule:** a key change sets `sdImageView.image = nil` _before_ the new load
+  (`expo-image/ios/ImageView.swift`), so it inserts a blank frame unless the incoming art is already
+  cached. The carousel gets away with it because its peek pre-warms the cache; the wall kiosk hero
+  deliberately omits it rather than flash a wall-mounted display between climbs.
 - **Release board-art on background + memory pressure.** `LayeredClimbImage` blanks its `<Image>`
-  layers when `useIsAppBackgrounded()` is true, and `useImageCacheMemoryManagement` (mounted at the
-  app root) sweeps expo-image's memory cache on background and on the OS `memoryWarning` event. The
-  `memoryWarning` path is the direct foreground lever against the iOS OOM kill. Re-decodes from disk
-  on foreground (no network).
+  layers when `useIsAppBackgrounded()` is true or the surface is a non-focused iPad tab
+  (`BoardArtVisibilityProvider` — the iPad shell keeps every tab mounted, and
+  `Image.clearMemoryCache()` cannot reclaim a bitmap a mounted view still holds). Alongside the cap,
+  `useImageCacheMemoryManagement` sweeps expo-image's memory cache on background and on the OS
+  `memoryWarning` event, and `useIpadTabSwitchImageCacheSweep` sweeps at iPad tab switches. Note the
+  `memoryWarning` event is a _last_ resort, not a foreground lever: iOS delivers it only after an
+  allocation has already failed. Re-decodes from disk (no network).
 
 **Why:** On-device profiling (Pixel 8 Pro, Android 16) showed ~248 MB native heap idle on the feed
 and the play-drawer carousel piling a native-res (~7 MB RGBA) overlay per swiped climb into the
@@ -301,7 +320,10 @@ real risk; the OOM actually reproduces on 4 GB iPhones.
 - `packages/mobile/src/lib/app-visibility.ts` (`useIsAppBackgrounded`, one ref-counted AppState
   listener) + `packages/mobile/src/hooks/use-image-cache-memory-management.ts` (root cache sweep).
 - `renderWidth` + `backgroundVariant` threaded through `BoardImageNative.tsx` →
-  `use-native-climb-render.ts`; applied in `play-drawer/SwipeBoardCarousel.tsx`.
+  `use-native-climb-render.ts`; applied in `play-drawer/SwipeBoardCarousel.tsx` and
+  `board-presence/wall-kiosk/WallHeroStage.tsx`.
+- `IMAGE_MEMORY_CACHE_MAX_BYTES` + `Image.configureCache` in
+  `packages/mobile/src/hooks/use-image-cache-memory-management.ts` — the cache ceiling.
 - `packages/mobile/modules/memory-trim/` (Android-only) — native Glide full-clear at
   `TRIM_MEMORY_UI_HIDDEN`; policy in `MemoryTrimPolicy.kt`, activation import in `app/_layout.tsx`.
 

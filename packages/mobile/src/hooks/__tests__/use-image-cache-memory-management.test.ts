@@ -3,6 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
 const clearMemoryCache = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
+const configureCache = vi.hoisted(() => vi.fn());
+
+// The cap effect reads Platform.OS, so tests flip this to assert the iOS gate —
+// expo-image's Android module exposes no configureCache and would throw.
+const platform = vi.hoisted(() => ({ OS: 'ios' as string }));
 
 // Capture each AppState handler by event name so tests can fire them and assert
 // the registered subscriptions are torn down on unmount.
@@ -24,10 +29,11 @@ const appState = vi.hoisted(() => {
 
 vi.mock('react-native', () => ({
   AppState: { addEventListener: appState.addEventListener },
+  Platform: platform,
 }));
 
 vi.mock('expo-image', () => ({
-  Image: { clearMemoryCache },
+  Image: { clearMemoryCache, configureCache },
 }));
 
 // Control the background flag directly so the cache-flush effect can be asserted
@@ -44,13 +50,60 @@ vi.mock('expo-router', () => ({ useSegments: () => segments.value }));
 const deviceLayout = vi.hoisted(() => ({ isPad: true }));
 vi.mock('../use-device-layout', () => ({ useDeviceLayout: () => ({ isPad: deviceLayout.isPad }) }));
 
-import { useImageCacheMemoryManagement, useIpadTabSwitchImageCacheSweep } from '../use-image-cache-memory-management';
+import {
+  IMAGE_MEMORY_CACHE_MAX_BYTES,
+  useImageCacheMemoryManagement,
+  useIpadTabSwitchImageCacheSweep,
+} from '../use-image-cache-memory-management';
+
+describe('image memory cache ceiling', () => {
+  beforeEach(() => {
+    configureCache.mockClear();
+    platform.OS = 'ios';
+    isBackgrounded.value = false;
+  });
+
+  it('caps the decoded-bitmap cache on iOS', () => {
+    renderHook(() => useImageCacheMemoryManagement());
+    // Pins the wiring, not the arithmetic: it must be maxMemoryCost (the in-memory
+    // bitmap budget), not maxDiskSize — capping the disk cache instead would evict
+    // the very PNGs a re-decode reads back and would not bound memory at all.
+    expect(configureCache).toHaveBeenCalledWith({ maxMemoryCost: IMAGE_MEMORY_CACHE_MAX_BYTES });
+  });
+
+  it('applies the cap once, not on every render', () => {
+    const { rerender } = renderHook(() => useImageCacheMemoryManagement());
+    rerender();
+    isBackgrounded.value = true;
+    rerender();
+    expect(configureCache).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not configure the cache on Android', () => {
+    // expo-image's Android module has no configureCache — calling it throws.
+    platform.OS = 'android';
+    renderHook(() => useImageCacheMemoryManagement());
+    expect(configureCache).not.toHaveBeenCalled();
+  });
+
+  it('picks a ceiling that holds a real working set but still bounds a long session', () => {
+    // A full-resolution board overlay decodes at roughly 8 MB of RGBA and the
+    // widest surface (the play-drawer carousel: previous + current + peek) holds
+    // three at once. Guards against a fat-fingered constant in either direction —
+    // too low and the cap evicts art a live surface is about to swap to (the
+    // peek→commit flash), too high and it stops bounding anything.
+    const fullResOverlayBytes = 8 * 1024 * 1024;
+    expect(IMAGE_MEMORY_CACHE_MAX_BYTES).toBeGreaterThan(8 * fullResOverlayBytes);
+    expect(IMAGE_MEMORY_CACHE_MAX_BYTES).toBeLessThan(512 * 1024 * 1024);
+  });
+});
 
 describe('useImageCacheMemoryManagement', () => {
   beforeEach(() => {
     clearMemoryCache.mockClear();
     appState.addEventListener.mockClear();
     isBackgrounded.value = false;
+    platform.OS = 'ios';
   });
 
   it('does not flush while foregrounded', () => {

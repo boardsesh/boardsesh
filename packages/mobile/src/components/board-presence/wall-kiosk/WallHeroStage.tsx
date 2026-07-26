@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { PixelRatio, StyleSheet, View } from 'react-native';
 import type { BoardName, BoardPresenceClimb } from '@boardsesh/shared-schema';
 import { BoardImageNative } from '../../BoardImageNative';
 import { useTheme } from '../../../providers/theme-provider';
@@ -32,6 +32,18 @@ function WallHeroStageComponent({
   artHeight,
 }: WallHeroStageProps) {
   const { systemColors } = useTheme();
+  // Rasterize the holds overlay at the size the kiosk actually draws it instead of
+  // the board's native ~1080px. Both LayeredClimbImage layers set
+  // `allowDownscaling={false}`, so a native-width overlay decodes at full size
+  // (~8 MB of RGBA) no matter how small it is shown — and this surface swaps climbs
+  // on every live-wall change and every scrub step, so each one lands another
+  // full-size bitmap in the memory cache. The board PHOTO stays full-res
+  // (`backgroundVariant="full"`): it's shared by every climb on the wall, so it's
+  // one decode either way, and this is the surface where a downgraded photo would
+  // show most. Same pairing as SwipeBoardCarousel; `useNativeClimbRender` clamps to
+  // native width, so a large kiosk that already draws the board above native
+  // resolution is unchanged. Refs #3803.
+  const overlayRenderWidth = artWidth > 0 ? Math.round(artWidth * PixelRatio.get()) : undefined;
   return (
     <View style={[styles.root, { width: artWidth, height: artHeight, backgroundColor: systemColors.background }]}>
       <BoardImageNative
@@ -42,6 +54,8 @@ function WallHeroStageComponent({
         setIds={boardConfig.setIds}
         boardWidth={boardWidth}
         boardHeight={boardHeight}
+        renderWidth={overlayRenderWidth}
+        backgroundVariant="full"
         style={{ width: artWidth, height: artHeight }}
       />
     </View>
