@@ -850,12 +850,24 @@ async function applyLogbookChunk(
   // PR #3872's skip-and-log philosophy (issue #3520) one layer down, at
   // DB-execution time instead of parse time.
   //
-  // Cost bound: one open subtransaction per chunk (postgres.js does not RELEASE
-  // savepoints), and syncUserData opens a fresh transaction per Aurora PAGE, so
-  // the live count is (page size / WRITE_CHUNK_SIZE) — ~10 for a 1000-row page,
+  // Cost bound. postgres.js issues `savepoint sN` and, on error, `rollback to
+  // sN` — but on SUCCESS it issues nothing at all (see its `scope()`: the
+  // commit/release branch is guarded by `if (!name)`, which is false for a
+  // named savepoint). So each savepoint stays open until the outer COMMIT and
+  // costs one subtransaction.
+  //
+  // syncUserData opens a fresh transaction per Aurora PAGE, so the happy-path
+  // count is (page size / WRITE_CHUNK_SIZE) — ~10 for a 1000-row page,
   // comfortably under the 64-subxid backend cache threshold past which other
-  // backends fall back to pg_subtrans lookups. Raising the page size raises
-  // this: keep a page under ~6400 rows.
+  // backends fall back to pg_subtrans lookups.
+  //
+  // The replay path costs more: a chunk that falls back adds up to
+  // `claims + updates + inserts` further savepoints (≤ WRITE_CHUNK_SIZE, i.e.
+  // ~100), so ONE fully-bad chunk in a 1000-row page takes the page to ~110 and
+  // over the threshold. That is a rare, self-limiting degradation — the poison
+  // rows get quarantined and skipped on the next cycle rather than replayed
+  // forever — but it is the number to reason about when tuning either constant.
+  // Raising the page size raises both: keep a page under ~6400 rows.
   try {
     await db.transaction(async (savepoint) => {
       const sp = savepoint as unknown as DrizzleDb;
