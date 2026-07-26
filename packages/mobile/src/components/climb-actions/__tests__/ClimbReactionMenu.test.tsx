@@ -12,31 +12,59 @@ const captured = vi.hoisted(() => ({
   modalOnRequestClose: undefined as undefined | (() => void),
   boardImageProps: null as Record<string, unknown> | null,
   ran: undefined as undefined | string,
+  glassSurfaceProps: null as Record<string, unknown> | null,
+  fadeColors: null as readonly string[] | null,
 }));
 
-vi.mock('react-native', () => ({
-  Platform: { OS: 'android', select: (o: Record<string, unknown>) => o.android },
-  Keyboard: { addListener: () => ({ remove: () => {} }) },
-  Modal: ({ children, onRequestClose }: { children?: ReactNode; onRequestClose?: () => void }) => {
-    captured.modalOnRequestClose = onRequestClose;
-    return createElement('div', { 'data-modal': 'true' }, children);
-  },
-  Pressable: ({
-    children,
-    onPress,
-    accessibilityLabel,
-  }: {
-    children?: ReactNode;
-    onPress?: () => void;
-    accessibilityLabel?: string;
-  }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
-  ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  TextInput: () => null,
-  View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
-  StyleSheet: { create: (s: Record<string, unknown>) => s, absoluteFill: {}, hairlineWidth: 1 },
-  PixelRatio: { get: () => 2 },
-  useWindowDimensions: () => ({ width: 400, height: 800, fontScale: 1 }),
-}));
+// Drives the rendering branches: which material sits under the overlay, and how
+// tall the window is (a short window forces the action list to scroll, which is
+// what mounts the bottom fade).
+const ctrl = vi.hoisted(() => ({ surfaceMode: 'material' as string, windowHeight: 800 }));
+
+vi.mock('react-native', () => {
+  const flattenStyle = (style: unknown): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    const walk = (entry: unknown) => {
+      if (!entry) return;
+      if (Array.isArray(entry)) {
+        for (const item of entry) walk(item);
+        return;
+      }
+      Object.assign(out, entry);
+    };
+    walk(style);
+    return out;
+  };
+  return {
+    Platform: { OS: 'android', select: (o: Record<string, unknown>) => o.android },
+    Keyboard: { addListener: () => ({ remove: () => {} }) },
+    Modal: ({ children, onRequestClose }: { children?: ReactNode; onRequestClose?: () => void }) => {
+      captured.modalOnRequestClose = onRequestClose;
+      return createElement('div', { 'data-modal': 'true' }, children);
+    },
+    Pressable: ({
+      children,
+      onPress,
+      accessibilityLabel,
+    }: {
+      children?: ReactNode;
+      onPress?: () => void;
+      accessibilityLabel?: string;
+    }) => createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children),
+    ScrollView: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+    TextInput: () => null,
+    View: ({ children, style }: { children?: ReactNode; style?: unknown }) =>
+      createElement('div', { 'data-bg': flattenStyle(style).backgroundColor }, children),
+    StyleSheet: {
+      create: (s: Record<string, unknown>) => s,
+      absoluteFill: {},
+      hairlineWidth: 1,
+      flatten: flattenStyle,
+    },
+    PixelRatio: { get: () => 2 },
+    useWindowDimensions: () => ({ width: 400, height: ctrl.windowHeight, fontScale: 1 }),
+  };
+});
 
 vi.mock('react-native-reanimated', () => ({
   default: { View: ({ children }: { children?: ReactNode }) => createElement('div', null, children) },
@@ -47,8 +75,18 @@ vi.mock('react-native-reanimated', () => ({
   runOnJS: (fn: () => void) => fn,
 }));
 
-vi.mock('@react-native-community/blur', () => ({ BlurView: () => null }));
-vi.mock('expo-linear-gradient', () => ({ LinearGradient: () => null }));
+vi.mock('@react-native-community/blur', () => ({
+  BlurView: () => createElement('div', { 'data-testid': 'blur-view' }),
+}));
+vi.mock('expo-linear-gradient', () => ({
+  LinearGradient: ({ colors }: { colors?: readonly string[] }) => {
+    captured.fadeColors = colors ?? null;
+    return createElement('div', { 'data-testid': 'menu-fade' });
+  },
+}));
+vi.mock('../../../hooks/use-effective-surface-mode', () => ({
+  useEffectiveSurfaceMode: () => ctrl.surfaceMode,
+}));
 vi.mock('react-native-screens', () => ({
   FullWindowOverlay: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
 }));
@@ -69,8 +107,13 @@ vi.mock('../../ListRow', () => ({
   ListRow: ({ title, onPress }: { title: string; onPress?: () => void }) =>
     createElement('button', { onClick: onPress, 'aria-label': title, 'data-listrow': 'true' }, title),
 }));
+// Records the surface contract (role / level / clip) rather than throwing it away:
+// the card's M3 tone and elevation cast are exactly what this component sets.
 vi.mock('../../GlassSurface', () => ({
-  GlassSurface: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  GlassSurface: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => {
+    captured.glassSurfaceProps = props;
+    return createElement('div', { 'data-glass': 'true' }, children);
+  },
 }));
 vi.mock('../../BoardImageNative', () => ({
   BoardImageNative: (props: Record<string, unknown>) => {
@@ -91,12 +134,22 @@ vi.mock('../../../lib/board-details', () => ({
 vi.mock('../../../lib/format-climb-stats', () => ({ formatSends: () => '', formatQuality: () => '' }));
 vi.mock('../../../hooks/use-grade-format', () => ({ useGradeFormat: () => ({ formatGrade: () => 'V4' }) }));
 vi.mock('../../../providers/theme-provider', () => ({
-  useTheme: () => ({ colorScheme: 'dark', systemColors: { fill: '#222', label: '#fff' } }),
+  useTheme: () => ({
+    colorScheme: 'dark',
+    systemColors: { fill: '#222', label: '#fff' },
+    m3SurfaceContainers: { lowest: '#101018', low: '#202028', base: '#303038', high: '#404048', highest: '#505058' },
+  }),
 }));
 vi.mock('../../../theme/animations', () => ({ springs: { gentle: {} }, timing: { fast: 150 } }));
 vi.mock('../../../theme/tokens', () => ({
   spacing: { 1: 4, 2: 8, 3: 12, 5: 20, 6: 24 },
   borderRadius: { lg: 12, xl: 16 },
+  overlays: { scrim: 'rgba(0, 0, 0, 0.6)' },
+}));
+// Tagged rather than re-implemented: the assertions care that the fade is built
+// from the card's own tone, not that we can redo hex→rgba arithmetic in a test.
+vi.mock('../../../theme/colors', () => ({
+  withAlpha: (color: string, alpha: number) => `alpha(${color}, ${alpha})`,
 }));
 
 // The playlist action's run() calls onSelectPlaylist (mirroring the real hook), so
@@ -148,6 +201,10 @@ describe('ClimbReactionMenu view switching', () => {
     captured.modalOnRequestClose = undefined;
     captured.boardImageProps = null;
     captured.ran = undefined;
+    captured.glassSurfaceProps = null;
+    captured.fadeColors = null;
+    ctrl.surfaceMode = 'material';
+    ctrl.windowHeight = 800;
   });
 
   it('runs the action when a primary button is pressed', () => {
@@ -231,5 +288,78 @@ describe('ClimbReactionMenu view switching', () => {
     // From the menu, back dismisses the whole overlay (reduceMotion → immediate).
     act(() => captured.modalOnRequestClose?.());
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels the tap-to-dismiss scrim as a close control, not as the climb', () => {
+    const { queryByLabelText, onClose } = renderMenu();
+    // The climb name would make VoiceOver/TalkBack announce a climb for a button
+    // that closes the overlay.
+    expect(queryByLabelText('Big Move')).toBeNull();
+    const scrim = queryByLabelText('mobile.climbActions.closeOverlay');
+    expect(scrim).not.toBeNull();
+    act(() => fireEvent.click(scrim as Element));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The overlay is an M3 dialog: a modal, scrim-dimming, non-anchored card. On the
+// no-blur paths nothing recedes the board-art grid behind it but the scrim itself.
+describe('ClimbReactionMenu surface treatment', () => {
+  beforeEach(() => {
+    captured.glassSurfaceProps = null;
+    captured.fadeColors = null;
+    ctrl.surfaceMode = 'material';
+    ctrl.windowHeight = 800;
+  });
+
+  it('raises the card to the M3 dialog tone and cast', () => {
+    renderMenu();
+    expect(captured.glassSurfaceProps?.role).toBe('high');
+    expect(captured.glassSurfaceProps?.level).toBe('level3');
+  });
+
+  it('keeps the card clipped so the fade and the picker header stay inside the corners', () => {
+    renderMenu();
+    // GlassSurface hoists this clip off its elevated view, so asking for it no
+    // longer costs the Android cast.
+    expect((captured.glassSurfaceProps?.style as Record<string, unknown>)?.overflow).toBe('hidden');
+  });
+
+  it('dims harder and drops the blur when no blur sits under the overlay', () => {
+    for (const mode of ['material', 'solid']) {
+      ctrl.surfaceMode = mode;
+      const { container, unmount } = renderMenu();
+      expect(container.querySelector('[data-testid="blur-view"]')).toBeNull();
+      expect(container.querySelector('[data-bg="rgba(0, 0, 0, 0.6)"]')).not.toBeNull();
+      unmount();
+    }
+  });
+
+  it('keeps the lighter tint on the blurred paths, where the blur already recedes the board', () => {
+    for (const mode of ['glass', 'blur']) {
+      ctrl.surfaceMode = mode;
+      const { container, unmount } = renderMenu();
+      expect(container.querySelector('[data-testid="blur-view"]')).not.toBeNull();
+      expect(container.querySelector('[data-bg="rgba(0,0,0,0.5)"]')).not.toBeNull();
+      unmount();
+    }
+  });
+
+  it('builds the list fade from the very tone the card is painted with on Material', () => {
+    // Short window → the list is capped and scrolls, which mounts the fade.
+    ctrl.windowHeight = 200;
+    const { container } = renderMenu();
+    expect(container.querySelector('[data-testid="menu-fade"]')).not.toBeNull();
+    const cardTone = { lowest: '#101018', low: '#202028', base: '#303038', high: '#404048', highest: '#505058' }[
+      captured.glassSurfaceProps?.role as string
+    ];
+    expect(captured.fadeColors).toEqual([`alpha(${cardTone}, 0)`, `alpha(${cardTone}, 0.92)`]);
+  });
+
+  it('keeps the tuned constants for the fade on the glass path (no opaque tone to read)', () => {
+    ctrl.surfaceMode = 'glass';
+    ctrl.windowHeight = 200;
+    renderMenu();
+    expect(captured.fadeColors).toEqual(['rgba(20, 17, 31, 0)', 'rgba(20, 17, 31, 0.92)']);
   });
 });

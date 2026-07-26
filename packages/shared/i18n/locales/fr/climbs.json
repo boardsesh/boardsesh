@@ -799,7 +799,8 @@
       "openInApp": "Ouvrir dans l'app Aurora",
       "fork": "Remix this climb",
       "edit": "Modifier la voie",
-      "editEntry": "Modifier l'entrée du carnet"
+      "editEntry": "Modifier l'entrée du carnet",
+      "closeOverlay": "Fermer les actions de la voie"
     },
     "create": {
       "brush": {

@@ -12,25 +12,51 @@ const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
 }));
 
-// Minimal RN surface. View renders a <div> exposing its background colour and
-// pointerEvents so the solid path and tint overlays are inspectable.
-vi.mock('react-native', () => ({
-  Platform: {
-    get OS() {
-      return ctrl.os;
-    },
-  },
-  StyleSheet: {
-    absoluteFill: { position: 'absolute' },
-    create: (styles: unknown) => styles,
-  },
-  View: ({ children, style, pointerEvents }: { children?: ReactNode; style?: unknown; pointerEvents?: string }) => {
-    const flat = Object.assign({}, ...(Array.isArray(style) ? style : [style]).filter(Boolean)) as {
-      backgroundColor?: string;
+// Minimal RN surface. View renders a <div> exposing its background colour, its
+// clip and its elevation so the solid path, the tint overlays and the hoisted
+// clip wrapper are all inspectable.
+vi.mock('react-native', () => {
+  // Resolve a (possibly nested) RN style array down to one object, like the real
+  // StyleSheet.flatten — later entries win, falsy entries are skipped.
+  const flattenStyle = (style: unknown): Record<string, unknown> => {
+    const out: Record<string, unknown> = {};
+    const walk = (entry: unknown) => {
+      if (!entry) return;
+      if (Array.isArray(entry)) {
+        for (const item of entry) walk(item);
+        return;
+      }
+      Object.assign(out, entry);
     };
-    return createElement('div', { 'data-bg': flat.backgroundColor, 'data-pe': pointerEvents }, children);
-  },
-}));
+    walk(style);
+    return out;
+  };
+  return {
+    Platform: {
+      get OS() {
+        return ctrl.os;
+      },
+    },
+    StyleSheet: {
+      absoluteFill: { position: 'absolute' },
+      create: (styles: unknown) => styles,
+      flatten: flattenStyle,
+    },
+    View: ({ children, style, pointerEvents }: { children?: ReactNode; style?: unknown; pointerEvents?: string }) => {
+      const flat = flattenStyle(style);
+      return createElement(
+        'div',
+        {
+          'data-bg': flat.backgroundColor,
+          'data-pe': pointerEvents,
+          'data-overflow': flat.overflow,
+          'data-elevation': flat.elevation,
+        },
+        children,
+      );
+    },
+  };
+});
 
 vi.mock('@react-native-community/blur', () => ({
   BlurView: () => createElement('div', { 'data-testid': 'blur-view' }),
@@ -183,5 +209,46 @@ describe('GlassSurface Material surface-container role', () => {
     const { container } = render(<GlassSurface role="base" fallbackColor="#FFFFFF" />);
     expect(container.querySelector('[data-bg="#303038"]')).not.toBeNull();
     expect(container.querySelector('[data-bg="#FFFFFF"]')).toBeNull();
+  });
+});
+
+// Android draws the elevation cast from the elevated view's own outline, so a
+// consumer `overflow: 'hidden'` on that view clips the shadow away entirely
+// (#3058). GlassSurface hoists the clip onto an inner wrapper instead.
+describe('GlassSurface Material elevation cast vs. a consumer clip', () => {
+  beforeEach(() => {
+    ctrl.variant = 'material';
+  });
+
+  it('keeps the cast off the clipped view: elevated outer is unclipped, children get a clipping wrapper', () => {
+    const { container } = render(
+      <GlassSurface role="high" level="level3" borderRadius={16} style={{ borderRadius: 16, overflow: 'hidden' }}>
+        <div data-testid="card-content" />
+      </GlassSurface>,
+    );
+
+    // The view carrying the cast must not clip.
+    const elevated = container.querySelector('[data-elevation="3"]');
+    expect(elevated).not.toBeNull();
+    expect(elevated?.getAttribute('data-overflow')).toBe('visible');
+
+    // ...and the clip lives on a descendant that still wraps the children.
+    const clip = container.querySelector('[data-overflow="hidden"]');
+    expect(clip).not.toBeNull();
+    expect(elevated?.contains(clip as Node)).toBe(true);
+    expect(clip?.querySelector('[data-testid="card-content"]')).not.toBeNull();
+  });
+
+  it('adds no wrapper when the consumer does not ask for a clip', () => {
+    const { container } = render(
+      <GlassSurface role="high" level="level3" borderRadius={16} style={{ borderRadius: 16 }}>
+        <div data-testid="card-content" />
+      </GlassSurface>,
+    );
+    expect(container.querySelector('[data-overflow="hidden"]')).toBeNull();
+    // Children stay direct descendants of the elevated view — no layout shift for
+    // the consumers that never clipped.
+    const elevated = container.querySelector('[data-elevation="3"]');
+    expect(elevated?.firstElementChild?.getAttribute('data-testid')).toBe('card-content');
   });
 });

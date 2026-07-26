@@ -799,7 +799,8 @@
       "openInApp": "Open in Aurora app",
       "fork": "Remix this climb",
       "edit": "Edit climb",
-      "editEntry": "Edit logbook entry"
+      "editEntry": "Edit logbook entry",
+      "closeOverlay": "Close climb actions"
     },
     "create": {
       "brush": {

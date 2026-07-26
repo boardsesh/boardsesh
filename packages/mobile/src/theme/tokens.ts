@@ -79,8 +79,9 @@ export const shadows = {
  * with the tonal `m3SurfaceContainers` ramp: depth on Material is tone-FIRST,
  * with these casts layered on the components M3 actually shadows (sheet L1, nav/
  * menu L2, dialog/FAB L3+). Level 0 is flat (app-bar-at-rest, filled card). Apply
- * on the SAME view as the background + radius (never under `overflow:'hidden'`,
- * which clips the cast) — see `GlassSurface`'s material branch.
+ * on the same view as the background + radius, and never on a view that also
+ * carries `overflow: 'hidden'` — Android clips the cast away. `GlassSurface`
+ * enforces that for you by hoisting a consumer clip onto an inner wrapper.
  */
 export const materialElevationByLevel = {
   level0: { shadowColor, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0, shadowRadius: 0, elevation: 0 },

@@ -34,7 +34,9 @@ import { useGradeFormat } from '../../hooks/use-grade-format';
 import { useTheme } from '../../providers/theme-provider';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import { springs, timing } from '../../theme/animations';
-import { spacing, borderRadius } from '../../theme/tokens';
+import { spacing, borderRadius, overlays } from '../../theme/tokens';
+import { withAlpha, type MaterialSurfaceContainers } from '../../theme/colors';
+import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { useClimbActions, type ClimbActionId, type ClimbActionItem } from './use-climb-actions';
 import { fitBoardArt, computeReactionBoardMaxSize } from './board-art-fit';
 
@@ -72,14 +74,34 @@ type ClimbReactionMenuProps = {
 // content's horizontal padding); on tablets this caps how wide the floating card gets.
 const PREVIEW_MAX_WIDTH = 400;
 
-// Bottom-edge fade for the scrollable action list — transparent → the scheme's surface
-// base. Concrete rgba, never a systemColors PlatformColor: feeding a PlatformColor into
-// the gradient bakes the wrong scheme (the ProgressiveBlur dark-band bug). The dark value
-// tracks GlassSurface's dark base (#14111F); keep them in sync if that surface changes.
+// The card is a modal, scrim-dimming, non-anchored overlay — an M3 dialog — so on
+// Material it takes the surface-container-high tone and a level-3 cast. Named here
+// because the bottom fade has to read the same tone; see MENU_FADE_COLORS.
+const MENU_CARD_ROLE: keyof MaterialSurfaceContainers = 'high';
+
+// Bottom-edge fade for the scrollable action list — transparent → the card's own
+// surface. Concrete rgba, never a systemColors PlatformColor: feeding a PlatformColor
+// into the gradient bakes the wrong scheme (the ProgressiveBlur dark-band bug). On
+// Material the stops are derived from the very tone GlassSurface paints the card with,
+// so bumping MENU_CARD_ROLE can't leave the fade behind. Glass / blur / solid keep the
+// tuned constants — there is no opaque tone to read there, the card is real glass, and
+// the dark value tracks its #14111F base.
+const MENU_FADE_END_ALPHA = 0.92;
 const MENU_FADE_COLORS = {
-  dark: ['rgba(20, 17, 31, 0)', 'rgba(20, 17, 31, 0.92)'],
-  light: ['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.92)'],
+  dark: ['rgba(20, 17, 31, 0)', `rgba(20, 17, 31, ${MENU_FADE_END_ALPHA})`],
+  light: ['rgba(255, 255, 255, 0)', `rgba(255, 255, 255, ${MENU_FADE_END_ALPHA})`],
 } as const;
+
+// A real blur under the scrim (iOS 26 Liquid Glass, or its < 26 blur fallback) already
+// makes the busy board-art grid recede, so a light tint finishes the dim. With no blur
+// — Android, Reduce Transparency, or the Material variant on iOS — the tint alone lets
+// the grid bleed through and the overlay stops reading as focused, so the scrim has to
+// do the receding itself. Gated on the surface mode GlassSurface switches on, so the
+// scrim and the card never disagree about which material is underneath.
+function resolveScrimColor(hasBlur: boolean, isDark: boolean): string {
+  if (hasBlur) return isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.35)';
+  return isDark ? overlays.scrim : 'rgba(0,0,0,0.4)';
+}
 
 // iOS portals above the persistent queue bar / tab bar via a native window overlay;
 // Android uses a transparent Modal (which also gives a hardware-back handler).
@@ -115,11 +137,12 @@ export function ClimbReactionMenu({
   reduceMotion,
   onClose,
 }: ClimbReactionMenuProps) {
-  const { colorScheme, systemColors } = useTheme();
+  const { colorScheme, systemColors, m3SurfaceContainers } = useTheme();
   const { t } = useTranslation('climbs');
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight, fontScale } = useWindowDimensions();
   const { formatGrade } = useGradeFormat();
+  const surfaceMode = useEffectiveSurfaceMode();
 
   const progress = useSharedValue(0);
   // 'menu' shows the action list; 'playlist' swaps the card to the inline
@@ -333,7 +356,12 @@ export function ClimbReactionMenu({
   // case it scrolls and the bottom fade cues more. The playlist view owns its own scroll.
   const listMaxHeight = Math.max(actionRowHeight, menuMaxHeight - primaryRowHeight);
   const menuScrollable = listContentHeight > listMaxHeight + 0.5;
-  const menuFadeColors = colorScheme === 'dark' ? MENU_FADE_COLORS.dark : MENU_FADE_COLORS.light;
+  const isDark = colorScheme === 'dark';
+  const menuFadeColors = useMemo<readonly [string, string]>(() => {
+    if (surfaceMode !== 'material') return isDark ? MENU_FADE_COLORS.dark : MENU_FADE_COLORS.light;
+    const cardTone = m3SurfaceContainers[MENU_CARD_ROLE];
+    return [withAlpha(cardTone, 0), withAlpha(cardTone, MENU_FADE_END_ALPHA)];
+  }, [surfaceMode, isDark, m3SurfaceContainers]);
 
   const backdropStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
   const previewStyle = useAnimatedStyle(() => ({
@@ -345,7 +373,8 @@ export function ClimbReactionMenu({
     transform: [{ translateY: (1 - progress.value) * 18 }, { scale: 0.96 + progress.value * 0.04 }],
   }));
 
-  const scrimColor = colorScheme === 'dark' ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.35)';
+  const hasBlur = surfaceMode === 'glass' || surfaceMode === 'blur';
+  const scrimColor = resolveScrimColor(hasBlur, isDark);
 
   return (
     <OverlayPortal onRequestClose={handleRequestClose}>
@@ -354,9 +383,9 @@ export function ClimbReactionMenu({
             the menu first (matching the back button), and dismisses from the menu
             — so a stray tap can't tear down a half-typed create form. */}
         <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
-          {Platform.OS === 'ios' ? (
+          {hasBlur ? (
             <BlurView
-              blurType={colorScheme === 'dark' ? 'dark' : 'light'}
+              blurType={isDark ? 'dark' : 'light'}
               blurAmount={12}
               reducedTransparencyFallbackColor={scrimColor}
               style={StyleSheet.absoluteFill}
@@ -367,7 +396,7 @@ export function ClimbReactionMenu({
             style={StyleSheet.absoluteFill}
             onPress={handleRequestClose}
             accessibilityRole="button"
-            accessibilityLabel={climb.name}
+            accessibilityLabel={t('mobile.climbActions.closeOverlay')}
           />
         </Animated.View>
 
@@ -433,7 +462,7 @@ export function ClimbReactionMenu({
           </Animated.View>
 
           <Animated.View style={[styles.menuWrap, menuStyle]}>
-            <GlassSurface role="base" level="level2" borderRadius={borderRadius.xl} style={styles.menuCard}>
+            <GlassSurface role={MENU_CARD_ROLE} level="level3" borderRadius={borderRadius.xl} style={styles.menuCard}>
               {view === 'playlist' ? (
                 // The picker pins its own header and scrolls the list within
                 // menuMaxHeight, so "back" stays put however far you scroll.
@@ -472,14 +501,17 @@ export function ClimbReactionMenu({
                     keyboardShouldPersistTaps="handled"
                     contentContainerStyle={styles.menuContent}
                   >
-                    {listActions.map((action, index) => (
+                    {/* Dividerless, like an M3 action list and an iOS context menu —
+                        the rows already read as separate targets, and hairlines under
+                        a scrolling list fight the bottom fade. Icons at 24 to match
+                        the primary row above. */}
+                    {listActions.map((action) => (
                       <ListRow
                         key={action.id}
                         title={action.title}
-                        leading={<Icon name={action.icon} size={22} color={action.color} />}
+                        leading={<Icon name={action.icon} size={24} color={action.color} />}
                         onPress={action.run}
-                        showSeparator={index < listActions.length - 1}
-                        separatorInset={56}
+                        showSeparator={false}
                       />
                     ))}
                   </ScrollView>
@@ -590,6 +622,9 @@ const styles = StyleSheet.create({
     maxWidth: PREVIEW_MAX_WIDTH,
     alignSelf: 'center',
   },
+  // The clip keeps the scrolling list, its bottom fade and the playlist picker's
+  // pinned header inside the rounded corners. GlassSurface hoists it onto an inner
+  // wrapper on Material so it can't clip the card's own elevation cast.
   menuCard: {
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
