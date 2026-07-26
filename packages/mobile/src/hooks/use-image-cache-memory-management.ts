@@ -41,10 +41,11 @@ export const IMAGE_MEMORY_CACHE_MAX_BYTES = 256 * 1024 * 1024;
 export function useImageCacheMemoryManagement(): void {
   const isBackgrounded = useIsAppBackgrounded();
 
-  // iOS-only: expo-image's Android module exposes no `configureCache`, so the
-  // call would throw. Android bounds Glide by its own device-RAM-derived policy
-  // plus the native `modules/memory-trim` full-clear (see
-  // docs/react-native-performance.md §7).
+  // iOS-only. expo-image declares `configureCache` `@platform ios` and its Android
+  // module defines no such function, so calling it off iOS fails at the bridge
+  // rather than quietly no-opping. Android bounds Glide by its own
+  // device-RAM-derived policy plus the native `modules/memory-trim` full-clear
+  // (docs/react-native-performance.md §7); web has no native cache to configure.
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
     Image.configureCache({ maxMemoryCost: IMAGE_MEMORY_CACHE_MAX_BYTES });

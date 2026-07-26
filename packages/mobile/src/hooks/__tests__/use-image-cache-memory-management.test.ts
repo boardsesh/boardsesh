@@ -79,9 +79,11 @@ describe('image memory cache ceiling', () => {
     expect(configureCache).toHaveBeenCalledTimes(1);
   });
 
-  it('does not configure the cache on Android', () => {
-    // expo-image's Android module has no configureCache — calling it throws.
-    platform.OS = 'android';
+  it.each(['android', 'web'])('does not configure the cache on %s', (os) => {
+    // expo-image declares configureCache @platform ios: the Android module defines
+    // no such function, and web has no native cache behind it. The guard is
+    // `!== 'ios'`, so both non-iOS targets must stay silent.
+    platform.OS = os;
     renderHook(() => useImageCacheMemoryManagement());
     expect(configureCache).not.toHaveBeenCalled();
   });

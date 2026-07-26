@@ -43,6 +43,12 @@ function WallHeroStageComponent({
   // show most. Same pairing as SwipeBoardCarousel; `useNativeClimbRender` clamps to
   // native width, so a large kiosk that already draws the board above native
   // resolution is unchanged. Refs #3803.
+  //
+  // Not memoized, unlike the carousel's equivalent: that one derives from a
+  // `boardBox` OBJECT, so `useMemo` is what keeps its identity stable. This derives
+  // from the `artWidth` number and feeds a number prop, and a number compares equal
+  // by value in the memo'd child's shallow compare — a `useMemo` here would add a
+  // dependency array to guard nothing.
   const overlayRenderWidth = artWidth > 0 ? Math.round(artWidth * PixelRatio.get()) : undefined;
   return (
     <View style={[styles.root, { width: artWidth, height: artHeight, backgroundColor: systemColors.background }]}>

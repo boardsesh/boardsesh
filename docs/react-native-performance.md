@@ -274,7 +274,8 @@ uptime (#3803). Four contracts keep them in check:
   expo-image does not override it, so an app that never calls `Image.configureCache()` runs an
   unbounded image memory cache and only ever reclaims at a background or `memoryWarning` seam.
   `useImageCacheMemoryManagement` sets `maxMemoryCost` (`IMAGE_MEMORY_CACHE_MAX_BYTES`, 256 MB) once
-  at startup. iOS-only: expo-image's Android module exposes no `configureCache` and the call throws.
+  at startup. iOS-only: expo-image declares `configureCache` `@platform ios` and defines no Android
+  counterpart, so calling it off iOS fails at the bridge rather than quietly no-opping.
   Prefer this over any periodic wipe — NSCache enforces it continuously, and because eviction drops
   only the _cache's_ reference (a bitmap a mounted view displays is retained by
   `UIImageView.image`/`CALayer.contents`), it can never blank on-screen art or force a reload.
