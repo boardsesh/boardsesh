@@ -101,13 +101,17 @@ export const HOLD_STATE_MAP: Record<BoardName, Record<HoldCode, HoldStateInfo>> 
   // Values 45-48 are additional live-BLE preview roles emitted by the ESP32 dev firmware.
   moonboard: {
     42: { name: 'STARTING', color: '#00FF00', displayColor: '#44FF44' },
-    // displayColorDark: #4444FF is only 3.05:1 against the dark play field, and
-    // once the black MoonBoard hold art is lightened for dark mode (see
-    // scripts/generate-dark-board-art.ts) a hand ring crossing one of those
-    // holds loses its luminance separation entirely. #6E7DFF is 5.24:1 against
-    // the field and stays 1.66:1 clear of the lightened art. The LED colour
-    // (#0000FF) is untouched.
-    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', displayColorDark: '#6E7DFF' },
+    // displayColorDark: a hand ring in dark mode has to read against FOUR things —
+    // the play field, the elevated card, the pale set A holds, and the black set B
+    // holds once they are lifted for dark mode (scripts/generate-dark-board-art.ts).
+    // No single blue clears them all: the best achievable worst case is 1.58:1,
+    // because a colour dark enough to sit against the pale sheets is too close to
+    // the field, and vice versa. #6C6CE8 is the blue that gets nearest to that
+    // ceiling (worst case 1.57:1, vs 1.12:1 for the light-mode #4444FF), so it is a
+    // strict improvement rather than a solution. Marker legibility is genuinely
+    // fixed by a two-tone casing that does not depend on the backdrop at all —
+    // tracked in #3913. The LED colour (#0000FF) is untouched.
+    43: { name: 'HAND', color: '#0000FF', displayColor: '#4444FF', displayColorDark: '#6C6CE8' },
     44: { name: 'FINISH', color: '#FF0000', displayColor: '#FF3333' },
     45: { name: 'FOOT', color: '#00FFFF', displayColor: '#66F0FF' },
     46: { name: 'AUX', color: '#FFE066', displayColor: '#FFE066', renderStyle: 'above-marker' },

@@ -135,7 +135,7 @@ export const MOONBOARD_SIZE = {
 // @boardsesh/board-constants — a drift test in that package enforces it.
 export const MOONBOARD_HOLD_STATES = {
   start: { name: 'STARTING' as const, color: '#00FF00', displayColor: '#44FF44' },
-  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF', displayColorDark: '#6E7DFF' },
+  hand: { name: 'HAND' as const, color: '#0000FF', displayColor: '#4444FF', displayColorDark: '#6C6CE8' },
   finish: { name: 'FINISH' as const, color: '#FF0000', displayColor: '#FF3333' },
 } as const;
 

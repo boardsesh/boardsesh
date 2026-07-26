@@ -20,10 +20,20 @@
  * collapses the lit-climb markers (the green start ring drops from 13.57:1 to 1.09:1
  * against a yellow field) — we lift *only* the offending layers, and only in dark mode.
  *
- * The transform is a per-channel linear remap of the visible pixels into `[lo, hi]`,
- * leaving alpha untouched. It is a floor-lift, not a flat fill: each hold keeps its
- * internal shading, so black plastic still reads as a moulded hold rather than a flat
- * sticker (which is what `expo-image`'s `tintColor` / `PorterDuff.SRC_IN` would give).
+ * Two transforms, because the two kinds of layer are genuinely different:
+ *
+ *   `tint`  — the coordinate-label sheets carry exactly ONE colour value (#000000; every
+ *             soft edge lives in the alpha channel, not the RGB). A range would be dead
+ *             config, so these get a single grey and say so.
+ *   `curve` — the black hold sheets DO carry modelling, but it is crushed against black:
+ *             the body inter-quartile range is only 16 levels out of 255. A plain linear
+ *             remap compresses that further (16 -> 10) and the holds come out looking like
+ *             flat stickers, which is exactly the failure mode that ruled out `expo-image`
+ *             `tintColor` / `PorterDuff.SRC_IN` in the first place. A gamma < 1 expands the
+ *             dark end instead, so the shipped sheets end up with MORE visible modelling
+ *             than the source (body IQR 16 -> 29).
+ *
+ * Alpha is never touched by either transform.
  *
  * The output files are committed. `scripts/sync-mobile-board-backgrounds.sh` derives a
  * manifest key per file path, so `holdsetb.dark.webp` becomes its own key with no
@@ -50,46 +60,75 @@ const IMAGES_DIR = path.join(ROOT_DIR, 'packages/web/public/images');
 /** Suffix that marks a dark-mode sibling. Must match `DARK_VARIANT_SUFFIX` in background-image-cache.ts. */
 const DARK_SUFFIX = '.dark.webp';
 
-type RemapRange = {
-  /** Output value for a source channel of 0 (the black floor gets lifted to here). */
-  readonly floor: number;
-  /** Output value for a source channel of 255. */
-  readonly ceiling: number;
-};
+/**
+ * Reference backgrounds these values were tuned against, sampled from real device
+ * screenshots rather than assumed: `#221A33` is the elevated card the board preview and
+ * the list thumbnails sit on, `#140E1E` is the play-view field. The card is the brighter
+ * of the two, so it is the worst case for art we are lifting *up*, and every ratio quoted
+ * below is against it.
+ */
+export const REFERENCE_CARD = '#221A33';
+/** Play-view field, the darker of the two surfaces the art composites onto. */
+export const REFERENCE_PLAY_FIELD = '#140E1E';
+
+type Transform =
+  | {
+      readonly kind: 'tint';
+      /** Single grey every visible pixel becomes. */
+      readonly value: number;
+    }
+  | {
+      readonly kind: 'curve';
+      readonly floor: number;
+      readonly ceiling: number;
+      /** < 1 expands the dark end, which is where all of this art's detail lives. */
+      readonly gamma: number;
+    };
 
 /**
- * The grid frame and the A-K / 1-18 coordinate labels. 100% pure `#000000`, and the
- * most-referenced pixels on a MoonBoard — beta is spoken as "F5 start, K13 finish", so
- * these are text-equivalent and get the higher floor: 5.4:1 mean against the dark field,
- * clearing WCAG AA for body text with margin. (Mean over visible pixels is a deliberately
- * conservative measure — antialiased glyph edges drag it down and the solid strokes sit
- * well above it.)
+ * The A-K / 1-18 coordinate labels. Not a grid — these sheets are 0.39% opaque with no run
+ * longer than a glyph, i.e. lettering only. Every visible pixel is exactly `#000000`
+ * (one unique value; the soft edges are alpha), so this is a tint and pretending otherwise
+ * would be dead config.
+ *
+ * They are the most-referenced pixels on a MoonBoard — beta is spoken as "F5 start, K13
+ * finish" — so they are text-equivalent. `#A8A8A8` is 7.0:1 against the card as authored;
+ * 1-2px glyph stems lose some of that to antialiasing when rendered, landing comfortably
+ * past the 4.5:1 AA bar rather than just scraping it.
  */
-const FRAME_REMAP: RemapRange = { floor: 140, ceiling: 240 };
+const LABEL_TINT: Transform = { kind: 'tint', value: 0xa8 };
 
 /**
- * The black plastic hold sheets. Lifted to 3.2:1 against the dark field (WCAG 1.4.11 for
- * non-text) while staying 2.3:1 *darker* than the pale set A sheets. Both bounds bind: a
- * higher floor buys field contrast but collapses the black-vs-pale distinction, which is a
- * real MoonBoard product fact and the only one that survives colour-vision deficiency.
- * 92/175 is the range that clears 3:1 on all three sheets with the most separation left
- * over — see scripts/generate-dark-board-art.test.ts, which pins both bounds.
+ * The black plastic hold sheets.
+ *
+ * These cannot hit 3:1 against the background AND stay clearly darker than the pale set A
+ * sheets, and that is arithmetic, not tuning: both hold families sit on ONE background, so
+ * the best achievable `min(hold-vs-card, hold-vs-paleA)` is **2.49:1**, at body luminance
+ * Y=0.107. Chasing WCAG 1.4.11's 3:1 against the card would push the black sheets to within
+ * 2.0:1 of the pale ones and start dissolving the black-vs-pale distinction — a real
+ * MoonBoard product fact, and the only cue that survives colour-vision deficiency.
+ *
+ * So this sits deliberately near that optimum: body median 2.58:1 against the card and
+ * 2.40:1 against pale set A, up from 1.17:1 before. gamma 0.5 over a wide 56-250 band also
+ * takes the body inter-quartile range from 16 levels in the source to 29 in the output, so
+ * the holds read as moulded rather than as flat silhouettes. All three bounds are pinned by
+ * scripts/generate-dark-board-art.test.ts.
  */
-const BLACK_HOLD_REMAP: RemapRange = { floor: 92, ceiling: 175 };
+const BLACK_HOLD_CURVE: Transform = { kind: 'curve', floor: 56, ceiling: 250, gamma: 0.5 };
 
 type ArtGroup = {
-  readonly remap: RemapRange;
+  readonly transform: Transform;
   /** Paths relative to packages/web/public/images, full-resolution variant. */
   readonly sources: readonly string[];
 };
 
 const ART_GROUPS: readonly ArtGroup[] = [
   {
-    remap: FRAME_REMAP,
+    transform: LABEL_TINT,
     sources: ['moonboard/moonboard-bg.webp', 'moonboard/minimoonboard-bg.webp'],
   },
   {
-    remap: BLACK_HOLD_REMAP,
+    transform: BLACK_HOLD_CURVE,
     sources: [
       'moonboard/moonboard2016/holdsetb.webp',
       'moonboard/moonboardmasters2017/holdsetb.webp',
@@ -131,24 +170,31 @@ function darkVariantPath(relativePath: string): string {
 }
 
 /**
- * Linear per-channel remap of visible pixels into [floor, ceiling], alpha preserved.
+ * Apply a group's transform to every visible pixel, alpha preserved.
  *
  * Fully transparent pixels are skipped: their RGB is meaningless but webp still stores
  * it, and rewriting it would churn the encoder output for no visual change.
  */
-async function renderDarkVariant(absoluteSource: string, remap: RemapRange): Promise<Buffer> {
+async function renderDarkVariant(absoluteSource: string, transform: Transform): Promise<Buffer> {
   const { data, info } = await sharp(absoluteSource).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 
   if (info.channels !== 4) {
     throw new Error(`Expected RGBA for ${absoluteSource}, got ${info.channels} channels`);
   }
 
-  const span = remap.ceiling - remap.floor;
+  const mapChannel =
+    transform.kind === 'tint'
+      ? () => transform.value
+      : (channel: number) => {
+          const span = transform.ceiling - transform.floor;
+          return transform.floor + Math.round((channel / 255) ** transform.gamma * span);
+        };
+
   for (let offset = 0; offset < data.length; offset += 4) {
     if (data[offset + 3] === 0) continue;
-    data[offset] = remap.floor + Math.round((data[offset] / 255) * span);
-    data[offset + 1] = remap.floor + Math.round((data[offset + 1] / 255) * span);
-    data[offset + 2] = remap.floor + Math.round((data[offset + 2] / 255) * span);
+    data[offset] = mapChannel(data[offset]);
+    data[offset + 1] = mapChannel(data[offset + 1]);
+    data[offset + 2] = mapChannel(data[offset + 2]);
   }
 
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
@@ -170,7 +216,7 @@ async function main(): Promise<void> {
 
       const relativeTarget = darkVariantPath(relativeSource);
       const absoluteTarget = path.join(IMAGES_DIR, relativeTarget);
-      const rendered = await renderDarkVariant(absoluteSource, group.remap);
+      const rendered = await renderDarkVariant(absoluteSource, group.transform);
 
       const existing = existsSync(absoluteTarget) ? await readFile(absoluteTarget) : null;
       if (existing?.equals(rendered)) continue;

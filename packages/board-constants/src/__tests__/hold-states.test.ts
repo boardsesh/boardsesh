@@ -227,7 +227,7 @@ describe('getHoldDisplayColor', () => {
   it('prefers displayColorDark in dark mode, displayColor in light', () => {
     const hand = HOLD_STATE_MAP.moonboard[43];
     expect(getHoldDisplayColor(hand, 'light')).toBe('#4444FF');
-    expect(getHoldDisplayColor(hand, 'dark')).toBe('#6E7DFF');
+    expect(getHoldDisplayColor(hand, 'dark')).toBe('#6C6CE8');
   });
 
   it('defaults to light when no scheme is given', () => {

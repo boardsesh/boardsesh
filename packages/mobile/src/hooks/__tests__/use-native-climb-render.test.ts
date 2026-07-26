@@ -306,7 +306,7 @@ describe('_getBoardConfigForTests', () => {
     expect(asRecord(lightMap[43])?.color).toBe('#4444FF');
     // #4444FF is only 3.05:1 against the dark play field and collides with the
     // lightened black hold art; #6E7DFF clears both.
-    expect(asRecord(darkMap[43])?.color).toBe('#6E7DFF');
+    expect(asRecord(darkMap[43])?.color).toBe('#6C6CE8');
     // Roles without a dark override are identical in both schemes.
     expect(asRecord(darkMap[42])?.color).toBe(asRecord(lightMap[42])?.color);
     expect(asRecord(darkMap[44])?.color).toBe(asRecord(lightMap[44])?.color);
