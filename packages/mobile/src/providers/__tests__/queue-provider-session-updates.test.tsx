@@ -1989,16 +1989,16 @@ describe('QueueProvider mutation-failure resync', () => {
     // replaced the queue. Collapsing them would either delay the pacing hint or
     // leave the queue silently swapped underneath the climber.
     //
-    // What this assertion actually guarantees: exactly these two toasts fire and
-    // nothing else. Deleting either one turns it red, so neither can regress.
+    // What this assertion guarantees: the toast identities, the count, and the
+    // observed order. Break any of the three and it goes red.
     //
-    // What it does NOT firmly guarantee, despite reading like it does: the
-    // ORDER. That holds only because the fallback resync awaits an HTTP
-    // round-trip, so anything toasted synchronously from dispatchSetCurrent's
-    // catch necessarily lands first. Rewriting the catch to toast from a .then()
-    // AFTER the recovery still passes this assertion. If reconciliation ever
-    // becomes synchronous, pin the order with explicit call-index assertions
-    // rather than trusting this one.
+    // What it does NOT pin is WHERE the first toast is emitted from. Rewriting
+    // dispatchSetCurrent's catch to toast from a .then() after the recovery
+    // still passes, because the competing toast sits behind the fallback
+    // resync's un-awaited HTTP round-trip and lands second either way. So the
+    // order here is real but structurally incidental — it falls out of the
+    // async shape rather than being enforced. If reconciliation ever becomes
+    // synchronous, re-derive this rather than assuming it still holds.
     expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual([
       'mobile.queue.rateLimited',
       'mobile.queue.outOfSyncRefreshed',
