@@ -26,6 +26,13 @@ export type ClimbCatalogPresence = 'catalog' | 'alias' | 'unknown';
  * (PRIMARY KEY (board_type, alias_uuid)). The alias probe only runs when the
  * board_climbs probe misses, so the hot path is a single PK lookup.
  *
+ * board_climbs.uuid alone is the PK, so the board_type predicate does nothing
+ * for uniqueness — it is a correctness filter, not an index hint. A tick names
+ * a (boardType, climbUuid) PAIR and board_climb_stats is keyed on that pair, so
+ * a Kilter UUID arriving under boardType 'tension' has to resolve `unknown`
+ * rather than quietly matching the Kilter row. The recompute's seed guard and
+ * owner CTE filter on both columns for the same reason.
+ *
  * Reads the PRIMARY, not dbRead, and that is the whole point: a climb published
  * seconds before the tick could still be in flight to a replica, and a lagging
  * replica would report a real climb as `unknown`. The tick saves either way, but

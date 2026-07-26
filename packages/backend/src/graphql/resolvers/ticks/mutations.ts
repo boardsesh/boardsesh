@@ -537,13 +537,20 @@ export const tickMutations = {
 
     // Observation only — never rejects, never throws. See the function's docs.
     //
-    // Started here but settled at the bottom of the resolver, so its lookup
-    // overlaps the board/session resolution and the insert that follow instead
-    // of adding a serial round-trip to the hot path. Deliberately not
-    // fire-and-forget: settling it keeps the counter deterministic (a test can
-    // assert the event fired, or didn't, without polling) and leaves no promise
-    // dangling past the request. It self-catches, so awaiting it cannot fail
-    // the tick.
+    // Started here but settled after the insert below, so its lookup overlaps
+    // the board/session resolution and the transaction instead of adding a
+    // serial round-trip to the hot path. Deliberately not fire-and-forget:
+    // settling it keeps the counter deterministic, so a test can assert the
+    // event fired — or, more to the point, that it did NOT fire for a
+    // deduped-away alias UUID. It self-catches, so awaiting it cannot fail the
+    // tick.
+    //
+    // If something between here and the await throws (a beta-link rejection,
+    // the transaction), the promise is abandoned unsettled. That's deliberate,
+    // not an oversight: the observation is about ticks that get SAVED, and a
+    // tick that failed shouldn't move a counter measuring saved-tick UUIDs.
+    // Nothing leaks — the helper never rejects, so an abandoned promise is
+    // inert.
     const catalogPresenceReport = reportTickClimbCatalogPresence(
       userId,
       validatedInput.boardType,
@@ -750,9 +757,8 @@ export const tickMutations = {
 
     // Settle the catalog observation started before the board/session lookups.
     // By now it has overlapped every round-trip above, so this is a no-op wait
-    // in practice — it exists so the counter is deterministic and no promise
-    // outlives the request. Placed before the early returns below so it covers
-    // every exit path from here on.
+    // in practice — it exists so the counter is deterministic. Placed before
+    // the early returns below so it covers every path that saves a tick.
     await catalogPresenceReport;
 
     if (!tick) {
