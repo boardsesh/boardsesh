@@ -781,6 +781,9 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
     expect(queueMutations.setQueue).toHaveBeenCalledTimes(2);
     expect(queueSnapshotStore.clearStoredQueueSnapshot).not.toHaveBeenCalled();
+    // One guarded FullSync so far, so one event — a re-seed that goes on to
+    // reject still counts, since the FullSync really was guarded into a write.
+    expect(guardedTrackCalls()).toHaveLength(1);
 
     // A later reconnect's empty FullSync retries the push, since the guard is
     // still armed for this session.
@@ -795,5 +798,10 @@ describe('QueueProvider session-seed failure guard (#3878)', () => {
     expect(queueMutations.setQueue).toHaveBeenCalledTimes(3);
     expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1', 'q2']);
     expect(queueSnapshotStore.clearStoredQueueSnapshot).toHaveBeenCalled();
+    // Two genuine empty FullSyncs were guarded into two writes, so two events.
+    // This is the one re-seed path where the count legitimately climbs — pinning
+    // it stops a future "just count once per session" shortcut from silently
+    // undercounting the retry that a rejected re-seed depends on.
+    expect(guardedTrackCalls()).toHaveLength(2);
   });
 });
