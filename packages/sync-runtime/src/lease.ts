@@ -131,9 +131,29 @@ export class DaemonLease {
   }
 
   private async beat(): Promise<void> {
+    // stop() may have run between this tick being scheduled and firing.
+    if (!this.held) return;
+
     try {
       const stillOurs = await this.io.acquireOrRenew();
-      if (!stillOurs && this.held) {
+
+      // stop() ran while the renew was in flight. Its DELETE may have landed
+      // BEFORE this upsert, in which case the renew just re-created the row we
+      // were trying to give up — a zombie holding the lease under a dead
+      // process's id, blocking the incoming instance for a full TTL instead of
+      // the milliseconds the SIGTERM release exists to buy. Undo it.
+      if (!this.held) {
+        if (stillOurs) {
+          try {
+            await this.io.release();
+          } catch (error) {
+            this.onError(error);
+          }
+        }
+        return;
+      }
+
+      if (!stillOurs) {
         this.held = false;
         this.stopHeartbeat();
         this.log(

@@ -134,6 +134,74 @@ describe('DaemonLease', () => {
     expect(lease.isHeld()).toBe(false);
   });
 
+  it('a heartbeat that lands mid-shutdown does not resurrect the released row', async () => {
+    // SIGTERM race: stop() deletes the row while a heartbeat upsert is already
+    // in flight. If that upsert lands after the DELETE it re-creates the lease
+    // under a dying process's holder id, and the incoming container waits out a
+    // full TTL instead of the milliseconds the release exists to buy.
+    let heartbeat: (() => void) | null = null;
+    let resolveRenew: ((held: boolean) => void) | null = null;
+    const release = vi.fn().mockResolvedValue(undefined);
+    const acquireOrRenew = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveRenew = resolve;
+          }),
+      );
+
+    const lease = new DaemonLease(
+      'test-daemon',
+      { acquireOrRenew, release },
+      {
+        setInterval: (handler) => {
+          heartbeat = handler;
+          return 0 as unknown as ReturnType<typeof setInterval>;
+        },
+        clearInterval: vi.fn(),
+      },
+    );
+
+    await lease.acquire();
+    heartbeat!(); // renew now parked in flight
+    await lease.stop(); // releases while that renew is still pending
+    expect(release).toHaveBeenCalledTimes(1);
+
+    // The parked renew resolves as "we still hold it" — i.e. it re-created the
+    // row after the DELETE. A compensating release must clear the zombie.
+    resolveRenew!(true);
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(2));
+    expect(lease.isHeld()).toBe(false);
+  });
+
+  it('a heartbeat scheduled before stop() never fires a renew after it', async () => {
+    const release = vi.fn().mockResolvedValue(undefined);
+    const acquireOrRenew = vi.fn().mockResolvedValue(true);
+    let heartbeat: (() => void) | null = null;
+    const lease = new DaemonLease(
+      'test-daemon',
+      { acquireOrRenew, release },
+      {
+        setInterval: (handler) => {
+          heartbeat = handler;
+          return 0 as unknown as ReturnType<typeof setInterval>;
+        },
+        clearInterval: vi.fn(),
+      },
+    );
+
+    await lease.acquire();
+    await lease.stop();
+    acquireOrRenew.mockClear();
+
+    // A timer callback already queued when stop() ran must be a no-op.
+    heartbeat!();
+    await Promise.resolve();
+    expect(acquireOrRenew).not.toHaveBeenCalled();
+  });
+
   it('a failed release is reported, not thrown, so shutdown still completes', async () => {
     const onError = vi.fn();
     const lease = new DaemonLease(
