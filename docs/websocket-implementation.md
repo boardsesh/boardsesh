@@ -506,12 +506,12 @@ Explicit UI actions still leave or end sessions immediately: `leaveSession` remo
 
 #### Leave vs. end on the client (#3502)
 
-Both platforms expose leave and end as distinct actions. Which one a surface *leads with* is a client concern — the server authorizes each independently.
+Both platforms expose leave and end as distinct actions. Which one a surface _leads with_ is a client concern — the server authorizes each independently.
 
 The subtlety: **one signed-in climber on two devices is a single participant.** `joinSession` resolves `participantId = client.userId || connectionId` (`room-manager/client-lifecycle.ts`), so two phones share one participant entry and one roster row. Every roster-derived signal is therefore participant-scoped and structurally cannot see the second device:
 
 - `SessionUser.isLeader` is the OR of leadership across a participant's connections (`upsertLocalParticipant` keeps it sticky-true), and the `SessionRosterSnapshot` branch in `@boardsesh/queue-runtime` re-derives the client's own `isLeader` from that row. A second device is therefore told `isLeader: true` by its very first roster snapshot, even though its connection is not the leader. **Do not build device-level UI on `isLeader`.**
-- `LocalSessionParticipant.connectionIds` (and its Redis equivalent) does distinguish connections, but is deliberately not exposed over GraphQL. It answers "how many sockets does this human hold right now", which flaps with screen locks and reconnects — and a stale value degrades toward offering the *destructive* action.
+- `LocalSessionParticipant.connectionIds` (and its Redis equivalent) does distinguish connections, but is deliberately not exposed over GraphQL. It answers "how many sockets does this human hold right now", which flaps with screen locks and reconnects — and a stale value degrades toward offering the _destructive_ action.
 
 Mobile instead keys the **emphasis** on device provenance (`session-store.ts` records the id of the session this device created) and the **availability** of End on `Session.createdByUserId` (member-only; redacted for the non-member preview). Provenance decides which action leads, never which actions exist — so losing it to a reinstall costs a creator the End-first default and nothing else.
 
