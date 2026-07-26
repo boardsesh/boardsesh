@@ -35,7 +35,7 @@
     "lint-fix": "vp lint --fix"
   },
   "dependencies": {
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0"
   },
