@@ -826,6 +826,12 @@ export function useNativeClimbRender(params: NativeClimbRenderParams): NativeCli
     holdShapeOverrides,
     brushThickness,
     shapeSize,
+    // renderSignature already subsumes holdRenderSignature and colorScheme for
+    // change detection (it is derived from both), so those two look redundant
+    // here. They are listed because the effect body genuinely READS them —
+    // holdRenderSignature for the unsupportedRenderSignatures capability check,
+    // which must stay scheme-independent, and colorScheme for getBoardConfig.
+    // Dropping them would leave the array wrong the day the disable above is lifted.
     holdRenderSignature,
     renderSignature,
     colorScheme,
