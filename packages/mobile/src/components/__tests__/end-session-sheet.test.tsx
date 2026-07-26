@@ -326,6 +326,30 @@ describe('EndSessionSheet', () => {
     });
   });
 
+  // Device provenance resolves asynchronously, so `defaultMode` can change a
+  // beat after the sheet is already open. Re-arming on that change would yank
+  // the sheet out from under someone who has already tapped through.
+  it('does not reset the chosen mode when defaultMode resolves late while open', () => {
+    const { container, rerender } = render(<EndSessionSheet {...makeProps({ defaultMode: 'end' })} />);
+    fireEvent.click(button(container, 'mobile.queue.leaveInsteadAction')!);
+    expect(button(container, 'mobile.queue.leaveSessionAction')).not.toBeNull();
+
+    // Provenance lands and flips the caller's preferred default.
+    rerender(<EndSessionSheet {...makeProps({ defaultMode: 'end' })} />);
+    expect(button(container, 'mobile.queue.leaveSessionAction')).not.toBeNull();
+    expect(button(container, 'mobile.queue.endSession')).toBeNull();
+  });
+
+  it('re-arms to the default the next time it opens', () => {
+    const { container, rerender } = render(<EndSessionSheet {...makeProps({ defaultMode: 'end' })} />);
+    fireEvent.click(button(container, 'mobile.queue.leaveInsteadAction')!);
+    expect(button(container, 'mobile.queue.endSession')).toBeNull();
+
+    rerender(<EndSessionSheet {...makeProps({ visible: false, defaultMode: 'end' })} />);
+    rerender(<EndSessionSheet {...makeProps({ visible: true, defaultMode: 'end' })} />);
+    expect(button(container, 'mobile.queue.endSession')).not.toBeNull();
+  });
+
   it('offers "just leave instead" from end mode, so ending is never the only exit', () => {
     const onLeave = vi.fn();
     const { container } = render(<EndSessionSheet {...makeProps({ onLeave })} />);

@@ -47,9 +47,13 @@ export function useSessionExitOptions(): SessionExitOptions {
   const { sessionUsers } = useQueueLiveStats();
   const { data: ownerUserId } = useSessionOwnerUserId(sessionId ?? undefined);
 
-  const [createdSessionId, setCreatedSessionId] = useState<string | null>(null);
+  // `undefined` = the SecureStore read hasn't landed yet, which is distinct from
+  // `null` = read, and this device didn't start anything. The difference decides
+  // the first frame's emphasis (see the fallback in the memo below).
+  const [createdSessionId, setCreatedSessionId] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
+    setCreatedSessionId(undefined);
     void getStoredCreatedSessionId().then((stored) => {
       if (!cancelled) setCreatedSessionId(stored);
     });
@@ -71,14 +75,24 @@ export function useSessionExitOptions(): SessionExitOptions {
   return useMemo(() => {
     const isKnownForeign = ownerUserId != null && selfUserId != null && ownerUserId !== selfUserId;
     const canEnd = !isKnownForeign;
+    // Honest — stays false until the read lands, so the analytics split doesn't
+    // count an unresolved device as the one that started the session.
     const startedOnThisDevice = createdSessionId != null && createdSessionId === sessionId;
+    // Emphasis while the read is still in flight. Falling back to `end` keeps
+    // the first frame byte-identical to the pre-#3502 chrome, so a creator (the
+    // common case) never sees the control change identity under their thumb.
+    // The joiner's brief red Stop is safe: `canEnd` is computed independently of
+    // provenance, so a known-foreign participant is still refused the End mode
+    // by the sheet even if they tap during that window.
+    const provenanceResolved = createdSessionId !== undefined;
+    const leadWithEnd = provenanceResolved ? startedOnThisDevice : true;
     return {
       canEnd,
       startedOnThisDevice,
       // Lead with End only on the phone that started the party AND is still
       // allowed to end it. Everything else — the same climber's second phone,
       // a friend's party — leads with the non-destructive exit.
-      defaultMode: startedOnThisDevice && canEnd ? 'end' : 'leave',
+      defaultMode: leadWithEnd && canEnd ? 'end' : 'leave',
     };
   }, [ownerUserId, selfUserId, createdSessionId, sessionId]);
 }

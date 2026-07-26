@@ -71,11 +71,18 @@ export function EndSessionSheet({
   // was selected — that request would be refused server-side anyway.
   const [mode, setMode] = useState<SessionExitMode>(defaultMode);
   const effectiveMode = canEnd ? mode : 'leave';
-  // Re-arm on every open (and if capability resolves late) so a climber who
-  // switched modes last time doesn't inherit that choice on the next exit.
+  // Re-arm on OPEN only, so a climber who switched modes last time doesn't
+  // inherit that choice on the next exit. Deliberately keyed on the open
+  // transition rather than on `defaultMode` itself: device provenance resolves
+  // asynchronously, and a late resolve must not yank the sheet out from under
+  // someone who has already tapped through to the other mode.
+  const wasVisibleRef = useRef(false);
+  const latestDefaultModeRef = useRef(defaultMode);
+  latestDefaultModeRef.current = defaultMode;
   useEffect(() => {
-    if (visible) setMode(defaultMode);
-  }, [visible, defaultMode]);
+    if (visible && !wasVisibleRef.current) setMode(latestDefaultModeRef.current);
+    wasVisibleRef.current = visible;
+  }, [visible]);
 
   const isEndMode = effectiveMode === 'end';
   const busy = isEnding || isLeaving;

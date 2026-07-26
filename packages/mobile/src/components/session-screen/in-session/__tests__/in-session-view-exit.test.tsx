@@ -229,6 +229,25 @@ describe('InSessionView session exit (#3502)', () => {
     expect(chrome.exitVariant).toBe('end');
   });
 
+  // Provenance is a SecureStore read, so it can't be known on the first frame.
+  // Falling back to `end` there keeps that frame identical to the pre-#3502
+  // chrome — a creator must never watch the control change identity under their
+  // thumb. Collapse the fallback to `leadWithEnd = startedOnThisDevice` and this
+  // fails (verified by mutation).
+  it('renders the pre-existing End chrome on the first frame, before provenance resolves', () => {
+    render(createElement(InSessionView, { showChrome: true }));
+    expect(sheet.defaultMode).toBe('end');
+    expect(chrome.exitVariant).toBe('end');
+  });
+
+  // ...but an unresolved read must not hand a known-foreign participant the
+  // destructive mode. canEnd is computed independently of provenance.
+  it('still withholds End on the first frame for a known-foreign participant', () => {
+    session.ownerUserId = 'user-someone-else';
+    render(createElement(InSessionView, { showChrome: true }));
+    expect(sheet.canEnd).toBe(false);
+  });
+
   // THE BUG. Same climber, same session, second phone: provenance is absent, so
   // the exit must lead with Leave. Delete the `startedOnThisDevice` term in
   // useSessionExitOptions and this flips back to 'end' — i.e. back to the only
@@ -298,6 +317,19 @@ describe('InSessionView session exit (#3502)', () => {
       expect(router.push).not.toHaveBeenCalled();
       expect(integrations.runSessionEndExports).not.toHaveBeenCalled();
       expect(toast.showToast).toHaveBeenCalledWith('mobile.toast.leftSession', 'success');
+    });
+
+    // Without a toast here the climber taps Leave, the spinner vanishes, and
+    // nothing visibly happens — the sheet just sits there.
+    it('surfaces a failed local teardown instead of failing silently', async () => {
+      session.createdSessionId = null;
+      queue.clearSession.mockRejectedValue(new Error('teardown exploded'));
+      await renderInSession();
+      await act(async () => {
+        sheet.onLeave?.();
+      });
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+      expect(toast.showToast).not.toHaveBeenCalledWith('mobile.toast.leftSession', 'success');
     });
 
     it('tracks the leave with the provenance split', async () => {

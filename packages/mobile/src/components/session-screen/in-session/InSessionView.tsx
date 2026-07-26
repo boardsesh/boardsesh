@@ -535,8 +535,11 @@ export function InSessionView({
     } catch (error) {
       // clearSession swallows its own LEAVE_SESSION failure, so reaching here
       // means local teardown itself threw — surface it rather than leaving the
-      // climber stuck in a session they asked to leave.
+      // climber staring at a sheet that did nothing. The sheet deliberately
+      // stays open so they can retry (same call as handleConfirmEnd's catch);
+      // "Keep climbing" and pan-down are still there to back out.
       reportHandledError(error, { tags: { source: 'leaveSession' } });
+      showToast(t('mobile.queue.actionFailed'), 'error');
     } finally {
       setIsLeaving(false);
     }
