@@ -1816,7 +1816,14 @@ ActivityKit on every device that registered a token for this session
 
 ### Server-Side Analytics
 
-Live Activity actions that happen outside the web view are captured server-side through PostHog when `POSTHOG_PROJECT_KEY` is configured. The backend can also fall back to `NEXT_PUBLIC_POSTHOG_KEY` for compatibility with the web build env, but `POSTHOG_PROJECT_KEY` is the preferred runtime variable. `POSTHOG_HOST` defaults to `https://us.i.posthog.com`, and `POSTHOG_ENVIRONMENT` can override the event `environment` property. If `POSTHOG_ENVIRONMENT` is unset, the backend falls back to `SENTRY_ENVIRONMENT`, then `NODE_ENV`, then `development`. Server events are sent directly rather than through the browser `/api/posthog/*` proxy.
+Live Activity actions that happen outside the web view are captured server-side through PostHog when `POSTHOG_PROJECT_KEY` is configured. The backend can also fall back to `NEXT_PUBLIC_POSTHOG_KEY` for compatibility with the web build env, but `POSTHOG_PROJECT_KEY` is the preferred runtime variable. `POSTHOG_HOST` defaults to `https://us.i.posthog.com`. Server events are sent directly rather than through the browser `/api/posthog/*` proxy.
+
+**A key alone is not enough — only the production environment sends** (#3814). `getPosthogClient()` resolves an environment and short-circuits unless it is exactly `production`, so a key that leaks into a preview, staging, or local runtime can't pollute the prod project. Resolution order: `POSTHOG_ENVIRONMENT`, else `resolveSentryEnvironment()` from `@boardsesh/db/client/config` — the same helper that gates backend Sentry, so the two SDKs can never disagree about what runtime this is. That resolves `SENTRY_ENVIRONMENT` when set, otherwise `production` for any non-dev, non-test runtime, otherwise `NODE_ENV`. Consequences worth knowing:
+
+- Railway prod sets no `NODE_ENV` (`Dockerfile.backend` doesn't, and Railway injects none for an image deploy), so it resolves to `production` from the runtime inference alone — no dashboard variable is load-bearing for analytics staying on.
+- Preview/staging backends declare `SENTRY_ENVIRONMENT=preview` (`branch-deploy.yml`, #3808) and opt out for free.
+- Local dev resolves to `development` via the `dev` script's `NODE_ENV=development`; the test runner resolves to `test`. Both stay dark.
+- When the gate closes, the backend logs `[PostHog] Resolved environment '<x>' is not production; backend analytics disabled` at **warn** — same level as the missing-key branch, since both mean analytics went dark.
 
 Event taxonomy:
 

@@ -71,6 +71,10 @@ describe('registerAppEnvironment', () => {
       throw new Error('boom');
     });
     expect(() => registerAppEnvironment({ register })).not.toThrow();
+    // The warn assertion depends on __DEV__ being truthy — mobile vitest freezes it
+    // that way (see the mobile test setup). A test that stubs __DEV__ = false without
+    // restoring it turns this into a false green; the not-throwing assertion above is
+    // the load-bearing one either way.
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });

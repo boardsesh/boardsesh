@@ -150,13 +150,15 @@ APNS_PRODUCTION=true                 # true = production APNs (matches the app's
 # Optional server-side product analytics for Live Activity usage
 POSTHOG_PROJECT_KEY=phc_...          # Backend PostHog project key (preferred; falls back to NEXT_PUBLIC_POSTHOG_KEY)
 POSTHOG_HOST=https://us.i.posthog.com
-# getPosthogClient() only sends when the resolved environment is 'production' (#3814) —
-# a real backend PostHog project key is prod-only, so setting POSTHOG_ENVIRONMENT=production
-# here would send your local test events into the real prod project, indistinguishable
-# from Railway. Leave this UNSET for local testing (falls back to SENTRY_ENVIRONMENT, then
-# NODE_ENV, then 'development' — none of which is 'production' locally), or set it to
-# something else entirely, e.g. POSTHOG_ENVIRONMENT=local-dev, if you want to confirm
-# events would have sent by temporarily pointing POSTHOG_HOST at a non-prod project.
+# getPosthogClient() only sends when the resolved environment is 'production' (#3814).
+# A real backend PostHog project key is prod-only, so DON'T set POSTHOG_ENVIRONMENT=production
+# here — your local test events would land in the real prod project, indistinguishable
+# from Railway. Leave it UNSET and start the backend with `vp run dev`, whose backend `dev`
+# script sets NODE_ENV=development; the environment then resolves to 'development' and
+# nothing is sent. If you run the backend some other way (e.g. plain `tsx src/index.ts`,
+# no NODE_ENV), the runtime looks prod-like and WILL send — set POSTHOG_ENVIRONMENT to
+# anything non-production, e.g. local-dev, in that case.
+POSTHOG_ENVIRONMENT=local-dev
 ```
 
 When the backend starts, you should see:

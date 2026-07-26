@@ -42,13 +42,15 @@ bun start
 
 Environment variables:
 
-| Variable              | Default                                                           | Description                                              |
-| --------------------- | ----------------------------------------------------------------- | -------------------------------------------------------- |
-| `PORT`                | `8080`                                                            | WebSocket server port                                    |
-| `DATABASE_URL`        | `postgresql://postgres:postgres@localhost:5432/boardsesh_backend` | PostgreSQL connection string                             |
-| `POSTHOG_PROJECT_KEY` | `NEXT_PUBLIC_POSTHOG_KEY`, then unset                             | Enables backend PostHog events for Live Activity usage   |
-| `POSTHOG_HOST`        | `https://us.i.posthog.com`                                        | PostHog ingestion host                                   |
-| `POSTHOG_ENVIRONMENT` | `SENTRY_ENVIRONMENT`, then `NODE_ENV`, then `development`         | Event environment property for backend PostHog analytics |
+| Variable              | Default                                                           | Description                                            |
+| --------------------- | ----------------------------------------------------------------- | ------------------------------------------------------ |
+| `PORT`                | `8080`                                                            | WebSocket server port                                  |
+| `DATABASE_URL`        | `postgresql://postgres:postgres@localhost:5432/boardsesh_backend` | PostgreSQL connection string                           |
+| `POSTHOG_PROJECT_KEY` | `NEXT_PUBLIC_POSTHOG_KEY`, then unset                             | Enables backend PostHog events for Live Activity usage |
+| `POSTHOG_HOST`        | `https://us.i.posthog.com`                                        | PostHog ingestion host                                 |
+| `POSTHOG_ENVIRONMENT` | `resolveSentryEnvironment()`                                      | Environment for backend PostHog analytics — see below  |
+
+`POSTHOG_ENVIRONMENT` is an override; unset, the environment comes from `resolveSentryEnvironment()` in `@boardsesh/db/client/config` (the same helper that gates backend Sentry): `SENTRY_ENVIRONMENT` when set, else `production` in any non-dev, non-test runtime, else `NODE_ENV`. **Only a resolved `production` sends** (#3814) — a project key on its own is not enough, so a key that reaches a preview, staging, or local runtime can't pollute the prod project. When the gate closes, the backend logs `[PostHog] Resolved environment '<x>' is not production; backend analytics disabled` at warn.
 
 ## Network Setup
 

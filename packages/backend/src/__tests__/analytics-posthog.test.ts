@@ -199,7 +199,9 @@ describe('backend PostHog analytics helper', () => {
     expect(captured).toBe(false);
     expect(posthogMocks.PostHog).not.toHaveBeenCalled();
     expect(posthogMocks.capture).not.toHaveBeenCalled();
-    expect(loggerMock.info).toHaveBeenCalledWith(
+    // warn, not info — same severity as the missing-key branch, since both mean
+    // analytics went dark.
+    expect(loggerMock.warn).toHaveBeenCalledWith(
       "[PostHog] Resolved environment 'preview' is not production; backend analytics disabled",
     );
   });
@@ -228,16 +230,38 @@ describe('backend PostHog analytics helper', () => {
     expect(posthogMocks.PostHog).toHaveBeenCalledOnce();
   });
 
-  // getAnalyticsEnvironment()'s fallback is `?? 'development'` — unlike Sentry's
-  // resolveSentryEnvironment(), it does NOT special-case "everything unset" to
-  // 'production' (see the comment on getAnalyticsEnvironment). Real Railway prod
-  // resolves to 'production' via an explicit POSTHOG_ENVIRONMENT or
-  // SENTRY_ENVIRONMENT dashboard variable, not this fallback — this test pins
-  // that the fallback stays 'development' so nobody "fixes" it into matching
-  // Sentry's special-casing and masks a genuinely-unconfigured environment.
-  it("falls back to 'development' (not 'production') when every environment var is unset", async () => {
+  // The Railway prod shape, and the reason getAnalyticsEnvironment() delegates
+  // to resolveSentryEnvironment() instead of ending in `?? 'development'`:
+  // Dockerfile.backend never sets NODE_ENV and Railway injects none for an
+  // image deploy, so prod genuinely runs with all three vars unset. A bare
+  // 'development' fallback would resolve prod to non-production and take 100%
+  // of backend analytics dark on a dashboard-variable edit. This pins that a
+  // prod-like runtime (not dev, not the test runner) still sends.
+  it("resolves 'production' and sends when every environment var is unset in a prod-like runtime", async () => {
     vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
     vi.stubEnv('NODE_ENV', '');
+    vi.stubEnv('SENTRY_ENVIRONMENT', '');
+    vi.stubEnv('POSTHOG_ENVIRONMENT', '');
+    // Vitest sets VITEST=true on the process; clear it so resolveSentryEnvironment()
+    // sees a non-test runtime, which is what Railway prod actually looks like.
+    vi.stubEnv('VITEST', '');
+    const { captureBackendEvent } = await loadPosthogModule();
+
+    const captured = captureBackendEvent('Live Activity Started', { distinctId: 'user-1' });
+
+    expect(captured).toBe(true);
+    expect(posthogMocks.PostHog).toHaveBeenCalledOnce();
+    expect(posthogMocks.capture).toHaveBeenCalledWith(
+      expect.objectContaining({ properties: expect.objectContaining({ environment: 'production' }) }),
+    );
+  });
+
+  // The other half of the same delegation: a developer box is NOT prod-like, so
+  // an unset POSTHOG_ENVIRONMENT must not open the gate. packages/backend's
+  // `dev` script sets NODE_ENV=development for exactly this reason.
+  it('stays disabled on a local dev runtime with a real key and no explicit environment var', async () => {
+    vi.stubEnv('POSTHOG_PROJECT_KEY', 'ph_project');
+    vi.stubEnv('NODE_ENV', 'development');
     vi.stubEnv('SENTRY_ENVIRONMENT', '');
     vi.stubEnv('POSTHOG_ENVIRONMENT', '');
     const { captureBackendEvent } = await loadPosthogModule();
@@ -246,7 +270,7 @@ describe('backend PostHog analytics helper', () => {
 
     expect(captured).toBe(false);
     expect(posthogMocks.PostHog).not.toHaveBeenCalled();
-    expect(loggerMock.info).toHaveBeenCalledWith(
+    expect(loggerMock.warn).toHaveBeenCalledWith(
       "[PostHog] Resolved environment 'development' is not production; backend analytics disabled",
     );
   });

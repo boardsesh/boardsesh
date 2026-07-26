@@ -80,6 +80,9 @@ export function OtaUpdateTracker(): null {
       // property, so pr-* preview traffic had no way to be identified on any
       // OTHER event (#3814) — the environment super property (registerAppEnvironment,
       // posthog-client.ts) covers prod-vs-preview; this covers WHICH preview.
+      // Registered here rather than at client construction, so events fired
+      // before this effect runs carry no ota_channel. Accepted: `environment` has
+      // no such window, and prod-vs-preview is the filter that matters.
       ota_channel: properties.channel,
     });
   }, []);

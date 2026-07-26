@@ -1,3 +1,4 @@
+import { resolveSentryEnvironment } from '@boardsesh/db/client/config';
 import { PostHog } from 'posthog-node';
 import { logger } from '../../utils/logger';
 
@@ -74,25 +75,21 @@ function getPosthogClient(): PostHog | null {
     }
     return null;
   }
-  // Only the production environment sends. Without this, a key present in ANY
-  // non-prod runtime — a Railway "shared variable" wired to a future preview/
-  // staging service, or a local .env with a real key — would silently pollute
-  // the prod PostHog project (#3814), the same class of bug #3808 fixed for
-  // Sentry (`isProductionSentryEnvironment()` gating `Sentry.init({ enabled })`
-  // in instrument.ts). Historically this backend has been safe only because
-  // branch-deploy.yml's PR-preview containers never set a PostHog key — that's
-  // an absence-of-key accident, not a gate, so it's fixed here regardless of
-  // whether any leak has actually been observed. Preview/staging backends
-  // already declare SENTRY_ENVIRONMENT=preview (#3808, branch-deploy.yml), and
-  // getAnalyticsEnvironment() falls back through that var, so this opt-out is
-  // free — no new env var or workflow change needed. Checked before
-  // initAttempted (like the missing-key branch above) so the decision isn't
-  // permanently cached the one time this function runs before env vars settle.
+  // Only production sends. Without this, a key present in ANY non-prod runtime —
+  // a Railway "shared variable" wired to a future staging service, or a local
+  // .env with a real key — would silently pollute the prod project (#3814), the
+  // same class of bug #3808 fixed for Sentry. Until now this was safe only
+  // because branch-deploy.yml's preview containers never set a PostHog key: an
+  // absence-of-key accident, not a gate. Checked before initAttempted (like the
+  // missing-key branch above) so one early call can't cache the decision.
   const resolvedEnvironment = getAnalyticsEnvironment();
   if (resolvedEnvironment !== 'production') {
     if (!nonProductionEnvironmentLogged) {
       nonProductionEnvironmentLogged = true;
-      logger.info(
+      // warn, not info, to match the missing-key branch above: both mean
+      // "analytics is now dark", and in prod this line is the only signal that
+      // a misconfigured environment has switched it off.
+      logger.warn(
         `[PostHog] Resolved environment '${resolvedEnvironment}' is not production; backend analytics disabled`,
       );
     }
@@ -122,23 +119,27 @@ function getPosthogClient(): PostHog | null {
   return client;
 }
 
-// Deliberately its own resolution, not a reuse of @boardsesh/db/client/config's
-// isProductionSentryEnvironment()/resolveSentryEnvironment(): those are Sentry's
-// helpers, and this one checks POSTHOG_ENVIRONMENT first — a pre-existing degree
-// of freedom that lets PostHog's environment diverge from Sentry's if that's
-// ever needed (e.g. testing PostHog's environment tagging in isolation without
-// also flipping Sentry's). Collapsing this into the Sentry-named helper would
-// quietly remove that override. Falls back through SENTRY_ENVIRONMENT so
-// preview/staging backends (which already set that per #3808) get the
-// production opt-out below for free without a new var. Do NOT "simplify" this
-// by deleting the POSTHOG_ENVIRONMENT check or delegating to the Sentry helper.
+// POSTHOG_ENVIRONMENT is a deliberate override that lets PostHog's environment
+// diverge from Sentry's (e.g. testing PostHog's tagging in isolation) — keep it.
+// Everything below it delegates to @boardsesh/db/client/config's
+// resolveSentryEnvironment(), the repo's single answer to "what runtime is this
+// backend process in": SENTRY_ENVIRONMENT, else 'production' for any non-dev,
+// non-test runtime, else NODE_ENV.
+//
+// The delegation is the point. This used to end in a bare `?? 'development'`,
+// which reintroduced the NODE_ENV assumption that issues #3183 and #3603 were
+// both filed to remove: Railway prod runs Dockerfile.backend, which never sets
+// NODE_ENV, and Railway injects none for a prebuilt-image deploy. (Confirmed
+// live: yoga.ts serves GraphiQL only when NODE_ENV !== 'production', and
+// https://ws.boardsesh.com/graphql returns the GraphiQL shell.) Under the old
+// chain, prod resolved to 'production' *only* via a dashboard-managed variable,
+// so the send gate in getPosthogClient() would have gone dark — silently, and
+// for 100% of backend analytics — the first time anyone tidied that variable
+// away. Sentry doesn't have that failure mode; now neither does this.
+// Preview/staging still opt out for free: branch-deploy.yml declares
+// SENTRY_ENVIRONMENT=preview (#3808), which wins over the runtime inference.
 function getAnalyticsEnvironment(): string {
-  return (
-    readOptionalEnv('POSTHOG_ENVIRONMENT') ??
-    readOptionalEnv('SENTRY_ENVIRONMENT') ??
-    readOptionalEnv('NODE_ENV') ??
-    'development'
-  );
+  return readOptionalEnv('POSTHOG_ENVIRONMENT') ?? resolveSentryEnvironment();
 }
 
 export function captureBackendEvent(eventName: BackendAnalyticsEvent, options: CaptureBackendEventOptions): boolean {
@@ -176,6 +177,7 @@ export async function shutdownPosthog(): Promise<void> {
   posthogClient = null;
   initAttempted = false;
   missingProjectKeyLogged = false;
+  nonProductionEnvironmentLogged = false;
   loggedQueuedEvents.clear();
 
   try {
