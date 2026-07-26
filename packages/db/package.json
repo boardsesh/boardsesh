@@ -80,6 +80,7 @@
     "db:generate-moonboard-cell-sets": "tsx scripts/generate-moonboard-cell-sets.ts",
     "db:backfill-moonboard-set-ids": "tsx scripts/backfill-moonboard-set-ids.ts",
     "db:backfill-moonboard-hardware": "tsx scripts/backfill-moonboard-hardware.ts",
+    "db:backfill-clamped-send-attempts": "tsx scripts/backfill-clamped-send-attempts.ts",
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",

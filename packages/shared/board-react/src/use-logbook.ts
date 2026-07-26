@@ -112,8 +112,14 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
     lastMergedRef.current = fetchQuery.data;
 
     // Mark these UUIDs as fetched (including those that returned no ticks).
+    const sizeBefore = fetchedUuidsRef.current.size;
     newUuids.forEach((uuid) => fetchedUuidsRef.current.add(uuid));
-    setFetchedUuids(new Set(fetchedUuidsRef.current));
+    // Only publish a new Set when the membership actually grew. This value sits
+    // on the volatile logbook context, so a fresh identity re-renders every
+    // subscriber — not worth paying for a re-fetch that added nothing.
+    if (fetchedUuidsRef.current.size !== sizeBefore) {
+      setFetchedUuids(new Set(fetchedUuidsRef.current));
+    }
 
     queryClient.setQueryData<LogbookEntry[]>(accumulatedKey, (existing = []) =>
       mergeLogbookEntries(existing, fetchQuery.data),

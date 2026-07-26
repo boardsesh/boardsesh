@@ -248,6 +248,15 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/db db:backfill-moonboard-hardware',
         cache: false,
       },
+      // Repairs ticks whose attempt count was floored to 2 by the mobile
+      // quick-tick clamp (#3937). Needs `-- --events <posthog-export>`; add
+      // `--dry-run` to report without writing, `--revert <snapshot>` to undo.
+      // Run by hand against DB_URL with UPDATE rights, same pattern as
+      // db:dedupe-gyms.
+      'db:backfill-clamped-send-attempts': {
+        command: 'bun run --filter=@boardsesh/db db:backfill-clamped-send-attempts',
+        cache: false,
+      },
 
       // --- Codegen (GraphQL types for client + backend resolvers) ---
       // Direct binary invocation — no `bunx` (won't touch the lockfile).
