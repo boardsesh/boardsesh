@@ -40,6 +40,13 @@ export type BoardContextType = {
    * logbook on every render — turning O(rows × logbook) per merge into O(rows).
    */
   logbookByClimbAngle: Map<string, LogbookEntry[]>;
+  /**
+   * Climb uuids the logbook has actually been fetched for. A uuid missing here
+   * means "unknown", not "no ticks" — an empty `logbookByClimbAngle` lookup is
+   * ambiguous until the fetch lands, and treating it as "no history" is what
+   * let a repeat ascent be offered as a Flash (#3940).
+   */
+  fetchedLogbookClimbUuids: ReadonlySet<string>;
   getLogbook: (climbUuids: string[]) => Promise<void>;
   saveTick: (options: SaveTickOptions) => Promise<void>;
   saveClimb: (options: SaveClimbOptions) => Promise<SaveClimbResponse>;
@@ -53,7 +60,10 @@ export type BoardContextType = {
  * `getLogbook`/`saveTick`/`saveClimb`/`updateClimb` (or `boardName`/auth) reads
  * this via `useBoardActions()` and skips the per-merge re-render cascade.
  */
-export type BoardActionsContextType = Omit<BoardContextType, 'logbook' | 'logbookByClimbAngle'>;
+export type BoardActionsContextType = Omit<
+  BoardContextType,
+  'logbook' | 'logbookByClimbAngle' | 'fetchedLogbookClimbUuids'
+>;
 
 /**
  * The volatile half: the logbook and its prebuilt `${climb_uuid}:${angle}`
@@ -61,7 +71,10 @@ export type BoardActionsContextType = Omit<BoardContextType, 'logbook' | 'logboo
  * ascent-status reader (`useAscentStatus`) and the tick forms subscribe to it
  * via `useBoardLogbook()` — they SHOULD re-render when ticks change.
  */
-export type BoardLogbookContextType = Pick<BoardContextType, 'logbook' | 'logbookByClimbAngle'>;
+export type BoardLogbookContextType = Pick<
+  BoardContextType,
+  'logbook' | 'logbookByClimbAngle' | 'fetchedLogbookClimbUuids'
+>;
 
 // Full context kept for back-compat: web and any consumer wanting everything
 // still use `useBoardProvider()`. Its value still changes on a logbook merge
@@ -90,7 +103,7 @@ export function BoardProvider({
   const [climbUuids, setClimbUuids] = useState<string[]>([]);
 
   // React Query hooks for fetching + mutations. All shared.
-  const { logbook } = useLogbookQuery(boardName, climbUuids);
+  const { logbook, fetchedUuids: fetchedLogbookClimbUuids } = useLogbookQuery(boardName, climbUuids);
   const saveTickMutation = useSaveTickMutation(boardName);
   const saveClimbMutation = useSaveClimbMutation(boardName);
   const updateClimbMutation = useUpdateClimbMutation();
@@ -188,8 +201,8 @@ export function BoardProvider({
   // Volatile slice: changes on every merge. Only the ascent-status reader and
   // tick forms subscribe to it.
   const logbookValue = useMemo<BoardLogbookContextType>(
-    () => ({ logbook, logbookByClimbAngle }),
-    [logbook, logbookByClimbAngle],
+    () => ({ logbook, logbookByClimbAngle, fetchedLogbookClimbUuids }),
+    [logbook, logbookByClimbAngle, fetchedLogbookClimbUuids],
   );
 
   // Full value derived from the two slices so back-compat `useBoardProvider()`

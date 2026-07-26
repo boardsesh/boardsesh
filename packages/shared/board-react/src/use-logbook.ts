@@ -34,6 +34,13 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
   const fetchedUuidsRef = useRef<Set<string>>(new Set());
   const lastMergedRef = useRef<LogbookEntry[] | undefined>(undefined);
   const [invalidationCount, setInvalidationCount] = useState(0);
+  // Render-visible mirror of `fetchedUuidsRef`. The ref alone can't drive UI:
+  // a climb with no ticks merges an empty array, so the accumulated logbook
+  // keeps its identity and subscribers never re-render to observe the ref.
+  // Consumers need to tell "fetched, no history" from "not fetched yet" —
+  // without it, a repeat ascent reads as a first-ever go until the fetch lands
+  // and can be logged as a flash (#3940).
+  const [fetchedUuids, setFetchedUuids] = useState<ReadonlySet<string>>(() => new Set());
 
   const isEnabled = isAuthenticated && boardName !== null;
 
@@ -46,6 +53,10 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
     lastBoardRef.current = boardName;
     fetchedUuidsRef.current = new Set();
     lastMergedRef.current = undefined;
+    // Cleared in the same synchronous block as the ref (the React
+    // "adjust state when a prop changes" pattern) rather than in an effect,
+    // so no render can observe the previous board's uuids as fetched.
+    setFetchedUuids(new Set());
   }
 
   const accumulatedQuery = useQuery<LogbookEntry[]>({
@@ -102,6 +113,7 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
 
     // Mark these UUIDs as fetched (including those that returned no ticks).
     newUuids.forEach((uuid) => fetchedUuidsRef.current.add(uuid));
+    setFetchedUuids(new Set(fetchedUuidsRef.current));
 
     queryClient.setQueryData<LogbookEntry[]>(accumulatedKey, (existing = []) =>
       mergeLogbookEntries(existing, fetchQuery.data),
@@ -119,6 +131,7 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
 
       fetchedUuidsRef.current = new Set();
       lastMergedRef.current = undefined;
+      setFetchedUuids(new Set());
       setInvalidationCount((c) => c + 1);
     });
     return unsubscribe;
@@ -132,6 +145,7 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
     if (lastAuthRef.current && !isAuthenticated) {
       fetchedUuidsRef.current = new Set();
       lastMergedRef.current = undefined;
+      setFetchedUuids(new Set());
       // Remove every per-board logbook entry. A different user may sign in.
       queryClient.removeQueries({ queryKey: ['logbook'] });
     }
@@ -140,6 +154,9 @@ export function useLogbook(boardName: BoardName | null, climbUuids: string[]) {
 
   return {
     logbook,
+    // Which climbs the logbook can actually answer for. Absence means "not
+    // fetched yet", not "no ticks".
+    fetchedUuids,
     isLoading: fetchQuery.isLoading && logbook.length === 0,
     error: fetchQuery.error,
   };

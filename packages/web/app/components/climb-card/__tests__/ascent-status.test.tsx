@@ -59,6 +59,9 @@ function createBoardContextValue({
     isInitialized: true,
     logbook,
     logbookByClimbAngle,
+    // Every climb in the fixture is treated as already fetched, so an empty
+    // bucket means "no ticks" rather than "not loaded yet".
+    fetchedLogbookClimbUuids: new Set(logbook.map((tick) => tick.climb_uuid)),
     getLogbook: async () => {},
     saveTick: async () => {},
     saveClimb: async () => {

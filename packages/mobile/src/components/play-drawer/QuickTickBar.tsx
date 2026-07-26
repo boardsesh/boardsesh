@@ -140,6 +140,12 @@ export const QuickTickBar = React.memo(function QuickTickBar({
     if (localPendingTicks > 0) return true;
     // No provider → assume history so the label stays `Send` (failure mode 1).
     if (!boardLogbook) return true;
+    // Not fetched yet → also assume history (failure mode 2). An empty index
+    // lookup can't distinguish "no ticks" from "not loaded", and guessing
+    // "no ticks" offers a green Flash on a climb the user has sent many times;
+    // tapping it in that window writes a phantom flash, which is worse than a
+    // Send label that resolves to Flash a moment later (#3940).
+    if (!boardLogbook.fetchedLogbookClimbUuids.has(climbUuid)) return true;
     return (boardLogbook.logbookByClimbAngle.get(logbookClimbAngleKey(climbUuid, angle))?.length ?? 0) > 0;
   }, [boardLogbook, climbUuid, angle, localPendingTicks]);
 

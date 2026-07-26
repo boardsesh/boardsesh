@@ -110,6 +110,7 @@ describe('BoardPageClimbsList logbook seed', () => {
       isInitialized: true,
       logbook: [],
       logbookByClimbAngle: new Map(),
+      fetchedLogbookClimbUuids: new Set<string>(),
       getLogbook: mockGetLogbook,
       saveTick: vi.fn(),
       saveClimb: vi.fn(),

@@ -186,7 +186,14 @@ function buttonWithText(container: HTMLElement, text: string): HTMLButtonElement
 
 /** Board fixture with a mounted provider and NO history for this climb+angle. */
 function boardWithoutHistory() {
-  return { logbook: [], logbookByClimbAngle: new Map<string, LogbookEntry[]>(), getLogbook: vi.fn() };
+  return {
+    logbook: [],
+    logbookByClimbAngle: new Map<string, LogbookEntry[]>(),
+    // Fetched and genuinely empty — the only state in which an empty index may
+    // be read as "no history".
+    fetchedLogbookClimbUuids: new Set([CLIMB_UUID]),
+    getLogbook: vi.fn(),
+  };
 }
 
 /** Board fixture with a mounted provider and one prior tick for this climb+angle. */
@@ -195,6 +202,17 @@ function boardWithHistory() {
   return {
     logbook: [tick],
     logbookByClimbAngle: new Map<string, LogbookEntry[]>([[logbookClimbAngleKey(CLIMB_UUID, ANGLE), [tick]]]),
+    fetchedLogbookClimbUuids: new Set([CLIMB_UUID]),
+    getLogbook: vi.fn(),
+  };
+}
+
+/** Provider mounted, but this climb's logbook fetch hasn't resolved yet. */
+function boardWithUnfetchedLogbook() {
+  return {
+    logbook: [],
+    logbookByClimbAngle: new Map<string, LogbookEntry[]>(),
+    fetchedLogbookClimbUuids: new Set<string>(),
     getLogbook: vi.fn(),
   };
 }
@@ -217,6 +235,7 @@ describe('QuickTickBar hasPriorHistory', () => {
       logbook: [],
       // Map index HAS history at this climb+angle → should resolve to "send".
       logbookByClimbAngle: new Map<string, LogbookEntry[]>([[logbookClimbAngleKey(CLIMB_UUID, ANGLE), [tick]]]),
+      fetchedLogbookClimbUuids: new Set([CLIMB_UUID]),
       getLogbook: vi.fn(),
     };
 
@@ -244,6 +263,46 @@ describe('QuickTickBar hasPriorHistory', () => {
       (node) => node.textContent === 'playView.tickBar.flashSaveLabel',
     );
     expect(flashButton).toBeUndefined();
+  });
+
+  // #3940: an empty index means "no ticks" only once the fetch has landed.
+  // Before that the answer is unknown, and guessing "no history" offers Flash
+  // on a climb the climber may have sent many times — a phantom flash is
+  // unrecoverable from the row itself, so the unknown state must read as Send.
+  it("does not offer Flash while this climb's logbook fetch is still in flight", () => {
+    boardState.current = boardWithUnfetchedLogbook();
+    const { container } = renderBar();
+
+    const flashButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.flashSaveLabel',
+    );
+    const sendButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.sendSaveLabel',
+    );
+    expect(flashButton).toBeUndefined();
+    expect(sendButton).toBeTruthy();
+  });
+
+  it('saves a send, not a flash, when tapped before the fetch resolves', () => {
+    boardState.current = boardWithUnfetchedLogbook();
+    const { container } = renderBar();
+
+    const sendButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.sendSaveLabel',
+    );
+    fireEvent.click(sendButton as Element);
+
+    expect(saveMock.mutate.mock.calls[0][0]).toMatchObject({ status: 'send' });
+  });
+
+  it('offers Flash once the fetch lands and confirms no history', () => {
+    boardState.current = boardWithoutHistory();
+    const { container } = renderBar();
+
+    const flashButton = Array.from(container.querySelectorAll('button')).find(
+      (node) => node.textContent === 'playView.tickBar.flashSaveLabel',
+    );
+    expect(flashButton).toBeTruthy();
   });
 });
 
