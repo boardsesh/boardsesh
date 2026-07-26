@@ -290,6 +290,12 @@ function errorMessage(error: unknown): string {
  * transaction, so it would recreate the very wedge this table reports.
  */
 function storableJson(value: unknown): unknown {
+  // `undefined` -> null, not passthrough: JSON.stringify DROPS an
+  // undefined-valued key entirely, and "Aurora sent no angle" would then be
+  // indistinguishable from "the quarantine never captured the angle". The
+  // absent field is usually the whole reason the row was refused, so it has to
+  // survive into the record.
+  if (value === undefined) return null;
   if (typeof value === 'string') return stripUnstorableText(value);
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'bigint') return value.toString();

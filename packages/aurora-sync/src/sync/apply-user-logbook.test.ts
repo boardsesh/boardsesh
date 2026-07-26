@@ -922,3 +922,63 @@ describe('applyLogbookChunk — claim UPDATE isolation (#3871)', () => {
     }
   });
 });
+
+describe('applyAuroraBids — DB-level write isolation (#3871)', () => {
+  it('isolates a refused bid the same way as an ascent, end to end through applyAuroraBids', async () => {
+    // applyAuroraBids shares applyLogbookChunk with ascents, but "shares the
+    // machinery" is an inference; bids reach it via a different entry point
+    // (no tombstone pass, different claim statuses), so drive it directly.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { tx, insertValues, calls, skipRows } = createTx({
+        selectResults: [[], []],
+        rejectTickWritesContaining: 'bid-poison',
+      });
+
+      await expect(
+        applyAuroraBids(tx as unknown as Db, 'tension', 'user-2', [
+          bid({ uuid: 'bid-ok-1', climb_uuid: 'climb-1' }),
+          bid({ uuid: 'bid-poison', climb_uuid: 'climb-2' }),
+          bid({ uuid: 'bid-ok-2', climb_uuid: 'climb-3' }),
+        ]),
+      ).resolves.toBeUndefined();
+
+      expect(insertValues.flat().map((row) => row.auroraId)).toEqual(['bid-ok-1', 'bid-ok-2']);
+      expect(calls.filter((c) => c.kind === 'rollback')).toHaveLength(2);
+      expect(skipRows).toHaveLength(1);
+      expect(skipRows[0]).toMatchObject({
+        userId: 'user-2',
+        boardType: 'tension',
+        auroraType: 'bids',
+        auroraId: 'bid-poison',
+        reason: 'db_write_rejected',
+      });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe('quarantine payload fidelity (#3871)', () => {
+  it('keeps an absent upstream field as an explicit null instead of dropping the key', async () => {
+    // The missing field is usually the reason the row was refused, so
+    // "angle was absent" must not be indistinguishable from "the quarantine
+    // never captured angle" — JSON.stringify drops undefined-valued keys.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { tx, skipRows } = createTx({ selectResults: [[], []] });
+
+      await applyAuroraAscents(tx as unknown as Db, 'kilter', 'user-1', [
+        ascent({ uuid: 'aur-no-angle', angle: undefined }),
+      ]);
+
+      expect(skipRows).toHaveLength(1);
+      expect(skipRows[0]).toMatchObject({ auroraId: 'aur-no-angle', reason: 'invalid_angle' });
+      const payload = skipRows[0].payload as Record<string, unknown>;
+      expect('angle' in payload).toBe(true);
+      expect(payload.angle).toBeNull();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
