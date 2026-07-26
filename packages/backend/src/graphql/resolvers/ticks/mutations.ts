@@ -83,7 +83,11 @@ async function reportTickClimbCatalogPresence(
     );
     captureBackendEvent('Tick Climb Not In Catalog', {
       distinctId: userId,
-      properties: { boardType, angle },
+      // climbUuid rides along so the counter is triageable on its own. "12 hits"
+      // means nothing until you know whether it's 12 climbs or one client
+      // looping on one bad UUID — and that distinction is the answer #3942 needs.
+      // Not PII: a catalog identifier, and the same value the warn log carries.
+      properties: { boardType, angle, climbUuid },
       processPersonProfile: false,
     });
   } catch (error) {
