@@ -143,6 +143,8 @@ const ART_GROUPS: readonly ArtGroup[] = [
  *   - `moonboardmasters2017/holdsetc` — 73-76% saturation. It is a RED set; a
  *     luminance-only rule would have grey-tinted it and lost the colour.
  *   - `moonboard2024/holdsetd|e|f` — blue `#2080C0`, already 4.3:1.
+ *   - `moonboardmasters2017|2019/screw-onfeet` — small mid-tone screw-on footholds; they read
+ *     already, and lifting them would crowd the lifted set B they sit between.
  *   - `woodenholds*` — mid-tone wood.
  *   - Every non-MoonBoard board — mid-tone by construction.
  */
