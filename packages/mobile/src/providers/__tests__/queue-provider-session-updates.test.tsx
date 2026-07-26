@@ -2171,6 +2171,81 @@ describe('QueueProvider mutation-failure resync', () => {
     expect(queueStateCalls).toBe(0);
   });
 
+  it('does not undo the re-sent queue add into a DIFFERENT session joined mid-flight', async () => {
+    const snapshots: Snapshot[] = [];
+    // Uuids unique to this test: providers rendered by earlier cases in this
+    // file can still land in-flight mutations while this one runs, so identity
+    // beats call counts here.
+    const seeded = makeQueueItem('swap-seed', 'climb-swap-seed');
+    const activated = makeQueueItem('swap-current', 'climb-swap-current');
+    routeHttpRequest(queueStateResponse([seeded], seeded));
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    act(() => {
+      snapshots.at(-1)?.setQueue([seeded], seeded);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(1);
+    });
+
+    // Arm both mocks immediately before the activation so a straggler from an
+    // earlier test can't consume the one-shot deferred ahead of this provider.
+    const inFlightAdd = createDeferred<void>();
+    queueMutations.addQueueItem.mockReturnValueOnce(inFlightAdd.promise);
+    queueMutations.setCurrentClimb.mockRejectedValueOnce(makeRateLimitedError());
+
+    act(() => {
+      snapshots.at(-1)?.setCurrentClimb(activated);
+    });
+    await waitFor(() => {
+      const addedUuids = (queueMutations.addQueueItem.mock.calls as unknown as Array<[ClimbQueueItem, number]>).map(
+        ([item]) => item?.uuid,
+      );
+      expect(addedUuids).toContain('swap-current');
+    });
+
+    // The climber leaves for ANOTHER room while the recovery add is still
+    // backing off. This is the case a presence-only (`!sessionIdRef.current`)
+    // guard misses: the session id is non-null throughout, it just points
+    // somewhere else. session-2 has never held this climb, so the membership
+    // check reads "they dropped it" and the undo would fire REMOVE_QUEUE_ITEM
+    // at a crew that never saw the add.
+    await act(async () => {
+      await snapshots.at(-1)?.joinSession('session-2', {
+        boardPath: '/kilter/1/10/1,2/40/list',
+        userBoard: activeBoard.stored,
+      });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-2');
+    });
+    // The new room's queue lands and does not contain the climb — exactly what
+    // the membership check below would otherwise read as "the climber dropped
+    // it". Without this the old queue lingers, the item is still found, and the
+    // early return happens for the wrong reason.
+    act(() => {
+      snapshots.at(-1)?.setQueue([], null);
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toHaveLength(0);
+    });
+
+    await act(async () => {
+      inFlightAdd.resolve();
+      await Promise.resolve();
+    });
+
+    const removedUuids = (queueMutations.removeQueueItem.mock.calls as unknown as Array<[string]>).map(
+      ([uuid]) => uuid,
+    );
+    expect(removedUuids).not.toContain('swap-current');
+  });
+
   it('toasts "slow down" rather than the generic failure when reorderQueue is rate-limited', async () => {
     const snapshots: Snapshot[] = [];
     const first = makeQueueItem('item-1', 'climb-1');
