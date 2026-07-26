@@ -1,6 +1,6 @@
 import type { PostHog } from 'posthog-react-native';
 import { createAnalytics } from '@boardsesh/analytics';
-import { getPostHogClient } from './posthog-client';
+import { getPostHogClient, registerAppSuperProperties } from './posthog-client';
 
 type PosthogFeatureFlagClient = {
   getFeatureFlag?: (key: string) => unknown;
@@ -121,7 +121,22 @@ const analytics = createAnalytics(getClient, {
   onDebug: __DEV__ ? (name, properties) => console.info('[analytics]', name, properties ?? {}) : undefined,
 });
 
-export const { track, identify, setPersonProperties, alias, reset } = analytics;
+export const { track, identify, setPersonProperties, alias } = analytics;
+
+// PostHog's reset() clears the distinct id AND every registered super property,
+// but getPostHogClient() caches the singleton, so the registrations it does at
+// construction never run again. Re-register the build-level ones straight after
+// so a logout / forced sign-out / account switch doesn't silently drop them for
+// the rest of the launch — `environment` (without it, a tester's preview traffic
+// reads as production again, reopening #3814) and `$raw_user_agent` (without it,
+// PostHog bot-filters the events). Person-scoped properties are meant to be
+// cleared and are deliberately not restored.
+export function reset(): boolean {
+  const didReset = analytics.reset();
+  const client = getClient();
+  if (client) registerAppSuperProperties(client);
+  return didReset;
+}
 
 // Manual screen view — the RN analogue of web's $pageview. PostHog's screen
 // autocapture can't read Expo Router's navigation, so AnalyticsScreenTracker

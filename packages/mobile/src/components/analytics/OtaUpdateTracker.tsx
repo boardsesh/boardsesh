@@ -91,14 +91,21 @@ export function OtaUpdateTracker(): null {
   // from the build-time Updates.channel; the active override lives only in the
   // AsyncStorage mirror (no native read-back API). Read it async and overwrite
   // just the ota_channel tag so their reports show the channel they're actually
-  // on — matching ChannelSwitcherScreen's `override ?? buildChannel`.
+  // on — matching ChannelSwitcherScreen's `override ?? buildChannel`. Applied to
+  // BOTH sinks: Sentry's tag and the PostHog super property stamped above.
+  // Correcting only Sentry would leave PostHog reporting the build channel
+  // (`production` on a store binary — mobile-ota-preview.yml pins
+  // EXPO_UPDATES_CHANNEL there), so ota_channel could never identify which
+  // preview an event came from — the one thing it exists to do.
   useEffect(() => {
     let active = true;
     // Best-effort: a storage read failure just leaves the build channel tag from
     // the launch stamp in place, so swallow rather than leak an unhandled rejection.
     void getPreference<string>(OTA_CHANNEL_OVERRIDE_KEY)
       .then((override) => {
-        if (active && override) setOtaChannelTag(override);
+        if (!active || !override) return;
+        setOtaChannelTag(override);
+        registerSuperProperties({ ota_channel: override });
       })
       .catch(() => {});
     return () => {

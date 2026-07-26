@@ -40,6 +40,19 @@ export function registerAppEnvironment(client: Pick<PostHog, 'register'>): void 
   }
 }
 
+// The super properties that describe the app build rather than the person, so
+// they belong on every event no matter who is signed in. Registered at client
+// construction AND re-registered after analytics.reset(): PostHog's reset()
+// clears every registered super property, and getPostHogClient() caches the
+// singleton, so without a re-register a logout / forced sign-out / account
+// switch drops them for the rest of the launch — `environment` (preview traffic
+// would look like production again, reopening #3814) and `$raw_user_agent`
+// (PostHog bot-filters events that have no UA).
+export function registerAppSuperProperties(client: Pick<PostHog, 'register'>): void {
+  registerMobileUserAgent(client);
+  registerAppEnvironment(client);
+}
+
 // PostHog project token. Intentionally the SAME project as web so a signed-in
 // user's web + mobile activity resolves to one person. `EXPO_PUBLIC_*` vars are
 // inlined into the JS bundle at build time, so this must be set when the bundle
@@ -97,8 +110,7 @@ export function getPostHogClient(): PostHog | null {
   // screen/action events start flowing.
   const bootstrapDistinctId = getAnalyticsBootstrapId();
   client = new PostHog(apiKey, buildPostHogOptions(host, bootstrapDistinctId));
-  registerMobileUserAgent(client);
-  registerAppEnvironment(client);
+  registerAppSuperProperties(client);
   return client;
 }
 

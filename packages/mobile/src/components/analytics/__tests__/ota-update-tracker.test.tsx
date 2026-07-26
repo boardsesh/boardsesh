@@ -161,12 +161,24 @@ describe('OtaUpdateTracker', () => {
   });
 });
 
-describe('OtaUpdateTracker channel-override Sentry tag', () => {
+describe('OtaUpdateTracker channel override', () => {
   it('overrides ota_channel with a tester-stored override channel', async () => {
     prefs.getPreference.mockResolvedValue('pr-3327');
     render(createElement(OtaUpdateTracker));
 
     await waitFor(() => expect(sentry.setOtaChannelTag).toHaveBeenCalledWith('pr-3327'));
+  });
+
+  // The override has to reach PostHog too, not just Sentry. On a store binary
+  // the build-time Updates.channel stays 'production' (mobile-ota-preview.yml
+  // pins EXPO_UPDATES_CHANNEL), so without this the ota_channel super property
+  // would tag a tester's preview events as production and could never answer
+  // "which preview did this come from" — the only reason it exists.
+  it('re-registers the PostHog ota_channel super property from the override', async () => {
+    prefs.getPreference.mockResolvedValue('pr-3327');
+    render(createElement(OtaUpdateTracker));
+
+    await waitFor(() => expect(analytics.registerSuperProperties).toHaveBeenCalledWith({ ota_channel: 'pr-3327' }));
   });
 
   it('leaves the build-channel tag in place when no override is stored', async () => {
@@ -176,6 +188,9 @@ describe('OtaUpdateTracker channel-override Sentry tag', () => {
     await waitFor(() => expect(prefs.getPreference).toHaveBeenCalled());
     await flushPendingPromises();
     expect(sentry.setOtaChannelTag).not.toHaveBeenCalled();
+    // Exact-shape match: the launch stamp registers ota_channel alongside three
+    // other keys, so only the single-key override call can match this.
+    expect(analytics.registerSuperProperties).not.toHaveBeenCalledWith({ ota_channel: expect.anything() });
   });
 
   it('swallows a storage read failure without overriding the tag or throwing', async () => {
