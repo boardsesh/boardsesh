@@ -545,12 +545,18 @@ export const tickMutations = {
     // deduped-away alias UUID. It self-catches, so awaiting it cannot fail the
     // tick.
     //
-    // If something between here and the await throws (a beta-link rejection,
-    // the transaction), the promise is abandoned unsettled. That's deliberate,
-    // not an oversight: the observation is about ticks that get SAVED, and a
-    // tick that failed shouldn't move a counter measuring saved-tick UUIDs.
-    // Nothing leaks — the helper never rejects, so an abandoned promise is
-    // inert.
+    // The event fires from inside the helper the moment the probe resolves —
+    // it is NOT conditional on the tick going on to commit. That is the
+    // intended reading: what's being counted is "a client sent a climb_uuid the
+    // catalog has never heard of", which is equally true whether the tick then
+    // succeeded or failed on something unrelated (a beta-link rejection, a
+    // constraint violation). A UUID we can't resolve is worth knowing about
+    // either way, so #3942 should read a hit as "this client sent an unknown
+    // UUID", not "an unknown-UUID tick was saved".
+    //
+    // Consequently, if something between here and the await throws, the promise
+    // is abandoned unsettled and the event may already have fired. Nothing
+    // leaks — the helper never rejects, so an abandoned promise is inert.
     const catalogPresenceReport = reportTickClimbCatalogPresence(
       userId,
       validatedInput.boardType,

@@ -155,6 +155,26 @@ describe('saveTick climb-catalog check (#3528, log-only)', () => {
     });
   });
 
+  // board_climbs.uuid alone is the primary key, so it is tempting to read the
+  // board_type predicate as a redundant filter and drop it. It isn't: a tick
+  // names a (boardType, climbUuid) PAIR and board_climb_stats is keyed on that
+  // pair, so a Kilter UUID arriving under boardType 'tension' names a climb
+  // that does not exist. Without this test, dropping the predicate would go
+  // unnoticed.
+  it('fires the counter for a UUID that exists only under a DIFFERENT board type', async () => {
+    await tickMutations.saveTick(
+      undefined,
+      { input: { ...tickInput(CATALOG_CLIMB), boardType: 'tension' } },
+      authCtx(),
+    );
+
+    const events = unknownCatalogEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0][1]).toMatchObject({
+      properties: { boardType: 'tension', climbUuid: CATALOG_CLIMB },
+    });
+  });
+
   // The whole point of the log-only ruling: observing must never cost a send.
   it('still saves the tick when the climb is unknown', async () => {
     const result = await tickMutations.saveTick(undefined, { input: tickInput(UNKNOWN_CLIMB) }, authCtx());
