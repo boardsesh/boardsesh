@@ -197,6 +197,9 @@ async function main() {
     const toleranceMs = toleranceMinutes * 60_000;
     const claimed = new Set<string>();
     const entries: SnapshotEntry[] = [];
+    // Collected during matching, where the row is already in scope — looking
+    // each one back up in `suspects` afterwards would be O(entries × suspects).
+    const affectedUserIds = new Set<string>();
     let unmatched = 0;
     let ambiguous = 0;
 
@@ -221,6 +224,7 @@ async function main() {
           : best,
       );
       claimed.add(nearest.uuid);
+      affectedUserIds.add(nearest.userId);
       entries.push({
         uuid: nearest.uuid,
         oldAttemptCount: nearest.attemptCount,
@@ -229,12 +233,8 @@ async function main() {
       });
     }
 
-    const affectedUsers = new Set(
-      entries.map((entry) => suspects.find((row) => row.uuid === entry.uuid)?.userId ?? ''),
-    );
-
     console.log('');
-    console.log(`Matched      ${entries.length} rows across ${affectedUsers.size} users`);
+    console.log(`Matched      ${entries.length} rows across ${affectedUserIds.size} users`);
     console.log(`Unmatched    ${unmatched} events (no row within ±${toleranceMinutes}m — backdated or not synced)`);
     console.log(`Ambiguous    ${ambiguous} events had several candidate rows; took the nearest by climbed_at`);
     console.log(`Untouched    ${suspects.length - entries.length} candidate rows (web-written or unmatched)`);

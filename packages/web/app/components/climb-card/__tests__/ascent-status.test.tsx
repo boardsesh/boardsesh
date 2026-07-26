@@ -39,9 +39,19 @@ const mockUseSession = vi.mocked(useSession);
 function createBoardContextValue({
   boardName = 'kilter',
   logbook = [],
+  fetchedClimbUuids,
 }: {
   boardName?: BoardContextType['boardName'];
   logbook?: LogbookEntry[];
+  /**
+   * Climbs whose logbook is considered already fetched. Defaults to the climbs
+   * present in `logbook`, which is enough for these tests because nothing on
+   * web reads `fetchedLogbookClimbUuids` — only mobile's quick-tick gates Flash
+   * on it. A web test that starts gating on it must pass this explicitly:
+   * deriving it from an empty `logbook` would say "not fetched yet", not
+   * "fetched, no ticks".
+   */
+  fetchedClimbUuids?: string[];
 } = {}): BoardContextType {
   const logbookByClimbAngle = new Map<string, LogbookEntry[]>();
   for (const tick of logbook) {
@@ -59,9 +69,7 @@ function createBoardContextValue({
     isInitialized: true,
     logbook,
     logbookByClimbAngle,
-    // Every climb in the fixture is treated as already fetched, so an empty
-    // bucket means "no ticks" rather than "not loaded yet".
-    fetchedLogbookClimbUuids: new Set(logbook.map((tick) => tick.climb_uuid)),
+    fetchedLogbookClimbUuids: new Set(fetchedClimbUuids ?? logbook.map((tick) => tick.climb_uuid)),
     getLogbook: async () => {},
     saveTick: async () => {},
     saveClimb: async () => {
