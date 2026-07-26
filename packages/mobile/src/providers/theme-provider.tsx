@@ -133,7 +133,9 @@ type Theme = {
   /**
    * M3 elevation casts keyed by level (`level0`–`level5`), each a full ViewStyle
    * (iOS `shadow*` + Android `elevation`). Scheme-independent. Apply on the same
-   * view as the tonal background — never under `overflow:'hidden'`.
+   * view as the tonal background, and never on a view that also carries
+   * `overflow: 'hidden'` — Android clips the cast away. `GlassSurface` handles
+   * that for you by hoisting a consumer clip onto an inner wrapper.
    */
   materialElevation: typeof materialElevationByLevel;
   /**

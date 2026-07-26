@@ -200,11 +200,20 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   /**
-   * The hoisted clip. Sized to disappear from layout: `stretch` fills the cross
-   * axis, `flexGrow` takes any definite height the surface was given, and
-   * `flexShrink` keeps the clip bounds on the box when content overruns — so the
-   * children lay out exactly as they did when they were direct descendants. It
-   * clips at the surface's PADDING box, so a surface that both pads and clips
+   * The hoisted clip, sized so the children lay out the way they did when they
+   * were direct descendants: `stretch` fills the cross axis, `flexGrow` absorbs
+   * any definite height the surface was given, and `flexShrink` keeps the clip
+   * bounds on the box when content overruns.
+   *
+   * `flexBasis` deliberately stays `auto` — this is NOT `flex: 1`. With
+   * `flexBasis: 0` an auto-height surface would measure its only in-flow child at
+   * zero, size itself to zero, and then have no free space to grow back into, so
+   * the whole surface would collapse (the reaction menu card is exactly that
+   * shape). `auto` starts from the content size, which is what an auto-height
+   * surface wants, and still leaves free space for `flexGrow` to take when the
+   * surface does have a definite height.
+   *
+   * It clips at the surface's PADDING box, so a surface that both pads and clips
    * would round its corners inside the padding; no consumer does both today.
    */
   clipLayer: {
