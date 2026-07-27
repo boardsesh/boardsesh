@@ -11,8 +11,10 @@
  *     expo-open-ota server. Requires EXPO_UPDATES_URL (the server's manifest
  *     endpoint — eoas derives the upload host from updates.url in app.config)
  *     and EOO_TOKEN (the app-scoped expo-open-ota API key; the V3 control-plane
- *     server rejects Expo tokens). The channel name maps to a same-named branch
- *     on the server.
+ *     server rejects Expo tokens). The `--channel <name>` value is used as the
+ *     server BRANCH name; the channel→branch mapping is a separate step
+ *     (a one-time dashboard action for production; scripts/ota-channel-map.ts
+ *     for per-PR previews).
  *
  * Usage:
  *   vp run mobile:publish                              # preview: current git branch
@@ -87,22 +89,20 @@ function publishToSelfHostedChannel(channelName: string, platform: string, expli
   const commitSubject = getCommitSubject();
   const updateMessage = explicitMessage ?? `${commitHash} ${commitSubject}`.trim();
 
-  // eoas publish targets a server branch; the channel baked into the binary
-  // maps to a same-named branch (channel "production" → branch "production").
+  // eoas@3.0.5 publish targets a server BRANCH (--branch holds the uploaded
+  // update). We deliberately do NOT pass --channel: in eoas@3 it's a DEPRECATED
+  // client-side no-op — it only sets RELEASE_CHANNEL during config resolution; it
+  // is NOT sent to the server, does NOT create a channel, and does NOT drive
+  // rollouts. Channel creation + channel→branch mapping is a separate step
+  // (scripts/ota-channel-map.ts for per-PR previews; a one-time dashboard action
+  // for production). Progressive rollouts are branch + runtimeVersion scoped
+  // (--rollout-percentage targets a branch's runtimeVersion), not channel scoped.
   // EOAS_PACKAGE_SPEC pins the CLI to the exact deployed V3 server version
   // (control-plane requires an exact match); see scripts/lib/eoas.ts.
   const eoasArgs = [
     EOAS_PACKAGE_SPEC,
     'publish',
     '--branch',
-    channelName,
-    // V3 control-plane: --branch holds the update, --channel is what the runtime
-    // client's baked expo-channel-name header resolves through. Passing --channel
-    // creates the channel (branch and channel share the name, e.g. production) and
-    // is required for progressive rollouts (--rollout-percentage targets a
-    // channel). The channel→branch mapping itself is a one-time dashboard action;
-    // an unmapped channel serves nothing ("No branch mapping found").
-    '--channel',
     channelName,
     '--platform',
     platform,

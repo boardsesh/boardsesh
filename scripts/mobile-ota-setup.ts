@@ -18,7 +18,7 @@
  *
  * Phases (run in this order as infra comes online):
  *   vp run mobile:ota-setup keys            # print the V3 Railway env + cert-export steps
- *   vp run mobile:ota-setup expo            # map the `production` channel → branch (post first publish)
+ *   vp run mobile:ota-setup map             # map the `production` channel → branch (post first publish; `expo` alias)
  *   vp run mobile:ota-setup github --url <BASE_URL>/manifest   # set the EXPO_UPDATES_URL variable + secret checks
  *   vp run mobile:ota-setup preview         # per-PR preview infra: S3 lifecycle rule + GitHub bits
  *
@@ -105,7 +105,7 @@ function printServerSetup(): void {
       `DB_URL=<Railway Postgres internal URL, with explicit sslmode; DB must exist before first boot>`,
       `DB_KEYS_MASTER_KEY_B64=<openssl rand -base64 32 — store safely, NEVER regenerate>`,
       `ADMIN_EMAIL=admin@boardsesh.com`,
-      `ADMIN_PASSWORD=<>=8 chars incl. upper+lower+digit+special — first boot crash-loops otherwise>`,
+      `ADMIN_PASSWORD=<at least 8 chars incl. upper+lower+digit+special — first boot crash-loops otherwise>`,
       `USE_DASHBOARD=true`,
       `STORAGE_MODE=s3`,
       `S3_BUCKET_NAME=${BUCKET}`,
@@ -215,6 +215,10 @@ function setupGithub(url: string | null): void {
     log('    gh variable set OTA_ADMIN_EMAIL --env ota-preview-unattended --body admin@boardsesh.com');
   }
   log('');
+  log('(The ota-preview-unattended environment is created by the `preview` phase — run');
+  log(' `vp run mobile:ota-setup preview` FIRST if the gh --env commands above fail because');
+  log(' the environment does not exist yet.)');
+  log('');
   log('Now ship one native build from main (ios-testflight-rn / android-apk-rn) to bake in');
   log('the fingerprint runtimeVersion + server URL + cert, then OTAs auto-publish on main.');
 }
@@ -319,7 +323,7 @@ function printRunbook(): void {
   log('  3. vp run mobile:ota-setup github --url https://updates.boardsesh.com/manifest');
   log('       → sets the EXPO_UPDATES_URL repo variable + checks EOO_TOKEN / OTA_ADMIN_*.');
   log('  4. Ship one native build from main, then let the production OTA publish once.');
-  log('  5. vp run mobile:ota-setup expo        (needs OTA_ADMIN_EMAIL + OTA_ADMIN_PASSWORD)');
+  log('  5. vp run mobile:ota-setup map         (needs OTA_ADMIN_EMAIL + OTA_ADMIN_PASSWORD; `expo` alias)');
   log('       → maps the `production` channel → its branch (dashboard or headless).');
   log('  6. vp run mobile:ota-setup preview     (optional — per-PR preview channels)');
   log('       → prints the S3 {appId}/pr- lifecycle rule + ensures the GitHub environments/secrets.');
@@ -334,6 +338,8 @@ switch (phase) {
   case 'keys':
     printServerSetup();
     break;
+  // The phase maps on our own server; `expo` is a backwards-compatible alias.
+  case 'map':
   case 'expo':
     setupChannel();
     break;
@@ -347,5 +353,7 @@ switch (phase) {
     printRunbook();
     break;
   default:
-    fail(`Unknown phase "${phase}". Expected one of: keys, expo, github, preview (or no argument for the runbook).`);
+    fail(
+      `Unknown phase "${phase}". Expected one of: keys, map (alias: expo), github, preview (or no argument for the runbook).`,
+    );
 }

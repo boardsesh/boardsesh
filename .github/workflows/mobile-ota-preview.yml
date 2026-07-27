@@ -30,10 +30,13 @@ name: Mobile OTA Preview (Per-PR Channel)
 #   * FORKS get NO secrets on `pull_request` (we never use pull_request_target). A
 #     fork can't publish, map, or exfiltrate a secret no matter what it edits — the
 #     hard boundary that keeps external contributors away from `production`.
-#   * The `/ota-preview` comment + workflow_dispatch paths run the DEFAULT-BRANCH
-#     (main) copy of this file, so their maintainer / author_association gate is NOT
-#     PR-editable. That's how a FORK is previewed safely: a maintainer triggers it
-#     and the publish then waits on the `ota-preview` environment.
+#   * The `/ota-preview` COMMENT path runs the DEFAULT-BRANCH (main) copy of this file
+#     (issue_comment events always use the default branch), so its maintainer /
+#     author_association gate is NOT PR-editable. workflow_dispatch runs the copy on
+#     WHICHEVER ref the dispatcher picks — the protection there is that dispatch
+#     REQUIRES REPO WRITE ACCESS, not the ref. Either way a FORK is previewed safely: a
+#     trusted maintainer triggers it and the publish then waits on the `ota-preview`
+#     environment.
 #   * SAME-REPO collaborators are trusted: for `pull_request` GitHub runs the PR's
 #     OWN copy of this workflow with repo secrets. Any same-repo PR touching the
 #     relevant paths auto-publishes; the `environment: ota-preview` reviewer gate
@@ -68,11 +71,13 @@ on:
         description: 'PR number to build a preview for (works for fork PRs)'
         required: true
 
+# Least-privilege DEFAULT for every job (read-only). The jobs that write —
+# announce / cleanup (sticky comment + deployment status) — re-grant the narrow write
+# set at the job level. The `publish` job, which runs PR-author code, is capped at
+# `contents: read` + `deployments: write` so a compromised PR build can't touch issues
+# or PRs with the workflow token.
 permissions:
   contents: read
-  pull-requests: write # sticky comment
-  issues: write # sticky comment (PRs are issues)
-  deployments: write # the "preview ready" signal
 
 # ─── SHARED FINGERPRINT ENV (workflow-level) ─────────────────────────────────────
 # MUST stay byte-identical to mobile-ota-production.yml / ios-testflight-rn.yml /
@@ -117,9 +122,11 @@ jobs:
   # NOTE on which copy of this file runs: for `pull_request` GitHub runs the PR's
   # OWN copy (a same-repo author can edit this gate — but same-repo collaborators are
   # already trusted with the repo's secrets, and forks get NO secrets so they can't
-  # publish regardless of what they edit). The `/ota-preview` comment + workflow_dispatch
-  # paths run the DEFAULT-BRANCH (main) copy, so their maintainer / author-association
-  # gate is NOT editable from a PR — that is what makes the fork / on-demand path safe.
+  # publish regardless of what they edit). The `/ota-preview` COMMENT path runs the
+  # DEFAULT-BRANCH (main) copy (issue_comment always uses the default branch), so its
+  # gate is NOT editable from a PR; workflow_dispatch runs the copy on whichever ref the
+  # dispatcher selects, gated instead by dispatch REQUIRING REPO WRITE ACCESS — that is
+  # what makes the fork / on-demand path safe.
   gate:
     # Skip unrelated comments (issue_comment fires on every comment in the repo).
     if: >-
@@ -130,11 +137,20 @@ jobs:
        startsWith(github.event.comment.body, '/ota-preview'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Read-only: reads PR metadata (incl. the head SHA to pin) and uploads an artifact.
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       action: ${{ steps.decide.outputs.action }}
       pr_number: ${{ steps.decide.outputs.pr_number }}
       channel: ${{ steps.decide.outputs.channel }}
       fork_skip: ${{ steps.decide.outputs.fork_skip }}
+      # The head SHA captured HERE, in the secret-free gate, is the exact commit the
+      # publish job checks out — pinning it closes the TOCTOU where a fork could push
+      # after the maintainer gate but before the publish checkout of the moving
+      # refs/pull/<n>/head (which runs with EOO_TOKEN).
+      head_sha: ${{ steps.decide.outputs.head_sha }}
     steps:
       - name: Decide action + resolve PR
         id: decide
@@ -149,6 +165,10 @@ jobs:
             // (mobile-ota-preview-prompt.yml) posts the "a maintainer can /ota-preview"
             // nudge. We only signal it via an artifact; no secrets, no fork code run.
             let forkSkip = false;
+            // The exact commit the publish job will check out (pinned at gate time, no
+            // secrets in scope). For pull_request we take the triggering commit
+            // directly; for comment / dispatch we resolve it via the API below.
+            let headSha = '';
 
             if (context.eventName === 'pull_request') {
               const pr = context.payload.pull_request;
@@ -162,6 +182,7 @@ jobs:
                 // /ota-preview comment or workflow_dispatch for those.
                 action = !isFork ? 'publish' : 'skip';
                 forkSkip = isFork;
+                headSha = pr.head.sha;
               }
             } else if (context.eventName === 'issue_comment') {
               const assoc = context.payload.comment.author_association;
@@ -186,14 +207,27 @@ jobs:
               action = 'skip';
               prNumber = '';
               forkSkip = false;
+              headSha = '';
+            }
+
+            // Comment / dispatch publishes only carried a PR number — resolve the head
+            // SHA now (still no secrets) so the publish job can PIN to this exact commit
+            // instead of re-resolving the moving refs/pull/<n>/head minutes later, after
+            // the maintainer gate, with EOO_TOKEN in scope.
+            if (action === 'publish' && !headSha) {
+              const { data: prData } = await github.rest.pulls.get({
+                owner: context.repo.owner, repo: context.repo.repo, pull_number: Number(prNumber),
+              });
+              headSha = prData.head.sha;
             }
 
             const channel = prNumber ? `pr-${prNumber}` : '';
-            core.info(`event=${context.eventName} action=${action} channel=${channel || '(none)'} fork_skip=${forkSkip}`);
+            core.info(`event=${context.eventName} action=${action} channel=${channel || '(none)'} head_sha=${headSha || '(none)'} fork_skip=${forkSkip}`);
             core.setOutput('action', action);
             core.setOutput('pr_number', String(prNumber));
             core.setOutput('channel', channel);
             core.setOutput('fork_skip', String(forkSkip));
+            core.setOutput('head_sha', headSha);
 
       # Hand the fork PR number to the companion workflow_run file. This job's token
       # is read-only on a fork PR (can't comment), and workflow_run.pull_requests is
@@ -222,6 +256,12 @@ jobs:
     if: needs.gate.outputs.action == 'publish'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # This job runs PR-author code with EOO_TOKEN, so its workflow-token scope is capped
+    # at the minimum: read the tree, write the pr-preview deployment. NO issues /
+    # pull-requests write — those stay on the trusted announce / cleanup jobs.
+    permissions:
+      contents: read
+      deployments: write
     environment: ota-preview
     concurrency:
       # `needs` isn't reliably available to job-level concurrency, so derive the PR
@@ -243,7 +283,9 @@ jobs:
     outputs:
       channel: ${{ needs.gate.outputs.channel }}
       published: ${{ steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success' }}
-      head_sha: ${{ steps.deploy.outputs.head_sha }}
+      # The exact commit this job checked out and published — the gate-captured SHA end
+      # to end (not a fresh re-resolution). The announce comment surfaces it.
+      head_sha: ${{ needs.gate.outputs.head_sha }}
       deployment_id: ${{ steps.deploy.outputs.deployment_id }}
       verdict_ios: ${{ steps.compat.outputs.verdict_ios }}
       verdict_android: ${{ steps.compat.outputs.verdict_android }}
@@ -264,14 +306,12 @@ jobs:
         env:
           CHANNEL: ${{ needs.gate.outputs.channel }}
           PR_NUMBER: ${{ needs.gate.outputs.pr_number }}
+          # The commit the gate pinned — the SAME one the checkout below uses. No fresh
+          # github.rest.pulls.get here: re-resolving could pick up a post-gate push.
+          HEAD_SHA: ${{ needs.gate.outputs.head_sha }}
         with:
           script: |
-            const prNumber = Number(process.env.PR_NUMBER);
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner, repo: context.repo.repo, pull_number: prNumber,
-            });
-            const headSha = pr.head.sha;
-            core.setOutput('head_sha', headSha);
+            const headSha = process.env.HEAD_SHA;
             // Deployment is a visibility nicety — never fail the publish over it.
             try {
               const dep = await github.rest.repos.createDeployment({
@@ -296,12 +336,18 @@ jobs:
               core.warning(`Could not create deployment: ${error.message}`);
             }
 
-      - name: Checkout PR head
+      - name: Checkout PR head (pinned to the gate-captured SHA)
         uses: actions/checkout@v4
         with:
-          # refs/pull/<n>/head exists in the base repo for every PR (fork or not),
-          # so this is uniform across the pull_request / comment / dispatch triggers.
-          ref: refs/pull/${{ needs.gate.outputs.pr_number }}/head
+          # Pin to the EXACT commit the secret-free gate captured — NOT the moving
+          # refs/pull/<n>/head, which a fork could advance after the maintainer gate but
+          # before this checkout (this job holds EOO_TOKEN). The commit is fetchable in
+          # the base repo for any PR (fork or not).
+          ref: ${{ needs.gate.outputs.head_sha }}
+          # This job then runs PR-author code (bun install, app.config execSync). Don't
+          # leave a write-capable GITHUB_TOKEN in .git/config for it to reach; the
+          # baseline fetch of public origin/main below works unauthenticated.
+          persist-credentials: false
           fetch-depth: 0
           fetch-tags: true
 
@@ -363,15 +409,21 @@ jobs:
   # actually published (so the branch exists). Idempotent.
   #
   # The `if:` is EXPLICIT (not the implicit success()): `!cancelled()` +
-  # needs.publish.result == 'success' + the `published` flag. A bare success()-implicit
-  # gate would skip the map when the OTHER platform's publish step failed even though a
-  # platform did ship; the explicit gate maps whenever the publish job completed and at
-  # least one platform landed.
+  # needs.publish.result != 'skipped' + the `published` flag. We gate on `!= 'skipped'`
+  # rather than `== 'success'` on purpose: if ONE platform's publish step fails the
+  # whole publish JOB result flips to `failure`, but the other platform still shipped a
+  # branch that needs mapping — a `== 'success'` gate would skip the map and orphan the
+  # channel. Job outputs (incl. `published`) are still set on a job failure, so the
+  # `published == 'true'` flag remains the real "≥1 platform landed" signal. `map` runs
+  # whenever the publish job actually ran (not skipped) and at least one platform landed.
   map:
     needs: [gate, publish]
-    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.publish.outputs.published == 'true' }}
+    if: ${{ !cancelled() && needs.publish.result != 'skipped' && needs.publish.outputs.published == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Only checks out the trusted base and calls the management API — read-only token.
+    permissions:
+      contents: read
     environment: ota-preview-unattended
     concurrency:
       group: mobile-ota-preview-map-${{ github.event.pull_request.number || github.event.issue.number || github.event.inputs.pr }}
@@ -416,6 +468,13 @@ jobs:
     if: ${{ !cancelled() && needs.gate.outputs.action == 'publish' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Trusted job (no OTA secrets, no PR-author code): keeps the write set to post the
+    # sticky comment (pull-requests / issues) and the deployment status.
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      deployments: write
     steps:
       - name: Announce preview on the PR
         uses: actions/github-script@v7
@@ -468,8 +527,8 @@ jobs:
             if (anyPublished && mapped) {
               switchable = true;
               headline =
-                `This PR is live on the OTA channel **\`${channel}\`**. Anyone on a TestFlight / App Store ` +
-                `build can load it without a new build:`;
+                `This PR is live on the OTA channel **\`${channel}\`** from commit \`${sha}\` (the exact SHA the ` +
+                `gate pinned). Anyone on a TestFlight / App Store build can load it without a new build:`;
               deployState = 'success';
               deployDesc = `OTA channel ${channel} ready`;
             } else if (anyPublished && !mapped) {
@@ -549,6 +608,13 @@ jobs:
     if: needs.gate.outputs.action == 'cleanup'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Trusted job (no PR-author code): keeps the write set to update the sticky comment
+    # (pull-requests / issues) and inactivate the pr-preview deployment.
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      deployments: write
     # Channel/branch teardown is a dashboard-admin action (the eoo_ key can't do it),
     # so this job needs the OTA_ADMIN_* creds — which live in the ota-preview-unattended
     # environment (NO required reviewers, so a PR close can't hang on approval). It runs
@@ -561,7 +627,7 @@ jobs:
     env:
       # Presence flag only (a boolean, NOT the secret) so the delete step's `if:` can
       # skip a fork-PR close where secrets are absent. The creds themselves are scoped
-      # to that step, off checkout / setup-bun / `bun install`.
+      # to that step, off checkout / setup-bun.
       HAS_OTA_ADMIN: ${{ secrets.OTA_ADMIN_PASSWORD != '' }}
       CHANNEL: ${{ needs.gate.outputs.channel }}
     steps:
@@ -579,14 +645,16 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
+      # No `bun install`: ota-channel-map.ts is dependency-free (node built-ins only).
+      # Skipping the workspace install keeps this most-sensitive job (admin creds in
+      # scope) from executing any dependency install/postinstall code.
+      #
       # Deletes the channel (its mapping first) then the branch on the V3 server, so
       # it stops resolving pr-N and the branch's S3 objects are the primary GC. The
       # bucket's `{appId}/pr-` lifecycle rule is only an orphan backstop. Skipped when
       # the admin creds are absent (fork close) — the scheduled sweep reclaims those.
       - name: Delete preview channel + branch
+        id: delete
         if: env.HAS_OTA_ADMIN == 'true'
         env:
           EXPO_UPDATES_URL: ${{ vars.EXPO_UPDATES_URL }}
@@ -601,11 +669,34 @@ jobs:
           CHANNEL: ${{ needs.gate.outputs.channel }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # success | failure | skipped (fork close: no admin creds) | '' — drives the
+          # wording so we don't claim "Removed" when the delete was skipped or failed.
+          DELETE_OUTCOME: ${{ steps.delete.outcome }}
         with:
           script: |
             const channel = process.env.CHANNEL;
             const prNumber = Number(process.env.PR_NUMBER);
             const marker = '<!-- mobile-ota-preview -->';
+
+            // The delete step is skipped on a fork close (no admin creds) and can fail
+            // if the server/creds misbehave — only claim "removed" when it actually ran
+            // and succeeded. Otherwise the daily sweep (mobile-ota-preview-sweep.yml) is
+            // the backstop that eventually reaps it.
+            const deleteOutcome = process.env.DELETE_OUTCOME;
+            const removed = deleteOutcome === 'success';
+            const removalNote = removed
+              ? `Removed — this PR is closed, so the \`${channel}\` channel and its branch were torn down. Testers ` +
+                `still pinned to it should reset to \`production\` in the OTA Channel Switcher.`
+              : deleteOutcome === 'failure'
+                ? `This PR is closed, but tearing down the \`${channel}\` channel failed (see the \`cleanup\` job in ` +
+                  `the run log) — the daily sweep will retry it. Testers still pinned to it should reset to ` +
+                  `\`production\` in the OTA Channel Switcher.`
+                : `This PR is closed. The \`${channel}\` channel couldn't be torn down here (a fork close carries no ` +
+                  `admin creds), so the daily sweep will reap it. Testers still pinned to it should reset to ` +
+                  `\`production\` in the OTA Channel Switcher.`;
+            const deployDesc = removed
+              ? `OTA channel ${channel} removed`
+              : `OTA channel ${channel} teardown pending (sweep backstop)`;
 
             // Inactivate any pr-preview deployment for this PR's head commit.
             try {
@@ -617,7 +708,7 @@ jobs:
                 await github.rest.repos.createDeploymentStatus({
                   owner: context.repo.owner, repo: context.repo.repo,
                   deployment_id: deployment.id, state: 'inactive',
-                  description: `OTA channel ${channel} removed`,
+                  description: deployDesc,
                 });
               }
             } catch (error) {
@@ -635,8 +726,7 @@ jobs:
                   marker,
                   `### 📱 OTA preview — \`${channel}\``,
                   '',
-                  `Removed — this PR is closed, so the \`${channel}\` channel was torn down. Testers still pinned ` +
-                    `to it should reset to \`production\` in the OTA Channel Switcher.`,
+                  removalNote,
                 ].join('\n');
                 await github.rest.issues.updateComment({
                   owner: context.repo.owner, repo: context.repo.repo, comment_id: existing.id, body,

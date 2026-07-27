@@ -31,6 +31,12 @@ Postgres and left V2 untouched. Two servers now run in parallel:
 - **Retire V2 later**, telemetry-gated: watch the old-build share in PostHog (below); when it's
   negligible, decommission the `boardsesh-ota` service + its bucket. Until then it's one small idle
   service.
+- **The URL cutover happens at merge, not before.** The repo variable `EXPO_UPDATES_URL` (consumed by
+  the native build workflows + the OTA publish workflow) flips from the V2 `https://ota.boardsesh.com/manifest`
+  to the V3 `https://updates.boardsesh.com/manifest` **when the V3 client PR merges** — no earlier, no
+  later. Flip it early and V2-era publishes from `main` break; flip it late and the first V3 native
+  build bakes the stale V2 URL into the binary. Already-open PR branches keep pinning `eoas@2` and
+  targeting the old URL until they're rebased onto the merged change.
 
 ### Standing rules
 
@@ -444,19 +450,29 @@ good bundle automatically. When you need installs reverted in **minutes**, befor
 merge, use the helper (wraps the `eoas` CLI):
 
 ```bash
-vp run mobile:ota-rollback                       # rollback to the embedded bundle, all platforms
-vp run mobile:ota-rollback -- --platform ios     # one platform only
-vp run mobile:ota-rollback -- --mode republish   # re-point to a previous update (interactive, run LOCALLY)
+vp run mobile:ota-rollback -- --platform ios       # rollback iOS to the embedded bundle
+vp run mobile:ota-rollback -- --platform android   # rollback Android (needs GOOGLE_MAPS_API_KEY)
+vp run mobile:ota-rollback -- --platform ios --mode republish   # re-point to a previous update (interactive, run LOCALLY)
 ```
 
-- **`--mode embedded` (default)** runs `eoas rollback`: publishes a rollback **directive** so every
-  install currently on the bad OTA reverts to the binary's embedded (shipped, known-good) bundle on
-  its next launch. Non-interactive — safe to run from CI.
+- **`--mode embedded` (default)** runs `eoas rollback --nonInteractive`: publishes a rollback
+  **directive** so every install currently on the bad OTA reverts to the binary's embedded (shipped,
+  known-good) bundle on its next launch. `eoas rollback` prompts for confirmation and throws in a
+  non-TTY, so the helper passes `--nonInteractive` — that's what makes it CI-safe.
 - **`--mode republish`** runs `eoas republish`: re-points the branch to a previous published update
   you pick from a list. It's **interactive**, so run it locally, not in CI.
 
-Both need `EXPO_UPDATES_URL` + `EOO_TOKEN` (same as the publish). After rolling back, land the real
-fix (a revert or a corrected commit) on `main` so the next publish moves the fleet forward again.
+**Run it one platform at a time.** `eoas` resolves the target runtimeVersion (fingerprint) from the
+local config, and that resolution mirrors the [per-platform production publish](#fingerprint-parity--the-one-rule-that-matters):
+Android needs `GOOGLE_MAPS_API_KEY` set (it changes `android.config`) while iOS must resolve
+**without** it (Apple Maps). A single `--platform all` can't satisfy both, so the helper rejects it.
+You must also set `EXPO_UPDATES_CHANNEL` (e.g. `production`) — it feeds `updates.requestHeaders` and
+thus the fingerprint. Get any of these wrong and `eoas` reports success while the directive is filed
+under a fingerprint no shipped binary embeds, so the fleet reverts nothing.
+
+Env: `EXPO_UPDATES_URL` + `EOO_TOKEN` + `EXPO_UPDATES_CHANNEL` (same as the publish), plus
+`GOOGLE_MAPS_API_KEY` for `--platform android`. After rolling back, land the real fix (a revert or a
+corrected commit) on `main` so the next publish moves the fleet forward again.
 
 ### Crash-screen recovery button ("Check for a fix")
 
@@ -552,8 +568,12 @@ Postgres, server, DNS) stay manual. Run it with no argument for the ordered runb
    database (generates the keypair, sealed under the master key). **Export the app's public cert**
    → commit it as `packages/mobile/certs/certificate.pem`. The committed cert is what flips
    production builds onto the self-hosted path (`resolveUpdatesConfig` stays on EAS until the cert
-   exists). Create the `production` branch + channel and **map** the channel to the branch (a
-   dashboard action — see [Channel↔branch mapping](#channelbranch-mapping-control-plane)).
+   exists). **Don't create/map the `production` channel yet** — the branch it maps to doesn't exist
+   until the first `eoas publish --branch production`, and the headless map hard-fails on a
+   nonexistent branch. Come back and map `production` → `production` **after the first production
+   publish** (the first `main` OTA, or a manual `vp run mobile:publish -- --channel production`), via
+   the dashboard or `vp run mobile:ota-setup map` — see
+   [Channel↔branch mapping](#channelbranch-mapping-control-plane).
 7. **Publish credential** — mint an app-scoped `eoo_` API key in the dashboard (the control-plane
    rejects Expo-token auth). Add it as the GitHub repo secret **`EOO_TOKEN`** and also to the
    `ota-preview` environment.
@@ -573,6 +593,11 @@ With DB-generated keys, the app's **private signing key lives only in Postgres**
 fleet unsignable — no OTA could ever be published again for those binaries. So both are load-bearing:
 keep Railway Postgres backups on, keep the master key in two places, and verify a `pg_restore`
 dry-run periodically.
+
+Because the shipped binary sends a fixed `expo-app-id`, **standing up a replacement server means
+RESTORING that Postgres** (the app row + its sealed signing key) from a `pg_dump` backup — recreating
+the app from scratch mints a **new** app id that no shipped binary ever sends, so its OTAs would never
+be requested.
 
 ## Changelog ownership (the in-app "What's New")
 
@@ -708,11 +733,12 @@ pr-<number>` (keeping `EXPO_UPDATES_CHANNEL=production` so the runtimeVersion eq
   that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
   `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held
   byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
-- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, and the mapping
-  step uses the dashboard admin credentials (`OTA_ADMIN_EMAIL` + `OTA_ADMIN_PASSWORD`); both live in
-  the gated `ota-preview` environment. The publish job runs PR-author code (`app.config.ts` calls
-  `execSync`; workspace postinstall) with those secrets in scope. The boundary that protects
-  `production`:
+- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, which lives in the
+  gated **`ota-preview`** environment; the channel-mapping step uses the dashboard admin credentials
+  (`OTA_ADMIN_EMAIL` + `OTA_ADMIN_PASSWORD`), which live in a SEPARATE **`ota-preview-unattended`**
+  environment (no required reviewers, trusted-base code only — see below). The publish job runs
+  PR-author code (`app.config.ts` calls `execSync`; workspace postinstall) with `EOO_TOKEN` in scope
+  but never the admin creds. The boundary that protects `production`:
   - **Forks get NO secrets** on `pull_request` (we never use `pull_request_target`), so a fork can't
     publish or exfiltrate the token regardless of what it edits. This is the hard boundary for
     external contributors.
@@ -731,13 +757,15 @@ pr-<number>` (keeping `EXPO_UPDATES_CHANNEL=production` so the runtimeVersion eq
     **`ota-preview` environment** reviewer gate (if required reviewers are configured) is the human
     checkpoint — not a hard wall against a malicious insider, who already holds the repo's secrets via
     other workflows. `^pr-[0-9]+$` guards every channel mutation (defense-in-depth).
-  - **Hardening (optional).** For hard same-repo enforcement, keep the publish credentials
-    (`EOO_TOKEN` and the admin creds) as **`ota-preview` environment secrets** only, so a same-repo PR
-    can't drop the environment to reach them. Then the sweep needs a main-only environment (e.g.
-    `ota-maintenance` with a `main` deployment branch policy, no reviewers) and the on-close cleanup
-    defers channel deletion to the sweep. `EOO_TOKEN` is also a repo secret because the production
-    publish on `main` needs it, but production mapping is a one-time dashboard action, so the admin
-    creds can stay environment-only.
+  - **Hardening (optional).** The admin-cred split is already done: `OTA_ADMIN_EMAIL` +
+    `OTA_ADMIN_PASSWORD` live only in **`ota-preview-unattended`**, whose jobs check out the trusted
+    base and carry no required reviewers, so PR-author code never runs with the admin creds. The only
+    residual hardening concerns **`EOO_TOKEN`**: it's currently also a plain repo secret (the
+    production publish on `main` needs it), which any same-repo PR workflow can read. For hard
+    same-repo enforcement, make `EOO_TOKEN` environment-scoped instead — hold it on `ota-preview` (and
+    on the `main` production environment) and drop the repo-level copy, so a PR can't reach it without
+    the `ota-preview` gate. Production channel mapping stays a one-time dashboard action, so no admin
+    creds ever touch `main`.
 - **Readiness signal.** Each publish posts a sticky PR comment (channel name + switcher steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
@@ -753,9 +781,10 @@ pr-<number>` (keeping `EXPO_UPDATES_CHANNEL=production` so the runtimeVersion eq
   leak) or the rule could match production, so `scripts/mobile-ci-env-parity.test.ts` couples them.
 
 One-time infra: `vp run mobile:ota-setup preview` prints the lifecycle rule + the GitHub setup
-(the `ota-preview` / `pr-preview` environments; the `ota-preview` env holds var `OTA_ADMIN_EMAIL` +
-secret `OTA_ADMIN_PASSWORD` for the mapping step and `EOO_TOKEN` for the publish, and
-`GOOGLE_MAPS_API_KEY` is a repo-level secret for the Android fingerprint).
+(the `ota-preview`, `ota-preview-unattended`, and `pr-preview` environments; `ota-preview` holds
+secret `EOO_TOKEN` for the publish job, `ota-preview-unattended` holds var `OTA_ADMIN_EMAIL` +
+secret `OTA_ADMIN_PASSWORD` for the mapping/cleanup/sweep jobs, and `GOOGLE_MAPS_API_KEY` is a
+repo-level secret for the Android fingerprint).
 
 ## Deferred
 

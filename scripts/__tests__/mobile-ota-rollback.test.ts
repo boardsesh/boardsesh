@@ -25,7 +25,7 @@ describe('parseRollbackArgs', () => {
 });
 
 describe('buildEoasArgs', () => {
-  it('maps the embedded mode to `eoas rollback`', () => {
+  it('maps the embedded mode to `eoas rollback --nonInteractive` (non-TTY safe)', () => {
     expect(buildEoasArgs({ branch: 'production', platform: 'all', mode: 'embedded' })).toEqual([
       EOAS_PACKAGE_SPEC,
       'rollback',
@@ -33,6 +33,7 @@ describe('buildEoasArgs', () => {
       'production',
       '--platform',
       'all',
+      '--nonInteractive',
     ]);
   });
 

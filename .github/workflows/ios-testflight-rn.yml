@@ -39,7 +39,7 @@ env:
   EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID: 401523882502-h92kdkck1qhmdbgq7ltek87g4rg8rg3h.apps.googleusercontent.com
   EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID: 401523882502-hvfhh79p4q1qq0md7lk646c6sgmsi9q0.apps.googleusercontent.com
   # Self-hosted OTA (expo-open-ota). EXPO_UPDATES_URL is the server's manifest
-  # endpoint (e.g. https://ota.boardsesh.com/manifest), set as a repo variable
+  # endpoint (e.g. https://updates.boardsesh.com/manifest), set as a repo variable
   # so the domain isn't hardcoded; until it's set, app.config.ts falls back to
   # the EAS URL and OTA stays inert (harmless). The channel is baked into the
   # binary via Expo.plist by `expo prebuild`. See docs/mobile-ota-updates.md.

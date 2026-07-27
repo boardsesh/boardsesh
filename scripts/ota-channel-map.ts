@@ -14,8 +14,9 @@
  *   bun scripts/ota-channel-map.ts delete --channel pr-123 --branch pr-123
  *
  * Both commands are idempotent. Env:
- *   OTA_BASE_URL          server base URL; falls back to EXPO_UPDATES_URL with a
- *                         trailing /manifest stripped (e.g. https://updates.boardsesh.com)
+ *   OTA_BASE_URL          server base URL (a trailing /manifest is tolerated and
+ *                         stripped); falls back to EXPO_UPDATES_URL the same way
+ *                         (e.g. https://updates.boardsesh.com)
  *   OTA_APP_ID            app id the server routes on (default: the Boardsesh app UUID)
  *   OTA_ADMIN_EMAIL       dashboard admin email (POST /auth/login)
  *   OTA_ADMIN_PASSWORD    dashboard admin password
@@ -45,8 +46,10 @@ function fail(message: string): never {
 }
 
 function resolveBaseUrl(): string {
+  // Both sources may be the manifest endpoint (…/manifest) — the natural value to
+  // paste is the same one EXPO_UPDATES_URL holds — so strip /manifest from either.
   const explicit = process.env.OTA_BASE_URL;
-  if (explicit) return explicit.replace(/\/+$/, '');
+  if (explicit) return explicit.replace(/\/manifest\/?$/, '').replace(/\/+$/, '');
   const updatesUrl = process.env.EXPO_UPDATES_URL;
   if (!updatesUrl) fail('Set OTA_BASE_URL (or EXPO_UPDATES_URL). e.g. https://updates.boardsesh.com');
   return updatesUrl.replace(/\/manifest\/?$/, '').replace(/\/+$/, '');
