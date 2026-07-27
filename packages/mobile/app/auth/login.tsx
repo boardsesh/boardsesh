@@ -96,7 +96,8 @@ export default function LoginScreen() {
     Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 35;
 
   const oauthProviders = useOAuthProviders();
-  const showSocialSignIn = oauthProviders.loading || oauthProviders.apple || oauthProviders.google;
+  const showSocialSignIn =
+    oauthProviders.loading || oauthProviders.error || oauthProviders.apple || oauthProviders.google;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>

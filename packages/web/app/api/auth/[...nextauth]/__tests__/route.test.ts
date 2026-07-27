@@ -49,6 +49,7 @@ describe('POST /api/auth/[...nextauth]', () => {
     vi.stubEnv('VERCEL_ENV', 'production');
     vi.stubEnv('NEXTAUTH_URL', 'https://www.boardsesh.com');
     vi.stubEnv('AUTH_COOKIE_DOMAIN', '');
+    vi.stubEnv('NEXTAUTH_SECRET', 'test-nextauth-secret');
     nextAuthHandlerMock.mockResolvedValue(new Response(null, { status: 200 }));
   });
 
@@ -226,5 +227,114 @@ describe('POST /api/auth/[...nextauth]', () => {
 
     const setCookies = response.headers.getSetCookie();
     expect(setCookies).toEqual(['next-auth.session-token=fresh-jwt; Path=/; HttpOnly; SameSite=Lax']);
+  });
+
+  it('binds an Expo Google return to OAuth state and returns callback errors to the app', async () => {
+    const returnUrl =
+      'https://app.boardsesh.com/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-1';
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://accounts.google.com/o/oauth2/v2/auth?state=google-state-1' },
+      }),
+    );
+    const signInRequest = request('/api/auth/signin/google', {
+      csrfToken: 'csrf-token',
+      callbackUrl: returnUrl,
+    });
+
+    const signInResponse = await POST(signInRequest, context);
+    const returnCookie = signInResponse.headers
+      .getSetCookie()
+      .find((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'));
+    expect(returnCookie).toContain('HttpOnly');
+    expect(returnCookie).toContain('SameSite=None');
+    expect(returnCookie).toContain('Secure');
+
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://www.boardsesh.com/auth/error?error=AccessDenied' },
+      }),
+    );
+    const callbackRequest = new NextRequest(
+      'https://www.boardsesh.com/api/auth/callback/google?state=google-state-1&code=provider-code',
+      {
+        headers: { Cookie: returnCookie!.split(';', 1)[0]! },
+      },
+    );
+
+    const callbackResponse = await GET(callbackRequest, context);
+    const destination = new URL(callbackResponse.headers.get('Location')!);
+    expect(destination.origin + destination.pathname).toBe('https://app.boardsesh.com/auth/login');
+    expect(destination.searchParams.get('boardseshOAuthProvider')).toBe('google');
+    expect(destination.searchParams.get('boardseshOAuthAttempt')).toBe('attempt-google-1');
+    expect(destination.searchParams.get('boardseshOAuthError')).toBe('AccessDenied');
+    expect(callbackResponse.headers.getSetCookie()).toContainEqual(
+      expect.stringMatching(/^boardsesh\.oauth-return\..*=; .*Max-Age=0/),
+    );
+  });
+
+  it('returns an Apple form-post callback to the exact Expo registration attempt', async () => {
+    const returnUrl =
+      'https://www.boardsesh.com/app/auth/register?boardseshOAuthProvider=apple&boardseshOAuthAttempt=attempt-apple-1';
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://appleid.apple.com/auth/authorize?state=apple-state-1' },
+      }),
+    );
+    const signInResponse = await POST(
+      request('/api/auth/signin/apple', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
+      context,
+    );
+    const returnCookie = signInResponse.headers
+      .getSetCookie()
+      .find((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'));
+
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: {
+          Location: 'https://www.boardsesh.com/app',
+          'Set-Cookie': '__Secure-next-auth.session-token=fresh; Path=/; Secure; HttpOnly',
+        },
+      }),
+    );
+    const callbackRequest = new NextRequest('https://www.boardsesh.com/api/auth/callback/apple', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Cookie: returnCookie!.split(';', 1)[0]!,
+      },
+      body: new URLSearchParams({ state: 'apple-state-1', code: 'provider-code' }),
+    });
+
+    const callbackResponse = await POST(callbackRequest, context);
+    expect(callbackResponse.headers.get('Location')).toBe(returnUrl);
+    expect(callbackResponse.headers.getSetCookie()).toContainEqual(
+      expect.stringContaining('__Secure-next-auth.session-token=fresh'),
+    );
+  });
+
+  it('does not bind an untrusted or malformed Expo callback URL', async () => {
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://accounts.google.com/o/oauth2/v2/auth?state=google-state-1' },
+      }),
+    );
+    const lookalikeRequest = request('/api/auth/signin/google', {
+      csrfToken: 'csrf-token',
+      callbackUrl:
+        'https://app.boardsesh.com.evil.example/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-1',
+    });
+
+    const response = await POST(lookalikeRequest, context);
+
+    expect(response.headers.getSetCookie().some((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'))).toBe(
+      false,
+    );
+    expect(nextAuthHandlerMock).toHaveBeenCalledWith(lookalikeRequest, context);
   });
 });

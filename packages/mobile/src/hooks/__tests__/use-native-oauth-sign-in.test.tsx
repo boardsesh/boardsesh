@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 
 // Mock the auth provider so the hook gets controllable sign-in functions without
 // pulling in the provider's native dependency chain. The `type OAuthSignInResult`
@@ -26,8 +26,14 @@ const reportErrorMock = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({ reportError: (...args: unknown[]) => reportErrorMock(...args) }));
 
 const setOAuthPendingMock = vi.fn();
+const consumeFreshOAuthPendingMock = vi.fn();
 vi.mock('../../lib/oauth-pending-store', () => ({
   setOAuthPending: (...args: unknown[]) => setOAuthPendingMock(...args),
+  consumeFreshOAuthPending: (...args: unknown[]) => consumeFreshOAuthPendingMock(...args),
+}));
+const consumeWebOAuthReturnMock = vi.fn();
+vi.mock('../../lib/oauth-return', () => ({
+  consumeWebOAuthReturn: (...args: unknown[]) => consumeWebOAuthReturnMock(...args),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -77,6 +83,9 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
     signInWithAppleWebMock.mockReset();
     setOAuthPendingMock.mockReset();
     setOAuthPendingMock.mockResolvedValue(undefined);
+    consumeWebOAuthReturnMock.mockReset();
+    consumeWebOAuthReturnMock.mockReturnValue(null);
+    consumeFreshOAuthPendingMock.mockReset();
   });
 
   it('falls back to the web flow when native Google throws ("Unable to open Safari") and signs in', async () => {
@@ -205,11 +214,12 @@ describe('useNativeOAuthSignIn — Expo web redirect', () => {
     await runSignIn('google');
 
     expect(setOAuthPendingMock).toHaveBeenCalledWith({
+      attemptId: expect.any(String),
       provider: 'google',
       attemptedAt: expect.any(Number),
       isRegistration: false,
     });
-    expect(signInWithGoogleMock).toHaveBeenCalledTimes(1);
+    expect(signInWithGoogleMock).toHaveBeenCalledWith(expect.any(String), false);
     expect(signInWithGoogleWebMock).not.toHaveBeenCalled();
     expect(trackMock).toHaveBeenCalledWith('Login Attempted', {
       auth_method: 'google',
@@ -228,6 +238,32 @@ describe('useNativeOAuthSignIn — Expo web redirect', () => {
 
     expect(signInWithAppleMock).toHaveBeenCalledTimes(1);
     expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a provider error only for its matching browser attempt', async () => {
+    consumeWebOAuthReturnMock.mockReturnValue({
+      provider: 'apple',
+      attemptId: 'attempt-apple-1',
+      error: 'AccessDenied',
+    });
+    consumeFreshOAuthPendingMock.mockResolvedValue({
+      attemptId: 'attempt-apple-1',
+      provider: 'apple',
+      attemptedAt: Date.now(),
+      isRegistration: false,
+    });
+    const setError = vi.fn();
+
+    renderHook(() => useNativeOAuthSignIn({ setError }));
+
+    await waitFor(() => expect(setError).toHaveBeenCalledWith('nativeStart.oauthError'));
+    expect(consumeFreshOAuthPendingMock).toHaveBeenCalledWith('attempt-apple-1');
+    expect(trackMock).toHaveBeenCalledWith('Login Failed', {
+      auth_method: 'apple',
+      flow: 'web',
+      failure_reason: 'oauth',
+      failure_detail: 'AccessDenied',
+    });
   });
 });
 

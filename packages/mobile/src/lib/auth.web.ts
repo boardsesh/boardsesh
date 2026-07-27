@@ -13,7 +13,7 @@ import {
 } from './auth-store.web';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
 import { WEB_BASE_URL, webApiUrl } from './env';
-import { WEB_OAUTH_RETURN_PROVIDER_PARAM } from './oauth-return-marker';
+import { WEB_OAUTH_RETURN_ATTEMPT_PARAM, WEB_OAUTH_RETURN_PROVIDER_PARAM } from './oauth-return-marker';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -499,29 +499,34 @@ export function isGoogleSignInConfigured(): boolean {
 /**
  * Build the NextAuth start URL for the Expo browser app. OAuth itself always
  * runs on WEB_BASE_URL (www in production), while the callback returns to the
- * actual export that initiated it: `/app` for the same-origin build and `/` for
- * app.boardsesh.com.
+ * exact auth route that initiated it: `/app/auth/...` for the same-origin build
+ * and `/auth/...` for app.boardsesh.com.
  */
 export function buildWebOAuthStartUrl(
   provider: AuthProvider,
   appOrigin: string,
+  attemptId: string,
+  isRegistration = false,
   exportBasePath = process.env.EXPO_BASE_URL || '/',
 ): string {
-  const callbackUrl = new URL(exportBasePath || '/', appOrigin);
+  const normalizedBasePath = exportBasePath === '/' ? '' : exportBasePath.replace(/\/$/, '');
+  const callbackUrl = new URL(`${normalizedBasePath}/auth/${isRegistration ? 'register' : 'login'}`, appOrigin);
   callbackUrl.searchParams.set(WEB_OAUTH_RETURN_PROVIDER_PARAM, provider);
+  callbackUrl.searchParams.set(WEB_OAUTH_RETURN_ATTEMPT_PARAM, attemptId);
   const startUrl = new URL('/auth/native-start', WEB_BASE_URL);
   startUrl.searchParams.set('provider', provider);
   startUrl.searchParams.set('callbackUrl', callbackUrl.toString());
   return startUrl.toString();
 }
 
-function startWebOAuth(provider: AuthProvider): Promise<OAuthSignInResult> {
+function startWebOAuth(provider: AuthProvider, attemptId?: string, isRegistration = false): Promise<OAuthSignInResult> {
   if (typeof window === 'undefined') {
     return Promise.resolve({ success: false, status: null, error: 'browser_unavailable' });
   }
 
   try {
-    window.location.assign(buildWebOAuthStartUrl(provider, window.location.origin));
+    if (!attemptId) throw new Error('Missing browser OAuth attempt ID');
+    window.location.assign(buildWebOAuthStartUrl(provider, window.location.origin, attemptId, isRegistration));
     // The document is about to unload. This distinct result prevents the
     // in-process native flow from reporting success or checking the old cookie
     // before the provider round-trip returns.
@@ -531,12 +536,12 @@ function startWebOAuth(provider: AuthProvider): Promise<OAuthSignInResult> {
   }
 }
 
-export function signInWithApple(): Promise<OAuthSignInResult> {
-  return startWebOAuth('apple');
+export function signInWithApple(webAttemptId?: string, isRegistration = false): Promise<OAuthSignInResult> {
+  return startWebOAuth('apple', webAttemptId, isRegistration);
 }
 
-export function signInWithGoogle(): Promise<OAuthSignInResult> {
-  return startWebOAuth('google');
+export function signInWithGoogle(webAttemptId?: string, isRegistration = false): Promise<OAuthSignInResult> {
+  return startWebOAuth('google', webAttemptId, isRegistration);
 }
 
 export function signInWithGoogleWeb(): Promise<OAuthSignInResult> {

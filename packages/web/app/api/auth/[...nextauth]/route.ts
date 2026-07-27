@@ -8,6 +8,13 @@ import {
   responseSetsSessionCookie,
   sessionCookieName,
 } from '@/app/lib/auth/secure-cookies';
+import {
+  bindExpoReturnToState,
+  readExpoReturnForState,
+  redirectExpoOAuthResponse,
+  validatedExpoReturnUrl,
+  type ExpoWebOAuthProvider,
+} from '@/app/lib/auth/expo-web-oauth-return';
 
 type NextAuthRouteContext = {
   params: Promise<{ nextauth: string[] }>;
@@ -21,6 +28,69 @@ type ExpectedSignOutIdentity = {
 };
 
 const handler = NextAuth(authOptions) as NextAuthHandler;
+
+function oauthProviderForPath(pathname: string, action: 'signin' | 'callback'): ExpoWebOAuthProvider | null {
+  const match = pathname.match(new RegExp(`/api/auth/${action}/(apple|google)/?$`));
+  return match?.[1] === 'apple' || match?.[1] === 'google' ? match[1] : null;
+}
+
+async function readOAuthForm(request: NextRequest): Promise<FormData | null> {
+  try {
+    return await request.clone().formData();
+  } catch {
+    return null;
+  }
+}
+
+function stateFromAuthorizationRedirect(response: Response): string | null {
+  const location = response.headers.get('Location');
+  if (!location) return null;
+  try {
+    return new URL(location, 'https://provider.invalid').searchParams.get('state');
+  } catch {
+    return null;
+  }
+}
+
+function responseContainsOAuthError(response: Response): boolean {
+  const location = response.headers.get('Location');
+  if (!location) return false;
+  try {
+    return new URL(location, 'https://auth.invalid').searchParams.has('error');
+  } catch {
+    return false;
+  }
+}
+
+async function handleExpoOAuthPost(
+  request: NextRequest,
+  context: NextAuthRouteContext,
+  pathname: string,
+): Promise<Response | null> {
+  const signInProvider = oauthProviderForPath(pathname, 'signin');
+  if (signInProvider) {
+    const form = await readOAuthForm(request);
+    const returnUrl = validatedExpoReturnUrl(form?.get('callbackUrl') ?? null, signInProvider, request.nextUrl.origin);
+    if (!returnUrl) return null;
+
+    const response = clearLegacyCookieIfSessionWritten(await handler(request, context));
+    const state = stateFromAuthorizationRedirect(response);
+    if (state) return bindExpoReturnToState(response, request, state, signInProvider, returnUrl);
+    return responseContainsOAuthError(response)
+      ? redirectExpoOAuthResponse(response, request, null, returnUrl)
+      : response;
+  }
+
+  const callbackProvider = oauthProviderForPath(pathname, 'callback');
+  if (!callbackProvider) return null;
+  const form = await readOAuthForm(request);
+  const state = form?.get('state');
+  if (typeof state !== 'string' || !state) return null;
+  const descriptor = readExpoReturnForState(request, state, callbackProvider);
+  if (!descriptor) return null;
+  const response = clearLegacyCookieIfSessionWritten(await handler(request, context));
+  return redirectExpoOAuthResponse(response, request, state, descriptor.returnUrl);
+}
 
 async function readExpectedSignOutIdentity(
   request: NextRequest,
@@ -75,6 +145,8 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
   const pathname = request.nextUrl.pathname.endsWith('/')
     ? request.nextUrl.pathname.slice(0, -1)
     : request.nextUrl.pathname;
+  const expoOAuthResponse = await handleExpoOAuthPost(request, context, pathname);
+  if (expoOAuthResponse) return expoOAuthResponse;
   if (!pathname.endsWith('/api/auth/signout')) {
     return clearLegacyCookieIfSessionWritten(await handler(request, context));
   }
@@ -110,5 +182,14 @@ export async function POST(request: NextRequest, context: NextAuthRouteContext):
 }
 
 export async function GET(request: NextRequest, context: NextAuthRouteContext): Promise<Response> {
+  const callbackProvider = oauthProviderForPath(request.nextUrl.pathname, 'callback');
+  const state = request.nextUrl.searchParams.get('state');
+  if (callbackProvider && state) {
+    const descriptor = readExpoReturnForState(request, state, callbackProvider);
+    if (descriptor) {
+      const response = clearLegacyCookieIfSessionWritten(await handler(request, context));
+      return redirectExpoOAuthResponse(response, request, state, descriptor.returnUrl);
+    }
+  }
   return clearLegacyCookieIfSessionWritten(await handler(request, context));
 }

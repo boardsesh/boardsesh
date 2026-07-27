@@ -41,7 +41,7 @@ if (process.env.APPLE_ID && process.env.APPLE_SECRET) {
     AppleProvider({
       clientId: process.env.APPLE_ID,
       clientSecret: process.env.APPLE_SECRET,
-      checks: ['pkce'],
+      checks: ['pkce', 'state'],
       allowDangerousEmailAccountLinking: true,
     }),
   );

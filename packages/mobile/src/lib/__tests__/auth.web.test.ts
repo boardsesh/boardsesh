@@ -55,21 +55,25 @@ afterEach(() => {
 
 describe('Expo web OAuth', () => {
   it('starts Google on www and returns to the same-origin /app export', () => {
-    const url = new URL(buildWebOAuthStartUrl('google', 'https://www.boardsesh.com'));
+    const url = new URL(buildWebOAuthStartUrl('google', 'https://www.boardsesh.com', 'attempt-google-1'));
 
     expect(url.origin).toBe(WEB);
     expect(url.pathname).toBe('/auth/native-start');
     expect(url.searchParams.get('provider')).toBe('google');
-    expect(url.searchParams.get('callbackUrl')).toBe('https://www.boardsesh.com/app?boardseshOAuthProvider=google');
+    expect(url.searchParams.get('callbackUrl')).toBe(
+      'https://www.boardsesh.com/app/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-1',
+    );
   });
 
   it('starts Apple on www and returns to the standalone app root', () => {
-    const url = new URL(buildWebOAuthStartUrl('apple', 'https://app.boardsesh.com', ''));
+    const url = new URL(buildWebOAuthStartUrl('apple', 'https://app.boardsesh.com', 'attempt-apple-1', true, ''));
 
     expect(url.origin).toBe(WEB);
     expect(url.pathname).toBe('/auth/native-start');
     expect(url.searchParams.get('provider')).toBe('apple');
-    expect(url.searchParams.get('callbackUrl')).toBe('https://app.boardsesh.com/?boardseshOAuthProvider=apple');
+    expect(url.searchParams.get('callbackUrl')).toBe(
+      'https://app.boardsesh.com/auth/register?boardseshOAuthProvider=apple&boardseshOAuthAttempt=attempt-apple-1',
+    );
   });
 
   it('reports browser navigation failures without throwing', async () => {
@@ -82,7 +86,7 @@ describe('Expo web OAuth', () => {
       },
     });
 
-    await expect(signInWithGoogle()).resolves.toEqual({
+    await expect(signInWithGoogle('attempt-google-1')).resolves.toEqual({
       success: false,
       status: null,
       error: 'browser_unavailable',

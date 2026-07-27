@@ -204,7 +204,8 @@ export default function RegisterScreen() {
   }
 
   const oauthProviders = useOAuthProviders();
-  const showSocialSignIn = oauthProviders.loading || oauthProviders.apple || oauthProviders.google;
+  const showSocialSignIn =
+    oauthProviders.loading || oauthProviders.error || oauthProviders.apple || oauthProviders.google;
 
   return (
     <>

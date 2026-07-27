@@ -12,6 +12,8 @@ export function useOAuthProviders(): OAuthProviderAvailability {
     apple: Platform.OS === 'ios',
     google: isGoogleSignInConfigured(),
     loading: false,
+    error: false,
+    retry: () => undefined,
   };
 }
 

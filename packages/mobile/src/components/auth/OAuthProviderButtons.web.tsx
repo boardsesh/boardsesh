@@ -17,6 +17,8 @@ const UNAVAILABLE_PROVIDERS: OAuthProviderAvailability = {
   apple: false,
   google: false,
   loading: false,
+  error: false,
+  retry: () => undefined,
 };
 
 function parseProvidersConfig(response: ProvidersConfigResponse): OAuthProviderAvailability {
@@ -24,17 +26,25 @@ function parseProvidersConfig(response: ProvidersConfigResponse): OAuthProviderA
     apple: response.apple === true,
     google: response.google === true,
     loading: false,
+    error: false,
+    retry: () => undefined,
   };
 }
 
 export function useOAuthProviders(): OAuthProviderAvailability {
+  const [requestVersion, setRequestVersion] = useState(0);
   const [providers, setProviders] = useState<OAuthProviderAvailability>({
     ...UNAVAILABLE_PROVIDERS,
     loading: true,
+    retry: () => setRequestVersion((version) => version + 1),
   });
 
   useEffect(() => {
     const abortController = new AbortController();
+    let disposed = false;
+    const timeoutId = setTimeout(() => abortController.abort(), 8_000);
+    const retry = () => setRequestVersion((version) => version + 1);
+    setProviders({ ...UNAVAILABLE_PROVIDERS, loading: true, retry });
 
     void fetch(webApiUrl('/api/auth/providers-config'), {
       credentials: 'include',
@@ -46,14 +56,22 @@ export function useOAuthProviders(): OAuthProviderAvailability {
         if (!response.ok) throw new Error(`Provider discovery failed with ${response.status}`);
         return (await response.json()) as ProvidersConfigResponse;
       })
-      .then((response) => setProviders(parseProvidersConfig(response)))
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') return;
-        setProviders(UNAVAILABLE_PROVIDERS);
+      .then((response) => {
+        clearTimeout(timeoutId);
+        setProviders({ ...parseProvidersConfig(response), retry });
+      })
+      .catch(() => {
+        clearTimeout(timeoutId);
+        if (disposed) return;
+        setProviders({ ...UNAVAILABLE_PROVIDERS, error: true, retry });
       });
 
-    return () => abortController.abort();
-  }, []);
+    return () => {
+      disposed = true;
+      clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, [requestVersion]);
 
   return providers;
 }
@@ -103,6 +121,26 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
       <View style={styles.loadingButtons} accessibilityLabel={t('nativeStart.orContinueWith')}>
         <View style={[styles.loadingButton, { backgroundColor: theme.systemColors.fill }]} />
         <View style={[styles.loadingButton, { backgroundColor: theme.systemColors.fill }]} />
+      </View>
+    );
+  }
+
+  if (providers.error) {
+    return (
+      <View style={styles.discoveryError} accessibilityRole="alert">
+        <Text style={[styles.discoveryErrorText, { color: theme.systemColors.secondaryLabel }]}>
+          {t('nativeStart.providerDiscoveryError')}
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('nativeStart.retryProviders')}
+          disabled={disabled}
+          onPress={providers.retry}
+        >
+          <Text style={[styles.retryLabel, { color: theme.systemColors.accent }]}>
+            {t('nativeStart.retryProviders')}
+          </Text>
+        </Pressable>
       </View>
     );
   }
@@ -179,6 +217,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     opacity: 0.45,
   },
+  discoveryError: { alignItems: 'center', gap: 8 },
+  discoveryErrorText: { fontSize: 14, textAlign: 'center' },
+  retryLabel: { fontSize: 15, fontWeight: '600' },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.8 },
 });

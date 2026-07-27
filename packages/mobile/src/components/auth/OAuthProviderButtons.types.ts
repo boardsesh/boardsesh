@@ -4,6 +4,8 @@ export type OAuthProviderAvailability = {
   apple: boolean;
   google: boolean;
   loading: boolean;
+  error: boolean;
+  retry: () => void;
 };
 
 export type OAuthProviderButtonsProps = {

@@ -1,10 +1,12 @@
 import { getPreference, removePreference, setPreference } from './preference-store';
 import type { AuthProvider } from './auth';
 
-const OAUTH_PENDING_KEY = 'auth:oauth-pending';
+const OAUTH_PENDING_KEY_PREFIX = 'auth:oauth-pending:';
 const OAUTH_PENDING_MAX_AGE_MS = 5 * 60 * 1000;
+const OAUTH_ATTEMPT_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 export type OAuthPendingMarker = {
+  attemptId: string;
   provider: AuthProvider;
   attemptedAt: number;
   isRegistration: boolean;
@@ -14,6 +16,8 @@ function isOAuthPendingMarker(candidate: unknown): candidate is OAuthPendingMark
   if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) return false;
   const marker = candidate as Record<string, unknown>;
   return (
+    typeof marker.attemptId === 'string' &&
+    OAUTH_ATTEMPT_ID_PATTERN.test(marker.attemptId) &&
     (marker.provider === 'google' || marker.provider === 'apple') &&
     typeof marker.attemptedAt === 'number' &&
     Number.isFinite(marker.attemptedAt) &&
@@ -22,30 +26,32 @@ function isOAuthPendingMarker(candidate: unknown): candidate is OAuthPendingMark
 }
 
 export function setOAuthPending(marker: OAuthPendingMarker): Promise<void> {
-  return setPreference(OAUTH_PENDING_KEY, marker);
+  return setPreference(`${OAUTH_PENDING_KEY_PREFIX}${marker.attemptId}`, marker);
 }
 
 /**
  * Consume a browser-OAuth attempt after the returned NextAuth cookie has been
  * confirmed. Storage failures are analytics-only and must never block login.
  */
-export async function consumeFreshOAuthPending(): Promise<OAuthPendingMarker | null> {
+export async function consumeFreshOAuthPending(attemptId: string): Promise<OAuthPendingMarker | null> {
+  if (!OAUTH_ATTEMPT_ID_PATTERN.test(attemptId)) return null;
+  const storageKey = `${OAUTH_PENDING_KEY_PREFIX}${attemptId}`;
   let stored: unknown;
   try {
-    stored = await getPreference<unknown>(OAUTH_PENDING_KEY);
+    stored = await getPreference<unknown>(storageKey);
   } catch {
     return null;
   }
   if (stored === null) return null;
 
   try {
-    await removePreference(OAUTH_PENDING_KEY);
+    await removePreference(storageKey);
   } catch {
     // A failed cleanup may duplicate telemetry on a later reload, but must not
     // turn a completed OAuth login into an auth failure.
   }
 
-  if (!isOAuthPendingMarker(stored)) return null;
+  if (!isOAuthPendingMarker(stored) || stored.attemptId !== attemptId) return null;
   const age = Date.now() - stored.attemptedAt;
   return age >= 0 && age <= OAUTH_PENDING_MAX_AGE_MS ? stored : null;
 }

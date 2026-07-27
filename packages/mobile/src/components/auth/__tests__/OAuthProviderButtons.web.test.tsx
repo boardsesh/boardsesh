@@ -28,6 +28,8 @@ vi.mock('react-i18next', () => ({
         'login.providers.google': 'Continue with Google',
         'login.providers.apple': 'Continue with Apple',
         'nativeStart.orContinueWith': 'or continue with',
+        'nativeStart.providerDiscoveryError': "We couldn't load the social sign-in options.",
+        'nativeStart.retryProviders': 'Try again',
       })[key] ?? key,
   }),
 }));
@@ -35,7 +37,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../../../providers/theme-provider', () => ({
   useTheme: () => ({
     colorScheme: 'light',
-    systemColors: { fill: '#cccccc' },
+    systemColors: { accent: '#0066cc', fill: '#cccccc', secondaryLabel: '#666666' },
   }),
 }));
 
@@ -121,11 +123,21 @@ describe('OAuthProviderButtons on web', () => {
     unmount();
   });
 
-  it('hides the controls when discovery fails', async () => {
+  it('offers a retry when discovery fails', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('offline'));
     render(<ProviderHarness />);
     await act(async () => {});
-    expect(screen.queryByRole('button')).toBeNull();
+    const retryButton = screen.getByRole('button', { name: 'Try again' });
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ google: true, apple: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    fireEvent.click(retryButton);
+    await act(async () => {});
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeTruthy();
   });
 
   it('disables provider controls while a sign-in is in progress', () => {
@@ -134,7 +146,7 @@ describe('OAuthProviderButtons on web', () => {
       <OAuthProviderButtons
         disabled
         isRegistration
-        providers={{ apple: true, google: true, loading: false }}
+        providers={{ apple: true, google: true, loading: false, error: false, retry: vi.fn() }}
         onSignIn={onSignIn}
       />,
     );

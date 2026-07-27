@@ -167,7 +167,7 @@ vi.mock('../../lib/oauth-pending-store', () => ({
 }));
 
 vi.mock('../../lib/oauth-return', () => ({
-  consumeWebOAuthReturnProvider: (...args: unknown[]) => consumeWebOAuthReturnProviderMock(...args),
+  consumeWebOAuthReturn: (...args: unknown[]) => consumeWebOAuthReturnProviderMock(...args),
 }));
 
 const authSignOutMock = vi.fn();
@@ -653,8 +653,13 @@ describe('AuthProvider Expo-web OAuth completion', () => {
   });
 
   it('consumes a pending attempt after the returned web session is authenticated', async () => {
-    consumeWebOAuthReturnProviderMock.mockReturnValue('apple');
+    consumeWebOAuthReturnProviderMock.mockReturnValue({
+      provider: 'apple',
+      attemptId: 'attempt-apple-1',
+      error: null,
+    });
     consumeFreshOAuthPendingMock.mockResolvedValue({
+      attemptId: 'attempt-apple-1',
       provider: 'apple',
       attemptedAt: Date.now(),
       isRegistration: true,
@@ -685,7 +690,11 @@ describe('AuthProvider Expo-web OAuth completion', () => {
   });
 
   it('does not attribute a login when the OAuth return has no pending attempt', async () => {
-    consumeWebOAuthReturnProviderMock.mockReturnValue('google');
+    consumeWebOAuthReturnProviderMock.mockReturnValue({
+      provider: 'google',
+      attemptId: 'attempt-google-1',
+      error: null,
+    });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>

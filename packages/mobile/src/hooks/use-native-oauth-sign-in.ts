@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useAuth } from '../providers/auth-provider';
@@ -9,7 +9,9 @@ import {
   isRecoverableAndroidGoogleSignInError,
   nativeSignInErrorCode,
 } from '../lib/native-auth-analytics';
-import { setOAuthPending } from '../lib/oauth-pending-store';
+import { consumeFreshOAuthPending, setOAuthPending } from '../lib/oauth-pending-store';
+import { consumeWebOAuthReturn } from '../lib/oauth-return';
+import { createWebOAuthAttemptId } from '../lib/oauth-return-marker';
 import type { OAuthSignInResult } from '../lib/auth';
 import { useTranslation } from 'react-i18next';
 
@@ -34,11 +36,31 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
   const { signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb } = useAuth();
   const { t } = useTranslation('auth');
   const [inProgress, setInProgress] = useState(false);
+  const inProgressRef = useRef(false);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const returnedOAuth = consumeWebOAuthReturn();
+    if (!returnedOAuth?.error) return;
+
+    void consumeFreshOAuthPending(returnedOAuth.attemptId).then((marker) => {
+      if (!marker || marker.provider !== returnedOAuth.provider) return;
+      track(SHARED_EVENTS.LoginFailed, {
+        auth_method: marker.provider,
+        flow: 'web',
+        failure_reason: 'oauth',
+        failure_detail: returnedOAuth.error,
+        ...(marker.isRegistration ? { is_registration: true } : {}),
+      });
+      setError(t('nativeStart.oauthError'));
+    });
+  }, [setError, t]);
 
   const signIn = useCallback(
     async (provider: Provider) => {
       // A rapid double-tap would open two concurrent native sheets.
-      if (inProgress) return;
+      if (inProgressRef.current) return;
+      inProgressRef.current = true;
       setInProgress(true);
       setError(null);
       const registrationProps = isRegistration ? { is_registration: true } : {};
@@ -141,17 +163,21 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       };
 
       try {
+        const attemptId = Platform.OS === 'web' ? createWebOAuthAttemptId() : undefined;
         if (Platform.OS === 'web') {
           // The browser unloads for NextAuth, so persist the attempt before
           // navigation. AuthProvider consumes it only after the returned cookie
           // is confirmed; a storage failure must not prevent sign-in.
           try {
-            await setOAuthPending({ provider, attemptedAt: Date.now(), isRegistration });
+            await setOAuthPending({ attemptId: attemptId!, provider, attemptedAt: Date.now(), isRegistration });
           } catch {
             // Analytics continuity is best-effort; authentication is not.
           }
         }
-        const result = provider === 'apple' ? await signInWithApple() : await signInWithGoogle();
+        const result =
+          provider === 'apple'
+            ? await signInWithApple(attemptId, isRegistration)
+            : await signInWithGoogle(attemptId, isRegistration);
         if ('redirecting' in result) {
           return;
         }
@@ -242,19 +268,11 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         });
         setError(t('nativeStart.oauthError'));
       } finally {
+        inProgressRef.current = false;
         setInProgress(false);
       }
     },
-    [
-      inProgress,
-      isRegistration,
-      setError,
-      signInWithApple,
-      signInWithGoogle,
-      signInWithGoogleWeb,
-      signInWithAppleWeb,
-      t,
-    ],
+    [isRegistration, setError, signInWithApple, signInWithGoogle, signInWithGoogleWeb, signInWithAppleWeb, t],
   );
 
   return { signIn, inProgress };

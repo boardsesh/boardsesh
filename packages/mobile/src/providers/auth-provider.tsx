@@ -39,13 +39,13 @@ import { getPendingCount, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { stopTokenManagement } from '../notifications';
 import { consumeFreshOAuthPending } from '../lib/oauth-pending-store';
-import { consumeWebOAuthReturnProvider } from '../lib/oauth-return';
+import { consumeWebOAuthReturn } from '../lib/oauth-return';
 
 type AuthState = {
   isAuthenticated: boolean;
   isLoading: boolean;
-  signInWithApple: () => Promise<OAuthSignInResult>;
-  signInWithGoogle: () => Promise<OAuthSignInResult>;
+  signInWithApple: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
+  signInWithGoogle: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
   // Browser-OAuth fallback for when native Google sign-in can't present (iOS 26.5.1).
   signInWithGoogleWeb: () => Promise<OAuthSignInResult>;
   // Browser-OAuth fallback for when native Sign in with Apple throws (code 1000).
@@ -329,10 +329,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         pendingAuthTransportRestartRef.current = false;
         bumpAuthTransportRevision();
       }
-      const returnedOAuthProvider = Platform.OS === 'web' && !wasAuthenticated ? consumeWebOAuthReturnProvider() : null;
-      if (returnedOAuthProvider) {
-        void consumeFreshOAuthPending().then((marker) => {
-          if (!marker || marker.provider !== returnedOAuthProvider) return;
+      const returnedOAuth = Platform.OS === 'web' && !wasAuthenticated ? consumeWebOAuthReturn() : null;
+      if (returnedOAuth && returnedOAuth.error === null) {
+        void consumeFreshOAuthPending(returnedOAuth.attemptId).then((marker) => {
+          if (!marker || marker.provider !== returnedOAuth.provider) return;
           track(SHARED_EVENTS.LoginSucceeded, {
             auth_method: marker.provider,
             flow: 'web',
