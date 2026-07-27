@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { resolveUpdatesConfig } from '../../app.config';
+import { resolveUpdatesConfig, OTA_APP_ID } from '../../app.config';
 
 // Unit tests for the fail-closed OTA routing in app.config.ts. This function
 // decides whether a production binary points at EAS or our self-hosted server,
@@ -72,23 +72,26 @@ describe('resolveUpdatesConfig', () => {
     expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(false))).toEqual({ url: EAS_URL });
   });
 
-  it('uses the self-hosted server with channel header + code signing when URL + cert are present', () => {
+  it('uses the self-hosted server with app-id + channel headers + code signing when URL + cert are present', () => {
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
     process.env.EXPO_UPDATES_CHANNEL = 'production';
     expect(resolveUpdatesConfig(PROJECT_ID, projectRoot(true))).toEqual({
       url: SELF_HOST_URL,
       enabled: true,
-      requestHeaders: { 'expo-channel-name': 'production' },
+      // expo-app-id is baked unconditionally (V3 routes on it + eoas requires it);
+      // expo-channel-name is added when a channel is set.
+      requestHeaders: { 'expo-app-id': OTA_APP_ID, 'expo-channel-name': 'production' },
       codeSigningCertificate: './certs/certificate.pem',
       codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
     });
   });
 
-  it('omits the channel header when EXPO_UPDATES_CHANNEL is unset (still signed)', () => {
+  it('keeps the app-id header but omits the channel header when EXPO_UPDATES_CHANNEL is unset (still signed)', () => {
     process.env.EXPO_UPDATES_URL = SELF_HOST_URL;
     const result = resolveUpdatesConfig(PROJECT_ID, projectRoot(true)) as Record<string, unknown>;
     expect(result.url).toBe(SELF_HOST_URL);
-    expect(result.requestHeaders).toBeUndefined();
+    // expo-app-id is always present; only expo-channel-name is conditional.
+    expect(result.requestHeaders).toEqual({ 'expo-app-id': OTA_APP_ID });
     expect(result.codeSigningCertificate).toBe('./certs/certificate.pem');
   });
 

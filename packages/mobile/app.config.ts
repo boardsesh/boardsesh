@@ -56,7 +56,7 @@ const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? DEFAULT_EAS_PRO
 // dashboard generated this UUID when the app was created, and the server 404s
 // ("Unknown app id") for anything else. Baked into the fingerprint, so keep it
 // stable; overridable if the app is ever re-provisioned.
-const OTA_APP_ID = process.env.EXPO_PUBLIC_OTA_APP_ID ?? '007e6fd7-f200-448c-9449-8d48ba5d51fc';
+export const OTA_APP_ID = process.env.EXPO_PUBLIC_OTA_APP_ID ?? '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
 const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.boardsesh.app';
 const HEALTH_UPDATE_USAGE_DESCRIPTION = 'Boardsesh saves your finished climbing sessions to Apple Health as workouts.';
