@@ -190,6 +190,13 @@ const cookieDomain = sessionCookieDomain();
 // existing rows — including legacy mixed-case ones — via `lower(email)`, with a
 // deterministic order so a transient duplicate set resolves to the same row
 // until the account merge collapses it.
+//
+// That row is not necessarily the one merge-accounts picks as the winner (it
+// ranks by ticks → other rows → verified → oldest; this ranks verified → oldest,
+// because a sign-in wants the verified identity). The two can only disagree in
+// the window between this deploy and the merge run, and nothing is lost when
+// they do: `accounts` rows are repointed by the merge, so an OAuth link made
+// against the non-winner follows the user onto the winner.
 function createAuthAdapter(): Adapter {
   const base = DrizzleAdapter(getDb(), {
     usersTable: schema.users,

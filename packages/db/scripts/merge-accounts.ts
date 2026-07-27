@@ -122,6 +122,12 @@ const PLAIN_REPOINTS: Array<{ table: string; column: string }> = [
   // Admin who reviewed a gym ownership claim (SET NULL, no unique) — repoint so
   // the reviewer attribution follows the merged account.
   { table: 'gym_claims', column: 'reviewed_by' },
+  // Staff who resolved a feedback item / performed a gym merge (both SET NULL,
+  // no unique). Same rationale as the reviewers above: the two rows are the same
+  // human, so the audit trail should name the surviving account rather than go
+  // blank when the loser is deleted.
+  { table: 'app_feedback', column: 'resolved_by' },
+  { table: 'gym_merge_audit', column: 'performed_by' },
 ];
 
 /**
@@ -701,6 +707,12 @@ type ForeignKeyRow = { childTable: string; childColumn: string };
  * expected to be moved. This diffs the actual FK set in pg_catalog against the
  * union of the repoint lists, the specials, and the deliberate cascade-only
  * allow-list — and aborts with the offending columns if anything is unaccounted.
+ *
+ * Known scope: single-column FKs only (`array_length(conkey, 1) = 1`). Nothing
+ * references users(id) as part of a composite key today, and every repoint in
+ * the lists is single-column by construction, so a composite FK would need its
+ * own repoint strategy regardless — widen this query and the repoint lists
+ * together if one ever lands.
  */
 export async function assertAllUserFksHandled(commandDb: ExecuteDb): Promise<void> {
   const handled = new Set<string>(

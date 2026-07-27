@@ -13,9 +13,12 @@ vi.mock('drizzle-orm', () => ({
   sql: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ _type: 'sql', strings, values })),
 }));
 
-// Mock DrizzleAdapter — we only care about the signIn callback, not adapter internals
+// Mock DrizzleAdapter. Most tests only care about the signIn callback, but the
+// case-insensitive wrapper delegates user creation to the base adapter, so
+// expose a spy for `createUser` (hoisted, because vi.mock factories are).
+const { mockBaseCreateUser } = vi.hoisted(() => ({ mockBaseCreateUser: vi.fn() }));
 vi.mock('@auth/drizzle-adapter', () => ({
-  DrizzleAdapter: vi.fn(() => ({})),
+  DrizzleAdapter: vi.fn(() => ({ createUser: mockBaseCreateUser })),
 }));
 
 // Mock OAuth providers — only present in the array; we test callbacks, not provider config
@@ -67,6 +70,7 @@ vi.mock('@/app/lib/db/schema', () => ({
     id: 'users.id',
     email: 'users.email',
     emailVerified: 'users.emailVerified',
+    createdAt: 'users.createdAt',
   },
   accounts: {},
   sessions: {},
@@ -874,5 +878,76 @@ describe('authOptions.cookies — shared .boardsesh.com domain', () => {
     expect(cookies?.sessionToken?.options.domain).toBeUndefined();
     expect(cookies?.sessionToken?.options.secure).toBe(false);
     expect(cookies?.callbackUrl?.options.domain).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adapter wrapper: case-insensitive OAuth account lookup / creation
+// ---------------------------------------------------------------------------
+
+describe('authOptions.adapter (case-insensitive wrapper)', () => {
+  const mockDbOrderBy = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // select().from().where().orderBy().limit()
+    mockDbSelect.mockReturnValue({ from: mockDbFrom });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbWhere.mockReturnValue({ orderBy: mockDbOrderBy });
+    mockDbOrderBy.mockReturnValue({ limit: mockDbLimit });
+    mockDbLimit.mockResolvedValue([]);
+  });
+
+  it('matches an existing account whose stored email differs only in case', async () => {
+    mockDbLimit.mockResolvedValue([
+      {
+        id: 'user-mixed-case',
+        email: 'Foo@Example.com',
+        emailVerified: new Date('2026-01-01'),
+        name: 'Foo',
+        image: null,
+      },
+    ]);
+
+    const user = await authOptions.adapter?.getUserByEmail?.('FOO@example.com ');
+
+    expect(user).toMatchObject({ id: 'user-mixed-case', email: 'Foo@Example.com' });
+
+    // Assert on the predicate the code actually recorded, not one rebuilt here:
+    // it must compare lower(email) against the *normalized* input.
+    const recordedPredicate = mockDbWhere.mock.calls[0][0] as { strings: string[]; values: unknown[] };
+    expect(recordedPredicate.strings.join('?')).toContain('lower(');
+    expect(recordedPredicate.values).toContain('foo@example.com');
+  });
+
+  it('returns null when no row shares the lower-cased email', async () => {
+    mockDbLimit.mockResolvedValue([]);
+
+    await expect(authOptions.adapter?.getUserByEmail?.('nobody@example.com')).resolves.toBeNull();
+  });
+
+  it('takes a single row in verified-first, then oldest, order', async () => {
+    mockDbLimit.mockResolvedValue([]);
+
+    await authOptions.adapter?.getUserByEmail?.('dupe@example.com');
+
+    // NULLS LAST puts a verified row ahead of an unverified one; createdAt
+    // breaks the remaining tie so a duplicate set always resolves the same way.
+    const [orderExpression, tieBreaker] = mockDbOrderBy.mock.calls[0] as [{ strings: string[] }, unknown];
+    expect(orderExpression.strings.join('?')).toContain('ASC NULLS LAST');
+    expect(tieBreaker).toBe('users.createdAt');
+    expect(mockDbLimit).toHaveBeenCalledWith(1);
+  });
+
+  it('lower-cases the email before handing a new user to the base adapter', async () => {
+    mockBaseCreateUser.mockResolvedValue({ id: 'new-user' });
+
+    await authOptions.adapter?.createUser?.({
+      id: 'new-user',
+      email: '  New@Example.COM ',
+      emailVerified: null,
+    });
+
+    expect(mockBaseCreateUser).toHaveBeenCalledWith(expect.objectContaining({ email: 'new@example.com' }));
   });
 });
