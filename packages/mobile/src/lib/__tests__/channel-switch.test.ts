@@ -213,7 +213,7 @@ describe('performChannelReset', () => {
 describe('resolveRequestedChannelAction', () => {
   const ready = {
     requestedChannel: 'pr-100',
-    alreadyOffered: false,
+    offeredChannel: null,
     overrideLoaded: true,
     previewsLoading: false,
     updatesUsable: true,
@@ -238,12 +238,19 @@ describe('resolveRequestedChannelAction', () => {
     expect(resolveRequestedChannelAction({ ...ready, previewsLoading: true })).toBe('wait');
   });
 
-  it('never offers twice — the one-shot guard wins over every other input', () => {
+  it('never offers the same channel twice — that guard wins over every other input', () => {
     // The regression this exists for: the switch itself re-renders the screen, and
     // a second dialog on top of the first would strand the flow.
-    expect(resolveRequestedChannelAction({ ...ready, alreadyOffered: true })).toBe('none');
-    expect(resolveRequestedChannelAction({ ...ready, alreadyOffered: true, overrideLoaded: false })).toBe('none');
-    expect(resolveRequestedChannelAction({ ...ready, alreadyOffered: true, updatesUsable: false })).toBe('none');
+    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-100' })).toBe('none');
+    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-100', overrideLoaded: false })).toBe('none');
+    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-100', updatesUsable: false })).toBe('none');
+  });
+
+  it('offers a DIFFERENT channel even after one was already offered', () => {
+    // Expo Router can swap the param on a still-mounted preview screen when a second
+    // /preview/pr-M link is opened. A lifetime boolean guard swallowed that link.
+    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-99' })).toBe('switch');
+    expect(resolveRequestedChannelAction({ ...ready, offeredChannel: 'pr-99', updatesUsable: false })).toBe('prefill');
   });
 
   it('prefills instead of prompting when switching is inert (Metro / Expo Go)', () => {

@@ -734,6 +734,14 @@ comment also carries **`https://www.boardsesh.com/preview/pr-<number>`**. It res
   stored-override read plus the preview list first, so the dialog can name the PR and the revert
   target is correct. On a Metro/dev build (`updatesUsable === false`) it prefills the manual field
   instead.
+- **It survives signing in.** The auth gate (`auth-provider.tsx`) redirects any unauthenticated route
+  to `/auth/login`, so a signed-out tap would otherwise drop the channel on the floor and land the
+  tester on home. `deep-link-provider.tsx` stashes it under `boardsesh_pending_preview_channel` and
+  replays it once auth flips — the same stash-and-replay the join flow uses, re-validating the stored
+  value on the way out as well as in.
+- **The link only appears once the channel is mapped.** The announce step gates on `switchable`
+  (published **and** the `map` job succeeded), so a bundle that published but failed mapping doesn't
+  advertise a link that would report "No branch mapping found".
 - **Channel names from a URL are whitelisted** in `src/lib/preview-link.ts` (`^pr-[1-9]\d*$` plus the
   presets — no `pr-0`, no leading zeros, so one PR has exactly one URL) before they reach
   `performChannelSwitch`. The web half is

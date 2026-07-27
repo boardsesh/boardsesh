@@ -93,9 +93,11 @@ export type RequestedChannelAction =
  */
 export function resolveRequestedChannelAction(params: {
   requestedChannel: string | undefined;
-  // The caller's one-shot guard — true once a previous call returned something
-  // other than 'wait'.
-  alreadyOffered: boolean;
+  // The channel the caller last acted on, or null. Keyed by channel rather than a
+  // lifetime boolean: Expo Router can swap the param on a still-mounted preview
+  // screen when a second /preview/pr-M link is opened, and a boolean guard would
+  // swallow every channel after the first.
+  offeredChannel: string | null;
   // The stored override has been read back. Switching before this lands would
   // capture the wrong `previousOverride` to revert to.
   overrideLoaded: boolean;
@@ -105,8 +107,8 @@ export function resolveRequestedChannelAction(params: {
   updatesUsable: boolean;
   activeChannel: string;
 }): RequestedChannelAction {
-  const { requestedChannel, alreadyOffered, overrideLoaded, previewsLoading, updatesUsable, activeChannel } = params;
-  if (alreadyOffered || !requestedChannel) return 'none';
+  const { requestedChannel, offeredChannel, overrideLoaded, previewsLoading, updatesUsable, activeChannel } = params;
+  if (!requestedChannel || offeredChannel === requestedChannel) return 'none';
   if (!overrideLoaded || previewsLoading) return 'wait';
   if (!updatesUsable) return 'prefill';
   return requestedChannel === activeChannel ? 'none' : 'switch';

@@ -69,9 +69,10 @@ export function ChannelSwitcherScreen({ requestedChannel }: ChannelSwitcherScree
   // from a ref avoids reverting to a stale render-closure value if the mount load
   // resolved after this callback was created.
   const overrideRef = useRef<string | null>(null);
-  // One-shot guard for the deep-link offer, so the re-renders the switch itself
-  // causes can't re-raise the dialog.
-  const offeredRequestRef = useRef(false);
+  // The channel the deep-link offer last acted on, so the re-renders the switch
+  // itself causes can't re-raise the dialog. Holds the channel rather than a flag
+  // so a second /preview/pr-M link on this same mounted screen still gets offered.
+  const offeredChannelRef = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -172,7 +173,7 @@ export function ChannelSwitcherScreen({ requestedChannel }: ChannelSwitcherScree
   useEffect(() => {
     const action = resolveRequestedChannelAction({
       requestedChannel,
-      alreadyOffered: offeredRequestRef.current,
+      offeredChannel: offeredChannelRef.current,
       overrideLoaded,
       // isLoading goes false on error too, so a failed list degrades to the bare
       // channel name in the dialog instead of hanging on 'wait' forever.
@@ -182,8 +183,8 @@ export function ChannelSwitcherScreen({ requestedChannel }: ChannelSwitcherScree
     });
     if (action === 'wait' || action === 'none' || !requestedChannel) return;
 
-    // Past 'wait', the request is handled however it resolved — don't re-raise.
-    offeredRequestRef.current = true;
+    // Past 'wait', this channel is handled however it resolved — don't re-raise it.
+    offeredChannelRef.current = requestedChannel;
     if (action === 'prefill') {
       // The section footer already explains why nothing here is tappable.
       setCustomChannel(requestedChannel);
