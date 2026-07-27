@@ -1,5 +1,5 @@
 diff --git a/ios/EXDevLauncherController.m b/ios/EXDevLauncherController.m
-index 372d0210c54a361754c4fbfb504f00381abf78e1..bb7d88f88b002faa44e03256a6c952e98eef4ad6 100644
+index 76fd0f5f15f2ee6beadca5ce3c9828f0427c8896..806afb683501b23236536b8752b1d09f640274e9 100644
 --- a/ios/EXDevLauncherController.m
 +++ b/ios/EXDevLauncherController.m
 @@ -38,7 +38,7 @@

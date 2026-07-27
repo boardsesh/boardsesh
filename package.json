@@ -53,15 +53,15 @@
     "vitest": "^4.1.5"
   },
   "overrides": {
-    "react-native-screens": "4.25.2"
+    "react-native-screens": "4.26.0"
   },
   "engines": {
     "node": "22.x"
   },
   "packageManager": "bun@1.3.14",
   "patchedDependencies": {
-    "react-native-screens@4.25.2": "patches/react-native-screens@4.25.2.patch",
-    "expo-dev-launcher@57.0.5": "patches/expo-dev-launcher@57.0.5.patch",
-    "@expo/ui@57.0.3": "patches/@expo%2Fui@57.0.3.patch"
+    "@expo/ui@57.0.7": "patches/@expo%2Fui@57.0.7.patch",
+    "expo-dev-launcher@57.0.9": "patches/expo-dev-launcher@57.0.9.patch",
+    "react-native-screens@4.26.0": "patches/react-native-screens@4.26.0.patch"
   }
 }
