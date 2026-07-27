@@ -25,6 +25,7 @@ const userStorageOwnerState = vi.hoisted(() => ({
 }));
 const bumpAuthTransportRevisionMock = vi.hoisted(() => vi.fn());
 const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
+const consumeWebOAuthReturnProviderMock = vi.hoisted(() => vi.fn());
 const trackMock = vi.hoisted(() => vi.fn());
 
 // expo-router and react-native both reach for the native runtime; stub the
@@ -118,6 +119,8 @@ beforeEach(() => {
   bumpAuthTransportRevisionMock.mockReset();
   consumeFreshOAuthPendingMock.mockReset();
   consumeFreshOAuthPendingMock.mockResolvedValue(null);
+  consumeWebOAuthReturnProviderMock.mockReset();
+  consumeWebOAuthReturnProviderMock.mockReturnValue(null);
   trackMock.mockReset();
   captureAuthCredentialGenerationMock.mockReset();
   captureAuthCredentialGenerationMock.mockReturnValue(1);
@@ -161,6 +164,10 @@ vi.mock('../../lib/analytics', () => ({
 
 vi.mock('../../lib/oauth-pending-store', () => ({
   consumeFreshOAuthPending: (...args: unknown[]) => consumeFreshOAuthPendingMock(...args),
+}));
+
+vi.mock('../../lib/oauth-return', () => ({
+  consumeWebOAuthReturnProvider: (...args: unknown[]) => consumeWebOAuthReturnProviderMock(...args),
 }));
 
 const authSignOutMock = vi.fn();
@@ -646,6 +653,7 @@ describe('AuthProvider Expo-web OAuth completion', () => {
   });
 
   it('consumes a pending attempt after the returned web session is authenticated', async () => {
+    consumeWebOAuthReturnProviderMock.mockReturnValue('apple');
     consumeFreshOAuthPendingMock.mockResolvedValue({
       provider: 'apple',
       attemptedAt: Date.now(),
@@ -674,6 +682,25 @@ describe('AuthProvider Expo-web OAuth completion', () => {
       await result.current.refreshAuthState();
     });
     expect(consumeFreshOAuthPendingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attribute a login when the OAuth return has no pending attempt', async () => {
+    consumeWebOAuthReturnProviderMock.mockReturnValue('google');
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    await waitFor(() => expect(consumeFreshOAuthPendingMock).toHaveBeenCalledTimes(1));
+    expect(trackMock).not.toHaveBeenCalledWith(
+      'Login Succeeded',
+      expect.objectContaining({ auth_method: 'google', flow: 'web' }),
+    );
   });
 });
 

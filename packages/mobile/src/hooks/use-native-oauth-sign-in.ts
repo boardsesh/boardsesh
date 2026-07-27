@@ -165,7 +165,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           // distinct event keeps it out of the LoginFailed count.
           track(SHARED_EVENTS.LoginCancelled, {
             auth_method: provider,
-            flow: 'native',
+            flow: primaryFlow,
             duration_ms: Date.now() - attemptStartedAt,
             ...registrationProps,
           });

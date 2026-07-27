@@ -39,6 +39,7 @@ import { getPendingCount, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { stopTokenManagement } from '../notifications';
 import { consumeFreshOAuthPending } from '../lib/oauth-pending-store';
+import { consumeWebOAuthReturnProvider } from '../lib/oauth-return';
 
 type AuthState = {
   isAuthenticated: boolean;
@@ -328,9 +329,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         pendingAuthTransportRestartRef.current = false;
         bumpAuthTransportRevision();
       }
-      if (Platform.OS === 'web' && !wasAuthenticated) {
+      const returnedOAuthProvider = Platform.OS === 'web' && !wasAuthenticated ? consumeWebOAuthReturnProvider() : null;
+      if (returnedOAuthProvider) {
         void consumeFreshOAuthPending().then((marker) => {
-          if (!marker) return;
+          if (!marker || marker.provider !== returnedOAuthProvider) return;
           track(SHARED_EVENTS.LoginSucceeded, {
             auth_method: marker.provider,
             flow: 'web',

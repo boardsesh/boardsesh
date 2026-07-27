@@ -90,6 +90,21 @@ describe('OAuthProviderButtons on web', () => {
     expect(screen.queryByText('Continue with Facebook')).toBeNull();
   });
 
+  it('renders Apple when it is the only configured provider', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(JSON.stringify({ google: false, apple: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    render(<ProviderHarness />);
+    await act(async () => {});
+
+    expect(screen.getByRole('button', { name: 'Continue with Apple' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Continue with Google' })).toBeNull();
+  });
+
   it('starts the selected provider', async () => {
     const onSignIn = vi.fn();
     vi.mocked(fetch).mockResolvedValue(

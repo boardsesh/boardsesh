@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@react-native-async-storage/async-storage', () => {
   let storage: Record<string, string> = {};
+  let failNextRemove = false;
   return {
     default: {
       getItem: vi.fn(async (key: string) => storage[key] ?? null),
@@ -9,6 +10,10 @@ vi.mock('@react-native-async-storage/async-storage', () => {
         storage[key] = value;
       }),
       removeItem: vi.fn(async (key: string) => {
+        if (failNextRemove) {
+          failNextRemove = false;
+          throw new Error('storage unavailable');
+        }
         delete storage[key];
       }),
       getAllKeys: vi.fn(async () => Object.keys(storage)),
@@ -17,6 +22,10 @@ vi.mock('@react-native-async-storage/async-storage', () => {
       }),
       __reset: () => {
         storage = {};
+        failNextRemove = false;
+      },
+      __failNextRemove: () => {
+        failNextRemove = true;
       },
     },
   };
@@ -57,5 +66,19 @@ describe('oauth-pending-store', () => {
     });
 
     await expect(consumeFreshOAuthPending()).resolves.toBeNull();
+  });
+
+  it('returns a fresh marker when one-time cleanup fails', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    const asyncStorage = (await import('@react-native-async-storage/async-storage')).default as unknown as {
+      __failNextRemove: () => void;
+    };
+    asyncStorage.__failNextRemove();
+    const { consumeFreshOAuthPending, setOAuthPending } = await import('../oauth-pending-store');
+    const marker = { provider: 'apple' as const, attemptedAt: 999_000, isRegistration: false };
+
+    await setOAuthPending(marker);
+
+    await expect(consumeFreshOAuthPending()).resolves.toEqual(marker);
   });
 });

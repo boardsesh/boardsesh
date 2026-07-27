@@ -13,6 +13,7 @@ import {
 } from './auth-store.web';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
 import { WEB_BASE_URL, webApiUrl } from './env';
+import { WEB_OAUTH_RETURN_PROVIDER_PARAM } from './oauth-return-marker';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -506,10 +507,11 @@ export function buildWebOAuthStartUrl(
   appOrigin: string,
   exportBasePath = process.env.EXPO_BASE_URL || '/',
 ): string {
-  const callbackUrl = new URL(exportBasePath || '/', appOrigin).toString();
+  const callbackUrl = new URL(exportBasePath || '/', appOrigin);
+  callbackUrl.searchParams.set(WEB_OAUTH_RETURN_PROVIDER_PARAM, provider);
   const startUrl = new URL('/auth/native-start', WEB_BASE_URL);
   startUrl.searchParams.set('provider', provider);
-  startUrl.searchParams.set('callbackUrl', callbackUrl);
+  startUrl.searchParams.set('callbackUrl', callbackUrl.toString());
   return startUrl.toString();
 }
 

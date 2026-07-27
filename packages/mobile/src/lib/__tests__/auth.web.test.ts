@@ -60,7 +60,7 @@ describe('Expo web OAuth', () => {
     expect(url.origin).toBe(WEB);
     expect(url.pathname).toBe('/auth/native-start');
     expect(url.searchParams.get('provider')).toBe('google');
-    expect(url.searchParams.get('callbackUrl')).toBe('https://www.boardsesh.com/app');
+    expect(url.searchParams.get('callbackUrl')).toBe('https://www.boardsesh.com/app?boardseshOAuthProvider=google');
   });
 
   it('starts Apple on www and returns to the standalone app root', () => {
@@ -69,7 +69,7 @@ describe('Expo web OAuth', () => {
     expect(url.origin).toBe(WEB);
     expect(url.pathname).toBe('/auth/native-start');
     expect(url.searchParams.get('provider')).toBe('apple');
-    expect(url.searchParams.get('callbackUrl')).toBe('https://app.boardsesh.com/');
+    expect(url.searchParams.get('callbackUrl')).toBe('https://app.boardsesh.com/?boardseshOAuthProvider=apple');
   });
 
   it('reports browser navigation failures without throwing', async () => {
