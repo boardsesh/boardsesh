@@ -418,6 +418,19 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
           ],
           category: ['BROWSABLE', 'DEFAULT'],
         },
+        // The OTA-preview link in every PR comment. iOS gets this free from the
+        // wildcard AASA; Android intent filters are path-scoped, so the prefix has
+        // to be declared here. Without it an Android tester lands on the web page
+        // and has to tap through its "Open in Boardsesh" button instead.
+        {
+          action: 'VIEW',
+          autoVerify: true,
+          data: [
+            { scheme: 'https', host: 'www.boardsesh.com', pathPrefix: '/preview' },
+            { scheme: 'https', host: 'boardsesh.com', pathPrefix: '/preview' },
+          ],
+          category: ['BROWSABLE', 'DEFAULT'],
+        },
       ],
       // Keep the legacy predictive back gesture OFF. Enabling it
       // (android.predictiveBackGestureEnabled: true) currently breaks

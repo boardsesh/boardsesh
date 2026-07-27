@@ -87,3 +87,15 @@ describe('parsePreviewLinkChannel', () => {
     expect(parsePreviewLinkChannel('https://www.boardsesh.com/preview/production')).toBe('production');
   });
 });
+
+describe('parsePreviewLinkChannel locale handling', () => {
+  it('strips only real locale prefixes, not any two-letter segment', () => {
+    // `go` is not a locale — stripping it would make a future /go/... route
+    // parse as a preview link.
+    expect(parsePreviewLinkChannel('https://www.boardsesh.com/go/preview/pr-1234')).toBeNull();
+  });
+
+  it('does not expect the default locale as a prefix (it lives at the root)', () => {
+    expect(parsePreviewLinkChannel('https://www.boardsesh.com/preview/pr-1234')).toBe('pr-1234');
+  });
+});

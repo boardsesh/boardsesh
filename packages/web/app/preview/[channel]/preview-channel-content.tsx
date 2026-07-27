@@ -60,8 +60,9 @@ export default function PreviewChannelContent({ channel, pullNumber }: { channel
             </Divider>
 
             {/* A QR needs a light quiet zone to scan, so the tile stays white in
-                both colour modes rather than inheriting the card surface. */}
-            <Box sx={{ bgcolor: '#FFFFFF', borderRadius: 2, p: 2, lineHeight: 0 }}>
+                both colour modes rather than inheriting the card surface —
+                `common.white` is mode-invariant, which is exactly the intent. */}
+            <Box sx={{ bgcolor: 'common.white', borderRadius: 2, p: 2, lineHeight: 0 }}>
               <QRCodeSVG value={pageUrl} size={168} level="M" marginSize={1} aria-hidden />
             </Box>
             <Typography variant="body2" sx={{ color: themeTokens.neutral[500], textAlign: 'center' }}>

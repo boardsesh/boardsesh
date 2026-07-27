@@ -9,7 +9,12 @@
 // publishes) and the tester presets are accepted. The web half of this contract
 // lives in packages/web/app/lib/ota-preview-link.ts.
 
+import { SUPPORTED_LOCALES, DEFAULT_LOCALE } from '@boardsesh/i18n';
 import { PRESET_CHANNELS } from './channel-switch';
+
+// Locales that appear as a URL path prefix. The default locale lives at the root
+// (`/preview/…`, not `/en-US/preview/…`), so it never shows up as a segment.
+const LOCALE_PREFIXES = SUPPORTED_LOCALES.filter((locale) => locale !== DEFAULT_LOCALE);
 
 // No leading zeros and no `pr-0`: GitHub numbers PRs from 1, and the web half
 // (packages/web/app/lib/ota-preview-link.ts) rejects both, so accepting them here
@@ -54,8 +59,10 @@ export function parsePreviewLinkChannel(url: string): string | null {
   // For an https link the first segment is the domain; for the custom scheme's
   // two-slash form it's already `preview`. A dot only ever appears in a host.
   if (segments.length > 0 && segments[0].includes('.')) segments.shift();
-  // Drop a leading two-letter locale (`es`, `fr`) — no route prefix is 2 letters.
-  if (segments.length > 0 && /^[a-z]{2}$/.test(segments[0])) segments.shift();
+  // Drop a leading locale segment. Matched against the real locale list rather
+  // than a two-letter shape, so a future two-letter route prefix (`/go/…`) isn't
+  // silently eaten, and a regional locale (`pt-BR`) works the day it's added.
+  if (segments.length > 0 && (LOCALE_PREFIXES as readonly string[]).includes(segments[0])) segments.shift();
 
   if (segments.length < 2 || segments[0] !== 'preview') return null;
   return parsePreviewChannel(segments[1]);
