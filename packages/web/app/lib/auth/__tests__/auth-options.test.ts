@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vite-plus/test'
 import type { Session } from 'next-auth';
 import { authOptions } from '../auth-options';
 
-const { mockAdapterCreateUser, mockAdapterUpdateUser } = vi.hoisted(() => ({
-  mockAdapterCreateUser: vi.fn(),
-  mockAdapterUpdateUser: vi.fn(),
-}));
+const { mockAdapterCreateUser, mockAdapterUpdateUser, mockBaseCreateUser } = vi.hoisted(() => {
+  const mockAdapterCreateUser = vi.fn();
+  return {
+    mockAdapterCreateUser,
+    mockAdapterUpdateUser: vi.fn(),
+    // The account-normalizing wrapper delegates to the base adapter's createUser.
+    mockBaseCreateUser: mockAdapterCreateUser,
+  };
+});
 
 // Mock server-only before any imports
 vi.mock('server-only', () => ({}));
@@ -1013,5 +1018,76 @@ describe('auth-options module side effect — canonical NEXTAUTH_URL', () => {
     await import('../auth-options');
 
     expect(process.env.NEXTAUTH_URL).toBe('http://localhost:3000');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adapter wrapper: case-insensitive OAuth account lookup / creation
+// ---------------------------------------------------------------------------
+
+describe('authOptions.adapter (case-insensitive wrapper)', () => {
+  const mockDbOrderBy = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // select().from().where().orderBy().limit()
+    mockDbSelect.mockReturnValue({ from: mockDbFrom });
+    mockDbFrom.mockReturnValue({ where: mockDbWhere });
+    mockDbWhere.mockReturnValue({ orderBy: mockDbOrderBy });
+    mockDbOrderBy.mockReturnValue({ limit: mockDbLimit });
+    mockDbLimit.mockResolvedValue([]);
+  });
+
+  it('matches an existing account whose stored email differs only in case', async () => {
+    mockDbLimit.mockResolvedValue([
+      {
+        id: 'user-mixed-case',
+        email: 'Foo@Example.com',
+        emailVerified: new Date('2026-01-01'),
+        name: 'Foo',
+        image: null,
+      },
+    ]);
+
+    const user = await authOptions.adapter?.getUserByEmail?.('FOO@example.com ');
+
+    expect(user).toMatchObject({ id: 'user-mixed-case', email: 'Foo@Example.com' });
+
+    // Assert on the predicate the code actually recorded, not one rebuilt here:
+    // it must compare lower(email) against the normalized input.
+    const recordedPredicate = mockDbWhere.mock.calls[0][0] as { strings: string[]; values: unknown[] };
+    expect(recordedPredicate.strings.join('?')).toContain('lower(');
+    expect(recordedPredicate.values).toContain('foo@example.com');
+  });
+
+  it('returns null when no row shares the lower-cased email', async () => {
+    mockDbLimit.mockResolvedValue([]);
+
+    await expect(authOptions.adapter?.getUserByEmail?.('nobody@example.com')).resolves.toBeNull();
+  });
+
+  it('takes a single row in verified-first, then oldest, order', async () => {
+    mockDbLimit.mockResolvedValue([]);
+
+    await authOptions.adapter?.getUserByEmail?.('dupe@example.com');
+
+    // NULLS LAST puts a verified row ahead of an unverified one; createdAt
+    // breaks the remaining tie so a duplicate set always resolves the same way.
+    const [orderExpression, tieBreaker] = mockDbOrderBy.mock.calls[0] as [{ strings: string[] }, unknown];
+    expect(orderExpression.strings.join('?')).toContain('ASC NULLS LAST');
+    expect(tieBreaker).toBe('users.createdAt');
+    expect(mockDbLimit).toHaveBeenCalledWith(1);
+  });
+
+  it('lower-cases the email before handing a new user to the base adapter', async () => {
+    mockBaseCreateUser.mockResolvedValue({ id: 'new-user' });
+
+    await authOptions.adapter?.createUser?.({
+      id: 'new-user',
+      email: '  New@Example.COM ',
+      emailVerified: null,
+    });
+
+    expect(mockBaseCreateUser).toHaveBeenCalledWith(expect.objectContaining({ email: 'new@example.com' }));
   });
 });
