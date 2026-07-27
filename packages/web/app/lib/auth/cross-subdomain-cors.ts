@@ -14,6 +14,9 @@ import { isAllowedAppOrigin } from '@/app/lib/auth/app-origin-allowlist';
 // set tight so no other route grows an ambient-credential CORS surface.
 const CORS_AUTH_PATHS = new Set([
   '/api/auth/session',
+  // The Expo-web login/register screens discover which configured providers
+  // should be offered before starting a browser OAuth redirect.
+  '/api/auth/providers-config',
   '/api/auth/csrf',
   '/api/auth/callback/credentials',
   '/api/auth/signout',

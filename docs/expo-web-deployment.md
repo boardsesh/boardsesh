@@ -80,12 +80,29 @@ reaching production.
 ### Cross-origin backend
 
 Because the app runs on `app.boardsesh.com` and the backend on
-`ws.boardsesh.com` (`EXPO_PUBLIC_BACKEND_URL`), the browser session exchange
-(`POST /auth/native/exchange`), GraphQL, and token refresh are all cross-origin.
+`ws.boardsesh.com` (`EXPO_PUBLIC_BACKEND_URL`), GraphQL and authenticated API
+requests are cross-origin.
 The backend CORS allow-list (`packages/backend/src/handlers/cors.ts`) includes
 `https://app.boardsesh.com` (configurable via `APP_ORIGIN`, prod default) plus
 its numbered preview form `https://{N}.app.boardsesh.com`. No auth token is ever
 persisted in the browser's AsyncStorage.
+
+### Browser authentication
+
+Expo web shares the NextAuth session cookie issued by `www.boardsesh.com`; it
+does not use the native transfer-token or refresh-token flow. Credentials calls
+the narrowly CORS-enabled NextAuth endpoints on www, then
+`packages/mobile/src/lib/auth-store.web.ts` reads the HttpOnly session through
+`/api/auth/session` and keeps the backend JWE from `/api/internal/ws-auth` in
+memory only.
+
+Google and Apple buttons use the same browser NextAuth providers as the classic
+web app. They navigate to `/auth/native-start` on www, which performs the
+CSRF-backed provider POST, and pass the initiating Expo export as the callback:
+`/app` for the same-origin build or `/` for `app.boardsesh.com`. The NextAuth
+redirect allow-list accepts only the configured app origin and numbered app
+previews, and the shared `.boardsesh.com` session cookie is available when the
+Expo export reloads.
 
 ### Infra follow-ups (not provisioned here)
 

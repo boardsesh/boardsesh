@@ -25,6 +25,11 @@ vi.mock('../../lib/analytics', () => ({ track: (...args: unknown[]) => trackMock
 const reportErrorMock = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({ reportError: (...args: unknown[]) => reportErrorMock(...args) }));
 
+const setOAuthPendingMock = vi.fn();
+vi.mock('../../lib/oauth-pending-store', () => ({
+  setOAuthPending: (...args: unknown[]) => setOAuthPendingMock(...args),
+}));
+
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 
 // The hook reads Platform.OS to gate the browser web fallback (Google + Apple)
@@ -70,6 +75,8 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
     signInWithGoogleMock.mockReset();
     signInWithGoogleWebMock.mockReset();
     signInWithAppleWebMock.mockReset();
+    setOAuthPendingMock.mockReset();
+    setOAuthPendingMock.mockResolvedValue(undefined);
   });
 
   it('falls back to the web flow when native Google throws ("Unable to open Safari") and signs in', async () => {
@@ -176,6 +183,51 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
     });
     // A browser that never opened is a failure, not the user backing out.
     expect(events).not.toContainEqual(expect.objectContaining({ event: 'Login Cancelled', flow: 'web_fallback' }));
+  });
+});
+
+describe('useNativeOAuthSignIn — Expo web redirect', () => {
+  beforeEach(() => {
+    platform.OS = 'web';
+    trackMock.mockReset();
+    reportErrorMock.mockReset();
+    signInWithAppleMock.mockReset();
+    signInWithGoogleMock.mockReset();
+    signInWithGoogleWebMock.mockReset();
+    signInWithAppleWebMock.mockReset();
+    setOAuthPendingMock.mockReset();
+    setOAuthPendingMock.mockResolvedValue(undefined);
+  });
+
+  it('persists the attempt and treats a full-page Google redirect as neither success nor failure', async () => {
+    signInWithGoogleMock.mockResolvedValue({ success: false, redirecting: true });
+
+    await runSignIn('google');
+
+    expect(setOAuthPendingMock).toHaveBeenCalledWith({
+      provider: 'google',
+      attemptedAt: expect.any(Number),
+      isRegistration: false,
+    });
+    expect(signInWithGoogleMock).toHaveBeenCalledTimes(1);
+    expect(signInWithGoogleWebMock).not.toHaveBeenCalled();
+    expect(trackMock).toHaveBeenCalledWith('Login Attempted', {
+      auth_method: 'google',
+      flow: 'web',
+    });
+    expect(trackMock).not.toHaveBeenCalledWith('Login Succeeded', expect.anything());
+    expect(trackMock).not.toHaveBeenCalledWith('Login Failed', expect.anything());
+    expect(reportErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('continues to OAuth when the analytics marker cannot be persisted', async () => {
+    setOAuthPendingMock.mockRejectedValue(new Error('IndexedDB unavailable'));
+    signInWithAppleMock.mockResolvedValue({ success: false, redirecting: true });
+
+    await runSignIn('apple');
+
+    expect(signInWithAppleMock).toHaveBeenCalledTimes(1);
+    expect(reportErrorMock).not.toHaveBeenCalled();
   });
 });
 

@@ -38,6 +38,7 @@ import { setSetting } from '../settings';
 import { getPendingCount, setSigningOut } from '@boardsesh/offline-sync';
 import { drainMutationQueue } from '../offline/offline-sync-adapter';
 import { stopTokenManagement } from '../notifications';
+import { consumeFreshOAuthPending } from '../lib/oauth-pending-store';
 
 type AuthState = {
   isAuthenticated: boolean;
@@ -296,6 +297,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
 
   const handleAuthenticatedTransition = useCallback(
     async (transitionEpoch: number, authSession: { userId?: string; authSessionId?: string }): Promise<boolean> => {
+      const wasAuthenticated = authStateRef.current.isAuthenticated;
       let authenticatedIdentityChanged = false;
       if (Platform.OS === 'web') {
         const nextUserId = authSession.userId;
@@ -325,6 +327,16 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       if (Platform.OS === 'web' && (pendingAuthTransportRestartRef.current || authenticatedIdentityChanged)) {
         pendingAuthTransportRestartRef.current = false;
         bumpAuthTransportRevision();
+      }
+      if (Platform.OS === 'web' && !wasAuthenticated) {
+        void consumeFreshOAuthPending().then((marker) => {
+          if (!marker) return;
+          track(SHARED_EVENTS.LoginSucceeded, {
+            auth_method: marker.provider,
+            flow: 'web',
+            ...(marker.isRegistration ? { is_registration: true } : {}),
+          });
+        });
       }
       return true;
     },

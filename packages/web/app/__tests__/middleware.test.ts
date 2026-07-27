@@ -783,10 +783,24 @@ describe('middleware cross-subdomain auth CORS', () => {
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });
 
-  it('does not add CORS to an auth path outside the allow-list, even from the app origin', () => {
-    // /api/auth/providers-config isn't one of the endpoints the app calls
-    // cross-origin, so it must not grow an ambient-credential CORS surface.
+  it('allows provider discovery from the standalone app origin', () => {
     const response = middleware(makeCorsRequest('/api/auth/providers-config', { origin: APP_ORIGIN }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(APP_ORIGIN);
+    expect(response.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+  });
+
+  it('allows provider discovery from a numbered preview origin', () => {
+    const preview = 'https://14.app.boardsesh.com';
+    const response = middleware(makeCorsRequest('/api/auth/providers-config', { origin: preview }));
+
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe(preview);
+  });
+
+  it('rejects provider discovery from a look-alike app origin', () => {
+    const response = middleware(
+      makeCorsRequest('/api/auth/providers-config', { origin: 'https://app.boardsesh.com.evil.com' }),
+    );
 
     expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
   });

@@ -12,13 +12,17 @@ import {
   type WebAuthIdentity,
 } from './auth-store.web';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
-import { webApiUrl } from './env';
+import { WEB_BASE_URL, webApiUrl } from './env';
 
 export type AuthProvider = 'google' | 'apple';
 
 type AuthFailure = { success: false; status: number | null; error: string };
 
-export type OAuthSignInResult = { success: true } | { success: false; cancelled: true } | AuthFailure;
+export type OAuthSignInResult =
+  | { success: true }
+  | { success: false; cancelled: true }
+  | { success: false; redirecting: true }
+  | AuthFailure;
 export type CredentialsSignInResult = { success: true } | AuthFailure;
 export type RegistrationResult =
   | { success: true; authenticated?: true }
@@ -491,22 +495,52 @@ export function isGoogleSignInConfigured(): boolean {
   return false;
 }
 
-function unavailableOAuth(): Promise<OAuthSignInResult> {
-  return Promise.resolve({ success: false, status: null, error: 'oauth_unavailable' });
+/**
+ * Build the NextAuth start URL for the Expo browser app. OAuth itself always
+ * runs on WEB_BASE_URL (www in production), while the callback returns to the
+ * actual export that initiated it: `/app` for the same-origin build and `/` for
+ * app.boardsesh.com.
+ */
+export function buildWebOAuthStartUrl(
+  provider: AuthProvider,
+  appOrigin: string,
+  exportBasePath = process.env.EXPO_BASE_URL || '/',
+): string {
+  const callbackUrl = new URL(exportBasePath || '/', appOrigin).toString();
+  const startUrl = new URL('/auth/native-start', WEB_BASE_URL);
+  startUrl.searchParams.set('provider', provider);
+  startUrl.searchParams.set('callbackUrl', callbackUrl);
+  return startUrl.toString();
+}
+
+function startWebOAuth(provider: AuthProvider): Promise<OAuthSignInResult> {
+  if (typeof window === 'undefined') {
+    return Promise.resolve({ success: false, status: null, error: 'browser_unavailable' });
+  }
+
+  try {
+    window.location.assign(buildWebOAuthStartUrl(provider, window.location.origin));
+    // The document is about to unload. This distinct result prevents the
+    // in-process native flow from reporting success or checking the old cookie
+    // before the provider round-trip returns.
+    return Promise.resolve({ success: false, redirecting: true });
+  } catch {
+    return Promise.resolve({ success: false, status: null, error: 'browser_unavailable' });
+  }
 }
 
 export function signInWithApple(): Promise<OAuthSignInResult> {
-  return unavailableOAuth();
+  return startWebOAuth('apple');
 }
 
 export function signInWithGoogle(): Promise<OAuthSignInResult> {
-  return unavailableOAuth();
+  return startWebOAuth('google');
 }
 
 export function signInWithGoogleWeb(): Promise<OAuthSignInResult> {
-  return unavailableOAuth();
+  return startWebOAuth('google');
 }
 
 export function signInWithAppleWeb(): Promise<OAuthSignInResult> {
-  return unavailableOAuth();
+  return startWebOAuth('apple');
 }

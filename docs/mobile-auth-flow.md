@@ -2,7 +2,12 @@
 
 ## Overview
 
-The mobile auth flow lets React Native (Expo) clients authenticate with the Boardsesh backend. React Native cannot share the NextAuth session cookie used by the web app because there is no embedded WebView hosting the Next.js origin. Instead, the mobile app completes OAuth in a system browser, receives a short-lived transfer token from the web callback, and exchanges it for a long-lived JWT + refresh token pair via the backend.
+The native mobile auth flow lets React Native (Expo) clients authenticate with the Boardsesh backend. Native iOS and Android cannot share the NextAuth session cookie used by the web app because there is no embedded WebView hosting the Next.js origin. Instead, the native app completes OAuth with the provider SDK (or its system-browser fallback), then receives Boardsesh access and refresh tokens.
+
+The Expo browser target is different: it shares the `.boardsesh.com` NextAuth
+cookie with `www.boardsesh.com`, keeps its backend JWE in memory, and returns
+from Google/Apple OAuth directly to the `/app` or `app.boardsesh.com` export.
+See [`expo-web-deployment.md`](./expo-web-deployment.md#browser-authentication).
 
 ## Token exchange flow
 

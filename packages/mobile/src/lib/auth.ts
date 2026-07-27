@@ -45,7 +45,11 @@ type NativeAuthFailure = { success: false; status: number | null; error: string 
 // A native OAuth attempt resolves to one of: success, an explicit user
 // cancellation (no error shown), or a real failure carrying the server's
 // status/error (mapped to a translated message by the caller).
-export type OAuthSignInResult = { success: true } | { success: false; cancelled: true } | NativeAuthFailure;
+export type OAuthSignInResult =
+  | { success: true }
+  | { success: false; cancelled: true }
+  | { success: false; redirecting: true }
+  | NativeAuthFailure;
 
 /**
  * POST a verified provider identity token to the backend, which verifies it

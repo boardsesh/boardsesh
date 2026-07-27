@@ -24,6 +24,8 @@ const userStorageOwnerState = vi.hoisted(() => ({
   set: vi.fn(),
 }));
 const bumpAuthTransportRevisionMock = vi.hoisted(() => vi.fn());
+const consumeFreshOAuthPendingMock = vi.hoisted(() => vi.fn());
+const trackMock = vi.hoisted(() => vi.fn());
 
 // expo-router and react-native both reach for the native runtime; stub the
 // thin surface AuthProvider consumes. `useSegments` returning `[]` keeps the
@@ -114,6 +116,9 @@ beforeEach(() => {
     userStorageOwnerState.current = owner as { userId: string; authSessionId: string } | null;
   });
   bumpAuthTransportRevisionMock.mockReset();
+  consumeFreshOAuthPendingMock.mockReset();
+  consumeFreshOAuthPendingMock.mockResolvedValue(null);
+  trackMock.mockReset();
   captureAuthCredentialGenerationMock.mockReset();
   captureAuthCredentialGenerationMock.mockReturnValue(1);
   authSignInWithCredentialsMock.mockReset();
@@ -147,6 +152,15 @@ vi.mock('../../lib/auth-store', () => ({
 const reportErrorMock = vi.fn();
 vi.mock('../../lib/error-reporting', () => ({
   reportError: (...args: unknown[]) => reportErrorMock(...args),
+}));
+
+vi.mock('../../lib/analytics', () => ({
+  reset: vi.fn(),
+  track: (...args: unknown[]) => trackMock(...args),
+}));
+
+vi.mock('../../lib/oauth-pending-store', () => ({
+  consumeFreshOAuthPending: (...args: unknown[]) => consumeFreshOAuthPendingMock(...args),
 }));
 
 const authSignOutMock = vi.fn();
@@ -619,6 +633,47 @@ describe('AuthProvider.register', () => {
     });
 
     expect(getAuthTokenMock).toHaveBeenCalledTimes(authReadsBeforeRegistration);
+  });
+});
+
+describe('AuthProvider Expo-web OAuth completion', () => {
+  beforeEach(() => {
+    platformState.OS = 'web';
+    getAuthTokenMock.mockReset();
+    getAuthTokenMock.mockResolvedValue('backend-jwe');
+    isTokenExpiringSoonMock.mockReset();
+    isTokenExpiringSoonMock.mockResolvedValue(false);
+  });
+
+  it('consumes a pending attempt after the returned web session is authenticated', async () => {
+    consumeFreshOAuthPendingMock.mockResolvedValue({
+      provider: 'apple',
+      attemptedAt: Date.now(),
+      isRegistration: true,
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>{children}</AuthProvider>
+      </QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useAuth(), { wrapper });
+
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith('Login Succeeded', {
+        auth_method: 'apple',
+        flow: 'web',
+        is_registration: true,
+      }),
+    );
+    expect(consumeFreshOAuthPendingMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.refreshAuthState();
+    });
+    expect(consumeFreshOAuthPendingMock).toHaveBeenCalledTimes(1);
   });
 });
 

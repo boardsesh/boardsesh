@@ -1,12 +1,9 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
-import * as AppleAuthentication from 'expo-apple-authentication';
-import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
-import { isGoogleSignInConfigured } from '../../src/lib/auth';
 import { validateRegisterFields, isValid, type RegisterFieldErrors } from '../../src/lib/auth-validation';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
@@ -18,6 +15,7 @@ import { track, setPersonProperties } from '../../src/lib/analytics';
 import { webApiUrl } from '../../src/lib/env';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
+import { OAuthProviderButtons, useOAuthProviders } from '../../src/components/auth/OAuthProviderButtons';
 
 type FieldKey = 'name' | 'email' | 'password' | 'confirmPassword';
 
@@ -205,10 +203,8 @@ export default function RegisterScreen() {
     }
   }
 
-  const isDark = theme.colorScheme === 'dark';
-  const showAppleSignIn = Platform.OS === 'ios';
-  const showGoogleSignIn = isGoogleSignInConfigured();
-  const showSocialSignIn = showAppleSignIn || showGoogleSignIn;
+  const oauthProviders = useOAuthProviders();
+  const showSocialSignIn = oauthProviders.loading || oauthProviders.apple || oauthProviders.google;
 
   return (
     <>
@@ -265,37 +261,15 @@ export default function RegisterScreen() {
 
               {showSocialSignIn && (
                 <>
-                  <View style={styles.socialButtons}>
-                    {showAppleSignIn && (
-                      // SIGN_UP variant on the registration screen, per Apple HIG.
-                      <AppleAuthentication.AppleAuthenticationButton
-                        buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
-                        buttonStyle={
-                          isDark
-                            ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                            : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-                        }
-                        cornerRadius={12}
-                        style={styles.appleButton}
-                        onPress={() => {
-                          hapticLight();
-                          void handleOAuthSignIn('apple');
-                        }}
-                      />
-                    )}
-                    {showGoogleSignIn && (
-                      <GoogleSigninButton
-                        size={GoogleSigninButton.Size.Wide}
-                        color={isDark ? GoogleSigninButton.Color.Dark : GoogleSigninButton.Color.Light}
-                        disabled={oauthInProgress}
-                        style={styles.googleButton}
-                        onPress={() => {
-                          hapticLight();
-                          void handleOAuthSignIn('google');
-                        }}
-                      />
-                    )}
-                  </View>
+                  <OAuthProviderButtons
+                    disabled={oauthInProgress}
+                    isRegistration
+                    providers={oauthProviders}
+                    onSignIn={(provider) => {
+                      hapticLight();
+                      void handleOAuthSignIn(provider);
+                    }}
+                  />
 
                   <View style={styles.dividerRow}>
                     <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
@@ -423,10 +397,6 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: { flexGrow: 1, justifyContent: 'flex-start', padding: 24 },
   intro: { marginBottom: 24 },
-  socialButtons: { gap: 12 },
-  // Apple's native button needs explicit height + width or it renders nothing.
-  appleButton: { width: '100%', height: 50 },
-  googleButton: { width: '100%', height: 50 },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',

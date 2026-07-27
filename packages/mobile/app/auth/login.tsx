@@ -2,12 +2,9 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import * as AppleAuthentication from 'expo-apple-authentication';
-import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
 import { useTranslation } from 'react-i18next';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { classifyNativeAuthFailureReason } from '../../src/lib/native-auth-analytics';
-import { isGoogleSignInConfigured } from '../../src/lib/auth';
 import { EMAIL_REGEX } from '../../src/lib/auth-validation';
 import { useAuth } from '../../src/providers/auth-provider';
 import { useTheme } from '../../src/providers/theme-provider';
@@ -19,6 +16,7 @@ import { track } from '../../src/lib/analytics';
 import { reportError } from '../../src/lib/error-reporting';
 import { hapticLight } from '../../src/lib/haptics';
 import { openDiscordInvite } from '../../src/lib/discord';
+import { OAuthProviderButtons, useOAuthProviders } from '../../src/components/auth/OAuthProviderButtons';
 
 export default function LoginScreen() {
   const { signInWithCredentials } = useAuth();
@@ -97,15 +95,8 @@ export default function LoginScreen() {
   const showAndroidFreezeNotice =
     Platform.OS === 'android' && typeof Platform.Version === 'number' && Platform.Version >= 35;
 
-  const isDark = theme.colorScheme === 'dark';
-
-  // Sign in with Apple is iOS-only; Google only when the build shipped its
-  // native config (an Apple-only / misconfigured build hides it rather than
-  // showing a button that fails on tap). Hide the whole social section if
-  // neither is available so the divider doesn't dangle.
-  const showAppleSignIn = Platform.OS === 'ios';
-  const showGoogleSignIn = isGoogleSignInConfigured();
-  const showSocialSignIn = showAppleSignIn || showGoogleSignIn;
+  const oauthProviders = useOAuthProviders();
+  const showSocialSignIn = oauthProviders.loading || oauthProviders.apple || oauthProviders.google;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -224,41 +215,15 @@ export default function LoginScreen() {
               <View style={[styles.dividerLine, { backgroundColor: theme.systemColors.separator }]} />
             </View>
 
-            <View style={styles.buttons}>
-              {showAppleSignIn && (
-                // Apple's official native button — App Review requires it when other
-                // third-party logins are offered. Self-labeled/localized; colour and
-                // corner radius come from the dedicated props (not `style`).
-                <AppleAuthentication.AppleAuthenticationButton
-                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                  buttonStyle={
-                    isDark
-                      ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
-                      : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
-                  }
-                  cornerRadius={12}
-                  style={styles.appleButton}
-                  onPress={() => {
-                    hapticLight();
-                    void handleOAuthSignIn('apple');
-                  }}
-                />
-              )}
-              {/* Google's official brand-compliant button — only when the build
-                  shipped the Google native config (otherwise it would fail on tap). */}
-              {showGoogleSignIn && (
-                <GoogleSigninButton
-                  size={GoogleSigninButton.Size.Wide}
-                  color={isDark ? GoogleSigninButton.Color.Dark : GoogleSigninButton.Color.Light}
-                  disabled={oauthInProgress}
-                  style={styles.googleButton}
-                  onPress={() => {
-                    hapticLight();
-                    void handleOAuthSignIn('google');
-                  }}
-                />
-              )}
-            </View>
+            <OAuthProviderButtons
+              disabled={oauthInProgress}
+              isRegistration={false}
+              providers={oauthProviders}
+              onSignIn={(provider) => {
+                hapticLight();
+                void handleOAuthSignIn(provider);
+              }}
+            />
           </>
         )}
 
@@ -350,10 +315,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     opacity: 0.6,
   },
-  buttons: { gap: 12 },
-  // Apple's native button needs explicit height + width or it renders nothing.
-  appleButton: { width: '100%', height: 50 },
-  googleButton: { width: '100%', height: 50 },
   forgotPasswordHit: {
     alignSelf: 'center',
     marginTop: 4,

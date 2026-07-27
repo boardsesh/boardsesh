@@ -9,6 +9,7 @@ import {
   isRecoverableAndroidGoogleSignInError,
   nativeSignInErrorCode,
 } from '../lib/native-auth-analytics';
+import { setOAuthPending } from '../lib/oauth-pending-store';
 import type { OAuthSignInResult } from '../lib/auth';
 import { useTranslation } from 'react-i18next';
 
@@ -41,7 +42,8 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       setInProgress(true);
       setError(null);
       const registrationProps = isRegistration ? { is_registration: true } : {};
-      track(SHARED_EVENTS.LoginAttempted, { auth_method: provider, flow: 'native', ...registrationProps });
+      const primaryFlow = Platform.OS === 'web' ? 'web' : 'native';
+      track(SHARED_EVENTS.LoginAttempted, { auth_method: provider, flow: primaryFlow, ...registrationProps });
       // duration_ms separates a human dismissing the system sheet (seconds) from
       // the flow dying programmatically (sub-second).
       const attemptStartedAt = Date.now();
@@ -105,6 +107,9 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
         }
+        if ('redirecting' in fallback) {
+          return;
+        }
         if ('cancelled' in fallback) {
           // The user dismissed the browser — intent, not a failure. A distinct
           // event keeps it out of the LoginFailed count.
@@ -136,9 +141,22 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       };
 
       try {
+        if (Platform.OS === 'web') {
+          // The browser unloads for NextAuth, so persist the attempt before
+          // navigation. AuthProvider consumes it only after the returned cookie
+          // is confirmed; a storage failure must not prevent sign-in.
+          try {
+            await setOAuthPending({ provider, attemptedAt: Date.now(), isRegistration });
+          } catch {
+            // Analytics continuity is best-effort; authentication is not.
+          }
+        }
         const result = provider === 'apple' ? await signInWithApple() : await signInWithGoogle();
+        if ('redirecting' in result) {
+          return;
+        }
         if (result.success) {
-          track(SHARED_EVENTS.LoginSucceeded, { auth_method: provider, flow: 'native', ...registrationProps });
+          track(SHARED_EVENTS.LoginSucceeded, { auth_method: provider, flow: primaryFlow, ...registrationProps });
           // AuthProvider flips isAuthenticated and the redirect handles navigation.
           return;
         }
@@ -160,7 +178,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         const oauthFailureReason = classifyNativeAuthFailureReason(result, 'oauth');
         track(SHARED_EVENTS.LoginFailed, {
           auth_method: provider,
-          flow: 'native',
+          flow: primaryFlow,
           failure_reason: oauthFailureReason,
           failure_detail: result.error,
           recoverable: Platform.OS === 'ios',
@@ -178,9 +196,9 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         // Surface to error tracking too: an OAuth 401 / no_id_token is a config
         // bug (client-id audience mismatch, unconfigured backend) rather than a
         // user typo. Network blips downgrade to a warning.
-        reportError(new Error(`Native ${provider} sign-in failed: ${result.error}`), {
+        reportError(new Error(`${primaryFlow} ${provider} sign-in failed: ${result.error}`), {
           level: result.error === 'network' ? 'warning' : 'error',
-          tags: { source: 'native-auth', provider, flow: 'native', failure_reason: oauthFailureReason },
+          tags: { source: 'native-auth', provider, flow: primaryFlow, failure_reason: oauthFailureReason },
           extra: { status: result.status, server_error: result.error },
         });
         setError(result.error === 'network' ? t('nativeStart.networkError') : t('nativeStart.oauthError'));
@@ -202,7 +220,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           (Platform.OS === 'android' && provider === 'google' && isRecoverableAndroidGoogleSignInError(oauthError));
         track(SHARED_EVENTS.LoginFailed, {
           auth_method: provider,
-          flow: 'native',
+          flow: primaryFlow,
           failure_reason: 'exception',
           failure_detail: nativeErrorCode ?? (oauthError instanceof Error ? oauthError.message : undefined),
           recoverable: willFallBack,
@@ -217,7 +235,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
           tags: {
             source: 'native-auth',
             provider,
-            flow: 'native',
+            flow: primaryFlow,
             mechanism: 'exception',
             native_error_code: nativeErrorCode,
           },

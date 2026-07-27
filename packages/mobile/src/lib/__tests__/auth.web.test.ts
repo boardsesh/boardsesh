@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureAuthCredentialGeneration, clearTokens, getAuthToken, synchronizeWebSession } from '../auth-store.web';
 import {
+  buildWebOAuthStartUrl,
   registerWithCredentials,
   requestPasswordReset,
   resetPassword,
@@ -47,6 +48,26 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe('Expo web OAuth', () => {
+  it('starts Google on www and returns to the same-origin /app export', () => {
+    const url = new URL(buildWebOAuthStartUrl('google', 'https://www.boardsesh.com'));
+
+    expect(url.origin).toBe(WEB);
+    expect(url.pathname).toBe('/auth/native-start');
+    expect(url.searchParams.get('provider')).toBe('google');
+    expect(url.searchParams.get('callbackUrl')).toBe('https://www.boardsesh.com/app');
+  });
+
+  it('starts Apple on www and returns to the standalone app root', () => {
+    const url = new URL(buildWebOAuthStartUrl('apple', 'https://app.boardsesh.com', ''));
+
+    expect(url.origin).toBe(WEB);
+    expect(url.pathname).toBe('/auth/native-start');
+    expect(url.searchParams.get('provider')).toBe('apple');
+    expect(url.searchParams.get('callbackUrl')).toBe('https://app.boardsesh.com/');
+  });
 });
 
 describe('Expo web credentials auth', () => {
