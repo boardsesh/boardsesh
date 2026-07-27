@@ -233,19 +233,33 @@ describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
     expect(sweep).toMatch(/\^pr-\[0-9\]\+\$/);
   });
 
-  it('keeps the channel-name prefix equal to the documented S3 lifecycle prefix', () => {
-    // expo-open-ota keys updates as <branch>/<rtv>/<ts>/…, so the S3 lifecycle rule
-    // that bounds storage is scoped to the channel-name prefix. If the workflow's
-    // channel prefix and the documented lifecycle prefix ever diverge, previews
-    // either never expire (storage leak) or the rule could match production.
+  it('scopes the S3 lifecycle prefix to <appId>/pr- (ends with the channel prefix, and documented)', () => {
+    // V3 (control-plane) keys updates as <appId>/<branch>/<rtv>/<ts>/…, so the S3
+    // lifecycle rule that bounds per-PR preview storage is scoped to `<appId>/pr-`
+    // — NOT a bare `pr-`. It MUST end with the workflow's channel-name prefix (so
+    // it matches only pr-<n> channels) and can never match `<appId>/production/…`.
+    // Post-V3 the channel-name prefix and the S3 key prefix differ, so they're two
+    // constants in mobile-ota-setup.ts; if they drift, previews either never expire
+    // (storage leak) or the rule hits production. The docs must document the exact
+    // appId-scoped prefix.
     const preview = readWorkflow(OTA_PREVIEW);
     const guard = preview.match(/\^(pr-)\[0-9\]\+\$/);
     expect(guard, 'preview workflow must guard channels as ^pr-[0-9]+$').not.toBeNull();
     const channelPrefix = guard![1];
 
+    const setup = readFileSync(resolve(REPO_ROOT, 'scripts/mobile-ota-setup.ts'), 'utf8');
+    const appId = setup.match(/OTA_APP_ID\s*=\s*'([^']+)'/)?.[1];
+    const channelConst = setup.match(/PREVIEW_CHANNEL_PREFIX\s*=\s*'([^']+)'/)?.[1];
+    expect(appId, 'setup must define OTA_APP_ID').toBeTruthy();
+    expect(channelConst, 'setup PREVIEW_CHANNEL_PREFIX must equal the workflow channel prefix').toBe(channelPrefix);
+    // The lifecycle rule keys off the appId-scoped prefix, which must end with the channel prefix.
+    expect(setup, 'setup lifecycle rule must use the appId-scoped PREVIEW_S3_PREFIX').toContain('PREVIEW_S3_PREFIX');
+    const s3Prefix = `${appId}/${channelConst}`;
+    expect(s3Prefix.endsWith(channelPrefix), 'S3 lifecycle prefix must end with the channel-name prefix').toBe(true);
+
     const docs = readFileSync(resolve(REPO_ROOT, 'docs/mobile-ota-updates.md'), 'utf8');
     expect(docs.toLowerCase(), 'docs must describe the S3 lifecycle rule').toContain('lifecycle');
-    expect(docs, `docs must document the lifecycle prefix \`${channelPrefix}\``).toContain(`\`${channelPrefix}\``);
+    expect(docs, `docs must document the appId-scoped lifecycle prefix \`${s3Prefix}\``).toContain(s3Prefix);
   });
 
   it('uses pull_request (never pull_request_target) so fork jobs get no secrets', () => {

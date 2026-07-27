@@ -12,6 +12,12 @@ name: Mobile OTA Backport (Approved Release)
 # OTA would resolve a fingerprint no shipped binary has and silently never land —
 # better to fail loudly. See docs/mobile-ota-updates.md.
 #
+# V2 is FROZEN: this backport publishes only to the V3 server (updates.boardsesh.com)
+# via eoas@3.0.5 (pinned in scripts/lib/eoas.ts, used by `vp run mobile:publish`),
+# authenticated with EOO_TOKEN. It therefore reaches only V3-fingerprint release
+# anchors. Pre-V3 (old-fleet) binaries point at the retired V2 server and are NOT
+# served here — they migrate by store-updating to a V3 build.
+#
 # Manual only. Prepare the fix as normal commits on main (or anywhere fetchable)
 # first, then dispatch this with those commit SHAs.
 
@@ -97,15 +103,16 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Gates EXPO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
+    # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
     strategy:
       fail-fast: false
       matrix:
         platform: ${{ fromJSON(needs.setup.outputs.platforms) }}
-    # EXPO_TOKEN is NOT a job-level env: that would expose the publish-capable token
-    # to checkout, setup-vp/bun, `bun install`, and the cherry-pick before the
-    # publish. It's scoped to the "Publish OTA" step below instead.
+    # EOO_TOKEN (the app-scoped expo-open-ota publish key) is NOT a job-level env:
+    # that would expose the publish-capable key to checkout, setup-vp/bun,
+    # `bun install`, and the cherry-pick before the publish. It's scoped to the
+    # "Publish OTA" step below instead.
 
     steps:
       - name: Checkout repository
@@ -232,7 +239,7 @@ jobs:
       - name: Publish OTA to the approved release
         if: ${{ !inputs.dry_run }}
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
           PLATFORM: ${{ matrix.platform }}
           GOOGLE_MAPS_API_KEY: ${{ matrix.platform == 'android' && secrets.GOOGLE_MAPS_API_KEY || '' }}
           VERSION: ${{ inputs.version }}

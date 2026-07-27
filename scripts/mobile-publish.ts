@@ -10,8 +10,9 @@
  *   Production (`--channel <name>`) — `eoas publish` to our self-hosted
  *     expo-open-ota server. Requires EXPO_UPDATES_URL (the server's manifest
  *     endpoint — eoas derives the upload host from updates.url in app.config)
- *     and EXPO_TOKEN (Expo API auth for branch/channel mapping). The channel
- *     name maps to a same-named branch on the server.
+ *     and EOO_TOKEN (the app-scoped expo-open-ota API key; the V3 control-plane
+ *     server rejects Expo tokens). The channel name maps to a same-named branch
+ *     on the server.
  *
  * Usage:
  *   vp run mobile:publish                              # preview: current git branch
@@ -69,7 +70,9 @@ function publishToSelfHostedChannel(channelName: string, platform: string, expli
   const serverUrl = process.env.EXPO_UPDATES_URL;
   if (!serverUrl) {
     console.error('[mobile:publish] --channel requires EXPO_UPDATES_URL (the expo-open-ota manifest endpoint,');
-    console.error('[mobile:publish] e.g. https://ota.boardsesh.com/manifest). eoas derives the upload host from it.');
+    console.error(
+      '[mobile:publish] e.g. https://updates.boardsesh.com/manifest). eoas derives the upload host from it.',
+    );
     console.error('[mobile:publish] See docs/mobile-ota-updates.md.');
     process.exit(1);
   }

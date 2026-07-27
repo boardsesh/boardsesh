@@ -1,19 +1,53 @@
-# Mobile OTA updates (production: self-hosted expo-open-ota)
+# Mobile OTA updates (production: self-hosted expo-open-ota V3)
 
 How JS/TS-only fixes reach the `packages/mobile` app without a new native build.
 
 `expo-updates` speaks an open protocol, so we self-host the manifest + asset server with
-[expo-open-ota](https://github.com/axelmarciano/expo-open-ota) instead of paying for EAS Update
-hosting. The only thing we keep from Expo is a **free** account/token — the server uses Expo's
-API for channel↔branch metadata, but serves manifests and bundles from our own storage, so
-there's no MAU/bandwidth billing.
+[expo-open-ota](https://github.com/mercuretechnologies/expo-open-ota) (the mercuretechnologies fork)
+instead of paying for EAS Update hosting. We run it in **V3 control-plane mode** (`v3.0.5`): a
+Postgres-backed server that owns channel↔branch mapping, code-signing keys, and progressive
+rollouts itself, so there's no dependency on Expo's API and no MAU/bandwidth billing. The only thing
+we still keep from Expo is a free account/token for the EAS free-tier _preview_ path (below).
+
+## Two servers: V2 frozen, V3 live (green-field migration)
+
+We migrated to V3 green-field rather than upgrading V2 in place, because a V2→V3 upgrade needs a
+destructive storage re-path and an in-place stateless→control-plane key-sealing migration. We were
+cutting a new native build anyway, so instead we stood up a fresh V3 server on an empty bucket + new
+Postgres and left V2 untouched. Two servers now run in parallel:
+
+| Server          | Host                    | Version                                     | Who hits it                                                                                                                                                                     |
+| --------------- | ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **V2 (frozen)** | `ota.boardsesh.com`     | axelmarciano V2, stateless                  | Old store/TestFlight binaries built before the V3 cutover. They have `ota.boardsesh.com` + the old cert baked in, so V2 keeps serving them unchanged. **Do not publish to it.** |
+| **V3 (live)**   | `updates.boardsesh.com` | mercuretechnologies `v3.0.5`, control-plane | New/updated binaries (V3 URL + V3 cert + `expo-app-id` header baked in). CI publishes only here.                                                                                |
+
+- Old installs migrate to V3 by store-updating to a V3 build; there's no cross-server backport.
+- **Rollback before the store rollout is free:** the V3 build bakes the V3 URL, so V3 must be proven
+  good on TestFlight/internal track before wide release. If V3 misbehaves pre-rollout, fix it — the
+  old fleet is untouched on V2. Post-rollout recovery is forward-only (publish a fixed OTA / roll
+  back on V3).
+- V3 is the Railway service `boardsesh-ota-v3` (image `ghcr.io/mercuretechnologies/expo-open-ota:v3.0.5`),
+  backed by a dedicated Railway Postgres and a Tigris bucket `boardsesh-ota-v3`.
+- **Retire V2 later**, telemetry-gated: watch the old-build share in PostHog (below); when it's
+  negligible, decommission the `boardsesh-ota` service + its bucket. Until then it's one small idle
+  service.
+
+### Standing rules
+
+- **Never drop `expo-app-id`.** V3 clients must always send it (baked in `updates.requestHeaders` via
+  `OTA_APP_ID`). Dropping it breaks both publishing and the in-app channel switcher — keep it forever.
+- **Bump the V3 server image and `eoas` in lockstep** (exact version match). After any bump,
+  re-verify `/ready` = 200 and a header-carrying manifest + asset probe, and run `eoas doctor`.
+- **Dashboard creds are production-release creds.** `/dashboard` mints API keys, exports the cert,
+  remaps channels, and runs rollouts — treat the admin login as production-release access (one admin,
+  read-only members).
 
 ## Two hosting paths (don't mix them up)
 
 |                | Preview / dev                            | Production                                                                                                                       |
 | -------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Built by       | `eas build` (`mobile:preview-build`)     | bare `expo prebuild` + xcodebuild/gradle (the `ios-testflight-rn` / `android-apk-rn` workflows)                                  |
-| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota                                                                                                        |
+| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota V3 (`updates.boardsesh.com`)                                                                           |
 | Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                   |
 | Publish        | `vp run mobile:publish` (→ `eas update`) | auto on push to `main` (`mobile-ota-production.yml`); manual: `vp run mobile:publish -- --channel production` (→ `eoas publish`) |
 
@@ -33,11 +67,18 @@ install, since the device couldn't verify the manifest came from us.
 
 1. **Build time** (`expo prebuild`): `EXPO_UPDATES_CHANNEL=production` →
    `updates.requestHeaders['expo-channel-name'] = 'production'` is injected into `Expo.plist`
-   (`EXUpdatesRequestHeaders`) and `AndroidManifest.xml`. `updates.url` points at our server. The
-   public code-signing cert (`certs/certificate.pem`) is embedded.
-2. **Runtime**: on launch the app asks `<server>/manifest` with its channel + runtimeVersion
-   headers. The server returns the latest signed update on the branch mapped to that channel; the
-   app verifies the signature against the embedded cert and applies it on next launch.
+   (`EXUpdatesRequestHeaders`) and `AndroidManifest.xml`. `updates.url` points at V3
+   (`https://updates.boardsesh.com/manifest`). The build also bakes an **`expo-app-id`** request
+   header — `007e6fd7-f200-448c-9449-8d48ba5d51fc`, the V3 server's internal app id (set in
+   `app.config.ts` as `OTA_APP_ID`, env-overridable via `EXPO_PUBLIC_OTA_APP_ID`). This is **not**
+   the EAS project id `87499648-…`; that value survives only as the cert's CN. V3 routes every
+   request on `expo-app-id`, so a build that drops the header can't be served. The public
+   code-signing cert (`certs/certificate.pem`, exported from the V3 dashboard) is embedded, and the
+   app signs manifests with `keyid: 'main'` / `rsa-v1_5-sha256` (V3 hardcodes `keyid='main'`).
+2. **Runtime**: on launch the app asks `<server>/manifest` with its `expo-app-id`, channel, and
+   runtimeVersion headers. V3 returns the latest signed update on the branch mapped to that channel
+   (see [Channel↔branch mapping](#channelbranch-mapping-control-plane) below); the app verifies the
+   signature against the embedded cert and applies it on next launch.
 3. **runtimeVersion** uses the **`fingerprint`** policy — a hash of the native project (deps,
    config plugins, entitlements, native dirs), resolved by Expo's bundled `@expo/fingerprint`. An
    update only reaches a binary with the **same** fingerprint, so a JS-only change keeps the same
@@ -83,17 +124,45 @@ regenerating it, then `changelog-discord-summary.ts` diffs the two snapshots and
 entries grouped as New / Improved / Fixed. When nothing new shipped (changelog unchanged) it falls
 back to the triggering commit's subject.
 
-**Manual** (one branch, ad hoc) — once the server is deployed and you're logged in (`bunx eas
-login`, or `EXPO_TOKEN` set):
+**Manual** (one branch, ad hoc) — set the V3 server URL and an app-scoped `EOO_TOKEN`:
 
 ```sh
-EXPO_UPDATES_URL=https://ota.boardsesh.com/manifest \
+EXPO_UPDATES_URL=https://updates.boardsesh.com/manifest \
+EOO_TOKEN=eoo_… \
   vp run mobile:publish -- --channel production --message "fix: <what>"
 ```
 
-This runs `eoas publish --branch production`, which does an `expo export` and uploads the bundle
-to our storage via the server. `eoas` reads the server URL from `updates.url` in `app.config.ts`,
-so `EXPO_UPDATES_URL` must be present.
+This runs `eoas publish --branch production --channel production`, which does an `expo export` and
+uploads the bundle to our storage via the server. `eoas` reads the server URL from `updates.url` in
+`app.config.ts`, so `EXPO_UPDATES_URL` must be present. **Auth is `EOO_TOKEN`, not an Expo token:**
+the V3 control-plane server rejects Expo tokens, so publish/rollback need an app-scoped `eoo_` key
+minted in the dashboard. The CLI is pinned to **`eoas@3.0.5`** via `EOAS_PACKAGE_SPEC` in
+`scripts/lib/eoas.ts` — it must match the deployed server version exactly (V3 routes are
+app-scoped; a `v2` CLI 404s). Bump the server image and the pin in lockstep.
+
+**Progressive rollouts** are a control-plane feature: `eoas publish --branch production --channel
+production --rollout-percentage N` ships to only `N%` of the channel's installs. Finish or revert
+the rollout from the dashboard once it's healthy — an unfinished per-update rollout **locks**
+further publishing on that branch, so a forgotten one turns the next auto-publish red.
+
+### Channel↔branch mapping (control-plane)
+
+In V3 the channel→branch mapping lives in Postgres, not in Expo's API. `eoas publish --branch X
+--channel Y` creates the **branch** (which holds the update) and the **channel**, but leaves them
+**unmapped**. A client requesting an unmapped channel gets `No branch mapping found`. Mapping is a
+**dashboard-admin operation**: the app-scoped `eoo_` publish key can list branches/channels but
+**cannot map** (it 403s with "This action requires a dashboard session").
+
+- **Production** was mapped once, by hand, in the dashboard — nothing on `main` remaps it.
+- **Automation** (the per-PR previews) maps headlessly via `scripts/ota-channel-map.ts`
+  (`map` / `delete`), which logs in with the dashboard admin credentials (`OTA_ADMIN_EMAIL` +
+  `OTA_ADMIN_PASSWORD`) to mint a short-lived admin JWT, then create/remap or delete the channel
+  through the management API (`POST /auth/login` → `GET/POST /api/apps/{appId}/branches|channels`,
+  `POST …/branch/{branchId}/updateChannelBranchMapping`, `DELETE …/{channels|branches}/{name}`).
+  Delete the channel/mapping before the branch, or the branch delete is refused.
+- **Green-field consequence:** a legacy v1 client that sends **no** `expo-app-id` header gets an
+  HTTP 400 from V3. That's correct — only new header-carrying V3 builds ever hit V3; old binaries
+  stay on V2.
 
 ### Fingerprint parity — the one rule that matters
 
@@ -313,13 +382,16 @@ measure how many pulled a given OTA.
 
 ## Health monitoring & rollback
 
-A production OTA reaches **every** matching install on the next launch — there's no rollout
-percentage to cap the blast radius — and it publishes to our **self-hosted** server, so
-`eas update:insights` (which only sees EAS-hosted updates) is blind to it. The health signal
-therefore comes from the app's own launch telemetry above: an `OTA Update Status` event with
-`isEmergencyLaunch === true` is expo-updates' automatic safety net firing — the downloaded JS
-failed to boot, so the binary fell back to its **embedded** bundle. A spike in that rate across the
-production fleet right after a publish is the tell-tale of a broken bundle.
+A default production OTA reaches **every** matching install on the next launch, but V3 also supports
+**progressive rollouts** to cap the blast radius: `eoas publish … --rollout-percentage N` serves the
+update to only `N%` of the channel, and you finish or revert it from the dashboard once it looks
+healthy (a per-update rollout locks further publishing on that branch until it's finished). Either
+way the OTA publishes to our **self-hosted** server, so `eas update:insights` (which only sees
+EAS-hosted updates) is blind to it. The health signal therefore comes from the app's own launch
+telemetry above: an `OTA Update Status` event with `isEmergencyLaunch === true` is expo-updates'
+automatic safety net firing — the downloaded JS failed to boot, so the binary fell back to its
+**embedded** bundle. A spike in that rate across the production fleet right after a publish is the
+tell-tale of a broken bundle.
 
 ### The health check (`scripts/mobile-ota-health-check.ts`)
 
@@ -365,10 +437,11 @@ Discord header to the 🚨 emergency-spike variant.
 
 ### Rollback (`scripts/mobile-ota-rollback.ts`)
 
-Because there's no rollout percentage, "rollback" means re-pointing the production branch on the
-self-hosted server. The canonical, durable fix is to **revert the offending JS commit on `main`** —
-this workflow then republishes a good bundle automatically. When you need installs reverted in
-**minutes**, before a revert PR can merge, use the helper (wraps the `eoas` CLI):
+For an already-shipped (non-rollout) update, "rollback" means re-pointing the production branch on
+the V3 server (a live progressive rollout is instead reverted from the dashboard). The canonical,
+durable fix is to **revert the offending JS commit on `main`** — this workflow then republishes a
+good bundle automatically. When you need installs reverted in **minutes**, before a revert PR can
+merge, use the helper (wraps the `eoas` CLI):
 
 ```bash
 vp run mobile:ota-rollback                       # rollback to the embedded bundle, all platforms
@@ -382,7 +455,7 @@ vp run mobile:ota-rollback -- --mode republish   # re-point to a previous update
 - **`--mode republish`** runs `eoas republish`: re-points the branch to a previous published update
   you pick from a list. It's **interactive**, so run it locally, not in CI.
 
-Both need `EXPO_UPDATES_URL` + `EXPO_TOKEN` (same as the publish). After rolling back, land the real
+Both need `EXPO_UPDATES_URL` + `EOO_TOKEN` (same as the publish). After rolling back, land the real
 fix (a revert or a corrected commit) on `main` so the next publish moves the fleet forward again.
 
 ### Crash-screen recovery button ("Check for a fix")
@@ -435,44 +508,71 @@ git worktree add /tmp/main-baseline origin/main
 vp run check:mobile-ota-compat -- --write-env --base-dir /tmp/main-baseline
 ```
 
-## One-time setup (infra — done outside this repo)
+## One-time setup (V3 green-field infra — done outside this repo)
 
-`vp run mobile:ota-setup` scripts the in-repo phases (cert generation, the Railway env block, the
-Expo channel/branch, the GitHub variable); the cloud actions (bucket, server, DNS) stay manual.
-Run `vp run mobile:ota-setup` with no argument for the ordered runbook.
+This is the runbook that stood up the live V3 server; it's here for the record and for standing up a
+replacement. `vp run mobile:ota-setup` scripts the in-repo phases; the cloud actions (bucket,
+Postgres, server, DNS) stay manual. Run it with no argument for the ordered runbook.
 
-1. **Storage bucket** — reuse the existing S3-compatible provider (the one
-   `packages/backend/src/storage/s3.ts` uses) with a dedicated `boardsesh-ota` bucket + a scoped
-   token. Keep it portable (see the Railway/object-storage rules in `CLAUDE.md`).
-2. **Code-signing keys** — `vp run mobile:ota-setup keys` (runs `bunx eoas@2 generate-certs` in
-   `packages/mobile/` and prints the Railway env block with the base64 keys filled in). Produces
-   `certs/certificate.pem` (commit — already whitelisted in `.gitignore`) plus the gitignored
-   `certs/private-key.pem` and `certs/public-key.pem` (**never commit** — these go to the server).
-   The committed cert is what flips production builds onto the self-hosted path:
-   `resolveUpdatesConfig` stays on EAS until the cert exists, so generate and commit it before
-   relying on the `EXPO_UPDATES_URL` variable.
-3. **Deploy the server** — [Railway template](https://axelmarciano.github.io/expo-open-ota/docs/deployment/railway)
-   or Docker/Helm. Required env (see the
-   [env reference](https://axelmarciano.github.io/expo-open-ota/docs/reference/environment)):
-   - `BASE_URL` = `https://ota.boardsesh.com`
+1. **Storage bucket** — an empty S3-compatible bucket `boardsesh-ota-v3` (Boardsesh uses Tigris,
+   `t3.storage.dev`, region `auto`) + a scoped key. Keep it portable (see the object-storage rules
+   in `CLAUDE.md`). Preflight put/get/CopyObject/delete (retry with `AWS_S3_FORCE_PATH_STYLE=true`
+   if CopyObject fails).
+2. **Postgres** — a dedicated Railway Postgres. **Create the database before first boot** (the
+   server runs migrations but never creates the DB itself, else SQLSTATE `3D000`), and use an
+   internal URL with explicit `sslmode` in `DB_URL`. **Enable backups + uptime monitoring and keep a
+   `pg_dump` / `pg_restore` runbook** — see the durability note below; Postgres is the sole store of
+   the app's private signing key.
+3. **Master key** — `printf %s "$(openssl rand -base64 32)"` (no trailing newline). Store
+   `DB_KEYS_MASTER_KEY_B64` in a password manager **plus** one out-of-band copy, and read it back
+   before boot. It seals the signing key in Postgres; **never regenerate it** (doing so makes every
+   sealed key unreadable).
+4. **Deploy the server** — Railway service running
+   `ghcr.io/mercuretechnologies/expo-open-ota:v3.0.5` (see the
+   [deployment](https://mercuretechnologies.github.io/expo-open-ota/docs/deployment/railway) /
+   [env reference](https://mercuretechnologies.github.io/expo-open-ota/docs/reference/environment)
+   docs). Required env:
+   - `BASE_URL` = `https://updates.boardsesh.com`
    - `JWT_SECRET` = random string
-   - `EXPO_APP_ID` = `87499648-655e-4fb8-9856-65da37e55fb1` (our Expo project id)
-   - `EXPO_ACCESS_TOKEN` = an Expo token (same value as the `EXPO_TOKEN` CI secret)
-   - `CACHE_MODE` = `local` (or `redis`)
-   - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME`, `AWS_REGION`, `AWS_BASE_ENDPOINT` (the
-     S3-compatible endpoint — Boardsesh uses Tigris on fly.io), and
-     `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-   - `KEYS_STORAGE_TYPE` = `environment`, plus `PUBLIC_EXPO_KEY_B64` / `PRIVATE_EXPO_KEY_B64`
-     (base64 of the keys from step 2)
-   - optional: `USE_DASHBOARD=true` + `ADMIN_PASSWORD` for the monitoring web UI
-4. **DNS** — point `ota.boardsesh.com` at the deployed server (CDN-front if desired).
-5. **GitHub config** — `vp run mobile:ota-setup github --url https://ota.boardsesh.com/manifest`
-   sets the repo **variable** `EXPO_UPDATES_URL` (consumed by the two native build workflows + the
-   OTA publish workflow) and confirms the `EXPO_TOKEN` secret exists. `GOOGLE_MAPS_API_KEY` must
-   also exist as a secret (already used by the Android build).
-6. **Channel/branch** — `vp run mobile:ota-setup expo` creates the `production` channel + branch on
-   the Expo project (the server reads the mapping from Expo's API) and maps channel `production` →
-   branch `production`.
+   - `STORAGE_MODE` = `s3`, plus `S3_BUCKET_NAME` (`boardsesh-ota-v3`), `AWS_REGION` (`auto`),
+     `AWS_BASE_ENDPOINT` (the Tigris endpoint), and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+   - `CACHE_MODE` = `local` (fine at one replica)
+   - `DB_URL` + `DB_KEYS_MASTER_KEY_B64` (from steps 2–3)
+   - `USE_DASHBOARD=true`, `ADMIN_EMAIL` (a bare address), and a policy-compliant `ADMIN_PASSWORD`
+     (≥8 chars, upper/lower/digit/special — first boot crash-loops otherwise). These are the
+     dashboard email+password login.
+   - `PROMETHEUS_ENABLED` — gates the `/metrics` endpoint (public/unauthenticated when on).
+   - **Not needed** in control-plane: `EXPO_APP_ID`, `EXPO_ACCESS_TOKEN`,
+     `PUBLIC_EXPO_KEY_B64` / `PRIVATE_EXPO_KEY_B64` — the app and its keypair are created in the
+     dashboard and the keypair is DB-generated + sealed under the master key.
+5. **DNS** — point `updates.boardsesh.com` at the service (Railway custom domain + CNAME). Confirm
+   liveness `/hc` = 200 and readiness `/ready` = 200 (`/ready` is new in V3).
+6. **Create the app + keys/cert** — in `/dashboard` (admin login), create the app; its internal id
+   is `007e6fd7-f200-448c-9449-8d48ba5d51fc` (what the client sends as `expo-app-id`). Key store =
+   database (generates the keypair, sealed under the master key). **Export the app's public cert**
+   → commit it as `packages/mobile/certs/certificate.pem`. The committed cert is what flips
+   production builds onto the self-hosted path (`resolveUpdatesConfig` stays on EAS until the cert
+   exists). Create the `production` branch + channel and **map** the channel to the branch (a
+   dashboard action — see [Channel↔branch mapping](#channelbranch-mapping-control-plane)).
+7. **Publish credential** — mint an app-scoped `eoo_` API key in the dashboard (the control-plane
+   rejects Expo-token auth). Add it as the GitHub repo secret **`EOO_TOKEN`** and also to the
+   `ota-preview` environment.
+8. **GitHub config** — set the repo **variable** `EXPO_UPDATES_URL` =
+   `https://updates.boardsesh.com/manifest` (consumed by the two native build workflows + the OTA
+   publish workflow). `GOOGLE_MAPS_API_KEY` must also exist as a secret (already used by the Android
+   build).
+9. **Verify** — a header-carrying `GET https://updates.boardsesh.com/manifest` (with `expo-app-id`,
+   `expo-channel-name: production`, platform/runtime headers) returns 200 with signature `keyid
+main` after the first publish, and its assets load. `bunx eoas@3.0.5 doctor --channel=production`
+   should be clean.
+
+### Durability: Postgres holds the only private key
+
+With DB-generated keys, the app's **private signing key lives only in Postgres**, sealed under
+`DB_KEYS_MASTER_KEY_B64`. Losing both the master key and the Postgres backups makes the entire V3
+fleet unsignable — no OTA could ever be published again for those binaries. So both are load-bearing:
+keep Railway Postgres backups on, keep the master key in two places, and verify a `pg_restore`
+dry-run periodically.
 
 ## Changelog ownership (the in-app "What's New")
 
@@ -519,12 +619,13 @@ itself still ships). A fine-grained PAT from a user who's in the bypass list wor
 
 ## Verify end to end
 
-1. Local config check (the cert gate means you must generate certs first, else the config falls
-   back to EAS and injects no channel header): `cd packages/mobile && bunx eoas@2 generate-certs`,
-   then `EXPO_UPDATES_URL=https://example.test/manifest EXPO_UPDATES_CHANNEL=production bunx expo
-prebuild --platform ios --clean --no-install`, then confirm `ios/Boardsesh/Supporting/Expo.plist`
-   has `EXUpdatesRequestHeaders` → `expo-channel-name=production` and an `EXUpdatesCodeSigning*`
-   entry. Repeat `--platform android` and grep `AndroidManifest.xml`.
+1. Local config check — the V3 cert is already committed at `packages/mobile/certs/certificate.pem`,
+   so the cert gate is satisfied and a local prebuild injects the headers (a missing cert would fall
+   back to EAS and inject no channel header). Run `cd packages/mobile &&
+EXPO_UPDATES_URL=https://example.test/manifest EXPO_UPDATES_CHANNEL=production bunx expo prebuild
+--platform ios --clean --no-install`, then confirm `ios/Boardsesh/Supporting/Expo.plist` has
+   `EXUpdatesRequestHeaders` → `expo-channel-name=production` **and** `expo-app-id=007e6fd7-…`, plus
+   an `EXUpdatesCodeSigning*` entry. Repeat `--platform android` and grep `AndroidManifest.xml`.
 2. **Fingerprint parity (the critical check)** — the OTA server must serve an update under the exact
    runtimeVersion the shipped binary embeds. The binary embeds the gate fingerprint (the
    `fingerprint-<platform>-<hash>` tag), baked as a literal `EXUpdatesRuntimeVersion` in `Expo.plist`
@@ -534,7 +635,8 @@ prebuild --platform ios --clean --no-install`, then confirm `ios/Boardsesh/Suppo
    manifest the way the app does, with the tag's hash as the runtime-version header:
 
    ```sh
-   curl -sS -H 'expo-channel-name: production' -H 'expo-platform: ios' \
+   curl -sS -H 'expo-app-id: 007e6fd7-f200-448c-9449-8d48ba5d51fc' \
+        -H 'expo-channel-name: production' -H 'expo-platform: ios' \
         -H 'expo-runtime-version: <hash-from-fingerprint-ios-tag>' \
         -H 'accept: application/expo+json,application/json' \
         "$EXPO_UPDATES_URL"
@@ -595,16 +697,22 @@ Every PR with React Native changes can publish its JS bundle to its own self-hos
 above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.yml` (sweep:
 `mobile-ota-preview-sweep.yml`).
 
-- **Fingerprint parity.** The publish keeps `EXPO_UPDATES_CHANNEL=production` (so the runtimeVersion
-  equals the shipped binary's) and passes `--channel pr-<number>` as the `eoas` upload branch. The
-  two are independent: the baked `expo-channel-name` header drives the fingerprint, `--channel`
-  drives where the bundle lands and what the switcher selects. A native-change PR resolves a new
-  fingerprint no shipped binary has, so that platform is **skipped** — `vp run check:mobile-ota-compat`
-  (the same engine as `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The
-  env is held byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
-- **Who can publish (security).** `EXPO_TOKEN` == the server's trusted `EXPO_ACCESS_TOKEN`, and the
-  publish job runs PR-author code (`app.config.ts` calls `execSync`; workspace postinstall) with that
-  token. The boundary that protects `production`:
+- **Publish + map.** For each platform the workflow runs `eoas publish --branch pr-<number> --channel
+pr-<number>` (keeping `EXPO_UPDATES_CHANNEL=production` so the runtimeVersion equals the shipped
+  binary's), then maps the channel to the branch with `scripts/ota-channel-map.ts map` — because in
+  V3 `eoas publish` leaves the channel **unmapped** and the `eoo_` key can't map it (see
+  [Channel↔branch mapping](#channelbranch-mapping-control-plane)). The channel name and the baked
+  header are independent: the baked `expo-channel-name=production` drives the fingerprint, `pr-<number>`
+  drives where the bundle lands and what the switcher selects.
+- **Fingerprint parity.** A native-change PR resolves a new fingerprint no shipped binary has, so
+  that platform is **skipped** — `vp run check:mobile-ota-compat` (the same engine as
+  `mobile-ota-check.yml`) gates each platform, and the PR comment says so. The env is held
+  byte-identical to the native builds + production publish by `scripts/mobile-ci-env-parity.test.ts`.
+- **Who can publish (security).** The publish uses the app-scoped **`EOO_TOKEN`**, and the mapping
+  step uses the dashboard admin credentials (`OTA_ADMIN_EMAIL` + `OTA_ADMIN_PASSWORD`); both live in
+  the gated `ota-preview` environment. The publish job runs PR-author code (`app.config.ts` calls
+  `execSync`; workspace postinstall) with those secrets in scope. The boundary that protects
+  `production`:
   - **Forks get NO secrets** on `pull_request` (we never use `pull_request_target`), so a fork can't
     publish or exfiltrate the token regardless of what it edits. This is the hard boundary for
     external contributors.
@@ -623,28 +731,31 @@ above — no per-tester build. Workflow: `.github/workflows/mobile-ota-preview.y
     **`ota-preview` environment** reviewer gate (if required reviewers are configured) is the human
     checkpoint — not a hard wall against a malicious insider, who already holds the repo's secrets via
     other workflows. `^pr-[0-9]+$` guards every channel mutation (defense-in-depth).
-  - **Hardening (optional).** For hard same-repo enforcement, make `EXPO_TOKEN` an **`ota-preview`
-    environment secret** (not a repo secret) so a same-repo PR can't drop the environment to reach it.
-    Then the sweep needs a main-only environment (e.g. `ota-maintenance` with a `main` deployment
-    branch policy, no reviewers) and the on-close cleanup defers channel deletion to the sweep (so
-    cleanup needs no token). Not done by default because `EXPO_TOKEN` is currently a repo secret
-    shared with the production publish.
+  - **Hardening (optional).** For hard same-repo enforcement, keep the publish credentials
+    (`EOO_TOKEN` and the admin creds) as **`ota-preview` environment secrets** only, so a same-repo PR
+    can't drop the environment to reach them. Then the sweep needs a main-only environment (e.g.
+    `ota-maintenance` with a `main` deployment branch policy, no reviewers) and the on-close cleanup
+    defers channel deletion to the sweep. `EOO_TOKEN` is also a repo secret because the production
+    publish on `main` needs it, but production mapping is a one-time dashboard action, so the admin
+    creds can stay environment-only.
 - **Readiness signal.** Each publish posts a sticky PR comment (channel name + switcher steps) and a
   GitHub **Deployment** to the `pr-preview` environment so the PR shows a green "ready" marker; the
   cleanup marks it inactive on close.
-- **Cleanup + storage.** On PR close the `pr-<number>` channel + branch are deleted (mapping gone →
-  the server stops resolving it). The S3 bytes are reclaimed by a **bucket lifecycle rule** scoped to
-  the **`pr-`** key prefix: expo-open-ota keys updates as `<branch>/<runtimeVersion>/<timestamp>/…`,
-  and neither `production/` nor `preview-*/` starts with `pr-`, so production is never touched. A
-  daily sweep reaps `pr-<number>` channels whose PR is no longer open (the backstop for fork closes,
-  which get no secrets). The lifecycle rule is the **only** thing bounding S3 (there is no
-  branch-delete primitive, only per-update `DeleteUpdateFolder`), so treat it as load-bearing infra.
-  **Keep `S3_KEY_PREFIX` unset** — the bare `pr-` prefix depends on it; if you ever set it, re-scope
-  the lifecycle rule to `<prefix>/pr-`.
+- **Cleanup + storage.** On PR close the `pr-<number>` channel + branch are deleted via
+  `scripts/ota-channel-map.ts delete` (mapping gone → the server stops resolving it), and a daily
+  sweep reaps `pr-<number>` channels whose PR is no longer open (the backstop for fork closes, which
+  get no secrets). Server-side deletion is the **primary** garbage collector. The S3 bytes are the
+  orphan backstop: V3 keys updates as `{appId}/{branch}/{runtimeVersion}/{timestamp}/…`, so the
+  bucket lifecycle rule is scoped to the appId-scoped prefix
+  **`007e6fd7-f200-448c-9449-8d48ba5d51fc/pr-`** — it ends with the workflow's channel prefix `pr-`,
+  and `production/` under the same app id never starts with `pr-`, so production is never touched. If
+  the channel prefix and this lifecycle prefix ever diverge, previews either never expire (storage
+  leak) or the rule could match production, so `scripts/mobile-ci-env-parity.test.ts` couples them.
 
 One-time infra: `vp run mobile:ota-setup preview` prints the lifecycle rule + the GitHub setup
-(the `ota-preview` / `pr-preview` environments, and exposing `GOOGLE_MAPS_API_KEY` as a
-repo-level secret for the Android fingerprint).
+(the `ota-preview` / `pr-preview` environments; the `ota-preview` env holds var `OTA_ADMIN_EMAIL` +
+secret `OTA_ADMIN_PASSWORD` for the mapping step and `EOO_TOKEN` for the publish, and
+`GOOGLE_MAPS_API_KEY` is a repo-level secret for the Android fingerprint).
 
 ## Deferred
 

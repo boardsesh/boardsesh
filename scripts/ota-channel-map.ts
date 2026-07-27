@@ -122,7 +122,8 @@ async function mapCommand(baseUrl: string, appId: string, channel: string, branc
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ channelName: channel, branchName: branch }),
     });
-    if (!response.ok) fail(`Create+map channel failed (HTTP ${response.status}): ${(await response.text()).slice(0, 200)}`);
+    if (!response.ok)
+      fail(`Create+map channel failed (HTTP ${response.status}): ${(await response.text()).slice(0, 200)}`);
     console.log(`${LOG} created channel "${channel}" → branch "${branch}".`);
     return;
   }
@@ -138,7 +139,10 @@ async function mapCommand(baseUrl: string, appId: string, channel: string, branc
 }
 
 async function deleteResource(baseUrl: string, token: string, path: string, label: string): Promise<void> {
-  const response = await fetch(`${baseUrl}${path}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}` },
+  });
   if (response.ok || response.status === 404) {
     console.log(`${LOG} deleted ${label}${response.status === 404 ? ' (already gone)' : ''}.`);
     return;
@@ -149,9 +153,19 @@ async function deleteResource(baseUrl: string, token: string, path: string, labe
 async function deleteCommand(baseUrl: string, appId: string, channel: string, branch: string | null): Promise<void> {
   const token = await login(baseUrl);
   // Channel (and its mapping) must go before the branch, or the branch delete is refused.
-  await deleteResource(baseUrl, token, `/api/apps/${appId}/channels/${encodeURIComponent(channel)}`, `channel "${channel}"`);
+  await deleteResource(
+    baseUrl,
+    token,
+    `/api/apps/${appId}/channels/${encodeURIComponent(channel)}`,
+    `channel "${channel}"`,
+  );
   if (branch) {
-    await deleteResource(baseUrl, token, `/api/apps/${appId}/branches/${encodeURIComponent(branch)}`, `branch "${branch}"`);
+    await deleteResource(
+      baseUrl,
+      token,
+      `/api/apps/${appId}/branches/${encodeURIComponent(branch)}`,
+      `branch "${branch}"`,
+    );
   }
 }
 

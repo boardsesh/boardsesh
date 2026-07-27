@@ -1,10 +1,11 @@
 /// <reference types="node" />
 
 /**
- * Emergency rollback for a production self-hosted OTA. Production has no rollout
- * percentage — every install on the bad bundle is on it — so "rollback" means
- * re-pointing the production branch on the expo-open-ota server. Two modes, both
- * via the eoas CLI (the same client scripts/mobile-publish.ts uses):
+ * Emergency rollback for a production self-hosted OTA. V3 supports progressive
+ * rollouts, but once a bad update has fully rolled out (or shipped at 100%) every
+ * install is on it — so "rollback" means re-pointing the production branch on the
+ * expo-open-ota server. Two modes, both via the eoas CLI (the same client
+ * scripts/mobile-publish.ts uses):
  *
  *   --mode embedded   (default) → `eoas rollback`   Publishes a rollback
  *       DIRECTIVE: every install currently on the bad OTA reverts to the binary's
@@ -25,8 +26,8 @@
  *   vp run mobile:ota-rollback -- --platform ios     # one platform
  *   vp run mobile:ota-rollback -- --mode republish   # re-point to a previous update (interactive, local)
  *
- * Env: EXPO_UPDATES_URL (server manifest endpoint) + EXPO_TOKEN (Expo API auth),
- * same as the production publish.
+ * Env: EXPO_UPDATES_URL (server manifest endpoint) + EOO_TOKEN (the app-scoped
+ * expo-open-ota API key), same as the production publish.
  */
 
 import { spawnSync } from 'node:child_process';
