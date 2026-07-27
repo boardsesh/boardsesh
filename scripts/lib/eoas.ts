@@ -10,6 +10,15 @@
 import { closeSync, openSync, readSync } from 'node:fs';
 import { join, delimiter } from 'node:path';
 
+// The eoas CLI spec passed to `bunx`. V3 (control-plane) requires the CLI version
+// to EXACTLY match the deployed server — our self-hosted expo-open-ota at
+// updates.boardsesh.com runs v3.0.5, so this is pinned, not `@latest`. Bump this
+// and the Railway server image in lockstep; a drift breaks publish/rollback
+// (v3 routes are app-scoped; a v2 CLI 404s). Single source of truth: imported by
+// mobile-publish.ts, mobile-ota-rollback.ts, mobile-ota-setup.ts, and asserted by
+// the rollback test so a mismatch can't creep back in per-file.
+export const EOAS_PACKAGE_SPEC = 'eoas@3.0.5';
+
 // vp (Vite+) prepends its own bun shim directory to PATH, and that shim's `bunx`
 // is a `/bin/sh` wrapper that forwards to `bun` WITHOUT switching to x-mode — so
 // `bunx <pkg>` runs as `bun <pkg>` (script mode) and dies with

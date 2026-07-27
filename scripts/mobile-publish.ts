@@ -23,7 +23,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pathWithoutBrokenBunxShims } from './lib/eoas';
+import { EOAS_PACKAGE_SPEC, pathWithoutBrokenBunxShims } from './lib/eoas';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -73,9 +73,10 @@ function publishToSelfHostedChannel(channelName: string, platform: string, expli
     console.error('[mobile:publish] See docs/mobile-ota-updates.md.');
     process.exit(1);
   }
-  if (!process.env.EXPO_TOKEN) {
-    console.error('[mobile:publish] --channel requires EXPO_TOKEN (Expo API auth for branch/channel mapping).');
-    console.error('[mobile:publish] Run `bunx eas login` locally, or set EXPO_TOKEN in CI.');
+  if (!process.env.EOO_TOKEN) {
+    console.error('[mobile:publish] --channel requires EOO_TOKEN (an app-scoped expo-open-ota API key).');
+    console.error('[mobile:publish] The V3 control-plane server rejects Expo tokens; mint a key in the dashboard');
+    console.error('[mobile:publish] and set EOO_TOKEN locally / in CI. See docs/mobile-ota-updates.md.');
     process.exit(1);
   }
 
@@ -85,13 +86,20 @@ function publishToSelfHostedChannel(channelName: string, platform: string, expli
 
   // eoas publish targets a server branch; the channel baked into the binary
   // maps to a same-named branch (channel "production" → branch "production").
-  // Pin the major (matches the eas-cli@16 convention below): eoas 3.x is already
-  // in alpha, and an unpinned @latest could pull a breaking release into the
-  // production publish path with no change in this repo.
+  // EOAS_PACKAGE_SPEC pins the CLI to the exact deployed V3 server version
+  // (control-plane requires an exact match); see scripts/lib/eoas.ts.
   const eoasArgs = [
-    'eoas@2',
+    EOAS_PACKAGE_SPEC,
     'publish',
     '--branch',
+    channelName,
+    // V3 control-plane: --branch holds the update, --channel is what the runtime
+    // client's baked expo-channel-name header resolves through. Passing --channel
+    // creates the channel (branch and channel share the name, e.g. production) and
+    // is required for progressive rollouts (--rollout-percentage targets a
+    // channel). The channel→branch mapping itself is a one-time dashboard action;
+    // an unmapped channel serves nothing ("No branch mapping found").
+    '--channel',
     channelName,
     '--platform',
     platform,

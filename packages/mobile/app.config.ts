@@ -51,16 +51,23 @@ export function resolveWebHeadOrigin(
 
 const DEFAULT_EAS_PROJECT_ID = '87499648-655e-4fb8-9856-65da37e55fb1';
 const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? DEFAULT_EAS_PROJECT_ID;
+// The expo-open-ota (V3 control-plane) app id the self-hosted server routes on,
+// sent as the `expo-app-id` request header. NOT the EAS project id — the V3
+// dashboard generated this UUID when the app was created, and the server 404s
+// ("Unknown app id") for anything else. Baked into the fingerprint, so keep it
+// stable; overridable if the app is ever re-provisioned.
+const OTA_APP_ID = process.env.EXPO_PUBLIC_OTA_APP_ID ?? '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
 const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.boardsesh.app';
 const HEALTH_UPDATE_USAGE_DESCRIPTION = 'Boardsesh saves your finished climbing sessions to Apple Health as workouts.';
 const HEALTH_SHARE_USAGE_DESCRIPTION =
   'Boardsesh reads your body weight to estimate calories and your saved Boardsesh workouts to prevent duplicates.';
 
-// Public code-signing certificate for self-hosted OTA. `bunx eoas@2 generate-certs`
-// writes certs/certificate.pem (committed) + the private/public keys (server-only,
-// gitignored). Its presence is a hard gate (see resolveUpdatesConfig) so we never
-// ship a self-hosted OTA binary that can't verify update signatures.
+// Public code-signing certificate for self-hosted OTA. certs/certificate.pem is the
+// V3 app's public cert, exported from the expo-open-ota (control-plane) dashboard —
+// the server generates and seals the private key; it never leaves the server. The
+// cert's presence is a hard gate (see resolveUpdatesConfig) so we never ship a
+// self-hosted OTA binary that can't verify update signatures.
 const CODE_SIGNING_CERT_PATH = './certs/certificate.pem';
 
 // Resolves the expo-updates block. Two distinct hosting paths:
@@ -108,11 +115,17 @@ export function resolveUpdatesConfig(easProjectId: string, projectRoot: string):
     url: selfHostUrl,
     enabled: true,
     // Written into Expo.plist (EXUpdatesRequestHeaders) and AndroidManifest by
-    // `expo prebuild`; the self-hosted server maps this channel to a branch. The
-    // tester channel switcher overrides this header at runtime via
+    // `expo prebuild`. expo-app-id identifies the app to the V3 (control-plane)
+    // server on every manifest/asset request, and `eoas@3` refuses to publish
+    // without it — so it's baked unconditionally (present at both runtime and
+    // publish). expo-channel-name maps to a server branch when a channel is set;
+    // the tester channel switcher overrides that header at runtime via
     // Updates.setUpdateRequestHeadersOverride — which only works because the key
     // is baked in here — and needs no disableAntiBrickingMeasures.
-    ...(channel ? { requestHeaders: { 'expo-channel-name': channel } } : {}),
+    requestHeaders: {
+      'expo-app-id': OTA_APP_ID,
+      ...(channel ? { 'expo-channel-name': channel } : {}),
+    },
     // Verifies the manifest signature on-device so a compromised manifest host
     // can't push arbitrary JS. Private key lives only on the server.
     codeSigningCertificate: CODE_SIGNING_CERT_PATH,

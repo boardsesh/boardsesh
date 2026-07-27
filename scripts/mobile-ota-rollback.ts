@@ -32,7 +32,7 @@
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { pathWithoutBrokenBunxShims } from './lib/eoas';
+import { EOAS_PACKAGE_SPEC, pathWithoutBrokenBunxShims } from './lib/eoas';
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MOBILE_DIR = resolve(ROOT_DIR, 'packages', 'mobile');
@@ -75,10 +75,10 @@ export function parseRollbackArgs(argv: string[]): RollbackOptions {
   return { branch, platform, mode };
 }
 
-/** The eoas argv for a rollback mode. `eoas@2` pins the major, matching mobile-publish.ts. */
+/** The eoas argv for a rollback mode. EOAS_PACKAGE_SPEC pins the CLI to the deployed V3 server version. */
 export function buildEoasArgs(options: RollbackOptions): string[] {
   const subcommand = options.mode === 'embedded' ? 'rollback' : 'republish';
-  return ['eoas@2', subcommand, '--branch', options.branch, '--platform', options.platform];
+  return [EOAS_PACKAGE_SPEC, subcommand, '--branch', options.branch, '--platform', options.platform];
 }
 
 /** Returns an error message for an invalid mode/platform, or null when the options are usable. */
@@ -107,8 +107,9 @@ function main(): number {
     console.error('[ota-rollback] See docs/mobile-ota-updates.md.');
     return 1;
   }
-  if (!process.env.EXPO_TOKEN) {
-    console.error('[ota-rollback] Requires EXPO_TOKEN (Expo API auth). Run `bunx eas login` locally or set it in CI.');
+  if (!process.env.EOO_TOKEN) {
+    console.error('[ota-rollback] Requires EOO_TOKEN (an app-scoped expo-open-ota API key — the V3 server rejects');
+    console.error('[ota-rollback] Expo tokens). Mint one in the dashboard and set it. See docs/mobile-ota-updates.md.');
     return 1;
   }
 
