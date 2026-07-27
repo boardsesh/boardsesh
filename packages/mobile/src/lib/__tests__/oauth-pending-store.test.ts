@@ -67,7 +67,7 @@ describe('oauth-pending-store', () => {
     await setOAuthPending({
       attemptId: 'attempt-apple-1',
       provider: 'apple',
-      attemptedAt: 1_000_000 - 5 * 60 * 1000 - 1,
+      attemptedAt: 1_000_000 - 10 * 60 * 1000 - 1,
       isRegistration: true,
     });
 

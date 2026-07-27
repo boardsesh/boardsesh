@@ -174,17 +174,11 @@ export function redirectExpoOAuthResponse(
   const destination = new URL(returnUrl);
   const errorCode = responseErrorCode(response);
   if (errorCode) destination.searchParams.set(RETURN_ERROR_PARAM, errorCode);
-  if (response.status >= 300 && response.status < 400) {
-    response.headers.set('Location', destination.toString());
-    if (state) {
-      response.headers.append('Set-Cookie', `${returnCookieName(state)}=; ${cookieAttributes(request, 0)}`);
-    }
-    return response;
-  }
   const headers = new Headers(response.headers);
   headers.set('Location', destination.toString());
   if (state) {
     headers.append('Set-Cookie', `${returnCookieName(state)}=; ${cookieAttributes(request, 0)}`);
   }
-  return new Response(null, { status: 302, headers });
+  const status = response.status >= 300 && response.status < 400 ? response.status : 302;
+  return new Response(null, { status, headers });
 }

@@ -3,7 +3,7 @@ import type { AuthProvider } from './auth';
 import { WEB_OAUTH_ATTEMPT_ID_PATTERN } from './oauth-return-marker';
 
 const OAUTH_PENDING_KEY_PREFIX = 'auth:oauth-pending:';
-const OAUTH_PENDING_MAX_AGE_MS = 5 * 60 * 1000;
+const OAUTH_PENDING_MAX_AGE_MS = 10 * 60 * 1000;
 
 export type OAuthPendingMarker = {
   attemptId: string;
