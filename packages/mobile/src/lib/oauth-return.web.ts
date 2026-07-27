@@ -4,9 +4,8 @@ import {
   WEB_OAUTH_RETURN_ATTEMPT_PARAM,
   WEB_OAUTH_RETURN_ERROR_PARAM,
   WEB_OAUTH_RETURN_PROVIDER_PARAM,
+  WEB_OAUTH_ATTEMPT_ID_PATTERN,
 } from './oauth-return-marker';
-
-const OAUTH_ATTEMPT_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 export function consumeWebOAuthReturn(): WebOAuthReturn | null {
   if (typeof window === 'undefined') return null;
@@ -28,7 +27,7 @@ export function consumeWebOAuthReturn(): WebOAuthReturn | null {
     // URL cleanup is cosmetic. The provider marker has still been consumed by
     // this app lifecycle and the durable attempt marker remains one-time.
   }
-  if (!provider || !attemptId || !OAUTH_ATTEMPT_ID_PATTERN.test(attemptId)) return null;
+  if (!provider || !attemptId || !WEB_OAUTH_ATTEMPT_ID_PATTERN.test(attemptId)) return null;
   return { provider, attemptId, error };
 }
 

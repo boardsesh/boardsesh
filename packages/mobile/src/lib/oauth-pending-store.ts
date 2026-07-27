@@ -1,9 +1,9 @@
 import { getPreference, removePreference, setPreference } from './preference-store';
 import type { AuthProvider } from './auth';
+import { WEB_OAUTH_ATTEMPT_ID_PATTERN } from './oauth-return-marker';
 
 const OAUTH_PENDING_KEY_PREFIX = 'auth:oauth-pending:';
 const OAUTH_PENDING_MAX_AGE_MS = 5 * 60 * 1000;
-const OAUTH_ATTEMPT_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 
 export type OAuthPendingMarker = {
   attemptId: string;
@@ -17,7 +17,7 @@ function isOAuthPendingMarker(candidate: unknown): candidate is OAuthPendingMark
   const marker = candidate as Record<string, unknown>;
   return (
     typeof marker.attemptId === 'string' &&
-    OAUTH_ATTEMPT_ID_PATTERN.test(marker.attemptId) &&
+    WEB_OAUTH_ATTEMPT_ID_PATTERN.test(marker.attemptId) &&
     (marker.provider === 'google' || marker.provider === 'apple') &&
     typeof marker.attemptedAt === 'number' &&
     Number.isFinite(marker.attemptedAt) &&
@@ -34,7 +34,7 @@ export function setOAuthPending(marker: OAuthPendingMarker): Promise<void> {
  * confirmed. Storage failures are analytics-only and must never block login.
  */
 export async function consumeFreshOAuthPending(attemptId: string): Promise<OAuthPendingMarker | null> {
-  if (!OAUTH_ATTEMPT_ID_PATTERN.test(attemptId)) return null;
+  if (!WEB_OAUTH_ATTEMPT_ID_PATTERN.test(attemptId)) return null;
   const storageKey = `${OAUTH_PENDING_KEY_PREFIX}${attemptId}`;
   let stored: unknown;
   try {

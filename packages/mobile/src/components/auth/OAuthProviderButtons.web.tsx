@@ -115,6 +115,9 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
   const theme = useTheme();
   const appleBackground = theme.colorScheme === 'dark' ? '#FFFFFF' : '#000000';
   const appleForeground = theme.colorScheme === 'dark' ? '#000000' : '#FFFFFF';
+  const googleBackground = theme.colorScheme === 'dark' ? '#131314' : '#FFFFFF';
+  const googleBorder = theme.colorScheme === 'dark' ? '#8E918F' : '#747775';
+  const googleForeground = theme.colorScheme === 'dark' ? '#E3E3E3' : '#1F1F1F';
 
   if (providers.loading) {
     return (
@@ -155,13 +158,13 @@ export function OAuthProviderButtons({ disabled, onSignIn, providers }: OAuthPro
           onPress={() => onSignIn('google')}
           style={({ pressed }) => [
             styles.providerButton,
-            styles.googleButton,
+            { backgroundColor: googleBackground, borderColor: googleBorder },
             disabled ? styles.disabled : undefined,
             pressed ? styles.pressed : undefined,
           ]}
         >
           <GoogleIcon />
-          <Text style={styles.googleLabel}>{t('login.providers.google')}</Text>
+          <Text style={[styles.googleLabel, { color: googleForeground }]}>{t('login.providers.google')}</Text>
         </Pressable>
       ) : null}
       {providers.apple ? (
@@ -198,12 +201,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
   },
-  googleButton: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#747775',
-  },
   googleLabel: {
-    color: '#1F1F1F',
     fontSize: 15,
     fontWeight: '600',
   },
