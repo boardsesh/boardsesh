@@ -58,6 +58,7 @@ export function useOAuthProviders(): OAuthProviderAvailability {
       })
       .then((response) => {
         clearTimeout(timeoutId);
+        if (disposed) return;
         setProviders({ ...parseProvidersConfig(response), retry });
       })
       .catch(() => {

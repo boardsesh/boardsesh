@@ -60,6 +60,7 @@ describe('OAuthProviderButtons on web', () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -138,6 +139,21 @@ describe('OAuthProviderButtons on web', () => {
     await act(async () => {});
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeTruthy();
+  });
+
+  it('offers a retry when provider discovery times out', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+
+    render(<ProviderHarness />);
+    await act(() => vi.advanceTimersByTimeAsync(8_000));
+
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   });
 
   it('disables provider controls while a sign-in is in progress', () => {

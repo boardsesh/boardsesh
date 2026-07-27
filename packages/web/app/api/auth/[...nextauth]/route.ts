@@ -28,9 +28,12 @@ type ExpectedSignOutIdentity = {
 };
 
 const handler = NextAuth(authOptions) as NextAuthHandler;
+const OAUTH_SIGNIN_PATH_PATTERN = /\/api\/auth\/signin\/(apple|google)\/?$/;
+const OAUTH_CALLBACK_PATH_PATTERN = /\/api\/auth\/callback\/(apple|google)\/?$/;
 
 function oauthProviderForPath(pathname: string, action: 'signin' | 'callback'): ExpoWebOAuthProvider | null {
-  const match = pathname.match(new RegExp(`/api/auth/${action}/(apple|google)/?$`));
+  const pattern = action === 'signin' ? OAUTH_SIGNIN_PATH_PATTERN : OAUTH_CALLBACK_PATH_PATTERN;
+  const match = pathname.match(pattern);
   return match?.[1] === 'apple' || match?.[1] === 'google' ? match[1] : null;
 }
 
