@@ -9,3 +9,7 @@ export type WebOAuthReturn = {
 export function consumeWebOAuthReturn(): WebOAuthReturn | null {
   return null;
 }
+
+export function consumeWebOAuthErrorReturn(): WebOAuthReturn | null {
+  return null;
+}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { consumeWebOAuthReturn } from '../oauth-return.web';
+import { consumeWebOAuthErrorReturn, consumeWebOAuthReturn } from '../oauth-return.web';
 
 afterEach(() => {
   window.history.replaceState({}, '', '/');
@@ -44,5 +44,21 @@ describe('consumeWebOAuthReturn', () => {
       error: 'OAuthCallback',
     });
     expect(window.location.search).toBe('');
+  });
+
+  it('leaves a successful return for AuthProvider to consume', () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-2',
+    );
+
+    expect(consumeWebOAuthErrorReturn()).toBeNull();
+    expect(window.location.search).toContain('boardseshOAuthAttempt=attempt-google-2');
+    expect(consumeWebOAuthReturn()).toEqual({
+      provider: 'google',
+      attemptId: 'attempt-google-2',
+      error: null,
+    });
   });
 });

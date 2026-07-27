@@ -13,7 +13,11 @@ import {
 } from './auth-store.web';
 import { withAuthCookieLock } from './auth-cookie-lock.web';
 import { WEB_BASE_URL, webApiUrl } from './env';
-import { WEB_OAUTH_RETURN_ATTEMPT_PARAM, WEB_OAUTH_RETURN_PROVIDER_PARAM } from './oauth-return-marker';
+import {
+  createWebOAuthAttemptId,
+  WEB_OAUTH_RETURN_ATTEMPT_PARAM,
+  WEB_OAUTH_RETURN_PROVIDER_PARAM,
+} from './oauth-return-marker';
 
 export type AuthProvider = 'google' | 'apple';
 
@@ -525,8 +529,8 @@ function startWebOAuth(provider: AuthProvider, attemptId?: string, isRegistratio
   }
 
   try {
-    if (!attemptId) throw new Error('Missing browser OAuth attempt ID');
-    window.location.assign(buildWebOAuthStartUrl(provider, window.location.origin, attemptId, isRegistration));
+    const resolvedAttemptId = attemptId ?? createWebOAuthAttemptId();
+    window.location.assign(buildWebOAuthStartUrl(provider, window.location.origin, resolvedAttemptId, isRegistration));
     // The document is about to unload. This distinct result prevents the
     // in-process native flow from reporting success or checking the old cookie
     // before the provider round-trip returns.

@@ -33,7 +33,7 @@ vi.mock('../../lib/oauth-pending-store', () => ({
 }));
 const consumeWebOAuthReturnMock = vi.fn();
 vi.mock('../../lib/oauth-return', () => ({
-  consumeWebOAuthReturn: (...args: unknown[]) => consumeWebOAuthReturnMock(...args),
+  consumeWebOAuthErrorReturn: (...args: unknown[]) => consumeWebOAuthReturnMock(...args),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));

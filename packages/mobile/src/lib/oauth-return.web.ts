@@ -31,3 +31,10 @@ export function consumeWebOAuthReturn(): WebOAuthReturn | null {
   if (!provider || !attemptId || !OAUTH_ATTEMPT_ID_PATTERN.test(attemptId)) return null;
   return { provider, attemptId, error };
 }
+
+export function consumeWebOAuthErrorReturn(): WebOAuthReturn | null {
+  if (typeof window === 'undefined') return null;
+  const currentUrl = new URL(window.location.href);
+  if (!currentUrl.searchParams.has(WEB_OAUTH_RETURN_ERROR_PARAM)) return null;
+  return consumeWebOAuthReturn();
+}

@@ -275,6 +275,70 @@ describe('POST /api/auth/[...nextauth]', () => {
     );
   });
 
+  it('returns a successful Google callback to the exact Expo login attempt', async () => {
+    const returnUrl =
+      'https://app.boardsesh.com/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-2';
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://accounts.google.com/o/oauth2/v2/auth?state=google-state-2' },
+      }),
+    );
+    const signInResponse = await POST(
+      request('/api/auth/signin/google', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
+      context,
+    );
+    const returnCookie = signInResponse.headers
+      .getSetCookie()
+      .find((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'));
+
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://www.boardsesh.com/app' },
+      }),
+    );
+    const callbackRequest = new NextRequest(
+      'https://www.boardsesh.com/api/auth/callback/google?state=google-state-2&code=provider-code',
+      { headers: { Cookie: returnCookie!.split(';', 1)[0]! } },
+    );
+
+    const callbackResponse = await GET(callbackRequest, context);
+
+    expect(callbackResponse.status).toBe(302);
+    expect(callbackResponse.headers.get('Location')).toBe(returnUrl);
+  });
+
+  it('turns a non-redirect callback failure into a return to the Expo app', async () => {
+    const returnUrl =
+      'https://app.boardsesh.com/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-3';
+    nextAuthHandlerMock.mockResolvedValueOnce(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://accounts.google.com/o/oauth2/v2/auth?state=google-state-3' },
+      }),
+    );
+    const signInResponse = await POST(
+      request('/api/auth/signin/google', { csrfToken: 'csrf-token', callbackUrl: returnUrl }),
+      context,
+    );
+    const returnCookie = signInResponse.headers
+      .getSetCookie()
+      .find((setCookie) => setCookie.startsWith('boardsesh.oauth-return.'));
+    nextAuthHandlerMock.mockResolvedValueOnce(new Response('upstream failed', { status: 500 }));
+    const callbackRequest = new NextRequest(
+      'https://www.boardsesh.com/api/auth/callback/google?state=google-state-3&code=provider-code',
+      { headers: { Cookie: returnCookie!.split(';', 1)[0]! } },
+    );
+
+    const callbackResponse = await GET(callbackRequest, context);
+
+    expect(callbackResponse.status).toBe(302);
+    const destination = new URL(callbackResponse.headers.get('Location')!);
+    expect(destination.origin + destination.pathname).toBe('https://app.boardsesh.com/auth/login');
+    expect(destination.searchParams.get('boardseshOAuthError')).toBe('OAuthCallback');
+  });
+
   it('returns an Apple form-post callback to the exact Expo registration attempt', async () => {
     const returnUrl =
       'https://www.boardsesh.com/app/auth/register?boardseshOAuthProvider=apple&boardseshOAuthAttempt=attempt-apple-1';
@@ -336,5 +400,24 @@ describe('POST /api/auth/[...nextauth]', () => {
       false,
     );
     expect(nextAuthHandlerMock).toHaveBeenCalledWith(lookalikeRequest, context);
+  });
+
+  it('fails explicitly when Expo return binding has no signing secret', async () => {
+    vi.stubEnv('NEXTAUTH_SECRET', '');
+    nextAuthHandlerMock.mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { Location: 'https://accounts.google.com/o/oauth2/v2/auth?state=google-state-4' },
+      }),
+    );
+    const signInRequest = request('/api/auth/signin/google', {
+      csrfToken: 'csrf-token',
+      callbackUrl:
+        'https://app.boardsesh.com/auth/login?boardseshOAuthProvider=google&boardseshOAuthAttempt=attempt-google-4',
+    });
+
+    await expect(POST(signInRequest, context)).rejects.toThrow(
+      'NEXTAUTH_SECRET is required to bind Expo web OAuth returns',
+    );
   });
 });

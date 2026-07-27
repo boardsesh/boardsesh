@@ -10,7 +10,7 @@ import {
   nativeSignInErrorCode,
 } from '../lib/native-auth-analytics';
 import { consumeFreshOAuthPending, setOAuthPending } from '../lib/oauth-pending-store';
-import { consumeWebOAuthReturn } from '../lib/oauth-return';
+import { consumeWebOAuthErrorReturn } from '../lib/oauth-return';
 import { createWebOAuthAttemptId } from '../lib/oauth-return-marker';
 import type { OAuthSignInResult } from '../lib/auth';
 import { useTranslation } from 'react-i18next';
@@ -40,7 +40,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
 
   useEffect(() => {
     if (Platform.OS !== 'web') return;
-    const returnedOAuth = consumeWebOAuthReturn();
+    const returnedOAuth = consumeWebOAuthErrorReturn();
     if (!returnedOAuth?.error) return;
 
     void consumeFreshOAuthPending(returnedOAuth.attemptId).then((marker) => {

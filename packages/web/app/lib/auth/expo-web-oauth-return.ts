@@ -41,9 +41,9 @@ function returnCookieName(state: string): string {
   return `${COOKIE_PREFIX}${stateHash}`;
 }
 
-function encodeDescriptor(descriptor: ReturnDescriptor): string | null {
+function encodeDescriptor(descriptor: ReturnDescriptor): string {
   const secret = signingSecret();
-  if (!secret) return null;
+  if (!secret) throw new Error('NEXTAUTH_SECRET is required to bind Expo web OAuth returns');
   const payload = Buffer.from(JSON.stringify(descriptor)).toString('base64url');
   return `${payload}.${signature(payload, secret).toString('base64url')}`;
 }
@@ -134,7 +134,6 @@ export function bindExpoReturnToState(
   returnUrl: string,
 ): Response {
   const encoded = encodeDescriptor({ provider, returnUrl, createdAt: Date.now() });
-  if (!encoded) return response;
   response.headers.append(
     'Set-Cookie',
     `${returnCookieName(state)}=${encoded}; ${cookieAttributes(request, Math.floor(RETURN_MAX_AGE_MS / 1000))}`,
@@ -156,7 +155,7 @@ export function readExpoReturnForState(
 
 function responseErrorCode(response: Response): string | null {
   const location = response.headers.get('Location');
-  if (!location) return null;
+  if (!location) return response.status >= 300 && response.status < 400 ? null : 'OAuthCallback';
   try {
     const candidate = new URL(location, 'https://auth.invalid');
     const error = candidate.searchParams.get('error');
@@ -175,9 +174,17 @@ export function redirectExpoOAuthResponse(
   const destination = new URL(returnUrl);
   const errorCode = responseErrorCode(response);
   if (errorCode) destination.searchParams.set(RETURN_ERROR_PARAM, errorCode);
-  response.headers.set('Location', destination.toString());
+  const headers = new Headers(response.headers);
+  headers.set('Location', destination.toString());
   if (state) {
-    response.headers.append('Set-Cookie', `${returnCookieName(state)}=; ${cookieAttributes(request, 0)}`);
+    headers.append('Set-Cookie', `${returnCookieName(state)}=; ${cookieAttributes(request, 0)}`);
   }
-  return response;
+  if (response.status >= 300 && response.status < 400) {
+    response.headers.set('Location', destination.toString());
+    if (state) {
+      response.headers.append('Set-Cookie', `${returnCookieName(state)}=; ${cookieAttributes(request, 0)}`);
+    }
+    return response;
+  }
+  return new Response(null, { status: 302, headers });
 }

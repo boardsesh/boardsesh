@@ -7,6 +7,7 @@ import {
   resetPassword,
   signInWithCredentials,
   signInWithGoogle,
+  signInWithGoogleWeb,
   signOut,
   signOutForGeneration,
 } from '../auth.web';
@@ -91,6 +92,22 @@ describe('Expo web OAuth', () => {
       status: null,
       error: 'browser_unavailable',
     });
+  });
+
+  it('generates an attempt ID when the browser fallback starts without one', async () => {
+    const assign = vi.fn();
+    vi.stubGlobal('window', {
+      location: {
+        origin: 'https://app.boardsesh.com',
+        assign,
+      },
+    });
+
+    await expect(signInWithGoogleWeb()).resolves.toEqual({ success: false, redirecting: true });
+
+    const startUrl = new URL(assign.mock.calls[0]![0] as string);
+    const callbackUrl = new URL(startUrl.searchParams.get('callbackUrl')!);
+    expect(callbackUrl.searchParams.get('boardseshOAuthAttempt')).toMatch(/^[A-Za-z0-9_-]{8,128}$/);
   });
 });
 
