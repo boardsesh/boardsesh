@@ -129,6 +129,17 @@ export const MOONBOARD_ANGLES = [25, 40] as const;
 // Moon Climbing just never grades outside 25°/40°, so climbs graded at other
 // angles start with no catalog grade/stats until the community logs there,
 // exactly like any Aurora board today.
+//
+// ⚠️ DO NOT ENABLE THE `moonboard-wide-angles` FLAG IN POSTHOG BEFORE
+// migration 0185 (moonboard angle-dedup, packages/db/drizzle/
+// 0185_moonboard_angle_dedup_backfill.sql) has run in prod. A tick logged at
+// a wide angle pre-dedup writes against one of the old PER-ANGLE climb
+// uuids; 0185's stats re-key only follows a member's own angle at the time
+// it runs, so a wide-angle stats row created after that point would be
+// stranded under a uuid the migration already delisted. Put this same
+// warning in the flag's description field when creating it in PostHog —
+// this comment won't be visible to whoever flips the toggle six months from
+// now.
 export const MOONBOARD_WIDE_ANGLES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70] as const;
 
 // MoonBoard has a single fixed size (all boards are same dimensions)
