@@ -127,12 +127,21 @@
 -- then) any catalog import.
 --
 -- Prod group/member counts are NOT pre-verified for this migration (no live
--- prod DB access at authoring time, and the standard dev-db seed uses an
--- older single-row-per-problem importer that doesn't reproduce this
--- duplication — see import-moonboard-problems.ts). Every step below is
--- written to be correct for any group size/count, but run a read-only sizing
--- query against prod (see the _mad_groups/_mad_raw_groups shape below) before
--- deploying, and update this comment with the numbers per repo convention.
+-- prod DB access at authoring time). Replayed against the pre-built dev-db
+-- image (ghcr.io/boardsesh/boardsesh-dev-db) via `vp run db:up`, which DOES
+-- carry real per-angle MoonBoard catalog duplication (contrary to an earlier
+-- version of this comment that assumed otherwise): 766 groups auto-merged,
+-- 478 same-angle-collision groups correctly left untouched, zero errors,
+-- zero orphaned tick references post-repoint. That run's ticks/votes tables
+-- had no rows landing on a losing (non-canonical) member, so it validates
+-- the structural/grouping logic on real data but not the collision-dedup or
+-- vote_counts-rebuild code paths under real load — those are covered by the
+-- scratch-Postgres replay fixture (moonboard-angle-dedup-replay.ts, CASE
+-- A-E) instead. Dev-db counts are NOT a substitute for prod sizing (dev is a
+-- small fixed snapshot, not representative of prod scale/shape) — still run
+-- a read-only sizing query against prod (see the _mad_groups/_mad_raw_groups
+-- shape below) before deploying, and update this comment with those numbers
+-- per repo convention.
 
 CREATE TABLE IF NOT EXISTS _bs_migration_guards (
   tag text PRIMARY KEY,
