@@ -29,8 +29,9 @@ export function webApiUrl(path: string): string {
 // Base URL for the board-snapshot manifest directory (offline-sync Phase 2/4):
 // `${SNAPSHOT_BASE_URL}/manifest.json` is the manifest; each entry's own `url`
 // is an absolute artifact URL, so this constant is only used for the manifest
-// fetch. Mirrors packages/backend/src/scripts/export-board-snapshots.ts's
-// `board-snapshots/v1` key prefix, served from the same Tigris/S3 bucket
+// fetch. Mirrors one of packages/backend/src/scripts/export-board-snapshots.ts's
+// key prefixes — the CI workflows point it at the gzip-encoded catalog,
+// `board-snapshots/v1-gzip` — served from the same Tigris/S3 bucket
 // packages/backend/src/storage/s3.ts uploads to. This must be supplied by the
 // EAS build environment; there is deliberately no guessed production fallback.
 //

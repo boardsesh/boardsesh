@@ -28,17 +28,18 @@ now — typically under a day.
 `concurrency.group: export-board-snapshots` with `cancel-in-progress: false` means overlapping runs queue
 instead of stepping on each other.
 
-**Dual-publish during the gzip transition.** The nightly runs the export **twice**, targeting two
-prefixes via `--key-prefix` (default `board-snapshots/v1`):
+**Dual-publish.** The nightly runs the export **twice**, targeting two prefixes via `--key-prefix`
+(default `board-snapshots/v1`):
 
-- `board-snapshots/v1` — **identity**-encoded, exactly the pre-gzip run. This is what the current fleet
-  reads (all mobile workflows' `EXPO_PUBLIC_SNAPSHOT_BASE_URL` still point here), so it is left unchanged.
-- `board-snapshots/v1-gzip` — `--gzip`, ~2.6× smaller (`kilter:1` 258 MB → ~99 MB). Newer builds point at
-  this prefix once transparent `Content-Encoding: gzip` decode is validated on-device.
+- `board-snapshots/v1-gzip` — `--gzip`, ~2.6× smaller (`kilter:1` 271 MB → 103 MB as of 2026-07-27).
+  **This is what the fleet reads**: every mobile workflow's `EXPO_PUBLIC_SNAPSHOT_BASE_URL` points here.
+- `board-snapshots/v1` — **identity**-encoded, exactly the pre-gzip run. Nothing points at it any more; it
+  stays live as the one-revert rollback target and as the public dataset base
+  (`docs/board-snapshots-dataset.md`).
 
 Each prefix is a self-contained, single-encoding manifest: the merge and prune logic below scope entirely
-to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. The follow-up
-that cuts the whole fleet to gzip drops the identity pass and deletes the `v1` prefix (see Rollout plan).
+to whichever prefix the run targets, so a gzip run never reads or prunes the identity prefix. A later
+cleanup drops the identity pass and deletes the `v1` prefix (see Rollout plan).
 
 For every `(board_type, layout_id)` pair with at least one climb (`discoverLayoutPairs`), each pass:
 
@@ -119,7 +120,8 @@ Artifacts superseded by a newer build for the same `(boardType, layoutId)` are d
 - the run was **unfiltered** (a filtered run doesn't have the full manifest picture to prune safely), and
 - the run had **zero layout failures** (a failed night just defers pruning to the next green run).
 
-An object is eligible for deletion when it's under `board-snapshots/v1/` and NOT referenced by the manifest
+An object is eligible for deletion when it's under the prefix the run targets (`board-snapshots/v1/` for
+the identity pass, `board-snapshots/v1-gzip/` for the gzip pass) and NOT referenced by the manifest
 just written, **and** its `lastModified` is older than a **14-day grace window**
 (`PRUNE_GRACE_MS`). The grace window exists because the manifest is CDN-cached for up to 5 minutes and a
 client may hold a fetched manifest (with a now-superseded artifact URL) far longer than that before it
@@ -360,7 +362,7 @@ builds (`https://t3.storage.dev/<bucket>/<key>`) returns 403 for anonymous GETs 
 bucket. The workflow therefore sets `SNAPSHOT_PUBLIC_BASE_URL` (not a secret — it appears in every
 manifest) and the export re-bases entry URLs onto it. Keep it consistent with
 `EXPO_PUBLIC_SNAPSHOT_BASE_URL` in the mobile workflows: the mobile value is
-`${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1`.
+`${SNAPSHOT_PUBLIC_BASE_URL}/board-snapshots/v1-gzip`.
 
 ### Kill switches
 
@@ -368,7 +370,8 @@ manifest) and the export re-bases entry URLs onto it. Keep it consistent with
   to the paged crawl for newly-enabled boards; nothing already bootstrapped is affected (it's already past
   the eligibility check).
 - **Nuclear, affects every client regardless of flag state after cache expiry**: delete the
-  `board-snapshots/v1/manifest.json` object from the bucket. The manifest is cached for up to 5 minutes
+  `board-snapshots/v1-gzip/manifest.json` object from the bucket — that's the prefix the fleet reads;
+  deleting `board-snapshots/v1/manifest.json` stops nothing. The manifest is cached for up to 5 minutes
   (`Cache-Control: public, max-age=300`), so clients that already fetched it may keep bootstrapping until
   that cache entry expires. After that, `fetchManifest` returns a 404 → `absent` → permanent miss, no
   attempt burned, straight to the paged crawl. Restoring after a manifest delete must use an unfiltered
@@ -440,37 +443,35 @@ page — that's the trigger to prioritize the fix.
      crawl (see Mobile wiring above).
    - One real on-device bootstrap, confirmed end to end: the `ATTACH` uses a bare filesystem path (no
      `file://` scheme — SQLite's ATTACH resolution isn't guaranteed URI-mode-safe on either platform's
-     bundled sqlite3), and identity artifacts attach/import without a gzip-magic-byte failure. If `--gzip`
-     is tested separately, verify no gzip-magic-byte handled error is reported to Sentry for that download.
+     bundled sqlite3), the artifact attaches and imports, and Sentry reports no gzip-magic-byte handled
+     error for that download (the fleet reads the gzip prefix, so decode is on the live path).
 3. **Percentage ramp**: increase the PostHog rollout gradually, watching `Offline Board Download Completed`
    duration percentiles split by `method`, and the Sentry `snapshot-bootstrap` failure rate, at each step.
    Hold or roll back on a `snapshot` p95 that doesn't clearly beat `paged`, or a failure-rate step change.
 
 ## Gzip transition & cutover
 
-Gzip cuts artifact size ~2.6× (`kilter:1` 258 MB → ~99 MB), directly shrinking the download portion of
-`durationMs`. It ships in stages so the live fleet is never regressed while transparent decode is unverified:
+Gzip cuts artifact size ~2.6× (`kilter:1` 271 MB → 103 MB, whole catalog 595 MB → 220 MB, measured
+2026-07-27), directly shrinking the download portion of `durationMs`. It shipped in stages so the live
+fleet was never regressed while transparent decode was unverified:
 
-1. **Dual-publish (shipped).** The nightly publishes both `board-snapshots/v1` (identity, unchanged) and
-   `board-snapshots/v1-gzip` (`--gzip`). Every mobile workflow's `EXPO_PUBLIC_SNAPSHOT_BASE_URL` still
-   points at `v1`, so the fleet is untouched. After merging, dispatch the workflow once (or wait a night) to
-   populate `v1-gzip`.
-2. **Validate transparent decode on-device, iOS + Android.** Build a dev-client with
-   `EXPO_PUBLIC_SNAPSHOT_BASE_URL=<base>/board-snapshots/v1-gzip` (build-time only, **not** committed — the
-   parity test below forbids a single-workflow change), flags on, and enable a fresh board. Pass =
-   PostHog `Offline Board Download Completed` `method: 'snapshot'`, `durationMs` down markedly, and **no**
-   Sentry handled error `kind: 'snapshot-bootstrap'` "arrived still gzip-compressed". Android is runnable
-   via `vp run mobile:android-shots` (real OkHttp); iOS needs a Mac.
-3. **Cutover (follow-up PR).** Flip `EXPO_PUBLIC_SNAPSHOT_BASE_URL` to the `v1-gzip` path in **all** the
-   mobile fingerprint workflows **at once** — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
-   `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml` —
-   because `scripts/mobile-ci-env-parity.test.ts` requires this var byte-identical across them (a
-   single-workflow change fails CI, and the `pr-<number>` preview channel bakes the same env as
-   production, so there is no "preview-only" pointer). The production OTA then migrates the fleet on next
-   launch; any straggler where decode fails degrades to the paged crawl, never a crash. Watch the same
-   telemetry as the ramp above.
-4. **Cleanup (later PR).** Once the fleet has migrated, drop the identity pass from the export workflow and
-   delete the `board-snapshots/v1` artifacts + manifest.
+1. **Dual-publish — shipped.** The nightly publishes both `board-snapshots/v1` (identity) and
+   `board-snapshots/v1-gzip` (`--gzip`), one manifest each, ~80s apart in the same run.
+2. **Transparent decode validated on-device, iOS + Android — done.** Android: the real `downloadArtifact`
+   path on an emulator (OkHttp) inflated the artifact to a decoded SQLite file, no
+   `SnapshotPermanentMissError`. iOS 26.5.2: via the `pr-3816` gzip OTA preview — fresh downloads took the
+   snapshot path and Sentry reported no `kind: 'snapshot-bootstrap'` "arrived still gzip-compressed".
+3. **Cutover — shipped.** `EXPO_PUBLIC_SNAPSHOT_BASE_URL` points at `.../board-snapshots/v1-gzip` in **all
+   six** mobile fingerprint workflows — `mobile-ota-production.yml`, `ios-testflight-rn.yml`,
+   `android-apk-rn.yml`, `mobile-ota-check.yml`, `mobile-ota-preview.yml`, `mobile-ota-backport.yml`. They
+   must move together: `scripts/mobile-ci-env-parity.test.ts` requires the var byte-identical across them
+   (a single-workflow change fails CI, and the `pr-<number>` preview channel bakes the same env as
+   production, so there is no "preview-only" pointer). It's a bundle-only var, so the cutover rode the
+   production OTA rather than a native release; any straggler where decode fails degrades to the paged
+   crawl, never a crash.
+4. **Cleanup (not done yet).** Once the fleet has migrated, drop the identity pass from the export workflow
+   and delete the `board-snapshots/v1` artifacts + manifest. `docs/board-snapshots-dataset.md` publishes
+   `v1` URLs to outside users, so that doc has to be repointed at `v1-gzip` in the same change.
 
-**Rollback** at any stage: point the workflows back at `v1` (identity is always live) — no export change
-needed.
+**Rollback**: point the six workflows back at `v1` (identity is still published nightly) — a one-commit
+revert, no export change needed.
