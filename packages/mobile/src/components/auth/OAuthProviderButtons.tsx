@@ -39,7 +39,9 @@ export function OAuthProviderButtons({ disabled, isRegistration, onSignIn, provi
           }
           cornerRadius={12}
           style={[styles.providerButton, disabled ? styles.disabled : undefined]}
-          onPress={() => onSignIn('apple')}
+          onPress={() => {
+            if (!disabled) onSignIn('apple');
+          }}
         />
       ) : null}
       {providers.google ? (

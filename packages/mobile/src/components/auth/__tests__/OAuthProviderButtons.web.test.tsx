@@ -90,9 +90,9 @@ describe('OAuthProviderButtons on web', () => {
     expect(screen.queryByText('Continue with Facebook')).toBeNull();
   });
 
-  it('starts the selected provider and hides the controls when discovery fails', async () => {
+  it('starts the selected provider', async () => {
     const onSignIn = vi.fn();
-    vi.mocked(fetch).mockResolvedValueOnce(
+    vi.mocked(fetch).mockResolvedValue(
       new Response(JSON.stringify({ google: true, apple: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -104,8 +104,10 @@ describe('OAuthProviderButtons on web', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue with Apple' }));
     expect(onSignIn).toHaveBeenCalledWith('apple');
     unmount();
+  });
 
-    vi.mocked(fetch).mockRejectedValueOnce(new Error('offline'));
+  it('hides the controls when discovery fails', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'));
     render(<ProviderHarness />);
     await act(async () => {});
     expect(screen.queryByRole('button')).toBeNull();

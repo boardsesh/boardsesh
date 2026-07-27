@@ -6,6 +6,7 @@ import {
   requestPasswordReset,
   resetPassword,
   signInWithCredentials,
+  signInWithGoogle,
   signOut,
   signOutForGeneration,
 } from '../auth.web';
@@ -37,6 +38,7 @@ function requestBody(callIndex: number): string {
 }
 
 beforeEach(async () => {
+  vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
   // Simulate the www-mounted export (experiments.baseUrl '/app'): Expo CLI
   // inlines this into the bundle as EXPO_BASE_URL, and appCallbackUrl derives
@@ -48,6 +50,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe('Expo web OAuth', () => {
@@ -67,6 +70,23 @@ describe('Expo web OAuth', () => {
     expect(url.pathname).toBe('/auth/native-start');
     expect(url.searchParams.get('provider')).toBe('apple');
     expect(url.searchParams.get('callbackUrl')).toBe('https://app.boardsesh.com/');
+  });
+
+  it('reports browser navigation failures without throwing', async () => {
+    vi.stubGlobal('window', {
+      location: {
+        origin: 'https://app.boardsesh.com',
+        assign: vi.fn(() => {
+          throw new Error('navigation blocked');
+        }),
+      },
+    });
+
+    await expect(signInWithGoogle()).resolves.toEqual({
+      success: false,
+      status: null,
+      error: 'browser_unavailable',
+    });
   });
 });
 
