@@ -130,7 +130,8 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
   CREATE TABLE feed_items (
     id bigserial PRIMARY KEY,
     entity_type social_entity_type NOT NULL,
-    entity_id text NOT NULL
+    entity_id text NOT NULL,
+    created_at timestamp DEFAULT now() NOT NULL
   );
 
   CREATE TABLE notifications (
@@ -244,10 +245,77 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
     updated_at timestamp DEFAULT now() NOT NULL,
     PRIMARY KEY (board_type, climb_uuid)
   );
+
+  -- The REAL votes_count_trigger, verbatim from 0130_vote_count_skip_guard.sql
+  -- (re-creates 0053_add_vote_counts.sql's function with the skip guard added).
+  -- Deliberately included (not omitted, as an earlier version of this fixture
+  -- did) so the replay actually exercises the trigger interplay migration
+  -- 0185's votes/vote_counts steps depend on — that's exactly where an
+  -- earlier version of 0185 had a formula mismatch with this trigger.
+  CREATE OR REPLACE FUNCTION update_vote_counts() RETURNS trigger AS $$
+  DECLARE
+    v_entity_type social_entity_type;
+    v_entity_id text;
+    v_up int;
+    v_down int;
+    v_score int;
+    v_hot_score double precision;
+    v_created_at timestamp;
+  BEGIN
+    IF current_setting('boardsesh.skip_vote_counts', true) = 'on' THEN
+      RETURN NULL;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+      v_entity_type := OLD.entity_type;
+      v_entity_id := OLD.entity_id;
+    ELSE
+      v_entity_type := NEW.entity_type;
+      v_entity_id := NEW.entity_id;
+    END IF;
+
+    SELECT
+      COALESCE(SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END), 0),
+      COALESCE(SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END), 0)
+    INTO v_up, v_down
+    FROM votes
+    WHERE entity_type = v_entity_type AND entity_id = v_entity_id;
+
+    v_score := v_up - v_down;
+
+    SELECT COALESCE(
+      (SELECT fi."created_at" FROM feed_items fi
+       WHERE fi."entity_type" = v_entity_type AND fi."entity_id" = v_entity_id
+       LIMIT 1),
+      NOW()
+    ) INTO v_created_at;
+
+    v_hot_score := SIGN(v_score) * LN(GREATEST(ABS(v_score), 1))
+      + EXTRACT(EPOCH FROM v_created_at) / 45000.0;
+
+    INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at)
+    VALUES (v_entity_type, v_entity_id, v_up, v_down, v_score, v_hot_score, v_created_at)
+    ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+      upvotes = EXCLUDED.upvotes,
+      downvotes = EXCLUDED.downvotes,
+      score = EXCLUDED.score,
+      hot_score = EXCLUDED.hot_score;
+
+    IF v_up = 0 AND v_down = 0 THEN
+      DELETE FROM vote_counts WHERE entity_type = v_entity_type AND entity_id = v_entity_id;
+    END IF;
+
+    RETURN NULL;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  CREATE TRIGGER votes_count_trigger
+    AFTER INSERT OR UPDATE OR DELETE ON votes
+    FOR EACH ROW EXECUTE FUNCTION update_vote_counts();
 `;
 
 /**
- * Seed covers four cases:
+ * Seed covers five cases:
  *  - CASE A ("p25"/"p40"): the expected shape — one problem graded at two
  *    distinct angles, exercising every repoint/collision/merge path.
  *  - CASE B ("q25a"/"q25b"): a same-angle collision (both members at 25°) —
@@ -256,6 +324,11 @@ export const MOONBOARD_DEDUP_REPLAY_SCHEMA_SQL = `
  *    share holds+angle — the user-owned row must never be touched.
  *  - CASE D ("t25"/"t40"/"t55"): a 3-angle group, proving the migration
  *    handles arbitrary group sizes, not just pairs.
+ *  - CASE E ("w25"/"w40"/"w55"): a 3-angle group where two NON-CANONICAL
+ *    members collide with EACH OTHER (not just with the canonical) across
+ *    playlist/circuit/classic-status/beta-link/vote rows — reproduces a real
+ *    bug where a canonical-only collision check missed alias-vs-alias
+ *    collisions and aborted the whole migration on deploy.
  */
 export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   -- CASE A: problem P, graded at 25° (fewer ascents) and 40° (more ascents,
@@ -312,6 +385,10 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     ('moonboard','p40','https://example.com/beta',40);
 
   -- votes: u2 only on p25, u3 only on p40 (no collision); u4 on BOTH (collision).
+  -- Seeded with the trigger suppressed so pre-migration vote_counts land at
+  -- these exact, deterministic values regardless of trigger timing/ordering —
+  -- the migration's OWN rebuild (step 6) is what's under test, not the seed.
+  SELECT set_config('boardsesh.skip_vote_counts', 'on', false);
   INSERT INTO votes (user_id, entity_type, entity_id, value, created_at) VALUES
     ('u2','climb','p25',1,'2024-02-01T00:00:00Z'),
     ('u3','climb','p40',-1,'2024-02-01T00:00:00Z'),
@@ -320,6 +397,7 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at) VALUES
     ('climb','p25',2,0,2,1.0,'2024-01-15T00:00:00Z'),
     ('climb','p40',1,0,1,1.0,'2024-06-01T00:00:00Z');
+  SELECT set_config('boardsesh.skip_vote_counts', 'off', false);
 
   INSERT INTO board_climb_embeddings (board_type, climb_uuid, angle) VALUES ('moonboard','p25',25);
   INSERT INTO board_climb_similar (board_type, climb_uuid, angle, neighbor_uuid) VALUES
@@ -333,7 +411,13 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
   INSERT INTO board_climb_events (board_type, climb_uuid) VALUES ('moonboard','p25');
   INSERT INTO climb_proposals (climb_uuid, board_type, angle) VALUES ('p25','moonboard',25);
   INSERT INTO comments (entity_type, entity_id) VALUES ('climb','p25');
-  INSERT INTO feed_items (entity_type, entity_id) VALUES ('climb','p25');
+  -- feed_items.created_at feeds the vote_counts rebuild's hot_score/created_at
+  -- chain (step 6): both rows get repointed onto p40 by step 3's plain
+  -- repoint, so the rebuild's "earliest feed_items row" pick is exercised
+  -- (p25's earlier row must win over p40's own later one).
+  INSERT INTO feed_items (entity_type, entity_id, created_at) VALUES
+    ('climb','p25','2024-01-15T00:00:00Z'),
+    ('climb','p40','2024-06-01T00:00:00Z');
   INSERT INTO notifications (entity_type, entity_id) VALUES ('climb','p25');
 
   -- CASE D: problem T, graded at THREE distinct angles (25°, 40°, 55°) — the
@@ -354,6 +438,55 @@ export const MOONBOARD_DEDUP_REPLAY_SEED_SQL = `
     ('moonboard','t55',55,7);
   INSERT INTO boardsesh_ticks (user_id, board_type, climb_uuid, angle) VALUES
     ('u5','moonboard','t25',25), ('u5','moonboard','t40',40), ('u5','moonboard','t55',55);
+
+  -- CASE E: problem W, graded at THREE distinct angles (25°/40°/55°, canonical
+  -- w40) — same shape as CASE D, but with TWO NON-CANONICAL members (w25,
+  -- w55) both holding a row in the same collision-prone table. This
+  -- reproduces a real bug: dedupe steps that only checked "does this alias's
+  -- row collide with the CANONICAL's own row" miss two ALIASES colliding
+  -- with EACH OTHER once both repoint onto the same canonical, and the whole
+  -- migration aborted with a unique-constraint violation. If this seed makes
+  -- prepareMoonboardDedupReplayDatabase() throw, that alone is the strongest
+  -- possible regression signal — every test in this file would fail with the
+  -- same setup error.
+  INSERT INTO board_climbs (uuid, board_type, layout_id, angle, user_id, is_draft, is_listed, created_at) VALUES
+    ('w25', 'moonboard', 1, 25, NULL, false, true, '2024-01-01T00:00:00Z'),
+    ('w40', 'moonboard', 1, 40, NULL, false, true, '2024-01-02T00:00:00Z'),
+    ('w55', 'moonboard', 1, 55, NULL, false, true, '2024-01-03T00:00:00Z');
+  INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, hold_state) VALUES
+    ('moonboard','w25',40,'STARTING'), ('moonboard','w25',41,'FINISH'),
+    ('moonboard','w40',40,'STARTING'), ('moonboard','w40',41,'FINISH'),
+    ('moonboard','w55',40,'STARTING'), ('moonboard','w55',41,'FINISH');
+  INSERT INTO board_climb_stats (board_type, climb_uuid, angle, upstream_ascensionist_count) VALUES
+    ('moonboard','w25',25,3),
+    ('moonboard','w40',40,50),
+    ('moonboard','w55',55,7);
+
+  -- playlist_climbs: w25 AND w55 (NOT w40) both in playlist 300 — collision
+  -- between two aliases, canonical has no row there at all.
+  INSERT INTO playlist_climbs (playlist_id, climb_uuid) VALUES (300, 'w25'), (300, 'w55');
+
+  -- board_circuits_climbs: same shape.
+  INSERT INTO board_circuits_climbs (board_type, circuit_uuid, climb_uuid) VALUES
+    ('moonboard','circuit-2','w25'), ('moonboard','circuit-2','w55');
+
+  -- climb_classic_status: unique on (climb_uuid, board_type) only — no angle
+  -- discriminator at all, so this collides even without matching angles.
+  INSERT INTO climb_classic_status (climb_uuid, board_type, is_classic) VALUES
+    ('w25','moonboard',true), ('w55','moonboard',true);
+
+  -- board_beta_links: same link on both aliases.
+  INSERT INTO board_beta_links (board_type, climb_uuid, link, angle) VALUES
+    ('moonboard','w25','https://example.com/w-beta',25),
+    ('moonboard','w55','https://example.com/w-beta',55);
+
+  -- votes: u7 votes on BOTH w25 and w55 — collision. Trigger left ACTIVE here
+  -- (no skip_vote_counts guard): w25/w55's own pre-migration vote_counts
+  -- values aren't asserted, only w40's post-migration state, which step 6
+  -- fully rebuilds from scratch regardless of what existed before.
+  INSERT INTO votes (user_id, entity_type, entity_id, value, created_at) VALUES
+    ('u7','climb','w25',1,'2024-02-01T00:00:00Z'),
+    ('u7','climb','w55',1,'2024-02-02T00:00:00Z');
 
   -- CASE B: problem Q, two catalog rows BOTH at 25° (identical holds) — a
   -- residual same-angle duplicate this migration must NOT auto-merge.
@@ -543,7 +676,7 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
     },
   },
   {
-    name: 'CASE A: vote_counts recomputed with the exact hot_score formula and earliest created_at',
+    name: 'CASE A: vote_counts recomputed matching update_vote_counts() exactly (formula + created_at chain)',
     run: async (db) => {
       const rows = await db`SELECT upvotes, downvotes, score, hot_score, created_at::text AS created_at_text
         FROM vote_counts WHERE entity_type = 'climb' AND entity_id = 'p40'`;
@@ -555,13 +688,22 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       // than letting postgres.js auto-parse it into a Date) so this assertion
       // doesn't depend on the test runner's local timezone.
       const createdAt = new Date(`${(rows[0].created_at_text as string).replace(' ', 'T')}Z`);
-      assert.equal(createdAt.toISOString(), new Date('2024-01-15T00:00:00Z').toISOString(), 'MIN(created_at) kept');
-      const expectedHot =
-        Math.sign(1) * Math.log(Math.max(Math.abs(1), 1)) +
-        (createdAt.getTime() - new Date('2005-12-08T00:00:00Z').getTime()) / 1000 / 45000;
+      // feed_items preference wins: p25's earlier feed_item (2024-01-15) got
+      // repointed onto p40 by step 3, so it's picked over p40's own later one
+      // (2024-06-01) and over MIN(votes.created_at) (2024-02-01).
+      assert.equal(
+        createdAt.toISOString(),
+        new Date('2024-01-15T00:00:00Z').toISOString(),
+        'earliest feed_items.created_at kept, matching update_vote_counts()',
+      );
+      // Plain Unix epoch — NO Reddit-epoch offset. This is update_vote_counts()'s
+      // (0053/0130) exact formula, verified against the live trigger this fixture
+      // now includes: an earlier version of this migration subtracted
+      // TIMESTAMP '2005-12-08', which doesn't appear anywhere in the trigger.
+      const expectedHot = Math.sign(1) * Math.log(Math.max(Math.abs(1), 1)) + createdAt.getTime() / 1000 / 45000;
       assert.ok(
         Math.abs((rows[0].hot_score as number) - expectedHot) < 1e-6,
-        'hot_score matches refresh_vote_counts() formula',
+        'hot_score matches update_vote_counts() formula exactly',
       );
 
       const orphaned = await db`SELECT 1 FROM vote_counts WHERE entity_type = 'climb' AND entity_id = 'p25'`;
@@ -608,8 +750,9 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       assert.equal(proposals.length, 1);
       const comments = await db`SELECT 1 FROM comments WHERE entity_type = 'climb' AND entity_id = 'p40'`;
       assert.equal(comments.length, 1);
+      // Two rows: p40's own seeded feed_item plus p25's repointed one (see seed comment).
       const feed = await db`SELECT 1 FROM feed_items WHERE entity_type = 'climb' AND entity_id = 'p40'`;
-      assert.equal(feed.length, 1);
+      assert.equal(feed.length, 2);
       const notif = await db`SELECT 1 FROM notifications WHERE entity_type = 'climb' AND entity_id = 'p40'`;
       assert.equal(notif.length, 1);
     },
@@ -661,6 +804,81 @@ export const moonboardDedupReplayChecks: MoonboardDedupReplayCheck[] = [
       const rows =
         await db`SELECT 1 FROM vote_counts WHERE entity_type = 'climb' AND entity_id IN ('t25', 't40', 't55')`;
       assert.equal(rows.length, 0, 'recompute, not invent — t25/t40/t55 never had a vote_counts row or any votes');
+    },
+  },
+  {
+    name: 'CASE E: migration does not abort on a 3-member group where two non-canonical members collide',
+    run: async (db) => {
+      // If prepareMoonboardDedupReplayDatabase() threw during setup (the
+      // actual failure mode of the bug this reproduces), every test in this
+      // file — not just this one — would already have failed. Reaching this
+      // assertion at all is itself part of the regression coverage.
+      const climbs = await db`SELECT uuid, is_listed FROM board_climbs WHERE uuid IN ('w25','w40','w55') ORDER BY uuid`;
+      assert.deepEqual(
+        climbs.map((row) => [row.uuid, row.is_listed]),
+        [
+          ['w25', false],
+          ['w40', true],
+          ['w55', false],
+        ],
+        'w40 (most ascents) wins canonical; both losing members delisted, never deleted',
+      );
+    },
+  },
+  {
+    name: 'CASE E: playlist collision between two non-canonical members resolves to exactly one row',
+    run: async (db) => {
+      const rows = await db`SELECT climb_uuid FROM playlist_climbs WHERE playlist_id = 300`;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].climb_uuid, 'w40');
+    },
+  },
+  {
+    name: 'CASE E: circuit collision between two non-canonical members resolves to exactly one row',
+    run: async (db) => {
+      const rows = await db`SELECT climb_uuid FROM board_circuits_climbs
+        WHERE board_type = 'moonboard' AND circuit_uuid = 'circuit-2'`;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].climb_uuid, 'w40');
+    },
+  },
+  {
+    name: 'CASE E: classic-status collision (no angle discriminator) resolves to exactly one row',
+    run: async (db) => {
+      const rows = await db`SELECT climb_uuid, is_classic FROM climb_classic_status
+        WHERE board_type = 'moonboard' AND climb_uuid = 'w40'`;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].is_classic, true);
+      const orphaned = await db`SELECT 1 FROM climb_classic_status WHERE climb_uuid IN ('w25','w55')`;
+      assert.equal(orphaned.length, 0);
+    },
+  },
+  {
+    name: 'CASE E: beta-link collision between two non-canonical members resolves to exactly one row',
+    run: async (db) => {
+      const rows = await db`SELECT climb_uuid FROM board_beta_links
+        WHERE board_type = 'moonboard' AND link = 'https://example.com/w-beta'`;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].climb_uuid, 'w40');
+    },
+  },
+  {
+    name: 'CASE E: vote collision between two non-canonical members resolves to one vote and a correct rebuild',
+    run: async (db) => {
+      const votes = await db`SELECT user_id, value FROM votes WHERE entity_type = 'climb' AND entity_id = 'w40'`;
+      assert.equal(votes.length, 1, 'u7 kept exactly one vote after colliding on w25 and w55');
+      assert.equal(votes[0].user_id, 'u7');
+      assert.equal(votes[0].value, 1);
+
+      const counts = await db`SELECT upvotes, downvotes, score FROM vote_counts
+        WHERE entity_type = 'climb' AND entity_id = 'w40'`;
+      assert.equal(counts.length, 1);
+      assert.equal(counts[0].upvotes, 1);
+      assert.equal(counts[0].downvotes, 0);
+      assert.equal(counts[0].score, 1);
+
+      const orphaned = await db`SELECT 1 FROM vote_counts WHERE entity_type = 'climb' AND entity_id IN ('w25','w55')`;
+      assert.equal(orphaned.length, 0);
     },
   },
   {

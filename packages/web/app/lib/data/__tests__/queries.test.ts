@@ -31,6 +31,7 @@ describe('getClimb', () => {
   });
 
   it('maps layoutId, boardType, and derives difficulty/is_no_match from characteristics', async () => {
+    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-1',
@@ -65,7 +66,7 @@ describe('getClimb', () => {
       climb_uuid: 'climb-uuid-1',
     });
 
-    expect(mockSqlTag).toHaveBeenCalledTimes(1);
+    expect(mockSqlTag).toHaveBeenCalledTimes(2);
     expect(climb.uuid).toBe('climb-uuid-1');
     expect(climb.layoutId).toBe(8);
     expect(climb.boardType).toBe('kilter');
@@ -75,6 +76,7 @@ describe('getClimb', () => {
   });
 
   it('derives is_no_match from the description prefix when characteristics is null', async () => {
+    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-2',
@@ -116,6 +118,7 @@ describe('getClimb', () => {
   });
 
   it('is_no_match is false when characteristics has no no_match token and the description does not start with "no match"', async () => {
+    mockSqlTag.mockResolvedValueOnce([]); // alias lookup: no alias, uuid unchanged
     mockSqlTag.mockResolvedValueOnce([
       {
         uuid: 'climb-uuid-3',
@@ -153,5 +156,52 @@ describe('getClimb', () => {
     expect(climb.boardType).toBe('tension');
     expect(climb.difficulty).toBe('7a/V6');
     expect(climb.is_no_match).toBe(false);
+  });
+
+  it('resolves an old/merged climb link through board_climb_aliases to the canonical uuid', async () => {
+    mockSqlTag.mockResolvedValueOnce([{ canonical_uuid: 'canonical-uuid-9' }]); // alias hit
+    mockSqlTag.mockResolvedValueOnce([
+      {
+        uuid: 'canonical-uuid-9',
+        setter_username: 'setter9',
+        userId: null,
+        name: 'Merged Climb',
+        description: '',
+        layoutId: 3,
+        boardType: 'moonboard',
+        frames: 'p1r42',
+        framesCount: 1,
+        framesPace: 0,
+        angle: 40,
+        ascensionist_count: 5,
+        difficulty_id: 20,
+        quality_average: '3.50',
+        difficulty_error: '0.00',
+        benchmark_difficulty: null,
+        is_draft: false,
+        created_at: '2024-01-01T00:00:00.000Z',
+        published_at: '2024-01-01T00:00:00.000Z',
+        characteristics: null,
+      },
+    ]);
+
+    const climb = await getClimb({
+      board_name: 'moonboard',
+      layout_id: 3,
+      size_id: 1,
+      set_ids: [1],
+      angle: 40,
+      climb_uuid: 'old-alias-uuid-9', // a bookmarked link to the now-delisted row
+    });
+
+    expect(mockSqlTag).toHaveBeenCalledTimes(2);
+    // The climb query (2nd call) must have queried by the RESOLVED canonical
+    // uuid, not the alias — otherwise this renders an empty husk instead of
+    // the merged climb's real data. Call args are [strings, ...interpolated
+    // values]; check the interpolated values only.
+    const [, ...climbQueryValues] = mockSqlTag.mock.calls[1];
+    expect(climbQueryValues).toContain('canonical-uuid-9');
+    expect(climbQueryValues).not.toContain('old-alias-uuid-9');
+    expect(climb.uuid).toBe('canonical-uuid-9');
   });
 });

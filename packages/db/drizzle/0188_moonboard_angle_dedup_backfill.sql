@@ -43,15 +43,26 @@
 --
 -- Per group: pick a canonical (most own-angle ascents, tie-break oldest
 -- created_at, then uuid — same policy as 0163), alias every other member
--- onto it (source='moonboard-angle-dedup'), re-key each member's own
--- board_climb_stats row onto the canonical (preserving its angle), repoint
--- every table that references a climb UUID, and DELIST (never DELETE) the
--- non-canonical board_climbs rows — deleting them would CASCADE-drop their
--- board_climb_holds/board_climb_aliases rows, none of which need removing
--- since nothing downstream reads a delisted row directly. Fenced to catalog
--- rows (user_id IS NULL) throughout, exactly like 0163: a user-created
--- single-angle MoonBoard climb is never grouped, aliased, delisted, or
--- repointed by this migration.
+-- onto it (source='moonboard-angle-dedup'), re-key every member's own
+-- board_climb_stats rows onto the canonical (preserving each row's angle),
+-- repoint every table that references a climb UUID, and DELIST (never
+-- DELETE) the non-canonical board_climbs rows — deleting them would
+-- CASCADE-drop their board_climb_holds/board_climb_aliases rows, none of
+-- which need removing since nothing downstream reads a delisted row
+-- directly. Fenced to catalog rows (user_id IS NULL) throughout, exactly
+-- like 0163: a user-created single-angle MoonBoard climb is never grouped,
+-- aliased, delisted, or repointed by this migration.
+--
+-- MULTI-MEMBER COLLISIONS (groups of 3+): every dedupe-then-repoint step
+-- below ranks ALL rows touching a group — the canonical's own pre-existing
+-- row (if any) plus every alias member's row — for each post-repoint unique
+-- key, and keeps exactly one. This matters because a >2-member group can
+-- have two DIFFERENT non-canonical members both holding a row that would
+-- collide once repointed (e.g. two users each added a different losing
+-- angle-row to the same playlist) — checking only "does the row collide with
+-- the CANONICAL's own row" (as an earlier version of this migration did)
+-- misses alias-vs-alias collisions entirely and aborts the whole migration
+-- with a unique-constraint violation on deploy.
 --
 -- Explicitly NOT touched (left pointing at their original uuid):
 --   * sync_deletions — an append-only log of deletions that already
@@ -71,10 +82,23 @@
 -- the audit trail is safe and keeps it queryable from the canonical uuid.)
 --
 -- vote_counts.hot_score has no scheduled recompute job (verified: no cron/
--- workflow touches it), so it is recomputed here inline using the exact
--- Reddit-style formula from refresh_vote_counts() (0053_add_vote_counts.sql):
+-- workflow touches it), so it is rebuilt here from scratch for every
+-- affected canonical, matching update_vote_counts() EXACTLY — the live
+-- trigger on `votes` (created in 0053_add_vote_counts.sql, re-created
+-- identically in 0130_vote_count_skip_guard.sql) and the same recipe
+-- rebuildGymVoteCounts() in packages/db/src/queries/gyms/merge-gyms.ts uses
+-- for gym merges:
 --   hot_score = SIGN(score) * LN(GREATEST(ABS(score), 1))
---             + EXTRACT(EPOCH FROM (created_at - TIMESTAMP '2005-12-08')) / 45000.0
+--             + EXTRACT(EPOCH FROM created_at) / 45000.0
+--   created_at = COALESCE(feed_items.created_at, MIN(votes.created_at), NOW())
+-- Plain Unix epoch — no Reddit-epoch offset (an earlier version of this
+-- migration subtracted TIMESTAMP '2005-12-08', which doesn't appear anywhere
+-- in the trigger and would have sunk every merged climb ~25,200 points in
+-- hot ordering relative to every trigger-computed row). The bulk votes
+-- DELETE/UPDATE below runs with boardsesh.skip_vote_counts='on' (same guard
+-- the gym-merge path uses) so the per-row trigger doesn't do wasted/premature
+-- recomputes mid-repoint; vote_counts is then rebuilt in one pass afterwards.
+--
 -- Recommendation/ML caches (board_climb_embeddings, board_climb_similar) are
 -- fully rebuilt from board_climbs/board_climb_stats on their own schedule
 -- (load-similarity.ts does a full per-board DELETE+reinsert; the weekly
@@ -90,6 +114,17 @@
 -- ⚠️ NEVER run this file manually via psql: outside the migrator's
 -- transaction there is nothing but the guard row below to stop a
 -- re-application.
+--
+-- ⚠️ DEPLOY ORDERING: do not run packages/db/scripts/import-moonboard-catalog.ts
+-- between this migration landing and the angle-agnostic importer rewrite
+-- (#3851) landing. The pre-#3851 importer still matches incoming problems on
+-- (layout_id, angle, hold_fingerprint) and skips delisted rows — so an
+-- incoming problem at a now-delisted angle finds no match, re-mints
+-- moonboard:{id}:{angle}, and its alias upsert (catalogAliasConflictUpdate())
+-- overwrites this migration's alias back to self-pointing, re-splitting that
+-- problem's ticks/logbook resolution and re-creating a stats row under the
+-- delisted uuid. Safe order: this migration -> #3851's importer -> (only
+-- then) any catalog import.
 --
 -- Prod group/member counts are NOT pre-verified for this migration (no live
 -- prod DB access at authoring time, and the standard dev-db seed uses an
@@ -210,12 +245,17 @@ BEGIN
   ON CONFLICT (board_type, alias_uuid) DO UPDATE
     SET canonical_uuid = excluded.canonical_uuid, last_seen_at = now();
 
-  -- 2. Re-key board_climb_stats onto the canonical uuid, ONE ROW PER
-  --    ORIGINAL ANGLE — angles are never combined (see header). ON CONFLICT
-  --    is defensive only: _mad_groups guarantees no two members of one group
-  --    share an angle, so the canonical's own pre-existing stats row (same
-  --    uuid, same angle) is the only possible conflict target, and that's a
-  --    same-row no-op via the COALESCE/GREATEST below.
+  -- 2. Re-key ALL of each alias's board_climb_stats rows onto the canonical
+  --    uuid, preserving each row's own angle — NOT just the row at the
+  --    member's "native" board_climbs.angle. A stats row can also exist at a
+  --    non-native angle (e.g. minted by the tick recompute when someone
+  --    logged a tick at a different angle than the climb's own), and step 3
+  --    below repoints that tick unconditionally — so its stats row must
+  --    follow, or it's orphaned under the delisted uuid (double-counted by
+  --    anything scanning board_climb_stats broadly) and never reaches the
+  --    canonical. ON CONFLICT already merges conservatively (COALESCE/
+  --    GREATEST) for the case where the canonical independently has its own
+  --    row at that same angle.
   INSERT INTO board_climb_stats (board_type, climb_uuid, angle, display_difficulty, benchmark_difficulty,
          ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count, difficulty_average,
          quality_average, upstream_quality_average, quality_normalized, fa_username, fa_at, upstream_synced_at)
@@ -223,7 +263,7 @@ BEGIN
          s.ascensionist_count, s.upstream_ascensionist_count, s.boardsesh_ascensionist_count, s.difficulty_average,
          s.quality_average, s.upstream_quality_average, s.quality_normalized, s.fa_username, s.fa_at, s.upstream_synced_at
     FROM board_climb_stats s
-    JOIN _mad_map m ON m.alias_uuid = s.climb_uuid AND m.angle = s.angle
+    JOIN _mad_map m ON m.alias_uuid = s.climb_uuid
    WHERE s.board_type = 'moonboard'
   ON CONFLICT (board_type, climb_uuid, angle) DO UPDATE SET
     display_difficulty = COALESCE(board_climb_stats.display_difficulty, excluded.display_difficulty),
@@ -239,13 +279,13 @@ BEGIN
     quality_normalized = board_climb_stats.quality_normalized OR excluded.quality_normalized,
     upstream_synced_at = GREATEST(board_climb_stats.upstream_synced_at, excluded.upstream_synced_at);
 
-  -- The row just copied onto the canonical uuid now fully duplicates the
-  -- retiring uuid's own stats row (same board_type/angle, identical values) —
-  -- drop the original so nothing that scans board_climb_stats broadly (a
+  -- The rows just copied onto the canonical uuid now fully duplicate the
+  -- retiring uuid's own stats rows (same board_type/angle, identical values) —
+  -- drop the originals so nothing that scans board_climb_stats broadly (a
   -- leaderboard, a bulk recompute) double-counts a delisted climb's ascents.
   -- Safe: every value has already been copied forward by the INSERT above.
   DELETE FROM board_climb_stats s USING _mad_map m
-   WHERE s.board_type = 'moonboard' AND s.climb_uuid = m.alias_uuid AND s.angle = m.angle;
+   WHERE s.board_type = 'moonboard' AND s.climb_uuid = m.alias_uuid;
 
   -- 3. Plain repoints — climb_uuid moves to canonical, each row's own
   --    angle/value is untouched, no uniqueness collision is possible.
@@ -271,136 +311,197 @@ BEGIN
     FROM _mad_map m WHERE n.entity_type = 'climb' AND n.entity_id = m.alias_uuid;
 
   -- 4. Repoints where the uniqueness constraint does NOT include angle, so a
-  --    real collision is possible (a user interacted with both angle-rows of
-  --    the same problem): drop the losing duplicate, then repoint the
-  --    survivor. Same shape as 0163's playlist_climbs step.
-  DELETE FROM playlist_climbs pc USING _mad_map m
-   WHERE pc.climb_uuid = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM playlist_climbs pc2
-        WHERE pc2.playlist_id = pc.playlist_id AND pc2.climb_uuid = m.canonical_uuid
-     );
+  --    real collision is possible. Ranks EVERY row touching the group — the
+  --    canonical's own pre-existing row (if any) plus every alias member's
+  --    row — per post-repoint key, keeping exactly one: the canonical's own
+  --    row always wins if present, otherwise the lowest-id/ctid alias row
+  --    wins (arbitrary but deterministic). This is NOT just "does it collide
+  --    with the canonical" — two DIFFERENT non-canonical members can collide
+  --    with EACH OTHER once both repoint onto the same canonical, which a
+  --    canonical-only check misses entirely (reproduced against a scratch DB
+  --    with a 3-member group: two losing members both playlisted, migration
+  --    aborted with a unique-constraint violation).
+  WITH ranked AS (
+    SELECT pc.id,
+           EXISTS (
+             SELECT 1 FROM playlist_climbs pc3
+              WHERE pc3.playlist_id = pc.playlist_id AND pc3.climb_uuid = m.canonical_uuid
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY pc.playlist_id, m.canonical_uuid ORDER BY pc.id) AS rn
+      FROM playlist_climbs pc
+      JOIN _mad_map m ON m.alias_uuid = pc.climb_uuid
+  )
+  DELETE FROM playlist_climbs pc USING ranked r
+   WHERE pc.id = r.id AND (r.canonical_has_own OR r.rn > 1);
   UPDATE playlist_climbs pc SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE pc.climb_uuid = m.alias_uuid;
 
   -- A collision here can leave a gap in the circuit's position sequence
-  -- (the dropped alias's slot isn't resequenced) — accepted: position only
+  -- (the dropped row's slot isn't resequenced) — accepted: position only
   -- drives ORDER BY for circuit member display, which doesn't need contiguity.
-  DELETE FROM board_circuits_climbs cc USING _mad_map m
-   WHERE cc.board_type = 'moonboard' AND cc.climb_uuid = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM board_circuits_climbs cc2
-        WHERE cc2.board_type = 'moonboard' AND cc2.circuit_uuid = cc.circuit_uuid AND cc2.climb_uuid = m.canonical_uuid
-     );
+  -- No surrogate id on this table; ctid is a safe same-statement tiebreak.
+  WITH ranked AS (
+    SELECT cc.ctid,
+           EXISTS (
+             SELECT 1 FROM board_circuits_climbs cc3
+              WHERE cc3.board_type = 'moonboard' AND cc3.circuit_uuid = cc.circuit_uuid AND cc3.climb_uuid = m.canonical_uuid
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY cc.circuit_uuid, m.canonical_uuid ORDER BY cc.ctid) AS rn
+      FROM board_circuits_climbs cc
+      JOIN _mad_map m ON m.alias_uuid = cc.climb_uuid
+     WHERE cc.board_type = 'moonboard'
+  )
+  DELETE FROM board_circuits_climbs cc USING ranked r
+   WHERE cc.ctid = r.ctid AND (r.canonical_has_own OR r.rn > 1);
   UPDATE board_circuits_climbs cc SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE cc.board_type = 'moonboard' AND cc.climb_uuid = m.alias_uuid;
 
-  DELETE FROM climb_classic_status cs USING _mad_map m
-   WHERE cs.board_type = 'moonboard' AND cs.climb_uuid = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM climb_classic_status cs2
-        WHERE cs2.board_type = 'moonboard' AND cs2.climb_uuid = m.canonical_uuid
-     );
+  WITH ranked AS (
+    SELECT cs.id,
+           EXISTS (
+             SELECT 1 FROM climb_classic_status cs3
+              WHERE cs3.board_type = 'moonboard' AND cs3.climb_uuid = m.canonical_uuid
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY m.canonical_uuid ORDER BY cs.id) AS rn
+      FROM climb_classic_status cs
+      JOIN _mad_map m ON m.alias_uuid = cs.climb_uuid
+     WHERE cs.board_type = 'moonboard'
+  )
+  DELETE FROM climb_classic_status cs USING ranked r
+   WHERE cs.id = r.id AND (r.canonical_has_own OR r.rn > 1);
   UPDATE climb_classic_status cs SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE cs.board_type = 'moonboard' AND cs.climb_uuid = m.alias_uuid;
 
-  DELETE FROM board_beta_links bl USING _mad_map m
-   WHERE bl.board_type = 'moonboard' AND bl.climb_uuid = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM board_beta_links bl2
-        WHERE bl2.board_type = 'moonboard' AND bl2.climb_uuid = m.canonical_uuid AND bl2.link = bl.link
-     );
+  -- No surrogate id on this table either; ctid tiebreak again.
+  WITH ranked AS (
+    SELECT bl.ctid,
+           EXISTS (
+             SELECT 1 FROM board_beta_links bl3
+              WHERE bl3.board_type = 'moonboard' AND bl3.climb_uuid = m.canonical_uuid AND bl3.link = bl.link
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY bl.link, m.canonical_uuid ORDER BY bl.ctid) AS rn
+      FROM board_beta_links bl
+      JOIN _mad_map m ON m.alias_uuid = bl.climb_uuid
+     WHERE bl.board_type = 'moonboard'
+  )
+  DELETE FROM board_beta_links bl USING ranked r
+   WHERE bl.ctid = r.ctid AND (r.canonical_has_own OR r.rn > 1);
   UPDATE board_beta_links bl SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE bl.board_type = 'moonboard' AND bl.climb_uuid = m.alias_uuid;
 
-  -- 5. Angle-scoped uniqueness tables. A collision at the ALIAS MEMBER's own
-  --    angle (m.angle) isn't expected — _mad_groups guarantees distinct
-  --    angles per group — but the dedupe check below matches on each row's
-  --    OWN angle (not m.angle), so it also defends the row unconditionally:
-  --    if a row somehow exists at a DIFFERENT angle than the member's own
-  --    (e.g. m.angle=25 but this row is angle=40), the subsequent UPDATE has
-  --    no angle filter and would otherwise risk a unique-constraint failure
-  --    on an untested angle. Matching every row's actual angle, not just
-  --    m.angle, closes that gap at no extra cost.
-  DELETE FROM user_favorites uf USING _mad_map m
-   WHERE uf.board_name = 'moonboard' AND uf.climb_uuid = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM user_favorites uf2
-        WHERE uf2.user_id = uf.user_id AND uf2.board_name = 'moonboard'
-          AND uf2.climb_uuid = m.canonical_uuid AND uf2.angle = uf.angle
-     );
+  -- 5. Angle-scoped uniqueness tables — same all-members ranking as step 4,
+  --    partitioned additionally by each row's OWN angle (not the group
+  --    member's "native" angle): _mad_groups guarantees distinct angles
+  --    across DIFFERENT members, so a same-angle collision here would only
+  --    come from a row at a non-native angle, but nothing enforces that
+  --    can't happen, and the ranking handles it for free either way.
+  WITH ranked AS (
+    SELECT uf.id,
+           EXISTS (
+             SELECT 1 FROM user_favorites uf3
+              WHERE uf3.user_id = uf.user_id AND uf3.board_name = 'moonboard'
+                AND uf3.climb_uuid = m.canonical_uuid AND uf3.angle = uf.angle
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY uf.user_id, m.canonical_uuid, uf.angle ORDER BY uf.id) AS rn
+      FROM user_favorites uf
+      JOIN _mad_map m ON m.alias_uuid = uf.climb_uuid
+     WHERE uf.board_name = 'moonboard'
+  )
+  DELETE FROM user_favorites uf USING ranked r
+   WHERE uf.id = r.id AND (r.canonical_has_own OR r.rn > 1);
   UPDATE user_favorites uf SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE uf.board_name = 'moonboard' AND uf.climb_uuid = m.alias_uuid;
 
-  DELETE FROM climb_community_status ccs USING _mad_map m
-   WHERE ccs.board_type = 'moonboard' AND ccs.climb_uuid = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM climb_community_status ccs2
-        WHERE ccs2.board_type = 'moonboard' AND ccs2.climb_uuid = m.canonical_uuid AND ccs2.angle = ccs.angle
-     );
+  WITH ranked AS (
+    SELECT ccs.id,
+           EXISTS (
+             SELECT 1 FROM climb_community_status ccs3
+              WHERE ccs3.board_type = 'moonboard' AND ccs3.climb_uuid = m.canonical_uuid AND ccs3.angle = ccs.angle
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY m.canonical_uuid, ccs.angle ORDER BY ccs.id) AS rn
+      FROM climb_community_status ccs
+      JOIN _mad_map m ON m.alias_uuid = ccs.climb_uuid
+     WHERE ccs.board_type = 'moonboard'
+  )
+  DELETE FROM climb_community_status ccs USING ranked r
+   WHERE ccs.id = r.id AND (r.canonical_has_own OR r.rn > 1);
   UPDATE climb_community_status ccs SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE ccs.board_type = 'moonboard' AND ccs.climb_uuid = m.alias_uuid;
 
   -- 5b. board_climb_ratings — see header: no MoonBoard row can exist today
   -- (only writer hardcodes boardType to Kilter), so this is a defensive no-op
-  -- kept in case that ever changes. Same dedupe-then-update shape, unique key
+  -- kept in case that ever changes. Same all-members ranking, unique key
   -- (board_type, climb_uuid, angle, user_id).
-  DELETE FROM board_climb_ratings bcr USING _mad_map m
-   WHERE bcr.board_type = 'moonboard' AND bcr.climb_uuid = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM board_climb_ratings bcr2
-        WHERE bcr2.board_type = 'moonboard' AND bcr2.climb_uuid = m.canonical_uuid
-          AND bcr2.angle = bcr.angle AND bcr2.user_id = bcr.user_id
-     );
+  WITH ranked AS (
+    SELECT bcr.id,
+           EXISTS (
+             SELECT 1 FROM board_climb_ratings bcr3
+              WHERE bcr3.board_type = 'moonboard' AND bcr3.climb_uuid = m.canonical_uuid
+                AND bcr3.angle = bcr.angle AND bcr3.user_id = bcr.user_id
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY bcr.user_id, m.canonical_uuid, bcr.angle ORDER BY bcr.id) AS rn
+      FROM board_climb_ratings bcr
+      JOIN _mad_map m ON m.alias_uuid = bcr.climb_uuid
+     WHERE bcr.board_type = 'moonboard'
+  )
+  DELETE FROM board_climb_ratings bcr USING ranked r
+   WHERE bcr.id = r.id AND (r.canonical_has_own OR r.rn > 1);
   UPDATE board_climb_ratings bcr SET climb_uuid = m.canonical_uuid
     FROM _mad_map m WHERE bcr.board_type = 'moonboard' AND bcr.climb_uuid = m.alias_uuid;
 
-  -- 6. votes: drop the losing duplicate (a user who voted on both angle-rows
-  --    keeps only their canonical-row vote), repoint survivors, then
-  --    recompute vote_counts for every affected climb using the exact
-  --    Reddit-hot formula (see header) — there is no scheduled job that
-  --    recomputes hot_score, so leaving it stale here would never self-heal.
-  DELETE FROM votes v USING _mad_map m
-   WHERE v.entity_type = 'climb' AND v.entity_id = m.alias_uuid
-     AND EXISTS (
-       SELECT 1 FROM votes v2
-        WHERE v2.user_id = v.user_id AND v2.entity_type = 'climb' AND v2.entity_id = m.canonical_uuid
-     );
+  -- 6. votes + vote_counts. Skip the per-row trigger during the bulk repoint
+  --    (same guard rebuildGymVoteCounts() uses in merge-gyms.ts) so it
+  --    doesn't do wasted/premature recomputes mid-repoint, dedupe among ALL
+  --    members (same ranking shape as steps 4/5 — a user could have voted on
+  --    two different losing members), repoint survivors, then rebuild
+  --    vote_counts from scratch for every affected canonical using the exact
+  --    trigger formula/created_at chain (see header).
+  PERFORM set_config('boardsesh.skip_vote_counts', 'on', true);
+
+  WITH ranked AS (
+    SELECT v.id,
+           EXISTS (
+             SELECT 1 FROM votes v3
+              WHERE v3.user_id = v.user_id AND v3.entity_type = 'climb' AND v3.entity_id = m.canonical_uuid
+           ) AS canonical_has_own,
+           ROW_NUMBER() OVER (PARTITION BY v.user_id, m.canonical_uuid ORDER BY v.id) AS rn
+      FROM votes v
+      JOIN _mad_map m ON m.alias_uuid = v.entity_id
+     WHERE v.entity_type = 'climb'
+  )
+  DELETE FROM votes v USING ranked r
+   WHERE v.id = r.id AND (r.canonical_has_own OR r.rn > 1);
   UPDATE votes v SET entity_id = m.canonical_uuid
     FROM _mad_map m WHERE v.entity_type = 'climb' AND v.entity_id = m.alias_uuid;
 
-  WITH created AS (
-    SELECT ai.canonical_uuid, MIN(vc.created_at) AS created_at
-      FROM _mad_all_ids ai
-      JOIN vote_counts vc ON vc.entity_type = 'climb' AND vc.entity_id = ai.uuid
-     GROUP BY ai.canonical_uuid
-  ),
-  agg AS (
-    SELECT ai.canonical_uuid,
-           COUNT(*) FILTER (WHERE v.value = 1)  AS upvotes,
-           COUNT(*) FILTER (WHERE v.value = -1) AS downvotes
-      FROM (SELECT DISTINCT canonical_uuid FROM _mad_map) ai
-      LEFT JOIN votes v ON v.entity_type = 'climb' AND v.entity_id = ai.canonical_uuid
-     GROUP BY ai.canonical_uuid
-  )
-  INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at)
-  SELECT 'climb', agg.canonical_uuid, agg.upvotes, agg.downvotes, agg.upvotes - agg.downvotes,
-         SIGN(agg.upvotes - agg.downvotes) * LN(GREATEST(ABS(agg.upvotes - agg.downvotes), 1))
-           + EXTRACT(EPOCH FROM (COALESCE(created.created_at, now()) - TIMESTAMP '2005-12-08')) / 45000.0,
-         COALESCE(created.created_at, now())
-    FROM agg
-    LEFT JOIN created ON created.canonical_uuid = agg.canonical_uuid
-   -- Skip canonicals with no real vote data: recompute, don't invent. Without
-   -- this, a climb neither side ever voted on gets a spurious 0/0/0 ghost row
-   -- (agg's LEFT JOIN votes still produces a zero-count row for every
-   -- canonical in _mad_map, and created's INNER JOIN finds nothing for it).
-   WHERE agg.upvotes > 0 OR agg.downvotes > 0 OR created.canonical_uuid IS NOT NULL
-  ON CONFLICT (entity_type, entity_id) DO UPDATE SET
-    upvotes = excluded.upvotes, downvotes = excluded.downvotes, score = excluded.score,
-    hot_score = excluded.hot_score, created_at = excluded.created_at;
+  DELETE FROM vote_counts vc
+   WHERE vc.entity_type = 'climb'
+     AND vc.entity_id IN (SELECT uuid FROM _mad_all_ids);
 
-  DELETE FROM vote_counts vc USING _mad_map m
-   WHERE vc.entity_type = 'climb' AND vc.entity_id = m.alias_uuid;
+  INSERT INTO vote_counts (entity_type, entity_id, upvotes, downvotes, score, hot_score, created_at)
+  SELECT
+    vote_totals.entity_type, vote_totals.entity_id, vote_totals.upvotes, vote_totals.downvotes, vote_totals.score,
+    SIGN(vote_totals.score) * LN(GREATEST(ABS(vote_totals.score), 1))
+      + EXTRACT(EPOCH FROM COALESCE(feed_created_at.created_at, vote_totals.first_vote_created_at, now())) / 45000.0,
+    COALESCE(feed_created_at.created_at, vote_totals.first_vote_created_at, now())
+  FROM (
+    SELECT 'climb'::social_entity_type AS entity_type, m.canonical_uuid AS entity_id,
+           SUM(CASE WHEN v.value = 1 THEN 1 ELSE 0 END)::int AS upvotes,
+           SUM(CASE WHEN v.value = -1 THEN 1 ELSE 0 END)::int AS downvotes,
+           SUM(v.value)::int AS score,
+           MIN(v.created_at) AS first_vote_created_at
+      FROM votes v
+      JOIN (SELECT DISTINCT canonical_uuid FROM _mad_map) m ON m.canonical_uuid = v.entity_id
+     WHERE v.entity_type = 'climb'
+     GROUP BY m.canonical_uuid
+  ) vote_totals
+  LEFT JOIN LATERAL (
+    SELECT fi.created_at FROM feed_items fi
+     WHERE fi.entity_type = vote_totals.entity_type AND fi.entity_id = vote_totals.entity_id
+     ORDER BY fi.created_at ASC, fi.id ASC LIMIT 1
+  ) feed_created_at ON true;
+
+  PERFORM set_config('boardsesh.skip_vote_counts', 'off', true);
 
   -- 7. Recommendation/ML caches (see header for why dropping, not merging,
   --    is correct here).

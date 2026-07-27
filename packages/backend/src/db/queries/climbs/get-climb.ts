@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../client';
 import { UNIFIED_TABLES, type BoardName } from '../util/table-select';
-import { getClimbStars, getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
+import { getClimbStars, getGradeLabel, toConfidenceTier, resolveCanonicalClimbUuid } from '@boardsesh/db/queries';
 import { boardClimbGrades } from '@boardsesh/db/schema';
 import type { Climb } from '@boardsesh/shared-schema';
 import { logger } from '../../../utils/logger';
@@ -18,6 +18,12 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
   const tables = UNIFIED_TABLES;
 
   try {
+    // Resolve through board_climb_aliases first: an old/bookmarked/shared
+    // link to a climb that's since been merged into another (e.g. the
+    // MoonBoard angle-dedup migration, 0185) must still resolve to where its
+    // stats/ticks/favorites actually live now, not render an empty husk.
+    const climbUuid = await resolveCanonicalClimbUuid(db, params.board_name, params.climb_uuid);
+
     // Direct-by-UUID lookups intentionally do NOT filter `framesCount = 1`.
     // Search/dedupe still skip multi-frame climbs, but the player needs to
     // be able to render variable-speed Aurora routes when navigated to by URL.
@@ -64,7 +70,7 @@ export const getClimbByUuid = async (params: GetClimbParams): Promise<Climb | nu
       .where(
         sql`${tables.climbs.boardType} = ${params.board_name}
         AND ${tables.climbs.layoutId} = ${params.layout_id}
-        AND ${tables.climbs.uuid} = ${params.climb_uuid}`,
+        AND ${tables.climbs.uuid} = ${climbUuid}`,
       )
       .limit(1);
 
