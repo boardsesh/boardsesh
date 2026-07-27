@@ -3,7 +3,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { sql, eq } from 'drizzle-orm';
+import { sql, eq, and, isNull } from 'drizzle-orm';
 import { boardClimbs, boardClimbStats, boardClimbHolds, boardClimbAliases } from '../src/schema/boards/unified.js';
 import { blendedQualityAverageSql } from '../src/queries/climb-stats/quality-blend.js';
 import { fingerprintFromHolds } from './moonboard-2024-helpers.js';
@@ -88,6 +88,11 @@ async function buildExistingIndex(
   }
   flush();
 
+  // user_id IS NULL fences out Boardsesh-native user climbs, matching the
+  // same fence 0185's dedup migration applies. Without it, a user climb that
+  // happens to share holds with an incoming catalog problem could be adopted
+  // as the merge target, after which the catalog import would upsert its
+  // stats onto the user's climb and point the problem's aliases at it.
   const climbRows = await db
     .select({
       uuid: boardClimbs.uuid,
@@ -96,7 +101,7 @@ async function buildExistingIndex(
       isListed: boardClimbs.isListed,
     })
     .from(boardClimbs)
-    .where(eq(boardClimbs.boardType, 'moonboard'));
+    .where(and(eq(boardClimbs.boardType, 'moonboard'), isNull(boardClimbs.userId)));
 
   const aliasRows = await db
     .select({ aliasUuid: boardClimbAliases.aliasUuid, canonicalUuid: boardClimbAliases.canonicalUuid })
@@ -142,7 +147,7 @@ async function importMoonBoardCatalog() {
   const client = postgres(databaseUrl, { max: 1 });
   const db = drizzle(client);
 
-  const totals = { matched: 0, inserted: 0, climbs: 0, stats: 0, holds: 0, skippedProblems: 0 };
+  const totals = { matched: 0, inserted: 0, climbs: 0, stats: 0, holds: 0, skippedProblems: 0, skippedAmbiguous: 0 };
 
   try {
     const existingIndex = await buildExistingIndex(client, db);
@@ -174,6 +179,7 @@ async function importMoonBoardCatalog() {
       let matched = 0;
       let inserted = 0;
       let skippedProblems = 0;
+      let skippedAmbiguous = 0;
 
       for (const problem of dump.problems) {
         const mapped = catalogProblemToClimbs(problem, layoutId);
@@ -181,7 +187,24 @@ async function importMoonBoardCatalog() {
           skippedProblems++;
           continue;
         }
-        const { uuid, matched: matchedExisting } = resolveCatalogClimbUuid(mapped, existingIndex);
+        const { uuid, matched: matchedExisting, ambiguous } = resolveCatalogClimbUuid(mapped, existingIndex);
+
+        // Multiple DISTINCT listed rows share this problem's holds — the
+        // expected shape when migration 0185 (moonboard angle-dedup) hasn't
+        // run against this database yet, so both angle-rows of the problem
+        // are still separately listed. Writing through this state would
+        // double-count ascents across two listed rows and point a legacy
+        // alias at whichever row the name tie-break happened to land on.
+        // Loud skip, not a silent guess: run 0185 first, then re-import.
+        if (ambiguous) {
+          skippedAmbiguous++;
+          console.error(
+            `   ⚠️  Skipping problem ${problem.id} ("${problem.name}"): multiple listed rows already share its holds ` +
+              `at layout ${layoutId} — this database likely predates migration 0185 (moonboard angle-dedup). ` +
+              `Run that migration, then re-run this import.`,
+          );
+          continue;
+        }
 
         // Record the aliases before the dedupe below: when two problems collapse
         // onto one climb (same holds) we drop the weaker problem's data, but we
@@ -225,6 +248,16 @@ async function importMoonBoardCatalog() {
           edgeRight: null,
           edgeBottom: null,
           edgeTop: null,
+          // Angle-agnostic identity (see module header) — but KNOWN GAP,
+          // deliberately deferred: three backend paths (new-climb-subscriptions.ts,
+          // notification-worker.ts, feed-fanout.ts) resolve difficultyName via
+          // `LEFT JOIN board_climb_stats ON stats.angle = climbs.angle`, which
+          // never matches when climbs.angle is null — so a newly-imported
+          // MoonBoard problem shows ungraded in the new-climb feed and
+          // notifications until those three queries learn a MoonBoard fallback
+          // (e.g. pick the min-angle stats row when climbs.angle is null).
+          // Nothing fails; the grade just doesn't show. Track before relying on
+          // those surfaces for MoonBoard.
           angle: null,
           framesCount: 1,
           framesPace: 0,
@@ -290,7 +323,10 @@ async function importMoonBoardCatalog() {
       const holdsRecords = [...holdsByKey.values()];
       const aliasRecords = [...aliasByUuid.values()];
 
-      console.info(`   ${matched} matched existing, ${inserted} new; ${skippedProblems} problems skipped`);
+      console.info(
+        `   ${matched} matched existing, ${inserted} new; ${skippedProblems} problems skipped, ` +
+          `${skippedAmbiguous} skipped as ambiguous (pre-0185 duplicate rows)`,
+      );
 
       // One transaction per board: a crash mid-file never leaves a climb without
       // its holds/aliases, and completed boards stay committed for an idempotent
@@ -378,6 +414,7 @@ async function importMoonBoardCatalog() {
       totals.stats += statsRecords.length;
       totals.holds += holdsRecords.length;
       totals.skippedProblems += skippedProblems;
+      totals.skippedAmbiguous += skippedAmbiguous;
     }
 
     console.info('\n✅ Import completed!');
@@ -387,6 +424,12 @@ async function importMoonBoardCatalog() {
     console.info(`   Stats upserted:   ${totals.stats}`);
     console.info(`   Holds upserted:   ${totals.holds}`);
     console.info(`   Problems skipped: ${totals.skippedProblems}`);
+    if (totals.skippedAmbiguous > 0) {
+      console.error(
+        `   ⚠️  Problems skipped as ambiguous: ${totals.skippedAmbiguous} — this database likely predates ` +
+          `migration 0185 (moonboard angle-dedup). Run it, then re-run this import to pick these up.`,
+      );
+    }
 
     await client.end();
     process.exit(0);

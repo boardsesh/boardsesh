@@ -152,18 +152,33 @@ export function catalogAliasConflictUpdate() {
   return { canonicalUuid: sql`excluded.canonical_uuid`, lastSeenAt: sql`now()` };
 }
 
-/** Resolve an incoming catalog climb to an existing merge candidate, if any. */
+/**
+ * Resolve an incoming catalog climb to an existing merge candidate, if any.
+ *
+ * `ambiguous: true` means the fingerprint bucket held >1 DISTINCT listed
+ * candidate uuid — expected shape post-#3849 (one canonical per problem), but
+ * on a database migration 0185 hasn't run against yet, both angle-rows of a
+ * problem are still separately listed and typically share a name, so the
+ * name tie-break "resolves" to one of them non-deterministically (row order)
+ * while the OTHER stays listed too. Writing through that state doubles-counts
+ * ascents across two listed rows and can point a legacy alias at whichever
+ * row the tie-break happened to pick. Callers should treat `ambiguous: true`
+ * as "skip this problem, don't write anything for it" rather than silently
+ * trusting the returned uuid — see import-moonboard-catalog.ts.
+ */
 export function resolveCatalogClimbUuid(
   mapped: MappedCatalogClimb,
   index: Map<string, ExistingCatalogClimb[]>,
-): { uuid: string; matched: boolean } {
+): { uuid: string; matched: boolean; ambiguous: boolean } {
   const candidates = index.get(`${mapped.layoutId}|${mapped.holdFingerprint}`);
-  if (!candidates || candidates.length === 0) return { uuid: mapped.uuid, matched: false };
+  if (!candidates || candidates.length === 0) return { uuid: mapped.uuid, matched: false, ambiguous: false };
   const candidateUuids = new Set(candidates.map((candidate) => candidate.uuid));
-  if (candidateUuids.size === 1) return { uuid: candidates[0].uuid, matched: true };
+  if (candidateUuids.size === 1) return { uuid: candidates[0].uuid, matched: true, ambiguous: false };
   const target = mapped.name.trim().toLowerCase();
   const named = candidates.find((candidate) => (candidate.name ?? '').trim().toLowerCase() === target);
-  return named ? { uuid: named.uuid, matched: true } : { uuid: mapped.uuid, matched: false };
+  return named
+    ? { uuid: named.uuid, matched: true, ambiguous: true }
+    : { uuid: mapped.uuid, matched: false, ambiguous: true };
 }
 
 const STATE_TO_ROLE: Record<string, number> = {

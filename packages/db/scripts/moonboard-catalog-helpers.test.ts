@@ -170,7 +170,7 @@ void test('catalog matching excludes delisted rows even when they have stale sel
     ]),
   );
 
-  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: canonicalUuid, matched: true });
+  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: canonicalUuid, matched: true, ambiguous: false });
 });
 
 void test('catalog matching follows alias chains and collapses candidates at the same canonical UUID', () => {
@@ -194,7 +194,7 @@ void test('catalog matching follows alias chains and collapses candidates at the
     ]),
   );
 
-  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: canonicalUuid, matched: true });
+  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: canonicalUuid, matched: true, ambiguous: false });
 });
 
 void test('catalog matching ignores cyclic aliases instead of writing another broken redirect', () => {
@@ -210,7 +210,7 @@ void test('catalog matching ignores cyclic aliases instead of writing another br
     ]),
   );
 
-  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: mapped.uuid, matched: false });
+  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: mapped.uuid, matched: false, ambiguous: false });
 });
 
 void test('catalog matching ignores a listed alias chain whose terminal climb is delisted', () => {
@@ -229,7 +229,52 @@ void test('catalog matching ignores a listed alias chain whose terminal climb is
     ]),
   );
 
-  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: mapped.uuid, matched: false });
+  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: mapped.uuid, matched: false, ambiguous: false });
+});
+
+void test('catalog matching flags ambiguous when TWO DISTINCT listed rows share holds+name (pre-0185 database)', () => {
+  const mapped = makeMappedClimb();
+  // Neither aliases the other — both are independently listed, same holds,
+  // same name. This is the exact shape a database predating migration 0185
+  // (moonboard angle-dedup) looks like: both angle-rows of one problem still
+  // separately listed.
+  const angle25Uuid = 'moonboard-not-yet-deduped-25';
+  const angle40Uuid = 'moonboard-not-yet-deduped-40';
+  const index = buildExistingCatalogMatchIndex(
+    [
+      { uuid: angle25Uuid, layoutId: mapped.layoutId, name: mapped.name, isListed: true },
+      { uuid: angle40Uuid, layoutId: mapped.layoutId, name: mapped.name, isListed: true },
+    ],
+    new Map([
+      [angle25Uuid, mapped.holdFingerprint],
+      [angle40Uuid, mapped.holdFingerprint],
+    ]),
+    new Map(),
+  );
+
+  const result = resolveCatalogClimbUuid(mapped, index);
+  assert.equal(result.ambiguous, true, 'caller must skip rather than silently write through this uuid');
+  assert.ok(
+    result.uuid === angle25Uuid || result.uuid === angle40Uuid,
+    'still resolves to one of the two candidates (row-order dependent) — the ambiguous flag is what matters',
+  );
+});
+
+void test('catalog matching flags ambiguous when TWO DISTINCT listed rows share holds but NEITHER matches the incoming name', () => {
+  const mapped = makeMappedClimb({ name: 'Freshly Renamed Problem' });
+  const index = buildExistingCatalogMatchIndex(
+    [
+      { uuid: 'moonboard-old-name-a', layoutId: mapped.layoutId, name: 'Old Name A', isListed: true },
+      { uuid: 'moonboard-old-name-b', layoutId: mapped.layoutId, name: 'Old Name B', isListed: true },
+    ],
+    new Map([
+      ['moonboard-old-name-a', mapped.holdFingerprint],
+      ['moonboard-old-name-b', mapped.holdFingerprint],
+    ]),
+    new Map(),
+  );
+
+  assert.deepEqual(resolveCatalogClimbUuid(mapped, index), { uuid: mapped.uuid, matched: false, ambiguous: true });
 });
 
 void test('catalog alias conflicts repair the canonical target and refresh last seen', () => {
