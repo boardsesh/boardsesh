@@ -2,7 +2,6 @@ import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ExpoConfig, ConfigContext } from 'expo/config';
-import { OTA_APP_ID } from './src/lib/ota-app-id';
 
 type WebPlatformResolution = {
   platforms: NonNullable<ExpoConfig['platforms']>;
@@ -52,11 +51,13 @@ export function resolveWebHeadOrigin(
 
 const DEFAULT_EAS_PROJECT_ID = '87499648-655e-4fb8-9856-65da37e55fb1';
 const EAS_PROJECT_ID = process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? DEFAULT_EAS_PROJECT_ID;
-// V3 OTA app id (the `expo-app-id` header the self-hosted server routes on) — the
-// single source lives in src/lib/ota-app-id and is shared with the in-app channel
-// switcher (apply-channel-override), so the runtime override re-sends the exact
-// header the build baked. Re-exported here for resolveUpdatesConfig's unit tests.
-export { OTA_APP_ID };
+// V3 OTA app id (the `expo-app-id` header the self-hosted server routes on). Inlined
+// here — NOT imported — because Expo's config loader compiles only app.config.ts and
+// can't resolve a sibling .ts import at config-read time (bundle check fails with
+// "Cannot find module './src/lib/ota-app-id'"). The identical value lives in
+// src/lib/ota-app-id.ts for the in-app channel switcher; mobile-ci-env-parity.test.ts
+// asserts the two stay equal. NOT the EAS project id (that value is only the cert CN).
+export const OTA_APP_ID = process.env.EXPO_PUBLIC_OTA_APP_ID ?? '007e6fd7-f200-448c-9449-8d48ba5d51fc';
 const IOS_APP_STORE_URL = 'https://apps.apple.com/app/boardsesh/id6761350784';
 const ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.boardsesh.app';
 const HEALTH_UPDATE_USAGE_DESCRIPTION = 'Boardsesh saves your finished climbing sessions to Apple Health as workouts.';

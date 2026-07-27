@@ -267,11 +267,12 @@ describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
     expect(docs, `docs must document the appId-scoped lifecycle prefix \`${s3Prefix}\``).toContain(s3Prefix);
   });
 
-  it('keeps the OTA app id identical across the shared const, the map helper, and setup', () => {
-    // app.config bakes the expo-app-id header from src/lib/ota-app-id; the channel-map
-    // helper (DEFAULT_APP_ID) and the setup runbook (OTA_APP_ID) address the same app.
-    // A drift between them 404s ("Unknown app id") or mis-routes previews, and the id
-    // is a fingerprint input — so pin them equal.
+  it('keeps the OTA app id identical across app.config, the shared const, the map helper, and setup', () => {
+    // The expo-app-id header is baked by app.config.ts (inline — Expo's config loader
+    // can't import a sibling .ts) and mirrored in src/lib/ota-app-id.ts for the in-app
+    // channel switcher; the channel-map helper (DEFAULT_APP_ID) and the setup runbook
+    // (OTA_APP_ID) address the same app. A drift 404s ("Unknown app id") or mis-routes
+    // previews, and the id is a fingerprint input — so pin all four equal.
     const idFrom = (rel: string, name: string): string | undefined => {
       const src = readFileSync(resolve(REPO_ROOT, rel), 'utf8');
       return (
@@ -281,6 +282,7 @@ describe('mobile OTA preview channel isolation + S3 lifecycle coupling', () => {
     };
     const shared = idFrom('packages/mobile/src/lib/ota-app-id.ts', 'OTA_APP_ID');
     expect(shared, 'src/lib/ota-app-id must define OTA_APP_ID').toBeTruthy();
+    expect(idFrom('packages/mobile/app.config.ts', 'OTA_APP_ID'), 'app.config OTA_APP_ID').toBe(shared);
     expect(idFrom('scripts/ota-channel-map.ts', 'DEFAULT_APP_ID'), 'ota-channel-map DEFAULT_APP_ID').toBe(shared);
     expect(idFrom('scripts/mobile-ota-setup.ts', 'OTA_APP_ID'), 'mobile-ota-setup OTA_APP_ID').toBe(shared);
   });
