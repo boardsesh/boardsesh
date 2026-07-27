@@ -4,10 +4,12 @@
 // instead of paging the whole catalog over GraphQL. See
 // packages/backend/src/scripts/export-board-snapshots.ts for what this
 // downloads: a per-(boardType, layoutId) SQLite file uploaded to Tigris/S3
-// under `board-snapshots/v1/`, plus `manifest.json` listing every artifact's
-// URL, stored size, content encoding, and resume watermarks. Artifacts default
-// to identity encoding; gzip is opt-in and verified by this adapter before the
-// file is handed to SQLite.
+// under `board-snapshots/v1-gzip/` (the prefix the shipped builds point at),
+// plus `manifest.json` listing every artifact's URL, stored size, content
+// encoding, and resume watermarks. Live artifacts are gzip-encoded and this
+// adapter verifies the body was decoded before handing the file to SQLite; the
+// identity prefix (`board-snapshots/v1/`) is still published as a rollback
+// target, so the identity path below stays load-bearing.
 //
 // The engine only consumes what this returns — it never fetches, downloads, or
 // gunzips anything itself (see snapshot-bootstrap.ts's `SnapshotSource`
@@ -183,9 +185,11 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
       safeDeleteFile(downloaded);
       // Expected behaviour is that the native HTTP stack (NSURLSession /
       // OkHttp) auto-decodes a gzip Content-Encoding while downloading — this
-      // path should be rare-to-never. Report it as a handled error (not just a
-      // dev warning) so a real pattern shows up in Sentry before gzip is enabled
-      // for mobile artifacts.
+      // path should be rare-to-never (validated on Android/OkHttp and iOS 26.5.2
+      // before the fleet was cut over to the gzip prefix). Report it as a handled
+      // error (not just a dev warning) so a real pattern shows up in Sentry —
+      // it's now the live download path, and a spike here is the cutover's
+      // rollback signal.
       reportHandledError(
         new Error('snapshot artifact arrived still gzip-compressed (Content-Encoding was not auto-decoded)'),
         {
