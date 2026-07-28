@@ -91,13 +91,25 @@ export type BottomChromeMetrics = {
   inSessionListBottom: number;
   /**
    * Bottom offset for the pre-session Start capsule / footer. Material uses the
-   * fixed-footer reserve; Liquid Glass anchors to the raw safe-area inset.
+   * fixed-footer reserve; Liquid Glass anchors to the raw safe-area inset plus
+   * the JS queue reserve — identical arithmetic to {@link inSessionListBottom},
+   * and it must stay in lockstep with it: both surfaces clear the same bottom
+   * chrome, and letting one branch drift is what caused #3967.
    *
    * Verified on-device (iPhone 17 Pro / iOS 26): with the native tab bar + climb
    * accessory present, the safe-area bottom inset is 139 = home indicator (34) +
    * tab bar (49) + accessory (56) — the glass tab bar extends the UIKit safe area.
    * `fixedFooterBottom` would add the tab bar + accessory a second time (246),
    * stranding the control ~110px up the screen — hence the raw inset on glass.
+   * That evidence covers the *native tab bar* path only, where `jsQueueReserve`
+   * is 0 (the accessory owns the climb) so this stays exactly 139.
+   *
+   * On the JS-tab-bar fallback (iOS < 26, non-glass-capable iPhones, iPad in a
+   * narrow split, Android forced to Liquid Glass) the floating
+   * `PersistentQueueBar` is a JS overlay that does NOT extend the UIKit safe
+   * area, so nothing reserves for it implicitly — the raw inset alone dropped
+   * the Start capsule under the tray's log-ascent tick (#3967). Hence the
+   * explicit `+ jsQueueReserve`.
    */
   preSessionFooterBottom: number;
 };
@@ -199,6 +211,12 @@ export function computeBottomChromeMetrics({
       material: fixedFooterBottom,
       liquidGlass: insetsBottom + jsQueueReserve,
     }),
-    preSessionFooterBottom: selectByVariant(uiVariant, { material: fixedFooterBottom, liquidGlass: insetsBottom }),
+    // Keep this branch identical to `inSessionListBottom`: the JS queue tray is an
+    // overlay outside the safe area, so the Start capsule only clears it when the
+    // reserve is added explicitly (#3967).
+    preSessionFooterBottom: selectByVariant(uiVariant, {
+      material: fixedFooterBottom,
+      liquidGlass: insetsBottom + jsQueueReserve,
+    }),
   };
 }

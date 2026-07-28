@@ -272,7 +272,11 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.inSessionListBottom).toBe(139);
     });
 
-    it('adds only the JS queue reserve to the Liquid Glass in-session list when the accessory is unavailable', () => {
+    it('adds the JS queue reserve to both Liquid Glass session bottoms when the accessory is unavailable', () => {
+      // iOS < 26 / non-glass-capable iPhone: the JS `PersistentQueueBar` tray is an
+      // overlay outside the UIKit safe area, so BOTH the in-session list and the
+      // pre-session Start capsule have to reserve for it. Before #3967 the footer
+      // rode the raw inset and landed under the tray's log-ascent tick.
       const metrics = computeBottomChromeMetrics({
         uiVariant: 'liquidGlass',
         usesNativeTabBar: false,
@@ -283,7 +287,107 @@ describe('computeBottomChromeMetrics', () => {
         nativeAccessoryMounted: false,
       });
       expect(metrics.inSessionListBottom).toBe(34 + TOOLBAR_RESERVE);
-      expect(metrics.preSessionFooterBottom).toBe(34);
+      expect(metrics.preSessionFooterBottom).toBe(34 + TOOLBAR_RESERVE);
+    });
+  });
+
+  describe('pre-session Start capsule clears the floating queue tray (#3967)', () => {
+    // The tray band is rebuilt here from `ActiveContextBar`'s OWN formula
+    // (packages/mobile/src/components/queue-control/ActiveContextBar.tsx: floating
+    // bottom = `bottomChrome.tabBarBottom + TOOLBAR_GAP_ABOVE_TABBAR`, content height
+    // `glassSize.hero`) rather than from `preSessionFooterBottom`, so this is not a
+    // tautology: the two sides come from independent code paths. The tray renders at
+    // app root in window coordinates while the Start capsule is inside the tab screen,
+    // so convert the tray to screen-local coordinates first. An in-flow JS
+    // `MaterialTabBar` means the screen's floor already sits `tabBarBottom` above the
+    // window bottom (the same assumption `contentInsetBottom` encodes); a native
+    // overlaying tab bar or the sidebar shell leaves the screen floor at the window
+    // bottom.
+    const trayTopAboveScreenFloor = (
+      metrics: ReturnType<typeof computeBottomChromeMetrics>,
+      usesNativeTabBar: boolean,
+    ) => {
+      const jsTabBarInFlow = metrics.tabBarHeight > 0 && !usesNativeTabBar;
+      const screenFloorAboveWindow = jsTabBarInFlow ? metrics.tabBarBottom : 0;
+      return metrics.tabBarBottom + TOOLBAR_GAP_ABOVE_TABBAR + glassSize.hero - screenFloorAboveWindow;
+    };
+
+    it('clears the tray on an iOS < 26 / non-glass-capable iPhone', () => {
+      const metrics = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: false,
+        insetsBottom: 34,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryMounted: false,
+      });
+      expect(metrics.jsQueueToolbarVisible).toBe(true);
+      expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(trayTopAboveScreenFloor(metrics, false));
+    });
+
+    it('clears the tray on an iPad in a narrow split (sidebar without the detail pane)', () => {
+      const metrics = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: false,
+        insetsBottom: 20,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryMounted: true,
+        usesSidebar: true,
+        detailPaneOwnsQueue: false,
+      });
+      expect(metrics.jsQueueToolbarVisible).toBe(true);
+      expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(trayTopAboveScreenFloor(metrics, false));
+    });
+  });
+
+  describe('session-bottom invariants across the whole input matrix', () => {
+    const allInputs = function* () {
+      for (const uiVariant of ['liquidGlass', 'material'] as const) {
+        for (const usesNativeTabBar of [true, false]) {
+          for (const onAccessorySurface of [true, false]) {
+            for (const hasCurrentClimb of [true, false]) {
+              for (const nativeAccessoryMounted of [true, false]) {
+                for (const usesSidebar of [true, false]) {
+                  for (const detailPaneOwnsQueue of [true, false]) {
+                    yield {
+                      uiVariant,
+                      usesNativeTabBar,
+                      insetsBottom: 34,
+                      insideTabs: true,
+                      onAccessorySurface,
+                      hasCurrentClimb,
+                      nativeAccessoryMounted,
+                      usesSidebar,
+                      detailPaneOwnsQueue,
+                    };
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+
+    it('always reserves at least the JS queue tray when that tray is visible', () => {
+      for (const inputs of allInputs()) {
+        const metrics = computeBottomChromeMetrics(inputs);
+        if (!metrics.jsQueueToolbarVisible) continue;
+        expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(metrics.jsQueueReserve);
+      }
+    });
+
+    it('keeps the pre-session footer and the in-session list on the same bottom chrome', () => {
+      // Both session surfaces sit under the same tab bar + queue tray, so their
+      // bottom offsets must not drift apart — one branch being edited without the
+      // other is exactly what caused #3967.
+      for (const inputs of allInputs()) {
+        const metrics = computeBottomChromeMetrics(inputs);
+        expect(metrics.preSessionFooterBottom).toBe(metrics.inSessionListBottom);
+      }
     });
   });
 
@@ -356,7 +460,7 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.floatingControlBottom).toBe(20 + TOOLBAR_RESERVE);
       expect(metrics.fixedFooterBottom).toBe(TOOLBAR_RESERVE);
       expect(metrics.inSessionListBottom).toBe(20 + TOOLBAR_RESERVE);
-      expect(metrics.preSessionFooterBottom).toBe(20);
+      expect(metrics.preSessionFooterBottom).toBe(20 + TOOLBAR_RESERVE);
     });
 
     it('defaults usesSidebar to false so existing compact call sites are unchanged', () => {
