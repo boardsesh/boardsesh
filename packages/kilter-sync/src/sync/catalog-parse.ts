@@ -48,8 +48,15 @@ export type GripsDecodeResult =
  * from the pre-split Aurora backend — stores the same climb in
  * `board_climbs.frames` as comma-separated per-frame deltas, where the
  * integer is the **placement id**: `p{placementId}r{roleCode}` lights a hold,
- * `x{placementId}` clears one, and every frame after the first carries a
- * literal `"` prefix.
+ * `x{placementId}` clears one, and a frame carrying a literal `"` prefix is a
+ * delta on the previous frame.
+ *
+ * We emit `,"` on every frame after the first, so everything this decoder
+ * produces is pure delta. That is a property of *our* encoder, not of the
+ * format. The legacy Aurora catalog also contains unquoted later frames,
+ * which are absolute snapshots that restate the whole lit set from scratch —
+ * reading those as deltas was issue #3947. See `parseFramesSegments` in
+ * `@boardsesh/board-constants/hold-states`.
  *
  * `board_placements(layout_id, hole_id)` maps each Grips hole id onto exactly
  * one Aurora placement id per layout, and the role codes are shared

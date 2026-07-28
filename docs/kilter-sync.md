@@ -189,6 +189,17 @@ h{holeId} p{roleCode} [s{startFrame}] [e{endFrame}]
 
 Verified against 100,513 live catalog rows across two product layouts (2026-07-25): every concat matches the grammar with no gaps, and no `s`/`e` index falls outside `1..frameCount`. Decoding every climb present in both catalogs and diffing against the legacy Aurora `frames` gives **141/141 semantic parity on multi-frame climbs** (78 of them byte-identical) over 86,054 climbs compared, with one divergence that is an upstream content edit rather than a decode fault. The captured samples backing the unit tests live in `packages/kilter-sync/src/sync/__fixtures__/grips-multiframe.json`, with their provenance recorded in the file.
 
+#### Two kinds of frame (and why only 78 of those 141 are byte-identical)
+
+An Aurora `frames` string mixes two frame kinds, and the leading `"` is what tells them apart:
+
+- **Delta frame** — starts with `"`. Holds carry over from the previous frame; `p` adds or re-roles one, `x` turns one off. A frame that is _only_ a `"` is a legitimate **hold frame**: a delta with no changes, i.e. hold the lights for one more pace tick. 956 of these exist across 320 catalog climbs.
+- **Absolute frame** — a later frame with no `"`. It restates the whole lit set from scratch, so every hold the previous frame lit goes dark unless this frame lights it again. 295 of the 709 multi-frame climbs carry at least one.
+
+`catalog-parse.ts` emits `,"` unconditionally, so everything _we_ write is pure delta. That is why our decode is byte-identical only for the climbs the legacy catalog also wrote as pure delta, and semantically equal (not byte-equal) for the rest.
+
+Reading every frame as a delta, and dropping the `"`-only ones, is issue **#3947** — it made 91 of those 141 animated Kilter climbs play back wrong. The reader that gets it right is `parseFramesSegments` / `accumulateFramesToMaps` in `@boardsesh/board-constants/hold-states`, pinned by a cross-encoding fixture at `packages/board-constants/src/__tests__/__fixtures__/aurora-frames-oracle.json` whose expected snapshots are decoded from Grips' `s`/`e` ranges rather than from our own reader.
+
 ### The skip backlog (`board_climb_ingest_skips`)
 
 A climb the sync reads but cannot turn into a `board_climbs` row is recorded in `board_climb_ingest_skips` with its **verbatim** `climb_concat`, so an encoding change is visible instead of silent. Before this table existed such a climb was counted, logged once, and then missing from Boardsesh forever — including its stats, which get dropped along with it (issue #3523).

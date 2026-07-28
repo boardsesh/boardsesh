@@ -10,7 +10,12 @@ export type ClimbFrames = {
   frameStrings: string[];
   /** Effective per-frame pace in milliseconds, clamped to `MIN_PACE_MS`. */
   paceMs: number;
-  /** Reported frame count (>=1). May exceed `frames.length` for sparse climbs. */
+  /**
+   * Reported frame count (>=1). Since #3947 this agrees with `frames.length`
+   * for every climb in the catalog — the reader no longer drops the
+   * `"`-only hold frames it used to. The DB column stays the source of
+   * truth in case a future climb disagrees.
+   */
   count: number;
 };
 
@@ -19,10 +24,11 @@ export type ClimbFrames = {
  * memoised by the underlying frames text so the playback engine doesn't
  * rebuild on every render.
  *
- * The Aurora frames string is a sequence of *delta* frames — holds stay
- * lit across frames unless an `x<holdId>` token explicitly turns them
- * off. We accumulate the deltas into per-frame snapshots up front, then
- * re-emit each snapshot as a flat BLE-friendly string for the LED
+ * The Aurora frames string mixes two kinds of frame: a `"`-prefixed *delta*
+ * (holds stay lit unless an `x<holdId>` token turns them off) and an
+ * unquoted *absolute snapshot* that restates the whole lit set from
+ * scratch. `accumulateFramesToMaps` folds both into one snapshot per frame,
+ * then we re-emit each snapshot as a flat BLE-friendly string for the LED
  * driver. Single-frame climbs round-trip identically.
  */
 export function useClimbFrames(

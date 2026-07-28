@@ -91,10 +91,12 @@ describe('buildOverlayUrl', () => {
   });
 
   it('collapses multi-frame delta strings to the cumulative final snapshot', () => {
-    // Aurora delta format: `p1r12` then `,p2r13` adds hold 2 on frame 1.
-    // Renderer can't parse commas — toFlatFrames accumulates and re-emits
-    // using STATE_TO_PRIMARY_CODE['kilter'] (12 -> 42, 13 -> 43).
-    const url = buildOverlayUrl(boardDetails, 'p1r12,p2r13');
+    // Aurora delta format: `p1r12` then `,"p2r13` adds hold 2 on frame 1.
+    // The `"` is what marks the frame as a delta — a later frame without it
+    // is an absolute snapshot (issue #3947). Renderer can't parse commas —
+    // toFlatFrames collapses and re-emits using STATE_TO_PRIMARY_CODE
+    // ['kilter'] (12 -> 42, 13 -> 43).
+    const url = buildOverlayUrl(boardDetails, 'p1r12,"p2r13');
     expect(url).toContain('frames=p1r42p2r43');
     expect(url).not.toContain('%2C');
   });
@@ -143,7 +145,9 @@ describe('buildOgBoardRenderUrl', () => {
   it('points at the backend /og/climb endpoint as an absolute JPEG URL when the origin resolves', () => {
     vi.stubEnv('NEXT_PUBLIC_WS_URL', 'wss://ws.boardsesh.com/graphql');
 
-    const url = buildOgBoardRenderUrl(boardDetails, 'p1r12,p2r13');
+    // `,"` marks frame 1 as a delta on frame 0 — a later frame without the
+    // quote would be an absolute snapshot instead (issue #3947).
+    const url = buildOgBoardRenderUrl(boardDetails, 'p1r12,"p2r13');
 
     expect(url).toBe(
       'https://ws.boardsesh.com/og/climb?board_name=kilter&layout_id=1&size_id=7&set_ids=1%2C20' +

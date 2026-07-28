@@ -411,7 +411,9 @@ describe('Controller Mutations', () => {
           sequence: 1,
           stateHash: 'test-state-hash',
           item: null,
-          frames: 'p1r12,p2r13',
+          // `,"` marks frame 1 as a delta on frame 0. A later frame without
+          // the quote is an absolute snapshot instead (issue #3947).
+          frames: 'p1r12,"p2r13',
           clientId: 'AA:BB:CC:DD:EE:FF',
           correlationId: null,
         });
