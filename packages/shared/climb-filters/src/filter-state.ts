@@ -51,9 +51,11 @@ export type ClimbFilterState = {
   onlyWithBetaVideos?: boolean;
   // Climb-type toggles. Default is boulders-only (routes hidden) — see
   // DEFAULT_CLIMB_FILTER_STATE. Both-on or both-off means "no preference" and
-  // omits the frames_count constraint. Maps to ClimbSearchInput.boulders/routes,
-  // whose SQL lives in @boardsesh/db create-climb-filters.ts (boulders →
-  // frames_count = 1 or NULL, routes → frames_count > 1).
+  // maps to no frames_count constraint (both-on sends explicit boulders:
+  // true, routes: true rather than omitting — see toClimbSearchInput for
+  // why). Maps to ClimbSearchInput.boulders/routes, whose SQL lives in
+  // @boardsesh/db create-climb-filters.ts (boulders → frames_count = 1 or
+  // NULL, routes → frames_count > 1).
   boulders?: boolean;
   routes?: boolean;
   status: StatusFilter;
@@ -191,13 +193,32 @@ export function toClimbSearchInput(
   if (state.showOnlyAttempted) input.showOnlyAttempted = true;
   if (state.showOnlyCompleted) input.showOnlyCompleted = true;
 
-  // Climb-type filter: apply only when exactly one of boulders/routes is
-  // selected. Both-on and both-off mean "no preference" → omit entirely (the
-  // backend treats a missing frames_count constraint as all climbs). Mirrors
-  // create-climb-filters.ts and web's never-both-off toggle behaviour.
+  // Climb-type filter. Both-on ("All") and both-off mean "no preference" for
+  // the frames_count constraint, but they must NOT be handled the same way:
+  //
+  // - Both-off is genuinely omitted (unreachable via any current UI — web's
+  //   never-both-off toggle and mobile's boulders/routes/both selector never
+  //   produce it — kept as-is, out of scope for this fix).
+  // - Both-on ("All") sends explicit boulders: true, routes: true rather than
+  //   omitting both fields. Omission and explicit true/true are proven
+  //   behaviourally identical today (both parse to no frames_count
+  //   constraint), but only because the backend resolver's Zod
+  //   default(true)/default(false) for these fields is dead code —
+  //   searchClimbs's validateInput() call at
+  //   packages/backend/src/graphql/resolvers/climbs/queries.ts discards its
+  //   parsed/defaulted return value, so the default never actually applies.
+  //   If that discard is ever "cleaned up" to use the parsed result, an
+  //   omitted both/both would silently start defaulting to
+  //   boulders=true/routes=false (boulders-only) — reintroducing the exact
+  //   regression reported in issue #2636. Sending explicit true/true removes
+  //   that footgun regardless of what the backend resolver does with its
+  //   validation return. See create-climb-filters.ts for the SQL this maps to.
   const bouldersOn = state.boulders ?? true;
   const routesOn = state.routes ?? false;
-  if (bouldersOn !== routesOn) {
+  if (bouldersOn && routesOn) {
+    input.boulders = true;
+    input.routes = true;
+  } else if (bouldersOn !== routesOn) {
     if (bouldersOn) input.boulders = true;
     if (routesOn) input.routes = true;
   }

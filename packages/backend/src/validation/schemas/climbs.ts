@@ -197,9 +197,20 @@ export const ClimbSearchInputSchema = z.object({
   showOnlyCompleted: z.boolean().optional(),
   onlyDrafts: z.boolean().optional(),
   projectsOnly: z.boolean().optional(),
-  // Default to boulders-only so non-web GraphQL callers (mobile, scripts)
-  // get the same shape as the web UI when the field is omitted. Web sends
-  // explicit values from URL state, so its behaviour is unchanged.
+  // Intended to default to boulders-only so non-web GraphQL callers (mobile,
+  // scripts) get the same shape as the web UI when the field is omitted. This
+  // default is currently DEAD CODE: searchClimbs (see
+  // packages/backend/src/graphql/resolvers/climbs/queries.ts) calls
+  // validateInput(ClimbSearchInputSchema, input, 'input') only for its
+  // throw-on-invalid side effect and discards the parsed/defaulted return
+  // value, so every downstream consumer (mapSearchInputToParams) reads the
+  // raw, un-defaulted input — an omitted boulders/routes stays undefined, not
+  // true/false (see #2636). Do not "fix" this by wiring the parsed result
+  // into use without auditing every caller of @boardsesh/climb-filters'
+  // toClimbSearchInput first: its both-selected ("All") case now sends
+  // explicit boulders: true, routes: true (hardened by #2636) so it's safe,
+  // but its both-off case still relies on omission staying undefined, and
+  // reactivating this default would flip that to boulders-only.
   boulders: z.boolean().optional().default(true),
   routes: z.boolean().optional().default(false),
   zoneBox: z
