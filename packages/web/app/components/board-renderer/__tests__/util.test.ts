@@ -90,7 +90,7 @@ describe('buildOverlayUrl', () => {
     expect(url).not.toContain('thumbnail');
   });
 
-  it('collapses multi-frame delta strings to the cumulative final snapshot', () => {
+  it('unions a delta frame onto the frame it deltas from', () => {
     // Aurora delta format: `p1r12` then `,"p2r13` adds hold 2 on frame 1.
     // The `"` is what marks the frame as a delta — a later frame without it
     // is an absolute snapshot (issue #3947). Renderer can't parse commas —
