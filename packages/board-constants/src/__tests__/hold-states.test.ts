@@ -282,7 +282,14 @@ describe('accumulateFramesToMaps against the Kilter Grips oracle', () => {
       );
       const expected = climb.expectedFrames.map((frame) =>
         Object.fromEntries(
-          Object.entries(frame).map(([placementId, roleCode]) => [placementId, HOLD_STATE_MAP.kilter[roleCode].name]),
+          Object.entries(frame).map(([placementId, roleCode]) => {
+            // A fixture role code outside HOLD_STATE_MAP means the fixture is
+            // wrong, not the parser — say so instead of throwing a TypeError
+            // from a `.name` on undefined.
+            const stateInfo = HOLD_STATE_MAP.kilter[roleCode];
+            expect(stateInfo, `oracle fixture role code ${roleCode} is not in HOLD_STATE_MAP.kilter`).toBeDefined();
+            return [placementId, stateInfo?.name];
+          }),
         ),
       );
       expect(decoded).toEqual(expected);
