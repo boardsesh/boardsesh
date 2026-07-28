@@ -1,7 +1,11 @@
 import { sql } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
 import * as dbSchema from '@boardsesh/db/schema';
-import { STATE_TO_PRIMARY_CODE, convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
+import {
+  STATE_TO_PRIMARY_CODE,
+  convertLitUpHoldsStringToMap,
+  isSentinelHoldState,
+} from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/board-constants';
 import { executeRows } from '@boardsesh/db/client';
 import { db } from '../../../db/client';
@@ -89,7 +93,7 @@ export function parseFramesToHoldEntries(boardType: BoardName, frames: string | 
   for (const [frameIndexKey, holdsMap] of Object.entries(frameMap)) {
     const frameNumber = Number(frameIndexKey);
     for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
-      if (!hold.state || hold.state.includes('=')) continue;
+      if (isSentinelHoldState(hold.state)) continue;
       const holdId = Number(holdIdKey);
       if (!Number.isFinite(holdId)) continue;
       rows.push({ frameNumber, holdId, holdState: hold.state });

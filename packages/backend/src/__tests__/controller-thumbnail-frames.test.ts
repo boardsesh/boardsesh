@@ -10,7 +10,7 @@ describe('controller thumbnail frames', () => {
   // an absolute snapshot that restates the whole lit set (issue #3947), so
   // these cases spell the quote out rather than leaning on the old
   // everything-is-a-delta reading.
-  it('collapses multi-frame delta strings to the cumulative final snapshot', () => {
+  it('unions a delta frame onto the frame it deltas from', () => {
     expect(toThumbnailFrames('p1r12,"p2r13', 'kilter')).toBe('p1r42p2r43');
   });
 

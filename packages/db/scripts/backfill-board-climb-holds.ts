@@ -18,7 +18,7 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
+import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 import { createScriptDb } from './db-connection.js';
 import { executeRows, executeCommandCount } from '../src/client/index.js';
@@ -62,7 +62,7 @@ function parseFrames(boardType: BoardName, frames: string): ParsedHold[] {
   for (const [frameIndexKey, holdsMap] of Object.entries(frameMap)) {
     const frameNumber = Number(frameIndexKey);
     for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
-      if (!hold.state || hold.state.includes('=')) continue;
+      if (isSentinelHoldState(hold.state)) continue;
       const holdId = Number(holdIdKey);
       if (!Number.isFinite(holdId)) continue;
       rows.push({ frameNumber, holdId, holdState: hold.state });

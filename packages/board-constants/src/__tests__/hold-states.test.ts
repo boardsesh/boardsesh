@@ -187,10 +187,17 @@ describe('parseFramesSegments', () => {
     ]);
   });
 
-  it('drops a single trailing empty segment so a trailing comma is not a frame', () => {
+  it('drops empty unquoted segments from trailing or doubled commas', () => {
+    // An empty *unquoted* segment would decode as an absolute snapshot that
+    // lights nothing — a one-tick blackout of the whole wall — so it is not
+    // a frame. The empty *quoted* segment two tests up is, and stays.
     expect(parseFramesSegments('p100r42,"p200r43,')).toEqual([
       { absolute: true, body: 'p100r42' },
       { absolute: false, body: 'p200r43' },
+    ]);
+    expect(parseFramesSegments('p100r42,,p200r43')).toEqual([
+      { absolute: true, body: 'p100r42' },
+      { absolute: true, body: 'p200r43' },
     ]);
   });
 });

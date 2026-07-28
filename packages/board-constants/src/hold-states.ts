@@ -183,23 +183,22 @@ export type FrameSegment = {
  * Frames are NOT self-contained maps — call `accumulateFramesToMaps` to fold
  * them into per-frame lit-state snapshots suitable for rendering or BLE.
  *
- * Returns an empty array for the empty string, and drops a single trailing
- * empty unquoted segment so a trailing comma doesn't produce a phantom frame.
+ * Returns an empty array for the empty string, and drops every empty
+ * *unquoted* segment — a trailing or a doubled comma — because such a
+ * segment would otherwise decode as an absolute snapshot that lights
+ * nothing, i.e. a one-tick blackout of the whole wall. An empty *quoted*
+ * segment is the hold frame described above and is kept.
  */
 export function parseFramesSegments(frames: string): FrameSegment[] {
   if (!frames) return [];
-  const segments: FrameSegment[] = frames
+  return frames
     .split(',')
     .map((segment, index) =>
       index > 0 && segment.startsWith('"')
         ? { absolute: false, body: segment.slice(1) }
         : { absolute: true, body: segment },
-    );
-  const lastSegment = segments.at(-1);
-  if (segments.length > 1 && lastSegment && lastSegment.absolute && lastSegment.body === '') {
-    segments.pop();
-  }
-  return segments;
+    )
+    .filter((segment) => !segment.absolute || segment.body !== '');
 }
 
 /**
