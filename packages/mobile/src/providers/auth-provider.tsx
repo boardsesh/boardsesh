@@ -47,9 +47,9 @@ type AuthState = {
   signInWithApple: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
   signInWithGoogle: (webAttemptId?: string, isRegistration?: boolean) => Promise<OAuthSignInResult>;
   // Browser-OAuth fallback for when native Google sign-in can't present (iOS 26.5.1).
-  signInWithGoogleWeb: () => Promise<OAuthSignInResult>;
+  signInWithGoogleWeb: (isRegistration?: boolean) => Promise<OAuthSignInResult>;
   // Browser-OAuth fallback for when native Sign in with Apple throws (code 1000).
-  signInWithAppleWeb: () => Promise<OAuthSignInResult>;
+  signInWithAppleWeb: (isRegistration?: boolean) => Promise<OAuthSignInResult>;
   signInWithCredentials: (email: string, password: string) => Promise<CredentialsSignInResult>;
   register: (email: string, password: string, name?: string) => Promise<RegistrationResult>;
   signOut: (method?: 'manual' | 'account_deleted') => Promise<void>;
@@ -513,24 +513,30 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   // Browser-based Google fallback (native SDK can't present the OAuth browser on
   // iOS 26.5.1). Same success contract as the native flow: re-run checkAuth so the
   // provider flips to the authenticated UI.
-  const signInWithGoogleWeb = useCallback(async (): Promise<OAuthSignInResult> => {
-    const result = await authSignInWithGoogleWeb();
-    if (result.success) {
-      await checkAuth();
-    }
-    return result;
-  }, [checkAuth]);
+  const signInWithGoogleWeb = useCallback(
+    async (isRegistration = false): Promise<OAuthSignInResult> => {
+      const result = await authSignInWithGoogleWeb(isRegistration);
+      if (result.success) {
+        await checkAuth();
+      }
+      return result;
+    },
+    [checkAuth],
+  );
 
   // Browser-based Apple fallback (native Sign in with Apple threw a non-cancel
   // error). Same success contract as the native flow: re-run checkAuth so the
   // provider flips to the authenticated UI.
-  const signInWithAppleWeb = useCallback(async (): Promise<OAuthSignInResult> => {
-    const result = await authSignInWithAppleWeb();
-    if (result.success) {
-      await checkAuth();
-    }
-    return result;
-  }, [checkAuth]);
+  const signInWithAppleWeb = useCallback(
+    async (isRegistration = false): Promise<OAuthSignInResult> => {
+      const result = await authSignInWithAppleWeb(isRegistration);
+      if (result.success) {
+        await checkAuth();
+      }
+      return result;
+    },
+    [checkAuth],
+  );
 
   const signInWithCredentials = useCallback(
     async (email: string, password: string): Promise<CredentialsSignInResult> => {

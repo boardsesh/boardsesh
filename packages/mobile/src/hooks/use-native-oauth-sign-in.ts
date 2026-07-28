@@ -87,7 +87,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
       // Keyed by provider so the map is exhaustive: extending Provider without a
       // web fn here is a type error, rather than silently routing the new provider
       // to the Google flow.
-      const webFallbackFor: Record<Provider, () => Promise<OAuthSignInResult>> = {
+      const webFallbackFor: Record<Provider, (registration: boolean) => Promise<OAuthSignInResult>> = {
         apple: signInWithAppleWeb,
         google: signInWithGoogleWeb,
       };
@@ -101,7 +101,7 @@ export function useNativeOAuthSignIn({ isRegistration = false, setError }: Optio
         });
         let fallback: OAuthSignInResult;
         try {
-          fallback = await webFallbackFor[provider]();
+          fallback = await webFallbackFor[provider](isRegistration);
         } catch (fallbackError) {
           track(SHARED_EVENTS.LoginFailed, {
             auth_method: provider,

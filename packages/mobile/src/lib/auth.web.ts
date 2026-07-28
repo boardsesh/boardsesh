@@ -548,10 +548,10 @@ export function signInWithGoogle(webAttemptId?: string, isRegistration = false):
   return startWebOAuth('google', webAttemptId, isRegistration);
 }
 
-export function signInWithGoogleWeb(): Promise<OAuthSignInResult> {
-  return startWebOAuth('google');
+export function signInWithGoogleWeb(isRegistration = false): Promise<OAuthSignInResult> {
+  return startWebOAuth('google', undefined, isRegistration);
 }
 
-export function signInWithAppleWeb(): Promise<OAuthSignInResult> {
-  return startWebOAuth('apple');
+export function signInWithAppleWeb(isRegistration = false): Promise<OAuthSignInResult> {
+  return startWebOAuth('apple', undefined, isRegistration);
 }

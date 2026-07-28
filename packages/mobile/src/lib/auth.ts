@@ -317,15 +317,20 @@ async function signInWithProviderWeb(provider: AuthProvider): Promise<OAuthSignI
 
 // Browser Google fallback — for when native GoogleSignin can't present its OAuth
 // browser (iOS 26.5.1 fails with GIDSignIn "Unable to open Safari" before any
-// network call).
-export function signInWithGoogleWeb(): Promise<OAuthSignInResult> {
+// network call). Native OAuth returns directly to the app through a transfer
+// token, so /auth/native-start has no separate login/register destination.
+// Registration attribution remains with useNativeOAuthSignIn; the argument is
+// intentionally unused here to keep the native and web platform APIs aligned.
+export function signInWithGoogleWeb(_isRegistration = false): Promise<OAuthSignInResult> {
   return signInWithProviderWeb('google');
 }
 
 // Browser Apple fallback — for when native Sign in with Apple throws a non-cancel
 // error (ASAuthorizationError.unknown / code 1000: device not signed into iCloud,
 // 2FA disabled, transient Apple ID issues), which otherwise dead-ends the user.
-export function signInWithAppleWeb(): Promise<OAuthSignInResult> {
+// As above, registration attribution is recorded by the hook rather than routed
+// through the native browser handoff.
+export function signInWithAppleWeb(_isRegistration = false): Promise<OAuthSignInResult> {
   return signInWithProviderWeb('apple');
 }
 

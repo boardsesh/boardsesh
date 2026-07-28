@@ -64,8 +64,8 @@ function trackedEvents(): TrackedEvent[] {
   }));
 }
 
-async function runSignIn(provider: 'google' | 'apple', setError = vi.fn()) {
-  const { result } = renderHook(() => useNativeOAuthSignIn({ setError }));
+async function runSignIn(provider: 'google' | 'apple', setError = vi.fn(), isRegistration = false) {
+  const { result } = renderHook(() => useNativeOAuthSignIn({ isRegistration, setError }));
   await act(async () => {
     await result.current.signIn(provider);
   });
@@ -131,6 +131,15 @@ describe('useNativeOAuthSignIn — Google web fallback (iOS)', () => {
       reason: 'invalid_oauth_token',
       recoverable: true,
     });
+  });
+
+  it('preserves registration attribution when the native flow falls back to the browser', async () => {
+    signInWithGoogleMock.mockRejectedValue(Object.assign(new Error('Unable to open Safari'), { code: -1 }));
+    signInWithGoogleWebMock.mockResolvedValue({ success: true });
+
+    await runSignIn('google', vi.fn(), true);
+
+    expect(signInWithGoogleWebMock).toHaveBeenCalledWith(true);
   });
 
   it('does NOT fall back when the user cancels native Google, and logs a cancel (not a failure)', async () => {
@@ -324,6 +333,15 @@ describe('useNativeOAuthSignIn — Apple web fallback (iOS)', () => {
       recoverable: undefined,
       mechanism: 'browser_deeplink',
     });
+  });
+
+  it('preserves registration attribution when the native flow falls back to the browser', async () => {
+    signInWithAppleMock.mockRejectedValue(Object.assign(new Error('unknown'), { code: 1000 }));
+    signInWithAppleWebMock.mockResolvedValue({ success: true });
+
+    await runSignIn('apple', vi.fn(), true);
+
+    expect(signInWithAppleWebMock).toHaveBeenCalledWith(true);
   });
 
   it('does NOT fall back when the user cancels native Apple, and logs a cancel (not a failure)', async () => {
