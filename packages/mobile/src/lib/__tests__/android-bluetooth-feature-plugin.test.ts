@@ -10,14 +10,18 @@ type UsesFeature = {
 
 type AndroidManifestShape = {
   manifest: {
+    $?: Record<string, string>;
     'uses-feature'?: UsesFeature[];
     'uses-permission'?: UsesFeature[];
+    'uses-permission-sdk-23'?: UsesFeature[];
   };
 };
 
 type BluetoothFeaturePlugin = {
   addBluetoothLeFeature(androidManifest: AndroidManifestShape): AndroidManifestShape;
+  addNeverForLocationScanFlag(androidManifest: AndroidManifestShape): AndroidManifestShape;
   FEATURE_NAME: string;
+  SCAN_PERMISSION_NAME: string;
 };
 
 const plugin = require('../../../plugins/with-android-bluetooth-feature.js') as BluetoothFeaturePlugin;
@@ -57,5 +61,97 @@ describe('with-android-bluetooth-feature', () => {
       (feature) => feature.$['android:name'] === plugin.FEATURE_NAME,
     );
     expect(bleEntries).toHaveLength(1);
+  });
+});
+
+/** What Expo's base `android.permissions` mod leaves behind before our mod runs. */
+function manifestWithBaseScanPermission(): AndroidManifestShape {
+  return {
+    manifest: {
+      $: { 'xmlns:android': 'http://schemas.android.com/apk/res/android' },
+      'uses-permission': [{ $: { 'android:name': plugin.SCAN_PERMISSION_NAME } }],
+    },
+  };
+}
+
+function scanPermissionOf(result: AndroidManifestShape): UsesFeature | undefined {
+  return (result.manifest['uses-permission'] ?? []).find(
+    (permission) => permission.$['android:name'] === plugin.SCAN_PERMISSION_NAME,
+  );
+}
+
+describe('addNeverForLocationScanFlag', () => {
+  it('flags an existing BLUETOOTH_SCAN as neverForLocation', () => {
+    // The bug this whole change exists for: without the flag, Android 12+ drops
+    // every scan result for a caller that has no location permission — no error,
+    // no callback, just an empty board picker.
+    const result = plugin.addNeverForLocationScanFlag(manifestWithBaseScanPermission());
+    const scanPermission = scanPermissionOf(result);
+
+    expect(scanPermission?.$['android:usesPermissionFlags']).toBe('neverForLocation');
+    expect(scanPermission?.$['tools:targetApi']).toBe('31');
+  });
+
+  it('does not cap or otherwise modify location permissions', () => {
+    // The highest-consequence wrong fix is "simplify" this to ble-plx's
+    // `neverForLocation: true` prop, which caps ACCESS_COARSE/FINE_LOCATION at
+    // maxSdkVersion=30 and silently breaks nearby-boards + Google Maps on
+    // Android 12+. Nothing here may touch a location declaration.
+    const manifest: AndroidManifestShape = {
+      manifest: {
+        $: { 'xmlns:android': 'http://schemas.android.com/apk/res/android' },
+        'uses-permission': [
+          { $: { 'android:name': plugin.SCAN_PERMISSION_NAME } },
+          { $: { 'android:name': 'android.permission.ACCESS_FINE_LOCATION' } },
+          { $: { 'android:name': 'android.permission.ACCESS_COARSE_LOCATION' } },
+        ],
+        'uses-permission-sdk-23': [{ $: { 'android:name': 'android.permission.ACCESS_FINE_LOCATION' } }],
+      },
+    };
+
+    const result = plugin.addNeverForLocationScanFlag(manifest);
+    const locationEntries = [
+      ...(result.manifest['uses-permission'] ?? []),
+      ...(result.manifest['uses-permission-sdk-23'] ?? []),
+    ].filter((permission) => permission.$['android:name'].includes('_LOCATION'));
+
+    expect(locationEntries).toHaveLength(3);
+    for (const entry of locationEntries) {
+      expect(entry.$['android:maxSdkVersion']).toBeUndefined();
+      expect(entry.$['android:usesPermissionFlags']).toBeUndefined();
+    }
+  });
+
+  it('adds a flagged BLUETOOTH_SCAN when none is declared', () => {
+    // Find-or-create: a mod-ordering or `android.permissions` change that stops
+    // Expo's base mod from declaring BLUETOOTH_SCAN first would otherwise turn
+    // this whole fix into a silent no-op.
+    const result = plugin.addNeverForLocationScanFlag({
+      manifest: { $: { 'xmlns:android': 'http://schemas.android.com/apk/res/android' } },
+    });
+    const scanPermission = scanPermissionOf(result);
+
+    expect(scanPermission?.$['android:usesPermissionFlags']).toBe('neverForLocation');
+    expect(result.manifest['uses-permission']).toHaveLength(1);
+  });
+
+  it('is idempotent — a second pass leaves one flagged entry', () => {
+    const once = plugin.addNeverForLocationScanFlag(manifestWithBaseScanPermission());
+    const twice = plugin.addNeverForLocationScanFlag(once);
+
+    const scanEntries = (twice.manifest['uses-permission'] ?? []).filter(
+      (permission) => permission.$['android:name'] === plugin.SCAN_PERMISSION_NAME,
+    );
+    expect(scanEntries).toHaveLength(1);
+    expect(scanEntries[0]?.$['android:usesPermissionFlags']).toBe('neverForLocation');
+  });
+
+  it('ensures the tools namespace so tools:targetApi is legal', () => {
+    // Emitting a tools: attribute into a manifest with no tools namespace fails
+    // the Android build. It happens to be present today only because of the
+    // unrelated BLUETOOTH_ADVERTISE `tools:node="remove"` block.
+    const result = plugin.addNeverForLocationScanFlag(manifestWithBaseScanPermission());
+
+    expect(result.manifest.$?.['xmlns:tools']).toBe('http://schemas.android.com/tools');
   });
 });

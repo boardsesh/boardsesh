@@ -461,10 +461,23 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
         'FOREGROUND_SERVICE_CONNECTED_DEVICE',
         'POST_NOTIFICATIONS',
       ],
-      // Do NOT add `neverForLocation` to BLUETOOTH_SCAN here: react-native-ble-plx
-      // caps ACCESS_FINE_LOCATION at maxSdkVersion=30 when it's set, which would
-      // break expo-location (board/session discovery) and expo-maps (Google Maps)
-      // on Android 12+. We keep fine location uncapped on purpose.
+      // BLUETOOTH_SCAN needs `android:usesPermissionFlags="neverForLocation"` on
+      // Android 12+ or the OS silently drops every scan result for a caller
+      // without location permission. It is set in
+      // ./plugins/with-android-bluetooth-feature, NOT here (this list can only
+      // carry bare permission names) and NOT via react-native-ble-plx's
+      // `neverForLocation: true` prop. Verified by running `expo prebuild
+      // --platform android` both ways: the prop caps ACCESS_COARSE/FINE_LOCATION
+      // at maxSdkVersion=30 — which would break expo-location (board/session
+      // discovery) and expo-maps (Google Maps) on Android 12+ — and leaves
+      // BLUETOOTH_SCAN untouched, because Expo's base permissions mod declares
+      // it first and ble-plx's addScanPermissionToManifest early-returns on an
+      // existing element. Our own mod gets the flag without the cap:
+      //   <uses-permission-sdk-23 android:name="android.permission.ACCESS_FINE_LOCATION"/>   <!-- uncapped -->
+      //   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>          <!-- uncapped -->
+      //   <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+      //       android:usesPermissionFlags="neverForLocation" tools:targetApi="31"/>
+      // Keep fine location uncapped on purpose.
       blockedPermissions: ['android.permission.BLUETOOTH_ADVERTISE'],
       // expo-maps on Android renders Google Maps, which needs an API key. iOS
       // uses Apple Maps and needs none. Supplied via env so iOS works out of the
