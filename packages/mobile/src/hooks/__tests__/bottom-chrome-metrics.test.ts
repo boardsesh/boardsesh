@@ -6,6 +6,7 @@ import {
   TAB_BAR_HEIGHT,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
+  floatingContextBarBottom,
   glassSize,
 } from '../../theme/layout';
 
@@ -292,30 +293,28 @@ describe('computeBottomChromeMetrics', () => {
   });
 
   describe('pre-session Start capsule clears the floating queue tray (#3967)', () => {
-    // The tray band is rebuilt here from `ActiveContextBar`'s OWN formula
-    // (packages/mobile/src/components/queue-control/ActiveContextBar.tsx: floating
-    // bottom = `bottomChrome.tabBarBottom + TOOLBAR_GAP_ABOVE_TABBAR`, content height
-    // `glassSize.hero`) rather than from `preSessionFooterBottom`, so this is not a
-    // tautology: the two sides come from independent code paths. The tray renders at
-    // app root in window coordinates while the Start capsule is inside the tab screen,
-    // so convert the tray to screen-local coordinates first. An in-flow JS
-    // `MaterialTabBar` means the screen's floor already sits `tabBarBottom` above the
-    // window bottom (the same assumption `contentInsetBottom` encodes); a native
+    // The tray band is rebuilt from `floatingContextBarBottom` — the SAME function
+    // `ActiveContextBar` positions itself with — rather than from
+    // `preSessionFooterBottom`, so this is not a tautology: the two sides come from
+    // independent code paths, and moving the tray moves this guard with it instead of
+    // leaving it green against a stale band. (The formula lives in theme/layout so this
+    // suite can use it without importing the component, which would pull react-native
+    // into an otherwise pure test file.) Tray height is `glassSize.hero`, its tallest
+    // island.
+    //
+    // The tray renders at app root in window coordinates while the Start capsule is
+    // inside the tab screen, so convert to screen-local coordinates first. An in-flow
+    // JS `MaterialTabBar` means the screen's floor already sits `tabBarBottom` above
+    // the window bottom (the same assumption `contentInsetBottom` encodes); a native
     // overlaying tab bar or the sidebar shell leaves the screen floor at the window
     // bottom.
-    //
-    // KEEP IN SYNC: this helper hand-copies `ActiveContextBar`'s floating-bottom
-    // formula. It has to (importing the component would drag react-native into this
-    // deliberately RN-free suite — see the file header), but that means changing the
-    // tray's position over there without changing it here leaves these tests green
-    // against a stale band. If you move the tray, move this too.
     const trayTopAboveScreenFloor = (
       metrics: ReturnType<typeof computeBottomChromeMetrics>,
       usesNativeTabBar: boolean,
     ) => {
       const jsTabBarInFlow = metrics.tabBarHeight > 0 && !usesNativeTabBar;
       const screenFloorAboveWindow = jsTabBarInFlow ? metrics.tabBarBottom : 0;
-      return metrics.tabBarBottom + TOOLBAR_GAP_ABOVE_TABBAR + glassSize.hero - screenFloorAboveWindow;
+      return floatingContextBarBottom(metrics.tabBarBottom) + glassSize.hero - screenFloorAboveWindow;
     };
 
     it('clears the tray on an iOS < 26 / non-glass-capable iPhone', () => {
@@ -387,22 +386,33 @@ describe('computeBottomChromeMetrics', () => {
       }
     };
 
+    // Both invariants collect every offending input rather than asserting inside the
+    // loop: a bare `expect` in a 256-iteration loop reports only "expected 34 to be
+    // 100" and leaves you bisecting by hand for which combination produced it.
     it('always reserves at least the JS queue tray when that tray is visible', () => {
+      const unreserved = [];
       for (const inputs of allInputs()) {
         const metrics = computeBottomChromeMetrics(inputs);
         if (!metrics.jsQueueToolbarVisible) continue;
-        expect(metrics.preSessionFooterBottom).toBeGreaterThanOrEqual(metrics.jsQueueReserve);
+        if (metrics.preSessionFooterBottom < metrics.jsQueueReserve) {
+          unreserved.push({ inputs, footer: metrics.preSessionFooterBottom, reserve: metrics.jsQueueReserve });
+        }
       }
+      expect(unreserved).toEqual([]);
     });
 
     it('keeps the pre-session footer and the in-session list on the same bottom chrome', () => {
       // Both session surfaces sit under the same tab bar + queue tray, so their
       // bottom offsets must not drift apart — one branch being edited without the
       // other is exactly what caused #3967.
+      const drifted = [];
       for (const inputs of allInputs()) {
         const metrics = computeBottomChromeMetrics(inputs);
-        expect(metrics.preSessionFooterBottom).toBe(metrics.inSessionListBottom);
+        if (metrics.preSessionFooterBottom !== metrics.inSessionListBottom) {
+          drifted.push({ inputs, footer: metrics.preSessionFooterBottom, list: metrics.inSessionListBottom });
+        }
       }
+      expect(drifted).toEqual([]);
     });
   });
 

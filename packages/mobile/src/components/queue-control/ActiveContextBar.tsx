@@ -22,6 +22,7 @@ import {
   TOOLBAR_FAB_SIZE,
   TOOLBAR_GAP_ABOVE_TABBAR,
   TABBAR_SEAM_OVERLAP,
+  floatingContextBarBottom,
   glassSize,
 } from '../../theme/layout';
 import { useReduceMotion } from '../../hooks/use-reduce-motion';
@@ -66,10 +67,11 @@ export function ActiveContextBar({
   // Docked (Material): sit on the tab bar's REAL measured top, tucked under its hairline
   // by one px. Before the first measurement, fall back to the constant-estimated top
   // (≤2px off for a single frame, then it snaps to the truth). Floating (glass) keeps
-  // its lift above the tab bar.
+  // its lift above the tab bar — shared with the #3967 tray-clearance tests via
+  // `floatingContextBarBottom`, so the tray can't move without moving that guard.
   const bottom = dockToTabBar
     ? (measuredTabBarHeight ?? bottomChrome.tabBarBottom) - TABBAR_SEAM_OVERLAP
-    : bottomChrome.tabBarBottom + gapAboveTabBar;
+    : floatingContextBarBottom(bottomChrome.tabBarBottom, gapAboveTabBar);
 
   // Outer shell: plain View so `pointerEvents="box-none"` is respected on Android.
   // Reanimated's `entering` animations ignore pointerEvents on the animated view

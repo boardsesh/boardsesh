@@ -82,6 +82,8 @@ vi.mock('../../../theme/layout', () => ({
   TOOLBAR_GAP_ABOVE_TABBAR: 10,
   TABBAR_SEAM_OVERLAP: 1,
   SIDEBAR_WIDTH: 96,
+  // Mirrors the real implementation — ActiveContextBar's floating branch calls it.
+  floatingContextBarBottom: (tabBarBottom: number, gapAboveTabBar = 10) => tabBarBottom + gapAboveTabBar,
   glassSize: { hero: 64, inline: 44 },
 }));
 // The docked Material bar reads the tab bar's measured height to position itself.

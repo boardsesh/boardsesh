@@ -81,6 +81,23 @@ export const TOOLBAR_GAP_ABOVE_TABBAR = 10;
  *  — the hero log-ascent tick (`glassSize.hero`) — so nothing hides under it. */
 export const TOOLBAR_RESERVE = glassSize.hero + TOOLBAR_GAP_ABOVE_TABBAR;
 
+/**
+ * Window-coordinate `bottom` of the floating (Liquid Glass) active-context bar —
+ * the tray that holds the climb capsule and the log-ascent tick.
+ *
+ * `ActiveContextBar` positions itself with this, and the #3967 regression tests
+ * rebuild the tray's band with it to prove the pre-session Start capsule clears
+ * the tray. It lives here rather than inside the component so those two can't
+ * disagree: the tests need the formula but must not import `ActiveContextBar`
+ * (that would pull react-native into an otherwise pure suite). Move the tray by
+ * editing this, and the guard moves with it.
+ *
+ * Docking (the Material variant) is deliberately NOT here — it keys off the tab
+ * bar's *measured* height, which only the component has.
+ */
+export const floatingContextBarBottom = (tabBarBottom: number, gapAboveTabBar = TOOLBAR_GAP_ABOVE_TABBAR) =>
+  tabBarBottom + gapAboveTabBar;
+
 /** Height of the Material active-context bar docked directly above the tab bar. */
 export const MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT = glassSize.standard;
 
