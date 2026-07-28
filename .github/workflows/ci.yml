@@ -120,6 +120,9 @@ jobs:
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
               - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
+              # Defines the test:migration-journal script this job's new step
+              # invokes, so editing it has to run the job that depends on it.
+              - 'packages/db/package.json'
 
   setup:
     needs: [changes]

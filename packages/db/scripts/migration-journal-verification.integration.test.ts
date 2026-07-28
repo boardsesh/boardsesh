@@ -26,7 +26,13 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { findUnappliedMigrations } from '../../../scripts/lib/migration-ledger.js';
-import { inspectMigrationJournal, readExpectedMigrations, readLedgerHashesWith } from './migration-journal.js';
+import {
+  assertMigrationJournalApplied,
+  inspectMigrationJournal,
+  readExpectedMigrations,
+  readLedgerHashesWith,
+  runMigrationJournalGate,
+} from './migration-journal.js';
 
 type ScratchJournalEntry = { idx: number; version: string; when: number; tag: string; breakpoints: boolean };
 
@@ -188,6 +194,20 @@ describe('migration journal verification (#2933)', () => {
     assert.deepEqual(report.missingTags, [], 'a fully applied database must not trip the deploy gate');
     assert.equal(report.expectedCount, 2);
     assert.equal(report.ledgerCount, 2);
+
+    // The gate must also be incapable of failing closed on a healthy database:
+    // `migrate` is the `needs:` gate for both production deploy jobs, so a
+    // false positive here stops every release.
+    await assert.doesNotReject(
+      withScratchClient(scratchUrl, (client) =>
+        assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder),
+      ),
+    );
+    await assert.doesNotReject(
+      withScratchClient(scratchUrl, (client) =>
+        runMigrationJournalGate({ VERIFY_MIGRATION_JOURNAL: '1' }, readLedgerHashesWith(client), migrationsFolder),
+      ),
+    );
   });
 
   it('catches the migration drizzle skips below its created_at high-water mark', async (context) => {
@@ -235,6 +255,41 @@ describe('migration journal verification (#2933)', () => {
     assert.equal(ledgerCount, 2);
 
     assert.deepEqual(missingTags, ['0002_stale_when'], 'the per-entry check must name the skipped migration');
+
+    // Detecting the gap is not the fix — failing on it is. These two pin the
+    // fail-closed behaviour #2933 asks for, so the check cannot be quietly
+    // downgraded back to "report it and deploy anyway".
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder),
+      ),
+      /Migration journal verification failed:[\s\S]*0002_stale_when/,
+    );
+    await assert.rejects(
+      withScratchClient(scratchUrl, (client) =>
+        runMigrationJournalGate({ VERIFY_MIGRATION_JOURNAL: '1' }, readLedgerHashesWith(client), migrationsFolder),
+      ),
+      /0002_stale_when/,
+      'migrate.ts runs the check through runMigrationJournalGate — it must throw, not report',
+    );
+
+    // Gate off: the same broken database passes untouched. That is what keeps
+    // `vp run db:migrate` usable against the dev-db image (#3978) — and it must
+    // not read the ledger at all, so a future default-on flip is a visible change.
+    let ledgerReads = 0;
+    const gateOff = await withScratchClient(scratchUrl, (client) => {
+      const readHashes = readLedgerHashesWith(client);
+      return runMigrationJournalGate(
+        {},
+        () => {
+          ledgerReads += 1;
+          return readHashes();
+        },
+        migrationsFolder,
+      );
+    });
+    assert.equal(gateOff, null, 'an unset VERIFY_MIGRATION_JOURNAL must skip the check');
+    assert.equal(ledgerReads, 0, 'the gate must not query the ledger when it is off');
 
     // And it never self-heals: a third deploy does not create the table either.
     await applyMigrations(scratchUrl, migrationsFolder);
@@ -333,6 +388,30 @@ describe('migration journal verification (#2933)', () => {
     assert.throws(
       () => readExpectedMigrations(migrationsFolder, () => [{ folderMillis: 1000, hash: 'hash-of-0000_a' }]),
       /drizzle read 1 migration files for 2 journal entries/,
+    );
+  });
+
+  it('only arms the deploy gate on an exact VERIFY_MIGRATION_JOURNAL=1', async () => {
+    // No database needed: the ledger reader is a stub, so this pins the env
+    // contract on its own. `production-deploy.yml` and `db-migration-renumber.yml`
+    // both pass the literal '1'; anything else must leave the check off rather
+    // than half-on.
+    const migrationsFolder = makeTempFolder('gate');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+    const emptyLedger = async () => [];
+
+    for (const value of [undefined, '', '0', 'true', 'yes']) {
+      const report = await runMigrationJournalGate(
+        value === undefined ? {} : { VERIFY_MIGRATION_JOURNAL: value },
+        emptyLedger,
+        migrationsFolder,
+      );
+      assert.equal(report, null, `VERIFY_MIGRATION_JOURNAL=${String(value)} must not arm the gate`);
+    }
+
+    await assert.rejects(
+      runMigrationJournalGate({ VERIFY_MIGRATION_JOURNAL: '1' }, emptyLedger, migrationsFolder),
+      /Missing: 0000_a, 0001_b/,
     );
   });
 

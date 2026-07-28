@@ -66,12 +66,19 @@ export interface MigrationJournalReport {
  * journal entry, and each file's `folderMillis` equal to that entry's `when`. A
  * drizzle version that reordered or filtered `readMigrationFiles` would throw
  * here instead of quietly attaching the wrong tag to a hash.
+ *
+ * Both invariants are unreachable against drizzle 0.45.x: `readMigrationFiles`
+ * iterates `journal.entries` in order, pushes exactly one entry per journal
+ * entry (or throws `No file ... found`), and copies `folderMillis` straight from
+ * `journalEntry.when` — the same journal this function parses. They are a
+ * tripwire for a future drizzle bump, not a live guard, which is why the
+ * `readFiles` seam exists at all: without it there is nothing to test.
  */
 export function readExpectedMigrations(
   migrationsFolder: string = DRIZZLE_MIGRATIONS_FOLDER,
-  // Seam for the ordering guard's own test: the two invariants below compare
-  // drizzle's output against the journal, and since drizzle reads that same
-  // journal there is no way to misalign them from the outside.
+  // Seam for the ordering guard's own test (see above). No production caller
+  // passes this — drizzle reads the same journal we do, so the invariants
+  // cannot be misaligned from the outside.
   readFiles: (config: {
     migrationsFolder: string;
   }) => readonly { folderMillis: number; hash: string }[] = readMigrationFiles,
@@ -128,4 +135,31 @@ export async function assertMigrationJournalApplied(
     throw new Error(formatMigrationGapError(report.missingTags, report.expectedCount, report.ledgerCount));
   }
   return report;
+}
+
+/** Env var that turns the deploy gate on. Set by production-deploy.yml and db-migration-renumber.yml. */
+export const VERIFY_MIGRATION_JOURNAL_ENV = 'VERIFY_MIGRATION_JOURNAL';
+
+/**
+ * The deploy gate exactly as `migrate.ts` runs it: verify when
+ * `VERIFY_MIGRATION_JOURNAL=1`, otherwise do nothing and touch no database.
+ *
+ * This lives here rather than inline in `migrate.ts` so the fail-closed
+ * behaviour — the whole point of #2933 — is reachable from a test. `migrate.ts`
+ * is a top-level script that connects on import and has no seam, so an inline
+ * gate would be uncovered: swapping the throwing check for the reporting one
+ * would restore the pre-fix "detect the gap, log it, deploy anyway" semantics
+ * with the suite still green.
+ *
+ * Returns the report when the gate ran, `null` when it was off.
+ */
+export async function runMigrationJournalGate(
+  env: Record<string, string | undefined>,
+  readLedgerHashes: ReadLedgerHashes,
+  migrationsFolder: string = DRIZZLE_MIGRATIONS_FOLDER,
+): Promise<MigrationJournalReport | null> {
+  if (env[VERIFY_MIGRATION_JOURNAL_ENV] !== '1') {
+    return null;
+  }
+  return assertMigrationJournalApplied(readLedgerHashes, migrationsFolder);
 }

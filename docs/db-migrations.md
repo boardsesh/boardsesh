@@ -147,12 +147,27 @@ would not have written re-opens the same gap under a different name.
 
 **When it fires.** It does not self-heal, on purpose: several migrations here are data
 backfills whose idempotence hinges on `_bs_migration_guards` semantic keys, so re-running a
-mixed DDL/DML set unattended is worse than a blocked deploy. Repair each named tag by hand:
+mixed DDL/DML set unattended is worse than a blocked deploy.
 
-1. Read `packages/db/drizzle/<tag>.sql` and confirm it is safe against the current schema.
-2. Apply it inside a transaction.
-3. In the same transaction, insert the ledger row with the journal's `when` as `created_at`
-   and the hash `db:verify-journal` printed for that tag:
+A missing row is not proof the migration never ran. Two states produce the same report and
+need different repairs:
+
+- **The migration never ran** — usually drizzle's high-water-mark skip, the `0129` case
+  above. The objects are absent.
+- **The schema is there, the ledger row is not** — a snapshot or restore, a row lost in an
+  earlier hand repair, a renumber. `boardsesh-dev-db` is in exactly this state for
+  `0187_sad_freak` today (#3978): the tables and types exist, the row does not. The `.sql`
+  files are not idempotent, so applying one here just fails on `… already exists`.
+
+Repair each named tag by hand, in this order:
+
+1. Check whether that migration's objects already exist (`\d <table>`, `\dT <type>`). If they
+   all do, go straight to step 3 and insert only the ledger row.
+2. Otherwise read `packages/db/drizzle/<tag>.sql`, confirm it is safe against the current
+   schema, and apply it inside a transaction. Partial state — some objects present, some not
+   — means trimming the statement list by hand; there is no safe shortcut.
+3. Insert the ledger row (in the same transaction as step 2, when there was one) with the
+   journal's `when` as `created_at` and the hash `db:verify-journal` printed for that tag:
    `INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ('<ledger hash>', <when>);`
 4. Re-run `vp run db:verify-journal` to confirm the repair.
 

@@ -6,9 +6,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import {
   DRIZZLE_MIGRATIONS_FOLDER,
-  assertMigrationJournalApplied,
   readExpectedMigrations,
   readLedgerHashesWith,
+  runMigrationJournalGate,
 } from './migration-journal.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,9 +77,11 @@ async function runMigrations() {
     // Still behind the env gate: the boardsesh-dev-db image is missing
     // 0187_sad_freak's ledger row, so a default-on check would redden every
     // developer's `vp run db:migrate` today. Both places that matter
-    // (production-deploy.yml, db-migration-renumber.yml) already set it.
-    if (process.env.VERIFY_MIGRATION_JOURNAL === '1') {
-      const report = await assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder);
+    // (production-deploy.yml, db-migration-renumber.yml) already set it. The
+    // gate itself is `runMigrationJournalGate` so it has test coverage; this
+    // file connects on import and offers no seam of its own.
+    const report = await runMigrationJournalGate(process.env, readLedgerHashesWith(client), migrationsFolder);
+    if (report) {
       console.info(
         `✅ Verified all ${report.expectedCount} journal migrations are recorded ` +
           `(${report.ledgerCount} ledger rows)`,
