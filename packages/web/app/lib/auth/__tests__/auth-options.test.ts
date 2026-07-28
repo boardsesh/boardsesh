@@ -662,6 +662,25 @@ describe('CredentialsProvider.authorize — email/password', () => {
 
     expect(result).toEqual({ id: 'user-pw', email: 'user@example.com', name: 'Password', image: null });
   });
+
+  it('returns null once every candidate in a duplicate set rejects the password', async () => {
+    // Both rows have a password, neither matches — the loop must exhaust and
+    // fall through to null rather than returning the last candidate anyway.
+    const firstTwin = { id: 'user-a', email: 'User@example.com', name: 'A', image: null };
+    const secondTwin = { id: 'user-b', email: 'user@example.com', name: 'B', image: null };
+    setAuthorizeRows([firstTwin, secondTwin], {
+      'user-a': [{ userId: 'user-a', passwordHash: '$2a$12$hash-a' }],
+      'user-b': [{ userId: 'user-b', passwordHash: '$2a$12$hash-b' }],
+    });
+    mockBcryptCompare.mockResolvedValue(false);
+
+    const provider = getEmailCredentialsProvider();
+    const result = await provider.authorize?.({ email: 'user@example.com', password: 'wrongpass' });
+
+    expect(result).toBeNull();
+    // Every candidate was actually checked, not short-circuited after the first.
+    expect(mockBcryptCompare).toHaveBeenCalledTimes(2);
+  });
 });
 
 // =============================================================================
