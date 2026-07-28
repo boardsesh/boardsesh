@@ -52,6 +52,13 @@ export interface MigrationJournalReport {
  * deploy gate into a false positive). `readMigrationFiles` walks
  * `journal.entries` in order and returns one entry per journal entry, so zipping
  * it back against the journal by index is exact — same file, same parse.
+ *
+ * `MigrationMeta` carries no `tag`, so the index zip is the only join available,
+ * and it rests on drizzle's iteration order. Rather than trust that silently,
+ * both invariants that would break the pairing are checked below: one file per
+ * journal entry, and each file's `folderMillis` equal to that entry's `when`. A
+ * drizzle version that reordered or filtered `readMigrationFiles` would throw
+ * here instead of quietly attaching the wrong tag to a hash.
  */
 export function readExpectedMigrations(migrationsFolder: string = DRIZZLE_MIGRATIONS_FOLDER): ExpectedMigration[] {
   const journalPath = path.join(migrationsFolder, 'meta', '_journal.json');
@@ -63,10 +70,17 @@ export function readExpectedMigrations(migrationsFolder: string = DRIZZLE_MIGRAT
         `for ${journal.entries.length} journal entries in ${migrationsFolder}.`,
     );
   }
-  return migrationFiles.map((migrationFile, index) => ({
-    tag: journal.entries[index].tag,
-    hash: migrationFile.hash,
-  }));
+  return migrationFiles.map((migrationFile, index) => {
+    const journalEntry = journal.entries[index];
+    if (migrationFile.folderMillis !== journalEntry.when) {
+      throw new Error(
+        `Migration journal verification failed: drizzle's migration file at position ${index} has ` +
+          `folderMillis ${migrationFile.folderMillis}, but journal entry ${journalEntry.tag} has ` +
+          `when ${journalEntry.when}. readMigrationFiles no longer returns journal order.`,
+      );
+    }
+    return { tag: journalEntry.tag, hash: migrationFile.hash };
+  });
 }
 
 /**

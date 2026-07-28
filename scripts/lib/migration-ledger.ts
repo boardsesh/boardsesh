@@ -73,6 +73,16 @@ export function findUnappliedMigrations(
 }
 
 /**
+ * What the operator does next. Shared so the deploy-gate throw and the
+ * `db:verify-journal` CLI (which prints its tag list across lines) cannot drift
+ * into telling two different stories about the same condition.
+ */
+export const MIGRATION_GAP_REMEDIATION =
+  "These were skipped by drizzle's created_at high-water mark and will never re-apply on their own — " +
+  'apply each .sql by hand inside a transaction and insert its ledger row with the journal\'s "when" as created_at. ' +
+  'See docs/db-migrations.md.';
+
+/**
  * Operator-facing message. Names every missing tag — an error that fires but
  * won't say which migration is missing leaves the operator no better off than
  * the runtime crash this check replaces.
@@ -87,8 +97,6 @@ export function formatMigrationGapError(
     `Migration journal verification failed: ${missingTags.length} of ${expectedCount} journal ` +
     `${plural} no row in drizzle.__drizzle_migrations (${ledgerCount} rows present). ` +
     `Missing: ${missingTags.join(', ')}. ` +
-    `These were skipped by drizzle's created_at high-water mark and will never re-apply on their own — ` +
-    `apply each .sql by hand inside a transaction and insert its ledger row with the journal's "when" as created_at. ` +
-    `See docs/db-migrations.md.`
+    MIGRATION_GAP_REMEDIATION
   );
 }

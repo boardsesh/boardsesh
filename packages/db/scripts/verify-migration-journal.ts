@@ -15,6 +15,7 @@
 import postgres from 'postgres';
 import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
 import { inspectMigrationJournal, readLedgerHashesWith } from './migration-journal.js';
+import { MIGRATION_GAP_REMEDIATION } from '../../../scripts/lib/migration-ledger.js';
 
 async function verifyMigrationJournal(): Promise<void> {
   const databaseUrl = getScriptDatabaseUrl();
@@ -31,10 +32,7 @@ async function verifyMigrationJournal(): Promise<void> {
       for (const tag of report.missingTags) {
         console.error(`   • ${tag}`);
       }
-      console.error(
-        "   These were skipped by drizzle's created_at high-water mark and will never re-apply on their own. " +
-          'See docs/db-migrations.md for the repair.',
-      );
+      console.error(`   ${MIGRATION_GAP_REMEDIATION}`);
       process.exitCode = 1;
       return;
     }

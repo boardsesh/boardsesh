@@ -115,6 +115,7 @@ jobs:
               # The journal<->ledger verification that gates the production
               # deploy (#2933) and its real-database test.
               - 'scripts/lib/migration-ledger.ts'
+              - 'scripts/lib/migration-ledger.test.ts'
               - 'packages/db/scripts/migrate.ts'
               - 'packages/db/scripts/migration-journal.ts'
               - 'packages/db/scripts/verify-migration-journal.ts'
