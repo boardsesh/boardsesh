@@ -14,7 +14,19 @@ describe('controller thumbnail frames', () => {
     expect(toThumbnailFrames('p1r12,"p2r13', 'kilter')).toBe('p1r42p2r43');
   });
 
-  it('removes holds that are off in the final frame', () => {
-    expect(toThumbnailFrames('p1r12p2r13,"x2', 'kilter')).toBe('p1r42');
+  it('keeps a hold a later frame turned off — the union is the whole route', () => {
+    // A thumbnail can't animate, so it shows every hold the climb ever lit
+    // rather than whatever survived to the last frame.
+    expect(toThumbnailFrames('p1r12p2r13,"x2', 'kilter')).toBe('p1r42p2r43');
+  });
+
+  it('unions absolute frames instead of showing only the last fragment', () => {
+    // Unquoted later frames are snapshots: on their own, frame 1 is just
+    // hold 2. The union is the pair.
+    expect(toThumbnailFrames('p1r12,p2r13', 'kilter')).toBe('p1r42p2r43');
+  });
+
+  it('lets the last frame that sets a hold win its role', () => {
+    expect(toThumbnailFrames('p1r12,"p1r14', 'kilter')).toBe('p1r44');
   });
 });

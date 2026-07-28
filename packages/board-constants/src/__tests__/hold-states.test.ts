@@ -8,6 +8,8 @@ import {
   parseFramesSegments,
   accumulateFramesToMaps,
   accumulatedMapsToFrameStrings,
+  flattenFramesToUnion,
+  toFlatFrames,
 } from '../hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
 import oracle from './__fixtures__/aurora-frames-oracle.json';
@@ -299,5 +301,36 @@ describe('accumulatedMapsToFrameStrings', () => {
     ];
     const [string0] = accumulatedMapsToFrameStrings(maps, 'moonboard');
     expect(string0).toBe('p100r42');
+  });
+});
+
+describe('flattenFramesToUnion / toFlatFrames', () => {
+  it('returns the frames string untouched when there is only one frame', () => {
+    expect(toFlatFrames('p100r1p200r2', 'tension')).toBe('p100r1p200r2');
+  });
+
+  it('returns the empty string for null, undefined and empty input', () => {
+    expect(toFlatFrames(null, 'tension')).toBe('');
+    expect(toFlatFrames(undefined, 'tension')).toBe('');
+    expect(toFlatFrames('', 'tension')).toBe('');
+  });
+
+  it('keeps a hold an x token cleared — the static render is the whole route', () => {
+    // The last frame lights only hold 200; the route as a whole used both.
+    expect(toFlatFrames('p100r1p200r2,"x100', 'tension')).toBe('p100r1p200r2');
+  });
+
+  it('unions absolute frames instead of showing the last fragment', () => {
+    // Frame 1 is unquoted, so on its own it is just hold 300.
+    expect(toFlatFrames('p100r1p200r2,p300r3', 'tension')).toBe('p100r1p200r2p300r3');
+  });
+
+  it('lets the last frame that sets a hold win its role', () => {
+    const union = flattenFramesToUnion(accumulateFramesToMaps('p100r1,"p100r3', 'tension'));
+    expect(union[100].state).toBe('FINISH');
+  });
+
+  it('returns an empty map for no frames', () => {
+    expect(flattenFramesToUnion([])).toEqual({});
   });
 });

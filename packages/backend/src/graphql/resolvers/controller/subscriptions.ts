@@ -18,7 +18,11 @@ import { roomManager } from '../../../services/room-manager';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { getLedPlacements } from '@boardsesh/board-constants/led-placements';
 import { convertLitUpHoldsStringToMap } from '../../../db/queries/util/hold-state';
-import { accumulateFramesToMaps, accumulatedMapsToFrameStrings } from '@boardsesh/board-constants/hold-states';
+import {
+  accumulateFramesToMaps,
+  accumulatedMapsToFrameStrings,
+  flattenFramesToUnion,
+} from '@boardsesh/board-constants/hold-states';
 import { requireControllerAuth } from '../shared/helpers';
 import { getGradeColor } from './grade-colors';
 import { buildNavigationContext, findClimbIndex } from './navigation-helpers';
@@ -63,12 +67,12 @@ function buildControllerQueueSync(queue: ClimbQueueItem[], currentItemUuid: stri
  * Derives the litUpHoldsMap from the compact frames string on-the-fly.
  *
  * Multi-frame Aurora climbs (variable-speed routes/circuits) encode their
- * lit state as comma-separated `p<id>r<role>` / `x<id>` deltas. The naive
+ * lit state as comma-separated frames. The naive
  * `convertLitUpHoldsStringToMap(...)[0]` path would only ever return frame
  * zero — so the ESP32 would light the start of the route and never play
- * any subsequent frames. Accumulating to the cumulative final snapshot
- * lights the entire route on the controller; single-frame climbs collapse
- * to the same single-frame map they used to produce, so the ESP32
+ * any subsequent frames. The controller has no animation loop, so it gets
+ * the union of every frame: the whole route at once. Single-frame climbs
+ * collapse to the same single-frame map they used to produce, so the ESP32
  * behaviour for the 99% case is unchanged.
  */
 function climbToLedCommands(
@@ -80,7 +84,7 @@ function climbToLedCommands(
   const isSingleFrame = framesText.length > 0 && !framesText.includes(',') && !framesText.includes('x');
   const litUpHoldsMap = isSingleFrame
     ? convertLitUpHoldsStringToMap(framesText, boardName)[0] || {}
-    : (accumulateFramesToMaps(framesText, boardName).at(-1) ?? {});
+    : flattenFramesToUnion(accumulateFramesToMaps(framesText, boardName));
   const commands: LedCommand[] = [];
 
   for (const [placementIdStr, holdInfo] of Object.entries(litUpHoldsMap)) {
@@ -106,12 +110,18 @@ function climbToLedCommands(
   return commands;
 }
 
+/**
+ * Flatten a climb's frames for a *static* thumbnail. Same union rule as
+ * `toFlatFrames` in board-constants: a hold is lit if any frame lights it,
+ * last role wins. A thumbnail can't animate, so showing one frame of a
+ * multi-frame climb shows a fragment.
+ */
 export function toThumbnailFrames(frames: string | null | undefined, boardName: BoardName): string {
   if (!frames) return '';
   if (!frames.includes(',') && !frames.includes('x')) return frames;
 
-  const accumulatedMaps = accumulateFramesToMaps(frames, boardName);
-  return accumulatedMapsToFrameStrings(accumulatedMaps, boardName).at(-1) ?? '';
+  const union = flattenFramesToUnion(accumulateFramesToMaps(frames, boardName));
+  return accumulatedMapsToFrameStrings([union], boardName)[0] ?? '';
 }
 
 export const controllerSubscriptions = {
