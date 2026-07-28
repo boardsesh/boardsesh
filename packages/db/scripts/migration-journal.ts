@@ -41,6 +41,13 @@ export interface MigrationJournalReport {
   ledgerCount: number;
   /** Journal-order tags with no ledger row. Empty means the database is complete. */
   missingTags: string[];
+  /**
+   * The same gap with each tag's hash attached. The repair inserts a ledger row
+   * carrying that hash, and re-deriving the sha256 by hand is exactly the parity
+   * liability this module exists to avoid — so the operator is handed the hash
+   * drizzle would have written rather than told to compute one.
+   */
+  missing: ExpectedMigration[];
 }
 
 /**
@@ -60,10 +67,18 @@ export interface MigrationJournalReport {
  * drizzle version that reordered or filtered `readMigrationFiles` would throw
  * here instead of quietly attaching the wrong tag to a hash.
  */
-export function readExpectedMigrations(migrationsFolder: string = DRIZZLE_MIGRATIONS_FOLDER): ExpectedMigration[] {
+export function readExpectedMigrations(
+  migrationsFolder: string = DRIZZLE_MIGRATIONS_FOLDER,
+  // Seam for the ordering guard's own test: the two invariants below compare
+  // drizzle's output against the journal, and since drizzle reads that same
+  // journal there is no way to misalign them from the outside.
+  readFiles: (config: {
+    migrationsFolder: string;
+  }) => readonly { folderMillis: number; hash: string }[] = readMigrationFiles,
+): ExpectedMigration[] {
   const journalPath = path.join(migrationsFolder, 'meta', '_journal.json');
   const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8')) as MigrationJournal;
-  const migrationFiles = readMigrationFiles({ migrationsFolder });
+  const migrationFiles = readFiles({ migrationsFolder });
   if (migrationFiles.length !== journal.entries.length) {
     throw new Error(
       `Migration journal verification failed: drizzle read ${migrationFiles.length} migration files ` +
@@ -93,10 +108,13 @@ export async function inspectMigrationJournal(
 ): Promise<MigrationJournalReport> {
   const expected = readExpectedMigrations(migrationsFolder);
   const ledgerHashes = await readLedgerHashes();
+  const missingTags = findUnappliedMigrations(expected, ledgerHashes);
+  const missingTagSet = new Set(missingTags);
   return {
     expectedCount: expected.length,
     ledgerCount: ledgerHashes.length,
-    missingTags: findUnappliedMigrations(expected, ledgerHashes),
+    missingTags,
+    missing: expected.filter((migration) => missingTagSet.has(migration.tag)),
   };
 }
 

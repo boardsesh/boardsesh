@@ -132,7 +132,18 @@ DB_URL=postgres://... vp run db:verify-journal
 
 That is one `SELECT hash FROM drizzle.__drizzle_migrations` plus local file reads — safe to
 point at production, and worth doing before merging anything that touches the migration
-folder, since `migrate` gates both production deploy jobs.
+folder, since `migrate` gates both production deploy jobs. On a gap it prints each missing
+tag with the ledger hash that tag's repair row needs:
+
+```
+❌ 1 of 188 journal migrations have no row in drizzle.__drizzle_migrations (189 rows present).
+   • 0187_sad_freak  (ledger hash 9f2c…)
+```
+
+Take the hash from that output rather than computing a sha256 yourself. The whole reason
+this check calls drizzle's own `readMigrationFiles` is that a re-derived hash drifts on
+encoding, BOM, line endings, or a drizzle change — and a repair row carrying a hash drizzle
+would not have written re-opens the same gap under a different name.
 
 **When it fires.** It does not self-heal, on purpose: several migrations here are data
 backfills whose idempotence hinges on `_bs_migration_guards` semantic keys, so re-running a
@@ -141,9 +152,9 @@ mixed DDL/DML set unattended is worse than a blocked deploy. Repair each named t
 1. Read `packages/db/drizzle/<tag>.sql` and confirm it is safe against the current schema.
 2. Apply it inside a transaction.
 3. In the same transaction, insert the ledger row with the journal's `when` as `created_at`
-   and the same hash drizzle would have written:
-   `INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES (<sha256 of the .sql body>, <when>);`
-   `vp run db:verify-journal` confirms the repair.
+   and the hash `db:verify-journal` printed for that tag:
+   `INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES ('<ledger hash>', <when>);`
+4. Re-run `vp run db:verify-journal` to confirm the repair.
 
 Extra ledger rows matching no journal entry are ignored — renumbering leaves those behind
 legitimately, and failing on them would block deploys for benign residue.

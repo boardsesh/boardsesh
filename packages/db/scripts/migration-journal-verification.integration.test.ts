@@ -269,6 +269,14 @@ describe('migration journal verification (#2933)', () => {
       inspectMigrationJournal(readLedgerHashesWith(client), migrationsFolder),
     );
     assert.deepEqual(afterRerun.missingTags, ['0000_a'], 'a re-run is expected not to restore the deleted row');
+
+    // The repair needs the hash, not just the tag: re-deriving a sha256 by hand
+    // is the parity liability this whole check exists to avoid.
+    assert.deepEqual(
+      afterDeletion.missing.map((migration) => migration.tag),
+      ['0000_a'],
+    );
+    assert.equal(afterDeletion.missing[0].hash, firstEntryHash);
   });
 
   it('ignores ledger rows that belong to no journal entry', async (context) => {
@@ -296,6 +304,36 @@ describe('migration journal verification (#2933)', () => {
     );
     assert.deepEqual(report.missingTags, []);
     assert.equal(report.ledgerCount, 3);
+  });
+
+  it('refuses to pair tags with hashes when drizzle stops returning journal order', () => {
+    // No database needed. The ordering guard cannot be tripped from outside —
+    // drizzle reads the same journal we do, so folderMillis always matches —
+    // hence the injected reader. This pins the behaviour a future drizzle that
+    // reorders or filters readMigrationFiles would hit: throw, never silently
+    // attach the wrong tag to a hash.
+    const migrationsFolder = makeTempFolder('ordering');
+    writeMigrationsFolder(migrationsFolder, PHASE_ONE);
+
+    const inOrder = readExpectedMigrations(migrationsFolder);
+    assert.deepEqual(
+      inOrder.map((migration) => migration.tag),
+      ['0000_a', '0001_b'],
+    );
+
+    assert.throws(
+      () =>
+        readExpectedMigrations(migrationsFolder, () => [
+          { folderMillis: 3000, hash: 'hash-of-0001_b' },
+          { folderMillis: 1000, hash: 'hash-of-0000_a' },
+        ]),
+      /no longer returns journal order/,
+    );
+
+    assert.throws(
+      () => readExpectedMigrations(migrationsFolder, () => [{ folderMillis: 1000, hash: 'hash-of-0000_a' }]),
+      /drizzle read 1 migration files for 2 journal entries/,
+    );
   });
 
   it('keeps findUnappliedMigrations multiset-aware for byte-identical migrations', () => {

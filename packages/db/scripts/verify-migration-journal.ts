@@ -10,7 +10,9 @@
  * writes, no `migrate()` call, no DDL.
  *
  * Usage: `DB_URL=postgres://... vp run db:verify-journal`
- * Exit 0 = every journal migration is recorded. Exit 1 = missing tags listed.
+ * Exit 0 = every journal migration is recorded. Exit 1 = each missing tag
+ * listed with the ledger hash its repair row needs, so nobody has to re-derive
+ * a sha256 by hand (the exact parity liability this check avoids elsewhere).
  */
 import postgres from 'postgres';
 import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
@@ -29,8 +31,8 @@ async function verifyMigrationJournal(): Promise<void> {
         `❌ ${report.missingTags.length} of ${report.expectedCount} journal migrations have no row in ` +
           `drizzle.__drizzle_migrations (${report.ledgerCount} rows present).`,
       );
-      for (const tag of report.missingTags) {
-        console.error(`   • ${tag}`);
+      for (const migration of report.missing) {
+        console.error(`   • ${migration.tag}  (ledger hash ${migration.hash})`);
       }
       console.error(`   ${MIGRATION_GAP_REMEDIATION}`);
       process.exitCode = 1;
