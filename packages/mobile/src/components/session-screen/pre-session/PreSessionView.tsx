@@ -259,9 +259,11 @@ export function PreSessionView({ showChrome = false }: PreSessionViewProps) {
   const canStart = activeBoard != null && !isStarting && generatorPreviewReady;
   // The single source of the Start capsule's bottom offset: passed to SessionStartFab
   // AND used for the list reservation, so the FAB position and the last-row clearance
-  // can't drift. The Material-vs-glass arbitration — with the on-device iPhone 17 Pro
-  // evidence for why glass uses the raw inset — lives in computeBottomChromeMetrics
-  // (see `preSessionFooterBottom`).
+  // can't drift. The Material-vs-glass arbitration lives in computeBottomChromeMetrics
+  // (see `preSessionFooterBottom`): on glass it is the safe-area inset PLUS the JS
+  // queue-tray reserve. The on-device iPhone 17 Pro evidence for using the raw inset
+  // only covers the native-tab-bar path, where that reserve is 0; reading the inset
+  // alone puts the capsule back under the tray on the JS-tab-bar fallback (#3967).
   const footerBottom = bottomChrome.preSessionFooterBottom;
 
   // Inline status copy shown above an empty preview (loading / no results /

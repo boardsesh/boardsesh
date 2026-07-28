@@ -45,9 +45,18 @@ type SessionStartFabProps = {
  * not a full-width pinned bar. Liquid Glass renders a brand-tinted **glass**
  * capsule (the iOS 26 `.glassProminent` look: a `GlassSurface` tinted with the
  * brand hue, not a flat opaque fill); Material renders an M3 extended FAB. Both sit
- * over the host-supplied `bottomOffset` (variant-correct: the raw safe-area inset on
- * Liquid Glass — which already includes the tab bar + accessory — or the fixed-footer
- * reserve on Material) and report their height through `onHeightChange`.
+ * over the host-supplied `bottomOffset` and report their height through
+ * `onHeightChange`.
+ *
+ * `bottomOffset` is variant-correct, but on Liquid Glass it is NOT just the safe-area
+ * inset: it is the inset plus the JS queue-tray reserve. That reserve is 0 only on the
+ * native-tab-bar path, where the UIKit glass bar already extends the inset over the tab
+ * bar + accessory. On the JS-tab-bar fallback the floating `PersistentQueueBar` is an
+ * overlay outside the safe area, so the reserve has to be added explicitly or this
+ * capsule lands under the tray's log-ascent tick (#3967). Material uses the
+ * fixed-footer reserve. Don't re-derive any of that here — take the number the host
+ * passes; the whole arbitration lives in `computeBottomChromeMetrics`
+ * (`preSessionFooterBottom`).
  *
  * The End action no longer lives here — it docks in the top chrome (see
  * `RecordTopChrome` / `SessionScreenHeader`).

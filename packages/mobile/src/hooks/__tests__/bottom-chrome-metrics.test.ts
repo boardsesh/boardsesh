@@ -303,6 +303,12 @@ describe('computeBottomChromeMetrics', () => {
     // window bottom (the same assumption `contentInsetBottom` encodes); a native
     // overlaying tab bar or the sidebar shell leaves the screen floor at the window
     // bottom.
+    //
+    // KEEP IN SYNC: this helper hand-copies `ActiveContextBar`'s floating-bottom
+    // formula. It has to (importing the component would drag react-native into this
+    // deliberately RN-free suite — see the file header), but that means changing the
+    // tray's position over there without changing it here leaves these tests green
+    // against a stale band. If you move the tray, move this too.
     const trayTopAboveScreenFloor = (
       metrics: ReturnType<typeof computeBottomChromeMetrics>,
       usesNativeTabBar: boolean,
@@ -344,6 +350,13 @@ describe('computeBottomChromeMetrics', () => {
   });
 
   describe('session-bottom invariants across the whole input matrix', () => {
+    // Deliberately exhaustive, including combinations no shell produces today
+    // (`usesNativeTabBar` with `insideTabs: false`, say). `computeBottomChromeMetrics`
+    // is a pure total function and the callers that feed it — `useNativeTabBar`, the
+    // sidebar shell — change shape more often than it does, so pinning the invariants
+    // over the full cross-product is what stops a future caller from routing a new
+    // combination into an unreserved branch. The realistic configurations are covered
+    // by the hand-written cases above; these add the ones nobody thought to enumerate.
     const allInputs = function* () {
       for (const uiVariant of ['liquidGlass', 'material'] as const) {
         for (const usesNativeTabBar of [true, false]) {
