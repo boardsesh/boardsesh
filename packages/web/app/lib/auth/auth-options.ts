@@ -222,6 +222,13 @@ function createAuthAdapter(): Adapter {
       if (!user) return null;
       return {
         id: user.id,
+        // Deliberately the stored value, not the normalized one: NextAuth puts
+        // this in the JWT claims and on `session.user.email`, and it should
+        // reflect what's actually in the row. For a legacy mixed-case row that
+        // stays mixed-case until the PR-2 backfill lower-cases it, so any
+        // downstream `session.user.email === someEmail` check can mismatch —
+        // compare with `lower()` (or `normalizeEmail`) on both sides, as every
+        // lookup in this file does.
         email: user.email,
         emailVerified: user.emailVerified,
         name: user.name,
