@@ -17,7 +17,24 @@ type AndroidManifestShape = {
   };
 };
 
-type BluetoothFeaturePlugin = {
+/** The single argument @expo/config-plugins hands a manifest mod. */
+type ManifestModConfig = {
+  modResults: AndroidManifestShape;
+  modRequest: Record<string, unknown>;
+  modRawConfig: Record<string, unknown>;
+};
+
+type ExpoConfigWithMods = {
+  name: string;
+  slug: string;
+  mods?: {
+    android?: {
+      manifest?: (modConfig: ManifestModConfig) => Promise<ManifestModConfig>;
+    };
+  };
+};
+
+type BluetoothFeaturePlugin = ((config: ExpoConfigWithMods) => ExpoConfigWithMods) & {
   addBluetoothLeFeature(androidManifest: AndroidManifestShape): AndroidManifestShape;
   addNeverForLocationScanFlag(androidManifest: AndroidManifestShape): AndroidManifestShape;
   FEATURE_NAME: string;
@@ -153,6 +170,67 @@ describe('addNeverForLocationScanFlag', () => {
     const result = plugin.addNeverForLocationScanFlag(manifestWithBaseScanPermission());
 
     expect(result.manifest.$?.['xmlns:tools']).toBe('http://schemas.android.com/tools');
+  });
+});
+
+/**
+ * Registers the exported (run-once-wrapped) plugin on a bare config and runs the
+ * android manifest mod @expo/config-plugins would run at prebuild time.
+ *
+ * This is the only assertion path that covers the plugin's *wiring*. Everything
+ * else in this file calls the two exported transforms directly, so deleting
+ * `modConfig.modResults = addNeverForLocationScanFlag(...)` from
+ * `withAndroidBluetoothFeature` would leave those green while the flag silently
+ * stopped reaching the generated manifest — and no CI job runs `expo prebuild`
+ * to catch it downstream.
+ */
+async function runPluginManifestMod(androidManifest: AndroidManifestShape): Promise<AndroidManifestShape> {
+  const config = plugin({ name: 'Boardsesh', slug: 'boardsesh' });
+  const manifestMod = config.mods?.android?.manifest;
+  if (!manifestMod) {
+    throw new Error('the plugin did not register an android.manifest mod');
+  }
+
+  const result = await manifestMod({ modResults: androidManifest, modRequest: {}, modRawConfig: {} });
+  return result.modResults;
+}
+
+describe('withAndroidBluetoothFeature (the plugin as prebuild runs it)', () => {
+  it('applies both manifest mods', async () => {
+    const modResults = await runPluginManifestMod(manifestWithBaseScanPermission());
+
+    const bleFeature = (modResults.manifest['uses-feature'] ?? []).find(
+      (feature) => feature.$['android:name'] === plugin.FEATURE_NAME,
+    );
+    expect(bleFeature?.$['android:required']).toBe('false');
+
+    const scanPermission = scanPermissionOf(modResults);
+    expect(scanPermission?.$['android:usesPermissionFlags']).toBe('neverForLocation');
+    expect(scanPermission?.$['tools:targetApi']).toBe('31');
+    expect(modResults.manifest.$?.['xmlns:tools']).toBe('http://schemas.android.com/tools');
+  });
+
+  it('leaves location permissions uncapped end to end', async () => {
+    const modResults = await runPluginManifestMod({
+      manifest: {
+        $: { 'xmlns:android': 'http://schemas.android.com/apk/res/android' },
+        'uses-permission': [
+          { $: { 'android:name': plugin.SCAN_PERMISSION_NAME } },
+          { $: { 'android:name': 'android.permission.ACCESS_FINE_LOCATION' } },
+        ],
+        'uses-permission-sdk-23': [{ $: { 'android:name': 'android.permission.ACCESS_FINE_LOCATION' } }],
+      },
+    });
+
+    const locationEntries = [
+      ...(modResults.manifest['uses-permission'] ?? []),
+      ...(modResults.manifest['uses-permission-sdk-23'] ?? []),
+    ].filter((permission) => permission.$['android:name'].includes('_LOCATION'));
+
+    expect(locationEntries).toHaveLength(2);
+    for (const entry of locationEntries) {
+      expect(entry.$['android:maxSdkVersion']).toBeUndefined();
+    }
   });
 });
 
