@@ -296,48 +296,27 @@ export function accumulatedMapsToFrameStrings(maps: LitUpHoldsMap[], board: Boar
 }
 
 /**
- * Convert lit up holds string to a map of frames.
+ * Convert a frames string into a map of frame index → lit-state snapshot.
  * Each frame maps hold IDs to their state, color, and display color.
+ *
+ * This was a second parser for the same string: it split on `p` and then on
+ * `r`, so it understood neither the `x` off-token nor the `"` delta marker.
+ * On `"x1192p1370r13` the first element is `'"x1192'`, `Number(...)` gives
+ * `NaN`, and the unknown-code branch emitted a phantom `hold_id 0` with the
+ * state `NaN=undefined` (issue #3948). It now delegates to
+ * `accumulateFramesToMaps` — one grammar, one parser.
+ *
+ * Single-frame strings (99.9% of the catalog, and every caller that reads
+ * index `[0]`, since frame 0 is always absolute) produce identical output.
+ * Unknown role codes still get the `{holdId}={code}` sentinel that
+ * `climb-similarity.ts` and `backfill-board-climb-holds.ts` filter on.
  */
 export function convertLitUpHoldsStringToMap(litUpHolds: string, board: BoardName): Record<number, LitUpHoldsMap> {
-  return litUpHolds
-    .split(',')
-    .filter((frame) => frame)
-    .reduce(
-      (frameMap, frameString, frameIndex) => {
-        const frameHoldsMap = Object.fromEntries(
-          frameString
-            .split('p')
-            .filter((hold) => hold)
-            .map((holdData) => holdData.split('r').map((str) => Number(str)))
-            .map(([holdId, stateCode]) => {
-              const stateInfo = HOLD_STATE_MAP[board]?.[stateCode];
-              if (!stateInfo) {
-                const warnKey = `${board}:${stateCode}`;
-                if (!warnedHoldStates.has(warnKey)) {
-                  warnedHoldStates.add(warnKey);
-                  console.warn(
-                    `HOLD_STATE_MAP is missing values for ${board} status code: ${stateCode} (this warning is only shown once per status code)`,
-                  );
-                }
-                return [
-                  holdId || 0,
-                  {
-                    state: `${holdId}=${stateCode}` as HoldState,
-                    color: '#FFF',
-                    displayColor: '#FFF',
-                  },
-                ];
-              }
-              const { name, color, displayColor } = stateInfo;
-              return [holdId, { state: name, color, displayColor: displayColor || color }];
-            }),
-        );
-        frameMap[frameIndex] = frameHoldsMap as LitUpHoldsMap;
-        return frameMap;
-      },
-      {} as Record<number, LitUpHoldsMap>,
-    );
+  const frameMap: Record<number, LitUpHoldsMap> = {};
+  accumulateFramesToMaps(litUpHolds, board).forEach((map, frameIndex) => {
+    frameMap[frameIndex] = map;
+  });
+  return frameMap;
 }
 
 /** Collapse a possibly multi-frame frames string to its final lit snapshot. */

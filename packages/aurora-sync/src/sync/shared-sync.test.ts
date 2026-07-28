@@ -73,6 +73,9 @@ import {
  * thenable. The fluent shim short-circuits all chained methods to itself
  * and resolves to an empty array for SELECTs.
  */
+/** Every row handed to a `.values(...)` call on the shim, in call order. */
+const shimInsertedRows: Array<Record<string, unknown>> = [];
+
 function createDbShim() {
   const fluent: Record<string, unknown> = {};
   const proxy: ProxyHandler<typeof fluent> = {
@@ -88,7 +91,14 @@ function createDbShim() {
       // `await` resolves to whatever the proxy is — fine for INSERTs (we don't
       // read the result) and SELECTs that hit `.from(...)`.
       return new Proxy(() => shim, {
-        apply: () => shim,
+        apply: (_target, _thisArg, args: unknown[]) => {
+          // Record INSERT payloads so a test can assert on what would hit
+          // the database without needing a real one.
+          if (prop === 'values' && Array.isArray(args[0])) {
+            shimInsertedRows.push(...(args[0] as Array<Record<string, unknown>>));
+          }
+          return shim;
+        },
       });
     },
   };
@@ -148,6 +158,65 @@ describe('syncSharedData loop', () => {
 
     expect(mockSharedSync).toHaveBeenCalledTimes(100); // MAX_SYNC_ATTEMPTS
     expect(result.complete).toBe(false);
+  });
+});
+
+describe('board_climb_holds writes', () => {
+  beforeEach(() => {
+    mockSharedSync.mockReset();
+    mockConvertLitUpHolds.mockReset();
+    mockPopulateDenormalizedColumns.mockReset();
+    mockPopulateDenormalizedColumns.mockResolvedValue(undefined);
+    shimInsertedRows.length = 0;
+  });
+
+  it('never writes a hold row whose state is the unmapped-role sentinel (#3948)', async () => {
+    // An unmapped role code decodes to the `{holdId}={code}` sentinel rather
+    // than a real hold state. `backfill-board-climb-holds.ts` already drops
+    // those; if this writer keeps them they poison the fingerprint backfill
+    // and the similarity signatures built on top of it.
+    mockConvertLitUpHolds.mockReturnValue({
+      0: {
+        100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
+        200: { state: '200=999', color: '#FFF', displayColor: '#FFF' },
+      },
+    });
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climbs: [{ uuid: 'CLIMB-1', frames: 'p100r1p200r999', layout_id: 1, name: 'sentinel climb' }],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const holdRows = shimInsertedRows.filter((row) => 'holdId' in row);
+    expect(holdRows).toEqual([
+      { boardType: 'decoy', climbUuid: 'CLIMB-1', frameNumber: 0, holdId: 100, holdState: 'STARTING' },
+    ]);
+  });
+
+  it('writes one row per (frame, hold) for the states that do resolve', async () => {
+    mockConvertLitUpHolds.mockReturnValue({
+      0: { 100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' } },
+      1: {
+        100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
+        300: { state: 'HAND', color: '#0000FF', displayColor: '#4444FF' },
+      },
+    });
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climbs: [{ uuid: 'CLIMB-2', frames: 'p100r1,"p300r2', layout_id: 1, name: 'two frames' }],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const holdRows = shimInsertedRows.filter((row) => 'holdId' in row);
+    expect(holdRows).toEqual([
+      { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 0, holdId: 100, holdState: 'STARTING' },
+      { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 100, holdState: 'STARTING' },
+      { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 300, holdState: 'HAND' },
+    ]);
   });
 });
 

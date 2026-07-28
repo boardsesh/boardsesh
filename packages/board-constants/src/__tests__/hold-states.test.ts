@@ -130,6 +130,28 @@ describe('convertLitUpHoldsStringToMap', () => {
       displayColor: '#00DD00',
     });
   });
+
+  it('does not invent a hold_id 0 from an x token or a leading quote (#3948)', () => {
+    // The old `split('p')` parser saw `'"x1192'` as its first element,
+    // `Number(...)` gave NaN, and the unknown-code branch emitted
+    // `[holdId || 0, { state: 'NaN=undefined' }]` — a phantom hold 0 that
+    // aurora-sync then wrote straight into board_climb_holds.
+    const result = convertLitUpHoldsStringToMap('p1369r13,"x1192p1370r13', 'kilter');
+    for (const frame of Object.values(result)) {
+      expect(frame[0]).toBeUndefined();
+      for (const hold of Object.values(frame)) {
+        expect(hold.state).not.toContain('NaN');
+      }
+    }
+    expect(Object.keys(result[1]).sort()).toEqual(['1369', '1370']);
+  });
+
+  it('still emits the {holdId}={code} sentinel for an unmapped role code', () => {
+    // climb-similarity.ts and backfill-board-climb-holds.ts both filter on
+    // the `=`; changing that shape would silently let garbage through.
+    const result = convertLitUpHoldsStringToMap('p100r999', 'kilter');
+    expect(result[0][100].state).toBe('100=999');
+  });
 });
 
 describe('parseFramesSegments', () => {

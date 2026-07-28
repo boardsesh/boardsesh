@@ -12,8 +12,15 @@ import {
  * Parses a climb's `frames` string into an array of BoardHold objects ready for rendering.
  *
  * The frames string format is a comma-separated list of frames (usually just one).
- * Each frame contains entries like `p{holdId}r{stateCode}` — parsed by
- * `convertLitUpHoldsStringToMap` from board-constants.
+ * `convertLitUpHoldsStringToMap` from board-constants decodes it into one
+ * lit-state *snapshot* per frame, resolving the `"` delta marker and the `x`
+ * off-token on the way.
+ *
+ * Since #3948 those snapshots are cumulative rather than raw per-frame deltas,
+ * so a multi-frame climb yields roughly 3x as many (frame, hold) pairs as it
+ * used to. This hook pushes one BoardHold per pair with no dedupe — on the
+ * worst catalog climb (100 frames) that is ~2,200 overlapping circles. Nothing
+ * renders it today; it wants a dedupe before it gets a caller.
  *
  * This hook resolves each hold ID to its (cx, cy, r) position from `holdsData`,
  * and maps the state code to a display color via HOLD_STATE_MAP.

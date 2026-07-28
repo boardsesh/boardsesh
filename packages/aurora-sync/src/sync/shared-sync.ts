@@ -682,13 +682,20 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
   const allHolds = data.flatMap((item) => {
     const holdsByFrame = convertLitUpHoldsStringToMap(item.frames, board);
     return Object.entries(holdsByFrame).flatMap(([frameNumber, holds]) =>
-      Object.entries(holds).map(([holdId, { state }]) => ({
-        boardType: board,
-        climbUuid: item.uuid,
-        frameNumber: Number(frameNumber),
-        holdId: Number(holdId),
-        holdState: state,
-      })),
+      Object.entries(holds)
+        // An unmapped role code decodes to the `{holdId}={code}` sentinel
+        // rather than a real hold state. `backfill-board-climb-holds.ts`
+        // already drops those; the two hold writers should agree, or the
+        // sentinel poisons `backfill-hold-fingerprints` and the similarity
+        // signatures downstream of it (issue #3948).
+        .filter(([, { state }]) => state && !state.includes('='))
+        .map(([holdId, { state }]) => ({
+          boardType: board,
+          climbUuid: item.uuid,
+          frameNumber: Number(frameNumber),
+          holdId: Number(holdId),
+          holdState: state,
+        })),
     );
   });
 
