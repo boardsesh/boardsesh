@@ -17,7 +17,6 @@ import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
 import { createAsyncIterator } from '../shared/async-iterators';
 import { getLedPlacements } from '@boardsesh/board-constants/led-placements';
-import { convertLitUpHoldsStringToMap } from '../../../db/queries/util/hold-state';
 import {
   accumulateFramesToMaps,
   accumulatedMapsToFrameStrings,
@@ -71,9 +70,11 @@ function buildControllerQueueSync(queue: ClimbQueueItem[], currentItemUuid: stri
  * `convertLitUpHoldsStringToMap(...)[0]` path would only ever return frame
  * zero — so the ESP32 would light the start of the route and never play
  * any subsequent frames. The controller has no animation loop, so it gets
- * the union of every frame: the whole route at once. Single-frame climbs
- * collapse to the same single-frame map they used to produce, so the ESP32
- * behaviour for the 99% case is unchanged.
+ * the union of every frame: the whole route at once. A single-frame string
+ * unions to itself, so the ESP32 behaviour for the 99% case is unchanged —
+ * which is why there is no single-frame fast path here. There used to be
+ * one, but once `convertLitUpHoldsStringToMap` started delegating to
+ * `accumulateFramesToMaps` it called the same code by a longer name.
  */
 function climbToLedCommands(
   climb: { frames: string },
@@ -81,10 +82,7 @@ function climbToLedCommands(
   ledPlacements: Record<number, number>,
 ): LedCommand[] {
   const framesText = climb.frames || '';
-  const isSingleFrame = framesText.length > 0 && !framesText.includes(',') && !framesText.includes('x');
-  const litUpHoldsMap = isSingleFrame
-    ? convertLitUpHoldsStringToMap(framesText, boardName)[0] || {}
-    : flattenFramesToUnion(accumulateFramesToMaps(framesText, boardName));
+  const litUpHoldsMap = flattenFramesToUnion(accumulateFramesToMaps(framesText, boardName));
   const commands: LedCommand[] = [];
 
   for (const [placementIdStr, holdInfo] of Object.entries(litUpHoldsMap)) {
