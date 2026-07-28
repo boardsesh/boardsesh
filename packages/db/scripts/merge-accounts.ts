@@ -676,6 +676,18 @@ async function mergeSet(commandDb: ExecuteDb, duplicateSet: DuplicateSet): Promi
   await execute(commandDb, sql`DELETE FROM users WHERE id IN (${sqlIdList(loserIds)})`);
 }
 
+/**
+ * Collapses one duplicate set onto its winner.
+ *
+ * MUST be called inside a transaction. The `FOR UPDATE` below is what stops a
+ * concurrent signup or a second merge run from changing the set mid-flight, and
+ * a row lock is released the moment its transaction ends — so outside one, the
+ * lock is dropped immediately and the membership re-check becomes advisory
+ * only. `ExecuteDb` is structural and matches both a transaction handle and a
+ * plain connection, so the type can't enforce this; `main` supplies a real
+ * `db.transaction(...)` handle, and the integration test drives it inside a
+ * rolled-back transaction.
+ */
 export async function applyMerge(
   commandDb: ExecuteDb,
   duplicateSet: DuplicateSet,
