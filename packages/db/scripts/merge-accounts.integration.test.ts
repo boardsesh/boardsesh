@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { createScriptDb } from './db-connection.js';
 import { applyMerge, assertAllUserFksHandled, buildDuplicateSets, fetchMembersForEmail } from './merge-accounts.js';
@@ -91,7 +92,9 @@ void describe('merge-accounts apply path', () => {
       const rollbackMarker = new Error('rollback merge fixture');
       try {
         await db.transaction(async (tx) => {
-          const tag = `merge-${Date.now()}`;
+          // randomUUID, not Date.now(): two runs in the same millisecond (watch
+          // mode, or a parallel worker) would otherwise collide on users.id.
+          const tag = `merge-${randomUUID()}`;
           const lowerEmail = `${tag}@example.test`;
           const winnerId = `${tag}-winner`;
           const loserId = `${tag}-loser`;
