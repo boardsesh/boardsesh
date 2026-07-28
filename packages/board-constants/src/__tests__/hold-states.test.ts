@@ -9,6 +9,7 @@ import {
   accumulateFramesToMaps,
   accumulatedMapsToFrameStrings,
   flattenFramesToUnion,
+  isSentinelHoldState,
   toFlatFrames,
 } from '../hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -332,5 +333,26 @@ describe('flattenFramesToUnion / toFlatFrames', () => {
 
   it('returns an empty map for no frames', () => {
     expect(flattenFramesToUnion([])).toEqual({});
+  });
+});
+
+describe('isSentinelHoldState', () => {
+  it('flags the {holdId}={code} sentinel an unmapped role code produces', () => {
+    const [frame] = accumulateFramesToMaps('p100r999', 'kilter');
+    expect(isSentinelHoldState(frame[100].state)).toBe(true);
+  });
+
+  it('treats a missing state as a sentinel too', () => {
+    expect(isSentinelHoldState('')).toBe(true);
+    expect(isSentinelHoldState(null)).toBe(true);
+    expect(isSentinelHoldState(undefined)).toBe(true);
+  });
+
+  it('passes every real hold state on every board', () => {
+    for (const stateMap of Object.values(HOLD_STATE_MAP)) {
+      for (const info of Object.values(stateMap)) {
+        expect(isSentinelHoldState(info.name), `${info.name} is a real state`).toBe(false);
+      }
+    }
   });
 });

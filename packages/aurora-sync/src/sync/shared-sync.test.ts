@@ -39,9 +39,12 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
   };
 });
 
-vi.mock('@boardsesh/board-constants/hold-states', () => ({
-  convertLitUpHoldsStringToMap: mockConvertLitUpHolds,
-}));
+vi.mock('@boardsesh/board-constants/hold-states', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/board-constants/hold-states')>();
+  // Only the parser is stubbed. `isSentinelHoldState` stays real so this file
+  // tests the writer against the same predicate production uses.
+  return { ...actual, convertLitUpHoldsStringToMap: mockConvertLitUpHolds };
+});
 
 // drizzle() returns a client we never actually issue queries against; the
 // shim below replaces its surface area entirely. We only mock `drizzle`
@@ -73,7 +76,13 @@ import {
  * thenable. The fluent shim short-circuits all chained methods to itself
  * and resolves to an empty array for SELECTs.
  */
-/** Every row handed to a `.values(...)` call on the shim, in call order. */
+/**
+ * Every row handed to a `.values(...)` call on the shim, in call order.
+ * Module-level because the shim is built inside the mocked `drizzle()`
+ * factory, which the test never gets a handle on. Suites that read it clear
+ * it in their own `beforeEach` and filter by climb uuid, so rows written by
+ * another suite cannot be mistaken for theirs.
+ */
 const shimInsertedRows: Array<Record<string, unknown>> = [];
 
 function createDbShim() {
@@ -189,7 +198,7 @@ describe('board_climb_holds writes', () => {
 
     await syncSharedData(fakePostgresClient(), 'decoy', 'token');
 
-    const holdRows = shimInsertedRows.filter((row) => 'holdId' in row);
+    const holdRows = shimInsertedRows.filter((row) => 'holdId' in row && row.climbUuid === 'CLIMB-1');
     expect(holdRows).toEqual([
       { boardType: 'decoy', climbUuid: 'CLIMB-1', frameNumber: 0, holdId: 100, holdState: 'STARTING' },
     ]);
@@ -211,7 +220,7 @@ describe('board_climb_holds writes', () => {
 
     await syncSharedData(fakePostgresClient(), 'decoy', 'token');
 
-    const holdRows = shimInsertedRows.filter((row) => 'holdId' in row);
+    const holdRows = shimInsertedRows.filter((row) => 'holdId' in row && row.climbUuid === 'CLIMB-2');
     expect(holdRows).toEqual([
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 0, holdId: 100, holdState: 'STARTING' },
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 100, holdState: 'STARTING' },

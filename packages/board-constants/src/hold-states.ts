@@ -296,6 +296,20 @@ export function accumulatedMapsToFrameStrings(maps: LitUpHoldsMap[], board: Boar
 }
 
 /**
+ * True when a decoded hold state is the `{holdId}={code}` sentinel that
+ * `accumulateFramesToMaps` emits for a role code missing from
+ * `HOLD_STATE_MAP`, rather than a real hold state.
+ *
+ * The predicate lives here, next to the code that produces the sentinel, so
+ * the readers that drop those rows (`shared-sync.ts`, `climb-similarity.ts`,
+ * `backfill-board-climb-holds.ts`) share one definition instead of each
+ * re-deriving "contains an `=`" from the shape.
+ */
+export function isSentinelHoldState(state: string | null | undefined): boolean {
+  return !state || state.includes('=');
+}
+
+/**
  * Convert a frames string into a map of frame index → lit-state snapshot.
  * Each frame maps hold IDs to their state, color, and display color.
  *

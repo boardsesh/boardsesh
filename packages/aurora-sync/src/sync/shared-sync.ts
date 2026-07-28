@@ -24,7 +24,7 @@ import type {
 } from '../api/sync-api-types';
 import { UNIFIED_TABLES } from '../db/table-select';
 import { normalizeQualityTo5, isNoMatchClimb, CLIMB_CHARACTERISTICS } from '@boardsesh/shared-schema';
-import { convertLitUpHoldsStringToMap } from '@boardsesh/board-constants/hold-states';
+import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
 import {
   populateDenormalizedColumns,
   blendedQualityAverageSql,
@@ -688,7 +688,7 @@ async function upsertClimbs(db: DrizzleDb, board: AuroraBoardName, data: Climb[]
         // already drops those; the two hold writers should agree, or the
         // sentinel poisons `backfill-hold-fingerprints` and the similarity
         // signatures downstream of it (issue #3948).
-        .filter(([, { state }]) => state && !state.includes('='))
+        .filter(([, { state }]) => !isSentinelHoldState(state))
         .map(([holdId, { state }]) => ({
           boardType: board,
           climbUuid: item.uuid,
