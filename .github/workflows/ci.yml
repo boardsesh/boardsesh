@@ -112,6 +112,13 @@ jobs:
               - 'packages/db/src/schema/**'
               - 'scripts/check-db-migrations.ts'
               - 'scripts/lib/drizzle-migrations.ts'
+              # The journal<->ledger verification that gates the production
+              # deploy (#2933) and its real-database test.
+              - 'scripts/lib/migration-ledger.ts'
+              - 'packages/db/scripts/migrate.ts'
+              - 'packages/db/scripts/migration-journal.ts'
+              - 'packages/db/scripts/verify-migration-journal.ts'
+              - 'packages/db/scripts/migration-journal-verification.integration.test.ts'
 
   setup:
     needs: [changes]
@@ -257,7 +264,24 @@ jobs:
     # board-constants and the sync packages).
     if: needs.changes.outputs.dbMigrations == 'true' || needs.changes.outputs.rootCi == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    # A stock Postgres is enough: the journal<->ledger test builds its own
+    # throwaway migrations folder and database, so it needs no board data and
+    # never pulls the (large) boardsesh-dev-db image.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -274,6 +298,14 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin main
           vp run check:db-migrations -- --base origin/main
+      # Guards the failure mode check:db-migrations cannot see: a migration
+      # whose `when` lands below drizzle's created_at high-water mark is skipped
+      # forever and silently (#2933). Drives drizzle's real migrate() against a
+      # scratch database.
+      - name: Verify the migration journal check against a real database
+        env:
+          MIGRATION_JOURNAL_DB_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: vp run test:db:migration-journal
 
   codegen-drift:
     needs: [changes, setup]

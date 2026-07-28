@@ -105,6 +105,49 @@ It deliberately ignores six duplicate numbers that main has carried since 2024
 (`0025`, `0048`–`0052`). Both sides are journalled and applied in production; they order
 correctly by `when` and cannot be fixed now.
 
+### The journal-vs-ledger check (`VERIFY_MIGRATION_JOURNAL=1`)
+
+`check:db-migrations` reads files. It cannot see whether a database actually ran them, and
+one failure mode only shows up there.
+
+Drizzle's applier is a single high-water mark, not a reconciliation. `PgDialect.migrate()`
+reads `max(created_at)` from `drizzle.__drizzle_migrations` **once, before the loop**, and
+applies only journal entries whose `when` is strictly greater. A migration appended with a
+`when` at or below that mark is skipped on that deploy — and on every deploy after it,
+because the mark only ever moves up. Production hit this with `0129_numerous_star_brand`:
+`location_sync_gym_sources` was never created, and the first Kilter location sync days
+later died on `relation "location_sync_gym_sources" does not exist`.
+
+With `VERIFY_MIGRATION_JOURNAL=1`, `packages/db/scripts/migrate.ts` now checks **every**
+journal entry against the ledger, keyed on the migration hash, and throws with the missing
+tags named. `production-deploy.yml` and `db-migration-renumber.yml` both set it. It stays
+opt-in for now because the `boardsesh-dev-db` image is missing `0187_sad_freak`'s ledger
+row, so a default-on check would redden every developer's `vp run db:migrate`.
+
+Run it read-only against any database, without applying anything:
+
+```
+DB_URL=postgres://... vp run db:verify-journal
+```
+
+That is one `SELECT hash FROM drizzle.__drizzle_migrations` plus local file reads — safe to
+point at production, and worth doing before merging anything that touches the migration
+folder, since `migrate` gates both production deploy jobs.
+
+**When it fires.** It does not self-heal, on purpose: several migrations here are data
+backfills whose idempotence hinges on `_bs_migration_guards` semantic keys, so re-running a
+mixed DDL/DML set unattended is worse than a blocked deploy. Repair each named tag by hand:
+
+1. Read `packages/db/drizzle/<tag>.sql` and confirm it is safe against the current schema.
+2. Apply it inside a transaction.
+3. In the same transaction, insert the ledger row with the journal's `when` as `created_at`
+   and the same hash drizzle would have written:
+   `INSERT INTO drizzle."__drizzle_migrations" (hash, created_at) VALUES (<sha256 of the .sql body>, <when>);`
+   `vp run db:verify-journal` confirms the repair.
+
+Extra ledger rows matching no journal entry are ignored — renumbering leaves those behind
+legitimately, and failing on them would block deploys for benign residue.
+
 ## Why the schema barrel is union-merged
 
 `.gitattributes` marks `packages/db/src/schema/**/index.ts` as `merge=union`. The file is

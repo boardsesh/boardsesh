@@ -159,6 +159,16 @@ export default defineConfig({
         dependsOn: ['db:up'],
         cache: false,
       },
+      // Read-only pre-flight for the VERIFY_MIGRATION_JOURNAL=1 gate that
+      // production-deploy.yml runs (#2933): reports any journal migration with
+      // no row in drizzle.__drizzle_migrations. One SELECT, no writes, no
+      // migrate() call — safe to point at production before a deploy. No db:up
+      // dependency: it's normally run by hand against DB_URL, same pattern as
+      // db:dedupe-gyms.
+      'db:verify-journal': {
+        command: 'bun run --filter=@boardsesh/db db:verify-journal',
+        cache: false,
+      },
       'db:studio': {
         command: 'bun run --filter=@boardsesh/db db:studio',
         dependsOn: ['db:up'],
@@ -208,6 +218,15 @@ export default defineConfig({
       },
       'test:db': {
         command: 'bun run --filter=@boardsesh/db test',
+      },
+      // The one packages/db node:test file CI runs (from ci.yml's db-migrations
+      // job, against a stock postgres:17 service). It builds its own throwaway
+      // migrations folder and database, so it needs no board data and no db:up.
+      // Locally it skips unless DATABASE_URL/MIGRATION_JOURNAL_DB_URL points at
+      // a local Postgres.
+      'test:db:migration-journal': {
+        command: 'bun run --filter=@boardsesh/db test:migration-journal',
+        cache: false,
       },
       'locations:aurora': {
         command: 'bun run --filter=@boardsesh/aurora-sync sync:locations',

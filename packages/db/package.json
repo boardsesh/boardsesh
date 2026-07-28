@@ -72,6 +72,8 @@
     "db:migrate": "bun scripts/migrate.ts",
     "test": "tsx --test scripts/**/*.test.ts src/**/*.test.ts",
     "test:explain": "tsx --test src/queries/climbs/__tests__/search-climbs-explain.integration.test.ts",
+    "test:migration-journal": "tsx --test scripts/migration-journal-verification.integration.test.ts",
+    "db:verify-journal": "tsx scripts/verify-migration-journal.ts",
     "db:studio": "drizzle-kit studio",
     "db:import-moonboard": "tsx scripts/import-moonboard-problems.ts",
     "db:import-moonboard-2024": "tsx scripts/import-moonboard-2024.ts",

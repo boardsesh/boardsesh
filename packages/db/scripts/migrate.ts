@@ -3,24 +3,15 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { config } from 'dotenv';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
+import {
+  DRIZZLE_MIGRATIONS_FOLDER,
+  assertMigrationJournalApplied,
+  readExpectedMigrations,
+  readLedgerHashesWith,
+} from './migration-journal.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-type MigrationJournalEntry = {
-  tag: string;
-  when: number;
-};
-
-type MigrationJournal = {
-  entries: MigrationJournalEntry[];
-};
-
-type LatestAppliedMigrationRow = {
-  latestCreatedAt: number | string | bigint | null;
-  appliedMigrationCount: number | string | bigint | null;
-};
 
 // Load environment files (same as drizzle.config.ts)
 config({ path: path.resolve(__dirname, '../../../.boardsesh/dev-db.env') });
@@ -68,47 +59,30 @@ async function runMigrations() {
       },
     });
 
-    const migrationsFolder = path.resolve(__dirname, '../drizzle');
-    const journalPath = path.join(migrationsFolder, 'meta', '_journal.json');
-    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8')) as MigrationJournal;
-    const latestJournalEntry = journal.entries.reduce<MigrationJournalEntry | null>(
-      (latestEntry, entry) => (!latestEntry || entry.when > latestEntry.when ? entry : latestEntry),
-      null,
-    );
-    if (!latestJournalEntry) {
+    const migrationsFolder = DRIZZLE_MIGRATIONS_FOLDER;
+    const expectedMigrations = readExpectedMigrations(migrationsFolder);
+    if (expectedMigrations.length === 0) {
       throw new Error('Migration journal is empty');
     }
-    console.info(`📋 Found ${journal.entries.length} migrations in journal`);
+    console.info(`📋 Found ${expectedMigrations.length} migrations in journal`);
 
     await migrate(db, { migrationsFolder });
 
+    // Per-entry, hash-keyed verification (#2933). The old check asserted
+    // `max(created_at) >= the newest journal entry's when`, which is exactly the
+    // one condition a below-the-high-water-mark gap cannot violate, and the
+    // count mismatch that *would* have caught it was a console.warn. See
+    // scripts/lib/migration-ledger.ts for the mechanism.
+    //
+    // Still behind the env gate: the boardsesh-dev-db image is missing
+    // 0187_sad_freak's ledger row, so a default-on check would redden every
+    // developer's `vp run db:migrate` today. Both places that matter
+    // (production-deploy.yml, db-migration-renumber.yml) already set it.
     if (process.env.VERIFY_MIGRATION_JOURNAL === '1') {
-      const appliedMigrationRows = await client<LatestAppliedMigrationRow[]>`
-      SELECT
-        MAX(created_at)::bigint AS "latestCreatedAt",
-        COUNT(*)::int AS "appliedMigrationCount"
-      FROM drizzle."__drizzle_migrations"
-    `;
-      const latestAppliedCreatedAt = Number(appliedMigrationRows[0]?.latestCreatedAt ?? 0);
-      const appliedMigrationCount = Number(appliedMigrationRows[0]?.appliedMigrationCount ?? 0);
-
-      if (latestAppliedCreatedAt < latestJournalEntry.when) {
-        throw new Error(
-          `Latest migration verification failed: database latest created_at is ${latestAppliedCreatedAt}, ` +
-            `but bundled latest migration ${latestJournalEntry.tag} has created_at ${latestJournalEntry.when}.`,
-        );
-      }
-
-      if (appliedMigrationCount !== journal.entries.length) {
-        console.warn(
-          `⚠️ Migration table has ${appliedMigrationCount} rows for ${journal.entries.length} journal entries; ` +
-            `continuing because latest migration ${latestJournalEntry.tag} is applied.`,
-        );
-      }
-
+      const report = await assertMigrationJournalApplied(readLedgerHashesWith(client), migrationsFolder);
       console.info(
-        `✅ Verified latest migration ${latestJournalEntry.tag} is applied ` +
-          `(created_at ${latestAppliedCreatedAt}; ${appliedMigrationCount}/${journal.entries.length} rows recorded)`,
+        `✅ Verified all ${report.expectedCount} journal migrations are recorded ` +
+          `(${report.ledgerCount} ledger rows)`,
       );
     }
 
