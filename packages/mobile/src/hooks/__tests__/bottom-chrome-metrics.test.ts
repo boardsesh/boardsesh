@@ -347,22 +347,24 @@ describe('computeBottomChromeMetrics', () => {
     const allInputs = function* () {
       for (const uiVariant of ['liquidGlass', 'material'] as const) {
         for (const usesNativeTabBar of [true, false]) {
-          for (const onAccessorySurface of [true, false]) {
-            for (const hasCurrentClimb of [true, false]) {
-              for (const nativeAccessoryMounted of [true, false]) {
-                for (const usesSidebar of [true, false]) {
-                  for (const detailPaneOwnsQueue of [true, false]) {
-                    yield {
-                      uiVariant,
-                      usesNativeTabBar,
-                      insetsBottom: 34,
-                      insideTabs: true,
-                      onAccessorySurface,
-                      hasCurrentClimb,
-                      nativeAccessoryMounted,
-                      usesSidebar,
-                      detailPaneOwnsQueue,
-                    };
+          for (const insideTabs of [true, false]) {
+            for (const onAccessorySurface of [true, false]) {
+              for (const hasCurrentClimb of [true, false]) {
+                for (const nativeAccessoryMounted of [true, false]) {
+                  for (const usesSidebar of [true, false]) {
+                    for (const detailPaneOwnsQueue of [true, false]) {
+                      yield {
+                        uiVariant,
+                        usesNativeTabBar,
+                        insetsBottom: 34,
+                        insideTabs,
+                        onAccessorySurface,
+                        hasCurrentClimb,
+                        nativeAccessoryMounted,
+                        usesSidebar,
+                        detailPaneOwnsQueue,
+                      };
+                    }
                   }
                 }
               }
