@@ -155,3 +155,30 @@ describe('addNeverForLocationScanFlag', () => {
     expect(result.manifest.$?.['xmlns:tools']).toBe('http://schemas.android.com/tools');
   });
 });
+
+describe('the two mods composed, as withAndroidBluetoothFeature runs them', () => {
+  it('keeps both results when chained through the same manifest object', () => {
+    // withAndroidBluetoothFeature assigns each mod's return value back onto
+    // modConfig.modResults, so the second mod's return has to still carry the
+    // first mod's mutations. AndroidConfig.Manifest.ensureToolsAvailable mutates
+    // in place today; if it ever started returning a fresh object, the
+    // uses-feature entry would silently vanish from the generated manifest.
+    const chained = plugin.addNeverForLocationScanFlag(plugin.addBluetoothLeFeature(manifestWithBaseScanPermission()));
+
+    const bleFeature = (chained.manifest['uses-feature'] ?? []).find(
+      (feature) => feature.$['android:name'] === plugin.FEATURE_NAME,
+    );
+    expect(bleFeature?.$['android:required']).toBe('false');
+    expect(scanPermissionOf(chained)?.$['android:usesPermissionFlags']).toBe('neverForLocation');
+    expect(chained.manifest.$?.['xmlns:tools']).toBe('http://schemas.android.com/tools');
+  });
+
+  it('is order-independent', () => {
+    const otherOrder = plugin.addBluetoothLeFeature(
+      plugin.addNeverForLocationScanFlag(manifestWithBaseScanPermission()),
+    );
+
+    expect(otherOrder.manifest['uses-feature']).toHaveLength(1);
+    expect(scanPermissionOf(otherOrder)?.$['android:usesPermissionFlags']).toBe('neverForLocation');
+  });
+});
