@@ -796,6 +796,31 @@ describe('ClimbFilterSheet name field (#3606)', () => {
     expect(onClearName).toHaveBeenCalledTimes(1);
   });
 
+  // The issue's literal repro: a lone climb-name search with every other control
+  // still at its default. `anyActive` used to be built only from
+  // hasActiveClimbFilters/hasActiveBoardFilters, neither of which can see the
+  // name — so Reset rendered disabled and the fix above it was unreachable.
+  // Note the activity mocks stay at their default `false` here on purpose.
+  it('enables Reset and clears the name when ONLY a climb name is set', () => {
+    const onClearName = vi.fn();
+    const { getByText } = renderFilterSheet({ searchName: 'crimpy', onClearName });
+
+    const resetButton = getByText('mobile.filter.reset').closest('button');
+    expect(resetButton?.disabled).toBe(false);
+
+    fireEvent.click(getByText('mobile.filter.reset'));
+    expect(onClearName).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Reset disabled when nothing at all is set', () => {
+    const onClearName = vi.fn();
+    const { getByText } = renderFilterSheet({ onClearName });
+
+    expect(getByText('mobile.filter.reset').closest('button')?.disabled).toBe(true);
+    fireEvent.click(getByText('mobile.filter.reset'));
+    expect(onClearName).not.toHaveBeenCalled();
+  });
+
   it('mirrors a typed name to onNameChange and to the field itself', () => {
     const onNameChange = vi.fn();
     const { getByLabelText } = renderFilterSheet({ onNameChange });
