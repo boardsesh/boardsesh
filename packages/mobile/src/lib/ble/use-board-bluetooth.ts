@@ -282,6 +282,10 @@ type UseBoardBluetoothOptions = {
   holdsData?: HoldPlacement[];
   ledColorOverrides?: LedColorOverrides;
   analyticsBoardId?: number | null;
+  /** Fired on every connection-state edge. A consumer must tolerate a `false`
+   *  with no preceding `true`: when connect()'s initial write kills the link,
+   *  the drop teardown fires `false` and connect() then bails before it would
+   *  ever have fired `true` (#3875). */
   onConnectionChange?: (connected: boolean) => void;
   onConnectSuccess?: (serial: string | null) => void;
   /** Reads whether this connection was made via the mismatch "Connect anyway"

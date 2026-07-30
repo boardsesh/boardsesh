@@ -1689,6 +1689,15 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
 // connect() writes initialFrames before declaring success. That write can take
 // the link with it. These tests pin the boundary: a lost link fails the connect,
 // while a write the board merely refused does not.
+//
+// Which side of that boundary a test lands on is decided by the rejection
+// message, via isDisconnectionError (@boardsesh/ble-protocol/connection-error):
+// 'Not connected' matches its "definite drop" pattern and tears the connection
+// down; 'GATT write failed' does not and leaves the link alive. Deliberately not
+// re-derived in the test bodies — asserting against a locally rebuilt predicate
+// is the tautology this repo has already shipped once. If a change to
+// isDisconnectionError ever collapsed those two messages to the same verdict,
+// the pair below would start agreeing and this comment is the breadcrumb.
 describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
