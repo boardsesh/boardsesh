@@ -1848,6 +1848,73 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     const sendFailure = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
     expect(sendFailure?.[1]).toMatchObject({ sendSource: 'connect' });
   });
+
+  it('leaves the AutoSender dedup unseeded when the initial write failed (#3875)', async () => {
+    // The seed tells the AutoSender "these frames are already on the wall".
+    // Seeding it after a write that never landed made the AutoSender skip the
+    // write (connected board, dark wall) and fire onWallConfirmed anyway, so the
+    // party feed reported a climb as lit on a dark wall. The link is alive here,
+    // so the connect itself must still succeed.
+    const fakeAdapter = makeFakeAdapter({
+      write: vi.fn().mockRejectedValue(new Error('GATT write failed')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+
+    expect(result.current.isConnected).toBe(true);
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('seeds the AutoSender dedup when the initial write landed (#3875)', async () => {
+    // The mutation guard for the test above: clearing the seed unconditionally
+    // would pass it while reintroducing the doubled connect haptic and the
+    // redundant full-frame re-write the seed exists to prevent.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+
+    expect(result.current.connectInitialSendRef.current).toEqual({
+      frames: 'p100r12',
+      mirrored: false,
+      colorSignature: expect.any(String),
+    });
+  });
+
+  it('clears a stale dedup seed when connecting without initial frames (#3875)', async () => {
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+    expect(result.current.connectInitialSendRef.current).not.toBeNull();
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
 });
 
 describe('convertToMirroredFramesString', () => {

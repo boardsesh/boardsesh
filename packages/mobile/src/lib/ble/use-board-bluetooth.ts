@@ -988,8 +988,9 @@ export function useBoardBluetooth({
         // resulting Climb Sent to Board Success/Failure/Skipped attributable to
         // this connect-time write instead of having to be inferred from a
         // millisecond gap against Bluetooth Connection Success.
+        let initialSendResult: boolean | undefined;
         if (initialFrames) {
-          await sendFramesToBoard(initialFrames, mirrored, undefined, { sendSource: 'connect' });
+          initialSendResult = await sendFramesToBoard(initialFrames, mirrored, undefined, { sendSource: 'connect' });
         }
 
         // The initial write can kill the link it just rode in on: out of range
@@ -1002,8 +1003,8 @@ export function useBoardBluetooth({
         // with skipReason 'no_adapter', and onConnectSuccess claiming a board hold
         // in board presence that we cannot write to (#3875).
         //
-        // The signal is adapter IDENTITY, not sendFramesToBoard's return value. Do
-        // not "simplify" this to `if (sendFramesToBoard(...) === false)`:
+        // The signal is adapter IDENTITY, not initialSendResult. Do not "simplify"
+        // this to `if (initialSendResult === false)`:
         //   - false does NOT mean the link died. It is also returned for
         //     incompatible_climb, missing_mirror_data, missing_led_placements and
         //     every ordinary write rejection (write_failed, write_timeout,
@@ -1032,10 +1033,18 @@ export function useBoardBluetooth({
 
         // Seed the AutoSender's dedup with what was written so it doesn't
         // immediately repeat the identical frame (and its success haptic) when it
-        // mounts on isConnected.
-        connectInitialSendRef.current = initialFrames
-          ? { frames: initialFrames, mirrored: !!mirrored, colorSignature }
-          : null;
+        // mounts on isConnected — but ONLY when the write actually landed. Seeding
+        // after a failed write told the AutoSender the wall already showed this
+        // climb, so it (a) skipped the write and left a connected board dark until
+        // the climber navigated away and back, and (b) hit the byte-identical
+        // branch that fires onWallConfirmed, reporting a lit climb to the party /
+        // presence feed over a dark wall. Assigned on every exit path (including
+        // the bail above), so a later native-connection adoption — which never
+        // assigns this ref — can't inherit a stale seed either.
+        connectInitialSendRef.current =
+          initialFrames && initialSendResult === true
+            ? { frames: initialFrames, mirrored: !!mirrored, colorSignature }
+            : null;
 
         lastDisconnectInfoRef.current = null;
         setIsConnected(true);
