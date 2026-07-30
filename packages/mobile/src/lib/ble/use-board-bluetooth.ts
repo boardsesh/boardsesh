@@ -1007,6 +1007,17 @@ export function useBoardBluetooth({
         // with skipReason 'no_adapter', and onConnectSuccess claiming a board hold
         // in board presence that we cannot write to (#3875).
         //
+        // A third, non-drop route reaches this bail: the config-switch effect
+        // below. Its deps (boardName/layoutId/sizeId) are route-derived provider
+        // state, so navigating to a different board while the awaited write is in
+        // flight re-runs it, and — since connectedConfigKeyRef is now assigned when
+        // the link opens rather than after this send — it tears the now-stale
+        // connection down. Bailing is right (the adapter really is gone), but the
+        // alert then reads "move closer" for what was a deliberate switch. Accepted:
+        // the copy is mildly wrong on a path where the user has already navigated
+        // away, and the alternative is streaming the new config's LED map to the old
+        // wall. Revisit with a distinct reason if it shows up in support.
+        //
         // The signal is adapter IDENTITY, not initialSendResult. Do not "simplify"
         // this to `if (initialSendResult === false)`:
         //   - false does NOT mean the link died. It is also returned for
