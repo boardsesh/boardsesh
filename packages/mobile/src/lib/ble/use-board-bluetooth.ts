@@ -253,8 +253,10 @@ export const convertToMirroredFramesString = (frames: string, holdsData: HoldPla
  */
 export type BleSendContext = {
   /** Where the send came from: the queue auto-sender, an undo, a deliberate
-   *  clear (passed by clearBoard), or a wall-kiosk relight. */
-  sendSource: 'auto' | 'undo' | 'clear' | 'wall-relight';
+   *  clear (passed by clearBoard), a wall-kiosk relight, or connect()'s own
+   *  initial frame write (`connect` — the one send that can take the link with
+   *  it, so it needs to be separable in analytics). */
+  sendSource: 'auto' | 'undo' | 'clear' | 'wall-relight' | 'connect';
   targetQueueItemUuid?: string;
   climbUuid?: string;
   /** The climb's own board metadata, when known — lets a board/climb mismatch be seen. */
@@ -982,15 +984,58 @@ export function useBoardBluetooth({
           }
         }
 
-        // Send initial frames if provided; seed the AutoSender's dedup with
-        // what was written so it doesn't immediately repeat the identical
-        // frame (and its success haptic) when it mounts on isConnected.
+        // Send initial frames if provided. `sendSource: 'connect'` makes the
+        // resulting Climb Sent to Board Success/Failure/Skipped attributable to
+        // this connect-time write instead of having to be inferred from a
+        // millisecond gap against Bluetooth Connection Success.
         if (initialFrames) {
-          await sendFramesToBoard(initialFrames, mirrored);
-          connectInitialSendRef.current = { frames: initialFrames, mirrored: !!mirrored, colorSignature };
-        } else {
-          connectInitialSendRef.current = null;
+          await sendFramesToBoard(initialFrames, mirrored, undefined, { sendSource: 'connect' });
         }
+
+        // The initial write can kill the link it just rode in on: out of range
+        // during the handshake, the box powered off, or a second phone stealing a
+        // last-connection-wins board. Both teardown routes (sendFramesToBoard's
+        // isDisconnectionError branch, and the adapter's own onDisconnect
+        // subscription registered above) run clearConnectionAfterDrop, which nulls
+        // adapterRef. Without this check connect() went on to setIsConnected(true)
+        // over a null adapter: a lit lightbulb, every later send early-returning
+        // with skipReason 'no_adapter', and onConnectSuccess claiming a board hold
+        // in board presence that we cannot write to (#3875).
+        //
+        // The signal is adapter IDENTITY, not sendFramesToBoard's return value. Do
+        // not "simplify" this to `if (sendFramesToBoard(...) === false)`:
+        //   - false does NOT mean the link died. It is also returned for
+        //     incompatible_climb, missing_mirror_data, missing_led_placements and
+        //     every ordinary write rejection (write_failed, write_timeout,
+        //     characteristic_unavailable). Failing the connect on those would
+        //     strand a live adapter behind a dark bulb — the mirror-image bug.
+        //   - false is NOT returned when the adapter's onDisconnect fires during
+        //     the write: write() resolves, the send reports success, and the
+        //     teardown has already happened. The boolean misses that case entirely.
+        if (adapterRef.current !== adapter) {
+          // clearConnectionAfterDrop already flipped isConnected to false, aborted
+          // this write generation, disposed the adapter and cleared the Sentry BLE
+          // tags — including onConnectionChange?.(false) without a preceding true,
+          // which no consumer reads today but a future one must tolerate.
+          connectInitialSendRef.current = null;
+          Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.connectFailed'));
+          track(SHARED_EVENTS.BluetoothConnectionFailed, {
+            boardName,
+            layoutId,
+            sizeId,
+            // Sits alongside the classifyBleFailure categories used by the catch
+            // block below; this one is only reachable from the initial write.
+            failureReason: 'dropped_after_connect',
+          });
+          return false;
+        }
+
+        // Seed the AutoSender's dedup with what was written so it doesn't
+        // immediately repeat the identical frame (and its success haptic) when it
+        // mounts on isConnected.
+        connectInitialSendRef.current = initialFrames
+          ? { frames: initialFrames, mirrored: !!mirrored, colorSignature }
+          : null;
 
         lastDisconnectInfoRef.current = null;
         setIsConnected(true);

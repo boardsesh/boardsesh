@@ -1686,6 +1686,170 @@ describe('useBoardBluetooth remembered-board persistence (#3609)', () => {
   });
 });
 
+// connect() writes initialFrames before declaring success. That write can take
+// the link with it. These tests pin the boundary: a lost link fails the connect,
+// while a write the board merely refused does not.
+describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetReactNativePermissionHarness();
+    mockBleManager.state.mockResolvedValue('PoweredOn');
+  });
+
+  function mockAuroraSendable() {
+    mockGetLedPlacements.mockReturnValue({ 100: 7, 999: 8 });
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([0x01]),
+      skippedPositionCount: 0,
+      skippedRoleCount: 0,
+      totalPlacements: 1,
+    });
+  }
+
+  it('fails the connect when the initial write kills the link (#3875)', async () => {
+    // The write rejects with a disconnection signature, so sendFramesToBoard tears
+    // the connection down. connect() used to sail past that and light the
+    // lightbulb over a null adapter: every later send then early-returned with
+    // skipReason 'no_adapter' and the wall stayed dark until the climber toggled
+    // the connection off and back on.
+    const fakeAdapter = makeFakeAdapter({
+      write: vi.fn().mockRejectedValue(new Error('Not connected')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+    const onConnectSuccess = vi.fn();
+
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, onConnectSuccess }),
+    );
+
+    let connected: boolean | undefined;
+    await act(async () => {
+      connected = await result.current.connect('p100r12');
+    });
+
+    expect(connected).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(onConnectSuccess).not.toHaveBeenCalled();
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({ boardName: 'kilter', failureReason: 'dropped_after_connect' });
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+    expect(fakeAdapter.disconnect).toHaveBeenCalled();
+  });
+
+  it('fails the connect when a drop event lands during the initial write (#3875)', async () => {
+    // The write itself RESOLVES — the adapter's own disconnect event fires while
+    // it is in flight. sendFramesToBoard therefore returns true, so the return
+    // value cannot see this at all; only the adapter identity can. If this test
+    // is the only failing one, someone replaced the identity check with a check
+    // on sendFramesToBoard's boolean.
+    let dropLink: (() => void) | undefined;
+    const fakeAdapter = {
+      ...makeFakeAdapter(),
+      onDisconnect: vi.fn((handler: (info?: { source: string }) => void) => {
+        dropLink = () => handler({ source: 'adapter-event' });
+        return () => {};
+      }),
+      write: vi.fn(async () => {
+        dropLink?.();
+      }),
+    };
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connected: boolean | undefined;
+    await act(async () => {
+      connected = await result.current.connect('p100r12');
+    });
+
+    expect(connected).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
+  });
+
+  it('still connects when the initial climb is incompatible with the board (#3875)', async () => {
+    // Every placement skipped → sendFramesToBoard returns false, but the GATT
+    // link is untouched. Failing the connect here (the fix the issue asked for)
+    // would strand a live adapter behind a dark lightbulb and raise a bogus
+    // "couldn't connect" on a board that is connected.
+    const fakeAdapter = makeFakeAdapter();
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetLedPlacements.mockReturnValue({ 100: 7 });
+    mockGetAuroraBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([]),
+      skippedPositionCount: 3,
+      skippedRoleCount: 1,
+      totalPlacements: 4,
+    });
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connected: boolean | undefined;
+    await act(async () => {
+      connected = await result.current.connect('p100r12');
+    });
+
+    expect(connected).toBe(true);
+    expect(result.current.isConnected).toBe(true);
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeDefined();
+  });
+
+  it('still connects when the initial write fails on a live link (#3875)', async () => {
+    // The far more common flavour: an ordinary write rejection (write_failed /
+    // write_timeout / characteristic_unavailable) that isDisconnectionError does
+    // not match. The link is alive, so the connect stands.
+    const fakeAdapter = makeFakeAdapter({
+      write: vi.fn().mockRejectedValue(new Error('GATT write failed')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    let connected: boolean | undefined;
+    await act(async () => {
+      connected = await result.current.connect('p100r12');
+    });
+
+    expect(connected).toBe(true);
+    expect(result.current.isConnected).toBe(true);
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeDefined();
+  });
+
+  it('attributes the initial write to sendSource "connect" (#3875)', async () => {
+    // Makes the connect-time send separable in PostHog. Before this, telling a
+    // connect-time failure from a mid-session one meant joining on a
+    // sub-10ms gap against Bluetooth Connection Success.
+    const fakeAdapter = makeFakeAdapter({
+      write: vi.fn().mockRejectedValue(new Error('GATT write failed')),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+
+    await act(async () => {
+      await result.current.connect('p100r12');
+    });
+
+    const sendFailure = mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Failure');
+    expect(sendFailure?.[1]).toMatchObject({ sendSource: 'connect' });
+  });
+});
+
 describe('convertToMirroredFramesString', () => {
   it('correctly maps hold IDs to mirrored IDs', () => {
     const holdsData: HoldPlacement[] = [makePlacement(100, 200), makePlacement(101, 201)];
