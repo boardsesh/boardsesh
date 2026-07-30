@@ -1,5 +1,5 @@
 import { memo, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Pressable, View, StyleSheet, type LayoutChangeEvent } from 'react-native';
+import { Pressable, View, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import {
   Gesture,
@@ -22,6 +22,19 @@ import { useTheme } from '../providers/theme-provider';
 import { hapticSelection, hapticMedium } from '../lib/haptics';
 import type { QueueDragControls } from './play-drawer/use-queue-drag';
 import { rowReorderShift } from './play-drawer/queue-drag-math';
+
+// Screen-reader activation for elements whose press lives on an RNGH gesture.
+// RNGH's Gesture API builds native gesture recognizers that never register with
+// React Native's accessibility-action bridge (verified against
+// react-native-gesture-handler@2.32.0: neither the Gesture builders nor RNGH's own
+// Touchable/GenericTouchable/BaseButton set onAccessibilityTap or
+// accessibilityActions), so a VoiceOver/TalkBack activate never reaches a
+// Gesture.Tap(). RN core's Pressable is exempt — it rides the standard touch-
+// responder chain, which the OS activates for free. Anything wrapped in a
+// GestureDetector must therefore wire onAccessibilityTap + this action list
+// explicitly. Module-level so the array identity is stable and React.memo /
+// prop-equality on these rows is untouched.
+const ACTIVATE_ACCESSIBILITY_ACTIONS = [{ name: 'activate' }];
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
@@ -276,6 +289,23 @@ function QueueItemRowComponent({
     onTickHistory?.(itemRef.current);
   }, [onTickHistory]);
 
+  // Screen-reader activate → the same handlers the RNGH taps call. Branch on the
+  // action name so adding a second custom action to these rows later can't turn
+  // every action into a row press.
+  const handleRowAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'activate') handlePress();
+    },
+    [handlePress],
+  );
+
+  const handleTickAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'activate') handleTickPress();
+    },
+    [handleTickPress],
+  );
+
   const handleLongPress = useCallback(() => {
     if (isEditMode || !onOpenActions) return;
     hapticMedium();
@@ -381,6 +411,9 @@ function QueueItemRowComponent({
         accessibilityRole="button"
         accessibilityLabel={`${climbName}, ${t('mobile.queue.positionLabel', { position })}`}
         accessibilityState={{ selected: isEditMode ? isSelected : isCurrentClimb }}
+        onAccessibilityTap={handlePress}
+        accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+        onAccessibilityAction={handleRowAccessibilityAction}
         style={[
           styles.row,
           { backgroundColor: systemColors.secondaryBackground },
@@ -426,14 +459,22 @@ function QueueItemRowComponent({
           <GestureDetector gesture={tickGesture}>
             <View
               testID="tick-button"
+              accessible
               accessibilityRole="button"
               accessibilityLabel={t('mobile.queue.logAscent')}
+              onAccessibilityTap={handleTickPress}
+              accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+              onAccessibilityAction={handleTickAccessibilityAction}
               style={styles.trailingButton}
             >
               <Icon name="tick" size={26} color={brandColors.success} />
             </View>
           </GestureDetector>
         ) : showDragHandle && dragHandleGesture ? (
+          // Deliberately NOT given an `activate` action: reordering with a screen
+          // reader needs worded move-up/move-down custom actions, not a plain
+          // activate (an activate here has nothing meaningful to do). That's a UX
+          // decision, tracked as a follow-up rather than guessed at here.
           <GestureDetector gesture={dragHandleGesture}>
             <View
               style={styles.trailingButton}

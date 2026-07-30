@@ -41,6 +41,21 @@ const gestureCalls = vi.hoisted(() => ({
   longPressLogs: [] as { method: string; args: unknown[] }[][],
 }));
 
+// Screen-reader activation props, captured off the rendered elements. RNGH's
+// gesture recognizers never reach RN's accessibility-action bridge, so the row and
+// its tick button wire onAccessibilityTap/onAccessibilityAction explicitly (#3914).
+// Keyed by which element carried them: the row is the accessible button-role
+// Animated.View, the tick is the `tick-button` testID.
+type AccessibilityCapture = {
+  onAccessibilityTap?: () => void;
+  accessibilityActions?: { name: string }[];
+  onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+};
+const a11y = vi.hoisted(() => ({
+  row: null as null | AccessibilityCapture,
+  tick: null as null | AccessibilityCapture,
+}));
+
 vi.mock('react-native', () => {
   const passthrough =
     (tag: string) =>
@@ -49,7 +64,16 @@ vi.mock('react-native', () => {
   return {
     Platform: { OS: 'ios' },
     PlatformColor: (name: string) => name,
-    View: passthrough('div'),
+    View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
+      if (testID === 'tick-button') {
+        a11y.tick = {
+          onAccessibilityTap: rest.onAccessibilityTap,
+          accessibilityActions: rest.accessibilityActions,
+          onAccessibilityAction: rest.onAccessibilityAction,
+        };
+      }
+      return createElement('div', null, children);
+    },
     // Capture by testID so any future Pressable addition doesn't silently
     // overwrite the wrong slot. (The tick button is now an RNGH gesture, not a
     // Pressable — its callback is captured in the Gesture.Tap mock below.)
@@ -65,7 +89,28 @@ vi.mock('react-native', () => {
 });
 
 vi.mock('react-native-reanimated', () => {
-  const passthrough = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
+  // The row itself is the accessible, button-role Animated.View (the outer
+  // container/swipe wrappers carry no accessibility props), so key the capture on
+  // that pair rather than adding a testID that production doesn't need.
+  const passthrough = ({
+    children,
+    accessible,
+    accessibilityRole,
+    ...rest
+  }: {
+    children?: ReactNode;
+    accessible?: boolean;
+    accessibilityRole?: string;
+  } & AccessibilityCapture) => {
+    if (accessible && accessibilityRole === 'button') {
+      a11y.row = {
+        onAccessibilityTap: rest.onAccessibilityTap,
+        accessibilityActions: rest.accessibilityActions,
+        onAccessibilityAction: rest.onAccessibilityAction,
+      };
+    }
+    return createElement('div', null, children);
+  };
   return {
     default: { View: passthrough },
     useAnimatedStyle: (fn: () => unknown) => fn(),
@@ -223,6 +268,8 @@ describe('QueueItemRow React.memo', () => {
     gestureCalls.panLogs = [];
     gestureCalls.tapLogs = [];
     gestureCalls.longPressLogs = [];
+    a11y.row = null;
+    a11y.tick = null;
     vi.clearAllMocks();
   });
 
@@ -357,6 +404,142 @@ describe('QueueItemRow React.memo', () => {
     expect(localOnPress).toHaveBeenCalledTimes(1);
     expect(localOnPress).toHaveBeenCalledWith(item);
     expect(onOpenActions).toHaveBeenCalledTimes(1);
+  });
+
+  // #3914: the row's press lives on an RNGH Gesture.Tap, which never registers with
+  // RN's accessibility-action bridge — a VoiceOver/TalkBack activate reached nothing.
+  // The row must therefore expose onAccessibilityTap + an `activate` action that call
+  // the same handler the tap does. These assertions invoke the props the component
+  // actually renders, so reverting the fix leaves them undefined and fails here.
+  it('activates the row from a screen-reader tap and from the activate action', () => {
+    const localOnPress = vi.fn();
+    const item = makeItem('a', 'Crimp Master');
+    render(
+      <QueueItemRow
+        item={item}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        onPress={localOnPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+      />,
+    );
+
+    expect(a11y.row?.onAccessibilityTap).toBeTypeOf('function');
+    expect(a11y.row?.accessibilityActions).toEqual([{ name: 'activate' }]);
+    expect(a11y.row?.onAccessibilityAction).toBeTypeOf('function');
+
+    a11y.row?.onAccessibilityTap?.();
+    expect(localOnPress).toHaveBeenCalledTimes(1);
+    expect(localOnPress).toHaveBeenCalledWith(item);
+
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'activate' } });
+    expect(localOnPress).toHaveBeenCalledTimes(2);
+
+    // A different action name must be a no-op — guards against a handler that
+    // blindly presses the row for every action a future PR adds to this element.
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'magicTap' } });
+    expect(localOnPress).toHaveBeenCalledTimes(2);
+  });
+
+  it('toggles selection from a screen-reader activation while in edit mode', () => {
+    const localOnToggleSelect = vi.fn();
+    const item = makeItem('a', 'Crimp Master');
+    render(
+      <QueueItemRow
+        item={item}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        isEditMode
+        isSelected={false}
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={localOnToggleSelect}
+      />,
+    );
+
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'activate' } });
+    expect(localOnToggleSelect).toHaveBeenCalledTimes(1);
+    expect(localOnToggleSelect).toHaveBeenCalledWith('a');
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  // Same gap on the history row's trailing tick button — its own Gesture.Tap was
+  // equally unreachable by a screen reader.
+  it('logs an ascent from a screen-reader activation of the tick button', () => {
+    const onTickHistory = vi.fn();
+    const item = makeItem('a', 'Crimp Master');
+    render(
+      <QueueItemRow
+        item={item}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        isHistoryItem
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+        onTickHistory={onTickHistory}
+      />,
+    );
+
+    expect(a11y.tick?.onAccessibilityTap).toBeTypeOf('function');
+    expect(a11y.tick?.accessibilityActions).toEqual([{ name: 'activate' }]);
+
+    a11y.tick?.onAccessibilityTap?.();
+    expect(onTickHistory).toHaveBeenCalledTimes(1);
+    expect(onTickHistory).toHaveBeenCalledWith(item);
+
+    a11y.tick?.onAccessibilityAction?.({ nativeEvent: { actionName: 'activate' } });
+    expect(onTickHistory).toHaveBeenCalledTimes(2);
+
+    a11y.tick?.onAccessibilityAction?.({ nativeEvent: { actionName: 'magicTap' } });
+    expect(onTickHistory).toHaveBeenCalledTimes(2);
+    // The tick's activation must not also fire the row press, which would make the
+    // history climb current and dismiss the queue sheet.
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  // The activate-action array is module-level, so it keeps its identity across
+  // renders. An inline `[{ name: 'activate' }]` would hand the row a fresh array
+  // every render and churn the props of these elements on every parent update.
+  it('reuses one accessibilityActions array across renders', () => {
+    const item = makeItem('a', 'Crimp Master');
+    const element = (
+      <QueueItemRow
+        item={item}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        isHistoryItem
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+        onTickHistory={vi.fn()}
+      />
+    );
+    const { rerender } = render(element);
+    const rowActions = a11y.row?.accessibilityActions;
+    expect(rowActions).toBeDefined();
+    // Same array instance shared by the row and its tick button.
+    expect(a11y.tick?.accessibilityActions).toBe(rowActions);
+
+    rerender(
+      <QueueItemRow
+        item={makeItem('a', 'Crimp Master')}
+        position={2}
+        board={board}
+        isCurrentClimb={false}
+        isHistoryItem
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+        onTickHistory={vi.fn()}
+      />,
+    );
+    expect(a11y.row?.accessibilityActions).toBe(rowActions);
   });
 
   it('keeps handleDeletePress stable when item identity changes but its data is equal', () => {

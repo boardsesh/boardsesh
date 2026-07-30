@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { View, StyleSheet, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Platform,
+  type AccessibilityActionEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useAnimatedReaction,
@@ -28,6 +35,15 @@ import { useSwipeArm } from './use-swipe-arm';
 // past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
 // to-queue) — no resting-open state, no second tap. friction=1 makes the row
 // track the finger 1:1 (snappy, like Spotify's tracklist swipe). Tunable.
+// Screen-reader activation for elements whose press lives on an RNGH gesture.
+// RNGH's native gesture recognizers never register with React Native's
+// accessibility-action bridge, so a VoiceOver/TalkBack activate never reaches a
+// Gesture.Tap() — unlike RN core's Pressable, which the OS activates for free via
+// the standard touch-responder chain. Rows inside a GestureDetector must wire
+// onAccessibilityTap + this action list themselves. Module-level so the array
+// identity stays stable and the row's React.memo is untouched.
+const ACTIVATE_ACCESSIBILITY_ACTIONS = [{ name: 'activate' }];
+
 const ACTION_REVEAL = 150;
 const COMMIT_THRESHOLD = 96;
 const SWIPE_FRICTION = 1;
@@ -293,6 +309,23 @@ const ClimbListRow = React.memo(function ClimbListRow({
     openActions('more_button');
   }, [openActions]);
 
+  // Screen-reader activate → the same handlers the RNGH taps call. Branch on the
+  // action name so a future custom action on these rows can't turn every action
+  // into a row press / menu open.
+  const handleRowAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'activate') handleRowPress();
+    },
+    [handleRowPress],
+  );
+
+  const handleMoreButtonAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === 'activate') handleOpenActions();
+    },
+    [handleOpenActions],
+  );
+
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
   // releases past the threshold — no second tap. We deliberately do NOT close
   // here: closing mid-"will open" raced ReanimatedSwipeable's open animation
@@ -461,6 +494,13 @@ const ClimbListRow = React.memo(function ClimbListRow({
             accessibilityRole="button"
             accessibilityLabel={climb.name}
             accessibilityState={{ selected: !!selected }}
+            onAccessibilityTap={handleRowPress}
+            // Only the primary activate is exposed here. When `showMoreButton` is
+            // false the reaction menu is reachable by long-press alone, which a
+            // screen reader can't perform — surfacing it needs a worded custom
+            // action (product copy), so it's a follow-up rather than a guess.
+            accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+            onAccessibilityAction={handleRowAccessibilityAction}
           >
             {/* Active-climb highlight: violet wash + left accent bar */}
             {selected ? (
@@ -475,9 +515,14 @@ const ClimbListRow = React.memo(function ClimbListRow({
             {showMoreButton && onOpenActions ? (
               <GestureDetector gesture={moreButtonGesture}>
                 <View
+                  testID="climb-row-more-button"
                   style={styles.moreButton}
+                  accessible
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.climbRow.moreActions')}
+                  onAccessibilityTap={handleOpenActions}
+                  accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+                  onAccessibilityAction={handleMoreButtonAccessibilityAction}
                 >
                   {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;
                       Android's dots-vertical is already vertical (no rotation). */}
