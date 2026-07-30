@@ -333,6 +333,9 @@ function ClimbListInner() {
   // actual TextInput/native field, leaving it visually stale.
   const handleSheetNameChange = useCallback(
     (text: string) => {
+      // ORDER MATTERS — see the comment above: mirror the raw text first, THEN
+      // let handleSearchChange's normalized write win by running second.
+      // Swapping these two lines silently regresses the top-bar mirror.
       applyVisibleSearchText(text);
       handleSearchChange(text);
     },
