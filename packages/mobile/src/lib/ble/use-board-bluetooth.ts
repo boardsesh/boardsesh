@@ -914,6 +914,14 @@ export function useBoardBluetooth({
 
         unsubDisconnectRef.current = adapter.onDisconnect(handleDisconnection);
         adapterRef.current = adapter;
+        // Assigned here, beside adapterRef, rather than after the initial send:
+        // the physical link exists from this line on, and the config-switch effect
+        // early-returns while this ref is null. Leaving it null across the awaited
+        // initial write meant a board/layout/size change landing in that window
+        // couldn't tear the (now-wrong) connection down. Both drop paths
+        // (clearConnectionAfterDrop, teardownConnection) already clear it.
+        connectedConfigKeyRef.current =
+          layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
 
         // Push board configuration into the native BoardBleManager so the
         // Dynamic Island widget intent path (next/prev tapped while the app
@@ -984,8 +992,6 @@ export function useBoardBluetooth({
           connectInitialSendRef.current = null;
         }
 
-        connectedConfigKeyRef.current =
-          layoutId !== undefined && sizeId !== undefined ? boardConfigKey(boardName, layoutId, sizeId) : null;
         lastDisconnectInfoRef.current = null;
         setIsConnected(true);
         onConnectionChange?.(true);
