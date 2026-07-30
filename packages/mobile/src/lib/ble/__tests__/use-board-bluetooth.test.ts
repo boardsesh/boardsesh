@@ -1787,6 +1787,11 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
     const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
     expect(failure?.[1]).toMatchObject({ failureReason: 'dropped_after_connect' });
+    // clearConnectionAfterDrop disposes the adapter on BOTH of its callers, not
+    // just the write-failure one — the adapter self-cleans after firing its own
+    // event, but the explicit disconnect is what stops a half-alive native link
+    // and the onDeviceDisconnected subscription leaking.
+    expect(fakeAdapter.disconnect).toHaveBeenCalled();
   });
 
   it('still connects when the initial climb is incompatible with the board (#3875)', async () => {
@@ -1928,6 +1933,76 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     await act(async () => {
       await result.current.connect();
     });
+    expect(result.current.connectInitialSendRef.current).toBeNull();
+  });
+
+  it('fails the connect when the board config switches during the initial write (#3875)', async () => {
+    // The guard for commit 1 (connectedConfigKeyRef assigned when the link opens
+    // rather than after the initial send). That move is what makes this path
+    // reachable at all: the config-switch effect early-returns while the ref is
+    // null, so before it, a board switch landing inside the awaited write left
+    // the stale connection up. Now the effect tears it down and the identity
+    // bail below stops connect() lighting the lightbulb over a dead adapter.
+    //
+    // The alert asserted here is deliberately the generic "move closer" copy,
+    // which does NOT describe what happened — the climber navigated away, the
+    // link did not drop. That wart is accepted (see the comment beside the bail);
+    // this assertion pins it so a future distinct bail reason updates the test on
+    // purpose instead of silently changing what the climber is told.
+    let releaseWrite: (() => void) | undefined;
+    let writeReached: (() => void) | undefined;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const writeStarted = new Promise<void>((resolve) => {
+      writeReached = resolve;
+    });
+    const fakeAdapter = makeFakeAdapter({
+      write: vi.fn(async () => {
+        writeReached?.();
+        await writeGate;
+      }),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockAuroraSendable();
+
+    const { result, rerender } = renderHook((props) => useBoardBluetooth(props), {
+      initialProps: { boardName: 'kilter', layoutId: 1, sizeId: 1 },
+    });
+
+    // Park connect() on the initial write. Only then is adapterRef (and, thanks
+    // to commit 1, connectedConfigKeyRef) set, which is what stops the
+    // config-switch effect early-returning and makes this test non-vacuous.
+    let pending: Promise<boolean> | undefined;
+    await act(async () => {
+      pending = result.current.connect('p100r12');
+      await writeStarted;
+    });
+
+    // The switch needs its own act: effects queued by rerender only flush when
+    // the act scope exits, so doing this inside the block above would release the
+    // write before the teardown had run.
+    await act(async () => {
+      rerender({ boardName: 'kilter', layoutId: 2, sizeId: 1 });
+    });
+    expect(fakeAdapter.disconnect).toHaveBeenCalled();
+
+    let connected: boolean | undefined;
+    await act(async () => {
+      releaseWrite?.();
+      connected = await pending;
+    });
+
+    expect(connected).toBe(false);
+    expect(result.current.isConnected).toBe(false);
+    expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({ failureReason: 'dropped_after_connect' });
+    // The switched-away connection must not leave a seed behind for the new
+    // board's AutoSender to inherit.
     expect(result.current.connectInitialSendRef.current).toBeNull();
   });
 });
