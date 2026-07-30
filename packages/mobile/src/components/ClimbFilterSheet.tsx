@@ -521,14 +521,13 @@ export function ClimbFilterSheet({
     hapticSelection();
     updateLocalFilters(DEFAULT_FILTERS);
     updateLocalBoardFilters(DEFAULT_CLIMB_BOARD_FILTER_STATE);
-    // Clear the name field too (#3606) — via the same single clearing path the
-    // inline × uses, so Reset and × can never drift apart. setNameDraft gives
-    // instant visual feedback; onClearName clears the parent's committed name
-    // (and its top-bar/native-search-bar mirror) in the same tick.
-    setNameDraft('');
-    onClearName?.();
+    // Clear the name field too (#3606) — CALLS handleClearNameField rather than
+    // repeating its two lines, so Reset and the inline × are two callers of one
+    // function, not two copies that can silently drift apart if the clearing
+    // logic grows.
+    handleClearNameField();
     hasLocalDraftEditsRef.current = false;
-  }, [updateLocalBoardFilters, updateLocalFilters, onClearName]);
+  }, [updateLocalBoardFilters, updateLocalFilters, handleClearNameField]);
 
   // The Holds row is always visible now (no Refine accordion to expand), so
   // prewarm the create-board hold geometry as soon as the sheet is visible with

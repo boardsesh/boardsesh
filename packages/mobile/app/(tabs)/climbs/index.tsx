@@ -343,7 +343,10 @@ function ClimbListInner() {
   // its inline × (#3606) — mirrors handleNativeSearchCancel's clearing sequence
   // but deliberately does NOT touch setShowFilters: Reset must not close the sheet.
   const handleClearName = useCallback(() => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
     visibleSearchTextRef.current = '';
     setName('');
     applyVisibleSearchText('');
