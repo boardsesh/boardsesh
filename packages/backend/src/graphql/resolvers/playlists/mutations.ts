@@ -290,33 +290,18 @@ export const playlistMutations = {
 
     const playlistId = ownership[0].id;
 
-    // Check if climb already exists in playlist
-    const existing = await db
-      .select()
-      .from(dbSchema.playlistClimbs)
-      .where(
-        and(
-          eq(dbSchema.playlistClimbs.playlistId, playlistId),
-          eq(dbSchema.playlistClimbs.climbUuid, validatedInput.climbUuid),
-        ),
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
-      // Already in playlist - return existing
-      return {
-        id: existing[0].id.toString(),
-        playlistId: validatedInput.playlistId,
-        climbUuid: existing[0].climbUuid,
-        angle: existing[0].angle,
-        position: existing[0].position,
-        addedAt: existing[0].addedAt.toISOString(),
-      };
-    }
-
-    // Use transaction to prevent race condition in position assignment
-    const playlistClimb = await db.transaction(async (tx) => {
-      // Get max position within transaction
+    // Insert-or-noop + position assignment share one transaction: a plain
+    // pre-check SELECT followed by a separate INSERT leaves a window where
+    // two concurrent calls for the same (playlistId, climbUuid) both see no
+    // existing row and both reach the INSERT, so the second hits the
+    // unique_playlist_climb index as a raw 23505 instead of the intended
+    // idempotent no-op. onConflictDoNothing lets Postgres's index arbitrate;
+    // when our insert loses the race we re-select the winner's row inside
+    // the same transaction (read-your-writes) and return it in the same
+    // "already in playlist" shape the old pre-check used.
+    // `wasAlreadyPresent` isn't surfaced in the response: the "added" vs
+    // "already present" shape stays identical, as it was before this fix.
+    const { playlistClimb } = await db.transaction(async (tx) => {
       const maxPosition = await tx
         .select({ max: sql<number>`coalesce(max(${dbSchema.playlistClimbs.position}), -1)` })
         .from(dbSchema.playlistClimbs)
@@ -325,8 +310,7 @@ export const playlistMutations = {
 
       const nextPosition = (maxPosition[0]?.max ?? -1) + 1;
 
-      // Add climb to playlist
-      const [newClimb] = await tx
+      const [insertedClimb] = await tx
         .insert(dbSchema.playlistClimbs)
         .values({
           playlistId,
@@ -335,16 +319,41 @@ export const playlistMutations = {
           position: nextPosition,
           addedAt: new Date(),
         })
+        .onConflictDoNothing({
+          target: [dbSchema.playlistClimbs.playlistId, dbSchema.playlistClimbs.climbUuid],
+        })
         .returning();
 
-      // Update playlist updatedAt and lastAccessedAt
-      const now = new Date();
-      await tx
-        .update(dbSchema.playlists)
-        .set({ updatedAt: now, lastAccessedAt: now })
-        .where(eq(dbSchema.playlists.id, playlistId));
+      if (insertedClimb) {
+        const now = new Date();
+        await tx
+          .update(dbSchema.playlists)
+          .set({ updatedAt: now, lastAccessedAt: now })
+          .where(eq(dbSchema.playlists.id, playlistId));
 
-      return newClimb;
+        return { playlistClimb: insertedClimb, wasAlreadyPresent: false };
+      }
+
+      // Conflict hit: a concurrent insert won the race. Re-select the
+      // winner's row within this transaction for read-your-writes.
+      const [existingClimb] = await tx
+        .select()
+        .from(dbSchema.playlistClimbs)
+        .where(
+          and(
+            eq(dbSchema.playlistClimbs.playlistId, playlistId),
+            eq(dbSchema.playlistClimbs.climbUuid, validatedInput.climbUuid),
+          ),
+        )
+        .limit(1);
+
+      if (!existingClimb) {
+        // Should be unreachable: onConflictDoNothing only skips when a
+        // conflicting row exists. Fail loudly rather than return undefined.
+        throw new Error('Failed to add climb to playlist: conflicting row not found after insert skip');
+      }
+
+      return { playlistClimb: existingClimb, wasAlreadyPresent: true };
     });
 
     return {
