@@ -656,6 +656,7 @@
       "apply": "Apply filters",
       "reset": "Reset",
       "section": {
+        "name": "Climb name",
         "difficulty": "Difficulty",
         "quality": "Quality",
         "theClimb": "The climb",

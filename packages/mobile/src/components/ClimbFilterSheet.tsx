@@ -3,6 +3,7 @@ import {
   View,
   Pressable,
   StyleSheet,
+  TextInput,
   type ViewStyle,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -56,6 +57,7 @@ import { parseSetIdsParam, prewarmCreateBoardHolds } from '../lib/create-board-h
 import { subscribeToHoldsFilterSelection } from '../lib/hold-filter-handoff';
 import { subscribeToZoneFilterSelection, type ZoneFilterSelection } from '../lib/zone-filter-handoff';
 import { subscribeToSetterFilterSelection } from '../lib/setter-filter-handoff';
+import { visibleSearchTextNeedsSync } from '../lib/search-name';
 import { useAuth } from '../providers/auth-provider';
 import { hapticSelection } from '../lib/haptics';
 import { springs } from '../theme/animations';
@@ -77,11 +79,19 @@ type ClimbFilterSheetProps = {
   boardConfig: BoardSearchConfig | null;
   currentFilters: ClimbFilters;
   currentBoardFilters: ClimbBoardFilterState;
-  /** Current committed name term, so the live "Show N" count matches Apply. */
+  /** Current committed name term, so the live "Show N" count matches Apply and
+   *  the in-sheet name field seeds correctly. */
   searchName?: string;
   /** Last-used grade id; centres the grade rail on a familiar grade when unset. */
   lastUsedGradeId?: number;
   onApply: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
+  /** Fired per keystroke as the in-sheet name field changes (mirrors into the
+   *  parent's live search — name is committed outside the Apply-gated draft
+   *  model, same as the top-bar search field). */
+  onNameChange?: (text: string) => void;
+  /** Fired by Reset and the field's inline × — the ONE clearing path for name,
+   *  shared so there is exactly one code path to reason about (#3606). */
+  onClearName?: () => void;
 };
 
 // The status enum is still driven from the sheet — "My drafts" (Your progress
@@ -155,8 +165,11 @@ export function ClimbFilterSheet({
   searchName,
   lastUsedGradeId,
   onApply,
+  onNameChange,
+  onClearName,
 }: ClimbFilterSheetProps) {
   const { t } = useTranslation('climbs');
+  const { t: tCommon } = useTranslation('common');
   const theme = useTheme();
   const { systemColors } = theme;
   const { isAuthenticated } = useAuth();
@@ -179,6 +192,25 @@ export function ClimbFilterSheet({
     statusForAuth(normalizeRetiredStatus(currentFilters), isAuthenticated),
   );
   const [localBoardFilters, setLocalBoardFilters] = useState<ClimbBoardFilterState>(currentBoardFilters);
+  // The name field's own draft — seeded from the committed `searchName` prop.
+  // Name lives outside the Apply-gated draft model (it's committed live via the
+  // parent's debounce, same as the top-bar search field), so this is a plain
+  // display draft, not part of localFilters/DEFAULT_FILTERS.
+  const [nameDraft, setNameDraft] = useState(searchName ?? '');
+  // Ref snapshot of the draft, read (not the reactive `nameDraft`) inside the
+  // resync effect below so the effect's own deps stay just [searchName] — same
+  // shape as the parent's top-bar sync effect, which reads visibleSearchTextRef.
+  const nameDraftRef = useRef(nameDraft);
+  nameDraftRef.current = nameDraft;
+
+  // Resync the field from an external `searchName` change (board switch, recent
+  // pill, cancel) — but ignore a trim-only difference, exactly like the parent's
+  // own top-bar sync effect (packages/mobile/app/(tabs)/climbs/index.tsx), so a
+  // mid-typing space isn't yanked out from under the cursor.
+  useEffect(() => {
+    if (!visibleSearchTextNeedsSync(nameDraftRef.current, searchName ?? '')) return;
+    setNameDraft(searchName ?? '');
+  }, [searchName]);
   // The sub-pickers (setters / holds / zone) are pushed routes, not stacked
   // sheets (native sheets can't stack above this one). While a sub-route is open
   // we suspend — dismiss the native sheet without unmounting, so the draft below
@@ -237,19 +269,28 @@ export function ClimbFilterSheet({
     : { hasShorter: false, hasNarrower: false };
 
   // Live "Show N" preview for the in-progress edits (matches what Apply yields).
-  // Debounced so rapid chip/toggle taps don't each fire a count request.
-  const [debouncedEdits, setDebouncedEdits] = useState({ filters: localFilters, boardFilters: localBoardFilters });
+  // Debounced so rapid chip/toggle taps — and now keystrokes in the name field —
+  // don't each fire a count request. `name` rides along so an in-sheet name edit
+  // is reflected in the preview the same way a chip/toggle edit is.
+  const [debouncedEdits, setDebouncedEdits] = useState({
+    filters: localFilters,
+    boardFilters: localBoardFilters,
+    name: nameDraft,
+  });
   useEffect(() => {
-    const handle = setTimeout(() => setDebouncedEdits({ filters: localFilters, boardFilters: localBoardFilters }), 250);
+    const handle = setTimeout(
+      () => setDebouncedEdits({ filters: localFilters, boardFilters: localBoardFilters, name: nameDraft }),
+      250,
+    );
     return () => clearTimeout(handle);
-  }, [localFilters, localBoardFilters]);
+  }, [localFilters, localBoardFilters, nameDraft]);
   const previewInput = useMemo(() => {
     if (!boardConfig) return null;
     return mergeBoardFilters(
-      toClimbSearchInput(debouncedEdits.filters, boardConfig, { page: 0, pageSize: 1 }, { name: searchName }),
+      toClimbSearchInput(debouncedEdits.filters, boardConfig, { page: 0, pageSize: 1 }, { name: debouncedEdits.name }),
       debouncedEdits.boardFilters,
     );
-  }, [boardConfig, debouncedEdits, searchName]);
+  }, [boardConfig, debouncedEdits]);
   const { data: previewCount } = useSearchClimbsCount(
     previewInput ?? { boardName: '', layoutId: 0, sizeId: 0, setIds: '', angle: 0 },
     !!previewInput,
@@ -337,6 +378,25 @@ export function ClimbFilterSheet({
     },
     [updateLocalFilters],
   );
+
+  // Per-keystroke: update the field's own display state immediately, and mirror
+  // the raw text out to the parent (which commits it live via its own debounce —
+  // name is not part of the Apply-gated draft, see the `nameDraft` comment above).
+  const handleNameTextChange = useCallback(
+    (text: string) => {
+      setNameDraft(text);
+      onNameChange?.(text);
+    },
+    [onNameChange],
+  );
+
+  // The ONE clearing path for name, shared by the inline × and Reset (#3606) —
+  // clears the field's own display state and asks the parent to clear the
+  // committed name + the top-bar/native-search-bar mirror.
+  const handleClearNameField = useCallback(() => {
+    setNameDraft('');
+    onClearName?.();
+  }, [onClearName]);
 
   const handleSortByChange = useCallback(
     (sortBy: SortOption) =>
@@ -461,8 +521,14 @@ export function ClimbFilterSheet({
     hapticSelection();
     updateLocalFilters(DEFAULT_FILTERS);
     updateLocalBoardFilters(DEFAULT_CLIMB_BOARD_FILTER_STATE);
+    // Clear the name field too (#3606) — via the same single clearing path the
+    // inline × uses, so Reset and × can never drift apart. setNameDraft gives
+    // instant visual feedback; onClearName clears the parent's committed name
+    // (and its top-bar/native-search-bar mirror) in the same tick.
+    setNameDraft('');
+    onClearName?.();
     hasLocalDraftEditsRef.current = false;
-  }, [updateLocalBoardFilters, updateLocalFilters]);
+  }, [updateLocalBoardFilters, updateLocalFilters, onClearName]);
 
   // The Holds row is always visible now (no Refine accordion to expand), so
   // prewarm the create-board hold geometry as soon as the sheet is visible with
@@ -668,12 +734,49 @@ export function ClimbFilterSheet({
           onScroll={handleScroll}
           scrollEventThrottle={32}
           onContentSizeChange={handleScrollContentSizeChange}
+          // This sheet never hosted a text input before the name field below —
+          // without this, a first tap on Apply/Reset/another row while the
+          // keyboard is up over the field can be swallowed (standard RN
+          // ScrollView gotcha; the tap dismisses the keyboard instead of firing).
+          keyboardShouldPersistTaps="handled"
         >
           {/* Flat, labeled sections — no accordions. The scroll body is one column
               child (styles.body) so the native sheet scrolls and the footer pins. */}
           <View style={styles.body}>
-            {/* 1 · DIFFICULTY — grade bound + grade accuracy. */}
+            {/* 1 · NAME — climb-name search term, first row so Reset has something
+                visible to reset (#3606). Committed live via onNameChange/onClearName,
+                same as the top-bar search field — NOT part of localFilters/Apply. */}
             <View style={styles.sectionFirst}>
+              <Text variant="headline" style={styles.sectionHeader}>
+                {t('mobile.filter.section.name')}
+              </Text>
+              <View style={[styles.nameInputRow, { backgroundColor: systemColors.tertiaryBackground }]}>
+                <TextInput
+                  value={nameDraft}
+                  onChangeText={handleNameTextChange}
+                  placeholder={t('search.placeholders.climbs')}
+                  placeholderTextColor={systemColors.tertiaryLabel}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                  accessibilityLabel={t('mobile.filter.section.name')}
+                  style={[styles.nameInput, { color: systemColors.label }]}
+                />
+                {nameDraft.length > 0 ? (
+                  <Pressable
+                    onPress={handleClearNameField}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel={tCommon('clear')}
+                  >
+                    <Icon name="close" size={14} color={systemColors.tertiaryLabel} />
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+
+            {/* 2 · DIFFICULTY — grade bound + grade accuracy. */}
+            <View style={styles.section}>
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.difficulty')}
               </Text>
@@ -714,7 +817,7 @@ export function ClimbFilterSheet({
               />
             </View>
 
-            {/* 2 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
+            {/* 3 · YOUR PROGRESS — auth-only; the per-user tick-flag selector plus
                 the "My drafts" toggle (old Status 'drafts', with its side-effects). */}
             {isAuthenticated ? (
               <View style={styles.section}>
@@ -739,7 +842,7 @@ export function ClimbFilterSheet({
               </View>
             ) : null}
 
-            {/* 3 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
+            {/* 4 · QUALITY — benchmarks, min rating, popularity (incl. Unrepeated). */}
             <View style={styles.section}>
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.quality')}
@@ -809,7 +912,7 @@ export function ClimbFilterSheet({
               </View>
             </View>
 
-            {/* 4 · THE CLIMB — type, shape, setters, holds, zones, beta. */}
+            {/* 5 · THE CLIMB — type, shape, setters, holds, zones, beta. */}
             <View style={styles.section}>
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.theClimb')}
@@ -948,7 +1051,7 @@ export function ClimbFilterSheet({
               />
             </View>
 
-            {/* 5 · SORT — sort key + direction (or reshuffle for random). */}
+            {/* 6 · SORT — sort key + direction (or reshuffle for random). */}
             <View style={styles.section}>
               <Text variant="headline" style={styles.sectionHeader}>
                 {t('mobile.filter.section.sort')}
@@ -1040,7 +1143,7 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: spacing[4],
   },
-  // Each top-level group. A generous top pad separates the five headers into
+  // Each top-level group. A generous top pad separates the six headers into
   // distinct inset-style groups; the first group sits tighter under the sheet header.
   section: {
     paddingTop: spacing[5],
@@ -1048,10 +1151,26 @@ const styles = StyleSheet.create({
   sectionFirst: {
     paddingTop: spacing[2],
   },
-  // The five group titles — more prominent than the muted footnote sub-labels so
-  // the flat sheet reads as five inset groups without accordions.
+  // The six group titles — more prominent than the muted footnote sub-labels so
+  // the flat sheet reads as six inset groups without accordions.
   sectionHeader: {
     marginBottom: spacing[3],
+  },
+  // The name field's row — same tertiaryBackground pill language as the
+  // tappable rows below (setters/holds/zone), so it reads as part of the family.
+  nameInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing[2],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    borderRadius: 10,
+    minHeight: 44,
+  },
+  nameInput: {
+    flex: 1,
+    fontSize: 17,
+    paddingVertical: 0,
   },
   subsectionLabel: {
     opacity: 0.55,

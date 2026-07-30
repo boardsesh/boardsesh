@@ -656,6 +656,7 @@
       "apply": "Aplicar filtros",
       "reset": "Restablecer",
       "section": {
+        "name": "Nombre del bloque",
         "difficulty": "Dificultad",
         "quality": "Calidad",
         "theClimb": "El bloque",

@@ -77,6 +77,14 @@ const createBoardHoldsMocks = vi.hoisted(() => ({
   prewarmCreateBoardHolds: vi.fn(),
 }));
 
+// A spy (not a bare stub) so a test can inspect the `name` it was called with —
+// needed to assert the "Show N" preview reflects an in-sheet name edit (#3606).
+// Typed explicitly: an inferred `() => {}` gives `.mock.calls` the `[][]` tuple
+// type and `lastCall?.[3]` fails to typecheck (TS2493).
+const searchInputMocks = vi.hoisted(() => ({
+  toClimbSearchInput: vi.fn((..._args: unknown[]) => ({})),
+}));
+
 const currentFilters: ClimbFilters = {
   sortBy: 'popular',
   sortOrder: 'desc',
@@ -100,6 +108,13 @@ const boardConfig = {
   angle: 40,
 };
 
+type TextInputProps = {
+  value?: string;
+  onChangeText?: (text: string) => void;
+  placeholder?: string;
+  accessibilityLabel?: string;
+};
+
 vi.mock('react-native', () => ({
   Platform: { OS: 'android' },
   useWindowDimensions: () => ({ width: 390, height: 844 }),
@@ -118,6 +133,16 @@ vi.mock('react-native', () => ({
       renderedChildren,
     );
   },
+  // The name field's input (#3606) — a plain controlled `<input>` standing in
+  // for RN's TextInput; `onChangeText` (not DOM's `onChange`-with-event) is the
+  // callback shape ClimbFilterSheet actually calls.
+  TextInput: ({ value, onChangeText, placeholder, accessibilityLabel }: TextInputProps) =>
+    createElement('input', {
+      value,
+      onChange: (event: { target: { value: string } }) => onChangeText?.(event.target.value),
+      placeholder,
+      'aria-label': accessibilityLabel,
+    }),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
 }));
 
@@ -213,7 +238,7 @@ vi.mock('@boardsesh/climb-filters', () => ({
   hasActiveBoardFilters: filterActivityMocks.hasActiveBoardFilters,
   applyStatusChange: (_filters: unknown, status: string) => ({ status }),
   normalizeRetiredStatus: (filters: unknown) => filters,
-  toClimbSearchInput: () => ({}),
+  toClimbSearchInput: searchInputMocks.toClimbSearchInput,
   newSortSeed: () => '424242',
   mergeBoardFilters: (input: unknown) => input,
   formatMinAscentsFilterCount: (count: number) => String(count),
@@ -366,6 +391,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => false);
   filterActivityMocks.hasActiveBoardFilters.mockImplementation(() => false);
+  searchInputMocks.toClimbSearchInput.mockImplementation(() => ({}));
   bottomSheetModalProps.latest = null;
   bottomSheetModalProps.mountCount = 0;
   bottomSheetScrollViewProps.latest = null;
@@ -688,10 +714,12 @@ describe('ClimbFilterSheet random sort', () => {
 });
 
 describe('ClimbFilterSheet flat sections', () => {
-  it('renders five labeled sections flat, without any accordion controls', () => {
+  it('renders six labeled sections flat, without any accordion controls', () => {
     const { getByText, queryByText } = renderFilterSheet();
 
-    // The five top-level group headers are all present and always visible.
+    // The six top-level group headers are all present and always visible — Name
+    // is now the first (#3606), ahead of Difficulty.
+    expect(getByText('mobile.filter.section.name')).not.toBeNull();
     expect(getByText('mobile.filter.section.difficulty')).not.toBeNull();
     expect(getByText('mobile.filter.progress.label')).not.toBeNull();
     expect(getByText('mobile.filter.section.quality')).not.toBeNull();
@@ -744,5 +772,92 @@ describe('ClimbFilterSheet flat sections', () => {
     const call = onApply.mock.calls.at(-1);
     expect((call?.[0] as ClimbFilters).status).toBe('any');
     expect((call?.[1] as { onlyBenchmarks?: boolean }).onlyBenchmarks).toBe(true);
+  });
+});
+
+// Regression coverage for #3606: Reset silently left the committed climb-name
+// term in place (no wire existed to clear it), and the maintainer separately
+// asked for the name to be a visible, editable first row in the sheet.
+describe('ClimbFilterSheet name field (#3606)', () => {
+  it('clears the name via onClearName on Reset, but NOT on Apply', () => {
+    // Reset is only enabled while the draft has active filters.
+    filterActivityMocks.hasActiveClimbFilters.mockImplementation(() => true);
+    const onClearName = vi.fn();
+    const onApply = vi.fn();
+    const { getByText } = renderFilterSheet({ searchName: 'crimpy', onClearName, onApply });
+
+    // Guards against the wiring landing on the wrong button — a plausible
+    // copy-paste inversion given Reset/Apply sit in the same header/footer.
+    fireEvent.click(getByText('mobile.filter.showCount12'));
+    expect(onClearName).not.toHaveBeenCalled();
+    expect(onApply).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(getByText('mobile.filter.reset'));
+    expect(onClearName).toHaveBeenCalledTimes(1);
+  });
+
+  it('mirrors a typed name to onNameChange and to the field itself', () => {
+    const onNameChange = vi.fn();
+    const { getByLabelText } = renderFilterSheet({ onNameChange });
+
+    const input = getByLabelText('mobile.filter.section.name') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'crimp' } });
+
+    expect(onNameChange).toHaveBeenCalledWith('crimp');
+    expect(input.value).toBe('crimp');
+  });
+
+  it('shows the inline clear button only once there is text, and routes it through the same path as Reset', () => {
+    const onClearName = vi.fn();
+    // Seeded non-empty so the clear button is visible immediately.
+    const { getByLabelText, queryByLabelText } = renderFilterSheet({ searchName: 'foot', onClearName });
+
+    const input = getByLabelText('mobile.filter.section.name') as HTMLInputElement;
+    expect(input.value).toBe('foot');
+
+    fireEvent.click(getByLabelText('clear'));
+
+    expect(input.value).toBe('');
+    expect(onClearName).toHaveBeenCalledTimes(1);
+    expect(queryByLabelText('clear')).toBeNull();
+  });
+
+  it('resyncs the name field from an external searchName change, but ignores a trim-only difference', () => {
+    const rendered = renderFilterSheet({ searchName: 'crimp' });
+    const input = rendered.getByLabelText('mobile.filter.section.name') as HTMLInputElement;
+    expect(input.value).toBe('crimp');
+
+    // A genuine external change (board switch / recent-pill apply / cancel)
+    // re-seeds the field.
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} searchName="jugs" />);
+    expect(input.value).toBe('jugs');
+
+    // Simulate mid-typing a trailing space, then the parent commits the
+    // NORMALIZED (trimmed) value — the field's own trailing space must survive,
+    // not get yanked out from under the cursor.
+    fireEvent.change(input, { target: { value: 'sloper ' } });
+    rendered.rerender(<ClimbFilterSheet {...rendered.props} searchName="sloper" />);
+    expect(input.value).toBe('sloper ');
+  });
+
+  it('reflects an in-sheet name edit in the "Show N" preview after the debounce', () => {
+    vi.useFakeTimers();
+    try {
+      const { getByLabelText } = renderFilterSheet();
+      searchInputMocks.toClimbSearchInput.mockClear();
+
+      const input = getByLabelText('mobile.filter.section.name') as HTMLInputElement;
+      fireEvent.change(input, { target: { value: 'crimp' } });
+
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      const lastCall = searchInputMocks.toClimbSearchInput.mock.calls.at(-1);
+      // 4th positional arg is `{ name }` — see toClimbSearchInput(filters, boardConfig, pageParams, { name }).
+      expect(lastCall?.[3]).toEqual({ name: 'crimp' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

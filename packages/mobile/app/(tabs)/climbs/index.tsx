@@ -323,6 +323,32 @@ function ClimbListInner() {
     nativeSearchRef.current?.clearText();
   }, [setName]);
 
+  // Composed for the filter sheet's in-line name field (#3606): mirror the raw
+  // keystroke into the top bar/native search bar FIRST via applyVisibleSearchText
+  // (silent — doesn't re-enter this same handler), THEN run handleSearchChange's
+  // normal normalize+debounce+commit path, whose ref/state writes run second and
+  // so win. Without the mirror call first, the top bar's own resync effect (see
+  // the visibleSearchTextNeedsSync effect above) would see visibleSearchTextRef
+  // already in lockstep with the sheet's typing and skip re-seeding the top bar's
+  // actual TextInput/native field, leaving it visually stale.
+  const handleSheetNameChange = useCallback(
+    (text: string) => {
+      applyVisibleSearchText(text);
+      handleSearchChange(text);
+    },
+    [applyVisibleSearchText, handleSearchChange],
+  );
+
+  // The ONE clearing path for name, shared by the filter sheet's Reset button and
+  // its inline × (#3606) — mirrors handleNativeSearchCancel's clearing sequence
+  // but deliberately does NOT touch setShowFilters: Reset must not close the sheet.
+  const handleClearName = useCallback(() => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    visibleSearchTextRef.current = '';
+    setName('');
+    applyVisibleSearchText('');
+  }, [applyVisibleSearchText, setName]);
+
   const handleSearchFocus = useCallback(() => {
     setShowGrade(false);
     setIsSearchFocused(true);
@@ -1565,6 +1591,8 @@ function ClimbListInner() {
           searchName={name}
           lastUsedGradeId={lastUsedGrade}
           onApply={handleApplyFilters}
+          onNameChange={handleSheetNameChange}
+          onClearName={handleClearName}
         />
       ) : null}
     </View>
