@@ -1781,6 +1781,12 @@ describe('useBoardBluetooth connect() initial frame write (#3875)', () => {
     expect(connected).toBe(false);
     expect(result.current.isConnected).toBe(false);
     expect(mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Success')).toBeUndefined();
+    // Asserted here too, not just in the test above: this is the arm the boolean
+    // return value cannot reach, so it needs its own proof that the climber is
+    // told and the failure is recorded.
+    expect(Alert.alert).toHaveBeenCalledWith('ble.connectionFailedTitle', 'bluetooth.connectFailed');
+    const failure = mockTrack.mock.calls.find(([name]) => name === 'Bluetooth Connection Failed');
+    expect(failure?.[1]).toMatchObject({ failureReason: 'dropped_after_connect' });
   });
 
   it('still connects when the initial climb is incompatible with the board (#3875)', async () => {

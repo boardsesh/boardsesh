@@ -1045,6 +1045,13 @@ export function useBoardBluetooth({
         // presence feed over a dark wall. Assigned on every exit path (including
         // the bail above), so a later native-connection adoption — which never
         // assigns this ref — can't inherit a stale seed either.
+        //
+        // Accepted cost: an incompatible initialFrames no longer suppresses the
+        // AutoSender's own attempt, so the climber can see ble.errorIncompatible
+        // twice. That is deliberate — suppressing the second alert also suppresses
+        // the truthful "nothing is on the wall" state and puts a phantom
+        // onWallConfirmed on the party feed. One extra alert beats telling the
+        // crew a climb is lit when the wall is dark.
         connectInitialSendRef.current =
           initialFrames && initialSendResult === true
             ? { frames: initialFrames, mirrored: !!mirrored, colorSignature }
