@@ -87,11 +87,15 @@ type ClimbFilterSheetProps = {
   onApply: (filters: ClimbFilters, boardFilters: ClimbBoardFilterState) => void;
   /** Fired per keystroke as the in-sheet name field changes (mirrors into the
    *  parent's live search — name is committed outside the Apply-gated draft
-   *  model, same as the top-bar search field). */
-  onNameChange?: (text: string) => void;
+   *  model, same as the top-bar search field). Required: the sheet only owns the
+   *  field's display state, so an unwired caller would render a name field that
+   *  looks like it filters and doesn't. */
+  onNameChange: (text: string) => void;
   /** Fired by Reset and the field's inline × — the ONE clearing path for name,
-   *  shared so there is exactly one code path to reason about (#3606). */
-  onClearName?: () => void;
+   *  shared so there is exactly one code path to reason about (#3606). Required
+   *  for the same reason as `onNameChange`: without it, clearing would blank the
+   *  field while the committed search term quietly survived. */
+  onClearName: () => void;
 };
 
 // The status enum is still driven from the sheet — "My drafts" (Your progress
@@ -385,7 +389,7 @@ export function ClimbFilterSheet({
   const handleNameTextChange = useCallback(
     (text: string) => {
       setNameDraft(text);
-      onNameChange?.(text);
+      onNameChange(text);
     },
     [onNameChange],
   );
@@ -395,7 +399,7 @@ export function ClimbFilterSheet({
   // committed name + the top-bar/native-search-bar mirror.
   const handleClearNameField = useCallback(() => {
     setNameDraft('');
-    onClearName?.();
+    onClearName();
   }, [onClearName]);
 
   const handleSortByChange = useCallback(

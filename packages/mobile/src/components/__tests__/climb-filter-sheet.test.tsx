@@ -374,6 +374,8 @@ function renderFilterSheet(overrides: Partial<Parameters<typeof ClimbFilterSheet
     currentBoardFilters,
     searchName: '',
     onApply: vi.fn(),
+    onNameChange: vi.fn(),
+    onClearName: vi.fn(),
     ...overrides,
   };
 
