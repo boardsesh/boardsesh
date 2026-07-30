@@ -239,6 +239,7 @@ type Snapshot = {
   playlistSuggestionSource: PlaylistSuggestionSource | null;
   addToQueue: ReturnType<typeof useQueue>['addToQueue'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
+  clearQueue: ReturnType<typeof useQueue>['clearQueue'];
   reorderQueue: ReturnType<typeof useQueue>['reorderQueue'];
   setQueue: ReturnType<typeof useQueue>['setQueue'];
   setCurrentClimb: ReturnType<typeof useQueue>['setCurrentClimb'];
@@ -336,6 +337,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       playlistSuggestionSource,
       addToQueue: queue.addToQueue,
       removeFromQueue: queue.removeFromQueue,
+      clearQueue: queue.clearQueue,
       reorderQueue: queue.reorderQueue,
       setQueue: queue.setQueue,
       setCurrentClimb: queue.setCurrentClimb,
@@ -357,6 +359,7 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     playlistSuggestionSource,
     queue.addToQueue,
     queue.removeFromQueue,
+    queue.clearQueue,
     queue.reorderQueue,
     queue.setQueue,
     queue.setCurrentClimb,
@@ -2478,6 +2481,176 @@ describe('QueueProvider mutation-failure resync', () => {
     // retry loop fired. No "refreshed" toast since nothing was applied.
     expect(queueStateCalls).toBe(1);
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+  });
+
+  // #3929: a throttled queue-CONTENT mutation used to be completely silent
+  // about pacing — the climber only ever saw the delayed "Queue was out of
+  // sync" notice, which reads as a bug rather than "ease off". These four cover
+  // add / remove / setQueue / clearQueue. The pacing hint lands first and the
+  // refresh notice still follows, exactly like the setCurrentClimb path above.
+  it('surfaces the pacing hint when a throttled add fails in a session', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-item', 'climb-server');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.addQueueItem.mockRejectedValueOnce(makeRateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.addToQueue(makeQueueItem('local-add', 'climb-local'));
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item']);
+    });
+    // The divergence is real, so reconciliation still runs on top of the toast.
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual([
+      'mobile.queue.rateLimited',
+      'mobile.queue.outOfSyncRefreshed',
+    ]);
+  });
+
+  it('surfaces the pacing hint when a throttled remove fails in a session', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-kept', 'climb-kept');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.removeQueueItem.mockRejectedValueOnce(makeRateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      prepared.addToQueue(makeQueueItem('to-remove', 'climb-remove'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toContain('to-remove');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.removeFromQueue('to-remove');
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-kept']);
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual([
+      'mobile.queue.rateLimited',
+      'mobile.queue.outOfSyncRefreshed',
+    ]);
+  });
+
+  it('surfaces the pacing hint when a throttled setQueue fails in a session', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-item', 'climb-server');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.setQueue.mockRejectedValueOnce(makeRateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.setQueue([makeQueueItem('replaced-one', 'climb-replaced-one')]);
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item']);
+    });
+    expect(queueStateCalls).toBe(1);
+    expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual([
+      'mobile.queue.rateLimited',
+      'mobile.queue.outOfSyncRefreshed',
+    ]);
+  });
+
+  it('prefers the throttled rejection when clearing a queue partly fails', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-kept', 'climb-kept');
+    routeHttpRequest(queueStateResponse([serverItem]));
+    // The limiter typically rejects the TAIL of a clear's per-item removes, so
+    // the plain failure comes first: an implementation that classifies
+    // rejectedRemovals[0] would miss the pacing hint entirely.
+    queueMutations.removeQueueItem.mockRejectedValueOnce(new Error('network'));
+    queueMutations.removeQueueItem.mockRejectedValueOnce(makeRateLimitedError());
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      prepared.addToQueue(makeQueueItem('clear-one', 'climb-clear-one'));
+      prepared.addToQueue(makeQueueItem('clear-two', 'climb-clear-two'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['clear-one', 'clear-two']);
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.clearQueue();
+    });
+
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+    });
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+  });
+
+  it('keeps a non-throttled add failure silent about pacing', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-item', 'climb-server');
+    let queueStateCalls = 0;
+    routeHttpRequest(queueStateResponse([serverItem]), { onQueueStateCall: () => (queueStateCalls += 1) });
+    queueMutations.addQueueItem.mockRejectedValueOnce(new Error('add failed'));
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.addToQueue(makeQueueItem('local-add', 'climb-local'));
+    });
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['server-item']);
+    });
+    expect(queueStateCalls).toBe(1);
+    // Guard test: a best-effort add that fails offline/transiently must stay
+    // quiet apart from the refresh notice. Reaching for
+    // showQueueMutationErrorToast here would fire "Action failed" on every
+    // dropped connection — the #2763 complaint all over again.
+    expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual(['mobile.queue.outOfSyncRefreshed']);
   });
 });
 
