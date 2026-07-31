@@ -2618,8 +2618,45 @@ describe('QueueProvider mutation-failure resync', () => {
     });
 
     await waitFor(() => {
-      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
+      expect(toast.showToast.mock.calls.map(([message]) => message)).toEqual([
+        'mobile.queue.rateLimited',
+        'mobile.queue.outOfSyncRefreshed',
+      ]);
     });
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
+  });
+
+  it('keeps a non-throttled clear failure silent about pacing', async () => {
+    const snapshots: Snapshot[] = [];
+    const serverItem = makeQueueItem('server-kept', 'climb-kept');
+    routeHttpRequest(queueStateResponse([serverItem]));
+    queueMutations.removeQueueItem.mockRejectedValueOnce(new Error('network'));
+
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.sessionId).toBe('session-1');
+    });
+
+    const prepared = snapshots.at(-1);
+    if (!prepared) throw new Error('queue snapshot was not captured');
+    act(() => {
+      prepared.addToQueue(makeQueueItem('clear-one', 'climb-clear-one'));
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['clear-one']);
+    });
+
+    const snapshot = snapshots.at(-1);
+    if (!snapshot) throw new Error('queue snapshot was not captured');
+    act(() => {
+      snapshot.clearQueue();
+    });
+
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith('mobile.queue.outOfSyncRefreshed', 'error');
+    });
+    expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.rateLimited', 'error');
     expect(toast.showToast).not.toHaveBeenCalledWith('mobile.queue.actionFailed', 'error');
   });
 

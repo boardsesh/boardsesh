@@ -692,26 +692,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     if (refreshed) showToast(t('mobile.queue.outOfSyncRefreshed'), 'error');
   }, [showToast, t]);
 
-  // Failure handler for the four queue-CONTENT mutations (add/remove/clear/
-  // setQueue). Two things happen, deliberately independent:
-  //
-  //  1. If the backend throttled us, say so straight away. Without this the
-  //     climber gets no pacing hint at all — the only feedback was the delayed
-  //     "Queue was out of sync" toast, which reads as a bug rather than "ease
-  //     off" (#3929).
-  //  2. Reconcile regardless. Content divergence is permanent (see the comment
-  //     above), so the resync must run even when we already toasted.
-  //
-  // That means a throttled content mutation shows TWO toasts: the pacing hint
-  // now, and `outOfSyncRefreshed` a round-trip later once reconciliation
-  // actually replaced the queue. That is by design and matches the existing
-  // setCurrentClimb contract asserted in queue-provider-session-updates.test.tsx
-  // ("Two toasts, deliberately"). Don't collapse them — suppressing the refresh
-  // toast hides a queue that genuinely swapped under the climber.
-  //
-  // Deliberately NOT showQueueMutationErrorToast: that helper also fires
-  // `actionFailed` + reportHandledError on every non-throttle error, and these
-  // syncs are best-effort (offline/transient failures must stay silent, #2763).
+  // Failure handler for the four queue-CONTENT mutations (add/remove/clear/setQueue).
+  // A throttled one shows TWO toasts by design (#3929): the pacing hint now, and
+  // `outOfSyncRefreshed` a round-trip later once reconciliation replaced the queue —
+  // same contract as setCurrentClimb ("Two toasts, deliberately" in the tests).
+  // Not showQueueMutationErrorToast: that also fires `actionFailed` on every
+  // non-throttle error, and these syncs must stay silent when offline (#2763).
   const reconcileFailedContentMutation = useCallback(
     (error: unknown) => {
       if (sessionIdRef.current && isRateLimitedError(error)) showToast(t('mobile.queue.rateLimited'), 'error');
