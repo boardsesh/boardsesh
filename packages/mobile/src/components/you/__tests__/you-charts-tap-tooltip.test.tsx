@@ -31,6 +31,7 @@ vi.mock('react-native', () => ({
   Pressable: ({ children, onPress }: { children?: ReactNode; onPress?: () => void }) =>
     createElement('button', { type: 'button', onClick: onPress }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
+  PixelRatio: { getFontScale: () => 1 },
 }));
 
 vi.mock('react-i18next', () => ({

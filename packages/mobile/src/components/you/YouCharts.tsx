@@ -1,5 +1,12 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Pressable, View, StyleSheet, type GestureResponderEvent, type LayoutChangeEvent } from 'react-native';
+import {
+  PixelRatio,
+  Pressable,
+  View,
+  StyleSheet,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { BarChart, LineChart } from 'react-native-gifted-charts';
 import type { RawGroupedBar, RawVPointsTimeline } from '@boardsesh/profile-stats';
@@ -18,6 +25,7 @@ import {
   getStackedBarsMaxValue,
   type ChartTooltipModel,
 } from './chart-model';
+import { computeBarTopLabelLayout, longestBarValue } from './bar-top-label';
 
 const MAX_X_LABELS = 12;
 const AXIS_LABEL_SIZE = 11;
@@ -31,6 +39,9 @@ const MIN_GROUPED_BAR = 6;
 // already carry their own 0.85 alpha, so a deeper dim keeps unselected pairs
 // readable on the dark violet card while the focused pair still pops.
 const CHART_LOWLIGHT_OPACITY = 0.5;
+// Mirrors `Text`'s maxFontSizeMultiplier: the count can grow by half again
+// under accessibility text sizes, and its box has to grow with it.
+const MAX_LABEL_FONT_SCALE = 1.5;
 
 export type ChartLegendItem = { color: string; label: string };
 
@@ -466,6 +477,12 @@ export const GroupedBarChart = memo(function GroupedBarChart({
     [bars, colorScheme],
   );
   const yAxisMaxValue = fitYAxisToData ? getGroupedBarsMaxValue(bars) : undefined;
+  // Size every count off the widest one so the whole row reads the same way.
+  const longestCount = useMemo(
+    () => longestBarValue((bars ?? []).flatMap((bar) => bar.values.map((value) => value.value))),
+    [bars],
+  );
+  const labelFontScale = Math.min(PixelRatio.getFontScale(), MAX_LABEL_FONT_SCALE);
   const handlePress = useCallback(
     (index: number) => {
       if (!interactive) return;
@@ -496,6 +513,14 @@ export const GroupedBarChart = memo(function GroupedBarChart({
             const barWidth = Math.max(MIN_GROUPED_BAR, Math.round(baseBarWidth * zoomScale));
             const zoomedGroupGap = Math.max(groupGap, Math.round(groupGap * zoomScale));
             const zoomedInnerGap = Math.max(innerGap, Math.round(innerGap * zoomScale));
+            // A count may spill into the gap beside its bar; past that it turns
+            // vertical rather than getting clipped (#3779).
+            const labelLayout = computeBarTopLabelLayout(
+              longestCount,
+              barWidth,
+              barWidth + zoomedInnerGap,
+              labelFontScale,
+            );
             const data = list.flatMap((bar, barIndex) =>
               bar.values.map((value, valueIndex) => ({
                 value: value.value,
@@ -507,7 +532,17 @@ export const GroupedBarChart = memo(function GroupedBarChart({
                 topLabelComponent:
                   value.value > 0
                     ? () => (
-                        <Text variant="caption2" color={chartColors.secondaryLabel} style={styles.barTopLabel}>
+                        <Text
+                          variant="caption2"
+                          color={chartColors.secondaryLabel}
+                          numberOfLines={1}
+                          style={[
+                            styles.barTopLabel,
+                            labelLayout.rotated
+                              ? { transform: [{ rotate: '-90deg' }], marginBottom: labelLayout.marginBottom }
+                              : null,
+                          ]}
+                        >
                           {value.value}
                         </Text>
                       )
@@ -518,11 +553,11 @@ export const GroupedBarChart = memo(function GroupedBarChart({
               <BarChart
                 data={data}
                 width={width - 8}
-                height={height - 28}
+                height={height - 28 - labelLayout.headroom}
                 barWidth={barWidth}
                 initialSpacing={initial}
                 barBorderRadius={STACK_BAR_RADIUS}
-                topLabelContainerStyle={{ width: barWidth }}
+                topLabelContainerStyle={{ width: labelLayout.width, left: labelLayout.left }}
                 hideRules
                 hideYAxisText
                 maxValue={yAxisMaxValue}
