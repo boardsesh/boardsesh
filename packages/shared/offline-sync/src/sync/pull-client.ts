@@ -797,7 +797,9 @@ async function enforceDeletionsCoverage(
     queryClient.invalidateQueries({ queryKey: JSON.parse(serializedKey) as string[] });
   }
 
-  const markerAgeDays = Math.round((evaluatedAt - coverageAt) / 86_400_000);
+  // floor, not round: a 79.6-day marker must not be reported as 80 (the
+  // threshold value) when the decision was made on exact milliseconds.
+  const markerAgeDays = Math.floor((evaluatedAt - coverageAt) / 86_400_000);
   options?.onCoverageReset?.({ markerAgeDays, rowsCleared, pendingMutations });
 }
 

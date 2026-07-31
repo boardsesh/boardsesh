@@ -125,6 +125,22 @@ describe('resetUserDataForLostCoverage', () => {
     expect(await readMeta(db, 'checkpoint:deletions')).toBeNull();
   });
 
+  it('runs cleanly on already-empty tables and reports rowsCleared: 0', async () => {
+    // Reachable whenever a stale marker meets tables that hold nothing — a user
+    // who deleted everything server-side, or a sign-out teardown that raced the
+    // guard. It must be a no-op that still stamps the marker, not a throw and
+    // not a half-applied reset.
+    await resetUserDataForLostCoverage(db, NOW);
+
+    const { rowsCleared } = await resetUserDataForLostCoverage(db, NOW + 1000);
+
+    expect(rowsCleared).toBe(0);
+    expect(await readMeta(db, DELETIONS_COVERAGE_KEY)).toBe(String(NOW + 1000));
+    for (const tableName of USER_DATA_TABLES) {
+      expect(await countRows(db, tableName)).toBe(0);
+    }
+  });
+
   it('leaves the downloaded board catalog and its markers completely alone', async () => {
     // No production path emits a board tombstone (clear-aurora-board.ts sets
     // `boardsesh.suppress_sync_tombstones` around the only DELETEs, and
