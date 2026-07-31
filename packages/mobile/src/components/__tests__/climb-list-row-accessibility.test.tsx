@@ -7,12 +7,15 @@ import type { Climb } from '@boardsesh/shared-schema';
 // #3914: ClimbListRow's press and its ⋮ button both live on RNGH gestures, whose
 // native recognizers never register with React Native's accessibility-action
 // bridge — a VoiceOver/TalkBack activate reached nothing. Both elements must expose
-// onAccessibilityTap plus an `activate` accessibility action that call the same
-// handlers the taps do. These tests capture the props the component actually
-// renders and invoke them, so reverting the fix leaves them undefined and fails.
+// onAccessibilityTap, plus (Android only) an `activate` accessibility action, that
+// call the same handlers the taps do. The ⋮ button also has to be published as a
+// labelled custom action on the row, because UIKit treats the row's `accessible`
+// container as a leaf and VoiceOver never focuses the nested button. These tests
+// capture the props the component actually renders and invoke them, so reverting
+// the fix leaves them undefined and fails.
 type AccessibilityCapture = {
   onAccessibilityTap?: () => void;
-  accessibilityActions?: { name: string }[];
+  accessibilityActions?: { name: string; label?: string }[];
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
 };
 
@@ -21,6 +24,11 @@ const a11y = vi.hoisted(() => ({
   moreButton: null as null | AccessibilityCapture,
 }));
 
+// Mutable so the Android-gate test can flip the platform, reset the module registry
+// and re-import the component — the `activate` action list is decided at
+// module-evaluation time.
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+
 vi.mock('react-native', () => {
   const capture = (props: AccessibilityCapture): AccessibilityCapture => ({
     onAccessibilityTap: props.onAccessibilityTap,
@@ -28,7 +36,7 @@ vi.mock('react-native', () => {
     onAccessibilityAction: props.onAccessibilityAction,
   });
   return {
-    Platform: { OS: 'ios' },
+    Platform: platform,
     PlatformColor: (name: string) => name,
     View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
       if (testID === 'climb-row') a11y.row = capture(rest);
@@ -143,8 +151,11 @@ describe('ClimbListRow screen-reader activation', () => {
     render(<ClimbListRow climb={climb} {...boardProps} onPress={onPress} />);
 
     expect(a11y.row?.onAccessibilityTap).toBeTypeOf('function');
-    expect(a11y.row?.accessibilityActions).toEqual([{ name: 'activate' }]);
     expect(a11y.row?.onAccessibilityAction).toBeTypeOf('function');
+    // iOS: no unlabelled `activate` entry — VoiceOver announces every action by its
+    // raw name when it has no label, and the double-tap already reaches
+    // onAccessibilityTap.
+    expect(a11y.row?.accessibilityActions).toBeUndefined();
 
     a11y.row?.onAccessibilityTap?.();
     expect(onPress).toHaveBeenCalledTimes(1);
@@ -163,6 +174,11 @@ describe('ClimbListRow screen-reader activation', () => {
     const onPress = vi.fn();
     render(<ClimbListRow climb={climb} {...boardProps} onPress={onPress} unsupported />);
 
+    // Precondition: the channel exists. Without this the assertion below would
+    // pass vacuously against unfixed code, where both props are undefined.
+    expect(a11y.row?.onAccessibilityTap).toBeTypeOf('function');
+    expect(a11y.row?.onAccessibilityAction).toBeTypeOf('function');
+
     a11y.row?.onAccessibilityTap?.();
     a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'activate' } });
     expect(onPress).not.toHaveBeenCalled();
@@ -176,7 +192,8 @@ describe('ClimbListRow screen-reader activation', () => {
     );
 
     expect(a11y.moreButton?.onAccessibilityTap).toBeTypeOf('function');
-    expect(a11y.moreButton?.accessibilityActions).toEqual([{ name: 'activate' }]);
+    expect(a11y.moreButton?.onAccessibilityAction).toBeTypeOf('function');
+    expect(a11y.moreButton?.accessibilityActions).toBeUndefined();
 
     a11y.moreButton?.onAccessibilityTap?.();
     expect(onOpenActions).toHaveBeenCalledTimes(1);
@@ -191,9 +208,61 @@ describe('ClimbListRow screen-reader activation', () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
-  it('shares one module-level activate-action array across the row and its ⋮ button', () => {
-    render(<ClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={vi.fn()} showMoreButton />);
-    expect(a11y.row?.accessibilityActions).toBeDefined();
-    expect(a11y.moreButton?.accessibilityActions).toBe(a11y.row?.accessibilityActions);
+  // The route that actually works under VoiceOver: the nested ⋮ view can never take
+  // focus inside the row's `accessible` container, so the row publishes the menu as
+  // a labelled custom action of its own.
+  it('publishes the ⋮ menu as a labelled custom action on the row itself', () => {
+    const onOpenActions = vi.fn();
+    const onPress = vi.fn();
+    render(
+      <ClimbListRow climb={climb} {...boardProps} onPress={onPress} onOpenActions={onOpenActions} showMoreButton />,
+    );
+
+    expect(a11y.row?.accessibilityActions).toEqual([{ name: 'moreActions', label: 'mobile.climbRow.moreActions' }]);
+
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'moreActions' } });
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
+    expect(onOpenActions).toHaveBeenCalledWith(climb);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('keeps one accessibilityActions array across rerenders', () => {
+    const props = { climb, ...boardProps, onPress: vi.fn(), onOpenActions: vi.fn(), showMoreButton: true };
+    const { rerender } = render(<ClimbListRow {...props} />);
+    const rowActions = a11y.row?.accessibilityActions;
+    expect(rowActions).toBeDefined();
+
+    rerender(<ClimbListRow {...props} selected />);
+    expect(a11y.row?.accessibilityActions).toBe(rowActions);
+  });
+});
+
+// Android has no onAccessibilityTap at all — 'activate' maps to ACTION_CLICK in
+// ReactAccessibilityDelegate and is the only route there, so the action list is
+// gated on the platform at module-evaluation time.
+describe('ClimbListRow screen-reader activation on Android', () => {
+  beforeEach(() => {
+    a11y.row = null;
+    a11y.moreButton = null;
+  });
+
+  it('adds the activate action on Android', async () => {
+    platform.OS = 'android';
+    vi.resetModules();
+    try {
+      const { ClimbListRow: AndroidClimbListRow } = await import('../ClimbListRow');
+      render(
+        <AndroidClimbListRow climb={climb} {...boardProps} onPress={vi.fn()} onOpenActions={vi.fn()} showMoreButton />,
+      );
+
+      expect(a11y.row?.accessibilityActions).toEqual([
+        { name: 'activate' },
+        { name: 'moreActions', label: 'mobile.climbRow.moreActions' },
+      ]);
+      expect(a11y.moreButton?.accessibilityActions).toEqual([{ name: 'activate' }]);
+    } finally {
+      platform.OS = 'ios';
+      vi.resetModules();
+    }
   });
 });

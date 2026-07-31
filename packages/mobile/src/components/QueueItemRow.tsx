@@ -1,5 +1,13 @@
 import { memo, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Pressable, View, StyleSheet, type AccessibilityActionEvent, type LayoutChangeEvent } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  View,
+  StyleSheet,
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
+  type LayoutChangeEvent,
+} from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, runOnJS } from 'react-native-reanimated';
 import {
   Gesture,
@@ -32,9 +40,29 @@ import { rowReorderShift } from './play-drawer/queue-drag-math';
 // Gesture.Tap(). RN core's Pressable is exempt — it rides the standard touch-
 // responder chain, which the OS activates for free. Anything wrapped in a
 // GestureDetector must therefore wire onAccessibilityTap + this action list
-// explicitly. Module-level so the array identity is stable and React.memo /
-// prop-equality on these rows is untouched.
-const ACTIVATE_ACCESSIBILITY_ACTIONS = [{ name: 'activate' }];
+// explicitly.
+//
+// The `activate` entry is Android-only on purpose. On Android 'activate' is the
+// only route: it maps to ACTION_CLICK in ReactAccessibilityDelegate and
+// onAccessibilityTap is not implemented at all. On iOS it is both redundant and
+// harmful — UIAccessibility already routes a double-tap to onAccessibilityTap,
+// and every accessibilityActions entry becomes a UIAccessibilityCustomAction
+// announced by its raw `name` when it carries no label, so VoiceOver would read
+// out a developer-facing "activate" on every row.
+const ACTIVATE_ACCESSIBILITY_ACTIONS: readonly AccessibilityActionInfo[] =
+  Platform.OS === 'android' ? ([{ name: 'activate' }] as const) : [];
+
+// The tick button is nested inside the row's `accessible` container. UIKit treats
+// an accessibility element as a leaf, so VoiceOver never lands focus on the nested
+// view and its own onAccessibilityTap can never fire — the row has to publish the
+// tick as a labelled custom action of its own. (TalkBack does still focus the
+// nested view, which is why its props stay wired too.)
+const LOG_ASCENT_ACTION_NAME = 'logAscent';
+
+// Nested buttons only ever need the plain activate, so on iOS they get no action
+// list at all. Module-level so the identity is stable across rerenders.
+const NESTED_BUTTON_ACCESSIBILITY_ACTIONS =
+  ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
 
 const SWIPE_DELETE_THRESHOLD = -80;
 const DELETE_BUTTON_WIDTH = 80;
@@ -295,8 +323,9 @@ function QueueItemRowComponent({
   const handleRowAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'activate') handlePress();
+      if (event.nativeEvent.actionName === LOG_ASCENT_ACTION_NAME) handleTickPress();
     },
-    [handlePress],
+    [handlePress, handleTickPress],
   );
 
   const handleTickAccessibilityAction = useCallback(
@@ -396,6 +425,15 @@ function QueueItemRowComponent({
   const showTick = !!tickGesture;
   const showDragHandle = !!dragHandleGesture && !isEditMode;
 
+  // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
+  // `t` identity on plenty of renders, which would rebuild this array every time
+  // and churn the row element's props.
+  const logAscentLabel = t('mobile.queue.logAscent');
+  const rowAccessibilityActions = useMemo(() => {
+    if (!showTick) return ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
+    return [...ACTIVATE_ACCESSIBILITY_ACTIONS, { name: LOG_ASCENT_ACTION_NAME, label: logAscentLabel }];
+  }, [showTick, logAscentLabel]);
+
   // History rows pin the grade for the angle the climb was CLIMBED at, which can
   // differ from the live board angle (e.g. the session moved on after the send).
   // Surface the climbed-at angle only when it differs — no chip on the common
@@ -412,7 +450,7 @@ function QueueItemRowComponent({
         accessibilityLabel={`${climbName}, ${t('mobile.queue.positionLabel', { position })}`}
         accessibilityState={{ selected: isEditMode ? isSelected : isCurrentClimb }}
         onAccessibilityTap={handlePress}
-        accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+        accessibilityActions={rowAccessibilityActions}
         onAccessibilityAction={handleRowAccessibilityAction}
         style={[
           styles.row,
@@ -463,7 +501,7 @@ function QueueItemRowComponent({
               accessibilityRole="button"
               accessibilityLabel={t('mobile.queue.logAscent')}
               onAccessibilityTap={handleTickPress}
-              accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+              accessibilityActions={NESTED_BUTTON_ACCESSIBILITY_ACTIONS}
               onAccessibilityAction={handleTickAccessibilityAction}
               style={styles.trailingButton}
             >

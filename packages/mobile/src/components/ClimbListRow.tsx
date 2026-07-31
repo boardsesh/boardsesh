@@ -4,6 +4,7 @@ import {
   StyleSheet,
   Platform,
   type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -35,18 +36,38 @@ import { useSwipeArm } from './use-swipe-arm';
 // past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
 // to-queue) — no resting-open state, no second tap. friction=1 makes the row
 // track the finger 1:1 (snappy, like Spotify's tracklist swipe). Tunable.
+const ACTION_REVEAL = 150;
+const COMMIT_THRESHOLD = 96;
+const SWIPE_FRICTION = 1;
+
 // Screen-reader activation for elements whose press lives on an RNGH gesture.
 // RNGH's native gesture recognizers never register with React Native's
 // accessibility-action bridge, so a VoiceOver/TalkBack activate never reaches a
 // Gesture.Tap() — unlike RN core's Pressable, which the OS activates for free via
 // the standard touch-responder chain. Rows inside a GestureDetector must wire
-// onAccessibilityTap + this action list themselves. Module-level so the array
-// identity stays stable and the row's React.memo is untouched.
-const ACTIVATE_ACCESSIBILITY_ACTIONS = [{ name: 'activate' }];
+// onAccessibilityTap + this action list themselves.
+//
+// The `activate` entry is Android-only on purpose. On Android 'activate' is the
+// only route: it maps to ACTION_CLICK in ReactAccessibilityDelegate and
+// onAccessibilityTap is not implemented at all. On iOS it is both redundant and
+// harmful — UIAccessibility already routes a double-tap to onAccessibilityTap,
+// and every accessibilityActions entry becomes a UIAccessibilityCustomAction
+// announced by its raw `name` when it carries no label, so VoiceOver would read
+// out a developer-facing "activate" on every row.
+const ACTIVATE_ACCESSIBILITY_ACTIONS: readonly AccessibilityActionInfo[] =
+  Platform.OS === 'android' ? ([{ name: 'activate' }] as const) : [];
 
-const ACTION_REVEAL = 150;
-const COMMIT_THRESHOLD = 96;
-const SWIPE_FRICTION = 1;
+// The ⋮ button is nested inside the row's `accessible` container. UIKit treats an
+// accessibility element as a leaf, so VoiceOver never lands focus on the nested
+// view and its own onAccessibilityTap can never fire — the row has to publish the
+// menu as a labelled custom action of its own. (TalkBack does still focus the
+// nested view, which is why its props stay wired too.)
+const MORE_ACTIONS_ACTION_NAME = 'moreActions';
+
+// Nested buttons only ever need the plain activate, so on iOS they get no action
+// list at all. Module-level so the identity is stable across rerenders.
+const NESTED_BUTTON_ACCESSIBILITY_ACTIONS =
+  ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
 
 // Per-row swipe perf: the panels below split into a cheap always-mounted shell
 // (just the coloured panel + its resting-state icon, zero shared values /
@@ -315,8 +336,9 @@ const ClimbListRow = React.memo(function ClimbListRow({
   const handleRowAccessibilityAction = useCallback(
     (event: AccessibilityActionEvent) => {
       if (event.nativeEvent.actionName === 'activate') handleRowPress();
+      if (event.nativeEvent.actionName === MORE_ACTIONS_ACTION_NAME) handleOpenActions();
     },
-    [handleRowPress],
+    [handleRowPress, handleOpenActions],
   );
 
   const handleMoreButtonAccessibilityAction = useCallback(
@@ -325,6 +347,16 @@ const ClimbListRow = React.memo(function ClimbListRow({
     },
     [handleOpenActions],
   );
+
+  const hasMoreButton = !!(showMoreButton && onOpenActions);
+  // Keyed on the resolved label string, not on `t` — react-i18next hands back a new
+  // `t` identity on plenty of renders, which would rebuild this array every time
+  // and churn the row element's props.
+  const moreActionsLabel = t('mobile.climbRow.moreActions');
+  const rowAccessibilityActions = useMemo(() => {
+    if (!hasMoreButton) return ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
+    return [...ACTIVATE_ACCESSIBILITY_ACTIONS, { name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel }];
+  }, [hasMoreButton, moreActionsLabel]);
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
   // releases past the threshold — no second tap. We deliberately do NOT close
@@ -495,11 +527,11 @@ const ClimbListRow = React.memo(function ClimbListRow({
             accessibilityLabel={climb.name}
             accessibilityState={{ selected: !!selected }}
             onAccessibilityTap={handleRowPress}
-            // Only the primary activate is exposed here. When `showMoreButton` is
-            // false the reaction menu is reachable by long-press alone, which a
-            // screen reader can't perform — surfacing it needs a worded custom
-            // action (product copy), so it's a follow-up rather than a guess.
-            accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+            // Carries the ⋮ menu as a labelled custom action when that button is
+            // shown. When `showMoreButton` is false the reaction menu is reachable
+            // by long-press alone, which a screen reader can't perform — surfacing
+            // it there needs its own product copy, so it stays a follow-up.
+            accessibilityActions={rowAccessibilityActions}
             onAccessibilityAction={handleRowAccessibilityAction}
           >
             {/* Active-climb highlight: violet wash + left accent bar */}
@@ -521,7 +553,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.climbRow.moreActions')}
                   onAccessibilityTap={handleOpenActions}
-                  accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
+                  accessibilityActions={NESTED_BUTTON_ACCESSIBILITY_ACTIONS}
                   onAccessibilityAction={handleMoreButtonAccessibilityAction}
                 >
                   {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;

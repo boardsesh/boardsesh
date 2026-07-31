@@ -48,7 +48,7 @@ const gestureCalls = vi.hoisted(() => ({
 // Animated.View, the tick is the `tick-button` testID.
 type AccessibilityCapture = {
   onAccessibilityTap?: () => void;
-  accessibilityActions?: { name: string }[];
+  accessibilityActions?: { name: string; label?: string }[];
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
 };
 const a11y = vi.hoisted(() => ({
@@ -408,9 +408,11 @@ describe('QueueItemRow React.memo', () => {
 
   // #3914: the row's press lives on an RNGH Gesture.Tap, which never registers with
   // RN's accessibility-action bridge — a VoiceOver/TalkBack activate reached nothing.
-  // The row must therefore expose onAccessibilityTap + an `activate` action that call
-  // the same handler the tap does. These assertions invoke the props the component
-  // actually renders, so reverting the fix leaves them undefined and fails here.
+  // The row must therefore expose onAccessibilityTap plus, on Android only, an
+  // `activate` action that call the same handler the tap does. These assertions
+  // invoke the props the component actually renders, so reverting the fix leaves
+  // them undefined and fails here. (Platform.OS is mocked as 'ios' in this file;
+  // the Android gate has its own re-import test at the bottom.)
   it('activates the row from a screen-reader tap and from the activate action', () => {
     const localOnPress = vi.fn();
     const item = makeItem('a', 'Crimp Master');
@@ -427,8 +429,11 @@ describe('QueueItemRow React.memo', () => {
     );
 
     expect(a11y.row?.onAccessibilityTap).toBeTypeOf('function');
-    expect(a11y.row?.accessibilityActions).toEqual([{ name: 'activate' }]);
     expect(a11y.row?.onAccessibilityAction).toBeTypeOf('function');
+    // iOS: no unlabelled `activate` entry — VoiceOver would announce the raw
+    // developer-facing name as a custom action on every row, and the double-tap
+    // already reaches onAccessibilityTap.
+    expect(a11y.row?.accessibilityActions).toBeUndefined();
 
     a11y.row?.onAccessibilityTap?.();
     expect(localOnPress).toHaveBeenCalledTimes(1);
@@ -467,7 +472,10 @@ describe('QueueItemRow React.memo', () => {
   });
 
   // Same gap on the history row's trailing tick button — its own Gesture.Tap was
-  // equally unreachable by a screen reader.
+  // equally unreachable by a screen reader. The nested view's own props only reach
+  // TalkBack (UIKit treats the row's `accessible` container as a leaf and never
+  // focuses inside it), so the row also has to publish the tick as a labelled
+  // custom action of its own. Both routes are asserted.
   it('logs an ascent from a screen-reader activation of the tick button', () => {
     const onTickHistory = vi.fn();
     const item = makeItem('a', 'Crimp Master');
@@ -486,7 +494,8 @@ describe('QueueItemRow React.memo', () => {
     );
 
     expect(a11y.tick?.onAccessibilityTap).toBeTypeOf('function');
-    expect(a11y.tick?.accessibilityActions).toEqual([{ name: 'activate' }]);
+    expect(a11y.tick?.onAccessibilityAction).toBeTypeOf('function');
+    expect(a11y.tick?.accessibilityActions).toBeUndefined();
 
     a11y.tick?.onAccessibilityTap?.();
     expect(onTickHistory).toHaveBeenCalledTimes(1);
@@ -502,9 +511,52 @@ describe('QueueItemRow React.memo', () => {
     expect(onPress).not.toHaveBeenCalled();
   });
 
-  // The activate-action array is module-level, so it keeps its identity across
-  // renders. An inline `[{ name: 'activate' }]` would hand the row a fresh array
-  // every render and churn the props of these elements on every parent update.
+  it('publishes the tick as a labelled custom action on the row itself', () => {
+    const onTickHistory = vi.fn();
+    const item = makeItem('a', 'Crimp Master');
+    render(
+      <QueueItemRow
+        item={item}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        isHistoryItem
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+        onTickHistory={onTickHistory}
+      />,
+    );
+
+    expect(a11y.row?.accessibilityActions).toEqual([{ name: 'logAscent', label: 'mobile.queue.logAscent' }]);
+
+    a11y.row?.onAccessibilityAction?.({ nativeEvent: { actionName: 'logAscent' } });
+    expect(onTickHistory).toHaveBeenCalledTimes(1);
+    expect(onTickHistory).toHaveBeenCalledWith(item);
+    expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('offers no tick action on a row without a tick button', () => {
+    render(
+      <QueueItemRow
+        item={makeItem('a', 'Crimp Master')}
+        position={1}
+        board={board}
+        isCurrentClimb={false}
+        onPress={onPress}
+        onRemove={onRemove}
+        onToggleSelect={onToggleSelect}
+      />,
+    );
+
+    // Precondition, so this guard can't pass vacuously against unfixed code.
+    expect(a11y.row?.onAccessibilityAction).toBeTypeOf('function');
+    expect(a11y.row?.accessibilityActions ?? []).not.toContainEqual(expect.objectContaining({ name: 'logAscent' }));
+  });
+
+  // The row's action list comes from a useMemo keyed on whether the tick shows, so
+  // it keeps its identity across renders. An inline array would hand the row a
+  // fresh one every render and churn the props of this element on every update.
   it('reuses one accessibilityActions array across renders', () => {
     const item = makeItem('a', 'Crimp Master');
     const element = (
@@ -523,8 +575,6 @@ describe('QueueItemRow React.memo', () => {
     const { rerender } = render(element);
     const rowActions = a11y.row?.accessibilityActions;
     expect(rowActions).toBeDefined();
-    // Same array instance shared by the row and its tick button.
-    expect(a11y.tick?.accessibilityActions).toBe(rowActions);
 
     rerender(
       <QueueItemRow
