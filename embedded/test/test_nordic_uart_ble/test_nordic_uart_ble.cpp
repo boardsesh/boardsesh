@@ -24,6 +24,13 @@ static std::vector<LedCommand> lastLedCommands;
 static int ledDataCallbackCount = 0;
 static int lastAngle = 0;
 
+// These duplicate the externally observable connection request deliberately so
+// the test fails if production changes its BLE timing contract.
+constexpr uint16_t kExpectedConnectionIntervalMin = 6;           // 7.5 ms in 1.25 ms units
+constexpr uint16_t kExpectedConnectionIntervalMax = 18;          // 22.5 ms in 1.25 ms units
+constexpr uint16_t kExpectedConnectionLatency = 0;               // No skipped connection events
+constexpr uint16_t kExpectedConnectionSupervisionTimeout = 200;  // 2 s in 10 ms units
+
 void testConnectCallback(bool connected) {
     lastConnectState = connected;
     connectCallbackCount++;
@@ -218,12 +225,32 @@ void test_connection_requests_expected_connection_parameters_before_callback(voi
     NimBLEServer* server = NimBLEDevice::getServer();
     TEST_ASSERT_EQUAL(1, server->getConnectionParameterUpdateCallCount());
     TEST_ASSERT_EQUAL(42, server->getConnectionParameterUpdateHandle());
-    TEST_ASSERT_EQUAL(6, server->getConnectionParameterUpdateMinInterval());
-    TEST_ASSERT_EQUAL(18, server->getConnectionParameterUpdateMaxInterval());
-    TEST_ASSERT_EQUAL(0, server->getConnectionParameterUpdateLatency());
-    TEST_ASSERT_EQUAL(200, server->getConnectionParameterUpdateTimeout());
+    TEST_ASSERT_EQUAL(kExpectedConnectionIntervalMin, server->getConnectionParameterUpdateMinInterval());
+    TEST_ASSERT_EQUAL(kExpectedConnectionIntervalMax, server->getConnectionParameterUpdateMaxInterval());
+    TEST_ASSERT_EQUAL(kExpectedConnectionLatency, server->getConnectionParameterUpdateLatency());
+    TEST_ASSERT_EQUAL(kExpectedConnectionSupervisionTimeout, server->getConnectionParameterUpdateTimeout());
     TEST_ASSERT_EQUAL(1, connectCallbackCount);
     TEST_ASSERT_TRUE(connectCallbackSawConnectionParameterRequest);
+}
+
+void test_reconnect_requests_connection_parameters_again(void) {
+    ble->begin("Test Device");
+
+    ble_gap_conn_desc firstConnection;
+    memset(&firstConnection, 0, sizeof(firstConnection));
+    firstConnection.conn_handle = 42;
+    NimBLEDevice::getServer()->mockConnect(&firstConnection);
+    NimBLEDevice::getServer()->mockDisconnect(&firstConnection);
+
+    ble_gap_conn_desc secondConnection;
+    memset(&secondConnection, 0, sizeof(secondConnection));
+    secondConnection.conn_handle = 43;
+    NimBLEDevice::getServer()->mockConnect(&secondConnection);
+
+    NimBLEServer* server = NimBLEDevice::getServer();
+    TEST_ASSERT_EQUAL(2, server->getConnectionParameterUpdateCallCount());
+    TEST_ASSERT_EQUAL(43, server->getConnectionParameterUpdateHandle());
+    TEST_ASSERT_EQUAL(kExpectedConnectionSupervisionTimeout, server->getConnectionParameterUpdateTimeout());
 }
 
 void test_connection_callback_called_on_connect(void) {
@@ -705,6 +732,7 @@ int main(int argc, char** argv) {
 
     // Connection lifecycle tests
     RUN_TEST(test_connection_requests_expected_connection_parameters_before_callback);
+    RUN_TEST(test_reconnect_requests_connection_parameters_again);
     RUN_TEST(test_connection_callback_called_on_connect);
     RUN_TEST(test_advertising_stops_while_connected);
     RUN_TEST(test_advertising_restarts_after_disconnect);

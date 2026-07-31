@@ -395,7 +395,7 @@ class NimBLEServer {
     }
 
     void updateConnParams(uint16_t connHandle, uint16_t minInterval, uint16_t maxInterval, uint16_t latency,
-                          uint16_t timeout) const {
+                          uint16_t timeout) {
         connectionParameterUpdateCallCount_++;
         connectionParameterUpdateHandle_ = connHandle;
         connectionParameterUpdateMinInterval_ = minInterval;
@@ -442,12 +442,12 @@ class NimBLEServer {
     int connectedCount_;
     bool started_;
     uint16_t disconnectedHandle_ = BLE_HS_CONN_HANDLE_NONE;
-    mutable int connectionParameterUpdateCallCount_ = 0;
-    mutable uint16_t connectionParameterUpdateHandle_ = BLE_HS_CONN_HANDLE_NONE;
-    mutable uint16_t connectionParameterUpdateMinInterval_ = 0;
-    mutable uint16_t connectionParameterUpdateMaxInterval_ = 0;
-    mutable uint16_t connectionParameterUpdateLatency_ = 0;
-    mutable uint16_t connectionParameterUpdateTimeout_ = 0;
+    int connectionParameterUpdateCallCount_ = 0;
+    uint16_t connectionParameterUpdateHandle_ = BLE_HS_CONN_HANDLE_NONE;
+    uint16_t connectionParameterUpdateMinInterval_ = 0;
+    uint16_t connectionParameterUpdateMaxInterval_ = 0;
+    uint16_t connectionParameterUpdateLatency_ = 0;
+    uint16_t connectionParameterUpdateTimeout_ = 0;
 };
 
 // =============================================================================
