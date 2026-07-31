@@ -142,6 +142,13 @@ void describe('moonBoardGradeToDifficultyId', () => {
     assert.equal(moonBoardGradeToDifficultyId('8B+'), 31);
   });
 
+  void it('maps 8C and 8C+ into the shared difficulty ids', () => {
+    assert.equal(moonBoardGradeToDifficultyId('8C'), 32);
+    assert.equal(moonBoardGradeToDifficultyId('8C+'), 33);
+    assert.equal(moonBoardGradeToDifficultyId('8c'), 32);
+    assert.equal(moonBoardGradeToDifficultyId('8c+'), 33);
+  });
+
   void it('returns undefined for unknown grades', () => {
     assert.equal(moonBoardGradeToDifficultyId('9A'), undefined);
   });
