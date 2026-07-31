@@ -12,12 +12,8 @@
 // for a y-axis gutter, so the chart occupied ~22-32px more than the card had.
 //
 // This repo has no visual regression harness for RN charts, so these tests pin
-// the prop contract instead: the FULL occupied span must fit inside the
-// measured frame, and the fitted bar/spacing content must fit inside the width
-// prop. The library-default fallbacks below mirror gifted-charts-core 0.1.81
-// (`AxesAndRulesDefaults.yAxisEmptyLabelWidth = 10`, `yAxisLabelWidth = 35`,
-// `endSpacing = spacing`, `BarDefaults.spacing = 20`) so a chart that simply
-// omits a prop is still measured at its true rendered size.
+// every layout prop explicitly: the FULL occupied span must fit inside the
+// measured frame, and the fitted bar/spacing content must fit inside `width`.
 import { createElement, useEffect, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,6 +21,7 @@ import type { RawGroupedBar } from '@boardsesh/profile-stats';
 import type { ColoredBar } from '../profile-chart-colors';
 
 const FRAME_WIDTH = 320;
+const getFontScaleMock = vi.hoisted(() => vi.fn(() => 1));
 
 // Minimal RN surface — mirrors you-charts-tap-tooltip.test.tsx's mock so
 // ChartFrame's width-gated render path reaches the chart under test.
@@ -40,7 +37,7 @@ vi.mock('react-native', () => ({
   },
   Pressable: ({ children }: { children?: ReactNode }) => createElement('button', { type: 'button' }, children),
   StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
-  PixelRatio: { getFontScale: () => 1 },
+  PixelRatio: { getFontScale: getFontScaleMock },
 }));
 
 vi.mock('react-i18next', () => ({
@@ -49,12 +46,15 @@ vi.mock('react-i18next', () => ({
 
 type BarChartCall = {
   width?: number;
+  height?: number;
   barWidth?: number;
   spacing?: number;
   initialSpacing?: number;
   endSpacing?: number;
   yAxisLabelWidth?: number;
   hideYAxisText?: boolean;
+  disableScroll?: boolean;
+  topLabelContainerStyle?: { width?: number; left?: number };
   stackData?: { stacks?: { value: number }[] }[];
   data?: { spacing?: number }[];
 };
@@ -119,19 +119,10 @@ vi.mock('../profile-chart-colors', () => ({
 
 import { StackedBarChart, GroupedBarChart } from '../YouCharts';
 
-// gifted-charts-core defaults, applied when we omit the prop. Transcribed from
-// `AxesAndRulesDefaults` / `BarDefaults` in dist/utils/constants.js at the
-// version pinned in bun.lock (0.1.81) — bun's isolated install puts
-// gifted-charts-core outside packages/mobile's resolution path, so they can't be
-// imported. COUPLING: bumping react-native-gifted-charts can move these, and a
-// bump that grows a default would make the charts overflow again while these
-// tests stayed green. Re-read dist/utils/constants.js on any such bump.
-const GIFTED_DEFAULT_SPACING = 20;
-const GIFTED_Y_AXIS_LABEL_WIDTH = 35;
-const GIFTED_Y_AXIS_EMPTY_LABEL_WIDTH = 10;
-
 beforeEach(() => {
   barChartCalls.length = 0;
+  getFontScaleMock.mockReset();
+  getFontScaleMock.mockReturnValue(1);
 });
 
 /**
@@ -140,11 +131,10 @@ beforeEach(() => {
  * the rules/x-axis row extends by. This is the number that must fit the card.
  */
 function occupiedSpan(call: BarChartCall): number {
-  const barLevelSpacing = call.spacing ?? GIFTED_DEFAULT_SPACING;
-  const endSpacing = call.endSpacing ?? barLevelSpacing;
-  const yAxisGutter =
-    call.yAxisLabelWidth ?? (call.hideYAxisText ? GIFTED_Y_AXIS_EMPTY_LABEL_WIDTH : GIFTED_Y_AXIS_LABEL_WIDTH);
-  return yAxisGutter + (call.width ?? 0) + endSpacing;
+  if (call.yAxisLabelWidth === undefined || call.width === undefined || call.endSpacing === undefined) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return call.yAxisLabelWidth + call.width + call.endSpacing;
 }
 
 /** Total pixel span the fitted stack-bar data actually occupies. */
@@ -153,7 +143,7 @@ function stackedContentSpan(call: BarChartCall): number {
   const barWidth = call.barWidth ?? 0;
   const spacing = call.spacing ?? 0;
   const initial = call.initialSpacing ?? 0;
-  return initial * 2 + count * barWidth + Math.max(0, count - 1) * spacing;
+  return initial + count * barWidth + Math.max(0, count - 1) * spacing;
 }
 
 /**
@@ -164,7 +154,7 @@ function groupedContentSpan(call: BarChartCall): number {
   const data = call.data ?? [];
   const barWidth = call.barWidth ?? 0;
   const initial = call.initialSpacing ?? 0;
-  const gaps = data.reduce((total, datum) => total + (datum.spacing ?? 0), 0);
+  const gaps = data.slice(0, -1).reduce((total, datum) => total + (datum.spacing ?? 0), 0);
   return initial + data.length * barWidth + gaps;
 }
 
@@ -185,7 +175,10 @@ describe('StackedBarChart width budget (#3778, #3050)', () => {
 
     expect(barChartCalls).toHaveLength(1);
     const call = barChartCalls[0]!;
-    expect(call.width).toBeGreaterThan(0);
+    expect(call.width).toBe(FRAME_WIDTH - 8 - 32);
+    expect(call.yAxisLabelWidth).toBe(32);
+    expect(call.endSpacing).toBe(0);
+    expect(call.disableScroll).toBe(true);
     expect(occupiedSpan(call)).toBeLessThanOrEqual(FRAME_WIDTH);
   });
 
@@ -202,9 +195,26 @@ describe('StackedBarChart width budget (#3778, #3050)', () => {
     render(<StackedBarChart bars={bars} colorBy="layout" />);
 
     const call = barChartCalls[0]!;
+    expect(call.width).toBe(FRAME_WIDTH - 8);
     expect(call.yAxisLabelWidth).toBe(0);
+    expect(call.endSpacing).toBe(0);
     expect(occupiedSpan(call)).toBeLessThanOrEqual(FRAME_WIDTH);
     expect(stackedContentSpan(call)).toBeLessThanOrEqual(call.width!);
+  });
+
+  it('enables base-scale scrolling when 52 weeks cannot fit above the minimum bar width', () => {
+    const weeklyBars: ColoredBar[] = Array.from({ length: 52 }, (_, index) => ({
+      key: `week-${index}`,
+      label: `W${index + 1}`,
+      segments: [{ key: 'kilter-1', label: 'Kilter Original', value: index + 1 }],
+    }));
+
+    render(<StackedBarChart bars={weeklyBars} colorBy="layout" showYAxisScale />);
+
+    const call = barChartCalls[0]!;
+    expect(stackedContentSpan(call)).toBeGreaterThan(call.width!);
+    expect(call.disableScroll).toBe(false);
+    expect(occupiedSpan(call)).toBeLessThanOrEqual(FRAME_WIDTH);
   });
 });
 
@@ -223,7 +233,7 @@ describe('GroupedBarChart width budget (#3778, #3050)', () => {
 
     expect(barChartCalls).toHaveLength(1);
     const call = barChartCalls[0]!;
-    expect(call.width).toBeGreaterThan(0);
+    expect(call.width).toBe(FRAME_WIDTH - 8);
     // `hideYAxisText` on its own still reserves gifted-charts'
     // `yAxisEmptyLabelWidth` (10px) outside `width`, and an unset `endSpacing`
     // falls back to the 20px default `spacing` because this chart carries
@@ -238,6 +248,7 @@ describe('GroupedBarChart width budget (#3778, #3050)', () => {
     const call = barChartCalls[0]!;
     expect(call.yAxisLabelWidth).toBe(0);
     expect(call.endSpacing).toBe(0);
+    expect(call.disableScroll).toBe(true);
   });
 
   it('sizes grouped bars to fit inside the width actually given to BarChart', () => {
@@ -246,5 +257,49 @@ describe('GroupedBarChart width budget (#3778, #3050)', () => {
     const call = barChartCalls[0]!;
     expect(call.data?.length).toBe(groupedBars.length * 2);
     expect(groupedContentSpan(call)).toBeLessThanOrEqual(call.width!);
+  });
+
+  it('enables base-scale scrolling when dense grade groups exceed the plot width', () => {
+    const denseGroupedBars: RawGroupedBar[] = Array.from({ length: 18 }, (_, index) => ({
+      key: `V${index}`,
+      label: `V${index}`,
+      values: [
+        { key: 'flash', label: 'Flash', value: index + 1 },
+        { key: 'redpoint', label: 'Redpoint', value: index + 2 },
+      ],
+    }));
+
+    render(<GroupedBarChart bars={denseGroupedBars} />);
+
+    const call = barChartCalls[0]!;
+    expect(groupedContentSpan(call)).toBeGreaterThan(call.width!);
+    expect(call.disableScroll).toBe(false);
+    expect(occupiedSpan(call)).toBeLessThanOrEqual(FRAME_WIDTH);
+  });
+
+  it('preserves PixelRatio-driven top-label headroom from #3779', () => {
+    const largeCountBars = groupedBars.map((bar, index) => ({
+      ...bar,
+      values: bar.values.map((value, valueIndex) => ({
+        ...value,
+        value: valueIndex === 0 ? 128 - index : 44 - index,
+      })),
+    }));
+
+    const normalRender = render(<GroupedBarChart bars={largeCountBars} />);
+    const normalScaleCall = barChartCalls[0]!;
+    normalRender.unmount();
+
+    barChartCalls.length = 0;
+    getFontScaleMock.mockReturnValue(2);
+    render(<GroupedBarChart bars={largeCountBars} />);
+    const accessibilityScaleCall = barChartCalls[0]!;
+
+    expect(getFontScaleMock).toHaveBeenCalledTimes(2);
+    expect(accessibilityScaleCall.width).toBe(normalScaleCall.width);
+    expect(accessibilityScaleCall.topLabelContainerStyle?.width).toBeGreaterThan(
+      normalScaleCall.topLabelContainerStyle?.width ?? 0,
+    );
+    expect(accessibilityScaleCall.height).toBeLessThan(normalScaleCall.height ?? Number.POSITIVE_INFINITY);
   });
 });
