@@ -750,8 +750,12 @@ async function enforceDeletionsCoverage(
   // retained tombstone window.
   if (isSigningOut()) return;
 
+  // One clock reading for the whole decision. The probe below is a network
+  // round-trip, so re-reading Date.now() after it would report a marker age
+  // that isn't the one the verdict was made on.
+  const evaluatedAt = Date.now();
   const coverageAt = await getDeletionsCoverageAt(db);
-  const verdict = evaluateDeletionsCoverage(coverageAt, Date.now());
+  const verdict = evaluateDeletionsCoverage(coverageAt, evaluatedAt);
 
   // Only 'stale' does anything. Keeping the explicit `coverageAt === null`
   // disjunct means an absent marker can never structurally reach the wipe below,
@@ -773,8 +777,9 @@ async function enforceDeletionsCoverage(
   if (isSigningOut() || isBackgrounded() || getWipeEpoch() !== cycleEpoch) return;
 
   const pendingMutations = await getPendingCount(db);
-  const resetAt = Date.now();
-  const { rowsCleared } = await resetUserDataForLostCoverage(db, resetAt);
+  // The STAMP is read fresh — it claims coverage as of the wipe itself, which is
+  // after the probe. Only the reported age below uses the decision's clock.
+  const { rowsCleared } = await resetUserDataForLostCoverage(db, Date.now());
 
   // Bust every user-data cache the wipe just invalidated. The rebuild below
   // cannot be relied on to do it: syncTable only invalidates when it pulled at
@@ -792,7 +797,7 @@ async function enforceDeletionsCoverage(
     queryClient.invalidateQueries({ queryKey: JSON.parse(serializedKey) as string[] });
   }
 
-  const markerAgeDays = Math.round((resetAt - coverageAt) / 86_400_000);
+  const markerAgeDays = Math.round((evaluatedAt - coverageAt) / 86_400_000);
   options?.onCoverageReset?.({ markerAgeDays, rowsCleared, pendingMutations });
 }
 
@@ -835,6 +840,10 @@ export async function pullSync(
   // See deletions-coverage.ts for the invariant and for exactly what the reset
   // does (and does not) clear.
   await enforceDeletionsCoverage(db, queryClient, graphqlFetch, cycleEpoch, options);
+  // The phase can spend a probe and a multi-table wipe; the bootstrap phase below
+  // starts downloading before the deletions phase's own cycleAborted(), so check
+  // here rather than let a teardown that landed during it kick off a download.
+  if (cycleAborted()) return;
 
   const enabledBoards = options?.enabledBoards ?? [];
   const onProgress = options?.onProgress;
