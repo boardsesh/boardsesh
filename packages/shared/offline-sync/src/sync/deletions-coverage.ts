@@ -23,7 +23,7 @@
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import { applyBusyTimeout } from '../db/pragmas';
 import { DELETIONS_CHECKPOINT_KEY, getCheckpointKey } from './checkpoints';
-import { DELETIONS_COVERAGE_MAX_AGE_MS } from './retention';
+import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS, DELETIONS_COVERAGE_MAX_AGE_MS } from './retention';
 import { USER_DATA_TABLES } from './table-config';
 
 /**
@@ -39,7 +39,10 @@ import { USER_DATA_TABLES } from './table-config';
 export const DELETIONS_COVERAGE_KEY = 'deletions-coverage';
 
 export type DeletionsCoverageVerdict =
-  /** No marker yet (fresh install, or the OTA that introduced this). Seed it, reset nothing. */
+  /**
+   * No usable marker: absent (fresh install, or the OTA that introduced this),
+   * or a value below the plausibility floor. Seed it, reset nothing.
+   */
   | 'unknown'
   /** Marker is dated after `now` — a clock corrected backwards. Re-stamp it, reset nothing. */
   | 'future'
@@ -53,10 +56,15 @@ export async function getDeletionsCoverageAt(db: SqlExecutor): Promise<number | 
     DELETIONS_COVERAGE_KEY,
   ]);
   if (!row) return null;
+  // Digits-only, deliberately: Number.parseInt tolerates trailing garbage, so an
+  // ISO string written by some future refactor would parse to its leading year
+  // ('2026-07-01…' → 2026 ≈ epoch-ms 1970) and read as decades stale. A corrupt
+  // value must read as ABSENT — seeding a fresh marker costs one retention
+  // window of exposure, whereas treating it as infinitely old wipes user data
+  // off a garbled row. (evaluateDeletionsCoverage's floor catches the same class
+  // of value; this is the cheaper of the two belts.)
+  if (!/^\d+$/.test(row.value.trim())) return null;
   const parsed = Number.parseInt(row.value, 10);
-  // A corrupt value reads as absent: seeding a fresh marker is the safe
-  // direction (it costs one retention window of exposure), whereas treating it
-  // as infinitely old would wipe user data off a garbled row.
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -74,6 +82,12 @@ export async function setDeletionsCoverageAt(db: SqlExecutor, atMs: number): Pro
  */
 export function evaluateDeletionsCoverage(coverageAt: number | null, nowMs: number): DeletionsCoverageVerdict {
   if (coverageAt === null) return 'unknown';
+  // Below the floor is a broken clock, not an old device — see
+  // DELETIONS_COVERAGE_EPOCH_FLOOR_MS. A phone that boots to 1970 before NTP
+  // lands takes the 'future' branch and re-stamps the marker with its bogus
+  // "now"; without this, the correction back to real time would then read as
+  // decades stale and wipe a device that has been syncing daily.
+  if (coverageAt < DELETIONS_COVERAGE_EPOCH_FLOOR_MS) return 'unknown';
   if (coverageAt > nowMs) return 'future';
   return nowMs - coverageAt > DELETIONS_COVERAGE_MAX_AGE_MS ? 'stale' : 'fresh';
 }

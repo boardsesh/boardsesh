@@ -733,6 +733,7 @@ async function enforceDeletionsCoverage(
   db: OfflineDatabase,
   queryClient: QueryInvalidator,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
+  cycleEpoch: number,
   options?: SyncOptions,
 ): Promise<void> {
   // Sign-out is (or is about to be) wiping local user data on its own terms;
@@ -746,10 +747,13 @@ async function enforceDeletionsCoverage(
   const verdict = evaluateDeletionsCoverage(coverageAt, Date.now());
 
   if (verdict === 'fresh') return;
-  // `coverageAt === null` IS the 'unknown' verdict — spelling it that way here
-  // narrows coverageAt to a number for the rest of the function, so the
-  // markerAgeDays below needs no fallback for a case that cannot happen.
-  if (coverageAt === null || verdict === 'future') {
+  // Everything that is not 'stale' re-seeds and resets nothing: an absent
+  // marker, a clock still ahead of the stamp, or a value below the plausibility
+  // floor. Keeping the explicit `coverageAt === null` disjunct means an absent
+  // marker can never structurally reach the wipe below, whatever the classifier
+  // is later taught to return — and it narrows coverageAt to a number, so
+  // markerAgeDays needs no fallback for a case that cannot happen.
+  if (coverageAt === null || verdict !== 'stale') {
     await setDeletionsCoverageAt(db, Date.now());
     return;
   }
@@ -760,8 +764,11 @@ async function enforceDeletionsCoverage(
 
   // Re-check the teardown flags after the network await — the probe may have
   // been in flight across a sign-out or a backgrounding, and neither wants a
-  // multi-table DELETE dispatched at it.
-  if (isSigningOut() || isBackgrounded()) return;
+  // multi-table DELETE dispatched at it. The epoch check catches the third
+  // teardown: a board removal (or any beginLocalPurge) that landed while the
+  // probe was on the wire is about to abort this cycle at its first
+  // cycleAborted(), so a wipe here would clear user data with no rebuild behind it.
+  if (isSigningOut() || isBackgrounded() || getWipeEpoch() !== cycleEpoch) return;
 
   const pendingMutations = await getPendingCount(db);
   const resetAt = Date.now();
@@ -798,16 +805,6 @@ export async function pullSync(
   // when the app is already backgrounded.
   if (isBackgrounded()) return;
 
-  // Phase -1: deletions-coverage guard (issue #3474). Runs BEFORE the bootstrap
-  // phase and before cycleEpoch is captured, so the reset and the rebuild that
-  // follows belong to the same cycle. See deletions-coverage.ts for the
-  // invariant and for exactly what the reset does (and does not) clear.
-  await enforceDeletionsCoverage(db, queryClient, graphqlFetch, options);
-
-  const enabledBoards = options?.enabledBoards ?? [];
-  const onProgress = options?.onProgress;
-  let totalDocuments = 0;
-
   // Captured ONCE for the whole cycle and threaded into every phase, so a wipe or a
   // local purge aborts the entire pull rather than just whichever table is mid-flight.
   //
@@ -821,10 +818,25 @@ export async function pullSync(
   //
   // Sign-out never hit this because `isSigningOut()` is a persistent flag that stays
   // true for every subsequent table; the epoch alone is not a substitute for it.
+  //
+  // Captured immediately after the entry guard and BEFORE the coverage phase's
+  // awaits: that phase can spend a network probe plus a multi-table wipe, and a
+  // purge landing inside that window must read as "not my epoch" rather than be
+  // adopted as this cycle's own baseline.
   const cycleEpoch = getWipeEpoch();
   // Unlike the other two checks, isBackgrounded() is live, not latched — a background
   // dip that clears before the next check runs won't abort a cycle it can no longer affect.
   const cycleAborted = (): boolean => isSigningOut() || getWipeEpoch() !== cycleEpoch || isBackgrounded();
+
+  // Phase -1: deletions-coverage guard (issue #3474). Runs BEFORE the bootstrap
+  // phase, so the reset and the rebuild that follows belong to the same cycle.
+  // See deletions-coverage.ts for the invariant and for exactly what the reset
+  // does (and does not) clear.
+  await enforceDeletionsCoverage(db, queryClient, graphqlFetch, cycleEpoch, options);
+
+  const enabledBoards = options?.enabledBoards ?? [];
+  const onProgress = options?.onProgress;
+  let totalDocuments = 0;
 
   // Parse the enabled scope keys once; malformed keys are dropped (a stray value
   // can't crash the pull) so both the bootstrap phase and the paged board loop

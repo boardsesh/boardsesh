@@ -28,7 +28,7 @@ const onSchemaDrift = vi.fn();
 
 import { pullSync } from '../pull-client';
 import { enqueue } from '../../mutation-queue/queue';
-import { setBackgrounded } from '../../mutation-queue/drainer';
+import { setBackgrounded, beginLocalPurge, __resetDrainerStateForTests } from '../../mutation-queue/drainer';
 import { processMutation, type GraphQLFetch } from '../../mutation-queue/handlers';
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
@@ -119,6 +119,9 @@ describe('sync layer — real-DDL integration', () => {
     await runMigrations(db);
     await ensureMutationQueueTable(db);
     queryClient = createMockQueryClient();
+    // The drainer flags and the wipe epoch are module-level, so a test that
+    // backgrounds or purges must not leak into the next one.
+    __resetDrainerStateForTests();
   });
 
   // -------------------------------------------------------------------------
@@ -932,6 +935,31 @@ describe('sync layer — real-DDL integration', () => {
       expect(await countRows('boardsesh_ticks')).toBe(1);
       expect(await countRows('playlists')).toBe(1);
       expect(await countRows('pending_mutations')).toBe(1);
+      expect(await readCheckpoint(db, 'checkpoint:deletions')).not.toBeNull();
+      expect(await readCoverage()).toBe(staleAt);
+      expect(onCoverageReset).not.toHaveBeenCalled();
+    });
+
+    it('wipes NOTHING when a local purge lands while the probe is on the wire', async () => {
+      // removeBoardScopeData (Storage → Remove board) calls beginLocalPurge(),
+      // which bumps the wipe epoch to abort the whole cycle. The probe is a real
+      // network round-trip, so that purge can land mid-flight — and a wipe
+      // dispatched after it would clear user data with no rebuild behind it,
+      // because every phase below bails at its first cycleAborted().
+      await seedStaleDevice();
+      const staleAt = Date.now() - 100 * DAY_MS;
+      await setCoverage(staleAt);
+      const onCoverageReset = vi.fn();
+      const { fetch } = makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]);
+      const purgingFetch = (async (query: string, variables?: Record<string, unknown>) => {
+        if (variables?.limit === 1) beginLocalPurge();
+        return fetch(query, variables);
+      }) as unknown as GraphQLFetch;
+
+      await pullSync(db, queryClient, purgingFetch, { onCoverageReset });
+
+      expect(await countRows('boardsesh_ticks')).toBe(1);
+      expect(await countRows('playlists')).toBe(1);
       expect(await readCheckpoint(db, 'checkpoint:deletions')).not.toBeNull();
       expect(await readCoverage()).toBe(staleAt);
       expect(onCoverageReset).not.toHaveBeenCalled();

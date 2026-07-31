@@ -41,3 +41,14 @@ export const DELETIONS_COVERAGE_MARGIN_DAYS = 10;
  */
 export const DELETIONS_COVERAGE_MAX_AGE_MS =
   (SYNC_DELETIONS_RETENTION_DAYS - DELETIONS_COVERAGE_MARGIN_DAYS) * 24 * 60 * 60 * 1000;
+
+/**
+ * Earliest epoch-ms a coverage marker can plausibly hold. Boardsesh shipped no
+ * offline sync before 2025, so a marker below this is never an old device — it
+ * is a garbage clock (a phone that cold-boots to 1970/2001 before NTP lands and
+ * re-stamps the marker with its bogus "now") or a garbled row. Both read as
+ * decades stale, and wiping user data off a device that has been syncing daily
+ * is the regression this guard exists to avoid, so the classifier treats them as
+ * "no marker" and re-seeds instead.
+ */
+export const DELETIONS_COVERAGE_EPOCH_FLOOR_MS = Date.parse('2025-01-01T00:00:00Z');

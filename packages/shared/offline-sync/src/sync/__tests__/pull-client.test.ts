@@ -297,11 +297,14 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
-    // sync_meta writes are excluded: an empty cycle still stamps the
-    // deletions-coverage marker (pinned by the test below). This assertion is
-    // about DATA rows.
+    // Only the deletions-coverage marker is excused: an empty cycle legitimately
+    // stamps it (pinned by the test below). Checkpoints go through the same
+    // `INSERT OR REPLACE INTO sync_meta`, so excluding sync_meta wholesale would
+    // stop this from catching "an empty cycle advanced a cursor".
     const insertCalls = sqlCalls.filter(
-      (call) => call.sql.includes('INSERT OR REPLACE') && !call.sql.includes('sync_meta'),
+      (call) =>
+        call.sql.includes('INSERT OR REPLACE') &&
+        !(call.sql.includes('sync_meta') && call.params?.[0] === 'deletions-coverage'),
     );
     expect(insertCalls).toHaveLength(0);
   });

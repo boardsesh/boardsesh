@@ -15,7 +15,11 @@ import {
   resetUserDataForLostCoverage,
   setDeletionsCoverageAt,
 } from '../deletions-coverage';
-import { DELETIONS_COVERAGE_MARGIN_DAYS, SYNC_DELETIONS_RETENTION_DAYS } from '../retention';
+import {
+  DELETIONS_COVERAGE_EPOCH_FLOOR_MS,
+  DELETIONS_COVERAGE_MARGIN_DAYS,
+  SYNC_DELETIONS_RETENTION_DAYS,
+} from '../retention';
 import { USER_DATA_TABLES, BOARD_DATA_TABLES } from '../table-config';
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
@@ -47,6 +51,16 @@ describe('evaluateDeletionsCoverage', () => {
     // stale again — the guard would be permanently disarmed on that device.
     expect(evaluateDeletionsCoverage(NOW + 10 * DAY_MS, NOW)).toBe('future');
   });
+
+  it('treats an implausibly old marker as unknown, so a broken clock re-seeds instead of wiping', () => {
+    // The bad-clock loop this closes: a phone cold-boots with a dead RTC (1970 /
+    // 2001) before NTP lands, reads the real marker as 'future', re-stamps it
+    // with its bogus now — and once the clock corrects, that stamp is decades
+    // old and would authorise a wipe on a device that syncs every day.
+    expect(evaluateDeletionsCoverage(0, NOW)).toBe('unknown');
+    expect(evaluateDeletionsCoverage(Date.parse('2001-01-01T00:00:00Z'), NOW)).toBe('unknown');
+    expect(evaluateDeletionsCoverage(DELETIONS_COVERAGE_EPOCH_FLOOR_MS, NOW)).toBe('stale');
+  });
 });
 
 describe('deletions-coverage marker round-trip', () => {
@@ -64,11 +78,17 @@ describe('deletions-coverage marker round-trip', () => {
   });
 
   it('reads a garbled marker as absent rather than infinitely old', async () => {
-    await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
-      DELETIONS_COVERAGE_KEY,
-      'not-a-number',
-    ]);
-    expect(await getDeletionsCoverageAt(db)).toBeNull();
+    // 'not-a-number' is the easy case. The ISO string is the dangerous one:
+    // Number.parseInt tolerates trailing garbage and would return 2026 — epoch-ms
+    // 1970, i.e. "decades stale" — so a future refactor that starts writing ISO
+    // timestamps here would silently arm a fleet-wide wipe.
+    for (const garbledValue of ['not-a-number', '2026-07-01T00:00:00Z', '', '  ', '17e14', '-1']) {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+        DELETIONS_COVERAGE_KEY,
+        garbledValue,
+      ]);
+      expect(await getDeletionsCoverageAt(db)).toBeNull();
+    }
   });
 });
 
