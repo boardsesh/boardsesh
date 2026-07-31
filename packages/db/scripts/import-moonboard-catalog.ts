@@ -292,7 +292,9 @@ async function importMoonBoardCatalog() {
           .sort((left, right) => right[1] - left[1])
           .map(([grade, count]) => `${grade} (${count})`)
           .join(', ');
-        console.warn(`   ⚠️  Unmapped MoonBoard grades — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`);
+        console.warn(
+          `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`,
+        );
       }
 
       // One transaction per board: a crash mid-file never leaves a climb without
