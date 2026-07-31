@@ -33,6 +33,7 @@ import { processMutation, type GraphQLFetch } from '../../mutation-queue/handler
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
+import { getDeletionsCoverageAt } from '../deletions-coverage';
 import { TABLE_CONFIGS } from '../table-config';
 
 // The non-null fields of the backend's `input SaveTickInput`
@@ -857,12 +858,10 @@ describe('sync layer — real-DDL integration', () => {
       ]);
     }
 
-    async function readCoverage(): Promise<number | null> {
-      const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
-        'deletions-coverage',
-      ]);
-      return row ? Number(row.value) : null;
-    }
+    // The production reader, not a hand-rolled Number() — a local parse would
+    // accept values the app rejects (Number('17e14') is finite) and quietly
+    // certify behaviour the shipped code does not have.
+    const readCoverage = (): Promise<number | null> => getDeletionsCoverageAt(db);
 
     async function countRows(tableName: string): Promise<number> {
       const row = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${tableName}`, []);

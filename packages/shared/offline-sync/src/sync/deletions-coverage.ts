@@ -137,6 +137,10 @@ export async function resetUserDataForLostCoverage(
     await applyBusyTimeout(txn);
 
     for (const tableName of USER_DATA_TABLES) {
+      // Interpolated, because SQLite parameters bind values, not identifiers.
+      // Safe only while USER_DATA_TABLES stays compile-time literal (it is
+      // derived from TABLE_CONFIGS' keys) — same contract as removeBoardScopeData.
+      // Never let a computed or user-derived name into that array.
       const result = await txn.runAsync(`DELETE FROM ${tableName}`, []);
       rowsCleared += result.changes;
     }
