@@ -56,13 +56,18 @@ const a11y = vi.hoisted(() => ({
   tick: null as null | AccessibilityCapture,
 }));
 
+// Mutable so the Android-gate test can flip the platform, reset the module registry
+// and re-import the component — the `activate` action list is decided at
+// module-evaluation time.
+const platform = vi.hoisted(() => ({ OS: 'ios' as 'ios' | 'android' }));
+
 vi.mock('react-native', () => {
   const passthrough =
     (tag: string) =>
     ({ children }: { children?: ReactNode }) =>
       createElement(tag, null, children);
   return {
-    Platform: { OS: 'ios' },
+    Platform: platform,
     PlatformColor: (name: string) => name,
     View: ({ children, testID, ...rest }: { children?: ReactNode; testID?: string } & AccessibilityCapture) => {
       if (testID === 'tick-button') {
@@ -810,5 +815,45 @@ describe('QueueItemRow React.memo', () => {
     // Single negative number = leftward-only activation; NOT a symmetric [-10, 10]
     // array (which would also activate on rightward / right-diagonal drags).
     expect(activeOffsetX?.args).toEqual([-10]);
+  });
+});
+
+// Android has no onAccessibilityTap at all — 'activate' maps to ACTION_CLICK in
+// ReactAccessibilityDelegate and is the only route there, so the action list is
+// gated on the platform at module-evaluation time.
+describe('QueueItemRow screen-reader activation on Android', () => {
+  beforeEach(() => {
+    a11y.row = null;
+    a11y.tick = null;
+  });
+
+  it('adds the activate action on Android', async () => {
+    platform.OS = 'android';
+    vi.resetModules();
+    try {
+      const { QueueItemRow: AndroidQueueItemRow } = await import('../QueueItemRow');
+      render(
+        <AndroidQueueItemRow
+          item={makeItem('a', 'Crimp Master')}
+          position={1}
+          board={board}
+          isCurrentClimb={false}
+          isHistoryItem
+          onPress={vi.fn()}
+          onRemove={vi.fn()}
+          onToggleSelect={vi.fn()}
+          onTickHistory={vi.fn()}
+        />,
+      );
+
+      expect(a11y.row?.accessibilityActions).toEqual([
+        { name: 'activate' },
+        { name: 'logAscent', label: 'mobile.queue.logAscent' },
+      ]);
+      expect(a11y.tick?.accessibilityActions).toEqual([{ name: 'activate' }]);
+    } finally {
+      platform.OS = 'ios';
+      vi.resetModules();
+    }
   });
 });

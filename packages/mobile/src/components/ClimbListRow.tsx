@@ -4,7 +4,6 @@ import {
   StyleSheet,
   Platform,
   type AccessibilityActionEvent,
-  type AccessibilityActionInfo,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -31,6 +30,7 @@ import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
 import { useSwipeArm } from './use-swipe-arm';
+import { ACTIVATE_ACCESSIBILITY_ACTIONS, NESTED_BUTTON_ACCESSIBILITY_ACTIONS } from '../lib/row-accessibility-actions';
 
 // Swipe tuning. Each side reveals a panel up to ACTION_REVEAL wide; dragging
 // past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
@@ -40,34 +40,10 @@ const ACTION_REVEAL = 150;
 const COMMIT_THRESHOLD = 96;
 const SWIPE_FRICTION = 1;
 
-// Screen-reader activation for elements whose press lives on an RNGH gesture.
-// RNGH's native gesture recognizers never register with React Native's
-// accessibility-action bridge, so a VoiceOver/TalkBack activate never reaches a
-// Gesture.Tap() — unlike RN core's Pressable, which the OS activates for free via
-// the standard touch-responder chain. Rows inside a GestureDetector must wire
-// onAccessibilityTap + this action list themselves.
-//
-// The `activate` entry is Android-only on purpose. On Android 'activate' is the
-// only route: it maps to ACTION_CLICK in ReactAccessibilityDelegate and
-// onAccessibilityTap is not implemented at all. On iOS it is both redundant and
-// harmful — UIAccessibility already routes a double-tap to onAccessibilityTap,
-// and every accessibilityActions entry becomes a UIAccessibilityCustomAction
-// announced by its raw `name` when it carries no label, so VoiceOver would read
-// out a developer-facing "activate" on every row.
-const ACTIVATE_ACCESSIBILITY_ACTIONS: readonly AccessibilityActionInfo[] =
-  Platform.OS === 'android' ? ([{ name: 'activate' }] as const) : [];
-
-// The ⋮ button is nested inside the row's `accessible` container. UIKit treats an
-// accessibility element as a leaf, so VoiceOver never lands focus on the nested
-// view and its own onAccessibilityTap can never fire — the row has to publish the
-// menu as a labelled custom action of its own. (TalkBack does still focus the
-// nested view, which is why its props stay wired too.)
+// The ⋮ button is nested inside the row's `accessible` container, so it needs both
+// its own props (TalkBack focuses it) and a labelled custom action published on the
+// row (VoiceOver does not) — see lib/row-accessibility-actions.
 const MORE_ACTIONS_ACTION_NAME = 'moreActions';
-
-// Nested buttons only ever need the plain activate, so on iOS they get no action
-// list at all. Module-level so the identity is stable across rerenders.
-const NESTED_BUTTON_ACCESSIBILITY_ACTIONS =
-  ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
 
 // Per-row swipe perf: the panels below split into a cheap always-mounted shell
 // (just the coloured panel + its resting-state icon, zero shared values /
