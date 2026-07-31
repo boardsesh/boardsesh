@@ -14,7 +14,7 @@ import type { AuthRejectionResult } from './auth-rejection-result';
 type AuthRefreshResult =
   | { status: 'refreshed'; generation: number }
   | { status: 'rejected'; generation: number }
-  | { status: 'unavailable'; generation: number }
+  | { status: 'unavailable'; generation: number; error: unknown }
   | { status: 'superseded' };
 
 let refresh: { generation: number; promise: Promise<AuthRefreshResult> } | null = null;
@@ -35,11 +35,15 @@ function rejectedRefreshResult(generation: number): AuthRefreshResult {
 }
 
 async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshResult> {
-  const currentRefreshToken = await getRefreshToken();
-  if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
-  if (!currentRefreshToken) return rejectedRefreshResult(credentialGeneration);
-
   try {
+    // Keep the SecureStore read inside the guarded failure boundary. A locked or
+    // temporarily unavailable keychain is no more authoritative than a failed
+    // fetch and must resolve as unavailable rather than reject the shared refresh
+    // promise (which could otherwise make callers treat the session as absent).
+    const currentRefreshToken = await getRefreshToken();
+    if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
+    if (!currentRefreshToken) return rejectedRefreshResult(credentialGeneration);
+
     const response = await fetch(`${BACKEND_URL}/auth/native/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -51,18 +55,28 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
 
     if (!response.ok) {
       console.warn(`[Auth] Token refresh failed: HTTP ${response.status}`);
+      const refreshError = new Error(`Token refresh failed: HTTP ${response.status}`);
       // A 401/403 is an expired/revoked refresh token — routine, the user just
       // signs in again. A 5xx means our refresh endpoint is broken for everyone,
       // which we do want to see.
       if (response.status >= 500) {
-        reportError(new Error(`Token refresh failed: HTTP ${response.status}`), {
+        reportError(refreshError, {
+          tags: { source: 'auth-refresh' },
+          extra: { status: response.status },
+        });
+      } else if (response.status !== 401 && response.status !== 403) {
+        // Other unavailable responses (for example 429) are handled degradation,
+        // not logout. Report their original status once here; AuthProvider must
+        // not emit a second generic "refresh unavailable" exception.
+        reportHandledError(refreshError, {
+          ...(response.status === 429 ? { level: 'warning' as const } : {}),
           tags: { source: 'auth-refresh' },
           extra: { status: response.status },
         });
       }
       return response.status === 401 || response.status === 403
         ? { status: 'rejected', generation: credentialGeneration }
-        : { status: 'unavailable', generation: credentialGeneration };
+        : { status: 'unavailable', generation: credentialGeneration, error: refreshError };
     }
 
     const data = (await response.json()) as { jwt: string; refreshToken: string; expiresAt: string };
@@ -73,7 +87,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
     console.warn('[Auth] Token refresh error:', error instanceof Error ? error.message : 'unknown');
     // Offline/aborted refreshes downgrade to a warning; a real throw reports.
     reportHandledError(error, { tags: { source: 'auth-refresh' } });
-    return { status: 'unavailable', generation: credentialGeneration };
+    return { status: 'unavailable', generation: credentialGeneration, error };
   }
 }
 

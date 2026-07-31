@@ -106,13 +106,20 @@ Tokens are stored in `expo-secure-store` under three keys:
 
 ### Proactive refresh
 
-`isTokenExpiringSoon()` returns `true` when the JWT is within 24 hours of expiry. `ensureFreshToken()` is called before every authenticated request and triggers a refresh if needed.
+`isTokenExpiringSoon()` returns `true` when the JWT is within 24 hours of expiry or when its stored expiry metadata is missing. `ensureFreshToken()` is called before every authenticated request and triggers a refresh if needed. Keeping the missing-expiry case refreshable lets older or partially migrated credentials repair their metadata as soon as the backend is reachable.
+
+On app startup and foreground revalidation, a successfully read JWT establishes the local session before the expiry and refresh checks run. If the expiry read, refresh request, or post-refresh keychain read is temporarily unavailable, native keeps that JWT authenticated in a degraded state. This preserves downloaded boards and other account-scoped offline data even when the JWT is already past its server expiry; it does not bypass backend authorization, so online requests still fail until refresh succeeds. The provider retries a degraded session when the app becomes active or connectivity transitions from offline to online. Reconnect checks are coalesced and stop after a clean authentication result.
 
 ### 401 retry with deduplication
 
 If a request returns `401`, `authenticatedFetch()` triggers a token refresh and retries the request once with the new JWT. Concurrent refresh attempts are deduplicated via a shared `refreshPromise` -- only one network call is made regardless of how many requests hit `401` simultaneously.
 
-If the refresh itself fails, all tokens are cleared and the user is signed out.
+Refresh outcomes are deliberately split:
+
+- A `401` or `403` rejection (or a confirmed missing refresh credential) means the session cannot be renewed. The provider transitions to anonymous and runs the normal account-isolation cleanup.
+- A transport error, timeout, rate limit, backend failure, or transient keychain read error is `unavailable`, not rejected. Existing credentials remain stored and the established local session stays rendered while native waits to retry.
+
+Every native auth resolution carries the credential generation it started with. The resolver checks that generation after each asynchronous step, and `AuthProvider` checks it again immediately before applying state, so a delayed offline/refresh result cannot revive an account after sign-out or overwrite a newer login.
 
 ## Endpoint reference
 

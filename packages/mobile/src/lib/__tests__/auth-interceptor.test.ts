@@ -152,6 +152,24 @@ describe('ensureFreshToken', () => {
       warnSpy.mockRestore();
     }
   });
+
+  it('maps a transient refresh-token keychain read failure to unavailable with its original cause', async () => {
+    const keychainError = new Error('refresh token keychain locked');
+    mockGetRefreshToken.mockRejectedValueOnce(keychainError);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      await expect(deduplicatedRefresh()).resolves.toEqual({
+        status: 'unavailable',
+        generation: 7,
+        error: keychainError,
+      });
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith('[Auth] Token refresh error:', keychainError.message);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe('recoverAuthRejection', () => {

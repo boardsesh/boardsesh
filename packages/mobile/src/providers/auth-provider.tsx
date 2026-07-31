@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
 import { useSegments, Redirect } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { AppLoadingSplash } from '../components/AppLoadingSplash';
-import { resolveAuthSession } from '../lib/auth-session';
+import { resolveAuthSession, type AuthSessionResult } from '../lib/auth-session';
 import { captureAuthCredentialGeneration, isAuthCredentialGenerationCurrent } from '../lib/auth-store';
 import { subscribeAuthTokenChanges } from '../lib/auth-token-events';
 import { bumpAuthTransportRevision } from '../lib/auth-transport-revision';
@@ -22,7 +22,7 @@ import {
 } from '../lib/auth';
 import { SCREENSHOT_USER_EMAIL, SCREENSHOT_USER_PASSWORD } from '../lib/screenshot-mode';
 import { reset as resetAnalytics, track } from '../lib/analytics';
-import { reportError } from '../lib/error-reporting';
+import { reportError, reportHandledError } from '../lib/error-reporting';
 import { setOnForcedSignOut } from '../lib/auth-interceptor';
 import { getHttpClient, resetHttpClient } from '../lib/graphql/client';
 import { disposeWsClient } from '../lib/graphql/ws-client';
@@ -97,6 +97,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSessionUnavailable, setIsSessionUnavailable] = useState(false);
+  const [isNativeSessionDegraded, setIsNativeSessionDegraded] = useState(false);
   const segments = useSegments();
   const queryClient = useQueryClient();
   const authStateRef = useRef({ isAuthenticated: false, isLoading: true });
@@ -108,6 +109,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const pendingAuthTransportRestartRef = useRef(false);
   const remoteInvalidationVersionRef = useRef(0);
   const remoteRevalidationRef = useRef<Promise<void> | null>(null);
+  const nativeSessionDegradedRef = useRef(false);
+  const reconnectAuthCheckRef = useRef<Promise<void> | null>(null);
+
+  const updateNativeSessionDegraded = useCallback((degraded: boolean) => {
+    nativeSessionDegradedRef.current = degraded;
+    setIsNativeSessionDegraded(degraded);
+  }, []);
 
   const beginAuthTransition = useCallback((): number => {
     authTransitionEpochRef.current += 1;
@@ -255,6 +263,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
   const handleSignedOutTransition = useCallback(
     async (transitionEpoch: number, forceFullCleanup = false): Promise<boolean> => {
       if (!isAuthTransitionCurrent(transitionEpoch)) return false;
+      updateNativeSessionDegraded(false);
       const previousStorageOwner = Platform.OS === 'web' ? authenticatedStorageOwnerRef.current : undefined;
       if (Platform.OS === 'web' && !forceFullCleanup && anonymousSessionIsolatedRef.current) {
         authStateRef.current = { ...authStateRef.current, isAuthenticated: false };
@@ -297,7 +306,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       }
       return completed;
     },
-    [clearPersistedUserStores, isAuthTransitionCurrent, resetAnalyticsForSignedOutTransition, runSignedOutCleanup],
+    [
+      clearPersistedUserStores,
+      isAuthTransitionCurrent,
+      resetAnalyticsForSignedOutTransition,
+      runSignedOutCleanup,
+      updateNativeSessionDegraded,
+    ],
   );
 
   const handleAuthenticatedTransition = useCallback(
@@ -349,6 +364,35 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     [isAuthTransitionCurrent, runSignedOutCleanup],
   );
 
+  const handleResolvedAuthenticatedTransition = useCallback(
+    async (
+      transitionEpoch: number,
+      authSession: Extract<AuthSessionResult, { status: 'authenticated' }>,
+    ): Promise<boolean> => {
+      // resolveAuthSession checks its captured generation after every await, but
+      // another login or logout can still win in the microtask between resolution
+      // and this provider continuation. Recheck at the state-application boundary
+      // so an old session can never revive or annotate a newer credential owner.
+      if (Platform.OS !== 'web' && !isAuthCredentialGenerationCurrent(authSession.generation)) return false;
+
+      if (Platform.OS !== 'web') {
+        const degradation = authSession.degraded;
+        // Refresh failures are reported with their original cause by the
+        // interceptor. The remaining storage-read degradations originate in the
+        // session resolver, so report those here through the handled-error policy.
+        if (degradation && degradation.stage !== 'refresh-unavailable') {
+          reportHandledError(degradation.error, {
+            tags: { source: 'auth-session', auth_stage: degradation.stage },
+          });
+        }
+        updateNativeSessionDegraded(degradation !== undefined);
+      }
+
+      return handleAuthenticatedTransition(transitionEpoch, authSession);
+    },
+    [handleAuthenticatedTransition, updateNativeSessionDegraded],
+  );
+
   const checkAuthForTransition = useCallback(
     async (transitionEpoch: number) => {
       try {
@@ -359,18 +403,27 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
           // must not redirect or clean up that newer session.
           return;
         }
+        if (Platform.OS !== 'web' && !isAuthCredentialGenerationCurrent(authSession.generation)) {
+          // The credential owner changed after resolveAuthSession settled but
+          // before this continuation could apply its result.
+          return;
+        }
         if (authSession.status === 'unavailable') {
           // A browser network outage is not a confirmed logout: preserve an
           // already-rendered web session, or show the retry route on cold start.
           // Native keychain failures retain their established policy below.
-          reportError(authSession.error);
           if (Platform.OS !== 'web') {
             // Preserve native behavior for transient keychain failures: release
             // the current UI without running confirmed-sign-out cleanup, then
             // retry the keychain when the app becomes active again.
+            reportHandledError(authSession.error, {
+              tags: { source: 'auth-session', auth_stage: authSession.stage },
+            });
+            updateNativeSessionDegraded(false);
             setIsAuthenticated(false);
             setIsSessionUnavailable(false);
           } else {
+            reportError(authSession.error);
             const previousStorageOwner = authenticatedStorageOwnerRef.current;
             const confirmedIdentityChanged =
               authSession.identityInvalidated === true ||
@@ -398,6 +451,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         }
 
         if (authSession.status === 'anonymous') {
+          updateNativeSessionDegraded(false);
           pendingAuthTransportRestartRef.current = false;
           setIsSessionUnavailable(false);
           // Screenshot build: sign in programmatically here, before the loading gate
@@ -423,11 +477,27 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
                   const screenshotSession = await resolveAuthSession();
                   if (!isAuthTransitionCurrent(transitionEpoch)) return;
                   if (screenshotSession.status === 'authenticated') {
+                    if (Platform.OS !== 'web' && !isAuthCredentialGenerationCurrent(screenshotSession.generation)) {
+                      return;
+                    }
                     console.info('[screenshot] auto sign-in succeeded; rendering straight into home');
-                    await handleAuthenticatedTransition(transitionEpoch, screenshotSession);
+                    await handleResolvedAuthenticatedTransition(transitionEpoch, screenshotSession);
                   } else if (screenshotSession.status === 'unavailable') {
-                    reportError(screenshotSession.error);
-                    setIsSessionUnavailable(true);
+                    if (Platform.OS === 'web') {
+                      reportError(screenshotSession.error);
+                      setIsSessionUnavailable(true);
+                    } else if (isAuthCredentialGenerationCurrent(screenshotSession.generation)) {
+                      // Match the ordinary native token-read policy even in the
+                      // screenshot harness: a keychain failure is not a confirmed
+                      // logout and must not run cleanup or use the web-only retry
+                      // route.
+                      reportHandledError(screenshotSession.error, {
+                        tags: { source: 'auth-session', auth_stage: screenshotSession.stage },
+                      });
+                      updateNativeSessionDegraded(false);
+                      setIsAuthenticated(false);
+                      setIsSessionUnavailable(false);
+                    }
                   }
                   return;
                 }
@@ -453,7 +523,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
           await handleSignedOutTransition(transitionEpoch);
           return;
         }
-        await handleAuthenticatedTransition(transitionEpoch, authSession);
+        await handleResolvedAuthenticatedTransition(transitionEpoch, authSession);
       } catch (authCheckError) {
         if (!isAuthTransitionCurrent(transitionEpoch)) return;
         // resolveAuthSession normally converts transport/storage errors into the
@@ -462,6 +532,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         // persisted session.
         reportError(authCheckError);
         if (Platform.OS !== 'web') {
+          updateNativeSessionDegraded(false);
           setIsAuthenticated(false);
           setIsSessionUnavailable(false);
         } else if (!authStateRef.current.isAuthenticated) {
@@ -472,7 +543,13 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         if (isAuthTransitionCurrent(transitionEpoch)) setIsLoading(false);
       }
     },
-    [handleAuthenticatedTransition, handleSignedOutTransition, isAuthTransitionCurrent, runSignedOutCleanup],
+    [
+      handleResolvedAuthenticatedTransition,
+      handleSignedOutTransition,
+      isAuthTransitionCurrent,
+      runSignedOutCleanup,
+      updateNativeSessionDegraded,
+    ],
   );
 
   const checkAuth = useCallback((): Promise<void> => {
@@ -494,6 +571,26 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     });
     return () => subscription.remove();
   }, [checkAuth]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' || !isNativeSessionDegraded) return;
+
+    let wasOnline = onlineManager.isOnline();
+    return onlineManager.subscribe((isOnline) => {
+      const reconnected = !wasOnline && isOnline;
+      wasOnline = isOnline;
+      if (!reconnected || !nativeSessionDegradedRef.current || reconnectAuthCheckRef.current) return;
+
+      const reconnectCheck = checkAuth().finally(() => {
+        if (reconnectAuthCheckRef.current === reconnectCheck) reconnectAuthCheckRef.current = null;
+      });
+      reconnectAuthCheckRef.current = reconnectCheck;
+      // checkAuth owns expected failure handling. Keep this defensive catch so a
+      // future regression cannot turn a connectivity event into an unhandled
+      // promise rejection.
+      reconnectCheck.catch(reportError);
+    });
+  }, [checkAuth, isNativeSessionDegraded]);
 
   // Both native OAuth flows run their provider sheet, exchange the identity
   // token for our JWT pair, and — on success — re-run checkAuth so the provider
@@ -575,6 +672,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
     async (method: 'manual' | 'account_deleted' = 'manual') => {
       const credentialGeneration = captureAuthCredentialGeneration();
       const transitionEpoch = beginAuthTransition();
+      updateNativeSessionDegraded(false);
       track(SHARED_EVENTS.Logout, { method });
       await drainLocalMutationQueueBestEffort();
 
@@ -638,6 +736,7 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
       enqueueAuthTransition,
       handleSignedOutTransition,
       isAuthTransitionCurrent,
+      updateNativeSessionDegraded,
     ],
   );
 

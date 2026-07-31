@@ -1,4 +1,5 @@
 import { deduplicatedRefresh } from './auth-interceptor';
+import { reportHandledError } from './error-reporting';
 import {
   captureAuthCredentialGeneration,
   getAuthToken,
@@ -7,54 +8,111 @@ import {
 } from './auth-store';
 import type { UserStorageOwner } from './user-storage-owner';
 
+export type AuthSessionDegradation = {
+  stage: 'expiry-read' | 'refresh-unavailable' | 'refreshed-token-read';
+  error: unknown;
+};
+
 export type AuthSessionResult =
-  | { status: 'authenticated'; token: string; userId?: string; authSessionId?: string }
-  | { status: 'anonymous' }
+  | {
+      status: 'authenticated';
+      token: string;
+      generation: number;
+      degraded?: AuthSessionDegradation;
+      userId?: string;
+      authSessionId?: string;
+    }
+  | { status: 'anonymous'; generation: number }
   | { status: 'superseded' }
   | {
       status: 'unavailable';
+      stage: 'token-read';
       error: unknown;
+      generation: number;
       confirmedIdentity?: UserStorageOwner;
       identityInvalidated?: boolean;
     };
 
+function authenticatedSession(token: string, generation: number, degraded?: AuthSessionDegradation): AuthSessionResult {
+  if (!isAuthCredentialGenerationCurrent(generation)) return { status: 'superseded' };
+  return {
+    status: 'authenticated',
+    token,
+    generation,
+    ...(degraded ? { degraded } : {}),
+  };
+}
+
 /** Resolve the native mobile JWT session, refreshing it when necessary. */
 export async function resolveAuthSession(): Promise<AuthSessionResult> {
   const credentialGeneration = captureAuthCredentialGeneration();
+  let currentToken: string | null;
+
   try {
-    const currentToken = await getAuthToken();
-    if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
-    if (!currentToken) return { status: 'anonymous' };
-
-    const tokenExpiringSoon = await isTokenExpiringSoon();
-    if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
-    if (tokenExpiringSoon) {
-      // Refresh via the status-returning path (not the boolean `ensureFreshToken`,
-      // which collapses rejected and unavailable into the same `false`). A
-      // server-rejected refresh token is a real logout; a transient network
-      // failure must NOT sign the user out.
-      const refreshResult = await deduplicatedRefresh();
-      if (!isAuthCredentialGenerationCurrent(credentialGeneration) || refreshResult.status === 'superseded') {
-        return { status: 'superseded' };
-      }
-      if (refreshResult.status === 'rejected') return { status: 'anonymous' };
-      if (refreshResult.status === 'unavailable') {
-        // Preserve the session and let the caller retry, instead of a false logout.
-        return { status: 'unavailable', error: new Error('Token refresh unavailable') };
-      }
-
-      const refreshedToken = await getAuthToken();
-      if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
-      if (!refreshedToken) return { status: 'anonymous' };
-      return { status: 'authenticated', token: refreshedToken };
-    }
-
-    return isAuthCredentialGenerationCurrent(credentialGeneration)
-      ? { status: 'authenticated', token: currentToken }
-      : { status: 'superseded' };
+    currentToken = await getAuthToken();
   } catch (error) {
     return isAuthCredentialGenerationCurrent(credentialGeneration)
-      ? { status: 'unavailable', error }
+      ? { status: 'unavailable', stage: 'token-read', error, generation: credentialGeneration }
       : { status: 'superseded' };
   }
+
+  if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
+  if (!currentToken) return { status: 'anonymous', generation: credentialGeneration };
+
+  let tokenExpiringSoon: boolean;
+  try {
+    tokenExpiringSoon = await isTokenExpiringSoon();
+  } catch (error) {
+    return authenticatedSession(currentToken, credentialGeneration, { stage: 'expiry-read', error });
+  }
+
+  if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
+  if (!tokenExpiringSoon) return authenticatedSession(currentToken, credentialGeneration);
+
+  let refreshResult: Awaited<ReturnType<typeof deduplicatedRefresh>>;
+  try {
+    // Refresh via the status-returning path (not the boolean `ensureFreshToken`,
+    // which collapses rejected and unavailable into the same `false`). A
+    // server-rejected refresh token is a real logout; a transient network or
+    // keychain failure preserves the already-established local session.
+    refreshResult = await deduplicatedRefresh();
+  } catch (error) {
+    if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
+    // The concrete interceptor catches and reports all expected refresh failures.
+    // Keep this defensive boundary for an unexpected rejected implementation or
+    // test double, and report its original cause exactly once.
+    reportHandledError(error, {
+      tags: { source: 'auth-session', auth_stage: 'refresh-unavailable' },
+    });
+    return authenticatedSession(currentToken, credentialGeneration, { stage: 'refresh-unavailable', error });
+  }
+
+  if (!isAuthCredentialGenerationCurrent(credentialGeneration) || refreshResult.status === 'superseded') {
+    return { status: 'superseded' };
+  }
+  if (refreshResult.status === 'rejected') return { status: 'anonymous', generation: credentialGeneration };
+  if (refreshResult.status === 'unavailable') {
+    // `refreshTokens` owns telemetry for this original cause. Carry it to the
+    // caller for provenance, but do not report a second generic exception there.
+    return authenticatedSession(currentToken, credentialGeneration, {
+      stage: 'refresh-unavailable',
+      error: refreshResult.error,
+    });
+  }
+
+  let refreshedToken: string | null;
+  try {
+    refreshedToken = await getAuthToken();
+  } catch (error) {
+    return authenticatedSession(currentToken, credentialGeneration, { stage: 'refreshed-token-read', error });
+  }
+
+  if (!isAuthCredentialGenerationCurrent(credentialGeneration)) return { status: 'superseded' };
+  if (!refreshedToken) {
+    return authenticatedSession(currentToken, credentialGeneration, {
+      stage: 'refreshed-token-read',
+      error: new Error('Refreshed auth token was unavailable from secure storage'),
+    });
+  }
+  return authenticatedSession(refreshedToken, credentialGeneration);
 }
