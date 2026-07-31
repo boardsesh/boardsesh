@@ -44,6 +44,7 @@ import { SIDEBAR_WIDTH } from '../theme/layout';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
+import type { DismissAndWaitResult } from './sheet-presentation-provider';
 
 export type BoardConfig = {
   boardName: string;
@@ -69,6 +70,12 @@ export type OpenClimbActionsOptions = {
    *  with it (the "tick sheet closes immediately" bug). Same fix shape as
    *  `onAddBetaVideo` (#3505). Receives the climb/board snapshot the menu opened for. */
   onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** Awaitable close for a native BoardSheet / QueueSheet underneath the custom
+   * actions overlay. Omitted when the source is an inline iPad pane. */
+  dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
+  /** `/play`-owned native-stack close waiter. Threaded from the route because a
+   * root overlay cannot safely subscribe to the player's transition events. */
+  dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
 };
 
 export type LogAscentInput = {
@@ -335,6 +342,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     onEditEntry?: () => void;
     onAddBetaVideo?: (climb: Climb, boardConfig: BoardConfig) => void;
     onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+    dismissSourceSheet?: () => Promise<DismissAndWaitResult>;
+    dismissPlayerAndWait?: () => Promise<DismissAndWaitResult>;
   } | null>(null);
   const { addToQueue, setSessionBoardPath, setCurrentClimb } = useQueueActions();
   const { sessionId } = useQueueSessionControls();
@@ -524,6 +533,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
         onEditEntry: options?.onEditEntry,
         onAddBetaVideo: options?.onAddBetaVideo,
         onTick: options?.onTick,
+        dismissSourceSheet: options?.dismissSourceSheet,
+        dismissPlayerAndWait: options?.dismissPlayerAndWait,
       });
     },
     [],
@@ -571,6 +582,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   const requestCloseQueueSheet = useCallback(() => {
     queueSheetRef.current?.dismiss();
   }, []);
+  const dismissQueueSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
+    const handle = queueSheetRef.current;
+    return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
+  }, []);
 
   // Board sheet: present imperatively via the ref, exactly like the queue sheet
   // and Play Drawer. gorhom's present() from a `visible`-prop effect is a silent
@@ -583,6 +598,10 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     boardSheetRef.current?.present();
   }, []);
   const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
+  const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
+    const handle = boardSheetRef.current;
+    return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
+  }, []);
   // Snackbar "Open": dismiss the snackbar, then open the queue sheet.
   const handleSnackbarOpen = useCallback(() => {
     dismissSnackbar();
@@ -617,6 +636,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     storedBoardConfig: storedActiveBoardConfig,
     sessionId,
     requestCloseQueueSheet,
+    dismissQueueSheetAndWait,
   });
 
   // Switch-board control inside the board sheet: dismiss the sheet, then open
@@ -695,7 +715,17 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     [openAddToPlaylist],
   );
 
-  const handleBoardSheetOpenActions = useCallback(
+  const handleBoardSheetModalOpenActions = useCallback(
+    (action: BoardSheetClimbAction) => {
+      openClimbActions(action.climb, action.boardConfig, { dismissSourceSheet: dismissBoardSheetAndWait });
+    },
+    [openClimbActions, dismissBoardSheetAndWait],
+  );
+
+  // The regular-width iPad wall surface is a persistent inline pane, not the
+  // BoardSheet modal. Never hand it a modal dismiss callback: doing so could close
+  // an unrelated hidden/reopening sheet or abort a valid create navigation.
+  const handleBoardPanelOpenActions = useCallback(
     (action: BoardSheetClimbAction) => {
       openClimbActions(action.climb, action.boardConfig);
     },
@@ -764,7 +794,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onClimbPress: handleBoardSheetClimbPress,
             onAddToQueue: handleBoardSheetAddToQueue,
             onOpenPlaylist: handleBoardSheetOpenPlaylist,
-            onOpenActions: handleBoardSheetOpenActions,
+            onOpenActions: handleBoardPanelOpenActions,
           }
         : null,
     [
@@ -774,7 +804,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
       handleBoardSheetClimbPress,
       handleBoardSheetAddToQueue,
       handleBoardSheetOpenPlaylist,
-      handleBoardSheetOpenActions,
+      handleBoardPanelOpenActions,
     ],
   );
 
@@ -900,7 +930,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
           onClimbPress={handleBoardSheetClimbPress}
           onAddToQueue={handleBoardSheetAddToQueue}
           onOpenPlaylist={handleBoardSheetOpenPlaylist}
-          onOpenActions={handleBoardSheetOpenActions}
+          onOpenActions={handleBoardSheetModalOpenActions}
         />
         {/* Rendered after the queue/board sheets so its iOS FullWindowOverlay mounts as a
           later sibling and floats above them when a row inside those sheets is
@@ -915,6 +945,8 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
             onEditEntry={climbActions.onEditEntry}
             onAddBetaVideo={climbActions.onAddBetaVideo}
             onTick={climbActions.onTick}
+            dismissSourceSheet={climbActions.dismissSourceSheet}
+            dismissPlayerAndWait={climbActions.dismissPlayerAndWait}
             reduceMotion={reduceMotion}
             onClose={closeClimbActions}
           />

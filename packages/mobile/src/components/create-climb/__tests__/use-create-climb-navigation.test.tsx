@@ -1,17 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Climb } from '@boardsesh/shared-schema';
+import type { DismissAndWaitResult } from '../../../providers/sheet-presentation-provider';
 
-const ctrl = vi.hoisted(() => ({ segments: ['(tabs)', 'climbs'] as readonly string[] }));
-const router = vi.hoisted(() => ({ push: vi.fn(), dismiss: vi.fn() }));
+const router = vi.hoisted(() => ({ push: vi.fn() }));
 
-vi.mock('expo-router', () => ({
-  useRouter: () => router,
-  useSegments: () => ctrl.segments,
-}));
+vi.mock('expo-router', () => ({ useRouter: () => router }));
 
-import { useCreateClimbNavigation } from '../use-create-climb-navigation';
+import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../use-create-climb-navigation';
 
 const climb = {
   uuid: 'climb-1',
@@ -22,45 +19,76 @@ const climb = {
 
 const board = { boardName: 'kilter', layoutId: 8, sizeId: 17, setIds: '26,27', angle: 40 };
 
+function deferredDismiss() {
+  let resolvePromise: (result: DismissAndWaitResult) => void = () => {};
+  const promise = new Promise<DismissAndWaitResult>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
 beforeEach(() => {
-  ctrl.segments = ['(tabs)', 'climbs'];
   router.push.mockClear();
-  router.dismiss.mockClear();
 });
 
-describe('useCreateClimbNavigation player dismiss', () => {
-  // /play is a transparentModal in the ROOT stack; /(tabs)/climbs/create is a
-  // transparentModal in the CLIMBS-TAB stack, which is mounted BENEATH it. Pushing
-  // create without dismissing the player stacks it under the live player.
-  it('dismisses the player before pushing create when /play is focused', () => {
-    ctrl.segments = ['play'];
-    const { result } = renderHook(() => useCreateClimbNavigation());
+describe('useCreateClimbNavigation serialized handoff', () => {
+  it('claims one action before overlay dismissal, then waits source → player → push', async () => {
+    const sourceDeferred = deferredDismiss();
+    const playerDeferred = deferredDismiss();
+    const dismissSourceSheet = vi.fn(() => sourceDeferred.promise);
+    const dismissPlayerAndWait = vi.fn(() => playerDeferred.promise);
+    const dismissOverlay = vi.fn();
+    const { result } = renderHook(() => useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait }));
 
-    result.current.openRemix(climb, board);
+    result.current.openRemix(climb, board, dismissOverlay);
+    result.current.openRemix(climb, board, dismissOverlay); // overlay is still hit-testable
 
-    expect(router.dismiss).toHaveBeenCalledTimes(1);
+    expect(dismissOverlay).toHaveBeenCalledTimes(1);
+    expect(dismissSourceSheet).toHaveBeenCalledTimes(1);
+    expect(dismissOverlay.mock.invocationCallOrder[0]).toBeLessThan(dismissSourceSheet.mock.invocationCallOrder[0]);
+    expect(dismissPlayerAndWait).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+
+    await act(async () => sourceDeferred.resolve({ status: 'dismissed' }));
+    expect(dismissPlayerAndWait).toHaveBeenCalledTimes(1);
+    expect(router.push).not.toHaveBeenCalled();
+
+    await act(async () => playerDeferred.resolve({ status: 'dismissed' }));
     expect(router.push).toHaveBeenCalledTimes(1);
-    expect(router.dismiss.mock.invocationCallOrder[0]).toBeLessThan(router.push.mock.invocationCallOrder[0]);
   });
 
-  it('pushes without dismissing from the climbs list', () => {
-    const { result } = renderHook(() => useCreateClimbNavigation());
-
-    result.current.openRemix(climb, board);
-
-    expect(router.dismiss).not.toHaveBeenCalled();
-    expect(router.push).toHaveBeenCalledTimes(1);
-  });
-
-  // The iPad regular-width layout hosts the player in the detail pane, so the focused
-  // route is still a tabs route and there is no modal to pop.
-  it('pushes without dismissing from a pushed climbs sub-route (iPad pane player)', () => {
-    ctrl.segments = ['(tabs)', 'climbs', '[climbUuid]'];
-    const { result } = renderHook(() => useCreateClimbNavigation());
+  it('stops when source-sheet teardown aborts the wait', async () => {
+    const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const { result } = renderHook(() =>
+      useCreateClimbNavigation({
+        dismissSourceSheet: async () => ({ status: 'aborted' }),
+        dismissPlayerAndWait,
+      }),
+    );
 
     result.current.openEdit(climb, board);
+    await act(async () => {});
 
-    expect(router.dismiss).not.toHaveBeenCalled();
+    expect(dismissPlayerAndWait).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('stops when the player route unmount aborts its transition wait', async () => {
+    const { result } = renderHook(() =>
+      useCreateClimbNavigation({ dismissPlayerAndWait: async () => ({ status: 'aborted' }) }),
+    );
+
+    result.current.openRemix(climb, board);
+    await act(async () => {});
+
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('pushes immediately when no native source or player callback was injected (including iPad panes)', () => {
+    const { result } = renderHook(() => useCreateClimbNavigation());
+
+    result.current.openRemix(climb, board);
+
     expect(router.push).toHaveBeenCalledTimes(1);
   });
 });
@@ -114,28 +142,23 @@ describe('useCreateClimbNavigation params', () => {
 });
 
 describe('useCreateClimbNavigation callback stability', () => {
-  // `useSegments()` returns a fresh array on every navigation. If it were a dep rather
-  // than a ref read, these callbacks would change identity on each one and rebuild
-  // `useClimbActions`' memoised action list.
-  it('keeps openRemix / openEdit stable across a segments change', () => {
-    const { result, rerender } = renderHook(() => useCreateClimbNavigation());
-    const first = { openRemix: result.current.openRemix, openEdit: result.current.openEdit };
+  it('keeps openRemix / openEdit stable while reading the latest injected waiter', async () => {
+    const firstWaiter = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const secondWaiter = vi.fn(async () => ({ status: 'dismissed' as const }));
+    const { result, rerender } = renderHook(
+      ({ dismissSourceSheet }: { dismissSourceSheet?: DismissSurfaceAndWait }) =>
+        useCreateClimbNavigation({ dismissSourceSheet }),
+      { initialProps: { dismissSourceSheet: firstWaiter } },
+    );
+    const firstCallbacks = { openRemix: result.current.openRemix, openEdit: result.current.openEdit };
 
-    ctrl.segments = ['play'];
-    rerender();
+    rerender({ dismissSourceSheet: secondWaiter });
+    result.current.openRemix(climb, board);
+    await act(async () => {});
 
-    expect(result.current.openRemix).toBe(first.openRemix);
-    expect(result.current.openEdit).toBe(first.openEdit);
-  });
-
-  it('still reads the CURRENT segments through the stable callback', () => {
-    const { result, rerender } = renderHook(() => useCreateClimbNavigation());
-    const openRemix = result.current.openRemix;
-
-    ctrl.segments = ['play'];
-    rerender();
-    openRemix(climb, board);
-
-    expect(router.dismiss).toHaveBeenCalledTimes(1);
+    expect(result.current.openRemix).toBe(firstCallbacks.openRemix);
+    expect(result.current.openEdit).toBe(firstCallbacks.openEdit);
+    expect(firstWaiter).not.toHaveBeenCalled();
+    expect(secondWaiter).toHaveBeenCalledTimes(1);
   });
 });

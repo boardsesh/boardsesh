@@ -152,6 +152,8 @@ type PlayDrawerProps = {
    *  its own in-tree beta opener via `options.onAddBetaVideo` so the beta sheet
    *  stacks above the `/play` modal (#3505). */
   onOpenClimbActions?: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
+  /** Supplied only by the `/play` route. The persistent iPad pane omits it. */
+  dismissPlayerAndWait?: OpenClimbActionsOptions['dismissPlayerAndWait'];
   /** The climb to show; applied on mount and whenever `nonce` changes. */
   openTarget: PlayDrawerOpenTarget | null;
   /** Rendering context. `'route'` (default) is the full-screen `/play` modal — a
@@ -188,6 +190,7 @@ export function PlayDrawer({
   mismatchBoardLabel,
   onSwitchBoard,
   onOpenClimbActions,
+  dismissPlayerAndWait,
   openTarget,
   presentation = 'route',
   paneTopInset = true,
@@ -1079,6 +1082,7 @@ export function PlayDrawer({
           }}
           onToggleFavorite={handleToggleFavorite}
           onAddBetaVideo={isAuthenticated ? handleOpenAddBetaVideo : undefined}
+          dismissPlayerAndWait={dismissPlayerAndWait}
           onClose={handleCloseSubDrawer}
         />
       )}

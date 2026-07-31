@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { View, Pressable, Platform, StyleSheet } from 'react-native';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
+import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import type { Climb, ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
@@ -39,6 +39,8 @@ type QueueSheetProps = {
 export type QueueSheetHandle = {
   present: () => void;
   dismiss: () => void;
+  /** Dismiss and resolve only after the native animation settles. */
+  dismissAndWait: () => Promise<DismissAndWaitResult>;
 };
 
 export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function QueueSheet(
@@ -127,6 +129,7 @@ export const QueueSheet = forwardRef<QueueSheetHandle, QueueSheetProps>(function
       dismiss: () => {
         managed.handle.dismiss();
       },
+      dismissAndWait: () => managed.handle.dismissAndWait(),
     }),
     [managed.handle],
   );

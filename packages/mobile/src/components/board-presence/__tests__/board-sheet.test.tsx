@@ -50,6 +50,7 @@ const managedSheet = vi.hoisted(() => ({
   // then fires `lastOnFullyDismissed` itself to settle the dismiss late.
   deferSettle: false,
   lastOnFullyDismissed: null as (() => void) | null,
+  dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
 const climbRows = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const thumbnails = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
@@ -179,6 +180,7 @@ vi.mock('../../../providers/sheet-presentation-provider', () => ({
             opts.onFullyDismissed?.();
           }
         },
+        dismissAndWait: managedSheet.dismissAndWait,
       },
     };
   },
@@ -395,6 +397,7 @@ describe('BoardSheet', () => {
     sheetModal.onChange = null;
     managedSheet.deferSettle = false;
     managedSheet.lastOnFullyDismissed = null;
+    managedSheet.dismissAndWait.mockClear();
     climbRows.props = [];
     thumbnails.props = [];
     safeArea.bottom = 0;
@@ -418,6 +421,23 @@ describe('BoardSheet', () => {
 
     ref.current?.dismiss();
     expect(sheetModal.dismiss).toHaveBeenCalled();
+  });
+
+  it('forwards dismissAndWait through the imperative ref', async () => {
+    const ref = createRef<BoardSheetHandle>();
+    render(
+      createElement(BoardSheet, {
+        ref,
+        boardLabel: 'Garage Wall',
+        onClose: noop,
+        boardConfig,
+        onSwitchBoard: noop,
+      }),
+    );
+
+    if (!ref.current) throw new Error('board sheet handle did not mount');
+    await expect(ref.current.dismissAndWait()).resolves.toEqual({ status: 'dismissed' });
+    expect(managedSheet.dismissAndWait).toHaveBeenCalledTimes(1);
   });
 
   it('renders no presence content while dismissed — zero list/hero/chrome work', () => {

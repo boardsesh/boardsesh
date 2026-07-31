@@ -49,6 +49,14 @@ import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 
 export type PresenterGroup = 'root' | (string & {});
 
+/** Result of an awaitable surface dismissal. `aborted` means the registered
+ * host disappeared before its native dismiss settled; callers must stop the
+ * handoff instead of presenting a replacement over an indeterminate teardown. */
+export type DismissAndWaitResult = { status: 'dismissed' } | { status: 'aborted' };
+
+const DISMISSED_RESULT: DismissAndWaitResult = { status: 'dismissed' };
+const ABORTED_RESULT: DismissAndWaitResult = { status: 'aborted' };
+
 /** How long after JS asks a native sheet to dismiss we treat it as still
  * animating (the ceiling before we let the next transition run). iOS modal sheet
  * present/dismiss is ~0.4-0.5s; Android material is quicker. This is the primary
@@ -98,6 +106,10 @@ export type SheetCoordinator = {
   /** Declarative entry point: the desired open/closed state for a sheet. The
    * scheduler reconciles it against what's physically presented. */
   setDesiredOpen: (id: string, open: boolean) => void;
+  /** Close this sheet and resolve only after the coordinator's existing native
+   * settle signal / platform ceiling. Duplicate callers share the same settle;
+   * unregistering the host resolves every pending caller as `aborted`. */
+  dismissAndWait: (id: string) => Promise<DismissAndWaitResult>;
   /** The native sheet finished its dismiss animation (patched `@expo/ui`
    * `onDismiss`). Early-resolves the settle so the next transition can start. */
   notifyFullyDismissed: (id: string) => void;
@@ -123,6 +135,7 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
   const registrations = useRef(new Map<string, Registration>());
   const desired = useRef(new Map<string, { open: boolean; seq: number }>());
   const groups = useRef(new Map<PresenterGroup, GroupState>());
+  const dismissWaiters = useRef(new Map<string, Set<(result: DismissAndWaitResult) => void>>());
   const seqCounter = useRef(0);
 
   const coordinator = useMemo<SheetCoordinator>(() => {
@@ -157,6 +170,13 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
       return bestId;
     }
 
+    function settleDismissWaiters(id: string, result: DismissAndWaitResult): void {
+      const waiters = dismissWaiters.current.get(id);
+      if (!waiters) return;
+      dismissWaiters.current.delete(id);
+      for (const resolve of waiters) resolve(result);
+    }
+
     function onSettle(group: PresenterGroup, viaCeiling: boolean): void {
       const state = groupState(group);
       const inFlight = state.inFlight;
@@ -167,6 +187,10 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         state.presentedId = inFlight.id;
       } else {
         state.presentedId = null;
+        // Resolve before the consumer's onFullyDismissed callback: that callback
+        // may unmount/unregister the Host, which is an abort only while a native
+        // dismissal is still outstanding, not after it has settled.
+        settleDismissWaiters(inFlight.id, DISMISSED_RESULT);
         registrations.current.get(inFlight.id)?.onFullyDismissed?.();
         if (__DEV__ && viaCeiling && inFlight.expectNative) {
           console.warn(
@@ -241,6 +265,10 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         groupState(reg.group);
         return () => {
           const state = groupState(reg.group);
+          // A caller waiting to navigate must not continue after this Host is
+          // torn down. Resolve (never reject) so fire-and-forget action paths do
+          // not create unhandled promise rejections.
+          settleDismissWaiters(reg.id, ABORTED_RESULT);
           // Was this sheet presented or mid-transition when it unmounted? If so its
           // native teardown is still animating out, even though no coordinator
           // dismiss was issued (e.g. a present-on-mount sheet the parent unmounts
@@ -275,6 +303,39 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         desired.current.set(id, { open, seq });
         const group = groupOf(id);
         if (group) pump(group);
+      },
+
+      dismissAndWait(id) {
+        const registration = registrations.current.get(id);
+        // No registration and no transition owned by this id means there is no
+        // native surface left to wait for.
+        if (!registration) return Promise.resolve(DISMISSED_RESULT);
+
+        const state = groupState(registration.group);
+        const involved = state.presentedId === id || state.inFlight?.id === id;
+        const previous = desired.current.get(id);
+        desired.current.set(id, { open: false, seq: previous?.seq ?? 0 });
+
+        if (!involved) {
+          // It may have been desired while another group member was transitioning,
+          // but it never reached the native presenter. Cancel that queued desire
+          // and finish immediately.
+          pump(registration.group);
+          return Promise.resolve(DISMISSED_RESULT);
+        }
+
+        return new Promise<DismissAndWaitResult>((resolve) => {
+          let waiters = dismissWaiters.current.get(id);
+          if (!waiters) {
+            waiters = new Set();
+            dismissWaiters.current.set(id, waiters);
+          }
+          waiters.add(resolve);
+          // Presented → dismiss now. Present-in-flight → the desired-close is
+          // observed when that transition settles, then the normal pump starts a
+          // dismiss. An already-running dismiss simply keeps this waiter attached.
+          pump(registration.group);
+        });
       },
 
       notifyFullyDismissed(id) {
@@ -326,7 +387,9 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
 export type ManagedSheetHandle = Pick<
   BottomSheetMethods,
   'present' | 'dismiss' | 'close' | 'forceClose' | 'snapToIndex' | 'snapToPosition' | 'expand' | 'collapse'
->;
+> & {
+  dismissAndWait: () => Promise<DismissAndWaitResult>;
+};
 
 type UseManagedSheetOptions = {
   /** Controlled open state. Pass a boolean to drive the sheet declaratively;
@@ -440,6 +503,7 @@ export function useManagedSheet({
     () => ({
       present: () => coordinator.setDesiredOpen(id, true),
       dismiss: () => coordinator.setDesiredOpen(id, false),
+      dismissAndWait: () => coordinator.dismissAndWait(id),
       close: () => coordinator.setDesiredOpen(id, false),
       forceClose: () => coordinator.setDesiredOpen(id, false),
       snapToIndex: (index: number) => {

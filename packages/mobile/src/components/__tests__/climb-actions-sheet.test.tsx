@@ -1,22 +1,22 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
+import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
 
 // The sheet is mounted always-on inside the Play Drawer and toggled via the
 // controlled `visible` prop (the ModalSheet coordinator drives present/dismiss).
 // The mock captures the latest `visible` it was handed.
-const sheet = vi.hoisted(() => ({ visible: undefined as boolean | undefined }));
+const sheet = vi.hoisted(() => ({
+  visible: undefined as boolean | undefined,
+  dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
+}));
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
-// `segments` drives the real `useCreateClimbNavigation` (deliberately NOT mocked, so the
-// Remix/Edit rows are covered end-to-end through the hook that owns the player dismiss).
 const ctrl = vi.hoisted(() => ({
   variant: 'liquidGlass' as 'liquidGlass' | 'material',
   canUpdate: false,
-  segments: ['play'] as readonly string[],
 }));
-const nav = vi.hoisted(() => ({ push: vi.fn(), dismiss: vi.fn() }));
+const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const clipboard = vi.hoisted(() => ({ setStringAsync: vi.fn() }));
 const urlBuilder = vi.hoisted(() => ({ buildReadableClimbViewPath: vi.fn(() => '/readable/view/x') }));
 
@@ -28,10 +28,14 @@ vi.mock('react-native', () => ({
 vi.mock('@expo/ui/community/bottom-sheet', () => ({ BottomSheetModal: function BottomSheetModal() {} }));
 
 vi.mock('../ModalSheet', () => ({
-  ModalSheet: ({ children, visible }: { children?: ReactNode; visible?: boolean }) => {
+  ModalSheet: forwardRef(function MockModalSheet(
+    { children, visible }: { children?: ReactNode; visible?: boolean },
+    ref,
+  ) {
     sheet.visible = visible;
+    useImperativeHandle(ref, () => ({ dismissAndWait: sheet.dismissAndWait }));
     return createElement('div', { 'data-modal-sheet': 'true', 'data-visible': String(visible) }, children);
-  },
+  }),
 }));
 
 vi.mock('../ClimbPreviewCard', () => ({
@@ -51,8 +55,7 @@ vi.mock('../Icon', () => ({
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: nav.push, dismiss: nav.dismiss }),
-  useSegments: () => ctrl.segments,
+  useRouter: () => ({ push: nav.push }),
 }));
 vi.mock('expo-clipboard', () => ({ setStringAsync: clipboard.setStringAsync }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn() }));
@@ -110,15 +113,13 @@ const baseProps = {
 
 beforeEach(() => {
   sheet.visible = undefined;
+  sheet.dismissAndWait.mockClear();
   clipboard.setStringAsync.mockClear();
   urlBuilder.buildReadableClimbViewPath.mockClear();
   preview.props = null;
   ctrl.variant = 'liquidGlass';
   ctrl.canUpdate = false;
-  // This sheet only ever renders inside the play drawer, so /play is the realistic default.
-  ctrl.segments = ['play'];
   nav.push.mockClear();
-  nav.dismiss.mockClear();
 });
 
 describe('ClimbActionsSheet controlled visible (always-mounted toggle)', () => {
@@ -273,14 +274,20 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
   // Both /play and /(tabs)/climbs/create are transparentModals, but in different
   // navigators — create lives under the player, so it must not be pushed while the
   // player is still up.
-  it('closes the sheet, dismisses the player, then pushes create with the fork params', () => {
+  it('claims the action, closes the sheet, then awaits the injected player dismissal before pushing', async () => {
     const onClose = vi.fn();
-    render(<ClimbActionsSheet visible={true} {...baseProps} onClose={onClose} />);
+    const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    render(
+      <ClimbActionsSheet visible={true} {...baseProps} onClose={onClose} dismissPlayerAndWait={dismissPlayerAndWait} />,
+    );
 
     fireEvent.click(screen.getByText('mobile.climbActions.fork'));
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(nav.dismiss).toHaveBeenCalledTimes(1);
+    expect(sheet.dismissAndWait).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(dismissPlayerAndWait).toHaveBeenCalledTimes(1));
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(dismissPlayerAndWait.mock.invocationCallOrder[0]);
+    await waitFor(() => expect(nav.push).toHaveBeenCalledTimes(1));
     expect(nav.push).toHaveBeenCalledWith({
       pathname: '/(tabs)/climbs/create',
       params: {
@@ -296,13 +303,22 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
     });
   });
 
-  it('pushes create in edit mode from the owner-only Edit row', () => {
+  it('pushes create in edit mode from the owner-only Edit row', async () => {
     ctrl.canUpdate = true;
-    render(<ClimbActionsSheet visible={true} {...baseProps} climb={ownerClimb} currentUserId="user-1" />);
+    const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    render(
+      <ClimbActionsSheet
+        visible={true}
+        {...baseProps}
+        climb={ownerClimb}
+        currentUserId="user-1"
+        dismissPlayerAndWait={dismissPlayerAndWait}
+      />,
+    );
 
     fireEvent.click(screen.getByText('mobile.climbActions.edit'));
 
-    expect(nav.dismiss).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(nav.push).toHaveBeenCalledTimes(1));
     expect(nav.push).toHaveBeenCalledWith({
       pathname: '/(tabs)/climbs/create',
       params: {
@@ -319,13 +335,11 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
   // On an iPad regular-width layout the player renders in the detail PANE, not the
   // /play route — there is no modal to dismiss, and popping one would take the wrong
   // screen with it.
-  it('does not dismiss when the player is a pane rather than the /play route', () => {
-    ctrl.segments = ['(tabs)', 'climbs'];
+  it('does not dismiss a player route when the player is an inline pane', async () => {
     render(<ClimbActionsSheet visible={true} {...baseProps} />);
 
     fireEvent.click(screen.getByText('mobile.climbActions.fork'));
 
-    expect(nav.dismiss).not.toHaveBeenCalled();
-    expect(nav.push).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(nav.push).toHaveBeenCalledTimes(1));
   });
 });

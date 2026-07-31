@@ -7,12 +7,18 @@ import type {
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
 import { climbToQueueItem } from '../../lib/climb-to-queue-item';
-import type { BoardConfig, LogAscentInput, OpenPlayDrawerOptions } from '../../providers/drawer-host-provider';
+import type {
+  BoardConfig,
+  LogAscentInput,
+  OpenClimbActionsOptions,
+  OpenPlayDrawerOptions,
+} from '../../providers/drawer-host-provider';
+import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 
 type QueueSheetHandlerDeps = {
   setCurrentClimb: (item: ClimbQueueItem, options?: SetCurrentClimbOptions) => void;
   openPlayDrawer: (climb: Climb, options?: OpenPlayDrawerOptions) => void;
-  openClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig) => void;
+  openClimbActions: (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => void;
   openLogAscent: (input: LogAscentInput) => void;
   /** The user's STORED active board (never a drawer override) — the queue renders
    *  against it, and a tick-history log is filed against it. */
@@ -21,6 +27,8 @@ type QueueSheetHandlerDeps = {
   /** Dismiss the QueueSheet this set of handlers drives (the host's instance or
    *  the play-route's instance). */
   requestCloseQueueSheet: () => void;
+  /** Await the exact QueueSheet instance this handler set drives. */
+  dismissQueueSheetAndWait: () => Promise<DismissAndWaitResult>;
 };
 
 type QueueSheetHandlers = {
@@ -46,6 +54,7 @@ export function useQueueSheetHandlers({
   storedBoardConfig,
   sessionId,
   requestCloseQueueSheet,
+  dismissQueueSheetAndWait,
 }: QueueSheetHandlerDeps): QueueSheetHandlers {
   // Tap a queue item → make it current (for the whole session, always-live) and
   // show it in the play drawer.
@@ -63,9 +72,9 @@ export function useQueueSheetHandlers({
   // correct.
   const handleOpenActions = useCallback(
     (item: ClimbQueueItem) => {
-      openClimbActions(item.climb);
+      openClimbActions(item.climb, undefined, { dismissSourceSheet: dismissQueueSheetAndWait });
     },
-    [openClimbActions],
+    [openClimbActions, dismissQueueSheetAndWait],
   );
 
   // Tap a suggestion → activate it with a suggestion source built from the

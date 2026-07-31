@@ -30,10 +30,12 @@ const queueSheet = vi.hoisted(() => ({
     };
     onClose: () => void;
     onClimbPress: (item: ClimbQueueItem) => void;
+    onOpenActions: (item: ClimbQueueItem) => void;
     onSuggestionPress: (climb: ClimbQueueItem['climb'], source: PlaylistSuggestionSource) => void;
   },
   present: vi.fn(),
   dismiss: vi.fn(),
+  dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
 
 const climbActions = vi.hoisted(() => ({
@@ -52,6 +54,7 @@ const boardSheet = vi.hoisted(() => ({
   props: null as null | Record<string, unknown>,
   present: vi.fn(),
   dismiss: vi.fn(),
+  dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
 
 const activeBoard = vi.hoisted(() => {
@@ -146,6 +149,7 @@ vi.mock('../../components/play-drawer/QueueSheet', async () => {
           };
           onClose: () => void;
           onClimbPress: (item: ClimbQueueItem) => void;
+          onOpenActions: (item: ClimbQueueItem) => void;
           onSuggestionPress: (climb: ClimbQueueItem['climb'], source: PlaylistSuggestionSource) => void;
         },
         ref,
@@ -154,6 +158,7 @@ vi.mock('../../components/play-drawer/QueueSheet', async () => {
         React.useImperativeHandle(ref, () => ({
           present: queueSheet.present,
           dismiss: queueSheet.dismiss,
+          dismissAndWait: queueSheet.dismissAndWait,
         }));
         return React.createElement('div', { 'data-queue-sheet': 'true' });
       },
@@ -191,7 +196,11 @@ vi.mock('../../components/board-presence/BoardSheet', async () => {
   return {
     BoardSheet: React.forwardRef((props: Record<string, unknown>, ref) => {
       boardSheet.props = props;
-      React.useImperativeHandle(ref, () => ({ present: boardSheet.present, dismiss: boardSheet.dismiss }));
+      React.useImperativeHandle(ref, () => ({
+        present: boardSheet.present,
+        dismiss: boardSheet.dismiss,
+        dismissAndWait: boardSheet.dismissAndWait,
+      }));
       return React.createElement('div', { 'data-board-sheet': 'true' });
     }),
   };
@@ -451,11 +460,13 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
     queueSheet.props = null;
     queueSheet.present.mockClear();
     queueSheet.dismiss.mockClear();
+    queueSheet.dismissAndWait.mockClear();
     climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
     boardSheet.dismiss.mockClear();
+    boardSheet.dismissAndWait.mockClear();
   });
 
   it('broadcasts queued climb selection for every session member', async () => {
@@ -530,6 +541,21 @@ describe('DrawerHostProvider queue sheet (always-live, no driver gate)', () => {
     });
     expect(routes.at(-1)?.playTarget?.options).toEqual({ committedExternally: true });
   });
+
+  it('threads the exact queue-sheet settle callback into climb actions', async () => {
+    const hosts: Array<HostValue> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(queueSheet.props).not.toBeNull());
+
+    const item = makeQueueItem('queue-actions', 'climb-actions');
+    act(() => queueSheet.props?.onOpenActions(item));
+    await waitFor(() => expect(climbActions.props).not.toBeNull());
+
+    const dismissSourceSheet = climbActions.props?.dismissSourceSheet as (() => Promise<unknown>) | undefined;
+    if (!dismissSourceSheet) throw new Error('queue dismiss callback was not forwarded');
+    await expect(dismissSourceSheet()).resolves.toEqual({ status: 'dismissed' });
+    expect(queueSheet.dismissAndWait).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('DrawerHostProvider board sheet climb actions', () => {
@@ -543,6 +569,7 @@ describe('DrawerHostProvider board sheet climb actions', () => {
     boardSheet.props = null;
     boardSheet.present.mockClear();
     boardSheet.dismiss.mockClear();
+    boardSheet.dismissAndWait.mockClear();
   });
 
   it('sets current and opens the drawer when any session member taps a board-sheet climb', async () => {
@@ -628,6 +655,10 @@ describe('DrawerHostProvider board sheet climb actions', () => {
       climb,
       boardConfig: { boardName: 'kilter', layoutId: 1, sizeId: 10, setIds: '1,2', angle: 30 },
     });
+    const dismissSourceSheet = climbActions.props?.dismissSourceSheet as (() => Promise<unknown>) | undefined;
+    if (!dismissSourceSheet) throw new Error('board dismiss callback was not forwarded');
+    await expect(dismissSourceSheet()).resolves.toEqual({ status: 'dismissed' });
+    expect(boardSheet.dismissAndWait).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -638,11 +669,13 @@ describe('DrawerHostProvider queue sheet open / re-open', () => {
     queueSheet.props = null;
     queueSheet.present.mockClear();
     queueSheet.dismiss.mockClear();
+    queueSheet.dismissAndWait.mockClear();
     climbActions.props = null;
     playlistSheet.props = null;
     boardSheet.props = null;
     boardSheet.present.mockClear();
     boardSheet.dismiss.mockClear();
+    boardSheet.dismissAndWait.mockClear();
   });
 
   it('stays mounted and presents via the imperative handle on open', async () => {
@@ -1007,6 +1040,21 @@ describe('DrawerHostProvider iPad pane open (regular width)', () => {
     // drawer's job (via openTarget.options), so the host never calls
     // setCurrentClimb on a pane open.
     layoutCfg.widthClass = 'regular';
+    climbActions.props = null;
+    boardSheet.dismissAndWait.mockClear();
+  });
+
+  it('opens wall-column actions without attaching the modal BoardSheet dismiss', async () => {
+    const hosts: Array<HostValue> = [];
+    renderHost((host) => hosts.push(host));
+    await waitFor(() => expect(hosts.at(-1)?.boardPanelProps).not.toBeNull());
+
+    const climb = makeQueueItem('queue-pane-actions', 'climb-pane-actions').climb as unknown as Climb;
+    act(() => hosts.at(-1)?.boardPanelProps?.onOpenActions(makeBoardSheetAction(climb)));
+    await waitFor(() => expect(climbActions.props).not.toBeNull());
+
+    expect(climbActions.props?.dismissSourceSheet).toBeUndefined();
+    expect(boardSheet.dismissAndWait).not.toHaveBeenCalled();
   });
 
   it('drives the pane open target without navigating to /play', async () => {

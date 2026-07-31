@@ -39,6 +39,7 @@ import { spacing, borderRadius, overlays } from '../../theme/tokens';
 import { withAlpha, type MaterialSurfaceContainers } from '../../theme/colors';
 import { useEffectiveSurfaceMode } from '../../hooks/use-effective-surface-mode';
 import { useClimbActions, type ClimbActionId, type ClimbActionItem } from './use-climb-actions';
+import type { DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { fitBoardArt, computeReactionBoardMaxSize } from './board-art-fit';
 
 // Log a tick / Add to playlist / Share get pulled out of the scrollable list into a
@@ -63,6 +64,10 @@ type ClimbReactionMenuProps = {
    *  forces UIKit to dismiss `/play` and the tick sheet closes immediately.
    *  Receives the climb/board snapshot the menu was opened for. */
   onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** Native sheet underneath this custom overlay, if any. */
+  dismissSourceSheet?: DismissSurfaceAndWait;
+  /** Supplied only when this menu was opened from the `/play` route. */
+  dismissPlayerAndWait?: DismissSurfaceAndWait;
   /** Read once at the app root (resolved) and passed in, so the mount-time enter
    *  animation uses the real value rather than useReduceMotion's conservative default. */
   reduceMotion: boolean;
@@ -143,6 +148,8 @@ export function ClimbReactionMenu({
   onEditEntry,
   onAddBetaVideo,
   onTick,
+  dismissSourceSheet,
+  dismissPlayerAndWait,
   reduceMotion,
   onClose,
 }: ClimbReactionMenuProps) {
@@ -236,6 +243,8 @@ export function ClimbReactionMenu({
     onSelectPlaylist: openPlaylist,
     onAddBetaVideo,
     onTick,
+    dismissSourceSheet,
+    dismissPlayerAndWait,
   });
 
   // Split the actions into the fixed top button row (tick / playlist / share, in that

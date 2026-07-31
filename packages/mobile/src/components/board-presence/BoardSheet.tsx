@@ -29,7 +29,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Platform, StyleSheet } from 'react-native';
 import { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
-import { useManagedSheet } from '../../providers/sheet-presentation-provider';
+import { useManagedSheet, type DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { useBoardPresenceCurrent, useBoardPresenceFeed } from '@boardsesh/board-presence-react';
 import { useTheme } from '../../providers/theme-provider';
@@ -49,6 +49,8 @@ export type { BoardSheetClimbAction } from './NowOnTheWallPanel';
 export type BoardSheetHandle = {
   present: () => void;
   dismiss: () => void;
+  /** Dismiss and resolve only after the native animation settles. */
+  dismissAndWait: () => Promise<DismissAndWaitResult>;
 };
 
 type BoardSheetProps = {
@@ -171,6 +173,10 @@ export const BoardSheet = forwardRef<BoardSheetHandle, BoardSheetProps>(function
       dismiss: () => {
         invalidatePanelActions();
         managed.handle.dismiss();
+      },
+      dismissAndWait: () => {
+        invalidatePanelActions();
+        return managed.handle.dismissAndWait();
       },
     }),
     [managed.handle, invalidatePanelActions],

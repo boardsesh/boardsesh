@@ -114,6 +114,13 @@ and on iOS it's the ceiling for the rare case the native event never arrives (a 
 mid-animation). A `__DEV__` warning fires only when the ceiling beats a native signal that was
 expected (an iOS dismiss of a still-registered sheet).
 
+Call `managed.dismissAndWait()` when the next step must not begin until that settle point. It
+uses the coordinator's existing native-dismiss-or-ceiling lifecycle rather than starting a
+second timer, and it also waits when `present()` is still in flight. Concurrent callers for the
+same sheet share the outcome. The promise resolves with `{ status: 'dismissed' }` after a normal
+settle (or the platform ceiling), and `{ status: 'aborted' }` if the sheet unregisters during the
+handoff. Stop the follow-up action on `aborted`; the owning surface has gone away.
+
 The same patch also guards the **Android** re-snap path: `snapToIndex` on an already-open
 multi-detent sheet fires `expand()` / `partialExpand()` fire-and-forget on the native
 `ModalBottomSheetView`. A store binary whose native `@expo/ui` predates one of those
@@ -218,12 +225,19 @@ player pushes create into a navigator that is already covered: create stacks **u
 still-live player (two drawers visible at once), and `CreateDrawer`'s root-window
 `BottomSheet` strands a scrim over the search list once you navigate away.
 
-**The fix: dismiss the modal route first, then push.**
+**The fix: finish each live surface in order, then push.** An edit/remix action claims a
+one-action guard synchronously, before closing its custom overlay. It then awaits the source
+managed sheet (Board or Queue), awaits the player route's close transition when the player is a
+modal, and only then pushes create:
 
-```ts
-if (isPlayerRoute(segments)) router.dismiss();
-router.push({ pathname: '/(tabs)/climbs/create', params });
+```text
+claim action → dismiss source sheet → settle → dismiss /play → closing transitionEnd → push create
 ```
+
+`dismissAndWait()` can return `aborted` when its owner unmounts; that aborts the rest of the
+handoff. This prevents a stale async action from opening create after its source disappeared.
+Repeated taps join neither a second dismiss nor a second push because the action guard is set
+before the first asynchronous boundary.
 
 `handleSwitchBoardFromDrawer` in `drawer-host-provider.tsx` does the same
 `router.dismiss()` → `router.push('/boards')` when the play drawer's board-mismatch overlay
@@ -236,15 +250,16 @@ it.
 
 Two things that are easy to get wrong:
 
-- **Gate the dismiss.** The same menu opens from the climbs list and the board sheet, where
-  there is no modal to close — and on an **iPad regular-width layout the player renders in the
-  detail pane, not the `/play` route** at all. An ungated `router.dismiss()` pops the wrong
-  screen. Gate on `isPlayerRoute(segments)` (`src/lib/route-segments.ts`).
-- **Read the segments from a ref, not a dep.** `useSegments()` hands back a fresh array on
-  every navigation, so listing it in a `useCallback` dep array churns the callback identity and
-  rebuilds any memoised list built on top of it (here, `useClimbActions`' action list). Mirror
-  it with the repo's latest-ref idiom (`segmentsRef.current = segments`) and read it inside the
-  handler.
+- **Let the route own its close waiter.** The actual `/play` route subscribes to its native
+  stack's `transitionEnd` before calling `router.dismiss()`, ignores events where `closing` is
+  false, and cleans up/returns `aborted` if the route unmounts first. On web there is no native
+  transition to await, so dismissal completes immediately. Thread this callback down through
+  the in-tree opener; a hook mounted in a sibling root provider cannot safely subscribe to the
+  `/play` navigator.
+- **Omit the player callback when there is no player route.** The same menu opens from the
+  climbs list and BoardSheet, and on an **iPad regular-width layout the player is an inline
+  detail pane**. Those entry points must not call `router.dismiss()` or they can pop an unrelated
+  route. The callback's presence is the gate; do not infer it from root-level segments.
 
 The rule of thumb: **before pushing a route, ask which navigator it lands in.** Same navigator
 is fine. A navigator _below_ the modal you're standing in needs the dismiss first.

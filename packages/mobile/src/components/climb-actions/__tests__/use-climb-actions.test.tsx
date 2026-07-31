@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { ClimbActionId } from '../use-climb-actions';
 
-// `segments` drives the real `useCreateClimbNavigation` (deliberately NOT mocked here,
-// so fork/edit get end-to-end coverage through the hook that owns the player dismiss).
-const ctrl = vi.hoisted(() => ({ canUpdate: false, segments: ['(tabs)', 'climbs'] as readonly string[] }));
+// Keep the real useCreateClimbNavigation in this test so fork/edit exercise the
+// one-action and injected-dismiss handoff end to end.
+const ctrl = vi.hoisted(() => ({ canUpdate: false }));
 const openers = vi.hoisted(() => ({
   openPlayDrawer: vi.fn(),
   openAddToPlaylist: vi.fn(),
@@ -15,14 +15,12 @@ const openers = vi.hoisted(() => ({
   addToQueue: vi.fn(),
   toggleFavoriteMutate: vi.fn(),
   push: vi.fn(),
-  dismiss: vi.fn(),
   shareClimb: vi.fn(async () => {}),
 }));
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push: openers.push, dismiss: openers.dismiss }),
-  useSegments: () => ctrl.segments,
+  useRouter: () => ({ push: openers.push }),
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'queue-uuid' }));
 vi.mock('expo-web-browser', () => ({ openBrowserAsync: vi.fn(async () => {}) }));
@@ -92,7 +90,6 @@ function ids(args: ActionArgs): ClimbActionId[] {
 
 beforeEach(() => {
   ctrl.canUpdate = false;
-  ctrl.segments = ['(tabs)', 'climbs'];
   Object.values(openers).forEach((fn) => fn.mockClear?.());
 });
 
@@ -292,24 +289,33 @@ describe('useClimbActions create-climb navigation (fork / edit)', () => {
     });
   });
 
-  // The player is a transparentModal in the ROOT stack; create is a transparentModal in
-  // the CLIMBS-TAB stack underneath it. Pushing without dismissing stacks create under
-  // the live player (two drawers + a stranded scrim).
-  it('dismisses the player route first when the menu was opened from /play', () => {
-    ctrl.segments = ['play'];
-    const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
+  it('awaits the injected player close before pushing create', async () => {
+    let finishPlayerDismiss: (result: { status: 'dismissed' }) => void = () => {};
+    const dismissPlayerAndWait = vi.fn(
+      () =>
+        new Promise<{ status: 'dismissed' }>((resolve) => {
+          finishPlayerDismiss = resolve;
+        }),
+    );
+    const { result } = renderActions({
+      climb,
+      boardConfig: kilterBoard,
+      isAuthenticated: false,
+      dismissPlayerAndWait,
+    });
     result.current.find((action) => action.id === 'fork')?.run();
 
-    expect(openers.dismiss).toHaveBeenCalledTimes(1);
+    expect(dismissPlayerAndWait).toHaveBeenCalledTimes(1);
+    expect(openers.push).not.toHaveBeenCalled();
+
+    await act(async () => finishPlayerDismiss({ status: 'dismissed' }));
     expect(openers.push).toHaveBeenCalledTimes(1);
   });
 
-  it('does not dismiss anything when remixing from the climbs list', () => {
-    ctrl.segments = ['(tabs)', 'climbs'];
+  it('pushes directly when no source or player dismiss callback is present', () => {
     const { result } = renderActions({ climb, boardConfig: kilterBoard, isAuthenticated: false });
     result.current.find((action) => action.id === 'fork')?.run();
 
-    expect(openers.dismiss).not.toHaveBeenCalled();
     expect(openers.push).toHaveBeenCalledTimes(1);
   });
 });

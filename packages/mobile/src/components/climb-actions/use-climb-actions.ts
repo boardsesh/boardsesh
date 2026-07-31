@@ -19,7 +19,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 import { computeCanUpdate, type SavedClimbSnapshot } from '@boardsesh/create-climb-react';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import type { IconName } from '../icon-map';
-import { useCreateClimbNavigation } from '../create-climb/use-create-climb-navigation';
+import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../create-climb/use-create-climb-navigation';
 import { useDrawerHost, boardConfigsMatch, type BoardConfig } from '../../providers/drawer-host-provider';
 import { useQueueActions } from '../../providers/queue-provider';
 import { useToggleFavorite, useFavoriteStatus } from '../../lib/graphql/hooks';
@@ -97,6 +97,10 @@ type UseClimbActionsArgs = {
    * ticking opens the root sheet (correct off `/play`, where nothing conflicts).
    */
   onTick?: (climb: Climb, boardConfig: BoardConfig) => void;
+  /** Native BoardSheet / QueueSheet underneath the custom overlay, if any. */
+  dismissSourceSheet?: DismissSurfaceAndWait;
+  /** `/play`-owned native-stack close waiter; absent for every inline surface. */
+  dismissPlayerAndWait?: DismissSurfaceAndWait;
 };
 
 // Mirrors web's constructClimbInfoUrl: Kilter no longer has a public app URL.
@@ -116,9 +120,11 @@ export function useClimbActions({
   onSelectPlaylist,
   onAddBetaVideo,
   onTick,
+  dismissSourceSheet,
+  dismissPlayerAndWait,
 }: UseClimbActionsArgs): ClimbActionItem[] {
   const { t } = useTranslation('climbs');
-  const { openRemix, openEdit } = useCreateClimbNavigation();
+  const { openRemix, openEdit } = useCreateClimbNavigation({ dismissSourceSheet, dismissPlayerAndWait });
   const { actionColors } = useTheme();
   const { addToQueue } = useQueueActions();
   const { mutate: toggleFavoriteMutate } = useToggleFavorite();
@@ -298,11 +304,10 @@ export function useClimbActions({
         title: t('mobile.climbActions.edit'),
         icon: 'edit',
         color: accentColor,
-        // Dismiss the overlay, then navigate. `openEdit` closes the player route
-        // first when we're inside it, so create doesn't stack under `/play`.
+        // `openEdit` claims the action before dismissing this overlay, then owns
+        // the source-sheet → player-route → create ordering.
         run: () => {
-          after();
-          openEdit(climb, boardConfig);
+          openEdit(climb, boardConfig, after);
         },
       });
     }
@@ -312,10 +317,9 @@ export function useClimbActions({
       title: t('mobile.climbActions.fork'),
       icon: 'branch',
       color: accentColor,
-      // Same as edit: `openRemix` closes the player route first when we're inside it.
+      // Same serialized handoff as Edit.
       run: () => {
-        after();
-        openRemix(climb, boardConfig);
+        openRemix(climb, boardConfig, after);
       },
     });
 
@@ -366,6 +370,8 @@ export function useClimbActions({
     onSelectPlaylist,
     onAddBetaVideo,
     onTick,
+    dismissSourceSheet,
+    dismissPlayerAndWait,
     after,
     t,
     actionColors,

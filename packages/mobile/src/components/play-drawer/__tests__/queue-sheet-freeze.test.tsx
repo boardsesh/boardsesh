@@ -20,6 +20,7 @@ const queueData = vi.hoisted(() => ({
 const managedSheet = vi.hoisted(() => ({
   present: vi.fn(),
   dismiss: vi.fn(),
+  dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
   onChange: vi.fn(),
   onFullyDismissed: vi.fn(),
 }));
@@ -45,7 +46,11 @@ vi.mock('@expo/ui/community/bottom-sheet', () => ({
 
 vi.mock('../../../providers/sheet-presentation-provider', () => ({
   useManagedSheet: () => ({
-    handle: { present: managedSheet.present, dismiss: managedSheet.dismiss },
+    handle: {
+      present: managedSheet.present,
+      dismiss: managedSheet.dismiss,
+      dismissAndWait: managedSheet.dismissAndWait,
+    },
     onChange: managedSheet.onChange,
     onFullyDismissed: managedSheet.onFullyDismissed,
   }),
@@ -147,6 +152,7 @@ describe('QueueSheet freeze contract', () => {
     queueData.current = makeData(['a', 'b']);
     managedSheet.present.mockClear();
     managedSheet.dismiss.mockClear();
+    managedSheet.dismissAndWait.mockClear();
     queueList.renders = 0;
     queueList.lastQueue = null;
   });
@@ -190,5 +196,14 @@ describe('QueueSheet freeze contract', () => {
     expect(managedSheet.present).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-testid="queue-list"]')?.getAttribute('data-uuids')).toBe('a,b,c');
     expect(queueList.lastQueue).toBe(queueData.current?.queue);
+  });
+
+  it('forwards dismissAndWait through the imperative handle', async () => {
+    const handleRef = createRef<QueueSheetHandle>();
+    renderSheet(handleRef);
+
+    if (!handleRef.current) throw new Error('queue sheet handle did not mount');
+    await expect(handleRef.current.dismissAndWait()).resolves.toEqual({ status: 'dismissed' });
+    expect(managedSheet.dismissAndWait).toHaveBeenCalledTimes(1);
   });
 });

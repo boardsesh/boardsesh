@@ -108,6 +108,62 @@ describe('SheetPresentationProvider coordinator', () => {
     expect(a.onFullyDismissed).toHaveBeenCalledTimes(1);
   });
 
+  it('dismissAndWait follows a present-in-flight through its later dismiss settle', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+
+    const settled = vi.fn();
+    const resultPromise = coordinator.dismissAndWait('a');
+    void resultPromise.then(settled);
+    expect(a.dismiss).not.toHaveBeenCalled(); // presenting cannot be interrupted
+
+    vi.advanceTimersByTime(SETTLE_MS); // present settles, then dismiss starts
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    expect(settled).not.toHaveBeenCalled();
+
+    coordinator.notifyFullyDismissed('a');
+    await expect(resultPromise).resolves.toEqual({ status: 'dismissed' });
+    expect(settled).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismissAndWait uses the existing platform ceiling and resolves duplicate waiters together', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+
+    const first = coordinator.dismissAndWait('a');
+    const second = coordinator.dismissAndWait('a');
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(SETTLE_MS);
+    await expect(Promise.all([first, second])).resolves.toEqual([{ status: 'dismissed' }, { status: 'dismissed' }]);
+  });
+
+  it('dismissAndWait resolves aborted when the registered Host tears down before settle', async () => {
+    const a = makeSheet();
+    const unregister = coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+    vi.advanceTimersByTime(SETTLE_MS);
+
+    const resultPromise = coordinator.dismissAndWait('a');
+    expect(a.dismiss).toHaveBeenCalledTimes(1);
+    unregister();
+
+    await expect(resultPromise).resolves.toEqual({ status: 'aborted' });
+    expect(coordinator.isBusy('root')).toBe(true); // teardown still keeps the group guarded
+  });
+
+  it('dismissAndWait resolves immediately when the sheet is already absent', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+
+    await expect(coordinator.dismissAndWait('a')).resolves.toEqual({ status: 'dismissed' });
+    expect(a.dismiss).not.toHaveBeenCalled();
+  });
+
   it('warns (dev) when an iOS coordinator-driven dismiss settles via the ceiling timer', () => {
     vi.stubGlobal('__DEV__', true);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -358,6 +414,18 @@ describe('useManagedSheet bridge', () => {
       managed?.handle.dismiss();
     });
     expect(sheetApi.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('forwards dismissAndWait through the managed handle', async () => {
+    render(createElement(SheetPresentationProvider, null, createElement(ManagedHarness, { open: true })));
+    vi.advanceTimersByTime(SETTLE_MS);
+
+    if (!managed) throw new Error('managed sheet did not mount');
+    const resultPromise = managed.handle.dismissAndWait();
+    expect(sheetApi.dismiss).toHaveBeenCalledTimes(1);
+    act(() => managed?.onFullyDismissed());
+
+    await expect(resultPromise).resolves.toEqual({ status: 'dismissed' });
   });
 
   it('a user pan-down (onChange(-1)) fires onClose', () => {

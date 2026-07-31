@@ -7,10 +7,18 @@ import { QueueSheet, type QueueSheetHandle } from '../src/components/play-drawer
 import { DevicePickerSheetHost } from '../src/components/ble/DevicePickerSheetHost';
 import { useQueueSheetHandlers } from '../src/components/play-drawer/use-queue-sheet-handlers';
 import type { QueueItemRowBoard } from '../src/components/QueueItemRow';
-import { useDrawerHost, usePlayDrawerRoute } from '../src/providers/drawer-host-provider';
+import {
+  useDrawerHost,
+  usePlayDrawerRoute,
+  type BoardConfig,
+  type OpenClimbActionsOptions,
+} from '../src/providers/drawer-host-provider';
 import { useQueueActions, useQueueSessionControls } from '../src/providers/queue-provider';
 import { useTheme } from '../src/providers/theme-provider';
 import { playDrawerMaterialTint } from '../src/theme/colors';
+import { usePlayerDismissAndWait } from '../src/components/create-climb/use-player-dismiss-and-wait';
+import type { Climb } from '@boardsesh/shared-schema';
+import type { DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
 
 /**
  * Full-screen "now playing" player route (`presentation: 'fullScreenModal'`,
@@ -54,6 +62,20 @@ export default function PlayScreen() {
   const queueSheetRef = useRef<QueueSheetHandle>(null);
   const presentQueue = useCallback(() => queueSheetRef.current?.present(), []);
   const requestCloseQueue = useCallback(() => queueSheetRef.current?.dismiss(), []);
+  const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
+    const handle = queueSheetRef.current;
+    return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
+  }, []);
+  const dismissPlayerAndWait = usePlayerDismissAndWait();
+  // Any actions menu opened from this route receives the route-owned transition
+  // waiter. That includes the root FullWindowOverlay and the route's QueueSheet;
+  // neither can safely discover the native-stack navigation object itself.
+  const openPlayerClimbActions = useCallback(
+    (climb: Climb, boardConfigOverride?: BoardConfig, options?: OpenClimbActionsOptions) => {
+      openClimbActions(climb, boardConfigOverride, { ...options, dismissPlayerAndWait });
+    },
+    [openClimbActions, dismissPlayerAndWait],
+  );
 
   // Paint the glass first, mount the heavy player content one frame later so the
   // native present starts immediately (see the file comment). rAF fires before
@@ -87,11 +109,12 @@ export default function PlayScreen() {
   const { handleClimbPress, handleOpenActions, handleSuggestionPress, handleTickHistory } = useQueueSheetHandlers({
     setCurrentClimb,
     openPlayDrawer,
-    openClimbActions,
+    openClimbActions: openPlayerClimbActions,
     openLogAscent,
     storedBoardConfig,
     sessionId,
     requestCloseQueueSheet: requestCloseQueue,
+    dismissQueueSheetAndWait: dismissQueueAndWait,
   });
 
   return (
@@ -121,7 +144,8 @@ export default function PlayScreen() {
             boardMismatch={boardMismatch}
             mismatchBoardLabel={mismatchBoardLabel}
             onSwitchBoard={onSwitchBoard}
-            onOpenClimbActions={openClimbActions}
+            onOpenClimbActions={openPlayerClimbActions}
+            dismissPlayerAndWait={dismissPlayerAndWait}
             openTarget={playTarget}
           />
           {queueBoard ? (
