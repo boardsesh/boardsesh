@@ -77,7 +77,10 @@ vi.mock('react-native', () => ({
   AppState: { addEventListener: vi.fn(() => ({ remove: vi.fn() })) },
 }));
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'test-correlation-id' }));
-vi.mock('@boardsesh/graphql-client', () => ({ execute: graph.execute }));
+vi.mock('@boardsesh/graphql-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@boardsesh/graphql-client')>()),
+  execute: graph.execute,
+}));
 vi.mock('@boardsesh/queue-react', () => ({ useQueueMutations: () => queueMutations }));
 vi.mock('@boardsesh/play-view', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@boardsesh/play-view')>()),
