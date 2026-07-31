@@ -474,6 +474,11 @@ describe('QueueItemRow React.memo', () => {
     expect(localOnToggleSelect).toHaveBeenCalledTimes(1);
     expect(localOnToggleSelect).toHaveBeenCalledWith('a');
     expect(onPress).not.toHaveBeenCalled();
+
+    // Both routes go through the same handler, so both must respect edit mode.
+    a11y.row?.onAccessibilityTap?.();
+    expect(localOnToggleSelect).toHaveBeenCalledTimes(2);
+    expect(onPress).not.toHaveBeenCalled();
   });
 
   // Same gap on the history row's trailing tick button — its own Gesture.Tap was
@@ -825,6 +830,7 @@ describe('QueueItemRow screen-reader activation on Android', () => {
   beforeEach(() => {
     a11y.row = null;
     a11y.tick = null;
+    vi.clearAllMocks();
   });
 
   it('adds the activate action on Android', async () => {

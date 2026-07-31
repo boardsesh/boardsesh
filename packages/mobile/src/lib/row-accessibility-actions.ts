@@ -18,14 +18,18 @@ import { Platform, type AccessibilityActionInfo } from 'react-native';
 // and every accessibilityActions entry becomes a UIAccessibilityCustomAction
 // announced by its raw `name` when it carries no label, so VoiceOver would read
 // out a developer-facing "activate" on every row.
-export const ACTIVATE_ACCESSIBILITY_ACTIONS: readonly AccessibilityActionInfo[] =
+const ACTIVATE_ACTIONS: readonly AccessibilityActionInfo[] =
   Platform.OS === 'android' ? ([{ name: 'activate' }] as const) : [];
 
-// A button nested inside a row's `accessible` container only ever needs the plain
-// activate, so on iOS it gets no action list at all — UIKit treats the container
-// as a leaf and never focuses inside it anyway, which is why every such row also
-// has to publish its nested affordance as a labelled custom action of its own.
-// (TalkBack does still focus the nested view, which is why these props stay wired.)
-// Module-level so the identity is stable across rerenders.
-export const NESTED_BUTTON_ACCESSIBILITY_ACTIONS =
-  ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
+// The list for an element whose only screen-reader affordance is its own press —
+// undefined on iOS, where the empty list would be noise on the prop. Module-level
+// so the identity is stable across rerenders.
+export const ACTIVATE_ACCESSIBILITY_ACTIONS = ACTIVATE_ACTIONS.length > 0 ? ACTIVATE_ACTIONS : undefined;
+
+// A row that also owns a nested button has to publish that button as a labelled
+// custom action of its own: UIKit treats the row's `accessible` container as a leaf
+// and VoiceOver never focuses inside it. (TalkBack does, which is why the nested
+// view keeps its own props too.) Wrap the result in a useMemo at the call site.
+export function rowAccessibilityActionsWith(nestedAction: AccessibilityActionInfo): AccessibilityActionInfo[] {
+  return [...ACTIVATE_ACTIONS, nestedAction];
+}

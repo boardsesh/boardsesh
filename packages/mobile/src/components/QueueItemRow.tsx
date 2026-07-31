@@ -22,7 +22,7 @@ import { useTheme } from '../providers/theme-provider';
 import { hapticSelection, hapticMedium } from '../lib/haptics';
 import type { QueueDragControls } from './play-drawer/use-queue-drag';
 import { rowReorderShift } from './play-drawer/queue-drag-math';
-import { ACTIVATE_ACCESSIBILITY_ACTIONS, NESTED_BUTTON_ACCESSIBILITY_ACTIONS } from '../lib/row-accessibility-actions';
+import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
 
 // The tick button is nested inside the row's `accessible` container, so it needs
 // both its own props (TalkBack focuses it) and a labelled custom action published
@@ -394,10 +394,13 @@ function QueueItemRowComponent({
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const logAscentLabel = t('mobile.queue.logAscent');
-  const rowAccessibilityActions = useMemo(() => {
-    if (!showTick) return ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
-    return [...ACTIVATE_ACCESSIBILITY_ACTIONS, { name: LOG_ASCENT_ACTION_NAME, label: logAscentLabel }];
-  }, [showTick, logAscentLabel]);
+  const rowAccessibilityActions = useMemo(
+    () =>
+      showTick
+        ? rowAccessibilityActionsWith({ name: LOG_ASCENT_ACTION_NAME, label: logAscentLabel })
+        : ACTIVATE_ACCESSIBILITY_ACTIONS,
+    [showTick, logAscentLabel],
+  );
 
   // History rows pin the grade for the angle the climb was CLIMBED at, which can
   // differ from the live board angle (e.g. the session moved on after the send).
@@ -466,7 +469,7 @@ function QueueItemRowComponent({
               accessibilityRole="button"
               accessibilityLabel={t('mobile.queue.logAscent')}
               onAccessibilityTap={handleTickPress}
-              accessibilityActions={NESTED_BUTTON_ACCESSIBILITY_ACTIONS}
+              accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
               onAccessibilityAction={handleTickAccessibilityAction}
               style={styles.trailingButton}
             >

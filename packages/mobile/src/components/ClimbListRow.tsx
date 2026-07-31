@@ -30,7 +30,7 @@ import { iosSystemColors } from '../theme/ios-colors';
 import { brandColors } from '../theme/colors';
 import { selectedRowColors } from './climb-list-row-colors';
 import { useSwipeArm } from './use-swipe-arm';
-import { ACTIVATE_ACCESSIBILITY_ACTIONS, NESTED_BUTTON_ACCESSIBILITY_ACTIONS } from '../lib/row-accessibility-actions';
+import { ACTIVATE_ACCESSIBILITY_ACTIONS, rowAccessibilityActionsWith } from '../lib/row-accessibility-actions';
 
 // Swipe tuning. Each side reveals a panel up to ACTION_REVEAL wide; dragging
 // past COMMIT_THRESHOLD and RELEASING commits the action (Spotify-style swipe-
@@ -329,10 +329,13 @@ const ClimbListRow = React.memo(function ClimbListRow({
   // `t` identity on plenty of renders, which would rebuild this array every time
   // and churn the row element's props.
   const moreActionsLabel = t('mobile.climbRow.moreActions');
-  const rowAccessibilityActions = useMemo(() => {
-    if (!hasMoreButton) return ACTIVATE_ACCESSIBILITY_ACTIONS.length > 0 ? ACTIVATE_ACCESSIBILITY_ACTIONS : undefined;
-    return [...ACTIVATE_ACCESSIBILITY_ACTIONS, { name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel }];
-  }, [hasMoreButton, moreActionsLabel]);
+  const rowAccessibilityActions = useMemo(
+    () =>
+      hasMoreButton
+        ? rowAccessibilityActionsWith({ name: MORE_ACTIONS_ACTION_NAME, label: moreActionsLabel })
+        : ACTIVATE_ACCESSIBILITY_ACTIONS,
+    [hasMoreButton, moreActionsLabel],
+  );
 
   // Commit-on-release: fired from onSwipeableWillOpen the instant the user
   // releases past the threshold — no second tap. We deliberately do NOT close
@@ -529,7 +532,7 @@ const ClimbListRow = React.memo(function ClimbListRow({
                   accessibilityRole="button"
                   accessibilityLabel={t('mobile.climbRow.moreActions')}
                   onAccessibilityTap={handleOpenActions}
-                  accessibilityActions={NESTED_BUTTON_ACCESSIBILITY_ACTIONS}
+                  accessibilityActions={ACTIVATE_ACCESSIBILITY_ACTIONS}
                   onAccessibilityAction={handleMoreButtonAccessibilityAction}
                 >
                   {/* iOS has no vertical-ellipsis SF Symbol, so rotate the horizontal one;

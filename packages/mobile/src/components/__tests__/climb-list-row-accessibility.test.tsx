@@ -244,6 +244,7 @@ describe('ClimbListRow screen-reader activation on Android', () => {
   beforeEach(() => {
     a11y.row = null;
     a11y.moreButton = null;
+    vi.clearAllMocks();
   });
 
   it('adds the activate action on Android', async () => {
