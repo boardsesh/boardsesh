@@ -566,6 +566,11 @@ export function useSessionRealtime({
                 // leaves clientId as '' (createEmptySessionRuntimeState) and a
                 // pre-#3382 server sends no clientId at all. Either way we fall
                 // back to today's 'peer' attribution.
+                //
+                // The `__typename` re-check is load-bearing, not dead code:
+                // this switch discriminates on `result.eventType`, a separate
+                // variable, so `event` is still the full union here and TS
+                // rejects `event.clientId` without it.
                 const selfClientId = sessionRuntimeStateRef.current?.clientId;
                 if (
                   event.__typename === 'QueueItemRemoved' &&
