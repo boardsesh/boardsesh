@@ -16,6 +16,7 @@ import type {
 } from '@boardsesh/queue';
 import { createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
+import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
 import type { SubscriptionQueueEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
 import { buildBoardPath } from '@boardsesh/board-config';
@@ -32,7 +33,7 @@ import { getStoredActiveBoard } from '../lib/active-board-store';
 import { useActiveBoard, useSetActiveBoard } from '../lib/graphql/use-active-board';
 import { findPreviousQueueItem, findNextQueueItemWithSuggestions } from '@boardsesh/play-view';
 import { toClimbQueueItem } from '../lib/queue-conversion';
-import { climbToQueueItem, toClimbInput, isClimbResolved } from '../lib/climb-to-queue-item';
+import { climbToQueueItem, toQueueItemWireInput, isClimbResolved } from '../lib/climb-to-queue-item';
 import { track } from '../lib/analytics';
 import { reportHandledError } from '../lib/error-reporting';
 import { useAuthTransportRevision } from '../lib/auth-transport-revision';
@@ -236,7 +237,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // ref because the joinTracker is memoized once (empty deps) and its execute
   // closure must read the latest value — mirrors web's usernameRef/avatarUrlRef
   // in persistent-session/hooks/session-connection-ports.ts.
-  const { username: partyUsername, avatarUrl: partyAvatarUrl } = usePartyProfile();
+  const { profile: partyProfile, username: partyUsername, avatarUrl: partyAvatarUrl } = usePartyProfile();
   const identityRef = useRef<{ username: string | undefined; avatarUrl: string | undefined }>({
     username: partyUsername,
     avatarUrl: partyAvatarUrl,
@@ -246,6 +247,40 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // re-announce effect (below) only fires when it changes afterwards — e.g. the
   // profile resolved after a cold-launch eager join, or the user edited it.
   const announcedIdentityRef = useRef<{ username: string | undefined; avatarUrl: string | undefined } | null>(null);
+
+  // The attribution this device stamps onto a queue item IT introduces, or null
+  // while signed out / before the party profile resolves. Assigned during render
+  // (same pattern as identityRef) so the queue callbacks — memoized on
+  // `mutations`, not on identity — always read the latest.
+  //
+  // Requires BOTH a profile id and a non-empty username: an anonymous phone must
+  // not push a blank-named avatar onto every peer's queue row.
+  const selfAttributionRef = useRef<QueueItemAttribution | null>(null);
+  selfAttributionRef.current =
+    partyProfile?.id && partyUsername
+      ? {
+          addedBy: sessionRuntimeStateRef.current.clientId || null,
+          addedByUser: { id: partyProfile.id, username: partyUsername, avatarUrl: partyAvatarUrl ?? null },
+        }
+      : null;
+
+  /**
+   * Stamp this device's identity onto an item it is INTRODUCING to the queue.
+   *
+   * Deliberately not done in `toQueueItemInput`: a wire-level fallback would
+   * claim authorship of any unattributed item on the next full-queue write —
+   * including a peer's item that arrived before their profile resolved. So skip
+   * an item that already carries attribution, and skip anything already sitting
+   * in this device's queue (that item is not ours to claim; whatever it carries
+   * came from the crew).
+   */
+  const attributeNewItem = useCallback((item: ClimbQueueItem): ClimbQueueItem => {
+    const self = selfAttributionRef.current;
+    if (!self) return item;
+    if (item.addedBy || item.addedByUser) return item;
+    if (stateRef.current.queue.some((queueItem) => queueItem.uuid === item.uuid)) return item;
+    return { ...item, ...self };
+  }, []);
 
   // The active board is read synchronously from the React Query cache
   // (staleTime: Infinity, hydrated from AsyncStorage) so analytics call sites
@@ -422,8 +457,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     getSessionId: () => sessionIdRef.current,
     // Strip the climb to ClimbInput fields — sending the raw search climb (with
     // created_at) makes the server reject the mutation and silently breaks queue
-    // sync to peers. See toClimbInput.
-    toQueueItemInput: (item) => ({ uuid: item.uuid, climb: toClimbInput(item.climb) }),
+    // sync to peers — and carry the item-level fields (addedBy / addedByUser /
+    // tickedBy / suggested) that used to be dropped here, which anonymised every
+    // climb queued from a phone and stripped the crew's avatars on the next
+    // full-queue write (#3995). See toQueueItemWireInput.
+    toQueueItemInput: (item) => toQueueItemWireInput(item),
     // Where a deferred queue-add (a superseded or drained-then-throttled
     // activation) should land, so peers see the order this device shows. Read
     // live off `stateRef` — assigned during render — because the send can fire
@@ -746,7 +784,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   }, [state.needsResync]);
 
   const addToQueue = useCallback(
-    (item: ClimbQueueItem) => {
+    (rawItem: ClimbQueueItem) => {
+      // Whoever tapped "add" owns this climb — stamp identity before the dispatch
+      // so the local queue and the broadcast carry the same object (#3995).
+      const item = attributeNewItem(rawItem);
       // Optimistic local dispatch is the source of truth for the user's queue.
       // The server echoes this item via the WS subscription, but
       // DELTA_ADD_QUEUE_ITEM dedupes by uuid so the echo is a no-op. The shared
@@ -776,7 +817,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // Surface the "Climb added to queue · Open" snackbar for every add path.
       showQueueAddedSnackbar();
     },
-    [mutations, reconcileFailedContentMutation, showQueueAddedSnackbar],
+    [attributeNewItem, mutations, reconcileFailedContentMutation, showQueueAddedSnackbar],
   );
 
   const removeFromQueue = useCallback(
@@ -865,21 +906,34 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // A whole-queue replace sets its own current; it supersedes any deferred
       // current re-broadcast (#3868).
       pendingUnsyncedCurrentRef.current = null;
-      dispatch({ type: 'UPDATE_QUEUE', payload: { queue, currentClimbQueueItem: currentClimbQueueItem ?? null } });
+      // Stamp BEFORE the dispatch, and feed the same array to both the local
+      // reducer and the broadcast — otherwise this device's own queue would show
+      // no author while peers saw one (#3995). The membership check reads
+      // `stateRef.current.queue`, which is still the pre-dispatch queue here, so
+      // a climb the crew already had keeps whoever queued it.
+      const attributedQueue = queue.map((item) => attributeNewItem(item));
+      const attributedCurrent = currentClimbQueueItem
+        ? (attributedQueue.find((item) => item.uuid === currentClimbQueueItem.uuid) ??
+          attributeNewItem(currentClimbQueueItem))
+        : currentClimbQueueItem;
+      dispatch({
+        type: 'UPDATE_QUEUE',
+        payload: { queue: attributedQueue, currentClimbQueueItem: attributedCurrent ?? null },
+      });
       // Keep the full queue locally, but never broadcast a placeholder/thin item
       // to peers (#2527): drop unresolved items from the wire payload (they can't
       // form a valid ClimbInput and peers can't render them). useQueueResolveClimbs
       // hydrates any resolvable item in place; a later mutation re-syncs the real
       // one. An unresolved current climb is likewise not sent as current.
-      const syncableQueue = queue.filter((item) => isClimbResolved(item.climb));
+      const syncableQueue = attributedQueue.filter((item) => isClimbResolved(item.climb));
       const syncableCurrent =
-        currentClimbQueueItem && isClimbResolved(currentClimbQueueItem.climb) ? currentClimbQueueItem : undefined;
+        attributedCurrent && isClimbResolved(attributedCurrent.climb) ? attributedCurrent : undefined;
       mutations.setQueue(syncableQueue, syncableCurrent).catch((error) => {
         if (__DEV__) console.warn('[queue] setQueue sync failed', error);
         reconcileFailedContentMutation(error);
       });
     },
-    [mutations, reconcileFailedContentMutation],
+    [attributeNewItem, mutations, reconcileFailedContentMutation],
   );
 
   // Stable live read of the queue + current climb (see QueueContextValue). Reads
@@ -964,11 +1018,17 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // instead of re-applied.
   const dispatchSetCurrent = useCallback(
     (
-      item: ClimbQueueItem,
+      rawItem: ClimbQueueItem,
       shouldAddToQueue: boolean,
       playlistSuggestionSource?: PlaylistSuggestionSource | null,
       insertAfterCurrent?: boolean,
     ) => {
+      // Activating a climb that isn't in the queue yet (shouldAddToQueue, or the
+      // playlist peek minted in nextClimb) introduces it — stamp it before the
+      // dispatch so state and broadcast agree. Navigating onto an item already in
+      // the queue is a no-op here: attributeNewItem sees the uuid and leaves it
+      // alone, so stepping through the crew's queue never re-authors it (#3995).
+      const item = attributeNewItem(rawItem);
       const correlationId = coordinator.generateCorrelationId();
       dispatch({
         type: 'DELTA_UPDATE_CURRENT_CLIMB',
@@ -1032,7 +1092,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         showQueueMutationErrorToast(error, t, showToast);
       });
     },
-    [coordinator, mutations, recoverThrottledQueueAdd, resyncQueueAfterMutationFailure, showToast, t],
+    [attributeNewItem, coordinator, mutations, recoverThrottledQueueAdd, resyncQueueAfterMutationFailure, showToast, t],
   );
 
   // Re-broadcast the current climb once a deferred thin item hydrates (#3868).

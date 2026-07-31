@@ -58,6 +58,22 @@ function readMobileSubscriptionClimbFields(): string {
   return extractTemplateConst(readMobileOperationsSource(), 'SUBSCRIPTION_CLIMB_FIELDS');
 }
 
+/**
+ * Mobile's operation strings interpolate `${SUBSCRIPTION_QUEUE_ITEM_FIELDS}` (which
+ * itself interpolates `${SUBSCRIPTION_CLIMB_FIELDS}`) at build time via JS template
+ * literals. The regex extraction above reads raw source text, so it captures those
+ * placeholders literally — substitute them, outer one first, to reproduce what the
+ * real template literal evaluates to before parsing as GraphQL. One helper so a new
+ * nested selection const cannot be taught to one call site and forgotten at another.
+ */
+function resolveMobileTemplatePlaceholders(rawSource: string, mobileOperationsSource: string): string {
+  const queueItemFields = extractTemplateConst(mobileOperationsSource, 'SUBSCRIPTION_QUEUE_ITEM_FIELDS');
+  const climbFields = extractTemplateConst(mobileOperationsSource, 'SUBSCRIPTION_CLIMB_FIELDS');
+  return rawSource
+    .replaceAll('${SUBSCRIPTION_QUEUE_ITEM_FIELDS}', queueItemFields)
+    .replaceAll('${SUBSCRIPTION_CLIMB_FIELDS}', climbFields);
+}
+
 // Collect the field names selected inside every `climb { ... }` selection set of
 // a GraphQL operation document. Both the shared queue-session subscription and a
 // wrapped copy of the mobile fragment feed through this, so parity is compared
@@ -158,16 +174,11 @@ describe('shared-schema operations validate against the executable schema', () =
  */
 describe('mobile plain-string subscription documents validate against the executable schema', () => {
   const mobileOperationsSource = readMobileOperationsSource();
-  const subscriptionClimbFields = extractTemplateConst(mobileOperationsSource, 'SUBSCRIPTION_CLIMB_FIELDS');
-
-  // QUEUE_UPDATES_SUBSCRIPTION interpolates `${SUBSCRIPTION_CLIMB_FIELDS}` at build
-  // time via a JS template literal. The regex extraction below reads raw source text,
-  // so it captures that placeholder literally — substitute the extracted field list
-  // in its place to reproduce what the real template literal evaluates to before
-  // parsing as GraphQL.
   function readMobilePlainOperation(constName: string): string {
-    const rawSource = extractTemplateConst(mobileOperationsSource, constName);
-    return rawSource.replaceAll('${SUBSCRIPTION_CLIMB_FIELDS}', subscriptionClimbFields);
+    return resolveMobileTemplatePlaceholders(
+      extractTemplateConst(mobileOperationsSource, constName),
+      mobileOperationsSource,
+    );
   }
 
   const mobilePlainOperationNames = [
@@ -291,14 +302,9 @@ describe('mobile QUEUE_UPDATES_SUBSCRIPTION selects the same PlaybackStateChange
   }
 
   const mobileOperationsSource = readMobileOperationsSource();
-  const subscriptionClimbFields = extractTemplateConst(mobileOperationsSource, 'SUBSCRIPTION_CLIMB_FIELDS');
-  // Same placeholder-substitution technique as the "mobile plain-string
-  // subscription documents" describe block above — QUEUE_UPDATES_SUBSCRIPTION
-  // interpolates `${SUBSCRIPTION_CLIMB_FIELDS}` at build time, so replicate
-  // that before parsing raw extracted source text as GraphQL.
-  const mobileQueueUpdates = extractTemplateConst(mobileOperationsSource, 'QUEUE_UPDATES_SUBSCRIPTION').replaceAll(
-    '${SUBSCRIPTION_CLIMB_FIELDS}',
-    subscriptionClimbFields,
+  const mobileQueueUpdates = resolveMobileTemplatePlaceholders(
+    extractTemplateConst(mobileOperationsSource, 'QUEUE_UPDATES_SUBSCRIPTION'),
+    mobileOperationsSource,
   );
 
   const sharedPlaybackFields = inlineFragmentFieldNames(queueSessionOperations.QUEUE_UPDATES, 'PlaybackStateChanged');

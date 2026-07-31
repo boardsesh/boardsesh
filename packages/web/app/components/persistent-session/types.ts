@@ -7,7 +7,9 @@ import type {
   SessionSummary,
   QueueState,
   ClimbQueueItemInput,
+  ClimbInput,
 } from '@boardsesh/shared-schema';
+import { toClimbQueueItemInput as toSharedClimbQueueItemInput } from '@boardsesh/queue-react/queue-item-input';
 import type { QueueAction, QueueSearchParams, PlaylistSuggestionSource } from '@boardsesh/queue';
 import type { ClimbQueueItem as LocalClimbQueueItem } from '../queue-control/types';
 import type { BoardDetails, ParsedBoardRouteParameters } from '@/app/lib/types';
@@ -253,67 +255,64 @@ export type PendingInitialQueue = {
   sessionName?: string;
 };
 
-// Convert local ClimbQueueItem to GraphQL input format
-// Explicit return type so the compiler catches any drift between the web's
-// local item shape and the shared wire input (rather than a cast at the call
-// site silently absorbing it).
-export function toClimbQueueItemInput(item: LocalClimbQueueItem): ClimbQueueItemInput {
+// Map web's local climb to the GraphQL `ClimbInput`. Web-specific on purpose:
+// it sends `description: item.climb.description || ''` where mobile sends the
+// raw value, so this must NOT be collapsed onto mobile's `toClimbInput`.
+function toClimbInput(climb: LocalClimbQueueItem['climb']): ClimbInput {
   return {
-    uuid: item.uuid,
-    climb: {
-      uuid: item.climb.uuid,
-      setter_username: item.climb.setter_username,
-      // userId is the stable identity for ownership gates (Edit button,
-      // 24h post-publish window). Null/undefined for Aurora-synced climbs.
-      userId: item.climb.userId ?? null,
-      name: item.climb.name,
-      description: item.climb.description || '',
-      frames: item.climb.frames,
-      angle: item.climb.angle,
-      ascensionist_count: item.climb.ascensionist_count,
-      difficulty: item.climb.difficulty,
-      quality_average: item.climb.quality_average,
-      stars: item.climb.stars,
-      difficulty_error: item.climb.difficulty_error,
-      mirrored: item.climb.mirrored,
-      benchmark_difficulty: item.climb.benchmark_difficulty,
-      // Both selection sets already SELECT these two, so leaving them off the
-      // input meant every web-originated write cleared the no-match / method
-      // tags that peers were rendering.
-      is_no_match: item.climb.is_no_match ?? null,
-      characteristics: item.climb.characteristics ?? null,
-      // Round-trip draft/publish state so peers can decide locally whether
-      // to surface the Edit affordance without re-querying the DB.
-      is_draft: item.climb.is_draft ?? null,
-      published_at: item.climb.published_at ?? null,
-      userAscents: item.climb.userAscents,
-      userAttempts: item.climb.userAttempts,
-      // Multi-frame metadata so a peer who receives this climb via queue
-      // broadcast plays back at the climb's native pace instead of falling
-      // through to the DEFAULT_PACE_MS (750 ms) heuristic.
-      framesCount: item.climb.framesCount ?? null,
-      framesPace: item.climb.framesPace ?? null,
-      // Board identity so a peer on a different wall can classify this climb
-      // as a spill instead of dark-firing their board (issue #3193).
-      boardType: item.climb.boardType,
-      layoutId: item.climb.layoutId ?? null,
-      // Round-trip the Boardsesh grade so party peers render it without a refetch.
-      boardseshDifficulty: item.climb.boardseshDifficulty ?? null,
-      boardseshConfidence: item.climb.boardseshConfidence ?? null,
-    },
-    addedBy: item.addedBy,
-    addedByUser: item.addedByUser
-      ? {
-          id: item.addedByUser.id,
-          username: item.addedByUser.username,
-          avatarUrl: item.addedByUser.avatarUrl,
-        }
-      : undefined,
-    // The wire input is `[String!]` — drop any local nulls rather than send
-    // an invalid value the server would reject.
-    tickedBy: item.tickedBy?.filter((id): id is string => id !== null),
-    suggested: item.suggested,
+    uuid: climb.uuid,
+    setter_username: climb.setter_username,
+    // userId is the stable identity for ownership gates (Edit button,
+    // 24h post-publish window). Null/undefined for Aurora-synced climbs.
+    userId: climb.userId ?? null,
+    name: climb.name,
+    description: climb.description || '',
+    frames: climb.frames,
+    angle: climb.angle,
+    ascensionist_count: climb.ascensionist_count,
+    difficulty: climb.difficulty,
+    quality_average: climb.quality_average,
+    stars: climb.stars,
+    difficulty_error: climb.difficulty_error,
+    mirrored: climb.mirrored,
+    benchmark_difficulty: climb.benchmark_difficulty,
+    // Both selection sets already SELECT these two, so leaving them off the
+    // input meant every web-originated write cleared the no-match / method
+    // tags that peers were rendering.
+    is_no_match: climb.is_no_match ?? null,
+    characteristics: climb.characteristics ?? null,
+    // Round-trip draft/publish state so peers can decide locally whether
+    // to surface the Edit affordance without re-querying the DB.
+    is_draft: climb.is_draft ?? null,
+    published_at: climb.published_at ?? null,
+    userAscents: climb.userAscents,
+    userAttempts: climb.userAttempts,
+    // Multi-frame metadata so a peer who receives this climb via queue
+    // broadcast plays back at the climb's native pace instead of falling
+    // through to the DEFAULT_PACE_MS (750 ms) heuristic.
+    framesCount: climb.framesCount ?? null,
+    framesPace: climb.framesPace ?? null,
+    // Board identity so a peer on a different wall can classify this climb
+    // as a spill instead of dark-firing their board (issue #3193).
+    boardType: climb.boardType,
+    layoutId: climb.layoutId ?? null,
+    // Round-trip the Boardsesh grade so party peers render it without a refetch.
+    boardseshDifficulty: climb.boardseshDifficulty ?? null,
+    boardseshConfidence: climb.boardseshConfidence ?? null,
   };
+}
+
+// Convert local ClimbQueueItem to GraphQL input format.
+//
+// The ITEM-level field list (addedBy / addedByUser / tickedBy / suggested) lives
+// in `@boardsesh/queue-react/queue-item-input` so web and mobile cannot drift
+// apart again — mobile shipped a `{ uuid, climb }` copy of this function and
+// anonymised every climb queued from a phone (#3995). Only the climb mapper is
+// per-platform. Explicit return type so the compiler catches any drift between
+// the web's local item shape and the shared wire input (rather than a cast at
+// the call site silently absorbing it).
+export function toClimbQueueItemInput(item: LocalClimbQueueItem): ClimbQueueItemInput {
+  return toSharedClimbQueueItemInput(item, toClimbInput);
 }
 
 // Shared refs type used across hooks

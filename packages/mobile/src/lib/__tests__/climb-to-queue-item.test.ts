@@ -5,7 +5,7 @@ vi.mock('expo-crypto', () => ({
   randomUUID: () => 'generated-uuid',
 }));
 
-import { climbToQueueItem, toClimbInput } from '../climb-to-queue-item';
+import { climbToQueueItem, toClimbInput, toQueueItemWireInput } from '../climb-to-queue-item';
 
 // A climb queued from search / detail must keep its multi-frame playback
 // metadata so playback uses the setter's pace rather than DEFAULT_PACE_MS.
@@ -95,5 +95,41 @@ describe('climbToQueueItem ownership / draft state (#3927)', () => {
     const sent = new Set(Object.keys(toClimbInput(climb)));
 
     expect(kept).toEqual(sent);
+  });
+});
+
+// The same contract, one level up (#3995). This client used to send a bare
+// `{ uuid, climb }` for every queue mutation, so a climb queued from a phone
+// reached the crew with no author, and the phone's next full-queue write wiped
+// the "added by" avatars off the climbs they queued from web.
+describe('toQueueItemWireInput (#3995)', () => {
+  it('carries queue-item attribution, not just the climb', () => {
+    const input = toQueueItemWireInput({
+      uuid: 'queue-slot-1',
+      climb: makeClimb(),
+      addedBy: 'client-1',
+      addedByUser: { id: 'party-uuid-1', username: 'Marco', avatarUrl: 'https://example.test/a.png' },
+      tickedBy: ['db-user-1'],
+      suggested: true,
+    });
+
+    expect(input.addedBy).toBe('client-1');
+    expect(input.addedByUser).toEqual({
+      id: 'party-uuid-1',
+      username: 'Marco',
+      avatarUrl: 'https://example.test/a.png',
+    });
+    expect(input.tickedBy).toEqual(['db-user-1']);
+    expect(input.suggested).toBe(true);
+  });
+
+  // The climb half must still go out in full: the item-level fix must not have
+  // narrowed what `toClimbInput` sends. Read live off both functions, same
+  // technique as the climb-level guard above.
+  it('still sends the full toClimbInput climb field set', () => {
+    const climb = makeClimb();
+    const sentOnTheWire = new Set(Object.keys(toQueueItemWireInput({ uuid: 'queue-slot-1', climb }).climb));
+
+    expect(sentOnTheWire).toEqual(new Set(Object.keys(toClimbInput(climb))));
   });
 });

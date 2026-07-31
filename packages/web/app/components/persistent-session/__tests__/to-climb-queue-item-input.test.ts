@@ -81,4 +81,41 @@ describe('toClimbQueueItemInput', () => {
     const sent = new Set(Object.keys(toClimbQueueItemInput(makeItem()).climb));
     expect(sent).toEqual(climbInputFieldNames());
   });
+
+  // The one non-passthrough coercion in web's climb mapper. Mobile sends
+  // `description` raw, so the shared extraction had to keep web's own `|| ''`
+  // rather than repoint web at mobile's mapper (#3995).
+  it('sends an empty-string description rather than null when the climb has none', () => {
+    const input = toClimbQueueItemInput(makeItem({ description: undefined }));
+    expect(input.climb.description).toBe('');
+  });
+});
+
+// The item level now delegates to `@boardsesh/queue-react/queue-item-input`,
+// shared with mobile so the two platforms cannot drift apart again (#3995).
+// These pin the delegation to zero behaviour change: a refactor that forgot a
+// field, or coerced an absent `addedBy` to null, goes red here.
+describe('toClimbQueueItemInput item-level attribution', () => {
+  it('keeps the item-level attribution after the shared-mapper delegation', () => {
+    const input = toClimbQueueItemInput({
+      ...makeItem(),
+      addedBy: 'client-1',
+      addedByUser: { id: 'u1', username: 'Marco', avatarUrl: 'https://example.test/a.png' },
+      tickedBy: ['u1', null],
+      suggested: true,
+    });
+
+    expect(input.addedBy).toBe('client-1');
+    expect(input.addedByUser).toEqual({ id: 'u1', username: 'Marco', avatarUrl: 'https://example.test/a.png' });
+    // The wire input is `[String!]` — local nulls are dropped, not sent.
+    expect(input.tickedBy).toEqual(['u1']);
+    expect(input.suggested).toBe(true);
+  });
+
+  it('leaves an absent addedBy undefined rather than writing a null over a peer value', () => {
+    const input = toClimbQueueItemInput({ ...makeItem(), addedBy: undefined, addedByUser: undefined });
+
+    expect(input.addedBy).toBeUndefined();
+    expect(input.addedByUser).toBeUndefined();
+  });
 });

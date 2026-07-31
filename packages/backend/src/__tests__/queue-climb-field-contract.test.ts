@@ -51,21 +51,57 @@ function climbSelectionFieldNames(operationSource: string): Set<string> {
 }
 
 /**
- * Mobile hand-maintains its selection set as a plain template string, so read it
- * out of the source text rather than importing the mobile package (which would
- * drag React Native deps into this backend test). Same technique as
+ * The GraphQL fields a queue ITEM hangs off in these operations: the FullSync
+ * queue list, the FullSync current pointer, and the per-variant `item` (aliased
+ * `addedItem` / `currentItem` to dodge the union nullability conflict).
+ */
+const QUEUE_ITEM_PARENT_FIELDS = new Set(['queue', 'currentClimbQueueItem', 'item']);
+
+/** Top-level field names selected on each queue ITEM of an operation. */
+function queueItemSelectionFieldNames(operationSource: string): Set<string> {
+  const fields = new Set<string>();
+  visit(parse(operationSource), {
+    Field(node) {
+      if (!QUEUE_ITEM_PARENT_FIELDS.has(node.name.value) || !node.selectionSet) return;
+      for (const selection of node.selectionSet.selections) {
+        if (selection.kind === 'Field') fields.add(selection.alias?.value ?? selection.name.value);
+      }
+    },
+  });
+  return fields;
+}
+
+/**
+ * Mobile hand-maintains its selection sets as plain template strings, so read
+ * them out of the source text rather than importing the mobile package (which
+ * would drag React Native deps into this backend test). Same technique as
  * `operations-schema-validation.test.ts`.
  */
-function mobileSubscriptionClimbFields(): Set<string> {
+function mobileSelectionTemplate(constName: string): string {
   const source = readFileSync(
     new URL('../../../../packages/mobile/src/lib/graphql/operations.ts', import.meta.url),
     'utf-8',
   );
-  const match = source.match(/SUBSCRIPTION_CLIMB_FIELDS\s*=\s*`([\s\S]*?)`/);
+  const match = source.match(new RegExp(`${constName}\\s*=\\s*\`([\\s\\S]*?)\``));
   if (!match?.[1]) {
-    throw new Error('Could not extract SUBSCRIPTION_CLIMB_FIELDS from mobile operations.ts');
+    throw new Error(`Could not extract ${constName} from mobile operations.ts`);
   }
-  return climbSelectionFieldNames(`{ climb { ${match[1]} } }`);
+  return match[1];
+}
+
+function mobileSubscriptionClimbFields(): Set<string> {
+  return climbSelectionFieldNames(`{ climb { ${mobileSelectionTemplate('SUBSCRIPTION_CLIMB_FIELDS')} } }`);
+}
+
+function mobileSubscriptionQueueItemFields(): Set<string> {
+  // The template interpolates the climb selection; stub the interpolation so the
+  // string parses. What the climb sub-selection contains is the climb-level
+  // guard's job, not this one's.
+  const template = mobileSelectionTemplate('SUBSCRIPTION_QUEUE_ITEM_FIELDS').replace(
+    '${SUBSCRIPTION_CLIMB_FIELDS}',
+    'uuid',
+  );
+  return queueItemSelectionFieldNames(`{ item { ${template} } }`);
 }
 
 const climbInputFields = inputTypeFieldNames('ClimbInput');
@@ -201,6 +237,54 @@ describe('queue climb field parity: the two READ paths', () => {
         readButNeverWritten,
         'This selection set reads fields that no client writes, so they can only ever be null. ' +
           'Either add them to ClimbInput or drop them from the selection set.',
+      ).toEqual([]);
+    });
+  }
+});
+
+/**
+ * The same guard one level up (#3995).
+ *
+ * A queue item carries more than its climb: `addedBy` / `addedByUser` are who
+ * put it on the wall, `tickedBy` is who has sent it this session, `suggested`
+ * marks a playlist suggestion. Mobile shipped a `{ uuid, climb }` write mapper
+ * AND a `{ uuid, climb }` selection set, so climbs queued from a phone reached
+ * peers anonymous and a phone's next full-queue write wiped the crew's avatars
+ * off web-queued climbs. Both platforms now write all four, which makes the READ
+ * side flap-critical — hence this parity check, the read-side counterpart to the
+ * `satisfies Record<keyof ClimbQueueItemInput, true>` guard on the write mapper.
+ */
+describe('queue item field parity: the two READ paths', () => {
+  const queueItemInputFields = inputTypeFieldNames('ClimbQueueItemInput');
+
+  it('found the ClimbQueueItemInput type in the schema', () => {
+    expect(queueItemInputFields.size).toBeGreaterThan(0);
+  });
+
+  for (const [name, fields] of [
+    [
+      'shared QUEUE_ITEM_FIELDS (packages/shared/graphql/src/operations/queue-session.ts)',
+      queueItemSelectionFieldNames(QUEUE_UPDATES),
+    ],
+    [
+      'mobile SUBSCRIPTION_QUEUE_ITEM_FIELDS (packages/mobile/src/lib/graphql/operations.ts)',
+      mobileSubscriptionQueueItemFields(),
+    ],
+  ] as const) {
+    it(`${name} selects exactly what ClimbQueueItemInput declares`, () => {
+      const notRead = [...queueItemInputFields].filter((field) => !fields.has(field));
+      const readButNeverWritten = [...fields].filter((field) => !queueItemInputFields.has(field));
+
+      expect(
+        notRead,
+        'This selection set is missing item-level fields that clients WRITE, so they will FLAP: ' +
+          'this peer rebuilds the item without them and its next full-queue write pushes the gap ' +
+          'back to everyone — the crew\'s "added by" avatars blink out. Add them here.',
+      ).toEqual([]);
+      expect(
+        readButNeverWritten,
+        'This selection set reads item-level fields no client writes, so they can only ever be null. ' +
+          'Either add them to ClimbQueueItemInput or drop them from the selection set.',
       ).toEqual([]);
     });
   }

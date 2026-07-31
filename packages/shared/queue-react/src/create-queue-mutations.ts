@@ -62,7 +62,16 @@ export type QueueMutationsDeps<TItem> = {
   getClient: () => Client | null;
   /** Live active-session-id getter (web: session?.id; mobile: sessionIdRef.current). */
   getSessionId: () => string | null;
-  /** Platform mapper: item -> wire input (web: toClimbQueueItemInput; mobile: thin {uuid,climb}). */
+  /**
+   * Platform mapper: item -> wire input. BOTH platforms delegate to
+   * `toClimbQueueItemInput` from `@boardsesh/queue-react/queue-item-input`,
+   * supplying only their own climb mapper — this is the single item->wire seam
+   * for every write path here (addQueueItem / setCurrentClimb / setQueue /
+   * replaceQueueItem; `mirrorCurrentClimb` carries no item at all). Dropping an
+   * item-level field here does not just blank it: it FLAPS for the whole crew,
+   * because this client rebuilds peer items without it and its next full-queue
+   * write pushes the gap back to everyone. See #3927 / #3995.
+   */
   toQueueItemInput: (item: TItem) => ClimbQueueItemInput;
   /**
    * Live index of `uuid` in THIS client's local queue, or -1 when it is not

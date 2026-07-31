@@ -14,6 +14,11 @@
       "types": "./src/create-queue-mutations.ts",
       "import": "./src/create-queue-mutations.ts",
       "default": "./src/create-queue-mutations.ts"
+    },
+    "./queue-item-input": {
+      "types": "./src/queue-item-input.ts",
+      "import": "./src/queue-item-input.ts",
+      "default": "./src/queue-item-input.ts"
     }
   },
   "scripts": {

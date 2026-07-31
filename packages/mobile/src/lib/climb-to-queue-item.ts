@@ -1,6 +1,9 @@
 import { randomUUID } from 'expo-crypto';
-import type { Climb, ClimbInput } from '@boardsesh/shared-schema';
+import type { Climb, ClimbInput, ClimbQueueItemInput } from '@boardsesh/shared-schema';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+// Subpath import, not the barrel: nine queue-provider suites whole-module-mock
+// `@boardsesh/queue-react`, and this module sits in all of their graphs.
+import { toClimbQueueItemInput } from '@boardsesh/queue-react/queue-item-input';
 
 // `isClimbResolved` lives in ./queue-climb-resolution (no expo-crypto import) so
 // the shared visual can pull the predicate without this module's native deps.
@@ -54,6 +57,22 @@ export function toClimbInput(climb: Climb): ClimbInput {
 }
 
 /**
+ * Map a local queue item to the GraphQL `ClimbQueueItemInput` — the ONE item->wire
+ * seam for every mobile write path (add / setCurrent / setQueue / replace).
+ *
+ * The item level carries more than the climb: `addedBy` / `addedByUser` are who
+ * queued it (the avatar peers render on the queue row), `tickedBy` is who has
+ * sent it this session, and `suggested` marks a playlist suggestion. This client
+ * used to send only `{ uuid, climb }`, so every climb queued from a phone landed
+ * on peers anonymous — and worse, a phone's next full-queue write stripped the
+ * attribution off the climbs the crew had queued from web (#3995). The field list
+ * lives in the shared mapper so the two platforms cannot drift again.
+ */
+export function toQueueItemWireInput(item: ClimbQueueItem): ClimbQueueItemInput {
+  return toClimbQueueItemInput(item, toClimbInput);
+}
+
+/**
  * Build a ClimbQueueItem from a Climb returned by SEARCH_CLIMBS / climb-detail
  * queries. The mutation input is GraphQL's `ClimbInput`, which is a strict
  * subset of `Climb` — passing the whole response (e.g. with `created_at`)
@@ -68,6 +87,10 @@ export function toClimbInput(climb: Climb): ClimbInput {
  * gap back to everyone. `climb-to-queue-item.test.ts` asserts the two key sets
  * are equal, and `queue-climb-field-contract.test.ts` ties both to the schema.
  * See #3927.
+ *
+ * The same contract now applies one level up, at the queue item itself: what
+ * `toQueueItemWireInput` sends, `SUBSCRIPTION_QUEUE_ITEM_FIELDS` must select and
+ * `toClimbQueueItem` must rebuild. See #3995.
  */
 export function climbToQueueItem(climb: Climb, options?: { suggested?: boolean; uuid?: string }): ClimbQueueItem {
   return {

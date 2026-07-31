@@ -55,9 +55,28 @@ export type SubscriptionClimb = {
   boardseshConfidence?: string | null;
 };
 
+export type SubscriptionQueueItemUser = {
+  id: string;
+  username: string;
+  avatarUrl?: string | null;
+};
+
+/**
+ * Keep these fields in sync with `SUBSCRIPTION_QUEUE_ITEM_FIELDS` in
+ * `src/lib/graphql/operations.ts` and with `toQueueItemWireInput` in
+ * `src/lib/climb-to-queue-item.ts`. The item level is in the drift contract too
+ * (#3995): this client WRITES `addedBy` / `addedByUser` / `tickedBy` /
+ * `suggested`, so a field it fails to rebuild here is a field its next
+ * full-queue write strips off every peer's queue — the crew's "added by" avatars
+ * blink out the moment a phone touches the queue.
+ */
 export type SubscriptionQueueItem = {
   uuid: string;
   climb: SubscriptionClimb;
+  addedBy?: string | null;
+  addedByUser?: SubscriptionQueueItemUser | null;
+  tickedBy?: (string | null)[] | null;
+  suggested?: boolean | null;
 };
 
 /**
@@ -69,6 +88,13 @@ export type SubscriptionQueueItem = {
 export function toClimbQueueItem(subscriptionItem: SubscriptionQueueItem): ClimbQueueItem {
   return {
     uuid: subscriptionItem.uuid,
+    // Who queued it, who has ticked it, whether it's a playlist suggestion. The
+    // reducer's ClimbQueueItem types the last three as optional-not-nullable, so
+    // a server null narrows to undefined rather than being carried as null.
+    addedBy: subscriptionItem.addedBy,
+    addedByUser: subscriptionItem.addedByUser ?? undefined,
+    tickedBy: subscriptionItem.tickedBy ?? undefined,
+    suggested: subscriptionItem.suggested ?? undefined,
     climb: {
       uuid: subscriptionItem.climb.uuid,
       boardType: subscriptionItem.climb.boardType ?? undefined,

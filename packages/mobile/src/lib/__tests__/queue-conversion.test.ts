@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parse, visit } from 'graphql';
 import { toClimbQueueItem, type SubscriptionQueueItem } from '../queue-conversion';
-import { SUBSCRIPTION_CLIMB_FIELDS } from '../graphql/operations';
+import { SUBSCRIPTION_CLIMB_FIELDS, SUBSCRIPTION_QUEUE_ITEM_FIELDS } from '../graphql/operations';
 
 // Parse the selection set with graphql's own parser rather than splitting on
 // whitespace: an alias (`uuid: id`), an argument, or a directive would make a
@@ -13,6 +13,20 @@ function selectedClimbFieldNames(): Set<string> {
   visit(parse(`{ climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }`), {
     Field(node) {
       if (node.name.value !== 'climb' || !node.selectionSet) return;
+      for (const selection of node.selectionSet.selections) {
+        if (selection.kind === 'Field') fields.add(selection.alias?.value ?? selection.name.value);
+      }
+    },
+  });
+  return fields;
+}
+
+// Same collector, one level up: the top-level fields selected on each queue item.
+function selectedQueueItemFieldNames(): Set<string> {
+  const fields = new Set<string>();
+  visit(parse(`{ item { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} } }`), {
+    Field(node) {
+      if (node.name.value !== 'item' || !node.selectionSet) return;
       for (const selection of node.selectionSet.selections) {
         if (selection.kind === 'Field') fields.add(selection.alias?.value ?? selection.name.value);
       }
@@ -121,5 +135,51 @@ describe('toClimbQueueItem (SEED-2 fields)', () => {
     const rebuilt = new Set(Object.keys(toClimbQueueItem(makeSubscriptionItem()).climb));
 
     expect(rebuilt).toEqual(selectedClimbFieldNames());
+  });
+});
+
+// The item level of the same contract (#3995). This client now WRITES
+// addedBy / addedByUser / tickedBy / suggested, so dropping them on the way IN
+// would make them flap: we would rebuild every peer item without an author, and
+// our next full-queue write would push that gap back to the whole crew.
+describe('toClimbQueueItem item-level attribution (#3995)', () => {
+  it("keeps a web peer's attribution through the rebuild", () => {
+    const result = toClimbQueueItem({
+      ...makeSubscriptionItem(),
+      addedBy: 'client-web-1',
+      addedByUser: { id: 'web-peer', username: 'Ana', avatarUrl: 'https://example.test/a.png' },
+      tickedBy: ['db-user-1'],
+      suggested: true,
+    });
+
+    expect(result.addedBy).toBe('client-web-1');
+    expect(result.addedByUser).toEqual({ id: 'web-peer', username: 'Ana', avatarUrl: 'https://example.test/a.png' });
+    expect(result.tickedBy).toEqual(['db-user-1']);
+    expect(result.suggested).toBe(true);
+  });
+
+  // The reducer's ClimbQueueItem types the last three as optional-not-nullable,
+  // so a server null must narrow to undefined rather than be carried through.
+  it('narrows server nulls to undefined for the optional-only fields', () => {
+    const result = toClimbQueueItem({
+      ...makeSubscriptionItem(),
+      addedByUser: null,
+      tickedBy: null,
+      suggested: null,
+    });
+
+    expect(result.addedByUser).toBeUndefined();
+    expect(result.tickedBy).toBeUndefined();
+    expect(result.suggested).toBeUndefined();
+  });
+
+  // Set EQUALITY, derived from the live selection set: an item-level field the
+  // subscription selects but this rebuild drops is lost on every FullSync, and a
+  // field rebuilt here that the subscription does not select can only ever be
+  // undefined. Adding a seventh field to one side alone turns this red.
+  it('rebuilds exactly the field set SUBSCRIPTION_QUEUE_ITEM_FIELDS selects', () => {
+    const rebuilt = new Set(Object.keys(toClimbQueueItem(makeSubscriptionItem())));
+
+    expect(rebuilt).toEqual(selectedQueueItemFieldNames());
   });
 });

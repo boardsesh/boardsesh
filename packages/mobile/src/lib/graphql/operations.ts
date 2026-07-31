@@ -1245,6 +1245,25 @@ export const SUBSCRIPTION_CLIMB_FIELDS = `
   boardseshConfidence
 `;
 
+// The item-level fields that cross the wire alongside the climb. This client now
+// WRITES all four (`toQueueItemWireInput` in lib/climb-to-queue-item.ts), so
+// omitting them here would make them FLAP: we would rebuild every peer item
+// without attribution and our next full-queue write would push the gap back to
+// the whole crew — the exact bug #3995 was filed for, one level up from #3927.
+//
+// Exported so `lib/__tests__/queue-conversion.test.ts` can assert the rebuild
+// covers exactly this set, and read straight out of this source by
+// packages/backend/src/__tests__/queue-climb-field-contract.test.ts, which ties
+// it to the GraphQL `ClimbQueueItemInput`.
+export const SUBSCRIPTION_QUEUE_ITEM_FIELDS = `
+  uuid
+  climb { ${SUBSCRIPTION_CLIMB_FIELDS} }
+  addedBy
+  addedByUser { id username avatarUrl }
+  tickedBy
+  suggested
+`;
+
 // QueueItemAdded.item is ClimbQueueItem! and CurrentClimbChanged.item is
 // ClimbQueueItem — GraphQL rejects overlapping field selections with
 // differing nullability across union members ('Fields "item" conflict ...
@@ -1262,15 +1281,15 @@ export const QUEUE_UPDATES_SUBSCRIPTION = `
           sequence
           stateHash
           stateHashOrdered
-          queue { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
-          currentClimbQueueItem { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
+          queue { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+          currentClimbQueueItem { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
         }
       }
       ... on QueueItemAdded {
         sequence
         stateHash
         stateHashOrdered
-        addedItem: item { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
+        addedItem: item { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
         position
       }
       ... on QueueItemRemoved {
@@ -1291,7 +1310,7 @@ export const QUEUE_UPDATES_SUBSCRIPTION = `
         sequence
         stateHash
         stateHashOrdered
-        currentItem: item { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
+        currentItem: item { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
         clientId
         correlationId
       }
@@ -1328,8 +1347,8 @@ export const GET_SESSION_QUEUE_STATE = gql`
         sequence
         stateHash
         stateHashOrdered
-        queue { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
-        currentClimbQueueItem { uuid climb { ${SUBSCRIPTION_CLIMB_FIELDS} } }
+        queue { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
+        currentClimbQueueItem { ${SUBSCRIPTION_QUEUE_ITEM_FIELDS} }
       }
     }
   }
