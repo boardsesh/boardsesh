@@ -81,6 +81,9 @@ function mapRawGymRow(row: Record<string, unknown>): typeof dbSchema.gyms.$infer
     ownerId: row.owner_id as string,
     address: (row.address as string | null) ?? null,
     website: (row.website as string | null) ?? null,
+    // The raw query is a `SELECT *`, so the column is present; fall back to the
+    // safe value (un-vouched) rather than trusting a missing key (#3431).
+    websiteVouchedByOwner: row.website_vouched_by_owner === true,
     contactEmail: (row.contact_email as string | null) ?? null,
     contactPhone: (row.contact_phone as string | null) ?? null,
     latitude: row.latitude != null ? Number(row.latitude) : null,
@@ -950,6 +953,11 @@ export const socialGymMutations = {
         description: validatedInput.description ?? null,
         address: validatedInput.address ?? null,
         website: validatedInput.website ?? null,
+        // The creator IS the owner, so a website supplied at creation is
+        // owner-vouched and may drive the self-service domain claim (#3431).
+        // Written explicitly rather than leaning on the DB default so the intent
+        // reads here, next to the website it describes.
+        websiteVouchedByOwner: validatedInput.website != null,
         contactEmail: validatedInput.contactEmail ?? null,
         contactPhone: validatedInput.contactPhone ?? null,
         latitude: validatedInput.latitude ?? null,
@@ -990,6 +998,7 @@ export const socialGymMutations = {
     const userId = ctx.userId!;
 
     const gym = await requireGymEditAccess(validatedInput.gymUuid, userId);
+    const callerIsGymOwner = gym.ownerId === userId;
 
     const updateValues: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -1001,7 +1010,19 @@ export const socialGymMutations = {
     if (validatedInput.name !== undefined) updateValues.name = validatedInput.name;
     if (validatedInput.description !== undefined) updateValues.description = validatedInput.description;
     if (validatedInput.address !== undefined) updateValues.address = validatedInput.address;
-    if (validatedInput.website !== undefined) updateValues.website = validatedInput.website;
+    if (validatedInput.website !== undefined) {
+      updateValues.website = validatedInput.website;
+      // Provenance for the domain-claim path (#3431): only the owner's own edit
+      // vouches for a website. A non-owner CHANGING it drops the vouch; a
+      // non-owner saving the form with the website untouched must not (the
+      // manage form posts every field on every save, so an editor fixing the
+      // description would otherwise silently disable the owner's claim path).
+      if (callerIsGymOwner) {
+        updateValues.websiteVouchedByOwner = validatedInput.website != null;
+      } else if (validatedInput.website !== gym.website) {
+        updateValues.websiteVouchedByOwner = false;
+      }
+    }
     if (validatedInput.contactEmail !== undefined) updateValues.contactEmail = validatedInput.contactEmail;
     if (validatedInput.contactPhone !== undefined) updateValues.contactPhone = validatedInput.contactPhone;
     if (validatedInput.latitude !== undefined) updateValues.latitude = validatedInput.latitude;
