@@ -428,6 +428,15 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     // fire — one call, at 40.
     expect(queueClimbStatsRecomputeMock).toHaveBeenCalledTimes(1);
     expect(queueClimbStatsRecomputeMock).toHaveBeenCalledWith('moonboard', MOON_GRADED_40, 40);
+    // Reported off the RETURNING row, after the UPDATE landed — same stance as
+    // saveTick, so one event name means one thing across both mutations.
+    const events = snapEvents();
+    expect(events).toHaveLength(1);
+    expect(events[0][1].properties).toMatchObject({
+      climbUuid: MOON_GRADED_40,
+      requestedAngle: 25,
+      effectiveAngle: 40,
+    });
   });
 
   // 10. A quality/comment-only edit must not reach the resolver at all — a
@@ -453,5 +462,9 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     await tickMutations.updateTick(undefined, { uuid: existing.uuid, input: { comment: 'crimpy' } }, authCtx());
 
     expect(await storedAngles(MOON_BOTH_ANGLES)).toEqual([15]);
+    // And nothing is reported: the tick sits at an angle nothing grades, but we
+    // did not move it, so the counter must stay silent. The post-UPDATE report
+    // compares against `validatedInput.angle`, which this edit never sets.
+    expect(snapEvents()).toHaveLength(0);
   });
 });

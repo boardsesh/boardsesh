@@ -1191,29 +1191,17 @@ export const tickMutations = {
       // otherwise strand the tick exactly the way a fresh save used to. Resolved
       // only inside this branch: a quality/comment-only edit must never snap a
       // historical tick that predates the fix.
+      //
+      // Resolved here, REPORTED after the UPDATE lands (below) — the same stance
+      // saveTick takes, so the counter means one thing at both call sites: ticks
+      // we actually moved.
       if (validatedInput.angle !== undefined) {
-        const effectiveAngle = await resolveMoonBoardTickAngle(tx, {
+        updates.angle = await resolveMoonBoardTickAngle(tx, {
           boardType: targetTick.boardType,
           climbUuid: targetTick.climbUuid,
           requestedAngle: validatedInput.angle,
           onError: (error) => logger.error('[updateTick] moonboard tick angle resolution failed:', error),
         });
-        updates.angle = effectiveAngle;
-        if (effectiveAngle !== validatedInput.angle) {
-          logger.warn(
-            `[updateTick] moonboard tick angle snapped to the climb's graded angle (#3529): ` +
-              `tick=${uuid} requested=${validatedInput.angle} effective=${effectiveAngle} user=${userId}`,
-          );
-          captureBackendEvent('MoonBoard Tick Angle Snapped', {
-            distinctId: userId,
-            properties: {
-              climbUuid: targetTick.climbUuid,
-              requestedAngle: validatedInput.angle,
-              effectiveAngle,
-            },
-            processPersonProfile: false,
-          });
-        }
       }
 
       const finalStatus = validatedInput.status ?? targetTick.status;
@@ -1272,6 +1260,27 @@ export const tickMutations = {
     }
 
     const updated = mutationResult.updatedTarget;
+
+    // Report the #3529 snap only once the UPDATE has landed, off the RETURNING
+    // row — the saveTick stance, applied here so one `MoonBoard Tick Angle
+    // Snapped` event means the same thing whichever mutation emitted it. The
+    // `angle !== undefined` guard keeps a quality/comment-only edit silent even
+    // when the tick already sits at an angle its climb isn't graded at.
+    if (validatedInput.angle !== undefined && updated.angle !== validatedInput.angle) {
+      logger.warn(
+        `[updateTick] moonboard tick angle snapped to the climb's graded angle (#3529): ` +
+          `tick=${uuid} requested=${validatedInput.angle} effective=${updated.angle} user=${userId}`,
+      );
+      captureBackendEvent('MoonBoard Tick Angle Snapped', {
+        distinctId: userId,
+        properties: {
+          climbUuid: updated.climbUuid,
+          requestedAngle: validatedInput.angle,
+          effectiveAngle: updated.angle,
+        },
+        processPersonProfile: false,
+      });
+    }
 
     logger.info(
       `[updateTick] updated tick=${updated.uuid} user=${userId} ` +
