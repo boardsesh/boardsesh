@@ -133,6 +133,7 @@ export default defineConfig({
       './packages/shared-schema/vite.config.ts',
       './packages/mobile/vite.config.ts',
       './scripts/vite.config.ts',
+      './deploy/app-subdomain/vite.config.ts',
     ],
   },
   staged: {

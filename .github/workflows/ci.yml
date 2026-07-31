@@ -36,6 +36,12 @@ jobs:
       sharedSchema: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.sharedSchema }}
       i18nCatalogs: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.i18nCatalogs }}
       rootCi: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.rootCi }}
+      # Files that decide what ships to app.boardsesh.com (Cloudflare Pages
+      # config + the export/build/deploy pipeline that produces it). None of
+      # these match any other filter above, so without this a PR touching only
+      # deploy/app-subdomain/_headers ran zero jobs and ci-status passed on
+      # `skipped`. Gates the `deploy-config` job (see below).
+      deployConfig: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.deployConfig }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
@@ -48,6 +54,10 @@ jobs:
       # shared-schema) that wouldn't trigger anyJs but still need setup so
       # test-backend / mobile-bundle / codegen-drift can run.
       runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.rootCi == 'true' }}
+      # NOTE: deployConfig is deliberately NOT part of runAny — the deploy-config
+      # job below needs [changes] only (no bun-install/build:db setup pass), so a
+      # deploy/app-subdomain-only PR doesn't pay for a `setup` run nothing else
+      # would consume.
     steps:
       - uses: actions/checkout@v6
       - id: filter
@@ -99,6 +109,15 @@ jobs:
               - 'packages/shared/graphql/**'
             i18nCatalogs:
               - 'packages/shared/i18n/locales/**'
+            # Everything that decides what ships to app.boardsesh.com: the
+            # Cloudflare Pages config copied into the export at deploy time,
+            # the export/build scripts that produce it, and the workflow that
+            # deploys it. See deploy/app-subdomain/README.md.
+            deployConfig:
+              - 'deploy/app-subdomain/**'
+              - 'scripts/build-expo-web-export.sh'
+              - 'Dockerfile.web'
+              - '.github/workflows/production-deploy.yml'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -374,6 +393,30 @@ jobs:
         run: vp run check:i18n
       - name: Check orphaned i18n keys
         run: vp run check:i18n:orphans
+
+  deploy-config:
+    needs: [changes]
+    # Deliberately not `--changed`-filtered: the tests read `_headers`/`_redirects`
+    # via fs at run time (not a static import), so Vitest's `--changed` module-graph
+    # analysis would never mark them as related to a diff that only touches those
+    # files. On a PR, a full un-filtered run of this one small project is what makes
+    # a CSP or SPA-fallback regression fail CI. (Pushes to main run the project a
+    # second time inside test-default, which reads its project list off the root
+    # vite.config.ts — harmless, and no substitute for this job on PRs.)
+    if: needs.changes.outputs.deployConfig == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate deploy/app-subdomain config (_headers, _redirects, no-CSP rule)
+        run: vp test run --project deploy-app-subdomain
 
   test-default:
     needs: [changes, setup]
@@ -822,6 +865,7 @@ jobs:
       - commit-lint
       - release-notes
       - changelog-owned
+      - deploy-config
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

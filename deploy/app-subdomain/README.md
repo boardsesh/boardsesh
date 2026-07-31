@@ -1,8 +1,10 @@
 # `deploy/app-subdomain/` — Cloudflare Pages config for app.boardsesh.com
 
-These two files (`_redirects`, `_headers`) are copied into the standalone Expo
-web export at deploy time and shipped to the `boardsesh-app` Cloudflare Pages
-project. They are **not** part of the export itself — the export recipe
+`_redirects` and `_headers` are copied into the standalone Expo web export at
+deploy time and shipped to the `boardsesh-app` Cloudflare Pages project. They
+are the only deployed files here; the rest of the directory is this README plus
+the CI tests that guard them (`__tests__/`, `vite.config.ts`). They are **not**
+part of the export itself — the export recipe
 (`scripts/build-expo-web-export.sh --subdomain`) emits a `baseUrl /` static SPA;
 this directory adds the host-level SPA fallback and caching rules Pages needs.
 
@@ -43,6 +45,21 @@ else falls through to the shell.
 allowances) breaks board rendering outright. This is the same constraint the
 `/app` surface documents — see the "WASM glue needs `Function()`" note in
 `docs/expo-web.md`.
+
+`__tests__/headers.test.ts` enforces it. A policy that restricts script sources
+fails CI unless it grants both `'unsafe-eval'` and `'wasm-unsafe-eval'`, and
+that covers `default-src` too, since `script-src` falls back to it. If the
+renderer ever stops needing `new Function(...)`, relax the test in the same PR
+that relaxes this rule.
+
+## Editing these files
+
+Run `vp test run --project deploy-app-subdomain`. The suite parses both config
+files and asserts what Cloudflare would send for concrete paths: the CSP rule
+above, the `noindex` tag, forever-caching on content-hashed assets only, and the
+`200` SPA rewrite for deep links. The `deploy-config` job in
+`.github/workflows/ci.yml` runs it on every PR touching this directory, the
+export script, `Dockerfile.web`, or the deploy workflow.
 
 ## Why `EXPO_PUBLIC_WEB_URL` is www, not app
 

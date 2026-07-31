@@ -103,7 +103,11 @@ jobs:
           # Web deploys broadly: any change that isn't purely docs or mobile.
           WEB_CHANGED=false
           # app.boardsesh.com (standalone Expo web export) — deploys on the mobile
-          # app, its shared deps, the export script, or the CF Pages host config.
+          # app, its shared deps, the export script, or the two CF Pages host
+          # config files. Those two are named individually rather than globbed as
+          # `deploy/app-subdomain/*`: `case` wildcards span `/`, so the glob also
+          # caught the directory's README and its CI tests, and editing a comment
+          # in a test kicked off a production deploy.
           APP_CHANGED=false
           for file in $CHANGED_FILES; do
             case "$file" in
@@ -119,7 +123,7 @@ jobs:
                 ;;
             esac
             case "$file" in
-              packages/mobile/*|packages/shared/*|packages/shared-schema/*|scripts/build-expo-web-export.sh|deploy/app-subdomain/*)
+              packages/mobile/*|packages/shared/*|packages/shared-schema/*|scripts/build-expo-web-export.sh|deploy/app-subdomain/_headers|deploy/app-subdomain/_redirects)
                 APP_CHANGED=true
                 ;;
             esac
