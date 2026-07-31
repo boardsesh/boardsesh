@@ -287,28 +287,29 @@ export const LogAscentForm: React.FC<LogAscentFormProps> = ({
         void handleSubmit(formValues);
       }}
     >
-      {showDriftBanner && wallClimb && (
-        // severity="warning" — wall-drift is a decide-what-to-do event,
-        // not ambient FYI. The Switch button renders under the body so
-        // long climb names (Aurora's "Tortured Soul on Sloping Crystal"
-        // shape) don't wrap awkwardly inside MuiAlert's right-aligned
-        // action slot on narrow phones (UI review E).
-        <MuiAlert severity="warning" onClose={() => setBannerDismissed(true)}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
-            <Box component="span">
-              {tProfile('logbook.form.wallMoved', {
-                wallClimb: wallClimb.name,
-                loggingClimb: currentClimb.name,
-              })}
+      {showDriftBanner &&
+        wallClimb && (
+          // severity="warning" — wall-drift is a decide-what-to-do event,
+          // not ambient FYI. The Switch button renders under the body so
+          // long climb names (Aurora's "Tortured Soul on Sloping Crystal"
+          // shape) don't wrap awkwardly inside MuiAlert's right-aligned
+          // action slot on narrow phones (UI review E).
+          <MuiAlert severity="warning" onClose={() => setBannerDismissed(true)}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
+              <Box component="span">
+                {tProfile('logbook.form.wallMoved', {
+                  wallClimb: wallClimb.name,
+                  loggingClimb: currentClimb.name,
+                })}
+              </Box>
+              {onSwitchClimb && (
+                <Button color="inherit" size="small" variant="outlined" onClick={handleSwitch}>
+                  {tProfile('logbook.form.switchClimb', { climbName: wallClimb.name })}
+                </Button>
+              )}
             </Box>
-            {onSwitchClimb && (
-              <Button color="inherit" size="small" variant="outlined" onClick={handleSwitch}>
-                {tProfile('logbook.form.switchClimb', { climbName: wallClimb.name })}
-              </Button>
-            )}
-          </Box>
-        </MuiAlert>
-      )}
+          </MuiAlert>
+        )}
 
       <FormSection title={tProfile('logbook.form.sections.details')}>
         <FormField label={tProfile('logbook.form.logType')}>
