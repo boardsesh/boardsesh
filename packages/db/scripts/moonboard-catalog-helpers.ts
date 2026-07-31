@@ -433,7 +433,7 @@ export function mapCatalogConfigStats(config: MoonBoardCatalogConfiguration, ang
   return {
     angle,
     difficultyId: moonBoardGradeToDifficultyId(config.grade),
-    sourceGrade: config.grade,
+    sourceGrade: config.grade ?? '',
     isBenchmark: Boolean(config.isBenchmark),
     ascensionistCount: config.repeats ?? 0,
     qualityAverage: rating > 0 ? rating : null,
