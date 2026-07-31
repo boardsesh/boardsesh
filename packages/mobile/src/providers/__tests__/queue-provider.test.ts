@@ -83,14 +83,10 @@ describe('toClimbQueueItem', () => {
     expect(result.climb.benchmark_difficulty).toBeNull();
   });
 
-  it('produces a valid ClimbQueueItem shape without extra properties', () => {
-    const subscriptionItem = makeSubscriptionItem('qi-3', 'climb-123', 'Slab King');
-
-    const result = toClimbQueueItem(subscriptionItem);
-
-    // Should have exactly uuid and climb at the top level
-    expect(Object.keys(result)).toEqual(['uuid', 'climb']);
-  });
+  // The top-level field set of a rebuilt item is asserted in
+  // packages/mobile/src/lib/__tests__/queue-conversion.test.ts, which derives the
+  // expectation by parsing SUBSCRIPTION_QUEUE_ITEM_FIELDS. A hardcoded key list
+  // here would just be a second transcription that drifts on the next field.
 });
 
 // ── INITIAL_QUEUE_DATA ──────────────────────────────────────────────────

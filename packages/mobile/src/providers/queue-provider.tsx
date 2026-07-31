@@ -273,12 +273,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
    * an item that already carries attribution, and skip anything already sitting
    * in this device's queue (that item is not ours to claim; whatever it carries
    * came from the crew).
+   *
+   * `existingUuids` lets a whole-queue write hoist that membership lookup once
+   * rather than rescanning the current queue per item — playlist activation can
+   * hand us the entire board list. Omit it and the scan is used.
    */
-  const attributeNewItem = useCallback((item: ClimbQueueItem): ClimbQueueItem => {
+  const attributeNewItem = useCallback((item: ClimbQueueItem, existingUuids?: Set<string>): ClimbQueueItem => {
     const self = selfAttributionRef.current;
     if (!self) return item;
     if (item.addedBy || item.addedByUser) return item;
-    if (stateRef.current.queue.some((queueItem) => queueItem.uuid === item.uuid)) return item;
+    const alreadyQueued = existingUuids
+      ? existingUuids.has(item.uuid)
+      : stateRef.current.queue.some((queueItem) => queueItem.uuid === item.uuid);
+    if (alreadyQueued) return item;
     return { ...item, ...self };
   }, []);
 
@@ -911,10 +918,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // no author while peers saw one (#3995). The membership check reads
       // `stateRef.current.queue`, which is still the pre-dispatch queue here, so
       // a climb the crew already had keeps whoever queued it.
-      const attributedQueue = queue.map((item) => attributeNewItem(item));
+      const existingUuids = new Set(stateRef.current.queue.map((queueItem) => queueItem.uuid));
+      const attributedQueue = queue.map((item) => attributeNewItem(item, existingUuids));
       const attributedCurrent = currentClimbQueueItem
         ? (attributedQueue.find((item) => item.uuid === currentClimbQueueItem.uuid) ??
-          attributeNewItem(currentClimbQueueItem))
+          attributeNewItem(currentClimbQueueItem, existingUuids))
         : currentClimbQueueItem;
       dispatch({
         type: 'UPDATE_QUEUE',
