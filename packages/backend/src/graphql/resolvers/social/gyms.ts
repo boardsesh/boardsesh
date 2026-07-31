@@ -1017,15 +1017,14 @@ export const socialGymMutations = {
     if (validatedInput.address !== undefined) updateValues.address = validatedInput.address;
     if (validatedInput.website !== undefined) {
       updateValues.website = validatedInput.website;
-      // Provenance for the domain-claim path (#3431): only the owner's own edit
-      // vouches for a website. A non-owner CHANGING it drops the vouch; a
-      // non-owner saving the form with the website untouched must not (the
-      // manage form posts every field on every save, so an editor fixing the
-      // description would otherwise silently disable the owner's claim path).
-      if (callerIsGymOwner) {
-        updateValues.websiteVouchedByOwner = validatedInput.website != null;
-      } else if (validatedInput.website !== gym.website) {
-        updateValues.websiteVouchedByOwner = false;
+      // Provenance for the domain-claim path (#3431): only an actual write of the
+      // website re-evaluates the vouch, and only the owner's own write vouches.
+      // An unchanged website leaves the flag alone in both directions — the manage
+      // form posts every field on every save, so an editor fixing the description
+      // must not silently disable the owner's claim path, and an owner saving the
+      // form must not silently re-vouch a URL an editor put there.
+      if (validatedInput.website !== gym.website) {
+        updateValues.websiteVouchedByOwner = callerIsGymOwner && validatedInput.website != null;
       }
     }
     if (validatedInput.contactEmail !== undefined) updateValues.contactEmail = validatedInput.contactEmail;
