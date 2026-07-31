@@ -430,14 +430,10 @@ export function useSessionRealtime({
         // subscription-error branch. Unlike that branch this toasts: a client
         // whose join fails here never receives the live `SessionEnded`
         // subscription event (which does toast), so this is often the only
-        // signal the user gets that the session is gone. Guarded on the still-
-        // active session so a late error from a superseded A→B switch can't
-        // clear the new session.
-        if (
-          joinError instanceof GraphQLOperationError &&
-          joinError.extensions?.code === 'SESSION_ENDED' &&
-          sessionIdRef.current === sessionId
-        ) {
+        // signal the user gets that the session is gone. A late error from a
+        // superseded A→B switch is already dropped by the guard at the top of
+        // this catch block, so it can't clear the new session.
+        if (joinError instanceof GraphQLOperationError && joinError.extensions?.code === 'SESSION_ENDED') {
           void clearSessionRef.current();
           showToastRef.current(tRef.current('mobile.toast.sessionEnded'), 'success');
           return;
