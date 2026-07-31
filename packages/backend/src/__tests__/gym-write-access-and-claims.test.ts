@@ -96,11 +96,17 @@ const insertGym = async (opts: {
   uuid?: string;
   website?: string | null;
   isPublic?: boolean;
+  websiteVouchedByOwner?: boolean;
 }): Promise<{ id: number; uuid: string }> => {
   const { ownerId, name, uuid = uuidv4(), website = null, isPublic = true } = opts;
+  // Default to the same rule the 0189 backfill encodes: a seeded website counts
+  // as owner-vouched only on a user-owned gym. A SYSTEM-owned gym can never be
+  // vouched in production (its owner is the never-logged-in import user), so the
+  // helper must not seed that fiction. Pass the flag explicitly to force a value.
+  const websiteVouchedByOwner = opts.websiteVouchedByOwner ?? (website != null && ownerId !== SYSTEM_OWNER);
   const result = await db.execute(sql`
-    INSERT INTO gyms (uuid, name, slug, owner_id, website, is_public, created_at, updated_at)
-    VALUES (${uuid}, ${name}, ${uuid}, ${ownerId}, ${website}, ${isPublic}, now(), now())
+    INSERT INTO gyms (uuid, name, slug, owner_id, website, website_vouched_by_owner, is_public, created_at, updated_at)
+    VALUES (${uuid}, ${name}, ${uuid}, ${ownerId}, ${website}, ${websiteVouchedByOwner}, ${isPublic}, now(), now())
     RETURNING id
   `);
   return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
@@ -158,6 +164,23 @@ const gymMemberRole = async (gymId: number, userId: string): Promise<string | nu
   `);
   const row = Array.from(result as Iterable<{ role: string }>)[0];
   return row ? row.role : null;
+};
+
+// Whether the gym's current website is trusted for the self-service domain claim
+// (#3431). Read straight from the column so a test names the state transition,
+// not just its downstream effect.
+const gymWebsiteVouched = async (gymId: number): Promise<boolean> => {
+  const result = await db.execute(sql`SELECT website_vouched_by_owner FROM gyms WHERE id = ${gymId} LIMIT 1`);
+  return Array.from(result as Iterable<{ website_vouched_by_owner: boolean }>)[0].website_vouched_by_owner;
+};
+
+const claimRowCount = async (gymId: number): Promise<number> => {
+  const [countRow] = Array.from(
+    (await db.execute(sql`SELECT count(*)::int AS c FROM gym_claims WHERE gym_id = ${gymId}`)) as Iterable<{
+      c: number;
+    }>,
+  );
+  return Number(countRow.c);
 };
 
 const gymOwnerId = async (gymUuid: string): Promise<string> => {
@@ -684,6 +707,197 @@ describe('requestGymClaim — domain path', () => {
       ),
     ).rejects.toThrow(/no verifiable website domain/);
     expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================================
+// #3431 — only a website the gym's OWNER put on the listing can auto-transfer
+// ownership by email. Everything else falls back to admin review.
+// ============================================================================
+
+describe('requestGymClaim — the website must be owner-vouched to self-verify (#3431)', () => {
+  it('blocks a colluding second account from riding a community-leader-set website into ownership', async () => {
+    await insertUser(SYSTEM_OWNER);
+    // A synced catalog listing: owned by the never-logged-in import user, no
+    // website yet, carrying a kilter board so KILTER_LEADER's scoped role covers it.
+    const catalogGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Catalog Wall', website: null });
+    await insertBoard(catalogGym.id, SYSTEM_OWNER, 'kilter');
+
+    // The leader may still curate a website — that stays allowed.
+    const updated = await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: catalogGym.uuid, website: 'https://attacker-owned.example' } },
+      authCtx(KILTER_LEADER),
+    );
+    expect(updated.website).toBe('https://attacker-owned.example');
+    expect(await gymWebsiteVouched(catalogGym.id)).toBe(false);
+
+    // …but their second account cannot then self-verify into ownership.
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: catalogGym.uuid, claimEmail: 'boss@attacker-owned.example' } },
+        authCtx(SECOND_TARGET),
+      ),
+    ).rejects.toThrow(/hasn't been confirmed by the gym's owner/);
+
+    expect(await claimRowCount(catalogGym.id)).toBe(0);
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+    expect(await gymOwnerId(catalogGym.uuid)).toBe(SYSTEM_OWNER);
+  });
+
+  it('still lets an owner-set website self-serve by email', async () => {
+    // Seeded UN-vouched on purpose: the owner's own updateGym is the only thing
+    // that may flip the flag, so this reddens if that branch is removed.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Bonsist Claim', website: null });
+
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://www.bonsist.bg' } },
+      authCtx(OWNER),
+    );
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(true);
+
+    const result = await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid: claimGym.uuid, claimEmail: 'manager@bonsist.bg' } },
+      authCtx(CLAIMANT),
+    );
+
+    expect(result).toEqual({ status: 'email_sent', email: 'manager@bonsist.bg' });
+    const rows = Array.from(
+      (await db.execute(sql`
+        SELECT method, status, token_hash FROM gym_claims WHERE gym_id = ${claimGym.id}
+      `)) as Iterable<{ method: string; status: string; token_hash: string | null }>,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].method).toBe('domain');
+    expect(rows[0].token_hash).toBeTruthy();
+    expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('vouches for a website the creator supplied at createGym time', async () => {
+    const created = await socialGymMutations.createGym(
+      null,
+      { input: { name: 'New Wall', website: 'https://newwall.example' } },
+      authCtx(PLAIN_USER),
+    );
+
+    const result = await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid: created.uuid, claimEmail: 'manager@newwall.example' } },
+      authCtx(CLAIMANT),
+    );
+
+    expect(result).toEqual({ status: 'email_sent', email: 'manager@newwall.example' });
+    expect(sendGymClaimVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the vouch when an editor saves the form with the website untouched', async () => {
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Bonsist Editor Save', website: null });
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://bonsist.bg' } },
+      authCtx(OWNER),
+    );
+    await socialGymMutations.grantGymWriteAccess(
+      null,
+      { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
+      authCtx(OWNER),
+    );
+
+    // Exactly what the manage form posts: every field, website unchanged.
+    const edited = await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, description: 'New hours', website: 'https://bonsist.bg' } },
+      authCtx(EDITOR_TARGET),
+    );
+    expect(edited.description).toBe('New hours');
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(true);
+
+    const result = await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid: claimGym.uuid, claimEmail: 'manager@bonsist.bg' } },
+      authCtx(CLAIMANT),
+    );
+    expect(result).toEqual({ status: 'email_sent', email: 'manager@bonsist.bg' });
+  });
+
+  it('drops the vouch when an editor CHANGES the website', async () => {
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Bonsist Editor Rewrite', website: null });
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://bonsist.bg' } },
+      authCtx(OWNER),
+    );
+    await socialGymMutations.grantGymWriteAccess(
+      null,
+      { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
+      authCtx(OWNER),
+    );
+
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://attacker-owned.example' } },
+      authCtx(EDITOR_TARGET),
+    );
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(false);
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@attacker-owned.example' } },
+        authCtx(CLAIMANT),
+      ),
+    ).rejects.toThrow(/hasn't been confirmed by the gym's owner/);
+    expect(await claimRowCount(claimGym.id)).toBe(0);
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+
+    // KNOWN RESIDUAL, documented rather than fixed in code: a token minted while
+    // the gym was still vouched keeps redeeming for its 24h life, because
+    // verifyGymClaimByToken re-checks only the hash, status and expiry. That is
+    // the in-flight window drizzle/0189_backfill_gym_website_vouched.sql closes
+    // at deploy time by expiring pending domain claims on un-vouched gyms. It
+    // stays open in code on purpose: a flag re-check at redemption would also
+    // reject the legitimate SYSTEM-owned catalog claim covered above.
+    await insertClaim({
+      gymId: claimGym.id,
+      claimantUserId: CLAIMANT,
+      method: 'domain',
+      status: 'pending',
+      claimEmail: 'manager@bonsist.bg',
+      tokenHash: hashClaimToken('minted-before-the-editor-rewrote-it'),
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    const redeemed = await verifyGymClaimByToken('minted-before-the-editor-rewrote-it');
+    expect(redeemed.ok).toBe(true);
+    expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
+  });
+
+  it('leaves the admin-review fallback open on an un-vouched gym', async () => {
+    await insertUser(SYSTEM_OWNER);
+    const catalogGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Catalog Wall', website: null });
+    await insertBoard(catalogGym.id, SYSTEM_OWNER, 'kilter');
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: catalogGym.uuid, website: 'https://attacker-owned.example' } },
+      authCtx(KILTER_LEADER),
+    );
+
+    const result = await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid: catalogGym.uuid, message: 'I actually run this place' } },
+      authCtx(CLAIMANT),
+    );
+
+    expect(result).toEqual({ status: 'admin_review' });
+    const rows = Array.from(
+      (await db.execute(sql`
+        SELECT method, status FROM gym_claims WHERE gym_id = ${catalogGym.id}
+      `)) as Iterable<{ method: string; status: string }>,
+    );
+    expect(rows).toEqual([{ method: 'admin', status: 'pending' }]);
+    expect(sendGymClaimAdminNotification).toHaveBeenCalledTimes(1);
   });
 });
 

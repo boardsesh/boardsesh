@@ -716,7 +716,8 @@ export const schemaSQL = `
     "created_at" timestamp DEFAULT now() NOT NULL,
     "updated_at" timestamp DEFAULT now() NOT NULL,
     "deleted_at" timestamp,
-    "sync_frozen_at" timestamp
+    "sync_frozen_at" timestamp,
+    "website_vouched_by_owner" boolean DEFAULT false NOT NULL
   );
   CREATE INDEX IF NOT EXISTS "gyms_merged_into_idx" ON "gyms" ("merged_into_gym_id") WHERE "merged_into_gym_id" IS NOT NULL;
 
