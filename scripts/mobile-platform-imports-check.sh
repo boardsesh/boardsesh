@@ -25,10 +25,18 @@ gorhom_scan_dirs=(packages/mobile packages/shared)
 
 # swift-ui (and its sub-paths, e.g. /modifiers) must live only in *.ios.{ts,tsx}.
 # Match a quoted module specifier so a stray mention in a comment doesn't trip it.
+#
+# Vitest suites under `__tests__/` are exempt: they name the specifier only to
+# vi.mock() it (the call needs a literal path), they run in node, and Metro never
+# reaches them from an app entry — so they cannot produce the device crash this
+# guard exists to prevent. Everything Metro can reach is still scanned, and the
+# exemption is narrow: `__tests__/<file>.test.ts(x)` only, so a production module
+# can't dodge the guard by living in a test folder.
 swiftui_bad=$(
   grep -rlE "['\"]@expo/ui/swift-ui" "${scan_dirs[@]}" \
     --include='*.ts' --include='*.tsx' \
     | grep -vE '\.ios\.(ts|tsx)$' \
+    | grep -vE '/__tests__/[^/]+\.test\.(ts|tsx)$' \
     || true
 )
 
