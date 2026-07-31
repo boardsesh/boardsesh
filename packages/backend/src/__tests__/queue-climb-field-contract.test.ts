@@ -253,12 +253,38 @@ describe('queue climb field parity: the two READ paths', () => {
  * off web-queued climbs. Both platforms now write all four, which makes the READ
  * side flap-critical — hence this parity check, the read-side counterpart to the
  * `satisfies Record<keyof ClimbQueueItemInput, true>` guard on the write mapper.
+ *
+ * `NATIVE_IOS_QUEUE_UPDATES` (same shared operations file) is a third, deliberately
+ * slim contract and is NOT guarded here. It feeds the Swift Live Activity / widget,
+ * which only needs to know which climb is current, so it selects a subset on purpose
+ * to keep the native payload small. It cannot cause the flap above: the widget's
+ * `sendSetCurrentClimb` omits `shouldAddToQueue`, so the backend never appends a queue
+ * row for it and the shared reducer never rewrites an existing entry — only the
+ * current-climb pointer loses attribution, not the rows the avatars render from.
  */
-describe('queue item field parity: the two READ paths', () => {
+describe('queue item field parity: the shared and mobile READ paths', () => {
   const queueItemInputFields = inputTypeFieldNames('ClimbQueueItemInput');
 
   it('found the ClimbQueueItemInput type in the schema', () => {
     expect(queueItemInputFields.size).toBeGreaterThan(0);
+  });
+
+  it('mobile interpolates the shared item selection at every item-selection site', () => {
+    const mobileOperationsSource = readFileSync(
+      new URL('../../../../packages/mobile/src/lib/graphql/operations.ts', import.meta.url),
+      'utf-8',
+    );
+    const itemSelectionSites = mobileOperationsSource.match(/\b(?:queue|currentClimbQueueItem|item)\s*\{/g) ?? [];
+    const sharedSelectionInterpolations = mobileOperationsSource.match(/\$\{SUBSCRIPTION_QUEUE_ITEM_FIELDS\}/g) ?? [];
+
+    expect(itemSelectionSites.length).toBeGreaterThan(0);
+    expect(
+      sharedSelectionInterpolations.length,
+      'A queue-item selection set in mobile operations.ts is written out longhand instead of ' +
+        'interpolating SUBSCRIPTION_QUEUE_ITEM_FIELDS. The parity check below unions field names ' +
+        'across every item selection in a document, so one complete site would mask the incomplete ' +
+        'sibling — and the missing fields would FLAP.',
+    ).toBe(itemSelectionSites.length);
   });
 
   for (const [name, fields] of [

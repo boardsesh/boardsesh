@@ -255,6 +255,12 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   //
   // Requires BOTH a profile id and a non-empty username: an anonymous phone must
   // not push a blank-named avatar onto every peer's queue row.
+  //
+  // Assigned during render, so there is a window between a session join landing
+  // a new `clientId` and the next render where a stamp would carry
+  // `addedBy: null` with `addedByUser` populated. Peers render the avatar off
+  // `addedByUser`, so the row still shows the right person; only the legacy
+  // clientId field is absent. Same trade the other during-render refs here make.
   const selfAttributionRef = useRef<QueueItemAttribution | null>(null);
   selfAttributionRef.current =
     partyProfile?.id && partyUsername
@@ -468,7 +474,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     // tickedBy / suggested) that used to be dropped here, which anonymised every
     // climb queued from a phone and stripped the crew's avatars on the next
     // full-queue write (#3995). See toQueueItemWireInput.
-    toQueueItemInput: (item) => toQueueItemWireInput(item),
+    toQueueItemInput: toQueueItemWireInput,
     // Where a deferred queue-add (a superseded or drained-then-throttled
     // activation) should land, so peers see the order this device shows. Read
     // live off `stateRef` — assigned during render — because the send can fire
