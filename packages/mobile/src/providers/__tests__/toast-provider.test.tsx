@@ -24,6 +24,10 @@ vi.mock('expo-router', () => ({
   useSegments: () => ['(tabs)', 'climbs'],
 }));
 
+vi.mock('../../hooks/use-bottom-accessory', () => ({
+  useNativeTabBar: () => false,
+}));
+
 vi.mock('../../components/Icon', () => ({
   Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }),
 }));
