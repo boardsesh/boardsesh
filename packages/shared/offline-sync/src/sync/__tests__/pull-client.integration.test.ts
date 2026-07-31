@@ -996,6 +996,27 @@ describe('sync layer — real-DDL integration', () => {
       expect(await readCoverage()).toBeGreaterThan(Date.now() - 60_000);
     });
 
+    it('claims no coverage when that first post-update pull never reaches the tail', async () => {
+      // The marker is only honest if it means "this device consumed the whole
+      // tombstone stream at time T". Stamping it up front on an absent marker
+      // would hand a device that has been away 89 days a fresh 80-day window it
+      // never earned — its next pull could then read 'fresh' with the tombstones
+      // already pruned, which is #3474 all over again.
+      await seedStaleDevice();
+      const onCoverageReset = vi.fn();
+      const failingFetch = vi.fn(async () => {
+        throw new Error('Network request failed');
+      }) as unknown as GraphQLFetch;
+
+      await expect(pullSync(db, queryClient, failingFetch, { onCoverageReset })).rejects.toThrow(
+        'Network request failed',
+      );
+
+      expect(await readCoverage()).toBeNull();
+      expect(onCoverageReset).not.toHaveBeenCalled();
+      expect(await countRows('boardsesh_ticks')).toBe(1);
+    });
+
     it('ignores the deletions CHECKPOINT age — only the coverage marker decides', async () => {
       // The checkpoint holds the server-side deleted_at of the last tombstone
       // consumed and only advances on a non-empty page, so a user who has

@@ -702,17 +702,24 @@ async function runBootstrapPhase(
  * deletions pull, so tombstones it never saw are already pruned server-side
  * (issue #3474).
  *
- * Three of the four verdicts do NOT reset:
- *  - `unknown` (no marker): seed it and move on. The key is new, so EVERY
- *    existing install lacks it on the first launch after the update, and there
- *    is no persisted last-sync wall clock to seed from (mobile's lastSyncedAt is
- *    an in-memory store that resets each launch). Treating absence as "stale"
- *    would detonate a fleet-wide reset on the OTA that introduces the marker. A
+ * Three of the four verdicts do NOTHING AT ALL — no reset, and no stamp either.
+ * The marker is written in exactly one place, after the deletions pull below
+ * reaches its tail, because that is the only moment coverage is actually
+ * established. Claiming it here would be a lie a failed or backgrounded first
+ * pull could never take back:
+ *  - `unknown` (no marker, or one below the plausibility floor): the key is new,
+ *    so EVERY existing install lacks it on the first launch after the update,
+ *    and there is no persisted last-sync wall clock to seed from (mobile's
+ *    lastSyncedAt is an in-memory store that resets each launch). Treating
+ *    absence as "stale" would detonate a fleet-wide reset on the rollout. A
  *    device that has ALREADY been away longer than the window therefore keeps
  *    its stale rows — status quo, not a regression, and the only design that
- *    cannot mass-wipe the fleet on rollout.
- *  - `future` (marker dated after now): a clock corrected backwards. Re-stamp so
- *    it can go stale normally again instead of being frozen fresh forever.
+ *    cannot mass-wipe the fleet on rollout. It stays `unknown` until a pull
+ *    actually completes, so a device that can never finish one never claims a
+ *    window it did not have.
+ *  - `future` (marker dated after now): a clock corrected backwards. The
+ *    completed-pass stamp overwrites it with a real `now`, which unfreezes it
+ *    without inventing coverage on a cycle that failed.
  *  - `fresh`: the common path — one sync_meta read and nothing else.
  *
  * A `stale` verdict PROBES the network before touching anything. pullSync runs
@@ -746,17 +753,12 @@ async function enforceDeletionsCoverage(
   const coverageAt = await getDeletionsCoverageAt(db);
   const verdict = evaluateDeletionsCoverage(coverageAt, Date.now());
 
-  if (verdict === 'fresh') return;
-  // Everything that is not 'stale' re-seeds and resets nothing: an absent
-  // marker, a clock still ahead of the stamp, or a value below the plausibility
-  // floor. Keeping the explicit `coverageAt === null` disjunct means an absent
-  // marker can never structurally reach the wipe below, whatever the classifier
-  // is later taught to return — and it narrows coverageAt to a number, so
-  // markerAgeDays needs no fallback for a case that cannot happen.
-  if (coverageAt === null || verdict !== 'stale') {
-    await setDeletionsCoverageAt(db, Date.now());
-    return;
-  }
+  // Only 'stale' does anything. Keeping the explicit `coverageAt === null`
+  // disjunct means an absent marker can never structurally reach the wipe below,
+  // whatever the classifier is later taught to return — and it narrows
+  // coverageAt to a number, so markerAgeDays needs no fallback for a case that
+  // cannot happen.
+  if (coverageAt === null || verdict !== 'stale') return;
 
   // Reachability + auth probe. Its payload is irrelevant; only "did it resolve"
   // matters, so it asks for a single row.
