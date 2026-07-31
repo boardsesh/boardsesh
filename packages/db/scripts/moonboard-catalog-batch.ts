@@ -52,6 +52,14 @@ export type CatalogBatchStaging = {
   holds: CatalogHoldRow[];
   aliases: CatalogAliasRow[];
   counters: CatalogBatchCounters;
+  /**
+   * Setter grade string → how many graded configurations spelled it, for the
+   * grades MOONBOARD_GRADE_TO_DIFFICULTY has no difficulty id for. Counted for
+   * every configuration the mapper emitted, before the dedupe/skip branches:
+   * the point is to name a grade the catalog contains but the map cannot
+   * resolve, which is a property of the catalog file, not of what we wrote.
+   */
+  unmappedGrades: Map<string, number>;
 };
 
 export type StageCatalogBatchArgs = {
@@ -100,11 +108,21 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
     foldedInBatch: 0,
   };
 
+  // Grade strings the shared map has no difficulty id for. Those configurations
+  // still import, but with a NULL grade — indistinguishable from an ungraded
+  // project once they're in the table, so name them in the run log.
+  const unmappedGrades = new Map<string, number>();
+
   for (const problem of problems) {
     const mapped = catalogProblemToClimbs(problem, layoutId);
     if (!mapped) {
       counters.skippedProblems++;
       continue;
+    }
+    for (const stat of mapped.stats) {
+      if (stat.difficultyId !== undefined) continue;
+      const rawGrade = stat.sourceGrade.trim();
+      if (rawGrade.length > 0) unmappedGrades.set(rawGrade, (unmappedGrades.get(rawGrade) ?? 0) + 1);
     }
     const resolved = resolveCatalogClimbUuid(mapped, existingIndex);
 
@@ -317,5 +335,6 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
     holds: [...holdsByKey.values()],
     aliases: [...aliasByUuid.values()],
     counters,
+    unmappedGrades,
   };
 }

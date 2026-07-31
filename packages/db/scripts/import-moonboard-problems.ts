@@ -177,6 +177,10 @@ async function importMoonBoardProblems() {
       const holdsRecords: (typeof boardClimbHolds.$inferInsert)[] = [];
       let skippedGrade = 0;
       let skippedLayout = 0;
+      // Grade strings the shared map has no difficulty id for, kept so the next
+      // grade MoonBoard adds (9A…) shows up in the run log instead of silently
+      // dropping problems.
+      const unmappedGrades = new Map<string, number>();
 
       for (const problem of problems) {
         const layoutId = HOLDSETUP_TO_LAYOUT[problem.holdsetup.apiId];
@@ -188,6 +192,8 @@ async function importMoonBoardProblems() {
         const difficultyId = moonBoardGradeToDifficultyId(problem.grade);
         if (difficultyId === undefined) {
           skippedGrade++;
+          const rawGrade = (problem.grade ?? '').trim();
+          if (rawGrade.length > 0) unmappedGrades.set(rawGrade, (unmappedGrades.get(rawGrade) ?? 0) + 1);
           continue;
         }
 
@@ -261,6 +267,13 @@ async function importMoonBoardProblems() {
       }
 
       if (skippedGrade > 0) console.info(`   Skipped ${skippedGrade} problems with unknown grade`);
+      if (unmappedGrades.size > 0) {
+        const breakdown = [...unmappedGrades.entries()]
+          .sort((left, right) => right[1] - left[1])
+          .map(([grade, count]) => `${grade} (${count})`)
+          .join(', ');
+        console.warn(`   ⚠️  Unmapped MoonBoard grades — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`);
+      }
       if (skippedLayout > 0) console.info(`   Skipped ${skippedLayout} problems with unknown holdsetup`);
 
       // Batch insert climbs

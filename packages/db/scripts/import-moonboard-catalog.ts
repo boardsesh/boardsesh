@@ -192,6 +192,7 @@ async function importMoonBoardCatalog() {
         holds: holdsRecords,
         aliases: aliasRecords,
         counters,
+        unmappedGrades,
       } = stageCatalogBatch({
         problems: dump.problems,
         layoutId,
@@ -208,6 +209,13 @@ async function importMoonBoardCatalog() {
           `${counters.skippedDrifted} skipped as drifted (holds changed under an imported climb), ` +
           `${counters.skippedHijacked} skipped to protect climb rows a merge would repoint`,
       );
+      if (unmappedGrades.size > 0) {
+        const breakdown = [...unmappedGrades.entries()]
+          .sort((left, right) => right[1] - left[1])
+          .map(([grade, count]) => `${grade} (${count})`)
+          .join(', ');
+        console.warn(`   ⚠️  Unmapped MoonBoard grades — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`);
+      }
 
       // One transaction per board: a crash mid-file never leaves a climb without
       // its holds/aliases, and completed boards stay committed for an idempotent
