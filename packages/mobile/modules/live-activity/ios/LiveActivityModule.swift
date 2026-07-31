@@ -106,6 +106,20 @@ public class LiveActivityModule: Module {
             return ["available": false]
         }
 
+        // Called from a React effect after the root commits. Keeping this an
+        // explicit JS→native marker distinguishes background intent launches
+        // that mounted the full React tree from minimal native-only launches.
+        AsyncFunction("markIntentReactRootMounted") { () -> Void in
+            LiveActivityIntentDiagnostics.markReactRootMounted()
+        }
+
+        // AppState's foreground observer calls this. The native store performs
+        // schema/build/TTL/grace validation and atomically consumes each
+        // previous-process interruption at most once.
+        AsyncFunction("consumeInterruptedIntentRuns") { () -> [[String: Any]] in
+            LiveActivityIntentDiagnostics.consumeInterruptedRuns()
+        }
+
         AsyncFunction("startSession") { (options: StartSessionOptions, promise: Promise) in
             self.startSession(options: options, promise: promise)
         }

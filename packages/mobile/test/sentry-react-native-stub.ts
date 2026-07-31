@@ -13,6 +13,7 @@
 
 type StubScope = {
   setLevel: () => void;
+  setFingerprint: () => void;
   setTag: () => void;
   setExtra: () => void;
   setContext: () => void;
@@ -35,7 +36,13 @@ export function setContext(): void {}
 export function setTag(): void {}
 
 export function withScope(callback: (scope: StubScope) => void): void {
-  callback({ setLevel: () => {}, setTag: () => {}, setExtra: () => {}, setContext: () => {} });
+  callback({
+    setLevel: () => {},
+    setFingerprint: () => {},
+    setTag: () => {},
+    setExtra: () => {},
+    setContext: () => {},
+  });
 }
 
 export function flush(): Promise<boolean> {

@@ -37,12 +37,24 @@ enum ClimbNavigationIntent {
     static let httpSuccessCorrelationId = "widget-navigate"
 
     static func perform(direction: ClimbNavigationDirection, label: String) async {
+        #if !WIDGET_EXTENSION
+        let diagnosticKind: LiveActivityIntentDiagnosticKind = direction == .next ? .nextClimb : .previousClimb
+        let diagnosticRun = LiveActivityIntentDiagnostics.begin(kind: diagnosticKind)
+        var completionClass = LiveActivityIntentCompletionClass.success
+        defer { diagnosticRun.complete(completionClass) }
+        #endif
+
         // One notice per intent firing — production TestFlight builds need
         // this signal to diagnose "widget UI moved but wall didn't" reports.
         // Volume is bounded by user taps so the log isn't noisy.
         logger.notice("\(label).perform() running bundle=\(Bundle.main.bundleIdentifier ?? "unknown", privacy: .public) process=\(ProcessInfo.processInfo.processName, privacy: .public) direction=\(direction.rawValue, privacy: .public)")
 
-        guard let defaults = SharedConstants.sharedDefaults else { return }
+        guard let defaults = SharedConstants.sharedDefaults else {
+            #if !WIDGET_EXTENSION
+            completionClass = .sharedDefaultsUnavailable
+            #endif
+            return
+        }
         // No navigationAllowed gate: the widget only shows Prev/Next when this
         // device holds the board (connectedByMe — see SessionFooter), so reaching
         // here means we may drive. Gating visibility rather than the intent fixes
@@ -53,17 +65,37 @@ enum ClimbNavigationIntent {
 
         let (items, currentIndex) = SharedQueueState.load(from: defaults)
         guard let newIndex = direction.newIndex(from: currentIndex, count: items.count) else {
+            #if !WIDGET_EXTENSION
+            completionClass = .navigationOutOfBounds
+            #endif
             return
         }
 
         let navigationResult: WidgetNavigationResult
         if wallControl.requiresServerAuthorization {
+            #if !WIDGET_EXTENSION
+            diagnosticRun.mark(.networkStarted)
+            #endif
             navigationResult = await WidgetNetworking.sendNavigation(action: direction.rawValue, currentIndex: newIndex)
+            #if !WIDGET_EXTENSION
+            switch navigationResult {
+            case .success:
+                diagnosticRun.mark(.networkFinishedSuccess)
+            case .serverRejected:
+                diagnosticRun.mark(.networkFinishedTerminal)
+            case .retryableFailure:
+                diagnosticRun.mark(.networkFinishedRetryable)
+                completionClass = .retryableNetworkFailure
+            }
+            #endif
         } else {
             navigationResult = .success
         }
 
         guard navigationResult != .serverRejected else {
+            #if !WIDGET_EXTENSION
+            completionClass = .serverRejected
+            #endif
             logger.notice("\(label).perform() rejected by server; skipping local widget, BLE, and JS fallback updates")
             return
         }
@@ -91,13 +123,17 @@ enum ClimbNavigationIntent {
             let content = ActivityContent(state: newState, staleDate: Date().addingTimeInterval(SharedConstants.liveActivityStaleInterval))
             await activity.update(content)
         }
+        #if !WIDGET_EXTENSION
+        diagnosticRun.mark(.activityKitUpdated)
+        #endif
 
         // Direct BLE writes happen only after the server accepts party-session
         // navigation, or for local-only sessions. Retryable HTTP failures use
         // the Darwin/WebSocket fallback, whose mutation path owns repainting.
         #if !WIDGET_EXTENSION
-        let bleWriteTask: Task<Void, Never>?
+        let bleWriteTask: Task<Bool, Never>?
         if navigationResult == .success {
+            diagnosticRun.mark(.bleStarted)
             bleWriteTask = Task {
                 await LiveActivityBleBridge.writeBoardForIntent(items: items, currentIndex: newIndex)
             }
@@ -136,11 +172,18 @@ enum ClimbNavigationIntent {
         // re-send is a fast no-op against the wall's last-frame buffer.
         #if !WIDGET_EXTENSION
         if let bleWriteTask {
-            await bleWriteTask.value
+            let writeWasReady = await bleWriteTask.value
+            diagnosticRun.mark(writeWasReady ? .bleFinishedSuccess : .bleFinishedFailure)
+            if !writeWasReady {
+                completionClass = .bleFailure
+            }
         }
         #endif
 
         postQueueNavigateDarwinNotification()
+        #if !WIDGET_EXTENSION
+        diagnosticRun.mark(.darwinPosted)
+        #endif
     }
 
     private static func postQueueNavigateDarwinNotification() {

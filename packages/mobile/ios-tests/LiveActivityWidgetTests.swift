@@ -577,3 +577,182 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: .write, boardName: "moonboard"), .withResponse)
     }
 }
+
+@available(iOS 17.0, *)
+final class LiveActivityIntentDiagnosticStoreTests: XCTestCase {
+    private var suiteName: String!
+    private var defaults: UserDefaults!
+    private var clockNow: Date!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "com.boardsesh.rn.intent-diagnostic-tests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)
+        defaults.removePersistentDomain(forName: suiteName)
+        clockNow = Date(timeIntervalSince1970: 2_000_000_000)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        defaults = nil
+        suiteName = nil
+        clockNow = nil
+        super.tearDown()
+    }
+
+    private func makeStore(
+        processId: UUID = UUID(),
+        appVersion: String = "2.0.0",
+        buildNumber: String = "481",
+        maxRecords: Int = 16,
+        timeToLive: TimeInterval = 24 * 60 * 60,
+        incompleteGrace: TimeInterval = 30
+    ) -> LiveActivityIntentDiagnosticStore {
+        LiveActivityIntentDiagnosticStore(
+            defaults: defaults,
+            storageKey: "intent-diagnostic-tests",
+            processId: processId,
+            appVersion: appVersion,
+            buildNumber: buildNumber,
+            maxRecords: maxRecords,
+            timeToLive: timeToLive,
+            incompleteGrace: incompleteGrace,
+            now: { [unowned self] in self.clockNow }
+        )
+    }
+
+    func testRunLifecycleAndNormalEarlyCompletionAreDurableAndIdempotent() {
+        let store = makeStore()
+        let run = store.begin(kind: .nextClimb)
+
+        XCTAssertEqual(store.recordsSnapshot().single?.lastStage, .entered)
+        run.mark(.networkStarted)
+        XCTAssertEqual(store.recordsSnapshot().single?.lastStage, .networkStarted)
+
+        // Models an ordinary guard return (for example queue bounds). The
+        // production intent uses defer, so the same completion always runs.
+        run.complete(.navigationOutOfBounds)
+        run.mark(.bleStarted)
+        run.complete(.success)
+
+        let completed = store.recordsSnapshot().single
+        XCTAssertEqual(completed?.lastStage, .completed)
+        XCTAssertEqual(completed?.completionClass, .navigationOutOfBounds)
+    }
+
+    func testSameProcessAndCompletedRecordsAreNeverConsumed() {
+        let processId = UUID()
+        let store = makeStore(processId: processId)
+        _ = store.begin(kind: .previousClimb)
+        let completed = store.begin(kind: .takeControl)
+        completed.complete(.alreadyAllowed)
+        clockNow = clockNow.addingTimeInterval(60)
+
+        XCTAssertTrue(store.consumeInterruptedRuns().isEmpty)
+        XCTAssertEqual(store.recordsSnapshot().count, 2)
+    }
+
+    func testPreviousProcessRecordWaitsForGraceThenConsumesOnce() {
+        let firstProcess = makeStore(processId: UUID())
+        _ = firstProcess.begin(kind: .nextClimb)
+
+        clockNow = clockNow.addingTimeInterval(29)
+        let foregroundProcess = makeStore(processId: UUID())
+        XCTAssertTrue(foregroundProcess.consumeInterruptedRuns().isEmpty)
+
+        clockNow = clockNow.addingTimeInterval(2)
+        let consumed = foregroundProcess.consumeInterruptedRuns()
+        XCTAssertEqual(consumed.count, 1)
+        XCTAssertEqual(consumed.single?.intentKind, .nextClimb)
+        XCTAssertTrue(foregroundProcess.consumeInterruptedRuns().isEmpty)
+
+        // Recreating the consumer with the same durable store still cannot
+        // return the consumed run a second time.
+        let secondConsumer = makeStore(processId: UUID())
+        XCTAssertTrue(secondConsumer.consumeInterruptedRuns().isEmpty)
+    }
+
+    func testReactRootMarkerTouchesOnlyIncompleteRunsFromCurrentProcess() {
+        let oldProcess = makeStore(processId: UUID())
+        _ = oldProcess.begin(kind: .nextClimb)
+
+        let currentProcess = makeStore(processId: UUID())
+        _ = currentProcess.begin(kind: .reconnectBoard)
+        let completed = currentProcess.begin(kind: .takeControl)
+        completed.complete(.success)
+        currentProcess.markReactRootMounted()
+
+        let records = currentProcess.recordsSnapshot()
+        XCTAssertFalse(records.first(where: { $0.intentKind == .nextClimb })?.reactRootMounted ?? true)
+        XCTAssertTrue(records.first(where: { $0.intentKind == .reconnectBoard })?.reactRootMounted ?? false)
+        XCTAssertFalse(records.first(where: { $0.intentKind == .takeControl })?.reactRootMounted ?? true)
+    }
+
+    func testTimeToLiveAndBuildValidationDiscardInsteadOfReport() {
+        let oldBuild = makeStore(processId: UUID(), buildNumber: "480")
+        _ = oldBuild.begin(kind: .nextClimb)
+        clockNow = clockNow.addingTimeInterval(31)
+
+        let newBuild = makeStore(processId: UUID(), buildNumber: "481")
+        XCTAssertTrue(newBuild.consumeInterruptedRuns().isEmpty)
+        XCTAssertTrue(newBuild.recordsSnapshot().isEmpty)
+
+        let currentBuild = makeStore(processId: UUID(), timeToLive: 60)
+        _ = currentBuild.begin(kind: .previousClimb)
+        clockNow = clockNow.addingTimeInterval(61)
+        let laterProcess = makeStore(processId: UUID(), timeToLive: 60)
+        XCTAssertTrue(laterProcess.consumeInterruptedRuns().isEmpty)
+        XCTAssertTrue(laterProcess.recordsSnapshot().isEmpty)
+    }
+
+    func testCorruptAndWrongSchemaPayloadsFailClosed() {
+        defaults.set(Data("not-json".utf8), forKey: "intent-diagnostic-tests")
+        let store = makeStore()
+        XCTAssertTrue(store.consumeInterruptedRuns().isEmpty)
+        XCTAssertTrue(store.recordsSnapshot().isEmpty)
+
+        let wrongSchema = Data("{\"schemaVersion\":2,\"records\":[],\"consumed\":[]}".utf8)
+        defaults.set(wrongSchema, forKey: "intent-diagnostic-tests")
+        XCTAssertTrue(store.consumeInterruptedRuns().isEmpty)
+        XCTAssertTrue(store.recordsSnapshot().isEmpty)
+    }
+
+    func testRingBufferKeepsOnlyNewestBoundedRecords() {
+        let store = makeStore(maxRecords: 4)
+        for index in 0..<10 {
+            _ = store.begin(kind: index.isMultiple(of: 2) ? .nextClimb : .previousClimb)
+            clockNow = clockNow.addingTimeInterval(1)
+        }
+
+        let records = store.recordsSnapshot()
+        XCTAssertEqual(records.count, 4)
+        XCTAssertEqual(Set(records.map(\.runId)).count, 4)
+    }
+
+    func testPersistedAndBridgedFieldsAreBoundedAndIdentifierFree() throws {
+        let store = makeStore(
+            appVersion: "2.0.0<script>alert(1)</script>",
+            buildNumber: "481\nBearer secret"
+        )
+        _ = store.begin(kind: .reconnectBoard)
+        let record = try XCTUnwrap(store.recordsSnapshot().single)
+
+        XCTAssertEqual(record.appVersion, "2.0.0scriptalert1script")
+        XCTAssertEqual(record.buildNumber, "481Bearersecret")
+        XCTAssertLessThanOrEqual(record.appVersion.count, 64)
+        XCTAssertNotNil(UUID(uuidString: record.runId))
+        XCTAssertNotNil(UUID(uuidString: record.processId))
+
+        let bridgeJson = try JSONSerialization.data(withJSONObject: record.bridgePayload)
+        let bridgeText = try XCTUnwrap(String(data: bridgeJson, encoding: .utf8)).lowercased()
+        for forbiddenKey in ["userid", "climb", "session", "server", "endpoint", "peripheral", "authtoken"] {
+            XCTAssertFalse(bridgeText.contains(forbiddenKey), "unexpected identifier field: \(forbiddenKey)")
+        }
+    }
+}
+
+private extension Array {
+    var single: Element? {
+        count == 1 ? first : nil
+    }
+}

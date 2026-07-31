@@ -10,22 +10,56 @@ struct TakeControlIntent: LiveActivityIntent {
     private static let logger = Logger(subsystem: "com.boardsesh.app", category: "LiveActivityIntent")
 
     func perform() async throws -> some IntentResult {
-        guard let defaults = SharedConstants.sharedDefaults else { return .result() }
+        #if !WIDGET_EXTENSION
+        let diagnosticRun = LiveActivityIntentDiagnostics.begin(kind: .takeControl)
+        var completionClass = LiveActivityIntentCompletionClass.success
+        defer { diagnosticRun.complete(completionClass) }
+        #endif
+
+        guard let defaults = SharedConstants.sharedDefaults else {
+            #if !WIDGET_EXTENSION
+            completionClass = .sharedDefaultsUnavailable
+            #endif
+            return .result()
+        }
 
         let wallControl = SharedWidgetWallControlState.load(from: defaults)
         switch SharedWidgetTakeControlRuntime.action(for: wallControl) {
         case .enableLocalNavigation:
             SharedWidgetTakeControlRuntime.markControlClaimed(isPartySession: false, to: defaults)
             await refreshActivities()
+            #if !WIDGET_EXTENSION
+            diagnosticRun.mark(.activityKitUpdated)
+            completionClass = .localNavigationEnabled
+            #endif
             return .result()
         case .alreadyAllowed:
             await refreshActivities()
+            #if !WIDGET_EXTENSION
+            diagnosticRun.mark(.activityKitUpdated)
+            completionClass = .alreadyAllowed
+            #endif
             return .result()
         case .requestServerAuthorization:
             break
         }
 
+        #if !WIDGET_EXTENSION
+        diagnosticRun.mark(.networkStarted)
+        #endif
         let result = await WidgetNetworking.sendTakeControl()
+        #if !WIDGET_EXTENSION
+        switch result {
+        case .success:
+            diagnosticRun.mark(.networkFinishedSuccess)
+        case .serverRejected:
+            diagnosticRun.mark(.networkFinishedTerminal)
+            completionClass = .serverRejected
+        case .retryableFailure:
+            diagnosticRun.mark(.networkFinishedRetryable)
+            completionClass = .retryableNetworkFailure
+        }
+        #endif
         guard result == .success else {
             Self.logger.notice("TakeControlIntent rejected or failed; leaving widget navigation disabled")
             return .result()
@@ -33,6 +67,9 @@ struct TakeControlIntent: LiveActivityIntent {
 
         SharedWidgetTakeControlRuntime.markControlClaimed(isPartySession: true, to: defaults)
         await refreshActivities()
+        #if !WIDGET_EXTENSION
+        diagnosticRun.mark(.activityKitUpdated)
+        #endif
         return .result()
     }
 

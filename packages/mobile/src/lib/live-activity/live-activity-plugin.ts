@@ -7,6 +7,7 @@ import {
   type LiveActivityClimbUpdateOptions,
   type WidgetQueueNavigateEvent,
   type BoardControlEvent,
+  type LiveActivityIntentDiagnostic,
 } from '../../../modules/live-activity/src/index';
 
 // Platform-agnostic wrapper around the "session presence" native surface:
@@ -55,6 +56,32 @@ export async function updateLiveActivityClimb(options: LiveActivityClimbUpdateOp
   await sessionModule.updateActivityClimb(options);
 }
 
+/**
+ * Explicitly marks that the actual React root committed in this process. This
+ * is iOS-only and optional so an OTA bundle stays safe on an older binary.
+ * Diagnostics must never affect app startup, so native bridge failures no-op.
+ */
+export async function markLiveActivityIntentReactRootMounted(): Promise<void> {
+  try {
+    await liveActivityNative?.markIntentReactRootMounted?.();
+  } catch {
+    // Best-effort diagnostic marker only.
+  }
+}
+
+/**
+ * Atomically consumes eligible previous-process intent markers on iOS. Native
+ * owns schema/build/TTL/grace validation and once-only dedupe; JS only reports
+ * the already-sanitized records.
+ */
+export async function consumeInterruptedLiveActivityIntentRuns(): Promise<LiveActivityIntentDiagnostic[]> {
+  try {
+    return (await liveActivityNative?.consumeInterruptedIntentRuns?.()) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export function addWidgetQueueNavigateListener(callback: (event: WidgetQueueNavigateEvent) => void): () => void {
   if (!sessionModule) {
     return () => {};
@@ -76,4 +103,4 @@ export function addBoardControlListener(callback: (event: BoardControlEvent) => 
   return () => subscription.remove();
 }
 
-export type { WidgetQueueNavigateEvent, BoardControlEvent };
+export type { WidgetQueueNavigateEvent, BoardControlEvent, LiveActivityIntentDiagnostic };

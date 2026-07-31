@@ -562,7 +562,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         currentIndex: Int,
         readyTimeout: TimeInterval,
         drainTimeout: TimeInterval = 1.5
-    ) async {
+    ) async -> Bool {
         await waitUntilReady(timeout: readyTimeout)
         let ready = runOnBleQueueSync { isReadyForWrite }
         if !ready {
@@ -575,6 +575,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         }
         displayCurrentItem(items: items, currentIndex: currentIndex)
         await waitForWriteDrain(timeout: drainTimeout)
+        return ready
     }
 
     private var isAvailableOnBleQueue: Bool {

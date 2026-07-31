@@ -438,6 +438,53 @@ Connect your iPhone and open Xcode > Window > Devices and Simulators > your devi
 - `LiveActivityPlugin` — token registration with backend
 - `NativeWebSocketPlugin` — WebSocket connection state
 
+### Interrupted intent diagnostics
+
+The main app target keeps a best-effort marker for each `LiveActivityIntent`
+run (`NextClimbIntent`, `PreviousClimbIntent`, `TakeControlIntent`, and
+`ReconnectBoardIntent`). The widget-extension copies compile the recorder calls
+out with `#if !WIDGET_EXTENSION`; widget fallback execution never writes the
+main app's store.
+
+The marker is an app-local `UserDefaults` envelope, not App Group storage. It is
+schema-versioned, limited to the newest 16 records, and contains only generated
+run/process UUIDs, the fixed intent kind, app version/build, timestamps, a
+coarse last stage/result, and whether the React root committed. It never stores
+user, climb, queue, session, endpoint/server, auth-token, or Bluetooth
+peripheral values. A React effect mounted directly under the real app root marks
+the root commit; it is deliberately not a module-import side effect.
+
+On foreground, native code atomically consumes only incomplete records from a
+different process that are at least 30 seconds old. It discards records from a
+different build, an unknown schema, corrupt/future-dated records, and records
+older than 24 hours. A durable consumed-key ring prevents a run from being
+returned twice. JS reports each returned record as an informational Sentry
+message with the fixed fingerprint `live-activity-intent-interrupted`; it is not
+captured as an exception or crash. A normally returning intent always marks its
+record completed, including guard/early-return paths, so it is never reported.
+
+This instrumentation does not change the intent work budget. Widget HTTP still
+uses its existing 10-second request timeout, and navigation BLE still waits up
+to 3 seconds for readiness plus the existing 1.5-second write-drain window. It
+also does not cancel BLE work when the background task expires.
+
+#### MetricKit audit (no new integration)
+
+The mobile app currently pins `@sentry/react-native` 7.11.0, whose podspec pins
+Sentry Cocoa 8.58.0. That Cocoa SDK has a MetricKit integration, but
+`enableMetricKit` and `enableMetricKitRawPayload` both default to off, and our
+`src/lib/sentry.ts` initialization does not enable either option. Consequently,
+Boardsesh does not currently subscribe Sentry to MetricKit payloads. If enabled,
+that SDK version's supported conversion covers hang, CPU-exception, and
+disk-write diagnostics; its MetricKit manager disables crash diagnostics by
+default. No MetricKit option or reporting behavior is changed for #4077.
+
+Existing Sentry coverage remains separate: native crash handling is explicitly
+enabled, app-hang tracking uses the configured 2-second threshold, and Sentry
+Cocoa's watchdog-termination tracking retains its default-on setting. Those
+signals do not correlate an unlogged termination to a specific Live Activity
+intent run, which is why the small durable marker is needed.
+
 ### Inspect Push Token
 
 The push token is logged (first 8 characters) when obtained:

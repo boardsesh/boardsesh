@@ -1,0 +1,112 @@
+// @vitest-environment jsdom
+import { render, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const nativeDiagnostics = vi.hoisted(() => ({
+  markRootMounted: vi.fn(async () => {}),
+  consume: vi.fn(),
+}));
+
+const sentryDiagnostics = vi.hoisted(() => ({
+  capture: vi.fn(),
+}));
+
+const appState = vi.hoisted(() => {
+  let currentState = 'active';
+  const handlers = new Set<(state: string) => void>();
+  return {
+    getCurrentState: () => currentState,
+    setState: (state: string) => {
+      currentState = state;
+    },
+    emit: (state: string) => {
+      currentState = state;
+      for (const handler of handlers) handler(state);
+    },
+    addEventListener: vi.fn((_event: string, handler: (state: string) => void) => {
+      handlers.add(handler);
+      return { remove: vi.fn(() => handlers.delete(handler)) };
+    }),
+    reset: () => {
+      currentState = 'active';
+      handlers.clear();
+    },
+  };
+});
+
+vi.mock('react-native', () => ({
+  AppState: {
+    get currentState() {
+      return appState.getCurrentState();
+    },
+    addEventListener: appState.addEventListener,
+  },
+}));
+
+vi.mock('../../lib/live-activity/live-activity-plugin', () => ({
+  markLiveActivityIntentReactRootMounted: nativeDiagnostics.markRootMounted,
+  consumeInterruptedLiveActivityIntentRuns: nativeDiagnostics.consume,
+}));
+
+vi.mock('../../lib/sentry', () => ({
+  captureLiveActivityIntentDiagnostic: sentryDiagnostics.capture,
+}));
+
+import {
+  consumeAndReportInterruptedLiveActivityIntents,
+  LiveActivityIntentDiagnostics,
+} from '../LiveActivityIntentDiagnostics';
+
+const diagnostic = {
+  schemaVersion: 1 as const,
+  runId: '30fe8dab-7c3f-4ed0-ae20-291a87390001',
+  processId: 'b5a82684-6a2c-4bbb-a9cc-b7bfc1df0001',
+  intentKind: 'nextClimb' as const,
+  appVersion: '2.0.0',
+  buildNumber: '481',
+  startedAtMs: 1_000,
+  updatedAtMs: 3_000,
+  lastStage: 'bleStarted' as const,
+  reactRootMounted: true,
+};
+
+describe('LiveActivityIntentDiagnostics', () => {
+  beforeEach(() => {
+    appState.reset();
+    appState.addEventListener.mockClear();
+    nativeDiagnostics.markRootMounted.mockClear();
+    nativeDiagnostics.markRootMounted.mockResolvedValue(undefined);
+    nativeDiagnostics.consume.mockReset();
+    nativeDiagnostics.consume.mockResolvedValue([]);
+    sentryDiagnostics.capture.mockClear();
+  });
+
+  it('reports each sanitized record returned by the once-only native consumer', async () => {
+    const secondDiagnostic = { ...diagnostic, runId: '30fe8dab-7c3f-4ed0-ae20-291a87390002' };
+    nativeDiagnostics.consume.mockResolvedValueOnce([diagnostic, secondDiagnostic]);
+
+    await consumeAndReportInterruptedLiveActivityIntents();
+
+    expect(sentryDiagnostics.capture).toHaveBeenNthCalledWith(1, diagnostic);
+    expect(sentryDiagnostics.capture).toHaveBeenNthCalledWith(2, secondDiagnostic);
+  });
+
+  it('marks the root only after mount, then consumes while already foregrounded', async () => {
+    expect(nativeDiagnostics.markRootMounted).not.toHaveBeenCalled();
+    render(<LiveActivityIntentDiagnostics />);
+
+    await waitFor(() => expect(nativeDiagnostics.markRootMounted).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(nativeDiagnostics.consume).toHaveBeenCalledTimes(1));
+  });
+
+  it('marks a background-launched React root without consuming until foreground', async () => {
+    appState.setState('background');
+    render(<LiveActivityIntentDiagnostics />);
+
+    await waitFor(() => expect(nativeDiagnostics.markRootMounted).toHaveBeenCalledTimes(1));
+    expect(nativeDiagnostics.consume).not.toHaveBeenCalled();
+
+    appState.emit('active');
+    await waitFor(() => expect(nativeDiagnostics.consume).toHaveBeenCalledTimes(1));
+  });
+});

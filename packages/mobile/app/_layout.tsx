@@ -81,6 +81,7 @@ import { InstallReferrerTracker } from '../src/components/analytics/InstallRefer
 import { OnboardingGate } from '../src/components/onboarding/OnboardingGate';
 import { AccessoryOnboardingTip } from '../src/components/onboarding/AccessoryOnboardingTip';
 import { FreezeDebugOverlay } from '../src/components/FreezeDebugOverlay';
+import { LiveActivityIntentDiagnostics } from '../src/components/LiveActivityIntentDiagnostics';
 // Side-effect import: instantiates the Android-only MemoryTrim native module
 // (expo-modules-core creates modules lazily on first JS access), whose Kotlin
 // OnCreate registers the Glide trim-on-UI_HIDDEN callback. No-op on iOS.
@@ -447,6 +448,10 @@ function RootLayout() {
 
   return (
     <GestureHandlerRootView style={layoutStyles.root}>
+      {/* Effect runs only after this React root commits. It marks whether an
+          iOS LiveActivityIntent background launch mounted React, then consumes
+          eligible interrupted markers when the app is foregrounded. */}
+      <LiveActivityIntentDiagnostics />
       {/* PostHogProvider sits at the top so touch autocapture covers the whole
           app. It owns the single PostHog client; manual events go through the
           imperative wrapper in src/lib/analytics. No-ops (renders children

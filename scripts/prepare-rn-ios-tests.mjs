@@ -65,6 +65,10 @@ const TEST_SOURCE_FILES = [
     projectPath: 'BoardseshTests/LiveActivitySources/WidgetNetworking.swift',
   },
   {
+    sourcePath: '../modules/live-activity/ios/LiveActivityIntentDiagnostics.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/LiveActivityIntentDiagnostics.swift',
+  },
+  {
     sourcePath: '../modules/live-activity/ios/ClimbNavigationIntent.swift',
     projectPath: 'BoardseshTests/LiveActivitySources/ClimbNavigationIntent.swift',
   },

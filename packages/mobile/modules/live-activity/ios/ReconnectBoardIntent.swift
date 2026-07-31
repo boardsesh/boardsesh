@@ -18,6 +18,12 @@ struct ReconnectBoardIntent: LiveActivityIntent {
     private static let logger = Logger(subsystem: "com.boardsesh.app", category: "LiveActivityIntent")
 
     func perform() async throws -> some IntentResult {
+        #if !WIDGET_EXTENSION
+        let diagnosticRun = LiveActivityIntentDiagnostics.begin(kind: .reconnectBoard)
+        var completionClass = LiveActivityIntentCompletionClass.success
+        defer { diagnosticRun.complete(completionClass) }
+        #endif
+
         Self.logger.notice("ReconnectBoardIntent.perform() running process=\(ProcessInfo.processInfo.processName, privacy: .public)")
 
         // Reconnect BLE to the last board. In the main app process (the path iOS
@@ -26,7 +32,12 @@ struct ReconnectBoardIntent: LiveActivityIntent {
         // can't link BoardBleManager — fall back to a Darwin notification so the
         // live main app does the reconnect, mirroring ClimbNavigationIntent.
         #if !WIDGET_EXTENSION
-        _ = await LiveActivityBleBridge.reconnectForIntent()
+        diagnosticRun.mark(.bleStarted)
+        let reconnected = await LiveActivityBleBridge.reconnectForIntent()
+        diagnosticRun.mark(reconnected ? .bleFinishedSuccess : .bleFinishedFailure)
+        if !reconnected {
+            completionClass = .bleFailure
+        }
         #else
         postBleReconnectDarwinNotification()
         #endif
@@ -37,7 +48,22 @@ struct ReconnectBoardIntent: LiveActivityIntent {
         if let defaults = SharedConstants.sharedDefaults {
             let wallControl = SharedWidgetWallControlState.load(from: defaults)
             if wallControl.requiresServerAuthorization, !wallControl.navigationAllowed {
+                #if !WIDGET_EXTENSION
+                diagnosticRun.mark(.networkStarted)
+                #endif
                 let result = await WidgetNetworking.sendTakeControl()
+                #if !WIDGET_EXTENSION
+                switch result {
+                case .success:
+                    diagnosticRun.mark(.networkFinishedSuccess)
+                case .serverRejected:
+                    diagnosticRun.mark(.networkFinishedTerminal)
+                    completionClass = .serverRejected
+                case .retryableFailure:
+                    diagnosticRun.mark(.networkFinishedRetryable)
+                    completionClass = .retryableNetworkFailure
+                }
+                #endif
                 if result == .success {
                     SharedWidgetWallControlState.save(navigationAllowed: true, isPartySession: true, to: defaults)
                 }
@@ -45,6 +71,9 @@ struct ReconnectBoardIntent: LiveActivityIntent {
         }
 
         await refreshActivities()
+        #if !WIDGET_EXTENSION
+        diagnosticRun.mark(.activityKitUpdated)
+        #endif
         return .result()
     }
 
