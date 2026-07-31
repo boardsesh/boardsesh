@@ -296,7 +296,8 @@ export type LiveActivityIntentDiagnostic = {
     | 'bleStarted'
     | 'bleFinishedSuccess'
     | 'bleFinishedFailure'
-    | 'darwinPosted';
+    | 'darwinPosted'
+    | 'completed';
   reactRootMounted: boolean;
   completionClass?:
     | 'success'

@@ -14,6 +14,7 @@ const sentryDiagnostics = vi.hoisted(() => ({
 const appState = vi.hoisted(() => {
   let currentState = 'active';
   const handlers = new Set<(state: string) => void>();
+  const remove = vi.fn((handler: (state: string) => void) => handlers.delete(handler));
   return {
     getCurrentState: () => currentState,
     setState: (state: string) => {
@@ -25,11 +26,13 @@ const appState = vi.hoisted(() => {
     },
     addEventListener: vi.fn((_event: string, handler: (state: string) => void) => {
       handlers.add(handler);
-      return { remove: vi.fn(() => handlers.delete(handler)) };
+      return { remove: vi.fn(() => remove(handler)) };
     }),
+    remove,
     reset: () => {
       currentState = 'active';
       handlers.clear();
+      remove.mockClear();
     },
   };
 });
@@ -108,5 +111,22 @@ describe('LiveActivityIntentDiagnostics', () => {
 
     appState.emit('active');
     await waitFor(() => expect(nativeDiagnostics.consume).toHaveBeenCalledTimes(1));
+  });
+
+  it('removes its foreground listener and ignores a late root marker after unmount', async () => {
+    let resolveRootMarker = () => {};
+    nativeDiagnostics.markRootMounted.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveRootMarker = resolve;
+      }),
+    );
+    const { unmount } = render(<LiveActivityIntentDiagnostics />);
+
+    unmount();
+    resolveRootMarker();
+    await Promise.resolve();
+
+    expect(appState.remove).toHaveBeenCalledTimes(1);
+    expect(nativeDiagnostics.consume).not.toHaveBeenCalled();
   });
 });

@@ -269,10 +269,6 @@ final class LiveActivityIntentDiagnosticStore {
 
             envelope.records = retained
             self.pruneAndBound(&envelope, at: timestamp)
-            envelope.consumed = envelope.consumed
-                .filter { self.isWithinTimeToLive($0.consumedAt, at: timestamp) }
-                .suffix(self.maxRecords * 2)
-                .map { $0 }
         }
 
         return interrupted
@@ -313,6 +309,10 @@ final class LiveActivityIntentDiagnosticStore {
         envelope.records = envelope.records
             .filter { self.isValid($0, at: timestamp) }
             .suffix(maxRecords)
+            .map { $0 }
+        envelope.consumed = envelope.consumed
+            .filter { self.isWithinTimeToLive($0.consumedAt, at: timestamp) }
+            .suffix(maxRecords * 2)
             .map { $0 }
     }
 
