@@ -67,6 +67,9 @@ export function buildEmptyBoardQueuePreview(boardId: number): BoardQueuePreview 
  * explicit `endSession` mutation, and the inactivity sweep). There is
  * currently no mutation that flips `board_sessions.is_public` after creation
  * — if one is ever added, it MUST call this too when flipping to private.
+ * The board-level equivalent (`user_boards.is_public` flipped private, or the
+ * board soft-deleted) goes through `publishBoardQueuePreviewTombstoneForBoard`
+ * below, which `updateBoard`/`deleteBoard` call.
  *
  * Guards, in order:
  * - Only while the board's REVERSE binding still points at THIS session. When
@@ -95,4 +98,35 @@ export async function publishBoardQueuePreviewTombstoneForSession(sessionId: str
   if (await isPublicActiveSession(sessionId)) return;
 
   pubsub.publishBoardQueuePreview(boardId, buildEmptyBoardQueuePreview(Number(boardId)));
+}
+
+/**
+ * Publish an EMPTY preview (tombstone) for a board that just STOPPED being
+ * anonymously readable — `user_boards.is_public` flipped true→false, or the
+ * board was soft-deleted. Without this, kiosks keep rendering the last
+ * snapshot forever: the live producer re-gates every queue event, but a
+ * board-visibility flip is not a queue event, and once the flip commits the
+ * producer simply goes quiet.
+ *
+ * Only publishes when the board still has a bound session (the only case where
+ * a snapshot was ever produced, so the only case where anything needs
+ * clearing).
+ *
+ * Deliberately does NOT re-check `isBoardAnonReadable` or
+ * `isPublicActiveSession` the way `...ForSession` does: by the time a caller
+ * gets here the board is already private/deleted, so both gates would return
+ * false and suppress the exact publish this function exists to make.
+ *
+ * **The caller owns the privacy gate.** Call this ONLY on a genuine
+ * anon-readable → not-anon-readable transition, using the pre-update row it
+ * already has in hand (no extra query needed). Publishing on a board that was
+ * never anon-readable would leak "something just changed here" on a private
+ * board's channel to anyone who guessed its id — the same leak
+ * `...ForSession`'s gate 1 exists to prevent.
+ */
+export async function publishBoardQueuePreviewTombstoneForBoard(boardId: number): Promise<void> {
+  const boundSessionId = await pubsub.getBoardSession(String(boardId));
+  if (!boundSessionId) return;
+
+  pubsub.publishBoardQueuePreview(String(boardId), buildEmptyBoardQueuePreview(boardId));
 }

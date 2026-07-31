@@ -20,6 +20,7 @@ import {
   buildBoardQueuePreview,
   getBoardQueuePreviewSnapshot,
   publishBoardQueuePreviewForSession,
+  publishBoardQueuePreviewTombstoneForBoard,
   publishBoardQueuePreviewTombstoneForSession,
   registerBoardQueuePreviewHook,
   toBoardQueuePreviewItem,
@@ -31,6 +32,7 @@ import {
 import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
 import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
 import { roomManager } from '../services/room-manager';
+import { socialBoardMutations } from '../graphql/resolvers/social/boards';
 
 const TEST_USER_ID = 'board-queue-preview-test-user';
 const TEST_BOARD_PATH = 'queue-preview-test/1/10/1,2/40';
@@ -87,18 +89,23 @@ function makeQueueEvent(item: ClimbQueueItem): QueueEvent {
 }
 
 let boardSlugCounter = 0;
-async function makeBoard({
+/**
+ * Insert a board and return both keys: the numeric id the preview channel is
+ * keyed by, and the (real, schema-valid) uuid the social board mutations take.
+ */
+async function makeBoardRow({
   isPublic,
   ownerId = TEST_USER_ID,
 }: {
   isPublic: boolean;
   ownerId?: string;
-}): Promise<number> {
+}): Promise<{ id: number; uuid: string }> {
   const slug = `qp-board-${Date.now().toString(36)}-${boardSlugCounter++}`;
+  const boardUuid = uuidv4();
   const [row] = await db
     .insert(dbSchema.userBoards)
     .values({
-      uuid: `uuid-${slug}`,
+      uuid: boardUuid,
       slug,
       ownerId,
       boardType: 'kilter',
@@ -110,7 +117,12 @@ async function makeBoard({
       isPublic,
     })
     .returning({ id: dbSchema.userBoards.id });
-  return Number(row.id);
+  return { id: Number(row.id), uuid: boardUuid };
+}
+
+async function makeBoard(options: { isPublic: boolean; ownerId?: string }): Promise<number> {
+  const { id } = await makeBoardRow(options);
+  return id;
 }
 
 async function makeSession({
@@ -189,13 +201,13 @@ async function cleanup(): Promise<void> {
 }
 
 /** A public board with a public, active, queue-seeded session bound to it. */
-async function makePreviewableSession(): Promise<{ boardId: number; sessionId: string }> {
-  const boardId = await makeBoard({ isPublic: true });
+async function makePreviewableSession(): Promise<{ boardId: number; boardUuid: string; sessionId: string }> {
+  const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: true });
   const sessionId = await makeSession({ boardId, isPublic: true });
   const queue = [makeQueueItem(1), makeQueueItem(2)];
   await seedQueueState(sessionId, queue, queue[0]);
   await bindSessionToBoard(sessionId, boardId);
-  return { boardId, sessionId };
+  return { boardId, boardUuid, sessionId };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -812,6 +824,118 @@ describe('board-queue-preview tombstone', () => {
       // nothing to clear — and even an empty publish would leak "a session
       // just ended here" timing on the private board's channel.
       await roomManager.endSession(sessionId);
+      expect(received).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('the board-level tombstone publishes an empty snapshot for a board with a bound session', async () => {
+    const { boardId } = await makePreviewableSession();
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      await publishBoardQueuePreviewTombstoneForBoard(boardId);
+
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ boardId, ...EMPTY_PREVIEW_SHAPE });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('the board-level tombstone publishes nothing when no session is bound to the board', async () => {
+    const boardId = await makeBoard({ isPublic: true });
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      // Nothing ever previewed here, so there is nothing to clear.
+      await publishBoardQueuePreviewTombstoneForBoard(boardId);
+      expect(received).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('flipping the BOARD to private via updateBoard tombstones the kiosk', async () => {
+    const { boardId, boardUuid } = await makePreviewableSession();
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isPublic: false } }, authCtx());
+
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ boardId, ...EMPTY_PREVIEW_SHAPE });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('an updateBoard that does not touch isPublic never tombstones', async () => {
+    const { boardId, boardUuid } = await makePreviewableSession();
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, name: 'Renamed Wall' } }, authCtx());
+      expect(received).toHaveLength(0);
+
+      // Nor does re-asserting the board is public.
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isPublic: true } }, authCtx());
+      expect(received).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('does not tombstone when a board that was already private is updated', async () => {
+    const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: false });
+    const sessionId = await makeSession({ boardId, isPublic: true });
+    await seedQueueState(sessionId, [makeQueueItem(1)], null);
+    await bindSessionToBoard(sessionId, boardId);
+
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      // The channel never carried a snapshot — an empty publish here would
+      // leak "something just changed" on a private board's channel.
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isPublic: false } }, authCtx());
+      expect(received).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('soft-deleting a public board tombstones the kiosk', async () => {
+    const { boardId, boardUuid } = await makePreviewableSession();
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      await socialBoardMutations.deleteBoard(null, { boardUuid }, authCtx());
+
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ boardId, ...EMPTY_PREVIEW_SHAPE });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('soft-deleting a private board publishes nothing', async () => {
+    const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: false });
+    const sessionId = await makeSession({ boardId, isPublic: true });
+    await seedQueueState(sessionId, [makeQueueItem(1)], null);
+    await bindSessionToBoard(sessionId, boardId);
+
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      await socialBoardMutations.deleteBoard(null, { boardUuid }, authCtx());
       expect(received).toHaveLength(0);
     } finally {
       unsubscribe();

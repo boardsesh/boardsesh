@@ -15,6 +15,7 @@ import { logger } from '../utils/logger';
 export {
   buildEmptyBoardQueuePreview,
   isPublicActiveSession,
+  publishBoardQueuePreviewTombstoneForBoard,
   publishBoardQueuePreviewTombstoneForSession,
 } from './board-queue-preview-tombstone';
 

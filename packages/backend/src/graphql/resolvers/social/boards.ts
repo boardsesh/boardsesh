@@ -25,6 +25,7 @@ import { findExactNameMatchesWithin, decideAutoGymAttachment, AUTO_GYM_MATCH_RAD
 import { isGenericGymName } from '@boardsesh/db/queries';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
 import { SYSTEM_BOARD_OWNER_ID, requireAnonReadableBoard } from '../board-presence/shared';
+import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
@@ -1943,6 +1944,33 @@ export const socialBoardMutations = {
       throw error;
     }
 
+    // A public→private flip takes the board out of the anon-readable set, so
+    // the board-queue-preview producer goes quiet — public kiosks would keep
+    // rendering the last snapshot forever. Clear them with a tombstone.
+    // The "was previously anon-readable" gate lives HERE, on the pre-update
+    // row we already hold: a board that was never anon-readable must not get a
+    // publish on its channel at all (that alone would leak "something changed
+    // here" to anyone who guessed the board id). System-owned boards stay
+    // anon-readable regardless of isPublic, so a flip there is not a
+    // transition and must not blank their kiosks.
+    if (
+      board.isPublic &&
+      validatedInput.isPublic === false &&
+      !board.deletedAt &&
+      board.ownerId !== SYSTEM_BOARD_OWNER_ID
+    ) {
+      try {
+        await publishBoardQueuePreviewTombstoneForBoard(board.id);
+      } catch (error) {
+        // A pubsub hiccup must never fail the edit itself — the kiosk clears
+        // on its next reconnect/seed instead.
+        logger.warn('Failed to publish board queue preview tombstone on private flip', {
+          boardId: board.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     // Update PostGIS location column
     if (validatedInput.latitude !== undefined || validatedInput.longitude !== undefined) {
       const lat = validatedInput.latitude ?? updated.latitude;
@@ -1970,7 +1998,11 @@ export const socialBoardMutations = {
     const userId = ctx.userId!;
 
     const [board] = await db
-      .select({ id: dbSchema.userBoards.id, ownerId: dbSchema.userBoards.ownerId })
+      .select({
+        id: dbSchema.userBoards.id,
+        ownerId: dbSchema.userBoards.ownerId,
+        isPublic: dbSchema.userBoards.isPublic,
+      })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.uuid, boardUuid), isNull(dbSchema.userBoards.deletedAt)))
       .limit(1);
@@ -1989,6 +2021,22 @@ export const socialBoardMutations = {
       .update(dbSchema.userBoards)
       .set({ deletedAt: new Date(), syncFrozenAt: new Date() })
       .where(eq(dbSchema.userBoards.id, board.id));
+
+    // Same reasoning as the public→private flip in updateBoard: a soft-deleted
+    // board drops out of the anon-readable set, so the preview producer goes
+    // quiet and kiosks would keep the last snapshot. Gate on the pre-delete
+    // row's anon-readability (a private board's channel never carried a
+    // snapshot, and publishing on it would leak the deletion's timing).
+    if (board.isPublic || board.ownerId === SYSTEM_BOARD_OWNER_ID) {
+      try {
+        await publishBoardQueuePreviewTombstoneForBoard(board.id);
+      } catch (error) {
+        logger.warn('Failed to publish board queue preview tombstone on board delete', {
+          boardId: board.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return true;
   },
