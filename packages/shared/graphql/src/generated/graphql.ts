@@ -4308,7 +4308,7 @@ export type PlaylistClimbsResult = {
   climbs: Array<Climb>;
   /** Whether more are available */
   hasMore: Scalars['Boolean']['output'];
-  /** Total count */
+  /** Total number of climbs matching the supplied board, layout, size, and hold-set filters before pagination */
   totalCount: Scalars['Int']['output'];
 };
 

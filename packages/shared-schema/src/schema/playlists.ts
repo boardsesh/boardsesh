@@ -263,7 +263,7 @@ export const playlistsTypeDefs = /* GraphQL */ `
   type PlaylistClimbsResult {
     "List of climbs with full data"
     climbs: [Climb!]!
-    "Total count"
+    "Total number of climbs matching the supplied board, layout, size, and hold-set filters before pagination"
     totalCount: Int!
     "Whether more are available"
     hasMore: Boolean!

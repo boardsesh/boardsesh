@@ -163,6 +163,11 @@ describe('playlistClimbs — board-scoped size and hold-set filtering (real DB)'
     // only climbable on size 99. Deleting the predicate (rather than gating it on
     // board type) would make the MoonBoard case above pass and break this one.
     expect(result.climbs.map((climb) => climb.uuid)).toEqual(['kilter-fits']);
+    // #4000: totalCount must respect the same size filter as `climbs`. The
+    // playlist has 2 rows in `playlist_climbs` (`kilter-fits` + `kilter-other`),
+    // but only 1 fits this size — before the fix totalCount reported 2, so a
+    // paginating client would expect a second page that could never arrive.
+    expect(result.totalCount).toBe(1);
   });
 
   it('keeps a size-compatible Kilter climb whose array holds several sizes', async () => {
@@ -200,6 +205,9 @@ describe('playlistClimbs — board-scoped size and hold-set filtering (real DB)'
     // "needs nothing installed", and a hand-curated playlist shouldn't lose a climb
     // over missing denormalised data.
     expect(result.climbs.map((climb) => climb.uuid)).toEqual(['moon-sets-base', 'moon-sets-null']);
+    // #4000: the playlist has 3 rows, but `moon-sets-wooden` fails the hold-set
+    // filter, so totalCount must be 2 to match `climbs`, not the raw row count.
+    expect(result.totalCount).toBe(2);
   });
 
   it('keeps every MoonBoard climb once the wooden holds are installed', async () => {
@@ -221,6 +229,7 @@ describe('playlistClimbs — board-scoped size and hold-set filtering (real DB)'
     );
 
     expect(result.climbs.map((climb) => climb.uuid)).toEqual(['moon-sets-base', 'moon-sets-wooden', 'moon-sets-null']);
+    expect(result.totalCount).toBe(3);
   });
 
   it('leaves the playlist whole when the caller sends no set ids', async () => {
@@ -241,6 +250,7 @@ describe('playlistClimbs — board-scoped size and hold-set filtering (real DB)'
     );
 
     expect(result.climbs.map((climb) => climb.uuid)).toEqual(['moon-sets-base', 'moon-sets-wooden', 'moon-sets-null']);
+    expect(result.totalCount).toBe(3);
   });
 
   it('keeps Kilter climbs whose required sets have not been backfilled', async () => {

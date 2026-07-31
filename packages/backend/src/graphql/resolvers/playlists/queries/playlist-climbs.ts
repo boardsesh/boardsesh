@@ -30,31 +30,15 @@ function paginateResults<T>(results: T[], pageSize: number) {
 }
 
 /**
- * Specific-board mode: fetch climbs filtered by board type, layout, and size edges.
- *
- * Same two-step shape as the all-boards path: read the page of refs from
- * playlistClimbs (with the board/layout/size filters on the join), then hand
- * them to the shared hydrator, which joins stats/grades at the requested angle
- * and falls back to the most-ascended angle when the climb has no stats there
- * — so the selected angle never blanks a grade. The returned `angle` still
- * reports the requested wall angle: these climbs go straight into the queue on
- * playlist activation, and the tick badge, the board-presence report and the
- * logged ascent all read `climb.angle` as the wall in front of the user.
+ * Build the climb join conditions for specific-board mode (board type, layout,
+ * size, and hold-set scoping). Shared by the ref-rows query and the totalCount
+ * query so the count always reflects the same rows the page can return (#4000).
  */
-async function fetchSpecificBoardClimbs(
-  playlistId: bigint,
+function buildSpecificBoardClimbJoinConditions(
+  tables: typeof UNIFIED_TABLES,
+  boardName: BoardName,
   input: PlaylistClimbsInput,
-  page: number,
-  pageSize: number,
-): Promise<{ climbs: Climb[]; hasMore: boolean }> {
-  const boardName = input.boardName as BoardName;
-  if (!isValidBoardName(boardName)) {
-    throw new Error(`Invalid board name: ${String(boardName)}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
-  }
-
-  const tables = UNIFIED_TABLES;
-
-  // Build climb join conditions
+) {
   const climbJoinConditions = [
     eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid),
     eq(tables.climbs.boardType, boardName),
@@ -102,6 +86,48 @@ async function fetchSpecificBoardClimbs(
     );
   }
 
+  return climbJoinConditions;
+}
+
+/**
+ * Specific-board mode: fetch climbs filtered by board type, layout, and size edges.
+ *
+ * Same two-step shape as the all-boards path: read the page of refs from
+ * playlistClimbs (with the board/layout/size filters on the join), then hand
+ * them to the shared hydrator, which joins stats/grades at the requested angle
+ * and falls back to the most-ascended angle when the climb has no stats there
+ * — so the selected angle never blanks a grade. The returned `angle` still
+ * reports the requested wall angle: these climbs go straight into the queue on
+ * playlist activation, and the tick badge, the board-presence report and the
+ * logged ascent all read `climb.angle` as the wall in front of the user.
+ *
+ * `totalCount` is computed with the exact same join conditions as the ref-rows
+ * query (#4000) — before this fix it counted every `playlist_climbs` row for
+ * the playlist regardless of board/layout/size/set scope, so it could report a
+ * higher count than `climbs` could ever page through.
+ */
+async function fetchSpecificBoardClimbs(
+  playlistId: bigint,
+  input: PlaylistClimbsInput,
+  page: number,
+  pageSize: number,
+): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> {
+  const boardName = input.boardName as BoardName;
+  if (!isValidBoardName(boardName)) {
+    throw new Error(`Invalid board name: ${String(boardName)}. Must be one of: ${SUPPORTED_BOARDS.join(', ')}`);
+  }
+
+  const tables = UNIFIED_TABLES;
+  const climbJoinConditions = buildSpecificBoardClimbJoinConditions(tables, boardName, input);
+
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(dbSchema.playlistClimbs)
+    .innerJoin(tables.climbs, and(...climbJoinConditions))
+    .where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
+
+  const totalCount = countResult?.count ?? 0;
+
   const refRows = await db
     .select({
       climbUuid: dbSchema.playlistClimbs.climbUuid,
@@ -135,7 +161,7 @@ async function fetchSpecificBoardClimbs(
     hydrateOptions,
   );
 
-  return { climbs, hasMore };
+  return { climbs, totalCount, hasMore };
 }
 
 /**
@@ -145,14 +171,27 @@ async function fetchSpecificBoardClimbs(
  * override) from playlistClimbs in position order, then hand them to the
  * shared hydrator which owns the climbs/climbStats join. Lets schema changes
  * to climbStats live in exactly one file (`helpers/hydrate-climbs.ts`).
+ *
+ * `totalCount` is computed with the same inner join to `climbs` the ref-rows
+ * query uses (#4000), rather than a bare `playlist_climbs` row count. A stale
+ * playlist row whose `climb_uuid` no longer resolves is excluded from both
+ * results, so the count cannot exceed what paging through `climbs` can return.
  */
 async function fetchAllBoardsClimbs(
   playlistId: bigint,
   input: PlaylistClimbsInput,
   page: number,
   pageSize: number,
-): Promise<{ climbs: Climb[]; hasMore: boolean }> {
+): Promise<{ climbs: Climb[]; totalCount: number; hasMore: boolean }> {
   const tables = UNIFIED_TABLES;
+
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(dbSchema.playlistClimbs)
+    .innerJoin(tables.climbs, eq(tables.climbs.uuid, dbSchema.playlistClimbs.climbUuid))
+    .where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
+
+  const totalCount = countResult?.count ?? 0;
 
   const refRows = await db
     .select({
@@ -185,12 +224,18 @@ async function fetchAllBoardsClimbs(
     { angleOverrides },
   );
 
-  return { climbs, hasMore };
+  return { climbs, totalCount, hasMore };
 }
 
 /**
  * Get climbs in a playlist with full climb data.
  * Supports specific-board mode (boardName provided) or all-boards mode (boardName omitted).
+ *
+ * `totalCount` is delegated to whichever branch runs, since each computes it
+ * with the same join conditions its own `climbs` query applies (#4000) — a
+ * playlist-wide count here would ignore the board/layout/size scoping the
+ * specific-board branch imposes and could report more than `climbs` could
+ * ever page through.
  */
 export const playlistClimbs = async (
   _: unknown,
@@ -205,19 +250,7 @@ export const playlistClimbs = async (
   // Verify access (throws if denied)
   const playlistId = await verifyPlaylistAccess(input.playlistId, ctx.userId ?? null);
 
-  // Get total count
-  const countResult = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(dbSchema.playlistClimbs)
-    .where(eq(dbSchema.playlistClimbs.playlistId, playlistId));
-
-  const totalCount = countResult[0]?.count || 0;
-
-  if (input.boardName) {
-    const { climbs, hasMore } = await fetchSpecificBoardClimbs(playlistId, input, page, pageSize);
-    return { climbs, totalCount, hasMore };
-  } else {
-    const { climbs, hasMore } = await fetchAllBoardsClimbs(playlistId, input, page, pageSize);
-    return { climbs, totalCount, hasMore };
-  }
+  return input.boardName
+    ? fetchSpecificBoardClimbs(playlistId, input, page, pageSize)
+    : fetchAllBoardsClimbs(playlistId, input, page, pageSize);
 };
