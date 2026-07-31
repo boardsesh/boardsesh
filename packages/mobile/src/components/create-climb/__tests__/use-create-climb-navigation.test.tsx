@@ -91,6 +91,18 @@ describe('useCreateClimbNavigation serialized handoff', () => {
 
     expect(router.push).toHaveBeenCalledTimes(1);
   });
+
+  it('accepts a fresh action after its owning menu unmounts and mounts again', () => {
+    const firstMenu = renderHook(() => useCreateClimbNavigation());
+    firstMenu.result.current.openRemix(climb, board);
+    expect(router.push).toHaveBeenCalledTimes(1);
+    firstMenu.unmount();
+
+    const reopenedMenu = renderHook(() => useCreateClimbNavigation());
+    reopenedMenu.result.current.openRemix(climb, board);
+
+    expect(router.push).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('useCreateClimbNavigation params', () => {

@@ -14,11 +14,16 @@ const navigation = vi.hoisted(() => ({
     return navigation.unsubscribe;
   }),
 }));
+const navigationSource = vi.hoisted(() => ({
+  current: null as null | {
+    addListener: (event: string, listener: (transition: Transition) => void) => () => void;
+  },
+}));
 
 vi.mock('react-native', () => ({ Platform: platform }));
 vi.mock('expo-router', () => ({
   useRouter: () => router,
-  useNavigation: () => navigation,
+  useNavigation: () => navigationSource.current ?? navigation,
 }));
 
 import { usePlayerDismissAndWait } from '../use-player-dismiss-and-wait';
@@ -29,6 +34,7 @@ beforeEach(() => {
   navigation.listener = null;
   navigation.unsubscribe.mockClear();
   navigation.addListener.mockClear();
+  navigationSource.current = null;
 });
 
 describe('usePlayerDismissAndWait', () => {
@@ -70,5 +76,29 @@ describe('usePlayerDismissAndWait', () => {
 
     expect(router.dismiss).toHaveBeenCalledTimes(1);
     expect(navigation.addListener).not.toHaveBeenCalled();
+  });
+
+  it('keeps the callback stable while subscribing through the latest route navigation object', async () => {
+    let replacementListener: ((transition: Transition) => void) | null = null;
+    const replacementUnsubscribe = vi.fn();
+    const replacementNavigation = {
+      addListener: vi.fn((_event: string, listener: (transition: Transition) => void) => {
+        replacementListener = listener;
+        return replacementUnsubscribe;
+      }),
+    };
+    const { result, rerender } = renderHook(() => usePlayerDismissAndWait());
+    const initialCallback = result.current;
+
+    navigationSource.current = replacementNavigation;
+    rerender();
+
+    expect(result.current).toBe(initialCallback);
+    const resultPromise = result.current();
+    expect(replacementNavigation.addListener).toHaveBeenCalledWith('transitionEnd', expect.any(Function));
+
+    act(() => replacementListener?.({ data: { closing: true } }));
+    await expect(resultPromise).resolves.toEqual({ status: 'dismissed' });
+    expect(replacementUnsubscribe).toHaveBeenCalledTimes(1);
   });
 });

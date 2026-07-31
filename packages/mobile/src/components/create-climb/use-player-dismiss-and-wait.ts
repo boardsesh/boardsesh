@@ -28,6 +28,8 @@ const ABORTED_RESULT: DismissAndWaitResult = { status: 'aborted' };
 export function usePlayerDismissAndWait(): () => Promise<DismissAndWaitResult> {
   const router = useRouter();
   const navigation = useNavigation() as unknown as NativeStackTransitionNavigation;
+  const navigationRef = useRef(navigation);
+  navigationRef.current = navigation;
   const pendingAbortsRef = useRef(new Set<() => void>());
 
   useEffect(
@@ -65,7 +67,7 @@ export function usePlayerDismissAndWait(): () => Promise<DismissAndWaitResult> {
       try {
         // Register first: a fast native transition must not finish in the gap
         // between router.dismiss() and listener attachment.
-        unsubscribe = navigation.addListener('transitionEnd', (transition) => {
+        unsubscribe = navigationRef.current.addListener('transitionEnd', (transition) => {
           if (transition.data?.closing !== true) return;
           finish(DISMISSED_RESULT);
         });
@@ -74,5 +76,5 @@ export function usePlayerDismissAndWait(): () => Promise<DismissAndWaitResult> {
         finish(ABORTED_RESULT);
       }
     });
-  }, [navigation, router]);
+  }, [router]);
 }

@@ -233,6 +233,9 @@ export function ClimbReactionMenu({
     dismiss();
   }, [view, backToMenu, dismiss]);
 
+  // DrawerHost conditionally mounts this overlay only while an action target is
+  // present, so every open gets a fresh create-navigation double-tap guard. The
+  // guard intentionally stays claimed throughout this instance's exit animation.
   const actions = useClimbActions({
     climb,
     boardConfig,
