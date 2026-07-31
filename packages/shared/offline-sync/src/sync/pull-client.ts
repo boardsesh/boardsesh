@@ -731,6 +731,7 @@ async function runBootstrapPhase(
  */
 async function enforceDeletionsCoverage(
   db: OfflineDatabase,
+  queryClient: QueryInvalidator,
   graphqlFetch: <T>(query: string, variables?: Record<string, unknown>) => Promise<T>,
   options?: SyncOptions,
 ): Promise<void> {
@@ -762,6 +763,23 @@ async function enforceDeletionsCoverage(
   const pendingMutations = await getPendingCount(db);
   const resetAt = Date.now();
   const { rowsCleared } = await resetUserDataForLostCoverage(db, resetAt);
+
+  // Bust every user-data cache the wipe just invalidated. The rebuild below
+  // cannot be relied on to do it: syncTable only invalidates when it pulled at
+  // least one document and processDeletions only on arrivals, so a table the
+  // user had emptied server-side re-pulls nothing and a mounted screen would
+  // keep serving the pre-wipe react-query cache — the exact #3474 symptom
+  // surviving the fix. Deduped by serialized key, same shape as processDeletions.
+  const invalidatedKeys = new Set<string>();
+  for (const tableName of USER_DATA_TABLES) {
+    for (const key of TABLE_CONFIGS[tableName].invalidateKeys) {
+      invalidatedKeys.add(JSON.stringify(key));
+    }
+  }
+  for (const serializedKey of invalidatedKeys) {
+    queryClient.invalidateQueries({ queryKey: JSON.parse(serializedKey) as string[] });
+  }
+
   // coverageAt is non-null here: only a present marker can evaluate to 'stale'.
   const markerAgeDays = Math.round((resetAt - (coverageAt ?? resetAt)) / 86_400_000);
   options?.onCoverageReset?.({ markerAgeDays, rowsCleared, pendingMutations });
@@ -782,7 +800,7 @@ export async function pullSync(
   // phase and before cycleEpoch is captured, so the reset and the rebuild that
   // follows belong to the same cycle. See deletions-coverage.ts for the
   // invariant and for exactly what the reset does (and does not) clear.
-  await enforceDeletionsCoverage(db, graphqlFetch, options);
+  await enforceDeletionsCoverage(db, queryClient, graphqlFetch, options);
 
   const enabledBoards = options?.enabledBoards ?? [];
   const onProgress = options?.onProgress;

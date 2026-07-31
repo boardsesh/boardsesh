@@ -896,6 +896,13 @@ describe('sync layer — real-DDL integration', () => {
       expect(deletionsVariables[0]).toMatchObject({ limit: 1 });
       expect(deletionsVariables.length).toBeGreaterThanOrEqual(2);
 
+      // The wipe busts the user-data caches itself. It cannot lean on the
+      // rebuild to do it: the playlists pull returned zero documents (the user
+      // had emptied that table server-side), so syncTable's `totalProcessed > 0`
+      // gate never fires and a mounted screen would keep serving the pre-wipe
+      // react-query cache — #3474's symptom surviving the fix.
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['playlists'] });
+
       // Marker advanced, and the operational event carried the honest numbers.
       expect(await readCoverage()).toBeGreaterThan(Date.now() - 60_000);
       expect(onCoverageReset).toHaveBeenCalledTimes(1);
