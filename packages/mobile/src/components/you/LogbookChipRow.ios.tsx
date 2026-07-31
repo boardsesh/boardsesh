@@ -28,6 +28,8 @@ import {
   foregroundColor,
   padding,
   menuActionDismissBehavior,
+  labelStyle,
+  accessibilityLabel,
 } from '@expo/ui/swift-ui/modifiers';
 import { useTheme } from '../../providers/theme-provider';
 import { useGradeFormat } from '../../hooks/use-grade-format';
@@ -104,6 +106,21 @@ function LogbookChipRowComponent({
   const handleAngleChip = useCallback(() => onToggleFacet('angle'), [onToggleFacet]);
   const handleDateChip = useCallback(() => onToggleFacet('date'), [onToggleFacet]);
 
+  // The Filter chip is icon-only. `SwiftUI.Button(title, systemImage:)` builds a
+  // `Label`, and inside the glass HStack the icon+one-word title combination made
+  // SwiftUI compress the title to "F…" (#3782) — the plain-text chips beside it are
+  // fine. `labelStyle(.iconOnly)` drops the title from layout so the chip sizes to
+  // the symbol alone, matching the round icon-only filter button the Android
+  // (Material) logbook toolbar already ships. The title still has to be passed —
+  // @expo/ui only renders `systemImage` when a `label` is present — and iconOnly
+  // keeps it as the VoiceOver name; `accessibilityLabel` states that explicitly so
+  // the affordance can't silently lose its name.
+  const filterLabel = t('mobile.logbook.filter');
+  const filterModifiers = useMemo(
+    () => [...chipModifiers(anyFilterActive(facets)), labelStyle('iconOnly'), accessibilityLabel(filterLabel)],
+    [chipModifiers, facets, filterLabel],
+  );
+
   const handleSelectLatest = useCallback(() => onSelectPreset('recent'), [onSelectPreset]);
   const handleSelectHardest = useCallback(() => onSelectPreset('hardest'), [onSelectPreset]);
 
@@ -116,15 +133,16 @@ function LogbookChipRowComponent({
       <ScrollView axes="horizontal" showsIndicators={false}>
         {/* Vertical padding gives a pressed chip's glass lens room to expand. */}
         <HStack spacing={spacing[2]} modifiers={[padding({ horizontal: spacing[4], vertical: spacing[2] })]}>
-          {/* Filter → the long-tail sheet. An action button, not a menu. Neutral
-              glass until at least one facet is active, then amber — matching the
-              climb search, where Filters only colours up once filters are set. The
-              sort (Latest/Hardest) doesn't count, so it never tints the Filter chip. */}
+          {/* Filter → the long-tail sheet. An action button, not a menu, and
+              icon-only (see filterModifiers). Neutral glass until at least one
+              facet is active, then amber — matching the climb search, where Filters
+              only colours up once filters are set. The sort (Latest/Hardest)
+              doesn't count, so it never tints the Filter chip. */}
           <Button
-            label={t('mobile.logbook.filter')}
+            label={filterLabel}
             systemImage="line.3.horizontal.decrease"
             onPress={onOpenFilters}
-            modifiers={chipModifiers(anyFilterActive(facets))}
+            modifiers={filterModifiers}
           />
 
           {/* Latest / Hardest — live-commit the sort preset; null lights neither. */}
