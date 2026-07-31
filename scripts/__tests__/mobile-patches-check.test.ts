@@ -123,6 +123,91 @@ describe('checkPatchesApplied', () => {
   });
 });
 
+// The @expo/ui shape: a SCOPED package, so the key carries two `@` and the
+// version is the one after the scope. Its patch is plain TS whose loss is
+// runtime-only — the sheet still typechecks and bundles, it just stops
+// swallowing the native expand()/partialExpand() rejection — so this rule is
+// the only thing between a forgotten re-key and a silent regression.
+const SCOPED_PKG = '@expo/ui';
+const SCOPED_FILE = 'src/community/bottom-sheet/BottomSheet.android.tsx';
+const SCOPED_KEY = '@expo/ui@57.0.8';
+const SCOPED_PATCH_PATH = 'patches/@expo%2Fui@57.0.8.patch';
+const SCOPED_RULES: PatchRule[] = [
+  { package: SCOPED_PKG, file: SCOPED_FILE, sentinels: ['swallowMissingNativeHandler'], patchedKey: SCOPED_KEY },
+];
+const SCOPED_PATCHED_SOURCE = `
+function swallowMissingNativeHandler(error: unknown): void { /* ... */ }
+sheetRef.current?.expand()?.catch(swallowMissingNativeHandler);
+`;
+const SCOPED_UPSTREAM_SOURCE = `
+sheetRef.current?.expand();
+`;
+
+describe('checkPatchesApplied on a scoped package', () => {
+  it('passes when the scoped key matches and the sentinel is present', () => {
+    const env = makeEnv({
+      patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
+      versions: { [SCOPED_PKG]: '57.0.8' },
+      files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_PATCHED_SOURCE },
+    });
+
+    const result = checkPatchesApplied(SCOPED_RULES, env);
+
+    expect(result.checked).toBe(1);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('fails on version drift — the scope must not swallow the version segment', () => {
+    const env = makeEnv({
+      patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
+      versions: { [SCOPED_PKG]: '57.0.9' },
+      files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_PATCHED_SOURCE },
+    });
+
+    const result = checkPatchesApplied(SCOPED_RULES, env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('version drift');
+    expect(result.errors[0]).toContain('57.0.9');
+    expect(result.errors[0]).toContain('57.0.8');
+  });
+
+  it('fails when the key still matches but the sentinel is gone (patch silently dropped)', () => {
+    const env = makeEnv({
+      patchedDependencies: { [SCOPED_KEY]: SCOPED_PATCH_PATH },
+      versions: { [SCOPED_PKG]: '57.0.8' },
+      files: { [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_UPSTREAM_SOURCE },
+    });
+
+    const result = checkPatchesApplied(SCOPED_RULES, env);
+
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('patch NOT applied');
+    expect(result.errors[0]).toContain('swallowMissingNativeHandler');
+  });
+});
+
+describe('checkPatchesApplied across several packages', () => {
+  it('checks every rule and reports each package independently', () => {
+    const env = makeEnv({
+      patchedDependencies: { [KEY]: `patches/${KEY}.patch`, [SCOPED_KEY]: SCOPED_PATCH_PATH },
+      versions: { [PKG]: '4.25.2', [SCOPED_PKG]: '57.0.8' },
+      files: {
+        [`${PKG}::${FILE}`]: PATCHED_SOURCE,
+        // Only the scoped package lost its patch.
+        [`${SCOPED_PKG}::${SCOPED_FILE}`]: SCOPED_UPSTREAM_SOURCE,
+      },
+    });
+
+    const result = checkPatchesApplied([...RULES, ...SCOPED_RULES], env);
+
+    expect(result.checked).toBe(2);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain(SCOPED_PKG);
+    expect(result.errors[0]).not.toContain(PKG);
+  });
+});
+
 describe('versionFromKey', () => {
   it('extracts the version from an unscoped key', () => {
     expect(versionFromKey('react-native-screens@4.25.2')).toBe('4.25.2');

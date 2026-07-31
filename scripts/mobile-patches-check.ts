@@ -18,6 +18,13 @@
  * just stops minimizing — invisible to typecheck, the Metro bundle, and every
  * existing test, all the way into TestFlight.
  *
+ * For @expo/ui, the patch adds the Android `expand()`/`partialExpand()`
+ * rejection guard (#3478) and the iOS `onFullyDismissed` post-animation
+ * callback. Both are plain TS that Bun drops just as silently: the Android
+ * guard is pure runtime (a dropped patch turns a harmless re-snap into an
+ * unhandled rejection on older store binaries) and the iOS wiring is what
+ * makes `onFullyDismissed` ever fire. Neither shows up in a bundle.
+ *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
@@ -43,9 +50,16 @@ export interface PatchRule {
 }
 
 /**
- * Rules are maintained by hand — one per patched native module whose absence is
- * invisible to JS-level checks. Add a rule when you `bun patch` a package whose
- * effect is native-only (the JS side would catch a missing JS patch on its own).
+ * Rules are maintained by hand — one per patched file whose absence no other
+ * check would catch. Add a rule when you `bun patch` a package and the effect
+ * is native-only or runtime-only; a patch whose loss breaks a TYPE is already
+ * caught by `typecheck:mobile`, so it doesn't need one.
+ *
+ * Every rule's package must be a DIRECT dependency of packages/mobile, because
+ * {@link createNodeEnv} resolves from packages/mobile/package.json. That is why
+ * there is no expo-dev-launcher rule: under Bun's isolated linker it is only
+ * reachable through expo-dev-client, so its 10s -> 120s iOS request-timeout
+ * patch stays unguarded. Guarding it needs resolution via its parent first.
  */
 export const RULES: readonly PatchRule[] = [
   {
@@ -64,6 +78,26 @@ export const RULES: readonly PatchRule[] = [
     file: 'ios/tabs/host/RNSTabsHostComponentView.mm',
     sentinels: ['rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance'],
     patchedKey: 'react-native-screens@4.26.2',
+  },
+  // The Android sheet guard is the one hunk NOTHING else can see: it only
+  // swallows a native AsyncFunction rejection at runtime on store binaries
+  // whose ExpoUI layer predates expand()/partialExpand(). Types are unchanged,
+  // so typecheck and the Metro bundle stay green without it.
+  {
+    package: '@expo/ui',
+    file: 'src/community/bottom-sheet/BottomSheet.android.tsx',
+    sentinels: ['swallowMissingNativeHandler'],
+    patchedKey: '@expo/ui@57.0.8',
+  },
+  // The iOS half wires the native post-animation dismiss signal through to the
+  // `onFullyDismissed` prop. Drop it and the prop still TYPE-checks (the types
+  // hunk lives in the same patch) but silently never fires — LogAscentSheet,
+  // ClimbFilterSheet, AddToPlaylistSheet and AddBetaVideoSheet all rely on it.
+  {
+    package: '@expo/ui',
+    file: 'src/community/bottom-sheet/BottomSheet.ios.tsx',
+    sentinels: ['onFullyDismissedRef', 'handleNativeDismiss'],
+    patchedKey: '@expo/ui@57.0.8',
   },
 ];
 
