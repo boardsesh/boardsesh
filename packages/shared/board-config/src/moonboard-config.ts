@@ -28,6 +28,8 @@ export const MOONBOARD_GRADES = [
   { value: '8A+', label: '8a+/V12', difficultyId: 29 },
   { value: '8B', label: '8b/V13', difficultyId: 30 },
   { value: '8B+', label: '8b+/V14', difficultyId: 31 },
+  { value: '8C', label: '8c/V15', difficultyId: 32 },
+  { value: '8C+', label: '8c+/V16', difficultyId: 33 },
 ] as const;
 
 export function getMoonBoardGradeLabel(value: string): string {
