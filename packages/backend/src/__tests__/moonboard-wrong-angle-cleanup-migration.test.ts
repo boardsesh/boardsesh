@@ -21,6 +21,7 @@ type StatsRow = {
   upstream_ascensionist_count: number | null;
   boardsesh_ascensionist_count: number | null;
   display_difficulty: number | null;
+  benchmark_difficulty: number | null;
   fa_username: string | null;
   quality_normalized: boolean;
 };
@@ -129,7 +130,7 @@ describe('MoonBoard wrong-angle cleanup migration 0188 — real DB replay (#3529
   async function statsRows(): Promise<StatsRow[]> {
     const result = await db.execute(sql`
       SELECT board_type, climb_uuid, angle, upstream_ascensionist_count, boardsesh_ascensionist_count,
-             display_difficulty, fa_username, quality_normalized
+             display_difficulty, benchmark_difficulty, fa_username, quality_normalized
         FROM board_climb_stats
        ORDER BY board_type, climb_uuid, angle
     `);
@@ -146,6 +147,7 @@ describe('MoonBoard wrong-angle cleanup migration 0188 — real DB replay (#3529
   const ANGLE_AGNOSTIC = 'MOON-NULLANGLE';
   const KILTER = 'KILTER-WRONG-ANGLE';
   const IMPORTED = 'MOON-CSV-IMPORT';
+  const BENCHMARK_ONLY = 'MOON-BENCHMARK-ONLY';
 
   /**
    * Every shape the migration has to tell apart, seeded together so each run
@@ -207,7 +209,40 @@ describe('MoonBoard wrong-angle cleanup migration 0188 — real DB replay (#3529
       angle: 40,
       origin: 'moonboard_import',
     });
+
+    // 7. Fence: the leg of the shared predicate no other shape exercises alone.
+    //    A 25° row whose ONLY catalog column is benchmark_difficulty — zero
+    //    upstream count, NULL display_difficulty, NULL upstream_quality_average.
+    //    This is the shape delta D2 exists for: if statement A moved the tick
+    //    but statement B declined to delete the row (fences out of step), the
+    //    row would keep a stale boardsesh count that selfHealStaleClimbStats can
+    //    never revisit. Deleting `benchmark_difficulty IS NOT NULL` from either
+    //    fence turns this red.
+    await seedClimb({ boardType: 'moonboard', uuid: BENCHMARK_ONLY, angle: 40 });
+    await seedStats({ boardType: 'moonboard', uuid: BENCHMARK_ONLY, angle: 40, upstream: 5, displayDifficulty: 19.0 });
+    await seedStats({
+      boardType: 'moonboard',
+      uuid: BENCHMARK_ONLY,
+      angle: 25,
+      boardsesh: 1,
+      benchmarkDifficulty: 17.5,
+    });
+    await seedTick({ userId: 'climber', boardType: 'moonboard', uuid: BENCHMARK_ONLY, angle: 25 });
   }
+
+  it('leaves a benchmark_difficulty-only row alone — both fences must count that leg', async () => {
+    await seedEveryShape();
+
+    await applyMigration();
+
+    // Statement A must not move the tick…
+    expect((await tickRows()).find((tick) => tick.climb_uuid === BENCHMARK_ONLY)?.angle).toBe(25);
+    // …and statement B must not delete the row.
+    const kept = (await statsRows()).find((row) => row.climb_uuid === BENCHMARK_ONLY && row.angle === 25);
+    expect(kept).toBeDefined();
+    expect(Number(kept?.benchmark_difficulty)).toBeCloseTo(17.5);
+    expect(Number(kept?.boardsesh_ascensionist_count)).toBe(1);
+  });
 
   it('moves the stranded tick to the graded angle and deletes the emptied phantom row', async () => {
     await seedEveryShape();

@@ -1536,6 +1536,32 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(Number(seeded.bs)).toBe(1);
   });
 
+  // USER-CREATED climbs are outside the guard entirely, matching
+  // resolveMoonBoardTickAngle and migration 0188's `bc.user_id IS NULL` fence.
+  // Nothing grades a climber's own problem per angle, so a tick at any angle is
+  // legitimate and must seed a row. Deliberately NO stats row is pre-seeded at
+  // 25: with one present, ON CONFLICT DO NOTHING makes the assertion pass
+  // whether the guard fires or not. Deleting `bc.user_id IS NOT NULL` from the
+  // seed guard turns this red.
+  it('single-key: STILL seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
+    await seedUser('u-moon-owner', 'Ona');
+    await seedClimb('moonboard', 'MOON-USER-SET', 'u-moon-owner', 40);
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-USER-SET',
+      angle: 25,
+      userId: 'u-moon-owner',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsCore(db, 'moonboard', 'MOON-USER-SET', 25);
+
+    const seeded = await statsRow('moonboard', 'MOON-USER-SET', 25);
+    expect(Number(seeded.bs)).toBe(1);
+  });
+
   // The post-#3849 shape: once the catalog grades BOTH angles, a per-angle tick
   // seeds normally again. Dropping the "carries real catalog data" leg for a
   // blunt `bc.angle = angle` equality turns this red.

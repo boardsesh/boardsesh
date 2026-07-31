@@ -39,12 +39,24 @@ export type MoonBoardTickAngleInput = {
  *   (a) not MoonBoard → return requestedAngle with NO query. Kilter and Tension
  *       pay nothing; their angle genuinely is per-tick and the catalog grades
  *       every angle independently.
- *   (b) one query: the climb's own angle plus whether a stats row carrying REAL
- *       CATALOG DATA already exists at requestedAngle.
- *   (c) climb not in board_climbs, OR board_climbs.angle IS NULL, OR a
+ *   (b) one query: the climb's own angle, its owner, plus whether a stats row
+ *       carrying REAL CATALOG DATA already exists at requestedAngle.
+ *   (c) climb not in board_climbs, OR the climb is USER-CREATED
+ *       (board_climbs.user_id IS NOT NULL), OR board_climbs.angle IS NULL, OR a
  *       catalog-data stats row already exists at requestedAngle → return
  *       requestedAngle unchanged.
  *   (d) otherwise → return board_climbs.angle.
+ *
+ * The user-created fence in rule (c) is the same fence migration 0188 puts on
+ * statements A and B (`bc.user_id IS NULL`), and it is here for the same reason:
+ * createClimb writes a non-null board_climbs.angle plus a stats row carrying
+ * only fa_username, and editClimb changes board_climbs.angle while deliberately
+ * leaving the old angle's stats row in place ("removing it would race with
+ * concurrent ticks"). A fa_username-only row scores FALSE under
+ * statsRowCarriesRealCatalogData, so without this fence a climber ticking a
+ * user-created problem at the angle it was originally set at would have their
+ * tick silently rewritten to the setter's newer angle. The migration refuses to
+ * touch that shape; the runtime must refuse too, or the two halves disagree.
  *
  * Rule (c) tests for CATALOG DATA, not for a row: see
  * statsRowCarriesRealCatalogData. Every affected climb in prod already has a
@@ -82,6 +94,7 @@ export async function resolveMoonBoardTickAngle(
     const [climb] = await db
       .select({
         gradedAngle: boardClimbs.angle,
+        ownerUserId: boardClimbs.userId,
         catalogDataAtRequestedAngle: exists(
           db
             .select({ present: sql`1` })
@@ -101,6 +114,7 @@ export async function resolveMoonBoardTickAngle(
       .limit(1);
 
     if (!climb) return requestedAngle;
+    if (climb.ownerUserId != null) return requestedAngle;
     if (climb.gradedAngle == null) return requestedAngle;
     if (climb.catalogDataAtRequestedAngle) return requestedAngle;
 

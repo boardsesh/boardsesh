@@ -40,6 +40,9 @@ const MOON_PHANTOM_25 = `${PREFIX}MOON-PHANTOM`; // graded 40, phantom stats row
 const MOON_BOTH_ANGLES = `${PREFIX}MOON-BOTH`; // graded 40, REAL catalog data at 25 too (post-#3849)
 const MOON_NULL_ANGLE = `${PREFIX}MOON-NULLANGLE`; // angle-agnostic climb row (post-#3851)
 const MOON_UNKNOWN = `${PREFIX}MOON-NOT-IN-CATALOG`; // never inserted into board_climbs
+const MOON_USER_CREATED = `${PREFIX}MOON-USERSET`; // a climber's own problem, re-angled to 40 (migration 0188 fences this off)
+const MOON_BENCHMARK_ONLY = `${PREFIX}MOON-BENCH`; // graded 40; at 25 ONLY benchmark_difficulty is set
+const MOON_QUALITY_ONLY = `${PREFIX}MOON-QUAL`; // graded 40; at 25 ONLY upstream_quality_average is set
 const KILTER_NULL_ANGLE = `${PREFIX}KILTER-NULLANGLE`;
 const KILTER_ANGLED_40 = `${PREFIX}KILTER-40`;
 
@@ -84,11 +87,56 @@ async function betaLinkAngles(climbUuid: string): Promise<number[]> {
   return rows.map((row) => Number(row.angle));
 }
 
-async function insertClimb(uuid: string, boardType: string, angle: number | null): Promise<void> {
+async function insertClimb(
+  uuid: string,
+  boardType: string,
+  angle: number | null,
+  ownerUserId: string | null = null,
+): Promise<void> {
   await db.execute(sql`
-    INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, description, frames, is_listed, angle)
-    VALUES (${uuid}, ${boardType}, 1, 'setter', 'Test Climb', '', 'p1r1', true, ${angle})
+    INSERT INTO board_climbs (uuid, board_type, layout_id, setter_username, name, description, frames, is_listed, angle, user_id)
+    VALUES (${uuid}, ${boardType}, 1, 'setter', 'Test Climb', '', 'p1r1', true, ${angle}, ${ownerUserId})
     ON CONFLICT (uuid) DO NOTHING
+  `);
+}
+
+/**
+ * A stats row whose ONLY non-NULL catalog column is the one named. Each of the
+ * four legs of statsRowCarriesRealCatalogData has to be able to keep a tick in
+ * place on its own — insertGradedStatsRow sets three of them at once, so it
+ * cannot prove any single leg is load-bearing.
+ */
+async function insertSingleSignalStatsRow(
+  uuid: string,
+  angle: number,
+  signal: 'benchmark_difficulty' | 'upstream_quality_average',
+): Promise<void> {
+  const benchmarkDifficulty = signal === 'benchmark_difficulty' ? 17.5 : null;
+  const upstreamQualityAverage = signal === 'upstream_quality_average' ? 3.4 : null;
+  await db.execute(sql`
+    INSERT INTO board_climb_stats
+      (board_type, climb_uuid, angle, ascensionist_count, upstream_ascensionist_count,
+       boardsesh_ascensionist_count, display_difficulty, benchmark_difficulty,
+       upstream_quality_average, quality_normalized)
+    VALUES ('moonboard', ${uuid}, ${angle}, 0, 0, 0, NULL,
+            ${benchmarkDifficulty}, ${upstreamQualityAverage}, true)
+    ON CONFLICT (board_type, climb_uuid, angle) DO NOTHING
+  `);
+}
+
+/**
+ * What createClimb actually writes for a user-created climb: a stats row
+ * carrying fa_username and nothing else. That row scores FALSE under
+ * statsRowCarriesRealCatalogData — which is exactly why the resolver needs its
+ * own user_id fence rather than leaning on the catalog-data predicate.
+ */
+async function insertFaOnlyStatsRow(uuid: string, angle: number): Promise<void> {
+  await db.execute(sql`
+    INSERT INTO board_climb_stats
+      (board_type, climb_uuid, angle, ascensionist_count, upstream_ascensionist_count,
+       boardsesh_ascensionist_count, fa_username, quality_normalized)
+    VALUES ('moonboard', ${uuid}, ${angle}, 0, 0, 0, 'setter', true)
+    ON CONFLICT (board_type, climb_uuid, angle) DO NOTHING
   `);
 }
 
@@ -146,6 +194,20 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
 
     await insertClimb(MOON_NULL_ANGLE, 'moonboard', null);
     await insertGradedStatsRow(MOON_NULL_ANGLE, 'moonboard', 40);
+
+    // A climber's own MoonBoard problem: set at 25, later re-angled to 40.
+    // editClimb leaves the old angle's stats row (fa_username only) behind.
+    await insertClimb(MOON_USER_CREATED, 'moonboard', 40, USER_ID);
+    await insertFaOnlyStatsRow(MOON_USER_CREATED, 40);
+    await insertFaOnlyStatsRow(MOON_USER_CREATED, 25);
+
+    await insertClimb(MOON_BENCHMARK_ONLY, 'moonboard', 40);
+    await insertGradedStatsRow(MOON_BENCHMARK_ONLY, 'moonboard', 40);
+    await insertSingleSignalStatsRow(MOON_BENCHMARK_ONLY, 25, 'benchmark_difficulty');
+
+    await insertClimb(MOON_QUALITY_ONLY, 'moonboard', 40);
+    await insertGradedStatsRow(MOON_QUALITY_ONLY, 'moonboard', 40);
+    await insertSingleSignalStatsRow(MOON_QUALITY_ONLY, 25, 'upstream_quality_average');
 
     await insertClimb(KILTER_NULL_ANGLE, 'kilter', null);
     await insertClimb(KILTER_ANGLED_40, 'kilter', 40);
@@ -248,6 +310,53 @@ describe('MoonBoard tick angle resolution (#3529)', () => {
     );
 
     expect(await storedAngles(MOON_NULL_ANGLE)).toEqual([25]);
+    expect(snapEvents()).toHaveLength(0);
+  });
+
+  // 5b. USER-CREATED climbs are fenced off, matching migration 0188's
+  // `bc.user_id IS NULL` on statements A and B. createClimb writes a non-null
+  // board_climbs.angle plus an fa_username-only stats row, and editClimb changes
+  // the angle while deliberately leaving the old angle's row behind — so this
+  // shape scores FALSE under statsRowCarriesRealCatalogData and would otherwise
+  // be snapped. Deleting the `ownerUserId != null` guard from the resolver turns
+  // this red.
+  it('leaves a tick on a USER-CREATED MoonBoard climb at the angle the climber sent', async () => {
+    await tickMutations.saveTick(
+      undefined,
+      { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_USER_CREATED, angle: 25 }) },
+      authCtx(),
+    );
+
+    expect(await storedAngles(MOON_USER_CREATED)).toEqual([25]);
+    expect(snapEvents()).toHaveLength(0);
+    expect(queueClimbStatsRecomputeMock).toHaveBeenCalledWith('moonboard', MOON_USER_CREATED, 25);
+  });
+
+  // 5c/5d. Each remaining leg of the catalog-data predicate on its own.
+  // insertGradedStatsRow sets upstream count + display_difficulty +
+  // upstream_quality_average together, so it can never show that
+  // benchmark_difficulty or upstream_quality_average is individually
+  // load-bearing. Deleting either leg from real-catalog-data.ts turns the
+  // matching test red.
+  it('treats a benchmark_difficulty-only stats row as real catalog data', async () => {
+    await tickMutations.saveTick(
+      undefined,
+      { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_BENCHMARK_ONLY, angle: 25 }) },
+      authCtx(),
+    );
+
+    expect(await storedAngles(MOON_BENCHMARK_ONLY)).toEqual([25]);
+    expect(snapEvents()).toHaveLength(0);
+  });
+
+  it('treats an upstream_quality_average-only stats row as real catalog data', async () => {
+    await tickMutations.saveTick(
+      undefined,
+      { input: tickInput({ boardType: 'moonboard', climbUuid: MOON_QUALITY_ONLY, angle: 25 }) },
+      authCtx(),
+    );
+
+    expect(await storedAngles(MOON_QUALITY_ONLY)).toEqual([25]);
     expect(snapEvents()).toHaveLength(0);
   });
 

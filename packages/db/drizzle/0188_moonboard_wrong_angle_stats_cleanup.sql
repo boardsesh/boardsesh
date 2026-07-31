@@ -55,6 +55,44 @@
 --     predicate lives in TypeScript at
 --     packages/db/src/queries/climb-stats/real-catalog-data.ts; keep all three
 --     copies in step.
+--   * fa_username is deliberately NOT a catalog-data signal on MoonBoard: 0173
+--     established that MoonBoard catalog FA is not authoritative, and the one
+--     case where fa_username DOES mean something — a setter's own climb — is
+--     already covered by the bc.user_id IS NULL fence above. On a catalog climb
+--     an fa_username-only stats row is therefore deletable by statement B. Note
+--     the 2026-07-31 preflight measured "carries real catalog data", which does
+--     NOT cover fa_username — see the UNMEASURED block below.
+--   * DUPLICATE TICKS ARE POSSIBLE (statement A). boardsesh_ticks has no unique
+--     constraint on (user_id, board_type, climb_uuid, angle) — only uuid,
+--     aurora_id and kilter_id are unique — so a climber who ticked the same
+--     problem BOTH correctly at 40 and stranded at 25 ends up with two send rows
+--     at 40. board_climb_stats.ascensionist_count stays correct (the recompute
+--     counts DISTINCT climbers), so this is cosmetic in stats but visible in
+--     that climber's logbook. See the UNMEASURED block below.
+--
+-- UNMEASURED — TAKE THESE TWO READINGS AS PART OF SIGN-OFF
+--   Neither number was taken when this file was written, and neither is implied
+--   by the 2026-07-31 preflight above. Both are read-only.
+--
+--   1. Duplicate-tick collisions. If non-zero, decide deliberately between
+--      moving and deleting the loser rather than letting statement A run blind:
+--
+--      SELECT count(*) FROM boardsesh_ticks bt JOIN board_climbs bc
+--        ON bc.uuid = bt.climb_uuid AND bc.board_type = bt.board_type
+--       WHERE bt.board_type = 'moonboard' AND bc.user_id IS NULL
+--         AND bc.angle IS NOT NULL AND bt.angle <> bc.angle
+--         AND EXISTS (SELECT 1 FROM boardsesh_ticks o
+--                      WHERE o.user_id = bt.user_id AND o.board_type = bt.board_type
+--                        AND o.climb_uuid = bt.climb_uuid AND o.angle = bc.angle);
+--
+--   2. fa_username-carrying catalog rows at a wrong angle — the rows statement B
+--      will delete that a reader might expect protected:
+--
+--      SELECT count(*) FROM board_climb_stats s JOIN board_climbs bc
+--        ON bc.uuid = s.climb_uuid AND bc.board_type = s.board_type
+--       WHERE s.board_type = 'moonboard' AND bc.user_id IS NULL
+--         AND bc.angle IS NOT NULL AND s.angle <> bc.angle
+--         AND s.fa_username IS NOT NULL;
 --
 -- WHY DELETE RATHER THAN MERGE THE COUNTS (statement B)
 --   After statement A there are zero ticks left at the phantom key, so the row's

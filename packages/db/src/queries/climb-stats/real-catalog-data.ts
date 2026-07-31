@@ -52,11 +52,13 @@ export function statsRowCarriesRealCatalogData(): SQL | undefined {
  * hand-written seed statements (which cannot use the drizzle insert builder —
  * see the comment at the single-key seed).
  *
- * `tableAlias` is a SQL identifier supplied by this repo's own call sites, never
- * by user input; it is interpolated raw because a parameter placeholder cannot
- * stand in for an identifier.
+ * `tableAlias` is a SQL identifier and is interpolated raw, because a parameter
+ * placeholder cannot stand in for an identifier. The literal union type — not a
+ * comment — is what stops a caller ever routing input into it.
  */
-export function statsRowCarriesRealCatalogDataSql(tableAlias: string): SQL {
+export type StatsTableAlias = 's' | 'stats';
+
+export function statsRowCarriesRealCatalogDataSql(tableAlias: StatsTableAlias): SQL {
   const alias = sql.raw(tableAlias);
   return sql`(
     COALESCE(${alias}.upstream_ascensionist_count, 0) > 0
