@@ -34,9 +34,8 @@ import { DeferredBoard } from './DeferredBoard';
 import { BoardRenderUnavailable } from './BoardRenderUnavailable';
 import { PlaybackControls } from './PlaybackControls';
 import { useMobilePlayback } from './use-mobile-playback';
-import { PlayDrawerHeader } from './PlayDrawerHeader';
 import { copyClimbName } from './copy-climb-name';
-import { SwipeableHeader } from './SwipeableHeader';
+import { PlayDrawerSwipeableHeader } from './PlayDrawerSwipeableHeader';
 import { PlayDrawerPreviewBanner } from './PlayDrawerPreviewBanner';
 import { PlayDrawerOnWallBanner } from './PlayDrawerOnWallBanner';
 import { PlayDrawerActionBar } from './PlayDrawerActionBar';
@@ -70,7 +69,7 @@ import { hapticSuccess } from '../../lib/haptics';
 import { usePlayDrawerWakeLock } from './use-play-drawer-wake-lock';
 import { resolveFavoriteRollback } from './favorite-rollback';
 import { buildPlayDrawerBoardLayout } from './lightbulb-control';
-import { getViewOnlyPreviewNavigationTarget } from './play-drawer-navigation';
+import { getViewOnlyPreviewNavigationTarget, swipeDirectionForOffset } from './play-drawer-navigation';
 import { useLightbulbControl } from '../ble/use-lightbulb-control';
 import { track } from '../../lib/analytics';
 import { iosSystemColors } from '../../theme/ios-colors';
@@ -295,9 +294,9 @@ export function PlayDrawer({
 
   const [swipeDirection, setSwipeDirection] = useState<'next' | 'prev'>('next');
   useAnimatedReaction(
-    () => (swipeTranslateX.value < 0 ? 'next' : 'prev'),
+    () => swipeDirectionForOffset(swipeTranslateX.value),
     (direction, previous) => {
-      if (direction !== previous) runOnJS(setSwipeDirection)(direction);
+      if (direction !== null && direction !== previous) runOnJS(setSwipeDirection)(direction);
     },
   );
   // Freeze the header peek's climb for the fling+commit window, mirroring the
@@ -888,42 +887,20 @@ export function PlayDrawer({
 
                   {/* Title + grade swipe with the board: same translateX, same
                       tilt/fling; the next climb's header slides in edge-adjacent. */}
-                  <SwipeableHeader
+                  <PlayDrawerSwipeableHeader
+                    boardName={boardName as BoardName}
+                    angle={angle}
                     swipeTranslateX={swipeTranslateX}
                     viewportWidth={windowWidth}
-                    current={
-                      <PlayDrawerHeader
-                        name={displayedClimb.name}
-                        difficulty={displayedGrade?.label ?? displayedClimb.difficulty}
-                        rawDifficulty={displayedClimb.difficulty}
-                        gradeColor={displayedGrade?.color}
-                        qualityAverage={displayedClimb.quality_average}
-                        ascensionistCount={displayedClimb.ascensionist_count}
-                        setterUsername={displayedClimb.setter_username}
-                        benchmarkDifficulty={displayedClimb.benchmark_difficulty}
-                        characteristics={displayedClimb.characteristics}
-                        // The accessory-bar wall climb is physically lit right now, so its
-                        // read-only "on the wall" status rides in the header's leading slot
-                        // (left of the name, opposite the grade) rather than as a banner.
-                        leading={isPreview && drawerPreviewIsWallClimb ? <PlayDrawerOnWallBanner /> : undefined}
-                        onLongPressName={handleCopyName}
-                      />
-                    }
-                    peek={
-                      headerPeekClimb ? (
-                        <PlayDrawerHeader
-                          name={headerPeekClimb.name}
-                          difficulty={peekGrade?.label ?? headerPeekClimb.difficulty}
-                          rawDifficulty={headerPeekClimb.difficulty}
-                          gradeColor={peekGrade?.color}
-                          qualityAverage={headerPeekClimb.quality_average}
-                          ascensionistCount={headerPeekClimb.ascensionist_count}
-                          setterUsername={headerPeekClimb.setter_username}
-                          benchmarkDifficulty={headerPeekClimb.benchmark_difficulty}
-                          characteristics={headerPeekClimb.characteristics}
-                        />
-                      ) : null
-                    }
+                    currentClimb={displayedClimb}
+                    currentGrade={displayedGrade}
+                    // The accessory-bar wall climb is physically lit right now, so its
+                    // read-only "on the wall" status rides in the header's leading slot
+                    // (left of the name, opposite the grade) rather than as a banner.
+                    currentLeading={isPreview && drawerPreviewIsWallClimb ? <PlayDrawerOnWallBanner /> : undefined}
+                    onLongPressCurrentName={handleCopyName}
+                    peekClimb={headerPeekClimb}
+                    peekGrade={peekGrade}
                   />
 
                   {isPreview && !drawerPreviewIsWallClimb ? (

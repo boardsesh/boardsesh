@@ -50,10 +50,13 @@ vi.mock('../../DrawerHeader', () => ({
   DrawerHeader: ({ center }: { center?: ReactNode }) => createElement('div', null, center),
 }));
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createElement('i', null) }));
+vi.mock('../../AscentStatusGlyph', () => ({ AscentStatusGlyph: () => null }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
 const baseProps = {
+  climbUuid: 'climb-1',
+  angle: 40,
   name: 'Hueco Madness',
   difficulty: 'V6',
   qualityAverage: '0',

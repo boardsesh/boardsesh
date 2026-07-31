@@ -47,7 +47,12 @@ export const SwipeableHeader = memo(function SwipeableHeader({
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.peekLayer, peekStyle]} pointerEvents="none">
+      <Animated.View
+        style={[styles.peekLayer, peekStyle]}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         {peek}
       </Animated.View>
       <Animated.View style={[styles.currentLayer, currentStyle]}>{current}</Animated.View>

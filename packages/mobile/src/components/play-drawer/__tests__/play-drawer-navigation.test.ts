@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ClimbQueueItem, PlaylistSuggestionSource } from '@boardsesh/queue';
-import { getViewOnlyPreviewNavigationTarget } from '../play-drawer-navigation';
+import { getViewOnlyPreviewNavigationTarget, swipeDirectionForOffset } from '../play-drawer-navigation';
 
 function makeItem(id: string): ClimbQueueItem {
   return {
@@ -79,5 +79,23 @@ describe('getViewOnlyPreviewNavigationTarget', () => {
         targetItem: makeItem('previous'),
       }),
     ).toEqual({ viewOnly: false });
+  });
+});
+
+describe('swipeDirectionForOffset', () => {
+  it('keeps the initial next peek at rest and after a next-swipe reset', () => {
+    let retainedDirection: 'next' | 'prev' = 'next';
+    for (const offset of [0, -80, 0]) {
+      const directionUpdate = swipeDirectionForOffset(offset);
+      if (directionUpdate !== null) retainedDirection = directionUpdate;
+    }
+
+    expect(retainedDirection).toBe('next');
+    expect(swipeDirectionForOffset(0)).toBeNull();
+  });
+
+  it('reports prev only for a positive, non-zero swipe', () => {
+    expect(swipeDirectionForOffset(25)).toBe('prev');
+    expect(swipeDirectionForOffset(-25)).toBe('next');
   });
 });

@@ -69,6 +69,32 @@ describe('useAscentStatus', () => {
     expect(renderHook(() => useAscentStatus('a', 40)).result.current).toBe('flashed');
   });
 
+  it.each(['flash', 'send', 'attempt'] as const)('returns a %s entry at the current angle', (status) => {
+    ctrl.board = boardFrom([entry({ status })]);
+    expect(renderHook(() => useAscentStatus('a', 40)).result.current).toBe(status);
+  });
+
+  it('uses the O(1) climb-angle bucket again when the displayed climb or angle changes', () => {
+    ctrl.board = boardFrom([
+      entry({ climb_uuid: 'a', angle: 40, status: 'flash' }),
+      entry({ climb_uuid: 'a', angle: 30, status: 'attempt' }),
+      entry({ climb_uuid: 'b', angle: 30, status: 'send' }),
+    ]);
+    const { result, rerender } = renderHook(
+      ({ climbUuid, angle }: { climbUuid: string; angle: number }) => useAscentStatus(climbUuid, angle),
+      {
+        initialProps: { climbUuid: 'a', angle: 40 },
+      },
+    );
+    expect(result.current).toBe('flash');
+
+    rerender({ climbUuid: 'a', angle: 30 });
+    expect(result.current).toBe('attempt');
+
+    rerender({ climbUuid: 'b', angle: 30 });
+    expect(result.current).toBe('send');
+  });
+
   it('filters by mirror when isMirror is provided', () => {
     ctrl.board = boardFrom([
       entry({ is_mirror: true, status: 'mirror-send' }),

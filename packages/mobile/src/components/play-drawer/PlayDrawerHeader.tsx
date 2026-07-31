@@ -7,9 +7,17 @@ import { Text } from '../Text';
 import { MarqueeText } from '../MarqueeText';
 import { DrawerHeader } from '../DrawerHeader';
 import { ClimbAttributeIcons } from '../ClimbAttributeIcons';
+import { AscentStatusGlyph, AscentStatusMark } from '../AscentStatusGlyph';
+import type { AscentStatusValue } from '../../lib/ascent-status-utils';
 import { iosSystemColors } from '../../theme/ios-colors';
+import { spacing } from '../../theme/tokens';
 
 type PlayDrawerHeaderProps = {
+  /** The climb and angle used for the compact prior-ascent marker beside its name. */
+  climbUuid: string;
+  angle: number;
+  /** Set by foreign-board drawers that own a small board-specific status index. */
+  ascentStatus?: AscentStatusValue | null;
   name: string;
   /** Display label (already formatted to V or Font per user preference). */
   difficulty: string;
@@ -37,6 +45,9 @@ type PlayDrawerHeaderProps = {
 };
 
 export const PlayDrawerHeader = memo(function PlayDrawerHeader({
+  climbUuid,
+  angle,
+  ascentStatus,
   name,
   difficulty,
   rawDifficulty,
@@ -84,6 +95,11 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               </MarqueeText>
             </Pressable>
             <ClimbAttributeIcons benchmarkDifficulty={benchmarkDifficulty} characteristics={characteristics} />
+            {ascentStatus === undefined ? (
+              <AscentStatusGlyph climbUuid={climbUuid} angle={angle} style={styles.ascentStatus} />
+            ) : (
+              <AscentStatusMark status={ascentStatus} style={styles.ascentStatus} />
+            )}
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>
             {subtitleParts.join(' · ')}
@@ -131,5 +147,8 @@ const styles = StyleSheet.create({
     color: iosSystemColors.systemGray,
     marginTop: 2,
     textAlign: 'center',
+  },
+  ascentStatus: {
+    marginLeft: spacing[1],
   },
 });

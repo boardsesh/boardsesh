@@ -6,24 +6,12 @@ import { Text } from './Text';
 import { ClimbListThumbnail, THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT } from './ClimbListThumbnail';
 import { formatSends, formatQuality } from '../lib/format-climb-stats';
 import { useDisplayGrade } from '../hooks/use-display-grade';
-import { useAscentStatus } from '../hooks/use-ascent-status';
 import { useTheme } from '../providers/theme-provider';
-import { Icon } from './Icon';
 import { ClimbAttributeIcons } from './ClimbAttributeIcons';
 import { ClimbPlaylistChips } from './ClimbPlaylistChips';
 import { isClimbResolved } from '../lib/queue-climb-resolution';
-import type { IconName } from './icon-map';
-import type { AscentStatusValue } from '../lib/ascent-status-utils';
-
-// Scan-line status marker. Status is carried by glyph SHAPE in a single neutral
-// grey — not a colour — so it can't be mistaken for the colour-coded grade right
-// beside it, and so it stays readable for colour-blind users. ⚡ flashed,
-// ✓ sent, ✗ attempted.
-const ASCENT_STATUS_ICON: Record<AscentStatusValue, IconName> = {
-  flash: 'flash',
-  send: 'tick.outline',
-  attempt: 'ascent.attempt',
-};
+import { AscentStatusGlyph } from './AscentStatusGlyph';
+import { Icon } from './Icon';
 
 /**
  * Minimal structural climb shape this visual needs. Kept permissive so BOTH the
@@ -109,44 +97,6 @@ type ClimbListItemContentProps = {
    */
   showPlaylistChips?: boolean;
 };
-
-/**
- * Isolated, memoized ascent-status glyph. It is the ONLY part of the climb row
- * that subscribes to the logbook (via `useAscentStatus` → `BoardProvider`), so a
- * tick write / logbook merge re-renders just this 16px icon — not the whole row
- * (thumbnail, name, grade). Props are primitives, so `React.memo` skips it on
- * unrelated parent re-renders. Restores the memo boundary the climbs-search
- * redesign removed when it inlined `useAscentStatus` into `ClimbListItemContent`.
- */
-const AscentStatusGlyph = React.memo(function AscentStatusGlyph({
-  climbUuid,
-  angle,
-}: {
-  climbUuid: string;
-  angle: number;
-}) {
-  const { t } = useTranslation('climbs');
-  const theme = useTheme();
-  const ascentStatus = useAscentStatus(climbUuid, angle);
-
-  // Spoken by VoiceOver/TalkBack — the only non-visual signal now colour is gone.
-  // Literal keys (not a dynamic `t(...)`) so the i18n orphan checker sees them.
-  const ascentStatusLabel = useMemo(() => {
-    if (!ascentStatus) return undefined;
-    return {
-      flash: t('mobile.climbRow.ascentStatus.flash'),
-      send: t('mobile.climbRow.ascentStatus.send'),
-      attempt: t('mobile.climbRow.ascentStatus.attempt'),
-    }[ascentStatus];
-  }, [ascentStatus, t]);
-
-  if (!ascentStatus) return null;
-  return (
-    <View accessibilityRole="image" accessibilityLabel={ascentStatusLabel}>
-      <Icon name={ASCENT_STATUS_ICON[ascentStatus]} size={16} color={theme.systemColors.secondaryLabel} />
-    </View>
-  );
-});
 
 /**
  * The shared visual of a climb list item: portrait thumbnail (with ascent
