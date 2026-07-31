@@ -33,6 +33,7 @@ import { boardseshTicks } from '../src/schema/app/ascents.js';
 import { recomputeClimbStatsBulk } from '../src/queries/climb-stats/recompute.js';
 import { clearAuroraBoardData, countBoardseshOwnedRows } from '../src/queries/boards/clear-aurora-board.js';
 import { normalizeQualityTo5 } from '@boardsesh/shared-schema';
+import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
 import { createScriptDb, getScriptDatabaseUrl } from './db-connection.js';
 import {
   dedupeSourceClimbHolds,
@@ -439,8 +440,14 @@ function createImportConfigs(): ImportConfig[] {
         // value, which equals the blend when a climb has no Boardsesh votes.
         upstreamQualityAverage: normalizeQualityTo5(toNullableNumber(row.quality_average)),
         qualityNormalized: true,
-        faUsername: toNullableText(row.fa_username),
-        faAt: toNullableText(row.fa_at),
+        // The Aurora SQLite dumps ship the same impossible fa_at garbage the
+        // live sync does (future / pre-2016 dates, issue #3536) — and this
+        // bulk importer is the most likely origin of the bad prod rows, so it
+        // gets the same guard as the sync writers.
+        ...sanitizeFirstAscent({
+          faUsername: toNullableText(row.fa_username),
+          faAt: toNullableText(row.fa_at),
+        }),
       }),
     },
     {
@@ -458,8 +465,11 @@ function createImportConfigs(): ImportConfig[] {
         ascensionistCount: toNullableNumber(row.ascensionist_count),
         difficultyAverage: toNullableNumber(row.difficulty_average),
         qualityAverage: toNullableNumber(row.quality_average),
-        faUsername: toNullableText(row.fa_username),
-        faAt: toNullableText(row.fa_at),
+        // Same fa_at range guard as climb_stats above (issue #3536).
+        ...sanitizeFirstAscent({
+          faUsername: toNullableText(row.fa_username),
+          faAt: toNullableText(row.fa_at),
+        }),
         createdAt: toNullableText(row.created_at),
       }),
     },

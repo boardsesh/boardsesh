@@ -57,6 +57,7 @@ vi.mock('drizzle-orm/postgres-js', async () => {
   };
 });
 
+import type { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   climbListingConflictSet,
@@ -85,6 +86,15 @@ import {
  */
 const shimInsertedRows: Array<Record<string, unknown>> = [];
 
+/**
+ * Every `set` object handed to an `.onConflictDoUpdate(...)` call on the
+ * shim, in call order. Lets a test assert on the conflict clause the query
+ * builder actually RECORDED for a write — rebuilding the same clause by
+ * calling the production helper again would be a tautology that stays green
+ * even if the write path stops using the helper.
+ */
+const shimConflictSets: Array<Record<string, unknown>> = [];
+
 function createDbShim() {
   const fluent: Record<string, unknown> = {};
   const proxy: ProxyHandler<typeof fluent> = {
@@ -105,6 +115,12 @@ function createDbShim() {
           // the database without needing a real one.
           if (prop === 'values' && Array.isArray(args[0])) {
             shimInsertedRows.push(...(args[0] as Array<Record<string, unknown>>));
+          }
+          // Record conflict clauses so a test can assert on the SET a write
+          // actually shipped, not on a helper re-invoked inside the test.
+          if (prop === 'onConflictDoUpdate' && args[0] != null && typeof args[0] === 'object') {
+            const { set } = args[0] as { set?: Record<string, unknown> };
+            if (set != null) shimConflictSets.push(set);
           }
           return shim;
         },
@@ -226,6 +242,81 @@ describe('board_climb_holds writes', () => {
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 100, holdState: 'STARTING' },
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 300, holdState: 'HAND' },
     ]);
+  });
+});
+
+describe('board_climb_stats fa_username / fa_at sanitization (issue #3536)', () => {
+  beforeEach(() => {
+    mockSharedSync.mockReset();
+    mockPopulateDenormalizedColumns.mockReset();
+    mockPopulateDenormalizedColumns.mockResolvedValue(undefined);
+    shimInsertedRows.length = 0;
+  });
+
+  function climbStat(over: Partial<ReturnType<typeof baseClimbStat>>) {
+    return { ...baseClimbStat(), ...over };
+  }
+
+  function baseClimbStat() {
+    return {
+      climb_uuid: 'CLIMB-STATS',
+      angle: 40,
+      display_difficulty: 20,
+      benchmark_difficulty: 20,
+      ascensionist_count: 5,
+      difficulty_average: 20.1,
+      quality_average: 3,
+      fa_username: 'somebody',
+      fa_at: '2024-03-15T12:34:56.000Z',
+    };
+  }
+
+  it('nulls fa_username/fa_at for a future fa_at (2033 garbage) via the real syncSharedData write path', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [climbStat({ climb_uuid: 'CLIMB-FUTURE', fa_at: '2033-01-01T00:00:00.000Z' })],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const statsRows = shimInsertedRows.filter(
+      (row) => 'upstreamQualityAverage' in row && row.climbUuid === 'CLIMB-FUTURE',
+    );
+    expect(statsRows).toHaveLength(1);
+    expect(statsRows[0]).toMatchObject({ faUsername: null, faAt: null });
+  });
+
+  it('nulls fa_username/fa_at for a pre-2016 fa_at via the real syncSharedData write path', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [climbStat({ climb_uuid: 'CLIMB-PAST', fa_at: '2006-01-01T00:00:00.000Z' })],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const statsRows = shimInsertedRows.filter(
+      (row) => 'upstreamQualityAverage' in row && row.climbUuid === 'CLIMB-PAST',
+    );
+    expect(statsRows).toHaveLength(1);
+    expect(statsRows[0]).toMatchObject({ faUsername: null, faAt: null });
+  });
+
+  it('preserves a valid fa_at and fa_username verbatim via the real syncSharedData write path', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [climbStat({ climb_uuid: 'CLIMB-VALID' })],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    const statsRows = shimInsertedRows.filter(
+      (row) => 'upstreamQualityAverage' in row && row.climbUuid === 'CLIMB-VALID',
+    );
+    expect(statsRows).toHaveLength(1);
+    expect(statsRows[0]).toMatchObject({ faUsername: 'somebody', faAt: '2024-03-15T12:34:56.000Z' });
   });
 });
 
@@ -592,6 +683,48 @@ describe('climb conflict policies (SQL)', () => {
     expect(evalUpstreamCoalesce(upSql, null, 100)).toBe(100);
     // A row that never carried a count on either side seeds at 0.
     expect(evalUpstreamCoalesce(upSql, null, null)).toBe(0);
+  });
+
+  it('fa_username / fa_at: the RECORDED stats conflict SET ships bare excluded.* (#3536)', async () => {
+    // Renders the conflict clause captured from the query builder during a
+    // real syncSharedData climb_stats write — NOT the production helper
+    // re-invoked here, which would stay green even if upsertClimbStats
+    // stopped using it. sanitizeFirstAscent runs once, at INSERT-value
+    // construction, so the shipped ON CONFLICT clause must stay a plain
+    // excluded.* with no GREATEST/COALESCE range check drifting out of sync
+    // with the JS-side guard.
+    mockSharedSync.mockReset();
+    mockPopulateDenormalizedColumns.mockReset();
+    mockPopulateDenormalizedColumns.mockResolvedValue(undefined);
+    shimConflictSets.length = 0;
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [
+          {
+            climb_uuid: 'CLIMB-CONFLICT-SET',
+            angle: 40,
+            display_difficulty: 20,
+            benchmark_difficulty: 20,
+            ascensionist_count: 5,
+            difficulty_average: 20.1,
+            quality_average: 3,
+            fa_username: 'somebody',
+            fa_at: '2024-03-15T12:34:56.000Z',
+          },
+        ],
+      } as Partial<SyncData>),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    // board_climb_stats is the only writer whose conflict set carries fa_at.
+    const statsConflictSets = shimConflictSets.filter(
+      (conflictSet) => 'faAt' in conflictSet && 'faUsername' in conflictSet,
+    );
+    expect(statsConflictSets).toHaveLength(1);
+    const recordedSet = statsConflictSets[0] as { faUsername: SQL; faAt: SQL };
+    expect(render(recordedSet.faUsername)).toBe('excluded.fa_username');
+    expect(render(recordedSet.faAt)).toBe('excluded.fa_at');
   });
 });
 

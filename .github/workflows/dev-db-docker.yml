@@ -9,6 +9,9 @@ on:
       - 'packages/db/src/schema/**'
       - 'packages/db/drizzle/**'
       - 'packages/db/package.json'
+      # Copied into the dev-db image's node_modules (fa_at guard used by
+      # import-aurora-board-unified) — rebuild when it changes.
+      - 'packages/sync-runtime/**'
       - '.github/workflows/dev-db-docker.yml'
   workflow_dispatch:
 

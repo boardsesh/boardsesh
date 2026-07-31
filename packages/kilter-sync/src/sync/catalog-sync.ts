@@ -23,6 +23,7 @@ import { KilterApiError } from '../api/errors';
 import { pullKilterReference, type KilterReferencePull } from './reference-pull';
 import { correctGripsQualityAverage } from './quality-scale';
 import { buildLayoutResolver } from './layout-resolver';
+import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
 import { decodeGripsClimbConcat } from './catalog-parse';
 import {
   buildSkipRow,
@@ -253,14 +254,21 @@ export function foldCatalogStat(
   // (valid grade ids are ~10-33), so treat anything ≤ 1 as "no grade" → null.
   const incomingDisplayDifficulty = guardDifficulty(stat.currentDifficultyId ?? stat.difficultyAverage);
   const incomingDifficultyAverage = guardDifficulty(stat.difficultyAverage);
+  // Guard against impossible upstream fa_at values (future/pre-2016 dates)
+  // before they reach either branch below — see sanitizeFirstAscent for why
+  // nulling (not clamping) is correct here.
+  const { faUsername: sanitizedFaUsername, faAt: sanitizedFaAt } = sanitizeFirstAscent({
+    faUsername: stat.faUsername,
+    faAt: stat.faAt,
+  });
   const isCanonicalOwnRow = stat.climbUuid.toLowerCase() === canonicalUuid.toLowerCase();
   if (isCanonicalOwnRow) {
     // The canonical's own Grips row is authoritative — overwrite.
     accum.displayDifficulty = incomingDisplayDifficulty;
     accum.difficultyAverage = incomingDifficultyAverage;
     accum.qualityAverage = incomingQuality;
-    accum.faUsername = stat.faUsername;
-    accum.faAt = stat.faAt;
+    accum.faUsername = sanitizedFaUsername;
+    accum.faAt = sanitizedFaAt;
     accum.hasOwnRowStats = true;
   } else if (!accum.hasOwnRowStats) {
     // Fingerprint-merged duplicate: fill only the fields the canonical hasn't
@@ -269,8 +277,8 @@ export function foldCatalogStat(
     if (accum.displayDifficulty == null) accum.displayDifficulty = incomingDisplayDifficulty;
     if (accum.difficultyAverage == null) accum.difficultyAverage = incomingDifficultyAverage;
     if (accum.qualityAverage == null) accum.qualityAverage = incomingQuality;
-    if (accum.faUsername == null) accum.faUsername = stat.faUsername;
-    if (accum.faAt == null) accum.faAt = stat.faAt;
+    if (accum.faUsername == null) accum.faUsername = sanitizedFaUsername;
+    if (accum.faAt == null) accum.faAt = sanitizedFaAt;
   }
 }
 
@@ -683,6 +691,11 @@ async function syncBoardLayoutGroup(
             qualityAverage: blendedQuality,
             // Grips quality is natively 1-5, so a written row is always normalized.
             qualityNormalized: sql`true`,
+            // fa_* COALESCE deliberately kept as-is (#3536): the
+            // sanitizeFirstAscent guard in foldCatalogStat only stops NEW
+            // garbage from landing (a nulled incoming value falls through to
+            // the stored one), so an already-poisoned stored fa_at survives
+            // here until the deferred prod cleanup heals it.
             faUsername: sql`COALESCE(excluded.fa_username, ${boardClimbStats.faUsername})`,
             faAt: sql`COALESCE(excluded.fa_at, ${boardClimbStats.faAt})`,
             upstreamSyncedAt: sql`excluded.upstream_synced_at`,

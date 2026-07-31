@@ -84,13 +84,19 @@ COPY packages/db/tsconfig.json /app/tsconfig.json
 # sharp dep would otherwise break the standalone install. MoonBoard
 # required_set_ids are populated by the backfill, run from the full monorepo
 # against the live DB, not in this image.
+#
+# @boardsesh/sync-runtime (dependency-free; the fa_at range guard used by
+# import-aurora-board-unified, issue #3536) IS loaded at runtime, so like
+# shared-schema it is stripped from package.json and copied straight into
+# node_modules below.
 RUN cd /app && \
-    sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"@boardsesh\/board-constants"/d' -e '/"@boardsesh\/kiosk"/d' -e '/"sharp"/d' package.json && \
+    sed -i -e '/"@boardsesh\/shared-schema"/d' -e '/"@boardsesh\/board-config"/d' -e '/"@boardsesh\/board-constants"/d' -e '/"@boardsesh\/kiosk"/d' -e '/"@boardsesh\/sync-runtime"/d' -e '/"sharp"/d' package.json && \
     curl -fsSL https://bun.sh/install | bash && \
     ln -s /root/.bun/bin/bun /usr/local/bin/bun && \
     ln -s /root/.bun/bin/bunx /usr/local/bin/bunx && \
     bun install --ignore-scripts
 COPY packages/shared-schema/ /app/node_modules/@boardsesh/shared-schema/
+COPY packages/sync-runtime/ /app/node_modules/@boardsesh/sync-runtime/
 
 # Single RUN: download → extract → fix → start PG → import → migrate → stop PG → clean
 RUN set -e && \

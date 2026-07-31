@@ -150,6 +150,7 @@
         "@boardsesh/board-constants": "*",
         "@boardsesh/kiosk": "*",
         "@boardsesh/shared-schema": "*",
+        "@boardsesh/sync-runtime": "*",
         "drizzle-orm": "^0.45.1",
         "postgres": "^3.4.8",
         "uuid": "^13.0.0",

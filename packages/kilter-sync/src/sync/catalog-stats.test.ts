@@ -269,6 +269,64 @@ describe('foldCatalogStat — kilter catalog stat accumulation', () => {
     foldCatalogStat(map, stat({ climbUuid: CANON, angle: 30, ascentCount: 3 }), CANON);
     expect(map.size).toBe(2);
   });
+
+  it('nulls fa_username/fa_at on the canonical-own-row branch for an impossible future date (issue #3536)', () => {
+    const accum = fold({
+      stat: stat({
+        climbUuid: CANON,
+        angle: 40,
+        ascentCount: 1,
+        faUsername: 'somebody',
+        faAt: '2033-01-01T00:00:00.000Z',
+      }),
+      canonical: CANON,
+    });
+    expect(accum.faUsername).toBeNull();
+    expect(accum.faAt).toBeNull();
+  });
+
+  it('nulls fa_username/fa_at on the merge-fill branch for a pre-2016 date (issue #3536)', () => {
+    const accum = fold({
+      stat: stat({
+        climbUuid: MERGED,
+        angle: 40,
+        ascentCount: 1,
+        faUsername: 'somebody',
+        faAt: '2006-01-01T00:00:00.000Z',
+      }),
+      canonical: CANON,
+    });
+    expect(accum.faUsername).toBeNull();
+    expect(accum.faAt).toBeNull();
+  });
+
+  it('preserves a valid fa_at verbatim on both branches (regression guard against over-nulling)', () => {
+    const own = fold({
+      stat: stat({
+        climbUuid: CANON,
+        angle: 40,
+        ascentCount: 1,
+        faUsername: 'goodfa',
+        faAt: '2024-03-15T12:34:56.000Z',
+      }),
+      canonical: CANON,
+    });
+    expect(own.faUsername).toBe('goodfa');
+    expect(own.faAt).toBe('2024-03-15T12:34:56.000Z');
+
+    const merged = fold({
+      stat: stat({
+        climbUuid: MERGED,
+        angle: 30,
+        ascentCount: 1,
+        faUsername: 'mergefa',
+        faAt: '2023-01-01T00:00:00.000Z',
+      }),
+      canonical: CANON,
+    });
+    expect(merged.faUsername).toBe('mergefa');
+    expect(merged.faAt).toBe('2023-01-01T00:00:00.000Z');
+  });
 });
 
 describe('shouldRelistFoldedCanonical — re-list fold decision', () => {

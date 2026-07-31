@@ -15,3 +15,5 @@ export {
 export type { UpstreamPlaylistWriteDecision } from './upstream-playlist-ownership';
 export { DaemonLease, DaemonLeaseLostError } from './lease';
 export type { DaemonLeaseIo, DaemonLeaseRuntime } from './lease';
+export { sanitizeFirstAscent, FIRST_ASCENT_EARLIEST_MS } from './sanitize-first-ascent';
+export type { FirstAscentFields } from './sanitize-first-ascent';

@@ -185,9 +185,10 @@ function statValueFromAccum(accum: StatAccum): RepairStatValue {
     angle: accum.angle,
     displayDifficulty: accum.displayDifficulty,
     difficultyAverage: accum.difficultyAverage,
-    // qualityAverage (Grips' native 1-5, stored verbatim) and difficulty were
-    // range-guarded by foldCatalogStat when this repair accumulated the stat
-    // rows — the repair reads them straight from the accum.
+    // qualityAverage (Grips' native 1-5, stored verbatim), difficulty, and
+    // the fa_* fields (#3536 range guard) were all guarded by foldCatalogStat
+    // when this repair accumulated the stat rows — the repair reads them
+    // straight from the accum.
     qualityAverage: accum.qualityAverage,
     // Corrected manufacturer average also seeds the blend's upstream term.
     upstreamQualityAverage: accum.qualityAverage,
@@ -290,6 +291,11 @@ async function upsertRepairedStats(db: DrizzleDb, statValues: RepairStatValue[])
           upstreamQualityAverage: sql`COALESCE(excluded.upstream_quality_average, ${boardClimbStats.upstreamQualityAverage})`,
           qualityAverage: blendedQuality,
           qualityNormalized: sql`true`,
+          // fa_* COALESCE deliberately kept as-is (#3536): the
+          // sanitizeFirstAscent guard in foldCatalogStat (which built these
+          // values) only stops NEW garbage from landing, so an
+          // already-poisoned stored fa_at survives here until the deferred
+          // prod cleanup heals it.
           faUsername: sql`COALESCE(excluded.fa_username, ${boardClimbStats.faUsername})`,
           faAt: sql`COALESCE(excluded.fa_at, ${boardClimbStats.faAt})`,
           upstreamSyncedAt: sql`excluded.upstream_synced_at`,

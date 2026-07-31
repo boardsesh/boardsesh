@@ -32,6 +32,7 @@ import {
   snapshotClimbStatsHistoryIfDue,
 } from '@boardsesh/db/queries';
 import { setterFollows, notifications, userBoardMappings, userFollows } from '@boardsesh/db/schema';
+import { sanitizeFirstAscent } from '@boardsesh/sync-runtime';
 
 // Common ancestor of `PostgresJsDatabase` and the `PgTransaction` Drizzle
 // hands you inside `db.transaction(async (tx) => …)`. Both expose the same
@@ -134,6 +135,24 @@ export function climbStatsUpstreamConflictSet() {
   return {
     upstreamAscensionistCount: sql`COALESCE(excluded.upstream_ascensionist_count, ${climbStatsSchema.upstreamAscensionistCount}, 0)`,
     ascensionistCount: sql`COALESCE(excluded.upstream_ascensionist_count, ${climbStatsSchema.upstreamAscensionistCount}, 0) + COALESCE(${climbStatsSchema.boardseshAscensionistCount}, 0)`,
+  };
+}
+
+/**
+ * Conflict policy for board_climb_stats.fa_username / fa_at on the Aurora
+ * shared sync. Deliberately a bare `excluded.*` — the incoming value is
+ * already sanitized once at INSERT-value construction time (sanitizeFirstAscent,
+ * applied in upsertClimbStats' values.map), so `excluded.*` in this same
+ * statement reflects that sanitized value; no SQL-side range check is needed
+ * or wanted here (see @boardsesh/sync-runtime's sanitizeFirstAscent docs for
+ * why duplicating the range logic in SQL would risk drifting out of sync).
+ * Not exported: the test renders the conflict set RECORDED from the query
+ * builder, not this helper, so it can't drift from what actually ships.
+ */
+function firstAscentConflictSet() {
+  return {
+    faUsername: sql`excluded.fa_username`,
+    faAt: sql`excluded.fa_at`,
   };
 }
 
@@ -510,8 +529,10 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
         // We just normalised quality_average to 1-5, so the row is on the
         // canonical scale — the one-time 1-3→1-5 backfill must skip it.
         qualityNormalized: true,
-        faUsername: item.fa_username,
-        faAt: item.fa_at,
+        // Guard against impossible upstream fa_at values (future/pre-2016
+        // dates) before they reach the INSERT/ON CONFLICT — see
+        // sanitizeFirstAscent for why nulling (not clamping) is correct here.
+        ...sanitizeFirstAscent({ faUsername: item.fa_username, faAt: item.fa_at }),
       };
     });
 
@@ -564,8 +585,9 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
           upstreamQualityAverage: sql`excluded.upstream_quality_average`,
           qualityAverage: blendedQualityAverage,
           qualityNormalized: sql`true`,
-          faUsername: sql`excluded.fa_username`,
-          faAt: sql`excluded.fa_at`,
+          // See firstAscentConflictSet: sanitized once at INSERT-value
+          // construction time, so excluded.* here is already safe.
+          ...firstAscentConflictSet(),
           // Record that an upstream (manufacturer) sync last touched this row.
           upstreamSyncedAt: sql`excluded.upstream_synced_at`,
         },
