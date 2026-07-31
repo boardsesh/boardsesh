@@ -12,7 +12,7 @@
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_LOGBOOK_FILTERS } from '@boardsesh/logbook';
+import { DEFAULT_LOGBOOK_FILTERS, type LogbookFilterState } from '@boardsesh/logbook';
 import type { Grade } from '@boardsesh/shared-schema';
 
 type ModifierRecord = { modifier: string; arg?: unknown };
@@ -81,14 +81,14 @@ const GRADES: Grade[] = [
   { difficultyId: 14, name: '6b' },
 ];
 
-function renderRow() {
+function renderRow(filters: LogbookFilterState = DEFAULT_LOGBOOK_FILTERS) {
   captured.buttons = [];
   render(
     createElement(LogbookChipRow, {
       sortPreset: 'recent' as const,
       onSelectPreset: vi.fn(),
       onOpenFilters: vi.fn(),
-      filters: DEFAULT_LOGBOOK_FILTERS,
+      filters,
       grades: GRADES,
       onToggleFacet: vi.fn(),
       onUpdateFilters: vi.fn(),
@@ -131,6 +131,23 @@ describe('LogbookChipRow.ios Filter chip', () => {
     // Default filters ⇒ no facet active ⇒ neutral glass, not amber prominent.
     expect(filterButton.modifiers).toContainEqual({ modifier: 'buttonStyle', arg: 'glass' });
     expect(modifierNames(filterButton)).toEqual(['buttonStyle', 'controlSize', 'labelStyle', 'accessibilityLabel']);
+  });
+
+  it('keeps the icon-only modifiers on the amber chip once a facet is set', () => {
+    // A grade bound makes the grade facet active ⇒ anyFilterActive ⇒ amber
+    // prominent glass. The icon-only pair must survive that longer modifier list,
+    // otherwise the chip regresses to "F…" exactly when a filter is in play.
+    const filterButton = renderRow({ ...DEFAULT_LOGBOOK_FILTERS, minGrade: 10 });
+
+    expect(filterButton.modifiers).toContainEqual({ modifier: 'buttonStyle', arg: 'glassProminent' });
+    expect(modifierNames(filterButton)).toEqual([
+      'buttonStyle',
+      'controlSize',
+      'tint',
+      'foregroundColor',
+      'labelStyle',
+      'accessibilityLabel',
+    ]);
   });
 
   it('leaves the other chips as plain text chips', () => {
