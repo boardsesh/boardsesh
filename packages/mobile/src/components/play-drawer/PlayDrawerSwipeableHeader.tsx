@@ -116,6 +116,8 @@ function buildForeignStatusIndex(
   const statusIndex = new Map<string, AscentStatusValue>();
   for (const entry of logbook) {
     if (entry.angle !== angle || !targetClimbUuids.has(entry.climb_uuid)) continue;
+    // Match useAscentStatus's browse semantics: without an explicit mirror
+    // filter, history from both orientations contributes to the best status.
     const nextStatus = normalizeAscentStatus({
       status: entry.status,
       isAscent: entry.is_ascent,

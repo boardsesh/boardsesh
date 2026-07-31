@@ -50,7 +50,7 @@ vi.mock('../../DrawerHeader', () => ({
   DrawerHeader: ({ center }: { center?: ReactNode }) => createElement('div', null, center),
 }));
 vi.mock('../../ClimbAttributeIcons', () => ({ ClimbAttributeIcons: () => createElement('i', null) }));
-vi.mock('../../AscentStatusGlyph', () => ({ AscentStatusGlyph: () => null }));
+vi.mock('../../AscentStatusGlyph', () => ({ AscentStatusGlyph: () => null, AscentStatusMark: () => null }));
 
 import { PlayDrawerHeader } from '../PlayDrawerHeader';
 
