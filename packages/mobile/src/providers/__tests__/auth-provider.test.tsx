@@ -1489,6 +1489,38 @@ describe('AuthProvider native degraded sessions', () => {
     expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(2);
   });
 
+  it('retries after consecutive reconnect failures and stops once the session is clean', async () => {
+    onlineManager.setOnline(false);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    expect(deduplicatedRefreshMock).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      onlineManager.setOnline(true);
+      await vi.waitFor(() => expect(getAuthTokenMock).toHaveBeenCalledTimes(2));
+      await Promise.resolve();
+    });
+    expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(2);
+    expect(result.current.isAuthenticated).toBe(true);
+
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 });
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+      await vi.waitFor(() => expect(getAuthTokenMock).toHaveBeenCalledTimes(4));
+    });
+    expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(3);
+    expect(result.current.isAuthenticated).toBe(true);
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+      await Promise.resolve();
+    });
+    expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(3);
+  });
+
   it('lets a rejected reconnect refresh run the normal signed-out cleanup', async () => {
     onlineManager.setOnline(false);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

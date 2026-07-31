@@ -65,7 +65,7 @@ async function refreshTokens(credentialGeneration: number): Promise<AuthRefreshR
           extra: { status: response.status },
         });
       } else if (response.status !== 401 && response.status !== 403) {
-        // Other unavailable responses (for example 429) are handled degradation,
+        // Other unavailable responses (for example 429) are handled as degradation,
         // not logout. Report their original status once here; AuthProvider must
         // not emit a second generic "refresh unavailable" exception.
         reportHandledError(refreshError, {
