@@ -745,9 +745,9 @@ async function enforceDeletionsCoverage(
 ): Promise<void> {
   // Sign-out is (or is about to be) wiping local user data on its own terms;
   // don't write sync_meta into a DB mid-teardown, and don't spend a probe on an
-  // account that is going away. Its deleteUserCheckpoints resets the deletions
-  // cursor to the epoch anyway, so the next signed-in pull re-reads the whole
-  // retained tombstone window.
+  // account that is going away. Its deleteUserCheckpoints drops the coverage
+  // marker and rewinds the deletions cursor to the epoch anyway, so the next
+  // signed-in pull re-reads the whole retained tombstone window and re-stamps.
   if (isSigningOut()) return;
 
   // One clock reading for the whole decision. The probe below is a network

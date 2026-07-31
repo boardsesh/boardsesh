@@ -23,28 +23,24 @@
 import type { OfflineDatabase, SqlExecutor } from '../database';
 import { applyBusyTimeout } from '../db/pragmas';
 import { DELETIONS_CHECKPOINT_KEY, getCheckpointKey } from './checkpoints';
-import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS, DELETIONS_COVERAGE_MAX_AGE_MS } from './retention';
+import { DELETIONS_COVERAGE_EPOCH_FLOOR_MS, DELETIONS_COVERAGE_KEY, DELETIONS_COVERAGE_MAX_AGE_MS } from './retention';
 import { USER_DATA_TABLES } from './table-config';
 
-/**
- * sync_meta key holding the epoch-ms of the last completed deletions pull.
- *
- * Deliberately NOT under the `checkpoint:` prefix, for the same reason
- * SCOPE_COMPLETE_PREFIX isn't: it describes client wall-clock coverage, not a
- * server cursor. Sign-out's deleteUserCheckpoints resets the deletions cursor to
- * the epoch, which RE-ESTABLISHES full coverage rather than losing it, so the
- * marker must survive that wipe. scope-teardown's clearScopeSyncMeta uses an
- * exact key list, so it is unaffected too.
- */
-export const DELETIONS_COVERAGE_KEY = 'deletions-coverage';
+// The key itself lives in retention.ts (dependency-free, so sign-out's
+// checkpoint teardown can clear it without importing this module).
+export { DELETIONS_COVERAGE_KEY } from './retention';
 
 export type DeletionsCoverageVerdict =
   /**
    * No usable marker: absent (fresh install, or the OTA that introduced this),
-   * or a value below the plausibility floor. Seed it, reset nothing.
+   * or a value below the plausibility floor. Reset nothing; the next completed
+   * deletions pull stamps it.
    */
   | 'unknown'
-  /** Marker is dated after `now` — a clock corrected backwards. Re-stamp it, reset nothing. */
+  /**
+   * Marker is dated after `now` — a clock corrected backwards. Reset nothing;
+   * the completed-pass stamp overwrites it with a real `now`.
+   */
   | 'future'
   /** Within the window: every tombstone since the marker is still queryable. */
   | 'fresh'

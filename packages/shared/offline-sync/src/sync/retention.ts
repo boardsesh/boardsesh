@@ -15,6 +15,19 @@
 // outside @boardsesh/shared-schema, so there is no cycle.
 
 /**
+ * sync_meta key holding the epoch-ms of the last completed deletions pull.
+ *
+ * Lives here, in the dependency-free module, because both deletions-coverage.ts
+ * (which owns the semantics) and checkpoints.ts (which clears it on sign-out)
+ * need it, and deletions-coverage.ts already imports checkpoints.ts.
+ *
+ * Deliberately NOT under the `checkpoint:` prefix, for the same reason
+ * SCOPE_COMPLETE_PREFIX isn't: it describes client wall-clock coverage, not a
+ * server cursor.
+ */
+export const DELETIONS_COVERAGE_KEY = 'deletions-coverage';
+
+/**
  * How long a tombstone stays queryable before the daily prune job deletes it.
  * Lowering this shortens the window a stale device has to catch up.
  */

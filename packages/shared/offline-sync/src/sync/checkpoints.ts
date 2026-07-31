@@ -1,4 +1,5 @@
 import type { SqlExecutor } from '../database';
+import { DELETIONS_COVERAGE_KEY } from './retention';
 import { BOARD_DATA_TABLES } from './table-config';
 
 export type SyncCheckpoint = {
@@ -154,6 +155,15 @@ export async function deleteAllCheckpoints(db: SqlExecutor): Promise<void> {
  * update. board_climb_grades previously fell through this exact gap (its rows are
  * board reference data and are never cleared, but its checkpoint wasn't on the
  * hardcoded NOT-LIKE list, so it was wiped on every sign-out).
+ *
+ * The deletions-coverage marker goes too, even though it is not a `checkpoint:`
+ * key. It describes how much of the tombstone stream THIS account consumed, and
+ * sign-out rewinds the deletions cursor to the epoch, so it describes nothing
+ * afterwards. Left behind, a departing user's stale marker would trip the
+ * coverage guard on the NEXT account's first pull: a wasted network probe and a
+ * reset of tables sign-out already emptied, reported as a
+ * `OfflineSyncCoverageResetForced` with `rowsCleared: 0`. The new account
+ * re-stamps it when its own first deletions pull reaches the tail.
  */
 export async function deleteUserCheckpoints(db: SqlExecutor): Promise<void> {
   const preserveBoardTableClauses = BOARD_DATA_TABLES.map(() => 'AND key NOT LIKE ?').join('\n       ');
@@ -164,4 +174,5 @@ export async function deleteUserCheckpoints(db: SqlExecutor): Promise<void> {
        ${preserveBoardTableClauses}`,
     preserveBoardTableParams,
   );
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [DELETIONS_COVERAGE_KEY]);
 }

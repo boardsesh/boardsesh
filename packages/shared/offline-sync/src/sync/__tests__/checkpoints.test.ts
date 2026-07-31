@@ -10,6 +10,7 @@ import {
   deleteUserCheckpoints,
 } from '../checkpoints';
 import type { SyncCheckpoint } from '../checkpoints';
+import { getDeletionsCoverageAt, setDeletionsCoverageAt } from '../deletions-coverage';
 import { BOARD_DATA_TABLES } from '../table-config';
 import { runMigrations } from '../../db/migrations';
 import { createTestDatabase, type TestSqliteDb } from '../../testing/sqlite-test-db';
@@ -155,5 +156,18 @@ describe('deleteUserCheckpoints', () => {
       expect(await getCheckpoint(db, `checkpoint:${tableName}:kilter:1:5`)).not.toBeNull();
     }
     expect(await getCheckpoint(db, 'checkpoint:playlists')).toBeNull();
+  });
+
+  it('clears the deletions-coverage marker so it cannot leak into the next account', async () => {
+    // Sign-out rewinds the deletions cursor to the epoch, so the departing
+    // account's coverage marker describes nothing. Left behind and stale, it
+    // trips the #3474 guard on the NEXT account's first pull: a wasted probe and
+    // a reset of tables sign-out already emptied, reported as a coverage reset
+    // with rowsCleared: 0.
+    await setDeletionsCoverageAt(db, Date.now() - 100 * 24 * 60 * 60 * 1000);
+
+    await deleteUserCheckpoints(db);
+
+    expect(await getDeletionsCoverageAt(db)).toBeNull();
   });
 });
