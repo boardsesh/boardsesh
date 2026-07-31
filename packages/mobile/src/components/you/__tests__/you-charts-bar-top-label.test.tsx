@@ -13,11 +13,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RawGroupedBar } from '@boardsesh/profile-stats';
 
 const CARD_WIDTH = 320;
+// GroupedBarChart's own default `height` prop, and the room it always reserves
+// under the plot for the grade axis. Only the card *width* comes from onLayout.
+const CHART_HEIGHT = 150;
+const X_AXIS_RESERVE = 28;
 
 vi.mock('react-native', () => ({
   View: ({ children, onLayout }: { children?: ReactNode; onLayout?: (event: unknown) => void }) => {
     useEffect(() => {
-      onLayout?.({ nativeEvent: { layout: { width: CARD_WIDTH, height: 160, x: 0, y: 0 } } });
+      onLayout?.({ nativeEvent: { layout: { width: CARD_WIDTH, height: CHART_HEIGHT, x: 0, y: 0 } } });
       // eslint-disable-next-line react-hooks/exhaustive-deps -- fire once on mount, matching a real layout pass
     }, []);
     return createElement('div', null, children);
@@ -154,7 +158,7 @@ describe('GroupedBarChart top-label sizing (#3779)', () => {
     const rotation = labelStyles(props).find((style) => 'transform' in style);
     expect(rotation).toEqual({ transform: [{ rotate: '-90deg' }], marginBottom: expect.any(Number) });
     // Plot height shrinks so the standing label still fits inside the card.
-    expect(props.height).toBeLessThan(150 - 28);
+    expect(props.height).toBeLessThan(CHART_HEIGHT - X_AXIS_RESERVE);
   });
 
   it('leaves single-digit counts horizontal and the plot at full height', () => {
@@ -164,7 +168,7 @@ describe('GroupedBarChart top-label sizing (#3779)', () => {
     if (!props) return;
 
     expect(labelStyles(props).some((style) => 'transform' in style)).toBe(false);
-    expect(props.height).toBe(150 - 28);
+    expect(props.height).toBe(CHART_HEIGHT - X_AXIS_RESERVE);
     expect(props.topLabelContainerStyle?.width).toBe(props.barWidth);
   });
 });
