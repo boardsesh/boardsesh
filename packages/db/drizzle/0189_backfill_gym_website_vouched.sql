@@ -35,10 +35,11 @@
 -- merge that starts copying website, an admin script) MUST set this column in
 -- the same UPDATE, defaulting to false.
 --
--- Both statements are idempotent: re-running is a no-op.
+-- Both statements are idempotent: re-running lands on the same state.
 UPDATE "gyms"
    SET "website_vouched_by_owner" = true
  WHERE "website" IS NOT NULL
+   AND "website_vouched_by_owner" = false
    AND "owner_id" <> '00000000-0000-0000-0000-000000000000';
 --> statement-breakpoint
 UPDATE "gym_claims"
