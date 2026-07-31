@@ -205,6 +205,7 @@ type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
   sessionId: string | null;
   subscribeToQueueEvents: ReturnType<typeof useQueue>['subscribeToQueueEvents'];
+  removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
 };
 
 const user = (overrides: Partial<SessionUser> = {}): SessionUser => ({
@@ -360,8 +361,9 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
       state: queue.state,
       sessionId: queue.sessionId,
       subscribeToQueueEvents: queue.subscribeToQueueEvents,
+      removeFromQueue: queue.removeFromQueue,
     });
-  }, [queue.state, queue.sessionId, queue.subscribeToQueueEvents, onSnapshot]);
+  }, [queue.state, queue.sessionId, queue.subscribeToQueueEvents, queue.removeFromQueue, onSnapshot]);
   return null;
 }
 
@@ -942,6 +944,62 @@ describe('QueueItemRemoved self-echo attribution (issue #3382)', () => {
     expect(analytics.track).toHaveBeenCalledWith(
       'Climb Removed from Queue',
       expect.objectContaining({ removedBy: 'peer' }),
+    );
+  });
+
+  // The suppressed echo used to be the only mobile remove carrying
+  // `partyMode`, so the surviving self-track has to compute it or a PostHog
+  // breakdown on partyMode loses every mobile self-remove.
+  const seedAndRemoveLocally = async () => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
+    });
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(2, 'hash-2', wireItem('q1', 'c1')) } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1']);
+    });
+
+    analytics.track.mockClear();
+    act(() => {
+      snapshots.at(-1)?.removeFromQueue('q1');
+    });
+    await waitFor(() => {
+      expect(removeTrackCalls()).toHaveLength(1);
+    });
+  };
+
+  it('tracks a local remove with partyMode: true when the crew has more than one climber', async () => {
+    const joined = createJoinSessionResponse();
+    graph.execute.mockResolvedValue({
+      joinSession: {
+        ...joined.joinSession,
+        users: [...joined.joinSession.users, user({ id: 'participant-peer', username: 'Sam', userId: 'db-peer' })],
+      },
+    });
+
+    await seedAndRemoveLocally();
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Removed from Queue',
+      expect.objectContaining({ removedBy: 'self', partyMode: true }),
+    );
+  });
+
+  it('tracks a solo remove with partyMode: false', async () => {
+    await seedAndRemoveLocally();
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Removed from Queue',
+      expect.objectContaining({ removedBy: 'self', partyMode: false }),
     );
   });
 });

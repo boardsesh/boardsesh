@@ -14,7 +14,7 @@ import type {
   PlaylistSuggestionSource,
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
-import { createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
+import { countDistinctSessionUsers, createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { SubscriptionQueueEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
@@ -772,11 +772,16 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // item locally; the server mutation only syncs it to an existing session
       // (and no-ops when there's none).
       dispatch({ type: 'DELTA_REMOVE_QUEUE_ITEM', payload: { uuid } });
+      // partyMode matches web's self-track (QueueContext.tsx): the crew roster
+      // holds more than one distinct human. Without it the suppressed self-echo
+      // would take `partyMode: true` with it and a PostHog breakdown on
+      // partyMode would lose every mobile self-remove.
       track(SHARED_EVENTS.ClimbRemovedFromQueue, {
         climbUuid: removedItem?.climb.uuid ?? null,
         queueItemUuid: uuid,
         boardName: activeBoardRef.current?.boardType,
         layoutId: activeBoardRef.current?.layoutId,
+        partyMode: countDistinctSessionUsers(sessionRuntimeStateRef.current?.users) > 1,
         removedBy: 'self',
       });
       mutations.removeQueueItem(uuid).catch((error) => {
