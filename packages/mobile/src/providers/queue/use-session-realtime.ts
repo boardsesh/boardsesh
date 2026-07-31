@@ -17,7 +17,7 @@ import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
 import type { SessionUser, SubscriptionQueueEvent, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
-import { isNotSessionMemberError } from '@boardsesh/graphql-client';
+import { GraphQLOperationError, isNotSessionMemberError } from '@boardsesh/graphql-client';
 import { getWsClient } from '../../lib/graphql/ws-client';
 import { AUTH_REFRESH_RETRY_CLOSE_CODE } from '../../lib/graphql/ws-close-codes';
 import {
@@ -421,6 +421,25 @@ export function useSessionRealtime({
           joinDeferredForBackground = true;
           joinRetryCount = 0;
           clearJoinRetryTimer();
+          return;
+        }
+        // The party session already ended server-side (leader ended it, or it
+        // was reaped) while we were joining/rejoining — expected teardown, not
+        // a sync failure. Mirrors web's SESSION_ENDED guard
+        // (session-connection-ports.ts) and this file's own NOT_SESSION_MEMBER
+        // subscription-error branch. Unlike that branch this toasts: a client
+        // whose join fails here never receives the live `SessionEnded`
+        // subscription event (which does toast), so this is often the only
+        // signal the user gets that the session is gone. Guarded on the still-
+        // active session so a late error from a superseded A→B switch can't
+        // clear the new session.
+        if (
+          joinError instanceof GraphQLOperationError &&
+          joinError.extensions?.code === 'SESSION_ENDED' &&
+          sessionIdRef.current === sessionId
+        ) {
+          void clearSessionRef.current();
+          showToastRef.current(tRef.current('mobile.toast.sessionEnded'), 'success');
           return;
         }
         logJoinFailure(joinError);
