@@ -692,8 +692,12 @@ export const TotalAreaChart = memo(function TotalAreaChart({
             endOpacity={colorScheme === 'dark' ? 0.1 : 0.04}
             gradientDirection="vertical"
             thickness={2}
-            curved
-            curvature={0.2}
+            // Cardinal-spline curving (gifted-charts' `curved`) can overshoot past a
+            // data point's y-value between two neighbours, making a flat or dipping
+            // week look like it rose. The weekly cadence is evenly spaced already,
+            // so a straight-segment line reads just as smoothly without the
+            // overshoot (#3780).
+            curved={false}
             maxValue={model.maxValue}
             noOfSections={model.sections}
             yAxisLabelTexts={model.yAxisLabelTexts}
