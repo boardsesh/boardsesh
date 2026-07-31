@@ -7,6 +7,9 @@ import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react
 const redirectMock = vi.hoisted(() => vi.fn());
 const platformState = vi.hoisted(() => ({ OS: 'ios' }));
 const routerState = vi.hoisted(() => ({ segments: [] as string[] }));
+const appStateState = vi.hoisted(() => ({
+  listener: null as ((nextAppState: string) => void) | null,
+}));
 const authTokenEventsState = vi.hoisted(() => ({
   listener: null as
     | ((token: string | null, source: 'local' | 'remote' | 'remote-signout' | 'session' | 'hint') => void)
@@ -43,7 +46,14 @@ vi.mock('expo-router', () => ({
 vi.mock('react-native', () => ({
   Platform: platformState,
   AppState: {
-    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+    addEventListener: vi.fn((_event: string, listener: (nextAppState: string) => void) => {
+      appStateState.listener = listener;
+      return {
+        remove: vi.fn(() => {
+          if (appStateState.listener === listener) appStateState.listener = null;
+        }),
+      };
+    }),
   },
 }));
 
@@ -102,6 +112,7 @@ vi.mock('../../lib/auth-session', async (importOriginal) => {
 beforeEach(() => {
   platformState.OS = 'ios';
   routerState.segments = [];
+  appStateState.listener = null;
   redirectMock.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReset();
   isAuthCredentialGenerationCurrentMock.mockReturnValue(true);
@@ -1417,6 +1428,32 @@ describe('AuthProvider native degraded sessions', () => {
     });
     expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(2);
     expect(result.current.isAuthenticated).toBe(true);
+  });
+
+  it('revalidates and upgrades a degraded native session when the app becomes active', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useAuth(), { wrapper: createWrapper(queryClient) });
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    expect(deduplicatedRefreshMock).toHaveBeenCalledOnce();
+    expect(appStateState.listener).not.toBeNull();
+
+    deduplicatedRefreshMock.mockResolvedValue({ status: 'refreshed', generation: 1 });
+    await act(async () => {
+      appStateState.listener?.('active');
+      await vi.waitFor(() => expect(getAuthTokenMock).toHaveBeenCalledTimes(3));
+    });
+
+    expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(2);
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(clearStoredSessionIdMock).not.toHaveBeenCalled();
+    expect(clearStoredActiveBoardMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+      await Promise.resolve();
+    });
+    expect(deduplicatedRefreshMock).toHaveBeenCalledTimes(2);
   });
 
   it('coalesces connectivity flaps and unsubscribes after unmount', async () => {

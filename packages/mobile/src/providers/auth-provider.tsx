@@ -585,10 +585,10 @@ export function AuthProvider({ children, onReady }: AuthProviderProps) {
         if (reconnectAuthCheckRef.current === reconnectCheck) reconnectAuthCheckRef.current = null;
       });
       reconnectAuthCheckRef.current = reconnectCheck;
-      // checkAuth owns expected failure handling. Keep this defensive catch so a
-      // future regression cannot turn a connectivity event into an unhandled
-      // promise rejection.
-      reconnectCheck.catch(reportError);
+      // checkAuth owns telemetry as well as expected failure handling. Keep a
+      // no-op rejection handler only as an unhandled-rejection guard; reporting
+      // here would duplicate the original error if that ownership ever regressed.
+      reconnectCheck.catch(() => {});
     });
   }, [checkAuth, isNativeSessionDegraded]);
 
