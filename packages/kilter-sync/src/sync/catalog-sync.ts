@@ -298,6 +298,98 @@ export function foldCatalogStatOnce(
   return true;
 }
 
+type NewHoldRow = {
+  boardType: string;
+  climbUuid: string;
+  holdId: number;
+  frameNumber: number;
+  holdState: string;
+};
+type NewAliasRow = { boardType: string; aliasUuid: string; canonicalUuid: string; source: string };
+
+/**
+ * Flush one Grips layout's new-canonical batch (climbs + holds + aliases +
+ * denormalized columns) as a single atomic unit.
+ *
+ * Prior to #3538 these four steps ran as separate autocommit statement
+ * groups. A process kill between the climbs insert and any later step left
+ * `board_climbs` rows committed (is_listed=true, hold_fingerprint set) with
+ * no `board_climb_holds` rows and NULL `required_set_ids`/`compatible_size_ids`.
+ * Worse, the next cycle's UUID-identity short-circuit in `syncBoardLayoutGroup`
+ * matches these stranded rows by uuid and skips all hold/fingerprint
+ * re-derivation forever — there is no self-heal path, so the gap is permanent
+ * per affected climb. Wrapping the whole flush in one `db.transaction` makes
+ * it all-or-nothing: either every row for this batch lands, or none does and
+ * the climb is re-attempted (and re-derived from scratch) on the next cycle.
+ *
+ * Mirrors the pattern already used by aurora-sync's shared-sync.ts (`db.transaction`
+ * passing `tx` into every per-table upsert helper, no cast needed).
+ */
+export async function flushKilterLayoutBatch(
+  db: DrizzleDb,
+  newClimbInserts: NewBoardClimb[],
+  newHoldRows: NewHoldRow[],
+  aliasRows: NewAliasRow[],
+): Promise<void> {
+  if (newClimbInserts.length === 0 && newHoldRows.length === 0 && aliasRows.length === 0) return;
+
+  await db.transaction(async (tx) => {
+    if (newClimbInserts.length > 0) {
+      await processBatches(newClimbInserts, async (chunk) => {
+        await tx
+          .insert(boardClimbs)
+          .values(chunk)
+          .onConflictDoUpdate({
+            target: [boardClimbs.uuid],
+            // Never overwrite a user-authored climb on a UUID collision — the
+            // catalog sync only owns Kilter-synced rows (user_id IS NULL).
+            setWhere: isNull(boardClimbs.userId),
+            set: {
+              holdFingerprint: sql`COALESCE(${boardClimbs.holdFingerprint}, excluded.hold_fingerprint)`,
+              frames: sql`COALESCE(${boardClimbs.frames}, excluded.frames)`,
+              // Track the latest derived no_match on a re-sync that reaches this
+              // branch (the dedup path normally skips existing UUIDs). Overwrite
+              // (not COALESCE) so a "No match" prefix removed upstream actually
+              // clears the token — matching aurora-sync's excluded.characteristics.
+              //
+              // ASSUMPTION: Kilter/Tension characteristics currently only carry
+              // `no_match`; method tags are MoonBoard-only. A blind overwrite is
+              // therefore safe — the incoming value is either ['no_match'] or null,
+              // and we want null to clear a stale token. If Kilter ever gains its
+              // own characteristic tokens (e.g. board-specific flags), switch this
+              // to a merge expression (e.g. array_cat + dedup) so that tokens not
+              // managed by this sync path aren't silently dropped.
+              characteristics: sql`excluded.characteristics`,
+            },
+          });
+      });
+    }
+    if (newHoldRows.length > 0) {
+      await processBatches(newHoldRows, async (chunk) => {
+        await tx.insert(boardClimbHolds).values(chunk).onConflictDoNothing();
+      });
+    }
+    if (aliasRows.length > 0) {
+      await processBatches(aliasRows, async (chunk) => {
+        await tx
+          .insert(boardClimbAliases)
+          .values(chunk)
+          .onConflictDoUpdate({
+            target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
+            set: { lastSeenAt: sql`now()`, source: sql`excluded.source` },
+          });
+      });
+    }
+    if (newClimbInserts.length > 0) {
+      await populateDenormalizedColumns(
+        tx,
+        KILTER,
+        newClimbInserts.map((climb) => climb.uuid),
+      );
+    }
+  });
+}
+
 /**
  * Sync every Grips layout that maps to one board_layouts.id. Existing climbs
  * for the layout are loaded once (uuid identity + fingerprint maps) so dedup is
@@ -518,61 +610,13 @@ async function syncBoardLayoutGroup(
 
     // Flush this Grips layout. Order matters: climbs before holds (FK) before
     // aliases (canonical FK). Stats are deferred to the group-level pass.
-    if (newClimbInserts.length > 0) {
-      await processBatches(newClimbInserts, async (chunk) => {
-        await db
-          .insert(boardClimbs)
-          .values(chunk)
-          .onConflictDoUpdate({
-            target: [boardClimbs.uuid],
-            // Never overwrite a user-authored climb on a UUID collision — the
-            // catalog sync only owns Kilter-synced rows (user_id IS NULL).
-            setWhere: isNull(boardClimbs.userId),
-            set: {
-              holdFingerprint: sql`COALESCE(${boardClimbs.holdFingerprint}, excluded.hold_fingerprint)`,
-              frames: sql`COALESCE(${boardClimbs.frames}, excluded.frames)`,
-              // Track the latest derived no_match on a re-sync that reaches this
-              // branch (the dedup path normally skips existing UUIDs). Overwrite
-              // (not COALESCE) so a "No match" prefix removed upstream actually
-              // clears the token — matching aurora-sync's excluded.characteristics.
-              //
-              // ASSUMPTION: Kilter/Tension characteristics currently only carry
-              // `no_match`; method tags are MoonBoard-only. A blind overwrite is
-              // therefore safe — the incoming value is either ['no_match'] or null,
-              // and we want null to clear a stale token. If Kilter ever gains its
-              // own characteristic tokens (e.g. board-specific flags), switch this
-              // to a merge expression (e.g. array_cat + dedup) so that tokens not
-              // managed by this sync path aren't silently dropped.
-              characteristics: sql`excluded.characteristics`,
-            },
-          });
-      });
-      result.canonicalsInserted += newClimbInserts.length;
-    }
-    if (newHoldRows.length > 0) {
-      await processBatches(newHoldRows, async (chunk) => {
-        await db.insert(boardClimbHolds).values(chunk).onConflictDoNothing();
-      });
-    }
-    if (aliasRows.length > 0) {
-      await processBatches(aliasRows, async (chunk) => {
-        await db
-          .insert(boardClimbAliases)
-          .values(chunk)
-          .onConflictDoUpdate({
-            target: [boardClimbAliases.boardType, boardClimbAliases.aliasUuid],
-            set: { lastSeenAt: sql`now()`, source: sql`excluded.source` },
-          });
-      });
-      result.aliasesUpserted += aliasRows.length;
-    }
-    if (newClimbInserts.length > 0) {
-      await populateDenormalizedColumns(
-        db,
-        KILTER,
-        newClimbInserts.map((climb) => climb.uuid),
-      );
-    }
+    // The whole flush runs in one transaction — a crash/kill between steps
+    // must never leave a canonical committed without its holds/aliases/denorm
+    // columns (see #3538: a stranded climb matches on UUID identity on every
+    // later run and never gets its holds re-derived).
+    await flushKilterLayoutBatch(db, newClimbInserts, newHoldRows, aliasRows);
+    result.canonicalsInserted += newClimbInserts.length;
+    result.aliasesUpserted += aliasRows.length;
     log(
       `[kilter-catalog] layout ${gripsLayoutUuid}: ${climbs.length} climbs, +${newClimbInserts.length} canonical, +${aliasRows.length} aliases`,
     );
