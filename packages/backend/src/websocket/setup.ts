@@ -138,7 +138,8 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         // Rate-limit identity for anonymous callers. Without this every
         // reconnect got a fresh uuidv4 connectionId and therefore a fresh
         // bucket, which defeated the tier-1 limiter entirely (issue #2863).
-        const clientIp = resolveWebSocketClientIp(ctx.extra.request);
+        const upgradeRequest = ctx.extra.request;
+        const clientIp = resolveWebSocketClientIp(upgradeRequest);
 
         // Create context on initial connection with auth info
         const context = createContext({
@@ -154,7 +155,6 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         // denial (see requireSessionMember) only carries the connectionId, so
         // logging the User-Agent + remote address here makes it cheap to trace
         // a noisy/stale client back to its build (issue #2355).
-        const upgradeRequest = ctx.extra.request;
         logger.info(`Client connected: ${context.connectionId} (authenticated: ${isAuthenticated})`, {
           connectionId: context.connectionId,
           authenticated: isAuthenticated,

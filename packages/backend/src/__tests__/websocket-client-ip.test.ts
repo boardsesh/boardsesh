@@ -123,4 +123,10 @@ describe('normalizeClientIp', () => {
   it('keeps an embedded trailing IPv4 out of the /64 prefix', () => {
     expect(normalizeClientIp('2001:db8:85a3:1::192.0.2.1')).toBe('2001:db8:85a3:1::/64');
   });
+
+  it('keys the hex form of an IPv4-mapped address as IPv6 instead of dropping it', () => {
+    // `::ffff:c000:0201` is a valid IPv6 literal whose tail (`c000:0201`) is not
+    // an IP, so the `::ffff:` unwrap must not fire here.
+    expect(normalizeClientIp('::ffff:c000:0201')).toBe('0:0:0:0::/64');
+  });
 });

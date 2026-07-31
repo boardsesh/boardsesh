@@ -95,7 +95,7 @@ describe('applyRateLimit key selection', () => {
     expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('user-42', 'createSession', 5, 60_000);
   });
 
-  it('uses clientIp for anonymous HTTP requests', async () => {
+  it('uses clientIp for anonymous callers on both transports', async () => {
     const ctx: ConnectionContext = {
       connectionId: 'http-abc-123',
       isAuthenticated: false,

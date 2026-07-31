@@ -64,7 +64,11 @@ export function normalizeClientIp(raw: string | undefined): string | undefined {
   const withoutBrackets = trimmed.replace(/^\[/, '').replace(/\]$/, '');
   const withoutZone = withoutBrackets.split('%')[0] ?? '';
   const lowercased = withoutZone.toLowerCase();
-  const unwrapped = lowercased.startsWith('::ffff:') ? lowercased.slice('::ffff:'.length) : lowercased;
+  // Only unwrap when the tail is genuinely dotted-quad IPv4. The hex form
+  // (`::ffff:c000:0201`) is a valid IPv6 literal whose tail is not an IP, so
+  // stripping unconditionally would drop it instead of keying its /64.
+  const mappedIpv4Tail = lowercased.startsWith('::ffff:') ? lowercased.slice('::ffff:'.length) : undefined;
+  const unwrapped = mappedIpv4Tail !== undefined && isIP(mappedIpv4Tail) === 4 ? mappedIpv4Tail : lowercased;
 
   const family = isIP(unwrapped);
   if (family === 0) return undefined;
