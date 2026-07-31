@@ -108,9 +108,16 @@ export async function publishBoardQueuePreviewTombstoneForSession(sessionId: str
  * board-visibility flip is not a queue event, and once the flip commits the
  * producer simply goes quiet.
  *
- * Only publishes when the board still has a bound session (the only case where
- * a snapshot was ever produced, so the only case where anything needs
- * clearing).
+ * Publishes UNCONDITIONALLY once the caller's transition gate holds. It
+ * deliberately does not require a live `board:{id}:session` binding first:
+ * that binding is only a side effect of a climb report, TTLs out after 12h,
+ * and is process-local when Redis is off — while the snapshot a kiosk is
+ * actually rendering can equally come from
+ * `resolvePublicPreviewSessionForBoard`'s durable fallback (newest active
+ * public `board_sessions` row for the board). Gating on the binding would
+ * leave exactly those kiosks — no send in 12h, Redis flushed, or a Redis-less
+ * restart — stuck on the stale queue forever, which is the bug this exists to
+ * fix. An empty publish on a channel nobody watches costs one PUBLISH.
  *
  * Deliberately does NOT re-check `isBoardAnonReadable` or
  * `isPublicActiveSession` the way `...ForSession` does: by the time a caller
@@ -125,8 +132,5 @@ export async function publishBoardQueuePreviewTombstoneForSession(sessionId: str
  * `...ForSession`'s gate 1 exists to prevent.
  */
 export async function publishBoardQueuePreviewTombstoneForBoard(boardId: number): Promise<void> {
-  const boundSessionId = await pubsub.getBoardSession(String(boardId));
-  if (!boundSessionId) return;
-
   pubsub.publishBoardQueuePreview(String(boardId), buildEmptyBoardQueuePreview(boardId));
 }

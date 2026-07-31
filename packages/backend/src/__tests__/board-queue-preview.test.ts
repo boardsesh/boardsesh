@@ -845,14 +845,82 @@ describe('board-queue-preview tombstone', () => {
     }
   });
 
-  it('the board-level tombstone publishes nothing when no session is bound to the board', async () => {
+  it('the board-level tombstone publishes even with no session binding (kiosks seeded from the DB fallback)', async () => {
+    // The `board:{id}:session` binding is only a side effect of a climb
+    // report, TTLs out after 12h and is process-local without Redis — but a
+    // kiosk's snapshot can come from resolvePublicPreviewSessionForBoard's
+    // durable fallback. Gating the tombstone on the binding would strand
+    // exactly those kiosks on a stale queue.
     const boardId = await makeBoard({ isPublic: true });
     const received: BoardQueuePreview[] = [];
     const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
 
     try {
-      // Nothing ever previewed here, so there is nothing to clear.
       await publishBoardQueuePreviewTombstoneForBoard(boardId);
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ boardId, ...EMPTY_PREVIEW_SHAPE });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('flipping private clears a kiosk whose snapshot came from the DB fallback (no binding)', async () => {
+    const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: true });
+    const sessionId = await makeSession({ boardId, isPublic: true });
+    await seedQueueState(sessionId, [makeQueueItem(1)], null);
+    // Deliberately no bindSessionToBoard — the seed still finds this session
+    // through the durable fallback, so the kiosk is showing a queue the flip
+    // has to clear.
+    expect(await getBoardQueuePreviewSnapshot(boardId)).not.toBeNull();
+
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isPublic: false } }, authCtx());
+
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ boardId, ...EMPTY_PREVIEW_SHAPE });
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('does not tombstone when a SYSTEM-owned board flips isPublic (still anon-readable)', async () => {
+    await seedSystemBoardOwner();
+    const { id: boardId, uuid: boardUuid } = await makeBoardRow({ isPublic: true, ownerId: SYSTEM_BOARD_OWNER_ID });
+    const sessionId = await makeSession({ boardId, isPublic: true });
+    await seedQueueState(sessionId, [makeQueueItem(1)], null);
+    await bindSessionToBoard(sessionId, boardId);
+
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      // System boards stay anon-readable whatever isPublic says, so the
+      // producer keeps publishing — blanking their kiosks would be a bug.
+      await socialBoardMutations.updateBoard(
+        null,
+        { input: { boardUuid, isPublic: false } },
+        authCtx({ userId: SYSTEM_BOARD_OWNER_ID }),
+      );
+      expect(received).toHaveLength(0);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('does not tombstone when a soft-deleted board is restored and flipped private in one update', async () => {
+    const { boardId, boardUuid } = await makePreviewableSession();
+    await db.update(dbSchema.userBoards).set({ deletedAt: new Date() }).where(eq(dbSchema.userBoards.id, boardId));
+
+    const received: BoardQueuePreview[] = [];
+    const unsubscribe = await pubsub.subscribeBoardQueuePreview(String(boardId), (preview) => received.push(preview));
+
+    try {
+      // The board was already out of the anon-readable set, so this update is
+      // not an anon-readable → not-anon-readable transition.
+      await socialBoardMutations.updateBoard(null, { input: { boardUuid, isPublic: false } }, authCtx());
       expect(received).toHaveLength(0);
     } finally {
       unsubscribe();

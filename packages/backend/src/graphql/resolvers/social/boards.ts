@@ -2027,7 +2027,11 @@ export const socialBoardMutations = {
     // quiet and kiosks would keep the last snapshot. Gate on the pre-delete
     // row's anon-readability (a private board's channel never carried a
     // snapshot, and publishing on it would leak the deletion's timing).
-    if (board.isPublic || board.ownerId === SYSTEM_BOARD_OWNER_ID) {
+    // `isPublic` alone is the whole gate: the other half of
+    // `isBoardAnonReadable` — system-owned boards — is unreachable here,
+    // because the ownership check above only lets the authenticated owner
+    // through and nobody can authenticate as the synthetic system owner.
+    if (board.isPublic) {
       try {
         await publishBoardQueuePreviewTombstoneForBoard(board.id);
       } catch (error) {
