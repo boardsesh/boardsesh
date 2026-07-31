@@ -298,14 +298,11 @@ export function foldCatalogStatOnce(
   return true;
 }
 
-type NewHoldRow = {
-  boardType: string;
-  climbUuid: string;
-  holdId: number;
-  frameNumber: number;
-  holdState: string;
-};
-type NewAliasRow = { boardType: string; aliasUuid: string; canonicalUuid: string; source: string };
+// Derived from the schema (not hand-written) so a column added to or widened on
+// board_climb_holds / board_climb_aliases is a compile error at this API
+// boundary instead of silent drift — matching how NewBoardClimb is imported.
+type NewHoldRow = typeof boardClimbHolds.$inferInsert;
+type NewAliasRow = typeof boardClimbAliases.$inferInsert;
 
 /**
  * Flush one Grips layout's new-canonical batch (climbs + holds + aliases +
@@ -324,6 +321,17 @@ type NewAliasRow = { boardType: string; aliasUuid: string; canonicalUuid: string
  *
  * Mirrors the pattern already used by aurora-sync's shared-sync.ts (`db.transaction`
  * passing `tx` into every per-table upsert helper, no cast needed).
+ *
+ * Scope trade-off: the transaction spans a whole Grips layout, not a
+ * `processBatches` chunk (`BATCH` caps each statement, not the transaction). In
+ * steady state `newClimbInserts` is ~0 so this costs nothing. On a first bulk
+ * ingest or a large decoder-backlog recovery it can hold tens of thousands of
+ * `board_climbs` rows (and ~10x that in holds) plus the three
+ * `populateDenormalizedColumns` UPDATEs open in one transaction: a bigger
+ * snapshot, and a failure near the end retries the whole layout next cycle
+ * instead of keeping partial progress. That is the deliberate price of the
+ * all-or-nothing guarantee — a partially-flushed layout is unrecoverable
+ * (see the UUID short-circuit above), a retried one is not.
  */
 export async function flushKilterLayoutBatch(
   db: DrizzleDb,
