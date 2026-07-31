@@ -173,6 +173,10 @@ async function importMoonBoardCatalog() {
       let matched = 0;
       let inserted = 0;
       let skippedProblems = 0;
+      // Grade strings the shared map has no difficulty id for. Those configs still
+      // import, but with a NULL grade — indistinguishable from an ungraded project
+      // once they're in the table, so name them in the run log.
+      const unmappedGrades = new Map<string, number>();
 
       for (const problem of dump.problems) {
         const climbs = catalogProblemToClimbs(problem, layoutId);
@@ -182,6 +186,11 @@ async function importMoonBoardCatalog() {
         }
         for (const mapped of climbs) {
           const { uuid, matched: matchedExisting } = resolveCatalogClimbUuid(mapped, existingIndex);
+
+          if (mapped.difficultyId === undefined) {
+            const rawGrade = mapped.sourceGrade.trim();
+            if (rawGrade.length > 0) unmappedGrades.set(rawGrade, (unmappedGrades.get(rawGrade) ?? 0) + 1);
+          }
 
           // Record the aliases before the dedupe below: when two problems collapse
           // onto one climb (same holds+angle) we drop the weaker climb row, but we
@@ -278,6 +287,13 @@ async function importMoonBoardCatalog() {
       const aliasRecords = [...aliasByUuid.values()];
 
       console.info(`   ${matched} matched existing, ${inserted} new; ${skippedProblems} problems skipped`);
+      if (unmappedGrades.size > 0) {
+        const breakdown = [...unmappedGrades.entries()]
+          .sort((left, right) => right[1] - left[1])
+          .map(([grade, count]) => `${grade} (${count})`)
+          .join(', ');
+        console.warn(`   ⚠️  Unmapped MoonBoard grades — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`);
+      }
 
       // One transaction per board: a crash mid-file never leaves a climb without
       // its holds/aliases, and completed boards stay committed for an idempotent

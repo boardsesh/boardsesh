@@ -86,6 +86,9 @@ export type MappedCatalogClimb = {
   holdFingerprint: string;
   // undefined for an unmappable grade — caller decides (we only emit graded configs).
   difficultyId: number | undefined;
+  // The setter grade exactly as the catalog spelled it, kept so the importer can
+  // name the offending strings when difficultyId comes back undefined.
+  sourceGrade: string;
   isBenchmark: boolean;
   ascensionistCount: number;
   // null when userRating is 0/absent — 0 isn't on the 1-5 quality scale.
@@ -275,6 +278,7 @@ export function mapCatalogConfig(
     frames,
     holdFingerprint: fingerprintFromHolds(holds),
     difficultyId: moonBoardGradeToDifficultyId(config.grade),
+    sourceGrade: config.grade,
     isBenchmark: Boolean(config.isBenchmark),
     ascensionistCount: config.repeats ?? 0,
     qualityAverage: rating > 0 ? rating : null,
