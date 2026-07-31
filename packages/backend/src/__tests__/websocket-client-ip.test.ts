@@ -70,6 +70,17 @@ describe('resolveWebSocketClientIp', () => {
     expect(resolved).toBe('10.0.0.1');
   });
 
+  it('falls through to the socket when the last forwarded hop is junk', () => {
+    // The leading hop is a well-formed IP but client-authored, so a junk last
+    // hop must reach the socket rather than silently promoting the attacker's
+    // entry back into the key.
+    const resolved = resolveWebSocketClientIp(
+      fakeUpgradeRequest({ headers: { 'x-forwarded-for': '198.51.100.9, <script>' }, remoteAddress: '10.0.0.1' }),
+    );
+
+    expect(resolved).toBe('10.0.0.1');
+  });
+
   it('unwraps an IPv4-mapped IPv6 socket address so it shares the header path bucket', () => {
     const viaSocket = resolveWebSocketClientIp(fakeUpgradeRequest({ remoteAddress: '::ffff:203.0.113.5' }));
     const viaHeader = resolveWebSocketClientIp(fakeUpgradeRequest({ headers: { 'cf-connecting-ip': '203.0.113.5' } }));
