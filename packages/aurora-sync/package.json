@@ -67,14 +67,14 @@
     "@boardsesh/shared-schema": "*",
     "@boardsesh/sync-runtime": "*",
     "commander": "^14.0.3",
-    "dotenv": "^17.3.1",
-    "drizzle-orm": "^0.45.1",
-    "postgres": "^3.4.8",
-    "zod": "^4.3.6"
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^25.3.3",
-    "tsx": "^4.21.0",
+    "@types/node": "^25.9.5",
+    "tsx": "^4.23.1",
     "typescript": "^5.9.3"
   }
 }

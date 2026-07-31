@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@boardsesh/shared-schema": "workspace:*",
-    "@types/node": "^25.3.3",
+    "@types/node": "^25.9.5",
     "typescript": "~6.0.3"
   }
 }

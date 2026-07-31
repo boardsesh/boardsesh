@@ -19,7 +19,7 @@
     "lint-fix": "vp lint --fix"
   },
   "devDependencies": {
-    "@types/node": "^25",
+    "@types/node": "^25.9.5",
     "typescript": "~6.0.3"
   }
 }

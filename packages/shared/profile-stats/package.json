@@ -19,7 +19,7 @@
     "@boardsesh/board-constants": "*",
     "@boardsesh/play-view": "*",
     "@boardsesh/shared-schema": "*",
-    "dayjs": "^1.11.19"
+    "dayjs": "^1.11.21"
   },
   "devDependencies": {
     "typescript": "~6.0.3"

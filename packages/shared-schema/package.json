@@ -56,10 +56,10 @@
     "lint-fix": "vp lint --fix"
   },
   "dependencies": {
-    "graphql": "^16.13.0"
+    "graphql": "^16.14.2"
   },
   "devDependencies": {
-    "@types/node": "^25.3.3",
+    "@types/node": "^25.9.5",
     "typescript": "^5.9.3"
   }
 }

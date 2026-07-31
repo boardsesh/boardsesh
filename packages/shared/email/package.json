@@ -16,10 +16,10 @@
   },
   "dependencies": {
     "nodemailer": "^9.0.3",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^25.3.3",
+    "@types/node": "^25.9.5",
     "@types/nodemailer": "^8.0.1",
     "typescript": "~6.0.3"
   }

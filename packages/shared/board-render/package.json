@@ -30,10 +30,10 @@
     "@boardsesh/board-renderer-wasm": "*",
     "@boardsesh/play-view": "*",
     "@boardsesh/shared-schema": "*",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^25.3.3",
+    "@types/node": "^25.9.5",
     "sharp": "^0.34.5",
     "typescript": "~6.0.3"
   },
