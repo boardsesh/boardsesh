@@ -394,9 +394,25 @@ class NimBLEServer {
             connectedCount_--;
     }
 
+    void updateConnParams(uint16_t connHandle, uint16_t minInterval, uint16_t maxInterval, uint16_t latency,
+                          uint16_t timeout) const {
+        connectionParameterUpdateCallCount_++;
+        connectionParameterUpdateHandle_ = connHandle;
+        connectionParameterUpdateMinInterval_ = minInterval;
+        connectionParameterUpdateMaxInterval_ = maxInterval;
+        connectionParameterUpdateLatency_ = latency;
+        connectionParameterUpdateTimeout_ = timeout;
+    }
+
     // Test helpers
     NimBLEServerCallbacks* getCallbacks() const { return callbacks_; }
     uint16_t getDisconnectedHandle() const { return disconnectedHandle_; }
+    int getConnectionParameterUpdateCallCount() const { return connectionParameterUpdateCallCount_; }
+    uint16_t getConnectionParameterUpdateHandle() const { return connectionParameterUpdateHandle_; }
+    uint16_t getConnectionParameterUpdateMinInterval() const { return connectionParameterUpdateMinInterval_; }
+    uint16_t getConnectionParameterUpdateMaxInterval() const { return connectionParameterUpdateMaxInterval_; }
+    uint16_t getConnectionParameterUpdateLatency() const { return connectionParameterUpdateLatency_; }
+    uint16_t getConnectionParameterUpdateTimeout() const { return connectionParameterUpdateTimeout_; }
 
     void mockConnect(ble_gap_conn_desc* desc) {
         connectedCount_++;
@@ -426,6 +442,12 @@ class NimBLEServer {
     int connectedCount_;
     bool started_;
     uint16_t disconnectedHandle_ = BLE_HS_CONN_HANDLE_NONE;
+    mutable int connectionParameterUpdateCallCount_ = 0;
+    mutable uint16_t connectionParameterUpdateHandle_ = BLE_HS_CONN_HANDLE_NONE;
+    mutable uint16_t connectionParameterUpdateMinInterval_ = 0;
+    mutable uint16_t connectionParameterUpdateMaxInterval_ = 0;
+    mutable uint16_t connectionParameterUpdateLatency_ = 0;
+    mutable uint16_t connectionParameterUpdateTimeout_ = 0;
 };
 
 // =============================================================================

@@ -17,6 +17,7 @@ static NordicUartBLE* ble;
 // Test callback tracking
 static bool lastConnectState = false;
 static int connectCallbackCount = 0;
+static bool connectCallbackSawConnectionParameterRequest = false;
 static std::vector<uint8_t> lastDataReceived;
 static int dataCallbackCount = 0;
 static std::vector<LedCommand> lastLedCommands;
@@ -26,6 +27,9 @@ static int lastAngle = 0;
 void testConnectCallback(bool connected) {
     lastConnectState = connected;
     connectCallbackCount++;
+    NimBLEServer* server = NimBLEDevice::getServer();
+    connectCallbackSawConnectionParameterRequest =
+        server != nullptr && server->getConnectionParameterUpdateCallCount() > 0;
 }
 
 void testDataCallback(const uint8_t* data, size_t len) {
@@ -47,6 +51,7 @@ void setUp(void) {
     NimBLEDevice::mockReset();
     lastConnectState = false;
     connectCallbackCount = 0;
+    connectCallbackSawConnectionParameterRequest = false;
     lastDataReceived.clear();
     dataCallbackCount = 0;
     lastLedCommands.clear();
@@ -200,6 +205,26 @@ void test_set_led_data_callback_registration(void) {
 // =============================================================================
 // Connection Lifecycle Tests
 // =============================================================================
+
+void test_connection_requests_expected_connection_parameters_before_callback(void) {
+    ble->setConnectCallback(testConnectCallback);
+    ble->begin("Test Device");
+
+    ble_gap_conn_desc desc;
+    memset(&desc, 0, sizeof(desc));
+    desc.conn_handle = 42;
+    NimBLEDevice::getServer()->mockConnect(&desc);
+
+    NimBLEServer* server = NimBLEDevice::getServer();
+    TEST_ASSERT_EQUAL(1, server->getConnectionParameterUpdateCallCount());
+    TEST_ASSERT_EQUAL(42, server->getConnectionParameterUpdateHandle());
+    TEST_ASSERT_EQUAL(6, server->getConnectionParameterUpdateMinInterval());
+    TEST_ASSERT_EQUAL(18, server->getConnectionParameterUpdateMaxInterval());
+    TEST_ASSERT_EQUAL(0, server->getConnectionParameterUpdateLatency());
+    TEST_ASSERT_EQUAL(200, server->getConnectionParameterUpdateTimeout());
+    TEST_ASSERT_EQUAL(1, connectCallbackCount);
+    TEST_ASSERT_TRUE(connectCallbackSawConnectionParameterRequest);
+}
 
 void test_connection_callback_called_on_connect(void) {
     ble->setConnectCallback(testConnectCallback);
@@ -679,6 +704,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_set_led_data_callback_registration);
 
     // Connection lifecycle tests
+    RUN_TEST(test_connection_requests_expected_connection_parameters_before_callback);
     RUN_TEST(test_connection_callback_called_on_connect);
     RUN_TEST(test_advertising_stops_while_connected);
     RUN_TEST(test_advertising_restarts_after_disconnect);

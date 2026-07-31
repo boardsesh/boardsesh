@@ -2,6 +2,15 @@
 
 #include <log_buffer.h>
 
+namespace {
+
+constexpr uint16_t kConnectionIntervalMin = 6;
+constexpr uint16_t kConnectionIntervalMax = 18;
+constexpr uint16_t kConnectionLatency = 0;
+constexpr uint16_t kConnectionSupervisionTimeout = 200;
+
+}  // namespace
+
 NordicUartBLE BLE;
 
 NordicUartBLE::NordicUartBLE()
@@ -125,6 +134,8 @@ void NordicUartBLE::onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) {
     // Get the connected device's MAC address and connection handle
     connectedDeviceAddress = connInfo.getAddress().toString().c_str();
     connectedDeviceHandle = connInfo.getConnHandle();
+    pServer->updateConnParams(connectedDeviceHandle, kConnectionIntervalMin, kConnectionIntervalMax,
+                              kConnectionLatency, kConnectionSupervisionTimeout);
     Logger.logln("BLE: Device connected: %s (total: %d)", connectedDeviceAddress.c_str(), pServer->getConnectedCount());
 
     if (connectCallback) {
