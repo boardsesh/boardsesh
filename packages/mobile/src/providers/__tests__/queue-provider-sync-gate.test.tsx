@@ -284,6 +284,19 @@ function wireQueueItemAdded(sequence: number, stateHash: string, item: ReturnTyp
   };
 }
 
+// Wire-shaped QueueItemRemoved matching QUEUE_UPDATES_SUBSCRIPTION's `... on
+// QueueItemRemoved` fragment. `clientId` is the removing connection's id
+// (#3382); it is nullable on the wire, so a pre-#3382 server sends null.
+function wireQueueItemRemoved(sequence: number, stateHash: string, uuid: string, clientId: string | null) {
+  return {
+    __typename: 'QueueItemRemoved',
+    sequence,
+    stateHash,
+    uuid,
+    clientId,
+  };
+}
+
 // Wire-shaped PlaybackStateChanged matching QUEUE_UPDATES_SUBSCRIPTION's `...
 // on PlaybackStateChanged` fragment (issue #3358) — no top-level `stateHash`,
 // since this event doesn't mutate queue state.
@@ -846,5 +859,89 @@ describe('QueueProvider queue sync gate', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Issue #3382 — a remove echoed back to the client that issued it must NOT be
+// tracked again. The local remove already fired `Climb Removed from Queue`
+// with `removedBy: 'self'` at the mutation site (queue-provider.tsx), so the
+// echo handler firing a second, peer-attributed copy double counted every
+// party-session self-remove. joinSession returns clientId 'client-self' in
+// this harness, which is exactly what the backend stamps onto the event.
+describe('QueueItemRemoved self-echo attribution (issue #3382)', () => {
+  const seedAndRemove = async (clientId: string | null) => {
+    const snapshots: Snapshot[] = [];
+    renderProvider((snapshot) => snapshots.push(snapshot));
+
+    await waitFor(() => {
+      expect(ws.getQueueUpdatesSink()).not.toBeNull();
+    });
+    const queueUpdatesSink = ws.getQueueUpdatesSink();
+    if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
+
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
+    });
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(2, 'hash-2', wireItem('q1', 'c1')) } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue.map((item) => item.uuid)).toEqual(['q1']);
+    });
+
+    analytics.track.mockClear();
+    act(() => {
+      queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemRemoved(3, 'hash-3', 'q1', clientId) } });
+    });
+    await waitFor(() => {
+      expect(snapshots.at(-1)?.state.queue).toEqual([]);
+    });
+    return snapshots;
+  };
+
+  const removeTrackCalls = () =>
+    analytics.track.mock.calls.filter(([eventName]) => eventName === 'Climb Removed from Queue');
+
+  beforeEach(() => {
+    ws.reset();
+    ws.client.on.mockClear();
+    ws.client.subscribe.mockClear();
+    activeBoard.getStoredActiveBoard.mockReset();
+    activeBoard.getStoredActiveBoard.mockResolvedValue(activeBoard.stored);
+    toast.showToast.mockClear();
+    analytics.track.mockClear();
+    for (const mutation of Object.values(queueMutations) as Array<ReturnType<typeof vi.fn>>) {
+      mutation.mockReset();
+      mutation.mockResolvedValue(undefined);
+    }
+    sessionStore.getStoredSessionId.mockReset();
+    sessionStore.getStoredSessionId.mockResolvedValue('session-1');
+    graph.execute.mockReset();
+    graph.execute.mockResolvedValue(createJoinSessionResponse());
+    http.request.mockReset();
+    routeHttpRequest(queueStateResponse([]));
+  });
+
+  it('does not track a remove echoed back from this client', async () => {
+    await seedAndRemove('client-self');
+    expect(removeTrackCalls()).toHaveLength(0);
+  });
+
+  it("still tracks a peer's remove as removedBy: 'peer'", async () => {
+    await seedAndRemove('client-peer');
+    expect(removeTrackCalls()).toHaveLength(1);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Removed from Queue',
+      expect.objectContaining({ removedBy: 'peer', partyMode: true }),
+    );
+  });
+
+  it("falls back to 'peer' when a pre-#3382 server sends no clientId", async () => {
+    await seedAndRemove(null);
+    expect(removeTrackCalls()).toHaveLength(1);
+    expect(analytics.track).toHaveBeenCalledWith(
+      'Climb Removed from Queue',
+      expect.objectContaining({ removedBy: 'peer' }),
+    );
   });
 });

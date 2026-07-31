@@ -548,12 +548,33 @@ export function useSessionRealtime({
                 track(SHARED_EVENTS.ClimbAddedToQueue, {
                   boardName: activeBoardRef.current?.boardType,
                   layoutId: activeBoardRef.current?.layoutId,
+                  // QueueItemAdded carries no clientId on the wire yet, so a
+                  // self-add echo is still tracked here (double count) — #4042.
                   addedFromTab: 'peer_broadcast',
                   currentQueueLength: stateRef.current.queue.length + 1,
                   partyMode: true,
                 });
                 break;
-              case 'QueueItemRemoved':
+              case 'QueueItemRemoved': {
+                // The server echoes our own removes back to us. A locally
+                // initiated remove already tracked itself with
+                // removedBy: 'self' at the mutation site (queue-provider.tsx),
+                // so tracking the echo would double count — stay silent rather
+                // than emit a second, peer-attributed copy (#3382).
+                //
+                // Both truthiness guards are load-bearing: solo/unjoined state
+                // leaves clientId as '' (createEmptySessionRuntimeState) and a
+                // pre-#3382 server sends no clientId at all. Either way we fall
+                // back to today's 'peer' attribution.
+                const selfClientId = sessionRuntimeStateRef.current?.clientId;
+                if (
+                  event.__typename === 'QueueItemRemoved' &&
+                  event.clientId &&
+                  selfClientId &&
+                  event.clientId === selfClientId
+                ) {
+                  break;
+                }
                 track(SHARED_EVENTS.ClimbRemovedFromQueue, {
                   boardName: activeBoardRef.current?.boardType,
                   layoutId: activeBoardRef.current?.layoutId,
@@ -561,6 +582,7 @@ export function useSessionRealtime({
                   removedBy: 'peer',
                 });
                 break;
+              }
               case 'QueueReordered':
                 if (event.__typename === 'QueueReordered') {
                   track(SHARED_EVENTS.QueueReordered, {

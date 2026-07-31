@@ -5699,6 +5699,8 @@ export type QueueItemAdded = {
 /** Event when an item is removed from the queue. */
 export type QueueItemRemoved = {
   __typename?: 'QueueItemRemoved';
+  /** Connection id of the client that removed the item; null when unknown (widget/controller paths, or a pre-#3382 server). Clients compare it against their own joinSession clientId to suppress self-echoes. */
+  clientId?: Maybe<Scalars['ID']['output']>;
   /** Sequence number of this event */
   sequence: Scalars['Int']['output'];
   /** Order-insensitive queue state hash (v1) after this event is applied */

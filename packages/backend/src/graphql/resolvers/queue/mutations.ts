@@ -150,6 +150,10 @@ export const queueMutations = {
       stateHash,
       stateHashOrdered,
       uuid,
+      // Same coercion as setCurrentClimb/publishPlaybackState: an empty-string connectionId must
+      // become null, because peers compare defensively and two anonymous clients would otherwise
+      // echo-suppress each other's removes.
+      clientId: ctx.connectionId || null,
     });
 
     logMutationMetrics('removeQueueItem', performance.now() - startTime, sessionId);

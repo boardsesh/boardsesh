@@ -47,6 +47,7 @@ describe('usePeerBroadcastAnalytics', () => {
         isOnBoardRoute: true,
         boardLayoutName: 'Original',
         queueRef: { current: new Array(2) },
+        clientId: null,
       }),
     );
 
@@ -69,6 +70,7 @@ describe('usePeerBroadcastAnalytics', () => {
         isOnBoardRoute: true,
         boardLayoutName: 'Original',
         queueRef: { current: new Array(2) },
+        clientId: null,
       }),
     );
 
@@ -94,6 +96,7 @@ describe('usePeerBroadcastAnalytics', () => {
         isOnBoardRoute: false,
         boardLayoutName: null,
         queueRef: { current: new Array(0) },
+        clientId: null,
       }),
     );
 
@@ -111,6 +114,7 @@ describe('usePeerBroadcastAnalytics', () => {
         isOnBoardRoute: true,
         boardLayoutName: 'Original',
         queueRef: { current: new Array(0) },
+        clientId: null,
       }),
     );
 
@@ -130,6 +134,7 @@ describe('usePeerBroadcastAnalytics', () => {
         isOnBoardRoute: true,
         boardLayoutName: 'Original',
         queueRef: { current: new Array(0) },
+        clientId: null,
       }),
     );
 
@@ -150,6 +155,7 @@ describe('usePeerBroadcastAnalytics', () => {
           isOnBoardRoute: props.isOnBoardRoute,
           boardLayoutName: props.boardLayoutName,
           queueRef,
+          clientId: null,
         }),
       { initialProps: { isOnBoardRoute: true, boardLayoutName: 'Original' } },
     );
@@ -179,6 +185,7 @@ describe('usePeerBroadcastAnalytics', () => {
         isOnBoardRoute: true,
         boardLayoutName: 'Original',
         queueRef,
+        clientId: null,
       }),
     );
 
@@ -206,6 +213,7 @@ describe('usePeerBroadcastAnalytics', () => {
           isOnBoardRoute: props.isOnBoardRoute,
           boardLayoutName: 'Original',
           queueRef: { current: new Array(0) },
+          clientId: null,
         }),
       { initialProps: { isOnBoardRoute: false } },
     );
@@ -216,5 +224,78 @@ describe('usePeerBroadcastAnalytics', () => {
     rerender({ isOnBoardRoute: true });
     emit(addedEvent);
     expect(mockTrack).toHaveBeenCalledTimes(1);
+  });
+  // Issue #3382 — the server echoes our own remove back to us. The local
+  // remove already tracked `removedBy: 'self'` in graphql-queue/QueueContext.tsx
+  // (:693), so tracking the echo double counted every party-session
+  // self-remove. QueueItemRemoved now carries the removing connection id.
+  it('skips a QueueItemRemoved echoed back from this client', () => {
+    const { subscribeToQueueEvents, emit } = createSubscribeToQueueEvents();
+    renderHook(() =>
+      usePeerBroadcastAnalytics({
+        subscribeToQueueEvents,
+        isOnBoardRoute: true,
+        boardLayoutName: 'Original',
+        queueRef: { current: new Array(2) },
+        clientId: 'conn-self',
+      }),
+    );
+
+    emit({ ...removedEvent, clientId: 'conn-self' });
+
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
+  it("still fires 'peer' for a QueueItemRemoved from another client", () => {
+    const { subscribeToQueueEvents, emit } = createSubscribeToQueueEvents();
+    renderHook(() =>
+      usePeerBroadcastAnalytics({
+        subscribeToQueueEvents,
+        isOnBoardRoute: true,
+        boardLayoutName: 'Original',
+        queueRef: { current: new Array(2) },
+        clientId: 'conn-self',
+      }),
+    );
+
+    emit({ ...removedEvent, clientId: 'conn-peer' });
+
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+    expect(mockTrack).toHaveBeenCalledWith('Climb Removed from Queue', {
+      boardLayout: 'Original',
+      partyMode: true,
+      removedBy: 'peer',
+    });
+  });
+
+  // A pre-#3382 server sends no clientId; a solo/unjoined client has none of
+  // its own. Both fall back to the historical 'peer' attribution rather than
+  // silently dropping the event.
+  it("falls back to 'peer' when either side has no clientId", () => {
+    const { subscribeToQueueEvents, emit } = createSubscribeToQueueEvents();
+    const { rerender } = renderHook(
+      (props: { clientId: string | null }) =>
+        usePeerBroadcastAnalytics({
+          subscribeToQueueEvents,
+          isOnBoardRoute: true,
+          boardLayoutName: 'Original',
+          queueRef: { current: new Array(2) },
+          clientId: props.clientId,
+        }),
+      { initialProps: { clientId: 'conn-self' } as { clientId: string | null } },
+    );
+
+    // Legacy server: event carries no clientId.
+    emit({ ...removedEvent, clientId: null });
+    expect(mockTrack).toHaveBeenCalledTimes(1);
+
+    // Unjoined client: we have no clientId of our own.
+    rerender({ clientId: null });
+    emit({ ...removedEvent, clientId: 'conn-peer' });
+    expect(mockTrack).toHaveBeenCalledTimes(2);
+    expect(mockTrack).toHaveBeenLastCalledWith(
+      'Climb Removed from Queue',
+      expect.objectContaining({ removedBy: 'peer' }),
+    );
   });
 });

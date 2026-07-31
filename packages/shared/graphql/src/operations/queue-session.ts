@@ -448,6 +448,10 @@ export const EVENTS_REPLAY = `
           }
           position
         }
+        # No clientId here on purpose: delta replay only runs from session-connection.ts's
+        # reconnect(), so every replayed event carries the PRE-reconnect connectionId while the
+        # client already holds the new one. The self-echo comparison could never match, so the
+        # field would be dead weight (see #3382).
         ... on QueueItemRemoved {
           sequence
           stateHash
@@ -526,6 +530,7 @@ export const QUEUE_UPDATES = `
         stateHash
         stateHashOrdered
         uuid
+        clientId
       }
       ... on QueueReordered {
         sequence

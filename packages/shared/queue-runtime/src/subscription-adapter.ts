@@ -59,6 +59,8 @@ export type SubscriptionWireEnvelope<TWireItem> =
       sequence?: number | null;
       stateHash?: string | null;
       stateHashOrdered?: string | null;
+      /** Connection id of the removing client; read by analytics to suppress self-echoes (#3382). */
+      clientId?: string | null;
     }
   | {
       __typename: 'QueueReordered';

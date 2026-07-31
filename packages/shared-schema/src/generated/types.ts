@@ -5702,6 +5702,8 @@ export type QueueItemAdded = {
 /** Event when an item is removed from the queue. */
 export type QueueItemRemoved = {
   __typename?: 'QueueItemRemoved';
+  /** Connection id of the client that removed the item; null when unknown (widget/controller paths, or a pre-#3382 server). Clients compare it against their own joinSession clientId to suppress self-echoes. */
+  clientId?: Maybe<Scalars['ID']['output']>;
   /** Sequence number of this event */
   sequence: Scalars['Int']['output'];
   /** Order-insensitive queue state hash (v1) after this event is applied */
@@ -11698,6 +11700,7 @@ export type QueueItemRemovedResolvers<
   ContextType = ConnectionContext,
   ParentType extends ResolversParentTypes['QueueItemRemoved'] = ResolversParentTypes['QueueItemRemoved'],
 > = ResolversObject<{
+  clientId?: Resolver<Maybe<ResolversTypes['ID']>, ParentType, ContextType>;
   sequence?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
   stateHash?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   stateHashOrdered?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;

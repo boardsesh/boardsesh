@@ -20,6 +20,13 @@ type UsePeerBroadcastAnalyticsParams = {
    * exactly this purpose (`queueRef`).
    */
   queueRef: RefObject<{ length: number }>;
+  /**
+   * This client's joinSession-returned connection id (`lifecycle.session.clientId`),
+   * or null when not in a session. Used to suppress self-echoes of our own
+   * removes. Read via a ref internally so a rejoin doesn't tear down the
+   * subscription effect.
+   */
+  clientId: string | null;
 };
 
 /**
@@ -39,21 +46,26 @@ type UsePeerBroadcastAnalyticsParams = {
  * firing off-board too, a parity regression.
  *
  * Fires on every `QueueItemAdded`/`QueueItemRemoved` event this client's
- * queue subscription receives — including echoes of this client's own
- * mutations. The wire protocol never suppresses self-echoes for add/remove
- * (only `CurrentClimbChanged` carries a clientId for that); this mirrors the
- * old hook's behavior exactly — it never filtered self vs peer either.
+ * queue subscription receives. `QueueItemRemoved` now carries the removing
+ * client's connection id (#3382), so echoes of our OWN removes are skipped —
+ * the local remove already tracked itself with `removedBy: 'self'` in
+ * `graphql-queue/QueueContext.tsx`, and tracking the echo double counted.
+ * `QueueItemAdded` still has no clientId on the wire, so self-adds remain
+ * double counted — tracked as a follow-up in #4042.
  */
 export function usePeerBroadcastAnalytics({
   subscribeToQueueEvents,
   isOnBoardRoute,
   boardLayoutName,
   queueRef,
+  clientId,
 }: UsePeerBroadcastAnalyticsParams) {
   const isOnBoardRouteRef = useRef(isOnBoardRoute);
   isOnBoardRouteRef.current = isOnBoardRoute;
   const boardLayoutNameRef = useRef(boardLayoutName);
   boardLayoutNameRef.current = boardLayoutName;
+  const clientIdRef = useRef(clientId);
+  clientIdRef.current = clientId;
 
   useEffect(() => {
     const unsubscribe = subscribeToQueueEvents((event: SubscriptionQueueEvent) => {
@@ -71,10 +83,12 @@ export function usePeerBroadcastAnalytics({
           partyMode: true,
         });
       } else if (event.__typename === 'QueueItemRemoved') {
-        // TODO(#3383): `removedBy: 'peer'` mislabels echoes of THIS client's
-        // own removes. `QueueItemRemoved` has no `clientId` (unlike
-        // `CurrentClimbChanged`), so self-echoes can't be filtered here — a
-        // proper fix needs the wire field. Left hardcoded until then.
+        // Echo of our own remove: `graphql-queue/QueueContext.tsx` already
+        // tracked it with `removedBy: 'self'`, so tracking again would double
+        // count. Both truthiness guards matter — a solo/unjoined client has no
+        // clientId, and a pre-#3382 server sends none, so either way we fall
+        // back to the historical 'peer' attribution.
+        if (event.clientId && clientIdRef.current && event.clientId === clientIdRef.current) return;
         track('Climb Removed from Queue', {
           boardLayout: boardLayoutNameRef.current,
           partyMode: true,

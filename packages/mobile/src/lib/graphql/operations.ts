@@ -1278,6 +1278,7 @@ export const QUEUE_UPDATES_SUBSCRIPTION = `
         stateHash
         stateHashOrdered
         uuid
+        clientId
       }
       ... on QueueReordered {
         sequence

@@ -644,6 +644,44 @@ describe('order-sensitive dual-hash (stateHashOrdered)', () => {
       }),
     );
   });
+
+  // Issue #3382 — QueueItemRemoved must carry the removing connection's id so
+  // subscribers can drop echoes of their own removes instead of tagging them
+  // `removedBy: 'peer'` (a double count, since the local remove already
+  // tracked itself as 'self').
+  it('publishes the removing connection id on QueueItemRemoved', async () => {
+    const sessionId = uuidv4();
+    await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+
+    const climb = createTestClimb();
+    await queueMutations.addQueueItem({}, { item: climb }, ctxFor(sessionId));
+    publishSpy.mockClear();
+
+    await queueMutations.removeQueueItem({}, { uuid: climb.uuid }, ctxFor(sessionId));
+    const removedCall = publishSpy.mock.calls.find(
+      (call: unknown[]) => (call[1] as { __typename: string }).__typename === 'QueueItemRemoved',
+    );
+    expect(removedCall).toBeDefined();
+    expect((removedCall![1] as { clientId: string | null }).clientId).toBe('client-1');
+  });
+
+  // An anonymous publisher must send null, NOT '': peers compare defensively,
+  // and two empty-string clients would echo-suppress each other's removes.
+  it('coerces a missing connection id to null on QueueItemRemoved', async () => {
+    const sessionId = uuidv4();
+    await registerAndJoinSession('client-1', sessionId, '/kilter/1/2/3/40', 'User1');
+
+    const climb = createTestClimb();
+    await queueMutations.addQueueItem({}, { item: climb }, ctxFor(sessionId));
+    publishSpy.mockClear();
+
+    await queueMutations.removeQueueItem({}, { uuid: climb.uuid }, { ...ctxFor(sessionId), connectionId: '' });
+    const removedCall = publishSpy.mock.calls.find(
+      (call: unknown[]) => (call[1] as { __typename: string }).__typename === 'QueueItemRemoved',
+    );
+    expect(removedCall).toBeDefined();
+    expect((removedCall![1] as { clientId: string | null }).clientId).toBeNull();
+  });
 });
 
 // Issue #2387 — the setQueue "redundant resync" warning must be order-aware.

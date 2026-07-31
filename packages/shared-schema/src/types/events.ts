@@ -51,6 +51,8 @@ export type QueueEvent =
       stateHash: string;
       stateHashOrdered?: string | null;
       uuid: string;
+      /** Connection id of the removing client; optional so legacy/replayed payloads still typecheck. */
+      clientId?: string | null;
     }
   | {
       __typename: 'QueueReordered';
@@ -109,6 +111,8 @@ export type SubscriptionQueueEvent =
       stateHash: string;
       stateHashOrdered?: string | null;
       uuid: string;
+      /** Connection id of the removing client; optional so legacy/replayed payloads still typecheck. */
+      clientId?: string | null;
     }
   | {
       __typename: 'QueueReordered';

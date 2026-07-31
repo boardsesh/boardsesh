@@ -216,6 +216,10 @@ export const PersistentSessionProvider: React.FC<{ children: React.ReactNode }> 
     isOnBoardRoute: isBoardRoutePath(pathname),
     boardLayoutName: lifecycle.activeSession?.boardDetails.layout_name ?? null,
     queueRef,
+    // Our joinSession-returned connection id — the same value the backend
+    // stamps onto QueueItemRemoved, so the hook can drop echoes of our own
+    // removes instead of mislabelling them as a peer's (#3382).
+    clientId: lifecycle.session?.clientId ?? null,
   });
 
   // Session-scoped "the wall is lit" indicator, owned here (root, always
