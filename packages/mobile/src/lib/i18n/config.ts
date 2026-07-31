@@ -1,8 +1,9 @@
 // Polyfill Intl.PluralRules before i18next initialises. Hermes ships an
-// incomplete Intl implementation; without this, i18next's plural resolver
-// silently falls back to the v3 compatibility format and emits a startup
-// warning, plus picks wrong plural forms for es/fr. Mirrors how web wires
-// the same polyfill in app/lib/i18n/{server.ts,client.tsx}.
+// incomplete Intl implementation, and since i18next v24 the CLDR plural
+// resolver requires `Intl.PluralRules` outright — there is no v3-compatibility
+// fallback to degrade into any more, so without this plural lookups miss their
+// `_one`/`_other` suffix entirely and es/fr render the wrong form. Mirrors how
+// web wires the same polyfill in app/lib/i18n/{server.ts,client.tsx}.
 import 'intl-pluralrules';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -143,7 +144,6 @@ export function detectDeviceLocale(): Locale {
 }
 
 void i18n.use(initReactI18next).init({
-  compatibilityJSON: 'v4',
   resources,
   lng: detectDeviceLocale(),
   fallbackLng: DEFAULT_LOCALE,

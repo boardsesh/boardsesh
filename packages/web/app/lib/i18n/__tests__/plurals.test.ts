@@ -2,16 +2,17 @@ import { describe, expect, it, beforeAll } from 'vite-plus/test';
 import 'intl-pluralrules';
 import i18next from 'i18next';
 
-// Validates that i18next v23's CLDR plural resolver (`compatibilityJSON: 'v4'`,
-// the default) maps `count` to the correct `_one` / `_other` suffix for each
-// supported locale. The polyfill import above is a no-op on Node 22 (which
-// ships native `Intl.PluralRules`) but ensures the test file exercises the
-// same code path the browser bundle uses — so a regression that strips the
-// polyfill would still surface here if it ever broke locale registration.
+// Validates that i18next's CLDR plural resolver maps `count` to the correct
+// `_one` / `_other` suffix for each supported locale. Since v24 the v3 JSON
+// compatibility mode is gone and `Intl.PluralRules` is a hard requirement, so
+// this is the only resolver left. The polyfill import above is a no-op on
+// Node 22 (which ships native `Intl.PluralRules`) but ensures the test file
+// exercises the same code path the browser bundle uses — so a regression that
+// strips the polyfill would still surface here if it ever broke locale
+// registration.
 //
-// Catches: accidental `compatibilityJSON: 'v3'` reverts, missing `_one`/
-// `_other` siblings in catalogs, and runtime environments where plural rules
-// aren't registered.
+// Catches: missing `_one`/`_other` siblings in catalogs, and runtime
+// environments where plural rules aren't registered.
 
 describe('i18next plural resolution', () => {
   beforeAll(async () => {
