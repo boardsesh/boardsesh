@@ -51,7 +51,7 @@
     "@boardsesh/location-sync": "*",
     "@boardsesh/shared-schema": "*",
     "@boardsesh/sync-runtime": "*",
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "jose": "^6.2.6",

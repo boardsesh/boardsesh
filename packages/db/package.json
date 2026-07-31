@@ -98,7 +98,7 @@
     "@boardsesh/sync-runtime": "*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9",
-    "uuid": "^13.0.2"
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@faker-js/faker": "^10.5.0",
