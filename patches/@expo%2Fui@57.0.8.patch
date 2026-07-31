@@ -1,5 +1,5 @@
 diff --git a/build/community/bottom-sheet/types.d.ts b/build/community/bottom-sheet/types.d.ts
-index 72fc6becbc414c318799e28103d15484ed86f703..d1cf11e93b0c0d8dc77abddaafc89e14d34faccc 100644
+index 72fc6be..d1cf11e 100644
 --- a/build/community/bottom-sheet/types.d.ts
 +++ b/build/community/bottom-sheet/types.d.ts
 @@ -159,6 +159,14 @@ export interface BottomSheetProps {
@@ -18,7 +18,7 @@ index 72fc6becbc414c318799e28103d15484ed86f703..d1cf11e93b0c0d8dc77abddaafc89e14
       * Whether the sheet can be dismissed by panning down.
       * @default false
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..4e64d1a89518f9c22c0f9f3fb4473ae73ca99d40 100644
+index f60ae61..4e64d1a 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
 @@ -11,6 +11,20 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
@@ -55,10 +55,10 @@ index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..4e64d1a89518f9c22c0f9f3fb4473ae7
          pendingIndexRef.current = null;
        }
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
-index 9908630d50d9a405688ae60c88f5e6638948420d..75f4219b6ce2a72a90ec442329241c83b97af04f 100644
+index d9de442..5cd8c12 100644
 --- a/src/community/bottom-sheet/BottomSheet.ios.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.ios.tsx
-@@ -86,6 +86,7 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -87,6 +87,7 @@ export function BottomSheet(props: BottomSheetProps) {
      index: indexProp = 0,
      onChange,
      onClose,
@@ -66,7 +66,7 @@ index 9908630d50d9a405688ae60c88f5e6638948420d..75f4219b6ce2a72a90ec442329241c83
      onDismiss,
      enablePanDownToClose = false,
      enableDynamicSizing = true,
-@@ -108,6 +109,15 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -109,6 +110,15 @@ export function BottomSheet(props: BottomSheetProps) {
    const onCloseRef = useRef(onClose);
    onCloseRef.current = onClose;
    const onDismissRef = useRef(onDismiss);
@@ -82,7 +82,7 @@ index 9908630d50d9a405688ae60c88f5e6638948420d..75f4219b6ce2a72a90ec442329241c83
    onDismissRef.current = onDismiss;
  
    const detents = useMemo<PresentationDetent[]>(() => {
-@@ -234,6 +244,7 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -236,6 +246,7 @@ export function BottomSheet(props: BottomSheetProps) {
          <Host style={{ position: 'absolute', width }} pointerEvents="none">
            <NativeBottomSheet
              isPresented={isPresented}
@@ -91,7 +91,7 @@ index 9908630d50d9a405688ae60c88f5e6638948420d..75f4219b6ce2a72a90ec442329241c83
              fitToContents={fitToContents}>
              <Group modifiers={modifiers}>
 diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
-index d7372fcb72e3717329ee8df4e27e2f537f17decb..efcf4256103d5b9f1a068e32778a92efc6fa30bc 100644
+index d7372fc..efcf425 100644
 --- a/src/community/bottom-sheet/types.ts
 +++ b/src/community/bottom-sheet/types.ts
 @@ -178,6 +178,15 @@ export interface BottomSheetProps {

@@ -57,13 +57,13 @@ export const RULES: readonly PatchRule[] = [
       'findContentScrollViewInManagedSubtreeFrom',
       'RNSManagedContentScrollViewSearchMaxDepth',
     ],
-    patchedKey: 'react-native-screens@4.26.0',
+    patchedKey: 'react-native-screens@4.26.2',
   },
   {
     package: 'react-native-screens',
     file: 'ios/tabs/host/RNSTabsHostComponentView.mm',
     sentinels: ['rnscreens_relayoutBottomAccessoryIfAttachedAfterAppearance'],
-    patchedKey: 'react-native-screens@4.26.0',
+    patchedKey: 'react-native-screens@4.26.2',
   },
 ];
 
