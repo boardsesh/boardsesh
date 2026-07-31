@@ -870,6 +870,79 @@ describe('requestGymClaim — the website must be owner-vouched to self-verify (
     expect(await gymOwnerId(claimGym.uuid)).toBe(CLAIMANT);
   });
 
+  it('does not re-vouch when the owner saves the form over an editor-set website', async () => {
+    // Attack v2: the editor repoints the website, the un-vouch is invisible in the
+    // manage UI, and the owner later saves the form for an unrelated edit — posting
+    // the attacker's URL straight back. An unchanged website must not re-vouch, or
+    // the escalation reopens with one extra step.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Bonsist Owner Resave', website: null });
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://bonsist.bg' } },
+      authCtx(OWNER),
+    );
+    await socialGymMutations.grantGymWriteAccess(
+      null,
+      { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
+      authCtx(OWNER),
+    );
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://attacker-owned.example' } },
+      authCtx(EDITOR_TARGET),
+    );
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(false);
+
+    // The owner fixes the hours; the form posts the attacker's website unchanged.
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, description: 'New hours', website: 'https://attacker-owned.example' } },
+      authCtx(OWNER),
+    );
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(false);
+
+    await expect(
+      socialGymClaimMutations.requestGymClaim(
+        null,
+        { input: { gymUuid: claimGym.uuid, claimEmail: 'boss@attacker-owned.example' } },
+        authCtx(SECOND_TARGET),
+      ),
+    ).rejects.toThrow(/hasn't been confirmed by the gym's owner/);
+    expect(sendGymClaimVerificationEmail).not.toHaveBeenCalled();
+  });
+
+  it('re-vouches when the owner deliberately retypes a different website', async () => {
+    // The counterpart to the test above: the owner adopting a new URL is a real
+    // change, so it must still vouch — otherwise the fix would strand every owner
+    // who edits their website after an editor touched it.
+    const claimGym = await insertGym({ ownerId: OWNER, name: 'Bonsist Owner Retype', website: null });
+    await socialGymMutations.grantGymWriteAccess(
+      null,
+      { input: { gymUuid: claimGym.uuid, userId: EDITOR_TARGET } },
+      authCtx(OWNER),
+    );
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://attacker-owned.example' } },
+      authCtx(EDITOR_TARGET),
+    );
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(false);
+
+    await socialGymMutations.updateGym(
+      null,
+      { input: { gymUuid: claimGym.uuid, website: 'https://bonsist.bg' } },
+      authCtx(OWNER),
+    );
+    expect(await gymWebsiteVouched(claimGym.id)).toBe(true);
+
+    const result = await socialGymClaimMutations.requestGymClaim(
+      null,
+      { input: { gymUuid: claimGym.uuid, claimEmail: 'manager@bonsist.bg' } },
+      authCtx(CLAIMANT),
+    );
+    expect(result).toEqual({ status: 'email_sent', email: 'manager@bonsist.bg' });
+  });
+
   it('leaves the admin-review fallback open on an un-vouched gym', async () => {
     await insertUser(SYSTEM_OWNER);
     const catalogGym = await insertGym({ ownerId: SYSTEM_OWNER, name: 'Catalog Wall', website: null });
