@@ -1,0 +1,1 @@
+ALTER TABLE "gyms" ADD COLUMN "website_vouched_by_owner" boolean DEFAULT false NOT NULL;
