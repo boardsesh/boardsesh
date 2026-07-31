@@ -269,6 +269,13 @@ export const SHARED_EVENTS = {
   // method: 'snapshot' | 'paged', durationMs }. Mobile-only today (the engine
   // is shared, so a future web offline consumer would fire this too).
   OfflineBoardDownloadCompleted: 'Offline Board Download Completed',
+  // Offline sync — the device went longer than the tombstone retention window
+  // without completing a deletions pull, so its local USER data was rebuilt
+  // from scratch (issue #3474). Expected behaviour rather than an error: the
+  // rate across the fleet is the signal. Props: { markerAgeDays, rowsCleared,
+  // pendingMutations }. Downloaded board catalogs are deliberately untouched,
+  // so this never implies a surprise re-download.
+  OfflineSyncCoverageResetForced: 'Offline Sync Coverage Reset Forced',
 } as const;
 
 export type SharedEventKey = keyof typeof SHARED_EVENTS;

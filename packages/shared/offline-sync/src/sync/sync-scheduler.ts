@@ -4,6 +4,7 @@ import {
   type SyncProgress,
   type SchemaDriftReporter,
   type ScopeDownloadCompleteReporter,
+  type CoverageResetReporter,
 } from './pull-client';
 import type { SnapshotSource, SnapshotBootstrapErrorReporter } from './snapshot-bootstrap';
 
@@ -58,6 +59,8 @@ export type SchedulerOptions = {
   onSnapshotBootstrapError?: SnapshotBootstrapErrorReporter;
   /** Threaded through to pullSync's SyncOptions — see ScopeDownloadCompleteInfo. */
   onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
+  /** Threaded through to pullSync's SyncOptions — see CoverageResetInfo. */
+  onCoverageReset?: CoverageResetReporter;
 };
 
 let isSyncing = false;
@@ -96,6 +99,7 @@ async function runSync(
       snapshotSource: options?.snapshotSource,
       onSnapshotBootstrapError: options?.onSnapshotBootstrapError,
       onScopeDownloadComplete: options?.onScopeDownloadComplete,
+      onCoverageReset: options?.onCoverageReset,
     });
   } catch (error) {
     options?.onCycleError?.(error);

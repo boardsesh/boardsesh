@@ -600,7 +600,24 @@ ORDER BY deleted_at ASC, id ASC
 LIMIT $limit;
 ```
 
-Periodic cleanup: `DELETE FROM sync_deletions WHERE deleted_at < NOW() - INTERVAL '90 days'`.
+Periodic cleanup: `DELETE FROM sync_deletions WHERE deleted_at < NOW() - INTERVAL '90 days'` (the daily
+`pruneSyncDeletions` job).
+
+Because that prune is a hard delete and the query above is a strict `>` keyset, a device that has been
+away longer than the window can never be served the tombstones removed in the meantime. The client
+guards it with a wall-clock **deletions-coverage marker** (`sync_meta['deletions-coverage']`, written
+only when a deletions pull reaches its tail — never the checkpoint's own age, which stands still on a
+device whose user simply deleted nothing). Once the marker is older than `90 - 10 = 80` days, `pullSync`
+probes the network first and then rebuilds the local **user** tables from scratch: it deletes the rows of
+every `USER_DATA_TABLES` entry plus their checkpoints and `checkpoint:deletions`, and the same cycle
+re-pulls them from the epoch.
+
+Downloaded board catalogs are deliberately left alone — no production path emits a board tombstone (the
+only DELETEs of `board_climbs` / `board_climb_stats` run inside the transaction that sets
+`boardsesh.suppress_sync_tombstones`), so clearing them would recover nothing and cost a full
+re-download. `pending_mutations` is never touched either: unsynced local writes are not recoverable from
+the server. Both numbers live in one place, `packages/shared/offline-sync/src/sync/retention.ts`, which
+the backend prune job imports. See `sync/deletions-coverage.ts` for the invariant.
 
 ## Backend changes needed
 

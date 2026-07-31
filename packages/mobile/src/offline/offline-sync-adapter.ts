@@ -27,6 +27,7 @@ import {
   type DrainQueue,
   type GraphQLFetch,
   type OfflineDatabase,
+  type CoverageResetReporter,
   type ScopeDownloadCompleteReporter,
   type SchedulerTriggers,
   type SchemaDriftReporter,
@@ -66,6 +67,16 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({ scopeKey
 // path actually got used, and how long it took).
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({ scopeKey, method, durationMs }) => {
   track(SHARED_EVENTS.OfflineBoardDownloadCompleted, { scopeKey, method, durationMs });
+};
+
+// The deletions-coverage guard rebuilt this device's local user data because it
+// had been away longer than the tombstone retention window (issue #3474).
+// track(), not reportHandledError(): nothing failed — the guard did its job —
+// and the only question anyone will ask is how often it fires. If this shows up
+// far more than the "device away for 80+ days" model predicts, the threshold or
+// the marker plumbing is wrong, not the user's phone.
+const reportCoverageReset: CoverageResetReporter = ({ markerAgeDays, rowsCleared, pendingMutations }) => {
+  track(SHARED_EVENTS.OfflineSyncCoverageResetForced, { markerAgeDays, rowsCleared, pendingMutations });
 };
 
 // A failed cycle is routine for offline users (the reconnect trigger retries),
@@ -137,6 +148,7 @@ export function startSyncScheduler(
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onScopeDownloadComplete: reportScopeDownloadComplete,
+    onCoverageReset: reportCoverageReset,
   });
 }
 
@@ -155,6 +167,7 @@ export function triggerSync(
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onScopeDownloadComplete: reportScopeDownloadComplete,
+    onCoverageReset: reportCoverageReset,
   });
 }
 
@@ -168,6 +181,7 @@ export function pullSync(
     onSchemaDrift: reportSchemaDrift,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
     onScopeDownloadComplete: reportScopeDownloadComplete,
+    onCoverageReset: reportCoverageReset,
     ...options,
   });
 }

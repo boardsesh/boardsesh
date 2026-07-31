@@ -28,6 +28,7 @@ const onSchemaDrift = vi.fn();
 
 import { pullSync } from '../pull-client';
 import { enqueue } from '../../mutation-queue/queue';
+import { setBackgrounded } from '../../mutation-queue/drainer';
 import { processMutation, type GraphQLFetch } from '../../mutation-queue/handlers';
 import { runMigrations } from '../../db/migrations';
 import { ensureMutationQueueTable } from '../../mutation-queue/schema';
@@ -800,6 +801,221 @@ describe('sync layer — real-DDL integration', () => {
       expect(missingRequired).toEqual([]);
       expect(presentRequired).toEqual([...REQUIRED_SAVE_TICK_INPUT_FIELDS]);
       expect(capturedInput?.climbedAt).toBe('2024-05-30T10:00:00.000Z');
+    });
+  });
+  // -------------------------------------------------------------------------
+  // Deletions-coverage guard (issue #3474)
+  // -------------------------------------------------------------------------
+
+  describe('deletions-coverage guard forces a user-data resync when the retention window is blown', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    /**
+     * A fetch that serves an empty `syncDeletions`, one tick document for
+     * `syncTicks`, and an empty page for every other sync query. Records the
+     * variables of every syncDeletions call so a test can tell the one-row
+     * reachability PROBE (limit 1) apart from the real deletions pull.
+     */
+    function makeCoverageFetch(tickDocuments: Record<string, unknown>[]) {
+      const deletionsVariables: Record<string, unknown>[] = [];
+      const fetch = vi.fn(async <T>(query: string, variables?: Record<string, unknown>): Promise<T> => {
+        if (query.includes('syncDeletions')) {
+          deletionsVariables.push(variables ?? {});
+          return { syncDeletions: { deletions: [], cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+        }
+        if (query.includes('syncTicks')) {
+          return { syncTicks: { documents: tickDocuments, cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+        }
+        return { [extractQueryName(query)]: { documents: [], cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+      }) as unknown as GraphQLFetch;
+      return { fetch, deletionsVariables };
+    }
+
+    /** Rows and markers a long-absent device carries: stale user data + an intact catalog. */
+    async function seedStaleDevice(): Promise<void> {
+      await db.runAsync("INSERT INTO boardsesh_ticks (uuid, status) VALUES ('stale-tick', 'send')", []);
+      await db.runAsync("INSERT INTO playlists (uuid, name) VALUES ('stale-playlist', 'Old')", []);
+      await db.runAsync("INSERT INTO board_climbs (uuid, board_type, layout_id) VALUES ('climb-1', 'kilter', 1)", []);
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+        'checkpoint:deletions',
+        JSON.stringify({ updatedAt: '2026-01-01T00:00:00Z', syncSeq: '7' }),
+      ]);
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+        'checkpoint:board_climbs:kilter:1:5',
+        JSON.stringify({ updatedAt: '2026-01-01T00:00:00Z', syncSeq: '9' }),
+      ]);
+      await enqueue(db, 'boardsesh_ticks', 'create', { uuid: 'queued-tick' }, 'idem-coverage-1');
+    }
+
+    async function setCoverage(atMs: number): Promise<void> {
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+        'deletions-coverage',
+        String(atMs),
+      ]);
+    }
+
+    async function readCoverage(): Promise<number | null> {
+      const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
+        'deletions-coverage',
+      ]);
+      return row ? Number(row.value) : null;
+    }
+
+    async function countRows(tableName: string): Promise<number> {
+      const row = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM ${tableName}`, []);
+      return row?.n ?? 0;
+    }
+
+    it('rebuilds user data from the server, keeps the catalog and the outbox (the #3474 regression test)', async () => {
+      // 100 days without a completed deletions pull: every tombstone in the
+      // window (cursor, now-90d] was hard-deleted server-side before this device
+      // asked for it, so `stale-tick` / `stale-playlist` could sit here forever —
+      // a delta pull never re-emits a row the server deleted.
+      await seedStaleDevice();
+      await setCoverage(Date.now() - 100 * DAY_MS);
+      const onCoverageReset = vi.fn();
+      const { fetch, deletionsVariables } = makeCoverageFetch([
+        { uuid: 'fresh-tick', status: 'send', updated_at: '2026-07-01T00:00:00Z' },
+      ]);
+
+      await pullSync(db, queryClient, fetch, { onCoverageReset });
+
+      // Stale local rows are gone; the freshly pulled one landed.
+      expect(await countRows('playlists')).toBe(0);
+      expect(await db.getFirstAsync('SELECT uuid FROM boardsesh_ticks WHERE uuid = ?', ['stale-tick'])).toBeNull();
+      expect(await db.getFirstAsync('SELECT uuid FROM boardsesh_ticks WHERE uuid = ?', ['fresh-tick'])).not.toBeNull();
+
+      // The downloaded catalog and its cursor are untouched — no surprise re-download.
+      expect(await countRows('board_climbs')).toBe(1);
+      expect(await readCheckpoint(db, 'checkpoint:board_climbs:kilter:1:5')).not.toBeNull();
+
+      // The outbox survives: an unsynced write exists nowhere else.
+      expect(await countRows('pending_mutations')).toBe(1);
+
+      // A one-row probe ran BEFORE the wipe, then the real deletions pull.
+      expect(deletionsVariables[0]).toMatchObject({ limit: 1 });
+      expect(deletionsVariables.length).toBeGreaterThanOrEqual(2);
+
+      // Marker advanced, and the operational event carried the honest numbers.
+      expect(await readCoverage()).toBeGreaterThan(Date.now() - 60_000);
+      expect(onCoverageReset).toHaveBeenCalledTimes(1);
+      expect(onCoverageReset.mock.calls[0][0]).toMatchObject({
+        markerAgeDays: 100,
+        rowsCleared: 2,
+        pendingMutations: 1,
+      });
+    });
+
+    it('wipes NOTHING when the device is offline — the probe fails first', async () => {
+      // pullSync runs on every foreground, offline ones included. Wiping and
+      // only then discovering there is no connection would leave the user with
+      // an empty app until connectivity returns.
+      await seedStaleDevice();
+      const staleAt = Date.now() - 100 * DAY_MS;
+      await setCoverage(staleAt);
+      const onCoverageReset = vi.fn();
+      const offlineFetch = vi.fn(async () => {
+        throw new Error('Network request failed');
+      }) as unknown as GraphQLFetch;
+
+      await expect(pullSync(db, queryClient, offlineFetch, { onCoverageReset })).rejects.toThrow(
+        'Network request failed',
+      );
+
+      expect(await countRows('boardsesh_ticks')).toBe(1);
+      expect(await countRows('playlists')).toBe(1);
+      expect(await countRows('pending_mutations')).toBe(1);
+      expect(await readCheckpoint(db, 'checkpoint:deletions')).not.toBeNull();
+      expect(await readCoverage()).toBe(staleAt);
+      expect(onCoverageReset).not.toHaveBeenCalled();
+    });
+
+    it('does not wipe again on the next cycle (no probe, no second reset)', async () => {
+      // The reset stamps the marker in its own transaction, so a flaky network
+      // can never turn this into a wipe loop.
+      await seedStaleDevice();
+      await setCoverage(Date.now() - 100 * DAY_MS);
+      await pullSync(db, queryClient, makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]).fetch);
+
+      const onCoverageReset = vi.fn();
+      const second = makeCoverageFetch([{ uuid: 'fresh-tick', status: 'send' }]);
+      await pullSync(db, queryClient, second.fetch, { onCoverageReset });
+
+      expect(onCoverageReset).not.toHaveBeenCalled();
+      expect(second.deletionsVariables.every((variables) => variables.limit !== 1)).toBe(true);
+      expect(await db.getFirstAsync('SELECT uuid FROM boardsesh_ticks WHERE uuid = ?', ['fresh-tick'])).not.toBeNull();
+    });
+
+    it('seeds the marker and resets nothing on the first launch after the update (bootstrap OTA)', async () => {
+      // Every existing install lacks the key on that first launch. Absence must
+      // never mean "reset" — that would wipe the entire fleet's user data on the
+      // OTA that ships this guard.
+      await seedStaleDevice();
+      const onCoverageReset = vi.fn();
+
+      await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageReset });
+
+      expect(onCoverageReset).not.toHaveBeenCalled();
+      expect(await countRows('boardsesh_ticks')).toBe(1);
+      expect(await countRows('playlists')).toBe(1);
+      expect(await readCoverage()).toBeGreaterThan(Date.now() - 60_000);
+    });
+
+    it('ignores the deletions CHECKPOINT age — only the coverage marker decides', async () => {
+      // The checkpoint holds the server-side deleted_at of the last tombstone
+      // consumed and only advances on a non-empty page, so a user who has
+      // deleted nothing for 200 days carries a 200-day-old cursor on a perfectly
+      // current device. Wiring the oracle to it would wipe most of the fleet.
+      await seedStaleDevice();
+      await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+        'checkpoint:deletions',
+        JSON.stringify({ updatedAt: new Date(Date.now() - 200 * DAY_MS).toISOString(), syncSeq: '7' }),
+      ]);
+      await setCoverage(Date.now() - DAY_MS);
+      const onCoverageReset = vi.fn();
+
+      await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageReset });
+
+      expect(onCoverageReset).not.toHaveBeenCalled();
+      expect(await countRows('boardsesh_ticks')).toBe(1);
+      expect(await countRows('playlists')).toBe(1);
+    });
+
+    it('re-stamps a future-dated marker (clock corrected backwards) without resetting', async () => {
+      await seedStaleDevice();
+      await setCoverage(Date.now() + 10 * DAY_MS);
+      const onCoverageReset = vi.fn();
+
+      await pullSync(db, queryClient, makeCoverageFetch([]).fetch, { onCoverageReset });
+
+      expect(onCoverageReset).not.toHaveBeenCalled();
+      expect(await countRows('boardsesh_ticks')).toBe(1);
+      // Left in the future, the marker could never go stale again — the guard
+      // would be permanently disarmed on that device.
+      expect(await readCoverage()).toBeLessThan(Date.now() + 60_000);
+    });
+
+    it('does not advance the marker when the deletions pull is aborted mid-stream', async () => {
+      // A pull backgrounded on its first page consumed an unknown prefix of the
+      // stream. Claiming a fresh retention window off it would hide a real gap
+      // for another 80 days — this is what processDeletions' reachedTail buys.
+      const freshAt = Date.now() - DAY_MS;
+      await setCoverage(freshAt);
+      const abortingFetch = vi.fn(async <T>(query: string): Promise<T> => {
+        if (query.includes('syncDeletions')) {
+          setBackgrounded(true);
+          return { syncDeletions: { deletions: [], cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+        }
+        return { [extractQueryName(query)]: { documents: [], cursor: DEFAULT_CURSOR, hasMore: false } } as T;
+      }) as unknown as GraphQLFetch;
+
+      try {
+        await pullSync(db, queryClient, abortingFetch);
+      } finally {
+        setBackgrounded(false);
+      }
+
+      expect(await readCoverage()).toBe(freshAt);
     });
   });
 });

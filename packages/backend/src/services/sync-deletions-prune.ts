@@ -1,5 +1,6 @@
 import { lt } from 'drizzle-orm';
 import { syncDeletions } from '@boardsesh/db/schema';
+import { SYNC_DELETIONS_RETENTION_DAYS } from '@boardsesh/offline-sync';
 import { db, type Database } from '../db/client';
 
 /**
@@ -7,13 +8,18 @@ import { db, type Database } from '../db/client';
  * `sync_deletions` (packages/db/src/schema/app/sync-deletions.ts): tombstones
  * older than this are pruned by the daily job in server.ts.
  *
- * A client whose deletions checkpoint is older than this window can miss
- * pruned tombstones (stale local rows until the affected records are next
- * upserted). Detecting that gap and forcing a from-scratch resync is a
- * client-side follow-up; the unbounded-growth risk of never pruning is the
- * worse trade.
+ * The value is OWNED by @boardsesh/offline-sync (sync/retention.ts) and
+ * re-exported here under its long-standing name. The client's staleness guard
+ * compares its deletions-coverage marker against the same number minus a
+ * margin, and forces a from-scratch user-data resync when the window is blown
+ * (issue #3474) — if the two sides ever forked, the gap this job opens would go
+ * undetected on device again. Keep the single definition.
+ *
+ * Careful when LOWERING it: a client only picks up the new value with its next
+ * OTA bundle, so shortening the server window strands older clients comparing
+ * against the old one.
  */
-export const SYNC_DELETIONS_RETENTION_DAYS = 90;
+export { SYNC_DELETIONS_RETENTION_DAYS };
 
 export async function pruneSyncDeletions(database: Database = db): Promise<number> {
   const cutoff = new Date(Date.now() - SYNC_DELETIONS_RETENTION_DAYS * 24 * 60 * 60 * 1000);

@@ -219,6 +219,7 @@ describe('snapshot-bootstrap bindings', () => {
     const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
     expect(options.onSnapshotBootstrapError).toBeTypeOf('function');
     expect(options.onScopeDownloadComplete).toBeTypeOf('function');
+    expect(options.onCoverageReset).toBeTypeOf('function');
   });
 
   it('triggerSync passes snapshotSource through and wires the telemetry handlers', () => {
@@ -234,6 +235,7 @@ describe('snapshot-bootstrap bindings', () => {
     expect(options.snapshotSource).toBe(fakeSnapshotSource);
     expect(options.onSnapshotBootstrapError).toBeTypeOf('function');
     expect(options.onScopeDownloadComplete).toBeTypeOf('function');
+    expect(options.onCoverageReset).toBeTypeOf('function');
   });
 
   it('reports a bootstrap failure to Sentry with the snapshot-bootstrap tags', () => {
@@ -272,6 +274,28 @@ describe('snapshot-bootstrap bindings', () => {
       method: 'snapshot',
       durationMs: 1234,
     });
+  });
+
+  it('captures a PostHog event — not a Sentry error — when the coverage guard forces a resync', () => {
+    // A forced deletions-coverage reset is expected behaviour whose FREQUENCY is
+    // the signal (issue #3474), so it belongs with the operational events, not
+    // with the handled-error anomalies alongside it in the adapter.
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    options.onCoverageReset?.({ markerAgeDays: 100, rowsCleared: 42, pendingMutations: 3 });
+
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineSyncCoverageResetForced, {
+      markerAgeDays: 100,
+      rowsCleared: 42,
+      pendingMutations: 3,
+    });
+    expect(reportHandledError).not.toHaveBeenCalled();
   });
 
   it('pullSync binds the snapshot-bootstrap telemetry defaults but lets caller options win', async () => {

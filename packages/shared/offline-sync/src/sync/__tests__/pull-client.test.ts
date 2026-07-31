@@ -297,8 +297,38 @@ describe('pullSync', () => {
 
     await pullSync(db, queryClient, graphqlFetch);
 
-    const insertCalls = sqlCalls.filter((call) => call.sql.includes('INSERT OR REPLACE'));
+    // sync_meta writes are excluded: an empty cycle still stamps the
+    // deletions-coverage marker (pinned by the test below). This assertion is
+    // about DATA rows.
+    const insertCalls = sqlCalls.filter(
+      (call) => call.sql.includes('INSERT OR REPLACE') && !call.sql.includes('sync_meta'),
+    );
     expect(insertCalls).toHaveLength(0);
+  });
+
+  it('seeds the deletions-coverage marker and wipes nothing when the marker is absent', async () => {
+    // The mock db's getFirstAsync returns null, so the coverage marker reads as
+    // ABSENT — exactly the state of every existing install on the first launch
+    // after the OTA that introduces it. Absent must mean "seed it", never
+    // "assume the worst and reset": the alternative detonates a fleet-wide
+    // user-data wipe on rollout day. This pins that default for the whole suite.
+    setupGraphqlFetchForAllTables();
+
+    await pullSync(db, queryClient, graphqlFetch);
+
+    const coverageWrites = sqlCalls.filter(
+      (call) => call.sql.includes('INSERT OR REPLACE INTO sync_meta') && call.params?.[0] === 'deletions-coverage',
+    );
+    expect(coverageWrites.length).toBeGreaterThanOrEqual(1);
+    expect(Number(coverageWrites[0].params[1])).toBeGreaterThan(0);
+
+    // No user-table wipe, and the deletions cursor was not dropped.
+    const wipeDeletes = sqlCalls.filter((call) => call.sql === 'DELETE FROM boardsesh_ticks');
+    expect(wipeDeletes).toHaveLength(0);
+    const cursorDeletes = sqlCalls.filter(
+      (call) => call.sql.includes('DELETE FROM sync_meta') && call.params?.includes('checkpoint:deletions'),
+    );
+    expect(cursorDeletes).toHaveLength(0);
   });
 
   it('syncs per-board tables with boardType + layout/size scope variables', async () => {

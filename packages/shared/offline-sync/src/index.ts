@@ -60,7 +60,21 @@ export type {
   SchemaDriftReporter,
   ScopeDownloadCompleteInfo,
   ScopeDownloadCompleteReporter,
+  CoverageResetInfo,
+  CoverageResetReporter,
 } from './sync/pull-client';
+
+// --- Tombstone retention (issue #3474) --------------------------------------
+// The backend prune job imports SYNC_DELETIONS_RETENTION_DAYS from here so the
+// server's window and the client's staleness threshold can never fork.
+// evaluateDeletionsCoverage / resetUserDataForLostCoverage stay package-internal
+// on purpose (same reasoning as rewindDeletionsCheckpoint below): pull-client is
+// their only caller, and no app should be able to trigger a local wipe directly.
+export {
+  SYNC_DELETIONS_RETENTION_DAYS,
+  DELETIONS_COVERAGE_MARGIN_DAYS,
+  DELETIONS_COVERAGE_MAX_AGE_MS,
+} from './sync/retention';
 export {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,
