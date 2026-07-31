@@ -746,7 +746,10 @@ async function enforceDeletionsCoverage(
   const verdict = evaluateDeletionsCoverage(coverageAt, Date.now());
 
   if (verdict === 'fresh') return;
-  if (verdict === 'unknown' || verdict === 'future') {
+  // `coverageAt === null` IS the 'unknown' verdict — spelling it that way here
+  // narrows coverageAt to a number for the rest of the function, so the
+  // markerAgeDays below needs no fallback for a case that cannot happen.
+  if (coverageAt === null || verdict === 'future') {
     await setDeletionsCoverageAt(db, Date.now());
     return;
   }
@@ -780,8 +783,7 @@ async function enforceDeletionsCoverage(
     queryClient.invalidateQueries({ queryKey: JSON.parse(serializedKey) as string[] });
   }
 
-  // coverageAt is non-null here: only a present marker can evaluate to 'stale'.
-  const markerAgeDays = Math.round((resetAt - (coverageAt ?? resetAt)) / 86_400_000);
+  const markerAgeDays = Math.round((resetAt - coverageAt) / 86_400_000);
   options?.onCoverageReset?.({ markerAgeDays, rowsCleared, pendingMutations });
 }
 

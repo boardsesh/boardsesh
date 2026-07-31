@@ -86,9 +86,18 @@ describe('resetUserDataForLostCoverage', () => {
     // The rows are unreachable-but-present stale data: the tombstones that would
     // have removed them were pruned server-side, and the delta resolver never
     // re-emits a deleted row, so nothing short of deleting them locally works.
+    // Counted from the DB rather than hardcoded: `rowsCleared` feeds the
+    // telemetry payload, so it has to be the real row total, not the table count
+    // it happens to equal while every table holds exactly one seeded row.
+    let seededRows = 0;
+    for (const tableName of USER_DATA_TABLES) {
+      seededRows += await countRows(db, tableName);
+    }
+    expect(seededRows).toBeGreaterThan(0);
+
     const { rowsCleared } = await resetUserDataForLostCoverage(db, NOW);
 
-    expect(rowsCleared).toBe(USER_DATA_TABLES.length);
+    expect(rowsCleared).toBe(seededRows);
     for (const tableName of USER_DATA_TABLES) {
       expect(await countRows(db, tableName)).toBe(0);
       expect(await readMeta(db, `checkpoint:${tableName}`)).toBeNull();
