@@ -138,6 +138,13 @@ describe('normalizeClientIp', () => {
   it('keys the hex form of an IPv4-mapped address as IPv6 instead of dropping it', () => {
     // `::ffff:c000:0201` is a valid IPv6 literal whose tail (`c000:0201`) is not
     // an IP, so the `::ffff:` unwrap must not fire here.
+    //
+    // Accepted consequence: every hex-form IPv4-mapped literal starts with the
+    // same four zero hextets, so they all collapse into the single
+    // `0:0:0:0::/64` bucket. Node renders IPv4-mapped socket addresses in dotted
+    // form and Cloudflare sends dotted `cf-connecting-ip`, so this shape only
+    // reaches us from a hand-forged header — sharing one bucket is the safe
+    // direction (stricter, not looser) for that traffic.
     expect(normalizeClientIp('::ffff:c000:0201')).toBe('0:0:0:0::/64');
   });
 });

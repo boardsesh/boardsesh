@@ -128,6 +128,16 @@ describe('WebSocket connection context client IP', () => {
     expect(context.clientIp).toBe('172.68.1.1');
   });
 
+  it('falls back to the upgrade socket address when no proxy headers are present', async () => {
+    const context = await connectAndReadContext({});
+
+    // The test server listens on 127.0.0.1, so a direct connection carrying no
+    // Cloudflare or forwarded headers must still resolve a keyable identity
+    // rather than undefined — undefined drops the caller back into the
+    // connectionId bucket this fix exists to retire.
+    expect(context.clientIp).toBe('127.0.0.1');
+  });
+
   it('gives two reconnects from one IP the same rate-limit identity', async () => {
     const headers = { 'cf-connecting-ip': '203.0.113.7' };
     const first = await connectAndReadContext(headers);
