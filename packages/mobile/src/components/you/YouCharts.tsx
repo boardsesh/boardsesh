@@ -32,9 +32,11 @@ const AXIS_LABEL_SIZE = 11;
 const STACK_BAR_RADIUS = 3;
 const MIN_ZOOM_SCALE = 1;
 const MAX_ZOOM_SCALE = 2.75;
-// gifted-charts renders its y-axis gutter outside `width`, so budget both against the measured frame.
+// gifted-charts offsets the gutter outside `width`, so keep both inside the measured frame with 8px slack.
 const CHART_WIDTH_INSET = 8;
+// Use this for both the width budget and BarChart prop so the visible gutter cannot drift.
 const Y_AXIS_LABEL_WIDTH = 32;
+const CHART_INITIAL_SPACING = 8;
 // Floor for grouped flash|redpoint bars so a dense V0-V17 axis keeps each bar
 // above the iOS 44pt / Android 48dp touch target instead of shrinking to 4px.
 const MIN_GROUPED_BAR = 6;
@@ -60,8 +62,7 @@ function downsampleLabel(index: number, total: number, label: string, max: numbe
 function fitBars(width: number, count: number, minBar = 3): { barWidth: number; spacing: number } {
   if (count <= 0 || width <= 0) return { barWidth: minBar, spacing: 2 };
   const spacing = count > 26 ? 2 : count > 12 ? 4 : 8;
-  const initial = 8;
-  const available = width - initial * 2 - spacing * (count - 1);
+  const available = width - CHART_INITIAL_SPACING - spacing * (count - 1);
   const barWidth = Math.max(minBar, Math.floor(available / count));
   return { barWidth, spacing };
 }
@@ -391,7 +392,7 @@ export const StackedBarChart = memo(function StackedBarChart({
           {(width, zoomScale, scrollEnabled) => {
             const axisGutter = showYAxisScale ? Y_AXIS_LABEL_WIDTH : 0;
             const chartWidth = width - CHART_WIDTH_INSET - axisGutter;
-            const initialSpacing = 8;
+            const initialSpacing = CHART_INITIAL_SPACING;
             const fitted = fitBars(chartWidth, stackData.length, minBarWidth);
             const barWidth = Math.max(minBarWidth, Math.round(fitted.barWidth * zoomScale));
             const spacing = Math.max(2, Math.round(fitted.spacing * zoomScale));

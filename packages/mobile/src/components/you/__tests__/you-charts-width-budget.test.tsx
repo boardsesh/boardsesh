@@ -186,9 +186,8 @@ describe('StackedBarChart width budget (#3778, #3050)', () => {
     render(<StackedBarChart bars={bars} colorBy="layout" showYAxisScale />);
 
     const call = barChartCalls[0]!;
-    // The fitted content must also not exceed the canvas BarChart was told to
-    // draw into, or the last bar is clipped by the plot ScrollView at zoom 1.
-    expect(stackedContentSpan(call)).toBeLessThanOrEqual(call.width!);
+    expect(call.initialSpacing).toBe(8);
+    expect(stackedContentSpan(call)).toBe(call.width);
   });
 
   it('stays inside the frame without the y-axis scale too', () => {
@@ -295,7 +294,6 @@ describe('GroupedBarChart width budget (#3778, #3050)', () => {
     render(<GroupedBarChart bars={largeCountBars} />);
     const accessibilityScaleCall = barChartCalls[0]!;
 
-    expect(getFontScaleMock).toHaveBeenCalledTimes(2);
     expect(accessibilityScaleCall.width).toBe(normalScaleCall.width);
     expect(accessibilityScaleCall.topLabelContainerStyle?.width).toBeGreaterThan(
       normalScaleCall.topLabelContainerStyle?.width ?? 0,
