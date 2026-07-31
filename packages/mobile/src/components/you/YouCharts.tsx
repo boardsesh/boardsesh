@@ -24,6 +24,13 @@ const AXIS_LABEL_SIZE = 11;
 const STACK_BAR_RADIUS = 3;
 const MIN_ZOOM_SCALE = 1;
 const MAX_ZOOM_SCALE = 2.75;
+// gifted-charts' BarChart renders its bars/spacing into whatever `width` prop
+// it's given, but that width is itself a few px narrower than the measured
+// frame (room for the chart's own right-edge padding). Bar-fitting math MUST
+// use the same narrowed budget the chart is actually given, or the fitted
+// bars (sized off the full frame width) run wider than the canvas they're
+// drawn into and the last bar/label spills past the card edge (#3778).
+const CHART_WIDTH_INSET = 8;
 // Floor for grouped flash|redpoint bars so a dense V0-V17 axis keeps each bar
 // above the iOS 44pt / Android 48dp touch target instead of shrinking to 4px.
 const MIN_GROUPED_BAR = 6;
@@ -375,7 +382,8 @@ export const StackedBarChart = memo(function StackedBarChart({
           zoomable={interactive && zoomable}
         >
           {(width, zoomScale, scrollEnabled) => {
-            const fitted = fitBars(width, stackData.length, minBarWidth);
+            const chartWidth = width - CHART_WIDTH_INSET;
+            const fitted = fitBars(chartWidth, stackData.length, minBarWidth);
             const barWidth = Math.max(minBarWidth, Math.round(fitted.barWidth * zoomScale));
             const spacing = Math.max(2, Math.round(fitted.spacing * zoomScale));
             // gifted sizes each x-axis label box to ~one bar by default, so a wide
@@ -390,7 +398,7 @@ export const StackedBarChart = memo(function StackedBarChart({
             return (
               <BarChart
                 stackData={sizedData}
-                width={width - 8}
+                width={chartWidth}
                 height={height - 28}
                 barWidth={barWidth}
                 spacing={spacing}
@@ -487,11 +495,14 @@ export const GroupedBarChart = memo(function GroupedBarChart({
           zoomable={interactive && zoomable}
         >
           {(width, zoomScale, scrollEnabled) => {
+            const chartWidth = width - CHART_WIDTH_INSET;
             const list = bars ?? [];
             const initial = 8;
             const baseBarWidth = Math.max(
               MIN_GROUPED_BAR,
-              Math.floor((width - initial * 2 - groupGap * list.length - innerGap * list.length) / (list.length * 2)),
+              Math.floor(
+                (chartWidth - initial * 2 - groupGap * list.length - innerGap * list.length) / (list.length * 2),
+              ),
             );
             const barWidth = Math.max(MIN_GROUPED_BAR, Math.round(baseBarWidth * zoomScale));
             const zoomedGroupGap = Math.max(groupGap, Math.round(groupGap * zoomScale));
@@ -517,7 +528,7 @@ export const GroupedBarChart = memo(function GroupedBarChart({
             return (
               <BarChart
                 data={data}
-                width={width - 8}
+                width={chartWidth}
                 height={height - 28}
                 barWidth={barWidth}
                 initialSpacing={initial}
