@@ -250,6 +250,9 @@ void test_reconnect_requests_connection_parameters_again(void) {
     NimBLEServer* server = NimBLEDevice::getServer();
     TEST_ASSERT_EQUAL(2, server->getConnectionParameterUpdateCallCount());
     TEST_ASSERT_EQUAL(43, server->getConnectionParameterUpdateHandle());
+    TEST_ASSERT_EQUAL(kExpectedConnectionIntervalMin, server->getConnectionParameterUpdateMinInterval());
+    TEST_ASSERT_EQUAL(kExpectedConnectionIntervalMax, server->getConnectionParameterUpdateMaxInterval());
+    TEST_ASSERT_EQUAL(kExpectedConnectionLatency, server->getConnectionParameterUpdateLatency());
     TEST_ASSERT_EQUAL(kExpectedConnectionSupervisionTimeout, server->getConnectionParameterUpdateTimeout());
 }
 
