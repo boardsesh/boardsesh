@@ -4,15 +4,18 @@ import {
   MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
   MATERIAL_TAB_BAR_HEIGHT,
   TAB_BAR_HEIGHT,
-  TOOLBAR_GAP_ABOVE_TABBAR,
   TOOLBAR_RESERVE,
   floatingContextBarBottom,
   glassSize,
 } from '../../theme/layout';
 
-// Assert the arbitration in terms of the layout constants (not magic numbers) so
-// this stays correct when the glass-size ladder is retuned.
-const NATIVE_ACCESSORY_RESERVE = glassSize.standard + TOOLBAR_GAP_ABOVE_TABBAR;
+// The only device-measured native inset in this suite. Do not turn inferred
+// no-accessory/minimized values into product contracts without iOS 26 hardware QA.
+const DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET = 139;
+// A plausible 34pt home-indicator + 49pt tab-bar arithmetic fixture. This is NOT
+// an on-device measurement; it is used only to prove that the pure function treats
+// a native UIKit inset as opaque and does not add TAB_BAR_HEIGHT to it.
+const SYNTHETIC_NATIVE_SAFE_AREA_INSET = 83;
 
 describe('computeBottomChromeMetrics', () => {
   it('reserves nothing extra outside the tabs group', () => {
@@ -38,7 +41,7 @@ describe('computeBottomChromeMetrics', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       usesNativeTabBar: true,
-      insetsBottom: 0,
+      insetsBottom: SYNTHETIC_NATIVE_SAFE_AREA_INSET,
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
@@ -46,9 +49,9 @@ describe('computeBottomChromeMetrics', () => {
     });
     expect(metrics.jsQueueToolbarVisible).toBe(true);
     expect(metrics.jsQueueReserve).toBe(TOOLBAR_RESERVE);
-    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE);
-    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE);
-    expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + TOOLBAR_RESERVE);
+    expect(metrics.scrollBottomPadding).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET + TOOLBAR_RESERVE);
+    expect(metrics.floatingControlBottom).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET + TOOLBAR_RESERVE);
+    expect(metrics.fixedFooterBottom).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET + TOOLBAR_RESERVE);
   });
 
   it('clears the JS Material tab bar for Liquid Glass on a non-capable device', () => {
@@ -91,11 +94,13 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.fixedFooterBottom).toBe(MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT);
   });
 
-  it('does not pad scroll content for the UIKit-owned native accessory', () => {
+  it('anchors every native-tab offset to the UIKit safe-area inset, including the 139pt accessory anchor (#3973)', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       usesNativeTabBar: true,
-      insetsBottom: 0,
+      // iPhone 17 Pro / iOS 26 with the BottomAccessory: 34 home indicator +
+      // 49 native tab bar + 56 accessory. UIKit has already included all three.
+      insetsBottom: DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET,
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
@@ -104,12 +109,12 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.nativeAccessoryVisible).toBe(true);
     expect(metrics.jsQueueToolbarVisible).toBe(false);
     expect(metrics.jsQueueReserve).toBe(0);
-    // UIKit adds the accessory inset itself, so scroll padding is just the tab bar.
-    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT);
-    // But floating controls must still clear the accessory.
-    expect(metrics.nativeAccessoryReserve).toBe(NATIVE_ACCESSORY_RESERVE);
-    expect(metrics.floatingControlBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE);
-    expect(metrics.fixedFooterBottom).toBe(TAB_BAR_HEIGHT + NATIVE_ACCESSORY_RESERVE);
+    expect(metrics.tabBarHeight).toBe(TAB_BAR_HEIGHT);
+    expect(metrics.tabBarBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
+    expect(metrics.nativeAccessoryReserve).toBe(0);
+    expect(metrics.scrollBottomPadding).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
+    expect(metrics.floatingControlBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
+    expect(metrics.fixedFooterBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
   });
 
   it('hides the bar but keeps tab-bar clearance on a pushed sub-route (Material)', () => {
@@ -137,7 +142,7 @@ describe('computeBottomChromeMetrics', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       usesNativeTabBar: true,
-      insetsBottom: 0,
+      insetsBottom: SYNTHETIC_NATIVE_SAFE_AREA_INSET,
       insideTabs: true,
       onAccessorySurface: false,
       hasCurrentClimb: true,
@@ -147,7 +152,7 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.jsQueueToolbarVisible).toBe(false);
     expect(metrics.jsQueueReserve).toBe(0);
     expect(metrics.tabBarHeight).toBe(TAB_BAR_HEIGHT);
-    expect(metrics.scrollBottomPadding).toBe(TAB_BAR_HEIGHT);
+    expect(metrics.scrollBottomPadding).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET);
   });
 
   it('reserves no queue chrome for fixed footers outside the tabs group', () => {
@@ -174,7 +179,7 @@ describe('computeBottomChromeMetrics', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       usesNativeTabBar: true,
-      insetsBottom: 34,
+      insetsBottom: SYNTHETIC_NATIVE_SAFE_AREA_INSET,
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: false,
@@ -182,9 +187,9 @@ describe('computeBottomChromeMetrics', () => {
     });
     expect(metrics.jsQueueToolbarVisible).toBe(false);
     expect(metrics.nativeAccessoryVisible).toBe(false); // mounted, but no climb to show
-    expect(metrics.scrollBottomPadding).toBe(34 + TAB_BAR_HEIGHT);
-    expect(metrics.floatingControlBottom).toBe(34 + TAB_BAR_HEIGHT);
-    expect(metrics.fixedFooterBottom).toBe(34 + TAB_BAR_HEIGHT);
+    expect(metrics.scrollBottomPadding).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET);
+    expect(metrics.floatingControlBottom).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET);
+    expect(metrics.fixedFooterBottom).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET);
   });
 
   it('keeps scroll tab clearance but not fixed-footer tab clearance inside Material tabs', () => {
@@ -210,7 +215,7 @@ describe('computeBottomChromeMetrics', () => {
     const metrics = computeBottomChromeMetrics({
       uiVariant: 'liquidGlass',
       usesNativeTabBar: true,
-      insetsBottom: 0,
+      insetsBottom: DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET,
       insideTabs: true,
       onAccessorySurface: true,
       hasCurrentClimb: true,
@@ -227,7 +232,8 @@ describe('computeBottomChromeMetrics', () => {
           const metrics = computeBottomChromeMetrics({
             uiVariant: 'liquidGlass',
             usesNativeTabBar: true,
-            insetsBottom: 0,
+            // Geometry is irrelevant to this visibility-only total-function test.
+            insetsBottom: SYNTHETIC_NATIVE_SAFE_AREA_INSET,
             insideTabs: true,
             onAccessorySurface,
             hasCurrentClimb,
@@ -255,22 +261,22 @@ describe('computeBottomChromeMetrics', () => {
     });
 
     it('anchors Liquid Glass to the raw inset and never double-counts the tab bar', () => {
-      // iPhone 17 Pro / iOS 26: the glass tab bar already extends the inset, so the
-      // footer is the raw inset — NOT fixedFooterBottom, which would add the bar again.
+      // iPhone 17 Pro / iOS 26: the glass tab bar already extends the inset, so every
+      // bottom metric anchors to the raw value rather than adding chrome again.
       const metrics = computeBottomChromeMetrics({
         uiVariant: 'liquidGlass',
         usesNativeTabBar: true,
-        insetsBottom: 139,
+        insetsBottom: DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET,
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: true,
         nativeAccessoryMounted: true,
       });
-      expect(metrics.preSessionFooterBottom).toBe(139);
-      expect(metrics.preSessionFooterBottom).toBeLessThan(metrics.fixedFooterBottom);
+      expect(metrics.preSessionFooterBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
+      expect(metrics.fixedFooterBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
       // Native accessory mounted → no JS queue reserve, so the list also rides the raw inset.
       expect(metrics.jsQueueReserve).toBe(0);
-      expect(metrics.inSessionListBottom).toBe(139);
+      expect(metrics.inSessionListBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
     });
 
     it('adds the JS queue reserve to both Liquid Glass session bottoms when the accessory is unavailable', () => {
@@ -368,7 +374,9 @@ describe('computeBottomChromeMetrics', () => {
                       yield {
                         uiVariant,
                         usesNativeTabBar,
-                        insetsBottom: 34,
+                        // Synthetic for the total-function matrix: realistic device
+                        // states are pinned separately above.
+                        insetsBottom: SYNTHETIC_NATIVE_SAFE_AREA_INSET,
                         insideTabs,
                         onAccessorySurface,
                         hasCurrentClimb,
@@ -414,6 +422,33 @@ describe('computeBottomChromeMetrics', () => {
       }
       expect(drifted).toEqual([]);
     });
+
+    it('never adds native-tab chrome beyond the UIKit safe area', () => {
+      // Use the full input cross-product at one synthetic opaque inset and at the
+      // on-device 139pt anchor. On the NativeTabs path UIKit's safe area already
+      // covers the 49pt tab bar and,
+      // when present, the 56pt BottomAccessory. The only extra bottom reserve
+      // this function may add is a JS queue tray in a transitional/fallback
+      // state; it must never add native chrome again.
+      const doubleCounted = [];
+      for (const insetsBottom of [SYNTHETIC_NATIVE_SAFE_AREA_INSET, DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET]) {
+        for (const inputs of allInputs()) {
+          if (!inputs.usesNativeTabBar || !inputs.insideTabs || inputs.usesSidebar) continue;
+          const metrics = computeBottomChromeMetrics({ ...inputs, insetsBottom });
+          const expectedBottom = insetsBottom + metrics.jsQueueReserve;
+          if (
+            metrics.tabBarBottom !== insetsBottom ||
+            metrics.nativeAccessoryReserve !== 0 ||
+            metrics.scrollBottomPadding !== expectedBottom ||
+            metrics.floatingControlBottom !== expectedBottom ||
+            metrics.fixedFooterBottom !== expectedBottom
+          ) {
+            doubleCounted.push({ inputs: { ...inputs, insetsBottom }, metrics, expectedBottom });
+          }
+        }
+      }
+      expect(doubleCounted).toEqual([]);
+    });
   });
 
   describe('regular-width iPad sidebar (usesSidebar)', () => {
@@ -422,7 +457,7 @@ describe('computeBottomChromeMetrics', () => {
       // footer, so nothing floats at the bottom — every offset is the raw inset.
       const metrics = computeBottomChromeMetrics({
         uiVariant: 'liquidGlass',
-        usesNativeTabBar: true,
+        usesNativeTabBar: false,
         insetsBottom: 20,
         insideTabs: true,
         onAccessorySurface: true,
@@ -492,7 +527,7 @@ describe('computeBottomChromeMetrics', () => {
       const withFlag = computeBottomChromeMetrics({
         uiVariant: 'liquidGlass',
         usesNativeTabBar: true,
-        insetsBottom: 34,
+        insetsBottom: SYNTHETIC_NATIVE_SAFE_AREA_INSET,
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: false,
@@ -502,14 +537,14 @@ describe('computeBottomChromeMetrics', () => {
       const withoutFlag = computeBottomChromeMetrics({
         uiVariant: 'liquidGlass',
         usesNativeTabBar: true,
-        insetsBottom: 34,
+        insetsBottom: SYNTHETIC_NATIVE_SAFE_AREA_INSET,
         insideTabs: true,
         onAccessorySurface: true,
         hasCurrentClimb: false,
         nativeAccessoryMounted: false,
       });
       expect(withFlag).toEqual(withoutFlag);
-      expect(withoutFlag.scrollBottomPadding).toBe(34 + TAB_BAR_HEIGHT);
+      expect(withoutFlag.scrollBottomPadding).toBe(SYNTHETIC_NATIVE_SAFE_AREA_INSET);
     });
   });
 });

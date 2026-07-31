@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
 
 // Controls the resolved UI variant the Toast branches on.
-const ctrl = vi.hoisted(() => ({ variant: 'material' as 'material' | 'liquidGlass' }));
+const ctrl = vi.hoisted(() => ({
+  variant: 'material' as 'material' | 'liquidGlass',
+  nativeTabBar: false,
+  insetsBottom: 34,
+}));
 
 type ViewMockProps = { children?: ReactNode; accessibilityRole?: string };
 vi.mock('react-native', () => ({
@@ -62,8 +66,9 @@ vi.mock('react-native-paper', () => ({
 
 vi.mock('expo-router', () => ({ useSegments: () => ['(tabs)', 'climbs'] }));
 vi.mock('react-native-safe-area-context', () => ({
-  useSafeAreaInsets: () => ({ top: 47, bottom: 34, left: 0, right: 0 }),
+  useSafeAreaInsets: () => ({ top: 47, bottom: ctrl.insetsBottom, left: 0, right: 0 }),
 }));
+vi.mock('../../hooks/use-bottom-accessory', () => ({ useNativeTabBar: () => ctrl.nativeTabBar }));
 
 vi.mock('../Text', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', { 'data-text': 'true' }, children),
@@ -100,6 +105,12 @@ import { Toast } from '../Toast';
 const toast = { id: 't1', message: 'Saved tick', variant: 'success' as const, duration: 3000 };
 
 describe('Toast', () => {
+  beforeEach(() => {
+    ctrl.variant = 'material';
+    ctrl.nativeTabBar = false;
+    ctrl.insetsBottom = 34;
+  });
+
   it('renders a Paper Snackbar on the Material variant', () => {
     ctrl.variant = 'material';
     const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
@@ -164,9 +175,20 @@ describe('Toast', () => {
     expect(container.querySelector('[data-paper-snackbar]')).toBeNull();
   });
 
-  it('positions Liquid Glass toasts above the floating toolbar reserve', () => {
+  it('preserves explicit tab and queue reserves on the Liquid Glass JS fallback', () => {
     ctrl.variant = 'liquidGlass';
     const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
+    // 34 safe area + 49 JS tab bar + 56 floating queue reserve + 8 gap.
+    expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"bottom":147');
+  });
+
+  it('does not add native tab or accessory chrome to the measured 139pt UIKit inset (#3973)', () => {
+    ctrl.variant = 'liquidGlass';
+    ctrl.nativeTabBar = true;
+    ctrl.insetsBottom = 139;
+    const { container } = render(<Toast toast={toast} onDismiss={() => {}} />);
+    // 139 already includes the home indicator, native tab bar, and accessory;
+    // Toast adds only its 8pt visual gap.
     expect(container.querySelector('[data-animated]')?.getAttribute('data-style')).toContain('"bottom":147');
   });
 

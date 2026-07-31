@@ -19,6 +19,7 @@ import type { UiVariant } from '../theme/resolve-ui-variant';
 import { isTabsRoute } from '../lib/route-segments';
 import { useTheme } from '../providers/theme-provider';
 import { createVariantComponent, selectByVariant } from '../theme/variants';
+import { useNativeTabBar } from '../hooks/use-bottom-accessory';
 
 export type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
@@ -53,26 +54,32 @@ const VARIANT_CONFIG: Record<ToastVariant, { icon: IconName; colorKey: 'success'
 export const Toast = createVariantComponent('Toast', { liquidGlass: ToastGlass, material: ToastMaterial });
 
 /**
- * Reserve the worst-case queue toolbar height on tab screens so a toast never
- * covers the current-climb controls; off tab screens it sits just above the safe
- * area. Shared by both variants — ToastProvider sits above QueueProvider, so this
- * must stay independent from queue context.
+ * On JS-tab screens, reserve the worst-case queue toolbar height so a toast never
+ * covers current-climb controls. NativeTabs folds its own bar/accessory into the
+ * safe-area inset, and off-tab screens use the ordinary safe-area gap. Shared by
+ * both variants — ToastProvider sits above QueueProvider, so this must stay
+ * independent from queue context.
  */
 function useToastBottomOffset(uiVariant: UiVariant) {
   const insets = useSafeAreaInsets();
   const segments = useSegments();
+  // Use the same canonical predicate that selects NativeTabs in the tab layout.
+  // The UI variant alone is insufficient: Liquid Glass falls back to the JS bar
+  // on older iOS versions, Android, and tablets.
+  const usesNativeTabBar = useNativeTabBar();
   const toolbarReserve = selectByVariant(uiVariant, {
     material: MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT,
     liquidGlass: TOOLBAR_RESERVE,
   });
-  // The Material variant's JS nav bar is the taller M3 80dp bar; Liquid Glass uses
-  // the 49pt iOS tab bar. This is an independent recomputation (it sits above
-  // QueueProvider, so it can't use computeBottomChromeMetrics) — keep the tab-bar
-  // term variant-aware to match, or the Material snackbar tucks under the nav bar.
+  // ToastProvider sits above QueueProvider, so it cannot read current-climb state
+  // from computeBottomChromeMetrics and conservatively reserves the JS queue bar.
+  // NativeTabs is different: UIKit has already folded both its tab bar and any
+  // BottomAccessory into `insets.bottom`, so adding either reserve here recreates
+  // #3973. Material and the Liquid Glass JS fallback still need both explicit
+  // terms because their tab/queue bars are outside the UIKit safe-area inset.
   const tabBarHeight = selectByVariant(uiVariant, { material: MATERIAL_TAB_BAR_HEIGHT, liquidGlass: TAB_BAR_HEIGHT });
-  return isTabsRoute(segments)
-    ? insets.bottom + tabBarHeight + toolbarReserve + spacing[2]
-    : insets.bottom + spacing[3];
+  if (!isTabsRoute(segments)) return insets.bottom + spacing[3];
+  return usesNativeTabBar ? insets.bottom + spacing[2] : insets.bottom + tabBarHeight + toolbarReserve + spacing[2];
 }
 
 function ToastMaterial({ toast, onDismiss }: ToastProps) {

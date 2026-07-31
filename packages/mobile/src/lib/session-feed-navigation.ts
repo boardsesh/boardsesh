@@ -4,8 +4,9 @@ import type { SessionFeedItem } from '@boardsesh/shared-schema';
 type Router = ReturnType<typeof useRouter>;
 
 // Session detail lives once per tab stack (Home, Profile) so the push stays inside
-// the tab and keeps the native tab bar + bottom accessory on screen. Each feed
-// passes the route for its own tab so the detail lands in that tab's back stack.
+// the tab and keeps the native tab bar on screen; pushed-route accessory/queue
+// chrome unmounts. Each feed passes the route for its own tab so the detail lands
+// in that tab's back stack.
 export type SessionDetailPathname = '/home/session/[sessionId]' | '/profile/session/[sessionId]';
 
 export function navigateToSessionFeedItem(

@@ -67,9 +67,18 @@ export type BottomChromeMetrics = {
   nativeAccessoryMounted: boolean;
   nativeAccessoryVisible: boolean;
   jsQueueToolbarVisible: boolean;
+  /** Physical height of the rendered bottom tab bar; zero outside tabs/sidebar mode. */
   tabBarHeight: number;
+  /**
+   * Bottom clearance through the tab bar. NativeTabs returns the raw UIKit inset
+   * because it already contains native chrome; JS tabs add their in-flow height.
+   */
   tabBarBottom: number;
   jsQueueReserve: number;
+  /**
+   * Accessory clearance not already present in the safe-area inset. This is zero
+   * on the real NativeTabs path because UIKit owns and insets BottomAccessory.
+   */
   nativeAccessoryReserve: number;
   /** Bottom padding for scroll views so the last row clears the tab bar + JS toolbar. */
   scrollBottomPadding: number;
@@ -77,8 +86,8 @@ export type BottomChromeMetrics = {
   floatingControlBottom: number;
   /**
    * Bottom padding for fixed footers. NativeTabs overlays content, so fixed
-   * footers clear the tab bar there. Material JS tabs are in flow, so fixed
-   * footers clear only active queue/accessory chrome.
+   * footers use the raw UIKit inset that already clears native chrome. Material
+   * JS tabs are in flow, so fixed footers clear only active queue chrome.
    */
   fixedFooterBottom: number;
   /**
@@ -99,10 +108,10 @@ export type BottomChromeMetrics = {
    * Verified on-device (iPhone 17 Pro / iOS 26): with the native tab bar + climb
    * accessory present, the safe-area bottom inset is 139 = home indicator (34) +
    * tab bar (49) + accessory (56) — the glass tab bar extends the UIKit safe area.
-   * `fixedFooterBottom` would add the tab bar + accessory a second time (246),
-   * stranding the control ~110px up the screen — hence the raw inset on glass.
-   * That evidence covers the *native tab bar* path only, where `jsQueueReserve`
-   * is 0 (the accessory owns the climb) so this stays exactly 139.
+   * Every native-tab metric starts at that raw inset, rather than adding either
+   * piece of UIKit-owned chrome again; only separately rendered JS queue chrome
+   * may add a reserve. That evidence covers the *native tab bar* path with the
+   * accessory, where `jsQueueReserve` is 0, so this stays exactly 139.
    *
    * On the JS-tab-bar fallback (iOS < 26, non-glass-capable iPhones, iPad in a
    * narrow split, Android forced to Liquid Glass) the floating
@@ -172,12 +181,16 @@ export function computeBottomChromeMetrics({
   const jsQueueToolbarVisible = onAccessorySurface && hasCurrentClimb && !effectiveNativeAccessoryMounted;
   // The native iOS tab bar is 49pt; the JS M3 `MaterialTabBar` is taller. Key this
   // on the *rendered* bar, not the variant — Liquid Glass on iOS < 26 / Android
-  // falls back to the JS bar. Floating overlays (FAB, snackbar) and scroll padding
-  // clear this height, so it has to track the real bar on screen.
+  // falls back to the JS bar. `tabBarHeight` describes the rendered bar, while
+  // `tabBarBottom` is the full clearance from the screen bottom: the opaque raw
+  // inset for NativeTabs, or raw inset + JS bar height for the fallback.
   const tabBarConstant = usesNativeTabBar ? TAB_BAR_HEIGHT : MATERIAL_TAB_BAR_HEIGHT;
   const tabBarHeight = insideTabs && !usesSidebar ? tabBarConstant : 0;
   // Only the native tab bar overlays content (UIKit draws it over the scroll view);
-  // the JS `MaterialTabBar` sits in flow.
+  // the JS `MaterialTabBar` sits in flow. NativeTabs extends UIKit's safe-area
+  // inset to include both the bar and its BottomAccessory, so neither is an
+  // additional bottom offset. On-device, that inset is 139pt with an accessory on
+  // an iPhone 17 Pro (34 home indicator + 49 tab bar + 56 accessory).
   const tabBarOverlaysContent = insideTabs && usesNativeTabBar;
   // The Material bar reserves its full height even though it's tucked ~2px into the
   // tab bar (MATERIAL_TABBAR_OVERLAP in persistent-queue-bar), so its visible height
@@ -186,8 +199,15 @@ export function computeBottomChromeMetrics({
   // this pure arbitration. Don't "fix" it by subtracting the overlap here.
   const jsQueueToolbarReserve = uiVariant === 'material' ? MATERIAL_ACTIVE_CONTEXT_BAR_HEIGHT : TOOLBAR_RESERVE;
   const jsQueueReserve = jsQueueToolbarVisible ? jsQueueToolbarReserve : 0;
-  const nativeAccessoryReserve = nativeAccessoryVisible ? glassSize.standard + TOOLBAR_GAP_ABOVE_TABBAR : 0;
-  const tabBarBottom = insetsBottom + tabBarHeight;
+  // A native accessory is UIKit-owned and already folded into `insetsBottom` on
+  // the real NativeTabs path. Keep this field as an *additional* reserve so every
+  // offset below can use one shared formula without double-counting it. The
+  // non-overlay branch only keeps this pure total function conservative if a
+  // future or synthetic caller supplies the otherwise-inconsistent combination
+  // "native accessory visible without NativeTabs".
+  const nativeAccessoryReserve =
+    nativeAccessoryVisible && !tabBarOverlaysContent ? glassSize.standard + TOOLBAR_GAP_ABOVE_TABBAR : 0;
+  const tabBarBottom = insetsBottom + (tabBarOverlaysContent ? 0 : tabBarHeight);
   const activeQueueChromeReserve = Math.max(jsQueueReserve, nativeAccessoryReserve);
   const contentInsetBottom = tabBarOverlaysContent || !insideTabs ? tabBarBottom : 0;
   const fixedFooterBottom = contentInsetBottom + activeQueueChromeReserve;
@@ -202,8 +222,8 @@ export function computeBottomChromeMetrics({
     tabBarBottom,
     jsQueueReserve,
     nativeAccessoryReserve,
-    scrollBottomPadding: insetsBottom + tabBarHeight + jsQueueReserve,
-    floatingControlBottom: insetsBottom + tabBarHeight + Math.max(jsQueueReserve, nativeAccessoryReserve),
+    scrollBottomPadding: tabBarBottom + jsQueueReserve,
+    floatingControlBottom: tabBarBottom + Math.max(jsQueueReserve, nativeAccessoryReserve),
     fixedFooterBottom,
     // selectByVariant (vs a raw ternary) keeps these exhaustive: a new UiVariant is
     // a compile error here, since this file is outside the components/ guard scope.

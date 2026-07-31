@@ -30,9 +30,9 @@ const keyExtractor = (tick: SessionDetailTick) => tick.uuid;
 /**
  * Session detail — hero + stats + ticks list. Mounted from a per-tab route
  * (`home/session/[sessionId]`, `profile/session/[sessionId]`) so it pushes inside
- * the tab stack and keeps the native tab bar + Liquid Glass bottom accessory on
- * screen (matching the playlist detail view), rather than a root push that slides
- * the tab bar away.
+ * the tab stack and keeps the tab bar on screen, rather than a root push that
+ * slides it away. Pushed routes are intentionally not accessory surfaces, so the
+ * Liquid Glass BottomAccessory unmounts here.
  */
 export default function SessionDetailScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
@@ -42,9 +42,9 @@ export default function SessionDetailScreen() {
   const router = useRouter();
   const { openPlayDrawer } = useDrawerHost();
   const bottomChrome = useBottomChromeMetrics();
-  // floatingControlBottom (not scrollBottomPadding) reserves the iOS-26 native
-  // accessory — the now-playing bar — so the last sends clear it instead of
-  // hiding behind it.
+  // Session detail is a pushed route without queue/accessory chrome. Use the
+  // floating-control metric so the final row clears whichever tab bar is actually
+  // rendered: UIKit's raw inset for NativeTabs, or the explicit JS bar height.
   const paddingBottom = bottomChrome.floatingControlBottom + spacing[6];
 
   const { data: session, isPending } = useSessionDetail(sessionId);

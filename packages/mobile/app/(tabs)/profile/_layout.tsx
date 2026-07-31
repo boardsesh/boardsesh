@@ -15,8 +15,9 @@ export default function ProfileLayout() {
           title collapsing into a glass capsule), like the Discover/Climbs tabs —
           so the stack header is hidden here. */}
         <Stack.Screen name="index" options={{ headerShown: false, title: t('mobile.nav.profile') }} />
-        {/* Session detail keeps the native tab bar + bottom accessory by living in
-          this stack. It sets its own header title from the loaded session. */}
+        {/* Session detail keeps the native tab bar by living in this stack, while
+          pushed-route accessory/queue chrome unmounts. It sets its own header
+          title from the loaded session. */}
         <Stack.Screen name="session/[sessionId]" options={{ headerShown: true }} />
         <Stack.Screen name="more" options={{ title: t('mobile.more.title') }} />
         <Stack.Screen name="accessibility" options={{ title: t('mobile.more.accessibility.title') }} />
