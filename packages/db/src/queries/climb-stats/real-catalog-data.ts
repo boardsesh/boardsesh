@@ -53,10 +53,13 @@ export function statsRowCarriesRealCatalogData(): SQL | undefined {
  * see the comment at the single-key seed).
  *
  * `tableAlias` is a SQL identifier and is interpolated raw, because a parameter
- * placeholder cannot stand in for an identifier. The literal union type — not a
- * comment — is what stops a caller ever routing input into it.
+ * placeholder cannot stand in for an identifier. The literal type — not a
+ * comment — is what stops a caller ever routing input into it: the union lists
+ * only the aliases that actually appear at a call site, so `sql.raw` can never
+ * receive a runtime-computed string. Adding an alias is a deliberate one-line
+ * edit here, not something a new caller can do by accident.
  */
-export type StatsTableAlias = 's' | 'stats';
+export type StatsTableAlias = 's';
 
 export function statsRowCarriesRealCatalogDataSql(tableAlias: StatsTableAlias): SQL {
   const alias = sql.raw(tableAlias);

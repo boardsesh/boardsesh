@@ -488,7 +488,14 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
     //
     // The MoonBoard wrong-angle legs (#3529) live INSIDE the board_climbs EXISTS
     // because that is the only place bc.angle is in scope here — the single-key
-    // seed above carries the identical predicate with board_climbs in its outer FROM.
+    // seed above carries the identical predicate with board_climbs in its outer
+    // FROM. Leg for leg, including `bc.user_id IS NOT NULL`: a USER-CREATED climb
+    // is outside the guard entirely, matching resolveMoonBoardTickAngle and
+    // migration 0188's `bc.user_id IS NULL` fence. editClimb leaves a stats row
+    // behind at the old angle by design, so a tick at that angle is legitimate
+    // and must still seed. The bulk path reaches the same ticks the single-key
+    // one does (self-heal, backfills), so a leg missing here would re-open the
+    // hole for every writer that batches.
     await db.execute(sql`
       INSERT INTO board_climb_stats (board_type, climb_uuid, angle,
                                      ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
@@ -502,7 +509,8 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
             AND bc.board_type = k.board_type
             AND (
               k.board_type <> 'moonboard'
-                 OR bc.angle IS NULL
+              OR bc.user_id IS NOT NULL
+              OR bc.angle IS NULL
               OR bc.angle = k.angle
               OR EXISTS (
                 SELECT 1

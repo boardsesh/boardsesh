@@ -888,27 +888,14 @@ export const tickMutations = {
 
     // Settle the angle resolution started before the board/session lookups — the
     // insert below needs it. By now it has overlapped every round-trip since.
+    //
+    // The snap is only REPORTED after the transaction commits (below), never
+    // here. Unlike the #3528 catalog probe — which counts what the client sent
+    // and is deliberately independent of the tick surviving — this counter
+    // measures ticks we actually moved, so it must not fire for a tick that
+    // never landed: a concurrent replay of the same uuid (onConflictDoNothing
+    // no-op) or a transaction that rolls back would otherwise each inflate it.
     const effectiveAngle = await effectiveAnglePromise;
-    if (effectiveAngle !== validatedInput.angle) {
-      logger.warn(
-        `[saveTick] moonboard tick angle snapped to the climb's graded angle (#3529): ` +
-          `${validatedInput.boardType}/${validatedInput.climbUuid} requested=${validatedInput.angle} ` +
-          `effective=${effectiveAngle} user=${userId}`,
-      );
-      // Mirrors the Tick Climb Not In Catalog counter: if this stays hot, a
-      // client surface is sending the wrong angle and that client wants fixing
-      // too. Counting USERS (distinctId) keeps one looping client from reading
-      // as a fleet-wide problem.
-      captureBackendEvent('MoonBoard Tick Angle Snapped', {
-        distinctId: userId,
-        properties: {
-          climbUuid: validatedInput.climbUuid,
-          requestedAngle: validatedInput.angle,
-          effectiveAngle,
-        },
-        processPersonProfile: false,
-      });
-    }
 
     // Insert into database. When the client supplied a uuid that already exists
     // (offline replay), the insert is a no-op and `createdTick` is undefined —
@@ -998,6 +985,32 @@ export const tickMutations = {
       if (existingTick?.userId === userId) return tickResult(existingTick);
       throw new GraphQLError('Tick UUID is already in use', {
         extensions: { code: 'TICK_UUID_CONFLICT' },
+      });
+    }
+
+    // Report the #3529 snap only now — past the commit and past the
+    // "already existed, nothing was written" return above, so this row provably
+    // landed. Compared and reported off `tick.angle` (the RETURNING value)
+    // rather than the local, so the log and the counter can only ever say what
+    // the database actually holds.
+    if (tick.angle !== validatedInput.angle) {
+      logger.warn(
+        `[saveTick] moonboard tick angle snapped to the climb's graded angle (#3529): ` +
+          `${validatedInput.boardType}/${validatedInput.climbUuid} requested=${validatedInput.angle} ` +
+          `effective=${tick.angle} user=${userId}`,
+      );
+      // Mirrors the Tick Climb Not In Catalog counter: if this stays hot, a
+      // client surface is sending the wrong angle and that client wants fixing
+      // too. Counting USERS (distinctId) keeps one looping client from reading
+      // as a fleet-wide problem.
+      captureBackendEvent('MoonBoard Tick Angle Snapped', {
+        distinctId: userId,
+        properties: {
+          climbUuid: validatedInput.climbUuid,
+          requestedAngle: validatedInput.angle,
+          effectiveAngle: tick.angle,
+        },
+        processPersonProfile: false,
       });
     }
 

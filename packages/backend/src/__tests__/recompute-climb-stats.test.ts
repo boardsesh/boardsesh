@@ -1562,6 +1562,35 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     expect(Number(seeded.bs)).toBe(1);
   });
 
+  // The bulk twin of the case above. The bulk seed carries the same predicate in
+  // a different SHAPE (board_climbs lives inside an EXISTS rather than the outer
+  // FROM), so a leg can go missing from one statement while the other keeps it —
+  // which is exactly what happened to `bc.user_id IS NOT NULL` until QA caught
+  // it. Every self-heal and backfill runs through this path, so the hole here is
+  // wider than the single-key one. Same no-pre-seeded-row discipline: with a row
+  // present, ON CONFLICT DO NOTHING would pass whatever the guard did.
+  it('bulk: STILL seeds a user-created MoonBoard climb at an angle it is not set at', async () => {
+    await seedUser('u-moon-owner-bulk', 'Obi');
+    await seedClimb('moonboard', 'MOON-USER-SET-BULK', 'u-moon-owner-bulk', 40);
+    await seedTick({
+      boardType: 'moonboard',
+      climbUuid: 'MOON-USER-SET-BULK',
+      angle: 25,
+      userId: 'u-moon-owner-bulk',
+      status: 'send',
+      origin: 'native',
+      climbedAt: '2026-01-01 00:00:00',
+    });
+
+    await recomputeClimbStatsBulk(db, [{ boardType: 'moonboard', climbUuid: 'MOON-USER-SET-BULK', angle: 25 }]);
+
+    // Row count first, so dropping the fence reads as "expected 0 to be 1"
+    // rather than as an undefined-property TypeError one line further down.
+    expect(await statsRowCount('moonboard', 'MOON-USER-SET-BULK', 25)).toBe(1);
+    const seeded = await statsRow('moonboard', 'MOON-USER-SET-BULK', 25);
+    expect(Number(seeded.bs)).toBe(1);
+  });
+
   // The post-#3849 shape: once the catalog grades BOTH angles, a per-angle tick
   // seeds normally again. Dropping the "carries real catalog data" leg for a
   // blunt `bc.angle = angle` equality turns this red.
