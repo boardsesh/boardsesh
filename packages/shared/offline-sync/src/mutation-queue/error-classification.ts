@@ -87,7 +87,7 @@ const TRANSPORT_NETWORK_CODES = new Set([
 // specific (never a bare "connection"/"network"/"timed out") so a real bug is
 // never misclassified as offline.
 const IOS_NSURL_ENGLISH_DESCRIPTIONS =
-  /the request timed out|network connection was lost|connection appears to be offline|could not connect to the server|secure connection|the connection has timed out|not connected to the internet/i;
+  /the request timed out|network connection was lost|connection appears to be offline|could not connect to the server|secure connection to the server cannot be made|secure connection failed|the connection has timed out|not connected to the internet/i;
 
 const MAX_CAUSE_DEPTH = 3;
 

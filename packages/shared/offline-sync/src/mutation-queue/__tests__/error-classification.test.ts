@@ -218,7 +218,8 @@ describe('isTransportNetworkError', () => {
 
   it('matches the best-effort English NSURLError descriptions (un-wrapped iOS case)', () => {
     expect(isTransportNetworkError(new Error('The internet connection appears to be offline.'))).toBe(true);
-    expect(isTransportNetworkError(new Error('A TLS error caused the secure connection to fail.'))).toBe(true);
+    expect(isTransportNetworkError(new Error('A secure connection to the server cannot be made.'))).toBe(true);
+    expect(isTransportNetworkError(new Error('The secure connection failed.'))).toBe(true);
   });
 
   it('does NOT match a programmer bug that merely mentions fetch/network/timed out', () => {
@@ -226,6 +227,12 @@ describe('isTransportNetworkError', () => {
     expect(isTransportNetworkError(new TypeError("Cannot read property 'fetch' of undefined"))).toBe(false);
     expect(isTransportNetworkError(new Error('BLE write timed out waiting for the board to accept data'))).toBe(false);
     expect(isTransportNetworkError(new Error('network graph render failed'))).toBe(false);
+  });
+
+  it('does NOT match an app-level business message that merely contains "secure connection"', () => {
+    // Regression guard: the regex was previously a bare `secure connection` alternative,
+    // which would have swallowed any unrelated message containing that substring.
+    expect(isTransportNetworkError(new Error('This operation requires a secure connection'))).toBe(false);
   });
 
   it('does not classify a non-object or a real server error', () => {
