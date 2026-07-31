@@ -4,10 +4,10 @@
 
 namespace {
 
-constexpr uint16_t kConnectionIntervalMin = 6;
-constexpr uint16_t kConnectionIntervalMax = 18;
-constexpr uint16_t kConnectionLatency = 0;
-constexpr uint16_t kConnectionSupervisionTimeout = 200;
+constexpr uint16_t kConnectionIntervalMin = 6;           // 7.5 ms in 1.25 ms units
+constexpr uint16_t kConnectionIntervalMax = 18;          // 22.5 ms in 1.25 ms units
+constexpr uint16_t kConnectionLatency = 0;               // Number of connection events the peripheral may skip
+constexpr uint16_t kConnectionSupervisionTimeout = 200;  // 2 s in 10 ms units
 
 }  // namespace
 
