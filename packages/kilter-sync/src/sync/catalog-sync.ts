@@ -301,8 +301,8 @@ export function foldCatalogStatOnce(
 // Derived from the schema (not hand-written) so a column added to or widened on
 // board_climb_holds / board_climb_aliases is a compile error at this API
 // boundary instead of silent drift — matching how NewBoardClimb is imported.
-type NewHoldRow = typeof boardClimbHolds.$inferInsert;
-type NewAliasRow = typeof boardClimbAliases.$inferInsert;
+export type NewHoldRow = typeof boardClimbHolds.$inferInsert;
+export type NewAliasRow = typeof boardClimbAliases.$inferInsert;
 
 /**
  * Flush one Grips layout's new-canonical batch (climbs + holds + aliases +

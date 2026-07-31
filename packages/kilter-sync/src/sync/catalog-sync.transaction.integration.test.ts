@@ -217,7 +217,11 @@ describeIntegration('Kilter catalog layout flush is atomic (issue #3538)', () =>
       // explicitly so a partially-committed pre-fix state is cleaned as well.
       const tagPrefix = `${tag}-%`;
       await db.execute(sql`DELETE FROM board_climb_holds WHERE climb_uuid LIKE ${tagPrefix}`);
-      await db.execute(sql`DELETE FROM board_climb_aliases WHERE alias_uuid LIKE ${tagPrefix}`);
+      // Match both columns: this fixture only writes self-aliases, but an alias
+      // pointing AT a tagged canonical from a tagged alias uuid must not leak.
+      await db.execute(
+        sql`DELETE FROM board_climb_aliases WHERE alias_uuid LIKE ${tagPrefix} OR canonical_uuid LIKE ${tagPrefix}`,
+      );
       await db.execute(sql`DELETE FROM board_climbs WHERE uuid LIKE ${tagPrefix}`);
       await closePool();
     }
