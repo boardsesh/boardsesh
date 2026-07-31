@@ -8,7 +8,7 @@
 // render straight segments (`curved={false}`) with no leftover `curvature`.
 import { createElement, useEffect, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RawVPointsTimeline } from '@boardsesh/profile-stats';
 
 const FRAME_WIDTH = 320;
@@ -31,12 +31,13 @@ vi.mock('react-i18next', () => ({
 
 type LineChartCall = { curved?: boolean; curvature?: number; width?: number };
 
-const lineChartCalls: LineChartCall[] = [];
+// Hoist the mock so vi.mock's hoisted factory can access it.
+const { lineChartMock } = vi.hoisted(() => ({ lineChartMock: vi.fn<(props: LineChartCall) => void>() }));
 
 vi.mock('react-native-gifted-charts', () => ({
   BarChart: () => createElement('div', { 'data-testid': 'gifted-bar-chart' }),
   LineChart: (props: LineChartCall) => {
-    lineChartCalls.push(props);
+    lineChartMock(props);
     return createElement('div', { 'data-testid': 'gifted-line-chart' });
   },
 }));
@@ -92,18 +93,22 @@ vi.mock('../profile-chart-colors', () => ({
 import { TotalAreaChart } from '../YouCharts';
 
 describe('TotalAreaChart line interpolation (#3780)', () => {
+  // V-points data is cumulative, so the fixture must be monotonically non-decreasing.
   const timeline: RawVPointsTimeline = {
     weekLabels: ['W1', 'W2', 'W3', 'W4'],
-    series: [{ layoutKey: 'kilter-1', displayName: 'Kilter Original', data: [10, 12, 9, 20] }],
-    totalPoints: 20,
+    series: [{ layoutKey: 'kilter-1', displayName: 'Kilter Original', data: [10, 22, 31, 51] }],
+    totalPoints: 51,
   };
 
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('renders straight segments instead of an overshooting curve', () => {
-    lineChartCalls.length = 0;
     render(<TotalAreaChart timeline={timeline} color="#7c3aed" />);
 
-    expect(lineChartCalls).toHaveLength(1);
-    const call = lineChartCalls[0]!;
+    expect(lineChartMock).toHaveBeenCalledTimes(1);
+    const call = lineChartMock.mock.calls[0]![0];
     expect(call.curved).toBe(false);
     expect(call.curvature).toBeUndefined();
   });
