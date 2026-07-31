@@ -23,13 +23,14 @@
  * Store a Kilter Grips `qualityAverage` verbatim (it is already 1-5), guarding
  * only against non-ratings.
  *
- * - `null`/`undefined`/non-finite/`≤ 0`/`> 5` → `null` (unrated is never a 0
- *   rating; above 5 is garbage).
+ * - `null`/`undefined`/non-finite/`< 1`/`> 5` → `null` (a 1-5 star scale has no
+ *   valid value below 1 — anything in `(0, 1)` is as much garbage as `≤ 0`;
+ *   above 5 is garbage too).
  * - otherwise → `raw`, unchanged.
  */
 export function correctGripsQualityAverage(raw: number | null | undefined): number | null {
   if (raw == null) return null;
   const quality = Number(raw);
-  if (!Number.isFinite(quality) || quality <= 0 || quality > 5) return null;
+  if (!Number.isFinite(quality) || quality < 1 || quality > 5) return null;
   return quality;
 }

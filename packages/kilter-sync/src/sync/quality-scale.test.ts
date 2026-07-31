@@ -20,7 +20,7 @@ describe('correctGripsQualityAverage', () => {
     expect(correctGripsQualityAverage(4.0)).toBe(4.0);
   });
 
-  it('treats non-ratings as null (≤ 0 unrated, > 5 garbage, non-finite)', () => {
+  it('treats non-ratings as null (< 1 unrated/fractional, > 5 garbage, non-finite)', () => {
     expect(correctGripsQualityAverage(null)).toBeNull();
     expect(correctGripsQualityAverage(undefined)).toBeNull();
     expect(correctGripsQualityAverage(0)).toBeNull();
@@ -28,5 +28,11 @@ describe('correctGripsQualityAverage', () => {
     expect(correctGripsQualityAverage(5.0001)).toBeNull();
     expect(correctGripsQualityAverage(10)).toBeNull();
     expect(correctGripsQualityAverage(Number.NaN)).toBeNull();
+    // A 1-5 star scale has no valid value below 1 — a sub-one fraction (e.g. a
+    // pre-cutover blend gone wrong) is as much garbage as 0 or a negative.
+    expect(correctGripsQualityAverage(0.2)).toBeNull();
+    expect(correctGripsQualityAverage(0.99)).toBeNull();
+    // 1.0 is the lowest valid rating and must survive unchanged.
+    expect(correctGripsQualityAverage(1.0)).toBe(1.0);
   });
 });
