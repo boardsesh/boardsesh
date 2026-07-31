@@ -19,7 +19,7 @@
 // omits a prop is still measured at its true rendered size.
 import { createElement, useEffect, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RawGroupedBar } from '@boardsesh/profile-stats';
 import type { ColoredBar } from '../profile-chart-colors';
 
@@ -115,10 +115,20 @@ vi.mock('../profile-chart-colors', () => ({
 
 import { StackedBarChart, GroupedBarChart } from '../YouCharts';
 
-// gifted-charts-core 0.1.81 defaults, applied when we omit the prop.
+// gifted-charts-core defaults, applied when we omit the prop. Transcribed from
+// `AxesAndRulesDefaults` / `BarDefaults` in dist/utils/constants.js at the
+// version pinned in bun.lock (0.1.81) — bun's isolated install puts
+// gifted-charts-core outside packages/mobile's resolution path, so they can't be
+// imported. COUPLING: bumping react-native-gifted-charts can move these, and a
+// bump that grows a default would make the charts overflow again while these
+// tests stayed green. Re-read dist/utils/constants.js on any such bump.
 const GIFTED_DEFAULT_SPACING = 20;
 const GIFTED_Y_AXIS_LABEL_WIDTH = 35;
 const GIFTED_Y_AXIS_EMPTY_LABEL_WIDTH = 10;
+
+beforeEach(() => {
+  barChartCalls.length = 0;
+});
 
 /**
  * Horizontal span BarChart actually occupies in its parent: the y-axis gutter it
@@ -162,7 +172,6 @@ describe('StackedBarChart width budget (#3778)', () => {
   }));
 
   it('keeps the whole chart — y-axis gutter included — inside the measured frame', () => {
-    barChartCalls.length = 0;
     // `showYAxisScale` is what ProgressTab passes for Activity and Grade
     // Distribution, the two charts reported in #3778. It buys a 32px y-axis
     // gutter that gifted-charts renders OUTSIDE the `width` prop, so it has to
@@ -177,7 +186,6 @@ describe('StackedBarChart width budget (#3778)', () => {
   });
 
   it('sizes bars to fit inside the width actually given to BarChart', () => {
-    barChartCalls.length = 0;
     render(<StackedBarChart bars={bars} colorBy="layout" showYAxisScale />);
 
     const call = barChartCalls[0]!;
@@ -187,7 +195,6 @@ describe('StackedBarChart width budget (#3778)', () => {
   });
 
   it('stays inside the frame without the y-axis scale too', () => {
-    barChartCalls.length = 0;
     render(<StackedBarChart bars={bars} colorBy="layout" />);
 
     const call = barChartCalls[0]!;
@@ -208,7 +215,6 @@ describe('GroupedBarChart width budget (#3778)', () => {
   }));
 
   it('keeps the whole chart — y-axis gutter included — inside the measured frame', () => {
-    barChartCalls.length = 0;
     render(<GroupedBarChart bars={groupedBars} />);
 
     expect(barChartCalls).toHaveLength(1);
@@ -223,7 +229,6 @@ describe('GroupedBarChart width budget (#3778)', () => {
   });
 
   it('pins the y-axis gutter so the library default cannot creep back', () => {
-    barChartCalls.length = 0;
     render(<GroupedBarChart bars={groupedBars} />);
 
     const call = barChartCalls[0]!;
@@ -232,7 +237,6 @@ describe('GroupedBarChart width budget (#3778)', () => {
   });
 
   it('sizes grouped bars to fit inside the width actually given to BarChart', () => {
-    barChartCalls.length = 0;
     render(<GroupedBarChart bars={groupedBars} />);
 
     const call = barChartCalls[0]!;

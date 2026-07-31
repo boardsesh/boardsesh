@@ -8,7 +8,7 @@
 // render straight segments (`curved={false}`) with no leftover `curvature`.
 import { createElement, useEffect, type ReactNode } from 'react';
 import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RawVPointsTimeline } from '@boardsesh/profile-stats';
 
 const FRAME_WIDTH = 320;
@@ -91,6 +91,10 @@ vi.mock('../profile-chart-colors', () => ({
 
 import { TotalAreaChart } from '../YouCharts';
 
+beforeEach(() => {
+  lineChartCalls.length = 0;
+});
+
 describe('TotalAreaChart line interpolation (#3780)', () => {
   const timeline: RawVPointsTimeline = {
     weekLabels: ['W1', 'W2', 'W3', 'W4'],
@@ -99,7 +103,6 @@ describe('TotalAreaChart line interpolation (#3780)', () => {
   };
 
   it('renders straight segments instead of an overshooting curve', () => {
-    lineChartCalls.length = 0;
     render(<TotalAreaChart timeline={timeline} color="#7c3aed" />);
 
     expect(lineChartCalls).toHaveLength(1);
