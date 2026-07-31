@@ -416,8 +416,11 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  *
  * 1. **In-memory** (all users): Fast synchronous check, per-instance.
  *    For authenticated users the key is `userId:operation`; for
- *    unauthenticated users the key is `connectionId`. This provides
- *    immediate per-process protection and works even when Redis is down.
+ *    unauthenticated users it is `ip:<clientIp>:operation` on both transports
+ *    (HTTP sets clientIp in yoga.ts, WebSocket in websocket/setup.ts since
+ *    issue #2863), falling back to `connectionId` only when no client IP could
+ *    be resolved. This provides immediate per-process protection and works
+ *    even when Redis is down.
  *
  * 2. **Redis** (authenticated users only): Distributed enforcement
  *    across multiple backend instances. Uses an atomic Lua script

@@ -412,7 +412,14 @@ export const boardPresenceMutations = {
     { boardId, climb, angle }: { boardId: number; climb: ClimbQueueItemInput; angle?: number | null },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
-    await applyRateLimit(ctx, 60, 'reportBoardClimb');
+    // Anonymous callers are now bucketed per client IP rather than per
+    // connection (issue #2863), so a whole gym behind one NAT shares this
+    // budget — and this fires on every wall send. Give anon the headroom for
+    // several phones lighting climbs at once; logged-in senders keep 60/min
+    // because their bucket is genuinely per-user. ESP32 controllers authenticate
+    // by API key without setting isAuthenticated, so they land in the anon
+    // bucket too.
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 60 : 240, 'reportBoardClimb');
 
     // Auth-optional: anyone connected to the board emits (logged-in or
     // anonymous). The emitter id is the userId, or `conn:{connectionId}` for an
@@ -692,7 +699,10 @@ export const boardPresenceMutations = {
     { boardId }: { boardId: number },
     ctx: ConnectionContext,
   ): Promise<boolean> => {
-    await applyRateLimit(ctx, 60, 'reportBoardDisconnect');
+    // Same anon-per-IP headroom as reportBoardClimb: this pairs with every
+    // lightbulb-off / BLE drop, so a shared-NAT gym would otherwise burn one
+    // 60/min bucket between all its phones. See issue #2863.
+    await applyRateLimit(ctx, ctx.isAuthenticated ? 60 : 240, 'reportBoardDisconnect');
     assertValidBoardId(boardId);
     const emitterId = ctx.userId ?? `conn:${ctx.connectionId}`;
     const cleared = await pubsub.clearBoardWriterIf(String(boardId), emitterId);

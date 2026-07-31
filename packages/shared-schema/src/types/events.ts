@@ -160,7 +160,9 @@ export type ConnectionContext = {
   participantId?: string;
   userId?: string;
   isAuthenticated?: boolean;
-  // Client IP for rate limiting anonymous HTTP requests
+  // Client IP for rate limiting anonymous callers on both transports: HTTP
+  // sets it in graphql/yoga.ts, WebSocket in websocket/setup.ts via
+  // resolveWebSocketClientIp (issue #2863).
   clientIp?: string;
   // Controller-specific context (set when using API key auth)
   controllerId?: string;

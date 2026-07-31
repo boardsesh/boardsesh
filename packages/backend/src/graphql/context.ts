@@ -12,17 +12,34 @@ const DEBUG = process.env.NODE_ENV === 'development';
 const connections = new Map<string, ConnectionContext>();
 
 /**
+ * Options for {@link createContext}. Deliberately an options object rather than
+ * a positional list: every field is an optional string, so a positional call
+ * could put clientIp in the controllerMac slot and still type-check.
+ */
+export type CreateContextOptions = {
+  connectionId?: string;
+  isAuthenticated?: boolean;
+  userId?: string;
+  controllerId?: string;
+  controllerApiKey?: string;
+  controllerMac?: string;
+  /** Rate-limit identity for anonymous callers; see websocket/client-ip.ts. */
+  clientIp?: string;
+};
+
+/**
  * Create a new connection context.
  * Called when a WebSocket connection is established.
  */
-export function createContext(
-  connectionId?: string,
-  isAuthenticated?: boolean,
-  userId?: string,
-  controllerId?: string,
-  controllerApiKey?: string,
-  controllerMac?: string,
-): ConnectionContext {
+export function createContext({
+  connectionId,
+  isAuthenticated,
+  userId,
+  controllerId,
+  controllerApiKey,
+  controllerMac,
+  clientIp,
+}: CreateContextOptions = {}): ConnectionContext {
   const id = connectionId || uuidv4();
   const context: ConnectionContext = {
     connectionId: id,
@@ -33,6 +50,7 @@ export function createContext(
     controllerId,
     controllerApiKey,
     controllerMac,
+    clientIp,
   };
   connections.set(id, context);
   if (DEBUG) {

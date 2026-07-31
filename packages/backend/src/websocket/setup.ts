@@ -11,6 +11,7 @@ import { roomManager } from '../services/room-manager';
 import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
+import { resolveWebSocketClientIp } from './client-ip';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { logger } from '../utils/logger';
 
@@ -134,15 +135,20 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           logger.info(`[Auth] Controller MAC: ${controllerMac}`);
         }
 
+        // Rate-limit identity for anonymous callers. Without this every
+        // reconnect got a fresh uuidv4 connectionId and therefore a fresh
+        // bucket, which defeated the tier-1 limiter entirely (issue #2863).
+        const clientIp = resolveWebSocketClientIp(ctx.extra.request);
+
         // Create context on initial connection with auth info
-        const context = createContext(
-          undefined,
+        const context = createContext({
           isAuthenticated,
-          authenticatedUserId,
+          userId: authenticatedUserId,
           controllerId,
           controllerApiKey,
           controllerMac,
-        );
+          clientIp,
+        });
         await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId);
         // Attribution for connectionId → client identity: a subscription-auth
         // denial (see requireSessionMember) only carries the connectionId, so
@@ -155,6 +161,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           userAgent: upgradeRequest?.headers['user-agent'],
           forwardedFor: upgradeRequest?.headers['x-forwarded-for'],
           remoteAddress: upgradeRequest?.socket?.remoteAddress,
+          clientIp,
         });
 
         // Store context in ctx.extra for access in other hooks
