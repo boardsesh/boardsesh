@@ -136,6 +136,12 @@ Two non-obvious narrowing points bit us in #3927: `climbToQueueItem` hand-picked
 
 The contract is enforced by `packages/backend/src/__tests__/queue-climb-field-contract.test.ts`, which reads every list from its live source and compares by set equality against the GraphQL `ClimbInput` type. `userAscents` / `userAttempts` are the only deliberate exception — they are per-user tick counts and must never be broadcast, at the cost of behaving exactly like the bug the test guards against.
 
+### Queue item field contract
+
+The **item** wrapping that climb flaps for the same reason (#3995). `ClimbQueueItemInput` carries `addedBy`, `addedByUser`, `tickedBy` and `suggested` alongside `uuid`/`climb`, and each crosses its own write list (`toQueueItemInput` in `@boardsesh/queue-react`), the backend's Zod item schema, and each client's read selection (`QUEUE_ITEM_FIELDS` in `@boardsesh/graphql`, `SUBSCRIPTION_QUEUE_ITEM_FIELDS` on mobile, plus mobile's `toClimbQueueItem` rebuild). Item drift is louder than climb drift because attribution is rendered: the queue row's trailing avatar blinks in and out depending on who wrote last. Before #3995 mobile neither sent nor selected the four, so a phone in the session stripped attribution from climbs the crew had queued on web. The same contract test guards the item lists, by set equality against `ClimbQueueItemInput`.
+
+The note above about the adapter populating `addedBy`/`addedByUser` from `usePartyProfile` describes **web**. Mobile stamps its own identity in `attributeNewItem` (`queue-provider.tsx`), which deliberately skips an item that already carries attribution and anything already sitting in this device's queue — a blanket wire-level fallback would let a phone claim authorship of a peer's item on its next full-queue write.
+
 ## Technology Stack
 
 | Component          | Technology                        | Purpose                                                       |
