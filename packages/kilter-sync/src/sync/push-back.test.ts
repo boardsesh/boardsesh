@@ -73,4 +73,10 @@ describe('buildLogPushItem', () => {
     const item = buildLogPushItem(tick, new Map([['canonical-uuid', 'kilter-alias-uuid']]));
     expect(item.climbUuid).toBe('kilter-alias-uuid');
   });
+
+  it('falls back to the canonical climbUuid when the alias map has no entry', () => {
+    const tick = makeTick({ climbUuid: 'canonical-uuid' });
+    const item = buildLogPushItem(tick, new Map([['some-other-uuid', 'kilter-alias-uuid']]));
+    expect(item.climbUuid).toBe('canonical-uuid');
+  });
 });
