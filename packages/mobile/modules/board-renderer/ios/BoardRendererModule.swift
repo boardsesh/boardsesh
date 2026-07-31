@@ -101,12 +101,21 @@ public class BoardRendererModule: Module {
     _ = self.pruneOnce
     let outputUrl = self.cacheDir.appendingPathComponent("\(cacheKey).png")
 
-    if FileManager.default.fileExists(atPath: outputUrl.path) {
+    if let attributes = try? FileManager.default.attributesOfItem(atPath: outputUrl.path),
+      let existingSize = attributes[.size] as? Int,
+      existingSize > 0
+    {
       // Touch mtime so LRU treats hot files as recently used.
       try? FileManager.default.setAttributes(
         [.modificationDate: Date()], ofItemAtPath: outputUrl.path
       )
       return outputUrl.absoluteString
+    } else if FileManager.default.fileExists(atPath: outputUrl.path) {
+      // A zero-byte leftover — a partial write from before this fix shipped
+      // (writes are now atomic; see the `.atomic` option below, and the
+      // Android twin AtomicFileWrite.kt, #3748) — is never a valid cache hit.
+      // Delete it and fall through to render.
+      try? FileManager.default.removeItem(atPath: outputUrl.path)
     }
 
     let jsonData = Array(configJson.utf8)
@@ -171,7 +180,11 @@ public class BoardRendererModule: Module {
     }
 
     try retryOnceAfterRecreatingCacheDir {
-      try pngData.write(to: outputUrl)
+      // .atomic writes to a temp file in cacheDir and renames it into place,
+      // so a crash mid-write can never leave a partial PNG at outputUrl's path
+      // — it either lands whole or not at all (see AtomicFileWrite.kt for the
+      // Android twin, #3748).
+      try pngData.write(to: outputUrl, options: .atomic)
     }
     return outputUrl.absoluteString
   }

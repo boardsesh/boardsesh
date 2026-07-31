@@ -17,33 +17,23 @@ class BoardRendererModule : Module() {
     @Volatile
     private var pruned = false
 
-    private fun pruneCacheIfNeeded(maxBytes: Long) {
-        val files = cacheDir.listFiles() ?: return
-        var totalBytes = files.sumOf { it.length() }
-        if (totalBytes <= maxBytes) return
-
-        // Android's File.lastModified() is our LRU proxy — atime is not
-        // reliably available on the filesystems Android caches live on.
-        val sorted = files.sortedBy { it.lastModified() }
-        var removed = 0
-        for (file in sorted) {
-            if (totalBytes <= maxBytes) break
-            val size = file.length()
-            if (file.delete()) {
-                totalBytes -= size
-                removed++
-            }
-        }
-        if (removed > 0) {
-            android.util.Log.i("BoardRenderer", "Pruned $removed cached PNGs; new total $totalBytes bytes")
-        }
-    }
-
     private fun renderOverlay(configJson: String, cacheKey: String): String {
         if (!pruned) {
             synchronized(this@BoardRendererModule) {
                 if (!pruned) {
-                    pruneCacheIfNeeded(CACHE_CAP_BYTES)
+                    val result = CachePruner.pruneCacheIfNeeded(cacheDir, CACHE_CAP_BYTES)
+                    if (result.orphanedTempFilesRemoved > 0) {
+                        android.util.Log.i(
+                            "BoardRenderer",
+                            "Swept ${result.orphanedTempFilesRemoved} orphaned temp file(s) from a prior crash",
+                        )
+                    }
+                    if (result.cacheEntriesEvicted > 0) {
+                        android.util.Log.i(
+                            "BoardRenderer",
+                            "Pruned ${result.cacheEntriesEvicted} cached PNGs; new total ${result.finalTotalBytes} bytes",
+                        )
+                    }
                     pruned = true
                 }
             }
@@ -51,9 +41,15 @@ class BoardRendererModule : Module() {
         val outputFile = File(cacheDir, "$cacheKey.png")
 
         if (outputFile.exists()) {
-            // Touch mtime so LRU treats hot files as recently used.
-            outputFile.setLastModified(System.currentTimeMillis())
-            return "file://${outputFile.absolutePath}"
+            if (outputFile.length() > 0) {
+                // Touch mtime so LRU treats hot files as recently used.
+                outputFile.setLastModified(System.currentTimeMillis())
+                return "file://${outputFile.absolutePath}"
+            }
+            // A zero-byte leftover — a partial write from before this fix shipped
+            // (new writes can no longer land partially; see AtomicFileWrite) — is
+            // never a valid cache hit. Delete it and fall through to render.
+            outputFile.delete()
         }
 
         val renderResult = BoardRendererBridge.render(configJson)
@@ -91,11 +87,20 @@ class BoardRendererModule : Module() {
                     )
                 },
             ) {
-                FileOutputStream(outputFile).use { outputStream ->
-                    val written = overlayBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-                    if (!written) {
-                        outputFile.delete()
-                        throw Exception("PNG compression failed")
+                // Write to a temp file and rename into place so a thrown exception
+                // mid-compress (IO interruption, storage-full, process kill) can
+                // never leave a partial PNG at outputFile's path — it either lands
+                // whole or not at all (see AtomicFileWrite, #3748). The temp name is
+                // deterministic ("$cacheKey.png.tmp"), which is safe because Expo
+                // serialises every call into this module on a single modulesQueue
+                // (see #4041's PR body) — there's no concurrent renderOverlay call
+                // for the same cacheKey to collide with.
+                AtomicFileWrite.writeAtomically(outputFile) { tempFile ->
+                    FileOutputStream(tempFile).use { outputStream ->
+                        val written = overlayBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+                        if (!written) {
+                            throw Exception("PNG compression failed")
+                        }
                     }
                 }
             }
