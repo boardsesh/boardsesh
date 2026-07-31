@@ -32,6 +32,33 @@ Loose ends to clean when the routes go (not runtime callers, but they'd go stale
 `app/lib/api-docs/openapi-routes.ts` (documents `proxy/login`, `proxy/saveAscent`),
 `docs/branch-deploys.md` migration table, and the routes' own `__tests__`.
 
+### Shipped hardware pins `www` URL shapes (two different ones)
+
+Two shipped artefacts point at `www.boardsesh.com`, and they pin **different**
+things. Neither is fixable by us for the copies already in the field.
+
+- **The legacy page-route shape.** `packages/web/board-controller/main.py:627`
+  builds
+  `https://www.boardsesh.com/{board_name}/{board_layout}/{board_size}/{board_set}/{board_angle}/list?controllerUrl=…`
+  and 302s to it on line 629, using named slugs (defaults:
+  `kilter`/`original`/`12x12`/`screw_bolt`/`40`). This is a FastAPI app users run
+  on their own host from this repo, so the source is editable, but we can't push
+  the update — installed copies keep sending traffic at the old shape. The legacy
+  config-tuple `/list` route has to keep resolving.
+- **The `www` host plus `/api/internal/board-render`.**
+  `embedded/projects/board-controller/src/config/board_config.h:41` (same define
+  at `embedded/projects/moonboard-dev-server/src/config/board_config.h:17`) sets
+  `DEFAULT_RENDER_BASE_URL "https://www.boardsesh.com"`. The firmware never
+  requests a page: `buildBoardRenderThumbnailUrl`
+  (`embedded/libs/thumbnail-client/src/thumbnail_client.cpp:298-324`) appends
+  `/api/internal/board-render` plus a
+  `board_name`/`layout_id`/`size_id`/`set_ids`/`frames` query string. So this
+  pins that API route, not the route tree — A6 must not delete it. The default is
+  overridable at build time (`#ifndef`) and at runtime through the device's own
+  config endpoint (`embedded/libs/esp-web-server/src/esp_web_server.cpp:708-714`
+  persists `render_base_url`), so it is recoverable, but only by hand, one device
+  at a time.
+
 ### `/app` redirect destinations (for the route redirects in A6)
 
 | Web route removed  | `/app` destination                                          | Status                                                                                                                                         |
@@ -78,8 +105,20 @@ plus `useOptionalPlaylistActivation`. Refactor `multiboard-climb-list.tsx` and
   through the teardown.
 - `app/__tests__/climb-canonical-parity.test.ts` — documents that the legacy and
   `/b` view trees self-canonicalize into different URLs today (split PageRank).
-  **Flip at A1:** once the `url-utils` helpers emit `/b`, change the legacy
-  assertion to `.startsWith('/b/')` and assert parity.
+  **Flip at A1:** the consolidation target is the config-tuple tree (route
+  segments `/[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/…`, served in
+  its named-slug form — `/kilter/original/12x12/screw_bolt/40/…`), not `/b`.
+  `/b/{slug}` resolves through `boardBySlug`
+  (`packages/backend/src/graphql/resolvers/social/boards.ts:786-800`), which
+  reads `user_boards` scoped only by `slug` and `deletedAt` — a board a specific
+  user owns, not a climb config. Most climbs have no `/b` URL at all, and popular
+  configs have many (one per owning user), so `/b` can't be the canonical for a
+  climb config. The `url-utils` helpers already emit the config-tuple form, so A1
+  has no work there; what changes is the `/b` pages' inline canonical literal,
+  which reaches `createPageMetadata` without touching `url-utils` —
+  `b/[board_slug]/[angle]/view/[climb_uuid]/page.tsx:54` and
+  `b/[board_slug]/[angle]/list/page.tsx:37`. Point those at the legacy tree's
+  canonical, then flip the `/b`-tree assertion to match and assert parity.
 - `b/[board_slug]/[angle]/view/[climb_uuid]/__tests__/view-seo-fragment.test.tsx`
   — the climb-view page SSR-emits `ClimbViewSeoFragment` (the crawlable payload).
   Guards A2's drawer→static swap from dropping it.
