@@ -161,6 +161,7 @@ describe('PlayDrawerSwipeableHeader logbook I/O', () => {
       // wins even when the drawer art is currently unmirrored.
       entry('current', 'flash', 40, true),
       entry('current', 'attempt', 30),
+      entry('peek', 'attempt'),
       entry('peek', 'send'),
       entry('third', 'flash'),
     ]);

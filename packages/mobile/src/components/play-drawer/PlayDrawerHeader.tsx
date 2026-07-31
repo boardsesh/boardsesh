@@ -12,12 +12,7 @@ import type { AscentStatusValue } from '../../lib/ascent-status-utils';
 import { iosSystemColors } from '../../theme/ios-colors';
 import { spacing } from '../../theme/tokens';
 
-type PlayDrawerHeaderProps = {
-  /** The climb and angle used for the compact prior-ascent marker beside its name. */
-  climbUuid: string;
-  angle: number;
-  /** Set by foreign-board drawers that own a small board-specific status index. */
-  ascentStatus?: AscentStatusValue | null;
+type PlayDrawerHeaderBaseProps = {
   name: string;
   /** Display label (already formatted to V or Font per user preference). */
   difficulty: string;
@@ -44,22 +39,36 @@ type PlayDrawerHeaderProps = {
   onLongPressName?: () => void;
 };
 
-export const PlayDrawerHeader = memo(function PlayDrawerHeader({
-  climbUuid,
-  angle,
-  ascentStatus,
-  name,
-  difficulty,
-  rawDifficulty,
-  gradeColor,
-  qualityAverage,
-  ascensionistCount,
-  setterUsername,
-  benchmarkDifficulty,
-  characteristics,
-  leading,
-  onLongPressName,
-}: PlayDrawerHeaderProps) {
+type PlayDrawerHeaderProps = PlayDrawerHeaderBaseProps &
+  (
+    | {
+        /** The climb and angle used by the root-board live status lookup. */
+        climbUuid: string;
+        angle: number;
+        ascentStatus?: undefined;
+      }
+    | {
+        /** A status resolved by a foreign-board drawer's board-specific index. */
+        ascentStatus: AscentStatusValue | null;
+        climbUuid?: never;
+        angle?: never;
+      }
+  );
+
+export const PlayDrawerHeader = memo(function PlayDrawerHeader(props: PlayDrawerHeaderProps) {
+  const {
+    name,
+    difficulty,
+    rawDifficulty,
+    gradeColor,
+    qualityAverage,
+    ascensionistCount,
+    setterUsername,
+    benchmarkDifficulty,
+    characteristics,
+    leading,
+    onLongPressName,
+  } = props;
   const { t } = useTranslation('climbs');
   const resolvedGradeColor = useMemo(
     () => gradeColor ?? getGradeColor(rawDifficulty ?? difficulty) ?? DEFAULT_GRADE_COLOR,
@@ -95,10 +104,12 @@ export const PlayDrawerHeader = memo(function PlayDrawerHeader({
               </MarqueeText>
             </Pressable>
             <ClimbAttributeIcons benchmarkDifficulty={benchmarkDifficulty} characteristics={characteristics} />
-            {ascentStatus === undefined ? (
-              <AscentStatusGlyph climbUuid={climbUuid} angle={angle} style={styles.ascentStatus} />
+            {/* Undefined selects the root BoardProvider's live lookup; foreign-board
+                callers always provide a resolved status, including explicit null. */}
+            {props.ascentStatus === undefined ? (
+              <AscentStatusGlyph climbUuid={props.climbUuid} angle={props.angle} style={styles.ascentStatus} />
             ) : (
-              <AscentStatusMark status={ascentStatus} style={styles.ascentStatus} />
+              <AscentStatusMark status={props.ascentStatus} style={styles.ascentStatus} />
             )}
           </View>
           <Text variant="caption1" style={styles.subtitleText} numberOfLines={1}>

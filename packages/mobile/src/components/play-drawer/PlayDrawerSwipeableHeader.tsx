@@ -44,9 +44,9 @@ function HeaderContents({
       viewportWidth={viewportWidth}
       current={
         <PlayDrawerHeader
-          climbUuid={currentClimb.uuid}
-          angle={angle}
-          ascentStatus={currentAscentStatus}
+          {...(currentAscentStatus === undefined
+            ? { climbUuid: currentClimb.uuid, angle }
+            : { ascentStatus: currentAscentStatus })}
           name={currentClimb.name}
           difficulty={currentGrade?.label ?? currentClimb.difficulty}
           rawDifficulty={currentClimb.difficulty}
@@ -63,9 +63,9 @@ function HeaderContents({
       peek={
         peekClimb ? (
           <PlayDrawerHeader
-            climbUuid={peekClimb.uuid}
-            angle={angle}
-            ascentStatus={peekAscentStatus}
+            {...(peekAscentStatus === undefined
+              ? { climbUuid: peekClimb.uuid, angle }
+              : { ascentStatus: peekAscentStatus })}
             name={peekClimb.name}
             difficulty={peekGrade?.label ?? peekClimb.difficulty}
             rawDifficulty={peekClimb.difficulty}
