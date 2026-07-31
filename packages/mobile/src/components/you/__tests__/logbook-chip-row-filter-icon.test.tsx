@@ -94,7 +94,10 @@ function renderRow(filters: LogbookFilterState = DEFAULT_LOGBOOK_FILTERS) {
       onUpdateFilters: vi.fn(),
     }),
   );
-  const filterButton = captured.buttons[0];
+  // Look the chip up by label, not position, so a chip reorder fails loudly here
+  // instead of silently asserting against whatever chip moved into slot 0. The
+  // leading position is a separate assertion below.
+  const filterButton = captured.buttons.find((button) => button.label === 'mobile.logbook.filter');
   if (!filterButton) throw new Error('the Filter chip did not render');
   return filterButton;
 }
@@ -107,6 +110,8 @@ describe('LogbookChipRow.ios Filter chip', () => {
   it('renders the filter symbol with the title dropped from layout', () => {
     const filterButton = renderRow();
 
+    // Filter leads the row (the sheet opener sits before the sort/facet chips).
+    expect(captured.buttons[0]).toBe(filterButton);
     expect(filterButton.systemImage).toBe('line.3.horizontal.decrease');
     // Icon-only: without this the SwiftUI Label lays the title out beside the
     // symbol and the glass HStack compresses it to "F…" (#3782).
@@ -151,9 +156,9 @@ describe('LogbookChipRow.ios Filter chip', () => {
   });
 
   it('leaves the other chips as plain text chips', () => {
-    renderRow();
+    const filterButton = renderRow();
 
-    const otherButtons = captured.buttons.slice(1);
+    const otherButtons = captured.buttons.filter((button) => button !== filterButton);
     expect(otherButtons.length).toBeGreaterThan(0);
     for (const button of otherButtons) {
       expect(button.systemImage).toBeUndefined();
