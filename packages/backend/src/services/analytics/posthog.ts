@@ -17,7 +17,13 @@ export type BackendAnalyticsEvent =
   // Count DISTINCT USERS, not events — one looping client would otherwise read
   // as a fleet-wide problem. A sustained zero is the signal to turn the check
   // into a rejection (#3942).
-  | 'Tick Climb Not In Catalog';
+  | 'Tick Climb Not In Catalog'
+  // Fires when saveTick or updateTick moved a MoonBoard tick to the angle its
+  // climb is actually graded at (#3529). Same counting discipline as the line
+  // above: count DISTINCT USERS. A sustained hit rate means a client surface is
+  // sending the wrong angle and wants fixing too; a decline to zero once
+  // #3851's angle-agnostic import lands is what tells us the snap can retire.
+  | 'MoonBoard Tick Angle Snapped';
 
 interface CaptureBackendEventOptions {
   distinctId: string;

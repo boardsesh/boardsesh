@@ -3,6 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsOf } from '../util/rows';
 import { setSerialPlan } from '../util/serial-plan';
 import { blendedQualityAverageSql } from './quality-blend';
+import { statsRowCarriesRealCatalogDataSql } from './real-catalog-data';
 
 // Any drizzle-orm PgDatabase (postgres-js client, the script client, the
 // Neon HTTP client the web app uses) and the PgTransaction handle backend
@@ -92,13 +93,45 @@ type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
  * an existing row's Boardsesh-owned aggregates while preserving its upstream
  * fields. A matching send at a new angle remains legitimate and seeds a row.
  *
+ * That seed is deliberately guarded on the CLIMB, not on (climb, angle): a tick
+ * at an angle the catalog has no stats row for is legitimate and must still seed
+ * — that is the whole reason the seed exists. Tightening this to (climb, angle)
+ * would break real ticks, and there is a test whose only job is to fail if you do.
+ *
+ * ONE narrow exception, MoonBoard only (#3529). MoonBoard identity is
+ * angle-bearing: the catalog importer mints one board_climbs row per (problem,
+ * angle) as uuidv5('moonboard:{id}:{angle}'), each with a non-null
+ * board_climbs.angle. A tick logged from a board set to the OTHER angle therefore
+ * names a climb that is not graded at the tick's angle, and seeding there mints a
+ * row nothing can render: it shows up in that angle's stats-driven search with a
+ * NULL grade and a 1-ascent count, while the send is missing from the page every
+ * other climber browses. So the seed skips when ALL of:
+ *   - board_type = 'moonboard'  (Kilter/Tension are byte-for-byte unaffected —
+ *     their catalog grades every angle independently)
+ *   - board_climbs.angle IS NOT NULL and differs from the tick's angle
+ *   - no stats row carrying REAL CATALOG DATA exists at the tick's angle
+ *     (statsRowCarriesRealCatalogData — the shared predicate; bare existence
+ *     would be useless here, since the phantom row IS the thing being described)
+ * which is exactly the condition under which resolveMoonBoardTickAngle would
+ * have snapped the tick in the first place. This layer is the defence in depth
+ * for ticks that did NOT go through saveTick: rows written before the fix
+ * shipped, bulk/self-heal recomputes over them, and any future importer. (It is
+ * NOT about the legacy web proxy — that route returns 400 for MoonBoard and can
+ * never write a MoonBoard tick.)
+ *
+ * The exception goes inert on its own once #3851's angle-agnostic import lands
+ * and sets board_climbs.angle = NULL on the canonical climb. See the fuller
+ * forward-compat note on resolveMoonBoardTickAngle, including the #3849 window
+ * and the #3852 interaction.
+ *
  * Seeded rows carry quality_normalized = TRUE. Every value the row can ever
  * hold is on the canonical 1-5 scale: the Boardsesh blend is built from native
  * ticks (validated 1-5), and the only writers of the upstream side (Aurora
  * shared-sync, Kilter catalog-sync / stats-repair, the MoonBoard importers) all
  * set the flag TRUE on insert AND on conflict. Leaving it at the column default
- * FALSE is what stranded 44 MoonBoard rows outside the "all normalized"
- * invariant (#3529, seed half).
+ * FALSE is what stranded a growing set of MoonBoard rows outside the "all
+ * normalized" invariant (#3529, seed half — 44 at the audit, 101 by the time
+ * migration 0188 backfilled them).
  */
 
 export type DiffRow = {
@@ -168,8 +201,15 @@ export async function recomputeClimbStats(
     // throws at runtime on a partial column list ("selected fields are not the
     // same or are in a different order compared to the table definition"), so
     // it would force us to enumerate every column of board_climb_stats and
-    // re-enumerate them on every future column addition. Same statement shape
-    // as the bulk seed below, deliberately — the two guards should diff clean.
+    // re-enumerate them on every future column addition.
+    //
+    // The catalog-existence guard is the same statement shape as the bulk seed
+    // below, deliberately — those two should diff clean. The MoonBoard
+    // wrong-angle guard (#3529) cannot: here board_climbs is in the outer FROM
+    // so bc.angle is directly in scope, whereas the bulk seed only reaches
+    // board_climbs inside an EXISTS and has to carry the angle test in there.
+    // Same predicate, two shapes; contorting either to match the other would
+    // cost more clarity than the diff-cleanliness buys.
     await tx.execute(sql`
       INSERT INTO board_climb_stats (board_type, climb_uuid, angle,
                                      ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
@@ -186,6 +226,19 @@ export async function recomputeClimbStats(
               AND seed_tick.angle = ${angle}
               AND seed_tick.status IN ('flash','send')
               AND seed_tick.kilter_detached_at IS NULL
+         )
+         AND (
+           ${boardType} <> 'moonboard'
+           OR bc.angle IS NULL
+           OR bc.angle = ${angle}
+           OR EXISTS (
+             SELECT 1
+               FROM board_climb_stats s
+              WHERE s.board_type = ${boardType}
+                AND s.climb_uuid = ${climbUuid}
+                AND s.angle      = ${angle}
+                AND ${statsRowCarriesRealCatalogDataSql('s')}
+           )
          )
       ON CONFLICT (board_type, climb_uuid, angle) DO NOTHING;
     `);
@@ -419,8 +472,13 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
     // Defensive seed for keys whose stats row doesn't exist yet (ticks can
     // arrive at angles the saveClimb seed didn't cover). Guarded on both the
     // climb existing in board_climbs (#3528) and a matching attached flash/send
-    // tick — see the module doc. Existing keys still reach the UPDATE below
-    // even when that tick guard is now false.
+    // tick — see the module doc. The board_climbs EXISTS rides board_climbs_pkey,
+    // one probe per key. Existing keys still reach the UPDATE below even when
+    // that tick guard is now false.
+    //
+    // The MoonBoard wrong-angle legs (#3529) live INSIDE the board_climbs EXISTS
+    // because that is the only place bc.angle is in scope here — the single-key
+    // seed above carries the identical predicate with board_climbs in its outer FROM.
     await db.execute(sql`
       INSERT INTO board_climb_stats (board_type, climb_uuid, angle,
                                      ascensionist_count, upstream_ascensionist_count, boardsesh_ascensionist_count,
@@ -432,6 +490,19 @@ export async function recomputeClimbStatsBulk(db: DrizzleDb, keys: ClimbStatsKey
            FROM board_climbs bc
           WHERE bc.uuid = k.climb_uuid
             AND bc.board_type = k.board_type
+            AND (
+              k.board_type <> 'moonboard'
+              OR bc.angle IS NULL
+              OR bc.angle = k.angle
+              OR EXISTS (
+                SELECT 1
+                  FROM board_climb_stats s
+                 WHERE s.board_type = k.board_type
+                   AND s.climb_uuid = k.climb_uuid
+                   AND s.angle      = k.angle
+                   AND ${statsRowCarriesRealCatalogDataSql('s')}
+              )
+            )
        )
          AND EXISTS (
            SELECT 1

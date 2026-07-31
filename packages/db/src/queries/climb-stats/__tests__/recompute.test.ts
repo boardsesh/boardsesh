@@ -48,6 +48,16 @@ void describe('recomputeClimbStatsBulk', () => {
     assert.match(seedSql, /seed_tick\.kilter_detached_at IS NULL/);
     // Seeded rows are on the 1-5 scale from birth (#3529, seed half).
     assert.match(seedSql, /quality_normalized/);
+    // MoonBoard wrong-angle guard (#3529): scoped to moonboard, passes through
+    // an angle-less climb row, and tests for a stats row carrying REAL CATALOG
+    // DATA at the tick's angle rather than for a bare row.
+    assert.match(seedSql, /k\.board_type <> 'moonboard'/);
+    assert.match(seedSql, /bc\.angle IS NULL/);
+    assert.match(seedSql, /bc\.angle = k\.angle/);
+    assert.match(seedSql, /COALESCE\(s\.upstream_ascensionist_count, 0\) > 0/);
+    assert.match(seedSql, /s\.display_difficulty\s+IS NOT NULL/);
+    assert.match(seedSql, /s\.benchmark_difficulty\s+IS NOT NULL/);
+    assert.match(seedSql, /s\.upstream_quality_average IS NOT NULL/);
     const updateSql = sqlText(db.queries[1]);
     assert.match(updateSql, /UPDATE board_climb_stats/);
     assert.doesNotMatch(updateSql, /seed_tick/);
