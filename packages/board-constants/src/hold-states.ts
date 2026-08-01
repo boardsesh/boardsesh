@@ -364,6 +364,34 @@ export type StoredClimbHoldProjection = {
   };
 };
 
+/**
+ * Reproduce the raw per-frame `p` events used by Kilter's catalog fingerprint
+ * writer before the canonical stored-row projector landed in 6e93b223c.
+ *
+ * This is deliberately not a projection: repeated holds remain repeated,
+ * frame numbers preserve each raw comma-delimited slot (including empty
+ * unquoted slots), unknown roles keep the historical `{holdId}={roleCode}`
+ * sentinel, and nonpositive IDs are not sanitised. Compatibility callers must
+ * validate the resulting fingerprint against a stored value before trusting
+ * it. Do not use `parseFramesSegments` here: its canonical parser intentionally
+ * drops empty unquoted segments and therefore renumbers later events.
+ */
+export function legacyAuroraRawFrameHoldEvents(frames: string, board: AuroraBoardName): StoredClimbHoldRow[] {
+  const events: StoredClimbHoldRow[] = [];
+  const setToken = /p(-?\d+)r(\d+)/g;
+  for (const [frameNumber, segment] of frames.split(',').entries()) {
+    setToken.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = setToken.exec(segment)) !== null) {
+      const holdId = Number(match[1]);
+      const roleCode = Number(match[2]);
+      const holdState = HOLD_STATE_MAP[board][roleCode]?.name ?? (`${holdId}=${roleCode}` as HoldState);
+      events.push({ holdId, frameNumber, holdState });
+    }
+  }
+  return events;
+}
+
 /** True for boards whose climb frames use Aurora's p/r/x grammar. */
 export function isAuroraBoardName(board: string): board is AuroraBoardName {
   return (AURORA_BOARDS as readonly string[]).includes(board);

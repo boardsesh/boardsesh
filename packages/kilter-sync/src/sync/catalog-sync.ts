@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import {
   boardClimbs,
@@ -34,7 +34,13 @@ import {
   summarizeSkipReasons,
   type ClimbIngestSkip,
 } from './catalog-backlog';
-import { fingerprintFromHolds } from './fingerprint';
+import {
+  decideCatalogFingerprint,
+  enrichFingerprintOwnersWithLegacyCompatibility,
+  indexStoredFingerprintOwners,
+  partitionLegacyFingerprintCompatibilityRows,
+  type LegacyFingerprintCompatibilityRow,
+} from './catalog-fingerprint-compat';
 import { createSetterSyncNotifications, type NewClimbInfo } from './notifications';
 import { reconcileDeletions, type DeletionReport } from './deletions';
 import { syncKilterLocations } from './locations-sync';
@@ -129,6 +135,61 @@ async function loadHoleToPlacement(db: DrizzleDb, layoutId: number): Promise<Map
     if (row.holeId != null) map.set(row.holeId, row.id);
   }
   return map;
+}
+
+/**
+ * Existing rows must reach the first-fingerprint-owner index in stable order.
+ * Duplicate stored fingerprints are legal, so UUID order is the tie-breaker
+ * shared with the compatibility preload below.
+ */
+export function existingCatalogLayoutRowsQuery(db: DrizzleDb, boardLayoutId: number) {
+  return db
+    .select({
+      uuid: boardClimbs.uuid,
+      fingerprint: boardClimbs.holdFingerprint,
+      isListed: boardClimbs.isListed,
+      userId: boardClimbs.userId,
+    })
+    .from(boardClimbs)
+    .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.layoutId, boardLayoutId)))
+    .orderBy(boardClimbs.uuid);
+}
+
+/**
+ * Load every catalog-owned multi-frame row that could still carry the legacy
+ * raw-event fingerprint. One catalog-wide query keeps this compatibility
+ * bridge out of the per-layout hot loop; rows are partitioned in memory.
+ */
+async function loadLegacyFingerprintCompatibilityRows(
+  db: DrizzleDb,
+): Promise<Map<number, LegacyFingerprintCompatibilityRow[]>> {
+  const rows = await db
+    .select({
+      layoutId: boardClimbs.layoutId,
+      uuid: boardClimbs.uuid,
+      frames: boardClimbs.frames,
+      fingerprint: boardClimbs.holdFingerprint,
+    })
+    .from(boardClimbs)
+    .where(
+      and(
+        eq(boardClimbs.boardType, KILTER),
+        isNull(boardClimbs.userId),
+        gt(boardClimbs.framesCount, 1),
+        isNotNull(boardClimbs.frames),
+        ne(boardClimbs.frames, ''),
+        isNotNull(boardClimbs.holdFingerprint),
+      ),
+    )
+    .orderBy(boardClimbs.layoutId, boardClimbs.uuid);
+
+  return partitionLegacyFingerprintCompatibilityRows(
+    rows.flatMap((row) =>
+      row.frames && row.fingerprint
+        ? [{ layoutId: row.layoutId, uuid: row.uuid, frames: row.frames, fingerprint: row.fingerprint }]
+        : [],
+    ),
+  );
 }
 
 type GroupResult = {
@@ -442,6 +503,7 @@ async function syncBoardLayoutGroup(
   boardLayoutId: number,
   gripsLayoutUuids: string[],
   openSkips: Map<string, string>,
+  legacyFingerprintCompatibilityRows: ReadonlyArray<LegacyFingerprintCompatibilityRow>,
   log: (message: string) => void,
 ): Promise<GroupResult> {
   const result: GroupResult = {
@@ -462,27 +524,20 @@ async function syncBoardLayoutGroup(
   // Existing catalog for this layout: uuid identity + fingerprint → canonical,
   // carrying listing/ownership so the fold path can re-list a synced canonical
   // an incoming listed alias proves is back on the wall (never a user climb).
-  const existingRows = await db
-    .select({
-      uuid: boardClimbs.uuid,
-      fingerprint: boardClimbs.holdFingerprint,
-      isListed: boardClimbs.isListed,
-      userId: boardClimbs.userId,
-    })
-    .from(boardClimbs)
-    .where(and(eq(boardClimbs.boardType, KILTER), eq(boardClimbs.layoutId, boardLayoutId)));
+  const existingRows = await existingCatalogLayoutRowsQuery(db, boardLayoutId);
   const existingByLowerUuid = new Map<string, string>();
-  const fingerprintToCanonical = new Map<string, string>();
+  const storedFingerprintToCanonical = indexStoredFingerprintOwners(existingRows);
   // canonicalUuid → {isListed, userId} for DB-resident canonicals only. New
   // canonicals created this run are absent (already listed → never re-listed).
   const existingCanonicalMeta = new Map<string, { isListed: boolean | null; userId: string | null }>();
   for (const row of existingRows) {
     existingByLowerUuid.set(row.uuid.toLowerCase(), row.uuid);
     existingCanonicalMeta.set(row.uuid, { isListed: row.isListed, userId: row.userId });
-    if (row.fingerprint && !fingerprintToCanonical.has(row.fingerprint)) {
-      fingerprintToCanonical.set(row.fingerprint, row.uuid);
-    }
   }
+  const fingerprintToCanonical = enrichFingerprintOwnersWithLegacyCompatibility(
+    storedFingerprintToCanonical,
+    legacyFingerprintCompatibilityRows,
+  );
 
   // Existing self-aliases (alias_uuid = canonical_uuid) for this layout, so the
   // identity path only writes the ones actually missing (~6k historical gap;
@@ -576,14 +631,15 @@ async function syncBoardLayoutGroup(
         continue;
       }
       const { frames, holds } = decoded;
-      const fingerprint = fingerprintFromHolds(holds);
+      const fingerprintDecision = decideCatalogFingerprint(fingerprintToCanonical, climb.climbUuid, holds);
+      const { fingerprint } = fingerprintDecision;
       const resolvedByDecode = openSkips.get(lowerUuid);
       if (resolvedByDecode) result.resolvedSkipUuids.push(resolvedByDecode);
 
       // 2. Fingerprint dedup — a new UUID whose holds match an existing (or
       //    already-seen-this-run) canonical becomes an alias, not a new row.
-      const canonicalByFingerprint = fingerprintToCanonical.get(fingerprint);
-      if (canonicalByFingerprint) {
+      if (fingerprintDecision.canonicalToInsert === null) {
+        const canonicalByFingerprint = fingerprintDecision.canonicalUuid;
         climbUuidToCanonical.set(lowerUuid, canonicalByFingerprint);
         aliasRows.push({
           boardType: KILTER,
@@ -600,7 +656,7 @@ async function syncBoardLayoutGroup(
       }
 
       // 3. Genuinely new canonical.
-      fingerprintToCanonical.set(fingerprint, climb.climbUuid);
+      fingerprintToCanonical.set(fingerprint, fingerprintDecision.canonicalToInsert);
       existingByLowerUuid.set(lowerUuid, climb.climbUuid);
       climbUuidToCanonical.set(lowerUuid, climb.climbUuid);
       newClimbInserts.push({
@@ -626,7 +682,7 @@ async function syncBoardLayoutGroup(
         createdAt: climb.createdAt,
         holdFingerprint: fingerprint,
       });
-      for (const hold of holds) {
+      for (const hold of fingerprintDecision.holdRowsToInsert) {
         newHoldRows.push({
           boardType: KILTER,
           climbUuid: climb.climbUuid,
@@ -851,9 +907,18 @@ export async function syncKilterCatalog(args: SyncKilterCatalogArgs): Promise<Ki
   // The climbs already sitting unresolved in the backlog, so a run that finally
   // ingests one can stamp it resolved without scanning every climb it saw.
   const openSkips = await loadOpenSkips(args.db, KILTER);
+  const legacyFingerprintCompatibilityRowsByLayout = await loadLegacyFingerprintCompatibilityRows(args.db);
 
   for (const [boardLayoutId, gripsLayoutUuids] of byBoardLayout) {
-    const groupResult = await syncBoardLayoutGroup(args.db, state, boardLayoutId, gripsLayoutUuids, openSkips, log);
+    const groupResult = await syncBoardLayoutGroup(
+      args.db,
+      state,
+      boardLayoutId,
+      gripsLayoutUuids,
+      openSkips,
+      legacyFingerprintCompatibilityRowsByLayout.get(boardLayoutId) ?? [],
+      log,
+    );
     summary.gripsLayoutsProcessed += gripsLayoutUuids.length;
     summary.climbsSeen += groupResult.climbsSeen;
     summary.climbsUnmapped += groupResult.climbsUnmapped;

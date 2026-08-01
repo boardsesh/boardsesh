@@ -12,6 +12,7 @@ import {
   encodeMapsToFramesString,
   flattenFramesToUnion,
   isSentinelHoldState,
+  legacyAuroraRawFrameHoldEvents,
   projectAuroraFramesToStoredRows,
   toFlatFrames,
 } from '../hold-states';
@@ -411,6 +412,31 @@ describe('projectAuroraFramesToStoredRows', () => {
       { holdId: 1, frameNumber: 0, holdState: 'STARTING' },
       { holdId: 2, frameNumber: 0, holdState: 'HAND' },
       { holdId: 3, frameNumber: 4, holdState: 'HAND' },
+    ]);
+  });
+});
+
+describe('legacyAuroraRawFrameHoldEvents', () => {
+  it('preserves raw frame positions, repeated holds, and unknown sentinels without sanitising IDs', () => {
+    expect(legacyAuroraRawFrameHoldEvents('p1r1p0r2,,","x1p1r2p-2r999', 'tension')).toEqual([
+      { holdId: 1, frameNumber: 0, holdState: 'STARTING' },
+      { holdId: 0, frameNumber: 0, holdState: 'HAND' },
+      { holdId: 1, frameNumber: 3, holdState: 'HAND' },
+      { holdId: -2, frameNumber: 3, holdState: '-2=999' },
+    ]);
+  });
+
+  it('keeps the leading empty frame in a delayed-start Kilter animation', () => {
+    expect(legacyAuroraRawFrameHoldEvents(',"p100r13', 'kilter')).toEqual([
+      { holdId: 100, frameNumber: 1, holdState: 'HAND' },
+    ]);
+  });
+
+  it('ignores off tokens while keeping every cross-frame set event', () => {
+    expect(legacyAuroraRawFrameHoldEvents('p1r1,"x1p1r2,"x1p1r3', 'tension')).toEqual([
+      { holdId: 1, frameNumber: 0, holdState: 'STARTING' },
+      { holdId: 1, frameNumber: 1, holdState: 'HAND' },
+      { holdId: 1, frameNumber: 2, holdState: 'FINISH' },
     ]);
   });
 });
