@@ -12,8 +12,9 @@ import {
 // The only device-measured native inset in this suite. Do not turn inferred
 // no-accessory/minimized values into product contracts without iOS 26 hardware QA.
 const DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET = 139;
-// A plausible 34pt home-indicator + 49pt tab-bar arithmetic fixture. This is NOT
-// an on-device measurement; it is used only to prove that the pure function treats
+// A plausible 34pt home-indicator + 49pt tab-bar arithmetic fixture. Although
+// that sum matches a typical no-accessory inset, this exact state has not been
+// measured in this suite. It is used only to prove that the pure function treats
 // a native UIKit inset as opaque and does not add TAB_BAR_HEIGHT to it.
 const SYNTHETIC_NATIVE_SAFE_AREA_INSET = 83;
 
@@ -494,6 +495,29 @@ describe('computeBottomChromeMetrics', () => {
       expect(metrics.scrollBottomPadding).toBe(0);
       expect(metrics.floatingControlBottom).toBe(0);
       expect(metrics.nativeAccessoryMounted).toBe(false);
+    });
+
+    it('ignores a native-tab signal when the iPad sidebar owns navigation', () => {
+      // The shell should not report both today, but keep this total-function
+      // combination pinned: the sidebar branch wins before phone tab/accessory
+      // arithmetic and therefore adds no native chrome.
+      const metrics = computeBottomChromeMetrics({
+        uiVariant: 'liquidGlass',
+        usesNativeTabBar: true,
+        insetsBottom: 20,
+        insideTabs: true,
+        onAccessorySurface: true,
+        hasCurrentClimb: true,
+        nativeAccessoryMounted: true,
+        usesSidebar: true,
+      });
+      expect(metrics.tabBarHeight).toBe(0);
+      expect(metrics.tabBarBottom).toBe(20);
+      expect(metrics.nativeAccessoryMounted).toBe(false);
+      expect(metrics.nativeAccessoryReserve).toBe(0);
+      expect(metrics.scrollBottomPadding).toBe(20);
+      expect(metrics.floatingControlBottom).toBe(20);
+      expect(metrics.fixedFooterBottom).toBe(20);
     });
 
     it('keeps the JS queue toolbar when the sidebar is visible but the detail pane is suppressed', () => {
