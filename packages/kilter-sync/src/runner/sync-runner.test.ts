@@ -83,6 +83,8 @@ type SyncRunnerPrivates = {
   runCycleForCredential: (db: RunnerDb, cred: KilterCredentialRecord) => Promise<void>;
   getClient: () => { client: unknown; db: RunnerDb };
   maybeRunCatalogSync: (db: RunnerDb, cred: KilterCredentialRecord, currentToken: string) => Promise<void>;
+  maybeRepairKilterStats: (...args: unknown[]) => Promise<void>;
+  maybeSnapshotHistory: (...args: unknown[]) => Promise<void>;
 };
 
 type UpdateCall = { table: unknown; set: Record<string, unknown> };
@@ -544,6 +546,27 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     });
   });
 
+  it('leaves a newer cursor intact when catalog-sync claim ownership changes', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockStampSharedSyncFinished.mockResolvedValue(false);
+    const onError = vi.fn();
+    const logs: string[] = [];
+    const runner = new SyncRunner({
+      sharedSyncCooldownMs: 60_000,
+      onError,
+      onLog: (message) => logs.push(message),
+    });
+    const privates = runner as unknown as SyncRunnerPrivates;
+    const { db } = createDbShim();
+    vi.spyOn(privates, 'maybeRepairKilterStats').mockResolvedValue(undefined);
+    vi.spyOn(privates, 'maybeSnapshotHistory').mockResolvedValue(undefined);
+
+    await expect(privates.maybeRunCatalogSync(db, credential(), 'access-token')).resolves.toBeUndefined();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(logs.some((message) => message.includes('leaving the newer cursor intact'))).toBe(true);
+  });
+
   it('re-stamps when the pull failed, so a broken catalog does not loop every cycle', async () => {
     mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     mockSyncKilterCatalog.mockRejectedValueOnce(new Error('kilter down'));
@@ -556,6 +579,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
 
     expect(onError).toHaveBeenCalled();
     expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).not.toHaveProperty('nextCooldownMs');
   });
 
   it('a claim DB error never escapes into the credential status', async () => {

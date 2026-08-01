@@ -657,6 +657,7 @@ export class SyncRunner {
             agoSeconds === null ? 'unknown' : `${agoSeconds}s`
           } ago; cooldown ${Math.round(cooldownMs / 1000)}s)`,
         );
+        return;
       }
     } catch (claimError) {
       const claimErrorMessage = this.formatErrorMessage(claimError);
@@ -667,8 +668,6 @@ export class SyncRunner {
       this.log(`[SyncRunner] Could not claim the shared-sync slot for ${boardType}: ${claimErrorMessage}`);
       return;
     }
-
-    if (claimToken === null) return;
 
     let nextCooldownMs = cooldownMs;
     try {

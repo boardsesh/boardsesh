@@ -343,13 +343,12 @@ export class SyncRunner {
             remainingMinutes === null ? 'held by another instance' : `${remainingMinutes}m left`
           })`,
         );
+        return;
       }
     } catch (claimError) {
       this.handleError(claimError instanceof Error ? claimError : new Error(String(claimError)), { board });
       return;
     }
-
-    if (claimToken === null) return;
 
     // Reuse the just-minted user token first, then re-mint on demand (the
     // catalog pull can outlast a single access-token TTL).
@@ -405,11 +404,16 @@ export class SyncRunner {
     cooldownMs: number,
   ): Promise<void> {
     try {
-      await stampSharedSyncFinished(db, {
+      const finalized = await stampSharedSyncFinished(db, {
         ...cursor,
         claimToken,
         fullCooldownMs: cooldownMs,
       });
+      if (!finalized) {
+        this.log(
+          `[KilterSyncRunner] Catalog-sync claim ownership changed for ${KILTER_BOARD_TYPE}; leaving the newer cursor intact`,
+        );
+      }
     } catch (stampError) {
       this.handleError(stampError instanceof Error ? stampError : new Error(String(stampError)), {
         board: KILTER_BOARD_TYPE,
