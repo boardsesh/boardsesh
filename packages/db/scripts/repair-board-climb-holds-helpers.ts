@@ -142,6 +142,9 @@ export function strictlyProjectStoredRows(
 }
 
 export function isInvalidStoredRow(row: RepairHoldRow): boolean {
+  // Delete only shapes proven to be corrupt. Unknown but well-formed state
+  // names may belong to a newer board definition and are preserved; readers
+  // that require parser symmetry apply their narrower supported-state filter.
   return row.holdId <= 0 || row.holdState.length === 0 || row.holdState.includes('=');
 }
 
