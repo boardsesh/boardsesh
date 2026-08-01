@@ -129,15 +129,13 @@ export function createWebRedisRateLimitEvaluator({
 
 let singletonInitialized = false;
 let singletonEvaluator: RedisRateLimitEvaluate | undefined;
-let warnedAboutMissingVercelRedis = false;
 
 export function getWebRedisRateLimitEvaluator(): RedisRateLimitEvaluate | undefined {
   if (singletonInitialized) return singletonEvaluator;
   singletonInitialized = true;
 
   const redisUrl = process.env.REDIS_URL?.trim();
-  if (!redisUrl && process.env.VERCEL === '1' && !warnedAboutMissingVercelRedis) {
-    warnedAboutMissingVercelRedis = true;
+  if (!redisUrl && process.env.VERCEL === '1') {
     console.warn(
       '[public-api-rate-limit] REDIS_URL is not configured for the Vercel web deployment; only the bounded local tier is active.',
     );
