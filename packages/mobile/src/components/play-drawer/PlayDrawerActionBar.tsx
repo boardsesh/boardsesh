@@ -196,6 +196,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                   (lightbulbConnected ? tSettings('ble.turnOff') : tSettings('ble.connectBoard'))
                 }
                 scanningAccessibilityHint={tSettings('ble.scanning')}
+                writingAccessibilityHint={tSettings('ble.writing')}
                 longPressAccessibilityHint={
                   lightbulbLongPressEnabled
                     ? (lightbulbLongPressAccessibilityHint ?? tSettings('ble.holdForControls'))

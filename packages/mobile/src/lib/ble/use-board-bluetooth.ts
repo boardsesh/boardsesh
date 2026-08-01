@@ -51,6 +51,7 @@ import {
   setStoredLastConnectedBoard,
   type StoredLastConnectedBoard,
 } from './last-connected-board-store';
+import type { BleWriteActivityStore } from './write-activity-store';
 
 // Exported for testing. Decides how a connect-failure category reaches error
 // tracking:
@@ -345,6 +346,8 @@ type UseBoardBluetoothOptions = {
   /** Reads whether this connection was made via the mismatch "Connect anyway"
    *  override, attached to connection + send analytics. */
   getConnectedViaMismatchOverride?: () => boolean;
+  /** Provider-scoped external store for foreground JS write feedback. */
+  writeActivityStore?: BleWriteActivityStore;
 };
 
 const KEEP_AWAKE_TAG = 'boardsesh-ble';
@@ -435,6 +438,7 @@ export function useBoardBluetooth({
   onConnectionChange,
   onConnectSuccess,
   getConnectedViaMismatchOverride,
+  writeActivityStore,
 }: UseBoardBluetoothOptions) {
   const { t } = useTranslation('settings');
   // Connect-failure copy lives in the shared `common.bluetooth.*` keys so web
@@ -676,6 +680,7 @@ export function useBoardBluetooth({
       writeAbortRef.current?.abort();
       writeAbortRef.current = null;
       writeChainRef.current = Promise.resolve();
+      writeActivityStore?.reset();
       moonboardWriteFailureStreakRef.current = 0;
       setIsConnected(false);
       onConnectionChange?.(false);
@@ -689,7 +694,7 @@ export function useBoardBluetooth({
       // native link would otherwise leak — dispose explicitly.
       void expectedAdapter.disconnect().catch(() => {});
     },
-    [onConnectionChange],
+    [onConnectionChange, writeActivityStore],
   );
 
   const handleDisconnection = useCallback(
@@ -988,12 +993,17 @@ export function useBoardBluetooth({
       // coerces both outcomes), so a single fulfilled-arm .then suffices here;
       // the rejected arm below is belt-and-suspenders so a future edit that
       // lets performSend throw still can't wedge the chain.
+      const releaseWriteActivity = writeActivityStore?.begin();
       const queuedSend = writeChainRef.current.then(performSend);
       writeChainRef.current = queuedSend.then(
         () => undefined,
         () => undefined,
       );
-      return queuedSend;
+      try {
+        return await queuedSend;
+      } finally {
+        releaseWriteActivity?.();
+      }
     },
     [
       boardName,
@@ -1004,6 +1014,7 @@ export function useBoardBluetooth({
       analyticsBoardId,
       handleDisconnection,
       getConnectedViaMismatchOverride,
+      writeActivityStore,
       t,
     ],
   );
@@ -1060,6 +1071,7 @@ export function useBoardBluetooth({
         writeAbortRef.current?.abort();
         writeAbortRef.current = null;
         writeChainRef.current = Promise.resolve();
+        writeActivityStore?.reset();
         // Fresh connection generation — a stale dead-link streak must not carry over.
         moonboardWriteFailureStreakRef.current = 0;
 
@@ -1414,6 +1426,7 @@ export function useBoardBluetooth({
       sendFramesToBoard,
       sanitizedColorOverrides,
       colorSignature,
+      writeActivityStore,
       devicePicker,
       t,
       tCommon,
@@ -1442,12 +1455,13 @@ export function useBoardBluetooth({
       writeAbortRef.current?.abort();
       writeAbortRef.current = null;
       writeChainRef.current = Promise.resolve();
+      writeActivityStore?.reset();
       setIsConnected(false);
       onConnectionChange?.(false);
       clearBleDiagnosticsTags();
       await adapter?.disconnect();
     },
-    [consumeConnectionLifetime, onConnectionChange],
+    [consumeConnectionLifetime, onConnectionChange, writeActivityStore],
   );
 
   const disconnect = useCallback(
@@ -1686,6 +1700,7 @@ export function useBoardBluetooth({
       unsubDisconnectRef.current?.();
       unsubDisconnectRef.current = null;
       writeAbortRef.current?.abort();
+      writeActivityStore?.reset();
       const adapter = adapterRef.current;
       const lifetime = activeConnectionLifetimeRef.current;
       if (adapter && lifetime?.adapter === adapter) {
@@ -1700,7 +1715,7 @@ export function useBoardBluetooth({
       adapterRef.current = null;
       void adapter?.disconnect();
     };
-  }, [consumeConnectionLifetime]);
+  }, [consumeConnectionLifetime, writeActivityStore]);
 
   return {
     isConnected,

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getBleLightbulbAccessibilityHint, getBleLightbulbVisualState } from '../ble-lightbulb-button-state';
+import {
+  getBleLightbulbAccessibilityHint,
+  getBleLightbulbDisplayMode,
+  getBleLightbulbVisualState,
+} from '../ble-lightbulb-button-state';
 
 describe('BleLightbulbButton state helpers', () => {
   it('uses the outline lightbulb and neutral color when disconnected', () => {
@@ -30,18 +34,47 @@ describe('BleLightbulbButton state helpers', () => {
     });
   });
 
-  it('exposes the scanning hint while scanning, the long-press hint otherwise', () => {
-    expect(getBleLightbulbAccessibilityHint(true, 'Scanning for boards nearby', 'Hold for controls')).toBe(
-      'Scanning for boards nearby',
-    );
-    expect(getBleLightbulbAccessibilityHint(false, 'Scanning for boards nearby', 'Hold for controls')).toBe(
-      'Hold for controls',
-    );
+  it('resolves scanning before writing before the long-press hint', () => {
+    expect(
+      getBleLightbulbAccessibilityHint(
+        true,
+        true,
+        'Scanning for boards nearby',
+        'Lighting the board',
+        'Hold for controls',
+      ),
+    ).toBe('Scanning for boards nearby');
+    expect(
+      getBleLightbulbAccessibilityHint(
+        false,
+        true,
+        'Scanning for boards nearby',
+        'Lighting the board',
+        'Hold for controls',
+      ),
+    ).toBe('Lighting the board');
+    expect(
+      getBleLightbulbAccessibilityHint(
+        false,
+        false,
+        'Scanning for boards nearby',
+        'Lighting the board',
+        'Hold for controls',
+      ),
+    ).toBe('Hold for controls');
   });
 
   it('does not fall back to the long-press hint while scanning without a scanning hint', () => {
     // Scanning takes precedence: a missing scanning hint must not read as the
     // long-press action (the bug the third arg guards against).
-    expect(getBleLightbulbAccessibilityHint(true, undefined, 'Hold for controls')).toBeUndefined();
+    expect(
+      getBleLightbulbAccessibilityHint(true, true, undefined, 'Lighting the board', 'Hold for controls'),
+    ).toBeUndefined();
+  });
+
+  it('uses scanning before writing before idle for the display mode', () => {
+    expect(getBleLightbulbDisplayMode(true, true)).toBe('scanning');
+    expect(getBleLightbulbDisplayMode(false, true)).toBe('writing');
+    expect(getBleLightbulbDisplayMode(false, false)).toBe('idle');
   });
 });

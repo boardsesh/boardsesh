@@ -479,6 +479,7 @@
   },
   "ble": {
     "scanning": "Scanning for boards nearby…",
+    "writing": "Lighting the board…",
     "selectBoard": "Select Board",
     "devicesFound_one": "{{count}} board found",
     "devicesFound_other": "{{count}} boards found",

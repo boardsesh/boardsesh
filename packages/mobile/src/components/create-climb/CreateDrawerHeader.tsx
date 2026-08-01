@@ -90,6 +90,7 @@ export const CreateDrawerHeader = memo(function CreateDrawerHeader({
         onPress={onToggleBle}
         accessibilityLabel={bleConnected ? tCommon('lightControl.disconnect') : tSettings('ble.connectBoard')}
         scanningAccessibilityHint={tSettings('ble.scanning')}
+        writingAccessibilityHint={tSettings('ble.writing')}
         haptic="medium"
         size={24}
         containerSize={44}
