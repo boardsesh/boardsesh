@@ -67,6 +67,10 @@ export function createPublicApiRateLimitGuard({
 
     try {
       memoryLimiter.check(localIdentifier, PUBLIC_API_MAX_REQUESTS, PUBLIC_API_RATE_LIMIT_WINDOW_MS);
+      // `onStoreError` is intentionally omitted. The local tier has already
+      // spent this request, the Redis adapter logs the failure that opens its
+      // circuit, and cooldown/probe fallthrough stays silent instead of
+      // producing one warning for every origin request while Redis is down.
       await checkRedisRateLimit({
         evaluate: getRedisEvaluator(),
         identity: distributedIdentity,
