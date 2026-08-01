@@ -57,6 +57,31 @@ export function isTransientAuroraError(error: unknown): error is AuroraRequestEr
   return isAuroraRequestError(error) && error.transient;
 }
 
+/**
+ * Narrow retry classifier for the board-wide shared sync.
+ *
+ * The general Aurora classifier intentionally treats every HTTP error and an
+ * invalid response as transient for credential login. Shared sync has a
+ * different failure contract: shortening its persisted cooldown is safe only
+ * for canonical transport/rate-limit failures and server-side HTTP failures.
+ * Unknown throws, malformed responses, statusless HTTP errors and client-side
+ * HTTP failures keep the full cooldown so a deterministic failure cannot loop
+ * every daemon cycle.
+ */
+export function isTransientSharedSyncAuroraError(error: unknown): error is AuroraRequestError {
+  if (!isAuroraRequestError(error)) return false;
+
+  if (error.code === 'timeout' || error.code === 'network' || error.code === 'rate_limited') {
+    return true;
+  }
+
+  return (
+    error.code === 'http' &&
+    error.status !== undefined &&
+    (error.status === 429 || (error.status >= 500 && error.status <= 599))
+  );
+}
+
 export async function assertAuroraResponseOk(
   response: Response,
   url: string,

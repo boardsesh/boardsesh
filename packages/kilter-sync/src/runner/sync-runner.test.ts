@@ -486,7 +486,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     mockSyncKilterCatalog.mockResolvedValue(undefined);
     mockClaimSharedSyncSlot.mockReset();
     mockStampSharedSyncFinished.mockReset();
-    mockStampSharedSyncFinished.mockResolvedValue(undefined);
+    mockStampSharedSyncFinished.mockResolvedValue(true);
     mockReadSharedSyncCursor.mockReset();
     mockReadSharedSyncCursor.mockResolvedValue(new Date(Date.now() - 60_000));
     process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://test:test@localhost:5432/test';
@@ -494,7 +494,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
   });
 
   it('claims the persisted cooldown slot before pulling the catalog', async () => {
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const privates = runner as unknown as SyncRunnerPrivates;
     const { db } = createDbShim();
@@ -514,7 +514,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     // The refusal every instance-2 and every within-cooldown cycle gets. Before
     // the cooldown was persisted, a second container had its own empty Map and
     // would run a full catalog pull here.
-    mockClaimSharedSyncSlot.mockResolvedValue(false);
+    mockClaimSharedSyncSlot.mockResolvedValue(null);
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const privates = runner as unknown as SyncRunnerPrivates;
     const { db } = createDbShim();
@@ -528,7 +528,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
   });
 
   it('re-stamps the cursor after a successful pull so the cooldown starts at the end', async () => {
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const privates = runner as unknown as SyncRunnerPrivates;
     const { db } = createDbShim();
@@ -539,11 +539,13 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
     expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
       boardType: KILTER_BOARD_TYPE,
       cursorName: CATALOG_SYNC_COOLDOWN_CURSOR,
+      claimToken: '2026-07-31 23:00:00.000000',
+      fullCooldownMs: 60_000,
     });
   });
 
   it('re-stamps when the pull failed, so a broken catalog does not loop every cycle', async () => {
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     mockSyncKilterCatalog.mockRejectedValueOnce(new Error('kilter down'));
     const onError = vi.fn();
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });
@@ -575,7 +577,7 @@ describe('SyncRunner catalog-sync cooldown claim', () => {
   it('a re-stamp DB error never escapes either', async () => {
     // Same reasoning for the finally-block stamp: the worst case of a missed
     // stamp is that the cooldown measures from the start of the run.
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     mockStampSharedSyncFinished.mockRejectedValue(new Error('connection reset'));
     const onError = vi.fn();
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });

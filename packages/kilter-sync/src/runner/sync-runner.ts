@@ -17,6 +17,7 @@ import {
   stampSharedSyncFinished,
   isWeeklyCursorDue,
   markWeeklyCursorDone,
+  type SharedSyncClaimToken,
 } from '@boardsesh/db/queries';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import {
@@ -329,10 +330,10 @@ export class SyncRunner {
     // A DB error here must not escape: the user-half of this cycle has already
     // committed and been marked active, so letting the claim throw would record
     // a spurious credential failure for a user whose sync actually succeeded.
-    let claimed = false;
+    let claimToken: SharedSyncClaimToken | null = null;
     try {
-      claimed = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
-      if (!claimed) {
+      claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+      if (claimToken === null) {
         const lastRun = await readSharedSyncCursor(db, cursor);
         const remainingMinutes = lastRun
           ? Math.max(0, Math.round((cooldownMs - (Date.now() - lastRun.getTime())) / 60000))
@@ -348,7 +349,7 @@ export class SyncRunner {
       return;
     }
 
-    if (!claimed) return;
+    if (claimToken === null) return;
 
     // Reuse the just-minted user token first, then re-mint on demand (the
     // catalog pull can outlast a single access-token TTL).
@@ -386,7 +387,7 @@ export class SyncRunner {
       // Error-swallowing by design: this runs after the user-half has committed
       // and been marked active, so a DB error here must not escape and record a
       // credential failure for a user whose sync actually succeeded.
-      await this.stampCatalogSyncFinishedSafely(db, cursor);
+      await this.stampCatalogSyncFinishedSafely(db, cursor, claimToken, cooldownMs);
     }
   }
 
@@ -400,9 +401,15 @@ export class SyncRunner {
   private async stampCatalogSyncFinishedSafely(
     db: RunnerDb,
     cursor: { boardType: string; cursorName: string },
+    claimToken: SharedSyncClaimToken,
+    cooldownMs: number,
   ): Promise<void> {
     try {
-      await stampSharedSyncFinished(db, cursor);
+      await stampSharedSyncFinished(db, {
+        ...cursor,
+        claimToken,
+        fullCooldownMs: cooldownMs,
+      });
     } catch (stampError) {
       this.handleError(stampError instanceof Error ? stampError : new Error(String(stampError)), {
         board: KILTER_BOARD_TYPE,

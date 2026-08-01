@@ -8,7 +8,7 @@ The `@boardsesh/aurora-sync` package provides the shared sync implementation. It
 
 1. **CLI** - For local debugging and manual sync runs
 2. **Daemon CLI on a VM** - `aurora-sync daemon` as a long-lived process: picks one user per cycle, syncs their per-user tables, then runs a board-wide shared sync using their fresh Aurora token. This is the production deployment.
-3. **Backend / Vercel cron** - (Removed) Previously a `POST /sync-cron` backend handler and a `/api/internal/user-sync-cron` Vercel route; both removed in favour of the long-lived daemon, which the catalog piggyback's in-memory cooldown needs to survive across cycles.
+3. **Backend / Vercel cron** - (Removed) Previously a `POST /sync-cron` backend handler and a `/api/internal/user-sync-cron` Vercel route; both removed in favour of the long-lived daemon. The shared-sync cooldown is persisted in Postgres, so deploys and overlapping daemon instances share the same per-board gate.
 
 ## Architecture
 
@@ -111,6 +111,22 @@ After every successful per-user sync, the daemon also runs a shared sync for tha
 | kits                       | board_kits                         |
 
 When the climbs upsert sees previously-unseen UUIDs, the daemon also writes `new_climbs_synced` rows into the `notifications` table for each follower of the climb's setter (`setter_follows` and any linked `user_follows` accounts).
+
+The board-wide pull is gated by a synthetic cursor in `board_shared_syncs`.
+PostgreSQL writes the UTC marker and a fresh UUID atomically; each claim returns
+that complete value as its ownership token, and completion updates use it as a
+compare-and-set fence. Client clock skew and duplicate millisecond timestamps
+cannot reuse an identity. If a stalled daemon finishes after another daemon has
+reclaimed the board, the stale finisher cannot replace the newer marker.
+
+The normal cooldown is one hour from the end of the run (configurable through
+`sharedSyncCooldownMs`). Successful runs and permanent or unknown failures keep
+that full cooldown. A canonical `AuroraRequestError` caused by a timeout,
+network failure, rate limit, HTTP 429, or HTTP 500–599 retries after five minutes
+or the configured full cooldown, whichever is shorter. Other 4xx responses,
+invalid credentials, invalid responses, statusless HTTP failures, database
+errors, and arbitrary throws keep the full cooldown. Location refresh failures
+use the same classification because they are part of the board-wide run.
 
 #### Public board locations
 
@@ -263,9 +279,8 @@ op run --env-file=packages/aurora-sync/.env.1password -- bunx aurora-sync daemon
 
 Run `aurora-sync daemon` as a long-lived process (systemd unit, a small VM, or a
 Railway/Fly worker). It loops internally — there is no HTTP endpoint and no
-`CRON_SECRET`; nothing fronts it. A long-lived process is required so the shared-sync
-piggyback's in-memory cooldown holds across cycles (a per-request handler would
-reset it and re-pull the catalog every invocation — see kilter-sync.md).
+`CRON_SECRET`; nothing fronts it. The per-board shared-sync cooldown lives in
+Postgres and remains effective across daemon restarts and overlapping deploys.
 
 ### 1. Environment Variables
 

@@ -1231,7 +1231,7 @@ Sync runs as **long-lived daemon CLIs on a VM**, not as HTTP crons:
 - `aurora-sync daemon` (Kilter/Tension via the Aurora API)
 - `kilter-sync daemon` (Kilter Grips via Keycloak + PowerSync + REST)
 
-The daemons loop internally (one user per cycle, quiet hours, shared/catalog sync piggybacked) and authenticate with stored per-user credentials — nothing fronts them, so there is no `CRON_SECRET`. The earlier Vercel crons (`/api/internal/user-sync-cron`, etc.) and backend handlers (`/sync-cron`, `/kilter-sync-cron`) were removed; a long-lived process is required so the shared/catalog piggyback's in-memory cooldown survives across cycles.
+The daemons loop internally (one user per cycle, quiet hours, shared/catalog sync piggybacked) and authenticate with stored per-user credentials — nothing fronts them, so there is no `CRON_SECRET`. The earlier Vercel crons (`/api/internal/user-sync-cron`, etc.) and backend handlers (`/sync-cron`, `/kilter-sync-cron`) were removed. Shared/catalog cooldowns are persisted in Postgres with per-board compare-and-set claims, so they survive restarts and coordinate overlapping daemon instances.
 
 MoonBoard public locations use a separate manual CLI, `moonboard-sync locations`, because there is no per-user MoonBoard daemon yet.
 

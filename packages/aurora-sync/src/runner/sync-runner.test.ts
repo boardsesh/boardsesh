@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { SHARED_SYNC_COOLDOWN_CURSOR } from '@boardsesh/db/queries';
 import { AuroraRequestError } from '../api/errors';
-import { CredentialSyncError, formatSyncHealthSummary, SyncRunner, type SyncHealthSnapshot } from './sync-runner';
+import {
+  CredentialSyncError,
+  formatSyncHealthSummary,
+  sharedSyncCooldownAfterError,
+  SyncRunner,
+  type SyncHealthSnapshot,
+} from './sync-runner';
 import type { AuroraBoardName } from '../api/types';
 import type { CredentialRecord, SyncErrorContext } from './types';
 
@@ -373,7 +379,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     mockSyncAuroraBoardLocations.mockResolvedValue({ boardsSeen: 0, boardsUpserted: 0, boardsSkipped: 0 });
     mockClaimSharedSyncSlot.mockReset();
     mockStampSharedSyncFinished.mockReset();
-    mockStampSharedSyncFinished.mockResolvedValue(undefined);
+    mockStampSharedSyncFinished.mockResolvedValue(true);
     mockReadSharedSyncCursor.mockReset();
     mockReadSharedSyncCursor.mockResolvedValue(new Date(Date.now() - 60_000));
     // postgres-js is lazy; getClient() builds a client object but won't open a
@@ -383,7 +389,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
   });
 
   it('claims the persisted cooldown slot before running, keyed on the board', async () => {
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
 
@@ -402,7 +408,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
 
   it('skips the whole run when the slot is already claimed', async () => {
     // The refusal every instance-2 and every within-cooldown cycle gets.
-    mockClaimSharedSyncSlot.mockResolvedValue(false);
+    mockClaimSharedSyncSlot.mockResolvedValue(null);
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
 
@@ -416,7 +422,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
   });
 
   it('re-stamps the cursor after a successful run so the cooldown starts at the end', async () => {
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
 
@@ -426,11 +432,14 @@ describe('SyncRunner shared-sync per-board throttle', () => {
     expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
       boardType: 'decoy',
       cursorName: SHARED_SYNC_COOLDOWN_CURSOR,
+      claimToken: '2026-07-31 23:00:00.000000',
+      fullCooldownMs: 60_000,
+      nextCooldownMs: 60_000,
     });
   });
 
-  it('re-stamps the cursor when the run failed, so a broken board does not loop every cycle', async () => {
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+  it('keeps the full cooldown after an unknown failure, so a broken board does not loop every cycle', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     mockSyncSharedData.mockRejectedValueOnce(new Error('aurora down'));
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
@@ -439,6 +448,89 @@ describe('SyncRunner shared-sync per-board throttle', () => {
 
     expect(mockSyncAuroraBoardLocations).not.toHaveBeenCalled();
     expect(mockStampSharedSyncFinished).toHaveBeenCalledTimes(1);
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      fullCooldownMs: 60_000,
+      nextCooldownMs: 60_000,
+    });
+  });
+
+  it('uses a five-minute cooldown after a transient Aurora shared-sync failure', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({
+        code: 'http',
+        message: 'Aurora HTTP 503 Service Unavailable',
+        status: 503,
+      }),
+    );
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60 * 60 * 1000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u1');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      fullCooldownMs: 60 * 60 * 1000,
+      nextCooldownMs: 5 * 60 * 1000,
+    });
+  });
+
+  it('keeps the full cooldown after a permanent Aurora client failure', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockSyncSharedData.mockRejectedValueOnce(
+      new AuroraRequestError({
+        code: 'http',
+        message: 'Aurora HTTP 404 Not Found',
+        status: 404,
+      }),
+    );
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60 * 60 * 1000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u1');
+
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      fullCooldownMs: 60 * 60 * 1000,
+      nextCooldownMs: 60 * 60 * 1000,
+    });
+  });
+
+  it('uses the transient cooldown when the location refresh fails with a canonical network error', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockSyncAuroraBoardLocations.mockRejectedValueOnce(
+      new AuroraRequestError({
+        code: 'network',
+        message: 'Aurora pins request failed',
+      }),
+    );
+    const runner = new SyncRunner({ sharedSyncCooldownMs: 60 * 60 * 1000 });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u1');
+
+    expect(mockSyncSharedData).toHaveBeenCalledTimes(1);
+    expect(mockSyncAuroraBoardLocations).toHaveBeenCalledTimes(1);
+    expect(mockStampSharedSyncFinished.mock.calls[0][1]).toMatchObject({
+      fullCooldownMs: 60 * 60 * 1000,
+      nextCooldownMs: 5 * 60 * 1000,
+    });
+  });
+
+  it('swallows lost claim ownership without reporting a credential failure', async () => {
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
+    mockStampSharedSyncFinished.mockResolvedValue(false);
+    const onError = vi.fn();
+    const logs: string[] = [];
+    const runner = new SyncRunner({
+      sharedSyncCooldownMs: 60_000,
+      onError,
+      onLog: (message) => logs.push(message),
+    });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    await expect(runnerPrivates.maybeRunSharedSync('decoy', 'tok', 'u1')).resolves.toBeUndefined();
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(logs.some((message) => message.includes('leaving the newer cursor intact'))).toBe(true);
   });
 
   it('a claim DB error never escapes into the credential status', async () => {
@@ -460,7 +552,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
   it('a re-stamp DB error never escapes either, on the success path or the failure path', async () => {
     // Same reasoning for the finally-block stamp. Worst case of a missed stamp
     // is that the cooldown measures from the start of the run instead of its end.
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     mockStampSharedSyncFinished.mockRejectedValue(new Error('connection reset'));
     const onError = vi.fn();
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000, onError });
@@ -478,7 +570,7 @@ describe('SyncRunner shared-sync per-board throttle', () => {
   });
 
   it('claims per board independently', async () => {
-    mockClaimSharedSyncSlot.mockResolvedValue(true);
+    mockClaimSharedSyncSlot.mockResolvedValue('2026-07-31 23:00:00.000000');
     const runner = new SyncRunner({ sharedSyncCooldownMs: 60_000 });
     const runnerPrivates = runner as unknown as SyncRunnerPrivates;
 
@@ -493,6 +585,26 @@ describe('SyncRunner shared-sync per-board throttle', () => {
       'grasshopper',
     ]);
     expect(mockSyncSharedData.mock.calls.map((call) => call[1])).toEqual(['decoy', 'tension', 'grasshopper']);
+  });
+});
+
+describe('sharedSyncCooldownAfterError', () => {
+  const transientError = new AuroraRequestError({
+    code: 'timeout',
+    message: 'Aurora request timed out',
+  });
+
+  it('clamps the transient retry to five minutes for the default one-hour cooldown', () => {
+    expect(sharedSyncCooldownAfterError(transientError, 60 * 60 * 1000)).toBe(5 * 60 * 1000);
+  });
+
+  it('does not lengthen a configured cooldown shorter than five minutes', () => {
+    expect(sharedSyncCooldownAfterError(transientError, 60_000)).toBe(60_000);
+  });
+
+  it('keeps the full configured cooldown at the five-minute boundary and for unknown errors', () => {
+    expect(sharedSyncCooldownAfterError(transientError, 5 * 60 * 1000)).toBe(5 * 60 * 1000);
+    expect(sharedSyncCooldownAfterError(new Error('database failed'), 60 * 60 * 1000)).toBe(60 * 60 * 1000);
   });
 });
 

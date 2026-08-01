@@ -165,7 +165,15 @@ Wire JSON is **camelCase**. Across 19 listed layouts the catalog is ~424k climbs
 
 ### Cooldown + piggyback
 
-In-memory cooldown (`Map<board, lastRunMs>`, default 1h via `sharedSyncCooldownMs`) mirroring aurora-sync's `maybeRunSharedSync`. After a successful per-user cycle, `runCycleForCredential` calls `maybeRunCatalogSync` with that user's token; a catalog failure is caught and never poisons the user's credential. (Note: aurora-sync uses an in-memory cooldown for this, not `board_shared_syncs`; `board_shared_syncs` stays a per-table watermark store.)
+The per-board cooldown is persisted in `board_shared_syncs` (default 1h via
+`sharedSyncCooldownMs`) and claimed with a single-statement compare-and-set.
+PostgreSQL writes each cursor timestamp with a fresh UUID and returns that
+complete value to fence the completion update, so duplicate or skewed client
+clocks cannot let a stalled finisher overwrite a newer daemon's claim. After a
+successful per-user cycle, `runCycleForCredential` calls `maybeRunCatalogSync`
+with that user's token; success and failure both keep the full cooldown from
+the end of the catalog run, and a catalog failure never poisons the user's
+credential.
 
 ### Prerequisite: fingerprint backfill
 
@@ -364,7 +372,7 @@ The split exists because the error classifier fails open — a non-`KilterApiErr
 
 The daemon loop primitives (`resolveDaemonOptions`, `runDaemonLoop`, quiet-hours math) live in the neutral `@boardsesh/sync-runtime` package; both aurora-sync and kilter-sync consume them. Only the per-cycle work differs.
 
-It runs as a **long-lived CLI process on a VM** — `bunx kilter-sync daemon` (see [CLI](#cli)) — not as a backend HTTP endpoint. A long-lived process is required for the catalog piggyback's in-memory cooldown to hold across cycles; a per-request backend handler would reset it and re-pull the full catalog every invocation. The earlier `/kilter-sync-cron` backend handler (and the aurora `/sync-cron`) were removed in favour of this model, so the backend no longer depends on the sync packages. `CRON_SECRET` is no longer needed for kilter sync — the daemon authenticates to Kilter with the stored per-user refresh token, nothing fronts it.
+It runs as a **long-lived CLI process on a VM** — `bunx kilter-sync daemon` (see [CLI](#cli)) — not as a backend HTTP endpoint. The catalog piggyback's cooldown is persisted in Postgres, so restarts and overlapping deploys share the same per-board gate. The earlier `/kilter-sync-cron` backend handler (and the aurora `/sync-cron`) were removed in favour of this model, so the backend no longer depends on the sync packages. `CRON_SECRET` is no longer needed for kilter sync — the daemon authenticates to Kilter with the stored per-user refresh token, nothing fronts it.
 
 ## CLI
 

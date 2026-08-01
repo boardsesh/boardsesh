@@ -17,6 +17,7 @@ import {
   releaseDaemonLease,
   selfHealStaleClimbStats,
   stampSharedSyncFinished,
+  type SharedSyncClaimToken,
 } from '@boardsesh/db/queries';
 import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 import { syncUserData, hasForeignOwnedCircuitPlaylists } from '../sync/user-sync';
@@ -28,7 +29,7 @@ import {
   type AuroraLocationBoardName,
 } from '../sync/locations-sync';
 import { AuroraClimbingClient } from '../api/aurora-client';
-import { isAuroraRequestError, isTransientAuroraError } from '../api/errors';
+import { isAuroraRequestError, isTransientAuroraError, isTransientSharedSyncAuroraError } from '../api/errors';
 import { decrypt, encrypt } from '@boardsesh/crypto';
 import type { LocationSyncSummary } from '@boardsesh/location-sync';
 import type { AuroraBoardName } from '../api/types';
@@ -46,7 +47,22 @@ type RunnerDb = ReturnType<typeof drizzle>;
 // 1 hour matches the smallest unit of meaningful change for board-wide data
 // (climbs, climb_stats); tune via SyncRunnerConfig.sharedSyncCooldownMs.
 const DEFAULT_SHARED_SYNC_COOLDOWN_MS = 60 * 60 * 1000;
+const TRANSIENT_SHARED_SYNC_COOLDOWN_MS = 5 * 60 * 1000;
 const MAX_CREDENTIAL_FAILURES = 2;
+
+/**
+ * Resolve the cooldown to apply after a failed shared sync. Only the narrow
+ * canonical Aurora failures classified as retryable get the five-minute path;
+ * every other throw keeps the configured full cooldown. The retry is clamped
+ * to the full cooldown so a test/local configuration below five minutes is
+ * never lengthened by failure handling.
+ */
+export function sharedSyncCooldownAfterError(error: unknown, configuredCooldownMs: number): number {
+  const fullCooldownMs = Math.max(0, configuredCooldownMs);
+  return isTransientSharedSyncAuroraError(error)
+    ? Math.min(TRANSIENT_SHARED_SYNC_COOLDOWN_MS, fullCooldownMs)
+    : fullCooldownMs;
+}
 
 // aurora-sync owns every board EXCEPT kilter (which kilter-sync drives via its
 // own OAuth flow), so every credential query here excludes this board_type.
@@ -146,7 +162,7 @@ export class SyncRunner {
   }
 
   private getSharedSyncCooldownMs(): number {
-    return this.config.sharedSyncCooldownMs ?? DEFAULT_SHARED_SYNC_COOLDOWN_MS;
+    return Math.max(0, this.config.sharedSyncCooldownMs ?? DEFAULT_SHARED_SYNC_COOLDOWN_MS);
   }
 
   private getClient(): { client: RunnerClient; db: RunnerDb } {
@@ -630,10 +646,10 @@ export class SyncRunner {
     // committed and been marked active, and letting the claim throw would
     // bubble into syncSingleCredential's caller and record a spurious
     // credential failure for a user whose sync actually succeeded.
-    let claimed = false;
+    let claimToken: SharedSyncClaimToken | null = null;
     try {
-      claimed = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
-      if (!claimed) {
+      claimToken = await claimSharedSyncSlot(db, { ...cursor, cooldownMs });
+      if (claimToken === null) {
         const lastRunAt = await readSharedSyncCursor(db, cursor);
         const agoSeconds = lastRunAt ? Math.round((Date.now() - lastRunAt.getTime()) / 1000) : null;
         this.log(
@@ -652,8 +668,9 @@ export class SyncRunner {
       return;
     }
 
-    if (!claimed) return;
+    if (claimToken === null) return;
 
+    let nextCooldownMs = cooldownMs;
     try {
       this.log(`[SyncRunner] Running shared sync for ${boardType} using ${userId}'s token...`);
       await syncSharedData(client, boardType, token, this.log.bind(this));
@@ -661,20 +678,23 @@ export class SyncRunner {
         await syncAuroraBoardLocations({ db, board: boardType, log: this.log.bind(this) });
       }
     } catch (sharedError) {
+      nextCooldownMs = sharedSyncCooldownAfterError(sharedError, cooldownMs);
       const sharedErrorMessage = this.formatErrorMessage(sharedError);
       this.handleError(sharedError instanceof Error ? sharedError : new Error(sharedErrorMessage), {
         board: boardType,
         userId,
       });
-      this.log(`[SyncRunner] Shared sync for ${boardType} failed (user sync was OK): ${sharedErrorMessage}`);
+      this.log(
+        `[SyncRunner] Shared sync for ${boardType} failed (user sync was OK; retry cooldown ${Math.round(
+          nextCooldownMs / 1000,
+        )}s): ${sharedErrorMessage}`,
+      );
     } finally {
-      // Stamp on success AND failure, so the cooldown runs from the END of the
-      // work and a permanently failing board doesn't re-fire every cycle. In a
-      // `finally` with its own error handling: this runs after the user-half has
-      // already committed and been marked active, so a DB error here must never
-      // escape into syncSingleCredential's caller and record a credential
-      // failure for a user whose sync actually succeeded.
-      await this.stampSharedSyncFinishedSafely(db, cursor, boardType);
+      // Success and permanent/unknown failures get the full cooldown from the
+      // end of the work. Canonical transient Aurora failures get the shorter
+      // retry cooldown. Finalization is fenced by claimToken, so a stalled
+      // finisher cannot overwrite a newer claimant's full marker.
+      await this.stampSharedSyncFinishedSafely(db, cursor, boardType, claimToken, cooldownMs, nextCooldownMs);
     }
   }
 
@@ -689,9 +709,20 @@ export class SyncRunner {
     db: RunnerDb,
     cursor: { boardType: string; cursorName: string },
     boardType: string,
+    claimToken: SharedSyncClaimToken,
+    fullCooldownMs: number,
+    nextCooldownMs: number,
   ): Promise<void> {
     try {
-      await stampSharedSyncFinished(db, cursor);
+      const finalized = await stampSharedSyncFinished(db, {
+        ...cursor,
+        claimToken,
+        fullCooldownMs,
+        nextCooldownMs,
+      });
+      if (!finalized) {
+        this.log(`[SyncRunner] Shared-sync claim ownership changed for ${boardType}; leaving the newer cursor intact`);
+      }
     } catch (stampError) {
       const stampErrorMessage = this.formatErrorMessage(stampError);
       this.handleError(stampError instanceof Error ? stampError : new Error(stampErrorMessage), { board: boardType });
