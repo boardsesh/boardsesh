@@ -1,0 +1,662 @@
+import { createHash } from 'node:crypto';
+import { and, count, eq, inArray, or } from 'drizzle-orm';
+import { GraphQLError } from 'graphql';
+import { v4 as uuidv4 } from 'uuid';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
+import { db } from '../db/client';
+import * as dbSchema from '@boardsesh/db/schema';
+import { assertKnownBoardConfig } from '../graphql/resolvers/board-presence/board-catalog';
+import { boardPresenceMutations } from '../graphql/resolvers/board-presence/mutations';
+import { normalizeSetIds, SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/shared';
+import { socialBoardMutations } from '../graphql/resolvers/social/boards';
+import { BoardPresenceConfigInputSchema, CreateBoardInputSchema, UpdateBoardInputSchema } from '../validation/schemas';
+import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
+
+const PRODUCT_ID = 2_100_412_930;
+const LAYOUT_ID = 2_100_412_931;
+const SIZE_ID = 2_100_412_932;
+const SET_A_ID = 2_100_412_933;
+const SET_B_ID = 2_100_412_934;
+const OTHER_LAYOUT_ID = 2_100_412_935;
+const OTHER_SIZE_ID = 2_100_412_936;
+const UNKNOWN_LAYOUT_ID = 2_100_412_940;
+const UNKNOWN_SIZE_ID = 2_100_412_941;
+const UNKNOWN_SET_ID = 2_100_412_942;
+
+const AUTO_GYM_USER_ID = 'board-catalog-auto-gym-user';
+const PLAIN_CREATE_USER_ID = 'board-catalog-plain-create-user';
+const SERIAL_USER_ID = 'board-catalog-serial-user';
+const UPDATE_USER_ID = 'board-catalog-update-user';
+const TEST_USER_IDS = [AUTO_GYM_USER_ID, PLAIN_CREATE_USER_ID, SERIAL_USER_ID, UPDATE_USER_ID];
+
+let cleanupCatalogFixtures: () => Promise<void> = async () => {};
+let systemOwnerExistedBeforeSuite = false;
+
+function authCtx(userId: string): ConnectionContext {
+  return {
+    connectionId: `catalog-${userId}-${Math.random().toString(36).slice(2)}`,
+    isAuthenticated: true,
+    userId,
+  } as ConnectionContext;
+}
+
+function anonCtx(): ConnectionContext {
+  return {
+    connectionId: `catalog-anon-${Math.random().toString(36).slice(2)}`,
+    isAuthenticated: false,
+  } as ConnectionContext;
+}
+
+function presenceSlug(boardType: string, layoutId: number, sizeId: number, setIds: string): string {
+  const normalizedSetIds = normalizeSetIds(setIds);
+  const digest = createHash('sha256')
+    .update(`${boardType}:${layoutId}:${sizeId}:${normalizedSetIds}`)
+    .digest('hex')
+    .slice(0, 20);
+  return `presence-${boardType}-${layoutId}-${sizeId}-${digest}`;
+}
+
+async function insertTestBoard({
+  ownerId,
+  layoutId,
+  sizeId,
+  setIds,
+  name = 'Catalog validation board',
+  serialNumber = null,
+}: {
+  ownerId: string;
+  layoutId: number;
+  sizeId: number;
+  setIds: string;
+  name?: string;
+  serialNumber?: string | null;
+}): Promise<typeof dbSchema.userBoards.$inferSelect> {
+  const uuid = uuidv4();
+  const [board] = await db
+    .insert(dbSchema.userBoards)
+    .values({
+      uuid,
+      slug: uuid,
+      ownerId,
+      boardType: 'kilter',
+      layoutId,
+      sizeId,
+      setIds,
+      name,
+      serialNumber,
+    })
+    .returning();
+  return board;
+}
+
+async function sideEffectCounts(userId: string): Promise<{
+  boards: number;
+  gyms: number;
+  systemBoards: number;
+  systemOwners: number;
+}> {
+  const [[boardCount], [gymCount], [systemBoardCount], [systemOwnerCount]] = await Promise.all([
+    db.select({ total: count() }).from(dbSchema.userBoards).where(eq(dbSchema.userBoards.ownerId, userId)),
+    db.select({ total: count() }).from(dbSchema.gyms).where(eq(dbSchema.gyms.ownerId, userId)),
+    db
+      .select({ total: count() })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID)),
+    db.select({ total: count() }).from(dbSchema.users).where(eq(dbSchema.users.id, SYSTEM_BOARD_OWNER_ID)),
+  ]);
+  return {
+    boards: Number(boardCount?.total ?? 0),
+    gyms: Number(gymCount?.total ?? 0),
+    systemBoards: Number(systemBoardCount?.total ?? 0),
+    systemOwners: Number(systemOwnerCount?.total ?? 0),
+  };
+}
+
+async function expectUnknownBoardConfig(promise: Promise<unknown>): Promise<void> {
+  await expect(promise).rejects.toMatchObject({
+    extensions: { code: 'UNKNOWN_BOARD_CONFIG' },
+  });
+}
+
+beforeAll(async () => {
+  const [existingSystemOwner] = await db
+    .select({ id: dbSchema.users.id })
+    .from(dbSchema.users)
+    .where(eq(dbSchema.users.id, SYSTEM_BOARD_OWNER_ID))
+    .limit(1);
+  systemOwnerExistedBeforeSuite = existingSystemOwner !== undefined;
+
+  cleanupCatalogFixtures = await seedAuroraCatalogFixtures([
+    {
+      boardType: 'kilter',
+      productId: PRODUCT_ID,
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: [SET_A_ID, SET_B_ID],
+      associationIdBase: 2_100_412_950,
+      isListed: false,
+    },
+    {
+      boardType: 'kilter',
+      productId: PRODUCT_ID,
+      layoutId: OTHER_LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: [SET_A_ID],
+      associationIdBase: 2_100_412_960,
+      isListed: false,
+    },
+    {
+      boardType: 'kilter',
+      productId: PRODUCT_ID,
+      layoutId: LAYOUT_ID,
+      sizeId: OTHER_SIZE_ID,
+      setIds: [SET_A_ID],
+      associationIdBase: 2_100_412_970,
+      isListed: false,
+    },
+  ]);
+});
+
+beforeEach(async () => {
+  await db
+    .insert(dbSchema.users)
+    .values(
+      TEST_USER_IDS.map((userId) => ({
+        id: userId,
+        email: `${userId}@test.boardsesh.com`,
+        name: userId,
+      })),
+    )
+    .onConflictDoNothing();
+});
+
+afterEach(async () => {
+  await db
+    .delete(dbSchema.userBoards)
+    .where(
+      or(
+        inArray(dbSchema.userBoards.ownerId, TEST_USER_IDS),
+        and(
+          eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
+          inArray(dbSchema.userBoards.layoutId, [LAYOUT_ID, UNKNOWN_LAYOUT_ID]),
+        ),
+      ),
+    );
+  await db.delete(dbSchema.gyms).where(inArray(dbSchema.gyms.ownerId, TEST_USER_IDS));
+  await db.delete(dbSchema.users).where(inArray(dbSchema.users.id, TEST_USER_IDS));
+  vi.restoreAllMocks();
+});
+
+afterAll(async () => {
+  await cleanupCatalogFixtures();
+  if (!systemOwnerExistedBeforeSuite) {
+    await db.delete(dbSchema.users).where(eq(dbSchema.users.id, SYSTEM_BOARD_OWNER_ID));
+  }
+});
+
+describe('numeric board set CSV schemas', () => {
+  it('share the strict grammar without transforming the submitted representation', () => {
+    const submittedSetIds = '002,1,002';
+
+    expect(
+      BoardPresenceConfigInputSchema.parse({
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: submittedSetIds,
+      }).setIds,
+    ).toBe(submittedSetIds);
+    expect(
+      CreateBoardInputSchema.parse({
+        boardType: 'kilter',
+        layoutId: 1,
+        sizeId: 1,
+        setIds: submittedSetIds,
+        name: 'Schema test board',
+      }).setIds,
+    ).toBe(submittedSetIds);
+    expect(
+      UpdateBoardInputSchema.parse({
+        boardUuid: '11111111-1111-4111-8111-111111111111',
+        setIds: submittedSetIds,
+      }).setIds,
+    ).toBe(submittedSetIds);
+  });
+
+  it('rejects empty, spaced, trailing-comma, nondigit, and overlong values in every config schema', () => {
+    const malformedSetIds = ['', '1, 2', '1,2,', '1,two', '1'.repeat(257)];
+
+    for (const setIds of malformedSetIds) {
+      expect(
+        BoardPresenceConfigInputSchema.safeParse({ boardType: 'kilter', layoutId: 1, sizeId: 1, setIds }).success,
+      ).toBe(false);
+      expect(
+        CreateBoardInputSchema.safeParse({
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 1,
+          setIds,
+          name: 'Schema test board',
+        }).success,
+      ).toBe(false);
+      expect(
+        UpdateBoardInputSchema.safeParse({
+          boardUuid: '11111111-1111-4111-8111-111111111111',
+          setIds,
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('assertKnownBoardConfig', () => {
+  it('accepts an exact unlisted Aurora association in any order with duplicate set IDs', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
+
+    await expect(
+      assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, `${SET_B_ID},${SET_A_ID},${SET_B_ID}`),
+    ).resolves.toBeUndefined();
+
+    expect(selectSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a set associated only with another layout, another size, or no association', async () => {
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', OTHER_LAYOUT_ID, SIZE_ID, String(SET_B_ID)));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', LAYOUT_ID, OTHER_SIZE_ID, String(SET_B_ID)));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, String(UNKNOWN_SET_ID)));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', UNKNOWN_LAYOUT_ID, SIZE_ID, String(SET_A_ID)));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', LAYOUT_ID, UNKNOWN_SIZE_ID, String(SET_A_ID)));
+  });
+
+  it('rejects malformed and out-of-range IDs before issuing a catalog query', async () => {
+    const selectSpy = vi.spyOn(db, 'select');
+
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, `${SET_A_ID}, 2`));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', 2_147_483_648, SIZE_ID, String(SET_A_ID)));
+    await expectUnknownBoardConfig(assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, '2147483648'));
+
+    expect(selectSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not mask a database failure', async () => {
+    const databaseError = new Error('catalog database unavailable');
+    vi.spyOn(db, 'select').mockImplementationOnce(() => {
+      throw databaseError;
+    });
+
+    await expect(assertKnownBoardConfig('kilter', LAYOUT_ID, SIZE_ID, String(SET_A_ID))).rejects.toBe(databaseError);
+  });
+
+  it('validates MoonBoard against its exact static size, layout, and layout-specific sets', async () => {
+    const moonboardLayout = MOONBOARD_LAYOUTS['moonboard-2016'];
+    const [firstSet, secondSet] = MOONBOARD_SETS['moonboard-2016'];
+
+    await expect(
+      assertKnownBoardConfig(
+        'moonboard',
+        moonboardLayout.id,
+        MOONBOARD_SIZE.id,
+        `${secondSet.id},${firstSet.id},${secondSet.id}`,
+      ),
+    ).resolves.toBeUndefined();
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig('moonboard', moonboardLayout.id, MOONBOARD_SIZE.id + 1, String(firstSet.id)),
+    );
+    await expectUnknownBoardConfig(assertKnownBoardConfig('moonboard', 99_999, MOONBOARD_SIZE.id, String(firstSet.id)));
+    await expectUnknownBoardConfig(
+      assertKnownBoardConfig(
+        'moonboard',
+        moonboardLayout.id,
+        MOONBOARD_SIZE.id,
+        String(MOONBOARD_SETS['moonboard-2010'][0].id),
+      ),
+    );
+  });
+});
+
+describe('board-presence catalog gates', () => {
+  it('keeps an anonymous shared miss as NOT_FOUND without creating a system board', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+
+    await expect(
+      boardPresenceMutations.resolveBoardForConfig(
+        undefined,
+        {
+          boardType: 'kilter',
+          layoutId: UNKNOWN_LAYOUT_ID,
+          sizeId: UNKNOWN_SIZE_ID,
+          setIds: String(UNKNOWN_SET_ID),
+        },
+        anonCtx(),
+      ),
+    ).rejects.toMatchObject({ extensions: { code: 'NOT_FOUND' } });
+
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
+  });
+
+  it('rejects an authenticated shared miss before creating the system owner or board', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+
+    await expectUnknownBoardConfig(
+      boardPresenceMutations.resolveBoardForConfig(
+        undefined,
+        {
+          boardType: 'kilter',
+          layoutId: UNKNOWN_LAYOUT_ID,
+          sizeId: UNKNOWN_SIZE_ID,
+          setIds: String(UNKNOWN_SET_ID),
+        },
+        authCtx(AUTO_GYM_USER_ID),
+      ),
+    );
+
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
+  });
+
+  it('keeps malformed CSV at the existing presence schema-validation layer', async () => {
+    let caughtError: unknown;
+    try {
+      await boardPresenceMutations.resolveBoardForConfig(
+        undefined,
+        {
+          boardType: 'kilter',
+          layoutId: LAYOUT_ID,
+          sizeId: SIZE_ID,
+          setIds: `${SET_A_ID}, ${SET_B_ID}`,
+        },
+        authCtx(AUTO_GYM_USER_ID),
+      );
+    } catch (error) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(Error);
+    expect(caughtError).not.toBeInstanceOf(GraphQLError);
+    expect((caughtError as Error).message).toMatch(/comma-separated list of integers/);
+  });
+
+  it('continues to resolve an existing legacy-invalid shared row', async () => {
+    await db
+      .insert(dbSchema.users)
+      .values({ id: SYSTEM_BOARD_OWNER_ID, email: 'system@boardsesh.com', name: 'Boardsesh' })
+      .onConflictDoNothing();
+    const setIds = String(UNKNOWN_SET_ID);
+    const [legacyBoard] = await db
+      .insert(dbSchema.userBoards)
+      .values({
+        uuid: uuidv4(),
+        slug: presenceSlug('kilter', UNKNOWN_LAYOUT_ID, UNKNOWN_SIZE_ID, setIds),
+        ownerId: SYSTEM_BOARD_OWNER_ID,
+        boardType: 'kilter',
+        layoutId: UNKNOWN_LAYOUT_ID,
+        sizeId: UNKNOWN_SIZE_ID,
+        setIds,
+        name: 'Legacy shared board',
+        isPublic: false,
+        isUnlisted: true,
+      })
+      .returning();
+
+    const resolved = await boardPresenceMutations.resolveBoardForConfig(
+      undefined,
+      { boardType: 'kilter', layoutId: UNKNOWN_LAYOUT_ID, sizeId: UNKNOWN_SIZE_ID, setIds },
+      authCtx(AUTO_GYM_USER_ID),
+    );
+
+    expect(resolved.boardId).toBe(legacyBoard.id);
+  });
+
+  it("binds a serial to the caller's existing legacy-invalid board without catalog validation", async () => {
+    const legacyBoard = await insertTestBoard({
+      ownerId: SERIAL_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Legacy owned board',
+    });
+
+    const resolved = await boardPresenceMutations.resolveBoardForSerial(
+      undefined,
+      {
+        serial: 'CATALOG-LEGACY-1',
+        boardType: 'kilter',
+        layoutId: UNKNOWN_LAYOUT_ID,
+        sizeId: UNKNOWN_SIZE_ID,
+        setIds: String(UNKNOWN_SET_ID),
+      },
+      authCtx(SERIAL_USER_ID),
+    );
+
+    expect(resolved.boardId).toBe(legacyBoard.id);
+    const [updated] = await db
+      .select({ serialNumber: dbSchema.userBoards.serialNumber })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.id, legacyBoard.id));
+    expect(updated?.serialNumber).toBe('CATALOG-LEGACY-1');
+  });
+
+  it('rejects a fresh serial-board insert for an unknown config with no board side effect', async () => {
+    const before = await sideEffectCounts(SERIAL_USER_ID);
+
+    await expectUnknownBoardConfig(
+      boardPresenceMutations.resolveBoardForSerial(
+        undefined,
+        {
+          serial: 'CATALOG-FRESH-1',
+          boardType: 'kilter',
+          layoutId: UNKNOWN_LAYOUT_ID,
+          sizeId: UNKNOWN_SIZE_ID,
+          setIds: String(UNKNOWN_SET_ID),
+        },
+        authCtx(SERIAL_USER_ID),
+      ),
+    );
+
+    expect(await sideEffectCounts(SERIAL_USER_ID)).toEqual(before);
+  });
+});
+
+describe('social board create catalog gate', () => {
+  function createInput(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      boardType: 'kilter',
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: `${SET_B_ID},${SET_A_ID},${SET_B_ID}`,
+      name: 'Catalog validated board',
+      ...overrides,
+    };
+  }
+
+  it('creates the auto-gym transaction path and preserves the submitted setIds representation', async () => {
+    const submittedSetIds = `${SET_B_ID},${SET_A_ID},${SET_B_ID}`;
+    const created = await socialBoardMutations.createBoard(
+      undefined,
+      { input: createInput({ setIds: submittedSetIds }) },
+      authCtx(AUTO_GYM_USER_ID),
+    );
+
+    expect(created.setIds).toBe(submittedSetIds);
+    expect(created.gymId).not.toBeNull();
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toMatchObject({ boards: 1, gyms: 1 });
+  });
+
+  it('creates the plain insert path and preserves raw setIds when the owner already has a gym', async () => {
+    await db.insert(dbSchema.gyms).values({
+      uuid: uuidv4(),
+      slug: uuidv4(),
+      ownerId: PLAIN_CREATE_USER_ID,
+      name: 'Existing gym',
+    });
+    const submittedSetIds = `${SET_A_ID},${SET_B_ID},${SET_A_ID}`;
+
+    const created = await socialBoardMutations.createBoard(
+      undefined,
+      { input: createInput({ setIds: submittedSetIds, name: 'Plain catalog board' }) },
+      authCtx(PLAIN_CREATE_USER_ID),
+    );
+
+    expect(created.setIds).toBe(submittedSetIds);
+    expect(await sideEffectCounts(PLAIN_CREATE_USER_ID)).toMatchObject({ boards: 1, gyms: 1 });
+  });
+
+  it('rejects an unknown auto-gym-path config before creating a board or gym', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.createBoard(
+        undefined,
+        {
+          input: createInput({
+            layoutId: UNKNOWN_LAYOUT_ID,
+            sizeId: UNKNOWN_SIZE_ID,
+            setIds: String(UNKNOWN_SET_ID),
+          }),
+        },
+        authCtx(AUTO_GYM_USER_ID),
+      ),
+    );
+
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
+  });
+
+  it('rejects an unknown plain-insert-path config without touching the existing gym or boards', async () => {
+    await db.insert(dbSchema.gyms).values({
+      uuid: uuidv4(),
+      slug: uuidv4(),
+      ownerId: PLAIN_CREATE_USER_ID,
+      name: 'Existing gym',
+    });
+    const before = await sideEffectCounts(PLAIN_CREATE_USER_ID);
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.createBoard(
+        undefined,
+        {
+          input: createInput({
+            layoutId: UNKNOWN_LAYOUT_ID,
+            sizeId: UNKNOWN_SIZE_ID,
+            setIds: String(UNKNOWN_SET_ID),
+          }),
+        },
+        authCtx(PLAIN_CREATE_USER_ID),
+      ),
+    );
+
+    expect(await sideEffectCounts(PLAIN_CREATE_USER_ID)).toEqual(before);
+  });
+
+  it('returns UNKNOWN_BOARD_CONFIG before the legacy duplicate check', async () => {
+    await insertTestBoard({
+      ownerId: PLAIN_CREATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Legacy junk duplicate',
+    });
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.createBoard(
+        undefined,
+        {
+          input: createInput({
+            layoutId: UNKNOWN_LAYOUT_ID,
+            sizeId: UNKNOWN_SIZE_ID,
+            setIds: String(UNKNOWN_SET_ID),
+          }),
+        },
+        authCtx(PLAIN_CREATE_USER_ID),
+      ),
+    );
+    expect((await sideEffectCounts(PLAIN_CREATE_USER_ID)).boards).toBe(1);
+  });
+
+  it('keeps malformed CSV at the existing schema-validation layer, not UNKNOWN_BOARD_CONFIG', async () => {
+    let caughtError: unknown;
+    try {
+      await socialBoardMutations.createBoard(
+        undefined,
+        { input: createInput({ setIds: `${SET_A_ID}, ${SET_B_ID}` }) },
+        authCtx(AUTO_GYM_USER_ID),
+      );
+    } catch (error) {
+      caughtError = error;
+    }
+
+    expect(caughtError).toBeInstanceOf(Error);
+    expect(caughtError).not.toBeInstanceOf(GraphQLError);
+    expect((caughtError as Error).message).toMatch(/comma-separated list of integers/);
+    expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toMatchObject({ boards: 0, gyms: 0 });
+  });
+});
+
+describe('social board update catalog gate', () => {
+  it('validates the effective tuple for a partial config edit and preserves raw setIds', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: String(SET_A_ID),
+    });
+    const submittedSetIds = `${SET_B_ID},${SET_A_ID},${SET_B_ID}`;
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      { input: { boardUuid: board.uuid, setIds: submittedSetIds } },
+      authCtx(UPDATE_USER_ID),
+    );
+
+    expect(updated.layoutId).toBe(LAYOUT_ID);
+    expect(updated.sizeId).toBe(SIZE_ID);
+    expect(updated.setIds).toBe(submittedSetIds);
+  });
+
+  it('rejects an invalid partial config edit before the write and preserves the row', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: String(SET_B_ID),
+      name: 'Before rejection',
+    });
+    const before = await db
+      .select()
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.id, board.id))
+      .then((rows) => rows[0]);
+
+    await expectUnknownBoardConfig(
+      socialBoardMutations.updateBoard(
+        undefined,
+        { input: { boardUuid: board.uuid, layoutId: OTHER_LAYOUT_ID } },
+        authCtx(UPDATE_USER_ID),
+      ),
+    );
+
+    const [after] = await db.select().from(dbSchema.userBoards).where(eq(dbSchema.userBoards.id, board.id));
+    expect(after).toEqual(before);
+  });
+
+  it('allows metadata-only edits on a legacy-invalid board', async () => {
+    const board = await insertTestBoard({
+      ownerId: UPDATE_USER_ID,
+      layoutId: UNKNOWN_LAYOUT_ID,
+      sizeId: UNKNOWN_SIZE_ID,
+      setIds: String(UNKNOWN_SET_ID),
+      name: 'Legacy metadata',
+    });
+
+    const updated = await socialBoardMutations.updateBoard(
+      undefined,
+      { input: { boardUuid: board.uuid, name: 'Legacy metadata fixed' } },
+      authCtx(UPDATE_USER_ID),
+    );
+
+    expect(updated.name).toBe('Legacy metadata fixed');
+    expect(updated.layoutId).toBe(UNKNOWN_LAYOUT_ID);
+    expect(updated.sizeId).toBe(UNKNOWN_SIZE_ID);
+    expect(updated.setIds).toBe(String(UNKNOWN_SET_ID));
+  });
+});

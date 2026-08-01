@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { socialBoardQueries, socialBoardMutations } from '../graphql/resolvers/social/boards';
 import { socialGymQueries, socialGymMutations } from '../graphql/resolvers/social/gyms';
+import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 
 /**
  * Real-DB coverage for the moderator board/gym editing authorization
@@ -134,6 +135,33 @@ let kilterGymUuid: string;
 let kilterGymId: number;
 let kilterBoardUuid: string;
 let kilterBoardId: number;
+
+let cleanupBoardEditCatalogFixtures: () => Promise<void> = async () => {};
+
+beforeAll(async () => {
+  cleanupBoardEditCatalogFixtures = await seedAuroraCatalogFixtures([
+    {
+      boardType: 'kilter',
+      productId: 2_100_412_920,
+      layoutId: 2,
+      sizeId: 11,
+      setIds: [3, 4],
+      associationIdBase: 2_100_413_200,
+    },
+    {
+      boardType: 'kilter',
+      productId: 2_100_412_920,
+      layoutId: 9,
+      sizeId: 9,
+      setIds: [9],
+      associationIdBase: 2_100_413_210,
+    },
+  ]);
+});
+
+afterAll(async () => {
+  await cleanupBoardEditCatalogFixtures();
+});
 
 beforeEach(async () => {
   // Reset only the tables this suite owns; CASCADE clears their FK dependents.

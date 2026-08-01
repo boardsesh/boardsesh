@@ -7,6 +7,7 @@ import {
   LongitudeSchema,
   SlugSchema,
   BoardSerialSchema,
+  NumericCsvSchema,
   normalizeSerial,
 } from './primitives';
 
@@ -29,7 +30,7 @@ export const CreateBoardInputSchema = z.object({
   boardType: BoardNameSchema,
   layoutId: z.number().int().positive('Layout ID must be positive'),
   sizeId: z.number().int().positive('Size ID must be positive'),
-  setIds: z.string().min(1, 'Set IDs cannot be empty'),
+  setIds: NumericCsvSchema,
   name: z.string().min(1, 'Board name cannot be empty').max(100, 'Board name too long'),
   description: z.string().max(500, 'Description too long').optional(),
   locationName: z.string().max(200, 'Location name too long').optional(),
@@ -68,7 +69,7 @@ export const UpdateBoardInputSchema = z.object({
   isAngleAdjustable: z.boolean().optional(),
   layoutId: z.number().int().positive('Layout ID must be positive').optional(),
   sizeId: z.number().int().positive('Size ID must be positive').optional(),
-  setIds: z.string().min(1, 'Set IDs cannot be empty').optional(),
+  setIds: NumericCsvSchema.optional(),
   serialNumber: NullableBoardSerialInputSchema,
   timerName: z.string().min(1).max(200, 'Timer name too long').optional().nullable(),
 });

@@ -79,6 +79,17 @@ export const BoardNameSchema = z.enum(SUPPORTED_BOARDS, {
 });
 
 /**
+ * A non-empty comma-separated list of decimal integer IDs. This deliberately
+ * validates without normalising so callers that persist the submitted config
+ * retain the exact representation they received.
+ */
+export const NumericCsvSchema = z
+  .string()
+  .min(1, 'Set IDs cannot be empty')
+  .max(256, 'Set IDs too long')
+  .regex(/^\d+(,\d+)*$/, 'Set IDs must be a comma-separated list of integers');
+
+/**
  * Slug validation schema
  */
 export const SlugSchema = z

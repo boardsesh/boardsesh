@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vite-plus/test';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vite-plus/test';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
@@ -11,6 +11,7 @@ import {
 } from '../graphql/resolvers/social/gym-matching';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
 import { resetAllRateLimits } from '../utils/rate-limiter';
+import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 
 /**
  * Real-DB coverage for the gym-creation dedup surface:
@@ -85,15 +86,31 @@ const countGyms = async (): Promise<number> => {
 const findSimilarGyms = (input: unknown, ctx: ConnectionContext) =>
   socialGymMatchQueries.findSimilarGyms(null, { input }, ctx) as Promise<SimilarGymResult[]>;
 
-// A distinct size_id per board so createBoard's (owner, type, layout, size,
-// set_ids) unique constraint never trips across the several boards in this suite.
-let boardConfigCounter = 0;
 const createBoard = (input: Record<string, unknown>, ctx: ConnectionContext) =>
   socialBoardMutations.createBoard(
     null,
-    { input: { boardType: 'kilter', layoutId: 1, sizeId: 900 + boardConfigCounter++, setIds: '1,2', ...input } },
+    { input: { boardType: 'kilter', layoutId: 1, sizeId: 900, setIds: '1,2', ...input } },
     ctx,
   ) as Promise<{ gymId: number | null; gymUuid: string | null }>;
+
+let cleanupAutoGymCatalogFixture: () => Promise<void> = async () => {};
+
+beforeAll(async () => {
+  cleanupAutoGymCatalogFixture = await seedAuroraCatalogFixtures([
+    {
+      boardType: 'kilter',
+      productId: 2_100_412_910,
+      layoutId: 1,
+      sizeId: 900,
+      setIds: [1, 2],
+      associationIdBase: 2_100_413_100,
+    },
+  ]);
+});
+
+afterAll(async () => {
+  await cleanupAutoGymCatalogFixture();
+});
 
 beforeEach(async () => {
   resetAllRateLimits();

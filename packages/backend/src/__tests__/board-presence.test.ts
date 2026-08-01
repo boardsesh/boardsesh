@@ -25,6 +25,7 @@ import { socialBoardQueries } from '../graphql/resolvers/social/boards';
 import { getBoardSeqFloor } from '../graphql/resolvers/board-presence/shared';
 import { setCachedBoardPresenceStats } from '../graphql/resolvers/board-presence/stats';
 import { tickMutations } from '../graphql/resolvers/ticks/mutations';
+import { seedAuroraCatalogFixtures } from './helpers/board-catalog-fixture';
 
 // Board presence is always-on (the BOARD_PRESENCE_ENABLED env gate and the
 // PostHog flag were removed when the feature went GA), so the suite needs no
@@ -38,6 +39,49 @@ const TEST_CLIMB_UUID = 'board-presence-test-climb-uuid';
 const OTHER_TEST_CLIMB_UUID = 'board-presence-other-climb-uuid';
 const BOARD_MEMBERSHIP_TTL_MS = 43_200_000;
 const ALIAS_TEST_CLIMB_UUID = 'board-presence-alias-climb-uuid';
+
+let cleanupBoardPresenceCatalogFixtures: () => Promise<void> = async () => {};
+
+beforeAll(async () => {
+  cleanupBoardPresenceCatalogFixtures = await seedAuroraCatalogFixtures([
+    {
+      boardType: 'kilter',
+      productId: 2_100_412_900,
+      layoutId: 1,
+      sizeId: 10,
+      setIds: [1, 2, 7, 8],
+      associationIdBase: 2_100_413_000,
+    },
+    {
+      boardType: 'kilter',
+      productId: 2_100_412_900,
+      layoutId: 2,
+      sizeId: 20,
+      setIds: [5, 6],
+      associationIdBase: 2_100_413_010,
+    },
+    {
+      boardType: 'kilter',
+      productId: 2_100_412_900,
+      layoutId: 3,
+      sizeId: 30,
+      setIds: [7, 8],
+      associationIdBase: 2_100_413_020,
+    },
+    {
+      boardType: 'tension',
+      productId: 2_100_412_900,
+      layoutId: 1,
+      sizeId: 10,
+      setIds: [1, 2],
+      associationIdBase: 2_100_413_030,
+    },
+  ]);
+});
+
+afterAll(async () => {
+  await cleanupBoardPresenceCatalogFixtures();
+});
 
 function authCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
@@ -426,12 +470,12 @@ describe('board-presence resolvers', () => {
     it('resolves serial-less boards to a stable shared per-config board', async () => {
       const first = await boardPresenceMutations.resolveBoardForConfig(
         undefined,
-        { boardType: 'moonboard', layoutId: 99, sizeId: 1, setIds: '1' },
+        { boardType: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1' },
         authCtx(),
       );
       const second = await boardPresenceMutations.resolveBoardForConfig(
         undefined,
-        { boardType: 'moonboard', layoutId: 99, sizeId: 1, setIds: '1' },
+        { boardType: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1' },
         authCtx({ userId: SECOND_USER_ID }),
       );
 
@@ -448,23 +492,23 @@ describe('board-presence resolvers', () => {
     });
 
     it('converges concurrent serial-less config creates onto one normalized shared board', async () => {
-      const layoutId = 9000 + Math.floor(Math.random() * 10_000);
+      const layoutId = 2;
       const [first, second] = await Promise.all([
         boardPresenceMutations.resolveBoardForConfig(
           undefined,
-          { boardType: 'moonboard', layoutId, sizeId: 1, setIds: '3,1' },
+          { boardType: 'moonboard', layoutId, sizeId: 1, setIds: '3,2' },
           authCtx(),
         ),
         boardPresenceMutations.resolveBoardForConfig(
           undefined,
-          { boardType: 'moonboard', layoutId, sizeId: 1, setIds: '1,3' },
+          { boardType: 'moonboard', layoutId, sizeId: 1, setIds: '2,3' },
           authCtx({ userId: SECOND_USER_ID }),
         ),
       ]);
 
       expect(second.boardId).toBe(first.boardId);
-      expect(first.setIds).toBe('1,3');
-      expect(second.setIds).toBe('1,3');
+      expect(first.setIds).toBe('2,3');
+      expect(second.setIds).toBe('2,3');
 
       const [row] = await db.execute(sql`
         SELECT count(*)::int AS count, min(set_ids) AS set_ids
@@ -476,7 +520,7 @@ describe('board-presence resolvers', () => {
           AND deleted_at IS NULL
       `);
       expect(Number((row as { count: number }).count)).toBe(1);
-      expect((row as { set_ids: string }).set_ids).toBe('1,3');
+      expect((row as { set_ids: string }).set_ids).toBe('2,3');
     });
 
     it('rejects binding a second serial onto an already-bound board via the unique index', async () => {

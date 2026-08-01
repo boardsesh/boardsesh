@@ -17,6 +17,7 @@ import {
   ReportBoardClimbInputSchema,
 } from '../../../validation/schemas';
 import { generateUniqueSlug } from '../social/boards';
+import { assertKnownBoardConfig } from './board-catalog';
 import { logger } from '../../../utils/logger';
 import { pubsub } from '../../../pubsub/index';
 import { roomManager } from '../../../services/room-manager';
@@ -149,6 +150,7 @@ async function bindOrCreateOwnBoardForSerial(
     }
   }
 
+  await assertKnownBoardConfig(config.boardType, config.layoutId, config.sizeId, config.setIds);
   const uuid = uuidv4();
   const name = defaultBoardName(config.boardType);
   const slug = await generateUniqueSlug(name);

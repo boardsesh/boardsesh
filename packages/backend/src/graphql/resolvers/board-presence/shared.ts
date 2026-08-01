@@ -8,6 +8,7 @@ import * as dbSchema from '@boardsesh/db/schema';
 import { pubsub } from '../../../pubsub/index';
 import { logger } from '../../../utils/logger';
 import { isUniqueViolation } from '../../../utils/postgres-errors';
+import { assertKnownBoardConfig } from './board-catalog';
 
 /**
  * Validate the `boardId` argument is a positive integer. The SDL types it as
@@ -577,6 +578,7 @@ export async function resolveSharedBoardForConfig(
     throw new GraphQLError('Board not found', { extensions: { code: 'NOT_FOUND' } });
   }
 
+  await assertKnownBoardConfig(boardType, layoutId, sizeId, setIds);
   await ensureSystemBoardOwner();
 
   try {

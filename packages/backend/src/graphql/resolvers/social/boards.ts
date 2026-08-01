@@ -25,6 +25,7 @@ import { findExactNameMatchesWithin, decideAutoGymAttachment, AUTO_GYM_MATCH_RAD
 import { isGenericGymName } from '@boardsesh/db/queries';
 import { getUserCommunityRoles, hasAdminOrLeader, rolesGrantAdminOrLeader } from './roles';
 import { SYSTEM_BOARD_OWNER_ID, isRowAnonReadable, requireAnonReadableBoard } from '../board-presence/shared';
+import { assertKnownBoardConfig } from '../board-presence/board-catalog';
 import { publishBoardQueuePreviewTombstoneForBoard } from '../../../services/board-queue-preview';
 import { logger } from '../../../utils/logger';
 import { redisClientManager } from '../../../redis/client';
@@ -1600,6 +1601,12 @@ export const socialBoardMutations = {
     await applyRateLimit(ctx, 10, 'createBoard');
 
     const validatedInput = validateInput(CreateBoardInputSchema, input, 'input');
+    await assertKnownBoardConfig(
+      validatedInput.boardType,
+      validatedInput.layoutId,
+      validatedInput.sizeId,
+      validatedInput.setIds,
+    );
     const userId = ctx.userId!;
 
     // Check for duplicate config
@@ -1863,6 +1870,23 @@ export const socialBoardMutations = {
     // owner/admin may edit. Community moderators can fix outdated catalog boards.
     await requireBoardEditAccess(ctx, board);
 
+    // Config field changes (layoutId, sizeId, setIds). Authorized editors may
+    // change these even when the board has logged climbs — a config change
+    // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
+    // left untouched: they keep referencing the climbs/config they were logged
+    // against. We do not delete, move, or modify any tick rows here.
+    const hasConfigChange =
+      validatedInput.layoutId !== undefined ||
+      validatedInput.sizeId !== undefined ||
+      validatedInput.setIds !== undefined;
+    const newLayoutId = validatedInput.layoutId ?? board.layoutId;
+    const newSizeId = validatedInput.sizeId ?? board.sizeId;
+    const newSetIds = validatedInput.setIds ?? board.setIds;
+
+    if (hasConfigChange) {
+      await assertKnownBoardConfig(board.boardType, newLayoutId, newSizeId, newSetIds);
+    }
+
     // Build update values (only provided fields)
     const updateValues: Record<string, unknown> = {
       updatedAt: new Date(),
@@ -1887,16 +1911,6 @@ export const socialBoardMutations = {
     if (validatedInput.serialNumber !== undefined) updateValues.serialNumber = validatedInput.serialNumber;
     if (validatedInput.timerName !== undefined) updateValues.timerName = validatedInput.timerName;
 
-    // Config field changes (layoutId, sizeId, setIds). Authorized editors may
-    // change these even when the board has logged climbs — a config change
-    // reflects a real physical reconfiguration. Old boardsesh_ticks rows are
-    // left untouched: they keep referencing the climbs/config they were logged
-    // against. We do not delete, move, or modify any tick rows here.
-    const hasConfigChange =
-      validatedInput.layoutId !== undefined ||
-      validatedInput.sizeId !== undefined ||
-      validatedInput.setIds !== undefined;
-
     if (hasConfigChange) {
       // Check the unique constraint: no other active board with the same config
       // for the board's OWNER (not the caller — a moderator may be editing a
@@ -1905,10 +1919,6 @@ export const socialBoardMutations = {
       // config), so skip the pre-check there or we'd block the very catalog
       // fixes this feature exists for.
       if (board.ownerId !== SYSTEM_BOARD_OWNER_ID) {
-        const newLayoutId = validatedInput.layoutId ?? board.layoutId;
-        const newSizeId = validatedInput.sizeId ?? board.sizeId;
-        const newSetIds = validatedInput.setIds ?? board.setIds;
-
         const [configConflict] = await db
           .select({ id: dbSchema.userBoards.id })
           .from(dbSchema.userBoards)
