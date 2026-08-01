@@ -2,6 +2,8 @@ import { MemoryRateLimiter, RateLimitError } from '@boardsesh/rate-limit';
 
 const DEFAULT_WINDOW_MS = 60_000;
 const DEFAULT_MAX_REQUESTS = 60;
+// Deliberately no process-wide timer: cleanup happens on traffic and the
+// shared limiter's hard entry cap bounds an idle backend until traffic resumes.
 const rateLimiter = new MemoryRateLimiter();
 
 export { RateLimitError };
