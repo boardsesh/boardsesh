@@ -535,7 +535,8 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
     expect(result.skippedReason).toBe(CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON);
     expect(result.skippedReason).not.toBe(DUPLICATE_CIRCUIT_OWNER_SKIP_REASON);
     expect(result.circuitPlaylistRefusals).toEqual({ foreign: 0, ambiguous: 0, invariant: 1 });
-    expect(logged.some((line) => line.includes('"reason":"own"'))).toBe(true);
+    expect(logged.some((line) => line.includes('"reason":"own"'))).toBe(false);
+    expect(logged.some((line) => line.includes('invariant/concurrency warning'))).toBe(false);
     expect(errorLogged).toHaveLength(1);
     expect(JSON.parse(errorLogged[0] ?? '{}')).toEqual({
       level: 'error',
@@ -570,6 +571,33 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
     expect(insertsInto(playlistClimbs)).toHaveLength(0);
     expect(calls.filter((call) => call.kind === 'select' || call.kind === 'delete')).toHaveLength(0);
     expect(calls.filter((call) => call.kind === 'transaction')).toHaveLength(1);
+  });
+
+  it('keeps the valid input-row metric while de-duplicating source-only circuit writes', async () => {
+    const { db, calls, insertsInto } = createDbShim();
+    const malformed = { name: 'Missing UUID' } as unknown as CircuitFixture;
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      '',
+      [circuit('source-only', 'Old name'), malformed, circuit('source-only', 'New name')],
+      () => {},
+      () => {},
+    );
+
+    expect(result).toEqual({
+      synced: 2,
+      skipped: 1,
+      skippedReason: CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
+      circuitPlaylistRefusals: { foreign: 0, ambiguous: 0, invariant: 1 },
+    });
+    expect(calls.filter((call) => call.kind === 'execute')).toHaveLength(1);
+    const [sourceInsert] = insertsInto(boardCircuits);
+    const sourceValues = sourceInsert?.args[0] as Array<{ uuid: string; name: string }>;
+    expect(sourceValues).toEqual([expect.objectContaining({ uuid: 'source-only', name: 'New name' })]);
   });
 
   it('takes every namespaced advisory lock before the source upsert and fresh owner read', async () => {

@@ -173,6 +173,7 @@ function logCircuitRefusal(
         reason: input.reason,
       }),
     );
+    return;
   }
 
   if (input.reason === 'foreign' || input.reason === 'ambiguous') {
