@@ -87,6 +87,7 @@ const shimInsertedRows: Array<Record<string, unknown>> = [];
  */
 const shimConflictSets: Array<Record<string, unknown>> = [];
 const shimExistingClimbStatRows: Array<{ climbUuid: string; angle: number }> = [];
+const shimClimbStatSelectPredicates: SQL[] = [];
 
 function createDbShim() {
   const fluent: Record<string, unknown> = {};
@@ -100,14 +101,17 @@ function createDbShim() {
       if (prop === 'execute') return async () => undefined;
       if (prop === 'select') {
         return (selectedColumns: Record<string, unknown>) => {
-          const rows =
-            'climbUuid' in selectedColumns && 'angle' in selectedColumns ? [...shimExistingClimbStatRows] : [];
+          const isClimbStatKeySelect = 'climbUuid' in selectedColumns && 'angle' in selectedColumns;
+          const rows = isClimbStatKeySelect ? [...shimExistingClimbStatRows] : [];
           const terminal = Object.assign(Promise.resolve(rows), {
             limit: () => Promise.resolve(rows),
           });
           return {
             from: () => ({
-              where: () => terminal,
+              where: (predicate: SQL) => {
+                if (isClimbStatKeySelect) shimClimbStatSelectPredicates.push(predicate);
+                return terminal;
+              },
             }),
           };
         };
@@ -664,6 +668,7 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     shimInsertedRows.length = 0;
     shimConflictSets.length = 0;
     shimExistingClimbStatRows.length = 0;
+    shimClimbStatSelectPredicates.length = 0;
   });
 
   function stat(overrides: Partial<ClimbStats> = {}) {
@@ -695,6 +700,22 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
 
     expect(writtenStatsRows()).toHaveLength(0);
     expect(shimConflictSets.filter((set) => 'upstreamQualityAverage' in set)).toHaveLength(0);
+  });
+
+  it('bounds the existing-row pre-read by both candidate UUID and angle', async () => {
+    mockSharedSync.mockResolvedValueOnce(
+      complete({
+        climb_stats: [stat({ climb_uuid: 'ANGLE-40', angle: 40 }), stat({ climb_uuid: 'ANGLE-50', angle: 50 })],
+      }),
+    );
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(shimClimbStatSelectPredicates).toHaveLength(1);
+    const predicateQuery = dialect.sqlToQuery(shimClimbStatSelectPredicates[0]);
+    expect(predicateQuery.sql).toContain('"climb_uuid" in');
+    expect(predicateQuery.sql).toContain('"angle" in');
+    expect(predicateQuery.params).toEqual(['decoy', 'ANGLE-40', 'ANGLE-50', 40, 50]);
   });
 
   it('sanitizes invalid FA data before deciding a NEW row is empty', async () => {

@@ -478,7 +478,7 @@ async function upsertAttempts(db: DrizzleDb, board: AuroraBoardName, data: Attem
 // and benchmark cannot drift. Non-finite values are rejected before they reach
 // Postgres. display_difficulty falls back to a valid normalized average when
 // Aurora omits it or sends an invalid sentinel.
-export function normalizeDifficulty(difficulty: number | null | undefined): number | null {
+export function normalizeDifficulty(difficulty: number | null): number | null {
   if (difficulty == null) return null;
   const numericDifficulty = Number(difficulty);
   return Number.isFinite(numericDifficulty) && numericDifficulty > 1 ? numericDifficulty : null;
@@ -570,10 +570,17 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
     // counts and quality votes are preserved by the conflict SET below.
     const mappedValues = batch.map((item) => mapClimbStat(board, item));
     const candidateClimbUuids = [...new Set(mappedValues.map((value) => value.climbUuid))];
+    const candidateAngles = [...new Set(mappedValues.map((value) => value.angle))];
     const existingRows = await db
       .select({ climbUuid: climbStatsSchema.climbUuid, angle: climbStatsSchema.angle })
       .from(climbStatsSchema)
-      .where(and(eq(climbStatsSchema.boardType, board), inArray(climbStatsSchema.climbUuid, candidateClimbUuids)));
+      .where(
+        and(
+          eq(climbStatsSchema.boardType, board),
+          inArray(climbStatsSchema.climbUuid, candidateClimbUuids),
+          inArray(climbStatsSchema.angle, candidateAngles),
+        ),
+      );
     const existingKeys = new Set(existingRows.map((row) => climbStatKey(row.climbUuid, row.angle)));
     const values = mappedValues.filter(
       (value) => !isEmptyUpstreamClimbStat(value) || existingKeys.has(climbStatKey(value.climbUuid, value.angle)),
