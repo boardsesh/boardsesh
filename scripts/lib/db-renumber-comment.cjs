@@ -54,6 +54,11 @@ function renderRenumberWorkflowComment(input) {
     return commentBody || heldBody(context, 'The renumber job failed before it could finish.');
   }
 
+  // Load-bearing precedence: a successful push is the terminal fact. The
+  // workflow places this step after every proof step and its `if` keeps
+  // GitHub's implicit success() guard, so contradictory earlier outcomes are
+  // unreachable. Keep this first so we never claim "Nothing was pushed" after
+  // the branch was actually updated.
   if (pushOutcome === 'success') {
     return (
       commentBody ||

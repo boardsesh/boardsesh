@@ -129,11 +129,17 @@ describe('renderRenumberWorkflowComment', () => {
     expect(body).toContain('Nothing was pushed.');
   });
 
-  it('preserves the script-produced blocked and no-op bodies', () => {
+  it('preserves the script-produced blocked body', () => {
     const blocked = `${STICKY_MARKER}\n\n### 🚧 Couldn’t renumber this migration automatically\n\nNothing was pushed.`;
-    const noOp = `${STICKY_MARKER}\n\n### ✅ Migration number is already free`;
 
     expect(decide({ renumberStatus: 'blocked', commentBody: blocked })).toBe(blocked);
+  });
+
+  it('defensively preserves a no-op body when the helper is called directly', () => {
+    // The workflow filters no-op before invoking this helper; preserving the
+    // body here keeps the pure function safe if another caller reuses it.
+    const noOp = `${STICKY_MARKER}\n\n### ✅ Migration number is already free`;
+
     expect(decide({ renumberStatus: 'no-op', commentBody: noOp })).toBe(noOp);
   });
 });

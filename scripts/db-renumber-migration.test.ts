@@ -219,6 +219,112 @@ describe('parseArgs', () => {
   });
 });
 
+function sliceWorkflowJob(workflowSource: string, jobName: string): string {
+  const jobMarker = `\n  ${jobName}:\n`;
+  const jobStart = workflowSource.indexOf(jobMarker);
+  if (jobStart === -1) return '';
+
+  const jobContentStart = jobStart + jobMarker.length;
+  const nextSiblingOffset = workflowSource.slice(jobContentStart).search(/\n  [A-Za-z_][A-Za-z0-9_-]*:\n/);
+  const jobEnd = nextSiblingOffset === -1 ? workflowSource.length : jobContentStart + nextSiblingOffset;
+  return workflowSource.slice(jobStart, jobEnd);
+}
+
+const FORCE_PUSH_STEP_NAME = 'Force-push the renumbered branch';
+const EXPECTED_FORCE_PUSH_CONDITION =
+  "steps.renumber.outputs.status == 'renumbered' && steps.recheck.outputs.ok == 'true'";
+const EXPECTED_PROOF_STEP_CONDITION = "steps.renumber.outputs.status == 'renumbered'";
+const EXPECTED_COMMENT_JOB_CONDITION =
+  "always() && needs.gate.result == 'success' && needs.gate.outputs.run == 'true' && needs.renumber.outputs.renumber_status != 'no-op'";
+const PROOF_STEP_NAMES = [
+  'Validate the resulting migration folder',
+  'Verify the migrations apply',
+  'Verify re-applying is a no-op',
+  'Re-check the PR immediately before pushing',
+] as const;
+
+function sliceWorkflowStep(jobSource: string, stepName: string): string {
+  const stepMarker = `\n      - name: ${stepName}\n`;
+  const stepStart = jobSource.indexOf(stepMarker);
+  if (stepStart === -1) return '';
+
+  const stepContentStart = stepStart + stepMarker.length;
+  const nextStepOffset = jobSource.slice(stepContentStart).search(/\n      - /);
+  const stepEnd = nextStepOffset === -1 ? jobSource.length : stepContentStart + nextStepOffset;
+  return jobSource.slice(stepStart, stepEnd);
+}
+
+function normalizedWorkflowConditions(workflowSource: string, indentation: number): string[] {
+  const lines = workflowSource.split('\n');
+  const conditions: string[] = [];
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const conditionMatch = lines[lineIndex]?.match(/^( *)(?:if|'if'|"if"):\s*(.*)$/);
+    if (!conditionMatch || conditionMatch[1]?.length !== indentation) continue;
+
+    const rawCondition = conditionMatch[2]?.trim() ?? '';
+    if (!/^[>|][+-]?$/.test(rawCondition)) {
+      conditions.push(rawCondition.replace(/\s+/g, ' '));
+      continue;
+    }
+
+    const foldedLines: string[] = [];
+    for (let foldedLineIndex = lineIndex + 1; foldedLineIndex < lines.length; foldedLineIndex += 1) {
+      const foldedLine = lines[foldedLineIndex] ?? '';
+      const foldedIndentation = foldedLine.match(/^ */)?.[0].length ?? 0;
+      if (foldedLine.trim().length > 0 && foldedIndentation <= indentation) break;
+      foldedLines.push(foldedLine.trim());
+      lineIndex = foldedLineIndex;
+    }
+    conditions.push(foldedLines.filter(Boolean).join(' ').replace(/\s+/g, ' '));
+  }
+
+  return conditions;
+}
+
+function renumberPushContractViolations(renumberJobSource: string): string[] {
+  const violations: string[] = [];
+  const pushStepMarker = `\n      - name: ${FORCE_PUSH_STEP_NAME}\n`;
+  const pushStepStart = renumberJobSource.indexOf(pushStepMarker);
+  const pushStep = sliceWorkflowStep(renumberJobSource, FORCE_PUSH_STEP_NAME);
+  const pushConditions = normalizedWorkflowConditions(pushStep, 8);
+
+  if (pushStepStart === -1 || pushStep.length === 0) {
+    violations.push('force-push step is missing');
+  } else if (pushConditions.length !== 1 || pushConditions[0] !== EXPECTED_FORCE_PUSH_CONDITION) {
+    violations.push('force-push condition changed');
+  }
+
+  for (const proofStepName of PROOF_STEP_NAMES) {
+    const proofStepMarker = `\n      - name: ${proofStepName}\n`;
+    const proofStepStart = renumberJobSource.indexOf(proofStepMarker);
+    const proofStep = sliceWorkflowStep(renumberJobSource, proofStepName);
+    if (proofStepStart === -1 || proofStep.length === 0) {
+      violations.push(`${proofStepName} is missing`);
+      continue;
+    }
+    if (pushStepStart !== -1 && proofStepStart >= pushStepStart) {
+      violations.push(`${proofStepName} does not precede force-push`);
+    }
+    const proofConditions = normalizedWorkflowConditions(proofStep, 8);
+    if (proofConditions.length !== 1 || proofConditions[0] !== EXPECTED_PROOF_STEP_CONDITION) {
+      violations.push(`${proofStepName} condition changed`);
+    }
+    if (/^\s*(?:continue-on-error|'continue-on-error'|"continue-on-error")\s*:/m.test(proofStep)) {
+      violations.push(`${proofStepName} permits continue-on-error`);
+    }
+  }
+
+  return violations;
+}
+
+function commentJobContractViolations(commentJobSource: string): string[] {
+  const commentConditions = normalizedWorkflowConditions(commentJobSource, 4);
+  return commentConditions.length === 1 && commentConditions[0] === EXPECTED_COMMENT_JOB_CONDITION
+    ? []
+    : ['comment job condition changed'];
+}
+
 // Intentionally source-based and test-load-bearing: workflow job-boundary or
 // formatting changes fail closed so the privileged path gets deliberate review.
 describe('workflow comment trust boundary', () => {
@@ -228,8 +334,8 @@ describe('workflow comment trust boundary', () => {
   );
   const renumberJobStart = workflowSource.indexOf('\n  renumber:\n');
   const commentJobStart = workflowSource.indexOf('\n  comment:\n');
-  const renumberJob = workflowSource.slice(renumberJobStart, commentJobStart);
-  const commentJob = workflowSource.slice(commentJobStart);
+  const renumberJob = sliceWorkflowJob(workflowSource, 'renumber');
+  const commentJob = sliceWorkflowJob(workflowSource, 'comment');
 
   it('keeps PR-controlled work out of the pull-request-write job', () => {
     expect(renumberJobStart).toBeGreaterThan(-1);
@@ -238,6 +344,55 @@ describe('workflow comment trust boundary', () => {
     expect(renumberJob).not.toContain('renderRenumberWorkflowComment');
     expect(commentJob).toContain('needs: [gate, renumber]');
     expect(commentJob).toContain('pull-requests: write');
+    expect(commentJobContractViolations(commentJob)).toEqual([]);
+  });
+
+  it('keeps force-push behind every proof step and the implicit success guard', () => {
+    expect(renumberPushContractViolations(renumberJob)).toEqual([]);
+  });
+
+  it('rejects a status-function escape in the force-push condition', () => {
+    const escapedConditionJob = renumberJob.replace(
+      `if: ${EXPECTED_FORCE_PUSH_CONDITION}`,
+      `if: ${EXPECTED_FORCE_PUSH_CONDITION} || !success()`,
+    );
+    expect(escapedConditionJob).not.toBe(renumberJob);
+    expect(renumberPushContractViolations(escapedConditionJob)).toContain('force-push condition changed');
+  });
+
+  it('rejects continue-on-error on every proof step', () => {
+    for (const proofStepName of PROOF_STEP_NAMES) {
+      for (const continueOnErrorKey of ['continue-on-error', "'continue-on-error'", '"continue-on-error"']) {
+        const proofStepMarker = `\n      - name: ${proofStepName}\n`;
+        const continueOnErrorJob = renumberJob.replace(
+          proofStepMarker,
+          `${proofStepMarker}        ${continueOnErrorKey}: true\n`,
+        );
+        expect(continueOnErrorJob, `${proofStepName} mutation should apply`).not.toBe(renumberJob);
+        expect(renumberPushContractViolations(continueOnErrorJob)).toContain(
+          `${proofStepName} permits continue-on-error`,
+        );
+      }
+    }
+  });
+
+  it('rejects a false condition on every proof step', () => {
+    for (const proofStepName of PROOF_STEP_NAMES) {
+      const proofStep = sliceWorkflowStep(renumberJob, proofStepName);
+      const falseConditionStep = proofStep.replace(`if: ${EXPECTED_PROOF_STEP_CONDITION}`, 'if: false');
+      expect(falseConditionStep, `${proofStepName} mutation should apply`).not.toBe(proofStep);
+      const falseConditionJob = renumberJob.replace(proofStep, falseConditionStep);
+      expect(renumberPushContractViolations(falseConditionJob)).toContain(`${proofStepName} condition changed`);
+    }
+  });
+
+  it('rejects an always-true escape in the comment job condition', () => {
+    const escapedCommentJob = commentJob.replace(
+      "needs.renumber.outputs.renumber_status != 'no-op'",
+      "needs.renumber.outputs.renumber_status != 'no-op' || true",
+    );
+    expect(escapedCommentJob).not.toBe(commentJob);
+    expect(commentJobContractViolations(escapedCommentJob)).toEqual(['comment job condition changed']);
   });
 
   it('loads the helper from the immutable workflow commit on the fresh comment runner', () => {
@@ -247,5 +402,11 @@ describe('workflow comment trust boundary', () => {
     expect(commentJob).toContain('persist-credentials: false');
     expect(commentJob).toContain('`${process.env.GITHUB_WORKSPACE}/scripts/lib/db-renumber-comment.cjs`');
     expect(commentJob).not.toContain('.renumber-tooling');
+  });
+
+  it('stops the comment-job slice before a future sibling job', () => {
+    const workflowWithLaterJob = `${workflowSource.trimEnd()}\n  later_job:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo .renumber-tooling\n`;
+    expect(workflowWithLaterJob).toContain('.renumber-tooling');
+    expect(sliceWorkflowJob(workflowWithLaterJob, 'comment')).not.toContain('.renumber-tooling');
   });
 });
