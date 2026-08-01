@@ -180,8 +180,22 @@ describe('PlayDrawerSwipeableHeader logbook I/O', () => {
     expect(iconWithin(container, 'peek-header')).toBe('flash');
   });
 
-  it('reads a foreign board accumulated cache while requesting only its peek', () => {
-    logbookState.rootBoardName = 'kilter';
+  it('does not request the current climb again when the mounted peek is the same climb', () => {
+    logbookState.rootIndex = indexEntries([entry('current', 'send')]);
+
+    const { container } = render(createElement(PlayDrawerSwipeableHeader, { ...baseProps, peekClimb: currentClimb }));
+
+    expect(logbookState.useLogbook).toHaveBeenCalledWith('tension', []);
+    expect(logbookState.rootGetLogbook).not.toHaveBeenCalled();
+    expect(iconWithin(container, 'current-header')).toBe('tick.outline');
+    expect(iconWithin(container, 'peek-header')).toBe('tick.outline');
+  });
+
+  it.each([
+    ['a different root board', 'kilter'],
+    ['no root provider', null],
+  ])('reads the accumulated cache with %s while requesting only its peek', (_label, rootBoardName) => {
+    logbookState.rootBoardName = rootBoardName;
     logbookState.rootIndex = indexEntries([entry('current', 'attempt')]);
     // Models the board-keyed accumulated cache after DeferredSections fetched
     // current and this header's non-overlapping query fetched peek.

@@ -21,7 +21,8 @@ vi.mock('react-native-reanimated', () => ({
       createElement(
         'div',
         {
-          'data-accessibility-hidden': String(accessibilityElementsHidden ?? false),
+          'data-accessibility-hidden':
+            accessibilityElementsHidden === undefined ? undefined : String(accessibilityElementsHidden),
           'data-important-for-accessibility': importantForAccessibility,
         },
         children,
@@ -46,6 +47,6 @@ describe('SwipeableHeader accessibility', () => {
     const peekLayer = getByText('Peek header').parentElement;
     expect(peekLayer?.getAttribute('data-accessibility-hidden')).toBe('true');
     expect(peekLayer?.getAttribute('data-important-for-accessibility')).toBe('no-hide-descendants');
-    expect(getByText('Current header').parentElement?.getAttribute('data-accessibility-hidden')).toBe('false');
+    expect(getByText('Current header').parentElement?.hasAttribute('data-accessibility-hidden')).toBe(false);
   });
 });

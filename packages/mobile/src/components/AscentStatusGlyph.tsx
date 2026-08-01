@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { AscentStatusValue } from '../lib/ascent-status-utils';
@@ -32,14 +32,14 @@ export const AscentStatusMark = React.memo(function AscentStatusMark({ status, s
   const { t } = useTranslation('climbs');
   const theme = useTheme();
 
-  const ascentStatusLabel = useMemo(() => {
-    if (!status) return undefined;
-    return {
-      flash: t('mobile.climbRow.ascentStatus.flash'),
-      send: t('mobile.climbRow.ascentStatus.send'),
-      attempt: t('mobile.climbRow.ascentStatus.attempt'),
-    }[status];
-  }, [status, t]);
+  const ascentStatusLabel =
+    status === 'flash'
+      ? t('mobile.climbRow.ascentStatus.flash')
+      : status === 'send'
+        ? t('mobile.climbRow.ascentStatus.send')
+        : status === 'attempt'
+          ? t('mobile.climbRow.ascentStatus.attempt')
+          : undefined;
 
   if (!status) return null;
   return (

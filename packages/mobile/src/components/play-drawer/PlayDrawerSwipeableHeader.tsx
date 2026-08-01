@@ -93,7 +93,7 @@ function peekOnlyUuids(currentClimbUuid: string, peekClimbUuid: string | null): 
  * BoardProvider.getLogbook because that request slot is also used by the queue
  * toolbar and visible-climbs list.
  */
-function RootBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
+const RootBoardHeader = memo(function RootBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
   const peekClimbUuid = props.peekClimb?.uuid ?? null;
   const requestedPeekUuids = useMemo(
     () => peekOnlyUuids(props.currentClimb.uuid, peekClimbUuid),
@@ -104,7 +104,7 @@ function RootBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
   // replaceable getLogbook request slot.
   useLogbook(props.boardName, requestedPeekUuids);
   return <HeaderContents {...props} />;
-}
+});
 
 function buildForeignStatusIndex(
   logbook: readonly LogbookEntry[],
@@ -138,7 +138,7 @@ function buildForeignStatusIndex(
  * It requests only the peek; DeferredSections' current request merges into the
  * same board-keyed accumulated cache, avoiding overlapping network work.
  */
-function ForeignBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
+const ForeignBoardHeader = memo(function ForeignBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
   const peekClimbUuid = props.peekClimb?.uuid ?? null;
   const requestedPeekUuids = useMemo(
     () => peekOnlyUuids(props.currentClimb.uuid, peekClimbUuid),
@@ -156,7 +156,7 @@ function ForeignBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
       peekAscentStatus={peekClimbUuid ? (statusIndex.get(peekClimbUuid) ?? null) : null}
     />
   );
-}
+});
 
 /**
  * Swipeable play-drawer title strip. Normal active-board opens reuse the root
