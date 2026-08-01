@@ -16,7 +16,7 @@ Production access is never implicit. Get explicit operator approval separately f
 2. the production apply, including its short table-lock window; and
 3. the post-commit cache action.
 
-Pause catalog and sync writers only for the approved apply window. The transaction takes `SHARE ROW EXCLUSIVE` locks on `board_climbs` and `board_climb_holds`, uses a five-second lock timeout and a two-minute statement timeout, and rolls back on any manifest or verification mismatch.
+Pause catalog and sync writers only for the approved apply window. The transaction takes `SHARE ROW EXCLUSIVE` locks on `board_climbs` and `board_climb_holds`, uses a five-second lock timeout and a two-minute statement timeout, and rolls back on any manifest or verification mismatch. The statement timeout applies to each statement; if the large batch delete or insert times out, the entire transaction rolls back.
 
 ## Target database
 
