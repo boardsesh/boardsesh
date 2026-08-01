@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vite-plus/test';
+import { describe, expect, it, vi } from 'vitest';
 
 import { DaemonLease, DaemonLeaseLostError } from './lease';
 import { runDaemonLoop } from './daemon';
