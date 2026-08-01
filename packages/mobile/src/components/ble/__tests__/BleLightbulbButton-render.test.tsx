@@ -121,7 +121,6 @@ describe('BleLightbulbButton write activity', () => {
 
   it('keeps the scanning pulse/icon and hint ahead of write feedback', () => {
     const store = createBleWriteActivityStore();
-    store.begin();
     const view = render(
       createElement(
         BluetoothWriteActivityProvider,
@@ -136,11 +135,17 @@ describe('BleLightbulbButton write activity', () => {
         }),
       ),
     );
+    let release = () => {};
+    act(() => {
+      release = store.begin();
+    });
 
     const button = view.getByRole('button');
     expect(view.container.querySelector('[data-spinner="true"]')).toBeNull();
     expect(view.container.querySelector('[data-icon="lightbulb.fill"]')).toBeTruthy();
     expect(button.getAttribute('data-busy')).toBe('true');
     expect(button.getAttribute('data-hint')).toBe('Scanning for boards nearby');
+
+    act(() => release());
   });
 });
