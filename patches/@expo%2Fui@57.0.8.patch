@@ -1,5 +1,5 @@
 diff --git a/build/community/bottom-sheet/types.d.ts b/build/community/bottom-sheet/types.d.ts
-index 72fc6be..d1cf11e 100644
+index 72fc6becbc414c318799e28103d15484ed86f703..d1cf11e93b0c0d8dc77abddaafc89e14d34faccc 100644
 --- a/build/community/bottom-sheet/types.d.ts
 +++ b/build/community/bottom-sheet/types.d.ts
 @@ -159,6 +159,14 @@ export interface BottomSheetProps {
@@ -18,21 +18,27 @@ index 72fc6be..d1cf11e 100644
       * Whether the sheet can be dismissed by panning down.
       * @default false
 diff --git a/src/community/bottom-sheet/BottomSheet.android.tsx b/src/community/bottom-sheet/BottomSheet.android.tsx
-index f60ae61..4e64d1a 100644
+index f60ae61bf0c9023d41c55cdca2d9af0de7291a92..155afb2055b9e977f0651de67a4f1c812e87eef7 100644
 --- a/src/community/bottom-sheet/BottomSheet.android.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.android.tsx
-@@ -11,6 +11,20 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
+@@ -11,6 +11,26 @@ import { RNHostView } from '../../jetpack-compose/RNHostView';
  
  export { useBottomSheet } from './context';
  
-+// `expand()` / `partialExpand()` are native AsyncFunctions on `ModalBottomSheetView`.
-+// A store binary whose native ExpoUI layer predates a method rejects the call with
-+// "No handler registered for AsyncFunction '<method>' on view 'ModalBottomSheetView'".
-+// These calls are fire-and-forget, so an unhandled rejection would surface as a global
-+// onunhandledrejection (crash report + noise) even though the re-snap is a harmless
-+// no-op on those binaries. Swallow it: the sheet stays where it is, which is the
-+// existing behaviour, and never wrongly expands a collapse. On binaries whose native
-+// layer has the method this never rejects. (boardsesh patch — see issue #3478.)
++// `expand()` / `partialExpand()` / `hide()` are native AsyncFunctions on
++// `ModalBottomSheetView`. A store binary whose native ExpoUI layer predates a
++// method rejects the call with "No handler registered for AsyncFunction
++// '<method>' on view 'ModalBottomSheetView'". These calls are fire-and-forget,
++// so an unhandled rejection would surface as a global onunhandledrejection
++// (crash report + noise) even though the underlying state change is a harmless
++// no-op on those binaries. Swallow it: for expand()/partialExpand() the sheet
++// stays where it is (the existing behaviour, never wrongly expanding a
++// collapse); for hide() — used by close()/forceClose()/dismiss() and the
++// snapToIndex(-1) path — the caller still runs its own cleanup afterwards
++// (setIsOpen(false) etc.), so the sheet closes in JS state even when the
++// native side silently no-ops, instead of leaving it stuck open. On binaries
++// whose native layer has the method this never rejects. (boardsesh patch —
++// see issue #3478, and issue #4108 for the hide() call sites.)
 +function swallowMissingNativeHandler(error: unknown): void {
 +  // Never rejects on a dev build (current native layer has the method), so a warning
 +  // here means something genuinely unexpected — surface it in dev, stay silent in prod.
@@ -42,7 +48,27 @@ index f60ae61..4e64d1a 100644
  function extractBackgroundColor(
    backgroundStyle: BottomSheetProps['backgroundStyle']
  ): string | undefined {
-@@ -143,9 +157,9 @@ export function BottomSheet(props: BottomSheetProps) {
+@@ -127,11 +147,14 @@ export function BottomSheet(props: BottomSheetProps) {
+   const methods: BottomSheetMethods = useMemo(() => {
+     const snapToIndex = (index: number) => {
+       if (index === -1) {
+-        sheetRef.current?.hide().then(() => {
+-          setIsOpen(false);
+-          pendingIndexRef.current = null;
+-          fireCloseCallbacks();
+-        });
++        sheetRef.current
++          ?.hide()
++          .catch(swallowMissingNativeHandler)
++          .then(() => {
++            setIsOpen(false);
++            pendingIndexRef.current = null;
++            fireCloseCallbacks();
++          });
+         return;
+       }
+       const clampedIndex = clampIndex(index);
+@@ -143,9 +166,9 @@ export function BottomSheet(props: BottomSheetProps) {
          // Native ModalBottomSheet has two states: partial (~50%) and expanded (full).
          // Map index 0 → partialExpand(), last index → expand().
          if (clampedIndex === maxIndex) {
@@ -54,8 +80,28 @@ index f60ae61..4e64d1a 100644
          }
          pendingIndexRef.current = null;
        }
+@@ -153,11 +176,14 @@ export function BottomSheet(props: BottomSheetProps) {
+     };
+ 
+     const close = () => {
+-      sheetRef.current?.hide().then(() => {
+-        setIsOpen(false);
+-        pendingIndexRef.current = null;
+-        fireCloseCallbacks();
+-      });
++      sheetRef.current
++        ?.hide()
++        .catch(swallowMissingNativeHandler)
++        .then(() => {
++          setIsOpen(false);
++          pendingIndexRef.current = null;
++          fireCloseCallbacks();
++        });
+     };
+ 
+     return {
 diff --git a/src/community/bottom-sheet/BottomSheet.ios.tsx b/src/community/bottom-sheet/BottomSheet.ios.tsx
-index d9de442..5cd8c12 100644
+index d9de442f1efd51749ff9a0e661e6979e7915fef1..5cd8c129ae199edc83733d7617d4b8c32611fc03 100644
 --- a/src/community/bottom-sheet/BottomSheet.ios.tsx
 +++ b/src/community/bottom-sheet/BottomSheet.ios.tsx
 @@ -87,6 +87,7 @@ export function BottomSheet(props: BottomSheetProps) {
@@ -91,7 +137,7 @@ index d9de442..5cd8c12 100644
              fitToContents={fitToContents}>
              <Group modifiers={modifiers}>
 diff --git a/src/community/bottom-sheet/types.ts b/src/community/bottom-sheet/types.ts
-index d7372fc..efcf425 100644
+index d7372fcb72e3717329ee8df4e27e2f537f17decb..efcf4256103d5b9f1a068e32778a92efc6fa30bc 100644
 --- a/src/community/bottom-sheet/types.ts
 +++ b/src/community/bottom-sheet/types.ts
 @@ -178,6 +178,15 @@ export interface BottomSheetProps {
