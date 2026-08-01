@@ -88,6 +88,12 @@ export function buildSelfHostedEoasArgs(
     platform,
     '--message',
     updateMessage,
+    // Keep the exact Expo export that eoas uploads on disk with external source
+    // maps. The platform-specific workflow uploads this directory to Sentry
+    // immediately; the next eoas publish removes/replaces `dist`.
+    '--dumpSourcemap',
+    '--outputDir',
+    'dist',
     '--nonInteractive',
     // The repo uses bun; force bunx so eoas spawns `bunx expo export` regardless
     // of the nearest package.json's packageManager field.

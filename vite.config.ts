@@ -752,6 +752,10 @@ export default defineConfig({
         command: 'tsx scripts/mobile-publish.ts',
         cache: false,
       },
+      'mobile:upload-sourcemaps': {
+        command: 'tsx scripts/mobile-upload-sourcemaps.ts',
+        cache: false,
+      },
       'mobile:ota-setup': {
         command: 'tsx scripts/mobile-ota-setup.ts',
         cache: false,

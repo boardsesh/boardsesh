@@ -406,6 +406,12 @@ jobs:
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: vp run mobile:publish -- --channel "$CHANNEL" --platform android
 
+      # mobile:publish generates external source maps in dist for every
+      # self-hosted export, but PR-author code runs in this secret-bearing job.
+      # Intentionally do not provide SENTRY_AUTH_TOKEN or upload those maps. The
+      # next platform publish replaces dist, and the runner discards the final
+      # preview export when the job ends.
+
   # ── Map pr-<number> → its same-named branch on the self-hosted server. Channel
   # creation/mapping is a dashboard-admin action the eoo_ publish key CANNOT perform — so it
   # logs in with OTA_ADMIN_* (ota-preview-unattended environment, no reviewers). This is

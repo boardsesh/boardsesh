@@ -115,4 +115,13 @@ describe('backport OTA workflow upload pressure', () => {
     const timeout = Number(jobBlock(backport, 'backport').match(/timeout-minutes: (\d+)/)?.[1]);
     expect(timeout).toBeGreaterThanOrEqual(45);
   });
+
+  it('overlays the retry implementation required by the trusted publish wrapper', () => {
+    const snapshot = stepBlock(backport, 'Snapshot trusted OTA publish tooling');
+    const overlay = stepBlock(backport, 'Overlay trusted OTA publish tooling');
+
+    expect(snapshot).toContain('scripts/lib/mobile-publish-retry.ts');
+    expect(overlay).toContain('scripts/lib/mobile-publish-retry.ts');
+    expect(overlay).toMatch(/git add .*scripts\/lib\/mobile-publish-retry\.ts/);
+  });
 });
