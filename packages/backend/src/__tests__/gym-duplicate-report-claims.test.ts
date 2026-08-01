@@ -309,6 +309,65 @@ describe('gym duplicate report claim ownership', () => {
     warnSpy.mockRestore();
   });
 
+  it('backs off opportunistic promotion retries while a Redis partition persists', async () => {
+    let now = 45_000;
+    const outageKey = 'gymDuplicateReport:test:promotion-backoff';
+    const setSpy = vi.fn().mockRejectedValue(new Error('partition persists'));
+    const redisClient: GymDuplicateReportRedisClient = {
+      set: setSpy,
+      eval: vi.fn().mockResolvedValue(0),
+    };
+    await acquireGymDuplicateReportClaim(
+      outageKey,
+      createDependencies({ connected: false, now: () => now, tokens: ['outage-owner'] }),
+    );
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const connectedDependencies = createDependencies({
+      connected: true,
+      redisClient,
+      now: () => now,
+      tokens: ['request-one', 'request-two', 'request-three'],
+    });
+
+    await acquireGymDuplicateReportClaim('gymDuplicateReport:test:request-one', connectedDependencies);
+    expect(setSpy.mock.calls.filter(([key]) => key === outageKey)).toHaveLength(1);
+
+    await acquireGymDuplicateReportClaim('gymDuplicateReport:test:request-two', connectedDependencies);
+    expect(setSpy.mock.calls.filter(([key]) => key === outageKey)).toHaveLength(1);
+
+    now += 60_000;
+    await acquireGymDuplicateReportClaim('gymDuplicateReport:test:request-three', connectedDependencies);
+    expect(setSpy.mock.calls.filter(([key]) => key === outageKey)).toHaveLength(2);
+    warnSpy.mockRestore();
+  });
+
+  it('drains a new local claim that arrives during an awaited readiness promotion', async () => {
+    const firstKey = 'gymDuplicateReport:test:snapshot-first';
+    const secondKey = 'gymDuplicateReport:test:snapshot-second';
+    let finishFirstPromotion: ((result: 'OK') => void) | undefined;
+    const setSpy = vi.fn((key: string) => {
+      if (key === firstKey) {
+        return new Promise<'OK'>((resolve) => {
+          finishFirstPromotion = resolve;
+        });
+      }
+      return Promise.resolve('OK' as const);
+    });
+    const redisClient: GymDuplicateReportRedisClient = {
+      set: setSpy,
+      eval: vi.fn().mockResolvedValue(0),
+    };
+    await acquireGymDuplicateReportClaim(firstKey, createDependencies({ connected: false, tokens: ['first-owner'] }));
+
+    const firstReconciliation = reconcileGymDuplicateReportClaims(redisClient);
+    await vi.waitFor(() => expect(setSpy).toHaveBeenCalledTimes(1));
+    await acquireGymDuplicateReportClaim(secondKey, createDependencies({ connected: false, tokens: ['second-owner'] }));
+
+    finishFirstPromotion?.('OK');
+    await firstReconciliation;
+    expect(setSpy.mock.calls.map(([key]) => key)).toEqual([firstKey, secondKey]);
+  });
+
   it('retries with a recovered client after an older in-flight promotion fails', async () => {
     const now = 50_000;
     const key = 'gymDuplicateReport:test:concurrent-recovery';
