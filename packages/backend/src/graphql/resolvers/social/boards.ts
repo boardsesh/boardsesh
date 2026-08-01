@@ -802,14 +802,9 @@ export const socialBoardQueries = {
   /**
    * Get a board by slug (for URL routing).
    *
-   * INTENTIONALLY NOT anon-masked, unlike `board(boardUuid)` above. This read
-   * backs the entire `/b/{slug}/**` web surface through
-   * `packages/web/app/lib/board-slug-utils.ts`, whose fetch is anonymous by
-   * construction — no token path at all, and a cross-user `revalidate: 300`
-   * shared cache that could never hold a per-viewer result. Masking here would
-   * 404 every private board's own OWNER on their own board pages. Accepted
-   * residual exposure (a private board's name is disclosable to a slug holder)
-   * until the end-of-life web climbing surface goes away. See #3648.
+   * This follows the same anonymous-only mask as `board(boardUuid)`: direct
+   * private-board links keep working for signed-in climbers, while anonymous
+   * requests cannot disclose a private board through the shared web cache.
    */
   boardBySlug: async (_: unknown, { slug }: { slug: string }, ctx: ConnectionContext) => {
     // Validate slug format: lowercase alphanumeric with hyphens, max 120 chars
@@ -824,7 +819,9 @@ export const socialBoardQueries = {
       .limit(1);
 
     if (!board) return null;
-    return enrichBoard(board, ctx.isAuthenticated ? ctx.userId : undefined);
+    const viewerId = ctx.isAuthenticated ? ctx.userId : undefined;
+    if (!viewerId && !isRowAnonReadable(board)) return null;
+    return enrichBoard(board, viewerId);
   },
 
   /**
