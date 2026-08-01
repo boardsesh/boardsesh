@@ -14,6 +14,7 @@ vi.mock('../handlers', () => ({
 }));
 
 import { __resetDrainerStateForTests, drainMutationQueue } from '../drainer';
+import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '../error-classification';
 import { processMutation } from '../handlers';
 import { markCompleted, markDeadLetter, peekPending, recordFailure } from '../queue';
 
@@ -55,7 +56,7 @@ describe('drainMutationQueue with the real error classifier', () => {
     const emptyResponseError = Object.assign(
       new Error('GraphQL response body was empty or not valid JSON (HTTP 200)'),
       {
-        name: 'GraphQLEmptyResponseError',
+        name: GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
         status: 200,
       },
     );
@@ -65,6 +66,7 @@ describe('drainMutationQueue with the real error classifier', () => {
 
     await drainMutationQueue(mockDb, queryClient, graphqlFetch, { isOnline: () => true });
 
+    expect(mockPeekPending).toHaveBeenCalledWith(mockDb, 10);
     expect(mockProcessMutation).toHaveBeenCalledOnce();
     expect(mockRecordFailure).not.toHaveBeenCalled();
     expect(mockMarkDeadLetter).not.toHaveBeenCalled();

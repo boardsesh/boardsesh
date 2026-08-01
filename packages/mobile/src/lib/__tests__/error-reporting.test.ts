@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { reportError, reportHandledError } from '../error-reporting';
 import { captureToSentry } from '../sentry';
 
@@ -159,7 +160,7 @@ describe('reportHandledError', () => {
 
   it('downgrades a GraphQLEmptyResponseError (2xx with an empty/truncated body) to a warning tagged network (#3190)', () => {
     const emptyBody = Object.assign(new Error('GraphQL response body was empty or not valid JSON (HTTP 200)'), {
-      name: 'GraphQLEmptyResponseError',
+      name: GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
     });
     reportHandledError(emptyBody, { tags: { source: 'react-query', kind: 'query' } });
     expect(mockedCaptureToSentry).toHaveBeenCalledWith(emptyBody, {

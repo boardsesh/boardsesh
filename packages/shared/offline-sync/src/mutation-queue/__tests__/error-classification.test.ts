@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 
-import { isRetryable, getErrorStatus, isNetworkError, isTransportNetworkError } from '../error-classification';
+import {
+  GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
+  isRetryable,
+  getErrorStatus,
+  isNetworkError,
+  isTransportNetworkError,
+} from '../error-classification';
 
 describe('getErrorStatus', () => {
   it('extracts status from Response object', () => {
@@ -251,7 +257,7 @@ describe('isTransportNetworkError', () => {
 describe('isNetworkError', () => {
   it('treats a named GraphQL empty 2xx response as transport-shaped even with its status attached', () => {
     const error = Object.assign(new Error('GraphQL response body was empty or not valid JSON (HTTP 200)'), {
-      name: 'GraphQLEmptyResponseError',
+      name: GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
       status: 200,
     });
 

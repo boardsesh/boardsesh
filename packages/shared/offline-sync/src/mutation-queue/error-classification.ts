@@ -91,6 +91,9 @@ const IOS_NSURL_ENGLISH_DESCRIPTIONS =
 
 const MAX_CAUSE_DEPTH = 3;
 
+/** Stable cross-client identifier for a truncated successful GraphQL response. */
+export const GRAPHQL_EMPTY_RESPONSE_ERROR_NAME = 'GraphQLEmptyResponseError';
+
 /**
  * Locale-independent half of the transport check: errno-style codes and the
  * always-English fetch/polyfill wrapper strings / Java exception class names
@@ -108,7 +111,7 @@ function isLocaleIndependentTransportSignal(error: unknown, depth = 0): boolean 
   // so queued writes must stop without advancing toward the dead-letter. Match
   // structurally to keep this renderer-agnostic package independent of mobile.
   const name = (error as { name?: unknown }).name;
-  if (name === 'GraphQLEmptyResponseError') return true;
+  if (name === GRAPHQL_EMPTY_RESPONSE_ERROR_NAME) return true;
 
   const code = (error as { code?: unknown }).code;
   if (typeof code === 'string' && TRANSPORT_NETWORK_CODES.has(code)) return true;

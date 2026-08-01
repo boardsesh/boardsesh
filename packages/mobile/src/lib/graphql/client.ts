@@ -1,4 +1,5 @@
 import { GraphQLClient } from 'graphql-request';
+import { GRAPHQL_EMPTY_RESPONSE_ERROR_NAME } from '@boardsesh/offline-sync/error-classification';
 import { authenticatedFetch } from '../auth-interceptor';
 import { BACKEND_URL } from '../env';
 
@@ -21,7 +22,7 @@ export class GraphQLEmptyResponseError extends Error {
 
   constructor(status: number) {
     super(`GraphQL response body was empty or not valid JSON (HTTP ${status})`);
-    this.name = 'GraphQLEmptyResponseError';
+    this.name = GRAPHQL_EMPTY_RESPONSE_ERROR_NAME;
     this.status = status;
   }
 }

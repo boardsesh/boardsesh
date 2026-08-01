@@ -50,7 +50,12 @@ export type { DrainOptions } from './mutation-queue/drainer';
 export { ensureMutationQueueTable, MUTATION_QUEUE_SCHEMA } from './mutation-queue/schema';
 export { processMutation } from './mutation-queue/handlers';
 export type { GraphQLFetch } from './mutation-queue/handlers';
-export { isRetryable, isNetworkError, getErrorStatus } from './mutation-queue/error-classification';
+export {
+  GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
+  isRetryable,
+  isNetworkError,
+  getErrorStatus,
+} from './mutation-queue/error-classification';
 
 // --- Pull sync -----------------------------------------------------------------
 export { pullSync, toSqliteValue, multiRowChunkSize } from './sync/pull-client';
