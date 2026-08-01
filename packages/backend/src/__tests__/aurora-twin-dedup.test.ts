@@ -338,8 +338,8 @@ describe('#3535 Aurora-side duplicate ascents', () => {
    * hiding. `isLocallyEdited` then makes every later pull skip that row, so
    * payload parity is never restored and a strict payload rule would resurrect
    * the duplicates permanently — making it look like rating a send created
-   * them. `updateTick` writes in place and knows nothing about the group, so
-   * the predicate has to absorb this itself.
+   * them. `updateTick` fans visible direct twins out as one logical ascent, so
+   * the predicate must continue to absorb the local edit on its survivor.
    */
   const localEdits: Array<[string, SQL]> = [
     ['rated', sql`quality = 5`],
@@ -418,6 +418,23 @@ describe('#3535 Aurora-side duplicate ascents', () => {
       expect.objectContaining({ angle: ANGLE + 5, climbed_at: '2026-05-02 08:02:03' }),
     ]);
     expect(await visibleAuroraIds()).toEqual(['aur-1']);
+  });
+
+  it('preserves six climbedAt fractional digits while normalizing its offset across direct twins', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-1' });
+    await insertTick({ auroraId: 'aur-2' });
+
+    await tickMutations.updateTick(
+      null,
+      { uuid: survivorUuid, input: { climbedAt: '2026-05-02T01:02:03.123456-07:00' } },
+      authenticatedContext,
+    );
+
+    const rows = await db.execute(sql`
+      SELECT climbed_at::text AS climbed_at
+      FROM boardsesh_ticks WHERE user_id = ${USER_ID} ORDER BY aurora_id
+    `);
+    expect(rows).toEqual([{ climbed_at: '2026-05-02 08:02:03.123456' }, { climbed_at: '2026-05-02 08:02:03.123456' }]);
   });
 
   it('moves beta links for every edited member, invalidates once, and recomputes distinct old/new keys', async () => {
@@ -620,6 +637,7 @@ describe('#3535 Aurora-side duplicate ascents', () => {
       ORDER BY record_id
     `);
     expect(tombstones).toEqual(tickUuids.sort().map((recordId) => ({ record_id: recordId })));
+    expect(mutationSideEffects.invalidateRecentBetaLinksCache).toHaveBeenCalledTimes(1);
   });
 
   it('fans only supplied fields across the group and enforces flash attempts', async () => {
@@ -834,6 +852,34 @@ describe('#3535 Aurora-side duplicate ascents', () => {
       { aurora_id: 'aur-c', angle: ANGLE },
     ]);
     expect(await visibleAuroraIds()).toEqual(['aur-a', 'aur-c']);
+  });
+
+  it('keeps inverse NULL-kilter witnesses single-row for updates', async () => {
+    const nullKilterTargetUuid = await insertTick({ auroraId: 'aur-a' });
+    await insertTick({ auroraId: 'aur-b', kilterId: 'kil-b' });
+    await insertTick({ auroraId: 'aur-c', kilterId: 'kil-c' });
+    expect(await visibleAuroraIds()).toEqual(['aur-a']);
+
+    await tickMutations.updateTick(null, { uuid: nullKilterTargetUuid, input: { angle: 45 } }, authenticatedContext);
+
+    const rows = await db.execute(sql`
+      SELECT aurora_id, angle FROM boardsesh_ticks WHERE user_id = ${USER_ID} ORDER BY aurora_id
+    `);
+    expect(rows).toEqual([
+      { aurora_id: 'aur-a', angle: 45 },
+      { aurora_id: 'aur-b', angle: ANGLE },
+      { aurora_id: 'aur-c', angle: ANGLE },
+    ]);
+  });
+
+  it('keeps inverse NULL-kilter witnesses single-row for deletes', async () => {
+    const nullKilterTargetUuid = await insertTick({ auroraId: 'aur-a' });
+    await insertTick({ auroraId: 'aur-b', kilterId: 'kil-b' });
+    await insertTick({ auroraId: 'aur-c', kilterId: 'kil-c' });
+
+    await tickMutations.deleteTick(null, { uuid: nullKilterTargetUuid }, authenticatedContext);
+
+    expect(await storedAuroraIds()).toEqual(['aur-b', 'aur-c']);
   });
 
   it('keeps single-row semantics when a hidden UUID is addressed directly', async () => {
