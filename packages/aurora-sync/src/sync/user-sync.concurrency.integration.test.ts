@@ -13,13 +13,15 @@ import { boardCircuits, boardUsers, playlistClimbs, playlistOwnership, playlists
 import { getAuroraCircuitAdvisoryLockKey } from './circuit-arbitration';
 import { upsertTableData } from './user-sync';
 
+const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', 'postgres', '[::1]', '::1']);
+
 function localDatabaseUrl(): string | null {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) return null;
 
   try {
     const hostname = new URL(databaseUrl).hostname.toLowerCase();
-    return ['localhost', '127.0.0.1', 'postgres'].includes(hostname) ? databaseUrl : null;
+    return LOCAL_DATABASE_HOSTS.has(hostname) ? databaseUrl : null;
   } catch {
     return null;
   }
@@ -199,7 +201,10 @@ function createTransactionBarrier(participantCount: number, timeoutMs = 5_000): 
   let arrived = 0;
   let release: (() => void) | undefined;
   const allArrived = new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Timed out waiting for both circuit transactions')), timeoutMs);
+    const timeout = setTimeout(
+      () => reject(new Error(`Timed out waiting for ${participantCount} circuit transactions`)),
+      timeoutMs,
+    );
     release = () => {
       clearTimeout(timeout);
       resolve();

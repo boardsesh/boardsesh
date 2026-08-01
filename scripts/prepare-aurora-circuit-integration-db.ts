@@ -322,7 +322,8 @@ async function readNamedIndex(transaction: TransactionSql, indexName: string): P
   return indexes[0] ?? null;
 }
 
-async function ensurePlaylistExists(transaction: TransactionSql): Promise<void> {
+/** Serialize the narrow compatibility DDL on the fresh, isolated CI database. */
+async function lockPlaylistTableForCompatibilityPatch(transaction: TransactionSql): Promise<void> {
   await transaction.unsafe('LOCK TABLE public.playlists IN ACCESS EXCLUSIVE MODE');
 }
 
@@ -352,7 +353,7 @@ export async function prepareAuroraCircuitIntegrationDatabase(databaseUrl: strin
   const client = postgres(databaseUrl, { max: 1, prepare: false, onnotice: () => undefined });
   try {
     await client.begin(async (transaction) => {
-      await ensurePlaylistExists(transaction);
+      await lockPlaylistTableForCompatibilityPatch(transaction);
       const ledgerBefore = await snapshotLedger(transaction);
       const columnsBefore = await readPlaylistColumns(transaction);
 

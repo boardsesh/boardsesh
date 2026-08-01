@@ -36,5 +36,8 @@ describe('circuit playlist sync error codes', () => {
       syncError: 'Refresh token rejected',
     });
     expect(circuitPlaylistSyncWarningKind(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR, 'foreign')).toBe('foreign');
+    expect(circuitPlaylistSyncWarningKind(FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR, 'ambiguous')).toBe('foreign');
+    expect(circuitPlaylistSyncWarningKind('Refresh token rejected', 'foreign')).toBeNull();
+    expect(circuitPlaylistSyncWarningKind(null, 'ambiguous')).toBeNull();
   });
 });

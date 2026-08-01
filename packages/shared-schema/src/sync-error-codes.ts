@@ -59,7 +59,10 @@ export function circuitPlaylistSyncWarningKind(
   syncError: string | null,
   syncErrorReason?: CircuitPlaylistSyncErrorReason,
 ): CircuitPlaylistSyncWarningKind | null {
-  if (syncErrorReason) return syncErrorReason;
+  // `syncErrorReason` crosses a REST boundary. Only trust it alongside the
+  // generic compatibility code that `circuitPlaylistSyncWireFields` emits;
+  // precise stored codes remain authoritative even if a response is malformed.
+  if (syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR && syncErrorReason) return syncErrorReason;
   if (syncError === FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR) return 'foreign';
   if (syncError === AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR) return 'ambiguous';
   if (syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR) return 'legacy';

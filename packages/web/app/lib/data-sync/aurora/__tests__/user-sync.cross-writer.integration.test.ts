@@ -16,12 +16,14 @@ vi.mock('@/app/lib/db/db', () => ({ getDb: () => ({}) }));
 
 import { upsertTableData as webUpsertTableData } from '../user-sync';
 
+const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', 'postgres', '[::1]', '::1']);
+
 function localDatabaseUrl(): string | null {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) return null;
   try {
     const hostname = new URL(databaseUrl).hostname.toLowerCase();
-    return ['localhost', '127.0.0.1', 'postgres'].includes(hostname) ? databaseUrl : null;
+    return LOCAL_DATABASE_HOSTS.has(hostname) ? databaseUrl : null;
   } catch {
     return null;
   }
