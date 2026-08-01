@@ -213,6 +213,8 @@ const ChannelSlider = memo(function ChannelSlider({
   );
 
   useEffect(() => {
+    // React Strict Mode replays effect cleanup + setup without recreating refs,
+    // so restore the mounted flag after its development-only cleanup pass.
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;

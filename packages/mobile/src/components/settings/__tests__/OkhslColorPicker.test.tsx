@@ -14,7 +14,7 @@ type ResponderConfig = {
 type MeasureCallback = (x: number, y: number, width: number, height: number, pageX: number, pageY: number) => void;
 
 const responderHarness = vi.hoisted(() => ({
-  configs: [] as ResponderConfig[],
+  configsByLabel: {} as Record<string, ResponderConfig>,
   deferMeasurements: false,
   measurementCallbacks: [] as MeasureCallback[],
   measurementCallCount: 0,
@@ -31,11 +31,25 @@ type ViewMockProps = {
   accessibilityValue?: { text?: string };
   children?: ReactNode;
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  onPanResponderGrant?: ResponderConfig['onPanResponderGrant'];
+  onPanResponderMove?: ResponderConfig['onPanResponderMove'];
+  onPanResponderRelease?: ResponderConfig['onPanResponderRelease'];
+  onPanResponderTerminate?: ResponderConfig['onPanResponderTerminate'];
 };
 
 vi.mock('react-native', () => {
   const View = forwardRef<ViewHandle, ViewMockProps>(function View(
-    { accessible, accessibilityLabel, accessibilityValue, children, onAccessibilityAction },
+    {
+      accessible,
+      accessibilityLabel,
+      accessibilityValue,
+      children,
+      onAccessibilityAction,
+      onPanResponderGrant,
+      onPanResponderMove,
+      onPanResponderRelease,
+      onPanResponderTerminate,
+    },
     ref,
   ) {
     useImperativeHandle(
@@ -53,6 +67,12 @@ vi.mock('react-native', () => {
       [],
     );
     if (accessible && accessibilityLabel) {
+      responderHarness.configsByLabel[accessibilityLabel] = {
+        onPanResponderGrant,
+        onPanResponderMove,
+        onPanResponderRelease,
+        onPanResponderTerminate,
+      };
       responderHarness.sliderRenderCounts[accessibilityLabel] =
         (responderHarness.sliderRenderCounts[accessibilityLabel] ?? 0) + 1;
     }
@@ -71,10 +91,7 @@ vi.mock('react-native', () => {
 
   return {
     PanResponder: {
-      create: (config: ResponderConfig) => {
-        responderHarness.configs.push(config);
-        return { panHandlers: {} };
-      },
+      create: (config: ResponderConfig) => ({ panHandlers: config }),
     },
     StyleSheet: { create: (styles: Record<string, unknown>) => styles, hairlineWidth: 1 },
     View,
@@ -164,14 +181,22 @@ const LIGHTNESS_LABEL = 'mobile.more.accessibility.sliders.lightness';
 const SATURATION_LABEL = 'mobile.more.accessibility.sliders.saturation';
 const HUE_LABEL = 'mobile.more.accessibility.sliders.hue';
 const HEX_LABEL = 'mobile.more.accessibility.hexLabel';
+// These are intentional visual-contract assertions: lightness and saturation
+// each sample 12 stops, while hue includes both endpoints with 13 stops.
+const EXPECTED_GRADIENT_STOP_COUNTS = [12, 12, 13] as const;
+const EXPECTED_INITIAL_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS.reduce(
+  (total, stopCount) => total + stopCount,
+  0,
+);
+const LIGHTNESS_DEPENDENT_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS[1] + EXPECTED_GRADIENT_STOP_COUNTS[2];
 
 function responderEvent(pageX: number): ResponderEvent {
   return { nativeEvent: { pageX } };
 }
 
-function responder(index: number): ResponderConfig {
-  const config = responderHarness.configs[index];
-  if (!config) throw new Error(`Missing PanResponder config at index ${index}`);
+function responder(label: string): ResponderConfig {
+  const config = responderHarness.configsByLabel[label];
+  if (!config) throw new Error(`Missing PanResponder config for ${label}`);
   return config;
 }
 
@@ -181,20 +206,20 @@ function resolveNextMeasurement(width = 300, pageLeft = 0) {
   callback(0, 0, width, 14, pageLeft, 0);
 }
 
-function grant(index: number, pageX: number) {
-  responder(index).onPanResponderGrant?.(responderEvent(pageX));
+function grant(label: string, pageX: number) {
+  responder(label).onPanResponderGrant?.(responderEvent(pageX));
 }
 
-function move(index: number, moveX: number) {
-  responder(index).onPanResponderMove?.(responderEvent(moveX), { moveX });
+function move(label: string, moveX: number) {
+  responder(label).onPanResponderMove?.(responderEvent(moveX), { moveX });
 }
 
-function release(index: number, pageX: number) {
-  responder(index).onPanResponderRelease?.(responderEvent(pageX));
+function release(label: string, pageX: number) {
+  responder(label).onPanResponderRelease?.(responderEvent(pageX));
 }
 
-function terminate(index: number, pageX: number) {
-  responder(index).onPanResponderTerminate?.(responderEvent(pageX));
+function terminate(label: string, pageX: number) {
+  responder(label).onPanResponderTerminate?.(responderEvent(pageX));
 }
 
 function slider(container: HTMLElement, label: string): HTMLElement {
@@ -214,7 +239,7 @@ function gradientColors(gradient: HTMLElement): string[] {
 describe('OkhslColorPicker gradient updates', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    responderHarness.configs.length = 0;
+    responderHarness.configsByLabel = {};
     responderHarness.deferMeasurements = false;
     responderHarness.measurementCallbacks.length = 0;
     responderHarness.measurementCallCount = 0;
@@ -232,20 +257,20 @@ describe('OkhslColorPicker gradient updates', () => {
     const onChange = vi.fn();
     render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
 
-    expect(okhslHarness.conversionCount).toBe(37);
-    expect(responderHarness.configs).toHaveLength(3);
+    expect(okhslHarness.conversionCount).toBe(EXPECTED_INITIAL_GRADIENT_CONVERSIONS);
+    expect(Object.keys(responderHarness.configsByLabel)).toHaveLength(3);
 
     act(() => {
-      grant(0, 30);
+      grant(LIGHTNESS_LABEL, 30);
       for (let moveIndex = 0; moveIndex < 20; moveIndex += 1) {
-        move(0, 60 + moveIndex * 6);
+        move(LIGHTNESS_LABEL, 60 + moveIndex * 6);
       }
     });
 
-    // Every move still publishes one precise colour, but none of the 25
-    // dependent gradient stops rebuild before the bounded timer fires.
+    // Every move still publishes one precise colour, but none of the dependent
+    // gradient stops rebuild before the bounded timer fires.
     expect(onChange).toHaveBeenCalledTimes(21);
-    expect(okhslHarness.conversionCount).toBe(37 + 21);
+    expect(okhslHarness.conversionCount).toBe(EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21);
     expect(responderHarness.sliderRenderCounts[SATURATION_LABEL]).toBe(1);
     expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(1);
     expect(vi.getTimerCount()).toBe(1);
@@ -253,15 +278,17 @@ describe('OkhslColorPicker gradient updates', () => {
     act(() => {
       vi.advanceTimersByTime(32);
     });
-    expect(okhslHarness.conversionCount).toBe(37 + 21);
+    expect(okhslHarness.conversionCount).toBe(EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21);
 
     act(() => {
       vi.advanceTimersByTime(2);
     });
-    expect(okhslHarness.conversionCount).toBe(37 + 21 + 25);
+    expect(okhslHarness.conversionCount).toBe(
+      EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21 + LIGHTNESS_DEPENDENT_GRADIENT_CONVERSIONS,
+    );
     expect(responderHarness.sliderRenderCounts[SATURATION_LABEL]).toBe(2);
     expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(2);
-    expect(responderHarness.configs).toHaveLength(3);
+    expect(Object.keys(responderHarness.configsByLabel)).toHaveLength(3);
   });
 
   it('flushes the exact final gradient on release and leaves no stale trailing update', () => {
@@ -270,11 +297,11 @@ describe('OkhslColorPicker gradient updates', () => {
     const initialGradientColors = gradients(container).map(gradientColors);
 
     act(() => {
-      grant(0, 60);
-      move(0, 210);
+      grant(LIGHTNESS_LABEL, 60);
+      move(LIGHTNESS_LABEL, 210);
       vi.advanceTimersByTime(10);
-      move(0, 240);
-      release(0, 270);
+      move(LIGHTNESS_LABEL, 240);
+      release(LIGHTNESS_LABEL, 270);
     });
 
     expect(slider(container, LIGHTNESS_LABEL).dataset.accessibilityValue).toBe('90%');
@@ -283,7 +310,9 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(vi.getTimerCount()).toBe(0);
 
     const releasedGradients = gradients(container);
-    expect(releasedGradients.map((gradient) => gradient.querySelectorAll('[data-stop]').length)).toEqual([12, 12, 13]);
+    expect(releasedGradients.map((gradient) => gradient.querySelectorAll('[data-stop]').length)).toEqual([
+      ...EXPECTED_GRADIENT_STOP_COUNTS,
+    ]);
     for (const gradient of releasedGradients) {
       const stops = gradient.querySelectorAll<HTMLElement>('[data-stop]');
       expect(stops[0]?.dataset.offset).toBe('0');
@@ -309,10 +338,10 @@ describe('OkhslColorPicker gradient updates', () => {
     const { container } = render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
 
     act(() => {
-      grant(2, 30);
-      move(2, 150);
+      grant(HUE_LABEL, 30);
+      move(HUE_LABEL, 150);
       vi.advanceTimersByTime(10);
-      terminate(2, 225);
+      terminate(HUE_LABEL, 225);
     });
 
     expect(slider(container, HUE_LABEL).dataset.accessibilityValue).toBe('270°');
@@ -334,8 +363,8 @@ describe('OkhslColorPicker gradient updates', () => {
     const { unmount } = render(<OkhslColorPicker value="#00ff00" onChange={vi.fn()} />);
 
     act(() => {
-      grant(1, 30);
-      move(1, 210);
+      grant(SATURATION_LABEL, 30);
+      move(SATURATION_LABEL, 210);
     });
     expect(vi.getTimerCount()).toBe(1);
     const conversionsBeforeUnmount = okhslHarness.conversionCount;
@@ -353,10 +382,10 @@ describe('OkhslColorPicker gradient updates', () => {
     const conversionsBeforeDrag = okhslHarness.conversionCount;
 
     act(() => {
-      grant(0, 30);
-      move(0, 120);
-      move(0, 180);
-      release(0, 270);
+      grant(LIGHTNESS_LABEL, 30);
+      move(LIGHTNESS_LABEL, 120);
+      move(LIGHTNESS_LABEL, 180);
+      release(LIGHTNESS_LABEL, 270);
     });
 
     expect(responderHarness.measurementCallCount).toBe(1);
@@ -384,8 +413,8 @@ describe('OkhslColorPicker gradient updates', () => {
     const { unmount } = render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
 
     act(() => {
-      grant(0, 30);
-      move(0, 210);
+      grant(LIGHTNESS_LABEL, 30);
+      move(LIGHTNESS_LABEL, 210);
     });
     expect(responderHarness.measurementCallCount).toBe(1);
     expect(responderHarness.measurementCallbacks).toHaveLength(1);
@@ -409,10 +438,10 @@ describe('OkhslColorPicker gradient updates', () => {
     const conversionsBeforeDrag = okhslHarness.conversionCount;
 
     act(() => {
-      grant(0, 30);
-      release(0, 90);
-      grant(0, 150);
-      release(0, 240);
+      grant(LIGHTNESS_LABEL, 30);
+      release(LIGHTNESS_LABEL, 90);
+      grant(LIGHTNESS_LABEL, 150);
+      release(LIGHTNESS_LABEL, 240);
     });
     expect(responderHarness.measurementCallCount).toBe(1);
     expect(responderHarness.measurementCallbacks).toHaveLength(1);
@@ -443,12 +472,12 @@ describe('OkhslColorPicker gradient updates', () => {
     const conversionsBeforeDrag = okhslHarness.conversionCount;
 
     act(() => {
-      grant(0, 30);
-      release(0, 90);
-      grant(1, 60);
+      grant(LIGHTNESS_LABEL, 30);
+      release(LIGHTNESS_LABEL, 90);
+      grant(SATURATION_LABEL, 60);
       // A late termination from the old responder must be as inert as its
       // deferred release once another channel owns the picker-wide gesture.
-      terminate(0, 120);
+      terminate(LIGHTNESS_LABEL, 120);
     });
 
     expect(responderHarness.measurementCallCount).toBe(2);
@@ -476,7 +505,7 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(vi.getTimerCount()).toBe(1);
 
     act(() => {
-      terminate(1, 90);
+      terminate(SATURATION_LABEL, 90);
     });
 
     expect(slider(container, SATURATION_LABEL).dataset.accessibilityValue).toBe('30%');
