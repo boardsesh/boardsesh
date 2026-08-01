@@ -187,8 +187,13 @@ falls back to a valid average. New zero-ascent stats payloads with no valid
 difficulty, quality, or first-ascent data are skipped. The same empty payload
 for an existing key is still applied authoritatively, clearing upstream-owned
 fields without deleting the row or changing Boardsesh counts and quality votes.
-An omitted or malformed `ascensionist_count` is normalized to zero before this
-decision, so it cannot turn an empty row into a `NaN` database write.
+Only a non-negative safe-integer `ascensionist_count` is authoritative; an
+explicit numeric zero clears the stored upstream count, while an omitted, null,
+negative, fractional, non-finite, or wrong-type value is preserved as `NULL` so
+an existing count and its quality-blend weight survive the conflict update. The
+new-row emptiness check alone treats that `NULL` as zero: a fully empty new row
+is skipped, while a new row with other meaningful stats is inserted with a null
+upstream count.
 
 Tick-driven recomputation seeds a new stats row only when the climb exists and
 the exact key has a non-detached flash/send tick. Tick existence gates INSERT

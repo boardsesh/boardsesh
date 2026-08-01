@@ -503,8 +503,8 @@ type MappedClimbStat = {
   angle: number;
   displayDifficulty: number | null;
   benchmarkDifficulty: number | null;
-  ascensionistCount: number;
-  upstreamAscensionistCount: number;
+  ascensionistCount: number | null;
+  upstreamAscensionistCount: number | null;
   difficultyAverage: number | null;
   qualityAverage: number | null;
   qualityNormalized: true;
@@ -512,15 +512,14 @@ type MappedClimbStat = {
   faAt: string | null;
 };
 
-function normalizeAscensionistCount(count: number | null | undefined): number {
-  const numericCount = Number(count ?? 0);
-  return Number.isSafeInteger(numericCount) && numericCount >= 0 ? numericCount : 0;
+function normalizeAscensionistCount(count: unknown): number | null {
+  return typeof count === 'number' && Number.isSafeInteger(count) && count >= 0 ? count : null;
 }
 
 function mapClimbStat(board: AuroraBoardName, item: ClimbStats): MappedClimbStat {
-  // Some Aurora rows omit this nominally-required field. Treat missing or
-  // malformed counts as the same zero sentinel as the other empty-row fields;
-  // never let NaN turn an empty row into a batch-failing INSERT.
+  // Some Aurora rows omit this field or carry malformed values. Preserve that
+  // distinction as NULL: ON CONFLICT treats it as "no count update", while an
+  // explicit numeric 0 remains an authoritative reset.
   const upstreamAscensionistCount = normalizeAscensionistCount(item.ascensionist_count);
   const { difficultyAverage, displayDifficulty, benchmarkDifficulty } = parseDifficultyFields(item);
   return {
@@ -545,7 +544,7 @@ function climbStatKey(climbUuid: string, angle: number): string {
 
 function isEmptyUpstreamClimbStat(value: MappedClimbStat): boolean {
   return (
-    value.upstreamAscensionistCount === 0 &&
+    (value.upstreamAscensionistCount ?? 0) === 0 &&
     value.difficultyAverage == null &&
     value.displayDifficulty == null &&
     value.benchmarkDifficulty == null &&
@@ -573,9 +572,11 @@ async function upsertClimbStats(db: DrizzleDb, board: AuroraBoardName, data: Cli
     // explicitly for ticks-driven updates.
     // Normalize and sanitize the whole payload before deciding whether it has
     // meaningful upstream data. An empty payload is skipped only for a NEW
-    // key: for an existing key it is authoritative and must reach ON CONFLICT
-    // to clear the upstream count/difficulty/quality/FA fields. Boardsesh-owned
-    // counts and quality votes are preserved by the conflict SET below.
+    // key: for an existing key it must reach ON CONFLICT to apply the other
+    // upstream-owned fields. An explicit count 0 clears the stored upstream
+    // count; a missing or malformed count maps to NULL and preserves it.
+    // Boardsesh-owned counts and quality votes are preserved by the conflict
+    // SET below.
     const mappedValues = batch.map((item) => mapClimbStat(board, item));
     const candidateClimbUuids = [...new Set(mappedValues.map((value) => value.climbUuid))];
     const candidateAngles = [...new Set(mappedValues.map((value) => value.angle))];

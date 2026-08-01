@@ -135,7 +135,7 @@ export type ClimbStats = {
   angle: number;
   display_difficulty: number | null;
   benchmark_difficulty: number | null;
-  ascensionist_count: number;
+  ascensionist_count?: number | null;
   difficulty_average: number | null;
   quality_average: number | null;
   fa_username: string | null;

@@ -661,6 +661,87 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
   const dialect = new PgDialect();
   const render = (fragment: Parameters<typeof dialect.sqlToQuery>[0]) => dialect.sqlToQuery(fragment).sql.toLowerCase();
 
+  type RecordedStatsConflictSet = {
+    upstreamAscensionistCount: SQL;
+    ascensionistCount: SQL;
+    qualityAverage: SQL;
+  };
+
+  type RecordedStatsPolicyInput = {
+    incomingUpstreamCount: number | null;
+    storedUpstreamCount: number | null;
+    boardseshAscensionistCount: number;
+    upstreamQualityAverage: number | null;
+    boardseshQualitySum: number;
+    boardseshQualityCount: number;
+  };
+
+  function normalizeSql(fragment: SQL): string {
+    return render(fragment).replace(/\s+/g, ' ').trim();
+  }
+
+  function recordedStatsConflictSet(): RecordedStatsConflictSet {
+    const statsConflictSets = shimConflictSets.filter((set) => 'upstreamQualityAverage' in set);
+    expect(statsConflictSets).toHaveLength(1);
+    return statsConflictSets[0] as unknown as RecordedStatsConflictSet;
+  }
+
+  function evaluateRenderedUpstreamCount(
+    rendered: string,
+    incomingUpstreamCount: number | null,
+    storedUpstreamCount: number | null,
+  ): number {
+    const coalesceMatch = rendered.match(/^coalesce\(([^()]*)\)$/);
+    if (!coalesceMatch) throw new Error(`not a bare COALESCE expression: ${rendered}`);
+
+    for (const argument of coalesceMatch[1].split(',').map((part) => part.trim())) {
+      if (argument === 'excluded.upstream_ascensionist_count') {
+        if (incomingUpstreamCount != null) return incomingUpstreamCount;
+      } else if (argument === '"board_climb_stats"."upstream_ascensionist_count"') {
+        if (storedUpstreamCount != null) return storedUpstreamCount;
+      } else {
+        return Number(argument);
+      }
+    }
+
+    throw new Error(`no COALESCE argument resolved in: ${rendered}`);
+  }
+
+  function evaluateRecordedStatsPolicy(
+    conflictSet: RecordedStatsConflictSet,
+    input: RecordedStatsPolicyInput,
+  ): { upstreamCount: number; totalCount: number; blendedQualityAverage: number | null } {
+    const effectiveCountSql = normalizeSql(conflictSet.upstreamAscensionistCount);
+    const totalCountSql = normalizeSql(conflictSet.ascensionistCount);
+    const blendSql = normalizeSql(conflictSet.qualityAverage);
+
+    // The total and BOTH upstream-weight positions in the recorded blend must
+    // reuse the exact incoming-first COALESCE emitted for the count update.
+    // That ties these behavioral assertions to the query builder path that ran,
+    // rather than to a separately reconstructed helper expression.
+    expect(totalCountSql).toBe(
+      `${effectiveCountSql} + coalesce("board_climb_stats"."boardsesh_ascensionist_count", 0)`,
+    );
+    expect(blendSql.split(effectiveCountSql)).toHaveLength(3);
+    expect(blendSql).toContain('coalesce("board_climb_stats"."boardsesh_quality_sum", 0)');
+    expect(blendSql).toContain('coalesce("board_climb_stats"."boardsesh_quality_count", 0)');
+
+    const upstreamCount = evaluateRenderedUpstreamCount(
+      effectiveCountSql,
+      input.incomingUpstreamCount,
+      input.storedUpstreamCount,
+    );
+    const totalCount = upstreamCount + input.boardseshAscensionistCount;
+    const upstreamWeight = input.upstreamQualityAverage == null ? 0 : upstreamCount;
+    const blendWeight = upstreamWeight + input.boardseshQualityCount;
+    const weightedQualitySum =
+      (input.upstreamQualityAverage == null ? 0 : input.upstreamQualityAverage * upstreamCount) +
+      input.boardseshQualitySum;
+    const blendedQualityAverage = blendWeight === 0 ? input.upstreamQualityAverage : weightedQualitySum / blendWeight;
+
+    return { upstreamCount, totalCount, blendedQualityAverage };
+  }
+
   beforeEach(() => {
     mockSharedSync.mockReset();
     mockPopulateDenormalizedColumns.mockReset();
@@ -673,6 +754,10 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
 
   function stat(overrides: Partial<ClimbStats> = {}) {
     return { ...emptyStat(), ...overrides };
+  }
+
+  function statWithRawCount(rawCount: unknown, overrides: Partial<ClimbStats> = {}): ClimbStats {
+    return { ...stat(overrides), ascensionist_count: rawCount } as unknown as ClimbStats;
   }
 
   function emptyStat(): ClimbStats {
@@ -702,15 +787,111 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     expect(shimConflictSets.filter((set) => 'upstreamQualityAverage' in set)).toHaveLength(0);
   });
 
-  it('treats an omitted ascensionist count as zero instead of writing NaN', async () => {
+  it('treats an omitted count as zero only when deciding a fully empty NEW row is empty', async () => {
     const statWithoutCount = emptyStat();
-    delete (statWithoutCount as Partial<ClimbStats>).ascensionist_count;
+    delete statWithoutCount.ascensionist_count;
     mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [statWithoutCount] }));
 
     await syncSharedData(fakePostgresClient(), 'decoy', 'token');
 
     expect(writtenStatsRows()).toHaveLength(0);
   });
+
+  it('inserts NULL counts when a NEW row omits its count but has other meaningful stats', async () => {
+    const meaningfulStatWithoutCount = stat({ difficulty_average: 18 });
+    delete meaningfulStatWithoutCount.ascensionist_count;
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [meaningfulStatWithoutCount] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toEqual([
+      expect.objectContaining({
+        climbUuid: 'EMPTY-STAT',
+        difficultyAverage: 18,
+        upstreamAscensionistCount: null,
+        ascensionistCount: null,
+      }),
+    ]);
+  });
+
+  it.each([
+    { label: 'omitted', rawCount: undefined, omitCount: true },
+    { label: 'undefined', rawCount: undefined },
+    { label: 'null', rawCount: null },
+    { label: 'negative', rawCount: -1 },
+    { label: 'fractional', rawCount: 1.5 },
+    { label: 'NaN', rawCount: Number.NaN },
+    { label: 'positive infinity', rawCount: Number.POSITIVE_INFINITY },
+    { label: 'negative infinity', rawCount: Number.NEGATIVE_INFINITY },
+    { label: 'unsafe integer', rawCount: Number.MAX_SAFE_INTEGER + 1 },
+    { label: 'numeric string', rawCount: '7' },
+    { label: 'boolean', rawCount: true },
+  ])(
+    "maps an EXISTING row's $label count to NULL so stored count and blend weight survive",
+    async ({ rawCount, omitCount }) => {
+      shimExistingClimbStatRows.push({ climbUuid: 'EMPTY-STAT', angle: 40 });
+      const incomingStat = statWithRawCount(rawCount, { quality_average: 2 });
+      if (omitCount) delete incomingStat.ascensionist_count;
+      mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [incomingStat] }));
+
+      await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+      expect(writtenStatsRows()).toEqual([
+        expect.objectContaining({
+          upstreamAscensionistCount: null,
+          ascensionistCount: null,
+          upstreamQualityAverage: 3,
+        }),
+      ]);
+      expect(
+        evaluateRecordedStatsPolicy(recordedStatsConflictSet(), {
+          incomingUpstreamCount: null,
+          storedUpstreamCount: 8,
+          boardseshAscensionistCount: 2,
+          upstreamQualityAverage: 3,
+          boardseshQualitySum: 10,
+          boardseshQualityCount: 2,
+        }),
+      ).toEqual({ upstreamCount: 8, totalCount: 10, blendedQualityAverage: 3.4 });
+    },
+  );
+
+  it.each([
+    ['explicit zero', 0, 0, 2, 5],
+    ['positive safe integer', 4, 4, 6, 22 / 6],
+  ] as const)(
+    'keeps %s authoritative for an EXISTING row and its blend weight',
+    async (_label, incomingCount, expectedUpstreamCount, expectedTotalCount, expectedBlend) => {
+      shimExistingClimbStatRows.push({ climbUuid: 'EMPTY-STAT', angle: 40 });
+      mockSharedSync.mockResolvedValueOnce(
+        complete({ climb_stats: [stat({ ascensionist_count: incomingCount, quality_average: 2 })] }),
+      );
+
+      await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+      expect(writtenStatsRows()).toEqual([
+        expect.objectContaining({
+          upstreamAscensionistCount: incomingCount,
+          ascensionistCount: incomingCount,
+          upstreamQualityAverage: 3,
+        }),
+      ]);
+      expect(
+        evaluateRecordedStatsPolicy(recordedStatsConflictSet(), {
+          incomingUpstreamCount: incomingCount,
+          storedUpstreamCount: 8,
+          boardseshAscensionistCount: 2,
+          upstreamQualityAverage: 3,
+          boardseshQualitySum: 10,
+          boardseshQualityCount: 2,
+        }),
+      ).toEqual({
+        upstreamCount: expectedUpstreamCount,
+        totalCount: expectedTotalCount,
+        blendedQualityAverage: expectedBlend,
+      });
+    },
+  );
 
   it('bounds the existing-row pre-read by both candidate UUID and angle', async () => {
     mockSharedSync.mockResolvedValueOnce(
