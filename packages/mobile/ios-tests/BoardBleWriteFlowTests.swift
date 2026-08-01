@@ -1411,7 +1411,6 @@ final class WaiterPoolOutcomeTests: XCTestCase {
         XCTAssertTrue(signaledResult)
     }
 
-    // 13
     func testMoonBoardAckWatchdogStartsBoundedConnectionRecovery() {
         let hooks = manager.testHooks
         let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 20)
