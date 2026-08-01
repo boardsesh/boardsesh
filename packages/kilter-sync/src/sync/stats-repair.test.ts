@@ -161,4 +161,45 @@ describe('repairKilterCatalogStats', () => {
       },
     ]);
   });
+
+  it('skips an empty Grips angle but preserves a zero-ascent stat with a grade', async () => {
+    mockFetchLayoutClimbStats.mockImplementation((_token: string, layoutUuid: string) => {
+      if (layoutUuid === 'layout-a') {
+        return Promise.resolve([
+          stat({
+            climbUuid: 'canon',
+            angle: 50,
+            ascentCount: 0,
+            currentDifficultyId: 0,
+            difficultyAverage: 0,
+            qualityAverage: 0,
+          }),
+          stat({ climbUuid: 'canon', angle: 40, ascentCount: 0, currentDifficultyId: 20 }),
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    const { db, insertValues } = createDbShim({
+      selectResults: [[{ uuid: 'canon' }], []],
+      executeResults: [[], [{ changed_rows: '0' }], [{ rows_to_recompute: '0' }], { count: 0 }, []],
+    });
+
+    const summary = await repairKilterCatalogStats({
+      db: db as never,
+      tokenProvider: async () => 'token',
+      reference: reference(),
+      apply: true,
+    });
+
+    expect(summary.canonicalStatsComputed).toBe(1);
+    expect(insertValues).toHaveLength(1);
+    expect(insertValues[0]).toMatchObject([
+      {
+        climbUuid: 'canon',
+        angle: 40,
+        displayDifficulty: 20,
+        upstreamAscensionistCount: 0,
+      },
+    ]);
+  });
 });

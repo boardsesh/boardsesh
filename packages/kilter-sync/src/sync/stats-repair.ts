@@ -9,7 +9,7 @@ import { fetchLayoutClimbStats } from '../api/kilter-rest';
 import { KilterApiError } from '../api/errors';
 import { pullKilterReference, type KilterReferencePull } from './reference-pull';
 import { buildLayoutResolver } from './layout-resolver';
-import { catalogStatSourceKey, foldCatalogStat, type StatAccum } from './catalog-sync';
+import { catalogStatSourceKey, foldCatalogStat, shouldSkipEmptyCatalogStat, type StatAccum } from './catalog-sync';
 
 type DrizzleDb = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
@@ -374,7 +374,12 @@ export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Pro
     }
   }
 
-  const statValues = [...statsByCanonicalAngle.values()].map(statValueFromAccum);
+  // Keep repair behavior in parity with routine catalog ingest: Grips emits
+  // empty rows for unclimbed layout angles, which must not create phantom
+  // board_climb_stats rows during a repair run.
+  const statValues = [...statsByCanonicalAngle.values()]
+    .filter((accum) => !shouldSkipEmptyCatalogStat(accum))
+    .map(statValueFromAccum);
   const { changedRows, maxKilterDrop, maxKilterRise } = await compareExistingStats(args.db, statValues);
   const formulaRowsBeforeApply = await countFormulaMismatches(args.db);
 
