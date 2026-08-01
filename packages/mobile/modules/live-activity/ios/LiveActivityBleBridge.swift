@@ -16,9 +16,9 @@ enum LiveActivityBleBridge {
     /// main actor for the duration, so main actor is only briefly held at
     /// function entry/exit.
     @MainActor
-    /// Returns whether CoreBluetooth was ready when the existing display call
-    /// was enqueued. This is diagnostic-only; the write/no-op behavior and both
-    /// timeout values are unchanged.
+    /// Returns true only when this display request completed successfully and
+    /// the global write queue drained inside its existing timeout. This is
+    /// diagnostic-only; failed or late writes keep their existing behavior.
     @discardableResult
     static func writeBoardForIntent(items: [SharedQueueItem], currentIndex: Int) async -> Bool {
         let task = BleIntentBackgroundTask()

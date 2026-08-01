@@ -172,9 +172,9 @@ enum ClimbNavigationIntent {
         // re-send is a fast no-op against the wall's last-frame buffer.
         #if !WIDGET_EXTENSION
         if let bleWriteTask {
-            let writeWasReady = await bleWriteTask.value
-            diagnosticRun.mark(writeWasReady ? .bleFinishedSuccess : .bleFinishedFailure)
-            if !writeWasReady {
+            let writeSucceeded = await bleWriteTask.value
+            diagnosticRun.mark(writeSucceeded ? .bleFinishedSuccess : .bleFinishedFailure)
+            if !writeSucceeded {
                 completionClass = .bleFailure
             }
         }

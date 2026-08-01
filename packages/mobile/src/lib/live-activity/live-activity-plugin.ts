@@ -7,7 +7,7 @@ import {
   type LiveActivityClimbUpdateOptions,
   type WidgetQueueNavigateEvent,
   type BoardControlEvent,
-  type LiveActivityIntentDiagnostic,
+  type InterruptedLiveActivityIntentDiagnostic,
 } from '../../../modules/live-activity/src/index';
 
 // Platform-agnostic wrapper around the "session presence" native surface:
@@ -74,7 +74,7 @@ export async function markLiveActivityIntentReactRootMounted(): Promise<void> {
  * owns schema/build/TTL/grace validation and once-only dedupe; JS only reports
  * the already-sanitized records.
  */
-export async function consumeInterruptedLiveActivityIntentRuns(): Promise<LiveActivityIntentDiagnostic[]> {
+export async function consumeInterruptedLiveActivityIntentRuns(): Promise<InterruptedLiveActivityIntentDiagnostic[]> {
   try {
     return (await liveActivityNative?.consumeInterruptedIntentRuns?.()) ?? [];
   } catch {
@@ -103,4 +103,4 @@ export function addBoardControlListener(callback: (event: BoardControlEvent) => 
   return () => subscription.remove();
 }
 
-export type { WidgetQueueNavigateEvent, BoardControlEvent, LiveActivityIntentDiagnostic };
+export type { WidgetQueueNavigateEvent, BoardControlEvent, InterruptedLiveActivityIntentDiagnostic };

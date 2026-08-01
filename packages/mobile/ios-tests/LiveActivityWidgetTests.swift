@@ -655,7 +655,7 @@ final class LiveActivityIntentDiagnosticStoreTests: XCTestCase {
         )
     }
 
-    func testRunLifecycleAndNormalEarlyCompletionAreDurableAndIdempotent() {
+    func testRunLifecycleAndNormalEarlyCompletionAreDurableAndIdempotent() throws {
         let store = makeStore()
         let run = store.begin(kind: .nextClimb)
 
@@ -669,9 +669,10 @@ final class LiveActivityIntentDiagnosticStoreTests: XCTestCase {
         run.mark(.bleStarted)
         run.complete(.success)
 
-        let completed = store.recordsSnapshot().single
-        XCTAssertEqual(completed?.lastStage, .completed)
-        XCTAssertEqual(completed?.completionClass, .navigationOutOfBounds)
+        let completed = try XCTUnwrap(store.recordsSnapshot().single)
+        XCTAssertEqual(completed.lastStage, .completed)
+        XCTAssertEqual(completed.completionClass, .navigationOutOfBounds)
+        XCTAssertNil(LiveActivityInterruptedIntentDiagnostic(record: completed))
     }
 
     func testSameProcessAndCompletedRecordsAreNeverConsumed() {
@@ -686,7 +687,7 @@ final class LiveActivityIntentDiagnosticStoreTests: XCTestCase {
         XCTAssertEqual(store.recordsSnapshot().count, 2)
     }
 
-    func testPreviousProcessRecordWaitsForGraceThenConsumesOnce() {
+    func testPreviousProcessRecordWaitsForGraceThenConsumesOnce() throws {
         let firstProcess = makeStore(processId: UUID())
         _ = firstProcess.begin(kind: .nextClimb)
 
@@ -697,7 +698,14 @@ final class LiveActivityIntentDiagnosticStoreTests: XCTestCase {
         clockNow = clockNow.addingTimeInterval(2)
         let consumed = foregroundProcess.consumeInterruptedRuns()
         XCTAssertEqual(consumed.count, 1)
-        XCTAssertEqual(consumed.single?.intentKind, .nextClimb)
+        let interrupted = try XCTUnwrap(consumed.single)
+        XCTAssertEqual(interrupted.intentKind, .nextClimb)
+        XCTAssertNotEqual(interrupted.lastStage, .completed)
+        XCTAssertNil(interrupted.completionClass)
+        let bridgeDiagnostic = try XCTUnwrap(LiveActivityInterruptedIntentDiagnostic(record: interrupted))
+        XCTAssertEqual(bridgeDiagnostic.lastStage, .entered)
+        XCTAssertEqual(bridgeDiagnostic.bridgePayload["lastStage"] as? String, "entered")
+        XCTAssertNil(bridgeDiagnostic.bridgePayload["completionClass"])
         XCTAssertTrue(foregroundProcess.consumeInterruptedRuns().isEmpty)
 
         // Recreating the consumer with the same durable store still cannot
@@ -763,6 +771,25 @@ final class LiveActivityIntentDiagnosticStoreTests: XCTestCase {
         XCTAssertEqual(Set(records.map(\.runId)).count, 4)
     }
 
+    func testInterruptedStageProjectionCoversEveryNonCompletedStage() {
+        let storedInterruptedStages = Set(
+            LiveActivityIntentDiagnosticStage.allCases
+                .filter { $0 != .completed }
+                .map(\.rawValue)
+        )
+        let bridgeStages = Set(LiveActivityInterruptedIntentDiagnosticStage.allCases.map(\.rawValue))
+
+        XCTAssertEqual(bridgeStages, storedInterruptedStages)
+        for storedStage in LiveActivityIntentDiagnosticStage.allCases {
+            let projected = LiveActivityInterruptedIntentDiagnosticStage(rawValue: storedStage.rawValue)
+            if storedStage == .completed {
+                XCTAssertNil(projected)
+            } else {
+                XCTAssertEqual(projected?.rawValue, storedStage.rawValue)
+            }
+        }
+    }
+
     func testPersistedAndBridgedFieldsAreBoundedAndIdentifierFree() throws {
         let store = makeStore(
             appVersion: "2.0.0<script>alert(1)</script>",
@@ -777,7 +804,8 @@ final class LiveActivityIntentDiagnosticStoreTests: XCTestCase {
         XCTAssertNotNil(UUID(uuidString: record.runId))
         XCTAssertNotNil(UUID(uuidString: record.processId))
 
-        let bridgeJson = try JSONSerialization.data(withJSONObject: record.bridgePayload)
+        let bridgeDiagnostic = try XCTUnwrap(LiveActivityInterruptedIntentDiagnostic(record: record))
+        let bridgeJson = try JSONSerialization.data(withJSONObject: bridgeDiagnostic.bridgePayload)
         let bridgeText = try XCTUnwrap(String(data: bridgeJson, encoding: .utf8)).lowercased()
         for forbiddenKey in ["userid", "climb", "session", "server", "endpoint", "peripheral", "authtoken"] {
             XCTAssertFalse(bridgeText.contains(forbiddenKey), "unexpected identifier field: \(forbiddenKey)")

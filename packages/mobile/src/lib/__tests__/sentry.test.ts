@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { ComponentType } from 'react';
+import type { InterruptedLiveActivityIntentDiagnostic } from '../../../modules/live-activity/src/index';
 
 // Spy on the SDK so we can assert the disabled-build contract. Under vitest
 // `__DEV__` is true (vite.config define) and no DSN is set, so `isSentryEnabled`
@@ -61,7 +62,7 @@ describe('Live Activity intent diagnostic reporting', () => {
     updatedAtMs: 3_500,
     lastStage: 'bleStarted' as const,
     reactRootMounted: true,
-  };
+  } satisfies InterruptedLiveActivityIntentDiagnostic;
 
   it('maps to info level, a fixed fingerprint, fixed tags, and generated-id extras', () => {
     const scope = {
@@ -79,6 +80,7 @@ describe('Live Activity intent diagnostic reporting', () => {
     expect(scope.setTag).toHaveBeenCalledWith('intent_kind', 'nextClimb');
     expect(scope.setTag).toHaveBeenCalledWith('last_stage', 'bleStarted');
     expect(scope.setTag).toHaveBeenCalledWith('react_root_mounted', 'true');
+    expect(scope.setTag).not.toHaveBeenCalledWith('completion_class', expect.anything());
     expect(scope.setExtra).toHaveBeenCalledWith('run_id', diagnostic.runId);
     expect(scope.setExtra).toHaveBeenCalledWith('process_id', diagnostic.processId);
     expect(scope.setExtra).toHaveBeenCalledWith('elapsed_ms', 2_500);

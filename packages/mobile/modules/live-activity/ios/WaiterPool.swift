@@ -17,7 +17,7 @@ import Foundation
 final class WaiterPool: @unchecked Sendable {
     private struct Waiter {
         let id: UUID
-        let continuation: CheckedContinuation<Void, Never>
+        let continuation: CheckedContinuation<Bool, Never>
         let timeoutWorkItem: DispatchWorkItem
     }
 
@@ -28,18 +28,18 @@ final class WaiterPool: @unchecked Sendable {
         self.queue = queue
     }
 
-    /// Returns immediately if `isReady()` is true when evaluated on the pool's
-    /// queue; otherwise suspends until `signalAll()` is called or `timeout`
-    /// elapses.
-    func wait(timeout: TimeInterval, isReady: @escaping () -> Bool) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+    /// Returns `true` immediately when `isReady()` is already satisfied, or
+    /// after `signalAll()` resumes the waiter. Returns `false` when `timeout`
+    /// elapses first.
+    func wait(timeout: TimeInterval, isReady: @escaping () -> Bool) async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             queue.async { [weak self] in
                 guard let self else {
-                    continuation.resume()
+                    continuation.resume(returning: false)
                     return
                 }
                 if isReady() {
-                    continuation.resume()
+                    continuation.resume(returning: true)
                     return
                 }
                 let waiterId = UUID()
@@ -53,12 +53,12 @@ final class WaiterPool: @unchecked Sendable {
                         // traps in debug builds and hangs the awaiting Task.
                         // In practice unreachable while BoardBleManager.shared
                         // owns the pool, but the contract has to hold.
-                        continuation.resume()
+                        continuation.resume(returning: false)
                         return
                     }
                     if let index = self.waiters.firstIndex(where: { $0.id == waiterId }) {
                         let waiter = self.waiters.remove(at: index)
-                        waiter.continuation.resume()
+                        waiter.continuation.resume(returning: false)
                     }
                     // If no matching waiter is found, signalAll already
                     // resumed this continuation and removed the entry — do
@@ -79,7 +79,7 @@ final class WaiterPool: @unchecked Sendable {
         waiters = []
         for waiter in snapshot {
             waiter.timeoutWorkItem.cancel()
-            waiter.continuation.resume()
+            waiter.continuation.resume(returning: true)
         }
     }
 

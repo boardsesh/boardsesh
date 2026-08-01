@@ -277,37 +277,42 @@ export type WidgetQueueNavigateEvent = {
   correlationId: string;
 };
 
-export type LiveActivityIntentDiagnostic = {
+export type LiveActivityIntentDiagnosticKind = 'nextClimb' | 'previousClimb' | 'takeControl' | 'reconnectBoard';
+
+export type LiveActivityIntentDiagnosticStage =
+  | 'entered'
+  | 'networkStarted'
+  | 'networkFinishedSuccess'
+  | 'networkFinishedRetryable'
+  | 'networkFinishedTerminal'
+  | 'activityKitUpdated'
+  | 'bleStarted'
+  | 'bleFinishedSuccess'
+  | 'bleFinishedFailure'
+  | 'darwinPosted'
+  | 'completed';
+
+export type LiveActivityIntentCompletionClass =
+  | 'success'
+  | 'sharedDefaultsUnavailable'
+  | 'navigationOutOfBounds'
+  | 'serverRejected'
+  | 'retryableNetworkFailure'
+  | 'localNavigationEnabled'
+  | 'alreadyAllowed'
+  | 'bleFailure';
+
+export type InterruptedLiveActivityIntentDiagnostic = {
   schemaVersion: 1;
   runId: string;
   processId: string;
-  intentKind: 'nextClimb' | 'previousClimb' | 'takeControl' | 'reconnectBoard';
+  intentKind: LiveActivityIntentDiagnosticKind;
   appVersion: string;
   buildNumber: string;
   startedAtMs: number;
   updatedAtMs: number;
-  lastStage:
-    | 'entered'
-    | 'networkStarted'
-    | 'networkFinishedSuccess'
-    | 'networkFinishedRetryable'
-    | 'networkFinishedTerminal'
-    | 'activityKitUpdated'
-    | 'bleStarted'
-    | 'bleFinishedSuccess'
-    | 'bleFinishedFailure'
-    | 'darwinPosted'
-    | 'completed';
+  lastStage: Exclude<LiveActivityIntentDiagnosticStage, 'completed'>;
   reactRootMounted: boolean;
-  completionClass?:
-    | 'success'
-    | 'sharedDefaultsUnavailable'
-    | 'navigationOutOfBounds'
-    | 'serverRejected'
-    | 'retryableNetworkFailure'
-    | 'localNavigationEnabled'
-    | 'alreadyAllowed'
-    | 'bleFailure';
 };
 
 /**
@@ -331,7 +336,7 @@ type LiveActivityNativeModule = {
   /** Optional for OTA compatibility with binaries predating #4077. */
   markIntentReactRootMounted?(): Promise<void>;
   /** Optional for OTA compatibility with binaries predating #4077. */
-  consumeInterruptedIntentRuns?(): Promise<LiveActivityIntentDiagnostic[]>;
+  consumeInterruptedIntentRuns?(): Promise<InterruptedLiveActivityIntentDiagnostic[]>;
   addListener(event: 'queueNavigate', listener: (payload: WidgetQueueNavigateEvent) => void): EventSubscription;
 };
 

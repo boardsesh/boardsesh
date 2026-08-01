@@ -168,6 +168,29 @@ enum BoardBleError: LocalizedError {
     }
 }
 
+/// One-shot result for the specific display request issued by a Live Activity
+/// intent. Display callbacks settle on `bleQueue`; the awaiting task reads the
+/// result after the global drain waiter resumes. The lock makes that cross-task
+/// read explicit and prevents a defensive duplicate callback from changing the
+/// first result.
+private final class BoardBleDisplayWriteOutcome: @unchecked Sendable {
+    private let lock = NSLock()
+    private var settledResult: Bool?
+
+    func settle(succeeded: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard settledResult == nil else { return }
+        settledResult = succeeded
+    }
+
+    var succeeded: Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        return settledResult
+    }
+}
+
 final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let shared = BoardBleManager()
 
@@ -557,6 +580,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// no-op cleanly. The not-ready case is logged at `error` level so a
     /// "widget UI moved but wall didn't" report can be diagnosed from
     /// Console.app without recompiling under DEBUG.
+    /// Returns true only when this display request's callback succeeds AND the
+    /// global write queue drains before `drainTimeout`.
     func displayCurrentItemAwaitingReady(
         items: [SharedQueueItem],
         currentIndex: Int,
@@ -573,9 +598,39 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             ) }
             logger.error("displayCurrentItemAwaitingReady: not ready after \(readyTimeout, privacy: .public)s — centralState=\(state.centralState, privacy: .public) peripheral=\(state.hasPeripheral, privacy: .public) writeChar=\(state.hasWriteChar, privacy: .public); BLE write will no-op until the JS layer's BluetoothAutoSender re-fires")
         }
-        displayCurrentItem(items: items, currentIndex: currentIndex)
-        await waitForWriteDrain(timeout: drainTimeout)
-        return ready
+
+        return await displayCurrentItemAwaitingDrain(
+            items: items,
+            currentIndex: currentIndex,
+            drainTimeout: drainTimeout
+        )
+    }
+
+    private func displayCurrentItemAwaitingDrain(
+        items: [SharedQueueItem],
+        currentIndex: Int,
+        drainTimeout: TimeInterval
+    ) async -> Bool {
+        let displayOutcome = BoardBleDisplayWriteOutcome()
+        // Both blocks enter the same serial queue in call order: the display
+        // attempt settles or enqueues its specific request before the drain
+        // waiter evaluates the global queue predicate.
+        runOnBleQueue { [weak self] in
+            guard let self else {
+                displayOutcome.settle(succeeded: false)
+                return
+            }
+            self.displayCurrentItemOnBleQueue(items: items, currentIndex: currentIndex) { succeeded in
+                displayOutcome.settle(succeeded: succeeded)
+            }
+        }
+        let drainedBeforeTimeout = await waitForWriteDrain(timeout: drainTimeout)
+
+        // Success requires BOTH this display request's callback and the existing
+        // global drain condition. On timeout the write is deliberately left
+        // alone; a later callback may settle the one-shot outcome but cannot
+        // emit a second intent diagnostic because this await has already ended.
+        return drainedBeforeTimeout && displayOutcome.succeeded == true
     }
 
     private var isAvailableOnBleQueue: Bool {
@@ -866,17 +921,27 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         displayCurrentItemOnBleQueue(items: items, currentIndex: currentIndex)
     }
 
-    private func displayCurrentItemOnBleQueue(items: [SharedQueueItem], currentIndex: Int) {
+    private func displayCurrentItemOnBleQueue(
+        items: [SharedQueueItem],
+        currentIndex: Int,
+        completion: ((Bool) -> Void)? = nil
+    ) {
         guard currentIndex >= 0, currentIndex < items.count else {
-            clearBoardOnBleQueue()
+            clearBoardOnBleQueue(completion: completion)
             return
         }
-        displayItemOnBleQueue(items[currentIndex])
+        displayItemOnBleQueue(items[currentIndex], completion: completion)
     }
 
-    private func clearBoardOnBleQueue() {
-        guard let configuration else { return }
-        guard connectedPeripheral != nil, writeCharacteristic != nil else { return }
+    private func clearBoardOnBleQueue(completion: ((Bool) -> Void)? = nil) {
+        guard let configuration else {
+            completion?(false)
+            return
+        }
+        guard connectedPeripheral != nil, writeCharacteristic != nil else {
+            completion?(false)
+            return
+        }
 
         // `l##` (empty frame) is MoonBoard's clear-all: community firmware
         // (ArduinoMoonBoardLED) clears every LED on each incoming frame; unverified
@@ -896,17 +961,30 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             )
         }
 
-        guard !result.packet.isEmpty else { return }
+        guard !result.packet.isEmpty else {
+            completion?(false)
+            return
+        }
         writeOnBleQueue(data: result.packet) { [weak self] error, _ in
             if let error {
                 self?.logger.error("BLE clear failed: \(error.localizedDescription, privacy: .public)")
             }
+            completion?(error == nil)
         }
     }
 
-    private func displayItemOnBleQueue(_ item: SharedQueueItem) {
-        guard let configuration else { return }
-        guard connectedPeripheral != nil, writeCharacteristic != nil else { return }
+    private func displayItemOnBleQueue(
+        _ item: SharedQueueItem,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        guard let configuration else {
+            completion?(false)
+            return
+        }
+        guard connectedPeripheral != nil, writeCharacteristic != nil else {
+            completion?(false)
+            return
+        }
 
         // MoonBoard encodes straight from grid coordinates into the ASCII `l#…#`
         // frame format — it has no LED placement map and the Aurora binary
@@ -926,12 +1004,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 // makeMoonboardPacket returns an empty packet for this all-skipped
                 // case so it never reaches the wall.
                 logger.warning("Skipping MoonBoard BLE write: no encodable holds for climb \(item.climbUuid, privacy: .public)")
+                completion?(false)
                 return
             }
             writeOnBleQueue(data: result.packet) { [weak self] error, _ in
                 if let error {
                     self?.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
                 }
+                completion?(error == nil)
             }
             return
         }
@@ -943,6 +1023,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         )
         guard !ledPlacements.isEmpty || item.frames.isEmpty else {
             logger.error("Missing LED placement data for \(configuration.boardName, privacy: .public) layout=\(configuration.layoutId, privacy: .public) size=\(configuration.sizeId, privacy: .public)")
+            completion?(false)
             return
         }
 
@@ -954,6 +1035,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 layoutId: configuration.layoutId
             ) else {
                 logger.warning("Cannot mirror frames for climb \(item.climbUuid, privacy: .public)")
+                completion?(false)
                 return
             }
             framesToSend = mirroredFrames
@@ -971,6 +1053,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
         guard !result.packet.isEmpty || framesToSend.isEmpty else {
             logger.warning("Skipping BLE write because no placements resolved for climb \(item.climbUuid, privacy: .public)")
+            completion?(false)
             return
         }
 
@@ -978,6 +1061,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             if let error {
                 self?.logger.error("BLE write failed: \(error.localizedDescription, privacy: .public)")
             }
+            completion?(error == nil)
         }
     }
 
@@ -1556,12 +1640,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func waitUntilReady(timeout: TimeInterval) async {
-        await readyWaiters.wait(timeout: timeout) { [weak self] in
+        _ = await readyWaiters.wait(timeout: timeout) { [weak self] in
             self?.isReadyForWrite ?? true
         }
     }
 
-    private func waitForWriteDrain(timeout: TimeInterval) async {
+    private func waitForWriteDrain(timeout: TimeInterval) async -> Bool {
         await drainWaiters.wait(timeout: timeout) { [weak self] in
             guard let self else { return true }
             return self.writeQueue.isEmpty && !self.isWriting
@@ -2288,6 +2372,21 @@ extension BoardBleManager {
         /// before the call returns — the suite's determinism relies on it.
         func sync<T>(_ body: () -> T) -> T {
             manager.runOnBleQueueSync(body)
+        }
+
+        /// Exercise the intent display request + global drain contract after
+        /// readiness has already been established, without creating a real
+        /// CBCentralManager in the Swift unit-test target.
+        func displayCurrentItemAwaitingDrain(
+            items: [SharedQueueItem],
+            currentIndex: Int,
+            drainTimeout: TimeInterval
+        ) async -> Bool {
+            await manager.displayCurrentItemAwaitingDrain(
+                items: items,
+                currentIndex: currentIndex,
+                drainTimeout: drainTimeout
+            )
         }
 
         /// Directly seed the connection the write path guards on. No CoreBluetooth

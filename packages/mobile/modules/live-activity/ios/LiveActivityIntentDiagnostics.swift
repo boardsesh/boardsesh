@@ -27,6 +27,22 @@ enum LiveActivityIntentDiagnosticStage: String, Codable, CaseIterable {
     case completed
 }
 
+/// Stages that can cross the interrupted-run bridge. `completed` is
+/// intentionally unrepresentable here: normal exits stay in native storage and
+/// are never consumed by JS.
+enum LiveActivityInterruptedIntentDiagnosticStage: String, Codable, CaseIterable {
+    case entered
+    case networkStarted
+    case networkFinishedSuccess
+    case networkFinishedRetryable
+    case networkFinishedTerminal
+    case activityKitUpdated
+    case bleStarted
+    case bleFinishedSuccess
+    case bleFinishedFailure
+    case darwinPosted
+}
+
 /// Sanitized normal-exit classes. An interrupted run has no completion class.
 enum LiveActivityIntentCompletionClass: String, Codable, CaseIterable {
     case success
@@ -57,9 +73,43 @@ struct LiveActivityIntentDiagnosticRecord: Codable, Equatable {
     var storageKey: String {
         "\(processId):\(runId)"
     }
+}
+
+/// Failable boundary between durable stored records and the JS bridge. The DTO
+/// has neither a completed stage nor a completion class, so a future change to
+/// store filtering cannot accidentally widen the consumed payload.
+struct LiveActivityInterruptedIntentDiagnostic: Equatable {
+    let schemaVersion: Int
+    let runId: String
+    let processId: String
+    let intentKind: LiveActivityIntentDiagnosticKind
+    let appVersion: String
+    let buildNumber: String
+    let startedAt: Date
+    let updatedAt: Date
+    let lastStage: LiveActivityInterruptedIntentDiagnosticStage
+    let reactRootMounted: Bool
+
+    init?(record: LiveActivityIntentDiagnosticRecord) {
+        guard record.completionClass == nil,
+              let interruptedStage = LiveActivityInterruptedIntentDiagnosticStage(rawValue: record.lastStage.rawValue)
+        else {
+            return nil
+        }
+        schemaVersion = record.schemaVersion
+        runId = record.runId
+        processId = record.processId
+        intentKind = record.intentKind
+        appVersion = record.appVersion
+        buildNumber = record.buildNumber
+        startedAt = record.startedAt
+        updatedAt = record.updatedAt
+        lastStage = interruptedStage
+        reactRootMounted = record.reactRootMounted
+    }
 
     var bridgePayload: [String: Any] {
-        var payload: [String: Any] = [
+        [
             "schemaVersion": schemaVersion,
             "runId": runId,
             "processId": processId,
@@ -71,10 +121,6 @@ struct LiveActivityIntentDiagnosticRecord: Codable, Equatable {
             "lastStage": lastStage.rawValue,
             "reactRootMounted": reactRootMounted,
         ]
-        if let completionClass {
-            payload["completionClass"] = completionClass.rawValue
-        }
-        return payload
     }
 }
 
@@ -403,7 +449,9 @@ enum LiveActivityIntentDiagnostics {
     }
 
     static func consumeInterruptedRuns() -> [[String: Any]] {
-        store.consumeInterruptedRuns().map(\.bridgePayload)
+        store.consumeInterruptedRuns()
+            .compactMap { LiveActivityInterruptedIntentDiagnostic(record: $0) }
+            .map(\.bridgePayload)
     }
 }
 

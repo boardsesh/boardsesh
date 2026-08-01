@@ -467,11 +467,20 @@ returned twice. JS reports each returned record as an informational Sentry
 message with the fixed fingerprint `live-activity-intent-interrupted`; it is not
 captured as an exception or crash. A normally returning intent always marks its
 record completed, including guard/early-return paths, so it is never reported.
+Its normal completion class stays on that stored completed record; interrupted
+records have no completion class, and the native consume payload cannot include
+one.
 
 This instrumentation does not change the intent work budget. Widget HTTP still
 uses its existing 10-second request timeout, and navigation BLE still waits up
 to 3 seconds for readiness plus the existing 1.5-second write-drain window. It
 also does not cancel BLE work when the background task expires.
+
+For navigation intents, `bleFinishedSuccess` means the specific display
+request's native callback succeeded and the global write queue drained inside
+that 1.5-second window. Encoding, connection/enqueue, write, and drain-timeout
+failures record `bleFinishedFailure`; a write that finishes after the deadline
+continues normally but cannot change the already-settled diagnostic result.
 
 #### MetricKit audit (no new integration)
 

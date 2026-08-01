@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import * as Sentry from '@sentry/react-native';
 import { installGlobalErrorCapture } from './global-error-capture';
 import { resolveAppEnvironment } from './app-environment';
-import type { LiveActivityIntentDiagnostic } from './live-activity/live-activity-plugin';
+import type { InterruptedLiveActivityIntentDiagnostic } from './live-activity/live-activity-plugin';
 
 /**
  * Triage context attached to a reported error. Defined here (not in
@@ -174,7 +174,7 @@ type LiveActivityIntentDiagnosticScope = {
  */
 export function applyLiveActivityIntentDiagnosticToScope(
   scope: LiveActivityIntentDiagnosticScope,
-  diagnostic: LiveActivityIntentDiagnostic,
+  diagnostic: InterruptedLiveActivityIntentDiagnostic,
 ): void {
   scope.setLevel('info');
   scope.setFingerprint([LIVE_ACTIVITY_INTENT_INTERRUPTED_FINGERPRINT]);
@@ -185,9 +185,6 @@ export function applyLiveActivityIntentDiagnosticToScope(
   scope.setTag('intent_schema_version', diagnostic.schemaVersion);
   scope.setTag('app_version', diagnostic.appVersion);
   scope.setTag('build_number', diagnostic.buildNumber);
-  if (diagnostic.completionClass) {
-    scope.setTag('completion_class', diagnostic.completionClass);
-  }
   // Random recorder IDs are extras rather than high-cardinality indexed tags.
   // They identify only this diagnostic run/process, never a user or session.
   scope.setExtra('run_id', diagnostic.runId);
@@ -207,7 +204,7 @@ type LiveActivityIntentDiagnosticCaptureMessage = (message: string, level: 'info
  * contract remains directly testable in Vitest, where __DEV__ is inlined true.
  */
 export function captureEnabledLiveActivityIntentDiagnostic(
-  diagnostic: LiveActivityIntentDiagnostic,
+  diagnostic: InterruptedLiveActivityIntentDiagnostic,
   withScope: LiveActivityIntentDiagnosticWithScope,
   captureMessage: LiveActivityIntentDiagnosticCaptureMessage,
 ): void {
@@ -221,7 +218,7 @@ export function captureEnabledLiveActivityIntentDiagnostic(
  * Reports an interrupted native intent as an informational message. It is not
  * an exception or crash and therefore cannot inflate crash-free statistics.
  */
-export function captureLiveActivityIntentDiagnostic(diagnostic: LiveActivityIntentDiagnostic): void {
+export function captureLiveActivityIntentDiagnostic(diagnostic: InterruptedLiveActivityIntentDiagnostic): void {
   if (!isSentryEnabled) return;
   captureEnabledLiveActivityIntentDiagnostic(diagnostic, Sentry.withScope, Sentry.captureMessage);
 }

@@ -201,6 +201,29 @@ final class BoardBleWriteFlowTests: XCTestCase {
         )
     }
 
+    private func queueItem(frames: String = "p1r42", mirrored: Bool = false) -> SharedQueueItem {
+        SharedQueueItem(
+            uuid: "queue-item",
+            climbUuid: "climb-item",
+            climbName: "Test climb",
+            difficulty: "6c+/V5",
+            angle: 40,
+            frames: frames,
+            setterUsername: "tester",
+            mirrored: mirrored
+        )
+    }
+
+    private func waitForWriteQueueDepth(_ expectedDepth: Int) async {
+        for _ in 0..<1_000 {
+            if manager.testHooks.sync({ manager.testHooks.writeQueueDepth }) == expectedDepth {
+                return
+            }
+            await Task.yield()
+        }
+        XCTFail("write queue did not reach depth \(expectedDepth)")
+    }
+
     /// Fire the most recently scheduled one-shot with `label`, on the BLE queue.
     private func fireLatestOneShot(label: String) {
         manager.testHooks.sync {
@@ -1154,5 +1177,226 @@ final class BoardBleWriteFlowTests: XCTestCase {
         XCTAssertNil(completionError)
         XCTAssertEqual(completionTelemetry?.writeType, "withResponse")
         XCTAssertEqual(completionTelemetry?.writeTypeSource, BoardBleWriteTypeSource.moonboardCharacteristic.rawValue)
+    }
+
+    func testIntentDisplaySucceedsOnlyAfterItsRequestAndGlobalQueueDrain() async {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 512)
+        let characteristic = makeCharacteristic(properties: .writeWithoutResponse)
+
+        hooks.sync {
+            hooks.setConfiguration(moonboardConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        let resultTask = Task {
+            await hooks.displayCurrentItemAwaitingDrain(
+                items: [queueItem()],
+                currentIndex: 0,
+                drainTimeout: 1
+            )
+        }
+        await waitForWriteQueueDepth(1)
+
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        fireLatestOneShot(label: "chunkDelay")
+
+        let succeeded = await resultTask.value
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(hooks.sync { hooks.writeQueueDepth }, 0)
+        XCTAssertFalse(hooks.sync { hooks.isWriting })
+    }
+
+    func testIntentDisplayReportsEncodingAndEnqueueFailures() async {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 512)
+        let characteristic = makeCharacteristic(properties: .writeWithoutResponse)
+
+        hooks.sync {
+            hooks.setConfiguration(moonboardConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+        let encodingSucceeded = await hooks.displayCurrentItemAwaitingDrain(
+            items: [queueItem(frames: "garbage")],
+            currentIndex: 0,
+            drainTimeout: 1
+        )
+        XCTAssertFalse(encodingSucceeded)
+        XCTAssertTrue(peripheral.writtenChunks.isEmpty)
+
+        hooks.sync {
+            hooks.setConnection(peripheral: nil, characteristic: nil)
+        }
+        let enqueueSucceeded = await hooks.displayCurrentItemAwaitingDrain(
+            items: [queueItem()],
+            currentIndex: 0,
+            drainTimeout: 1
+        )
+        XCTAssertFalse(enqueueSucceeded)
+        XCTAssertTrue(peripheral.writtenChunks.isEmpty)
+    }
+
+    func testIntentDisplayReportsWriteFailureAfterQueueDrains() async {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 512)
+        let characteristic = makeCharacteristic(properties: .write)
+
+        hooks.sync {
+            hooks.setConfiguration(moonboardConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        let resultTask = Task {
+            await hooks.displayCurrentItemAwaitingDrain(
+                items: [queueItem()],
+                currentIndex: 0,
+                drainTimeout: 1
+            )
+        }
+        await waitForWriteQueueDepth(1)
+        hooks.fireWriteAck(error: BoardBleError.writeCancelled)
+
+        let succeeded = await resultTask.value
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(hooks.sync { hooks.writeQueueDepth }, 0)
+        XCTAssertFalse(hooks.sync { hooks.isWriting })
+    }
+
+    func testIntentDisplayDrainTimeoutStaysFailureWhenWriteFinishesLater() async {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: false, maxWriteValueLength: 512)
+        let characteristic = makeCharacteristic(properties: .writeWithoutResponse)
+
+        hooks.sync {
+            hooks.setConfiguration(moonboardConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        let resultTask = Task {
+            await hooks.displayCurrentItemAwaitingDrain(
+                items: [queueItem()],
+                currentIndex: 0,
+                drainTimeout: 0
+            )
+        }
+        await waitForWriteQueueDepth(1)
+
+        let initialResult = await resultTask.value
+        XCTAssertFalse(initialResult)
+        XCTAssertEqual(hooks.sync { hooks.writeQueueDepth }, 1)
+
+        peripheral.canSendDefault = true
+        hooks.sync { scheduler.repeatingTimers[0].fire() }
+        fireLatestOneShot(label: "chunkDelay")
+
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        XCTAssertEqual(hooks.sync { hooks.writeQueueDepth }, 0)
+        XCTAssertFalse(hooks.sync { hooks.isWriting })
+        // Reading the already-completed task again proves the late per-request
+        // callback cannot turn the timed-out diagnostic result into success.
+        let resultAfterLateCompletion = await resultTask.value
+        XCTAssertFalse(resultAfterLateCompletion)
+    }
+
+    func testIntentDisplayNeedsGlobalDrainAfterSpecificRequestSucceeds() async {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 512)
+        let characteristic = makeCharacteristic(properties: .writeWithoutResponse)
+
+        hooks.sync {
+            hooks.setConfiguration(moonboardConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        let resultTask = Task {
+            await hooks.displayCurrentItemAwaitingDrain(
+                items: [queueItem()],
+                currentIndex: 0,
+                drainTimeout: 1
+            )
+        }
+        await waitForWriteQueueDepth(1)
+
+        hooks.sync {
+            manager.write(data: Data([0x01])) { _, _ in }
+        }
+        XCTAssertEqual(hooks.sync { hooks.writeQueueDepth }, 2)
+
+        // Complete the intent's own request successfully, then park a second
+        // request so the existing global drain condition cannot signal.
+        peripheral.canSendDefault = false
+        fireLatestOneShot(label: "chunkDelay")
+        XCTAssertEqual(hooks.sync { hooks.writeQueueDepth }, 1)
+
+        let succeeded = await resultTask.value
+        XCTAssertFalse(succeeded)
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+
+        // The unrelated queued request is not cancelled by the intent's drain
+        // deadline and can still finish normally afterwards.
+        peripheral.canSendDefault = true
+        hooks.sync { scheduler.repeatingTimers[0].fire() }
+        fireLatestOneShot(label: "chunkDelay")
+        XCTAssertEqual(peripheral.writtenChunks.count, 2)
+        XCTAssertEqual(hooks.sync { hooks.writeQueueDepth }, 0)
+    }
+
+    func testIntentDisplayPreservesIntentionalEmptyFrameClear() async {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 512)
+        let characteristic = makeCharacteristic(properties: .writeWithoutResponse)
+
+        hooks.sync {
+            hooks.setConfiguration(moonboardConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+        }
+
+        let resultTask = Task {
+            await hooks.displayCurrentItemAwaitingDrain(
+                items: [queueItem(frames: "")],
+                currentIndex: 0,
+                drainTimeout: 1
+            )
+        }
+        await waitForWriteQueueDepth(1)
+        fireLatestOneShot(label: "chunkDelay")
+
+        let succeeded = await resultTask.value
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        XCTAssertEqual(String(data: peripheral.writtenChunks[0].data, encoding: .utf8), "l##")
+    }
+}
+
+@available(iOS 17.0, *)
+final class WaiterPoolOutcomeTests: XCTestCase {
+    func testWaitReportsImmediateSignalAndTimeoutOutcomes() async {
+        let queue = DispatchQueue(label: "com.boardsesh.tests.waiter-pool")
+        let pool = WaiterPool(queue: queue)
+
+        let immediateResult = await pool.wait(timeout: 1) { true }
+        let timeoutResult = await pool.wait(timeout: 0) { false }
+        XCTAssertTrue(immediateResult)
+        XCTAssertFalse(timeoutResult)
+    }
+
+    func testWaitReportsExplicitSignal() async {
+        let queue = DispatchQueue(label: "com.boardsesh.tests.waiter-pool-signal")
+        let pool = WaiterPool(queue: queue)
+        let resultTask = Task {
+            await pool.wait(timeout: 1) { false }
+        }
+
+        var waiterWasRegistered = false
+        for _ in 0..<1_000 {
+            waiterWasRegistered = queue.sync { pool.hasPendingWaiters }
+            if waiterWasRegistered { break }
+            await Task.yield()
+        }
+        XCTAssertTrue(waiterWasRegistered)
+        queue.sync { pool.signalAll() }
+
+        let signaledResult = await resultTask.value
+        XCTAssertTrue(signaledResult)
     }
 }
