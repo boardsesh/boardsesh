@@ -18,6 +18,7 @@ const responderHarness = vi.hoisted(() => ({
   deferMeasurements: false,
   measurementCallbacks: [] as MeasureCallback[],
   measurementCallCount: 0,
+  mountGesture: null as { label: string; grantPageX: number; releasePageX: number } | null,
   trackLayoutCallbacks: new Set<() => void>(),
   sliderRenderCounts: {} as Record<string, number>,
 }));
@@ -62,6 +63,13 @@ vi.mock('react-native', () => {
         responderHarness.trackLayoutCallbacks.delete(onLayout);
       };
     }, [onLayout]);
+    useEffect(() => {
+      const mountGesture = responderHarness.mountGesture;
+      if (mountGesture === null || !accessible || accessibilityLabel !== mountGesture.label) return;
+      responderHarness.mountGesture = null;
+      onPanResponderGrant?.({ nativeEvent: { pageX: mountGesture.grantPageX } });
+      onPanResponderRelease?.({ nativeEvent: { pageX: mountGesture.releasePageX } });
+    }, [accessibilityLabel, accessible, onPanResponderGrant, onPanResponderRelease]);
     useImperativeHandle(
       ref,
       () => ({
@@ -257,6 +265,7 @@ describe('OkhslColorPicker gradient updates', () => {
     responderHarness.deferMeasurements = false;
     responderHarness.measurementCallbacks.length = 0;
     responderHarness.measurementCallCount = 0;
+    responderHarness.mountGesture = null;
     responderHarness.trackLayoutCallbacks.clear();
     responderHarness.sliderRenderCounts = {};
     okhslHarness.conversionCount = 0;
@@ -478,6 +487,22 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     const hexInput = container.querySelector<HTMLInputElement>(`[aria-label="${HEX_LABEL}"]`);
     expect(hexInput?.value).toBe(onChange.mock.lastCall?.[0]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('installs measurement before a queued mount-time gesture reaches passive effects', () => {
+    responderHarness.mountGesture = {
+      label: LIGHTNESS_LABEL,
+      grantPageX: 30,
+      releasePageX: 270,
+    };
+    const onChange = vi.fn();
+    const { container } = render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
+
+    expect(responderHarness.mountGesture).toBeNull();
+    expect(responderHarness.measurementCallCount).toBe(1);
+    expect(slider(container, LIGHTNESS_LABEL).dataset.accessibilityValue).toBe('90%');
+    expect(onChange).toHaveBeenCalledTimes(2);
     expect(vi.getTimerCount()).toBe(0);
   });
 

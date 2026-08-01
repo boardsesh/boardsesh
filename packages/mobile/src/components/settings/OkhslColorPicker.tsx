@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   PanResponder,
   StyleSheet,
@@ -180,9 +180,10 @@ const ChannelSlider = memo(function ChannelSlider({
       applyCoordinate(latestCoordinate, layout);
     });
   }, [applyCoordinate, finishGesture]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Keep the latest callback available to its own deferred measurement
-    // completions without rebuilding the gesture responder mid-drag.
+    // completions without rebuilding the gesture responder mid-drag. Install
+    // it before passive effects can deliver queued touch events on a busy frame.
     measurePendingCoordinateRef.current = measurePendingCoordinate;
     return () => {
       measurePendingCoordinateRef.current = () => undefined;
