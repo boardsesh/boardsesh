@@ -5,6 +5,25 @@
 # worktree its own tracked hooks while sharing the repository config.
 set -eu
 
+read_git_config() {
+  config_command_output=''
+  config_command_status=0
+  config_command_output=$(git config "$@" 2>/dev/null) || config_command_status=$?
+
+  case "$config_command_status" in
+    0)
+      printf '%s' "$config_command_output"
+      ;;
+    1)
+      # Git uses status 1 when a requested key has no value.
+      ;;
+    *)
+      echo "git hook repair: could not read the repository Git configuration." >&2
+      return "$config_command_status"
+      ;;
+  esac
+}
+
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
   echo "git hook repair: run this command from inside a Git worktree." >&2
   exit 1
@@ -12,7 +31,9 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
 
 cd "$repo_root"
 
-effective_hooks_path=$(git config --get core.hooksPath 2>/dev/null || true)
+if ! effective_hooks_path=$(read_git_config --get core.hooksPath); then
+  exit 1
+fi
 case "$effective_hooks_path" in
   '' | .vite-hooks/_ | .vite-hooks)
     ;;
@@ -26,18 +47,23 @@ esac
 # A repeated local key can leave an earlier custom value hidden behind an
 # allowed effective value. Refuse that configuration too: setup must never
 # discard somebody's hook path as a side effect of repairing this repository.
-if ! git config --local --get-all core.hooksPath 2>/dev/null | while IFS= read -r local_configured_path; do
-  case "$local_configured_path" in
-    '' | .vite-hooks/_ | .vite-hooks)
-      ;;
-    *)
-      echo "git hook repair: local core.hooksPath is '$local_configured_path', not a Boardsesh-managed path." >&2
-      echo "Refusing to replace a custom hook path. Move or remove that setting, then rerun setup." >&2
-      exit 1
-      ;;
-  esac
-done; then
+if ! local_configured_paths=$(read_git_config --local --get-all core.hooksPath); then
   exit 1
+fi
+if [ -n "$local_configured_paths" ]; then
+  while IFS= read -r local_configured_path; do
+    case "$local_configured_path" in
+      '' | .vite-hooks/_ | .vite-hooks)
+        ;;
+      *)
+        echo "git hook repair: local core.hooksPath is '$local_configured_path', not a Boardsesh-managed path." >&2
+        echo "Refusing to replace a custom hook path. Move or remove that setting, then rerun setup." >&2
+        exit 1
+        ;;
+    esac
+  done <<EOF
+$local_configured_paths
+EOF
 fi
 
 for required_hook in pre-commit post-checkout commit-msg; do
@@ -56,8 +82,12 @@ fi
 
 git config --local --replace-all core.hooksPath .vite-hooks
 
-local_hooks_path=$(git config --local --get core.hooksPath 2>/dev/null || true)
-verified_hooks_path=$(git config --get core.hooksPath 2>/dev/null || true)
+if ! local_hooks_path=$(read_git_config --local --get core.hooksPath); then
+  exit 1
+fi
+if ! verified_hooks_path=$(read_git_config --get core.hooksPath); then
+  exit 1
+fi
 if [ "$local_hooks_path" != '.vite-hooks' ] || [ "$verified_hooks_path" != '.vite-hooks' ]; then
   echo "git hook repair: Git did not retain core.hooksPath=.vite-hooks (local='$local_hooks_path', effective='$verified_hooks_path')." >&2
   exit 1

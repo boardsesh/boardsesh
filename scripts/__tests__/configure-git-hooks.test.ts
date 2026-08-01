@@ -201,12 +201,49 @@ describe('configure-git-hooks', () => {
     expect(runGit(['config', '--local', '--get-all', 'core.hooksPath'], fixture.primaryWorktree)).toBe('.vite-hooks');
   });
 
+  it('fails when a required tracked Vite+ hook is missing', async () => {
+    const fixture = await createFixture();
+    const missingHookPath = join(fixture.primaryWorktree, '.vite-hooks/pre-commit');
+    await rm(missingHookPath);
+
+    const result = repairHooks(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`expected executable hook is missing: ${missingHookPath}`);
+  });
+
+  it('fails when the Conventional Commit hook is missing', async () => {
+    const fixture = await createFixture();
+    const missingHookPath = join(fixture.primaryWorktree, '.githooks/commit-msg');
+    await rm(missingHookPath);
+
+    const result = repairHooks(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`expected executable Conventional Commit hook is missing: ${missingHookPath}`);
+  });
+
+  it('fails with a clear message outside a Git worktree', async () => {
+    const fixture = await createFixture();
+
+    const result = run('sh', [repairScript], fixture.rootDirectory);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('run this command from inside a Git worktree');
+  });
+
   it('runs the repair after Vite+ has completed every hook-affecting setup step', async () => {
     const claudeSetup = await readFile(join(repositoryRoot, '.claude/setup.sh'), 'utf8');
     const developerSetup = await readFile(join(repositoryRoot, 'scripts/setup-dev.sh'), 'utf8');
 
-    expect(claudeSetup).toContain('vp config\n./scripts/configure-git-hooks.sh');
+    expect(claudeSetup).toContain('vp config');
+    expect(claudeSetup).toContain('./scripts/configure-git-hooks.sh');
+    expect(claudeSetup.indexOf('vp config')).toBeLessThan(claudeSetup.indexOf('./scripts/configure-git-hooks.sh'));
     expect(developerSetup.indexOf('vp install')).toBeLessThan(developerSetup.indexOf('vp config'));
-    expect(developerSetup).toContain('vp config\n"$REPO_ROOT/scripts/configure-git-hooks.sh"');
+    expect(developerSetup).toContain('vp config');
+    expect(developerSetup).toContain('"$REPO_ROOT/scripts/configure-git-hooks.sh"');
+    expect(developerSetup.indexOf('vp config')).toBeLessThan(
+      developerSetup.indexOf('"$REPO_ROOT/scripts/configure-git-hooks.sh"'),
+    );
   });
 });
