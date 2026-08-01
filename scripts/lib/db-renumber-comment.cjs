@@ -83,7 +83,7 @@ function renderRenumberWorkflowComment(input) {
     return heldBody(context, `The final PR re-check ${failedStepState(recheckOutcome)} after local renumbering.`);
   }
 
-  if (recheckOutcome === 'success' && recheckOk !== 'true') {
+  if (recheckOk !== 'true') {
     return heldBody(context, recheckReason || 'The PR changed or was opted out during the final re-check.');
   }
 

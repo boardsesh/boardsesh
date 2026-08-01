@@ -34,7 +34,13 @@ describe('renderRenumberWorkflowComment', () => {
 
   it('holds the branch when validation or proof-of-apply fails, without reusing success copy', () => {
     const heldOutcomes: Array<Record<string, string>> = [
-      { validationOutcome: 'failure', pushOutcome: 'skipped' },
+      {
+        validationOutcome: 'failure',
+        applyOutcome: 'skipped',
+        reapplyOutcome: 'skipped',
+        recheckOutcome: 'skipped',
+        pushOutcome: 'skipped',
+      },
       { applyOutcome: 'failure', reapplyOutcome: 'skipped', pushOutcome: 'skipped' },
       { reapplyOutcome: 'failure', pushOutcome: 'skipped' },
     ];
@@ -93,6 +99,21 @@ describe('renderRenumberWorkflowComment', () => {
     for (const pushOutcome of ['', 'skipped']) {
       expect(decide({ pushOutcome })).toContain('Nothing was pushed.');
     }
+  });
+
+  it('reports a cancelled force-push as held', () => {
+    const body = decide({ pushOutcome: 'cancelled' });
+
+    expect(body).toContain('step outcome: cancelled');
+    expect(body).toContain('Nothing was pushed.');
+  });
+
+  it('falls back to a held comment when renumbering fails without script output', () => {
+    const body = decide({ renumberStatus: 'failure', commentBody: '' });
+
+    expect(body).toContain('failed before it could finish');
+    expect(body).toContain('actions/runs/123');
+    expect(body).toContain('Nothing was pushed.');
   });
 
   it('preserves the script-produced blocked and no-op bodies', () => {
