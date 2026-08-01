@@ -4,9 +4,9 @@ import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/bo
 import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { NumericCsvSchema } from '../../../validation/schemas';
 
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
-const NUMERIC_CSV_PATTERN = /^\d+(,\d+)*$/;
 
 function throwUnknownBoardConfig(): never {
   throw new GraphQLError('Unknown board configuration', {
@@ -19,7 +19,7 @@ function isPostgresInteger(value: number): boolean {
 }
 
 function validateAndParseSetIds(setIds: string): number[] {
-  if (!NUMERIC_CSV_PATTERN.test(setIds)) {
+  if (!NumericCsvSchema.safeParse(setIds).success) {
     throwUnknownBoardConfig();
   }
 

@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
+import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
 import type {
   ConnectionContext,
   BoardPresenceEvent,
@@ -39,6 +40,8 @@ const TEST_CLIMB_UUID = 'board-presence-test-climb-uuid';
 const OTHER_TEST_CLIMB_UUID = 'board-presence-other-climb-uuid';
 const BOARD_MEMBERSHIP_TTL_MS = 43_200_000;
 const ALIAS_TEST_CLIMB_UUID = 'board-presence-alias-climb-uuid';
+const MOONBOARD_2010_LAYOUT = MOONBOARD_LAYOUTS['moonboard-2010'];
+const MOONBOARD_2016_LAYOUT = MOONBOARD_LAYOUTS['moonboard-2016'];
 
 let cleanupBoardPresenceCatalogFixtures: () => Promise<void> = async () => {};
 
@@ -468,14 +471,29 @@ describe('board-presence resolvers', () => {
     });
 
     it('resolves serial-less boards to a stable shared per-config board', async () => {
+      const moonboard2010SetIds = MOONBOARD_SETS['moonboard-2010'].map(({ id }) => id);
+      expect(moonboard2010SetIds).toHaveLength(1);
+      const moonboard2010SetId = moonboard2010SetIds[0];
+      if (moonboard2010SetId === undefined) throw new Error('MoonBoard 2010 must define one hold set');
+
       const first = await boardPresenceMutations.resolveBoardForConfig(
         undefined,
-        { boardType: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1' },
+        {
+          boardType: 'moonboard',
+          layoutId: MOONBOARD_2010_LAYOUT.id,
+          sizeId: MOONBOARD_SIZE.id,
+          setIds: String(moonboard2010SetId),
+        },
         authCtx(),
       );
       const second = await boardPresenceMutations.resolveBoardForConfig(
         undefined,
-        { boardType: 'moonboard', layoutId: 1, sizeId: 1, setIds: '1' },
+        {
+          boardType: 'moonboard',
+          layoutId: MOONBOARD_2010_LAYOUT.id,
+          sizeId: MOONBOARD_SIZE.id,
+          setIds: String(moonboard2010SetId),
+        },
         authCtx({ userId: SECOND_USER_ID }),
       );
 
@@ -492,35 +510,52 @@ describe('board-presence resolvers', () => {
     });
 
     it('converges concurrent serial-less config creates onto one normalized shared board', async () => {
-      const layoutId = 2;
+      const moonboard2016SetIds = MOONBOARD_SETS['moonboard-2016'].map(({ id }) => id);
+      expect(moonboard2016SetIds.length).toBeGreaterThanOrEqual(2);
+      const [firstSetId, secondSetId] = moonboard2016SetIds;
+      if (firstSetId === undefined || secondSetId === undefined) {
+        throw new Error('MoonBoard 2016 must define at least two hold sets');
+      }
+      const submittedSetIds = [secondSetId, firstSetId].join(',');
+      const normalizedSetIds = [firstSetId, secondSetId].sort((first, second) => first - second).join(',');
       const [first, second] = await Promise.all([
         boardPresenceMutations.resolveBoardForConfig(
           undefined,
-          { boardType: 'moonboard', layoutId, sizeId: 1, setIds: '3,2' },
+          {
+            boardType: 'moonboard',
+            layoutId: MOONBOARD_2016_LAYOUT.id,
+            sizeId: MOONBOARD_SIZE.id,
+            setIds: submittedSetIds,
+          },
           authCtx(),
         ),
         boardPresenceMutations.resolveBoardForConfig(
           undefined,
-          { boardType: 'moonboard', layoutId, sizeId: 1, setIds: '2,3' },
+          {
+            boardType: 'moonboard',
+            layoutId: MOONBOARD_2016_LAYOUT.id,
+            sizeId: MOONBOARD_SIZE.id,
+            setIds: normalizedSetIds,
+          },
           authCtx({ userId: SECOND_USER_ID }),
         ),
       ]);
 
       expect(second.boardId).toBe(first.boardId);
-      expect(first.setIds).toBe('2,3');
-      expect(second.setIds).toBe('2,3');
+      expect(first.setIds).toBe(normalizedSetIds);
+      expect(second.setIds).toBe(normalizedSetIds);
 
       const [row] = await db.execute(sql`
         SELECT count(*)::int AS count, min(set_ids) AS set_ids
         FROM user_boards
         WHERE owner_id = '00000000-0000-0000-0000-000000000000'
           AND board_type = 'moonboard'
-          AND layout_id = ${layoutId}
-          AND size_id = 1
+          AND layout_id = ${MOONBOARD_2016_LAYOUT.id}
+          AND size_id = ${MOONBOARD_SIZE.id}
           AND deleted_at IS NULL
       `);
       expect(Number((row as { count: number }).count)).toBe(1);
-      expect((row as { set_ids: string }).set_ids).toBe('2,3');
+      expect((row as { set_ids: string }).set_ids).toBe(normalizedSetIds);
     });
 
     it('rejects binding a second serial onto an already-bound board via the unique index', async () => {

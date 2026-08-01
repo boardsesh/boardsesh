@@ -515,6 +515,66 @@ describe('board-presence catalog gates', () => {
 
     expect(await sideEffectCounts(SERIAL_USER_ID)).toEqual(before);
   });
+
+  it('creates a fresh serial board for a valid catalog config without creating a gym', async () => {
+    const before = await sideEffectCounts(SERIAL_USER_ID);
+    const submittedSerial = '  catalog-fresh-valid-1  ';
+    const normalizedSerial = 'CATALOG-FRESH-VALID-1';
+    const submittedSetIds = `${SET_B_ID},${SET_A_ID},${SET_B_ID}`;
+
+    const resolved = await boardPresenceMutations.resolveBoardForSerial(
+      undefined,
+      {
+        serial: submittedSerial,
+        boardType: 'kilter',
+        layoutId: LAYOUT_ID,
+        sizeId: SIZE_ID,
+        setIds: submittedSetIds,
+      },
+      authCtx(SERIAL_USER_ID),
+    );
+
+    const [created] = await db
+      .select({
+        id: dbSchema.userBoards.id,
+        ownerId: dbSchema.userBoards.ownerId,
+        boardType: dbSchema.userBoards.boardType,
+        layoutId: dbSchema.userBoards.layoutId,
+        sizeId: dbSchema.userBoards.sizeId,
+        setIds: dbSchema.userBoards.setIds,
+        name: dbSchema.userBoards.name,
+        serialNumber: dbSchema.userBoards.serialNumber,
+        gymId: dbSchema.userBoards.gymId,
+      })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.id, resolved.boardId));
+
+    expect(created).toEqual({
+      id: resolved.boardId,
+      ownerId: SERIAL_USER_ID,
+      boardType: 'kilter',
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: `${SET_A_ID},${SET_B_ID}`,
+      name: 'Kilter Board',
+      serialNumber: normalizedSerial,
+      gymId: null,
+    });
+    expect(resolved).toMatchObject({
+      boardId: created.id,
+      boardName: created.name,
+      boardType: created.boardType,
+      layoutId: created.layoutId,
+      sizeId: created.sizeId,
+      setIds: created.setIds,
+    });
+    expect(await sideEffectCounts(SERIAL_USER_ID)).toEqual({
+      boards: before.boards + 1,
+      gyms: before.gyms,
+      systemBoards: before.systemBoards,
+      systemOwners: before.systemOwners,
+    });
+  });
 });
 
 describe('social board create catalog gate', () => {
