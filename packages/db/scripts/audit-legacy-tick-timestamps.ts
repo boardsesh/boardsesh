@@ -1,11 +1,4 @@
-/**
- * Read-only evidence collection for issue #3909.
- *
- * This command has no apply mode and emits no SQL. It classifies only
- * reciprocal one-to-one candidate/anchor pairs from one serializable,
- * read-only, deferrable PostgreSQL snapshot. The JSONL artifact is evidence for
- * a separately reviewed correction design; it is not an executable backfill.
- */
+// Read-only evidence collection for #3909; it has no apply path and emits only a review artifact.
 import { constants as fsConstants } from 'node:fs';
 import { access, link, lstat, open, realpath, unlink } from 'node:fs/promises';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -43,6 +36,10 @@ export const LEGACY_WEB_SAVE_ASCENT_NORMALIZER_FIX_SOURCE_REVISION = 'cdf1406dfb
 export const AUDIT_FORMAT_VERSION = 1;
 export const AUDIT_CURSOR_ROWS = 500;
 export const MAX_ROWS_PER_NATURAL_KEY = 10_000;
+export const AUDIT_CONNECT_TIMEOUT_SECONDS = 30;
+export const AUDIT_STATEMENT_TIMEOUT_MS = 300_000;
+export const AUDIT_DATABASE_RESPONSE_TIMEOUT_MS = 330_000;
+export const AUDIT_SHUTDOWN_TIMEOUT_SECONDS = 5;
 
 // Explicit epoch conversion avoids session-dependent parsing of timestamp
 // without time zone. The ORDER BY follows boardsesh_ticks_user_climb_lookup_idx
@@ -82,12 +79,75 @@ ORDER BY user_id, board_type, angle, climb_uuid, id
 
 export const AUDIT_QUERY_SHA256 = sha256Hex(AUDIT_SCAN_QUERY);
 
+const AUDIT_CURSOR_NAME = 'legacy_timestamp_audit_cursor';
+const AUDIT_DECLARE_CURSOR_QUERY = `DECLARE ${AUDIT_CURSOR_NAME} NO SCROLL CURSOR FOR ${AUDIT_SCAN_QUERY}`;
+const AUDIT_FETCH_CURSOR_QUERY = `FETCH FORWARD ${AUDIT_CURSOR_ROWS} FROM ${AUDIT_CURSOR_NAME}`;
+
 type CliArgs = {
   outputPath: string;
   policy: AuditPolicy;
 };
 
 export class CliUsageError extends Error {}
+
+export class DatabaseResponseTimeoutError extends Error {
+  constructor(operation: string, timeoutMs: number) {
+    super(`PostgreSQL did not respond to ${operation} within ${timeoutMs}ms`);
+    this.name = 'DatabaseResponseTimeoutError';
+  }
+}
+
+export type DatabaseResponseTimeoutScheduler = {
+  schedule(callback: () => void, timeoutMs: number): unknown;
+  cancel(handle: unknown): void;
+};
+
+const SYSTEM_DATABASE_RESPONSE_TIMEOUT_SCHEDULER: DatabaseResponseTimeoutScheduler = {
+  schedule: (callback, timeoutMs) => setTimeout(callback, timeoutMs),
+  cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+};
+
+export function awaitDatabaseResponse<T>(
+  operation: string,
+  response: PromiseLike<T>,
+  onTimeout: () => void,
+  options: { timeoutMs?: number; scheduler?: DatabaseResponseTimeoutScheduler } = {},
+): Promise<T> {
+  const timeoutMs = options.timeoutMs ?? AUDIT_DATABASE_RESPONSE_TIMEOUT_MS;
+  const scheduler = options.scheduler ?? SYSTEM_DATABASE_RESPONSE_TIMEOUT_SCHEDULER;
+
+  return new Promise<T>((resolveResponse, rejectResponse) => {
+    let settled = false;
+    const timeoutHandle = scheduler.schedule(() => {
+      if (settled) return;
+      settled = true;
+      rejectResponse(new DatabaseResponseTimeoutError(operation, timeoutMs));
+      onTimeout();
+    }, timeoutMs);
+
+    void Promise.resolve(response).then(
+      (result) => {
+        if (settled) return;
+        settled = true;
+        scheduler.cancel(timeoutHandle);
+        resolveResponse(result);
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        scheduler.cancel(timeoutHandle);
+        rejectResponse(error);
+      },
+    );
+  });
+}
+
+export function requireNoFollowFlag(noFollowFlag: number | undefined): number {
+  if (typeof noFollowFlag !== 'number') {
+    throw new Error('Audit artifact staging requires O_NOFOLLOW support');
+  }
+  return noFollowFlag;
+}
 
 const OPTION_NAMES = [
   '--output',
@@ -354,11 +414,12 @@ export async function writeAuditArtifact(
   producer: (sink: ArtifactSink) => Promise<Record<string, unknown>>,
   options: { cwd?: string; completedAt?: () => string } = {},
 ): Promise<{ outputPath: string; digest: string }> {
+  const noFollowFlag = requireNoFollowFlag(fsConstants.O_NOFOLLOW);
   const outputPath = await validateOutputPath(rawOutputPath, options.cwd);
   const partialPath = resolve(dirname(outputPath), `.${basename(outputPath)}.${process.pid}.${randomUUID()}.partial`);
   const file = await open(
     partialPath,
-    fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | (fsConstants.O_NOFOLLOW ?? 0),
+    fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | noFollowFlag,
     0o600,
   );
   const recordsHash = createHash('sha256');
@@ -405,6 +466,7 @@ export type DatabaseAuditMetadata = {
   snapshot: string;
   schemaSha256: string;
   serverVersion: string;
+  statementTimeoutMs: number;
   transactionIsolation: string;
   transactionReadOnly: string;
   transactionDeferrable: string;
@@ -595,20 +657,31 @@ export function buildAuditSummary(counters: AuditCounters): Record<string, unkno
   };
 }
 
-async function readMetadata(connection: postgres.ReservedSql): Promise<DatabaseAuditMetadata> {
-  const [state] = await connection.unsafe<Array<Record<string, unknown>>>(`
+type DatabaseResponseAwaiter = <T>(operation: string, response: PromiseLike<T>) => Promise<T>;
+
+async function readMetadata(
+  connection: postgres.ReservedSql,
+  awaitResponse: DatabaseResponseAwaiter,
+): Promise<DatabaseAuditMetadata> {
+  const [state] = await awaitResponse(
+    'read audit snapshot settings',
+    connection.unsafe<Array<Record<string, unknown>>>(`
     SELECT
       pg_current_snapshot()::text AS "snapshot",
       current_setting('server_version_num') AS "serverVersion",
+      (EXTRACT(EPOCH FROM current_setting('statement_timeout')::interval) * 1000)::double precision
+        AS "statementTimeoutMs",
       current_setting('transaction_isolation') AS "transactionIsolation",
       current_setting('transaction_read_only') AS "transactionReadOnly",
       current_setting('transaction_deferrable') AS "transactionDeferrable",
       current_setting('TimeZone') AS "timeZone"
-  `);
+  `),
+  );
   if (!state) throw new Error('Could not read PostgreSQL snapshot settings');
   const metadata = {
     snapshot: String(state.snapshot),
     serverVersion: String(state.serverVersion),
+    statementTimeoutMs: asFiniteNumber(state.statementTimeoutMs, 'statement_timeout'),
     transactionIsolation: String(state.transactionIsolation),
     transactionReadOnly: String(state.transactionReadOnly),
     transactionDeferrable: String(state.transactionDeferrable),
@@ -619,17 +692,21 @@ async function readMetadata(connection: postgres.ReservedSql): Promise<DatabaseA
     metadata.transactionIsolation !== 'serializable' ||
     metadata.transactionReadOnly !== 'on' ||
     metadata.transactionDeferrable !== 'on' ||
+    metadata.statementTimeoutMs !== AUDIT_STATEMENT_TIMEOUT_MS ||
     metadata.timeZone !== 'UTC'
   ) {
     throw new Error(`Unsafe audit transaction settings: ${canonicalJson(metadata)}`);
   }
 
-  const schemaRows = await connection.unsafe<Array<Record<string, unknown>>>(`
-    SELECT column_name AS "columnName", data_type AS "dataType", udt_name AS "udtName", is_nullable AS "nullable"
-    FROM information_schema.columns
-    WHERE table_schema = 'public' AND table_name = 'boardsesh_ticks'
-    ORDER BY ordinal_position
-  `);
+  const schemaRows = await awaitResponse(
+    'read boardsesh_ticks schema',
+    connection.unsafe<Array<Record<string, unknown>>>(`
+      SELECT column_name AS "columnName", data_type AS "dataType", udt_name AS "udtName", is_nullable AS "nullable"
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'boardsesh_ticks'
+      ORDER BY ordinal_position
+    `),
+  );
   const requiredColumns = new Set([
     'id',
     'uuid',
@@ -691,15 +768,26 @@ export async function runDatabaseAudit(
   pseudonymSecret: Uint8Array,
   onMetadata?: (metadata: DatabaseAuditMetadata) => Promise<void>,
 ): Promise<{ counters: AuditCounters; metadata: DatabaseAuditMetadata }> {
-  const client = postgres(databaseUrl, { max: 1, prepare: false, idle_timeout: 5 });
-  const connection = await client.reserve().catch(async (error: unknown) => {
-    await client.end().catch(() => undefined);
-    throw error;
+  const client = postgres(databaseUrl, {
+    connect_timeout: AUDIT_CONNECT_TIMEOUT_SECONDS,
+    idle_timeout: 5,
+    max: 1,
+    prepare: false,
   });
+  let connection: postgres.ReservedSql | null = null;
+  let forceClosed = false;
   const counters = emptyCounters();
   let transactionOpen = false;
   let currentGroupKey: string | null = null;
   let currentGroup: AuditTick[] = [];
+
+  const forceCloseClient = (): void => {
+    if (forceClosed) return;
+    forceClosed = true;
+    void client.end({ timeout: 0 }).catch(() => undefined);
+  };
+  const awaitResponse: DatabaseResponseAwaiter = (operation, response) =>
+    awaitDatabaseResponse(operation, response, forceCloseClient);
 
   const flushGroup = async (): Promise<void> => {
     if (currentGroup.length === 0) return;
@@ -716,13 +804,28 @@ export async function runDatabaseAudit(
   };
 
   try {
-    await connection.unsafe('BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE');
+    const reservedConnection = await awaitResponse('reserve the audit connection', client.reserve());
+    connection = reservedConnection;
+    await awaitResponse(
+      'begin the audit transaction',
+      reservedConnection.unsafe('BEGIN TRANSACTION ISOLATION LEVEL SERIALIZABLE READ ONLY DEFERRABLE'),
+    );
     transactionOpen = true;
-    await connection.unsafe(`SET LOCAL TIME ZONE 'UTC'`);
-    const metadata = await readMetadata(connection);
+    await awaitResponse(
+      'set the audit statement timeout',
+      reservedConnection.unsafe(`SET LOCAL statement_timeout = ${AUDIT_STATEMENT_TIMEOUT_MS}`),
+    );
+    await awaitResponse('set the audit time zone', reservedConnection.unsafe(`SET LOCAL TIME ZONE 'UTC'`));
+    const metadata = await readMetadata(reservedConnection, awaitResponse);
     await onMetadata?.(metadata);
 
-    await connection.unsafe(AUDIT_SCAN_QUERY).cursor(AUDIT_CURSOR_ROWS, async (databaseRows) => {
+    await awaitResponse('declare the audit cursor', reservedConnection.unsafe(AUDIT_DECLARE_CURSOR_QUERY));
+    while (true) {
+      const databaseRows = await awaitResponse(
+        'fetch an audit cursor batch',
+        reservedConnection.unsafe<Array<Record<string, unknown>>>(AUDIT_FETCH_CURSOR_QUERY),
+      );
+      if (databaseRows.length === 0) break;
       for (const databaseRow of databaseRows) {
         const tick = parseDatabaseRow(databaseRow as Record<string, unknown>);
         counters.scannedRows += 1;
@@ -734,15 +837,19 @@ export async function runDatabaseAudit(
           throw new Error(`Natural-key group exceeded the ${MAX_ROWS_PER_NATURAL_KEY}-row safety bound; audit aborted`);
         }
       }
-    });
+    }
     await flushGroup();
-    await connection.unsafe('ROLLBACK');
+    await awaitResponse('roll back the completed audit transaction', reservedConnection.unsafe('ROLLBACK'));
     transactionOpen = false;
     return { counters, metadata };
   } finally {
-    if (transactionOpen) await connection.unsafe('ROLLBACK').catch(() => undefined);
-    connection.release();
-    await client.end();
+    if (connection !== null && transactionOpen && !forceClosed) {
+      await awaitResponse('roll back the failed audit transaction', connection.unsafe('ROLLBACK')).catch(
+        () => undefined,
+      );
+    }
+    if (connection !== null && !forceClosed) connection.release();
+    if (!forceClosed) await client.end({ timeout: AUDIT_SHUTDOWN_TIMEOUT_SECONDS });
   }
 }
 
@@ -819,6 +926,11 @@ export async function runAuditCommand(cliArgs: CliArgs, databaseUrl?: string): P
             records_digest_reproducible_across_runs: false,
             records_digest_scope: 'single_artifact_integrity',
             per_user_offset_extrapolation: false,
+            timeouts: {
+              client_connect_seconds: AUDIT_CONNECT_TIMEOUT_SECONDS,
+              client_response_ms: AUDIT_DATABASE_RESPONSE_TIMEOUT_MS,
+              server_statement_ms: metadata.statementTimeoutMs,
+            },
             transaction: {
               deferrable: metadata.transactionDeferrable,
               isolation: metadata.transactionIsolation,

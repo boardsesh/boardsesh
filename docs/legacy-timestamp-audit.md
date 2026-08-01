@@ -9,7 +9,7 @@ not a backfill:
   Boardsesh command;
 - every database read occurs on one reserved PostgreSQL connection in one
   `SERIALIZABLE READ ONLY DEFERRABLE` snapshot, after the command sets and
-  verifies `TimeZone=UTC`;
+  verifies `TimeZone=UTC` and a five-minute statement timeout;
 - a failed scan leaves no file at the requested output path.
 
 This phase does **not** repair historical rows or close #3909. Release notes for
@@ -80,6 +80,15 @@ discarded; system/global config is disabled; and the output-relative path is
 passed after `--` with literal pathspec handling. The command stages a
 mode-`0600` partial file, syncs it, and publishes it with an exclusive hard link
 so a racing file is never overwritten.
+
+Database startup is limited to 30 seconds. Inside the transaction, PostgreSQL
+aborts any individual statement or cursor fetch that runs for more than 300
+seconds. The client separately rejects any awaited database response after 330
+seconds and force-closes that connection, covering a network path that cannot
+deliver the server timeout. The client timer stops before local group analysis
+or artifact writes and starts fresh for every database response, so these are
+per-response and per-fetch bounds rather than a total audit deadline. A timeout
+removes the partial artifact; rerun the audit to obtain a new complete snapshot.
 
 ## What counts as evidence
 
@@ -248,6 +257,7 @@ The header records:
 - source revisions and the exact scan-query digest;
 - PostgreSQL snapshot token, server version, transaction settings, and a digest
   of the inspected `boardsesh_ticks` schema;
+- the server-observed statement timeout and the client connect/response bounds;
 - explicit safety flags recording the candidate/Kilter sync guards, the
   unchanged-native requirement, and the single-artifact scope of the records
   digest.
@@ -263,12 +273,14 @@ records. Completion time, duration, and random run id are in a separate
 
 ## Query-plan check
 
-The scan is cursor-paged in batches of 500 and retains only one natural-key group
-in memory (hard limit 10,000 rows). It performs no per-row query, uses binary
-search over time-sorted semantics-compatible anchors, and stores only linear
-degree/sole-edge state even when a dense group has a quadratic number of logical
-edges. Its stable order follows the leading columns of
-`boardsesh_ticks_user_climb_lookup_idx`, with `id` as the final tie-break.
+The scan uses a transaction-local SQL cursor and awaits each `FETCH FORWARD 500`
+response before processing that batch. It completes the batch's local artifact
+writes before fetching again, including the final short batch, and retains only
+one natural-key group in memory (hard limit 10,000 rows). It performs no per-row
+query, uses binary search over time-sorted semantics-compatible anchors, and
+stores only linear degree/sole-edge state even when a dense group has a
+quadratic number of logical edges. Its stable order follows the leading columns
+of `boardsesh_ticks_user_climb_lookup_idx`, with `id` as the final tie-break.
 
 Before a production audit, run the opt-in integration test against a current
 **local** migrated database:

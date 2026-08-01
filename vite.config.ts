@@ -249,9 +249,7 @@ export default defineConfig({
       },
       'db:audit-legacy-timestamps': {
         command: 'bun run --filter=@boardsesh/db db:audit-legacy-timestamps',
-        // Audit-only and intentionally detached from db:up: operators may aim
-        // it at a read replica. The command itself verifies SERIALIZABLE READ
-        // ONLY DEFERRABLE + UTC before it reads a row and has no apply mode.
+        // No db:up: this read-only audit may target a replica and verifies transaction safety itself.
         cache: false,
       },
       'db:refresh-climb-grades': {
