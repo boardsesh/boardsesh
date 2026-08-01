@@ -15,7 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AURORA_BOARDS,
   parseAuroraExportJson,
@@ -1074,11 +1074,19 @@ function BoardAccountCard({
   // client is expected to explain in the viewer's language (#3526). Everything
   // else in `sync_error` is still free text from an older path — those keep the
   // generic error pill rather than being swallowed.
-  const hasDuplicateAccountCircuits = credential?.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR;
+  const circuitPlaylistWarning = circuitPlaylistSyncWarningKind(credential?.syncError ?? null);
+  const circuitPlaylistWarningCopy =
+    circuitPlaylistWarning === 'foreign'
+      ? t('aurora.status.foreignAccountCircuits')
+      : circuitPlaylistWarning === 'ambiguous'
+        ? t('aurora.status.ambiguousAccountCircuits')
+        : circuitPlaylistWarning === 'legacy'
+          ? t('aurora.status.duplicateAccountCircuits')
+          : null;
   // A warning, not a failure: the credential is active and syncing, only the
   // playlist mirror is paused. Red text here would tell a healthy account it is
   // broken, with nothing to act on.
-  const hasSyncFailure = Boolean(credential?.syncError) && !hasDuplicateAccountCircuits;
+  const hasSyncFailure = Boolean(credential?.syncError) && !circuitPlaylistWarning;
   const connectedLabel = credential?.auroraUsername
     ? t('aurora.mobile.connectedAs', { name: credential.auroraUsername })
     : t('aurora.mobile.connected');
@@ -1126,11 +1134,11 @@ function BoardAccountCard({
               {t('aurora.status.error')}
             </Text>
           ) : null}
-          {!isExpired && hasDuplicateAccountCircuits ? (
+          {!isExpired && circuitPlaylistWarningCopy ? (
             <View style={[styles.warningBlock, { backgroundColor: systemColors.tertiaryBackground }]}>
               <Icon name="warning" size={18} color={brandColors.warning} />
               <Text variant="footnote" color={systemColors.secondaryLabel} style={styles.warningText}>
-                {t('aurora.status.duplicateAccountCircuits')}
+                {circuitPlaylistWarningCopy}
               </Text>
             </View>
           ) : null}

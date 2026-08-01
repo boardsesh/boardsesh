@@ -38,7 +38,7 @@ import { useSession } from 'next-auth/react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Trans, useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import { circuitPlaylistSyncWarningKind } from '@boardsesh/shared-schema/sync-error-codes';
 import {
   AuroraBackendError,
   deleteAuroraCredential,
@@ -248,6 +248,16 @@ export function BoardCredentialCard({
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
+  const circuitPlaylistWarning = circuitPlaylistSyncWarningKind(credential?.syncError ?? null);
+  const circuitPlaylistWarningCopy =
+    circuitPlaylistWarning === 'foreign'
+      ? t('aurora.status.foreignAccountCircuits')
+      : circuitPlaylistWarning === 'ambiguous'
+        ? t('aurora.status.ambiguousAccountCircuits')
+        : circuitPlaylistWarning === 'legacy'
+          ? t('aurora.status.duplicateAccountCircuits')
+          : null;
+
   if (!credential) {
     return (
       <Card className={styles.credentialCard}>
@@ -356,14 +366,8 @@ export function BoardCredentialCard({
                   syncing, only its playlist mirror is paused (#3526). Anything else
                   is legacy free text from an older path: render it verbatim rather
                   than swallow it. */}
-              <Typography
-                variant="body2"
-                component="span"
-                color={credential.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR ? 'warning.main' : 'error'}
-              >
-                {credential.syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR
-                  ? t('aurora.status.duplicateAccountCircuits')
-                  : credential.syncError}
+              <Typography variant="body2" component="span" color={circuitPlaylistWarning ? 'warning.main' : 'error'}>
+                {circuitPlaylistWarningCopy ?? credential.syncError}
               </Typography>
             </div>
           )}

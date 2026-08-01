@@ -5,8 +5,14 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 /** Driverless drizzle handle — `.toSQL()` renders without a connection. */
 const renderOnlyDb = drizzle({} as never);
 import { playlists, playlistClimbs, playlistOwnership } from '@boardsesh/db/schema/app';
+import { boardCircuits } from '@boardsesh/db/schema';
 import { foreignPlaylistOwnerGuard, upstreamPlaylistOwnersQuery } from '@boardsesh/db/queries';
-import { upsertTableData, hasForeignOwnedCircuitPlaylists, DUPLICATE_CIRCUIT_OWNER_SKIP_REASON } from './user-sync';
+import {
+  CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
+  DUPLICATE_CIRCUIT_OWNER_SKIP_REASON,
+  getCircuitPlaylistOwnershipConflictState,
+  upsertTableData,
+} from './user-sync';
 
 /**
  * Hand-rolled Drizzle shim, not a real DB — same philosophy as kilter-sync's
@@ -14,7 +20,11 @@ import { upsertTableData, hasForeignOwnedCircuitPlaylists, DUPLICATE_CIRCUIT_OWN
  * test can assert that a refused circuit produces NO writes of any kind, and
  * hands back canned rows for the owner lookup.
  */
-type DbCall = { kind: 'select' | 'insert' | 'delete' | 'conflict'; table?: unknown; args: unknown[] };
+type DbCall = {
+  kind: 'select' | 'insert' | 'delete' | 'conflict' | 'execute' | 'transaction';
+  table?: unknown;
+  args: unknown[];
+};
 type SelectRows = Array<Record<string, unknown>>;
 
 function createDbShim(
@@ -27,6 +37,14 @@ function createDbShim(
   let returningIdx = 0;
 
   const db = {
+    transaction<T>(processor: (transaction: unknown) => Promise<T>) {
+      calls.push({ kind: 'transaction', args: [] });
+      return processor(db);
+    },
+    execute(statement: unknown) {
+      calls.push({ kind: 'execute', args: [statement] });
+      return Promise.resolve([]);
+    },
     select(cols: unknown) {
       calls.push({ kind: 'select', args: [cols] });
       const rows = selectResults[selectIdx++] ?? [];
@@ -128,10 +146,11 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
     expect(calls.filter((c) => c.kind === 'conflict' && c.table === playlists)).toHaveLength(0);
 
     expect(result.skipped).toBe(1);
-    // The board_circuits upsert ran for every row and is user-scoped by
-    // aurora_user_id — those DID sync. Only the playlists mirror was refused.
+    // The board_circuits upsert ran for every payload row. Only the
+    // ownership-sensitive playlists mirror was refused.
     expect(result.synced).toBe(1);
     expect(result.skippedReason).toBe(DUPLICATE_CIRCUIT_OWNER_SKIP_REASON);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 1, ambiguous: 0, invariant: 0 });
     expect(logged.some((line) => line.includes('already owned by a different Boardsesh user'))).toBe(true);
   });
 
@@ -159,6 +178,7 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
     expect(insertsInto(playlists)).toHaveLength(0);
     expect(insertsInto(playlistOwnership)).toHaveLength(0);
     expect(result.skipped).toBe(1);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 0, ambiguous: 1, invariant: 0 });
     expect(logged.some((line) => line.includes('two owners'))).toBe(true);
   });
 
@@ -211,7 +231,7 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
     const { db, insertsInto } = createDbShim({
       // circuit-new has no playlist at all; circuit-orphan has one whose
       // ownership rows are gone (LEFT join → null owner). Both are claimable.
-      selectResults: [[{ upstreamId: 'circuit-orphan', ownerUserId: null }]],
+      selectResults: [[], [{ upstreamId: 'circuit-orphan', ownerUserId: null }]],
       returningRows: [[{ id: BigInt(7) }], [{ id: BigInt(8) }]],
     });
 
@@ -230,16 +250,40 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
     expect(result.skipped).toBe(0);
   });
 
+  it('promotes this user from editor or viewer to owner when claiming an orphan', async () => {
+    const { db, calls } = createDbShim({
+      // Owner queries intentionally omit editor/viewer edges, so this playlist
+      // is claimable even though the unique (playlist,user) edge already exists.
+      selectResults: [[]],
+      returningRows: [[{ id: BigInt(7) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-orphan', 'Orphan')],
+      () => {},
+    );
+
+    const ownershipConflict = calls.find((call) => call.kind === 'conflict' && call.table === playlistOwnership)
+      ?.args[0] as { target?: unknown[]; set?: { role?: string } } | undefined;
+    expect(ownershipConflict?.target).toEqual([playlistOwnership.playlistId, playlistOwnership.userId]);
+    expect(ownershipConflict?.set).toEqual({ role: 'owner' });
+  });
+
   it('counts every refused circuit in a mixed batch and writes only the owned ones', async () => {
     const logged: string[] = [];
     const { db, insertsInto } = createDbShim({
       selectResults: [
+        [{ upstreamId: 'mine', ownerUserId: 'user-1' }],
         [
-          { upstreamId: 'mine', ownerUserId: 'user-1' },
-          { upstreamId: 'theirs', ownerUserId: 'user-2' },
           { upstreamId: 'shared', ownerUserId: 'user-1' },
           { upstreamId: 'shared', ownerUserId: 'user-2' },
         ],
+        [{ upstreamId: 'theirs', ownerUserId: 'user-2' }],
       ],
       returningRows: [[{ id: BigInt(7) }]],
     });
@@ -257,7 +301,54 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
     expect(insertsInto(playlists)).toHaveLength(1);
     expect(result.synced).toBe(3);
     expect(result.skipped).toBe(2);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 1, ambiguous: 1, invariant: 0 });
     expect(logged.filter((line) => line.includes('duplicate board account link'))).toHaveLength(2);
+  });
+
+  it('counts a duplicated refused UUID once and reports zero distinct playlist writes', async () => {
+    const logged: string[] = [];
+    const { db, insertsInto } = createDbShim({
+      selectResults: [[{ upstreamId: 'theirs', ownerUserId: 'user-2' }]],
+    });
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('theirs', 'First copy'), circuit('theirs', 'Duplicate copy')],
+      (message) => logged.push(message),
+    );
+
+    expect(insertsInto(playlists)).toHaveLength(0);
+    expect(result.synced).toBe(2);
+    expect(result.skipped).toBe(1);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 1, ambiguous: 0, invariant: 0 });
+    expect(logged).toContain('  Synced 0 circuits to playlists table');
+  });
+
+  it('deduplicates and sorts before the board_circuits batch upsert, with the last duplicate winning', async () => {
+    const { db, insertsInto } = createDbShim({
+      selectResults: [[], []],
+      returningRows: [[{ id: BigInt(7) }], [{ id: BigInt(8) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('z-circuit', 'Old value'), circuit('a-circuit', 'First'), circuit('z-circuit', 'Last value wins')],
+      () => {},
+    );
+
+    const [sourceInsert] = insertsInto(boardCircuits);
+    expect(sourceInsert?.args[0]).toMatchObject([
+      { uuid: 'a-circuit', name: 'First' },
+      { uuid: 'z-circuit', name: 'Last value wins' },
+    ]);
   });
 
   it('attaches the NOT EXISTS ownership guard to the playlist upsert', async () => {
@@ -298,12 +389,121 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
 });
 
 describe('upsertTableData circuits — race-guard suppression + owner lookup SQL', () => {
-  it('does not touch ownership or climbs when the SQL race guard suppresses the upsert', async () => {
+  it('counts and precisely logs a foreign owner found after the SQL race guard suppresses the upsert', async () => {
     // setWhere matched nothing → DO UPDATE was a no-op → .returning() is empty.
-    // The rest of the item must be abandoned, not run against an undefined id.
+    // The fresh re-read sees the transaction that won ownership arbitration.
+    const logged: string[] = [];
     const { db, calls, insertsInto } = createDbShim({
-      selectResults: [[]],
+      selectResults: [[], [{ upstreamId: 'circuit-1', ownerUserId: 'user-2' }]],
       returningRows: [[]],
+    });
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Lost the race', [{ climb_uuid: 'climb-A' }])],
+      (message) => logged.push(message),
+    );
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedReason).toBe(DUPLICATE_CIRCUIT_OWNER_SKIP_REASON);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 1, ambiguous: 0, invariant: 0 });
+    expect(insertsInto(playlistOwnership)).toHaveLength(0);
+    expect(insertsInto(playlistClimbs)).toHaveLength(0);
+    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    expect(logged.some((line) => line.includes('"stage":"suppressed-upsert"'))).toBe(true);
+    expect(logged.some((line) => line.includes('"reason":"foreign"'))).toBe(true);
+  });
+
+  it('counts and precisely logs ambiguous owners found after a suppressed upsert', async () => {
+    const logged: string[] = [];
+    const { db, calls, insertsInto } = createDbShim({
+      selectResults: [
+        [],
+        [
+          { upstreamId: 'circuit-1', ownerUserId: 'user-1' },
+          { upstreamId: 'circuit-1', ownerUserId: 'user-2' },
+        ],
+      ],
+      returningRows: [[]],
+    });
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Already cross-linked', [{ climb_uuid: 'climb-A' }])],
+      (message) => logged.push(message),
+    );
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedReason).toBe(DUPLICATE_CIRCUIT_OWNER_SKIP_REASON);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 0, ambiguous: 1, invariant: 0 });
+    expect(insertsInto(playlistOwnership)).toHaveLength(0);
+    expect(insertsInto(playlistClimbs)).toHaveLength(0);
+    expect(calls.filter((call) => call.kind === 'delete')).toHaveLength(0);
+    expect(logged.some((line) => line.includes('"reason":"ambiguous"'))).toBe(true);
+  });
+
+  it('refuses with an invariant warning when a suppressed upsert has no owner on re-read', async () => {
+    const logged: string[] = [];
+    const { db, calls, insertsInto } = createDbShim({
+      selectResults: [[], []],
+      returningRows: [[]],
+    });
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Invariant failure', [{ climb_uuid: 'climb-A' }])],
+      (message) => logged.push(message),
+    );
+
+    expect(result.skipped).toBe(1);
+    expect(result.skippedReason).toBe(CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 0, ambiguous: 0, invariant: 1 });
+    expect(insertsInto(playlistOwnership)).toHaveLength(0);
+    expect(insertsInto(playlistClimbs)).toHaveLength(0);
+    expect(calls.filter((call) => call.kind === 'delete')).toHaveLength(0);
+    expect(logged.some((line) => line.includes('invariant/concurrency warning'))).toBe(true);
+    expect(logged.some((line) => line.includes('"reason":"no-owner"'))).toBe(true);
+  });
+
+  it('does not label a suppressed upsert with only this owner as a duplicate account', async () => {
+    const logged: string[] = [];
+    const { db } = createDbShim({
+      selectResults: [[], [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
+      returningRows: [[]],
+    });
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('circuit-1', 'Invariant failure')],
+      (message) => logged.push(message),
+    );
+
+    expect(result.skippedReason).toBe(CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON);
+    expect(result.skippedReason).not.toBe(DUPLICATE_CIRCUIT_OWNER_SKIP_REASON);
+    expect(result.circuitPlaylistRefusals).toEqual({ foreign: 0, ambiguous: 0, invariant: 1 });
+    expect(logged.some((line) => line.includes('"reason":"own"'))).toBe(true);
+  });
+
+  it('takes every namespaced advisory lock before the source upsert and fresh owner read', async () => {
+    const { db, calls } = createDbShim({
+      selectResults: [[], []],
+      returningRows: [[{ id: BigInt(7) }], [{ id: BigInt(8) }]],
     });
 
     await upsertTableData(
@@ -312,13 +512,94 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
       'circuits',
       144574,
       'user-1',
-      [circuit('circuit-1', 'Lost the race', [{ climb_uuid: 'climb-A' }])],
+      [circuit('z-circuit', 'Last'), circuit('a-circuit', 'First')],
       () => {},
     );
 
-    expect(insertsInto(playlistOwnership)).toHaveLength(0);
-    expect(insertsInto(playlistClimbs)).toHaveLength(0);
-    expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(0);
+    const executeCallIndexes = calls
+      .map((call, index) => ({ call, index }))
+      .filter(({ call }) => call.kind === 'execute')
+      .map(({ index }) => index);
+    const sourceInsertCallIndex = calls.findIndex((call) => call.kind === 'insert' && call.table === boardCircuits);
+    const ownerSelectCallIndex = calls.findIndex((call) => call.kind === 'select');
+    expect(executeCallIndexes).toHaveLength(2);
+    expect(sourceInsertCallIndex).toBeGreaterThan(Math.max(...executeCallIndexes));
+    expect(ownerSelectCallIndex).toBeGreaterThan(sourceInsertCallIndex);
+
+    const lockStatement = calls[executeCallIndexes[0]]?.args[0];
+    const rendered = new PgDialect().sqlToQuery(lockStatement as never);
+    expect(rendered.sql).toContain('pg_advisory_xact_lock');
+    expect(rendered.sql).toContain('hashtext');
+    expect(rendered.params).toContain(0x41555243);
+    expect(rendered.params).toContain('tension|a-circuit');
+  });
+
+  it('takes multi-circuit locks in stable UUID order to avoid cross-transaction deadlocks', async () => {
+    const { db, calls } = createDbShim({
+      selectResults: [[], []],
+      returningRows: [[{ id: BigInt(7) }], [{ id: BigInt(8) }]],
+    });
+
+    await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [circuit('z-circuit', 'Last'), circuit('a-circuit', 'First')],
+      () => {},
+    );
+
+    const lockKeys = calls
+      .filter((call) => call.kind === 'execute')
+      .map((call) => new PgDialect().sqlToQuery(call.args[0] as never).params)
+      .map((params) => params.find((parameter) => typeof parameter === 'string'));
+    expect(lockKeys).toEqual(['tension|a-circuit', 'tension|z-circuit']);
+  });
+
+  it('locks each normalized set before its source upsert when calls share an outer transaction', async () => {
+    const { db, calls } = createDbShim({
+      selectResults: [[], [], [], []],
+      returningRows: [[{ id: BigInt(7) }], [{ id: BigInt(8) }], [{ id: BigInt(9) }], [{ id: BigInt(10) }]],
+    });
+
+    await db.transaction(async (outerTransaction) => {
+      await upsertTableData(
+        outerTransaction as unknown as ShimDb,
+        'tension',
+        'circuits',
+        144574,
+        'user-1',
+        [circuit('z-circuit', 'Last'), circuit('a-circuit', 'First')],
+        () => {},
+      );
+      await upsertTableData(
+        outerTransaction as unknown as ShimDb,
+        'tension',
+        'circuits',
+        144574,
+        'user-1',
+        [circuit('d-circuit', 'Fourth'), circuit('c-circuit', 'Third')],
+        () => {},
+      );
+    });
+
+    const arbitrationEvents = calls
+      .filter((call) => call.kind === 'execute' || (call.kind === 'insert' && call.table === boardCircuits))
+      .map((call) => {
+        if (call.kind === 'insert') return 'source-upsert';
+        const parameters = new PgDialect().sqlToQuery(call.args[0] as never).params;
+        return parameters.find((parameter) => typeof parameter === 'string');
+      });
+
+    expect(arbitrationEvents).toEqual([
+      'tension|a-circuit',
+      'tension|z-circuit',
+      'source-upsert',
+      'tension|c-circuit',
+      'tension|d-circuit',
+      'source-upsert',
+    ]);
   });
 
   it('renders the owner lookup with the role filter, LEFT JOIN and aurora_id column', () => {
@@ -342,9 +623,9 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
  * too: it flags both halves of the known duplicate Tension pair and none of the
  * other 110 Tension users.
  */
-describe('hasForeignOwnedCircuitPlaylists (#3526)', () => {
+describe('getCircuitPlaylistOwnershipConflictState (#3950)', () => {
   /**
-   * Stub for `.select().from().innerJoin().innerJoin().where().limit()`.
+   * Stub for `.select().from().innerJoin().leftJoin().where()`.
    *
    * `captured.where` holds the REAL predicate the production code passed.
    * Always render that — never rebuild the condition in the test. A rebuilt
@@ -353,44 +634,75 @@ describe('hasForeignOwnedCircuitPlaylists (#3526)', () => {
    * lesson learned the hard way).
    */
   function stubDb(rows: Array<Record<string, unknown>>) {
-    const captured: { where?: unknown } = {};
+    const captured: { where?: unknown; ownerJoin?: unknown } = {};
     const source = {
       innerJoin: (_table: unknown, _on: unknown) => source,
+      leftJoin: (_table: unknown, condition: unknown) => {
+        captured.ownerJoin = condition;
+        return source;
+      },
       where: (condition: unknown) => {
         captured.where = condition;
-        return { limit: (_n: number) => Promise.resolve(rows) };
+        return Promise.resolve(rows);
       },
     };
     return { db: { select: () => ({ from: () => source }) }, captured };
   }
 
-  it("reports a duplicate when a foreign owner holds one of the account's circuits", async () => {
-    const { db } = stubDb([{ playlistId: BigInt(1) }]);
-    await expect(hasForeignOwnedCircuitPlaylists(db as never, 'tension', 144574, 'user-1')).resolves.toBe(true);
+  it("reports foreign when another user solely owns one of the account's circuits", async () => {
+    const { db } = stubDb([{ circuitUuid: 'circuit-1', ownerUserId: 'user-2' }]);
+    await expect(getCircuitPlaylistOwnershipConflictState(db as never, 'tension', 144574, 'user-1')).resolves.toBe(
+      'foreign',
+    );
   });
 
-  it('reports no duplicate when nothing conflicts', async () => {
-    const { db } = stubDb([]);
-    await expect(hasForeignOwnedCircuitPlaylists(db as never, 'tension', 49399, 'user-1')).resolves.toBe(false);
+  it('reports ambiguous when this user and another user both own a playlist', async () => {
+    const { db } = stubDb([
+      { circuitUuid: 'circuit-1', ownerUserId: 'user-1' },
+      { circuitUuid: 'circuit-1', ownerUserId: 'user-2' },
+    ]);
+    await expect(getCircuitPlaylistOwnershipConflictState(db as never, 'tension', 144574, 'user-1')).resolves.toBe(
+      'ambiguous',
+    );
   });
 
-  it('scopes to this board, this Aurora account, and OTHER owners only', async () => {
-    // Renders the predicate PRODUCTION passed, pulled out of the stub. Flipping
-    // `ne(playlistOwnership.userId, ...)` to `eq` in user-sync.ts is the
-    // loudest failure mode in this change — every healthy Aurora user would get
-    // a permanent, false "circuits aren't syncing" banner — and a predicate
-    // rebuilt here would not notice.
+  it('gives ambiguous precedence when the account also has a foreign-only circuit', async () => {
+    const { db } = stubDb([
+      { circuitUuid: 'foreign', ownerUserId: 'user-2' },
+      { circuitUuid: 'shared', ownerUserId: 'user-1' },
+      { circuitUuid: 'shared', ownerUserId: 'user-3' },
+    ]);
+    await expect(getCircuitPlaylistOwnershipConflictState(db as never, 'tension', 144574, 'user-1')).resolves.toBe(
+      'ambiguous',
+    );
+  });
+
+  it.each([
+    ['no matching playlist', []],
+    ['an orphan', [{ circuitUuid: 'orphan', ownerUserId: null }]],
+    ['only this owner', [{ circuitUuid: 'mine', ownerUserId: 'user-1' }]],
+  ])('reports none for %s', async (_caseName, rows) => {
+    const { db } = stubDb(rows);
+    await expect(getCircuitPlaylistOwnershipConflictState(db as never, 'tension', 49399, 'user-1')).resolves.toBe(
+      'none',
+    );
+  });
+
+  it('scopes to this board/account and filters owner roles in the LEFT JOIN', async () => {
     const { db, captured } = stubDb([]);
 
-    await hasForeignOwnedCircuitPlaylists(db as never, 'tension', 144574, 'user-1');
+    await getCircuitPlaylistOwnershipConflictState(db as never, 'tension', 144574, 'user-1');
 
     expect(captured.where).toBeDefined();
     const rendered = new PgDialect().sqlToQuery(captured.where as never);
     expect(rendered.sql).toContain('"board_circuits"."board_type" =');
     expect(rendered.sql).toContain('"board_circuits"."user_id" =');
-    // The load-bearing character in the whole predicate.
-    expect(rendered.sql).toContain('"playlist_ownership"."user_id" <>');
-    expect(rendered.sql).not.toContain('"playlist_ownership"."user_id" =');
-    expect(rendered.params).toEqual(['tension', 144574, 'user-1']);
+    expect(rendered.params).toEqual(['tension', 144574]);
+
+    expect(captured.ownerJoin).toBeDefined();
+    const renderedOwnerJoin = new PgDialect().sqlToQuery(captured.ownerJoin as never);
+    expect(renderedOwnerJoin.sql).toContain('"playlist_ownership"."playlist_id" = "playlists"."id"');
+    expect(renderedOwnerJoin.sql).toContain('"playlist_ownership"."role" =');
+    expect(renderedOwnerJoin.params).toEqual(['owner']);
   });
 });

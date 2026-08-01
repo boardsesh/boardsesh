@@ -52,6 +52,23 @@ The `@boardsesh/aurora-sync` package provides the shared sync implementation. It
   - `bids` → `kilter_bids` + `boardsesh_ticks`
   - `circuits` → `kilter_circuits` + `playlists` + `playlist_climbs`
 
+Circuit playlist writes are arbitrated per `(board_type, circuit_uuid)` with a
+transaction-scoped PostgreSQL advisory lock. After taking the lock, the daemon
+reads the current owner edges and either refuses a foreign/ambiguous claim or
+writes the playlist, sole-owner edge, and climb replacement in one transaction.
+Circuit deltas are deduplicated with the last payload row winning, then sorted.
+The transaction acquires that complete sorted lock set before any
+`board_circuits` source upsert or playlist write. Claiming an orphan also
+promotes an existing editor/viewer edge for the syncing user to `owner`.
+The playlist upsert also retains its correlated ownership predicate as defence
+in depth. If that predicate suppresses an upsert, the daemon re-reads owners,
+counts the circuit as refused, and logs the exact owner state; an empty owner
+state is treated as an invariant/concurrency warning and is never claimed
+silently. After each successful cycle, a persistent ownership read records one
+of `none`, `foreign`, or `ambiguous`; mobile and web show distinct localised
+guidance for the two conflict states while continuing to understand the older
+generic stored code.
+
 ### Logbook writes (`ascents`/`bids`): timezone, claim, soft-delete
 
 Both pull implementations (the daemon `packages/aurora-sync/src/sync/user-sync.ts`

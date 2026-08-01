@@ -2,7 +2,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/react';
 import { createElement, type ReactNode } from 'react';
-import { DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+} from '@boardsesh/shared-schema/sync-error-codes';
 import type { AuroraCredentialStatus, AuroraCredentialsResponse } from '../../../lib/aurora-credentials';
 
 // --- Hoisted mock state, mutated per-test before render ---
@@ -406,15 +410,32 @@ describe('BoardAccountsSection — sync_error on a connected board card (#3526)'
     mocks.credentials = [];
   });
 
-  it('explains the duplicate board-account link instead of a bare red Error pill', () => {
-    mocks.credentials = [connectedCredential(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)];
+  it('explains a foreign-owned playlist without a bare red Error pill', () => {
+    mocks.credentials = [connectedCredential(FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)];
     const { container } = render(<BoardAccountsSection />);
 
-    expect(container.textContent).toContain('aurora.status.duplicateAccountCircuits');
+    expect(container.textContent).toContain('aurora.status.foreignAccountCircuits');
     // The account is healthy and syncing — the generic failure copy would tell
     // this climber their board login is broken, with nothing to act on.
     expect(container.textContent).not.toContain('aurora.status.error');
     // And it never leaks the raw code to the card.
+    expect(container.textContent).not.toContain(FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
+  });
+
+  it('uses distinct copy for an already cross-linked playlist', () => {
+    mocks.credentials = [connectedCredential(AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.ambiguousAccountCircuits');
+    expect(container.textContent).not.toContain('aurora.status.foreignAccountCircuits');
+    expect(container.textContent).not.toContain(AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
+  });
+
+  it('keeps localising the legacy generic code already stored on credentials', () => {
+    mocks.credentials = [connectedCredential(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)];
+    const { container } = render(<BoardAccountsSection />);
+
+    expect(container.textContent).toContain('aurora.status.duplicateAccountCircuits');
     expect(container.textContent).not.toContain(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR);
   });
 
