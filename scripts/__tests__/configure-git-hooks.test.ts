@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const repairScript = join(repositoryRoot, 'scripts/configure-git-hooks.sh');
@@ -18,8 +18,6 @@ type Fixture = {
   stubBinDirectory: string;
   vpLogPath: string;
 };
-
-const fixtureDirectories: string[] = [];
 
 function run(command: string, args: string[], cwd: string, extraEnvironment: NodeJS.ProcessEnv = {}) {
   return spawnSync(command, args, {
@@ -49,7 +47,7 @@ async function writeExecutable(path: string, contents: string): Promise<void> {
 
 async function createFixture(): Promise<Fixture> {
   const rootDirectory = await mkdtemp(join(tmpdir(), 'boardsesh-hook-repair-'));
-  fixtureDirectories.push(rootDirectory);
+  onTestFinished(() => rm(rootDirectory, { force: true, recursive: true }));
   const bareRepository = join(rootDirectory, 'origin.git');
   const primaryWorktree = join(rootDirectory, 'primary');
   const stubBinDirectory = join(rootDirectory, 'stub-bin');
@@ -105,9 +103,23 @@ function repairHooks(fixture: Fixture) {
   });
 }
 
-afterEach(async () => {
-  await Promise.all(fixtureDirectories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
-});
+function commandLineIndexes(contents: string, command: string): number[] {
+  return contents.split('\n').reduce<number[]>((indexes, line, index) => {
+    if (line.trim() === command) {
+      indexes.push(index);
+    }
+    return indexes;
+  }, []);
+}
+
+function expectCommandAfter(contents: string, firstCommand: string, secondCommand: string): void {
+  const firstCommandIndexes = commandLineIndexes(contents, firstCommand);
+  const secondCommandIndexes = commandLineIndexes(contents, secondCommand);
+
+  expect(firstCommandIndexes).toHaveLength(1);
+  expect(secondCommandIndexes).toHaveLength(1);
+  expect(secondCommandIndexes[0]).toBeGreaterThan(firstCommandIndexes[0]);
+}
 
 describe('configure-git-hooks', () => {
   it.each(['', '.vite-hooks/_', '.vite-hooks'])('repairs the allowed effective hook path %j', async (initialPath) => {
@@ -267,24 +279,36 @@ describe('configure-git-hooks', () => {
     expect(result.stderr).toContain('run this command from inside a Git worktree');
   });
 
+  it('warns without failing when post-checkout cannot repair hooks', async () => {
+    const fixture = await createFixture();
+    await rm(join(fixture.primaryWorktree, 'scripts/configure-git-hooks.sh'));
+
+    const result = run(
+      'sh',
+      [join(fixture.primaryWorktree, '.vite-hooks/post-checkout'), 'previous-head', 'new-head', '1'],
+      fixture.primaryWorktree,
+      {
+        PATH: `${fixture.stubBinDirectory}:${process.env.PATH ?? ''}`,
+        VP_LOG: fixture.vpLogPath,
+      },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toContain('WARNING: Dependencies installed, but Git hooks could not be repaired');
+  });
+
   it('runs the repair after Vite+ has completed every hook-affecting setup step', async () => {
     const claudeSetup = await readFile(join(repositoryRoot, '.claude/setup.sh'), 'utf8');
     const developerSetup = await readFile(join(repositoryRoot, 'scripts/setup-dev.sh'), 'utf8');
     const postCheckoutHook = await readFile(join(repositoryRoot, '.vite-hooks/post-checkout'), 'utf8');
 
-    expect(claudeSetup).toContain('vp config');
-    expect(claudeSetup).toContain('./scripts/configure-git-hooks.sh');
-    expect(claudeSetup.indexOf('vp config')).toBeLessThan(claudeSetup.indexOf('./scripts/configure-git-hooks.sh'));
-    expect(developerSetup.indexOf('vp install')).toBeLessThan(developerSetup.indexOf('vp config'));
-    expect(developerSetup).toContain('vp config');
-    expect(developerSetup).toContain('"$REPO_ROOT/scripts/configure-git-hooks.sh"');
-    expect(developerSetup.indexOf('vp config')).toBeLessThan(
-      developerSetup.indexOf('"$REPO_ROOT/scripts/configure-git-hooks.sh"'),
-    );
-    expect(postCheckoutHook).toContain('vp install');
-    expect(postCheckoutHook).toContain('"$repo_root/scripts/configure-git-hooks.sh"');
-    expect(postCheckoutHook.indexOf('vp install')).toBeLessThan(
-      postCheckoutHook.indexOf('"$repo_root/scripts/configure-git-hooks.sh"'),
+    expectCommandAfter(claudeSetup, 'vp config', './scripts/configure-git-hooks.sh');
+    expectCommandAfter(developerSetup, 'if ! vp install; then', 'vp config');
+    expectCommandAfter(developerSetup, 'vp config', '"$REPO_ROOT/scripts/configure-git-hooks.sh"');
+    expectCommandAfter(
+      postCheckoutHook,
+      'if ! vp install; then',
+      'if ! "$repo_root/scripts/configure-git-hooks.sh"; then',
     );
   });
 });
