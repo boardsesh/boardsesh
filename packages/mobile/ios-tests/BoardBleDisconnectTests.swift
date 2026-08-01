@@ -9,15 +9,20 @@ final class BoardBleDisconnectTests: XCTestCase {
     private var scheduler: FakeBleTimerScheduler!
     private var manager: BoardBleManager!
     private var cancelledPeripheralIds: [UUID] = []
+    private var stopScanCallCount = 0
     private let uartWriteCharacteristicUuid = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 
     override func setUp() {
         super.setUp()
         cancelledPeripheralIds = []
+        stopScanCallCount = 0
         scheduler = FakeBleTimerScheduler()
         manager = BoardBleManager(timerScheduler: scheduler, createCentralManagerEagerly: false)
         manager.testHooks.sync {
             manager.testHooks.setConfiguration(nil)
+            manager.testHooks.setStopScanOverride { [weak self] in
+                self?.stopScanCallCount += 1
+            }
             manager.testHooks.setCancelPeripheralConnectionOverride { [weak self] peripheral in
                 self?.cancelledPeripheralIds.append(peripheral.identifier)
             }
@@ -26,6 +31,7 @@ final class BoardBleDisconnectTests: XCTestCase {
 
     override func tearDown() {
         manager.testHooks.sync {
+            manager.testHooks.setStopScanOverride(nil)
             manager.testHooks.setCancelPeripheralConnectionOverride(nil)
         }
         manager = nil
@@ -95,6 +101,7 @@ final class BoardBleDisconnectTests: XCTestCase {
             intentionalGeneration
         )
         XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(stopScanCallCount, 1)
         XCTAssertNil(manager.connectedDeviceId)
         XCTAssertEqual(disconnectEventCount, 0)
 
@@ -110,6 +117,7 @@ final class BoardBleDisconnectTests: XCTestCase {
         )
         XCTAssertEqual(disconnectEventCount, 0)
         XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(stopScanCallCount, 1)
     }
 
     func testStaleDifferentPeripheralDisconnectLeavesCurrentWriteQueueUntouched() {

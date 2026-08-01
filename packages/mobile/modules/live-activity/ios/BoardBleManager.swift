@@ -386,6 +386,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private lazy var timerScheduler: BleTimerScheduling = DispatchBleTimerScheduler(queue: bleQueue)
 
     #if DEBUG || BOARDSESH_TESTS
+    /// Test-only interception of the CoreBluetooth scan teardown. The production
+    /// path still clears `scanRequested` before reaching this seam; tests use it
+    /// only to avoid touching the lazy `CBCentralManager` in an XCTest host that
+    /// has no bluetooth-central background mode.
+    private var stopScanOverrideForTesting: (() -> Void)?
     /// Test-only interception of the single concrete `cancelPeripheralConnection`
     /// call site so a fake peripheral never has to be a real `CBPeripheral` and no
     /// `CBCentralManager` is instantiated. nil in production/dev; set only through
@@ -672,6 +677,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     private func stopScanOnBleQueue() {
         scanRequested = false
+        #if DEBUG || BOARDSESH_TESTS
+        if let overrideForTesting = stopScanOverrideForTesting {
+            overrideForTesting()
+            return
+        }
+        #endif
         if centralManager.isScanning {
             centralManager.stopScan()
         }
@@ -2431,6 +2442,13 @@ extension BoardBleManager {
         /// fake peripheral never has to be a real `CBPeripheral`.
         func setCancelPeripheralConnectionOverride(_ handler: ((WritableBlePeripheral) -> Void)?) {
             manager.cancelPeripheralConnectionOverrideForTesting = handler
+        }
+
+        /// Intercept the concrete CoreBluetooth scan teardown while preserving
+        /// the production `scanRequested = false` transition in
+        /// `stopScanOnBleQueue`.
+        func setStopScanOverride(_ handler: (() -> Void)?) {
+            manager.stopScanOverrideForTesting = handler
         }
 
         /// Fire the `peripheralIsReady(toSendWriteWithoutResponse:)` delegate body.
