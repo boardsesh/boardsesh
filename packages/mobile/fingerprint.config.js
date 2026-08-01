@@ -29,6 +29,7 @@ const BUN_STORE_ENTRY_WITH_PEER_SUFFIX = new RegExp(
 function decodeBunStorePackageName(encodedPackageName) {
   if (!encodedPackageName.startsWith('@')) return encodedPackageName;
   const scopeSeparator = encodedPackageName.indexOf('+');
+  if (scopeSeparator === -1) return encodedPackageName;
   return `${encodedPackageName.slice(0, scopeSeparator)}/${encodedPackageName.slice(scopeSeparator + 1)}`;
 }
 
@@ -90,6 +91,7 @@ module.exports = {
   // tests so the exact allowlist and normalization boundary cannot widen silently.
   __test: {
     AUTOLINKING_SOURCE_IDS,
+    decodeBunStorePackageName,
     normalizeAutolinkingValue,
     normalizeTerminalBunPeerSuffixes,
   },

@@ -19,6 +19,7 @@ type FingerprintConfig = {
   fileHookTransform(source: HookSource, chunk: HookChunk): HookChunk;
   __test: {
     AUTOLINKING_SOURCE_IDS: Set<string>;
+    decodeBunStorePackageName(encodedPackageName: string): string;
     normalizeAutolinkingValue(value: unknown): unknown;
     normalizeTerminalBunPeerSuffixes(filePath: string): string;
   };
@@ -94,6 +95,11 @@ afterEach(() => {
 });
 
 describe('mobile fingerprint config', () => {
+  it('fails closed when a scoped store name lacks its encoded scope separator', () => {
+    expect(fingerprintConfig.__test.decodeBunStorePackageName('@scope-name')).toBe('@scope-name');
+    expect(fingerprintConfig.__test.decodeBunStorePackageName('@scope+name')).toBe('@scope/name');
+  });
+
   it('normalizes matching package@version paths for exactly the four platform autolinking content ids', () => {
     expect([...fingerprintConfig.__test.AUTOLINKING_SOURCE_IDS].sort()).toEqual([
       'expoAutolinkingConfig:android',

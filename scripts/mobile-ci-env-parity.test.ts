@@ -236,6 +236,10 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
       expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
       expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
     }
+
+    expect(readWorkflow(OTA_CHECK), 'OTA compatibility must react to fingerprint config edits').toContain(
+      "- 'packages/mobile/**'",
+    );
   });
 
   it('screens root package and fingerprint-config edits inside the composite native gate', () => {
