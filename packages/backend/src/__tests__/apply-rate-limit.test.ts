@@ -214,6 +214,28 @@ describe('applyRateLimit key selection', () => {
     expect(mockCheckRateLimitRedis).toHaveBeenCalledTimes(2);
   });
 
+  it('shares the local bucket across anonymous HTTP requests from the same IP', async () => {
+    const firstContext: ConnectionContext = {
+      connectionId: 'http-request-1',
+      transport: 'http',
+      isAuthenticated: false,
+      clientIp: '10.0.0.1',
+    };
+    const secondContext: ConnectionContext = {
+      ...firstContext,
+      connectionId: 'http-request-2',
+    };
+
+    await applyRateLimit(firstContext, 5, 'createSession');
+    await applyRateLimit(secondContext, 5, 'createSession');
+
+    expect(mockCheckRateLimit.mock.calls.map(([identity]) => identity)).toEqual([
+      'ip:10.0.0.1:createSession',
+      'ip:10.0.0.1:createSession',
+    ]);
+    expect(mockCheckRateLimitRedis).not.toHaveBeenCalled();
+  });
+
   it('falls back to connectionId when no clientIp and not authenticated', async () => {
     const ctx: ConnectionContext = {
       connectionId: 'ws-anon-456',

@@ -493,6 +493,10 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
       });
     }
 
+    // A rejected client/user bucket intentionally short-circuits before this
+    // secondary peer bucket: the request is already blocked and must not spend
+    // another identity's shared-proxy quota. Header rotation keeps reaching this
+    // call because each forged client bucket remains below its own limit.
     if (!ctx.isAuthenticated && ctx.transport === 'ws' && ctx.socketPeerIp) {
       const socketPeerLimit = Math.max(
         ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR,

@@ -187,5 +187,16 @@ describe('checkRateLimitRedis', () => {
       ).resolves.toBeUndefined();
       expect(mockCheckRateLimit).not.toHaveBeenCalled();
     });
+
+    it('falls back to the dedicated memory bucket after a Redis command failure when requested', async () => {
+      mockEval.mockRejectedValue(new Error('Redis cluster timeout'));
+
+      await expect(
+        checkRateLimitRedis('socket-peer:10.0.0.8', 'createSession', 600, 60_000, {
+          fallbackToMemory: true,
+        }),
+      ).resolves.toBeUndefined();
+      expect(mockCheckRateLimit).toHaveBeenCalledWith('socket-peer:10.0.0.8:createSession', 600, 60_000);
+    });
   });
 });
