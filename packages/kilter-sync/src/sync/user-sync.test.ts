@@ -7,7 +7,7 @@ import type { PowerSyncOp } from '../api/powersync-client';
 // resolveCanonicalClimbUuid stays real (pre-seeded alias cache → no DB hit).
 vi.mock('@boardsesh/db/queries', async (importActual) => {
   const actual = await importActual<typeof import('@boardsesh/db/queries')>();
-  return { ...actual, recomputeClimbStatsBulk: vi.fn() };
+  return { ...actual, acquireUserTickMutationLock: vi.fn(), recomputeClimbStatsBulk: vi.fn() };
 });
 
 import { recomputeClimbStatsBulk, type ClimbStatsKey } from '@boardsesh/db/queries';

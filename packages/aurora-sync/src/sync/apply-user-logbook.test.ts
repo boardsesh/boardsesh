@@ -6,7 +6,7 @@ import type { SQL } from 'drizzle-orm';
 // cross-source claim exercises the actual matching logic.
 vi.mock('@boardsesh/db/queries', async (importActual) => {
   const actual = await importActual<typeof import('@boardsesh/db/queries')>();
-  return { ...actual, recomputeClimbStatsBulk: vi.fn() };
+  return { ...actual, acquireUserTickMutationLock: vi.fn(), recomputeClimbStatsBulk: vi.fn() };
 });
 
 import { recomputeClimbStatsBulk } from '@boardsesh/db/queries';

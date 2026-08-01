@@ -9,6 +9,7 @@ import {
   adoptionMatchScoreSeconds,
   MAX_USER_UTC_OFFSET_SECONDS,
   NATURAL_KEY_TOLERANCE_SECONDS,
+  acquireUserTickMutationLock,
   type ClimbStatsKey,
   type TickTimeSample,
 } from '@boardsesh/db/queries';
@@ -749,6 +750,7 @@ async function applyLogbookChunk(
       -- but keeps the never-cross-users invariant enforced at the write itself.
       WHERE t.uuid = u.uuid
         AND t.user_id = ${userId}
+        AND (t.aurora_synced_at IS NULL OR t.updated_at <= t.aurora_synced_at)
     `);
   };
 
@@ -809,6 +811,11 @@ async function applyLogbookChunk(
       -- the write itself.
       WHERE t.aurora_id = u.aurora_id
         AND t.user_id = ${userId}
+        -- Re-check at write time. A rolling-deploy node that does not yet take
+        -- the shared advisory lock can edit after the SELECT above; comparing
+        -- timestamp columns here also preserves Postgres microseconds that JS
+        -- Date.parse cannot represent.
+        AND (t.aurora_synced_at IS NULL OR t.updated_at <= t.aurora_synced_at)
     `);
   };
 
@@ -962,6 +969,10 @@ export async function applyAuroraAscents(
     }
   }
 
+  // Shared with updateTick/deleteTick and Kilter log apply. The caller owns
+  // the transaction; take this before the first target/tombstone SELECT.
+  await acquireUserTickMutationLock(db, userId);
+
   touchedKeys.push(...(await applyAuroraTombstones(db, boardName, userId, tombstoneIds)));
 
   const unique = dedupeByAuroraId(live);
@@ -1010,6 +1021,8 @@ export async function applyAuroraBids(
       skips.push(skipFromNormalizeError(item, error, 'bids', userId, boardName));
     }
   }
+
+  await acquireUserTickMutationLock(db, userId);
 
   const unique = dedupeByAuroraId(live);
   for (const batch of chunk(unique, WRITE_CHUNK_SIZE)) {
