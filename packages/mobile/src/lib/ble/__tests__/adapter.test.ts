@@ -1474,7 +1474,7 @@ describe('RNBleAdapter', () => {
       }
     });
 
-    it('does not retry denied Android statuses or post-connect MTU/discovery failures', async () => {
+    it('does not retry denied Android statuses', async () => {
       const deniedError = androidConnectError(201, 19);
       const firstSelection = setupSelectedDevice('denied-device');
       mockBleManager.connectToDevice.mockRejectedValue(deniedError);
@@ -1483,8 +1483,9 @@ describe('RNBleAdapter', () => {
         deniedError,
       );
       expect(mockBleManager.connectToDevice).toHaveBeenCalledOnce();
+    });
 
-      vi.clearAllMocks();
+    it('does not retry a post-connect discovery failure', async () => {
       const secondSelection = setupSelectedDevice('discovery-device');
       const discoveryError = new Error('service discovery failed');
       secondSelection.connectedDevice.discoverAllServicesAndCharacteristics.mockRejectedValue(discoveryError);
