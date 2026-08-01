@@ -1,19 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { SYNC_DAEMON_DISABLED_MESSAGE } from '@boardsesh/sync-runtime';
-import { isOperatorLogLine } from './log-filter';
+import { isOperatorLogLine, shouldLogAuroraSyncMessage } from './log-filter';
 
-describe('isOperatorLogLine', () => {
-  it('prints the daemon-disabled line the runner logs', () => {
+describe('Aurora CLI non-verbose log filter', () => {
+  it('prints the daemon-disabled line and existing operator lines', () => {
     expect(isOperatorLogLine(`[SyncRunner] ${SYNC_DAEMON_DISABLED_MESSAGE}`)).toBe(true);
-  });
-
-  it('keeps the existing operator lines', () => {
     expect(isOperatorLogLine('[SyncRunner] Daemon started')).toBe(true);
     expect(isOperatorLogLine('[SyncRunner] CREDENTIAL QUARANTINED user-1/kilter')).toBe(true);
     expect(isOperatorLogLine('[SyncRunner] Sync health: 3 active')).toBe(true);
   });
 
-  it('drops per-table chatter', () => {
+  it.each([
+    '[aurora-sync] skipped foreign owner {"event":"aurora_circuit_playlist_refused"}',
+    '[SyncRunner] User user-1: circuits not syncing — tension playlist ownership state is foreign',
+    '[SyncRunner] CREDENTIAL FLAPPING user-1',
+    '[SyncRunner] Sync health: active=1',
+  ])('keeps operational warning %s', (message) => {
+    expect(shouldLogAuroraSyncMessage(message)).toBe(true);
+  });
+
+  it('drops progress chatter', () => {
     expect(isOperatorLogLine('[SyncRunner] Syncing table climbs page 3')).toBe(false);
+    expect(shouldLogAuroraSyncMessage('Sync attempt 2 for user 144574')).toBe(false);
   });
 });

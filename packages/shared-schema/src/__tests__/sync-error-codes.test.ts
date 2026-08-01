@@ -5,6 +5,7 @@ import {
   FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
   circuitPlaylistConflictSyncError,
   circuitPlaylistSyncWarningKind,
+  circuitPlaylistSyncWireFields,
 } from '../sync-error-codes';
 
 describe('circuit playlist sync error codes', () => {
@@ -20,5 +21,20 @@ describe('circuit playlist sync error codes', () => {
     expect(circuitPlaylistSyncWarningKind(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toBe('legacy');
     expect(circuitPlaylistSyncWarningKind('Refresh token rejected')).toBeNull();
     expect(circuitPlaylistSyncWarningKind(null)).toBeNull();
+  });
+
+  it('keeps the legacy code on the wire while preserving a precise reason for current clients', () => {
+    expect(circuitPlaylistSyncWireFields(FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toEqual({
+      syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+      syncErrorReason: 'foreign',
+    });
+    expect(circuitPlaylistSyncWireFields(AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR)).toEqual({
+      syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+      syncErrorReason: 'ambiguous',
+    });
+    expect(circuitPlaylistSyncWireFields('Refresh token rejected')).toEqual({
+      syncError: 'Refresh token rejected',
+    });
+    expect(circuitPlaylistSyncWarningKind(DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR, 'foreign')).toBe('foreign');
   });
 });

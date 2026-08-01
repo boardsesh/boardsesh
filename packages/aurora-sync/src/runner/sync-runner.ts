@@ -704,6 +704,15 @@ export class SyncRunner {
     this.log(`[SyncRunner] Syncing user ${cred.userId} for ${boardType}...`);
     await syncUserData(db, boardType, token, cred.auroraUserId, cred.userId, {
       log: this.log.bind(this),
+      logError: (message) =>
+        this.handleError(new Error(message), {
+          userId: cred.userId,
+          board: boardType,
+          boardType,
+          syncStatus: cred.syncStatus ?? undefined,
+          consecutiveFailures: cred.consecutiveFailures ?? undefined,
+          quarantined: false,
+        }),
       transaction: this.callOptions?.transaction ?? this.config.transaction,
       signal: this.currentSignal(),
     });

@@ -37,6 +37,7 @@ export const AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR = 'duplicate-board-acco
 
 /** Persistent ownership state for one credential's Aurora circuit playlists. */
 export type CircuitPlaylistOwnershipConflictState = 'none' | 'foreign' | 'ambiguous';
+export type CircuitPlaylistSyncErrorReason = Exclude<CircuitPlaylistOwnershipConflictState, 'none'>;
 
 /** The warning variants mobile and web know how to localise. */
 export type CircuitPlaylistSyncWarningKind = Exclude<CircuitPlaylistOwnershipConflictState, 'none'> | 'legacy';
@@ -54,11 +55,36 @@ export function circuitPlaylistConflictSyncError(
  * Decode both current codes and the pre-#3950 generic value. Unknown/free-text
  * errors deliberately return null so clients continue rendering them verbatim.
  */
-export function circuitPlaylistSyncWarningKind(syncError: string | null): CircuitPlaylistSyncWarningKind | null {
+export function circuitPlaylistSyncWarningKind(
+  syncError: string | null,
+  syncErrorReason?: CircuitPlaylistSyncErrorReason,
+): CircuitPlaylistSyncWarningKind | null {
+  if (syncErrorReason) return syncErrorReason;
   if (syncError === FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR) return 'foreign';
   if (syncError === AMBIGUOUS_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR) return 'ambiguous';
   if (syncError === DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR) return 'legacy';
   return null;
+}
+
+export type CircuitPlaylistSyncWireFields = {
+  syncError: string | null;
+  syncErrorReason?: CircuitPlaylistSyncErrorReason;
+};
+
+/**
+ * Keep the long-standing generic code on the REST wire so older clients still
+ * render their localised duplicate-account warning. Current clients receive a
+ * separate reason field for the more precise foreign/ambiguous copy.
+ */
+export function circuitPlaylistSyncWireFields(syncError: string | null): CircuitPlaylistSyncWireFields {
+  const warningKind = circuitPlaylistSyncWarningKind(syncError);
+  if (warningKind === 'foreign' || warningKind === 'ambiguous') {
+    return {
+      syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+      syncErrorReason: warningKind,
+    };
+  }
+  return { syncError };
 }
 
 /** Every `sync_error` value clients are expected to recognise and localise. */

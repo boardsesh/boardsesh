@@ -722,6 +722,7 @@ export type SyncUserDataResult = Record<string, SyncTableResult>;
 export type SyncUserDataOptions = {
   tables?: string[];
   log?: (message: string) => void;
+  logError?: (message: string) => void;
   /**
    * Runs each page's writes in one transaction. Defaults to `db.transaction`.
    * A background job passes its fenced runner here so every page commits only
@@ -755,7 +756,7 @@ export async function syncUserData(
   nextAuthUserId: string,
   options: SyncUserDataOptions = {},
 ): Promise<SyncUserDataResult> {
-  const { tables = USER_TABLES, log = console.info, signal } = options;
+  const { tables = USER_TABLES, log = console.info, logError = console.error, signal } = options;
   const runBatch: SyncBatchRunner = options.transaction ?? ((callback) => db.transaction(callback));
   const deferredStats =
     (options.deferStatsRecompute ?? options.transaction !== undefined) ? new DeferredClimbStatsRecompute() : null;
@@ -817,6 +818,7 @@ export async function syncUserData(
                 data,
                 log,
                 recompute,
+                logError,
               );
 
               if (!totalResults[tableName]) {
