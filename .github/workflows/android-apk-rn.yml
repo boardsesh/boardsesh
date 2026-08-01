@@ -265,25 +265,31 @@ jobs:
           EXPO_PUBLIC_USE_RN_FETCH=$EXPO_PUBLIC_USE_RN_FETCH
           EOF
 
-      # @sentry/react-native's Gradle upload task (sentry.gradle, applied by the
-      # @sentry/react-native/expo config plugin) previously called a Gradle API
-      # incompatible with Expo-prebuild-generated Gradle (`Could not find method
-      # exec()`). That was fixed upstream in @sentry/react-native 7.3.0 (we're
-      # pinned to 7.11.0) — sentry.gradle already uses the ExecOperations-safe
-      # pattern. Mirror ios-testflight-rn.yml exactly: gate the upload on
-      # SENTRY_AUTH_TOKEN presence so a missing token degrades to "no upload,
-      # green build" instead of failing the release. Without this Android JS
-      # errors report as one unsymbolicated `app:///index.android.bundle:1:...`
-      # frame and Sentry merges every distinct bug into a single issue (#4101).
-      - name: Configure Sentry source map upload
+      # @sentry/react-native's Gradle-embedded upload task (sentry.gradle,
+      # applied by the @sentry/react-native/expo config plugin) previously
+      # called a Gradle API incompatible with Expo-prebuild-generated Gradle
+      # (`Could not find method exec()`) — fixed upstream in @sentry/react-native
+      # 7.3.0 (we're pinned to 7.11.0, past the fix). Left disabled anyway: a
+      # feature-branch `workflow_dispatch` can't verify it first (the Production
+      # GitHub environment's deployment-branch policy only allows `main` — see
+      # `gh api repos/boardsesh/boardsesh/environments/Production/deployment-branch-policies`),
+      # and if it's still broken it fails assembleRelease/bundleRelease outright,
+      # taking down the whole Android release (APK + AAB + Play upload), not
+      # just symbolication — too large a blast radius to gamble on a P1 fix's
+      # first real test being a push to main. A decoupled, continue-on-error
+      # step below ("Upload Sentry source maps") uploads the same JS
+      # bundle/sourcemap Gradle already generates, explicitly, so a failure
+      # there can never block shipping the release. Runtime Sentry
+      # (EXPO_PUBLIC_SENTRY_DSN) is unaffected either way. See #4101.
+      - name: Disable Sentry Gradle-embedded source map upload
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
         run: |
+          echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "$GITHUB_ENV"
           if [ -n "$SENTRY_AUTH_TOKEN" ]; then
-            echo "SENTRY_DISABLE_AUTO_UPLOAD=false" >> "$GITHUB_ENV"
-            echo "Sentry auth token present — Android release source maps will upload."
+            echo "SENTRY_UPLOAD_ENABLED=true" >> "$GITHUB_ENV"
           else
-            echo "SENTRY_DISABLE_AUTO_UPLOAD=true" >> "$GITHUB_ENV"
+            echo "SENTRY_UPLOAD_ENABLED=false" >> "$GITHUB_ENV"
             echo "::warning::SENTRY_AUTH_TOKEN not set — skipping Sentry source map upload."
           fi
 
@@ -384,12 +390,12 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          # SENTRY_DISABLE_AUTO_UPLOAD comes from $GITHUB_ENV (set by "Configure
-          # Sentry source map upload" above) — NOT hardcoded here, so the token
-          # gate actually takes effect. sentry.gradle's upload task reads the
-          # auth token from this env var (non-flavor-aware config never passes
-          # --auth-token explicitly; see android/sentry.properties).
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # Keep the Gradle-embedded source-map upload disabled even if the
+          # Production environment has a Sentry token — see "Disable Sentry
+          # Gradle-embedded source map upload" above for why. Runtime Sentry
+          # remains enabled via the DSN above; the explicit "Upload Sentry
+          # source maps" step below handles symbolication instead.
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -PboardseshAbiFilters=arm64-v8a --no-daemon --console=plain --stacktrace
 
       # Guard against shipping an unsigned / debug-signed APK as if it were the
@@ -410,6 +416,58 @@ jobs:
           echo "Verifying $apk with $apksigner"
           "$apksigner" verify --print-certs "$apk"
           cp -f "$apk" "$release_asset"
+
+      # Decoupled from the Gradle build (see "Disable Sentry Gradle-embedded
+      # source map upload" above for why): replicates sentry.gradle's own
+      # sequence by hand — copy the debug ID from Metro's intermediate
+      # ("packager") source map into the final Hermes-composed one (Hermes's
+      # compose-source-maps step doesn't propagate it on its own), then upload
+      # via sentry-cli with the same release/dist convention sentry.gradle uses
+      # (`<applicationId>@<versionName>+<versionCode>` / versionCode), so it
+      # matches what the native Sentry SDK auto-detects at runtime
+      # (src/lib/sentry.ts leaves release/dist unset for exactly this reason).
+      # continue-on-error: a Sentry-side failure (outage, bad token) must never
+      # block shipping the APK/AAB — it already built and verified above.
+      - name: Upload Sentry source maps
+        id: sentry_sourcemaps
+        if: env.SENTRY_UPLOAD_ENABLED == 'true'
+        continue-on-error: true
+        working-directory: packages/mobile
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          # Non-flavor-aware config (see android/sentry.properties, written by
+          # the @sentry/react-native/expo config plugin at prebuild time):
+          # org/project/url come from this file, not CLI flags.
+          SENTRY_PROPERTIES: android/sentry.properties
+          VERSION_CODE: ${{ steps.version_code.outputs.value }}
+        run: |
+          set -euo pipefail
+          bundle_dir=android/app/build/generated/assets/react/release
+          sourcemap_dir=android/app/build/generated/sourcemaps/react/release
+          packager_sourcemap_dir=android/app/build/intermediates/sourcemaps/react/release
+          bundle_path="$bundle_dir/index.android.bundle"
+          sourcemap_path="$sourcemap_dir/index.android.bundle.map"
+          packager_sourcemap_path="$packager_sourcemap_dir/index.android.bundle.packager.map"
+
+          for path in "$bundle_path" "$sourcemap_path" "$packager_sourcemap_path"; do
+            if [ ! -f "$path" ]; then
+              echo "::error::Expected Gradle-generated file missing: $path"
+              exit 1
+            fi
+          done
+
+          node node_modules/@sentry/react-native/scripts/copy-debugid.js "$packager_sourcemap_path" "$sourcemap_path"
+
+          ./node_modules/.bin/sentry-cli react-native gradle \
+            --bundle "$bundle_path" \
+            --sourcemap "$sourcemap_path" \
+            --release "com.boardsesh.app@${BOARDSESH_MOBILE_VERSION}+${VERSION_CODE}" \
+            --dist "${VERSION_CODE}"
+
+      - name: Warn when Sentry source map upload fails
+        if: steps.sentry_sourcemaps.outcome == 'failure'
+        run: |
+          echo "::warning::Sentry source map upload failed after the signed APK was built and verified. The release is unaffected; Android JS errors for this build will report unsymbolicated frames until this is investigated. Re-run 'node node_modules/@sentry/react-native/scripts/copy-debugid.js ...' + 'sentry-cli react-native gradle ...' manually from packages/mobile against the retained APK artifact's build outputs if needed."
 
       - name: Upload APK as artifact
         uses: actions/upload-artifact@v4
@@ -469,10 +527,8 @@ jobs:
       # can never diverge. The arm64 APK stays the sideload channel (GitHub
       # Release above); this AAB is the Play channel (uploaded in a later phase /
       # by hand for the first internal-track build).
-      # SENTRY_DISABLE_AUTO_UPLOAD comes from $GITHUB_ENV (set by "Configure
-      # Sentry source map upload" above), same as the APK build — the AAB shares
-      # the same release JS bundle/variant, so this is a second (idempotent)
-      # upload of the same debug-id-tagged source map, not a divergent one.
+      # SENTRY_DISABLE_AUTO_UPLOAD is forced true here for the same reason as
+      # the APK build above.
       - name: Build signed release AAB
         id: build_aab
         working-directory: packages/mobile/android
@@ -481,7 +537,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: ./gradlew bundleRelease --no-daemon --console=plain --stacktrace
 
       # Block the GitHub Release / Play upload if any bundled native lib isn't 16 KB
