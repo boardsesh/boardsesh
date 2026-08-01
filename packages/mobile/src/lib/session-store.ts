@@ -1,23 +1,22 @@
-import * as SecureStore from 'expo-secure-store';
-import { SECURE_STORE_WRITE_OPTIONS } from './secure-store-options';
+import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
 import type { UserStorageOwner } from './user-storage-owner';
 
-const SESSION_ID_KEY = 'boardsesh_active_session_id';
+export const SESSION_ID_KEY = 'boardsesh_active_session_id';
 
 export async function getStoredSessionId(_owner?: UserStorageOwner | null): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(SESSION_ID_KEY);
+    return await readSecureValue(SESSION_ID_KEY);
   } catch {
     return null;
   }
 }
 
 export async function setStoredSessionId(sessionId: string, _owner?: UserStorageOwner | null): Promise<void> {
-  await SecureStore.setItemAsync(SESSION_ID_KEY, sessionId, SECURE_STORE_WRITE_OPTIONS);
+  await writeSecureValue(SESSION_ID_KEY, sessionId);
 }
 
 export async function clearStoredSessionId(_owner?: UserStorageOwner | null): Promise<void> {
-  await SecureStore.deleteItemAsync(SESSION_ID_KEY);
+  await deleteSecureValue(SESSION_ID_KEY);
 }
 
 /**
@@ -48,20 +47,20 @@ export async function clearStoredSessionId(_owner?: UserStorageOwner | null): Pr
  * leading with Leave, and End is still one tap away. A signal that degrades
  * toward offering the destructive action would be worse than no signal at all.
  */
-const CREATED_SESSION_ID_KEY = 'boardsesh_created_session_id';
+export const CREATED_SESSION_ID_KEY = 'boardsesh_created_session_id';
 
 export async function getStoredCreatedSessionId(): Promise<string | null> {
   try {
-    return await SecureStore.getItemAsync(CREATED_SESSION_ID_KEY);
+    return await readSecureValue(CREATED_SESSION_ID_KEY);
   } catch {
     return null;
   }
 }
 
 export async function setStoredCreatedSessionId(sessionId: string): Promise<void> {
-  await SecureStore.setItemAsync(CREATED_SESSION_ID_KEY, sessionId, SECURE_STORE_WRITE_OPTIONS);
+  await writeSecureValue(CREATED_SESSION_ID_KEY, sessionId);
 }
 
 export async function clearStoredCreatedSessionId(): Promise<void> {
-  await SecureStore.deleteItemAsync(CREATED_SESSION_ID_KEY);
+  await deleteSecureValue(CREATED_SESSION_ID_KEY);
 }

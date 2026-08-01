@@ -1,10 +1,11 @@
-import * as SecureStore from 'expo-secure-store';
-import { SECURE_STORE_WRITE_OPTIONS } from './secure-store-options';
+import { createOnceRunner, migrateSecureKeysToV2 } from './keychain-namespace-migration';
+import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
 
-const JWT_KEY = 'boardsesh_jwt';
-const REFRESH_TOKEN_KEY = 'boardsesh_refresh_token';
-const EXPIRES_AT_KEY = 'boardsesh_token_expires_at';
+export const JWT_KEY = 'boardsesh_jwt';
+export const REFRESH_TOKEN_KEY = 'boardsesh_refresh_token';
+export const EXPIRES_AT_KEY = 'boardsesh_token_expires_at';
 const CLEARED_CREDENTIAL = '__boardsesh_auth_credential_cleared__';
+const AUTH_SECURE_KEYS = [JWT_KEY, REFRESH_TOKEN_KEY, EXPIRES_AT_KEY] as const;
 let credentialGeneration = 0;
 let credentialMutationQueue: Promise<void> = Promise.resolve();
 
@@ -18,8 +19,29 @@ class AuthCredentialCleanupError extends Error {
   }
 }
 
+// Copies the three credential keys into the v2 keychain namespace (#4103), which
+// is the only way to reset their accessibility class so a locked-device
+// background read stops failing. Serialized through the credential mutation queue
+// so it can never interleave with a sign-in or sign-out write, and driven from
+// getStoredCredential rather than a mounted component so it runs off the app's
+// first token read — before AuthProvider has decided whether to render children.
+//
+// The migration treats the CLEARED_CREDENTIAL tombstone as an opaque value and
+// carries it across unchanged: it must stay visible to getStoredCredential in v2,
+// or a signed-out user whose deletion never physically landed would read the live
+// legacy credential through the fallback and be signed back in.
+const ensureAuthCredentialsMigrated = createOnceRunner(async () => {
+  await serializeCredentialMutation(async () => {
+    await migrateSecureKeysToV2(AUTH_SECURE_KEYS, 'auth');
+  });
+});
+
 async function getStoredCredential(key: string): Promise<string | null> {
-  const storedCredential = await SecureStore.getItemAsync(key);
+  // Best-effort. A keychain that refuses the migration refuses the read below
+  // too, which is exactly today's behaviour — the migration must never change
+  // the outcome of the read it precedes.
+  await ensureAuthCredentialsMigrated().catch(() => undefined);
+  const storedCredential = await readSecureValue(key);
   return storedCredential === CLEARED_CREDENTIAL ? null : storedCredential;
 }
 
@@ -27,8 +49,15 @@ async function clearStoredCredential(key: string): Promise<void> {
   const failures: unknown[] = [];
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      await SecureStore.deleteItemAsync(key);
-      return;
+      // Clears BOTH namespaces. Deleting only v2 would let the legacy copy
+      // resurface through readSecureValue's fallback on the next launch.
+      await deleteSecureValue(key);
+      // Deletion cannot be trusted from its result: expo-secure-store's iOS
+      // deleteValueWithKeyAsync discards every SecItemDelete status and never
+      // throws (SecureStoreModule.swift:43-51). That was survivable while one
+      // item existed; across two namespaces a half-completed delete would leave
+      // the legacy copy for the read fallback to find. Confirm by reading.
+      if ((await readSecureValue(key)) === null) return;
     } catch (error) {
       failures.push(error);
     }
@@ -38,7 +67,9 @@ async function clearStoredCredential(key: string): Promise<void> {
     // Some keychain failures reject deletion while still permitting an overwrite.
     // Persist a value that every getter treats as absent so credentials cannot be
     // restored on relaunch merely because physical deletion was unavailable.
-    await SecureStore.setItemAsync(key, CLEARED_CREDENTIAL, SECURE_STORE_WRITE_OPTIONS);
+    // Written to v2 (and mirrored to legacy) so it shadows any legacy credential
+    // the failed deletion left behind.
+    await writeSecureValue(key, CLEARED_CREDENTIAL);
   } catch (error) {
     failures.push(error);
     throw new AuthCredentialCleanupError(`Failed to clear stored auth credential: ${key}`, failures);
@@ -56,7 +87,7 @@ function serializeCredentialMutation<Result>(mutation: () => Promise<Result>): P
 
 async function writeCredentialForGeneration(generation: number, key: string, credential: string): Promise<boolean> {
   if (generation !== credentialGeneration) return false;
-  await SecureStore.setItemAsync(key, credential, SECURE_STORE_WRITE_OPTIONS);
+  await writeSecureValue(key, credential);
   return generation === credentialGeneration;
 }
 

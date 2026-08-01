@@ -1,0 +1,147 @@
+// One-way copy of SecureStore values from the legacy keychain service into the v2
+// service, which is what actually resets kSecAttrAccessible to AFTER_FIRST_UNLOCK
+// for items written before #3602 shipped. Background reads on a locked device
+// (token refresh, WS reconnect, Live Activity) stop failing once a key is here.
+// See secure-store-options.ts for why rewriting in place cannot work.
+//
+// Per key: read v2 → present means done. Else read legacy → null means nothing to
+// move. Else write v2 and READ IT BACK before calling it migrated.
+//
+// Every step is safe to interrupt because nothing is destroyed. A key is either
+// legacy-only (retry next launch) or in both namespaces (v2 wins on read) —
+// never neither, so there is no window where a credential does not exist and no
+// orphan copy that could resurrect a signed-out session. Progress is recorded by
+// the v2 item itself, per key, so a partial pass simply resumes: keys that
+// aborted still have no v2 item and get retried, while keys that made it are
+// skipped by the first read. There is no marker to write, and no way for a
+// swallowed failure to mark work as done that never happened.
+//
+// The legacy copy is deliberately NOT deleted here. It is phase 1's rollback
+// path: JS that predates this change reads only the legacy namespace, so
+// deleting it would strand anyone who lands back on an older bundle between the
+// migration and their next token write. Legacy cleanup belongs to phase 2, after
+// this has soaked — a leftover legacy copy is inert while readers prefer v2.
+//
+// All calls here are RAW SecureStore on purpose: routing them through
+// secure-store-io would re-enter the auth read path that awaits this migration.
+
+import * as SecureStore from 'expo-secure-store';
+import { track } from './analytics';
+import { SECURE_STORE_V2_OPTIONS, USES_V2_NAMESPACE } from './secure-store-options';
+
+export type SecureKeyMigrationStatus =
+  | 'already-v2'
+  | 'migrated'
+  | 'absent'
+  | 'v2-read-failed'
+  | 'legacy-read-failed'
+  | 'v2-write-failed'
+  | 'verify-mismatch';
+
+export type SecureKeyMigrationOutcome = { key: string; status: SecureKeyMigrationStatus };
+
+const SUCCESS_STATUSES: readonly SecureKeyMigrationStatus[] = ['already-v2', 'migrated', 'absent'];
+
+async function migrateKey(key: string): Promise<SecureKeyMigrationOutcome> {
+  let existingV2: string | null;
+  try {
+    existingV2 = await SecureStore.getItemAsync(key, SECURE_STORE_V2_OPTIONS);
+  } catch {
+    return { key, status: 'v2-read-failed' };
+  }
+  if (existingV2 !== null) return { key, status: 'already-v2' };
+
+  let legacyValue: string | null;
+  try {
+    legacyValue = await SecureStore.getItemAsync(key);
+  } catch {
+    // The locked-device case this whole migration exists to fix. Nothing has
+    // been touched; the next foreground launch retries.
+    return { key, status: 'legacy-read-failed' };
+  }
+  if (legacyValue === null) return { key, status: 'absent' };
+
+  try {
+    await SecureStore.setItemAsync(key, legacyValue, SECURE_STORE_V2_OPTIONS);
+  } catch {
+    return { key, status: 'v2-write-failed' };
+  }
+
+  // Read back through the same namespace before reporting success. A write that
+  // reported no error but did not land would otherwise leave the key looking
+  // migrated to this pass while the next launch still reads legacy.
+  let verifiedValue: string | null;
+  try {
+    verifiedValue = await SecureStore.getItemAsync(key, SECURE_STORE_V2_OPTIONS);
+  } catch {
+    return { key, status: 'verify-mismatch' };
+  }
+  if (verifiedValue !== legacyValue) return { key, status: 'verify-mismatch' };
+
+  return { key, status: 'migrated' };
+}
+
+function reportOutcomes(scope: string, outcomes: readonly SecureKeyMigrationOutcome[]): void {
+  const failures = outcomes.filter((outcome) => !SUCCESS_STATUSES.includes(outcome.status));
+  track('Keychain Namespace Migration', {
+    scope,
+    keys: outcomes.length,
+    migrated: outcomes.filter((outcome) => outcome.status === 'migrated').length,
+    already_v2: outcomes.filter((outcome) => outcome.status === 'already-v2').length,
+    absent: outcomes.filter((outcome) => outcome.status === 'absent').length,
+    failed: failures.length,
+    // Key names only — never values. Bounded by the fixed key list, and only
+    // non-success keys appear, so a healthy pass sends an empty string.
+    failures: failures.map((outcome) => `${outcome.key}:${outcome.status}`).join(','),
+  });
+}
+
+/**
+ * Migrate the given keys into the v2 namespace. Resolves with one outcome per
+ * key; never rejects, because a per-key failure is a retry-next-launch, not an
+ * error the caller can act on. No-op off iOS.
+ */
+export async function migrateSecureKeysToV2(
+  keys: readonly string[],
+  scope: string,
+): Promise<SecureKeyMigrationOutcome[]> {
+  if (!USES_V2_NAMESPACE) return [];
+
+  const outcomes: SecureKeyMigrationOutcome[] = [];
+  // Sequential: these are keychain round-trips on a cold start, and the auth
+  // scope runs inside the credential mutation queue where ordering matters.
+  for (const key of keys) {
+    outcomes.push(await migrateKey(key));
+  }
+
+  reportOutcomes(scope, outcomes);
+  return outcomes;
+}
+
+/**
+ * Run `task` at most once per process, sharing the in-flight promise with
+ * concurrent callers and allowing a retry after failure. Mirrors
+ * metro-target-store's migration guard: `completed` flips only on success, so a
+ * transient failure can't permanently skip the work, and a boolean alone would
+ * let the six near-simultaneous cold-start auth readers each start a pass.
+ */
+export function createOnceRunner(task: () => Promise<void>): () => Promise<void> {
+  let completed = false;
+  let inFlight: Promise<void> | null = null;
+
+  return function runOnce(): Promise<void> {
+    if (completed) return Promise.resolve();
+    if (inFlight !== null) return inFlight;
+    inFlight = task().then(
+      () => {
+        completed = true;
+        inFlight = null;
+      },
+      (error: unknown) => {
+        inFlight = null;
+        throw error;
+      },
+    );
+    return inFlight;
+  };
+}

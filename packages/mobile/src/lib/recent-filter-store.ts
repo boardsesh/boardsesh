@@ -1,8 +1,7 @@
-import * as SecureStore from 'expo-secure-store';
 import { SORT_OPTIONS, STATUS_FILTER_VALUES, normalizeRetiredStatus } from '@boardsesh/climb-filters';
 import type { ClimbFilters } from './climb-filter-types';
 import { getFilterKey } from './filter-key';
-import { SECURE_STORE_WRITE_OPTIONS } from './secure-store-options';
+import { deleteSecureValue, readSecureValue, writeSecureValue } from './secure-store-io';
 
 export { getFilterKey };
 
@@ -14,7 +13,7 @@ export type RecentFilter = {
   timestamp: number;
 };
 
-const RECENT_FILTERS_KEY = 'boardsesh_recent_filters';
+export const RECENT_FILTERS_KEY = 'boardsesh_recent_filters';
 const MAX_ITEMS = 10;
 
 // Fields the backend only honours for authenticated users. When loading
@@ -79,7 +78,7 @@ function stripAuthGatedFields(filters: ClimbFilters): ClimbFilters {
  */
 export async function getRecentFilters(options?: { isAuthenticated?: boolean }): Promise<RecentFilter[]> {
   try {
-    const value = await SecureStore.getItemAsync(RECENT_FILTERS_KEY);
+    const value = await readSecureValue(RECENT_FILTERS_KEY);
     if (!value) return [];
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
@@ -109,7 +108,7 @@ export async function addRecentFilter(label: string, filters: ClimbFilters, sear
     };
 
     const updated = [newEntry, ...deduplicated].slice(0, MAX_ITEMS);
-    await SecureStore.setItemAsync(RECENT_FILTERS_KEY, JSON.stringify(updated), SECURE_STORE_WRITE_OPTIONS);
+    await writeSecureValue(RECENT_FILTERS_KEY, JSON.stringify(updated));
   } catch {
     // Storage failure is non-critical
   }
@@ -117,7 +116,7 @@ export async function addRecentFilter(label: string, filters: ClimbFilters, sear
 
 export async function clearRecentFilters(): Promise<void> {
   try {
-    await SecureStore.deleteItemAsync(RECENT_FILTERS_KEY);
+    await deleteSecureValue(RECENT_FILTERS_KEY);
   } catch {
     // Storage failure is non-critical
   }
