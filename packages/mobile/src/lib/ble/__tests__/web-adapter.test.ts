@@ -119,6 +119,61 @@ describe('requestAndConnect', () => {
     expect(connection).toEqual({ deviceId: 'device-abc', deviceName: 'Kilter Board' });
   });
 
+  it('retries a transient GATT NetworkError without reopening the browser chooser', async () => {
+    vi.useFakeTimers();
+    try {
+      const { device, server } = makeDevice({ [UART_SERVICE_UUID]: makeCharacteristic() });
+      server.connected = false;
+      server.connect.mockRejectedValueOnce(
+        Object.assign(new Error('Connection attempt failed'), { name: 'NetworkError' }),
+      );
+      server.connect.mockResolvedValueOnce(server);
+      const requestDevice = vi.fn().mockResolvedValue(device);
+      stubBluetooth(requestDevice);
+
+      const connectionPromise = new WebBluetoothAdapter('aurora').requestAndConnect();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(requestDevice).toHaveBeenCalledTimes(1);
+      expect(server.connect).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(499);
+      expect(server.connect).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(connectionPromise).resolves.toEqual({
+        deviceId: 'device-abc',
+        deviceName: 'Kilter Board',
+      });
+      expect(requestDevice).toHaveBeenCalledTimes(1);
+      expect(server.connect).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('propagates chooser cancellation without retrying the chooser or connecting GATT', async () => {
+    vi.useFakeTimers();
+    try {
+      const { server } = makeDevice({ [UART_SERVICE_UUID]: makeCharacteristic() });
+      server.connected = false;
+      const chooserError = Object.assign(new Error('User cancelled the browser chooser'), {
+        name: 'NotFoundError',
+      });
+      const requestDevice = vi.fn().mockRejectedValue(chooserError);
+      stubBluetooth(requestDevice);
+
+      await expect(new WebBluetoothAdapter('aurora').requestAndConnect()).rejects.toBe(chooserError);
+
+      expect(requestDevice).toHaveBeenCalledTimes(1);
+      expect(server.connect).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('resolves the MoonBoard write characteristic via the RedBearLab fallback', async () => {
     // Only the RedBearLab service is present — UART probing rejects first.
     const redbearChar = makeCharacteristic(false);
