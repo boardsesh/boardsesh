@@ -65,6 +65,7 @@ async function createFixture(): Promise<Fixture> {
 
   await mkdir(join(primaryWorktree, '.vite-hooks'), { recursive: true });
   await mkdir(join(primaryWorktree, '.githooks'), { recursive: true });
+  await mkdir(join(primaryWorktree, 'scripts'), { recursive: true });
   await mkdir(join(primaryWorktree, 'node_modules/.bin'), { recursive: true });
   await mkdir(stubBinDirectory, { recursive: true });
 
@@ -72,14 +73,19 @@ async function createFixture(): Promise<Fixture> {
   await cp(join(repositoryRoot, '.vite-hooks/post-checkout'), join(primaryWorktree, '.vite-hooks/post-checkout'));
   await cp(join(repositoryRoot, '.vite-hooks/commit-msg'), join(primaryWorktree, '.vite-hooks/commit-msg'));
   await cp(join(repositoryRoot, '.githooks/commit-msg'), join(primaryWorktree, '.githooks/commit-msg'));
+  await cp(repairScript, join(primaryWorktree, 'scripts/configure-git-hooks.sh'));
   await Promise.all([
     chmod(join(primaryWorktree, '.vite-hooks/pre-commit'), 0o755),
     chmod(join(primaryWorktree, '.vite-hooks/post-checkout'), 0o755),
     chmod(join(primaryWorktree, '.vite-hooks/commit-msg'), 0o755),
     chmod(join(primaryWorktree, '.githooks/commit-msg'), 0o755),
+    chmod(join(primaryWorktree, 'scripts/configure-git-hooks.sh'), 0o755),
   ]);
 
-  await writeExecutable(join(stubBinDirectory, 'vp'), '#!/bin/sh\nprintf "%s:%s\\n" "$1" "$PWD" >> "$VP_LOG"\n');
+  await writeExecutable(
+    join(stubBinDirectory, 'vp'),
+    '#!/bin/sh\nprintf "%s:%s\\n" "$1" "$PWD" >> "$VP_LOG"\nif [ "$1" = install ]; then\n  git config --local --replace-all core.hooksPath .vite-hooks/_\nfi\n',
+  );
   await writeExecutable(
     join(primaryWorktree, 'node_modules/.bin/tsx'),
     '#!/bin/sh\nprintf "%s\\n" "$PWD" >> "$COMMIT_MSG_LOG"\nif grep -q "^invalid" "$2"; then\n  echo "invalid Conventional Commit" >&2\n  exit 1\nfi\n',
@@ -115,7 +121,7 @@ describe('configure-git-hooks', () => {
     expect(runGit(['config', '--get', 'core.hooksPath'], fixture.primaryWorktree)).toBe('.vite-hooks');
   });
 
-  it('uses the tracked hooks from each linked worktree and rejects invalid commit messages', async () => {
+  it('repairs Vite+ installs so subsequent linked worktrees keep executing tracked hooks', async () => {
     const fixture = await createFixture();
     const repairResult = repairHooks(fixture);
     expect(repairResult.status, repairResult.stderr).toBe(0);
@@ -135,6 +141,23 @@ describe('configure-git-hooks', () => {
 
     expect(worktreeResult.status, worktreeResult.stderr).toBe(0);
     expect(await readFile(fixture.vpLogPath, 'utf8')).toContain(`install:${linkedWorktree}`);
+    expect(runGit(['config', '--local', '--get', 'core.hooksPath'], linkedWorktree)).toBe('.vite-hooks');
+
+    // The first worktree's fake `vp install` resets the shared repository config
+    // to .vite-hooks/_. If post-checkout did not repair it, Git would look for the
+    // second worktree's not-yet-generated `_` hooks and this install would never
+    // run. Creating two worktrees proves the tracked hook path survives the first.
+    const subsequentWorktree = join(fixture.rootDirectory, 'subsequent');
+    const subsequentWorktreeResult = run(
+      'git',
+      ['worktree', 'add', '-b', 'subsequent-worktree', subsequentWorktree],
+      fixture.primaryWorktree,
+      hookEnvironment,
+    );
+
+    expect(subsequentWorktreeResult.status, subsequentWorktreeResult.stderr).toBe(0);
+    expect(await readFile(fixture.vpLogPath, 'utf8')).toContain(`install:${subsequentWorktree}`);
+    expect(runGit(['config', '--local', '--get', 'core.hooksPath'], subsequentWorktree)).toBe('.vite-hooks');
 
     const invalidCommitResult = run(
       'git',
@@ -157,11 +180,23 @@ describe('configure-git-hooks', () => {
     expect(linkedInvalidCommitResult.status).not.toBe(0);
     expect(linkedInvalidCommitResult.stderr).toContain('invalid Conventional Commit');
     expect(await readFile(fixture.vpLogPath, 'utf8')).toContain(`staged:${linkedWorktree}`);
+
+    const subsequentInvalidCommitResult = run(
+      'git',
+      ['commit', '--allow-empty', '-m', 'invalid subsequent commit message'],
+      subsequentWorktree,
+      hookEnvironment,
+    );
+
+    expect(subsequentInvalidCommitResult.status).not.toBe(0);
+    expect(subsequentInvalidCommitResult.stderr).toContain('invalid Conventional Commit');
+    expect(await readFile(fixture.vpLogPath, 'utf8')).toContain(`staged:${subsequentWorktree}`);
     expect((await readFile(fixture.commitMessageLogPath, 'utf8')).trim().split('\n')).toEqual([
       fixture.primaryWorktree,
       linkedWorktree,
+      subsequentWorktree,
     ]);
-    expect(runGit(['config', '--get', 'core.hooksPath'], linkedWorktree)).toBe('.vite-hooks');
+    expect(runGit(['config', '--get', 'core.hooksPath'], subsequentWorktree)).toBe('.vite-hooks');
   });
 
   it('refuses a foreign effective hook path without replacing it', async () => {
@@ -235,6 +270,7 @@ describe('configure-git-hooks', () => {
   it('runs the repair after Vite+ has completed every hook-affecting setup step', async () => {
     const claudeSetup = await readFile(join(repositoryRoot, '.claude/setup.sh'), 'utf8');
     const developerSetup = await readFile(join(repositoryRoot, 'scripts/setup-dev.sh'), 'utf8');
+    const postCheckoutHook = await readFile(join(repositoryRoot, '.vite-hooks/post-checkout'), 'utf8');
 
     expect(claudeSetup).toContain('vp config');
     expect(claudeSetup).toContain('./scripts/configure-git-hooks.sh');
@@ -244,6 +280,11 @@ describe('configure-git-hooks', () => {
     expect(developerSetup).toContain('"$REPO_ROOT/scripts/configure-git-hooks.sh"');
     expect(developerSetup.indexOf('vp config')).toBeLessThan(
       developerSetup.indexOf('"$REPO_ROOT/scripts/configure-git-hooks.sh"'),
+    );
+    expect(postCheckoutHook).toContain('vp install');
+    expect(postCheckoutHook).toContain('"$repo_root/scripts/configure-git-hooks.sh"');
+    expect(postCheckoutHook.indexOf('vp install')).toBeLessThan(
+      postCheckoutHook.indexOf('"$repo_root/scripts/configure-git-hooks.sh"'),
     );
   });
 });

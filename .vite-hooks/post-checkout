@@ -35,4 +35,14 @@ if ! vp install; then
   exit 0
 fi
 
+# Vite+ may restore core.hooksPath to its generated .vite-hooks/_ directory
+# during install. That setting is shared by every linked worktree, so repair it
+# only after install has finished. The repair only validates files and updates
+# Git config; it performs no checkout and therefore cannot recurse into this
+# hook.
+if ! "$repo_root/scripts/configure-git-hooks.sh"; then
+  echo "!! Dependencies installed, but Git hooks could not be repaired — run \`./scripts/configure-git-hooks.sh\` manually." >&2
+  exit 0
+fi
+
 echo "==> Worktree ready."
