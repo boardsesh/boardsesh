@@ -20,6 +20,9 @@ const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 export type PlaylistColumnDefinition = {
   readonly columnName: string;
   readonly dataType: string;
+  readonly underlyingTypeSchema: string;
+  readonly underlyingTypeName: string;
+  readonly formattedType: string;
   readonly nullable: boolean;
 };
 
@@ -28,31 +31,68 @@ export type PlaylistIndexDefinition = {
   readonly relationSchema: string | null;
   readonly relationName: string | null;
   readonly relationKind: string | null;
+  readonly accessMethod: string | null;
   readonly unique: boolean | null;
+  readonly ready: boolean | null;
   readonly valid: boolean | null;
+  readonly nullsNotDistinct: boolean | null;
   readonly predicate: string | null;
   readonly expressions: string | null;
   readonly keyColumnCount: number | null;
   readonly attributeCount: number | null;
   readonly keyColumns: readonly string[];
+  readonly keyOpclasses: readonly string[];
+  readonly keyCollations: readonly string[];
+  readonly keyOptions: readonly number[];
 };
 
-type LedgerSnapshot = {
+export type LedgerSnapshot = {
   readonly row_count: string;
-  readonly fingerprint: string;
+  readonly ordered_rows: string;
 };
 
 type ColumnRow = {
   readonly column_name: string;
   readonly data_type: string;
+  readonly udt_schema: string;
+  readonly udt_name: string;
+  readonly formatted_type: string;
   readonly is_nullable: 'YES' | 'NO';
 };
 
 const REQUIRED_COLUMNS: readonly PlaylistColumnDefinition[] = [
-  { columnName: 'kilter_type', dataType: 'text', nullable: true },
-  { columnName: 'kilter_id', dataType: 'text', nullable: true },
-  { columnName: 'kilter_synced_at', dataType: 'timestamp without time zone', nullable: true },
-  { columnName: 'generated_recommendation', dataType: 'text', nullable: true },
+  {
+    columnName: 'kilter_type',
+    dataType: 'text',
+    underlyingTypeSchema: 'pg_catalog',
+    underlyingTypeName: 'text',
+    formattedType: 'text',
+    nullable: true,
+  },
+  {
+    columnName: 'kilter_id',
+    dataType: 'text',
+    underlyingTypeSchema: 'pg_catalog',
+    underlyingTypeName: 'text',
+    formattedType: 'text',
+    nullable: true,
+  },
+  {
+    columnName: 'kilter_synced_at',
+    dataType: 'timestamp without time zone',
+    underlyingTypeSchema: 'pg_catalog',
+    underlyingTypeName: 'timestamp',
+    formattedType: 'timestamp without time zone',
+    nullable: true,
+  },
+  {
+    columnName: 'generated_recommendation',
+    dataType: 'text',
+    underlyingTypeSchema: 'pg_catalog',
+    underlyingTypeName: 'text',
+    formattedType: 'text',
+    nullable: true,
+  },
 ];
 
 const REQUIRED_INDEXES = [
@@ -92,6 +132,9 @@ export function columnMatchesCanonical(
   return (
     actualColumn.columnName === expectedColumn.columnName &&
     actualColumn.dataType === expectedColumn.dataType &&
+    actualColumn.underlyingTypeSchema === expectedColumn.underlyingTypeSchema &&
+    actualColumn.underlyingTypeName === expectedColumn.underlyingTypeName &&
+    actualColumn.formattedType === expectedColumn.formattedType &&
     actualColumn.nullable === expectedColumn.nullable
   );
 }
@@ -105,15 +148,28 @@ export function indexMatchesCanonical(
     actualIndex.relationSchema === 'public' &&
     actualIndex.relationName === 'playlists' &&
     actualIndex.relationKind === 'i' &&
+    actualIndex.accessMethod === 'btree' &&
     actualIndex.unique === true &&
+    actualIndex.ready === true &&
     actualIndex.valid === true &&
+    actualIndex.nullsNotDistinct === false &&
     actualIndex.predicate === null &&
     actualIndex.expressions === null &&
     actualIndex.keyColumnCount === 1 &&
     actualIndex.attributeCount === 1 &&
     actualIndex.keyColumns.length === 1 &&
-    actualIndex.keyColumns[0] === expectedIndex.columnName
+    actualIndex.keyColumns[0] === expectedIndex.columnName &&
+    actualIndex.keyOpclasses.length === 1 &&
+    actualIndex.keyOpclasses[0] === 'pg_catalog.text_ops' &&
+    actualIndex.keyCollations.length === 1 &&
+    actualIndex.keyCollations[0] === 'pg_catalog.default' &&
+    actualIndex.keyOptions.length === 1 &&
+    actualIndex.keyOptions[0] === 0
   );
+}
+
+export function ledgerSnapshotsMatch(before: LedgerSnapshot, after: LedgerSnapshot): boolean {
+  return before.row_count === after.row_count && before.ordered_rows === after.ordered_rows;
 }
 
 function expectedColumnByName(columnName: string): PlaylistColumnDefinition {
@@ -126,6 +182,9 @@ function toPlaylistColumnDefinition(column: ColumnRow): PlaylistColumnDefinition
   return {
     columnName: column.column_name,
     dataType: column.data_type,
+    underlyingTypeSchema: column.udt_schema,
+    underlyingTypeName: column.udt_name,
+    formattedType: column.formatted_type,
     nullable: column.is_nullable === 'YES',
   };
 }
@@ -134,8 +193,8 @@ function assertCanonicalColumn(column: PlaylistColumnDefinition): void {
   const expectedColumn = expectedColumnByName(column.columnName);
   if (!columnMatchesCanonical(column, expectedColumn)) {
     throw new Error(
-      `playlists.${column.columnName} is ${column.dataType} ${column.nullable ? 'NULL' : 'NOT NULL'}; expected ` +
-        `${expectedColumn.dataType} ${expectedColumn.nullable ? 'NULL' : 'NOT NULL'}.`,
+      `playlists.${column.columnName} is ${column.formattedType} ${column.nullable ? 'NULL' : 'NOT NULL'}; expected ` +
+        `${expectedColumn.formattedType} ${expectedColumn.nullable ? 'NULL' : 'NOT NULL'}.`,
     );
   }
 }
@@ -152,8 +211,11 @@ async function snapshotLedger(transaction: TransactionSql): Promise<LedgerSnapsh
   const [ledger] = await transaction<LedgerSnapshot[]>`
     SELECT
       count(*)::text AS row_count,
-      COALESCE(md5(string_agg(hash || ':' || created_at::text, ',' ORDER BY created_at, hash)), '') AS fingerprint
-    FROM drizzle."__drizzle_migrations"
+      COALESCE(
+        jsonb_agg(to_jsonb(migration_row) ORDER BY migration_row.id),
+        '[]'::jsonb
+      )::text AS ordered_rows
+    FROM drizzle."__drizzle_migrations" AS migration_row
   `;
   if (!ledger) throw new Error('Could not snapshot drizzle.__drizzle_migrations.');
   return ledger;
@@ -161,11 +223,26 @@ async function snapshotLedger(transaction: TransactionSql): Promise<LedgerSnapsh
 
 async function readPlaylistColumns(transaction: TransactionSql): Promise<Map<string, PlaylistColumnDefinition>> {
   const columns = await transaction<ColumnRow[]>`
-    SELECT column_name, data_type, is_nullable
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = 'playlists'
-      AND column_name IN ('kilter_type', 'kilter_id', 'kilter_synced_at', 'generated_recommendation')
+    SELECT
+      columns.column_name,
+      columns.data_type,
+      columns.udt_schema,
+      columns.udt_name,
+      format_type(attribute.atttypid, attribute.atttypmod) AS formatted_type,
+      columns.is_nullable
+    FROM information_schema.columns AS columns
+    JOIN pg_catalog.pg_namespace AS table_namespace
+      ON table_namespace.nspname = columns.table_schema
+    JOIN pg_catalog.pg_class AS table_class
+      ON table_class.relnamespace = table_namespace.oid
+      AND table_class.relname = columns.table_name
+    JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = table_class.oid
+      AND attribute.attname = columns.column_name
+      AND NOT attribute.attisdropped
+    WHERE columns.table_schema = 'public'
+      AND columns.table_name = 'playlists'
+      AND columns.column_name IN ('kilter_type', 'kilter_id', 'kilter_synced_at', 'generated_recommendation')
   `;
   return new Map(columns.map((column) => [column.column_name, toPlaylistColumnDefinition(column)]));
 }
@@ -177,8 +254,11 @@ async function readNamedIndex(transaction: TransactionSql, indexName: string): P
       index_namespace.nspname AS "relationSchema",
       table_class.relname AS "relationName",
       index_class.relkind::text AS "relationKind",
+      access_method.amname AS "accessMethod",
       index_data.indisunique AS unique,
+      index_data.indisready AS ready,
       index_data.indisvalid AS valid,
+      index_data.indnullsnotdistinct AS "nullsNotDistinct",
       pg_get_expr(index_data.indpred, index_data.indrelid) AS predicate,
       pg_get_expr(index_data.indexprs, index_data.indrelid) AS expressions,
       index_data.indnkeyatts::int AS "keyColumnCount",
@@ -187,15 +267,35 @@ async function readNamedIndex(transaction: TransactionSql, indexName: string): P
         array_agg(attribute.attname ORDER BY index_key.ordinality)
           FILTER (WHERE index_key.ordinality <= index_data.indnkeyatts),
         '{}'::text[]
-      ) AS "keyColumns"
+      ) AS "keyColumns",
+      COALESCE(
+        array_agg(opclass_namespace.nspname || '.' || opclass.opcname ORDER BY index_key.ordinality)
+          FILTER (WHERE index_key.ordinality <= index_data.indnkeyatts),
+        '{}'::text[]
+      ) AS "keyOpclasses",
+      COALESCE(
+        array_agg(collation_namespace.nspname || '.' || collation.collname ORDER BY index_key.ordinality)
+          FILTER (WHERE index_key.ordinality <= index_data.indnkeyatts),
+        '{}'::text[]
+      ) AS "keyCollations",
+      COALESCE(
+        array_agg(index_data.indoption[index_key.ordinality::int - 1]::int ORDER BY index_key.ordinality)
+          FILTER (WHERE index_key.ordinality <= index_data.indnkeyatts),
+        '{}'::int[]
+      ) AS "keyOptions"
     FROM pg_class AS index_class
     JOIN pg_namespace AS index_namespace ON index_namespace.oid = index_class.relnamespace
+    JOIN pg_am AS access_method ON access_method.oid = index_class.relam
     LEFT JOIN pg_index AS index_data ON index_data.indexrelid = index_class.oid
     LEFT JOIN pg_class AS table_class ON table_class.oid = index_data.indrelid
     LEFT JOIN LATERAL unnest(index_data.indkey::smallint[]) WITH ORDINALITY AS index_key(attnum, ordinality) ON true
     LEFT JOIN pg_attribute AS attribute
       ON attribute.attrelid = index_data.indrelid
       AND attribute.attnum = index_key.attnum
+    LEFT JOIN pg_opclass AS opclass ON opclass.oid = index_data.indclass[index_key.ordinality::int - 1]
+    LEFT JOIN pg_namespace AS opclass_namespace ON opclass_namespace.oid = opclass.opcnamespace
+    LEFT JOIN pg_collation AS collation ON collation.oid = index_data.indcollation[index_key.ordinality::int - 1]
+    LEFT JOIN pg_namespace AS collation_namespace ON collation_namespace.oid = collation.collnamespace
     WHERE index_namespace.nspname = 'public'
       AND index_class.relname = ${indexName}
     GROUP BY
@@ -203,8 +303,11 @@ async function readNamedIndex(transaction: TransactionSql, indexName: string): P
       index_namespace.nspname,
       table_class.relname,
       index_class.relkind,
+      access_method.amname,
       index_data.indisunique,
+      index_data.indisready,
       index_data.indisvalid,
+      index_data.indnullsnotdistinct,
       index_data.indpred,
       index_data.indexprs,
       index_data.indnkeyatts,
@@ -278,7 +381,7 @@ export async function prepareAuroraCircuitIntegrationDatabase(databaseUrl: strin
       }
 
       const ledgerAfter = await snapshotLedger(transaction);
-      if (ledgerBefore.row_count !== ledgerAfter.row_count || ledgerBefore.fingerprint !== ledgerAfter.fingerprint) {
+      if (!ledgerSnapshotsMatch(ledgerBefore, ledgerAfter)) {
         throw new Error('Aurora circuit schema preparation must not change the Drizzle migration ledger.');
       }
     });
