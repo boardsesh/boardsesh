@@ -8,7 +8,9 @@ import {
   type WebBluetoothRemoteGATTServer,
 } from '../web-transport';
 
-const GATT_CONNECT_RETRY_DELAY_MS = 500;
+// Deliberately independent of the private source constant: 500 ms is the issue
+// contract, so these tests must fail if production timing drifts from it.
+const EXPECTED_GATT_CONNECT_RETRY_DELAY_MS = 500;
 
 type ProbeCharacteristic = (device: WebBluetoothDevice) => Promise<WebBluetoothRemoteGATTCharacteristic | undefined>;
 
@@ -70,7 +72,7 @@ async function expectNetworkErrorRetry(
   expect(server.disconnect).not.toHaveBeenCalled();
   expect(vi.getTimerCount()).toBe(1);
 
-  await vi.advanceTimersByTimeAsync(GATT_CONNECT_RETRY_DELAY_MS - 1);
+  await vi.advanceTimersByTimeAsync(EXPECTED_GATT_CONNECT_RETRY_DELAY_MS - 1);
   expect(server.connect).toHaveBeenCalledTimes(1);
   expect(server.disconnect).not.toHaveBeenCalled();
 
@@ -191,7 +193,7 @@ describe('Web Bluetooth GATT connection retry (#4144)', () => {
     const probePromise = getUartCharacteristic(device);
     const settledProbe = probePromise.catch((error: unknown) => error);
     await Promise.resolve();
-    await vi.advanceTimersByTimeAsync(GATT_CONNECT_RETRY_DELAY_MS);
+    await vi.advanceTimersByTimeAsync(EXPECTED_GATT_CONNECT_RETRY_DELAY_MS);
 
     await expect(settledProbe).resolves.toBe(secondError);
     expect(server.connect).toHaveBeenCalledTimes(2);
