@@ -25,6 +25,8 @@ export type CreateContextOptions = {
   controllerMac?: string;
   /** Rate-limit identity for anonymous callers; see websocket/client-ip.ts. */
   clientIp?: string;
+  /** TCP-peer backstop for anonymous WebSocket rate limiting. */
+  socketPeerIp?: string;
 };
 
 /**
@@ -39,6 +41,7 @@ export function createContext({
   controllerApiKey,
   controllerMac,
   clientIp,
+  socketPeerIp,
 }: CreateContextOptions = {}): ConnectionContext {
   const id = connectionId || uuidv4();
   const context: ConnectionContext = {
@@ -51,6 +54,7 @@ export function createContext({
     controllerApiKey,
     controllerMac,
     clientIp,
+    socketPeerIp,
   };
   connections.set(id, context);
   if (DEBUG) {

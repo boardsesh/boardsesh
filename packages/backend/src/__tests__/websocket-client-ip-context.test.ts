@@ -15,7 +15,7 @@ import type { RawData, WebSocketServer } from 'ws';
  */
 
 const { createdContexts } = vi.hoisted(() => ({
-  createdContexts: [] as { connectionId: string; clientIp?: string }[],
+  createdContexts: [] as { connectionId: string; clientIp?: string; socketPeerIp?: string }[],
 }));
 
 vi.mock('../services/room-manager', () => ({
@@ -92,7 +92,7 @@ describe('WebSocket connection context client IP', () => {
   /** Connect with forged upgrade headers and resolve the context onConnect built. */
   async function connectAndReadContext(
     headers: Record<string, string>,
-  ): Promise<{ connectionId: string; clientIp?: string }> {
+  ): Promise<{ connectionId: string; clientIp?: string; socketPeerIp?: string }> {
     await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(webSocketUrl, GRAPHQL_TRANSPORT_WS, { headers });
       socket.once('open', () => socket.send(JSON.stringify({ type: 'connection_init' })));
@@ -120,6 +120,7 @@ describe('WebSocket connection context client IP', () => {
     });
 
     expect(context.clientIp).toBe('203.0.113.7');
+    expect(context.socketPeerIp).toBe('127.0.0.1');
   });
 
   it('keys on the last forwarded hop, ignoring an attacker-prefixed entry', async () => {
@@ -148,5 +149,14 @@ describe('WebSocket connection context client IP', () => {
     expect(second.connectionId).not.toBe(first.connectionId);
     expect(first.clientIp).toBe('203.0.113.7');
     expect(second.clientIp).toBe(first.clientIp);
+  });
+
+  it('keeps the socket-peer backstop stable across forged Cloudflare identities', async () => {
+    const first = await connectAndReadContext({ 'cf-connecting-ip': '203.0.113.7' });
+    const second = await connectAndReadContext({ 'cf-connecting-ip': '198.51.100.22' });
+
+    expect(second.clientIp).not.toBe(first.clientIp);
+    expect(first.socketPeerIp).toBe('127.0.0.1');
+    expect(second.socketPeerIp).toBe(first.socketPeerIp);
   });
 });

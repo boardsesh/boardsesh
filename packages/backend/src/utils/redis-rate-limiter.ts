@@ -24,26 +24,33 @@ return count
  * Distributed rate limiter using an atomic Lua script (INCR + EXPIRE).
  * Falls back to in-memory rate limiter if Redis is unavailable.
  *
- * Key format: ratelimit:{userId}:{operation}:{windowBucket}
+ * Key format: ratelimit:{identity}:{operation}:{windowBucket}
  * where windowBucket = Math.floor(Date.now() / windowMs)
+ *
+ * By default Redis failures use the local limiter. Callers that already ran a
+ * local tier pass `fallbackToMemory: false` to avoid counting one request twice.
  */
 export async function checkRateLimitRedis(
-  userId: string,
+  identity: string,
   operation: string,
   maxRequests: number,
   windowMs: number,
+  options: { fallbackToMemory?: boolean } = {},
 ): Promise<void> {
-  // If Redis is not connected, fall back to in-memory
+  const fallbackToMemory = options.fallbackToMemory ?? true;
+
+  // If Redis is not connected, use the optional in-memory fallback.
   if (!redisClientManager.isRedisConnected()) {
-    // Fall back to in-memory rate limiter using a combined key
-    checkRateLimit(`${userId}:${operation}`, maxRequests, windowMs);
+    // Some callers already applied their own in-memory tier. They disable this
+    // fallback so one request is not counted twice against the same bucket.
+    if (fallbackToMemory) checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
     return;
   }
 
   try {
     const { publisher } = redisClientManager.getClients();
     const windowBucket = Math.floor(Date.now() / windowMs);
-    const key = `ratelimit:${userId}:${operation}:${windowBucket}`;
+    const key = `ratelimit:${identity}:${operation}:${windowBucket}`;
     const expireSeconds = Math.ceil(windowMs / 1000);
 
     // Atomic INCR + EXPIRE via Lua script
@@ -59,7 +66,12 @@ export async function checkRateLimitRedis(
       throw err;
     }
     // Otherwise Redis failed — fall back to in-memory
-    logger.warn('[RateLimit] Redis unavailable, falling back to in-memory:', (err as Error).message);
-    checkRateLimit(`${userId}:${operation}`, maxRequests, windowMs);
+    logger.warn(
+      fallbackToMemory
+        ? '[RateLimit] Redis unavailable, falling back to in-memory:'
+        : '[RateLimit] Redis unavailable; caller in-memory tier remains active:',
+      (err as Error).message,
+    );
+    if (fallbackToMemory) checkRateLimit(`${identity}:${operation}`, maxRequests, windowMs);
   }
 }

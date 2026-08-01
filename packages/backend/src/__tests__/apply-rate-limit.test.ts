@@ -92,12 +92,15 @@ describe('applyRateLimit key selection', () => {
 
     expect(mockCheckRateLimit).toHaveBeenCalledWith('user-42:createSession', 5);
     // Also hits Redis for authenticated users
-    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('user-42', 'createSession', 5, 60_000);
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('user-42', 'createSession', 5, 60_000, {
+      fallbackToMemory: false,
+    });
   });
 
-  it('uses clientIp for anonymous callers on both transports', async () => {
+  it('keeps anonymous HTTP callers on the local tier until their proxy trust boundary is hardened', async () => {
     const ctx: ConnectionContext = {
       connectionId: 'http-abc-123',
+      transport: 'http',
       isAuthenticated: false,
       userId: undefined,
       clientIp: '203.0.113.50',
@@ -106,18 +109,95 @@ describe('applyRateLimit key selection', () => {
     await applyRateLimit(ctx, 5, 'createSession');
 
     expect(mockCheckRateLimit).toHaveBeenCalledWith('ip:203.0.113.50:createSession', 5);
-    // No Redis for anonymous users
     expect(mockCheckRateLimitRedis).not.toHaveBeenCalled();
+  });
+
+  it('adds a high-ceiling distributed TCP-peer bucket for anonymous WebSocket callers', async () => {
+    const ctx: ConnectionContext = {
+      connectionId: 'ws-anon-123',
+      transport: 'ws',
+      isAuthenticated: false,
+      clientIp: '203.0.113.50',
+      socketPeerIp: '10.0.0.8',
+    };
+
+    await applyRateLimit(ctx, 5, 'createSession');
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('ip:203.0.113.50:createSession', 5);
+    expect(mockCheckRateLimitRedis.mock.calls).toEqual([
+      ['ip:203.0.113.50', 'createSession', 5, 60_000, { fallbackToMemory: false }],
+      ['socket-peer:10.0.0.8', 'createSession', 600, 60_000, { fallbackToMemory: true }],
+    ]);
+  });
+
+  it('keeps the TCP-peer bucket stable when a direct-origin caller rotates the Cloudflare header', async () => {
+    const firstContext: ConnectionContext = {
+      connectionId: 'ws-anon-1',
+      transport: 'ws',
+      isAuthenticated: false,
+      clientIp: '203.0.113.1',
+      socketPeerIp: '10.0.0.8',
+    };
+    const secondContext: ConnectionContext = {
+      ...firstContext,
+      connectionId: 'ws-anon-2',
+      clientIp: '203.0.113.2',
+    };
+
+    await applyRateLimit(firstContext, 5, 'createSession');
+    await applyRateLimit(secondContext, 5, 'createSession');
+
+    const peerCalls = mockCheckRateLimitRedis.mock.calls.filter(([identity]) => identity === 'socket-peer:10.0.0.8');
+    expect(peerCalls).toHaveLength(2);
+    expect(peerCalls[0]).toEqual(peerCalls[1]);
+  });
+
+  it('does not apply the anonymous peer ceiling to authenticated WebSocket callers', async () => {
+    const ctx: ConnectionContext = {
+      connectionId: 'ws-user-123',
+      transport: 'ws',
+      isAuthenticated: true,
+      userId: 'user-42',
+      clientIp: '203.0.113.50',
+      socketPeerIp: '10.0.0.8',
+    };
+
+    await applyRateLimit(ctx, 5, 'createSession');
+
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledOnce();
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('user-42', 'createSession', 5, 60_000, {
+      fallbackToMemory: false,
+    });
+  });
+
+  it('still applies the anonymous peer ceiling when no client identity can be resolved', async () => {
+    const ctx: ConnectionContext = {
+      connectionId: 'ws-anon-123',
+      transport: 'ws',
+      isAuthenticated: false,
+      clientIp: undefined,
+      socketPeerIp: '10.0.0.8',
+    };
+
+    await applyRateLimit(ctx, 5, 'createSession');
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('ws-anon-123', 5);
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledOnce();
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledWith('socket-peer:10.0.0.8', 'createSession', 600, 60_000, {
+      fallbackToMemory: true,
+    });
   });
 
   it('shares rate limit bucket across anonymous requests from the same IP', async () => {
     const ctx1: ConnectionContext = {
-      connectionId: 'http-request-1',
+      connectionId: 'ws-request-1',
+      transport: 'ws',
       isAuthenticated: false,
       clientIp: '10.0.0.1',
     };
     const ctx2: ConnectionContext = {
-      connectionId: 'http-request-2',
+      connectionId: 'ws-request-2',
+      transport: 'ws',
       isAuthenticated: false,
       clientIp: '10.0.0.1',
     };
@@ -129,6 +209,7 @@ describe('applyRateLimit key selection', () => {
     expect(mockCheckRateLimit).toHaveBeenCalledTimes(2);
     expect(mockCheckRateLimit.mock.calls[0][0]).toBe('ip:10.0.0.1:createSession');
     expect(mockCheckRateLimit.mock.calls[1][0]).toBe('ip:10.0.0.1:createSession');
+    expect(mockCheckRateLimitRedis).toHaveBeenCalledTimes(2);
   });
 
   it('falls back to connectionId when no clientIp and not authenticated', async () => {

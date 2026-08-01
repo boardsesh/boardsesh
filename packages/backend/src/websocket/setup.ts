@@ -11,7 +11,7 @@ import { roomManager } from '../services/room-manager';
 import { pubsub } from '../pubsub/index';
 import { validateToken, extractAuthToken, extractControllerApiKey, validateControllerApiKey } from '../middleware/auth';
 import { isOriginAllowed, isSameOriginUpgrade } from '../handlers/cors';
-import { resolveWebSocketClientIp } from './client-ip';
+import { resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from './client-ip';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { logger } from '../utils/logger';
 
@@ -140,6 +140,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
         // bucket, which defeated the tier-1 limiter entirely (issue #2863).
         const upgradeRequest = ctx.extra.request;
         const clientIp = resolveWebSocketClientIp(upgradeRequest);
+        const socketPeerIp = resolveWebSocketSocketPeerIp(upgradeRequest);
 
         // Create context on initial connection with auth info
         const context = createContext({
@@ -149,6 +150,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           controllerApiKey,
           controllerMac,
           clientIp,
+          socketPeerIp,
         });
         await roomManager.registerClient(context.connectionId, undefined, authenticatedUserId);
         // Attribution for connectionId → client identity: a subscription-auth
@@ -162,6 +164,7 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           forwardedFor: upgradeRequest?.headers['x-forwarded-for'],
           remoteAddress: upgradeRequest?.socket?.remoteAddress,
           clientIp,
+          socketPeerIp,
         });
 
         // Store context in ctx.extra for access in other hooks

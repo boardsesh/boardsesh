@@ -142,6 +142,13 @@ describe('checkRateLimitRedis', () => {
 
       await expect(checkRateLimitRedis('user-1', 'vote', 30, 60_000)).rejects.toThrow('Rate limit exceeded');
     });
+
+    it('does not double-count when the caller already applied an in-memory tier', async () => {
+      await checkRateLimitRedis('user-1', 'vote', 30, 60_000, { fallbackToMemory: false });
+
+      expect(mockEval).not.toHaveBeenCalled();
+      expect(mockCheckRateLimit).not.toHaveBeenCalled();
+    });
   });
 
   describe('when Redis throws a connection error', () => {
@@ -170,6 +177,15 @@ describe('checkRateLimitRedis', () => {
 
       // Should not throw — falls back to in-memory
       await expect(checkRateLimitRedis('user-1', 'vote', 30, 60_000)).resolves.toBeUndefined();
+    });
+
+    it('does not repeat an already-applied memory tier after a Redis command failure', async () => {
+      mockEval.mockRejectedValue(new Error('Redis cluster timeout'));
+
+      await expect(
+        checkRateLimitRedis('user-1', 'vote', 30, 60_000, { fallbackToMemory: false }),
+      ).resolves.toBeUndefined();
+      expect(mockCheckRateLimit).not.toHaveBeenCalled();
     });
   });
 });

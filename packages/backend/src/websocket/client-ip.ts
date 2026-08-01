@@ -126,3 +126,14 @@ export function resolveWebSocketClientIp(req?: IncomingMessage): string | undefi
 
   return normalizeClientIp(req?.socket?.remoteAddress);
 }
+
+/**
+ * Resolve only the WebSocket upgrade's TCP peer. Unlike
+ * {@link resolveWebSocketClientIp}, this never consults request headers, so a
+ * client reaching the origin directly cannot rotate it by forging proxy
+ * metadata. At the hosted Railway origin this may identify an edge proxy, so
+ * callers must use it only for a deliberately high secondary ceiling.
+ */
+export function resolveWebSocketSocketPeerIp(req?: IncomingMessage): string | undefined {
+  return normalizeClientIp(req?.socket?.remoteAddress);
+}

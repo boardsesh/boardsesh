@@ -168,6 +168,10 @@ export type ConnectionContext = {
   // sets it in graphql/yoga.ts, WebSocket in websocket/setup.ts via
   // resolveWebSocketClientIp (issue #2863).
   clientIp?: string;
+  // Normalized address of the TCP peer for WebSocket upgrades. This is kept
+  // separately from clientIp so a direct-origin caller cannot evade the
+  // secondary rate-limit bucket by forging cf-connecting-ip (issue #4038).
+  socketPeerIp?: string;
   // Controller-specific context (set when using API key auth)
   controllerId?: string;
   controllerApiKey?: string;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { IncomingMessage } from 'node:http';
-import { normalizeClientIp, resolveWebSocketClientIp } from '../websocket/client-ip';
+import { normalizeClientIp, resolveWebSocketClientIp, resolveWebSocketSocketPeerIp } from '../websocket/client-ip';
 
 type UpgradeRequestParts = {
   headers?: Record<string, string | string[] | undefined>;
@@ -146,5 +146,24 @@ describe('normalizeClientIp', () => {
     // reaches us from a hand-forged header — sharing one bucket is the safe
     // direction (stricter, not looser) for that traffic.
     expect(normalizeClientIp('::ffff:c000:0201')).toBe('0:0:0:0::/64');
+  });
+});
+
+describe('resolveWebSocketSocketPeerIp', () => {
+  it('ignores forgeable proxy headers and returns only the normalized TCP peer', () => {
+    const request = fakeUpgradeRequest({
+      headers: {
+        'cf-connecting-ip': '203.0.113.7',
+        'x-forwarded-for': '198.51.100.9, 172.68.1.1',
+      },
+      remoteAddress: '::ffff:10.0.0.8',
+    });
+
+    expect(resolveWebSocketSocketPeerIp(request)).toBe('10.0.0.8');
+  });
+
+  it('returns undefined when no socket peer can be normalized', () => {
+    expect(resolveWebSocketSocketPeerIp(undefined)).toBeUndefined();
+    expect(resolveWebSocketSocketPeerIp(fakeUpgradeRequest({ remoteAddress: 'not-an-ip' }))).toBeUndefined();
   });
 });

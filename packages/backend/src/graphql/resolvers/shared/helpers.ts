@@ -65,6 +65,15 @@ export const RATE_LIMIT_SET_QUEUE_OP = 'setQueue';
 export const RATE_LIMIT_SET_QUEUE = 300;
 
 /**
+ * The TCP-peer bucket is a coarse direct-origin abuse backstop. Railway and
+ * Cloudflare can fan many real clients into one peer address, so it must stay
+ * well above the normal per-client limit while remaining finite.
+ */
+const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR = 600;
+const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER = 5;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+/**
  * Helper to require a session context.
  * Throws if the user is not in a session.
  */
@@ -422,17 +431,23 @@ export async function isSessionMember(ctx: ConnectionContext, sessionId: string)
  *    be resolved. This provides immediate per-process protection and works
  *    even when Redis is down.
  *
- * 2. **Redis** (authenticated users only): Distributed enforcement
- *    across multiple backend instances. Uses an atomic Lua script
- *    (INCR + EXPIRE) so counts are consistent cluster-wide.
+ * 2. **Redis** (authenticated callers and anonymous WebSockets): Distributed
+ *    enforcement across multiple backend instances. Authenticated callers key
+ *    on userId; anonymous WebSockets key on the trusted-hop clientIp resolved
+ *    during upgrade. Anonymous HTTP stays on Tier 1 because its separate proxy
+ *    trust boundary is not equivalent yet. Uses an atomic Lua script (INCR +
+ *    EXPIRE) so counts are consistent cluster-wide.
  *
- * Authenticated users are checked by *both* tiers intentionally:
+ * Callers are checked by *both* tiers intentionally:
  * the in-memory check is a fast short-circuit that avoids a Redis
  * round-trip when the user is clearly over the limit on this instance,
  * while Redis ensures the limit holds across all instances.
  *
- * Unauthenticated users only get in-memory limiting because they
- * don't have a stable userId for cross-instance tracking.
+ * Anonymous WebSocket callers also get a high-ceiling Redis bucket keyed on
+ * socketPeerIp. That address cannot be supplied in a request header, so a
+ * direct-origin caller forging cf-connecting-ip still hits a finite shared
+ * ceiling. Hosted proxy fan-in is why this secondary limit is intentionally
+ * much higher than the per-client bucket.
  *
  * @param ctx - Connection context
  * @param limit - Optional custom limit (default: 60 requests per minute)
@@ -464,9 +479,26 @@ export async function applyRateLimit(ctx: ConnectionContext, limit?: number, ope
     // Tier 1: Synchronous in-memory rate limiting (fast path, per-instance)
     checkRateLimit(key, maxRequests);
 
-    // Tier 2: Distributed Redis rate limiting (authenticated users only)
+    // Tier 2: Distributed Redis rate limiting. Tier 1 already ran, so Redis
+    // failures must not increment the same in-memory bucket a second time.
     if (ctx.isAuthenticated && ctx.userId) {
-      await checkRateLimitRedis(ctx.userId, operation, maxRequests, 60_000);
+      await checkRateLimitRedis(ctx.userId, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
+        fallbackToMemory: false,
+      });
+    } else if (ctx.transport === 'ws' && ctx.clientIp) {
+      await checkRateLimitRedis(`ip:${ctx.clientIp}`, operation, maxRequests, RATE_LIMIT_WINDOW_MS, {
+        fallbackToMemory: false,
+      });
+    }
+
+    if (!ctx.isAuthenticated && ctx.transport === 'ws' && ctx.socketPeerIp) {
+      const socketPeerLimit = Math.max(
+        ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR,
+        maxRequests * ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER,
+      );
+      await checkRateLimitRedis(`socket-peer:${ctx.socketPeerIp}`, operation, socketPeerLimit, RATE_LIMIT_WINDOW_MS, {
+        fallbackToMemory: true,
+      });
     }
   } catch (error) {
     if (error instanceof RateLimitError) {
