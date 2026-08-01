@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, TextInput, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +11,7 @@ import { Text } from '../src/components/Text';
 import { Button } from '../src/components/Button';
 import { Icon } from '../src/components/Icon';
 import { ActivityIndicator } from '../src/components/ActivityIndicator';
-import { LogbookRow } from '../src/components/you/LogbookRow';
+import { ShareBetaAscentRow } from '../src/components/share-beta/ShareBetaAscentRow';
 import { useTheme } from '../src/providers/theme-provider';
 import { useAuth } from '../src/providers/auth-provider';
 import { useToast } from '../src/providers/toast-provider';
@@ -23,6 +23,12 @@ import {
   useBetaLinkPreview,
 } from '../src/lib/graphql/hooks';
 import { extractGraphqlMessage } from '../src/lib/graphql/extract-error-message';
+import {
+  buildShareBetaListItems,
+  shareBetaListItemType,
+  shareBetaListKey,
+  type ShareBetaListItem,
+} from '../src/lib/share-beta-list';
 import { spacing, borderRadius } from '../src/theme/tokens';
 import { iosSystemColors } from '../src/theme/ios-colors';
 
@@ -47,6 +53,17 @@ export default function ShareBetaScreen() {
   const { showToast } = useToast();
   const { data: profile } = useProfile();
   const attach = useAttachBetaLink();
+  const attachRef = useRef(attach);
+  attachRef.current = attach;
+  const attachInFlightRef = useRef(false);
+  const linkRef = useRef(link);
+  linkRef.current = link;
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+  const translateRef = useRef(t);
+  translateRef.current = t;
 
   // Best-effort: fetch the reel's thumbnail + caption so we can preview the post
   // and auto-match the climb. Never blocks the manual picker.
@@ -60,7 +77,10 @@ export default function ShareBetaScreen() {
     const handle = setTimeout(() => setCommittedQuery(searchText.trim()), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [searchText]);
-  const isSearching = committedQuery.length > 0;
+  // Suppress caption suggestions from the first search keystroke, while the
+  // actual feed query remains debounced. Keep them suppressed for the debounce
+  // window after clearing too, until the unfiltered query is active again.
+  const isSearching = searchText.trim().length > 0 || committedQuery.length > 0;
 
   // attachBetaLink rejections shown inline (not via toast): this is a native
   // modal, so a toast renders behind the sheet where the user never sees it.
@@ -74,6 +94,7 @@ export default function ShareBetaScreen() {
     setSearchText('');
     setCommittedQuery('');
     setAttachError(null);
+    attachInFlightRef.current = false;
   }, [link]);
 
   // Nothing to attach (shouldn't happen — the provider validates first); just
@@ -102,52 +123,84 @@ export default function ShareBetaScreen() {
   const matches = useAscentCaptionMatches(profile?.id, isSearching ? null : caption);
   const suggestions = useMemo(() => (isSearching ? [] : (matches.data ?? [])), [isSearching, matches.data]);
 
-  const handleEndReached = useCallback(() => {
-    if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
-  }, [feed]);
+  const isLoadingMoreRef = useRef(false);
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = feed;
+  useEffect(() => {
+    if (!isFetchingNextPage) isLoadingMoreRef.current = false;
+  }, [isFetchingNextPage]);
 
-  const handleAttach = useCallback(
-    (ascent: AscentFeedItem) => {
-      if (!link || attach.isPending) return;
-      setAttachError(null);
-      attach.mutate(
-        { boardType: ascent.boardType, climbUuid: ascent.climbUuid, link, angle: ascent.angle, tickUuid: ascent.uuid },
-        {
-          onSuccess: () => {
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            // Toast is fine on success — router.back() dismisses the modal first,
-            // so it lands on the screen underneath where the toast is visible.
-            showToast(t('mobile.betaVideos.attachSuccess'), 'success');
-            router.back();
-          },
-          onError: (error: unknown) => {
-            // Surface the backend message verbatim — it carries the useful
-            // guidance ("post isn't available", "already attached to <climb>",
-            // "temporarily blocking us"). Show it INLINE, not as a toast: the
-            // modal stays open so the user can pick another climb, and a toast
-            // would render behind the sheet where they'd never see it.
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            setAttachError(extractGraphqlMessage(error) ?? t('mobile.betaVideos.attachError'));
-          },
+  const handleEndReached = useCallback(() => {
+    if (!hasNextPage || isFetchingNextPage || isLoadingMoreRef.current) return;
+    isLoadingMoreRef.current = true;
+    void fetchNextPage().finally(() => {
+      isLoadingMoreRef.current = false;
+    });
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  // Stable for the lifetime of the screen, so every memoized/recycled row keeps
+  // the same callback. A synchronous ref latch closes the double-tap window
+  // before React Query's isPending state can re-render the screen.
+  const handleAttach = useCallback((ascent: AscentFeedItem) => {
+    const currentLink = linkRef.current;
+    const mutation = attachRef.current;
+    if (!currentLink || mutation.isPending || attachInFlightRef.current) return;
+    attachInFlightRef.current = true;
+    setAttachError(null);
+    mutation.mutate(
+      {
+        boardType: ascent.boardType,
+        climbUuid: ascent.climbUuid,
+        link: currentLink,
+        angle: ascent.angle,
+        tickUuid: ascent.uuid,
+      },
+      {
+        onSuccess: () => {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          // Toast is fine on success — router.back() dismisses the modal first,
+          // so it lands on the screen underneath where the toast is visible.
+          showToastRef.current(translateRef.current('mobile.betaVideos.attachSuccess'), 'success');
+          routerRef.current.back();
         },
-      );
-    },
-    [attach, link, router, showToast, t],
-  );
+        onError: (error: unknown) => {
+          attachInFlightRef.current = false;
+          // Surface the backend message verbatim — it carries the useful
+          // guidance ("post isn't available", "already attached to <climb>",
+          // "temporarily blocking us"). Show it INLINE, not as a toast: the
+          // modal stays open so the user can pick another climb, and a toast
+          // would render behind the sheet where they'd never see it.
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          setAttachError(extractGraphqlMessage(error) ?? translateRef.current('mobile.betaVideos.attachError'));
+        },
+      },
+    );
+  }, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: AscentFeedItem }) => <LogbookRow ascent={item} onActivate={handleAttach} />,
-    [handleAttach],
+    ({ item }: { item: ShareBetaListItem }) => {
+      if (item.kind === 'section') {
+        const suggested = item.source === 'suggested';
+        return (
+          <Text
+            variant="footnote"
+            color={suggested ? brandColors.primary : systemColors.tertiaryLabel}
+            style={styles.sectionLabel}
+            accessibilityRole="header"
+          >
+            {suggested ? t('mobile.betaVideos.shareSuggestedTitle') : t('mobile.betaVideos.shareOtherAscents')}
+          </Text>
+        );
+      }
+      return <ShareBetaAscentRow ascent={item.ascent} onActivate={handleAttach} />;
+    },
+    [brandColors.primary, handleAttach, systemColors.tertiaryLabel, t],
   );
 
-  // Drop suggested climbs from the browse list so a recent + matched climb isn't
-  // listed twice (once under "Suggested", once below).
-  const suggestedClimbUuids = useMemo(() => new Set(suggestions.map((ascent) => ascent.climbUuid)), [suggestions]);
-  const listData = useMemo(
-    () => (suggestedClimbUuids.size > 0 ? items.filter((ascent) => !suggestedClimbUuids.has(ascent.climbUuid)) : items),
-    [items, suggestedClimbUuids],
+  const listItems = useMemo(
+    () => buildShareBetaListItems({ ascents: items, suggestions, isSearching }),
+    [isSearching, items, suggestions],
   );
-  const showSuggestions = suggestions.length > 0;
+  const listContentStyle = useMemo(() => ({ paddingBottom: insets.bottom + spacing[6] }), [insets.bottom]);
 
   const containerStyle = [styles.container, { backgroundColor: systemColors.background, paddingTop: insets.top }];
 
@@ -245,46 +298,28 @@ export default function ShareBetaScreen() {
           </View>
         ) : (
           <FlashList
-            data={listData}
+            data={listItems}
             renderItem={renderItem}
-            keyExtractor={(item) => item.uuid}
+            keyExtractor={shareBetaListKey}
+            getItemType={shareBetaListItemType}
             keyboardShouldPersistTaps="handled"
             onEndReached={handleEndReached}
             onEndReachedThreshold={0.5}
-            contentContainerStyle={{ paddingBottom: insets.bottom + spacing[6] }}
-            ListHeaderComponent={
-              showSuggestions ? (
-                <View style={styles.suggestedSection}>
-                  <Text variant="footnote" color={brandColors.primary} style={styles.sectionLabel}>
-                    {t('mobile.betaVideos.shareSuggestedTitle')}
-                  </Text>
-                  {suggestions.map((ascent) => (
-                    <LogbookRow key={ascent.uuid} ascent={ascent} onActivate={handleAttach} />
-                  ))}
-                  {listData.length > 0 && (
-                    <Text variant="footnote" color={systemColors.tertiaryLabel} style={styles.sectionLabel}>
-                      {t('mobile.betaVideos.shareOtherAscents')}
-                    </Text>
-                  )}
-                </View>
-              ) : null
-            }
+            contentContainerStyle={listContentStyle}
             ListFooterComponent={
-              feed.isFetchingNextPage ? (
+              isFetchingNextPage ? (
                 <View style={styles.footer}>
                   <ActivityIndicator size="small" />
                 </View>
               ) : null
             }
             ListEmptyComponent={
-              showSuggestions ? null : (
-                <View style={styles.empty}>
-                  <Icon name="tick.outline" size={44} color={systemColors.tertiaryLabel} />
-                  <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyText}>
-                    {isSearching ? t('mobile.betaVideos.shareNoResults') : t('mobile.betaVideos.shareNoAscents')}
-                  </Text>
-                </View>
-              )
+              <View style={styles.empty}>
+                <Icon name="tick.outline" size={44} color={systemColors.tertiaryLabel} />
+                <Text variant="subheadline" color={systemColors.secondaryLabel} style={styles.emptyText}>
+                  {isSearching ? t('mobile.betaVideos.shareNoResults') : t('mobile.betaVideos.shareNoAscents')}
+                </Text>
+              </View>
             }
           />
         )}
@@ -320,7 +355,6 @@ const styles = StyleSheet.create({
   thumb: { width: 44, height: 44, borderRadius: borderRadius.sm },
   thumbFallback: { alignItems: 'center', justifyContent: 'center' },
   linkText: { flex: 1, gap: 2 },
-  suggestedSection: { gap: spacing[1] },
   sectionLabel: {
     paddingHorizontal: spacing[4],
     paddingTop: spacing[3],
