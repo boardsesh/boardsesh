@@ -182,11 +182,29 @@ void describe('decodeGripsClimbConcat — holds and fingerprint', () => {
     ]);
   });
 
-  it('gives a real animated climb one hold row per lit token, never one per clear', () => {
+  it('gives a real animated climb one canonical row per placement', () => {
     const climb = fixtureClimb('DA658EAACBE54AC89DB4060ED07BAF6C');
     const result = decodeOk(climb.climbConcat, fixtureRemap(climb), climb.frameCount);
-    expect(result.holds).toHaveLength((climb.climbConcat.match(/h\d+p\d+/g) ?? []).length);
+    const holdIds = result.holds.map((hold) => hold.holdId);
+    expect(holdIds).toHaveLength(new Set(holdIds).size);
     expect(result.holds.every((hold) => hold.frameNumber < climb.frameCount)).toBe(true);
+
+    const relitPlacement = climb.holeToPlacement['1549'];
+    expect(result.holds.filter((hold) => hold.holdId === relitPlacement)).toEqual([
+      { holdId: relitPlacement, holdState: 'HAND', frameNumber: 13 },
+    ]);
+  });
+
+  it('skips an unknown first role but accepts the same placement when it later has a valid role', () => {
+    expect(decodeOk('h10p999e1h10p13s2', REMAP, 2).holds).toEqual([{ holdId: 100, holdState: 'HAND', frameNumber: 1 }]);
+  });
+
+  it('fingerprints a re-lit placement from the same canonical row the table stores', () => {
+    const decoded = decodeOk('h10p12e1h10p14s2', REMAP, 2);
+    expect(decoded.holds).toEqual([{ holdId: 100, holdState: 'STARTING', frameNumber: 0 }]);
+    expect(fingerprintFromHolds(decoded.holds)).toBe(
+      fingerprintFromHolds([{ holdId: 100, holdState: 'STARTING', frameNumber: 0 }]),
+    );
   });
 
   it('fingerprints identically regardless of hold order (sorted tuples)', () => {
