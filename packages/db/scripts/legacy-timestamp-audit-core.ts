@@ -532,6 +532,7 @@ export function canonicalJson(value: unknown): string {
 }
 
 const FORBIDDEN_OUTPUT_KEYS = new Set([
+  'id',
   'userid',
   'rawuserid',
   'comment',
