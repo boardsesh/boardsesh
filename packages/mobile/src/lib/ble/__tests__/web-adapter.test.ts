@@ -109,7 +109,7 @@ describe('requestDeviceOptionsForFamily', () => {
 
 describe('requestAndConnect', () => {
   it('requests with the Aurora filter shape and returns the connection identity', async () => {
-    const { device } = makeDevice({ [UART_SERVICE_UUID]: makeCharacteristic() });
+    const { device, server } = makeDevice({ [UART_SERVICE_UUID]: makeCharacteristic() });
     const requestDevice = vi.fn().mockResolvedValue(device);
     stubBluetooth(requestDevice);
 
@@ -117,6 +117,7 @@ describe('requestAndConnect', () => {
 
     expect(requestDevice).toHaveBeenCalledWith(requestDeviceOptionsForFamily('aurora'));
     expect(connection).toEqual({ deviceId: 'device-abc', deviceName: 'Kilter Board' });
+    expect(server.connect).not.toHaveBeenCalled();
   });
 
   it('retries a transient GATT NetworkError without reopening the browser chooser', async () => {
@@ -177,13 +178,14 @@ describe('requestAndConnect', () => {
   it('resolves the MoonBoard write characteristic via the RedBearLab fallback', async () => {
     // Only the RedBearLab service is present — UART probing rejects first.
     const redbearChar = makeCharacteristic(false);
-    const { device } = makeDevice({ [REDBEARLAB_SERVICE_UUID]: redbearChar });
+    const { device, server } = makeDevice({ [REDBEARLAB_SERVICE_UUID]: redbearChar });
     const requestDevice = vi.fn().mockResolvedValue(device);
     stubBluetooth(requestDevice);
 
     const connection = await new WebBluetoothAdapter('moonboard').requestAndConnect();
     expect(requestDevice).toHaveBeenCalledWith(requestDeviceOptionsForFamily('moonboard'));
     expect(connection.deviceId).toBe('device-abc');
+    expect(server.connect).not.toHaveBeenCalled();
   });
 
   it('rejects with the explicit message when MoonBoard exposes neither controller', async () => {
