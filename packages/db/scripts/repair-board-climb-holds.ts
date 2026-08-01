@@ -117,7 +117,7 @@ type CandidateJoinedRow = {
   hold_state: string | null;
 };
 
-async function fetchCandidateClimbs(executor: RepairQueryExecutor): Promise<RepairClimbInput[]> {
+export async function fetchCandidateClimbs(executor: RepairQueryExecutor): Promise<RepairClimbInput[]> {
   const joinedRows = await executeRows<CandidateJoinedRow>(
     executor,
     sql`
@@ -149,6 +149,11 @@ async function fetchCandidateClimbs(executor: RepairQueryExecutor): Promise<Repa
             ELSE NULL
           END AS hold_fingerprint
         FROM candidate_identity
+        -- board_climbs.uuid is the table's global primary key. This UUID-only
+        -- join is deliberate: a corrupt board_climb_holds row can carry a
+        -- different board_type from its parent while its FK still references
+        -- only uuid. Keeping that child identity lets the repair delete it;
+        -- joining board_type here would strand the invalid row.
         INNER JOIN board_climbs bc ON bc.uuid = candidate_identity.uuid
       )
       SELECT
@@ -288,15 +293,35 @@ function printManifest(manifest: RepairManifest, digest: string, reportLimit: nu
 
 type MutationRow = RepairHoldRow & { boardType: string; climbUuid: string };
 
+function climbIdentityKey(boardType: string, climbUuid: string): string {
+  return `${boardType}\u0000${climbUuid}`;
+}
+
 export async function applyRepairManifest(executor: RepairQueryExecutor, manifest: RepairManifest): Promise<void> {
   const changedEntries = manifest.entries.filter((entry) => entry.changed);
   const invalidOnlyEntries = manifest.entries.filter((entry) => !entry.multiFrame && entry.invalidRows.length > 0);
 
-  for (const entry of changedEntries) {
-    await executor.execute(sql`
-      DELETE FROM board_climb_holds
-      WHERE board_type = ${entry.boardType} AND climb_uuid = ${entry.uuid}
-    `);
+  if (changedEntries.length > 0) {
+    const deleted = await executeRows<{ board_type: string }>(
+      executor,
+      sql`
+        WITH changed AS (
+          SELECT *
+          FROM jsonb_to_recordset(${JSON.stringify(
+            changedEntries.map((entry) => ({ board_type: entry.boardType, climb_uuid: entry.uuid })),
+          )}::jsonb) AS row(board_type text, climb_uuid text)
+        )
+        DELETE FROM board_climb_holds stored
+        USING changed
+        WHERE stored.board_type = changed.board_type
+          AND stored.climb_uuid = changed.climb_uuid
+        RETURNING stored.board_type
+      `,
+    );
+    const expectedDeletedRows = changedEntries.reduce((total, entry) => total + entry.oldRows.length, 0);
+    if (deleted.length !== expectedDeletedRows) {
+      throw new Error('deleted changed-row count did not match the manifest');
+    }
   }
   const insertionRows: MutationRow[] = changedEntries.flatMap((entry) =>
     (entry.projectedRows ?? []).map((row) => ({ ...row, boardType: entry.boardType, climbUuid: entry.uuid })),
@@ -354,37 +379,79 @@ export async function applyRepairManifest(executor: RepairQueryExecutor, manifes
     if (deleted.length !== invalidRows.length) throw new Error('deleted invalid row count did not match the manifest');
   }
 
-  for (const entry of manifest.entries.filter((candidate) => candidate.fingerprint.shouldUpdate)) {
-    const updated = await executeRows<{ uuid: string }>(
+  const fingerprintUpdates = manifest.entries.filter((candidate) => candidate.fingerprint.shouldUpdate);
+  if (fingerprintUpdates.length > 0) {
+    const updated = await executeRows<{ board_type: string; uuid: string }>(
       executor,
       sql`
-        UPDATE board_climbs
-        SET hold_fingerprint = ${entry.fingerprint.projected}
-        WHERE board_type = ${entry.boardType}
-          AND uuid = ${entry.uuid}
-          AND hold_fingerprint = ${entry.fingerprint.old}
-        RETURNING uuid
+        WITH changes AS (
+          SELECT *
+          FROM jsonb_to_recordset(${JSON.stringify(
+            fingerprintUpdates.map((entry) => ({
+              board_type: entry.boardType,
+              uuid: entry.uuid,
+              old_fingerprint: entry.fingerprint.old,
+              projected_fingerprint: entry.fingerprint.projected,
+            })),
+          )}::jsonb)
+            AS row(board_type text, uuid text, old_fingerprint text, projected_fingerprint text)
+        )
+        UPDATE board_climbs stored
+        SET hold_fingerprint = changes.projected_fingerprint
+        FROM changes
+        WHERE stored.board_type = changes.board_type
+          AND stored.uuid = changes.uuid
+          AND stored.hold_fingerprint IS NOT DISTINCT FROM changes.old_fingerprint
+        RETURNING stored.board_type, stored.uuid
       `,
     );
-    if (updated.length !== 1) throw new Error(`fingerprint guard failed for ${entry.boardType}/${entry.uuid}`);
+    const updatedKeys = new Set(updated.map((row) => climbIdentityKey(row.board_type, row.uuid)));
+    const failedKeys = fingerprintUpdates
+      .filter((entry) => !updatedKeys.has(climbIdentityKey(entry.boardType, entry.uuid)))
+      .map((entry) => `${entry.boardType}/${entry.uuid}`);
+    if (updated.length !== fingerprintUpdates.length || failedKeys.length > 0) {
+      throw new Error(`fingerprint guard failed for ${failedKeys.join(', ') || 'unexpected duplicate identity'}`);
+    }
   }
 }
 
 export async function verifyAppliedRepair(executor: RepairQueryExecutor, manifest: RepairManifest): Promise<void> {
   const changedEntries = manifest.entries.filter((entry) => entry.changed);
-  for (const entry of changedEntries) {
-    const actual = await executeRows<{ hold_id: number; frame_number: number; hold_state: string }>(
+  const actualRowsByIdentity = new Map<string, RepairHoldRow[]>(
+    changedEntries.map((entry) => [climbIdentityKey(entry.boardType, entry.uuid), []]),
+  );
+  if (changedEntries.length > 0) {
+    const actual = await executeRows<{
+      board_type: string;
+      climb_uuid: string;
+      hold_id: number;
+      frame_number: number;
+      hold_state: string;
+    }>(
       executor,
       sql`
-        SELECT hold_id, frame_number, hold_state
-        FROM board_climb_holds
-        WHERE board_type = ${entry.boardType} AND climb_uuid = ${entry.uuid}
-        ORDER BY hold_id, frame_number, hold_state
+        WITH targets AS (
+          SELECT *
+          FROM jsonb_to_recordset(${JSON.stringify(
+            changedEntries.map((entry) => ({ board_type: entry.boardType, climb_uuid: entry.uuid })),
+          )}::jsonb) AS row(board_type text, climb_uuid text)
+        )
+        SELECT stored.board_type, stored.climb_uuid, stored.hold_id, stored.frame_number, stored.hold_state
+        FROM board_climb_holds stored
+        INNER JOIN targets
+          ON targets.board_type = stored.board_type
+         AND targets.climb_uuid = stored.climb_uuid
+        ORDER BY stored.board_type, stored.climb_uuid, stored.hold_id, stored.frame_number, stored.hold_state
       `,
     );
-    const actualRows = sortRepairRows(
-      actual.map((row) => ({ holdId: row.hold_id, frameNumber: row.frame_number, holdState: row.hold_state })),
-    );
+    for (const row of actual) {
+      const identityRows = actualRowsByIdentity.get(climbIdentityKey(row.board_type, row.climb_uuid));
+      if (!identityRows) throw new Error(`post-write verification returned an unexpected identity`);
+      identityRows.push({ holdId: row.hold_id, frameNumber: row.frame_number, holdState: row.hold_state });
+    }
+  }
+  for (const entry of changedEntries) {
+    const actualRows = sortRepairRows(actualRowsByIdentity.get(climbIdentityKey(entry.boardType, entry.uuid)) ?? []);
     if (JSON.stringify(actualRows) !== JSON.stringify(entry.projectedRows)) {
       throw new Error(`post-write row verification failed for ${entry.boardType}/${entry.uuid}`);
     }
