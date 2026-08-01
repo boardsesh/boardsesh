@@ -489,9 +489,10 @@ export async function runRepair(
       async (transaction) => {
         await transaction.execute(sql`SET LOCAL lock_timeout = '5s'`);
         await transaction.execute(sql`SET LOCAL statement_timeout = '120s'`);
-        // At REPEATABLE READ, the advisory-lock SELECT below is the first
-        // snapshot-taking command. Take both writer-blocking table locks before
-        // it so the manifest sees commits from writers that were already in flight.
+        // LOCK TABLE does not freeze a REPEATABLE READ view; PostgreSQL freezes
+        // it at the first SELECT or data-modification statement. Keep both
+        // writer-blocking locks before the advisory-lock SELECT so the manifest
+        // includes writers that committed while lock acquisition waited.
         await transaction.execute(sql`LOCK TABLE board_climbs IN SHARE ROW EXCLUSIVE MODE`);
         await transaction.execute(sql`LOCK TABLE board_climb_holds IN SHARE ROW EXCLUSIVE MODE`);
         await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:repair-board-climb-holds:v1'))`);
