@@ -391,6 +391,15 @@ export type ManagedSheetHandle = Pick<
   dismissAndWait: () => Promise<DismissAndWaitResult>;
 };
 
+/** Await a mounted managed sheet, or succeed immediately when no native
+ * surface exists. `aborted` is reserved for a registered host disappearing
+ * while its dismissal is already in flight. */
+export function dismissManagedSheetAndWait(
+  handle: Pick<ManagedSheetHandle, 'dismissAndWait'> | null | undefined,
+): Promise<DismissAndWaitResult> {
+  return handle ? handle.dismissAndWait() : Promise.resolve(DISMISSED_RESULT);
+}
+
 type UseManagedSheetOptions = {
   /** Controlled open state. Pass a boolean to drive the sheet declaratively;
    * leave `undefined` for purely imperative consumers (drive via the returned

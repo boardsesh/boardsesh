@@ -44,7 +44,7 @@ import { SIDEBAR_WIDTH } from '../theme/layout';
 import { useQueueSnackbar } from './queue-snackbar-provider';
 import { useBoardPresenceControls, type ResolveBoardUuidArgs } from './board-presence-provider';
 import { useOptionalBluetoothContext } from './bluetooth-provider';
-import type { DismissAndWaitResult } from './sheet-presentation-provider';
+import { dismissManagedSheetAndWait, type DismissAndWaitResult } from './sheet-presentation-provider';
 
 export type BoardConfig = {
   boardName: string;
@@ -583,8 +583,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
     queueSheetRef.current?.dismiss();
   }, []);
   const dismissQueueSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
-    const handle = queueSheetRef.current;
-    return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
+    return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
 
   // Board sheet: present imperatively via the ref, exactly like the queue sheet
@@ -599,8 +598,7 @@ export function DrawerHostProvider({ children }: { children: ReactNode }) {
   }, []);
   const requestCloseBoardSheet = useCallback(() => boardSheetRef.current?.dismiss(), []);
   const dismissBoardSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
-    const handle = boardSheetRef.current;
-    return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
+    return dismissManagedSheetAndWait(boardSheetRef.current);
   }, []);
   // Snackbar "Open": dismiss the snackbar, then open the queue sheet.
   const handleSnackbarOpen = useCallback(() => {

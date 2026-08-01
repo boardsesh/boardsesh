@@ -9,6 +9,7 @@ vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
 
 import {
   SheetPresentationProvider,
+  dismissManagedSheetAndWait,
   useSheetPresentation,
   useManagedSheet,
   type SheetCoordinator,
@@ -38,6 +39,10 @@ afterEach(() => {
 });
 
 describe('SheetPresentationProvider coordinator', () => {
+  it('treats a missing managed-sheet handle as already dismissed', async () => {
+    await expect(dismissManagedSheetAndWait(null)).resolves.toEqual({ status: 'dismissed' });
+  });
+
   it('presents an opened sheet and reports it presented after the settle window', () => {
     const a = makeSheet();
     coordinator.register({ id: 'a', group: 'root', ...a });

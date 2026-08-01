@@ -18,7 +18,7 @@ import { useTheme } from '../src/providers/theme-provider';
 import { playDrawerMaterialTint } from '../src/theme/colors';
 import { usePlayerDismissAndWait } from '../src/components/create-climb/use-player-dismiss-and-wait';
 import type { Climb } from '@boardsesh/shared-schema';
-import type { DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
+import { dismissManagedSheetAndWait, type DismissAndWaitResult } from '../src/providers/sheet-presentation-provider';
 
 /**
  * Full-screen "now playing" player route (`presentation: 'fullScreenModal'`,
@@ -63,8 +63,7 @@ export default function PlayScreen() {
   const presentQueue = useCallback(() => queueSheetRef.current?.present(), []);
   const requestCloseQueue = useCallback(() => queueSheetRef.current?.dismiss(), []);
   const dismissQueueAndWait = useCallback((): Promise<DismissAndWaitResult> => {
-    const handle = queueSheetRef.current;
-    return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
+    return dismissManagedSheetAndWait(queueSheetRef.current);
   }, []);
   const dismissPlayerAndWait = usePlayerDismissAndWait();
   // Any actions menu opened from this route receives the route-owned transition

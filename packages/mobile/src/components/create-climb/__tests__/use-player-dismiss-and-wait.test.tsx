@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Transition = { data?: { closing?: boolean } };
 
@@ -37,6 +37,10 @@ beforeEach(() => {
   navigationSource.current = null;
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('usePlayerDismissAndWait', () => {
   it('subscribes before dismiss and resolves only the closing transitionEnd', async () => {
     const { result } = renderHook(() => usePlayerDismissAndWait());
@@ -65,6 +69,20 @@ describe('usePlayerDismissAndWait', () => {
     unmount();
 
     await expect(resultPromise).resolves.toEqual({ status: 'aborted' });
+    expect(navigation.unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles through a bounded ceiling when transitionEnd never arrives', async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => usePlayerDismissAndWait());
+    const resultPromise = result.current();
+
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+
+    await expect(resultPromise).resolves.toEqual({ status: 'dismissed' });
+    expect(navigation.unsubscribe).toHaveBeenCalledTimes(1);
+
+    act(() => navigation.listener?.({ data: { closing: true } }));
     expect(navigation.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
