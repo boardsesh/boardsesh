@@ -218,3 +218,32 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--force'])).toThrow(/unknown argument/);
   });
 });
+
+describe('workflow comment trust boundary', () => {
+  const workflowSource = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../.github/workflows/db-migration-renumber.yml'),
+    'utf8',
+  );
+  const renumberJobStart = workflowSource.indexOf('\n  renumber:\n');
+  const commentJobStart = workflowSource.indexOf('\n  comment:\n');
+  const renumberJob = workflowSource.slice(renumberJobStart, commentJobStart);
+  const commentJob = workflowSource.slice(commentJobStart);
+
+  it('keeps PR-controlled work out of the pull-request-write job', () => {
+    expect(renumberJobStart).toBeGreaterThan(-1);
+    expect(commentJobStart).toBeGreaterThan(renumberJobStart);
+    expect(workflowSource.slice(0, renumberJobStart)).toContain('pull-requests: read');
+    expect(renumberJob).not.toContain('renderRenumberWorkflowComment');
+    expect(commentJob).toContain('needs: [gate, renumber]');
+    expect(commentJob).toContain('pull-requests: write');
+  });
+
+  it('loads the helper from the immutable workflow commit on the fresh comment runner', () => {
+    expect(commentJob).toContain('always() &&');
+    expect(commentJob).toContain('ref: ${{ github.workflow_sha }}');
+    expect(commentJob).toContain('sparse-checkout: scripts/lib/db-renumber-comment.cjs');
+    expect(commentJob).toContain('persist-credentials: false');
+    expect(commentJob).toContain('`${process.env.GITHUB_WORKSPACE}/scripts/lib/db-renumber-comment.cjs`');
+    expect(commentJob).not.toContain('.renumber-tooling');
+  });
+});

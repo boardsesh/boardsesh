@@ -41,7 +41,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  pull-requests: read
 
 concurrency:
   # NOT cancel-in-progress: being killed between the push and the comment would
@@ -108,6 +108,16 @@ jobs:
     if: needs.gate.outputs.run == 'true' && vars.OTA_PUSH_APP_ID != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      renumber_status: ${{ steps.renumber.outputs.status }}
+      comment_b64: ${{ steps.renumber.outputs.comment_b64 }}
+      validation_outcome: ${{ steps.validate.outcome }}
+      apply_outcome: ${{ steps.apply.outcome }}
+      reapply_outcome: ${{ steps.reapply.outcome }}
+      recheck_outcome: ${{ steps.recheck.outcome }}
+      recheck_ok: ${{ steps.recheck.outputs.ok }}
+      recheck_reason: ${{ steps.recheck.outputs.reason }}
+      push_outcome: ${{ steps.push.outcome }}
     services:
       # The only viable verification target. A from-scratch `drizzle-kit migrate` on
       # a bare Postgres cannot work: 0000_*.sql ALTERs kilter_climbs/tension_climbs,
@@ -160,10 +170,12 @@ jobs:
       # its own. Kept out of the workspace root would be tidier, but actions/checkout
       # requires a path inside it; the script stages explicitly rather than
       # `git add -A`, so this directory can never end up in the commit.
-      - name: Check out the renumber tooling from main
+      - name: Check out the trusted renumber tooling
         uses: actions/checkout@v4
         with:
-          ref: main
+          # Pin tooling to the immutable commit whose workflow is executing.
+          # A moving `main` ref could otherwise change the program mid-run.
+          ref: ${{ github.workflow_sha }}
           path: .renumber-tooling
           persist-credentials: false
 
@@ -247,26 +259,51 @@ jobs:
             "https://x-access-token:${GH_APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             "HEAD:refs/heads/$BRANCH"
 
+  # PR-controlled install/build/migration code ran in `renumber`. Never load a
+  # helper from that writable runner inside a token-bearing action: a postinstall
+  # could replace it. This fresh runner checks out only the immutable workflow
+  # commit, then renders and upserts the sticky comment with the narrow PR token.
+  comment:
+    needs: [gate, renumber]
+    if: >-
+      always() &&
+      needs.gate.result == 'success' &&
+      needs.gate.outputs.run == 'true' &&
+      needs.renumber.outputs.renumber_status != 'no-op'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.inputs.pr }}
+    steps:
+      - name: Check out trusted comment tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/lib/db-renumber-comment.cjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Comment the outcome
-        if: always() && steps.renumber.outputs.status != 'no-op'
         uses: actions/github-script@v7
         env:
-          COMMENT_B64: ${{ steps.renumber.outputs.comment_b64 }}
-          RENUMBER_STATUS: ${{ steps.renumber.outputs.status }}
-          VALIDATION_OUTCOME: ${{ steps.validate.outcome }}
-          APPLY_OUTCOME: ${{ steps.apply.outcome }}
-          REAPPLY_OUTCOME: ${{ steps.reapply.outcome }}
-          RECHECK_OUTCOME: ${{ steps.recheck.outcome }}
-          RECHECK_OK: ${{ steps.recheck.outputs.ok }}
-          RECHECK_REASON: ${{ steps.recheck.outputs.reason }}
-          PUSH_OUTCOME: ${{ steps.push.outcome }}
+          COMMENT_B64: ${{ needs.renumber.outputs.comment_b64 }}
+          RENUMBER_STATUS: ${{ needs.renumber.outputs.renumber_status }}
+          VALIDATION_OUTCOME: ${{ needs.renumber.outputs.validation_outcome }}
+          APPLY_OUTCOME: ${{ needs.renumber.outputs.apply_outcome }}
+          REAPPLY_OUTCOME: ${{ needs.renumber.outputs.reapply_outcome }}
+          RECHECK_OUTCOME: ${{ needs.renumber.outputs.recheck_outcome }}
+          RECHECK_OK: ${{ needs.renumber.outputs.recheck_ok }}
+          RECHECK_REASON: ${{ needs.renumber.outputs.recheck_reason }}
+          PUSH_OUTCOME: ${{ needs.renumber.outputs.push_outcome }}
         with:
           script: |
-            // This module comes from main's trusted tooling checkout and has no
-            // package dependency, so this always() step still runs if bun install
-            // or proof-of-apply failed in the PR checkout.
+            // This dependency-free module comes from the immutable workflow
+            // commit on a fresh runner that never executed PR-controlled code.
             const { renderRenumberWorkflowComment } = require(
-              `${process.env.GITHUB_WORKSPACE}/.renumber-tooling/scripts/lib/db-renumber-comment.cjs`,
+              `${process.env.GITHUB_WORKSPACE}/scripts/lib/db-renumber-comment.cjs`,
             );
             const commentBody = process.env.COMMENT_B64
               ? Buffer.from(process.env.COMMENT_B64, 'base64').toString('utf8')

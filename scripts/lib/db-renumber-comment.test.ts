@@ -41,8 +41,13 @@ describe('renderRenumberWorkflowComment', () => {
         recheckOutcome: 'skipped',
         pushOutcome: 'skipped',
       },
-      { applyOutcome: 'failure', reapplyOutcome: 'skipped', pushOutcome: 'skipped' },
-      { reapplyOutcome: 'failure', pushOutcome: 'skipped' },
+      {
+        applyOutcome: 'failure',
+        reapplyOutcome: 'skipped',
+        recheckOutcome: 'skipped',
+        pushOutcome: 'skipped',
+      },
+      { reapplyOutcome: 'failure', recheckOutcome: 'skipped', pushOutcome: 'skipped' },
     ];
 
     for (const overrides of heldOutcomes) {
@@ -87,6 +92,14 @@ describe('renderRenumberWorkflowComment', () => {
     expect(body).toContain('Nothing was pushed.');
   });
 
+  it('reports a failed final re-check before considering the push outcome', () => {
+    const body = decide({ recheckOutcome: 'failure', recheckOk: '', pushOutcome: 'skipped' });
+
+    expect(body).toContain('final PR re-check failed');
+    expect(body).toContain('Nothing was pushed.');
+    expect(body).not.toContain('Renumbered onto');
+  });
+
   it('reports a real force-push failure rather than claiming the local renumber landed', () => {
     const body = decide({ pushOutcome: 'failure' });
 
@@ -109,7 +122,7 @@ describe('renderRenumberWorkflowComment', () => {
   });
 
   it('falls back to a held comment when renumbering fails without script output', () => {
-    const body = decide({ renumberStatus: 'failure', commentBody: '' });
+    const body = decide({ renumberStatus: '', commentBody: '' });
 
     expect(body).toContain('failed before it could finish');
     expect(body).toContain('actions/runs/123');
