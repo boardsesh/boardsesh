@@ -8,7 +8,7 @@ import {
 } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { toConfidenceTier, notAuroraTwinDuplicate } from '@boardsesh/db/queries';
+import { toConfidenceTier, notAuroraTwinDuplicate, withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, applyRateLimit, validateInput, isNoMatchClimb } from '../shared/helpers';
 import {
   consensusDifficultyNameExpr,
@@ -1290,75 +1290,87 @@ export const tickQueries = {
         ne(dbSchema.boardseshTicks.status, 'attempt'),
       );
 
-      // Run three queries in parallel for this board type:
+      // Run three queries for this board type:
       // - gradeResults: counts per (layout, effective difficulty) for the chart
       // - distinctByLayout: per-layout distinct climb count (correct even when one
       //   climb appears across multiple grade buckets — e.g. logged at multiple
       //   angles whose consensus differs)
       // - distinctClimbs: global distinct climbs for `totalDistinctClimbs`
-      const [gradeResults, distinctByLayout, distinctClimbs] = await Promise.all([
-        db
-          .select({
-            layoutId: dbSchema.boardClimbs.layoutId,
-            difficulty: effectiveDifficultyExpr.as('effective_difficulty'),
-            distinctCount: sql<number>`count(distinct ${dbSchema.boardseshTicks.climbUuid})`.as('distinct_count'),
-          })
-          .from(dbSchema.boardseshTicks)
-          // Resolve dedup-merged climbs to their canonical UUID so the layout +
-          // stats lookups land on the canonical row. See the `ticks` resolver.
-          .leftJoin(
-            dbSchema.boardClimbAliases,
-            and(
-              eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
-              eq(dbSchema.boardClimbAliases.boardType, boardType),
-            ),
-          )
-          .leftJoin(
-            dbSchema.boardClimbs,
-            and(
-              sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
-              eq(dbSchema.boardClimbs.boardType, boardType),
-            ),
-          )
-          .leftJoin(
-            dbSchema.boardClimbStats,
-            and(
-              sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbStats.climbUuid}`,
-              eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbStats.boardType),
-              eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbStats.angle),
-            ),
-          )
-          .where(baseConditions)
-          .groupBy(dbSchema.boardClimbs.layoutId, effectiveDifficultyExpr),
+      //
+      // All three run inside ONE withSerialPlan transaction per board type. This
+      // resolver fans out over every SUPPORTED_BOARDS entry, so it was issuing up
+      // to 21 concurrent aggregates over boardsesh_ticks ⋈ board_climbs ⋈
+      // board_climb_stats — the highest concurrent DSM demand in the codebase, and
+      // enough for a single profile load to exhaust /dev/shm (#4105). Sharing one
+      // transaction also caps concurrency at one connection per board type rather
+      // than three, which matters against a `max: 10` pool. Queries on a single
+      // postgres.js connection run sequentially, so this trades a little latency
+      // on the You page for not falling over.
+      const [gradeResults, distinctByLayout, distinctClimbs] = await withSerialPlan(db, (tx) =>
+        Promise.all([
+          tx
+            .select({
+              layoutId: dbSchema.boardClimbs.layoutId,
+              difficulty: effectiveDifficultyExpr.as('effective_difficulty'),
+              distinctCount: sql<number>`count(distinct ${dbSchema.boardseshTicks.climbUuid})`.as('distinct_count'),
+            })
+            .from(dbSchema.boardseshTicks)
+            // Resolve dedup-merged climbs to their canonical UUID so the layout +
+            // stats lookups land on the canonical row. See the `ticks` resolver.
+            .leftJoin(
+              dbSchema.boardClimbAliases,
+              and(
+                eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
+                eq(dbSchema.boardClimbAliases.boardType, boardType),
+              ),
+            )
+            .leftJoin(
+              dbSchema.boardClimbs,
+              and(
+                sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
+                eq(dbSchema.boardClimbs.boardType, boardType),
+              ),
+            )
+            .leftJoin(
+              dbSchema.boardClimbStats,
+              and(
+                sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbStats.climbUuid}`,
+                eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbStats.boardType),
+                eq(dbSchema.boardseshTicks.angle, dbSchema.boardClimbStats.angle),
+              ),
+            )
+            .where(baseConditions)
+            .groupBy(dbSchema.boardClimbs.layoutId, effectiveDifficultyExpr),
 
-        db
-          .select({
-            layoutId: dbSchema.boardClimbs.layoutId,
-            distinctCount: sql<number>`count(distinct ${dbSchema.boardseshTicks.climbUuid})`.as('distinct_count'),
-          })
-          .from(dbSchema.boardseshTicks)
-          .leftJoin(
-            dbSchema.boardClimbAliases,
-            and(
-              eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
-              eq(dbSchema.boardClimbAliases.boardType, boardType),
-            ),
-          )
-          .leftJoin(
-            dbSchema.boardClimbs,
-            and(
-              sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
-              eq(dbSchema.boardClimbs.boardType, boardType),
-            ),
-          )
-          .where(baseConditions)
-          .groupBy(dbSchema.boardClimbs.layoutId),
+          tx
+            .select({
+              layoutId: dbSchema.boardClimbs.layoutId,
+              distinctCount: sql<number>`count(distinct ${dbSchema.boardseshTicks.climbUuid})`.as('distinct_count'),
+            })
+            .from(dbSchema.boardseshTicks)
+            .leftJoin(
+              dbSchema.boardClimbAliases,
+              and(
+                eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
+                eq(dbSchema.boardClimbAliases.boardType, boardType),
+              ),
+            )
+            .leftJoin(
+              dbSchema.boardClimbs,
+              and(
+                sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
+                eq(dbSchema.boardClimbs.boardType, boardType),
+              ),
+            )
+            .where(baseConditions)
+            .groupBy(dbSchema.boardClimbs.layoutId),
 
-        db
-          .selectDistinct({ climbUuid: dbSchema.boardseshTicks.climbUuid })
-          .from(dbSchema.boardseshTicks)
-          .where(baseConditions),
-      ]);
+          tx
+            .selectDistinct({ climbUuid: dbSchema.boardseshTicks.climbUuid })
+            .from(dbSchema.boardseshTicks)
+            .where(baseConditions),
+        ]),
+      );
 
       return { gradeResults, distinctByLayout, distinctClimbs, boardType };
     };

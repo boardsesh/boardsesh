@@ -1,6 +1,7 @@
 import { desc, sql, and, eq } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats, boardClimbGrades } from '../../schema/index';
+import { withSerialPlan } from '../util/serial-plan';
 import { createClimbFilters } from './create-climb-filters';
 import { getClimbStars } from './climb-stars';
 import { getGradeLabel } from './grade-lookup';
@@ -88,8 +89,6 @@ function mapResultToClimbRow(result: RawSelectResult, params: BoardRouteParams):
 
 type TransactionDb = Parameters<Parameters<DbInstance['transaction']>[0]>[0];
 type SearchDb = DbInstance | TransactionDb;
-type SearchDbTransaction = DbInstance['transaction'];
-type SearchDbExecute = (query: unknown) => Promise<unknown>;
 export type StatsDrivenSort = 'ascents' | 'quality';
 
 /**
@@ -110,16 +109,6 @@ export function getStatsDrivenSort(sortBy: string, sortOrder: 'asc' | 'desc'): S
   if (sortOrder !== 'desc') return null;
   if (sortBy === 'ascents' || sortBy === 'quality') return sortBy;
   return null;
-}
-
-function getTransaction(db: SearchDb): SearchDbTransaction | null {
-  const candidate = db as SearchDb & { transaction?: unknown };
-  return typeof candidate.transaction === 'function' ? (candidate.transaction.bind(db) as SearchDbTransaction) : null;
-}
-
-function getExecute(db: SearchDb): SearchDbExecute | null {
-  const candidate = db as SearchDb & { execute?: unknown };
-  return typeof candidate.execute === 'function' ? (candidate.execute.bind(db) as SearchDbExecute) : null;
 }
 
 /**
@@ -266,9 +255,8 @@ export function chooseSearchPath(input: {
  * stops after pageSize+1 qualifying rows — but with a narrow grade band + size
  * predicates + a larger pageSize + a page>0 OFFSET, the planner can still pick a
  * parallel plan, and each worker's DSM allocation can exhaust a small /dev/shm
- * (#3856). Disable per-gather parallelism inside a transaction (SET LOCAL needs
- * one; the pool runs prepare:false behind PgBouncer transaction pooling),
- * mirroring the standardSearch / countClimbs / getHoldHeatmapData guards.
+ * (#3856). `withSerialPlan` disables per-gather parallelism inside a transaction,
+ * the same guard standardSearch / countClimbs / getSetterStats use.
  *
  * The INNER JOIN excludes climbs without a stats row at this angle. The caller
  * (`searchClimbs`) compensates on any page without stats filters, whenever this
@@ -287,24 +275,7 @@ async function statsDrivenSearch(
   page: number,
   pageSize: number,
 ): Promise<ClimbSearchResult> {
-  const transaction = getTransaction(db);
-  if (transaction) {
-    return transaction(async (transactionDb) => {
-      await transactionDb.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
-      return runStatsDrivenSearch(transactionDb, params, filters, sortBy, page, pageSize);
-    });
-  }
-
-  // Reached only by execute-only query test doubles. Production call sites pass
-  // top-level DbInstance values so the transaction branch scopes SET LOCAL
-  // correctly; do not broaden searchClimbs to TransactionDb without revisiting
-  // that planner guard.
-  const execute = getExecute(db);
-  if (execute) {
-    await execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
-  }
-
-  return runStatsDrivenSearch(db, params, filters, sortBy, page, pageSize);
+  return withSerialPlan(db, (tx) => runStatsDrivenSearch(tx, params, filters, sortBy, page, pageSize));
 }
 
 async function runStatsDrivenSearch(
@@ -412,45 +383,19 @@ async function standardSearch(
   pageSize: number,
   orderStatsHavingFirst: boolean,
 ): Promise<ClimbSearchResult> {
-  const transaction = getTransaction(db);
-  if (transaction) {
-    return transaction(async (transactionDb) => {
-      await transactionDb.execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
-      return runStandardSearch(
-        transactionDb,
-        params,
-        searchParams,
-        filters,
-        sortBy,
-        sortOrder,
-        isDraftsQuery,
-        page,
-        pageSize,
-        orderStatsHavingFirst,
-      );
-    });
-  }
-
-  // Reached only by execute-only query test doubles. Production call sites pass
-  // top-level DbInstance values so the transaction branch scopes SET LOCAL
-  // correctly; do not broaden searchClimbs to TransactionDb without revisiting
-  // that planner guard.
-  const execute = getExecute(db);
-  if (execute) {
-    await execute(sql`SET LOCAL max_parallel_workers_per_gather = 0`);
-  }
-
-  return runStandardSearch(
-    db,
-    params,
-    searchParams,
-    filters,
-    sortBy,
-    sortOrder,
-    isDraftsQuery,
-    page,
-    pageSize,
-    orderStatsHavingFirst,
+  return withSerialPlan(db, (tx) =>
+    runStandardSearch(
+      tx,
+      params,
+      searchParams,
+      filters,
+      sortBy,
+      sortOrder,
+      isDraftsQuery,
+      page,
+      pageSize,
+      orderStatsHavingFirst,
+    ),
   );
 }
 

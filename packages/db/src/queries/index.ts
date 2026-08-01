@@ -16,3 +16,4 @@ export * from './grade-model/index';
 export * from './sessions/index';
 export * from './ticks/index';
 export * from './util/rows';
+export * from './util/serial-plan';

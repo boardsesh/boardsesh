@@ -2,6 +2,7 @@ import { eq, and, desc, sql, or, isNull } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
+import { withSerialPlan } from '@boardsesh/db/queries';
 import { requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
 import { ActivityFeedInputSchema } from '../../../validation/schemas';
 import { encodeCursor, decodeCursor } from '../../../utils/feed-cursor';
@@ -234,56 +235,62 @@ export const activityFeedQueries = {
     }
 
     const whereClause = and(...conditions);
-    const results = await db
-      .select({
-        tick: dbSchema.boardseshTicks,
-        userName: dbSchema.users.name,
-        userImage: dbSchema.users.image,
-        userDisplayName: dbSchema.userProfiles.displayName,
-        userAvatarUrl: dbSchema.userProfiles.avatarUrl,
-        climbName: dbSchema.boardClimbs.name,
-        climbDescription: dbSchema.boardClimbs.description,
-        setterUsername: dbSchema.boardClimbs.setterUsername,
-        layoutId: dbSchema.boardClimbs.layoutId,
-        frames: dbSchema.boardClimbs.frames,
-        difficultyName: dbSchema.boardDifficultyGrades.boulderName,
-      })
-      .from(dbSchema.boardseshTicks)
-      .innerJoin(dbSchema.users, eq(dbSchema.boardseshTicks.userId, dbSchema.users.id))
-      .leftJoin(dbSchema.userProfiles, eq(dbSchema.boardseshTicks.userId, dbSchema.userProfiles.userId))
-      // Resolve dedup-merged climbs to their canonical UUID before joining
-      // board_climbs. A tick may point at an alias UUID that was deduplicated
-      // away (no board_climbs row); the alias table maps it to the canonical.
-      // Ticks already on a canonical have no alias row, so COALESCE falls back to
-      // the tick's own climb_uuid. The PK (board_type, alias_uuid) keeps the join
-      // to ≤1 row, so it never fans out. Otherwise these ticks render "Unknown
-      // Climb" in the trending feed.
-      .leftJoin(
-        dbSchema.boardClimbAliases,
-        and(
-          eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
-          eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbAliases.boardType),
-        ),
-      )
-      .innerJoin(
-        dbSchema.boardClimbs,
-        and(
-          sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
-          eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
-          sql`${dbSchema.boardClimbs.isDraft} IS NOT TRUE`,
-          sql`${dbSchema.boardClimbs.isListed} IS NOT FALSE`,
-        ),
-      )
-      .leftJoin(
-        dbSchema.boardDifficultyGrades,
-        and(
-          eq(dbSchema.boardseshTicks.difficulty, dbSchema.boardDifficultyGrades.difficulty),
-          eq(dbSchema.boardseshTicks.boardType, dbSchema.boardDifficultyGrades.boardType),
-        ),
-      )
-      .where(whereClause)
-      .orderBy(desc(dbSchema.boardseshTicks.climbedAt), desc(dbSchema.boardseshTicks.id))
-      .limit(limit + 1);
+    // board_climbs INNER JOIN boardsesh_ticks is two large tables with no
+    // selective predicate when no boardUuid is supplied — the planner picks a
+    // parallel hash join, and this feed is public, unauthenticated and rate-limit
+    // free, so a burst of home-screen loads can exhaust /dev/shm (#4105).
+    const results = await withSerialPlan(db, (tx) =>
+      tx
+        .select({
+          tick: dbSchema.boardseshTicks,
+          userName: dbSchema.users.name,
+          userImage: dbSchema.users.image,
+          userDisplayName: dbSchema.userProfiles.displayName,
+          userAvatarUrl: dbSchema.userProfiles.avatarUrl,
+          climbName: dbSchema.boardClimbs.name,
+          climbDescription: dbSchema.boardClimbs.description,
+          setterUsername: dbSchema.boardClimbs.setterUsername,
+          layoutId: dbSchema.boardClimbs.layoutId,
+          frames: dbSchema.boardClimbs.frames,
+          difficultyName: dbSchema.boardDifficultyGrades.boulderName,
+        })
+        .from(dbSchema.boardseshTicks)
+        .innerJoin(dbSchema.users, eq(dbSchema.boardseshTicks.userId, dbSchema.users.id))
+        .leftJoin(dbSchema.userProfiles, eq(dbSchema.boardseshTicks.userId, dbSchema.userProfiles.userId))
+        // Resolve dedup-merged climbs to their canonical UUID before joining
+        // board_climbs. A tick may point at an alias UUID that was deduplicated
+        // away (no board_climbs row); the alias table maps it to the canonical.
+        // Ticks already on a canonical have no alias row, so COALESCE falls back to
+        // the tick's own climb_uuid. The PK (board_type, alias_uuid) keeps the join
+        // to ≤1 row, so it never fans out. Otherwise these ticks render "Unknown
+        // Climb" in the trending feed.
+        .leftJoin(
+          dbSchema.boardClimbAliases,
+          and(
+            eq(dbSchema.boardseshTicks.climbUuid, dbSchema.boardClimbAliases.aliasUuid),
+            eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbAliases.boardType),
+          ),
+        )
+        .innerJoin(
+          dbSchema.boardClimbs,
+          and(
+            sql`COALESCE(${dbSchema.boardClimbAliases.canonicalUuid}, ${dbSchema.boardseshTicks.climbUuid}) = ${dbSchema.boardClimbs.uuid}`,
+            eq(dbSchema.boardseshTicks.boardType, dbSchema.boardClimbs.boardType),
+            sql`${dbSchema.boardClimbs.isDraft} IS NOT TRUE`,
+            sql`${dbSchema.boardClimbs.isListed} IS NOT FALSE`,
+          ),
+        )
+        .leftJoin(
+          dbSchema.boardDifficultyGrades,
+          and(
+            eq(dbSchema.boardseshTicks.difficulty, dbSchema.boardDifficultyGrades.difficulty),
+            eq(dbSchema.boardseshTicks.boardType, dbSchema.boardDifficultyGrades.boardType),
+          ),
+        )
+        .where(whereClause)
+        .orderBy(desc(dbSchema.boardseshTicks.climbedAt), desc(dbSchema.boardseshTicks.id))
+        .limit(limit + 1),
+    );
 
     const hasMore = results.length > limit;
     const resultRows = hasMore ? results.slice(0, limit) : results;
