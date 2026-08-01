@@ -4,6 +4,7 @@
  * See docs/board-climb-holds-repair.md before pointing this at a remote DB.
  */
 import { pathToFileURL } from 'node:url';
+import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { sql, type SQLWrapper } from 'drizzle-orm';
 import { executeRows } from '../src/client/index.js';
 import { createScriptDb, describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
@@ -118,13 +119,17 @@ type CandidateJoinedRow = {
 };
 
 export async function fetchCandidateClimbs(executor: RepairQueryExecutor): Promise<RepairClimbInput[]> {
+  const auroraBoardList = sql.join(
+    AURORA_BOARDS.map((boardName) => sql`${boardName}`),
+    sql`, `,
+  );
   const joinedRows = await executeRows<CandidateJoinedRow>(
     executor,
     sql`
       WITH candidate_keys AS (
         SELECT bc.board_type, bc.uuid, TRUE AS multi_frame_target
         FROM board_climbs bc
-        WHERE bc.board_type IN ('kilter', 'tension', 'decoy', 'touchstone', 'grasshopper', 'soill')
+        WHERE bc.board_type IN (${auroraBoardList})
           AND bc.frames_count > 1
         UNION ALL
         SELECT invalid.board_type, invalid.climb_uuid AS uuid, FALSE AS multi_frame_target
@@ -298,11 +303,14 @@ function climbIdentityKey(boardType: string, climbUuid: string): string {
 }
 
 export async function applyRepairManifest(executor: RepairQueryExecutor, manifest: RepairManifest): Promise<void> {
-  const blockerCount = manifest.entries.reduce((total, entry) => total + entry.blockers.length, 0);
-  if (manifest.counts.blockers > 0 || blockerCount > 0) {
+  const recomputedBlockerCount = manifest.entries.reduce((total, entry) => total + entry.blockers.length, 0);
+  if (manifest.counts.blockers !== recomputedBlockerCount) {
     throw new Error(
-      `refusing to apply a repair manifest with ${Math.max(manifest.counts.blockers, blockerCount)} blocker(s)`,
+      `refusing to apply a repair manifest with inconsistent blocker counts: summary=${manifest.counts.blockers} entries=${recomputedBlockerCount}`,
     );
+  }
+  if (recomputedBlockerCount > 0) {
+    throw new Error(`refusing to apply a repair manifest with ${recomputedBlockerCount} blocker(s)`);
   }
 
   const changedEntries = manifest.entries.filter((entry) => entry.changed);

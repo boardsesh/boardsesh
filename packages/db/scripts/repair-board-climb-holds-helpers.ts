@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
-  HOLD_STATE_MAP,
   isAuroraBoardName,
+  legacyAuroraRawFrameHoldEvents,
   parseFramesSegments,
   projectAuroraFramesToStoredRows,
   type StoredClimbHoldRow,
@@ -178,19 +178,7 @@ export function fingerprintFromRepairRows(rows: ReadonlyArray<RepairHoldRow>): s
  */
 export function fingerprintFromLegacyFrameTokens(boardType: string, frames: string | null): string | null {
   if (!isAuroraBoardName(boardType) || !frames) return null;
-
-  const legacyRows: RepairHoldRow[] = [];
-  const setToken = /p(-?\d+)r(\d+)/g;
-  for (const [frameNumber, segment] of parseFramesSegments(frames).entries()) {
-    setToken.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = setToken.exec(segment.body)) !== null) {
-      const holdId = Number(match[1]);
-      const roleCode = Number(match[2]);
-      const holdState = HOLD_STATE_MAP[boardType][roleCode]?.name ?? `${holdId}=${roleCode}`;
-      legacyRows.push({ holdId, frameNumber, holdState });
-    }
-  }
+  const legacyRows = legacyAuroraRawFrameHoldEvents(frames, boardType);
   return legacyRows.length > 0 ? fingerprintFromRepairRows(legacyRows) : null;
 }
 

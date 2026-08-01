@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { AURORA_BOARDS } from '@boardsesh/shared-schema';
 import { sql, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
@@ -20,12 +21,30 @@ import {
 import { createScriptDb, isLocalDatabaseUrl } from './db-connection.js';
 import { executeRows } from '../src/client/index.js';
 
+function compiledQuery(query: unknown) {
+  return new PgDialect().sqlToQuery(query as SQL);
+}
+
 function renderedSql(query: unknown): string {
-  return new PgDialect()
-    .sqlToQuery(query as SQL)
-    .sql.replaceAll(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+  return compiledQuery(query).sql.replaceAll(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function blockedRepairManifest() {
+  return buildRepairManifest(
+    [
+      {
+        boardType: 'tension',
+        uuid: 'blocked-missing-placement',
+        layoutId: 1,
+        frames: 'p1r1,"p2r2',
+        framesCount: 2,
+        holdFingerprint: null,
+        multiFrameTarget: true,
+        rows: [],
+      },
+    ],
+    new Set([placementKey('tension', 1, 1)]),
+  );
 }
 
 void test('dry-run issues reads only and never starts a transaction', async () => {
@@ -50,6 +69,36 @@ void test('dry-run issues reads only and never starts a transaction', async () =
   assert.equal(transactionStarted, false);
   assert.equal(executed.length, 1);
   assert.match(renderedSql(executed[0]), /invalid\.hold_id <= 0/);
+});
+
+void test('candidate query binds every Aurora board once and preserves both candidate paths', async () => {
+  let capturedQuery: unknown;
+  const executor = {
+    execute(query: unknown) {
+      capturedQuery = query;
+      return Promise.resolve([]);
+    },
+  };
+
+  assert.deepEqual(await fetchCandidateClimbs(executor), []);
+  assert.ok(capturedQuery);
+  const candidateQuery = compiledQuery(capturedQuery);
+  const boundParameters = candidateQuery.params.map((parameter): unknown => parameter);
+  assert.deepEqual(boundParameters, [...AURORA_BOARDS]);
+  assert.equal(
+    boundParameters.some((parameter) => String(parameter) === 'moonboard'),
+    false,
+  );
+
+  const statement = renderedSql(capturedQuery);
+  assert.match(statement, /where bc\.board_type in \([^)]*\) and bc\.frames_count > 1/);
+  assert.match(statement, /union all select invalid\.board_type/);
+  assert.match(statement, /from board_climb_holds invalid where invalid\.hold_id <= 0/);
+  assert.match(statement, /inner join board_climbs bc on bc\.uuid = candidate_identity\.uuid/);
+  assert.doesNotMatch(
+    statement,
+    /inner join board_climbs bc on bc\.uuid = candidate_identity\.uuid and bc\.board_type/,
+  );
 });
 
 void test('apply requires digest, exact count guards, and a maximum affected count', () => {
@@ -328,21 +377,7 @@ void test('apply and verification batch changed identities while preserving empt
 });
 
 void test('direct apply rejects a blocked manifest before executing a mutation', async () => {
-  const manifest = buildRepairManifest(
-    [
-      {
-        boardType: 'tension',
-        uuid: 'blocked-missing-placement',
-        layoutId: 1,
-        frames: 'p1r1,"p2r2',
-        framesCount: 2,
-        holdFingerprint: null,
-        multiFrameTarget: true,
-        rows: [],
-      },
-    ],
-    new Set([placementKey('tension', 1, 1)]),
-  );
+  const manifest = blockedRepairManifest();
   let executorCalls = 0;
   const executor = {
     execute() {
@@ -352,6 +387,48 @@ void test('direct apply rejects a blocked manifest before executing a mutation',
   };
 
   await assert.rejects(applyRepairManifest(executor, manifest), /refusing to apply.*1 blocker/);
+  assert.equal(executorCalls, 0);
+});
+
+void test('direct apply rejects an underreported blocker summary before executing a mutation', async () => {
+  const manifest = blockedRepairManifest();
+  const inconsistentManifest = {
+    ...manifest,
+    counts: { ...manifest.counts, blockers: manifest.counts.blockers - 1 },
+  };
+  let executorCalls = 0;
+  const executor = {
+    execute() {
+      executorCalls += 1;
+      return Promise.resolve([]);
+    },
+  };
+
+  await assert.rejects(
+    applyRepairManifest(executor, inconsistentManifest),
+    /inconsistent blocker counts: summary=0 entries=1/,
+  );
+  assert.equal(executorCalls, 0);
+});
+
+void test('direct apply rejects an overreported blocker summary before executing a mutation', async () => {
+  const manifest = blockedRepairManifest();
+  const inconsistentManifest = {
+    ...manifest,
+    counts: { ...manifest.counts, blockers: manifest.counts.blockers + 1 },
+  };
+  let executorCalls = 0;
+  const executor = {
+    execute() {
+      executorCalls += 1;
+      return Promise.resolve([]);
+    },
+  };
+
+  await assert.rejects(
+    applyRepairManifest(executor, inconsistentManifest),
+    /inconsistent blocker counts: summary=2 entries=1/,
+  );
   assert.equal(executorCalls, 0);
 });
 
