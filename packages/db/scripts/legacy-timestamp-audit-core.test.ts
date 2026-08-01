@@ -741,6 +741,7 @@ void describe('artifact primitives', () => {
 
   void it('rejects raw identifiers, comments, session ids, and DSNs', () => {
     for (const unsafe of [
+      { id: 'raw' },
       { userId: 'raw' },
       { user_id: 'raw' },
       { uuid: 'raw' },
