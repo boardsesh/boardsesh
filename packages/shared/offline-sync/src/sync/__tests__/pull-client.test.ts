@@ -12,6 +12,7 @@ vi.mock('../checkpoints', () => ({
   rewindDeletionsCheckpoint: vi.fn().mockResolvedValue(undefined),
   compareCheckpoints: vi.fn().mockReturnValue(0),
   DELETIONS_CHECKPOINT_KEY: 'checkpoint:deletions',
+  SCOPE_COMPLETE_PREFIX: 'scope-complete:',
 }));
 
 vi.mock('../table-config', async () => {
@@ -92,7 +93,7 @@ describe('pullSync', () => {
     graphqlFetch = vi.fn() as unknown as GraphqlFetchMock;
   });
 
-  function setupGraphqlFetchForAllTables(enabledBoards: string[] = []) {
+  function setupGraphqlFetchForAllTables() {
     graphqlFetch.mockImplementation(async (query: string) => {
       const deletionsMatch = query.includes('syncDeletions');
       if (deletionsMatch) {

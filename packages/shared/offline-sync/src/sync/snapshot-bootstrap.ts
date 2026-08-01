@@ -126,15 +126,19 @@ export class SnapshotPermanentMissError extends Error {
 
 export type BootstrapScopeMetadata = {
   /** Counted transient bootstrap failures persisted for this scope. */
-  attempts: number;
+  readonly attempts: number;
   /** The scope has imported a snapshot, even if its delta pull has not finished yet. */
-  isBootstrapDone: boolean;
+  readonly isBootstrapDone: boolean;
   /** The latest bootstrap decision for this scope selected the ordinary paged crawl. */
-  isPagedFallback: boolean;
+  readonly isPagedFallback: boolean;
   /** Either board table has a checkpoint, so the scope is no longer bootstrap-eligible. */
-  hasBoardCheckpoint: boolean;
+  readonly hasBoardCheckpoint: boolean;
   /** The whole scope has reached the tail and can serve complete offline results. */
-  isScopeComplete: boolean;
+  readonly isScopeComplete: boolean;
+};
+
+type MutableBootstrapScopeMetadata = {
+  -readonly [Field in keyof BootstrapScopeMetadata]: BootstrapScopeMetadata[Field];
 };
 
 const BOARD_CLIMBS_CHECKPOINT_PREFIX = 'checkpoint:board_climbs:';
@@ -193,7 +197,7 @@ export async function getBootstrapMetadataByScope(
   const rows = await db.getAllAsync<{ key: string; value: string }>(BOOTSTRAP_METADATA_QUERY, [
     ...BOOTSTRAP_METADATA_PATTERNS,
   ]);
-  const metadataByScope = new Map<string, BootstrapScopeMetadata>();
+  const metadataByScope = new Map<string, MutableBootstrapScopeMetadata>();
 
   for (const row of rows) {
     const attemptsScopeKey = row.key.startsWith(BOOTSTRAP_ATTEMPTS_PREFIX)

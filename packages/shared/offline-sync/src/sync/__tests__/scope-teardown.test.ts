@@ -295,7 +295,9 @@ describe('removeBoardScopeData — markers', () => {
 
     expect(new Set(keys)).toEqual(
       new Set([
-        ...BOARD_DATA_TABLES.map((table) => `checkpoint:${table}:kilter:1:5`),
+        'checkpoint:board_climbs:kilter:1:5',
+        'checkpoint:board_climb_stats:kilter:1:5',
+        'checkpoint:board_climb_grades:kilter:1:5',
         'scope-complete:kilter:1:5',
         'bootstrap-attempts:kilter:1:5',
         'bootstrap-done:kilter:1:5',

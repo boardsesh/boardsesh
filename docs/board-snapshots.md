@@ -171,12 +171,13 @@ Implemented in `snapshot-bootstrap.ts` (the ATTACH/import/verify mechanics) and 
 `pull-client.ts`'s `runBootstrapPhase`, which runs **before** the deletions phase of every sync cycle.
 
 **Eligibility**: a board scope (`boardType:layoutId:sizeId`) is only considered when it has **no
-checkpoint on either `board_climbs` or `board_climb_stats`** (i.e. genuinely fresh — nothing pulled yet)
-and its bootstrap attempt count is under `MAX_BOOTSTRAP_ATTEMPTS` (2). One artifact download is shared
-across every size of the same `(boardType, layoutId)` within a cycle.
+checkpoint on either snapshot-backed table, `board_climbs` or `board_climb_stats`** (i.e. genuinely
+fresh for the snapshot) and its bootstrap attempt count is under `MAX_BOOTSTRAP_ATTEMPTS` (2). The
+ordinary paged sync still downloads `board_climb_grades` before the scope is reported complete. One
+artifact download is shared across every size of the same `(boardType, layoutId)` within a cycle.
 
 A scope torn down from **More → Storage** becomes eligible again: `removeBoardScopeData`
-(`sync/scope-teardown.ts`) clears the scope's checkpoints **and** its `bootstrap-attempts:` /
+(`sync/scope-teardown.ts`) clears all three board-data checkpoints **and** its `bootstrap-attempts:` /
 `bootstrap-done:` / `bootstrap-paged-fallback:` markers in the same transaction as the rows, so a re-download takes the snapshot fast
 path rather than a paged crawl — and `onScopeDownloadComplete` attributes it honestly instead of
 reporting a stale `method: 'snapshot'` for a run that actually paged. All three marker prefixes are exported

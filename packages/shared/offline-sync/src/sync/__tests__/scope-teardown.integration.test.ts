@@ -151,11 +151,12 @@ describe('re-downloading a removed board', () => {
 
     await removeBoardScopeData({ db, scope: SCOPE, scopeKey: SCOPE_KEY, retainedScopes: [] });
 
-    // Attempts reset and both board checkpoints gone — the two conditions
+    // Attempts reset and every board-data checkpoint gone — the conditions
     // runBootstrapPhase requires before it will warm a scope from a snapshot.
     expect(await getBootstrapAttempts(db, SCOPE_KEY)).toBe(0);
     expect(await getCheckpoint(db, `checkpoint:board_climbs:${SCOPE_KEY}`)).toBeNull();
     expect(await getCheckpoint(db, `checkpoint:board_climb_stats:${SCOPE_KEY}`)).toBeNull();
+    expect(await getCheckpoint(db, `checkpoint:board_climb_grades:${SCOPE_KEY}`)).toBeNull();
     expect(
       await db.getFirstAsync('SELECT key FROM sync_meta WHERE key = ?', [`bootstrap-paged-fallback:${SCOPE_KEY}`]),
     ).toBeNull();
