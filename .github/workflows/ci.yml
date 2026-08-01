@@ -163,6 +163,8 @@ jobs:
               - 'packages/sync-runtime/**'
               - 'packages/shared-schema/src/sync-error-codes.ts'
               - 'packages/shared-schema/src/__tests__/sync-error-codes.test.ts'
+              - 'scripts/prepare-aurora-circuit-integration-db.ts'
+              - 'scripts/prepare-aurora-circuit-integration-db.test.ts'
               - 'packages/{aurora-sync,db,sync-runtime,shared-schema,web}/package.json'
             rootCi:
               - '.github/workflows/ci.yml'
@@ -670,7 +672,7 @@ jobs:
           POSTGRES_PASSWORD: password
           POSTGRES_DB: main
         ports:
-          - 5432:5432
+          - 5433:5432
         options: >-
           --health-cmd "pg_isready -U postgres -d main"
           --health-interval 10s
@@ -689,9 +691,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: built-packages
+      - name: Prepare Aurora circuit arbitration database gate
+        env:
+          ALLOW_AURORA_CIRCUIT_SCHEMA_COMPAT: '1'
+          DATABASE_URL: postgresql://postgres:password@localhost:5433/main
+        run: vp node --import tsx scripts/prepare-aurora-circuit-integration-db.ts
       - name: Run Aurora circuit arbitration database gate
         env:
-          DATABASE_URL: postgresql://postgres:password@localhost:5432/main
+          DATABASE_URL: postgresql://postgres:password@localhost:5433/main
           REQUIRE_AURORA_CIRCUIT_INTEGRATION: '1'
         run: >-
           vp test run --project aurora-sync
@@ -699,7 +706,7 @@ jobs:
           --reporter=verbose --reporter=github-actions
       - name: Run Aurora daemon/web arbitration database gate
         env:
-          DATABASE_URL: postgresql://postgres:password@localhost:5432/main
+          DATABASE_URL: postgresql://postgres:password@localhost:5433/main
           REQUIRE_AURORA_CIRCUIT_INTEGRATION: '1'
         run: >-
           vp test run --project web
