@@ -18,9 +18,8 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { convertLitUpHoldsStringToMap, isSentinelHoldState } from '@boardsesh/board-constants/hold-states';
-import type { BoardName } from '@boardsesh/shared-schema';
 import { createScriptDb } from './db-connection.js';
+import { projectBackfillFrames } from './backfill-board-climb-holds-helpers.js';
 import { executeRows, executeCommandCount } from '../src/client/index.js';
 
 const args = process.argv.slice(2);
@@ -42,34 +41,6 @@ function parseBatchSize(): number {
 }
 const batchSize = parseBatchSize();
 const dryRun = args.includes('--dry-run');
-
-type ParsedHold = {
-  holdId: number;
-  frameNumber: number;
-  holdState: string;
-};
-
-/**
- * Mirrors `parseFramesToHoldEntries` in
- * `packages/backend/src/graphql/resolvers/climbs/climb-similarity.ts` — kept
- * inline here because `@boardsesh/db` does not depend on the backend
- * package. If you tweak the parser's behaviour, update both sites.
- */
-function parseFrames(boardType: BoardName, frames: string): ParsedHold[] {
-  if (!frames) return [];
-  const frameMap = convertLitUpHoldsStringToMap(frames, boardType);
-  const rows: ParsedHold[] = [];
-  for (const [frameIndexKey, holdsMap] of Object.entries(frameMap)) {
-    const frameNumber = Number(frameIndexKey);
-    for (const [holdIdKey, hold] of Object.entries(holdsMap)) {
-      if (isSentinelHoldState(hold.state)) continue;
-      const holdId = Number(holdIdKey);
-      if (!Number.isFinite(holdId)) continue;
-      rows.push({ frameNumber, holdId, holdState: hold.state });
-    }
-  }
-  return rows;
-}
 
 async function main() {
   const { db, close } = createScriptDb();
@@ -158,7 +129,7 @@ async function main() {
         }> = [];
 
         for (const climb of batchRows) {
-          const parsed = parseFrames(bt.board_type as BoardName, climb.frames);
+          const parsed = projectBackfillFrames(bt.board_type, climb.frames);
           if (parsed.length === 0) {
             // Unparseable frames text — log and skip. These rows will stay
             // out of the duplicate gate / similar-climbs index; without a
