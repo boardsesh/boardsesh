@@ -219,6 +219,8 @@ describe('parseArgs', () => {
   });
 });
 
+// Intentionally source-based and test-load-bearing: workflow job-boundary or
+// formatting changes fail closed so the privileged path gets deliberate review.
 describe('workflow comment trust boundary', () => {
   const workflowSource = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), '../.github/workflows/db-migration-renumber.yml'),

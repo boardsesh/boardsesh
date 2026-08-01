@@ -87,16 +87,7 @@ function renderRenumberWorkflowComment(input) {
     return heldBody(context, recheckReason || 'The PR changed or was opted out during the final re-check.');
   }
 
-  if (pushOutcome === 'failure') {
-    return heldBody(context, 'Force-pushing the locally renumbered branch failed.');
-  }
-
-  return heldBody(
-    context,
-    pushOutcome === 'skipped' || !pushOutcome
-      ? 'The force-push was skipped after local renumbering.'
-      : `The force-push did not succeed (step outcome: ${pushOutcome}).`,
-  );
+  return heldBody(context, `The force-push ${failedStepState(pushOutcome)} after local renumbering.`);
 }
 
 module.exports = { STICKY_MARKER, renderRenumberWorkflowComment };

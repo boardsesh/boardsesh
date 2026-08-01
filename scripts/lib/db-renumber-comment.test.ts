@@ -11,6 +11,18 @@ const context = {
 
 const successfulComment = `${STICKY_MARKER}\n\n### 🔢 Renumbered onto \`main\``;
 
+function heldComment(detail: string) {
+  return [
+    STICKY_MARKER,
+    '',
+    '### 🚧 Renumbering was held',
+    '',
+    detail,
+    '',
+    'See the [run log](https://github.com/boardsesh/boardsesh/actions/runs/123). Nothing was pushed.',
+  ].join('\n');
+}
+
 function decide(overrides: Record<string, string> = {}) {
   return renderRenumberWorkflowComment({
     renumberStatus: 'renumbered',
@@ -100,25 +112,13 @@ describe('renderRenumberWorkflowComment', () => {
     expect(body).not.toContain('Renumbered onto');
   });
 
-  it('reports a real force-push failure rather than claiming the local renumber landed', () => {
-    const body = decide({ pushOutcome: 'failure' });
-
-    expect(body).toContain('Force-pushing');
-    expect(body).toContain('Nothing was pushed.');
-    expect(body).not.toContain('Renumbered onto');
-  });
-
-  it('treats an empty/skipped push outcome under always() as held', () => {
-    for (const pushOutcome of ['', 'skipped']) {
-      expect(decide({ pushOutcome })).toContain('Nothing was pushed.');
-    }
-  });
-
-  it('reports a cancelled force-push as held', () => {
-    const body = decide({ pushOutcome: 'cancelled' });
-
-    expect(body).toContain('step outcome: cancelled');
-    expect(body).toContain('Nothing was pushed.');
+  it.each([
+    ['failure', 'failure', 'The force-push failed after local renumbering.'],
+    ['skipped', 'skipped', 'The force-push was skipped after local renumbering.'],
+    ['empty', '', 'The force-push was skipped after local renumbering.'],
+    ['cancelled', 'cancelled', 'The force-push did not succeed (step outcome: cancelled) after local renumbering.'],
+  ])('reports a %s force-push outcome as held', (_caseName, pushOutcome, detail) => {
+    expect(decide({ pushOutcome })).toBe(heldComment(detail));
   });
 
   it('falls back to a held comment when renumbering fails without script output', () => {
