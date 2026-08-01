@@ -166,13 +166,21 @@ describe('DaemonLease', () => {
 
     await lease.acquire();
     heartbeat!(); // renew now parked in flight
-    await lease.stop(); // releases while that renew is still pending
+    let stopSettled = false;
+    const stopCompletion = lease.stop().then(() => {
+      stopSettled = true;
+    });
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
     expect(release).toHaveBeenCalledTimes(1);
+    expect(stopSettled).toBe(false);
 
     // The parked renew resolves as "we still hold it" — i.e. it re-created the
     // row after the DELETE. A compensating release must clear the zombie.
     resolveRenew!(true);
-    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(2));
+    await stopCompletion;
+    expect(release).toHaveBeenCalledTimes(2);
+    expect(stopSettled).toBe(true);
     expect(lease.isHeld()).toBe(false);
   });
 

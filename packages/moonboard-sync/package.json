@@ -23,6 +23,11 @@
       "types": "./src/sync/index.ts",
       "import": "./src/sync/index.ts",
       "default": "./src/sync/index.ts"
+    },
+    "./runner": {
+      "types": "./src/runner/index.ts",
+      "import": "./src/runner/index.ts",
+      "default": "./src/runner/index.ts"
     }
   },
   "scripts": {
@@ -33,11 +38,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "vp lint",
     "lint-fix": "vp lint --fix",
+    "sync:daemon": "tsx src/cli/index.ts daemon --skip-if-missing-credentials",
     "sync:locations": "tsx src/cli/index.ts locations --skip-if-missing-credentials"
   },
   "dependencies": {
     "@boardsesh/db": "workspace:*",
     "@boardsesh/location-sync": "workspace:*",
+    "@boardsesh/sync-runtime": "workspace:*",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2"
