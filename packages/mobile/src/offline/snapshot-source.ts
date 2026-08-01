@@ -11,10 +11,14 @@
 //
 // The engine only consumes what this returns — it never fetches, downloads, or
 // gunzips anything itself (see snapshot-bootstrap.ts's `SnapshotSource`
-// contract). Every failure path here (disk space, download error, a stubborn
-// gzip body) returns `null`/throws, which the engine counts as one bootstrap
-// attempt and falls back to the ordinary paged crawl (MAX_BOOTSTRAP_ATTEMPTS
-// caps it at two tries before giving up on the snapshot path for that scope).
+// contract). Every failure path here (disk space, directory creation, download
+// error, a stubborn gzip body) THROWS a descriptive Error, which the engine
+// counts as one bootstrap attempt and falls back to the ordinary paged crawl
+// (MAX_BOOTSTRAP_ATTEMPTS caps it at two tries before giving up on the
+// snapshot path for that scope) — see `runBootstrapPhase`'s `cachedDownload`
+// handling in pull-client.ts, which only captures a `cause` for Sentry when
+// this throws (issue #4106: these used to `return null` on real failures,
+// which is a legal contract but reported `cause: null` for everything).
 
 import { Directory, File, Paths } from 'expo-file-system';
 import { SnapshotPermanentMissError, type SnapshotManifestEntry, type SnapshotSource } from '@boardsesh/offline-sync';
@@ -114,17 +118,41 @@ async function fetchManifest(): Promise<unknown> {
   }
 }
 
+/** Same idiom as `formatError` in offline-sync's mutation-queue/drainer.ts. */
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The disk-space, directory-creation, and actual-download failure branches
+ * below used to `return null` on a real error, which is a legal SnapshotSource
+ * contract (see the doc comment on downloadArtifact in snapshot-bootstrap.ts —
+ * "return null or throw, both count as an attempt"), but it meant
+ * `runBootstrapPhase`'s `cachedDownload.cause` (only ever set inside a
+ * `catch`) stayed `null` for every one of these — so Sentry's
+ * `reportSnapshotBootstrapError` reported `cause: null` for every real-world
+ * download failure, with no way to tell a 404 from a timeout from a disk-full
+ * device without reproducing it (issue #4106). Throwing instead of swallowing
+ * keeps the exact same retry/attempt/fallback semantics — only the visibility
+ * changes.
+ */
 async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePath: string } | null> {
   const freeSpaceSafetyMultiplier =
     entry.contentEncoding === 'gzip' ? GZIP_FREE_SPACE_SAFETY_MULTIPLIER : IDENTITY_FREE_SPACE_SAFETY_MULTIPLIER;
   const requiredBytes = entry.bytes * freeSpaceSafetyMultiplier;
-  if (Paths.availableDiskSpace < requiredBytes) return null;
+  const availableBytes = Paths.availableDiskSpace;
+  if (availableBytes < requiredBytes) {
+    throw new Error(
+      `snapshot download: insufficient disk space for ${entry.boardType}:${entry.layoutId} ` +
+        `(need ~${requiredBytes} bytes, have ${availableBytes} bytes free)`,
+    );
+  }
 
   const directory = snapshotDirectory();
   try {
     directory.create({ intermediates: true, idempotent: true });
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(`snapshot download: failed to create cache directory: ${formatError(error)}`);
   }
 
   // Content-addressed filename (boardType/layoutId/builtAt) so a retried
@@ -136,8 +164,10 @@ async function downloadArtifact(entry: SnapshotManifestEntry): Promise<{ filePat
   let downloaded: File;
   try {
     downloaded = await File.downloadFileAsync(entry.url, destination, { idempotent: true });
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(
+      `snapshot download: File.downloadFileAsync failed for ${entry.boardType}:${entry.layoutId}: ${formatError(error)}`,
+    );
   }
 
   if (entry.contentEncoding === 'gzip') {
