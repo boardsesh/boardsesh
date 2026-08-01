@@ -131,6 +131,9 @@ export class MemoryRateLimiter {
     this.pruneExpired(requestTime, true);
     if (this.entries.size < this.maxEntries) return;
 
+    // Map order makes this the insertion-oldest live identity. This is an O(1)
+    // bounded-memory fallback, not an expiry-priority queue; Redis remains the
+    // authoritative cross-instance tier when configured.
     const oldestIdentifier = this.entries.keys().next().value;
     if (typeof oldestIdentifier === 'string') this.entries.delete(oldestIdentifier);
   }
