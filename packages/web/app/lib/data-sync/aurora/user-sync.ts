@@ -9,11 +9,7 @@ import {
 import { eq, and, inArray, asc } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { foreignPlaylistOwnerGuard, selectUpstreamPlaylistOwners } from '@boardsesh/db/queries';
-import {
-  resolveUpstreamPlaylistWrite,
-  canWriteUpstreamPlaylist,
-  upstreamPlaylistSkipLogLine,
-} from '@boardsesh/sync-runtime';
+import { resolveUpstreamPlaylistWrite, upstreamPlaylistSkipLogLine } from '@boardsesh/sync-runtime';
 import { normalizePlaylistColor } from '@boardsesh/shared-schema';
 import { UNIFIED_TABLES } from '../../db/queries/util/table-select';
 import { auroraCredentials, playlists, playlistClimbs, playlistOwnership } from '../../db/schema';
@@ -341,7 +337,7 @@ export async function upsertTableData(
 
       for (const item of circuitItems) {
         const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
-        if (!canWriteUpstreamPlaylist(decision)) {
+        if (decision === 'foreign' || decision === 'ambiguous') {
           // Refuse the whole dual-write — upsert, ownership grant AND the
           // playlist_climbs replace below. Skipping only the upsert would still
           // wipe the other user's climbs further down.
