@@ -14,6 +14,7 @@ import {
   type MappedCatalogClimb,
   type MoonBoardCatalogProblem,
 } from './moonboard-catalog-helpers.js';
+import { recordUnmappedMoonBoardGrade } from './moonboard-helpers.js';
 
 // =============================================================================
 // Staging one catalog file's rows
@@ -120,9 +121,7 @@ export function stageCatalogBatch(args: StageCatalogBatchArgs): CatalogBatchStag
       continue;
     }
     for (const stat of mapped.stats) {
-      if (stat.difficultyId !== undefined) continue;
-      const rawGrade = stat.sourceGrade.trim();
-      if (rawGrade.length > 0) unmappedGrades.set(rawGrade, (unmappedGrades.get(rawGrade) ?? 0) + 1);
+      if (stat.difficultyId === undefined) recordUnmappedMoonBoardGrade(unmappedGrades, stat.sourceGrade);
     }
     const resolved = resolveCatalogClimbUuid(mapped, existingIndex);
 

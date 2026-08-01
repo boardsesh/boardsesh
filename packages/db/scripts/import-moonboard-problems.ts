@@ -12,6 +12,8 @@ import {
   MOONBOARD_UUID_NAMESPACE,
   moonBoardGradeToDifficultyId,
   moonBoardGradeConflictFields,
+  formatUnmappedMoonBoardGrades,
+  recordUnmappedMoonBoardGrade,
   type MoonBoardMove,
 } from './moonboard-helpers.js';
 import { createScriptDb, getScriptDatabaseUrl, describeDatabaseHost } from './db-connection.js';
@@ -192,8 +194,7 @@ async function importMoonBoardProblems() {
         const difficultyId = moonBoardGradeToDifficultyId(problem.grade);
         if (difficultyId === undefined) {
           skippedGrade++;
-          const rawGrade = (problem.grade ?? '').trim();
-          if (rawGrade.length > 0) unmappedGrades.set(rawGrade, (unmappedGrades.get(rawGrade) ?? 0) + 1);
+          recordUnmappedMoonBoardGrade(unmappedGrades, problem.grade);
           continue;
         }
 
@@ -268,12 +269,8 @@ async function importMoonBoardProblems() {
 
       if (skippedGrade > 0) console.info(`   Skipped ${skippedGrade} problems with unknown grade`);
       if (unmappedGrades.size > 0) {
-        const breakdown = [...unmappedGrades.entries()]
-          .sort((left, right) => right[1] - left[1])
-          .map(([grade, count]) => `${grade} (${count})`)
-          .join(', ');
         console.warn(
-          `   ⚠️  Unmapped MoonBoard grades, problems skipped — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`,
+          `   ⚠️  Unmapped MoonBoard grades, problems skipped — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
         );
       }
       if (skippedLayout > 0) console.info(`   Skipped ${skippedLayout} problems with unknown holdsetup`);

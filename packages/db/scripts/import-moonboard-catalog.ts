@@ -15,6 +15,7 @@ import {
 } from './moonboard-catalog-helpers.js';
 import { stageCatalogBatch } from './moonboard-catalog-batch.js';
 import { describeDatabaseHost, getScriptDatabaseUrl } from './db-connection.js';
+import { formatUnmappedMoonBoardGrades } from './moonboard-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -210,12 +211,8 @@ async function importMoonBoardCatalog() {
           `${counters.skippedHijacked} skipped to protect climb rows a merge would repoint`,
       );
       if (unmappedGrades.size > 0) {
-        const breakdown = [...unmappedGrades.entries()]
-          .sort((left, right) => right[1] - left[1])
-          .map(([grade, count]) => `${grade} (${count})`)
-          .join(', ');
         console.warn(
-          `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`,
+          `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
         );
       }
 
