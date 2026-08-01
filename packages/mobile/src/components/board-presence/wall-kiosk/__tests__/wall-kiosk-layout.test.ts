@@ -6,7 +6,13 @@ import {
   ZONE_DOMINANCE_RATIO,
   type WallKioskLayout,
 } from '../wall-kiosk-layout';
-import { resolveWallKioskTypeScale, resolveHeroScale, estimatePhysicalLongSideMm } from '../wall-kiosk-type';
+import {
+  bandContentFloor,
+  resolveWallKioskTypeScale,
+  resolveHeroScale,
+  estimatePhysicalLongSideMm,
+  type WallKioskTypeScale,
+} from '../wall-kiosk-type';
 
 const NO_INSETS = { top: 0, bottom: 0, left: 0, right: 0 };
 
@@ -21,6 +27,41 @@ const PANES = [
 const area = (rect: { width: number; height: number }) => rect.width * rect.height;
 const resolve = (w: number, h: number, ar: number, previous?: Pick<WallKioskLayout, 'region'>) =>
   resolveWallKioskLayout({ paneW: w, paneH: h, insets: NO_INSETS, boardAspectRatio: ar, previous }) as WallKioskLayout;
+
+function preSenderTwoColumnFloor(scale: WallKioskTypeScale): number {
+  const identityColumn =
+    scale.stateLineHeight + 16 + scale.gradeLineHeight + 4 + 2 * scale.nameLineHeight + scale.metaLineHeight + 36;
+  return Math.round(Math.max(identityColumn, 142) + 48 + 32);
+}
+
+function resolveProductionLayout({
+  paneW,
+  paneH,
+  screenLongSide,
+  boardAspectRatio,
+  contentFloorBand,
+}: {
+  paneW: number;
+  paneH: number;
+  screenLongSide: number;
+  boardAspectRatio: number;
+  contentFloorBand?: number;
+}): { layout: WallKioskLayout; typeScale: WallKioskTypeScale; heroScale: number } {
+  const heroScale = resolveHeroScale({
+    physicalLongSideMm: estimatePhysicalLongSideMm(screenLongSide),
+    paneShortSide: Math.min(paneW, paneH),
+  });
+  const typeScale = resolveWallKioskTypeScale(Math.min(paneW, paneH), heroScale);
+  const layout = resolveWallKioskLayout({
+    paneW,
+    paneH,
+    insets: NO_INSETS,
+    boardAspectRatio,
+    heroScale,
+    contentFloorBand: contentFloorBand ?? bandContentFloor(typeScale, quantizeDimension(paneW)),
+  }) as WallKioskLayout;
+  return { layout, typeScale, heroScale };
+}
 
 describe('quantizeDimension', () => {
   it('floors to the nearest 8px and floors junk to 0', () => {
@@ -67,6 +108,83 @@ describe('resolveWallKioskLayout — argmax axis crossovers', () => {
   it('a wide board flips the reserve axis to a BAND even in landscape (kills the v1 starved-rail hole)', () => {
     expect(resolve(1098, 834, 1.81).region).toBe('band');
     expect(resolve(1270, 1024, 1.81).region).toBe('band');
+  });
+
+  it('keeps content-floor growth out of axis selection', () => {
+    const { typeScale, heroScale } = resolveProductionLayout({
+      paneW: 1270,
+      paneH: 1024,
+      screenLongSide: 1366,
+      boardAspectRatio: 1.81,
+    });
+    const normalFloor = bandContentFloor(typeScale, 1270);
+    const normal = resolveWallKioskLayout({
+      paneW: 1270,
+      paneH: 1024,
+      insets: NO_INSETS,
+      boardAspectRatio: 1.81,
+      heroScale,
+      contentFloorBand: normalFloor,
+    }) as WallKioskLayout;
+    const tallerCopy = resolveWallKioskLayout({
+      paneW: 1270,
+      paneH: 1024,
+      insets: NO_INSETS,
+      boardAspectRatio: 1.81,
+      heroScale,
+      contentFloorBand: normalFloor + 44,
+    }) as WallKioskLayout;
+
+    expect(normal.region).toBe('band');
+    expect(tallerCopy.region).toBe(normal.region);
+  });
+});
+
+describe('resolveWallKioskLayout — production attribution geometry', () => {
+  it('keeps both common 11-inch portrait ratios banded, noncompact, and at their pre-sender board size', () => {
+    for (const boardAspectRatio of [0.56, 1.81]) {
+      const production = resolveProductionLayout({
+        paneW: 738,
+        paneH: 1194,
+        screenLongSide: 1194,
+        boardAspectRatio,
+      });
+      const baseline = resolveProductionLayout({
+        paneW: 738,
+        paneH: 1194,
+        screenLongSide: 1194,
+        boardAspectRatio,
+        contentFloorBand: preSenderTwoColumnFloor(production.typeScale),
+      });
+
+      expect(production.layout.region).toBe('band');
+      expect(baseline.layout.region).toBe('band');
+      expect(production.layout.compact).toBe(false); // Lit by + Sent by remain eligible.
+      expect(production.layout.boardRect).toEqual(baseline.layout.boardRect);
+      expect(production.layout.chromeRect).toEqual(baseline.layout.chromeRect);
+    }
+  });
+
+  it('keeps a wide climb on the 13-inch landscape pane in a noncompact band without shrinking its board', () => {
+    const production = resolveProductionLayout({
+      paneW: 1270,
+      paneH: 1024,
+      screenLongSide: 1366,
+      boardAspectRatio: 1.81,
+    });
+    const baseline = resolveProductionLayout({
+      paneW: 1270,
+      paneH: 1024,
+      screenLongSide: 1366,
+      boardAspectRatio: 1.81,
+      contentFloorBand: preSenderTwoColumnFloor(production.typeScale),
+    });
+
+    expect(production.layout.region).toBe('band');
+    expect(baseline.layout.region).toBe('band');
+    expect(production.layout.compact).toBe(false); // Lit by + Sent by remain eligible.
+    expect(production.layout.boardAreaFraction).toBeGreaterThanOrEqual(baseline.layout.boardAreaFraction);
+    expect(production.layout.boardAreaFraction).toBeGreaterThan(0.95);
   });
 });
 
@@ -173,5 +291,14 @@ describe('wall-kiosk-type', () => {
       expect(scale.gradeFontSize).toBeGreaterThan(scale.nameFontSize);
       expect(scale.nameFontSize).toBeGreaterThan(scale.metaFontSize);
     }
+  });
+
+  it('uses band width to fund both attribution rows without inflating common two-column geometry', () => {
+    const scale = resolveWallKioskTypeScale(738, 1);
+    const preSenderFloor = preSenderTwoColumnFloor(scale);
+
+    expect(bandContentFloor(scale, 738)).toBe(preSenderFloor);
+    expect(bandContentFloor(scale, 1270)).toBeLessThan(preSenderFloor);
+    expect(bandContentFloor(scale, 500)).toBe(preSenderFloor + 44);
   });
 });

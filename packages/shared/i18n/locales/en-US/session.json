@@ -28,7 +28,9 @@
     "open": "On the wall",
     "railDark": "Nothing lit right now",
     "openAria": "See what's on the wall",
-    "openAriaWithClimb": "See what's on the wall: {{name}}"
+    "openAriaWithClimb": "See what's on the wall: {{name}}",
+    "litByLine": "Lit by {{name}}",
+    "sentByLabel": "Sent by"
   },
   "detail": {
     "subtitleSends_one": "{{count}} send",

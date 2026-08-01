@@ -522,6 +522,22 @@ export type BoardClimbCleared = {
   seq: Scalars['Int']['output'];
 };
 
+/**
+ * One distinct climber who recently sent the displayed climb on this physical
+ * board. Results are ordered by each climber's latest successful tick.
+ */
+export type BoardClimbRecentSender = {
+  __typename?: 'BoardClimbRecentSender';
+  /** Profile avatar URL, falling back to the auth-account image */
+  avatarUrl?: Maybe<Scalars['String']['output']>;
+  /** Profile display name, falling back to the auth-account name */
+  displayName?: Maybe<Scalars['String']['output']>;
+  /** ISO 8601 timestamp of this climber's latest successful tick for the climb */
+  lastSentAt: Scalars['String']['output'];
+  /** Boardsesh user id, for linking the avatar to their profile */
+  userId: Scalars['ID']['output'];
+};
+
 /** Event: a climb was set (lit) on the wall. */
 export type BoardClimbSet = {
   __typename?: 'BoardClimbSet';
@@ -5002,6 +5018,13 @@ export type Query = {
   /** Get a board by slug (for URL routing). */
   boardBySlug?: Maybe<UserBoard>;
   /**
+   * The five most recent distinct climbers to send or flash a climb at the
+   * displayed angle on this physical board, newest sender first. Canonical and
+   * aliased climb UUIDs share one sender list. Anonymous access is allowed for
+   * public and system-shared boards; private boards are masked as NOT_FOUND.
+   */
+  boardClimbRecentSenders: Array<BoardClimbRecentSender>;
+  /**
    * The board's current connection holder — who's connected and writing right now
    * (the most recent confirmed sender), or null when the board is free. For
    * late-joiner initial state before the `boardNowPlaying` /
@@ -5612,6 +5635,13 @@ export type QueryBoardArgs = {
 /** Root query type for all read operations. */
 export type QueryBoardBySlugArgs = {
   slug: Scalars['String']['input'];
+};
+
+/** Root query type for all read operations. */
+export type QueryBoardClimbRecentSendersArgs = {
+  angle: Scalars['Int']['input'];
+  boardId: Scalars['Int']['input'];
+  climbUuid: Scalars['String']['input'];
 };
 
 /** Root query type for all read operations. */
@@ -8548,6 +8578,7 @@ export type ResolversTypes = ResolversObject<{
   BetaLinkPreview: ResolverTypeWrapper<BetaLinkPreview>;
   BoardCandidate: ResolverTypeWrapper<BoardCandidate>;
   BoardClimbCleared: ResolverTypeWrapper<BoardClimbCleared>;
+  BoardClimbRecentSender: ResolverTypeWrapper<BoardClimbRecentSender>;
   BoardClimbSet: ResolverTypeWrapper<BoardClimbSet>;
   BoardConnectionChanged: ResolverTypeWrapper<BoardConnectionChanged>;
   BoardConnectionHolder: ResolverTypeWrapper<BoardConnectionHolder>;
@@ -8940,6 +8971,7 @@ export type ResolversParentTypes = ResolversObject<{
   BetaLinkPreview: BetaLinkPreview;
   BoardCandidate: BoardCandidate;
   BoardClimbCleared: BoardClimbCleared;
+  BoardClimbRecentSender: BoardClimbRecentSender;
   BoardClimbSet: BoardClimbSet;
   BoardConnectionChanged: BoardConnectionChanged;
   BoardConnectionHolder: BoardConnectionHolder;
@@ -9527,6 +9559,17 @@ export type BoardClimbClearedResolvers<
 > = ResolversObject<{
   clearedAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   seq?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
+  __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
+}>;
+
+export type BoardClimbRecentSenderResolvers<
+  ContextType = ConnectionContext,
+  ParentType extends ResolversParentTypes['BoardClimbRecentSender'] = ResolversParentTypes['BoardClimbRecentSender'],
+> = ResolversObject<{
+  avatarUrl?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  displayName?: Resolver<Maybe<ResolversTypes['String']>, ParentType, ContextType>;
+  lastSentAt?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  userId?: Resolver<ResolversTypes['ID'], ParentType, ContextType>;
   __isTypeOf?: IsTypeOfResolverFn<ParentType, ContextType>;
 }>;
 
@@ -12018,6 +12061,12 @@ export type QueryResolvers<
     ContextType,
     RequireFields<QueryBoardBySlugArgs, 'slug'>
   >;
+  boardClimbRecentSenders?: Resolver<
+    Array<ResolversTypes['BoardClimbRecentSender']>,
+    ParentType,
+    ContextType,
+    RequireFields<QueryBoardClimbRecentSendersArgs, 'angle' | 'boardId' | 'climbUuid'>
+  >;
   boardConnection?: Resolver<
     Maybe<ResolversTypes['BoardConnectionHolder']>,
     ParentType,
@@ -13759,6 +13808,7 @@ export type Resolvers<ContextType = ConnectionContext> = ResolversObject<{
   BetaLinkPreview?: BetaLinkPreviewResolvers<ContextType>;
   BoardCandidate?: BoardCandidateResolvers<ContextType>;
   BoardClimbCleared?: BoardClimbClearedResolvers<ContextType>;
+  BoardClimbRecentSender?: BoardClimbRecentSenderResolvers<ContextType>;
   BoardClimbSet?: BoardClimbSetResolvers<ContextType>;
   BoardConnectionChanged?: BoardConnectionChangedResolvers<ContextType>;
   BoardConnectionHolder?: BoardConnectionHolderResolvers<ContextType>;

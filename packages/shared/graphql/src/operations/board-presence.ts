@@ -252,6 +252,20 @@ export const BOARD_HISTORY = `
   }
 `;
 
+// Query — up to five distinct climbers who most recently sent/flashed this
+// climb at the displayed angle on this physical board. The backend resolves
+// canonical + alias UUIDs before reading ticks.
+export const BOARD_CLIMB_RECENT_SENDERS = `
+  query BoardClimbRecentSenders($boardId: Int!, $climbUuid: String!, $angle: Int!) {
+    boardClimbRecentSenders(boardId: $boardId, climbUuid: $climbUuid, angle: $angle) {
+      userId
+      displayName
+      avatarUrl
+      lastSentAt
+    }
+  }
+`;
+
 // Query — durable + live stats for a board's wall feed.
 export const BOARD_PRESENCE_STATS = `
   query BoardPresenceStats($boardId: Int!) {

@@ -21,6 +21,13 @@ export const AdvertisedBoardTypeSchema = BoardNameSchema.nullish();
 // Live board angle; Aurora supports negative tilt.
 export const BoardPresenceAngleSchema = z.number().int().min(-90).max(90).nullable().optional();
 
+export const BoardClimbRecentSendersArgsSchema = z.object({
+  climbUuid: ClimbUuidSchema.refine((climbUuid) => climbUuid.trim().length > 0, 'Climb UUID cannot be empty').transform(
+    (climbUuid) => climbUuid.trim(),
+  ),
+  angle: z.number().int().min(0).max(90),
+});
+
 export const ReportBoardClimbInputSchema = z.object({
   uuid: z.string().min(1, 'Queue item UUID cannot be empty').max(100, 'Queue item UUID too long'),
   climb: ClimbInputSchema.extend({

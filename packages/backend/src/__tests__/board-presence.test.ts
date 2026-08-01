@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, vi } from 'vite-plus/test';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import { sql } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { MOONBOARD_LAYOUTS, MOONBOARD_SETS, MOONBOARD_SIZE } from '@boardsesh/board-config';
 import type {
@@ -107,6 +107,11 @@ async function waitForSessionBlockedBy(blockingPid: number): Promise<void> {
   throw new Error(`timed out waiting for a PostgreSQL session blocked by pid ${blockingPid}`);
 }
 
+const RECENT_SENDER_TEST_USER_IDS = Array.from(
+  { length: 6 },
+  (_, index) => `board-presence-recent-sender-${index + 1}`,
+);
+
 function authCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext {
   return {
     connectionId: `conn-${Math.random().toString(36).slice(2)}`,
@@ -204,7 +209,9 @@ async function cleanup(): Promise<void> {
   `);
   await db.execute(sql`DELETE FROM board_climbs WHERE uuid IN (${TEST_CLIMB_UUID}, ${OTHER_TEST_CLIMB_UUID})`);
   await db.execute(sql`DELETE FROM user_profiles WHERE user_id = ${TEST_USER_ID}`);
-  await db.execute(sql`DELETE FROM users WHERE id IN (${TEST_USER_ID}, ${SECOND_USER_ID})`);
+  await db
+    .delete(dbSchema.users)
+    .where(inArray(dbSchema.users.id, [TEST_USER_ID, SECOND_USER_ID, ...RECENT_SENDER_TEST_USER_IDS]));
 }
 
 // ============================================================
@@ -1287,6 +1294,178 @@ describe('board-presence resolvers', () => {
     // In the local-only mode this describe runs in, holder events don't fire.
   });
 
+  describe('boardClimbRecentSenders', () => {
+    let serialCounter = 0;
+
+    async function makeBoard(): Promise<number> {
+      const resolved = await boardPresenceMutations.resolveBoardForSerial(
+        undefined,
+        {
+          serial: `SENDERS-${Date.now().toString(36)}-${serialCounter++}`,
+          boardType: 'kilter',
+          layoutId: 1,
+          sizeId: 10,
+          setIds: '1,2',
+        },
+        authCtx(),
+      );
+      return resolved.boardId;
+    }
+
+    function tick({
+      uuid,
+      userId,
+      boardId,
+      climbUuid = TEST_CLIMB_UUID,
+      angle = 40,
+      status = 'send',
+      climbedAt,
+    }: {
+      uuid: string;
+      userId: string;
+      boardId: number;
+      climbUuid?: string;
+      angle?: number;
+      status?: 'flash' | 'send' | 'attempt';
+      climbedAt: string;
+    }): typeof dbSchema.boardseshTicks.$inferInsert {
+      return {
+        uuid,
+        userId,
+        boardId,
+        boardType: 'kilter',
+        climbUuid,
+        angle,
+        status,
+        climbedAt,
+      };
+    }
+
+    it('returns each latest successful sender newest-first across canonical and alias UUIDs', async () => {
+      const boardId = await makeBoard();
+      const otherBoard = await boardPresenceMutations.resolveBoardForConfig(
+        undefined,
+        { boardType: 'kilter', layoutId: 2, sizeId: 20, setIds: '5,6' },
+        authCtx(),
+      );
+      const oldest = '2026-07-01T10:00:00.000Z';
+      const secondLatest = '2026-07-02T10:00:00.000Z';
+      const latest = '2026-07-03T10:00:00.000Z';
+      const excludedLatest = '2026-07-04T10:00:00.000Z';
+
+      await db.insert(dbSchema.boardseshTicks).values([
+        tick({ uuid: `recent-old-${Date.now()}`, userId: TEST_USER_ID, boardId, climbedAt: oldest }),
+        tick({
+          uuid: `recent-alias-${Date.now()}`,
+          userId: TEST_USER_ID,
+          boardId,
+          climbUuid: ALIAS_TEST_CLIMB_UUID,
+          status: 'flash',
+          climbedAt: latest,
+        }),
+        tick({ uuid: `recent-second-${Date.now()}`, userId: SECOND_USER_ID, boardId, climbedAt: secondLatest }),
+        tick({
+          uuid: `recent-attempt-${Date.now()}`,
+          userId: SECOND_USER_ID,
+          boardId,
+          status: 'attempt',
+          climbedAt: excludedLatest,
+        }),
+        tick({
+          uuid: `recent-other-angle-${Date.now()}`,
+          userId: SECOND_USER_ID,
+          boardId,
+          angle: 45,
+          climbedAt: excludedLatest,
+        }),
+        tick({
+          uuid: `recent-other-climb-${Date.now()}`,
+          userId: SECOND_USER_ID,
+          boardId,
+          climbUuid: OTHER_TEST_CLIMB_UUID,
+          climbedAt: excludedLatest,
+        }),
+        tick({
+          uuid: `recent-other-board-${Date.now()}`,
+          userId: SECOND_USER_ID,
+          boardId: otherBoard.boardId,
+          climbedAt: excludedLatest,
+        }),
+      ]);
+
+      const senders = await boardPresenceQueries.boardClimbRecentSenders(
+        undefined,
+        { boardId, climbUuid: ALIAS_TEST_CLIMB_UUID, angle: 40 },
+        authCtx(),
+      );
+
+      expect(senders).toEqual([
+        {
+          userId: TEST_USER_ID,
+          displayName: SENDER_DISPLAY_NAME,
+          avatarUrl: SENDER_AVATAR_URL,
+          lastSentAt: latest,
+        },
+        {
+          userId: SECOND_USER_ID,
+          displayName: 'Second Sender',
+          avatarUrl: null,
+          lastSentAt: secondLatest,
+        },
+      ]);
+
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId, climbUuid: TEST_CLIMB_UUID, angle: 40 },
+          authCtx(),
+        ),
+      ).resolves.toEqual(senders);
+    });
+
+    it('caps the byline at the five latest distinct senders', async () => {
+      const boardId = await makeBoard();
+      await db.insert(dbSchema.users).values(
+        RECENT_SENDER_TEST_USER_IDS.map((userId, index) => ({
+          id: userId,
+          email: `${userId}@example.test`,
+          name: `Recent sender ${index + 1}`,
+        })),
+      );
+      const ticks = RECENT_SENDER_TEST_USER_IDS.map((userId, index) =>
+        tick({
+          uuid: `recent-cap-${index}-${Date.now()}`,
+          userId,
+          boardId,
+          climbedAt: new Date(Date.UTC(2026, 6, 1, index)).toISOString(),
+        }),
+      );
+      await db.insert(dbSchema.boardseshTicks).values(ticks);
+
+      const senders = await boardPresenceQueries.boardClimbRecentSenders(
+        undefined,
+        { boardId, climbUuid: TEST_CLIMB_UUID, angle: 40 },
+        authCtx(),
+      );
+
+      expect(senders.map((sender) => sender.userId)).toEqual([...RECENT_SENDER_TEST_USER_IDS].reverse().slice(0, 5));
+    });
+
+    it('validates climb UUID and angle before querying ticks', async () => {
+      const boardId = await makeBoard();
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(undefined, { boardId, climbUuid: '   ', angle: 40 }, authCtx()),
+      ).rejects.toThrow('Climb UUID cannot be empty');
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId, climbUuid: TEST_CLIMB_UUID, angle: 91 },
+          authCtx(),
+        ),
+      ).rejects.toThrow('Invalid recent senders');
+    });
+  });
+
   describe('boardNowPlaying subscription', () => {
     it('eager-subscribes (awaits the channel) before the first reported climb is delivered', async () => {
       const boardId = await (async () => {
@@ -2139,6 +2318,14 @@ describe('board-presence connection holder', () => {
       const stats = await boardPresenceQueries.boardPresenceStats(undefined, { boardId }, anon());
       expect(stats.climbsSentCount).toBe(0);
       expect(stats.distinctClimbersCount).toBe(0);
+
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId, climbUuid: TEST_CLIMB_UUID, angle: 40 },
+          anon(),
+        ),
+      ).resolves.toEqual([]);
     });
 
     it("masks a private board's history and stats as NOT_FOUND for anonymous viewers, identical to a missing board", async () => {
@@ -2148,6 +2335,12 @@ describe('board-presence connection holder', () => {
       for (const query of [
         (id: number) => boardPresenceQueries.boardHistory(undefined, { boardId: id }, anon()),
         (id: number) => boardPresenceQueries.boardPresenceStats(undefined, { boardId: id }, anon()),
+        (id: number) =>
+          boardPresenceQueries.boardClimbRecentSenders(
+            undefined,
+            { boardId: id, climbUuid: TEST_CLIMB_UUID, angle: 40 },
+            anon(),
+          ),
       ]) {
         const privateError = await query(boardId).then(
           () => null,
@@ -2177,6 +2370,13 @@ describe('board-presence connection holder', () => {
       await expect(boardPresenceQueries.boardHistory(undefined, { boardId }, authCtx())).resolves.toEqual([]);
       const stats = await boardPresenceQueries.boardPresenceStats(undefined, { boardId }, authCtx());
       expect(stats.climbsSentCount).toBe(0);
+      await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId, climbUuid: TEST_CLIMB_UUID, angle: 40 },
+          authCtx(),
+        ),
+      ).resolves.toEqual([]);
     });
   });
 

@@ -5684,6 +5684,14 @@ type Query {
   boardHistory(boardId: Int!, limit: Int, before: String): [BoardPresenceClimb!]!
 
   """
+  The five most recent distinct climbers to send or flash a climb at the
+  displayed angle on this physical board, newest sender first. Canonical and
+  aliased climb UUIDs share one sender list. Anonymous access is allowed for
+  public and system-shared boards; private boards are masked as NOT_FOUND.
+  """
+  boardClimbRecentSenders(boardId: Int!, climbUuid: String!, angle: Int!): [BoardClimbRecentSender!]!
+
+  """
   Lightweight stats for a board's wall feed — durable counts derived from
   `boardsesh_ticks` stamped with this board_id, plus the live window.
   Anonymous access is allowed for public and system-shared boards; private
@@ -7944,6 +7952,21 @@ type BoardPresenceClimb {
   sentAt: String!
   "Monotonic per-board sequence number for ordering and late-joiner dedup"
   seq: Int!
+}
+
+"""
+One distinct climber who recently sent the displayed climb on this physical
+board. Results are ordered by each climber's latest successful tick.
+"""
+type BoardClimbRecentSender {
+  "Boardsesh user id, for linking the avatar to their profile"
+  userId: ID!
+  "Profile display name, falling back to the auth-account name"
+  displayName: String
+  "Profile avatar URL, falling back to the auth-account image"
+  avatarUrl: String
+  "ISO 8601 timestamp of this climber's latest successful tick for the climb"
+  lastSentAt: String!
 }
 
 """

@@ -22,6 +22,15 @@ export type BoardPresenceClimb = {
   seq: number;
 };
 
+/** One distinct climber who recently sent the displayed climb on this wall. */
+export type BoardClimbRecentSender = {
+  userId: string;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  /** ISO 8601 timestamp of this climber's latest successful tick for the climb. */
+  lastSentAt: string;
+};
+
 export type BoardClimbSet = {
   __typename: 'BoardClimbSet';
   climb: BoardPresenceClimb;

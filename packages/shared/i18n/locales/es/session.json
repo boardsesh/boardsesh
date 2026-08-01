@@ -28,7 +28,9 @@
     "open": "En el muro",
     "railDark": "Nada encendido ahora",
     "openAria": "Ver qué hay en el muro",
-    "openAriaWithClimb": "Ver qué hay en el muro: {{name}}"
+    "openAriaWithClimb": "Ver qué hay en el muro: {{name}}",
+    "litByLine": "Encendido por {{name}}",
+    "sentByLabel": "Encadenado por"
   },
   "detail": {
     "subtitleSends_one": "{{count}} encadene",
