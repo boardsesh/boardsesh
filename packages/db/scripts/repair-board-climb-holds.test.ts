@@ -4,6 +4,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   applyRepairManifest,
+  fetchCandidateClimbs,
   getRepairOperatorHint,
   parseRepairArgs,
   runRepair,
@@ -179,6 +180,153 @@ void test('locked malformed/frame-count drift throws before mutation and rolls b
   );
 });
 
+void test('apply and verification batch changed identities while preserving empty projections', async () => {
+  const staleRows: RepairHoldRow[] = [{ holdId: 99, frameNumber: 0, holdState: 'HAND' }];
+  const manifest = buildRepairManifest(
+    [
+      {
+        boardType: 'tension',
+        uuid: 'batch-a',
+        layoutId: 1,
+        frames: 'p1r1,"p2r2',
+        framesCount: 2,
+        holdFingerprint: fingerprintFromRepairRows(staleRows),
+        multiFrameTarget: true,
+        rows: staleRows,
+      },
+      {
+        boardType: 'kilter',
+        uuid: 'batch-b',
+        layoutId: 1,
+        frames: 'p3r42,"p4r43',
+        framesCount: 2,
+        holdFingerprint: fingerprintFromRepairRows(staleRows),
+        multiFrameTarget: true,
+        rows: staleRows,
+      },
+      {
+        boardType: 'tension',
+        uuid: 'batch-empty',
+        layoutId: 1,
+        frames: 'p0r1,"',
+        framesCount: 2,
+        holdFingerprint: fingerprintFromRepairRows(staleRows),
+        multiFrameTarget: true,
+        rows: staleRows,
+      },
+    ],
+    new Set([
+      placementKey('tension', 1, 1),
+      placementKey('tension', 1, 2),
+      placementKey('kilter', 1, 3),
+      placementKey('kilter', 1, 4),
+    ]),
+  );
+  assert.equal(manifest.counts.changedMultiFrameClimbs, 3);
+  assert.equal(manifest.counts.fingerprintUpdates, 3);
+
+  const statements: string[] = [];
+  const projectedByIdentity = new Map(
+    manifest.entries.map((entry) => [`${entry.boardType}/${entry.uuid}`, entry.projectedRows ?? []]),
+  );
+  const executor = {
+    execute(query: unknown) {
+      const statement = renderedSql(query);
+      statements.push(statement);
+      if (statement.includes('delete from board_climb_holds stored') && statement.includes('using changed')) {
+        return Promise.resolve(Array.from({ length: manifest.counts.deleteRows }, () => ({ board_type: 'tension' })));
+      }
+      if (statement.includes('insert into board_climb_holds')) {
+        return Promise.resolve(
+          Array.from(projectedByIdentity.values())
+            .flat()
+            .map(() => ({ board_type: 'tension' })),
+        );
+      }
+      if (statement.includes('update board_climbs stored')) {
+        return Promise.resolve([
+          { board_type: 'tension', uuid: 'batch-a' },
+          { board_type: 'kilter', uuid: 'batch-b' },
+          { board_type: 'tension', uuid: 'batch-empty' },
+        ]);
+      }
+      if (statement.includes('inner join targets')) {
+        return Promise.resolve(
+          manifest.entries.flatMap((entry) =>
+            (entry.projectedRows ?? []).map((row) => ({
+              board_type: entry.boardType,
+              climb_uuid: entry.uuid,
+              hold_id: row.holdId,
+              frame_number: row.frameNumber,
+              hold_state: row.holdState,
+            })),
+          ),
+        );
+      }
+      if (statement.includes('select count(*)::integer as invalid_count')) {
+        return Promise.resolve([{ invalid_count: 0 }]);
+      }
+      throw new Error(`unexpected statement: ${statement}`);
+    },
+  };
+
+  await applyRepairManifest(executor, manifest);
+  await verifyAppliedRepair(executor, manifest);
+
+  assert.equal(statements.filter((statement) => statement.includes('using changed')).length, 1);
+  assert.equal(statements.filter((statement) => statement.includes('update board_climbs stored')).length, 1);
+  assert.equal(statements.filter((statement) => statement.includes('inner join targets')).length, 1);
+
+  const failedFingerprintExecutor = {
+    execute(query: unknown) {
+      const statement = renderedSql(query);
+      if (statement.includes('delete from board_climb_holds stored') && statement.includes('using changed')) {
+        return Promise.resolve(Array.from({ length: manifest.counts.deleteRows }, () => ({ board_type: 'tension' })));
+      }
+      if (statement.includes('insert into board_climb_holds')) {
+        return Promise.resolve(Array.from({ length: manifest.counts.insertRows }, () => ({ board_type: 'tension' })));
+      }
+      if (statement.includes('update board_climbs stored')) {
+        return Promise.resolve([
+          { board_type: 'kilter', uuid: 'batch-b' },
+          { board_type: 'tension', uuid: 'batch-a' },
+        ]);
+      }
+      throw new Error(`unexpected statement: ${statement}`);
+    },
+  };
+  await assert.rejects(
+    applyRepairManifest(failedFingerprintExecutor, manifest),
+    /fingerprint guard failed for tension\/batch-empty/,
+  );
+
+  const missingVerificationExecutor = {
+    execute(query: unknown) {
+      const statement = renderedSql(query);
+      if (statement.includes('inner join targets')) {
+        return Promise.resolve(
+          manifest.entries.flatMap((entry) =>
+            (entry.projectedRows ?? [])
+              .filter((_row, rowIndex) => entry.uuid !== 'batch-b' || rowIndex !== 0)
+              .map((row) => ({
+                board_type: entry.boardType,
+                climb_uuid: entry.uuid,
+                hold_id: row.holdId,
+                frame_number: row.frameNumber,
+                hold_state: row.holdState,
+              })),
+          ),
+        );
+      }
+      if (statement.includes('select count(*)::integer as invalid_count')) {
+        return Promise.resolve([{ invalid_count: 0 }]);
+      }
+      throw new Error(`unexpected statement: ${statement}`);
+    },
+  };
+  await assert.rejects(verifyAppliedRepair(missingVerificationExecutor, manifest), /kilter\/batch-b/);
+});
+
 void test('real Postgres apply deletes, inserts, updates fingerprints, verifies, and reruns idempotently', async (context) => {
   const databaseUrl = process.env.REPAIR_BOARD_CLIMB_HOLDS_TEST_DB_URL ?? process.env.DATABASE_URL;
   if (!databaseUrl || !isLocalDatabaseUrl(databaseUrl)) {
@@ -208,9 +356,11 @@ void test('real Postgres apply deletes, inserts, updates fingerprints, verifies,
       await transaction.execute(sql`
         CREATE TEMP TABLE board_climbs (
           board_type text NOT NULL,
-          uuid text NOT NULL,
-          hold_fingerprint text,
-          PRIMARY KEY (board_type, uuid)
+          uuid text PRIMARY KEY,
+          layout_id integer NOT NULL,
+          frames text,
+          frames_count integer,
+          hold_fingerprint text
         ) ON COMMIT DROP
       `);
       await transaction.execute(sql`
@@ -223,6 +373,41 @@ void test('real Postgres apply deletes, inserts, updates fingerprints, verifies,
           PRIMARY KEY (board_type, climb_uuid, hold_id)
         ) ON COMMIT DROP
       `);
+
+      const mismatchedUuid = 'repair-integration-mismatched-board';
+      await transaction.execute(sql`
+        INSERT INTO board_climbs (board_type, uuid, layout_id, frames, frames_count, hold_fingerprint)
+        VALUES ('tension', ${mismatchedUuid}, 1, 'p3r4', 1, 'parent-fingerprint')
+      `);
+      await transaction.execute(sql`
+        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+        VALUES ('kilter', ${mismatchedUuid}, -7, 0, 'HAND')
+      `);
+      const mismatchedCandidates = await fetchCandidateClimbs(transaction);
+      assert.deepEqual(mismatchedCandidates, [
+        {
+          boardType: 'kilter',
+          uuid: mismatchedUuid,
+          layoutId: 1,
+          frames: 'p3r4',
+          framesCount: 1,
+          holdFingerprint: null,
+          multiFrameTarget: false,
+          rows: [{ holdId: -7, frameNumber: 0, holdState: 'HAND' }],
+        },
+      ]);
+      const mismatchedManifest = buildRepairManifest(mismatchedCandidates, new Set());
+      await applyRepairManifest(transaction, mismatchedManifest);
+      await verifyAppliedRepair(transaction, mismatchedManifest);
+      const [{ invalid_count: mismatchedRows } = { invalid_count: -1 }] = await executeRows<{
+        invalid_count: number;
+      }>(transaction, sql`SELECT COUNT(*)::integer AS invalid_count FROM board_climb_holds`);
+      assert.equal(mismatchedRows, 0);
+      const [{ hold_fingerprint: parentFingerprint }] = await executeRows<{ hold_fingerprint: string | null }>(
+        transaction,
+        sql`SELECT hold_fingerprint FROM board_climbs WHERE uuid = ${mismatchedUuid}`,
+      );
+      assert.equal(parentFingerprint, 'parent-fingerprint');
 
       const initialManifest = buildRepairManifest(
         [
@@ -254,10 +439,10 @@ void test('real Postgres apply deletes, inserts, updates fingerprints, verifies,
       assert.equal(initialManifest.counts.fingerprintUpdates, 1);
 
       await transaction.execute(sql`
-        INSERT INTO board_climbs (board_type, uuid, hold_fingerprint)
+        INSERT INTO board_climbs (board_type, uuid, layout_id, frames, frames_count, hold_fingerprint)
         VALUES
-          ('tension', ${multiUuid}, ${fingerprintFromRepairRows(staleRows)}),
-          ('tension', ${invalidUuid}, NULL)
+          ('tension', ${multiUuid}, 1, ${frames}, 2, ${fingerprintFromRepairRows(staleRows)}),
+          ('tension', ${invalidUuid}, 1, 'p3r4', 1, NULL)
       `);
       await transaction.execute(sql`
         INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
