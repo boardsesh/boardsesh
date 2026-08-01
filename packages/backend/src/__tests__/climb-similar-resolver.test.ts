@@ -81,12 +81,11 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
   } as ConnectionContext;
 }
 
-// The shape varies by select: the board_climb_holds branch yields
-// (holdId, holdState) rows; the legacy-frames fallback yields (frames)
-// rows. Keep the helper polymorphic so callers can drive either path.
+// The joined target rows vary by fixture: materialized holds populate the hold
+// columns, while missing materialized holds leave those columns null.
 function mockSelectChain(rows: ReadonlyArray<Record<string, unknown>>) {
   const chain: Record<string, unknown> = {};
-  for (const method of ['from', 'where', 'limit']) {
+  for (const method of ['from', 'leftJoin', 'where']) {
     chain[method] = vi.fn(() => chain);
   }
   chain.then = (resolve: (value: unknown) => unknown) => Promise.resolve(rows).then(resolve);
@@ -217,8 +216,6 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('never reads the materialised index', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 1, holdState: 'STARTING' }]));
     await climbQueries.similarClimbs(
       {},
@@ -244,8 +241,6 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('looks up Woods physical size from the target climb', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ holdId: 0, holdState: 'STARTING' }]));
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'p0r4', compatibleSizeIds: [2] }]));
     await climbQueries.similarClimbs(
@@ -280,8 +275,6 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('accepts angle -5 and forwards it to the similarity helper as statsAngle: -5', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     // Aurora boards support negative tilt (e.g. grasshopper at -5°). angle is
     // only an optional stats-join key, so a negative value must pass
     // validation and flow straight through to findSimilarClimbs.
@@ -310,14 +303,11 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('climbUuid path reads the target climbs holds and passes them through with excludeUuid set to the target', async () => {
-    mockDb.select
-      .mockReturnValueOnce(mockSelectChain([{ frames: 'p4122r42p4182r43', framesCount: 1 }]))
-      .mockReturnValueOnce(
-        mockSelectChain([
-          { holdId: 4122, holdState: 'STARTING' },
-          { holdId: 4182, holdState: 'HAND' },
-        ]),
-      );
+    const selectChain = mockSelectChain([
+      { frames: 'p4122r42p4182r43', framesCount: 1, holdId: 4122, holdState: 'STARTING' },
+      { frames: 'p4122r42p4182r43', framesCount: 1, holdId: 4182, holdState: 'HAND' },
+    ]);
+    mockDb.select.mockReturnValueOnce(selectChain);
 
     await climbQueries.similarClimbs(
       {},
@@ -348,7 +338,9 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
       { holdId: 4122, holdState: 'STARTING' },
       { holdId: 4182, holdState: 'HAND' },
     ]);
-    // parseFramesToHoldEntries must NOT have been called on the climbUuid path.
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(selectChain.leftJoin).toHaveBeenCalledTimes(1);
+    // A materialized single-frame target must not fall back to parsing.
     expect(parseFramesToHoldEntriesMock).not.toHaveBeenCalled();
   });
 
@@ -386,10 +378,8 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
     expect(mockDb.select).not.toHaveBeenCalled();
   });
 
-  it('short-circuits to an empty array when the target has no holds, without calling the helper', async () => {
-    // Authorized target metadata lookup and holds lookup both return no rows.
-    // Both empty → resolver returns [] without hitting findSimilarClimbs.
-    mockDb.select.mockReturnValueOnce(mockSelectChain([])).mockReturnValueOnce(mockSelectChain([]));
+  it('short-circuits to an empty array when the target climb is missing', async () => {
+    mockDb.select.mockReturnValueOnce(mockSelectChain([]));
 
     const result = await climbQueries.similarClimbs(
       {},
@@ -398,22 +388,36 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
     );
 
     expect(result).toEqual([]);
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(parseFramesToHoldEntriesMock).not.toHaveBeenCalled();
+    expect(findSimilarClimbsMock).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits when an existing target has neither materialized holds nor frames', async () => {
+    mockDb.select.mockReturnValueOnce(
+      mockSelectChain([{ frames: null, framesCount: 1, holdId: null, holdState: null }]),
+    );
+
+    const result = await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 8, climbUuid: 'no-holds-or-frames' } },
+      makeCtx(),
+    );
+
+    expect(result).toEqual([]);
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(parseFramesToHoldEntriesMock).not.toHaveBeenCalled();
     expect(findSimilarClimbsMock).not.toHaveBeenCalled();
   });
 
   it('falls back to parsing board_climbs.frames when board_climb_holds is empty (legacy MoonBoard climbs)', async () => {
-    // Current content authorization runs before the holds or legacy frames lookup.
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ uuid: 'readable-target' }]));
     findSimilarClimbsMock.mockResolvedValue([]);
-    // After authorization: board_climb_holds → no rows (legacy state).
-    // Then board_climbs → returns the frames blob the gate
-    // recorded in the legacy import. The resolver should parse that and
-    // pass the resulting holds to findSimilarClimbs, so the duplicate
-    // drawer doesn't silently surface "no identical climbs" for a match
-    // that absolutely exists.
-    mockDb.select
-      .mockReturnValueOnce(mockSelectChain([{ frames: 'p1r12p2r13', framesCount: 1 }]))
-      .mockReturnValueOnce(mockSelectChain([]));
+    // The LEFT JOIN keeps the climb row and returns null hold columns when the
+    // legacy target has no materialized rows. Parse its frames without a
+    // second query so the duplicate drawer still finds the exact match.
+    mockDb.select.mockReturnValueOnce(
+      mockSelectChain([{ frames: 'p1r12p2r13', framesCount: 1, holdId: null, holdState: null }]),
+    );
     parseFramesToHoldEntriesMock.mockReturnValueOnce([
       { frameNumber: 0, holdId: 1, holdState: 'STARTING' },
       { frameNumber: 0, holdId: 2, holdState: 'HAND' },
@@ -425,6 +429,7 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
       makeCtx(),
     );
 
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
     expect(parseFramesToHoldEntriesMock).toHaveBeenCalledWith('moonboard', 'p1r12p2r13');
     expect(findSimilarClimbsMock).toHaveBeenCalledTimes(1);
     const args = findSimilarClimbsMock.mock.calls[0][0];
@@ -433,7 +438,9 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('parses board_climbs.frames directly for a multi-frame target', async () => {
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'p1r12,"x1p2r13', framesCount: 2 }]));
+    mockDb.select.mockReturnValueOnce(
+      mockSelectChain([{ frames: 'p1r12,"x1p2r13', framesCount: 2, holdId: 999, holdState: 'HAND' }]),
+    );
     parseFramesToHoldEntriesMock.mockReturnValueOnce([
       { frameNumber: 0, holdId: 1, holdState: 'STARTING' },
       { frameNumber: 1, holdId: 2, holdState: 'HAND' },
@@ -454,7 +461,9 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('does not parse a multi-frame target twice when its authoritative projection is empty', async () => {
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'x1,"', framesCount: 2 }]));
+    mockDb.select.mockReturnValueOnce(
+      mockSelectChain([{ frames: 'x1,"', framesCount: 2, holdId: 999, holdState: 'HAND' }]),
+    );
     parseFramesToHoldEntriesMock.mockReturnValueOnce([]);
 
     const result = await climbQueries.similarClimbs(
@@ -471,12 +480,12 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
   });
 
   it('filters nonpositive and noncanonical materialized rows for a single-frame target', async () => {
-    mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'p1r12', framesCount: 1 }])).mockReturnValueOnce(
+    mockDb.select.mockReturnValueOnce(
       mockSelectChain([
-        { holdId: 0, holdState: '0=undefined' },
-        { holdId: -1, holdState: 'HAND' },
-        { holdId: 1, holdState: 'STARTING' },
-        { holdId: 2, holdState: '2=999' },
+        { frames: 'p1r12', framesCount: 1, holdId: 0, holdState: '0=undefined' },
+        { frames: 'p1r12', framesCount: 1, holdId: -1, holdState: 'HAND' },
+        { frames: 'p1r12', framesCount: 1, holdId: 1, holdState: 'STARTING' },
+        { frames: 'p1r12', framesCount: 1, holdId: 2, holdState: '2=999' },
       ]),
     );
 
@@ -486,7 +495,35 @@ describe('climbQueries.similarClimbs — admins keep the live path', () => {
       makeCtx(),
     );
 
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
     expect(findSimilarClimbsMock.mock.calls[0][0].holds).toEqual([{ holdId: 1, holdState: 'STARTING' }]);
     expect(parseFramesToHoldEntriesMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to frames when every single-frame materialized row is invalid', async () => {
+    mockDb.select.mockReturnValueOnce(
+      mockSelectChain([
+        { frames: 'p1r12p2r13', framesCount: 1, holdId: 0, holdState: '0=undefined' },
+        { frames: 'p1r12p2r13', framesCount: 1, holdId: 2, holdState: '2=999' },
+      ]),
+    );
+    parseFramesToHoldEntriesMock.mockReturnValueOnce([
+      { frameNumber: 0, holdId: 1, holdState: 'STARTING' },
+      { frameNumber: 0, holdId: 2, holdState: 'HAND' },
+    ]);
+
+    await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'invalid-materialized' } },
+      makeCtx(),
+    );
+
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(parseFramesToHoldEntriesMock).toHaveBeenCalledTimes(1);
+    expect(parseFramesToHoldEntriesMock).toHaveBeenCalledWith('kilter', 'p1r12p2r13');
+    expect(findSimilarClimbsMock.mock.calls[0][0].holds).toEqual([
+      { holdId: 1, holdState: 'STARTING' },
+      { holdId: 2, holdState: 'HAND' },
+    ]);
   });
 });
