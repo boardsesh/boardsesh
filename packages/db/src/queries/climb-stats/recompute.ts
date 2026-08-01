@@ -372,8 +372,9 @@ function dedupeKeys(keys: ClimbStatsKey[]): ClimbStatsKey[] {
  * noise. Callers pass the DISTINCT keys of the flash/send ticks they wrote.
  *
  * Idempotent: safe to call on a passed transaction (the writer's tx) or a
- * top-level db. Does not open its own transaction — the seed + update are
- * individually idempotent, so a re-run repairs any partial state.
+ * top-level db. Does not open its own transaction. With a top-level db the seed
+ * and update are not atomic; an interruption can leave an empty seed until the
+ * next call, whose individually idempotent statements repair that partial state.
  *
  * Offline propagation: the UPDATE below is a plain SQL UPDATE, so every row
  * whose values actually change fires the BEFORE UPDATE trigger

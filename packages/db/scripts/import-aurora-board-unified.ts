@@ -720,7 +720,7 @@ async function main() {
       // pass a re-run zeroes boardsesh_ascensionist_count AND the quality blend's
       // boardsesh_quality_sum/count (leaving quality_average a stale pure-upstream
       // value). Re-derive them from boardsesh_ticks for every key with >=1
-      // flash/send tick on this board — recomputeClimbStatsBulk rebuilds the
+      // attached flash/send tick on this board — recomputeClimbStatsBulk rebuilds the
       // Boardsesh count, the materialized ascensionist total, the Boardsesh quality
       // terms and the blended quality_average in one set-based pass, updating both
       // the reinserted upstream rows and the preserved owned-climb rows in place;

@@ -1050,7 +1050,7 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     }
   });
 
-  it('single + bulk: owned averages exclude difficulty 0/1 and quality outside 1..5', async () => {
+  it('single + bulk: owned averages defensively exclude legacy/impossible rating sentinels', async () => {
     await seedUser('u-valid-rating', 'Val');
     await seedUser('u-low-rating', 'Lo');
     await seedUser('u-high-rating', 'Hi');
@@ -1058,6 +1058,9 @@ describe('recomputeClimbStats — provenance matrix (real DB)', () => {
     async function seedInvalidAverageFixture(uuid: string) {
       await seedClimb(KEY.boardType, uuid, 'u-valid-rating');
       await seedStats(KEY.boardType, uuid, KEY.angle, { upstream: 0 });
+      // The production CHECK rejects quality 6. This intentionally reduced test
+      // schema omits that constraint so the query-level defence stays covered for
+      // legacy rows or fixtures loaded with constraints disabled.
       await seedTick({
         boardType: KEY.boardType,
         climbUuid: uuid,

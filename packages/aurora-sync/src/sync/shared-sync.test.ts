@@ -702,6 +702,16 @@ describe('board_climb_stats empty-row guard (issue #4068)', () => {
     expect(shimConflictSets.filter((set) => 'upstreamQualityAverage' in set)).toHaveLength(0);
   });
 
+  it('treats an omitted ascensionist count as zero instead of writing NaN', async () => {
+    const statWithoutCount = emptyStat();
+    delete (statWithoutCount as Partial<ClimbStats>).ascensionist_count;
+    mockSharedSync.mockResolvedValueOnce(complete({ climb_stats: [statWithoutCount] }));
+
+    await syncSharedData(fakePostgresClient(), 'decoy', 'token');
+
+    expect(writtenStatsRows()).toHaveLength(0);
+  });
+
   it('bounds the existing-row pre-read by both candidate UUID and angle', async () => {
     mockSharedSync.mockResolvedValueOnce(
       complete({

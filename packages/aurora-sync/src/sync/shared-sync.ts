@@ -512,8 +512,16 @@ type MappedClimbStat = {
   faAt: string | null;
 };
 
+function normalizeAscensionistCount(count: number | null | undefined): number {
+  const numericCount = Number(count ?? 0);
+  return Number.isSafeInteger(numericCount) && numericCount >= 0 ? numericCount : 0;
+}
+
 function mapClimbStat(board: AuroraBoardName, item: ClimbStats): MappedClimbStat {
-  const upstreamAscensionistCount = Number(item.ascensionist_count);
+  // Some Aurora rows omit this nominally-required field. Treat missing or
+  // malformed counts as the same zero sentinel as the other empty-row fields;
+  // never let NaN turn an empty row into a batch-failing INSERT.
+  const upstreamAscensionistCount = normalizeAscensionistCount(item.ascensionist_count);
   const { difficultyAverage, displayDifficulty, benchmarkDifficulty } = parseDifficultyFields(item);
   return {
     boardType: board,
