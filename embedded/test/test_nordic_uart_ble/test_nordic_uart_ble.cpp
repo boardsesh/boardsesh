@@ -17,7 +17,7 @@ static NordicUartBLE* ble;
 // Test callback tracking
 static bool lastConnectState = false;
 static int connectCallbackCount = 0;
-static bool connectCallbackSawConnectionParameterRequest = false;
+static int connectionParameterRequestCountSeenByCallback = 0;
 static std::vector<uint8_t> lastDataReceived;
 static int dataCallbackCount = 0;
 static std::vector<LedCommand> lastLedCommands;
@@ -35,8 +35,8 @@ void testConnectCallback(bool connected) {
     lastConnectState = connected;
     connectCallbackCount++;
     NimBLEServer* server = NimBLEDevice::getServer();
-    connectCallbackSawConnectionParameterRequest =
-        server != nullptr && server->getConnectionParameterUpdateCallCount() > 0;
+    connectionParameterRequestCountSeenByCallback =
+        server == nullptr ? 0 : server->getConnectionParameterUpdateCallCount();
 }
 
 void testDataCallback(const uint8_t* data, size_t len) {
@@ -58,7 +58,7 @@ void setUp(void) {
     NimBLEDevice::mockReset();
     lastConnectState = false;
     connectCallbackCount = 0;
-    connectCallbackSawConnectionParameterRequest = false;
+    connectionParameterRequestCountSeenByCallback = 0;
     lastDataReceived.clear();
     dataCallbackCount = 0;
     lastLedCommands.clear();
@@ -230,10 +230,11 @@ void test_connection_requests_expected_connection_parameters_before_callback(voi
     TEST_ASSERT_EQUAL(kExpectedConnectionLatency, server->getConnectionParameterUpdateLatency());
     TEST_ASSERT_EQUAL(kExpectedConnectionSupervisionTimeout, server->getConnectionParameterUpdateTimeout());
     TEST_ASSERT_EQUAL(1, connectCallbackCount);
-    TEST_ASSERT_TRUE(connectCallbackSawConnectionParameterRequest);
+    TEST_ASSERT_EQUAL(1, connectionParameterRequestCountSeenByCallback);
 }
 
 void test_reconnect_requests_connection_parameters_again(void) {
+    ble->setConnectCallback(testConnectCallback);
     ble->begin("Test Device");
 
     ble_gap_conn_desc firstConnection;
@@ -254,6 +255,9 @@ void test_reconnect_requests_connection_parameters_again(void) {
     TEST_ASSERT_EQUAL(kExpectedConnectionIntervalMax, server->getConnectionParameterUpdateMaxInterval());
     TEST_ASSERT_EQUAL(kExpectedConnectionLatency, server->getConnectionParameterUpdateLatency());
     TEST_ASSERT_EQUAL(kExpectedConnectionSupervisionTimeout, server->getConnectionParameterUpdateTimeout());
+    // The second connect callback observed both parameter requests. If the
+    // reconnect request moved after callback dispatch, this would still be 1.
+    TEST_ASSERT_EQUAL(2, connectionParameterRequestCountSeenByCallback);
 }
 
 void test_connection_callback_called_on_connect(void) {
