@@ -9,6 +9,7 @@ import {
   INTER_CHUNK_DELAY_MS,
   MAX_BLUETOOTH_MESSAGE_SIZE,
   parseSerialNumber,
+  isRetryableAndroidConnectError,
 } from '@boardsesh/ble-protocol';
 import { bleManager } from './ble-manager';
 import { uint8ArrayToBase64, base64ToHex, serviceDataToHex } from './base64';
@@ -29,6 +30,7 @@ import type {
 import { SCAN_TIMEOUT_MS, SERIAL_RECONNECT_GRACE_MS } from '@boardsesh/ble-protocol/scan-constants';
 
 const CONNECTION_TIMEOUT_MS = 12_000;
+const ANDROID_CONNECT_RETRY_BACKOFF_MS = 500;
 
 // The ATT MTU requested after connect. 247 (chunk 244) is the DLE-friendly
 // sweet spot: the iOS-26.5 failure cohort clusters at ATT 512 (#3230), so
@@ -38,6 +40,69 @@ const REQUESTED_ATT_MTU = 247;
 const DEFAULT_ATT_MTU = 23;
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Wait the full retry backoff only when it fits inside the shared deadline.
+ * Whichever timer wins clears the other, so a deadline during backoff cannot
+ * leave a 500ms timer alive after the connect sequence has already settled. */
+function waitForRetryBackoffBeforeDeadline(deadlineMs: number): Promise<boolean> {
+  const remainingMs = deadlineMs - Date.now();
+  if (remainingMs <= 0) return Promise.resolve(false);
+
+  return new Promise<boolean>((resolve) => {
+    let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+    let backoffTimer: ReturnType<typeof setTimeout> | null = null;
+    let settled = false;
+    const settle = (completedFullBackoff: boolean) => {
+      if (settled) return;
+      settled = true;
+      if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+      if (backoffTimer !== null) clearTimeout(backoffTimer);
+      resolve(completedFullBackoff);
+    };
+
+    // Schedule the deadline first so an exact tie preserves the existing
+    // semantics: no second attempt begins once the shared budget is exhausted.
+    deadlineTimer = setTimeout(() => settle(false), remainingMs);
+    backoffTimer = setTimeout(() => settle(true), ANDROID_CONNECT_RETRY_BACKOFF_MS);
+  });
+}
+
+type DeadlineSettlement<T> =
+  | { kind: 'fulfilled'; result: T }
+  | { kind: 'rejected'; error: unknown }
+  | { kind: 'deadline' };
+
+/**
+ * Settle one connect-stage operation without extending the stage's shared
+ * deadline. Both fulfillment and rejection handlers stay attached after the
+ * deadline wins, so a late native promise cannot become an unhandled rejection.
+ */
+async function settleBeforeDeadline<T>(
+  operation: () => Promise<T>,
+  deadlineMs: number,
+): Promise<DeadlineSettlement<T>> {
+  const remainingMs = deadlineMs - Date.now();
+  if (remainingMs <= 0) return { kind: 'deadline' };
+
+  let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  const operationSettlement = Promise.resolve()
+    .then(operation)
+    .then(
+      (result): DeadlineSettlement<T> => ({ kind: 'fulfilled', result }),
+      (error: unknown): DeadlineSettlement<T> => ({ kind: 'rejected', error }),
+    );
+  const deadlineSettlement = new Promise<DeadlineSettlement<T>>((resolve) => {
+    deadlineTimer = setTimeout(() => resolve({ kind: 'deadline' }), remainingMs);
+  });
+
+  return Promise.race([operationSettlement, deadlineSettlement]).finally(() => {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+  });
+}
+
+function connectionTimeoutError(): Error {
+  return new Error('Connection timed out — board may be powered off');
+}
 
 /**
  * Find a write characteristic by service + characteristic UUID, returning
@@ -71,6 +136,9 @@ export class RNBleAdapter implements BluetoothAdapter {
   // Board-level demand for acknowledged writes (see BleAdapterOptions). Fixed
   // for the adapter's lifetime — the board it was built for doesn't change.
   private readonly preferWriteWithResponse: boolean;
+  // Whether a transient first GATT connect failure gets one in-budget retry
+  // (see BleAdapterOptions.enableAndroidConnectRetry) — Android only.
+  private readonly enableAndroidConnectRetry: boolean;
 
   constructor(
     private readonly devicePicker: DevicePickerFn,
@@ -78,6 +146,59 @@ export class RNBleAdapter implements BluetoothAdapter {
     options?: BleAdapterOptions,
   ) {
     this.preferWriteWithResponse = options?.preferWriteWithResponse ?? false;
+    this.enableAndroidConnectRetry = options?.enableAndroidConnectRetry ?? false;
+  }
+
+  /** Connect the already-selected peripheral, optionally recovering one known
+   * Android GATT handshake failure without rescanning or reopening the picker. */
+  private async connectSelectedDevice(
+    selectedDeviceId: string,
+  ): Promise<{ connected: Device; retrySucceeded: boolean }> {
+    const deadlineMs = Date.now() + CONNECTION_TIMEOUT_MS;
+    const attemptConnect = () => settleBeforeDeadline(() => bleManager.connectToDevice(selectedDeviceId), deadlineMs);
+    const cancelWithoutWaiting = () => {
+      void bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
+    };
+
+    const firstAttempt = await attemptConnect();
+    if (firstAttempt.kind === 'deadline') {
+      cancelWithoutWaiting();
+      throw connectionTimeoutError();
+    }
+    if (firstAttempt.kind === 'fulfilled') {
+      return { connected: firstAttempt.result, retrySucceeded: false };
+    }
+
+    const firstError = firstAttempt.error;
+    if (!this.enableAndroidConnectRetry || !isRetryableAndroidConnectError(firstError)) {
+      throw firstError;
+    }
+
+    // Close the failed native GATT handle before retrying. A rejection generally
+    // means it was already closed, so it must not block the retry. A hanging
+    // cleanup is bounded by the original connect deadline.
+    const cleanup = await settleBeforeDeadline(() => bleManager.cancelDeviceConnection(selectedDeviceId), deadlineMs);
+    if (cleanup.kind === 'deadline') throw firstError;
+
+    const completedBackoff = await waitForRetryBackoffBeforeDeadline(deadlineMs);
+    if (!completedBackoff) throw firstError;
+
+    const secondAttempt = await attemptConnect();
+    if (secondAttempt.kind === 'deadline') {
+      cancelWithoutWaiting();
+      throw connectionTimeoutError();
+    }
+    if (secondAttempt.kind === 'fulfilled') {
+      return { connected: secondAttempt.result, retrySucceeded: true };
+    }
+
+    const secondError = secondAttempt.error;
+    if (isRetryableAndroidConnectError(secondError)) {
+      // No third attempt. Give the exhausted handle the same bounded cleanup as
+      // the first while preserving the exact second error for telemetry.
+      await settleBeforeDeadline(() => bleManager.cancelDeviceConnection(selectedDeviceId), deadlineMs);
+    }
+    throw secondError;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -251,18 +372,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       }
     }
 
-    let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
-    const connected = await Promise.race([
-      bleManager.connectToDevice(selectedDeviceId),
-      new Promise<never>((_resolve, reject) => {
-        connectionTimeoutId = setTimeout(() => {
-          bleManager.cancelDeviceConnection(selectedDeviceId).catch(() => {});
-          reject(new Error('Connection timed out — board may be powered off'));
-        }, CONNECTION_TIMEOUT_MS);
-      }),
-    ]).finally(() => {
-      if (connectionTimeoutId != null) clearTimeout(connectionTimeoutId);
-    });
+    const { connected, retrySucceeded } = await this.connectSelectedDevice(selectedDeviceId);
 
     // Negotiate MTU before service discovery (Android requires this order
     // for best results; iOS handles MTU automatically but the call is safe).
@@ -324,6 +434,7 @@ export class RNBleAdapter implements BluetoothAdapter {
       deviceName: selectedDeviceName,
       manufacturerData: selectedManufacturerData,
       serviceData: selectedServiceData,
+      retrySucceeded,
     };
   }
 

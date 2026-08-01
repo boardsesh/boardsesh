@@ -1708,6 +1708,7 @@ export function useBoardBluetooth({
           deviceNamePresent: !!connection.deviceName,
           boardId: analyticsBoardId ?? undefined,
           connectedViaMismatchOverride: getConnectedViaMismatchOverride?.() ?? false,
+          retry_succeeded: connection.retrySucceeded === true,
           bleChosenWriteType: connectionDiagnostics?.chosenWriteType,
           bleSupportsWithoutResponse: connectionDiagnostics?.supportsWriteWithoutResponse,
           bleCharProperties: connectionDiagnostics?.characteristicProperties,
@@ -1796,16 +1797,18 @@ export function useBoardBluetooth({
             Alert.alert(t('ble.connectionFailedTitle'), tCommon('bluetooth.unknownError'));
         }
 
-        track(SHARED_EVENTS.BluetoothConnectionFailed, {
-          boardName,
-          layoutId,
-          sizeId,
-          failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
-          // Raw ble-plx codes (Android) so the real connect-failure cause and the
-          // low-level GATT status are visible for re-measurement (#3608). Empty on
-          // web / native iOS.
-          ...blePlxErrorCodes(error),
-        });
+        if (failureCategory !== 'user_cancelled') {
+          track(SHARED_EVENTS.BluetoothConnectionFailed, {
+            boardName,
+            layoutId,
+            sizeId,
+            failureReason: failureCategory === 'unknown' ? classifyBleFailureReason(error) : failureCategory,
+            // Raw ble-plx codes (Android) so the real connect-failure cause and the
+            // low-level GATT status are visible for re-measurement (#3608). Empty on
+            // web / native iOS.
+            ...blePlxErrorCodes(error),
+          });
+        }
       } finally {
         connectInFlightRef.current = false;
         setLoading(false);
