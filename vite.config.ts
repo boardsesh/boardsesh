@@ -275,6 +275,13 @@ export default defineConfig({
         command: 'bun run --filter=@boardsesh/db db:backfill-moonboard-hardware',
         cache: false,
       },
+      // Repairs only existing catalog-backed MoonBoard 8C/8C+ rows whose grade
+      // columns are still NULL. Requires the full app catalog as input, reports
+      // only by default, and writes only with an explicit `--apply`.
+      'db:repair-moonboard-8c-grades': {
+        command: 'bun run --filter=@boardsesh/db db:repair-moonboard-8c-grades',
+        cache: false,
+      },
       // Repairs ticks whose attempt count was floored to 2 by the mobile
       // quick-tick clamp (#3937). Needs `-- --events <posthog-export>`; add
       // `--dry-run` to report without writing, `--revert <snapshot>` to undo.

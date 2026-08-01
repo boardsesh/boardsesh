@@ -19,6 +19,7 @@ import {
   type MappedCatalogClimb,
 } from './moonboard-catalog-helpers.js';
 import { getScriptDatabaseUrl } from './db-connection.js';
+import { formatUnmappedMoonBoardGrades, recordUnmappedMoonBoardGrade } from './moonboard-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -188,8 +189,7 @@ async function importMoonBoardCatalog() {
           const { uuid, matched: matchedExisting } = resolveCatalogClimbUuid(mapped, existingIndex);
 
           if (mapped.difficultyId === undefined) {
-            const rawGrade = mapped.sourceGrade.trim();
-            if (rawGrade.length > 0) unmappedGrades.set(rawGrade, (unmappedGrades.get(rawGrade) ?? 0) + 1);
+            recordUnmappedMoonBoardGrade(unmappedGrades, mapped.sourceGrade);
           }
 
           // Record the aliases before the dedupe below: when two problems collapse
@@ -288,12 +288,8 @@ async function importMoonBoardCatalog() {
 
       console.info(`   ${matched} matched existing, ${inserted} new; ${skippedProblems} problems skipped`);
       if (unmappedGrades.size > 0) {
-        const breakdown = [...unmappedGrades.entries()]
-          .sort((left, right) => right[1] - left[1])
-          .map(([grade, count]) => `${grade} (${count})`)
-          .join(', ');
         console.warn(
-          `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${breakdown}`,
+          `   ⚠️  Unmapped MoonBoard grades, imported with a NULL grade — add them to MOONBOARD_GRADE_TO_DIFFICULTY: ${formatUnmappedMoonBoardGrades(unmappedGrades)}`,
         );
       }
 
