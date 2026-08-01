@@ -277,6 +277,25 @@ void test('an authoritative empty projection clears SHA256(empty) without touchi
   assert.equal(independentManifest.entries[0]?.fingerprint.shouldUpdate, false);
 });
 
+void test('an unchanged authoritative empty projection still clears its row-derived empty fingerprint', () => {
+  const emptyFingerprint = fingerprintFromRepairRows([]);
+  const manifest = buildRepairManifest(
+    [climb({ frames: 'x1,"', framesCount: 2, holdFingerprint: emptyFingerprint, rows: [] })],
+    placements,
+  );
+
+  assert.equal(manifest.counts.changedMultiFrameClimbs, 0);
+  assert.equal(manifest.counts.deleteRows, 0);
+  assert.equal(manifest.counts.fingerprintUpdates, 1);
+  assert.equal(manifest.counts.affectedClimbs, 1);
+  assert.deepEqual(manifest.entries[0]?.fingerprint, {
+    classification: 'row-derived',
+    old: emptyFingerprint,
+    projected: null,
+    shouldUpdate: true,
+  });
+});
+
 void test('blocked multi-frame input never plans a fingerprint-only mutation', () => {
   const invalidRows = [{ holdId: 0, frameNumber: 0, holdState: '0=999' }];
   const manifest = buildRepairManifest(

@@ -76,15 +76,18 @@ void test('apply requires digest, exact count guards, and a maximum affected cou
 
 void test('locked malformed/frame-count drift throws before mutation and rolls back', async () => {
   const emptyDigest = digestRepairManifest(buildRepairManifest([], new Set()));
-  let executeCount = 0;
+  let candidateQueryCount = 0;
   let rolledBack = false;
   let committed = false;
   let transactionOptions: unknown;
   const transactionStatements: string[] = [];
   const fakeDb = {
-    execute(_query: unknown) {
-      executeCount += 1;
-      if (executeCount === 7) {
+    execute(query: unknown) {
+      const statement = renderedSql(query);
+      if (statement.includes('with candidate_keys as')) {
+        candidateQueryCount += 1;
+      }
+      if (statement.includes('with candidate_keys as') && candidateQueryCount === 2) {
         return Promise.resolve([
           {
             board_type: 'tension',
@@ -148,7 +151,12 @@ void test('locked malformed/frame-count drift throws before mutation and rolls b
     'lock table board_climb_holds in share row exclusive mode',
     "select pg_advisory_xact_lock(hashtext('boardsesh:repair-board-climb-holds:v1'))",
   ]);
-  assert.equal(executeCount, 7, 'no mutation or post-write query should run after locked drift is detected');
+  assert.equal(candidateQueryCount, 2, 'the locked manifest must be rebuilt after the dry-run manifest');
+  assert.equal(
+    transactionStatements.some((statement) => /delete from|insert into|update board_climbs/.test(statement)),
+    false,
+    'no mutation should run after locked drift is detected',
+  );
 });
 
 void test('real Postgres apply deletes, inserts, updates fingerprints, verifies, and reruns idempotently', async (context) => {
