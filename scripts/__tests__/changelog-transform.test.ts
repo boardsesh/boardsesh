@@ -5,6 +5,7 @@ import {
   categorize,
   buildEntries,
   buildNativeReleases,
+  filterChangelogSourcesByReachability,
   isContentEqual,
   renderChangelogMarkdown,
   type RawPullRequest,
@@ -274,6 +275,32 @@ describe('buildEntries', () => {
       body: '## Release Notes\nNewer',
     };
     expect(buildEntries([older, newer]).map((entry) => entry.prNumber)).toEqual([3, 2]);
+  });
+});
+
+describe('filterChangelogSourcesByReachability', () => {
+  const pullRequest = (number: number, mergeCommitOid?: string | null): RawPullRequest => ({
+    number,
+    title: 'fix(mobile): bounded release',
+    body: '## Release Notes\nA bounded fix',
+    mergedAt: '2026-06-10T10:00:00Z',
+    mergeCommitOid,
+    url: `https://github.com/boardsesh/boardsesh/pull/${number}`,
+    labels: [],
+  });
+
+  it('keeps only PRs and native tags reachable from the deployed commit', () => {
+    const sources = filterChangelogSourcesByReachability(
+      [pullRequest(1, 'deployed-pr'), pullRequest(2, 'future-pr'), pullRequest(3, null)],
+      [
+        { platform: 'ios', hash: 'one', sha: 'deployed-tag', date: '2026-06-10T10:00:00Z' },
+        { platform: 'android', hash: 'two', sha: 'future-tag', date: '2026-06-11T10:00:00Z' },
+      ],
+      (commitSha) => commitSha.startsWith('deployed-'),
+    );
+
+    expect(sources.pullRequests.map(({ number }) => number)).toEqual([1]);
+    expect(sources.fingerprintTags.map(({ sha }) => sha)).toEqual(['deployed-tag']);
   });
 });
 

@@ -69,9 +69,34 @@ export type RawPullRequest = {
   title: string;
   body: string | null;
   mergedAt: string | null;
+  /** GitHub's merge/squash commit, used to bound a release to an exact deployed SHA. */
+  mergeCommitOid?: string | null;
   url: string;
   labels: string[];
 };
+
+/**
+ * Bounds live GitHub/tag inputs to commits reachable from the exact deployed
+ * commit. A PR merged while a long production deploy is running must not appear
+ * in the bundle or announcement for the older SHA.
+ */
+export function filterChangelogSourcesByReachability(
+  pullRequests: RawPullRequest[],
+  fingerprintTags: RawFingerprintTag[],
+  isReachable: (commitSha: string) => boolean,
+): { pullRequests: RawPullRequest[]; fingerprintTags: RawFingerprintTag[] } {
+  return {
+    // Missing mergeCommitOid fails closed only when a caller asks for an ancestry
+    // bound. Unbounded/local generation retains its existing behaviour.
+    pullRequests: pullRequests.filter(
+      (pullRequest) =>
+        pullRequest.mergeCommitOid !== null &&
+        pullRequest.mergeCommitOid !== undefined &&
+        isReachable(pullRequest.mergeCommitOid),
+    ),
+    fingerprintTags: fingerprintTags.filter((fingerprintTag) => isReachable(fingerprintTag.sha)),
+  };
+}
 
 // The label that opts a PR out of the changelog entirely (internal-only work).
 export const SKIP_LABEL = 'skip-changelog';

@@ -1,59 +1,83 @@
 name: Mobile OTA Production (Self-Hosted)
 
-# Publishes a production OTA (JS bundle + manifest) to the self-hosted
-# expo-open-ota server on every push to main that touches the mobile app, and on
-# manual dispatch. Safe to auto-run because runtimeVersion uses the `fingerprint`
-# policy: the update only reaches a binary whose native fingerprint matches, so a
-# native change yields a new fingerprint and the OTA simply isn't delivered to old
-# installs (they keep their embedded bundle until a store build with the new
-# fingerprint ships). The matching native builds run in parallel via
-# ios-testflight-rn.yml / android-apk-rn.yml. See docs/mobile-ota-updates.md.
+# Reusable production OTA publisher (JS bundle + manifest) for the self-hosted
+# expo-open-ota server. production-deploy.yml is its only caller: it serializes
+# the whole release, verifies migrations/backend/web first, then passes the exact
+# SHA that reached production. Keeping this file workflow_call-only prevents a
+# second OTA queue from announcing JS before its server dependencies. The
+# fingerprint policy still keeps native-incompatible bundles away from old apps.
 
 on:
-  push:
-    branches: [main]
-    # Matches the native build workflows' trigger set (ios-testflight-rn.yml /
-    # android-apk-rn.yml) so a native build and its OTA fire on the same changes.
-    # packages/shared/** already covers queue / board-config / ble-protocol, which
-    # live under it.
-    paths:
-      - 'packages/mobile/**'
-      - 'packages/shared/**'
-      - 'packages/board-constants/**'
-      - 'packages/shared-schema/**'
-      - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
-      - 'bun.lock'
-      - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
-      - 'scripts/mobile-publish.ts'
-      - 'scripts/lib/mobile-publish-retry.ts'
-      - 'scripts/lib/eoas.ts'
-      - '.github/workflows/mobile-ota-production.yml'
-  workflow_dispatch:
+  workflow_call:
     inputs:
+      commit_sha:
+        description: 'Exact commit that passed the production deployment gates'
+        required: true
+        type: string
+      changelog_base_sha:
+        description: 'Immutable release-range base, or the all-zero SHA when unavailable'
+        required: true
+        type: string
+      changelog_snapshot_sha:
+        description: 'Prior changelog JSON snapshot; normally the range base, or a verified generated descendant'
+        required: true
+        type: string
       message:
-        description: 'Update message (defaults to the commit subject)'
+        description: 'Update message (defaults to the deployed commit hash + subject)'
         required: false
+        type: string
+        default: ''
       platform:
         description: 'Platform to publish (ios, android, all)'
         required: false
+        type: string
         default: 'all'
+    secrets:
+      # Repository-scoped credentials must be forwarded explicitly: reusable
+      # workflows do not inherit caller secrets. GOOGLE_MAPS_API_KEY remains a
+      # Production-environment secret resolved by the called job. The optional
+      # PostHog health key is deliberately read only from `secrets`: the current
+      # same-named environment variable is not consumed because personal keys
+      # must be masked; the health check skips until an administrator migrates it.
+      EOO_TOKEN:
+        required: true
+      OTA_PUSH_APP_PRIVATE_KEY:
+        required: false
+    outputs:
+      configured:
+        description: 'Whether self-hosted OTA infrastructure was configured'
+        value: ${{ jobs.publish.outputs.configured }}
+      all_success:
+        description: 'Whether every requested platform published'
+        value: ${{ jobs.publish.outputs.all_success }}
+      any_success:
+        description: 'Whether at least one requested platform published'
+        value: ${{ jobs.publish.outputs.any_success }}
+      ios_outcome:
+        description: 'iOS publish step outcome'
+        value: ${{ jobs.publish.outputs.ios_outcome }}
+      android_outcome:
+        description: 'Android publish step outcome'
+        value: ${{ jobs.publish.outputs.android_outcome }}
+      health_status:
+        description: 'not-run, unavailable, checked, or alert'
+        value: ${{ jobs.publish.outputs.health_status }}
+      sourcemaps_status:
+        description: 'not-run, ok, or missing — Sentry symbolication for the published bundles'
+        value: ${{ jobs.publish.outputs.sourcemaps_status }}
+      changelog_changed:
+        description: 'Whether changelog generation produced a new snapshot'
+        value: ${{ jobs.publish.outputs.changelog_changed }}
+      changelog_summary_base64:
+        description: 'Base64-encoded Discord-safe changelog summary'
+        value: ${{ jobs.publish.outputs.changelog_summary_base64 }}
 
 permissions:
   # read only: the push-back to main uses a dedicated GitHub App token (it must
   # bypass main's "require a pull request" rule — the default GITHUB_TOKEN can't),
-  # so the workflow token just needs read for checkout/fetch.
+  # so the workflow token just needs checkout/fetch and merged-PR changelog reads.
   contents: read
-
-concurrency:
-  # EXACTLY ONE production OTA publish at a time, repo-wide. This workflow owns
-  # changelog.generated.json (regenerate + push to main), so two concurrent runs
-  # would race on that file. A constant group (not per-ref) serializes push +
-  # dispatch + any branch into a single lane. cancel-in-progress: false never
-  # kills a publish mid-flight; a newer run just queues behind it and supersedes
-  # an older pending one — harmless, since the generator crawls all merged PRs, so
-  # the run that wins republishes the latest state anyway.
-  group: mobile-ota-production
-  cancel-in-progress: false
+  pull-requests: read
 
 # ─── SHARED BUILD ENV (workflow-level) ───────────────────────────────────────
 # MUST stay byte-identical to ios-testflight-rn.yml / android-apk-rn.yml, for two
@@ -113,6 +137,16 @@ jobs:
     timeout-minutes: 150
     # Gates EOO_TOKEN + GOOGLE_MAPS_API_KEY + the EXPO_UPDATES_URL variable.
     environment: Production
+    outputs:
+      configured: ${{ steps.result.outputs.configured }}
+      all_success: ${{ steps.result.outputs.all_success }}
+      any_success: ${{ steps.result.outputs.any_success }}
+      ios_outcome: ${{ steps.result.outputs.ios_outcome }}
+      android_outcome: ${{ steps.result.outputs.android_outcome }}
+      health_status: ${{ steps.result.outputs.health_status }}
+      sourcemaps_status: ${{ steps.result.outputs.sourcemaps_status }}
+      changelog_changed: ${{ steps.result.outputs.changelog_changed }}
+      changelog_summary_base64: ${{ steps.result.outputs.changelog_summary_base64 }}
 
     # EOO_TOKEN (the app-scoped expo-open-ota publish key) is NOT a job-level env:
     # that would expose the publish-capable key to checkout, setup-vp/bun,
@@ -120,8 +154,11 @@ jobs:
     # the two publish steps below. INPUT_* stay here — they're plain inputs
     # referenced in the publish steps' `if:` expressions.
     env:
-      INPUT_PLATFORM: ${{ github.event.inputs.platform || 'all' }}
-      INPUT_MESSAGE: ${{ github.event.inputs.message }}
+      INPUT_COMMIT_SHA: ${{ inputs.commit_sha }}
+      INPUT_CHANGELOG_BASE_SHA: ${{ inputs.changelog_base_sha }}
+      INPUT_CHANGELOG_SNAPSHOT_SHA: ${{ inputs.changelog_snapshot_sha }}
+      INPUT_PLATFORM: ${{ inputs.platform }}
+      INPUT_MESSAGE: ${{ inputs.message }}
 
     steps:
       # Mint the GitHub App token FIRST so checkout persists ITS credentials for
@@ -141,6 +178,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # Never follow a moving main ref after the deploy: this bundle and its
+          # changelog must describe the exact commit the caller verified.
+          ref: ${{ inputs.commit_sha }}
           # Full history so the changelog push-back can rebase onto the latest main.
           fetch-depth: 0
           # The changelog generator reads the `fingerprint-<platform>-<hash>` tags
@@ -152,6 +192,46 @@ jobs:
           # as the app and bypasses the branch's PR rule. Falls back to the default
           # token (read-only checkout) when the app isn't set up.
           token: ${{ steps.push_token.outputs.token || github.token }}
+
+      - name: Verify requested release range
+        run: |
+          set -euo pipefail
+          ZERO_SHA=0000000000000000000000000000000000000000
+          EXPECTED_SHA=$(git rev-parse --verify "${INPUT_COMMIT_SHA}^{commit}")
+          ACTUAL_SHA=$(git rev-parse HEAD)
+          if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+            echo "::error::Checked out $ACTUAL_SHA, expected deployed commit $EXPECTED_SHA"
+            exit 1
+          fi
+
+          if [ "$INPUT_CHANGELOG_BASE_SHA" != "$ZERO_SHA" ]; then
+            BASE_SHA=$(git rev-parse --verify "${INPUT_CHANGELOG_BASE_SHA}^{commit}")
+            if ! git merge-base --is-ancestor "$BASE_SHA" "$EXPECTED_SHA"; then
+              echo "::error::Changelog base $BASE_SHA is not an ancestor of deployed commit $EXPECTED_SHA"
+              exit 1
+            fi
+          fi
+
+          # Snapshot identity is separate from release-range provenance. It is
+          # normally the range base. The only descendant exception is a sequence
+          # of positively identified, single-parent workflow-generated changelog
+          # commits pushed while this target waited in the production queue.
+          if [ "$INPUT_CHANGELOG_SNAPSHOT_SHA" = "$ZERO_SHA" ]; then
+            if [ "$INPUT_CHANGELOG_BASE_SHA" != "$ZERO_SHA" ]; then
+              echo "::error::A non-zero release base cannot use an empty changelog snapshot"
+              exit 1
+            fi
+          else
+            SNAPSHOT_SHA=$(git rev-parse --verify "${INPUT_CHANGELOG_SNAPSHOT_SHA}^{commit}")
+            if [ "$SNAPSHOT_SHA" != "$INPUT_CHANGELOG_BASE_SHA" ]; then
+              VERIFIED_SNAPSHOT=$(DEPLOY_SHA="$EXPECTED_SHA" CURRENT_MAIN_SHA="$SNAPSHOT_SHA" \
+                node scripts/production-deploy-baseline.mjs changelog-snapshot)
+              if [ "$VERIFIED_SNAPSHOT" != "$SNAPSHOT_SHA" ]; then
+                echo "::error::Changelog snapshot $SNAPSHOT_SHA is not a verified generated descendant of $EXPECTED_SHA"
+                exit 1
+              fi
+            fi
+          fi
 
       - uses: voidzero-dev/setup-vp@v1
 
@@ -192,37 +272,34 @@ jobs:
           EOF
 
       # This workflow is the SOLE OWNER of packages/mobile/src/data/changelog.generated.json.
-      # It regenerates the "What's New" changelog from merged-PR Release Notes,
-      # commits it, and pushes it back to main so the committed copy is the single
-      # source of truth (native builds bundle it; the next OTA diffs against it).
-      # Nothing else writes this file: a CI guard blocks PRs from editing it, and
-      # the native-build / refresh workflows only read it. We commit (not just
-      # regenerate) for two reasons: `eoas publish` refuses to run on a dirty tree,
-      # and the committed copy must reach main. The commit carries [skip ci], so the
-      # push can't re-trigger this workflow. Rebase-and-retry guards a non-OTA push
-      # landing on main since checkout (OTA runs are serialized on main, so two of
-      # these never race). Degrades gracefully: a gh/network failure leaves the file
-      # unchanged (no diff → no commit/push) and exits 0. The default GITHUB_TOKEN
-      # reads public PRs. The file is JS-only, so it never affects the fingerprint.
-      # Commit (not just regenerate) for two reasons: `eoas publish` refuses to run
-      # on a dirty tree, and the committed copy is pushed to main below. [skip ci]
-      # keeps the later push from re-triggering this workflow. The file is JS-only,
-      # so it never affects the fingerprint. `changed` tells the push step whether
-      # there's anything to push.
+      # It regenerates the "What's New" files from merged-PR Release Notes bounded
+      # to the exact deployed SHA, then commits locally because `eoas publish`
+      # requires a clean tree. A successful publish may push those files to main;
+      # native builds and refresh workflows only read them, and a CI guard blocks
+      # PR edits. The generated files are JS-only and do not affect fingerprints.
       - name: Generate changelog and commit
         id: generate
         if: steps.gate.outputs.configured == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          # The generator queries live merged PRs, so pin its upper ancestry
+          # bound explicitly or a PR merged during this deploy could be announced
+          # before its commit reaches production.
+          CHANGELOG_THROUGH_SHA: ${{ inputs.commit_sha }}
         run: |
           set -euo pipefail
-          # Snapshot the changelog as it stood BEFORE this run so the Discord notify
-          # step can diff prev→next and announce only what this OTA newly adds. Must
-          # be captured before `generate:changelog` overwrites the working copy. A
-          # first-run/missing file degrades to an empty entry list (full new list).
-          git show HEAD:packages/mobile/src/data/changelog.generated.json \
-            > "$RUNNER_TEMP/changelog.prev.json" 2>/dev/null \
-            || echo '{"entries":[]}' > "$RUNNER_TEMP/changelog.prev.json"
+          # The immutable base still describes release provenance. Read the prior
+          # JSON from the separately validated snapshot so a queued target does not
+          # re-announce entries written by the preceding deploy's generated commit.
+          # A zero snapshot deliberately degrades to an empty list for recovery.
+          ZERO_SHA=0000000000000000000000000000000000000000
+          if [ "$INPUT_CHANGELOG_SNAPSHOT_SHA" != "$ZERO_SHA" ] && \
+            git show "$INPUT_CHANGELOG_SNAPSHOT_SHA:packages/mobile/src/data/changelog.generated.json" \
+              > "$RUNNER_TEMP/changelog.prev.json" 2>/dev/null; then
+            echo "Using changelog snapshot from $INPUT_CHANGELOG_SNAPSHOT_SHA"
+          else
+            echo '{"entries":[]}' > "$RUNNER_TEMP/changelog.prev.json"
+          fi
           vp run generate:changelog
           # Render the "What's new" block (newly-added entries, grouped by category)
           # for Discord. Written to a file the notify step reads; empty when nothing
@@ -267,8 +344,11 @@ jobs:
         # binaries (still on the old one) never receive JS that needs the new native
         # code. Pinning to the last tag instead would do exactly that — a crash.
         run: |
-          args=(--channel production --platform ios)
-          if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
+          publish_message=$INPUT_MESSAGE
+          if [ -z "$publish_message" ]; then
+            publish_message=$(git log -1 --pretty='%h %s' "$INPUT_COMMIT_SHA")
+          fi
+          args=(--channel production --platform ios --message "$publish_message")
           vp run mobile:publish -- "${args[@]}"
 
       # eoas leaves this platform's export in packages/mobile/dist. Upload it
@@ -297,8 +377,11 @@ jobs:
           # iOS publish step; the publish resolves the current commit's fingerprint.)
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
-          args=(--channel production --platform android)
-          if [ -n "$INPUT_MESSAGE" ]; then args+=(--message "$INPUT_MESSAGE"); fi
+          publish_message=$INPUT_MESSAGE
+          if [ -z "$publish_message" ]; then
+            publish_message=$(git log -1 --pretty='%h %s' "$INPUT_COMMIT_SHA")
+          fi
+          args=(--channel production --platform android --message "$publish_message")
           vp run mobile:publish -- "${args[@]}"
 
       - name: Upload Android OTA source maps to Sentry
@@ -357,9 +440,9 @@ jobs:
       # source of truth (native builds bundle it; the next OTA diffs against it).
       # Runs AFTER publish, so the rebase here can't change what was just bundled.
       # The commit carries [skip ci], so this push can't re-trigger the workflow.
-      # Rebase-and-retry guards a non-OTA push landing on main since checkout (OTA
-      # runs are serialized on main, so two of these never race; only this workflow
-      # writes the file, so the rebase can't conflict). The generated commit stays
+      # Rebase-and-retry guards a non-release push landing on main since checkout
+      # (the unified production lane prevents two release writers from racing).
+      # The generated commit stays
       # local when any requested platform fails; the next successful run regenerates
       # it from merged PRs and pushes it.
       # Auth is the app token that checkout persisted (the app is in main's
@@ -408,47 +491,6 @@ jobs:
           echo "::error::Could not push the changelog to main after 3 attempts."
           exit 1
 
-      # Announce the publish to the Discord deploy channel (same webhook + pattern
-      # as ios-testflight-rn.yml / android-apk-rn.yml). Only announce success when
-      # every requested platform succeeded. A `--platform ios` run reports just
-      # "iOS" (the Android step is skipped, not success).
-      - name: Notify deployments channel
-        if: github.ref == 'refs/heads/main' && steps.publish_summary.outputs.all_success == 'true'
-        env:
-          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
-          IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
-          ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
-        run: |
-          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
-            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
-            exit 0
-          fi
-          platforms=""
-          [ "$IOS_OUTCOME" = "success" ] && platforms="iOS"
-          [ "$ANDROID_OUTCOME" = "success" ] && platforms="${platforms:+$platforms, }Android"
-          # Prefer the "What's new" block the generate step rendered from the
-          # changelog diff (the entries this OTA newly added). It's empty when
-          # nothing new shipped (changelog unchanged) — then fall back to the
-          # triggering commit's subject. Read the subject from $COMMIT_SHA, NOT
-          # `git log -1`: by now HEAD is this workflow's own changelog commit, so a
-          # bare `git log -1` would always echo "chore(changelog): refresh…".
-          SUMMARY_FILE="$RUNNER_TEMP/discord-changelog.md"
-          if [ -s "$SUMMARY_FILE" ]; then
-            # Build the header and the block in ONE printf so the newline between
-            # them survives — `$(printf '…\n')$(cat …)` would strip the trailing
-            # newline and glue the header onto the first category label.
-            BODY="$(printf '**What'\''s new**\n%s' "$(cat "$SUMMARY_FILE")")"
-          else
-            BODY="message: ${INPUT_MESSAGE:-$(git log -1 --pretty=%s "$COMMIT_SHA")}"
-          fi
-          CONTENT=$(printf '🚀 **Production OTA published** on `%s`\n• platforms: %s\n• channel: production\n\n%s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$platforms" "$BODY" "$RUN_URL")
-          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
-            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
-              echo "::warning::Failed to post Discord notification (see status above)"
-
       # Post-publish OTA health gate — NON-BLOCKING. Production OTAs publish to our
       # self-hosted server (not EAS), so `eas update:insights` can't see them.
       # Instead we read the app's own launch telemetry from PostHog
@@ -467,7 +509,7 @@ jobs:
       # See docs/mobile-ota-updates.md ("Health monitoring & rollback").
       - name: OTA health check (non-blocking)
         id: health
-        if: always() && github.ref == 'refs/heads/main' && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+        if: always() && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
         continue-on-error: true
         env:
           POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
@@ -481,39 +523,74 @@ jobs:
           sleep 30
           vp run mobile:ota-health-check -- --hours 6 --out "$RUNNER_TEMP/ota-health.md"
 
-      # Surface the health verdict on the same Discord deploy channel as the
-      # publish announcement. Posts only when the check produced a summary (it
-      # writes nothing when skipped for a missing PostHog key). steps.health.outcome
-      # is 'failure' only when the gate tripped (continue-on-error turned the
-      # non-zero exit into a step failure without failing the job).
-      - name: Notify OTA health to Discord
-        if: always() && github.ref == 'refs/heads/main' && steps.gate.outputs.configured == 'true' && (steps.publish_ios.outcome == 'success' || steps.publish_android.outcome == 'success')
+      # The caller owns the one truthful release notification. Return compact,
+      # non-secret facts even when an earlier step failed so its final gate can
+      # distinguish no-op, total failure, and a partially published OTA.
+      - name: Record OTA result
+        id: result
+        if: always()
         env:
-          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GATE_CONFIGURED: ${{ steps.gate.outputs.configured }}
+          ALL_SUCCESS: ${{ steps.publish_summary.outputs.all_success }}
+          ANY_SUCCESS: ${{ steps.publish_summary.outputs.any_success }}
+          IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
+          ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
           HEALTH_OUTCOME: ${{ steps.health.outcome }}
+          IOS_PUBLISH_OUTCOME: ${{ steps.publish_ios.outcome }}
+          ANDROID_PUBLISH_OUTCOME: ${{ steps.publish_android.outcome }}
+          IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
+          ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
+          CHANGELOG_CHANGED: ${{ steps.generate.outputs.changed }}
         run: |
-          SUMMARY_FILE="$RUNNER_TEMP/ota-health.md"
-          if [ ! -s "$SUMMARY_FILE" ]; then
-            echo "No OTA health summary (check skipped or produced no output) — nothing to post."
-            exit 0
-          fi
-          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
-            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
-            exit 0
-          fi
-          HEADER='🩺 **Production OTA health**'
-          [ "$HEALTH_OUTCOME" = "failure" ] && HEADER='🚨 **Production OTA health — emergency-launch spike**'
-          CONTENT=$(printf '%s\n%s\n<%s>' "$HEADER" "$(cat "$SUMMARY_FILE")" "$RUN_URL")
-          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
-            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
-              echo "::warning::Failed to post Discord notification (see status above)"
+          set -euo pipefail
+          configured=${GATE_CONFIGURED:-false}
+          all_success=${ALL_SUCCESS:-false}
+          any_success=${ANY_SUCCESS:-false}
+          changelog_changed=${CHANGELOG_CHANGED:-false}
 
-      # Source-map upload is deliberately non-atomic with OTA publish: by the time
-      # Sentry accepts the Debug ID, the update is already live. Surface that exact
-      # degraded state in the Actions log before the terminal gate turns the run
-      # red. The one Discord failure notification below includes both publish and
-      # source-map outcomes, avoiding a second alert for this same failure.
+          health_status=not-run
+          if [ "$any_success" = true ]; then
+            if [ "$HEALTH_OUTCOME" = failure ]; then
+              health_status=alert
+            elif [ -s "$RUNNER_TEMP/ota-health.md" ]; then
+              health_status=checked
+            else
+              health_status=unavailable
+            fi
+          fi
+
+          changelog_summary_base64=""
+          if [ -s "$RUNNER_TEMP/discord-changelog.md" ]; then
+            changelog_summary_base64=$(base64 -w 0 "$RUNNER_TEMP/discord-changelog.md")
+          fi
+          # Source-map upload is deliberately non-atomic with the publish: by the
+          # time Sentry accepts the Debug ID the update is already live. Report
+          # that degraded state as a fact so the caller's single release
+          # notification can name it instead of a bare workflow failure.
+          sourcemaps_status=not-run
+          if [ "$IOS_PUBLISH_OUTCOME" = success ] || [ "$ANDROID_PUBLISH_OUTCOME" = success ]; then
+            sourcemaps_status=ok
+            if [ "$IOS_PUBLISH_OUTCOME" = success ] && [ "$IOS_MAP_OUTCOME" != success ]; then
+              sourcemaps_status=missing
+            fi
+            if [ "$ANDROID_PUBLISH_OUTCOME" = success ] && [ "$ANDROID_MAP_OUTCOME" != success ]; then
+              sourcemaps_status=missing
+            fi
+          fi
+
+          echo "configured=$configured" >> "$GITHUB_OUTPUT"
+          echo "all_success=$all_success" >> "$GITHUB_OUTPUT"
+          echo "any_success=$any_success" >> "$GITHUB_OUTPUT"
+          echo "ios_outcome=${IOS_OUTCOME:-skipped}" >> "$GITHUB_OUTPUT"
+          echo "android_outcome=${ANDROID_OUTCOME:-skipped}" >> "$GITHUB_OUTPUT"
+          echo "health_status=$health_status" >> "$GITHUB_OUTPUT"
+          echo "sourcemaps_status=$sourcemaps_status" >> "$GITHUB_OUTPUT"
+          echo "changelog_changed=$changelog_changed" >> "$GITHUB_OUTPUT"
+          echo "changelog_summary_base64=$changelog_summary_base64" >> "$GITHUB_OUTPUT"
+
+      # The published OTA is live but unsymbolicated. Name the platforms in this
+      # run's log, then let the terminal gate below turn the run red — the caller
+      # reads `sourcemaps_status` and says the same thing in Discord exactly once.
       - name: Warn that published OTA source maps are missing
         if: always() && ((steps.publish_ios.outcome == 'success' && steps.upload_sourcemaps_ios.outcome != 'success') || (steps.publish_android.outcome == 'success' && steps.upload_sourcemaps_android.outcome != 'success'))
         env:
@@ -527,29 +604,10 @@ jobs:
           [ "$ANDROID_PUBLISH_OUTCOME" = "success" ] && [ "$ANDROID_MAP_OUTCOME" != "success" ] && platforms="${platforms:+$platforms, }Android"
           echo "::warning::The $platforms OTA is live, but its Sentry source-map upload did not succeed. Recreate the exact platform export before another eoas publish replaces dist."
 
+      # Last step in the job, so `Record OTA result` above has already published
+      # the outputs the caller needs before this failure propagates upward.
       - name: Require every published OTA source-map upload
         if: always() && ((steps.publish_ios.outcome == 'success' && steps.upload_sourcemaps_ios.outcome != 'success') || (steps.publish_android.outcome == 'success' && steps.upload_sourcemaps_android.outcome != 'success'))
         run: |
           echo "::error::At least one published OTA has no accepted Sentry source maps."
           exit 1
-
-      - name: Notify deployments channel of failure
-        if: always() && github.ref == 'refs/heads/main' && failure()
-        env:
-          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
-          IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
-          ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
-          IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
-          ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
-        run: |
-          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
-            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
-            exit 0
-          fi
-          CONTENT=$(printf '🚨 **Production OTA workflow failed** on `%s`\n• iOS publish: %s · source maps: %s\n• Android publish: %s · source maps: %s\n• Any successful platform remains published; no automatic rollback was attempted.\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$IOS_OUTCOME" "$IOS_MAP_OUTCOME" "$ANDROID_OUTCOME" "$ANDROID_MAP_OUTCOME" "$RUN_URL")
-          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
-            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
-              echo "::warning::Failed to post Discord notification (see status above)"

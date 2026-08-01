@@ -229,13 +229,22 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
   });
 
   it('runs every automatic fingerprint surface when root linker or patch inputs change', () => {
-    const automaticFingerprintWorkflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, ANDROID_PR, IOS_PR];
+    // production-deploy.yml now owns the production OTA via a reusable
+    // workflow_call. It has no trigger paths of its own, so assert its OTA
+    // change classifier separately below rather than treating the reusable
+    // callee as an automatic workflow.
+    const automaticFingerprintWorkflows = [NATIVE_IOS, NATIVE_ANDROID, OTA_CHECK, OTA_PREVIEW, ANDROID_PR, IOS_PR];
     for (const name of automaticFingerprintWorkflows) {
       const source = readWorkflow(name);
       expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
       expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
       expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
     }
+
+    const productionDeploy = readWorkflow('production-deploy.yml');
+    expect(productionDeploy, 'the unified release path must publish OTA for root patchedDependencies edits').toContain(
+      'package.json|bun.lock|patches/*|scripts/mobile-publish.ts',
+    );
 
     expect(readWorkflow(OTA_CHECK), 'OTA compatibility must react to fingerprint config edits').toContain(
       "- 'packages/mobile/**'",

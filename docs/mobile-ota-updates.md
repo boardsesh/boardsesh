@@ -50,12 +50,12 @@ Postgres and left V2 untouched. Two servers now run in parallel:
 
 ## Two hosting paths (don't mix them up)
 
-|                | Preview / dev                            | Production                                                                                                                                                                      |
-| -------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Built by       | `eas build` (`mobile:preview-build`)     | bare `expo prebuild` + xcodebuild/gradle (the `ios-testflight-rn` / `android-apk-rn` workflows)                                                                                 |
-| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota V3 (`updates.boardsesh.com`)                                                                                                                          |
-| Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                                                                  |
-| Publish        | `vp run mobile:publish` (→ `eas update`) | auto on push to `main` (`mobile-ota-production.yml`); manual: publish one platform, then immediately run `mobile:upload-sourcemaps` (→ `eoas publish` + Sentry Debug ID upload) |
+|                | Preview / dev                            | Production                                                                                                                                                                        |
+| -------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Built by       | `eas build` (`mobile:preview-build`)     | bare `expo prebuild` + xcodebuild/gradle (the `ios-testflight-rn` / `android-apk-rn` workflows)                                                                                    |
+| Hosting        | EAS free tier (`u.expo.dev`)             | self-hosted expo-open-ota V3 (`updates.boardsesh.com`)                                                                                                                             |
+| Channel source | `channel` in `eas.json`                  | `expo-channel-name` request header baked in by `expo prebuild`                                                                                                                     |
+| Publish        | `vp run mobile:publish` (→ `eas update`) | `production-deploy.yml` calls reusable `mobile-ota-production.yml` after the server/web gates; manual releases use Production Deploy inputs (→ `eoas publish` + Sentry source maps) |
 
 A third path rides the **same self-hosted server**: per-PR `pr-<number>` channels that let any user
 validate a specific PR on a store/TestFlight build via the in-app switcher — see
@@ -116,23 +116,68 @@ instead of throwing. For `@expo/ui` sheets the guard lives in `patches/@expo%2Fu
 
 ## Publishing a production update
 
-**Automatic.** Every push to `main` that touches the mobile app runs
-`.github/workflows/mobile-ota-production.yml`, which publishes a production OTA. Because
-runtimeVersion is a fingerprint, this is safe to run on every push: a native change publishes an
-OTA whose fingerprint no current binary has yet, so it only lands once the matching store build
-ships. Until the server is wired (no `EXPO_UPDATES_URL` variable or committed cert), the workflow
-skips with a green no-op. The matching native builds (`ios-testflight-rn` / `android-apk-rn`) run
-on the same push but are **fingerprint-gated** — they only build when the fingerprint is new (see
-[Native-build gating](#native-build-gating-ota-only-when-the-fingerprint-is-unchanged) below). A
-successful publish (and any failure) posts to the Discord deploy channel via the
-`DISCORD_DEPLOY_WEBHOOK` secret, the same channel the native build workflows use. The success
-message lists what the OTA newly added: the workflow snapshots `changelog.generated.json` before
-regenerating it, then `changelog-discord-summary.ts` diffs the two snapshots and renders the new
-entries grouped as New / Improved / Fixed. When nothing new shipped (changelog unchanged) it falls
-back to the triggering commit's subject.
+**Automatic.** Every push to `main` enters `.github/workflows/production-deploy.yml`. It detects OTA
+paths and calls `.github/workflows/mobile-ota-production.yml` as a reusable workflow only after the
+same SHA has passed every applicable release gate: web/backend artifacts build in parallel,
+migrations finish, Railway reaches `SUCCESS`, Vercel promotes, and the standalone Expo web deploy
+passes its smoke checks. Jobs skipped because their component did not change are valid. An active
+Vercel Instant Rollback blocks the standalone app-web deploy plus OTA/changelog publication; the
+Next web artifact may be staged with `--skip-domain`, and the backend image may be built without a
+Railway redeploy. `APP_WEB_DEPLOY_HOLD` remains an explicit browser-only hold: it is reported as
+held, while native OTA may continue after the backend and Next gates pass.
 
-**Manual** (one branch, ad hoc) — publish exactly one platform, then upload that export's source
-maps before running `eoas` again:
+The reusable workflow checks out the exact deployed SHA and receives two separate changelog
+boundaries. The immutable **release-range base** is the push's previous SHA (for manual runs, an
+explicit input or the selected commit's parent). The **previous snapshot SHA** normally matches that
+base. If deploy A writes its generated changelog commit C on top of already-queued target B, change
+detection may instead pass C as B's snapshot: every commit in `B..C` must be single-parent, authored
+by the workflow bot, use the exact generated `[skip ci]` subject, and touch only `CHANGELOG.md` and
+the generated mobile JSON. This prevents A's entries being announced again by B without changing
+B's release range. Live PRs and native tags remain ancestry-bounded at B's deployed SHA.
+
+The constant `production-deploy` concurrency group uses `queue: max` to serialize normal deploys,
+their downstream OTA, manual releases, and backports. It keeps up to 100 waiters and processes them
+FIFO by the time each started waiting ([GitHub concurrency docs](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)).
+A queued push can still have newer source above its target on `main` when its turn begins, so it
+fetches current `origin/main` before any production mutation. That intermediate target is marked
+`superseded` and every downstream job skips; the later queued run releases the newer SHA. Only the
+positively identified generated-commit exception above may sit ahead. For component detection, the
+workflow reads a bounded Actions history page, selects the run with the latest unambiguous
+completion timestamp, and trusts its SHA only when both the workflow and its
+`mark-production-promoted` job succeeded. The marker is emitted for a fully reflected release or a
+trusted no-change diff, never for rollback, app hold, unconfigured OTA, one-platform OTA,
+superseded, failed, or cancelled runs. Missing or ambiguous evidence forces the next run through the
+full release graph. There is no mutable “last-deployed SHA” branch, tag, or external state.
+
+Each platform's publish is followed by its own Sentry source-map upload, because every `eoas
+publish` recreates `packages/mobile/dist` and would erase the previous platform's maps. The upload
+itself is non-blocking so the second platform, the changelog push, and the health check still run,
+but a published bundle without accepted source maps reports `sourcemaps_status=missing`, fails the
+reusable workflow, and therefore fails the release gate — the parent names the degraded state in its
+one terminal notification instead of leaving an unsymbolicated OTA live and green.
+
+Because runtimeVersion is a fingerprint, a native change publishes an OTA whose fingerprint no
+current binary has yet, so it lands only after the matching store build ships. Until the server is
+wired (no `EXPO_UPDATES_URL` variable or committed cert), the reusable OTA job is a green no-op, but
+the parent classifies the release as held and does not emit a promotion marker. Matching native
+builds (`ios-testflight-rn` / `android-apk-rn`) remain fingerprint-gated. The parent workflow emits
+one terminal notification after OTA and its non-blocking health check settle (promoted,
+release-held, rollback-held, app-web-only held, or failed); trusted no-change and superseded runs
+stay quiet. That message includes server/web/app-web state, per-platform OTA outcomes, health and
+source-map status, and the changelog diff grouped as New / Improved / Fixed.
+
+**Manual unified release.** Run **Production Deploy** with the desired Git ref, `platform`, optional
+`message`, and optional `changelog_base_sha`. Leaving the base empty derives the selected commit's
+first parent. Manual runs force web, backend, app-web, migrations, and OTA through the same graph;
+the selected `github.sha` is passed verbatim to the reusable publisher. An iOS-only or Android-only
+publish is reported as release-held and cannot become the global component baseline. With no custom
+message, each platform uses the selected commit's short hash plus subject, even after changelog
+generation moves local `HEAD`. Manual dispatch deliberately bypasses the automatic stale-push guard:
+selecting an older or non-main ref is an operator-authorized full-stack release or rollback, and all
+components are forced through the graph. The separate Mobile OTA Backport workflow remains OTA-only.
+
+**Local OTA-only emergency publish** (bypasses the unified server/web gate) — publish exactly one
+platform, then upload that export's source maps before running `eoas` again:
 
 ```sh
 EXPO_UPDATES_URL=https://updates.boardsesh.com/manifest \
@@ -142,6 +187,10 @@ EOO_TOKEN=eoo_… \
 SENTRY_AUTH_TOKEN=sntrys_… \
   vp run mobile:upload-sourcemaps -- --platform ios
 ```
+
+This direct command does not deploy or verify backend/web dependencies and does not update the
+committed changelog. Prefer the unified workflow for routine releases; use OTA-only publication only
+when the bundle is deliberately independent of server changes or during incident recovery.
 
 The wrapper translates its `--channel production` selector to `eoas publish --branch production`.
 It deliberately does not pass eoas's deprecated `--channel` option; channel creation and mapping are
@@ -465,9 +514,10 @@ Confirm the Android release actually shipped before relying on an Android backpo
    dependency on the frozen anchor: ship a native update with a supported uploader, wait for its
    approved release anchor, and backport against that new anchor instead.
 4. Re-run with `dry_run` off to publish under the approved fingerprint and immediately upload that
-   platform's Debug ID source map. It shares the `mobile-ota-production` concurrency lane, limits
-   the platform matrix to one publish at a time, and never races a `main` OTA or bursts iOS and
-   Android uploads concurrently. A dry run neither publishes nor uploads.
+   platform's Debug ID source map. It shares the `production-deploy` concurrency lane with the
+   unified server/web/OTA graph and limits the platform matrix to one publish at a time, so it never
+   races a current production release or bursts iOS and Android uploads concurrently. A dry run
+   neither publishes nor uploads.
 
 To find the anchor for a release: `git tag -l 'release/ios-v2.1.0-*'`.
 
@@ -541,20 +591,22 @@ Two notes on what it measures:
   schedule), not the seconds after a publish.
 
 **Required secret to activate the gate:** add `POSTHOG_PERSONAL_API_KEY` (a PostHog personal API key
-with read access) to the **Production** environment — the same secret
-`scripts/refresh-recommendations.ts` already uses. `POSTHOG_PROJECT_ID` (default `412845`) and
-`POSTHOG_HOST` (default `https://us.posthog.com`) are optional overrides. Without the key the check
-**skips and exits 0** — it never blocks a publish.
+with read access) to the **Production** environment. At present the same-named value exists only as
+an environment **variable**, not a masked secret; the workflow deliberately does not read that
+sensitive value through `vars`, so an administrator must migrate it before this check activates.
+`POSTHOG_PROJECT_ID` (default `412845`) and `POSTHOG_HOST` (default
+`https://us.posthog.com`) are optional overrides. Without the secret the check **skips and exits 0**
+— it never blocks a publish.
 
 ### Post-publish CI step (non-blocking)
 
 `mobile-ota-production.yml` runs the health check after any platform publishes successfully, even
 when another requested platform failed (a short `sleep` lets early relaunches report), with
-`continue-on-error: true`, and posts the verdict to the same Discord
-deploy channel as the publish announcement. It's wired so it can **never** block or fail the
-publish: `continue-on-error` swallows a tripped gate, and the script no-ops (exit 0) until the
-`POSTHOG_PERSONAL_API_KEY` secret exists. The step's `outcome` going to `failure` is what flips the
-Discord header to the 🚨 emergency-spike variant.
+`continue-on-error: true`. It returns the verdict to `production-deploy.yml`, which includes it in
+the run's single terminal Discord notification. The check can **never** block or fail the publish:
+`continue-on-error` swallows a tripped gate, and the script no-ops (exit 0) until the
+`POSTHOG_PERSONAL_API_KEY` secret exists. A failed step outcome makes the parent notification use
+the OTA health-alert header.
 
 ### Rollback (`scripts/mobile-ota-rollback.ts`)
 
@@ -716,9 +768,11 @@ be requested.
 
 ## Changelog ownership (the in-app "What's New")
 
-`packages/mobile/src/data/changelog.generated.json` is owned **solely** by the
-`mobile-ota-production.yml` workflow. On every production OTA it regenerates the file from merged-PR
-`## Release Notes` sections and commits it locally before `eoas publish` (which needs a clean tree).
+`packages/mobile/src/data/changelog.generated.json` is owned **solely** by the reusable
+`mobile-ota-production.yml` workflow called from the unified production deploy. On every production
+OTA it regenerates the file from merged-PR `## Release Notes` sections whose merge commits are
+ancestors of the exact deployed SHA, then commits it locally before `eoas publish` (which needs a
+clean tree).
 It **pushes the commit back to `main`** only after every requested platform succeeds (the commit is
 tagged `[skip ci]` so the push can't re-trigger the OTA). A partial or total publish failure leaves
 the local CI commit unpushed; the next run regenerates the same source-of-truth files.

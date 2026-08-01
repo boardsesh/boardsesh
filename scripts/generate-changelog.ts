@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import {
   buildEntries,
   buildNativeReleases,
+  filterChangelogSourcesByReachability,
   isContentEqual,
   renderChangelogMarkdown,
   type ChangelogData,
@@ -47,6 +48,7 @@ const REPO_NAME = 'boardsesh';
 // would only burn API pages on PRs that can't produce an entry. Bump cautiously;
 // never set it before the feature landed.
 const CRAWL_START_DATE = '2026-06-01T00:00:00.000Z';
+const REQUESTED_THROUGH_SHA = process.env.CHANGELOG_THROUGH_SHA?.trim() || null;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = resolve(here, '../packages/mobile/src/data/changelog.generated.json');
@@ -63,6 +65,34 @@ function gh(args: string[]): string {
 
 function git(args: string[]): string {
   return execFileSync('git', args, { cwd: here, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+}
+
+function resolveThroughSha(): string | null {
+  if (REQUESTED_THROUGH_SHA === null) return null;
+  try {
+    return git(['rev-parse', '--verify', `${REQUESTED_THROUGH_SHA}^{commit}`]).trim();
+  } catch {
+    throw new Error(`CHANGELOG_THROUGH_SHA is not a reachable commit: ${REQUESTED_THROUGH_SHA}`);
+  }
+}
+
+function createReachabilityCheck(throughSha: string): (commitSha: string) => boolean {
+  const cache = new Map<string, boolean>();
+  return (commitSha) => {
+    const cached = cache.get(commitSha);
+    if (cached !== undefined) return cached;
+    try {
+      execFileSync('git', ['merge-base', '--is-ancestor', commitSha, throughSha], {
+        cwd: here,
+        stdio: 'ignore',
+      });
+      cache.set(commitSha, true);
+      return true;
+    } catch {
+      cache.set(commitSha, false);
+      return false;
+    }
+  };
 }
 
 function readExisting(): ChangelogData {
@@ -129,6 +159,7 @@ const MERGED_PRS_QUERY = `query($owner: String!, $name: String!, $cursor: String
         body
         mergedAt
         updatedAt
+        mergeCommit { oid }
         url
         labels(first: 20) { nodes { name } }
       }
@@ -142,6 +173,7 @@ type RawPrNode = {
   body: string | null;
   mergedAt: string | null;
   updatedAt: string | null;
+  mergeCommit?: { oid?: string } | null;
   url: string;
   labels?: { nodes?: { name?: string }[] };
 };
@@ -180,6 +212,7 @@ function fetchMergedPullRequests(): RawPullRequest[] | null {
           title: node.title,
           body: node.body,
           mergedAt: node.mergedAt,
+          mergeCommitOid: node.mergeCommit?.oid ?? null,
           url: node.url,
           labels: (node.labels?.nodes ?? []).map((label) => label.name ?? '').filter(Boolean),
         });
@@ -212,6 +245,7 @@ function fetchMergedPullRequests(): RawPullRequest[] | null {
 
 function main(): void {
   const existing = readExisting();
+  const throughSha = resolveThroughSha();
   const pullRequests = fetchMergedPullRequests();
 
   // Graceful degradation: a fetch failure keeps the committed snapshot untouched
@@ -225,8 +259,19 @@ function main(): void {
     return;
   }
 
-  const entries = buildEntries(pullRequests);
-  const nativeReleases = buildNativeReleases(gatherFingerprintTags());
+  const fingerprintTags = gatherFingerprintTags();
+  const boundedSources =
+    throughSha === null
+      ? { pullRequests, fingerprintTags }
+      : filterChangelogSourcesByReachability(pullRequests, fingerprintTags, createReachabilityCheck(throughSha));
+  if (throughSha !== null) {
+    console.log(
+      `[changelog] bounded sources at ${throughSha}: ${boundedSources.pullRequests.length}/${pullRequests.length} PRs, ` +
+        `${boundedSources.fingerprintTags.length}/${fingerprintTags.length} native tags`,
+    );
+  }
+  const entries = buildEntries(boundedSources.pullRequests);
+  const nativeReleases = buildNativeReleases(boundedSources.fingerprintTags);
   const candidate: ChangelogData = { generatedAt: existing.generatedAt, entries, nativeReleases };
   const contentUnchanged = isContentEqual(candidate, existing);
 

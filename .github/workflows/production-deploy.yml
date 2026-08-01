@@ -3,22 +3,23 @@ name: Production Deploy
 # Single source of truth for production deploys.
 #
 # Builds the web (Vercel prebuilt) and backend (GHCR image) artifacts in
-# parallel, then gates: the production Railway + Vercel deploys only run once
-# EVERY build that was attempted has passed. A failed build skips both prod
-# deploys, so we never ship a half-deployed release. db:migrate runs in its own
-# gated job after both builds pass (it used to run inside the Vercel build).
+# parallel, then gates the release in one serialized graph: every attempted
+# build must pass, migrations run, Railway deploys and verifies, Vercel and
+# app.boardsesh.com deploy, and only then can the exact same SHA publish a mobile
+# OTA. A failed/cancelled required job or an active rollback skips OTA/changelog,
+# so mobile JS can never announce server code that has not reached production.
 #
 # Vercel native git auto-deploy is disabled (packages/web/vercel.json
 # git.deploymentEnabled=false) so this workflow is the only production deployer.
 #
 # check-rollback detects whether a Vercel Instant Rollback is currently pinning
-# production to an older deployment. If so, this run still builds and deploys,
-# but does NOT promote: web ships with --skip-domain (staged, not assigned to
-# the production domain) and the backend image is pushed to GHCR without a
-# Railway redeploy. That way an incident mitigation isn't silently overwritten,
-# the release is staged and ready to promote once the rollback is cleared, and
-# Discord is notified. (Migrations must stay backward-compatible — see docs —
-# because Instant Rollback reverts only the web deployment, never the DB.)
+# production to an older deployment. If so, server artifacts still build but the
+# run does NOT promote: Next web ships with --skip-domain, the backend image is
+# pushed to GHCR without a Railway redeploy, and app.boardsesh.com plus native
+# OTA stay pinned. That way an incident mitigation isn't silently overwritten,
+# the server release is staged for later promotion, and Discord is notified.
+# Migrations must stay backward-compatible because Instant Rollback reverts only
+# the web deployment, never the DB.
 
 on:
   push:
@@ -26,9 +27,31 @@ on:
     # No paths filter — detect-changes decides per-side. Web deploys on
     # essentially any app change; backend only on backend-affecting paths.
   workflow_dispatch:
+    inputs:
+      message:
+        description: 'OTA message (defaults to the selected commit hash + subject)'
+        required: false
+        type: string
+      platform:
+        description: 'OTA platform to publish'
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - ios
+          - android
+      changelog_base_sha:
+        description: 'Optional changelog range base (defaults to the selected commit parent)'
+        required: false
+        type: string
 
 concurrency:
+  # One non-cancelling production lane covers server/web deploys, downstream OTA
+  # and manual backports. There is intentionally no durable "last deployed SHA"
+  # marker; each run pins and reports its own exact SHA + validated changelog base.
   group: production-deploy
+  queue: max
   cancel-in-progress: false # never cancel an in-flight production deploy
 
 env:
@@ -63,10 +86,20 @@ env:
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     outputs:
       web_changed: ${{ steps.changes.outputs.web }}
       backend_changed: ${{ steps.changes.outputs.backend }}
       app_changed: ${{ steps.changes.outputs.app }}
+      ota_changed: ${{ steps.changes.outputs.ota }}
+      migration_required: ${{ steps.changes.outputs.migration_required }}
+      superseded: ${{ steps.changes.outputs.superseded }}
+      deploy_sha: ${{ steps.changes.outputs.deploy_sha }}
+      component_base_sha: ${{ steps.changes.outputs.component_base_sha }}
+      changelog_base_sha: ${{ steps.changes.outputs.changelog_base_sha }}
+      changelog_snapshot_sha: ${{ steps.changes.outputs.changelog_snapshot_sha }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -74,33 +107,126 @@ jobs:
 
       - name: Detect changed paths
         id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE_SHA: ${{ github.event.before }}
+          INPUT_CHANGELOG_BASE_SHA: ${{ inputs.changelog_base_sha }}
+          TARGET_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # Manual runs build everything.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          set -euo pipefail
+          ZERO_SHA=0000000000000000000000000000000000000000
+          DEPLOY_SHA=$(git rev-parse --verify "${TARGET_SHA}^{commit}")
+          echo "deploy_sha=$DEPLOY_SHA" >> "$GITHUB_OUTPUT"
+
+          # Keep two separate boundaries. The immediate event before-SHA is the
+          # changelog snapshot base. Component detection uses only the last proven
+          # promoted Production Deploy commit, selected below from Actions history.
+          # Manual releases may supply an explicit changelog base; otherwise the
+          # selected commit's first parent is the deterministic default.
+          FORCE_COMPONENTS=false
+          COMPONENT_BASE_SHA=$ZERO_SHA
+          SUPERSEDED=false
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            if [ -n "$INPUT_CHANGELOG_BASE_SHA" ]; then
+              if ! git cat-file -e "${INPUT_CHANGELOG_BASE_SHA}^{commit}" 2>/dev/null; then
+                echo "::error::Manual changelog base is not a commit: $INPUT_CHANGELOG_BASE_SHA"
+                exit 1
+              fi
+              CHANGELOG_BASE_SHA=$(git rev-parse --verify "${INPUT_CHANGELOG_BASE_SHA}^{commit}")
+              if ! git merge-base --is-ancestor "$CHANGELOG_BASE_SHA" "$DEPLOY_SHA"; then
+                echo "::error::Manual changelog base $CHANGELOG_BASE_SHA is not an ancestor of $DEPLOY_SHA"
+                exit 1
+              fi
+            else
+              CHANGELOG_BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "$ZERO_SHA")
+            fi
+          else
+            CHANGELOG_BASE_SHA=${EVENT_BEFORE_SHA:-$ZERO_SHA}
+            if [ "$CHANGELOG_BASE_SHA" != "$ZERO_SHA" ] && git cat-file -e "${CHANGELOG_BASE_SHA}^{commit}" 2>/dev/null; then
+              CHANGELOG_BASE_SHA=$(git rev-parse --verify "${CHANGELOG_BASE_SHA}^{commit}")
+              if ! git merge-base --is-ancestor "$CHANGELOG_BASE_SHA" "$DEPLOY_SHA"; then
+                CHANGELOG_BASE_SHA=$ZERO_SHA
+                FORCE_COMPONENTS=true
+              fi
+            else
+              CHANGELOG_BASE_SHA=$ZERO_SHA
+              FORCE_COMPONENTS=true
+            fi
+          fi
+          echo "changelog_base_sha=$CHANGELOG_BASE_SHA" >> "$GITHUB_OUTPUT"
+          CHANGELOG_SNAPSHOT_SHA=$CHANGELOG_BASE_SHA
+
+          # queue:max processes waiters FIFO by the time they started waiting,
+          # but an intermediate target can still have newer source above it on
+          # main by the time its turn begins. Fetch current main before any build
+          # and supersede that stale target so the later queued run releases the
+          # newer SHA. A workflow-owned changelog commit alone is safe. For a
+          # current target, the same helper proves the component baseline from
+          # the preceding completed deployment and fails closed for every
+          # ambiguous or partially promoted predecessor.
+          if [ "$EVENT_NAME" != workflow_dispatch ]; then
+            git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+            CURRENT_MAIN_SHA=$(git rev-parse --verify 'refs/remotes/origin/main^{commit}')
+            BASELINE_JSON=$(DEPLOY_SHA="$DEPLOY_SHA" CHANGELOG_BASE_SHA="$CHANGELOG_BASE_SHA" \
+              CURRENT_MAIN_SHA="$CURRENT_MAIN_SHA" node scripts/production-deploy-baseline.mjs)
+            SUPERSEDED=$(jq -r '.superseded' <<< "$BASELINE_JSON")
+            if [ "$FORCE_COMPONENTS" != true ]; then
+              FORCE_COMPONENTS=$(jq -r '.forceComponents' <<< "$BASELINE_JSON")
+            fi
+            COMPONENT_BASE_SHA=$(jq -r '.componentBaseSha // empty' <<< "$BASELINE_JSON")
+            VERIFIED_SNAPSHOT_SHA=$(jq -r '.changelogSnapshotSha // empty' <<< "$BASELINE_JSON")
+            if [ -n "$VERIFIED_SNAPSHOT_SHA" ]; then
+              CHANGELOG_SNAPSHOT_SHA=$VERIFIED_SNAPSHOT_SHA
+            fi
+            BASELINE_REASON=$(jq -r '.reason' <<< "$BASELINE_JSON")
+            echo "Component baseline: ${COMPONENT_BASE_SHA:-none} ($BASELINE_REASON)"
+            if [ "$SUPERSEDED" = true ]; then
+              echo "superseded=true" >> "$GITHUB_OUTPUT"
+              echo "component_base_sha=$COMPONENT_BASE_SHA" >> "$GITHUB_OUTPUT"
+              echo "changelog_snapshot_sha=$CHANGELOG_SNAPSHOT_SHA" >> "$GITHUB_OUTPUT"
+              echo "web=false" >> "$GITHUB_OUTPUT"
+              echo "backend=false" >> "$GITHUB_OUTPUT"
+              echo "app=false" >> "$GITHUB_OUTPUT"
+              echo "ota=false" >> "$GITHUB_OUTPUT"
+              echo "migration_required=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::Skipping superseded production target $DEPLOY_SHA: $BASELINE_REASON"
+              exit 0
+            fi
+            if [ "$FORCE_COMPONENTS" = true ]; then
+              echo "::warning::Production baseline is not proven; forcing the full release graph."
+            fi
+          fi
+          echo "superseded=false" >> "$GITHUB_OUTPUT"
+          echo "component_base_sha=$COMPONENT_BASE_SHA" >> "$GITHUB_OUTPUT"
+          echo "changelog_snapshot_sha=$CHANGELOG_SNAPSHOT_SHA" >> "$GITHUB_OUTPUT"
+
+          # Manual runs deliberately exercise the same graph but force every
+          # component, including OTA, for the selected exact SHA.
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$FORCE_COMPONENTS" = true ]; then
             echo "web=true" >> "$GITHUB_OUTPUT"
             echo "backend=true" >> "$GITHUB_OUTPUT"
             echo "app=true" >> "$GITHUB_OUTPUT"
-            echo "Manual trigger: building web + backend + app"
+            echo "ota=true" >> "$GITHUB_OUTPUT"
+            echo "migration_required=true" >> "$GITHUB_OUTPUT"
+            echo "Full release: web + backend + app + OTA at $DEPLOY_SHA"
             exit 0
           fi
 
-          BEFORE="${{ github.event.before }}"
-          # First push / missing parent / force-push to a new ref -> full build.
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            echo "No usable before-sha ($BEFORE): building web + backend + app"
-            echo "web=true" >> "$GITHUB_OUTPUT"
-            echo "backend=true" >> "$GITHUB_OUTPUT"
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ -z "$COMPONENT_BASE_SHA" ] || [ "$COMPONENT_BASE_SHA" = "$ZERO_SHA" ]; then
+            echo "::error::Narrow release has no proven component baseline."
+            exit 1
           fi
-
-          CHANGED_FILES=$(git diff --name-only "$BEFORE" "${{ github.sha }}")
+          CHANGED_FILES=$(git diff --name-only "$COMPONENT_BASE_SHA" "$DEPLOY_SHA")
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # Backend-affecting paths — keep in sync with detect-changes in branch-deploy.yml.
+          # Production excludes packages/mobile from the broad monorepo backend
+          # rule: a mobile-only commit can safely proceed with backend/web skipped.
+          # Other workspace packages remain backend-affecting because they may be
+          # transitive service dependencies.
           BACKEND_CHANGED=false
-          # Web deploys broadly: any change that isn't purely docs or mobile.
+          # Next web deploys broadly, except docs and OTA/mobile-only plumbing.
           WEB_CHANGED=false
           # app.boardsesh.com (standalone Expo web export) — deploys on the mobile
           # app, its shared deps, the export script, or the two CF Pages host
@@ -109,35 +235,58 @@ jobs:
           # caught the directory's README and its CI tests, and editing a comment
           # in a test kicked off a production deploy.
           APP_CHANGED=false
+          OTA_CHANGED=false
           for file in $CHANGED_FILES; do
             case "$file" in
+              packages/mobile/*)
+                ;;
               packages/*|Dockerfile.backend|scripts/create-service-docker-context.mjs|scripts/railway-deployment-status.mjs|railway.toml|bun.lock|package.json|.github/workflows/production-deploy.yml)
                 BACKEND_CHANGED=true
                 ;;
             esac
             case "$file" in
-              mobile/*|packages/mobile/*|docs/*|*.md)
+              mobile/*|packages/mobile/*|docs/*|*.md|scripts/mobile-publish.ts|scripts/lib/mobile-publish-retry.ts|scripts/lib/eoas.ts|scripts/generate-changelog.ts|scripts/changelog-discord-summary.ts|scripts/lib/changelog-transform.ts|scripts/lib/changelog-discord-summary.ts|.github/workflows/mobile-ota-production.yml)
                 ;;
               *)
                 WEB_CHANGED=true
                 ;;
             esac
             case "$file" in
-              packages/mobile/*|packages/shared/*|packages/shared-schema/*|scripts/build-expo-web-export.sh|deploy/app-subdomain/_headers|deploy/app-subdomain/_redirects)
+              packages/mobile/src/data/changelog.generated.json)
+                ;;
+              packages/mobile/*|packages/shared/*|packages/board-constants/*|packages/shared-schema/*|patches/*|scripts/build-expo-web-export.sh|deploy/app-subdomain/_headers|deploy/app-subdomain/_redirects)
                 APP_CHANGED=true
+                ;;
+            esac
+            case "$file" in
+              packages/mobile/src/data/changelog.generated.json)
+                ;;
+              # Root linker and patch inputs change the resolved Expo config or
+              # native dependency graph, so the matching OTA must be published
+              # through this unified release path too.
+              packages/mobile/*|packages/shared/*|packages/board-constants/*|packages/shared-schema/*|package.json|bun.lock|patches/*|scripts/mobile-publish.ts|scripts/lib/mobile-publish-retry.ts|scripts/lib/eoas.ts|scripts/generate-changelog.ts|scripts/changelog-discord-summary.ts|scripts/lib/changelog-transform.ts|scripts/lib/changelog-discord-summary.ts|.github/workflows/mobile-ota-production.yml|.github/workflows/production-deploy.yml)
+                OTA_CHANGED=true
                 ;;
             esac
           done
 
+          MIGRATION_REQUIRED=false
+          if [ "$WEB_CHANGED" = true ] || [ "$BACKEND_CHANGED" = true ]; then
+            MIGRATION_REQUIRED=true
+          fi
           echo "backend=${BACKEND_CHANGED}" >> "$GITHUB_OUTPUT"
           echo "web=${WEB_CHANGED}" >> "$GITHUB_OUTPUT"
           echo "app=${APP_CHANGED}" >> "$GITHUB_OUTPUT"
-          echo "Backend changed: ${BACKEND_CHANGED}; Web changed: ${WEB_CHANGED}; App changed: ${APP_CHANGED}"
+          echo "ota=${OTA_CHANGED}" >> "$GITHUB_OUTPUT"
+          echo "migration_required=${MIGRATION_REQUIRED}" >> "$GITHUB_OUTPUT"
+          echo "Backend: ${BACKEND_CHANGED}; Web: ${WEB_CHANGED}; App: ${APP_CHANGED}; OTA: ${OTA_CHANGED}"
 
   # Detects whether a Vercel Instant Rollback is pinning production. Outputs
   # active=true/false; the deploy jobs read it to decide promote vs. stage-only.
   # Fails closed (blocks the run) only if it can't read rollback state at all.
   check-rollback:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.superseded != 'true'
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -305,11 +454,13 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
           # Same digest gets all of these tags. Homelab consumes :staging,
           # Railway consumes :production, humans use :sha-<short> for rollback.
+          # Manual releases may intentionally select a non-main ref, so the
+          # production tag is enabled for dispatches as well as main pushes.
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
             type=raw,value=staging,enable={{is_default_branch}}
-            type=raw,value=production,enable={{is_default_branch}}
+            type=raw,value=production,enable=${{ github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Generate backend Docker context
@@ -361,8 +512,13 @@ jobs:
         run: bun run --filter=@boardsesh/db db:migrate
 
   deploy-web:
-    needs: [detect-changes, check-rollback, build-web, migrate]
-    if: always() && needs.detect-changes.outputs.web_changed == 'true' && needs.build-web.result == 'success' && needs.migrate.result == 'success'
+    needs: [detect-changes, check-rollback, build-web, migrate, deploy-production-backend]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.web_changed == 'true'
+      && needs.build-web.result == 'success'
+      && needs.migrate.result == 'success'
+      && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -542,11 +698,9 @@ jobs:
   # from the `/app` export the web Docker image bakes. See
   # docs/expo-web-deployment.md.
   #
-  # Independent of the web/backend build+migrate gate: it's a self-contained
-  # static export + upload with no DB or image dependency, so it only needs
-  # detect-changes. No inline Playwright smoke gate — a per-deploy expo-web boot
-  # is too heavy here (this file has no such gate for web/backend either); the
-  # expo-web-smoke suite stays the dispatch-only gate in e2e-tests.yml.
+  # The export itself is self-contained, but promotion waits for any changed
+  # backend to be verified and for any required migration to finish. That keeps
+  # the browser app behind the same server compatibility gate as native OTA.
   # Manual deploy freeze for app.boardsesh.com, the Cloudflare Pages analogue of
   # check-rollback. deploy-web and deploy-production-backend both honour a pinned
   # Vercel Instant Rollback; Pages has no equivalent signal here, so without this
@@ -555,8 +709,15 @@ jobs:
   # script, or deploy/app-subdomain. Set the repo variable APP_WEB_DEPLOY_HOLD to
   # any non-empty value to hold the subdomain where it is; clear it to resume.
   deploy-app-web:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD == ''
+    needs: [detect-changes, check-rollback, build-web, build-backend, migrate, deploy-production-backend]
+    if: >-
+      always()
+      && needs.detect-changes.outputs.app_changed == 'true'
+      && needs.check-rollback.result == 'success'
+      && needs.check-rollback.outputs.active != 'true'
+      && vars.APP_WEB_DEPLOY_HOLD == ''
+      && (needs.detect-changes.outputs.migration_required != 'true' || needs.migrate.result == 'success')
+      && (needs.detect-changes.outputs.backend_changed != 'true' || needs.deploy-production-backend.result == 'success')
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -718,6 +879,243 @@ jobs:
           retry "index.html is NOT immutable-cached"      check_index_not_immutable
           retry "hashed _expo asset is immutable-cached"  check_hashed_asset_immutable
 
+  # The reusable workflow has no trigger or concurrency lane of its own. This
+  # call is the only production OTA entrypoint, after every changed dependency
+  # proved its required outcome. A skipped unchanged job is valid; a skipped
+  # changed job is not. An app-web hold is the one deliberate exception and does
+  # not block native OTA after the backend/Next gates pass.
+  publish-mobile-ota:
+    needs:
+      [
+        detect-changes,
+        check-rollback,
+        build-web,
+        build-backend,
+        migrate,
+        deploy-production-backend,
+        deploy-web,
+        deploy-app-web,
+      ]
+    if: >-
+      always()
+      && needs.detect-changes.result == 'success'
+      && needs.detect-changes.outputs.ota_changed == 'true'
+      && needs.check-rollback.result == 'success'
+      && needs.check-rollback.outputs.active != 'true'
+      && ((needs.detect-changes.outputs.web_changed == 'true' && needs.build-web.result == 'success')
+      || (needs.detect-changes.outputs.web_changed != 'true' && needs.build-web.result == 'skipped'))
+      && ((needs.detect-changes.outputs.backend_changed == 'true' && needs.build-backend.result == 'success')
+      || (needs.detect-changes.outputs.backend_changed != 'true' && needs.build-backend.result == 'skipped'))
+      && ((needs.detect-changes.outputs.migration_required == 'true' && needs.migrate.result == 'success')
+      || (needs.detect-changes.outputs.migration_required != 'true' && needs.migrate.result == 'skipped'))
+      && ((needs.detect-changes.outputs.backend_changed == 'true' && needs.deploy-production-backend.result == 'success')
+      || (needs.detect-changes.outputs.backend_changed != 'true' && needs.deploy-production-backend.result == 'skipped'))
+      && ((needs.detect-changes.outputs.web_changed == 'true' && needs.deploy-web.result == 'success')
+      || (needs.detect-changes.outputs.web_changed != 'true' && needs.deploy-web.result == 'skipped'))
+      && ((needs.detect-changes.outputs.app_changed != 'true' && needs.deploy-app-web.result == 'skipped')
+      || (needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD != '' && needs.deploy-app-web.result == 'skipped')
+      || (needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD == '' && needs.deploy-app-web.result == 'success'))
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: ./.github/workflows/mobile-ota-production.yml
+    with:
+      commit_sha: ${{ needs.detect-changes.outputs.deploy_sha }}
+      changelog_base_sha: ${{ needs.detect-changes.outputs.changelog_base_sha }}
+      changelog_snapshot_sha: ${{ needs.detect-changes.outputs.changelog_snapshot_sha }}
+      message: ${{ github.event_name == 'workflow_dispatch' && inputs.message || '' }}
+      platform: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
+    # Reusable workflows do not inherit repository secrets, so forward exactly
+    # the two repository-scoped credentials. GOOGLE_MAPS_API_KEY resolves from
+    # the called job's Production environment. PostHog health intentionally
+    # waits for its current environment variable to be migrated to a masked
+    # environment secret; the workflow never exposes a personal key via `vars`.
+    secrets:
+      EOO_TOKEN: ${{ secrets.EOO_TOKEN }}
+      OTA_PUSH_APP_PRIVATE_KEY: ${{ secrets.OTA_PUSH_APP_PRIVATE_KEY }}
+
+  # Executable truth table for the release. This catches an unexpected skip as a
+  # failure instead of letting a later successful component masquerade as a full
+  # deploy. It also proves rollback and app-web-hold exceptions explicitly.
+  release-gate:
+    needs:
+      [
+        detect-changes,
+        check-rollback,
+        build-web,
+        build-backend,
+        migrate,
+        deploy-web,
+        deploy-production-backend,
+        deploy-app-web,
+        publish-mobile-ota,
+      ]
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      state: ${{ steps.validate.outputs.state }}
+    steps:
+      - name: Validate changed and skipped component outcomes
+        id: validate
+        env:
+          DETECT_RESULT: ${{ needs.detect-changes.result }}
+          SUPERSEDED: ${{ needs.detect-changes.outputs.superseded }}
+          ROLLBACK_CHECK_RESULT: ${{ needs.check-rollback.result }}
+          ROLLBACK_ACTIVE: ${{ needs.check-rollback.outputs.active }}
+          WEB_CHANGED: ${{ needs.detect-changes.outputs.web_changed }}
+          BACKEND_CHANGED: ${{ needs.detect-changes.outputs.backend_changed }}
+          APP_CHANGED: ${{ needs.detect-changes.outputs.app_changed }}
+          OTA_CHANGED: ${{ needs.detect-changes.outputs.ota_changed }}
+          MIGRATION_REQUIRED: ${{ needs.detect-changes.outputs.migration_required }}
+          APP_WEB_HELD: ${{ vars.APP_WEB_DEPLOY_HOLD != '' }}
+          BUILD_WEB_RESULT: ${{ needs.build-web.result }}
+          BUILD_BACKEND_RESULT: ${{ needs.build-backend.result }}
+          MIGRATE_RESULT: ${{ needs.migrate.result }}
+          DEPLOY_WEB_RESULT: ${{ needs.deploy-web.result }}
+          DEPLOY_BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
+          DEPLOY_APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
+          OTA_RESULT: ${{ needs.publish-mobile-ota.result }}
+          OTA_CONFIGURED: ${{ needs.publish-mobile-ota.outputs.configured }}
+          OTA_ALL_SUCCESS: ${{ needs.publish-mobile-ota.outputs.all_success }}
+          OTA_ANY_SUCCESS: ${{ needs.publish-mobile-ota.outputs.any_success }}
+          OTA_PLATFORM: ${{ github.event_name == 'workflow_dispatch' && inputs.platform || 'all' }}
+        run: |
+          set -euo pipefail
+          failures=0
+
+          require_result() {
+            local changed=$1
+            local actual=$2
+            local label=$3
+            if [ "$changed" = true ]; then
+              if [ "$actual" != success ]; then
+                echo "::error::$label changed but result was $actual (expected success)"
+                failures=$((failures + 1))
+              fi
+            elif [ "$actual" != skipped ]; then
+              echo "::error::$label unchanged component unexpectedly ran: $actual"
+              failures=$((failures + 1))
+            fi
+          }
+
+          require_skipped() {
+            local actual=$1
+            local label=$2
+            if [ "$actual" != skipped ]; then
+              echo "::error::$label result was $actual (expected skipped)"
+              failures=$((failures + 1))
+            fi
+          }
+
+          if [ "$DETECT_RESULT" != success ]; then
+            echo "::error::change detection result was $DETECT_RESULT"
+            failures=$((failures + 1))
+          fi
+
+          # A queued target that already has newer source above it is a successful
+          # no-mutation terminal state only when every downstream job, including
+          # rollback detection, was skipped.
+          if [ "$SUPERSEDED" = true ]; then
+            require_skipped "$ROLLBACK_CHECK_RESULT" check-rollback
+            require_skipped "$BUILD_WEB_RESULT" build-web
+            require_skipped "$BUILD_BACKEND_RESULT" build-backend
+            require_skipped "$MIGRATE_RESULT" migrate
+            require_skipped "$DEPLOY_WEB_RESULT" deploy-web
+            require_skipped "$DEPLOY_BACKEND_RESULT" deploy-production-backend
+            require_skipped "$DEPLOY_APP_WEB_RESULT" deploy-app-web
+            require_skipped "$OTA_RESULT" publish-mobile-ota
+            echo "state=superseded" >> "$GITHUB_OUTPUT"
+            if [ "$failures" -ne 0 ]; then
+              echo "::error::Superseded release unexpectedly mutated production."
+              exit 1
+            fi
+            exit 0
+          fi
+
+          if [ "$ROLLBACK_CHECK_RESULT" != success ]; then
+            echo "::error::rollback check result was $ROLLBACK_CHECK_RESULT"
+            failures=$((failures + 1))
+          fi
+
+          require_result "$WEB_CHANGED" "$BUILD_WEB_RESULT" build-web
+          require_result "$BACKEND_CHANGED" "$BUILD_BACKEND_RESULT" build-backend
+          require_result "$MIGRATION_REQUIRED" "$MIGRATE_RESULT" migrate
+          require_result "$WEB_CHANGED" "$DEPLOY_WEB_RESULT" deploy-web
+          require_result "$BACKEND_CHANGED" "$DEPLOY_BACKEND_RESULT" deploy-production-backend
+
+          app_release_held=false
+          if [ "$ROLLBACK_ACTIVE" = true ]; then
+            require_skipped "$DEPLOY_APP_WEB_RESULT" deploy-app-web
+          elif [ "$APP_CHANGED" = true ] && [ "$APP_WEB_HELD" = true ]; then
+            app_release_held=true
+            echo "state-note=app-web-held" >> "$GITHUB_OUTPUT"
+            require_skipped "$DEPLOY_APP_WEB_RESULT" deploy-app-web
+          else
+            require_result "$APP_CHANGED" "$DEPLOY_APP_WEB_RESULT" deploy-app-web
+          fi
+
+          ota_release_held=false
+          if [ "$ROLLBACK_ACTIVE" = true ]; then
+            require_skipped "$OTA_RESULT" publish-mobile-ota
+          elif [ "$OTA_CHANGED" = true ]; then
+            if [ "$OTA_RESULT" != success ]; then
+              echo "::error::publish-mobile-ota changed but result was $OTA_RESULT (expected success)"
+              failures=$((failures + 1))
+            elif [ "$OTA_CONFIGURED" != true ]; then
+              ota_release_held=true
+              if [ "$OTA_ANY_SUCCESS" = true ]; then
+                echo "::error::unconfigured OTA unexpectedly reported a published platform"
+                failures=$((failures + 1))
+              fi
+            elif [ "$OTA_ALL_SUCCESS" != true ] || [ "$OTA_ANY_SUCCESS" != true ]; then
+              echo "::error::configured OTA did not prove every requested platform succeeded"
+              failures=$((failures + 1))
+            elif [ "$OTA_PLATFORM" != all ]; then
+              # A deliberate one-platform manual publish is useful, but it is not
+              # a global production baseline for subsequent component diffs.
+              ota_release_held=true
+            fi
+          else
+            require_skipped "$OTA_RESULT" publish-mobile-ota
+          fi
+
+          # Rollback outranks noop: even a docs-only run cannot become a trusted
+          # baseline while production is pinned behind it.
+          state=promoted
+          if [ "$ROLLBACK_ACTIVE" = true ]; then
+            state=rollback-active
+          elif [ "$WEB_CHANGED" != true ] && [ "$BACKEND_CHANGED" != true ] && \
+            [ "$APP_CHANGED" != true ] && [ "$OTA_CHANGED" != true ]; then
+            state=noop
+          elif [ "$app_release_held" = true ] && [ "$WEB_CHANGED" != true ] && \
+            [ "$BACKEND_CHANGED" != true ] && [ "$OTA_CHANGED" != true ]; then
+            state=app-web-held-only
+          elif [ "$app_release_held" = true ] || [ "$ota_release_held" = true ]; then
+            state=release-held
+          fi
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
+          if [ "$failures" -ne 0 ]; then
+            echo "::error::Production release truth table rejected $failures outcome(s)."
+            exit 1
+          fi
+
+  # Positive evidence consumed by the next run's baseline selector. Success here
+  # means every changed surface was reflected globally, or a trusted narrow diff
+  # proved there were no changed surfaces. No rollback, app hold, unconfigured
+  # OTA, or one-platform manual publish can emit this marker.
+  mark-production-promoted:
+    needs: release-gate
+    if: >-
+      always()
+      && needs.release-gate.result == 'success'
+      && (needs.release-gate.outputs.state == 'promoted'
+      || needs.release-gate.outputs.state == 'noop')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record global promotion
+        run: echo "All changed production surfaces are promoted."
+
   # Homelab staging-backend deploy is currently broken — re-enable once the
   # self-hosted runner is healthy. It deploys the same :staging image and is
   # intentionally independent of the web build / prod migrate gate (it targets
@@ -736,13 +1134,16 @@ jobs:
   #         sleep 5
   #         docker ps --filter "name=staging-backend" --format "table {{.Names}}\t{{.Status}}"
 
-  # Pings Discord when an app.boardsesh.com deploy was skipped by the freeze.
-  # Without this the hold is invisible: a skipped job just shows grey in the run
-  # summary, so a forgotten APP_WEB_DEPLOY_HOLD would quietly strand the
-  # subdomain on an old bundle. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
+  # Terminal notification for the one successful release state with no promoted
+  # component to report: an app-web-only change skipped by the deploy hold. The
+  # release-gate state makes this mutually exclusive with promoted, rollback, and
+  # failure notifications (including app+OTA changes, which use notify-success).
   notify-app-web-held:
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.app_changed == 'true' && vars.APP_WEB_DEPLOY_HOLD != ''
+    needs: [detect-changes, release-gate]
+    if: >-
+      always()
+      && needs.release-gate.result == 'success'
+      && needs.release-gate.outputs.state == 'app-web-held-only'
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -750,7 +1151,7 @@ jobs:
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ needs.detect-changes.outputs.deploy_sha }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
@@ -764,15 +1165,25 @@ jobs:
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
 
-  # Pings Discord when a deploy ran during an active rollback: the release was
-  # built and staged but NOT promoted, so production is still on the pinned
-  # (rolled-back) deployment. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
+  # Pings Discord once after a rollback-gated release settles. Web may be staged
+  # and the backend image may be built, but app web and native OTA/changelog do
+  # not publish while production is pinned.
   notify-no-promote:
-    needs: [check-rollback, build-backend, deploy-web, deploy-production-backend]
+    needs:
+      [
+        detect-changes,
+        check-rollback,
+        build-backend,
+        deploy-web,
+        deploy-production-backend,
+        deploy-app-web,
+        publish-mobile-ota,
+        release-gate,
+      ]
     if: >-
       always()
-      && needs.check-rollback.outputs.active == 'true'
-      && (needs.deploy-web.result == 'success' || needs.deploy-production-backend.result == 'success')
+      && needs.release-gate.result == 'success'
+      && needs.release-gate.outputs.state == 'rollback-active'
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -782,9 +1193,12 @@ jobs:
           WEB_URL: ${{ needs.deploy-web.outputs.url }}
           WEB_RESULT: ${{ needs.deploy-web.result }}
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
+          APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
+          APP_CHANGED: ${{ needs.detect-changes.outputs.app_changed }}
+          OTA_CHANGED: ${{ needs.detect-changes.outputs.ota_changed }}
           IMAGE: ${{ needs.build-backend.outputs.image }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ needs.detect-changes.outputs.deploy_sha }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
@@ -798,10 +1212,18 @@ jobs:
           if [ "$BACKEND_RESULT" = "success" ]; then
             BACKEND_LINE="image at ${IMAGE}:production in GHCR, Railway NOT redeployed"
           fi
+          APP_WEB_LINE="unchanged"
+          if [ "$APP_CHANGED" = true ]; then
+            APP_WEB_LINE="not deployed (rollback active)"
+          fi
+          OTA_LINE="unchanged"
+          if [ "$OTA_CHANGED" = true ]; then
+            OTA_LINE="not published (rollback active; changelog unchanged)"
+          fi
           # URL is wrapped in <…> so Discord suppresses the inline preview embed
           # (otherwise the workflow link dominates the message).
-          CONTENT=$(printf '⚠️ **Deployed but NOT promoted** on `%s`\nA Vercel Instant Rollback is active, so production stays pinned to the rolled-back deployment.\n• web: %s\n• backend: %s\nClear the rollback (revert the offending commit and re-promote), then promote the staged web deployment and redeploy the backend.\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$RUN_URL")
+          CONTENT=$(printf '⚠️ **Production release held by rollback** on `%s`\nA Vercel Instant Rollback is active, so server/web production stays pinned and native OTA is blocked.\n• web: %s\n• backend: %s\n• app.boardsesh.com: %s\n• mobile OTA: %s\nClear the rollback, then re-run this unified production deploy.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$APP_WEB_LINE" "$OTA_LINE" "$RUN_URL")
           # allowed_mentions.parse=[] blocks @everyone/@here/role/user pings from
           # any text we splice in (commit messages, PR titles, etc.).
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
@@ -824,10 +1246,18 @@ jobs:
         deploy-web,
         deploy-production-backend,
         deploy-app-web,
+        publish-mobile-ota,
+        release-gate,
+        mark-production-promoted,
       ]
     if: >-
       always()
-      && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+      && (needs.release-gate.result == 'failure'
+      || needs.mark-production-promoted.result == 'failure'
+      || ((needs.release-gate.outputs.state == 'promoted'
+      || needs.release-gate.outputs.state == 'noop')
+      && needs.mark-production-promoted.result != 'success')
+      || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-latest
     environment: Production
     steps:
@@ -842,16 +1272,22 @@ jobs:
           DEPLOY_WEB: ${{ needs.deploy-web.result }}
           DEPLOY_BACKEND: ${{ needs.deploy-production-backend.result }}
           DEPLOY_APP_WEB: ${{ needs.deploy-app-web.result }}
+          OTA_RESULT: ${{ needs.publish-mobile-ota.result }}
+          OTA_IOS_OUTCOME: ${{ needs.publish-mobile-ota.outputs.ios_outcome }}
+          OTA_ANDROID_OUTCOME: ${{ needs.publish-mobile-ota.outputs.android_outcome }}
+          OTA_HEALTH_STATUS: ${{ needs.publish-mobile-ota.outputs.health_status }}
+          RELEASE_GATE: ${{ needs.release-gate.result }}
+          PROMOTION_MARKER: ${{ needs.mark-production-promoted.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ needs.detect-changes.outputs.deploy_sha || github.sha }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
             exit 0
           fi
           # URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '🚨 **Production deploy failed** on \`%s\`\n• detect-changes: %s\n• check-rollback: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production release failed** on `%s`\n• detect-changes: %s\n• check-rollback: %s\n• build-web: %s\n• build-backend: %s\n• migrate: %s\n• deploy-web: %s\n• deploy-production-backend: %s\n• deploy-app-web: %s\n• mobile OTA: %s (iOS: %s, Android: %s; health: %s)\n• release-gate: %s\n• promotion marker: %s\nAny successful OTA platform remains published; no automatic rollback was attempted.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$DETECT_CHANGES" "$CHECK_ROLLBACK" "$BUILD_WEB" "$BUILD_BACKEND" "$MIGRATE" "$DEPLOY_WEB" "$DEPLOY_BACKEND" "$DEPLOY_APP_WEB" "$OTA_RESULT" "${OTA_IOS_OUTCOME:-skipped}" "${OTA_ANDROID_OUTCOME:-skipped}" "${OTA_HEALTH_STATUS:-not-run}" "$RELEASE_GATE" "$PROMOTION_MARKER" "$RUN_URL")
           # --fail-with-body surfaces Discord's status + error body (e.g. 429,
           # rotated webhook) in the log instead of failing silently. Don't let a
           # webhook hiccup fail the job — the alert is best-effort.
@@ -860,11 +1296,9 @@ jobs:
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
 
-  # Pings the Discord deploy channel after a successful, PROMOTED production
-  # deploy. Lists the PRs that just shipped (parsed from merge-commit subjects
-  # between github.event.before and github.sha). Fires only when no rollback
-  # is pinning prod, nothing failed or got cancelled, and at least one
-  # component actually deployed. No-ops if DISCORD_DEPLOY_WEBHOOK is unset.
+  # The single completion notification after a fully promoted or deliberately
+  # held mixed release settles, including OTA health. It uses the validated
+  # base→exact-deploy range rather than event fields from this late job.
   notify-success:
     needs:
       [
@@ -876,19 +1310,16 @@ jobs:
         deploy-web,
         deploy-production-backend,
         deploy-app-web,
+        publish-mobile-ota,
+        release-gate,
+        mark-production-promoted,
       ]
-    # deploy-app-web is both a dependency and a success trigger: a mobile-only
-    # push deploys app.boardsesh.com while deploy-web/backend skip, and without
-    # it in the trigger list that deploy would ship with no Discord message at
-    # all. Listing it in needs also stops the success ping racing ahead of an
-    # app deploy that is still uploading.
     if: >-
       always()
-      && needs.check-rollback.outputs.active != 'true'
-      && !contains(needs.*.result, 'failure')
-      && !contains(needs.*.result, 'cancelled')
-      && (needs.deploy-web.result == 'success' || needs.deploy-production-backend.result == 'success' ||
-      needs.deploy-app-web.result == 'success')
+      && needs.release-gate.result == 'success'
+      && (needs.release-gate.outputs.state == 'release-held'
+      || (needs.release-gate.outputs.state == 'promoted'
+      && needs.mark-production-promoted.result == 'success'))
     runs-on: ubuntu-latest
     environment: Production
     permissions:
@@ -901,25 +1332,31 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Need enough history to walk github.event.before..github.sha for the
-          # PR list. A single push to main is normally 1–5 commits (merge +
-          # squashed PR commits); 50 is a generous buffer for batched-merge
-          # days without paying for a full-history clone. If BEFORE isn't
-          # reachable in the shallow clone, the PR-list step short-circuits
-          # via the `git cat-file -e` check and the notification still posts
-          # (just without the Shipped section).
-          fetch-depth: 50
+          ref: ${{ needs.detect-changes.outputs.deploy_sha }}
+          fetch-depth: 0
 
-      - name: Notify Discord (deployed + promoted)
+      - name: Notify Discord (release settled)
         env:
           DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_STATE: ${{ needs.release-gate.outputs.state }}
           WEB_RESULT: ${{ needs.deploy-web.result }}
           BACKEND_RESULT: ${{ needs.deploy-production-backend.result }}
           APP_WEB_RESULT: ${{ needs.deploy-app-web.result }}
+          APP_CHANGED: ${{ needs.detect-changes.outputs.app_changed }}
+          APP_WEB_HELD: ${{ vars.APP_WEB_DEPLOY_HOLD != '' }}
+          OTA_CHANGED: ${{ needs.detect-changes.outputs.ota_changed }}
+          OTA_RESULT: ${{ needs.publish-mobile-ota.result }}
+          OTA_CONFIGURED: ${{ needs.publish-mobile-ota.outputs.configured }}
+          OTA_ANY_SUCCESS: ${{ needs.publish-mobile-ota.outputs.any_success }}
+          OTA_IOS_OUTCOME: ${{ needs.publish-mobile-ota.outputs.ios_outcome }}
+          OTA_ANDROID_OUTCOME: ${{ needs.publish-mobile-ota.outputs.android_outcome }}
+          OTA_HEALTH_STATUS: ${{ needs.publish-mobile-ota.outputs.health_status }}
+          OTA_CHANGELOG_SUMMARY_BASE64: ${{ needs.publish-mobile-ota.outputs.changelog_summary_base64 }}
+          OTA_MESSAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.message || '' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
+          COMMIT_SHA: ${{ needs.detect-changes.outputs.deploy_sha }}
+          BEFORE_SHA: ${{ needs.detect-changes.outputs.changelog_base_sha }}
           PR_BASE_URL: ${{ github.server_url }}/${{ github.repository }}/pull
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
@@ -932,14 +1369,30 @@ jobs:
           BACKEND_LINE="unchanged"
           if [ "$BACKEND_RESULT" = "success" ]; then BACKEND_LINE="deployed"; fi
           APP_WEB_LINE="unchanged"
-          if [ "$APP_WEB_RESULT" = "success" ]; then APP_WEB_LINE="deployed"; fi
+          if [ "$APP_CHANGED" = true ] && [ "$APP_WEB_HELD" = true ]; then
+            APP_WEB_LINE="held by APP_WEB_DEPLOY_HOLD"
+          elif [ "$APP_WEB_RESULT" = "success" ]; then
+            APP_WEB_LINE="deployed"
+          fi
 
-          # Pull PR numbers from merge-commit subjects in BEFORE..SHA. Skip the
-          # section entirely if BEFORE is missing/zero (workflow_dispatch, first
-          # push, force push) rather than guessing.
+          OTA_LINE="unchanged"
+          OTA_HEALTH_LINE="not run"
+          if [ "$OTA_CHANGED" = true ] && [ "$OTA_CONFIGURED" != true ]; then
+            OTA_LINE="skipped (self-hosted OTA is not configured)"
+          elif [ "$OTA_CHANGED" = true ] && [ "$OTA_ANY_SUCCESS" = true ]; then
+            OTA_LINE="published (iOS: ${OTA_IOS_OUTCOME:-skipped}, Android: ${OTA_ANDROID_OUTCOME:-skipped})"
+            OTA_HEALTH_LINE=${OTA_HEALTH_STATUS:-unavailable}
+          elif [ "$OTA_CHANGED" = true ]; then
+            OTA_LINE="not published (job: ${OTA_RESULT:-unknown})"
+          fi
+
+          # Pull PR numbers from merge commits and squash-merge subjects in the
+          # validated range. Skip the section for a zero base rather than guessing.
           PR_LIST=""
           if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-            PR_NUMS=$(git log --format='%s' "${BEFORE_SHA}..${COMMIT_SHA}" | grep -oE 'Merge pull request #[0-9]+' | grep -oE '[0-9]+' | sort -un || true)
+            PR_NUMS=$(git log --format='%s' "${BEFORE_SHA}..${COMMIT_SHA}" \
+              | sed -nE -e 's/.*Merge pull request #([0-9]+).*/\1/p' -e 's/.*\(#([0-9]+)\)$/\1/p' \
+              | sort -un || true)
             while IFS= read -r PR; do
               # `|| continue` form is safe under `set -e`; `&& continue` can trip it.
               [ -n "$PR" ] || continue
@@ -963,9 +1416,25 @@ jobs:
             SHIPPED_SECTION=$(printf '\nShipped:\n%s' "$PR_LIST")
           fi
 
+          WHATS_NEW_SECTION=""
+          if [ -n "$OTA_CHANGELOG_SUMMARY_BASE64" ]; then
+            OTA_CHANGELOG_SUMMARY=$(printf '%s' "$OTA_CHANGELOG_SUMMARY_BASE64" | base64 --decode)
+            WHATS_NEW_SECTION=$(printf '\n\n**What'\''s new**\n%s' "$OTA_CHANGELOG_SUMMARY")
+          elif [ "$OTA_ANY_SUCCESS" = true ]; then
+            OTA_FALLBACK_MESSAGE=${OTA_MESSAGE:-$(git log -1 --pretty=%s "$COMMIT_SHA")}
+            WHATS_NEW_SECTION=$(printf '\n\n**What'\''s new**\n%s' "$OTA_FALLBACK_MESSAGE")
+          fi
+
+          HEADER='✅ **Production release completed**'
+          if [ "$RELEASE_STATE" = release-held ]; then
+            HEADER='⚠️ **Production release completed with held surfaces**'
+          elif [ "$OTA_HEALTH_LINE" = alert ]; then
+            HEADER='⚠️ **Production release completed — OTA health alert**'
+          fi
+
           # RUN_URL wrapped in <…> so Discord suppresses the inline preview embed.
-          CONTENT=$(printf '✅ **Production deployed** on `%s`\n• web: %s\n• backend: %s\n• app.boardsesh.com: %s%s\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$APP_WEB_LINE" "$SHIPPED_SECTION" "$RUN_URL")
+          CONTENT=$(printf '%s on `%s`\n• web: %s\n• backend: %s\n• app.boardsesh.com: %s\n• mobile OTA: %s\n• OTA health: %s%s%s\n<%s>' \
+            "$HEADER" "${COMMIT_SHA:0:7}" "$WEB_LINE" "$BACKEND_LINE" "$APP_WEB_LINE" "$OTA_LINE" "$OTA_HEALTH_LINE" "$SHIPPED_SECTION" "$WHATS_NEW_SECTION" "$RUN_URL")
           # allowed_mentions.parse=[] blocks @everyone/@here/role/user pings —
           # critical here because PR titles flow straight into $content.
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
