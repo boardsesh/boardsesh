@@ -31,6 +31,11 @@ export interface GymDuplicateReportRedisClient {
   eval(script: string, numberOfKeys: number, key: string, ownerToken: string): Promise<unknown>;
 }
 
+type GymDuplicateReportRedisState = {
+  redisClient: GymDuplicateReportRedisClient | null;
+  redisClaimMayExist: boolean;
+};
+
 export interface GymDuplicateReportClaimDependencies {
   isRedisConnected: () => boolean;
   getRedisClient: () => GymDuplicateReportRedisClient;
@@ -38,12 +43,10 @@ export interface GymDuplicateReportClaimDependencies {
   now: () => number;
 }
 
-export type GymDuplicateReportClaim = {
+export type GymDuplicateReportClaim = Readonly<{
   key: string;
   ownerToken: string;
-  redisClient: GymDuplicateReportRedisClient | null;
-  redisClaimMayExist: boolean;
-};
+}>;
 
 export type GymDuplicateReportClaimResult =
   | { status: 'acquired'; claim: GymDuplicateReportClaim }
@@ -51,6 +54,7 @@ export type GymDuplicateReportClaimResult =
 
 const localClaims = new Map<string, LocalClaim>();
 const promotionPromises = new WeakMap<GymDuplicateReportClaim, Promise<void>>();
+const redisStates = new WeakMap<GymDuplicateReportClaim, GymDuplicateReportRedisState>();
 let nextLocalClaimPruneAt = 0;
 
 const defaultDependencies: GymDuplicateReportClaimDependencies = {
@@ -104,8 +108,10 @@ async function promoteLocalClaim(
   // happen after Redis applied the write. releaseGymDuplicateReportClaim then
   // waits for this promotion and performs the same owner-checked cleanup used by
   // the normal acquisition path.
-  localClaim.publicClaim.redisClient = redisClient;
-  localClaim.publicClaim.redisClaimMayExist = true;
+  const redisState = redisStates.get(localClaim.publicClaim);
+  if (!redisState) throw new Error('Missing Redis state for gym duplicate report claim');
+  redisState.redisClient = redisClient;
+  redisState.redisClaimMayExist = true;
 
   const promotionPromise = (async () => {
     try {
@@ -192,12 +198,15 @@ export async function acquireGymDuplicateReportClaim(
   }
 
   const ownerToken = dependencies.createOwnerToken();
-  const localOnlyClaim: GymDuplicateReportClaim = {
+  const localOnlyClaim: GymDuplicateReportClaim = Object.freeze({
     key,
     ownerToken,
+  });
+  const redisState: GymDuplicateReportRedisState = {
     redisClient: null,
     redisClaimMayExist: false,
   };
+  redisStates.set(localOnlyClaim, redisState);
   const localClaim: LocalClaim = {
     ownerToken,
     expiresAt: now + GYM_DUPLICATE_REPORT_CLAIM_TTL_MS,
@@ -210,8 +219,8 @@ export async function acquireGymDuplicateReportClaim(
     return { status: 'acquired', claim: localOnlyClaim };
   }
 
-  localOnlyClaim.redisClient = redisClient;
-  localOnlyClaim.redisClaimMayExist = true;
+  redisState.redisClient = redisClient;
+  redisState.redisClaimMayExist = true;
   try {
     const setResult = await redisClient.set(key, ownerToken, 'EX', GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS, 'NX');
 
@@ -250,16 +259,17 @@ export async function releaseGymDuplicateReportClaim(claim: GymDuplicateReportCl
   const pendingPromotion = promotionPromises.get(claim);
   if (pendingPromotion) await pendingPromotion;
 
-  if (!claim.redisClient || !claim.redisClaimMayExist) return;
+  const redisState = redisStates.get(claim);
+  if (!redisState?.redisClient || !redisState.redisClaimMayExist) return;
 
   try {
-    await claim.redisClient.eval(RELEASE_IF_OWNER_SCRIPT, 1, claim.key, claim.ownerToken);
+    await redisState.redisClient.eval(RELEASE_IF_OWNER_SCRIPT, 1, claim.key, claim.ownerToken);
   } catch {
     logger.warn('[GymDuplicateReport] Redis claim cleanup failed; the claim will expire automatically.');
   }
 }
 
-/** Clear process-local claim state between tests; Redis state is intentionally untouched. */
+/** @internal Clear process-local test state; Redis state is intentionally untouched. */
 export function resetGymDuplicateReportClaimsForTests(): void {
   localClaims.clear();
   nextLocalClaimPruneAt = 0;
@@ -269,4 +279,4 @@ export function resetGymDuplicateReportClaimsForTests(): void {
 // successful local-only notifications are still inside their 24-hour window.
 // RedisClientManager runs this hook before it advertises the recovered
 // connection to request handlers, closing the cross-instance duplicate gap.
-redisClientManager.onRedisReady?.((redisClient) => reconcileGymDuplicateReportClaims(redisClient));
+redisClientManager.onRedisReady((redisClient) => reconcileGymDuplicateReportClaims(redisClient));

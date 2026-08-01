@@ -137,7 +137,8 @@ describe('gym duplicate report claim ownership', () => {
     const firstResult = await acquireGymDuplicateReportClaim(key, dependencies);
     expect(firstResult.status).toBe('acquired');
     if (firstResult.status !== 'acquired') throw new Error('Expected a local-only claim');
-    expect(firstResult.claim).toMatchObject({ redisClient: null, redisClaimMayExist: false });
+    expect(firstResult.claim).toEqual({ key, ownerToken: 'local-owner' });
+    expect(Object.isFrozen(firstResult.claim)).toBe(true);
 
     await expect(acquireGymDuplicateReportClaim(key, dependencies)).resolves.toEqual({ status: 'already_claimed' });
 
@@ -332,8 +333,7 @@ describe('gym duplicate report claim ownership', () => {
     const staleReconciliation = reconcileGymDuplicateReportClaims(staleRedisClient, () => now);
     await vi.waitFor(() => expect(staleSet).toHaveBeenCalledTimes(1));
     const recoveredReconciliation = reconcileGymDuplicateReportClaims(recoveredRedisClient, () => now);
-    await Promise.resolve();
-    expect(recoveredRedisClient.setCalls).toHaveLength(0);
+    await vi.waitFor(() => expect(recoveredRedisClient.setCalls).toHaveLength(0));
 
     rejectStalePromotion?.(new Error('stale client disconnected'));
     await Promise.all([staleReconciliation, recoveredReconciliation]);
@@ -438,7 +438,6 @@ describe('gym duplicate report claim ownership', () => {
     const promotion = reconcileGymDuplicateReportClaims(redisClient);
     await vi.waitFor(() => expect(setSpy).toHaveBeenCalledTimes(1));
     const release = releaseGymDuplicateReportClaim(outageResult.claim);
-    await Promise.resolve();
     expect(evalSpy).not.toHaveBeenCalled();
 
     finishPromotion?.('OK');
