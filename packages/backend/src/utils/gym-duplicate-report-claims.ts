@@ -24,13 +24,7 @@ type LocalClaim = {
 
 /** The narrow Redis surface needed by this claim protocol. */
 export interface GymDuplicateReportRedisClient {
-  set(
-    key: string,
-    ownerToken: string,
-    expiryMode: 'EX' | 'PXAT',
-    expiry: number,
-    condition: 'NX',
-  ): Promise<'OK' | null>;
+  set(key: string, ownerToken: string, expiryMode: 'PXAT', expiry: number, condition: 'NX'): Promise<'OK' | null>;
   /** ioredis exposes EVAL as unknown; cleanup deliberately ignores the Lua result. */
   eval(script: string, numberOfKeys: number, key: string, ownerToken: string): Promise<unknown>;
 }

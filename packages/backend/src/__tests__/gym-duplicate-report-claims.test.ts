@@ -15,7 +15,7 @@ import {
 
 class FakeRedisClaimClient implements GymDuplicateReportRedisClient {
   readonly claims = new Map<string, { ownerToken: string; expiresAt: number }>();
-  readonly setCalls: Array<{ key: string; ownerToken: string; expiryMode: 'EX' | 'PXAT'; expiry: number }> = [];
+  readonly setCalls: Array<{ key: string; ownerToken: string; expiryMode: 'PXAT'; expiry: number }> = [];
   throwAfterNextSet = false;
   throwBeforeNextSet = false;
 
@@ -29,7 +29,7 @@ class FakeRedisClaimClient implements GymDuplicateReportRedisClient {
   async set(
     key: string,
     ownerToken: string,
-    expiryMode: 'EX' | 'PXAT',
+    expiryMode: 'PXAT',
     expiry: number,
     _condition: 'NX',
   ): Promise<'OK' | null> {
@@ -40,8 +40,7 @@ class FakeRedisClaimClient implements GymDuplicateReportRedisClient {
     }
     this.pruneExpired(key);
     if (this.claims.has(key)) return null;
-    const expiresAt = expiryMode === 'EX' ? this.now() + expiry * 1000 : expiry;
-    this.claims.set(key, { ownerToken, expiresAt });
+    this.claims.set(key, { ownerToken, expiresAt: expiry });
     if (this.throwAfterNextSet) {
       this.throwAfterNextSet = false;
       throw new Error('connection closed after write');
@@ -571,9 +570,7 @@ describe('gym duplicate report claim against test Redis', () => {
   function realRedisClaimClient(): GymDuplicateReportRedisClient {
     return {
       set: (claimKey, token, expiryMode, expiry, condition) =>
-        expiryMode === 'EX'
-          ? redis.set(claimKey, token, 'EX', expiry, condition)
-          : redis.set(claimKey, token, 'PXAT', expiry, condition),
+        redis.set(claimKey, token, expiryMode, expiry, condition),
       eval: (script, numberOfKeys, claimKey, token) => redis.eval(script, numberOfKeys, claimKey, token),
     };
   }

@@ -12,6 +12,7 @@ const REDIS_URL = process.env.REDIS_URL;
 // value).
 const MIN_REDIS_MAJOR = 6;
 const MIN_REDIS_MINOR = 2;
+const MAX_READY_HANDLER_PASSES = 100;
 
 function parseRedisVersion(infoBlock: string): { major: number; minor: number; patch: number } | null {
   // `INFO server` returns lines like "redis_version:7.2.4\r\n". Parse the
@@ -55,6 +56,8 @@ export class RedisClientManager {
   private isConnected = false;
   private connectionPromise: Promise<boolean> | null = null;
   private finishingConnection = false;
+  private connectionLifecycleEpoch = 0;
+  private cancelPendingConnection: (() => void) | null = null;
   private readonly readyHandlers = new Set<RedisReadyHandler>();
 
   /**
@@ -87,9 +90,15 @@ export class RedisClientManager {
     markConnectedIfCurrent: () => boolean,
   ): Promise<boolean> {
     const completedHandlers = new Set<RedisReadyHandler>();
-    while (true) {
+    let handlerPasses = 0;
+    while (handlerPasses <= MAX_READY_HANDLER_PASSES) {
       const pendingHandlers = Array.from(this.readyHandlers).filter((handler) => !completedHandlers.has(handler));
       if (pendingHandlers.length > 0) {
+        if (handlerPasses === MAX_READY_HANDLER_PASSES) {
+          logger.warn('[Redis] Recovery handlers kept registering more handlers; refusing to advertise readiness.');
+          throw new Error(`Redis recovery handlers did not settle after ${MAX_READY_HANDLER_PASSES} passes`);
+        }
+        handlerPasses += 1;
         for (const handler of pendingHandlers) completedHandlers.add(handler);
         await Promise.all(pendingHandlers.map((handler) => this.runReadyHandler(handler, publisher)));
         continue;
@@ -101,6 +110,8 @@ export class RedisClientManager {
       // path; it cannot fall into the gap between the two contracts.
       return markConnectedIfCurrent();
     }
+
+    throw new Error('Unreachable Redis readiness state');
   }
 
   /**
@@ -122,7 +133,23 @@ export class RedisClientManager {
   }
 
   private async doConnect(): Promise<boolean> {
+    const lifecycleEpoch = this.connectionLifecycleEpoch;
     return new Promise((resolve, reject) => {
+      let connectionSettled = false;
+      const resolveConnection = (connected: boolean) => {
+        if (connectionSettled) return;
+        connectionSettled = true;
+        if (this.cancelPendingConnection === cancelConnection) this.cancelPendingConnection = null;
+        resolve(connected);
+      };
+      const rejectConnection = (error: Error) => {
+        if (connectionSettled) return;
+        connectionSettled = true;
+        if (this.cancelPendingConnection === cancelConnection) this.cancelPendingConnection = null;
+        reject(error);
+      };
+      const cancelConnection = () => resolveConnection(false);
+      this.cancelPendingConnection = cancelConnection;
       logger.info('[Redis] Connecting to Redis...');
 
       // Create publisher connection
@@ -171,6 +198,7 @@ export class RedisClientManager {
       let readinessEpoch = 0;
 
       const checkAllReady = () => {
+        if (this.connectionLifecycleEpoch !== lifecycleEpoch) return;
         if (!(publisherReady && subscriberReady && streamConsumerReady)) return;
         if (this.isConnected || this.finishingConnection) return;
         this.finishingConnection = true;
@@ -183,7 +211,13 @@ export class RedisClientManager {
         verifyRedisVersion(publisher)
           .then(() =>
             this.runReadyHandlersBeforeConnected(publisher, () => {
-              if (!publisherReady || !subscriberReady || !streamConsumerReady || readinessEpoch !== reconciliationEpoch)
+              if (
+                this.connectionLifecycleEpoch !== lifecycleEpoch ||
+                !publisherReady ||
+                !subscriberReady ||
+                !streamConsumerReady ||
+                readinessEpoch !== reconciliationEpoch
+              )
                 return false;
               // Publish connected state and release the re-entrance guard in
               // the same synchronous callback as the final handler-set check.
@@ -191,7 +225,7 @@ export class RedisClientManager {
               // own readiness pass instead of being hidden by a stale guard.
               this.isConnected = true;
               this.finishingConnection = false;
-              resolve(true);
+              resolveConnection(true);
               return true;
             }),
           )
@@ -206,7 +240,7 @@ export class RedisClientManager {
           .catch((err: Error) => {
             this.finishingConnection = false;
             logger.error(`[Redis] ${err.message}`);
-            reject(err);
+            rejectConnection(err);
           });
       };
 
@@ -231,21 +265,21 @@ export class RedisClientManager {
       this.publisher.on('error', (err) => {
         logger.error('[Redis] Publisher error:', err.message);
         if (!this.isConnected) {
-          reject(new Error(`Redis publisher connection failed: ${err.message}`));
+          rejectConnection(new Error(`Redis publisher connection failed: ${err.message}`));
         }
       });
 
       this.subscriber.on('error', (err) => {
         logger.error('[Redis] Subscriber error:', err.message);
         if (!this.isConnected) {
-          reject(new Error(`Redis subscriber connection failed: ${err.message}`));
+          rejectConnection(new Error(`Redis subscriber connection failed: ${err.message}`));
         }
       });
 
       this.streamConsumer.on('error', (err) => {
         logger.error('[Redis] Stream consumer error:', err.message);
         if (!this.isConnected) {
-          reject(new Error(`Redis stream consumer connection failed: ${err.message}`));
+          rejectConnection(new Error(`Redis stream consumer connection failed: ${err.message}`));
         }
       });
 
@@ -325,6 +359,15 @@ export class RedisClientManager {
    */
   async disconnect(): Promise<void> {
     logger.info('[Redis] Disconnecting...');
+
+    // Invalidate any in-flight version check or readiness reconciliation before
+    // awaiting ioredis. quit() emits close asynchronously in real deployments,
+    // so relying on those events leaves a window where an old readiness pass
+    // could publish isConnected=true after shutdown has already started.
+    this.connectionLifecycleEpoch += 1;
+    this.isConnected = false;
+    this.finishingConnection = false;
+    this.cancelPendingConnection?.();
 
     const disconnectPromises: Promise<void>[] = [];
 

@@ -10,6 +10,8 @@ const redisMockState = vi.hoisted(() => ({
   instances: [] as FakeRedisInstance[],
   setCalls: [] as unknown[][],
   setHandler: null as ((...arguments_: unknown[]) => Promise<'OK' | null>) | null,
+  deferQuitClose: false,
+  pendingQuitClosures: [] as Array<() => void>,
 }));
 
 vi.mock('ioredis', () => {
@@ -41,6 +43,14 @@ vi.mock('ioredis', () => {
     }
 
     async quit(): Promise<'OK'> {
+      if (redisMockState.deferQuitClose) {
+        return new Promise<'OK'>((resolve) => {
+          redisMockState.pendingQuitClosures.push(() => {
+            this.emit('close');
+            resolve('OK');
+          });
+        });
+      }
       this.emit('close');
       return 'OK';
     }
@@ -55,6 +65,8 @@ beforeEach(() => {
   redisMockState.instances.length = 0;
   redisMockState.setCalls.length = 0;
   redisMockState.setHandler = null;
+  redisMockState.deferQuitClose = false;
+  redisMockState.pendingQuitClosures.length = 0;
 });
 
 afterEach(() => {
@@ -158,6 +170,57 @@ describe('RedisClientManager recovery readiness', () => {
     await expect(secondConnection).resolves.toBe(true);
     expect(readyHandler).toHaveBeenCalledTimes(2);
     expect(manager.isRedisConnected()).toBe(true);
+    await manager.disconnect();
+  });
+
+  it('does not advertise a stale connection while explicit disconnect is waiting for close events', async () => {
+    const { RedisClientManager } = await import('../redis/client');
+    const manager = new RedisClientManager();
+    let finishReadyHandler: (() => void) | undefined;
+    manager.onRedisReady(
+      () =>
+        new Promise<void>((resolve) => {
+          finishReadyHandler = resolve;
+        }),
+    );
+
+    const connection = manager.connect();
+    const [publisher, subscriber, streamConsumer] = redisMockState.instances;
+    publisher?.emit('ready');
+    subscriber?.emit('ready');
+    streamConsumer?.emit('ready');
+    await vi.waitFor(() => expect(finishReadyHandler).toBeTypeOf('function'));
+
+    redisMockState.deferQuitClose = true;
+    const disconnection = manager.disconnect();
+    await vi.waitFor(() => expect(redisMockState.pendingQuitClosures).toHaveLength(3));
+    finishReadyHandler?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(manager.isRedisConnected()).toBe(false);
+
+    for (const emitClose of redisMockState.pendingQuitClosures.splice(0)) emitClose();
+    await disconnection;
+    await expect(connection).resolves.toBe(false);
+    expect(manager.isRedisConnected()).toBe(false);
+  });
+
+  it('fails closed when readiness handlers recursively register more handlers', async () => {
+    const { RedisClientManager } = await import('../redis/client');
+    const manager = new RedisClientManager();
+    const registerNextHandler = () => {
+      manager.onRedisReady(async () => registerNextHandler());
+    };
+    registerNextHandler();
+
+    const connection = manager.connect();
+    const [publisher, subscriber, streamConsumer] = redisMockState.instances;
+    publisher?.emit('ready');
+    subscriber?.emit('ready');
+    streamConsumer?.emit('ready');
+
+    await expect(connection).rejects.toThrow('Redis recovery handlers did not settle after 100 passes');
+    expect(manager.isRedisConnected()).toBe(false);
     await manager.disconnect();
   });
 
