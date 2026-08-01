@@ -12,11 +12,11 @@ import {
 // The only device-measured native inset in this suite. Do not turn inferred
 // no-accessory/minimized values into product contracts without iOS 26 hardware QA.
 const DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET = 139;
-// A plausible 34pt home-indicator + 49pt tab-bar arithmetic fixture. Although
-// that sum matches a typical no-accessory inset, this exact state has not been
-// measured in this suite. It is used only to prove that the pure function treats
-// a native UIKit inset as opaque and does not add TAB_BAR_HEIGHT to it.
-const SYNTHETIC_NATIVE_SAFE_AREA_INSET = 83;
+// An intentionally non-device value used only to prove that the pure function
+// treats a native UIKit inset as opaque and does not add TAB_BAR_HEIGHT to it.
+// Keep it distinct from the 139pt device anchor so arithmetic fixtures cannot be
+// mistaken for a measured no-accessory or minimized-tab contract.
+const SYNTHETIC_NATIVE_SAFE_AREA_INSET = 100;
 
 describe('computeBottomChromeMetrics', () => {
   it('reserves nothing extra outside the tabs group', () => {
@@ -116,6 +116,7 @@ describe('computeBottomChromeMetrics', () => {
     expect(metrics.scrollBottomPadding).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
     expect(metrics.floatingControlBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
     expect(metrics.fixedFooterBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
+    expect(metrics.preSessionFooterBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
   });
 
   it('hides the bar but keeps tab-bar clearance on a pushed sub-route (Material)', () => {

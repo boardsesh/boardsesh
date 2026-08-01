@@ -186,6 +186,12 @@ Is it a secondary surface OVER the current screen, or its own full surface?
    paints its own opaque `View` under its `GlassSurface` so the live tabs screen doesn't show
    through. See `isTabsChromeRoute` in `src/lib/route-segments.ts`.
 
+   A **pushed route** under `NativeTabs` is different: the native tab bar remains, but route
+   classification deliberately unmounts the BottomAccessory / queue chrome on screens such as
+   session detail. Its bottom layout must therefore trust the raw UIKit safe-area inset for the
+   chrome that is actually present; it must not carry the accessory reserve forward from the tab
+   root or add the tab-bar height a second time.
+
 3. **Board gestures and modal/sheet pan don't mix.** A full-screen board you pan/pinch (the
    `holds` and `zone` filters) is a **pushed** route, not a modal — a modal/sheet's own pan
    gesture competes with the board's.
