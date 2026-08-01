@@ -84,6 +84,10 @@ const TEST_SOURCE_FILES = [
     sourcePath: '../modules/live-activity/ios/TakeControlIntent.swift',
     projectPath: 'BoardseshTests/LiveActivitySources/TakeControlIntent.swift',
   },
+  {
+    sourcePath: '../modules/live-activity/ios/ReconnectBoardIntent.swift',
+    projectPath: 'BoardseshTests/LiveActivitySources/ReconnectBoardIntent.swift',
+  },
 ];
 
 const SYSTEM_FRAMEWORKS = [

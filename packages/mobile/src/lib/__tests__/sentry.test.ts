@@ -21,6 +21,7 @@ import {
   applyBleDiagnosticsToScope,
   applyErrorContextToScope,
   applyLiveActivityIntentDiagnosticToScope,
+  captureEnabledLiveActivityIntentDiagnostic,
   applyOtaTagsToScope,
   captureLiveActivityIntentDiagnostic,
   captureToSentry,
@@ -87,6 +88,27 @@ describe('Live Activity intent diagnostic reporting', () => {
     captureLiveActivityIntentDiagnostic(diagnostic);
     expect(Sentry.withScope).not.toHaveBeenCalled();
     expect(Sentry.captureMessage).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('captures an enabled diagnostic as an informational Sentry message', () => {
+    const scope = {
+      setLevel: vi.fn(),
+      setFingerprint: vi.fn(),
+      setTag: vi.fn(),
+      setExtra: vi.fn(),
+    };
+    vi.mocked(Sentry.withScope).mockImplementation((callback) => callback(scope as never));
+
+    captureEnabledLiveActivityIntentDiagnostic(diagnostic, Sentry.withScope, Sentry.captureMessage);
+
+    expect(Sentry.withScope).toHaveBeenCalledTimes(1);
+    expect(scope.setLevel).toHaveBeenCalledWith('info');
+    expect(scope.setFingerprint).toHaveBeenCalledWith([LIVE_ACTIVITY_INTENT_INTERRUPTED_FINGERPRINT]);
+    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+      'Live Activity intent did not complete before its process ended',
+      'info',
+    );
     expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 });

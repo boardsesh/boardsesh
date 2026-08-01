@@ -80,6 +80,40 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(SharedWidgetTakeControlRuntime.action(for: wallControl), .alreadyAllowed)
     }
 
+    func testReconnectDiagnosticKeepsBleFailureWhenTakeControlAlsoFails() {
+        XCTAssertEqual(
+            ReconnectBoardIntent.diagnosticCompletionClass(
+                current: .bleFailure,
+                networkResult: .serverRejected
+            ),
+            .bleFailure
+        )
+        XCTAssertEqual(
+            ReconnectBoardIntent.diagnosticCompletionClass(
+                current: .bleFailure,
+                networkResult: .retryableFailure
+            ),
+            .bleFailure
+        )
+    }
+
+    func testReconnectDiagnosticRecordsNetworkFailureAfterSuccessfulBleReconnect() {
+        XCTAssertEqual(
+            ReconnectBoardIntent.diagnosticCompletionClass(
+                current: .success,
+                networkResult: .serverRejected
+            ),
+            .serverRejected
+        )
+        XCTAssertEqual(
+            ReconnectBoardIntent.diagnosticCompletionClass(
+                current: .success,
+                networkResult: .retryableFailure
+            ),
+            .retryableNetworkFailure
+        )
+    }
+
     func testMarkControlClaimedEnablesPartyNavigationButKeepsAuthorization() {
         SharedWidgetWallControlState.save(navigationAllowed: false, isPartySession: true, to: defaults)
 

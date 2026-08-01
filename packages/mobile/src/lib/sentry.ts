@@ -197,16 +197,33 @@ export function applyLiveActivityIntentDiagnosticToScope(
   scope.setExtra('elapsed_ms', Math.max(0, diagnostic.updatedAtMs - diagnostic.startedAtMs));
 }
 
+type LiveActivityIntentDiagnosticWithScope = (callback: (scope: LiveActivityIntentDiagnosticScope) => void) => void;
+
+type LiveActivityIntentDiagnosticCaptureMessage = (message: string, level: 'info') => void;
+
+/**
+ * Sends an intent diagnostic through an already-enabled Sentry context.
+ * Kept separate from the production enablement gate so the actual SDK emission
+ * contract remains directly testable in Vitest, where __DEV__ is inlined true.
+ */
+export function captureEnabledLiveActivityIntentDiagnostic(
+  diagnostic: LiveActivityIntentDiagnostic,
+  withScope: LiveActivityIntentDiagnosticWithScope,
+  captureMessage: LiveActivityIntentDiagnosticCaptureMessage,
+): void {
+  withScope((scope) => {
+    applyLiveActivityIntentDiagnosticToScope(scope, diagnostic);
+    captureMessage('Live Activity intent did not complete before its process ended', 'info');
+  });
+}
+
 /**
  * Reports an interrupted native intent as an informational message. It is not
  * an exception or crash and therefore cannot inflate crash-free statistics.
  */
 export function captureLiveActivityIntentDiagnostic(diagnostic: LiveActivityIntentDiagnostic): void {
   if (!isSentryEnabled) return;
-  Sentry.withScope((scope) => {
-    applyLiveActivityIntentDiagnosticToScope(scope, diagnostic);
-    Sentry.captureMessage('Live Activity intent did not complete before its process ended', 'info');
-  });
+  captureEnabledLiveActivityIntentDiagnostic(diagnostic, Sentry.withScope, Sentry.captureMessage);
 }
 
 // The global-scope tag keys written on connect, cleared together on disconnect
