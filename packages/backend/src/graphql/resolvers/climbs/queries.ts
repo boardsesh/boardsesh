@@ -123,7 +123,7 @@ export const climbQueries = {
       // a MoonBoard duplicate-publish that points the UI at the existing
       // climb via `climbUuid` would surface an empty "no identical climbs"
       // state for the exact match it just rejected.
-      if (holds.length === 0 && climbRow?.frames) {
+      if (holds.length === 0 && climbRow?.frames && (climbRow.framesCount ?? 1) <= 1) {
         holds = parseFramesToHoldEntries(boardType, climbRow.frames).map(({ holdId, holdState }) => ({
           holdId,
           holdState,

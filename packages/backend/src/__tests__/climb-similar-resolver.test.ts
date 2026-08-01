@@ -263,6 +263,23 @@ describe('climbQueries.similarClimbs', () => {
     ]);
   });
 
+  it('does not parse a multi-frame target twice when its authoritative projection is empty', async () => {
+    mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'x1,"', framesCount: 2 }]));
+    parseFramesToHoldEntriesMock.mockReturnValueOnce([]);
+
+    const result = await climbQueries.similarClimbs(
+      {},
+      { input: { boardType: 'kilter', layoutId: 1, climbUuid: 'empty-animated' } },
+      makeCtx(),
+    );
+
+    expect(result).toEqual([]);
+    expect(mockDb.select).toHaveBeenCalledTimes(1);
+    expect(parseFramesToHoldEntriesMock).toHaveBeenCalledTimes(1);
+    expect(parseFramesToHoldEntriesMock).toHaveBeenCalledWith('kilter', 'x1,"');
+    expect(findSimilarClimbsMock).not.toHaveBeenCalled();
+  });
+
   it('filters nonpositive and noncanonical materialized rows for a single-frame target', async () => {
     mockDb.select.mockReturnValueOnce(mockSelectChain([{ frames: 'p1r12', framesCount: 1 }])).mockReturnValueOnce(
       mockSelectChain([

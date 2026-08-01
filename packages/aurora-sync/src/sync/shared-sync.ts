@@ -60,7 +60,10 @@ type ExistingClimbFrameSource = {
  * so the hold writer must project that same persisted value. Projecting a
  * changed incoming blob would otherwise add rows that disagree with the
  * `board_climbs` row. A UUID owned by another board is a global-PK collision,
- * not a climb this sync may attach holds to.
+ * not a climb this sync may attach holds to. A legacy same-board row whose
+ * persisted frames are NULL likewise projects no rows here: the conflict
+ * policy cannot make the incoming blob authoritative, so repair/backfill owns
+ * recovery instead of silently diverging from `board_climbs`.
  */
 export function resolveAuthoritativeClimbFrames(
   board: AuroraBoardName,
