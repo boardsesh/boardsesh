@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { type SetRow, getSetsBySlug } from '@/app/lib/slug-utils';
+import { enforcePublicApiRateLimit } from '@/app/lib/public-api-rate-limit.server';
 import type { BoardName } from '@/app/lib/types';
 
 export async function GET(
@@ -8,6 +9,9 @@ export async function GET(
     params: Promise<{ board_name: string; layout_id: string; size_id: string; slug: string }>;
   },
 ): Promise<NextResponse<SetRow[] | { error: string }>> {
+  const rateLimitedResponse = await enforcePublicApiRateLimit(req);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   const params = await props.params;
   const { board_name, layout_id, size_id, slug } = params;
 

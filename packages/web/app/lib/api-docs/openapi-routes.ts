@@ -37,6 +37,25 @@ import {
   WsAuthResponseSchema,
 } from './openapi-registry';
 
+const PUBLIC_READ_RATE_LIMIT_RESPONSE = {
+  description: 'The shared client-IP budget of 120 origin requests per 60 seconds has been exceeded.',
+  headers: {
+    'Retry-After': {
+      description: 'Positive number of seconds to wait before retrying.',
+      schema: { type: 'integer' as const, minimum: 1 },
+    },
+  },
+  content: {
+    'application/json': {
+      schema: ErrorResponseSchema,
+    },
+  },
+};
+
+function describePublicRead(endpointDescription: string): string {
+  return `${endpointDescription} Requests that reach the origin share a 120 requests/60 seconds client-IP budget across all public GET /api/v1 routes. Responses served directly from the CDN cache do not spend that budget.`;
+}
+
 // ============================================
 // Board Configuration Routes
 // ============================================
@@ -45,8 +64,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/grades',
   summary: 'Get difficulty grades',
-  description:
+  description: describePublicRead(
     'Returns all difficulty grades for a specific board type. Grades are board-specific and include both numeric IDs and human-readable names.',
+  ),
   tags: ['Board Configuration'],
   request: {
     params: z.object({
@@ -62,6 +82,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
     500: {
       description: 'Server error',
       content: {
@@ -77,8 +98,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/grades/{board_name}',
   summary: 'Get difficulty grades (alternate)',
-  description:
+  description: describePublicRead(
     'Alternate endpoint for getting difficulty grades. Returns the same data as /api/v1/{board_name}/grades.',
+  ),
   tags: ['Board Configuration'],
   request: {
     params: z.object({
@@ -94,6 +116,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -101,8 +124,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/angles/{board_name}/{layout_id}',
   summary: 'Get available angles',
-  description:
+  description: describePublicRead(
     'Returns all available angles for a board (the same range applies to every layout). Angles are typically between 0-70 degrees depending on the board configuration.',
+  ),
   tags: ['Board Configuration'],
   request: {
     params: z.object({
@@ -119,6 +143,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -130,8 +155,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/{climb_uuid}',
   summary: 'Get climb details',
-  description:
+  description: describePublicRead(
     'Returns detailed information about a specific climb including hold positions, difficulty, and statistics.',
+  ),
   tags: ['Climbs'],
   request: {
     params: z.object({
@@ -160,6 +186,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -167,8 +194,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/climb-stats/{climb_uuid}',
   summary: 'Get climb statistics across all angles',
-  description:
+  description: describePublicRead(
     'Returns statistics for a climb at every angle it has been attempted. Useful for seeing how difficulty and popularity vary with angle.',
+  ),
   tags: ['Climbs'],
   request: {
     params: z.object({
@@ -185,6 +213,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -192,8 +221,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/setters',
   summary: 'Get setters for a board configuration',
-  description:
+  description: describePublicRead(
     'Returns a list of climb setters for the specified board configuration, ordered by number of climbs set.',
+  ),
   tags: ['Climbs'],
   request: {
     params: z.object({
@@ -213,6 +243,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -220,8 +251,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/{layout_id}/{size_id}/{set_ids}/{angle}/heatmap',
   summary: 'Get hold usage heatmap',
-  description:
-    'Returns frequency data for each hold, showing how often holds are used in climbs. Useful for visualizing popular hold positions.',
+  description: describePublicRead(
+    'Returns frequency data for each hold, showing how often holds are used in climbs. Useful for visualizing popular hold positions. Anonymous and signed-in heatmap reads spend the same IP budget, so users behind one gym NAT share it.',
+  ),
   tags: ['Climbs'],
   request: {
     params: z.object({
@@ -241,6 +273,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -252,7 +285,9 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/slugs/layout/{slug}',
   summary: 'Resolve layout slug to ID',
-  description: 'Converts a human-readable layout slug (e.g., "kilter-home-board") to its numeric ID.',
+  description: describePublicRead(
+    'Converts a human-readable layout slug (e.g., "kilter-home-board") to its numeric ID.',
+  ),
   tags: ['Slug Resolution'],
   request: {
     params: z.object({
@@ -277,6 +312,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -284,7 +320,7 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/slugs/size/{layout_id}/{slug}',
   summary: 'Resolve size slug to ID',
-  description: 'Converts a human-readable size slug to its numeric ID for a specific layout.',
+  description: describePublicRead('Converts a human-readable size slug to its numeric ID for a specific layout.'),
   tags: ['Slug Resolution'],
   request: {
     params: z.object({
@@ -310,6 +346,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
@@ -317,7 +354,7 @@ registry.registerPath({
   method: 'get',
   path: '/api/v1/{board_name}/slugs/sets/{layout_id}/{size_id}/{slug}',
   summary: 'Resolve set slug to IDs',
-  description: 'Converts a human-readable set slug to comma-separated set IDs.',
+  description: describePublicRead('Converts a human-readable set slug to comma-separated set IDs.'),
   tags: ['Slug Resolution'],
   request: {
     params: z.object({
@@ -344,6 +381,7 @@ registry.registerPath({
         },
       },
     },
+    429: PUBLIC_READ_RATE_LIMIT_RESPONSE,
   },
 });
 
