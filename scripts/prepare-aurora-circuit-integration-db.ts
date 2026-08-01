@@ -274,7 +274,10 @@ async function readNamedIndex(transaction: TransactionSql, indexName: string): P
         '{}'::text[]
       ) AS "keyOpclasses",
       COALESCE(
-        array_agg(collation_namespace.nspname || '.' || collation.collname ORDER BY index_key.ordinality)
+        array_agg(
+          collation_namespace.nspname || '.' || index_collation.collname
+          ORDER BY index_key.ordinality
+        )
           FILTER (WHERE index_key.ordinality <= index_data.indnkeyatts),
         '{}'::text[]
       ) AS "keyCollations",
@@ -294,8 +297,9 @@ async function readNamedIndex(transaction: TransactionSql, indexName: string): P
       AND attribute.attnum = index_key.attnum
     LEFT JOIN pg_opclass AS opclass ON opclass.oid = index_data.indclass[index_key.ordinality::int - 1]
     LEFT JOIN pg_namespace AS opclass_namespace ON opclass_namespace.oid = opclass.opcnamespace
-    LEFT JOIN pg_collation AS collation ON collation.oid = index_data.indcollation[index_key.ordinality::int - 1]
-    LEFT JOIN pg_namespace AS collation_namespace ON collation_namespace.oid = collation.collnamespace
+    LEFT JOIN pg_collation AS index_collation
+      ON index_collation.oid = index_data.indcollation[index_key.ordinality::int - 1]
+    LEFT JOIN pg_namespace AS collation_namespace ON collation_namespace.oid = index_collation.collnamespace
     WHERE index_namespace.nspname = 'public'
       AND index_class.relname = ${indexName}
     GROUP BY
