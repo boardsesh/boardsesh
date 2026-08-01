@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 import {
   HOLD_STATE_MAP,
   isAuroraBoardName,
@@ -125,7 +125,7 @@ export function strictlyProjectStoredRows(
   }
 
   const parsedSegments = parseFramesSegments(frames);
-  if (!Number.isInteger(expectedFramesCount) || expectedFramesCount == null || expectedFramesCount <= 0) {
+  if (expectedFramesCount == null || !Number.isInteger(expectedFramesCount) || expectedFramesCount <= 0) {
     errors.push(`frames_count is invalid: ${String(expectedFramesCount)}`);
   } else if (parsedSegments.length !== expectedFramesCount) {
     errors.push(`frames_count mismatch: stored=${expectedFramesCount} parsed=${parsedSegments.length}`);
