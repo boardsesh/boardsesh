@@ -72,6 +72,52 @@ interface WebBluetooth {
 
 const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
+// Android Chrome can reject the first GATT connection attempt with a transient
+// NetworkError, then accept the same granted device handle moments later. Keep
+// this deliberately small: one retry is enough for that race, without turning a
+// genuinely unreachable board into a long-running retry loop.
+const GATT_CONNECT_MAX_ATTEMPTS = 2;
+const GATT_CONNECT_RETRY_DELAY_MS = 500;
+
+function isRetryableGattConnectError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    (error as { name?: unknown }).name === 'NetworkError'
+  );
+}
+
+/**
+ * Connect an already-granted device without ever reopening the chooser.
+ *
+ * Web Bluetooth does not expose an AbortSignal or a safe cancellation API for
+ * a pending `connect()`, so this bounds only settled, retryable failures: one
+ * 500 ms wait and one more call on the same GATT handle. Do not add a racing
+ * timeout here; retrying while the original browser operation is still pending
+ * can itself produce "GATT operation already in progress" failures.
+ */
+async function connectWebBluetoothGattServer(
+  device: WebBluetoothDevice,
+): Promise<WebBluetoothRemoteGATTServer | undefined> {
+  const gatt = device.gatt;
+  if (!gatt || gatt.connected) return gatt;
+
+  for (let attempt = 1; attempt <= GATT_CONNECT_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await gatt.connect();
+    } catch (error) {
+      if (attempt === GATT_CONNECT_MAX_ATTEMPTS || !isRetryableGattConnectError(error)) {
+        throw error;
+      }
+      await delay(GATT_CONNECT_RETRY_DELAY_MS);
+    }
+  }
+
+  // The loop either returns from connect() or throws its final rejection.
+  throw new Error('Unreachable GATT connection state');
+}
+
 // --- Availability + device request ------------------------------------------
 
 /**
@@ -134,7 +180,7 @@ export function requestDeviceOptionsForFamily(scanFamily: 'aurora' | 'moonboard'
 export async function getUartCharacteristic(
   device: WebBluetoothDevice,
 ): Promise<WebBluetoothRemoteGATTCharacteristic | undefined> {
-  const server = await device.gatt?.connect();
+  const server = await connectWebBluetoothGattServer(device);
   const service = await server?.getPrimaryService(UART_SERVICE_UUID);
   return service?.getCharacteristic(UART_WRITE_CHARACTERISTIC_UUID);
 }
@@ -162,7 +208,7 @@ async function tryGetWriteCharacteristic(
 export async function getMoonboardWriteCharacteristic(
   device: WebBluetoothDevice,
 ): Promise<WebBluetoothRemoteGATTCharacteristic | undefined> {
-  const server = await device.gatt?.connect();
+  const server = await connectWebBluetoothGattServer(device);
   if (!server) return undefined;
   const uart = await tryGetWriteCharacteristic(server, UART_SERVICE_UUID, UART_WRITE_CHARACTERISTIC_UUID);
   if (uart) return uart;
