@@ -97,7 +97,9 @@ describe('applyRateLimit key selection', () => {
     });
   });
 
-  it('keeps anonymous HTTP callers on the local tier until their proxy trust boundary is hardened', async () => {
+  it('keeps anonymous HTTP callers on the local tier', async () => {
+    // Distributed limiting for the separate HTTP trust boundary is tracked in
+    // #3096. This issue only hardens WebSocket upgrade identity.
     const ctx: ConnectionContext = {
       connectionId: 'http-abc-123',
       transport: 'http',
@@ -252,6 +254,29 @@ describe('applyRateLimit structured RATE_LIMITED error (#2763)', () => {
     });
     // Message text is preserved for older clients that still string-match.
     expect((error as GraphQLError).message).toMatch(/Rate limit exceeded/);
+  });
+
+  it('rejects an anonymous WebSocket request when its TCP-peer ceiling is exceeded', async () => {
+    mockCheckRateLimitRedis.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new RateLimitError(17));
+    const ctx: ConnectionContext = {
+      connectionId: 'ws-anon-1',
+      transport: 'ws',
+      isAuthenticated: false,
+      clientIp: '203.0.113.50',
+      socketPeerIp: '10.0.0.8',
+    };
+
+    const error = await applyRateLimit(ctx, 5, 'createSession').catch((caughtError: unknown) => caughtError);
+
+    expect(error).toBeInstanceOf(GraphQLError);
+    expect((error as GraphQLError).extensions).toMatchObject({
+      code: 'RATE_LIMITED',
+      operation: 'createSession',
+      retryAfterSeconds: 17,
+    });
+    expect(mockCheckRateLimitRedis).toHaveBeenNthCalledWith(2, 'socket-peer:10.0.0.8', 'createSession', 600, 60_000, {
+      fallbackToMemory: true,
+    });
   });
 
   it('passes non-rate-limit errors through untouched', async () => {

@@ -71,6 +71,8 @@ export const RATE_LIMIT_SET_QUEUE = 300;
  */
 const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_FLOOR = 600;
 const ANONYMOUS_SOCKET_PEER_RATE_LIMIT_MULTIPLIER = 5;
+// Keep every Redis tier for one operation on the same window; changing this
+// means changing the windowMs passed to both calls below together.
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
 /**

@@ -164,6 +164,9 @@ export function setupWebSocketServer(httpServer: HttpServer): {
           forwardedFor: upgradeRequest?.headers['x-forwarded-for'],
           remoteAddress: upgradeRequest?.socket?.remoteAddress,
           clientIp,
+          // This can match remoteAddress (and a shared Railway edge) in hosted
+          // traffic; it is logged separately because it is the header-free
+          // identity that backstops a direct-origin caller.
           socketPeerIp,
         });
 
