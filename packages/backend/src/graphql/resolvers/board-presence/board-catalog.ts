@@ -18,7 +18,7 @@ function isPostgresInteger(value: number): boolean {
   return Number.isInteger(value) && value >= 0 && value <= POSTGRES_INTEGER_MAX;
 }
 
-function parseUniqueSetIds(setIds: string): number[] {
+function validateAndParseSetIds(setIds: string): number[] {
   if (!NUMERIC_CSV_PATTERN.test(setIds)) {
     throwUnknownBoardConfig();
   }
@@ -49,7 +49,7 @@ export async function assertKnownBoardConfig(
   if (!isPostgresInteger(layoutId) || !isPostgresInteger(productSizeId)) {
     throwUnknownBoardConfig();
   }
-  const uniqueSetIds = parseUniqueSetIds(setIds);
+  const uniqueSetIds = validateAndParseSetIds(setIds);
 
   if (boardType === 'moonboard') {
     if (productSizeId !== MOONBOARD_SIZE.id) {

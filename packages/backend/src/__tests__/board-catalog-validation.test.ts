@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, count, eq, inArray, or } from 'drizzle-orm';
+import { count, eq, inArray } from 'drizzle-orm';
 import { GraphQLError } from 'graphql';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
@@ -33,6 +33,7 @@ const TEST_USER_IDS = [AUTO_GYM_USER_ID, PLAIN_CREATE_USER_ID, SERIAL_USER_ID, U
 
 let cleanupCatalogFixtures: () => Promise<void> = async () => {};
 let systemOwnerExistedBeforeSuite = false;
+const insertedSystemBoardIds = new Set<number>();
 
 function authCtx(userId: string): ConnectionContext {
   return {
@@ -173,17 +174,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await db
-    .delete(dbSchema.userBoards)
-    .where(
-      or(
-        inArray(dbSchema.userBoards.ownerId, TEST_USER_IDS),
-        and(
-          eq(dbSchema.userBoards.ownerId, SYSTEM_BOARD_OWNER_ID),
-          inArray(dbSchema.userBoards.layoutId, [LAYOUT_ID, UNKNOWN_LAYOUT_ID]),
-        ),
-      ),
-    );
+  if (insertedSystemBoardIds.size > 0) {
+    await db.delete(dbSchema.userBoards).where(inArray(dbSchema.userBoards.id, [...insertedSystemBoardIds]));
+    insertedSystemBoardIds.clear();
+  }
+  await db.delete(dbSchema.userBoards).where(inArray(dbSchema.userBoards.ownerId, TEST_USER_IDS));
   await db.delete(dbSchema.gyms).where(inArray(dbSchema.gyms.ownerId, TEST_USER_IDS));
   await db.delete(dbSchema.users).where(inArray(dbSchema.users.id, TEST_USER_IDS));
   vi.restoreAllMocks();
@@ -355,6 +350,69 @@ describe('board-presence catalog gates', () => {
     expect(await sideEffectCounts(AUTO_GYM_USER_ID)).toEqual(before);
   });
 
+  it('creates a normalized hidden system board for an authenticated valid catalog config', async () => {
+    const before = await sideEffectCounts(AUTO_GYM_USER_ID);
+    const submittedSetIds = `${SET_B_ID},${SET_A_ID},${SET_B_ID}`;
+
+    const resolved = await boardPresenceMutations.resolveBoardForConfig(
+      undefined,
+      { boardType: 'kilter', layoutId: LAYOUT_ID, sizeId: SIZE_ID, setIds: submittedSetIds },
+      authCtx(AUTO_GYM_USER_ID),
+    );
+    insertedSystemBoardIds.add(resolved.boardId);
+
+    const [created] = await db
+      .select({
+        id: dbSchema.userBoards.id,
+        slug: dbSchema.userBoards.slug,
+        ownerId: dbSchema.userBoards.ownerId,
+        boardType: dbSchema.userBoards.boardType,
+        layoutId: dbSchema.userBoards.layoutId,
+        sizeId: dbSchema.userBoards.sizeId,
+        setIds: dbSchema.userBoards.setIds,
+        name: dbSchema.userBoards.name,
+        serialNumber: dbSchema.userBoards.serialNumber,
+        isPublic: dbSchema.userBoards.isPublic,
+        isUnlisted: dbSchema.userBoards.isUnlisted,
+        hideLocation: dbSchema.userBoards.hideLocation,
+        isOwned: dbSchema.userBoards.isOwned,
+      })
+      .from(dbSchema.userBoards)
+      .where(eq(dbSchema.userBoards.id, resolved.boardId));
+    const normalizedSetIds = `${SET_A_ID},${SET_B_ID}`;
+
+    expect(resolved).toEqual({
+      boardId: created.id,
+      boardName: 'Kilter Board Shared Feed',
+      boardType: 'kilter',
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: normalizedSetIds,
+    });
+    expect(created).toEqual({
+      id: resolved.boardId,
+      slug: presenceSlug('kilter', LAYOUT_ID, SIZE_ID, submittedSetIds),
+      ownerId: SYSTEM_BOARD_OWNER_ID,
+      boardType: 'kilter',
+      layoutId: LAYOUT_ID,
+      sizeId: SIZE_ID,
+      setIds: normalizedSetIds,
+      name: 'Kilter Board Shared Feed',
+      serialNumber: null,
+      isPublic: false,
+      isUnlisted: true,
+      hideLocation: true,
+      isOwned: false,
+    });
+    const after = await sideEffectCounts(AUTO_GYM_USER_ID);
+    expect(after).toEqual({
+      boards: before.boards,
+      gyms: before.gyms,
+      systemBoards: before.systemBoards + 1,
+      systemOwners: 1,
+    });
+  });
+
   it('keeps malformed CSV at the existing presence schema-validation layer', async () => {
     let caughtError: unknown;
     try {
@@ -398,6 +456,7 @@ describe('board-presence catalog gates', () => {
         isUnlisted: true,
       })
       .returning();
+    insertedSystemBoardIds.add(legacyBoard.id);
 
     const resolved = await boardPresenceMutations.resolveBoardForConfig(
       undefined,
