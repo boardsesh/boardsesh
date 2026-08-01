@@ -1,0 +1,27 @@
+#!/bin/sh
+
+# Keep the Conventional Commit check in the tracked Vite+ hooks directory.
+# Resolve the target from this tracked hook's own directory so each linked
+# worktree delegates to its own checked-out .githooks implementation.
+set -eu
+
+case "$0" in
+  /*) hook_path=$0 ;;
+  *) hook_path=$PWD/$0 ;;
+esac
+hook_dir=$(CDPATH= cd "$(dirname "$hook_path")" 2>/dev/null && pwd -P) || {
+  echo "commit-msg hook: could not resolve the tracked hook directory." >&2
+  exit 1
+}
+repo_root=$(CDPATH= cd "$hook_dir/.." 2>/dev/null && pwd -P) || {
+  echo "commit-msg hook: could not resolve the repository root." >&2
+  exit 1
+}
+
+commit_message_hook="$repo_root/.githooks/commit-msg"
+if [ ! -x "$commit_message_hook" ]; then
+  echo "commit-msg hook: expected executable hook is missing: $commit_message_hook" >&2
+  exit 1
+fi
+
+exec "$commit_message_hook" "$@"

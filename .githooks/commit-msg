@@ -2,8 +2,8 @@
 # Best-effort local Conventional Commit check. CI's commit-lint job is the
 # authoritative gate (local hooks are unreliable across this repo's worktrees).
 #
-# Installed alongside vp's generated pre-commit by scripts/setup-dev.sh — it does
-# not flip core.hooksPath. $1 is the path to the commit message file git wrote.
+# Delegated from .vite-hooks/commit-msg after setup repairs core.hooksPath.
+# $1 is the path to the commit message file git wrote.
 
 # Run from the repo root so relative script + node_modules paths resolve.
 repo_root=$(git rev-parse --show-toplevel)
