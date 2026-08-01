@@ -312,6 +312,7 @@ async function readNamedIndex(transaction: TransactionSql, indexName: string): P
       index_data.indisready,
       index_data.indisvalid,
       index_data.indnullsnotdistinct,
+      index_data.indrelid,
       index_data.indpred,
       index_data.indexprs,
       index_data.indnkeyatts,
