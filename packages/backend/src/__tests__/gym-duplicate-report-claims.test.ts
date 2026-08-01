@@ -111,6 +111,21 @@ describe('gym duplicate report claim ownership', () => {
     expect(redisClient.claims.get(key)).toBe('first-owner');
   });
 
+  it('retains the local claim when Redis reports connected but its client is unavailable', async () => {
+    const key = 'gymDuplicateReport:test:client-unavailable';
+    const dependencies = createDependencies({ connected: true, tokens: ['local-owner', 'retry-owner'] });
+
+    const firstResult = await acquireGymDuplicateReportClaim(key, dependencies);
+    expect(firstResult.status).toBe('acquired');
+    if (firstResult.status !== 'acquired') throw new Error('Expected a local-only claim');
+    expect(firstResult.claim).toMatchObject({ redisClient: null, redisClaimMayExist: false });
+
+    await expect(acquireGymDuplicateReportClaim(key, dependencies)).resolves.toEqual({ status: 'already_claimed' });
+
+    await releaseGymDuplicateReportClaim(firstResult.claim);
+    await expect(acquireGymDuplicateReportClaim(key, dependencies)).resolves.toMatchObject({ status: 'acquired' });
+  });
+
   it('uses owner checks for both local and Redis release', async () => {
     const redisClient = new FakeRedisClaimClient();
     const key = 'gymDuplicateReport:test:redis-owner';
