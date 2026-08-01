@@ -10,18 +10,55 @@ const sessionFeedTestState = vi.hoisted(() => {
     from: selectFromMock,
   }));
 
+  const guardMock = vi.fn();
+
+  // sessionGroupedFeed's main query runs inside withSerialPlan, which issues
+  // SET LOCAL max_parallel_workers_per_gather = 0 first (#4105). Route that
+  // statement to its own spy so the executeMock sequence these tests index into
+  // stays the resolver's own queries — while still being assertable.
+  const guardText = (query: unknown): string => {
+    if (!query || typeof query !== 'object') return '';
+    const chunks = (query as { queryChunks?: unknown[] }).queryChunks;
+    if (!Array.isArray(chunks)) return '';
+    return chunks
+      .map((chunk) => {
+        if (!chunk || typeof chunk !== 'object') return '';
+        const typed = chunk as { value?: unknown; queryChunks?: unknown[] };
+        if (Array.isArray(typed.value)) return typed.value.join('');
+        if (Array.isArray(typed.queryChunks)) return guardText(chunk);
+        return '';
+      })
+      .join('');
+  };
+  const isSerialPlanGuard = (query: unknown) => guardText(query).includes('max_parallel_workers_per_gather');
+
   return {
     executeMock,
     selectWhereMock,
     selectFromMock,
     selectMock,
+    guardMock,
+    isSerialPlanGuard,
   };
 });
 
 vi.mock('../db/client', () => {
+  const transaction = (callback: (tx: unknown) => unknown) =>
+    callback({
+      execute: (statement: unknown) => {
+        if (sessionFeedTestState.isSerialPlanGuard(statement)) {
+          sessionFeedTestState.guardMock(statement);
+          return Promise.resolve([]);
+        }
+        return sessionFeedTestState.executeMock(statement);
+      },
+      select: sessionFeedTestState.selectMock,
+    });
+
   const fakeDb = {
     execute: sessionFeedTestState.executeMock,
     select: sessionFeedTestState.selectMock,
+    transaction,
   };
   // sessionGroupedFeed reads from `dbRead`; alias it to the same fake so the
   // existing call assertions still hit `executeMock` / `selectMock`.
