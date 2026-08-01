@@ -24,7 +24,7 @@ import { applyRateLimit, requireAuthenticated, validateInput } from '../shared/h
 import { findMoonBoardDuplicateMatches } from './moonboard-duplicates';
 import {
   findSimilarClimbs,
-  isCanonicalStoredHold,
+  isSupportedSimilarityHold,
   parseFramesToHoldEntries,
   type NormalizedHold,
 } from './climb-similarity';
@@ -91,15 +91,9 @@ export const climbQueries = {
         .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)))
         .limit(1);
 
-      if ((climbRow?.framesCount ?? 1) > 1 && climbRow?.frames) {
-        // Historical multi-frame rows may reflect only fragments of the
-        // animation. The canonical frames text is the target signature until
-        // the repair has been run everywhere.
-        holds = parseFramesToHoldEntries(boardType, climbRow.frames).map(({ holdId, holdState }) => ({
-          holdId,
-          holdState,
-        }));
-      } else {
+      const useAuthoritativeFrames = (climbRow?.framesCount ?? 1) > 1 && Boolean(climbRow?.frames);
+      holds = [];
+      if (!useAuthoritativeFrames) {
         const targetHoldRows = await db
           .select({
             holdId: dbSchema.boardClimbHolds.holdId,
@@ -114,16 +108,14 @@ export const climbQueries = {
           );
         holds = targetHoldRows
           .map((row) => ({ holdId: row.holdId, holdState: row.holdState }))
-          .filter(isCanonicalStoredHold);
+          .filter(isSupportedSimilarityHold);
       }
 
-      // Legacy fallback: pre-existing climbs (especially MoonBoard imports)
-      // carry their hold pattern in board_climbs.frames but have no rows in
-      // board_climb_holds yet (backfill follow-up #1). Without this fallback
-      // a MoonBoard duplicate-publish that points the UI at the existing
-      // climb via `climbUuid` would surface an empty "no identical climbs"
-      // state for the exact match it just rejected.
-      if (holds.length === 0 && climbRow?.frames && (climbRow.framesCount ?? 1) <= 1) {
+      // Multi-frame rows may reflect only fragments of an animation, so their
+      // canonical frames text is always authoritative. For single-frame
+      // climbs this is only the legacy fallback: older MoonBoard imports can
+      // carry frames without materialized hold rows (backfill follow-up #1).
+      if (holds.length === 0 && climbRow?.frames) {
         holds = parseFramesToHoldEntries(boardType, climbRow.frames).map(({ holdId, holdState }) => ({
           holdId,
           holdState,

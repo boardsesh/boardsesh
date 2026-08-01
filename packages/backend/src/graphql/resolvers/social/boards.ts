@@ -784,9 +784,12 @@ export function dropPopularConfigsFallback(): void {
   fallbackGeneration += 1;
 }
 
-// Invalid/sentinel rows must not make an otherwise valid climb fail the
-// negative placement-exclusion check below.
-export const POPULAR_CONFIGS_CANONICAL_HOLD_PREDICATE = sql`bch.hold_id > 0 AND bch.hold_state <> '' AND bch.hold_state NOT LIKE '%=%'`;
+// Structurally corrupt/sentinel rows must not make an otherwise valid climb
+// fail the negative placement-exclusion check below. This intentionally does
+// not require a currently known state name: a well-formed state introduced by
+// a future board still belongs to a placement and must count here. Similarity
+// matching is stricter because both sides must use states its parser supports.
+export const POPULAR_CONFIGS_STRUCTURALLY_VALID_HOLD_PREDICATE = sql`bch.hold_id > 0 AND bch.hold_state <> '' AND bch.hold_state NOT LIKE '%=%'`;
 
 /** Exported so regression tests render the exact query the resolver executes. */
 export const POPULAR_CONFIGS_QUERY = sql`
@@ -848,7 +851,7 @@ export const POPULAR_CONFIGS_QUERY = sql`
         SELECT 1 FROM board_climb_holds bch
         WHERE bch.climb_uuid = bc.uuid
           AND bch.board_type = bc.board_type
-          AND ${POPULAR_CONFIGS_CANONICAL_HOLD_PREDICATE}
+          AND ${POPULAR_CONFIGS_STRUCTURALLY_VALID_HOLD_PREDICATE}
           AND NOT EXISTS (
             SELECT 1 FROM board_placements bp
             WHERE bp.board_type = bch.board_type

@@ -82,7 +82,7 @@ const KNOWN_HOLD_STATES_SQL = sql`(${sql.join(
   sql`, `,
 )})`;
 
-export function isCanonicalStoredHold(row: NormalizedHold): boolean {
+export function isSupportedSimilarityHold(row: NormalizedHold): boolean {
   return Number.isSafeInteger(row.holdId) && row.holdId > 0 && KNOWN_HOLD_STATE_SET.has(row.holdState);
 }
 

@@ -415,9 +415,9 @@ export async function runRepair(
       async (transaction) => {
         await transaction.execute(sql`SET LOCAL lock_timeout = '5s'`);
         await transaction.execute(sql`SET LOCAL statement_timeout = '120s'`);
-        // At REPEATABLE READ, the first SELECT fixes the transaction snapshot.
-        // Take both writer-blocking table locks before the advisory-lock SELECT
-        // so the manifest sees commits from writers that were already in flight.
+        // At REPEATABLE READ, the advisory-lock SELECT below is the first
+        // snapshot-taking command. Take both writer-blocking table locks before
+        // it so the manifest sees commits from writers that were already in flight.
         await transaction.execute(sql`LOCK TABLE board_climbs IN SHARE ROW EXCLUSIVE MODE`);
         await transaction.execute(sql`LOCK TABLE board_climb_holds IN SHARE ROW EXCLUSIVE MODE`);
         await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtext('boardsesh:repair-board-climb-holds:v1'))`);
@@ -435,6 +435,20 @@ export async function runRepair(
   } finally {
     await database.close();
   }
+}
+
+export function getRepairOperatorHint(error: unknown): string | null {
+  let current: unknown = error;
+  const seen = new Set<object>();
+  for (let depth = 0; depth < 4 && typeof current === 'object' && current !== null; depth += 1) {
+    if (seen.has(current)) break;
+    seen.add(current);
+    if ('code' in current && current.code === '55P03') {
+      return 'could not acquire repair locks within 5 seconds; retry after write traffic drops';
+    }
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return null;
 }
 
 function printHelp(): void {
@@ -459,7 +473,12 @@ async function main(): Promise<void> {
     console.info(`[repair-board-climb-holds] database_host=${describeDatabaseHost(databaseUrl)}`);
     await runRepair(args, createScriptDb(databaseUrl));
   } catch (error) {
-    console.error('[repair-board-climb-holds] failed:', error);
+    const operatorHint = getRepairOperatorHint(error);
+    if (operatorHint) {
+      console.error(`[repair-board-climb-holds] failed: ${operatorHint}`, error);
+    } else {
+      console.error('[repair-board-climb-holds] failed:', error);
+    }
     process.exitCode = 1;
   }
 }
