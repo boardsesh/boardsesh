@@ -1,0 +1,307 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { sql, type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { applyRepairManifest, parseRepairArgs, runRepair, verifyAppliedRepair } from './repair-board-climb-holds.js';
+import {
+  buildRepairManifest,
+  digestRepairManifest,
+  fingerprintFromRepairRows,
+  placementKey,
+  type RepairHoldRow,
+} from './repair-board-climb-holds-helpers.js';
+import { createScriptDb, isLocalDatabaseUrl } from './db-connection.js';
+import { executeRows } from '../src/client/index.js';
+
+function renderedSql(query: unknown): string {
+  return new PgDialect()
+    .sqlToQuery(query as SQL)
+    .sql.replaceAll(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+void test('dry-run issues reads only and never starts a transaction', async () => {
+  const executed: unknown[] = [];
+  let transactionStarted = false;
+  const database = {
+    db: {
+      execute(query: unknown) {
+        executed.push(query);
+        return Promise.resolve([]);
+      },
+      transaction() {
+        transactionStarted = true;
+        throw new Error('dry-run must not start a transaction');
+      },
+    },
+    close: async () => undefined,
+  } as unknown as Parameters<typeof runRepair>[1];
+
+  const result = await runRepair(parseRepairArgs([]), database);
+  assert.equal(result.applied, false);
+  assert.equal(transactionStarted, false);
+  assert.equal(executed.length, 1);
+  assert.match(renderedSql(executed[0]), /invalid\.hold_id <= 0/);
+});
+
+void test('apply requires digest, exact count guards, and a maximum affected count', () => {
+  assert.throws(() => parseRepairArgs(['--apply']), /requires --expected-digest/);
+  assert.deepEqual(
+    parseRepairArgs([
+      '--apply',
+      '--expected-digest',
+      'abc',
+      '--expected-scanned',
+      '10',
+      '--expected-changed',
+      '2',
+      '--expected-invalid',
+      '1',
+      '--max-affected',
+      '3',
+    ]),
+    {
+      apply: true,
+      help: false,
+      expectedDigest: 'abc',
+      expectedScanned: 10,
+      expectedChanged: 2,
+      expectedInvalid: 1,
+      maxAffected: 3,
+      reportLimit: 50,
+    },
+  );
+});
+
+void test('locked malformed/frame-count drift throws before mutation and rolls back', async () => {
+  const emptyDigest = digestRepairManifest(buildRepairManifest([], new Set()));
+  let executeCount = 0;
+  let rolledBack = false;
+  let committed = false;
+  let transactionOptions: unknown;
+  const transactionStatements: string[] = [];
+  const fakeDb = {
+    execute(_query: unknown) {
+      executeCount += 1;
+      if (executeCount === 7) {
+        return Promise.resolve([
+          {
+            board_type: 'tension',
+            uuid: 'drifted',
+            layout_id: 1,
+            frames: 'p1r1junk,"p2r2',
+            frames_count: 3,
+            hold_fingerprint: null,
+            multi_frame_target: true,
+            hold_id: null,
+            frame_number: null,
+            hold_state: null,
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    },
+    async transaction(callback: (executor: unknown) => Promise<unknown>, options: unknown) {
+      transactionOptions = options;
+      const transactionExecutor = {
+        execute(query: unknown) {
+          transactionStatements.push(renderedSql(query));
+          return fakeDb.execute(query);
+        },
+      };
+      try {
+        await callback(transactionExecutor);
+        committed = true;
+      } catch (error) {
+        rolledBack = true;
+        throw error;
+      }
+    },
+  };
+  const database = {
+    db: fakeDb,
+    close: async () => undefined,
+  } as unknown as Parameters<typeof runRepair>[1];
+  const args = parseRepairArgs([
+    '--apply',
+    '--expected-digest',
+    emptyDigest,
+    '--expected-scanned',
+    '0',
+    '--expected-changed',
+    '0',
+    '--expected-invalid',
+    '0',
+    '--max-affected',
+    '0',
+  ]);
+
+  await assert.rejects(runRepair(args, database), /repair guard failed/);
+  assert.equal(rolledBack, true);
+  assert.equal(committed, false);
+  assert.deepEqual(transactionOptions, { isolationLevel: 'repeatable read' });
+  assert.deepEqual(transactionStatements.slice(0, 5), [
+    "set local lock_timeout = '5s'",
+    "set local statement_timeout = '120s'",
+    'lock table board_climbs in share row exclusive mode',
+    'lock table board_climb_holds in share row exclusive mode',
+    "select pg_advisory_xact_lock(hashtext('boardsesh:repair-board-climb-holds:v1'))",
+  ]);
+  assert.equal(executeCount, 7, 'no mutation or post-write query should run after locked drift is detected');
+});
+
+void test('real Postgres apply deletes, inserts, updates fingerprints, verifies, and reruns idempotently', async (context) => {
+  const databaseUrl = process.env.REPAIR_BOARD_CLIMB_HOLDS_TEST_DB_URL ?? process.env.DATABASE_URL;
+  if (!databaseUrl || !isLocalDatabaseUrl(databaseUrl)) {
+    context.skip('set REPAIR_BOARD_CLIMB_HOLDS_TEST_DB_URL or DATABASE_URL to a local migrated Postgres');
+    return;
+  }
+
+  const { db, close } = createScriptDb(databaseUrl);
+  const multiUuid = 'repair-integration-multi';
+  const invalidUuid = 'repair-integration-invalid';
+  const frames = 'p1r1,"p2r2';
+  const staleRows: RepairHoldRow[] = [{ holdId: 9, frameNumber: 0, holdState: 'HAND' }];
+  const invalidRows: RepairHoldRow[] = [
+    { holdId: -7, frameNumber: 0, holdState: 'HAND' },
+    { holdId: 3, frameNumber: 0, holdState: 'FOOT' },
+  ];
+  const placementKeys = new Set([
+    placementKey('tension', 1, 1),
+    placementKey('tension', 1, 2),
+    placementKey('tension', 1, 3),
+  ]);
+
+  try {
+    await db.transaction(async (transaction) => {
+      // Session-local tables shadow the real schema, so this exercises the
+      // production SQL without touching persistent development data.
+      await transaction.execute(sql`
+        CREATE TEMP TABLE board_climbs (
+          board_type text NOT NULL,
+          uuid text NOT NULL,
+          hold_fingerprint text,
+          PRIMARY KEY (board_type, uuid)
+        ) ON COMMIT DROP
+      `);
+      await transaction.execute(sql`
+        CREATE TEMP TABLE board_climb_holds (
+          board_type text NOT NULL,
+          climb_uuid text NOT NULL,
+          hold_id integer NOT NULL,
+          frame_number integer NOT NULL,
+          hold_state text NOT NULL,
+          PRIMARY KEY (board_type, climb_uuid, hold_id)
+        ) ON COMMIT DROP
+      `);
+
+      const initialManifest = buildRepairManifest(
+        [
+          {
+            boardType: 'tension',
+            uuid: multiUuid,
+            layoutId: 1,
+            frames,
+            framesCount: 2,
+            holdFingerprint: fingerprintFromRepairRows(staleRows),
+            multiFrameTarget: true,
+            rows: staleRows,
+          },
+          {
+            boardType: 'tension',
+            uuid: invalidUuid,
+            layoutId: 1,
+            frames: 'p3r4',
+            framesCount: 1,
+            holdFingerprint: null,
+            multiFrameTarget: false,
+            rows: invalidRows,
+          },
+        ],
+        placementKeys,
+      );
+      assert.equal(initialManifest.counts.changedMultiFrameClimbs, 1);
+      assert.equal(initialManifest.counts.invalidRows, 1);
+      assert.equal(initialManifest.counts.fingerprintUpdates, 1);
+
+      await transaction.execute(sql`
+        INSERT INTO board_climbs (board_type, uuid, hold_fingerprint)
+        VALUES
+          ('tension', ${multiUuid}, ${fingerprintFromRepairRows(staleRows)}),
+          ('tension', ${invalidUuid}, NULL)
+      `);
+      await transaction.execute(sql`
+        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+        VALUES
+          ('tension', ${multiUuid}, 9, 0, 'HAND'),
+          ('tension', ${invalidUuid}, -7, 0, 'HAND'),
+          ('tension', ${invalidUuid}, 3, 0, 'FOOT')
+      `);
+
+      await applyRepairManifest(transaction, initialManifest);
+      await verifyAppliedRepair(transaction, initialManifest);
+
+      const materializedRows = await executeRows<{
+        climb_uuid: string;
+        hold_id: number;
+        frame_number: number;
+        hold_state: string;
+      }>(
+        transaction,
+        sql`
+          SELECT climb_uuid, hold_id, frame_number, hold_state
+          FROM board_climb_holds
+          ORDER BY climb_uuid, hold_id
+        `,
+      );
+      assert.deepEqual(Array.from(materializedRows), [
+        { climb_uuid: invalidUuid, hold_id: 3, frame_number: 0, hold_state: 'FOOT' },
+        { climb_uuid: multiUuid, hold_id: 1, frame_number: 0, hold_state: 'STARTING' },
+        { climb_uuid: multiUuid, hold_id: 2, frame_number: 1, hold_state: 'HAND' },
+      ]);
+
+      const [{ hold_fingerprint: repairedFingerprint }] = await executeRows<{ hold_fingerprint: string | null }>(
+        transaction,
+        sql`SELECT hold_fingerprint FROM board_climbs WHERE board_type = 'tension' AND uuid = ${multiUuid}`,
+      );
+      const repairedRows = materializedRows
+        .filter((row) => row.climb_uuid === multiUuid)
+        .map((row) => ({ holdId: row.hold_id, frameNumber: row.frame_number, holdState: row.hold_state }));
+      assert.equal(repairedFingerprint, fingerprintFromRepairRows(repairedRows));
+
+      const secondManifest = buildRepairManifest(
+        [
+          {
+            boardType: 'tension',
+            uuid: multiUuid,
+            layoutId: 1,
+            frames,
+            framesCount: 2,
+            holdFingerprint: repairedFingerprint,
+            multiFrameTarget: true,
+            rows: repairedRows,
+          },
+        ],
+        placementKeys,
+      );
+      assert.equal(secondManifest.counts.affectedClimbs, 0);
+      assert.equal(secondManifest.counts.deleteRows, 0);
+      assert.equal(secondManifest.counts.insertRows, 0);
+      assert.equal(secondManifest.counts.fingerprintUpdates, 0);
+      await applyRepairManifest(transaction, secondManifest);
+      await verifyAppliedRepair(transaction, secondManifest);
+
+      await transaction.execute(sql`
+        INSERT INTO board_climb_holds (board_type, climb_uuid, hold_id, frame_number, hold_state)
+        VALUES ('tension', ${invalidUuid}, -8, 0, 'HAND')
+      `);
+      await assert.rejects(
+        verifyAppliedRepair(transaction, secondManifest),
+        /post-write global invalid row count is 1, expected 0/,
+      );
+    });
+  } finally {
+    await close();
+  }
+});

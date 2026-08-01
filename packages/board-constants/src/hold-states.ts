@@ -1,4 +1,10 @@
-import type { BoardName, HoldState, LitUpHoldsMap } from '@boardsesh/shared-schema';
+import {
+  AURORA_BOARDS,
+  type AuroraBoardName,
+  type BoardName,
+  type HoldState,
+  type LitUpHoldsMap,
+} from '@boardsesh/shared-schema';
 
 export type HoldCode = number;
 export type HoldColor = string;
@@ -329,8 +335,9 @@ function tokeniseFrameDelta(
   frame: string,
 ): Array<{ kind: 'set'; holdId: number; roleCode: number } | { kind: 'off'; holdId: number }> {
   const tokens: Array<{ kind: 'set'; holdId: number; roleCode: number } | { kind: 'off'; holdId: number }> = [];
-  // Matches either `p<digits>r<digits>` or `x<digits>` greedily across the frame.
-  const re = /p(\d+)r(\d+)|x(\d+)/g;
+  // Recognise signed raw hold IDs so repair diagnostics can explicitly report
+  // nonpositive values instead of silently treating a minus sign as junk.
+  const re = /p(-?\d+)r(\d+)|x(-?\d+)/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(frame)) !== null) {
     if (match[1] !== undefined && match[2] !== undefined) {
@@ -340,6 +347,72 @@ function tokeniseFrameDelta(
     }
   }
   return tokens;
+}
+
+export type StoredClimbHoldRow = {
+  holdId: number;
+  frameNumber: number;
+  holdState: HoldState;
+};
+
+export type StoredClimbHoldProjection = {
+  rows: StoredClimbHoldRow[];
+  frameCount: number;
+  diagnostics: {
+    skippedUnknownRoleTokens: number;
+    skippedNonpositiveHoldIdTokens: number;
+  };
+};
+
+/** True for boards whose climb frames use Aurora's p/r/x grammar. */
+export function isAuroraBoardName(board: string): board is AuroraBoardName {
+  return (AURORA_BOARDS as readonly string[]).includes(board);
+}
+
+/**
+ * Project Aurora frames to the one-row-per-hold shape stored by
+ * `board_climb_holds`.
+ *
+ * The table primary key omits frame_number. Its historical writers inserted
+ * frames in ascending order with `ON CONFLICT DO NOTHING`, so the first valid
+ * accumulated occurrence of a hold is the canonical stored row. This helper
+ * makes that behaviour explicit and shared. The frame parser has already
+ * applied token order within each frame, so the last token in one frame wins.
+ * Unknown-role sentinels and nonpositive hold IDs never become stored rows;
+ * an unknown occurrence does not prevent a later valid occurrence from
+ * becoming the first stored row.
+ */
+export function projectAuroraFramesToStoredRows(frames: string, board: AuroraBoardName): StoredClimbHoldProjection {
+  const maps = accumulateFramesToMaps(frames, board);
+  const rowsByHoldId = new Map<number, StoredClimbHoldRow>();
+
+  for (const [frameNumber, map] of maps.entries()) {
+    for (const [holdIdKey, hold] of Object.entries(map)) {
+      const holdId = Number(holdIdKey);
+      if (!Number.isSafeInteger(holdId) || holdId <= 0 || isSentinelHoldState(hold.state)) continue;
+      if (!rowsByHoldId.has(holdId)) {
+        rowsByHoldId.set(holdId, { holdId, frameNumber, holdState: hold.state });
+      }
+    }
+  }
+
+  let skippedUnknownRoleTokens = 0;
+  let skippedNonpositiveHoldIdTokens = 0;
+  for (const segment of parseFramesSegments(frames)) {
+    for (const token of tokeniseFrameDelta(segment.body)) {
+      if (!Number.isSafeInteger(token.holdId) || token.holdId <= 0) {
+        skippedNonpositiveHoldIdTokens += 1;
+      } else if (token.kind === 'set' && !HOLD_STATE_MAP[board][token.roleCode]) {
+        skippedUnknownRoleTokens += 1;
+      }
+    }
+  }
+
+  return {
+    rows: Array.from(rowsByHoldId.values()).sort((left, right) => left.holdId - right.holdId),
+    frameCount: maps.length,
+    diagnostics: { skippedUnknownRoleTokens, skippedNonpositiveHoldIdTokens },
+  };
 }
 
 /**

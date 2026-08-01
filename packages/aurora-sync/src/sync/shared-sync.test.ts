@@ -3,11 +3,11 @@ import { notifications, setterFollows, userBoardMappings, userFollows } from '@b
 import type { ClimbStats, SyncData } from '../api/sync-api-types';
 import type { SyncOptions } from '../api/types';
 
-const { mockSharedSync, mockPopulateDenormalizedColumns, mockConvertLitUpHolds, mockSnapshotHistory } = vi.hoisted(
+const { mockSharedSync, mockPopulateDenormalizedColumns, mockProjectStoredRows, mockSnapshotHistory } = vi.hoisted(
   () => ({
     mockSharedSync: vi.fn(),
     mockPopulateDenormalizedColumns: vi.fn().mockResolvedValue(undefined),
-    mockConvertLitUpHolds: vi.fn().mockReturnValue({}),
+    mockProjectStoredRows: vi.fn().mockReturnValue({ rows: [], frameCount: 0, diagnostics: {} }),
     mockSnapshotHistory: vi.fn().mockResolvedValue({ written: 0, skipped: true }),
   }),
 );
@@ -33,9 +33,7 @@ vi.mock('@boardsesh/db/queries', async (importOriginal) => {
 
 vi.mock('@boardsesh/board-constants/hold-states', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@boardsesh/board-constants/hold-states')>();
-  // Only the parser is stubbed. `isSentinelHoldState` stays real so this file
-  // tests the writer against the same predicate production uses.
-  return { ...actual, convertLitUpHoldsStringToMap: mockConvertLitUpHolds };
+  return { ...actual, projectAuroraFramesToStoredRows: mockProjectStoredRows };
 });
 
 // drizzle() returns a client we never actually issue queries against; the
@@ -57,7 +55,9 @@ import {
   createSetterSyncNotifications,
   healRequiredSetIds,
   parseDifficultyFields,
+  projectAuthoritativeClimbRows,
   REQUIRED_SET_ID_DRAIN_LIMIT,
+  resolveAuthoritativeClimbFrames,
   shouldHealRequiredSetIds,
   syncSharedData,
 } from './shared-sync';
@@ -200,7 +200,7 @@ describe('syncSharedData loop', () => {
 describe('board_climb_holds writes', () => {
   beforeEach(() => {
     mockSharedSync.mockReset();
-    mockConvertLitUpHolds.mockReset();
+    mockProjectStoredRows.mockReset();
     mockPopulateDenormalizedColumns.mockReset();
     mockPopulateDenormalizedColumns.mockResolvedValue(undefined);
     shimInsertedRows.length = 0;
@@ -211,11 +211,10 @@ describe('board_climb_holds writes', () => {
     // than a real hold state. `backfill-board-climb-holds.ts` already drops
     // those; if this writer keeps them they poison the fingerprint backfill
     // and the similarity signatures built on top of it.
-    mockConvertLitUpHolds.mockReturnValue({
-      0: {
-        100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
-        200: { state: '200=999', color: '#FFF', displayColor: '#FFF' },
-      },
+    mockProjectStoredRows.mockReturnValue({
+      rows: [{ holdId: 100, frameNumber: 0, holdState: 'STARTING' }],
+      frameCount: 1,
+      diagnostics: { skippedUnknownRoleTokens: 1, skippedNonpositiveHoldIdTokens: 0 },
     });
     mockSharedSync.mockResolvedValueOnce(
       complete({
@@ -231,13 +230,14 @@ describe('board_climb_holds writes', () => {
     ]);
   });
 
-  it('writes one row per (frame, hold) for the states that do resolve', async () => {
-    mockConvertLitUpHolds.mockReturnValue({
-      0: { 100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' } },
-      1: {
-        100: { state: 'STARTING', color: '#00FF00', displayColor: '#00FF00' },
-        300: { state: 'HAND', color: '#0000FF', displayColor: '#4444FF' },
-      },
+  it('writes one first-valid row per hold for the states that resolve', async () => {
+    mockProjectStoredRows.mockReturnValue({
+      rows: [
+        { holdId: 100, frameNumber: 0, holdState: 'STARTING' },
+        { holdId: 300, frameNumber: 1, holdState: 'HAND' },
+      ],
+      frameCount: 2,
+      diagnostics: { skippedUnknownRoleTokens: 0, skippedNonpositiveHoldIdTokens: 0 },
     });
     mockSharedSync.mockResolvedValueOnce(
       complete({
@@ -250,9 +250,48 @@ describe('board_climb_holds writes', () => {
     const holdRows = shimInsertedRows.filter((row) => 'holdId' in row && row.climbUuid === 'CLIMB-2');
     expect(holdRows).toEqual([
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 0, holdId: 100, holdState: 'STARTING' },
-      { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 100, holdState: 'STARTING' },
       { boardType: 'decoy', climbUuid: 'CLIMB-2', frameNumber: 1, holdId: 300, holdState: 'HAND' },
     ]);
+  });
+
+  it('projects persisted frames for an existing UUID and skips cross-board or null sources', () => {
+    expect(
+      resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', {
+        boardType: 'decoy',
+        frames: 'p1r1',
+      }),
+    ).toBe('p1r1');
+    expect(
+      resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', {
+        boardType: 'tension',
+        frames: 'p1r1',
+      }),
+    ).toBeNull();
+    expect(
+      resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', {
+        boardType: 'decoy',
+        frames: null,
+      }),
+    ).toBeNull();
+    expect(resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', undefined)).toBe('p1r1p2r2');
+
+    mockProjectStoredRows.mockImplementation((frames: string) => ({
+      rows: frames.includes('p2r2')
+        ? [
+            { holdId: 1, frameNumber: 0, holdState: 'STARTING' },
+            { holdId: 2, frameNumber: 0, holdState: 'HAND' },
+          ]
+        : [{ holdId: 1, frameNumber: 0, holdState: 'STARTING' }],
+      frameCount: 1,
+      diagnostics: { skippedUnknownRoleTokens: 0, skippedNonpositiveHoldIdTokens: 0 },
+    }));
+    expect(
+      projectAuthoritativeClimbRows('decoy', 'p1r1p2r2', {
+        boardType: 'decoy',
+        frames: 'p1r1',
+      }),
+    ).toEqual([{ holdId: 1, frameNumber: 0, holdState: 'STARTING' }]);
+    expect(mockProjectStoredRows).toHaveBeenLastCalledWith('p1r1', 'decoy');
   });
 });
 

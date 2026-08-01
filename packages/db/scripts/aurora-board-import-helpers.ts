@@ -1,7 +1,9 @@
+import { projectAuroraFramesToStoredRows } from '@boardsesh/board-constants/hold-states';
+
 export const DIRECT_AURORA_BOARDS = ['decoy', 'touchstone', 'grasshopper', 'soill'] as const;
 
 export type DirectAuroraBoard = (typeof DIRECT_AURORA_BOARDS)[number];
-export type ImportedHoldState = 'STARTING' | 'HAND' | 'FINISH' | 'FOOT' | 'OFF';
+export type ImportedHoldState = 'STARTING' | 'HAND' | 'FINISH' | 'FOOT';
 
 export type SourceClimbRow = {
   uuid: string;
@@ -23,41 +25,6 @@ export type DerivedClimbHold = {
   holdState: ImportedHoldState;
 };
 
-const AURORA_HOLD_STATE_MAP: Record<DirectAuroraBoard, Record<number, ImportedHoldState>> = {
-  decoy: {
-    1: 'STARTING',
-    2: 'HAND',
-    3: 'FINISH',
-    4: 'FOOT',
-  },
-  touchstone: {
-    1: 'STARTING',
-    2: 'HAND',
-    3: 'FINISH',
-    4: 'FOOT',
-  },
-  grasshopper: {
-    1: 'STARTING',
-    2: 'HAND',
-    3: 'FINISH',
-    4: 'FOOT',
-  },
-  soill: {
-    1: 'STARTING',
-    2: 'HAND',
-    3: 'FINISH',
-    4: 'FOOT',
-  },
-};
-
-const HOLD_STATE_PRIORITY: Record<ImportedHoldState, number> = {
-  OFF: 0,
-  FOOT: 1,
-  HAND: 2,
-  FINISH: 3,
-  STARTING: 4,
-};
-
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') {
     return null;
@@ -72,30 +39,11 @@ function asImportedHoldState(value: string | null | undefined): ImportedHoldStat
     return null;
   }
 
-  if (value === 'STARTING' || value === 'HAND' || value === 'FINISH' || value === 'FOOT' || value === 'OFF') {
+  if (value === 'STARTING' || value === 'HAND' || value === 'FINISH' || value === 'FOOT') {
     return value;
   }
 
   return null;
-}
-
-function choosePreferredHold(existing: DerivedClimbHold | undefined, candidate: DerivedClimbHold): DerivedClimbHold {
-  if (!existing) {
-    return candidate;
-  }
-
-  const existingPriority = HOLD_STATE_PRIORITY[existing.holdState];
-  const candidatePriority = HOLD_STATE_PRIORITY[candidate.holdState];
-
-  if (candidatePriority > existingPriority) {
-    return candidate;
-  }
-
-  if (candidatePriority < existingPriority) {
-    return existing;
-  }
-
-  return candidate.frameNumber < existing.frameNumber ? candidate : existing;
 }
 
 export function deriveClimbHoldsFromFrames(climb: SourceClimbRow, boardName: DirectAuroraBoard): DerivedClimbHold[] {
@@ -103,53 +51,10 @@ export function deriveClimbHoldsFromFrames(climb: SourceClimbRow, boardName: Dir
     return [];
   }
 
-  const holdMap = new Map<number, DerivedClimbHold>();
-  const frames = climb.frames.split(',');
-
-  frames.forEach((framePart, frameIndex) => {
-    for (const token of framePart.split('p')) {
-      if (!token || token === '""') {
-        continue;
-      }
-
-      const match = token.match(/^(\d+)([rx])(\d+)$/);
-      if (!match) {
-        continue;
-      }
-
-      const [, holdIdRaw, marker, stateRaw] = match;
-      const holdId = Number(holdIdRaw);
-
-      if (!Number.isFinite(holdId)) {
-        continue;
-      }
-
-      let holdState: ImportedHoldState | null = null;
-
-      if (marker === 'x') {
-        holdState = 'OFF';
-      } else {
-        holdState = AURORA_HOLD_STATE_MAP[boardName][Number(stateRaw)] ?? null;
-      }
-
-      if (!holdState) {
-        continue;
-      }
-
-      const candidate: DerivedClimbHold = {
-        climbUuid: climb.uuid,
-        holdId,
-        frameNumber: frameIndex,
-        holdState,
-      };
-
-      holdMap.set(holdId, choosePreferredHold(holdMap.get(holdId), candidate));
-    }
+  return projectAuroraFramesToStoredRows(climb.frames, boardName).rows.flatMap((row) => {
+    const holdState = asImportedHoldState(row.holdState);
+    return holdState ? [{ climbUuid: climb.uuid, ...row, holdState }] : [];
   });
-
-  return Array.from(holdMap.values()).sort(
-    (left, right) => left.holdId - right.holdId || left.frameNumber - right.frameNumber,
-  );
 }
 
 export function dedupeSourceClimbHolds(rows: SourceClimbHoldRow[]): DerivedClimbHold[] {
@@ -160,7 +65,16 @@ export function dedupeSourceClimbHolds(rows: SourceClimbHoldRow[]): DerivedClimb
       const frameNumber = toNumber(row.frame_number);
       const holdState = asImportedHoldState(row.hold_state);
 
-      if (!climbUuid || holdId === null || frameNumber === null || !holdState) {
+      if (
+        !climbUuid ||
+        holdId === null ||
+        !Number.isSafeInteger(holdId) ||
+        holdId <= 0 ||
+        frameNumber === null ||
+        !Number.isSafeInteger(frameNumber) ||
+        frameNumber < 0 ||
+        !holdState
+      ) {
         return null;
       }
 
@@ -212,4 +126,28 @@ export function dedupeSourceClimbHolds(rows: SourceClimbHoldRow[]): DerivedClimb
   }
 
   return deduped;
+}
+
+/**
+ * Resolve the rows a full-board import may materialize.
+ *
+ * `board_climbs.frames` is canonical whenever present, so a stale-but-valid
+ * source `climb_holds` table must not override it. Normalized source rows are
+ * retained only for legacy climbs whose frame blob is absent.
+ */
+export function resolveImportedClimbHolds(
+  climbs: SourceClimbRow[],
+  sourceRows: SourceClimbHoldRow[],
+  boardName: DirectAuroraBoard,
+): DerivedClimbHold[] {
+  const sourceRowsByClimb = new Map<string, DerivedClimbHold[]>();
+  for (const row of dedupeSourceClimbHolds(sourceRows)) {
+    const rows = sourceRowsByClimb.get(row.climbUuid) ?? [];
+    rows.push(row);
+    sourceRowsByClimb.set(row.climbUuid, rows);
+  }
+
+  return climbs.flatMap((climb) =>
+    climb.frames ? deriveClimbHoldsFromFrames(climb, boardName) : (sourceRowsByClimb.get(climb.uuid) ?? []),
+  );
 }

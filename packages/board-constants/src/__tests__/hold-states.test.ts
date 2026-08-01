@@ -12,6 +12,7 @@ import {
   encodeMapsToFramesString,
   flattenFramesToUnion,
   isSentinelHoldState,
+  projectAuroraFramesToStoredRows,
   toFlatFrames,
 } from '../hold-states';
 import type { BoardName } from '@boardsesh/shared-schema';
@@ -383,6 +384,34 @@ describe('accumulateFramesToMaps', () => {
     expect(Object.keys(result[1])).toEqual(['100']);
     expect(result[1]).toEqual(result[0]);
     expect(Object.keys(result[2])).toEqual(['300']);
+  });
+});
+
+describe('projectAuroraFramesToStoredRows', () => {
+  it('keeps the first valid accumulated occurrence while same-frame last token wins', () => {
+    expect(projectAuroraFramesToStoredRows('p1r1p1r2,"p1r3p2r2', 'tension').rows).toEqual([
+      { holdId: 1, frameNumber: 0, holdState: 'HAND' },
+      { holdId: 2, frameNumber: 1, holdState: 'HAND' },
+    ]);
+  });
+
+  it('skips an unknown first occurrence and accepts the later valid role', () => {
+    const projection = projectAuroraFramesToStoredRows('p1r999,"p1r2p0r2p-2r2', 'tension');
+    expect(projection.rows).toEqual([{ holdId: 1, frameNumber: 1, holdState: 'HAND' }]);
+    expect(projection.diagnostics).toEqual({
+      skippedUnknownRoleTokens: 1,
+      skippedNonpositiveHoldIdTokens: 2,
+    });
+  });
+
+  it('handles hold frames, off/re-add, and later absolute frames deterministically', () => {
+    const projection = projectAuroraFramesToStoredRows('p1r1p2r2,","x1,"p1r3,p3r2', 'tension');
+    expect(projection.frameCount).toBe(5);
+    expect(projection.rows).toEqual([
+      { holdId: 1, frameNumber: 0, holdState: 'STARTING' },
+      { holdId: 2, frameNumber: 0, holdState: 'HAND' },
+      { holdId: 3, frameNumber: 4, holdState: 'HAND' },
+    ]);
   });
 });
 

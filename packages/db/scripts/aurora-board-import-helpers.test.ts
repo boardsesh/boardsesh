@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dedupeSourceClimbHolds, deriveClimbHoldsFromFrames } from './aurora-board-import-helpers.js';
+import {
+  dedupeSourceClimbHolds,
+  deriveClimbHoldsFromFrames,
+  resolveImportedClimbHolds,
+} from './aurora-board-import-helpers.js';
 
 void test('deriveClimbHoldsFromFrames maps aurora role codes', () => {
   const holds = deriveClimbHoldsFromFrames(
@@ -19,7 +23,7 @@ void test('deriveClimbHoldsFromFrames maps aurora role codes', () => {
   ]);
 });
 
-void test('deriveClimbHoldsFromFrames prefers meaningful non-foot states for duplicate holds', () => {
+void test('deriveClimbHoldsFromFrames keeps the first valid accumulated row per hold', () => {
   const holds = deriveClimbHoldsFromFrames(
     {
       uuid: 'climb-2',
@@ -29,35 +33,22 @@ void test('deriveClimbHoldsFromFrames prefers meaningful non-foot states for dup
   );
 
   assert.deepEqual(holds, [
-    { climbUuid: 'climb-2', holdId: 200, frameNumber: 1, holdState: 'HAND' },
+    { climbUuid: 'climb-2', holdId: 200, frameNumber: 0, holdState: 'FOOT' },
     { climbUuid: 'climb-2', holdId: 201, frameNumber: 0, holdState: 'HAND' },
-    { climbUuid: 'climb-2', holdId: 202, frameNumber: 1, holdState: 'OFF' },
     { climbUuid: 'climb-2', holdId: 203, frameNumber: 2, holdState: 'FINISH' },
   ]);
 });
 
-void test('deriveClimbHoldsFromFrames prefers FOOT over OFF', () => {
-  // FOOT in frame 0, OFF in frame 1 -> FOOT wins
-  const holds1 = deriveClimbHoldsFromFrames(
+void test('deriveClimbHoldsFromFrames skips nonpositive and unknown roles until a later valid state', () => {
+  const holds = deriveClimbHoldsFromFrames(
     {
       uuid: 'climb-4',
-      frames: 'p401r4,p401x1',
+      frames: 'p0r2p401r999,"p401r2',
     },
     'decoy',
   );
 
-  assert.deepEqual(holds1, [{ climbUuid: 'climb-4', holdId: 401, frameNumber: 0, holdState: 'FOOT' }]);
-
-  // OFF in frame 0, FOOT in frame 1 -> FOOT wins
-  const holds2 = deriveClimbHoldsFromFrames(
-    {
-      uuid: 'climb-5',
-      frames: 'p501x1,p501r4',
-    },
-    'decoy',
-  );
-
-  assert.deepEqual(holds2, [{ climbUuid: 'climb-5', holdId: 501, frameNumber: 1, holdState: 'FOOT' }]);
+  assert.deepEqual(holds, [{ climbUuid: 'climb-4', holdId: 401, frameNumber: 1, holdState: 'HAND' }]);
 });
 
 void test('dedupeSourceClimbHolds keeps the newest source hold row per climb and hold', () => {
@@ -88,5 +79,46 @@ void test('dedupeSourceClimbHolds keeps the newest source hold row per climb and
   assert.deepEqual(holds, [
     { climbUuid: 'climb-3', holdId: 301, frameNumber: 1, holdState: 'FINISH' },
     { climbUuid: 'climb-3', holdId: 302, frameNumber: 0, holdState: 'STARTING' },
+  ]);
+});
+
+void test('dedupeSourceClimbHolds drops invalid identities, frames, and non-lit states', () => {
+  const holds = dedupeSourceClimbHolds([
+    { climb_uuid: 'climb-6', hold_id: 0, frame_number: 0, hold_state: 'HAND' },
+    { climb_uuid: 'climb-6', hold_id: -1, frame_number: 0, hold_state: 'HAND' },
+    { climb_uuid: 'climb-6', hold_id: 601, frame_number: -1, hold_state: 'HAND' },
+    { climb_uuid: 'climb-6', hold_id: 602, frame_number: 0, hold_state: 'OFF' },
+    { climb_uuid: 'climb-6', hold_id: 603, frame_number: 0, hold_state: 'STARTING' },
+  ]);
+
+  assert.deepEqual(holds, [{ climbUuid: 'climb-6', holdId: 603, frameNumber: 0, holdState: 'STARTING' }]);
+});
+
+void test('resolveImportedClimbHolds prefers canonical frames and uses source rows only without frames', () => {
+  const holds = resolveImportedClimbHolds(
+    [
+      { uuid: 'canonical-frames', frames: 'p701r1' },
+      { uuid: 'source-fallback', frames: null },
+    ],
+    [
+      {
+        climb_uuid: 'canonical-frames',
+        hold_id: 701,
+        frame_number: 4,
+        hold_state: 'FINISH',
+      },
+      {
+        climb_uuid: 'source-fallback',
+        hold_id: 702,
+        frame_number: 0,
+        hold_state: 'HAND',
+      },
+    ],
+    'decoy',
+  );
+
+  assert.deepEqual(holds, [
+    { climbUuid: 'canonical-frames', holdId: 701, frameNumber: 0, holdState: 'STARTING' },
+    { climbUuid: 'source-fallback', holdId: 702, frameNumber: 0, holdState: 'HAND' },
   ]);
 });

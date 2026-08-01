@@ -268,6 +268,12 @@ export default defineConfig({
         // flags with `vp run db:dedupe-serial-boards -- --only-serial <s> --apply`.
         cache: false,
       },
+      'db:repair-board-climb-holds': {
+        command: 'pnpm --filter @boardsesh/db run db:repair-board-climb-holds',
+        // No db:up dependency. This is an operator-run, dry-run-by-default
+        // repair and must use the exact connection string being reviewed.
+        cache: false,
+      },
       'test:db': {
         command: 'pnpm --filter @boardsesh/db run test',
       },

@@ -100,6 +100,7 @@
     "db:dedupe-serial-boards": "tsx scripts/dedupe-serial-boards.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
+    "db:repair-board-climb-holds": "tsx scripts/repair-board-climb-holds.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",
     "db:seed-beta-links": "tsx scripts/seed-dev-beta-links.ts",
