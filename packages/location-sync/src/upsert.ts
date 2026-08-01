@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { gymClaims, gyms, locationSyncGymSources, userBoards, users } from '@boardsesh/db/schema';
@@ -41,6 +41,9 @@ type AliasedGym = {
   id: number;
   ownerId: string;
   hasApprovedClaim: boolean;
+  deletedAt: Date | null;
+  syncFrozenAt: Date | null;
+  mergedIntoGymId: number | null;
 };
 
 /**
@@ -170,11 +173,44 @@ async function refreshSyncedGymMetadata(db: DrizzleDb, gymId: number, record: Va
     .where(and(eq(gyms.id, gymId), isNull(gyms.syncFrozenAt)));
 }
 
+async function resurrectAliasedSystemGym(db: DrizzleDb, gymId: number, record: ValidBoardLocation): Promise<boolean> {
+  const resurrectedRows = await db
+    .update(gyms)
+    .set({
+      name: record.gymName,
+      address: sql`COALESCE(${record.gymAddress}, ${gyms.address})`,
+      latitude: record.latitude,
+      longitude: record.longitude,
+      isPublic: true,
+      updatedAt: sql`NOW()`,
+      deletedAt: null,
+    })
+    .where(
+      and(
+        eq(gyms.id, gymId),
+        eq(gyms.ownerId, SYSTEM_USER_ID),
+        isNull(gyms.syncFrozenAt),
+        isNotNull(gyms.deletedAt),
+        isNull(gyms.mergedIntoGymId),
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${gymClaims} claim
+          WHERE claim.gym_id = ${gyms.id} AND claim.status = 'approved'
+        )`,
+      ),
+    )
+    .returning({ id: gyms.id });
+
+  return resurrectedRows.length === 1;
+}
+
 async function findAliasedGym(db: DrizzleDb, sourceKey: string): Promise<AliasedGym | null> {
   const [aliasedGym] = await db
     .select({
       id: gyms.id,
       ownerId: gyms.ownerId,
+      deletedAt: gyms.deletedAt,
+      syncFrozenAt: gyms.syncFrozenAt,
+      mergedIntoGymId: gyms.mergedIntoGymId,
       // Squat protection: a user-owned (or approved-claim) gym that the importer
       // aliased earlier must keep its owner-curated fields. The alias-resolution
       // path reads this so it never refreshes metadata into such a gym.
@@ -185,7 +221,11 @@ async function findAliasedGym(db: DrizzleDb, sourceKey: string): Promise<Aliased
     })
     .from(locationSyncGymSources)
     .innerJoin(gyms, eq(locationSyncGymSources.gymId, gyms.id))
-    .where(and(eq(locationSyncGymSources.sourceKey, sourceKey), sql`${gyms.deletedAt} IS NULL`))
+    // Keep deleted rows visible here. An alias is the durable identity link:
+    // excluding its deleted target would fall through and mint a second,
+    // deterministic gym instead of safely deciding whether the original row
+    // can be restored.
+    .where(eq(locationSyncGymSources.sourceKey, sourceKey))
     .limit(1);
 
   if (!aliasedGym) {
@@ -196,6 +236,9 @@ async function findAliasedGym(db: DrizzleDb, sourceKey: string): Promise<Aliased
     id: Number(aliasedGym.id),
     ownerId: aliasedGym.ownerId,
     hasApprovedClaim: Boolean(aliasedGym.hasApprovedClaim),
+    deletedAt: aliasedGym.deletedAt,
+    syncFrozenAt: aliasedGym.syncFrozenAt,
+    mergedIntoGymId: aliasedGym.mergedIntoGymId === null ? null : Number(aliasedGym.mergedIntoGymId),
   };
 }
 
@@ -581,6 +624,15 @@ async function resolveGymIdForSource(
 ): Promise<number | null> {
   const aliasedGym = await findAliasedGym(db, sourceKey);
   if (aliasedGym !== null) {
+    if (aliasedGym.mergedIntoGymId !== null) {
+      logger.debug('location-sync alias points at a merged gym; source left unresolved', {
+        sourceKey,
+        gymId: aliasedGym.id,
+        mergedIntoGymId: aliasedGym.mergedIntoGymId,
+      });
+      return null;
+    }
+
     // Squat protection: an existing alias never licenses a metadata refresh into
     // an owner-curated gym. Only SYSTEM-owned, unclaimed gyms keep today's
     // refresh-on-every-sync behavior.
@@ -594,10 +646,39 @@ async function resolveGymIdForSource(
         gymId: aliasedGym.id,
         ownerId: aliasedGym.ownerId,
         hasApprovedClaim: aliasedGym.hasApprovedClaim,
+        isDeleted: aliasedGym.deletedAt !== null,
       });
-    } else {
-      await refreshSyncedGymMetadata(db, aliasedGym.id, record);
+      return aliasedGym.deletedAt === null ? aliasedGym.id : null;
     }
+
+    if (aliasedGym.deletedAt !== null) {
+      if (aliasedGym.syncFrozenAt !== null) {
+        logger.debug('location-sync alias resolved into a deleted frozen gym; source left unresolved', {
+          sourceKey,
+          gymId: aliasedGym.id,
+        });
+        return null;
+      }
+
+      // Re-check every protection in the UPDATE itself. Ownership, claims,
+      // merges, or another human freeze can change after the alias SELECT; a
+      // zero-row result leaves the deleted row untouched and prevents a twin.
+      const resurrected = await resurrectAliasedSystemGym(db, aliasedGym.id, record);
+      if (!resurrected) {
+        logger.debug('location-sync alias resurrection blocked by a concurrent protection change', {
+          sourceKey,
+          gymId: aliasedGym.id,
+        });
+        return null;
+      }
+      logger.info('location-sync resurrected an unfrozen deleted aliased gym', {
+        sourceKey,
+        gymId: aliasedGym.id,
+      });
+      return aliasedGym.id;
+    }
+
+    await refreshSyncedGymMetadata(db, aliasedGym.id, record);
     return aliasedGym.id;
   }
 

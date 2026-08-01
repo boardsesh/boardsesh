@@ -252,6 +252,8 @@ The location writer creates deterministic system-owned public rows:
 
 It never deletes rows that disappear upstream. Rows with missing layout mappings, unsupported product/size data, or invalid coordinates are reported as skipped.
 
+A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. It does not launch a sync. The next successful catalog/location pull may refresh or resurrect the row, while the separate gym-owner/approved-claim guard still prevents an upstream takeover of an owner-curated gym.
+
 The catalog sync refreshes locations after a successful catalog pull. You can also run the location-only path:
 
 ```bash

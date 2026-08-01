@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import { closePool, createDb, executeRows } from '@boardsesh/db/client';
 import { upsertPublicBoardLocations } from './upsert';
 import type { PublicBoardLocationInput } from './types';
-import { boardUuidForSource, gymUuidForSource } from './ids';
+import { boardUuidForSource, gymUuidForSource, SYSTEM_USER_ID } from './ids';
 import { resolveLocationSyncIntegrationConfig } from './integration-test-config';
 
 /**
@@ -34,6 +34,7 @@ type BoardStateRow = {
   name: string;
   latitude: number | string | null;
   gymId: number | string | null;
+  deletedAt: Date | string | null;
   syncFrozenAt: Date | string | null;
 };
 
@@ -87,7 +88,8 @@ async function readGym(tx: Parameters<typeof upsertPublicBoardLocations>[0], uui
 async function readBoard(tx: Parameters<typeof upsertPublicBoardLocations>[0], uuid: string): Promise<BoardStateRow> {
   const [row] = await executeRows<BoardStateRow>(
     tx,
-    sql`SELECT name, latitude, gym_id AS "gymId", sync_frozen_at AS "syncFrozenAt"
+    sql`SELECT name, latitude, gym_id AS "gymId", deleted_at AS "deletedAt",
+               sync_frozen_at AS "syncFrozenAt"
         FROM user_boards WHERE uuid = ${uuid} LIMIT 1`,
   );
   expect(row, `expected a user_boards row for ${uuid}`).toBeTruthy();
@@ -146,7 +148,7 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
     await closePool();
   });
 
-  it('never overwrites a human-curated gym/board, but keeps alias + link current', async () => {
+  it('keeps frozen edits, then refreshes and resurrects both rows after an explicit release', async () => {
     const db = createDb();
     const rollback = new Error('rollback freeze fixture');
 
@@ -221,6 +223,40 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
         expect(Number(alias.gymId)).toBe(Number(frozenGym.id));
         expect(Number(frozenBoard.gymId)).toBe(Number(frozenGym.id));
 
+        // 6. An admin releases the same marker that clearLocationSyncFreeze
+        // clears. Include a soft-delete so this pins the recovery contract too:
+        // the release itself changes no metadata/deletion state; the next
+        // matching source refresh is what may overwrite and resurrect the row.
+        await tx.execute(sql`
+          UPDATE gyms SET deleted_at = NOW(), sync_frozen_at = NULL WHERE uuid = ${gymUuid}
+        `);
+        await tx.execute(sql`
+          UPDATE user_boards SET deleted_at = NOW(), sync_frozen_at = NULL WHERE uuid = ${boardUuid}
+        `);
+
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({
+            sourceKey: boardSourceKey,
+            gymSourceKey,
+            gymName: 'Upstream Gym RESTORED',
+            name: 'Upstream Board RESTORED',
+            latitude: -35.25,
+            longitude: 149.75,
+          }),
+        ]);
+
+        const releasedGym = await readGym(tx, gymUuid);
+        expect(releasedGym.name).toBe('Upstream Gym RESTORED');
+        expect(Number(releasedGym.latitude)).toBeCloseTo(-35.25, 5);
+        expect(releasedGym.deletedAt).toBeNull();
+        expect(releasedGym.syncFrozenAt).toBeNull();
+
+        const releasedBoard = await readBoard(tx, boardUuid);
+        expect(releasedBoard.name).toBe('Upstream Board RESTORED');
+        expect(Number(releasedBoard.latitude)).toBeCloseTo(-35.25, 5);
+        expect(releasedBoard.deletedAt).toBeNull();
+        expect(releasedBoard.syncFrozenAt).toBeNull();
+
         throw rollback;
       })
       .catch((error: unknown) => {
@@ -266,6 +302,126 @@ describe.skipIf(integrationConfig.databaseUrl === null)('location sync freeze gu
         expect(gym.name).toBe('Open Gym CHANGED');
         expect(Number(gym.latitude)).toBeCloseTo(-35.5, 5);
         expect(gym.syncFrozenAt).toBeNull();
+
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) {
+          throw error;
+        }
+      });
+  });
+
+  it('resurrects a deleted unfrozen adopted alias in place without minting the deterministic twin', async () => {
+    const db = createDb();
+    const rollback = new Error('rollback adopted alias fixture');
+
+    await db
+      .transaction(async (tx) => {
+        const fixtureId = Date.now();
+        const gymSourceKey = `tension:adopted-gym-${fixtureId}`;
+        const boardSourceKey = `tension:adopted-board-${fixtureId}`;
+        const deterministicGymUuid = gymUuidForSource(gymSourceKey);
+        const adoptedGymUuid = gymUuidForSource(`${gymSourceKey}:adopted-row`);
+        const boardUuid = boardUuidForSource(boardSourceKey);
+
+        await upsertPublicBoardLocations(tx, [baseRecord({ sourceKey: boardSourceKey, gymSourceKey })]);
+        const seededGym = await readGym(tx, deterministicGymUuid);
+
+        // Simulate a source alias adopted onto a pre-existing physical gym: the
+        // durable alias still targets this id, but its UUID is not source-derived.
+        await tx.execute(sql`
+          UPDATE gyms
+             SET uuid = ${adoptedGymUuid}, name = 'Deleted Adopted Gym',
+                 deleted_at = NOW(), sync_frozen_at = NULL
+           WHERE id = ${Number(seededGym.id)}
+        `);
+
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({
+            sourceKey: boardSourceKey,
+            gymSourceKey,
+            gymName: 'Restored Adopted Gym',
+            name: 'Restored Adopted Board',
+            latitude: -35.1,
+            longitude: 149.6,
+          }),
+        ]);
+
+        const restoredGym = await readGym(tx, adoptedGymUuid);
+        expect(Number(restoredGym.id)).toBe(Number(seededGym.id));
+        expect(restoredGym.name).toBe('Restored Adopted Gym');
+        expect(restoredGym.deletedAt).toBeNull();
+        expect(restoredGym.syncFrozenAt).toBeNull();
+
+        const deterministicRows = await executeRows<{ id: number | string }>(
+          tx,
+          sql`SELECT id FROM gyms WHERE uuid = ${deterministicGymUuid}`,
+        );
+        expect(deterministicRows).toHaveLength(0);
+
+        const [alias] = await executeRows<AliasRow>(
+          tx,
+          sql`SELECT gym_id AS "gymId" FROM location_sync_gym_sources WHERE source_key = ${gymSourceKey} LIMIT 1`,
+        );
+        expect(Number(alias.gymId)).toBe(Number(seededGym.id));
+        const restoredBoard = await readBoard(tx, boardUuid);
+        expect(Number(restoredBoard.gymId)).toBe(Number(seededGym.id));
+
+        throw rollback;
+      })
+      .catch((error: unknown) => {
+        if (error !== rollback) {
+          throw error;
+        }
+      });
+  });
+
+  it('does not resurrect or duplicate a deleted aliased gym protected by an approved claim', async () => {
+    const db = createDb();
+    const rollback = new Error('rollback protected alias fixture');
+
+    await db
+      .transaction(async (tx) => {
+        const fixtureId = Date.now();
+        const gymSourceKey = `tension:claimed-adopted-gym-${fixtureId}`;
+        const boardSourceKey = `tension:claimed-adopted-board-${fixtureId}`;
+        const deterministicGymUuid = gymUuidForSource(gymSourceKey);
+        const adoptedGymUuid = gymUuidForSource(`${gymSourceKey}:adopted-row`);
+
+        await upsertPublicBoardLocations(tx, [baseRecord({ sourceKey: boardSourceKey, gymSourceKey })]);
+        const seededGym = await readGym(tx, deterministicGymUuid);
+        await tx.execute(sql`
+          UPDATE gyms
+             SET uuid = ${adoptedGymUuid}, name = 'Owner Protected Gym',
+                 deleted_at = NOW(), sync_frozen_at = NULL
+           WHERE id = ${Number(seededGym.id)}
+        `);
+        await tx.execute(sql`
+          INSERT INTO gym_claims (gym_id, claimant_user_id, method, status, created_at, updated_at)
+          VALUES (${Number(seededGym.id)}, ${SYSTEM_USER_ID}, 'admin', 'approved', NOW(), NOW())
+        `);
+
+        await upsertPublicBoardLocations(tx, [
+          baseRecord({
+            sourceKey: boardSourceKey,
+            gymSourceKey,
+            gymName: 'Upstream Must Not Win',
+            latitude: -35.2,
+            longitude: 149.7,
+          }),
+        ]);
+
+        const protectedGym = await readGym(tx, adoptedGymUuid);
+        expect(protectedGym.name).toBe('Owner Protected Gym');
+        expect(protectedGym.deletedAt).not.toBeNull();
+        expect(protectedGym.syncFrozenAt).toBeNull();
+
+        const deterministicRows = await executeRows<{ id: number | string }>(
+          tx,
+          sql`SELECT id FROM gyms WHERE uuid = ${deterministicGymUuid}`,
+        );
+        expect(deterministicRows).toHaveLength(0);
 
         throw rollback;
       })

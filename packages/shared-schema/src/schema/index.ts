@@ -27,6 +27,7 @@ import { betaLinksTypeDefs } from './beta-links';
 import { integrationsTypeDefs } from './integrations';
 import { otaTypeDefs } from './ota';
 import { syncTypeDefs } from './sync';
+import { locationSyncAdminTypeDefs } from './location-sync-admin';
 
 export const typeDefs = [
   scalarTypeDefs,
@@ -51,6 +52,7 @@ export const typeDefs = [
   integrationsTypeDefs,
   otaTypeDefs,
   syncTypeDefs,
+  locationSyncAdminTypeDefs,
   queriesTypeDefs,
   mutationsTypeDefs,
   subscriptionsTypeDefs,

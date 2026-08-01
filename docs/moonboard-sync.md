@@ -15,6 +15,8 @@ MoonBoard locations intentionally cover every configured layout, not just the 20
 
 Rows are upserted by deterministic UUID. The sync does not delete rows that disappear upstream.
 
+A human edit or deletion freezes that row by setting `sync_frozen_at`, so later source pulls cannot overwrite it. A global admin can release the freeze from `/admin/location-sync`; the action clears only the marker, requires a recorded reason, and writes `location_sync_unfreeze_audit`. The separate gym-owner/approved-claim guard remains in force. The location daemon refreshes MoonBoard every 6–8 hours, and operators can also run `moonboard-sync locations` manually. After a freeze is released, the next scheduled cycle or manual run may refresh or resurrect the matching row.
+
 ## Gym identity (source keys)
 
 MoonBoard's `GetMapMarkers` payload has **no upstream id** — only a name and coordinates. A gym's stable identity is therefore derived from its name plus a coarse location cell:

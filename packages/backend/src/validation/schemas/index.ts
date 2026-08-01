@@ -17,4 +17,5 @@ export * from './feedback';
 export * from './board-presence';
 export * from './integrations';
 export * from './sync';
+export * from './location-sync-admin';
 export * from './playback';

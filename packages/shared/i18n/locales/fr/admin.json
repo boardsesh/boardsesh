@@ -24,7 +24,8 @@
     "retention": "Tableau de rétention",
     "gymClaims": "Revendications de salles",
     "feedback": "Rapports de bugs",
-    "gymDuplicates": "Salles en double"
+    "gymDuplicates": "Salles en double",
+    "locationSync": "Gels de synchronisation des lieux"
   },
   "feedback": {
     "title": "Bugs et retours",
@@ -260,6 +261,65 @@
       "actions": "Actions"
     },
     "loadMore": "Charger plus"
+  },
+  "locationSync": {
+    "title": "Gels de synchronisation des lieux",
+    "backToAdmin": "Retour à l’administration",
+    "intro": "Libérez une modification humaine seulement quand la fiche source doit reprendre le dessus. Cette action ne lance pas de synchronisation ; la prochaine mise à jour d’une source correspondante pourra remplacer des détails ou restaurer une fiche supprimée.",
+    "tabs": {
+      "label": "Type de fiche",
+      "gyms": "Salles",
+      "boards": "Boards"
+    },
+    "search": {
+      "label": "Rechercher des fiches gelées",
+      "placeholder": "Nom, slug ou UUID",
+      "submit": "Rechercher"
+    },
+    "summary": "{{shown}} fiches gelées affichées sur {{total}}",
+    "retry": "Réessayer",
+    "error": "Impossible de charger les fiches gelées.",
+    "empty": "Aucune fiche gelée ne correspond à cette recherche.",
+    "loadMore": "Charger plus",
+    "notAvailable": "cette fiche",
+    "table": {
+      "listing": "Fiche",
+      "state": "État",
+      "frozenAt": "Gelée le",
+      "sources": "Sources de synchronisation",
+      "actions": "Actions",
+      "noRecordedSources": "Aucune source enregistrée"
+    },
+    "state": {
+      "deleted": "Supprimée",
+      "live": "Active",
+      "systemOwned": "Gérée par le système",
+      "userOwned": "Détenue par un utilisateur",
+      "ownerProtected": "Propriétaire protégé"
+    },
+    "actions": {
+      "release": "Libérer le gel"
+    },
+    "confirm": {
+      "title": "Libérer ce gel de synchronisation ?",
+      "body": "La prochaine synchronisation de lieu correspondante pourra à nouveau mettre à jour {{name}}. Vérifiez les avertissements et indiquez pourquoi le gel est libéré.",
+      "deletedWarning": "Cette fiche est supprimée. Une source correspondante pourra la restaurer lors de la prochaine synchronisation.",
+      "ownerProtectedWarning": "Cette salle a un propriétaire ou une revendication approuvée. La protection du propriétaire reste active après la libération du gel.",
+      "noSourceWarning": "Aucune source de synchronisation n’est actuellement liée à cette salle. Libérer le gel n’aura aucun effet tant qu’une source ne lui correspond pas.",
+      "moonBoardWarning": "Les lieux MoonBoard sont actualisés toutes les 6 à 8 heures. Après la libération de ce gel, le prochain cycle planifié ou une synchronisation manuelle des lieux MoonBoard pourra appliquer les changements de la source.",
+      "reasonLabel": "Motif",
+      "reasonPlaceholder": "Pourquoi les données source doivent-elles reprendre le dessus ?",
+      "reasonRemaining": "Caractères encore nécessaires : {{count}}",
+      "reasonStored": "Ce motif sera conservé dans le journal d’audit.",
+      "cancel": "Annuler",
+      "releasing": "Libération…",
+      "release": "Libérer le gel"
+    },
+    "snackbar": {
+      "alreadyReleased": "Le gel avait déjà été libéré",
+      "released": "Gel de synchronisation libéré",
+      "failed": "Impossible de libérer le gel de synchronisation. La liste a été actualisée."
+    }
   },
   "gymDuplicates": {
     "title": "Salles en double",
