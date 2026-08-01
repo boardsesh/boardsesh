@@ -31,7 +31,12 @@ export function createBluetoothAdapter(
   if (Platform.OS === 'ios' && boardBleNative && !options?.preferWriteWithResponse) {
     return new NativeIosBleAdapter(devicePicker, scanFamily, options);
   }
-  return new RNBleAdapter(devicePicker, scanFamily, options);
+  // Android retries one transient first GATT connect failure (isRetryableAndroidConnectError)
+  // before surfacing it — see RNBleAdapter.connectSelectedDevice. iOS never sets this.
+  return new RNBleAdapter(devicePicker, scanFamily, {
+    ...options,
+    enableAndroidConnectRetry: Platform.OS === 'android',
+  });
 }
 
 // `true` iff the runtime adapter is the native iOS one — used by the

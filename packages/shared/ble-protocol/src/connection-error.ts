@@ -73,6 +73,42 @@ function isBlePlxError(error: unknown): error is BlePlxErrorShape {
   return errorName(error) === BLE_PLX_ERROR_NAME;
 }
 
+// Only these ble-plx connect errors can represent Android's transient GATT
+// handshake failure. Keep this narrower than BLE_PLX_CODE_TO_CATEGORY below:
+// timeout, MTU, discovery and lookup errors are terminal and must not replay the
+// selected-device connect.
+const RETRYABLE_ANDROID_CONNECT_ERROR_CODES = new Set([200, 201, 205]);
+const RETRYABLE_ANDROID_GATT_STATUSES = new Set([133, 147]);
+
+/**
+ * True only for the small set of Android GATT connect failures which are known
+ * to recover after closing the stale GATT handle and trying the same peripheral
+ * once more. This is structural so the shared package stays pure TypeScript.
+ *
+ * The outer ble-plx code establishes that the failure came from the connection
+ * step. When Android also supplied its lower-level GATT status, that status is
+ * authoritative: only 133 (generic GATT error) and 147 may retry. A missing
+ * Android status is allowed because some devices/OS versions omit it entirely.
+ */
+export function isRetryableAndroidConnectError(error: unknown): boolean {
+  if (!isBlePlxError(error) || typeof error.errorCode !== 'number') return false;
+  if (!RETRYABLE_ANDROID_CONNECT_ERROR_CODES.has(error.errorCode)) return false;
+  // A chooser dismissal is never a failed GATT handshake. Keep this identical
+  // to classifyBleFailure's deliberately narrow user-cancel wording: a broad
+  // `cancel` match would also catch genuine technical failures such as
+  // "Operation was cancelled" and "Connection cancelled by peer".
+  if (/user cancell?ed|Device selection cancelled/i.test(errorMessage(error))) return false;
+  // ble-plx always carries both platform fields and uses null for the inactive
+  // platform. Reject a populated iOS field so this Android-only predicate stays
+  // safe even when called independently of the platform-gated adapter factory.
+  if (error.iosErrorCode !== undefined && error.iosErrorCode !== null) return false;
+  // On Android, ble-plx represents an omitted native GATT status as null. Keep
+  // accepting an actually-absent property too for structurally equivalent test
+  // doubles and older library shapes.
+  if (error.androidErrorCode === undefined || error.androidErrorCode === null) return true;
+  return typeof error.androidErrorCode === 'number' && RETRYABLE_ANDROID_GATT_STATUSES.has(error.androidErrorCode);
+}
+
 /**
  * Maps a ble-plx (`react-native-ble-plx`) numeric `BleErrorCode` to a connect
  * failure category. The code is a far more reliable signal than ble-plx's English

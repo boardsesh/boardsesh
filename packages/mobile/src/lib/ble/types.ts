@@ -1,6 +1,9 @@
 export type BleConnection = {
   deviceId: string;
   deviceName?: string;
+  // True only when the Android ble-plx adapter recovered a transient first
+  // GATT connect failure with its single in-budget retry.
+  retrySucceeded?: boolean;
   // Advertisement recon payload of the connected device, threaded through so the
   // `Bluetooth Connection Success` event can carry it. See `AdvertisementRecon`.
   manufacturerData?: string;
@@ -128,6 +131,10 @@ export type BleConnectDiagnostics = {
  */
 export type BleAdapterOptions = {
   preferWriteWithResponse?: boolean;
+  // RNBleAdapter only: retry one transient first GATT connect failure before
+  // surfacing it. Android only — set by createBluetoothAdapter from Platform.OS,
+  // never by a board's own preferences.
+  enableAndroidConnectRetry?: boolean;
 };
 
 export type BluetoothAdapter = {

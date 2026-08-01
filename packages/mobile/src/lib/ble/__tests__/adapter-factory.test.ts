@@ -60,6 +60,7 @@ describe('createBluetoothAdapter', () => {
     harness.module.boardBleNative = null;
     createBluetoothAdapter(noopPicker, 'aurora');
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
+    expect(RNBleAdapter).toHaveBeenCalledWith(noopPicker, 'aurora', { enableAndroidConnectRetry: false });
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
   });
 
@@ -68,6 +69,7 @@ describe('createBluetoothAdapter', () => {
     harness.module.boardBleNative = { _placeholder: true };
     createBluetoothAdapter(noopPicker, 'aurora');
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
+    expect(RNBleAdapter).toHaveBeenCalledWith(noopPicker, 'aurora', { enableAndroidConnectRetry: true });
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
   });
 
@@ -79,7 +81,10 @@ describe('createBluetoothAdapter', () => {
     harness.module.boardBleNative = { _placeholder: true };
     createBluetoothAdapter(noopPicker, 'moonboard', { preferWriteWithResponse: true });
     expect(RNBleAdapter).toHaveBeenCalledTimes(1);
-    expect(RNBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', { preferWriteWithResponse: true });
+    expect(RNBleAdapter).toHaveBeenCalledWith(noopPicker, 'moonboard', {
+      preferWriteWithResponse: true,
+      enableAndroidConnectRetry: false,
+    });
     expect(NativeIosBleAdapter).not.toHaveBeenCalled();
   });
 
