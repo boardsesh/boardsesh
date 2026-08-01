@@ -143,6 +143,7 @@ import {
 } from '../use-board-bluetooth';
 import type { BleWriteDiagnostics } from '../types';
 import { reportHandledError } from '../../error-reporting';
+import { createBleWriteActivityStore } from '../write-activity-store';
 
 // ── Factory helpers ────────────────────────────────────────────────────────
 
@@ -405,6 +406,7 @@ describe('useBoardBluetooth', () => {
   });
 
   it('serialises overlapping sendFramesToBoard calls so chunks never interleave', async () => {
+    const writeActivityStore = createBleWriteActivityStore();
     const writeEvents: string[] = [];
     let releaseFirstWrite!: () => void;
     const write = vi.fn((packet: Uint8Array) => {
@@ -429,7 +431,9 @@ describe('useBoardBluetooth', () => {
       .mockReturnValueOnce({ packet: new Uint8Array([1]) })
       .mockReturnValueOnce({ packet: new Uint8Array([2]) });
 
-    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1 }));
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, writeActivityStore }),
+    );
 
     await act(async () => {
       await result.current.connect();
@@ -444,11 +448,217 @@ describe('useBoardBluetooth', () => {
       await Promise.resolve();
       await Promise.resolve();
       expect(writeEvents).toEqual(['start-1']);
+      expect(writeActivityStore.getSnapshot()).toBe(true);
       releaseFirstWrite();
       await Promise.all([firstSend, secondSend]);
     });
 
     expect(writeEvents).toEqual(['start-1', 'end-1', 'start-2', 'end-2']);
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+  });
+
+  it('does not report write activity for the early no-adapter guard', async () => {
+    const writeActivityStore = createBleWriteActivityStore();
+    const listener = vi.fn();
+    writeActivityStore.subscribe(listener);
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, writeActivityStore }),
+    );
+
+    let sendResult: boolean | undefined = true;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard('p1r12');
+    });
+
+    expect(sendResult).toBeUndefined();
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('releases write activity when an adapter write rejects', async () => {
+    const writeActivityStore = createBleWriteActivityStore();
+    const activityListener = vi.fn();
+    writeActivityStore.subscribe(activityListener);
+    const fakeAdapter = makeFakeAdapter({ write: vi.fn().mockRejectedValue(new Error('transient write failure')) });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, writeActivityStore }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    let sendResult: boolean | undefined = true;
+    await act(async () => {
+      sendResult = await result.current.sendFramesToBoard('p1r12');
+    });
+
+    expect(sendResult).toBe(false);
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+    expect(activityListener).toHaveBeenCalledTimes(2);
+  });
+
+  it('tracks connect-initial MoonBoard frames until the adapter write settles', async () => {
+    const writeActivityStore = createBleWriteActivityStore();
+    let resolveWrite!: () => void;
+    const fakeAdapter = makeFakeAdapter({
+      write: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      ),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, writeActivityStore }),
+    );
+
+    let connectPromise!: Promise<boolean>;
+    act(() => {
+      connectPromise = result.current.connect('p1r12');
+    });
+    await waitFor(() => expect(writeActivityStore.getSnapshot()).toBe(true));
+
+    await act(async () => {
+      resolveWrite();
+      await connectPromise;
+    });
+
+    expect(result.current.isConnected).toBe(true);
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+  });
+
+  it('resets a dropped generation and ignores its late release after a new write begins', async () => {
+    const writeActivityStore = createBleWriteActivityStore();
+    let resolveOldWrite!: () => void;
+    let resolveNewWrite!: () => void;
+    const oldAdapter = makeFakeAdapter({
+      write: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveOldWrite = resolve;
+          }),
+      ),
+    });
+    const newAdapter = makeFakeAdapter({
+      write: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveNewWrite = resolve;
+          }),
+      ),
+    });
+    vi.mocked(createBluetoothAdapter)
+      .mockReturnValueOnce(oldAdapter as unknown as ReturnType<typeof createBluetoothAdapter>)
+      .mockReturnValueOnce(newAdapter as unknown as ReturnType<typeof createBluetoothAdapter>);
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, writeActivityStore }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    let oldSend!: Promise<boolean | undefined>;
+    act(() => {
+      oldSend = result.current.sendFramesToBoard('p1r12');
+    });
+    await waitFor(() => expect(writeActivityStore.getSnapshot()).toBe(true));
+
+    await act(async () => {
+      await result.current.disconnect();
+    });
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    let newSend!: Promise<boolean | undefined>;
+    act(() => {
+      newSend = result.current.sendFramesToBoard('p2r12');
+    });
+    await waitFor(() => expect(writeActivityStore.getSnapshot()).toBe(true));
+
+    await act(async () => {
+      resolveOldWrite();
+      await oldSend;
+    });
+    expect(writeActivityStore.getSnapshot()).toBe(true);
+
+    await act(async () => {
+      resolveNewWrite();
+      await newSend;
+    });
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+  });
+
+  it('resets write activity on hook unmount even when an adapter ignores abort', async () => {
+    const writeActivityStore = createBleWriteActivityStore();
+    let resolveWrite!: () => void;
+    const fakeAdapter = makeFakeAdapter({
+      write: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveWrite = resolve;
+          }),
+      ),
+    });
+    vi.mocked(createBluetoothAdapter).mockReturnValue(
+      fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
+    );
+    mockGetMoonboardBluetoothPacket.mockReturnValue({
+      packet: new Uint8Array([1]),
+      skippedRoleCount: 0,
+      skippedPositionCount: 0,
+      totalPlacements: 1,
+      isClear: false,
+    });
+    const { result, unmount } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'moonboard', layoutId: 1, sizeId: 1, writeActivityStore }),
+    );
+
+    await act(async () => {
+      await result.current.connect();
+    });
+    let send!: Promise<boolean | undefined>;
+    act(() => {
+      send = result.current.sendFramesToBoard('p1r12');
+    });
+    await waitFor(() => expect(writeActivityStore.getSnapshot()).toBe(true));
+
+    unmount();
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+
+    await act(async () => {
+      resolveWrite();
+      await send;
+    });
+    expect(writeActivityStore.getSnapshot()).toBe(false);
   });
 
   it('refuses a mirrored send on a mirroring board when holdsData is missing (never sends un-mirrored frames)', async () => {
@@ -845,13 +1055,18 @@ describe('useBoardBluetooth', () => {
   it('fires Board Lights Cleared on an Aurora deliberate clear (#3420)', async () => {
     // The Aurora clear branch is separate from dispatchMoonboardPacket, so its
     // sendSource-gated tracking needs its own pin.
+    const writeActivityStore = createBleWriteActivityStore();
+    const activityListener = vi.fn();
+    writeActivityStore.subscribe(activityListener);
     const fakeAdapter = makeFakeAdapter();
     vi.mocked(createBluetoothAdapter).mockReturnValue(
       fakeAdapter as unknown as ReturnType<typeof createBluetoothAdapter>,
     );
     mockGetAuroraBluetoothPacket.mockReturnValue({ packet: new Uint8Array([0x01, 0x02]) });
 
-    const { result } = renderHook(() => useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1 }));
+    const { result } = renderHook(() =>
+      useBoardBluetooth({ boardName: 'kilter', layoutId: 1, sizeId: 1, writeActivityStore }),
+    );
     await act(async () => {
       await result.current.connect();
     });
@@ -862,6 +1077,8 @@ describe('useBoardBluetooth', () => {
 
     expect(cleared).toBe(true);
     expect(fakeAdapter.write).toHaveBeenCalled();
+    expect(writeActivityStore.getSnapshot()).toBe(false);
+    expect(activityListener).toHaveBeenCalledTimes(2);
     const clearedCall = mockTrack.mock.calls.find(([name]) => name === 'Board Lights Cleared');
     expect(clearedCall?.[1]).toMatchObject({ boardName: 'kilter', sendSource: 'clear' });
     expect(mockTrack.mock.calls.find(([name]) => name === 'Climb Sent to Board Success')).toBeUndefined();

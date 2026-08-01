@@ -14,6 +14,14 @@ type BleLightbulbVisualState = {
   shadowColor?: string;
 };
 
+export type BleLightbulbDisplayMode = 'scanning' | 'writing' | 'idle';
+
+export function getBleLightbulbDisplayMode(isScanning: boolean, isWriting: boolean): BleLightbulbDisplayMode {
+  if (isScanning) return 'scanning';
+  if (isWriting) return 'writing';
+  return 'idle';
+}
+
 export function getBleLightbulbVisualState({
   isConnected,
   connectedColor,
@@ -40,9 +48,12 @@ export function getBleLightbulbVisualState({
 // the long-press action.
 export function getBleLightbulbAccessibilityHint(
   isScanning: boolean,
+  isWriting: boolean,
   scanningAccessibilityHint?: string,
+  writingAccessibilityHint?: string,
   longPressAccessibilityHint?: string,
 ): string | undefined {
   if (isScanning) return scanningAccessibilityHint;
+  if (isWriting) return writingAccessibilityHint;
   return longPressAccessibilityHint;
 }

@@ -52,6 +52,8 @@ import { track } from '../lib/analytics';
 import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-color-overrides';
 import { useSetting } from '../settings';
 import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
+import { createBleWriteActivityStore } from '../lib/ble/write-activity-store';
+import { BluetoothWriteActivityProvider } from './bluetooth-write-activity';
 
 type BluetoothContextValue = {
   isConnected: boolean;
@@ -494,6 +496,7 @@ export function BluetoothProvider({
   boardUuid,
   children,
 }: BluetoothProviderProps) {
+  const [writeActivityStore] = useState(createBleWriteActivityStore);
   const { sessionId, confirmClimbOnWall, reportWallDisconnect, setSessionBoardSerial, lastConnectedBoardSerial } =
     useQueueSessionControls();
   const { t } = useTranslation('settings');
@@ -953,6 +956,7 @@ export function BluetoothProvider({
     onConnectSuccess: handleConnectSuccess,
     onConnectionEnded: handleBluetoothConnectionEnded,
     getConnectedViaMismatchOverride,
+    writeActivityStore,
   });
 
   // Every successful board write is activity for the auto-disconnect deadline,
@@ -1545,36 +1549,38 @@ export function BluetoothProvider({
 
   return (
     <BluetoothContext.Provider value={value}>
-      {/* Holder model: anyone connected writes the wall (always-take), so the
-          auto-sender mounts on isConnected alone — no driver/preview write-gate.
-          Aurora is last-connection-wins, so one phone is physically connected. */}
-      {isConnected && (
-        <BluetoothAutoSender
-          sendFramesToBoard={sendFramesToBoardWithActivityReset}
-          onWallConfirmed={handleWallConfirmed}
-          reassertNonce={reassertNonce}
-          connectInitialSendRef={connectInitialSendRef}
-          lastPhysicalFramesRef={lastPhysicalFramesRef}
-          colorSignature={holdColorSignature}
-          activeConfig={currentBoardConfig}
-          onSkipSpillClimb={handleSkipSpillClimb}
-          onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
-        />
-      )}
-      <BlePickerHostContext.Provider value={pickerHostValue}>{children}</BlePickerHostContext.Provider>
-      {/* App-root picker, for connects off the tab screens / accessory bar.
-          Suppressed while a route (the player) hosts its own — see
-          DevicePickerSheetHost. */}
-      {pickerState && !pickerHostedExternally && (
-        <DevicePickerSheet
-          devices={pickerState.devices}
-          onSelect={handlePickerSelect}
-          onDismiss={pickerState.handleCancel}
-          isScanning={pickerState.isScanning}
-          resolvedBoards={resolvedPickerBoards}
-          currentBoardConfig={currentBoardConfig}
-        />
-      )}
+      <BluetoothWriteActivityProvider store={writeActivityStore}>
+        {/* Holder model: anyone connected writes the wall (always-take), so the
+            auto-sender mounts on isConnected alone — no driver/preview write-gate.
+            Aurora is last-connection-wins, so one phone is physically connected. */}
+        {isConnected && (
+          <BluetoothAutoSender
+            sendFramesToBoard={sendFramesToBoardWithActivityReset}
+            onWallConfirmed={handleWallConfirmed}
+            reassertNonce={reassertNonce}
+            connectInitialSendRef={connectInitialSendRef}
+            lastPhysicalFramesRef={lastPhysicalFramesRef}
+            colorSignature={holdColorSignature}
+            activeConfig={currentBoardConfig}
+            onSkipSpillClimb={handleSkipSpillClimb}
+            onUnresolvedCurrentClimb={handleUnresolvedCurrentClimb}
+          />
+        )}
+        <BlePickerHostContext.Provider value={pickerHostValue}>{children}</BlePickerHostContext.Provider>
+        {/* App-root picker, for connects off the tab screens / accessory bar.
+            Suppressed while a route (the player) hosts its own — see
+            DevicePickerSheetHost. */}
+        {pickerState && !pickerHostedExternally && (
+          <DevicePickerSheet
+            devices={pickerState.devices}
+            onSelect={handlePickerSelect}
+            onDismiss={pickerState.handleCancel}
+            isScanning={pickerState.isScanning}
+            resolvedBoards={resolvedPickerBoards}
+            currentBoardConfig={currentBoardConfig}
+          />
+        )}
+      </BluetoothWriteActivityProvider>
     </BluetoothContext.Provider>
   );
 }

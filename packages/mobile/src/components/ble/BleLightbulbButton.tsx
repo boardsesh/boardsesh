@@ -8,10 +8,16 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { Icon } from '../Icon';
+import { ActivityIndicator } from '../ActivityIndicator';
 import { hapticLight, hapticMedium } from '../../lib/haptics';
 import { useTheme } from '../../providers/theme-provider';
+import { useBluetoothWriteInProgress } from '../../providers/bluetooth-write-activity';
 import { timing } from '../../theme/animations';
-import { getBleLightbulbAccessibilityHint, getBleLightbulbVisualState } from './ble-lightbulb-button-state';
+import {
+  getBleLightbulbAccessibilityHint,
+  getBleLightbulbDisplayMode,
+  getBleLightbulbVisualState,
+} from './ble-lightbulb-button-state';
 
 type BleLightbulbButtonProps = {
   isConnected: boolean;
@@ -34,6 +40,8 @@ type BleLightbulbButtonProps = {
   /** Subtle visual warning that auto-disconnect is in its final ten seconds. */
   autoDisconnectWarning?: boolean;
   scanningAccessibilityHint?: string;
+  /** Announces the foreground wall write while preserving the button's action label. */
+  writingAccessibilityHint?: string;
   /** Hint describing the long-press action (e.g. "Hold to disconnect"). */
   longPressAccessibilityHint?: string;
   haptic?: 'light' | 'medium' | 'none';
@@ -57,12 +65,14 @@ export function BleLightbulbButton({
   accessibilitySelected,
   autoDisconnectWarning = false,
   scanningAccessibilityHint,
+  writingAccessibilityHint,
   longPressAccessibilityHint,
   haptic = 'light',
   size = 24,
   containerSize = 44,
 }: BleLightbulbButtonProps) {
   const { systemColors, brandColors } = useTheme();
+  const isWriting = useBluetoothWriteInProgress();
   const pulseOpacity = useSharedValue(1);
   const warningPulse = useSharedValue(0);
 
@@ -113,6 +123,7 @@ export function BleLightbulbButton({
     connectedColor: brandColors.warning,
     disconnectedColor: systemColors.secondaryLabel,
   });
+  const displayMode = getBleLightbulbDisplayMode(isScanning, isWriting);
 
   return (
     <AnimatedPressable
@@ -122,10 +133,12 @@ export function BleLightbulbButton({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={getBleLightbulbAccessibilityHint(
         isScanning,
+        isWriting,
         scanningAccessibilityHint,
+        writingAccessibilityHint,
         longPressAccessibilityHint,
       )}
-      accessibilityState={{ selected: accessibilitySelected ?? isConnected }}
+      accessibilityState={{ selected: accessibilitySelected ?? isConnected, busy: displayMode !== 'idle' }}
       hitSlop={8}
       style={({ pressed }: PressableStateCallbackType) => [
         styles.container,
@@ -139,7 +152,11 @@ export function BleLightbulbButton({
         pressed && styles.pressed,
       ]}
     >
-      <Icon name={visualState.iconName} size={size} color={visualState.iconColor} />
+      {displayMode === 'writing' ? (
+        <ActivityIndicator accessible={false} size="small" color={brandColors.warning} />
+      ) : (
+        <Icon name={visualState.iconName} size={size} color={visualState.iconColor} />
+      )}
     </AnimatedPressable>
   );
 }
