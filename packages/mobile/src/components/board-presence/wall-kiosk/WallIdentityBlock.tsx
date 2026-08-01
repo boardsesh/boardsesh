@@ -242,7 +242,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-    paddingTop: 2,
   },
   driverName: {
     flexShrink: 1,
@@ -254,6 +253,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing[2],
-    paddingTop: 2,
   },
 });
