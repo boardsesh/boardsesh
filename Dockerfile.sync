@@ -9,12 +9,12 @@
 # scheduler directly via tsx.
 # Sibling of Dockerfile.backend. The actual command is supplied by the container
 # `command:` (e.g. docker-compose, or Railway's custom start command), so one
-# image serves every CLI. kilter and aurora expose a long-running `daemon`;
-# moonboard is locations-only (no daemon subcommand); the scheduler's `start`
-# runs the cron loop and a /health server (see docs/scheduler.md):
+# image serves every CLI. kilter, aurora, and moonboard expose a long-running
+# `daemon`; the scheduler's `start` runs the cron loop and a /health server
+# (see docs/scheduler.md):
 #   node --import tsx packages/kilter-sync/src/cli/index.ts daemon
 #   node --import tsx packages/aurora-sync/src/cli/index.ts daemon
-#   node --import tsx packages/moonboard-sync/src/cli/index.ts locations
+#   node --import tsx packages/moonboard-sync/src/cli/index.ts daemon --skip-if-missing-credentials
 #   node --import tsx packages/scheduler/src/cli/index.ts start
 FROM node:22-alpine
 

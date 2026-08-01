@@ -853,6 +853,9 @@ importers:
       '@boardsesh/location-sync':
         specifier: workspace:*
         version: link:../location-sync
+      '@boardsesh/sync-runtime':
+        specifier: workspace:*
+        version: link:../sync-runtime
       commander:
         specifier: ^15.0.0
         version: 15.0.0
