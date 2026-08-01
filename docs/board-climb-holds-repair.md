@@ -2,6 +2,12 @@
 
 This repair rebuilds stale materialized hold rows for multi-frame Aurora-family climbs and removes globally invalid rows (`hold_id <= 0`, an empty state, or a state containing `=`) elsewhere. A valid frame sequence that projects to no canonical holds is cleaned to an empty row set. The repair also migrates fingerprints only when the old value is provably derived from the old rows or the historical per-frame Grips tokens; independent fingerprints are left alone. It does not change climb frames or run against MoonBoard multi-frame data.
 
+## Kilter rollout bridge
+
+Deploy the catalog-sync compatibility bridge before running this repair. During each sync it reads catalog-owned multi-frame Kilter rows once, proves which stored fingerprints came from the historical raw frame events, and adds their current projected fingerprints to the in-memory dedup index without changing the database. Existing stored fingerprint owners always win, and empty or unproven projections add no key.
+
+That dual-key bridge prevents the Kilter daemon from creating a second canonical in the interval between deploy and repair, so the daemon does not need to stay paused for that whole rollout interval. The repair migrates proven legacy fingerprints to the projected key; after migration the stored key is already primary and the bridge is a no-op. Writers should still be paused for the short approved apply window below, when the repair takes table locks.
+
 ## Approval gates
 
 Production access is never implicit. Get explicit operator approval separately for:
@@ -10,7 +16,7 @@ Production access is never implicit. Get explicit operator approval separately f
 2. the production apply, including its short table-lock window; and
 3. the post-commit cache action.
 
-Pause catalog and sync writers for the approved apply window. The transaction takes `SHARE ROW EXCLUSIVE` locks on `board_climbs` and `board_climb_holds`, uses a five-second lock timeout and a two-minute statement timeout, and rolls back on any manifest or verification mismatch.
+Pause catalog and sync writers only for the approved apply window. The transaction takes `SHARE ROW EXCLUSIVE` locks on `board_climbs` and `board_climb_holds`, uses a five-second lock timeout and a two-minute statement timeout, and rolls back on any manifest or verification mismatch.
 
 ## Target database
 
