@@ -273,6 +273,12 @@ describe('board_climb_holds writes', () => {
         frames: null,
       }),
     ).toBeNull();
+    expect(
+      resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', {
+        boardType: 'decoy',
+        frames: '',
+      }),
+    ).toBe('');
     expect(resolveAuthoritativeClimbFrames('decoy', 'p1r1p2r2', undefined)).toBe('p1r1p2r2');
 
     mockProjectStoredRows.mockImplementation((frames: string) => ({

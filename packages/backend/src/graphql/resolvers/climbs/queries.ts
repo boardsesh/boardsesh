@@ -142,10 +142,9 @@ export const climbQueries = {
       // climbs this is only the legacy fallback: older MoonBoard imports can
       // carry frames without materialized hold rows (backfill follow-up #1).
       if (holds.length === 0 && climbRow?.frames) {
-        holds = parseFramesToHoldEntries(boardType, climbRow.frames).map(({ holdId, holdState }) => ({
-          holdId,
-          holdState,
-        }));
+        holds = parseFramesToHoldEntries(boardType, climbRow.frames)
+          .map(({ holdId, holdState }) => ({ holdId, holdState }))
+          .filter(isSupportedSimilarityHold);
       }
 
       if (isSizeScopedSimilarityBoard(boardType) && sizeId === undefined) {
@@ -155,10 +154,9 @@ export const climbQueries = {
       // Always exclude the target climb itself from its own similar list.
       excludeUuid = validated.climbUuid;
     } else {
-      holds = parseFramesToHoldEntries(boardType, validated.frames ?? '').map(({ holdId, holdState }) => ({
-        holdId,
-        holdState,
-      }));
+      holds = parseFramesToHoldEntries(boardType, validated.frames ?? '')
+        .map(({ holdId, holdState }) => ({ holdId, holdState }))
+        .filter(isSupportedSimilarityHold);
     }
 
     if (holds.length === 0) return [];
