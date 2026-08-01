@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { useCallback, useEffect, useState } from 'react';
+import type { Climb } from '@boardsesh/shared-schema';
+import type { BoardConfig } from '../../../providers/drawer-host-provider';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../use-create-climb-navigation';
 
 type Transition = { data?: { closing?: boolean } };
 
 const platform = vi.hoisted(() => ({ OS: 'ios' }));
-const router = vi.hoisted(() => ({ dismiss: vi.fn() }));
+const router = vi.hoisted(() => ({ dismiss: vi.fn(), push: vi.fn() }));
 const navigation = vi.hoisted(() => ({
   listener: null as ((transition: Transition) => void) | null,
   unsubscribe: vi.fn(),
@@ -25,12 +29,14 @@ vi.mock('expo-router', () => ({
   useRouter: () => router,
   useNavigation: () => navigationSource.current ?? navigation,
 }));
+vi.mock('../../../lib/sentry', () => ({ captureToSentry: vi.fn() }));
 
 import { usePlayerDismissAndWait } from '../use-player-dismiss-and-wait';
 
 beforeEach(() => {
   platform.OS = 'ios';
-  router.dismiss.mockClear();
+  router.dismiss.mockReset();
+  router.push.mockReset();
   navigation.listener = null;
   navigation.unsubscribe.mockClear();
   navigation.addListener.mockClear();
@@ -62,13 +68,31 @@ describe('usePlayerDismissAndWait', () => {
     expect(navigation.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
-  it('cleans up and resolves aborted when the player route unmounts first', async () => {
+  it('returns aborted from a stale player callback without dismissing the route underneath', async () => {
     const { result, unmount } = renderHook(() => usePlayerDismissAndWait());
-    const resultPromise = result.current();
+    const dismissStalePlayer = result.current;
 
     unmount();
 
-    await expect(resultPromise).resolves.toEqual({ status: 'aborted' });
+    await expect(dismissStalePlayer()).resolves.toEqual({ status: 'aborted' });
+    expect(router.dismiss).not.toHaveBeenCalled();
+    expect(navigation.addListener).not.toHaveBeenCalled();
+  });
+
+  it('waits through synchronous player unmount after its own dismiss request', async () => {
+    vi.useFakeTimers();
+    const { result, unmount } = renderHook(() => usePlayerDismissAndWait());
+    router.dismiss.mockImplementationOnce(unmount);
+
+    const resultPromise = result.current();
+    const settled = vi.fn();
+    void resultPromise.then(settled);
+
+    await act(async () => vi.advanceTimersByTimeAsync(549));
+    expect(settled).not.toHaveBeenCalled();
+
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    await expect(resultPromise).resolves.toEqual({ status: 'dismissed' });
     expect(navigation.unsubscribe).toHaveBeenCalledTimes(1);
   });
 
@@ -118,5 +142,76 @@ describe('usePlayerDismissAndWait', () => {
     act(() => replacementListener?.({ data: { closing: true } }));
     await expect(resultPromise).resolves.toEqual({ status: 'dismissed' });
     expect(replacementUnsubscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+const handoffClimb = {
+  uuid: 'climb-1',
+  name: 'Sloper Traverse',
+  frames: 'p1129r15p1130r12',
+  description: 'Start matched on the jug',
+} as unknown as Climb;
+const handoffBoard = {
+  boardName: 'kilter',
+  layoutId: 8,
+  sizeId: 17,
+  setIds: '26,27',
+  angle: 40,
+} as unknown as BoardConfig;
+
+function PlayerDismissBridge({ onReady }: { onReady: (waiter: DismissSurfaceAndWait) => void }) {
+  const dismissPlayerAndWait = usePlayerDismissAndWait();
+  useEffect(() => onReady(dismissPlayerAndWait), [dismissPlayerAndWait, onReady]);
+  return null;
+}
+
+function PlayerCreateHandoffHarness({ onPlayerUnmountReady }: { onPlayerUnmountReady: (unmount: () => void) => void }) {
+  const [isPlayerMounted, setIsPlayerMounted] = useState(true);
+  const [dismissPlayerAndWait, setDismissPlayerAndWait] = useState<DismissSurfaceAndWait>();
+  const { openRemix } = useCreateClimbNavigation({ dismissPlayerAndWait });
+  const acceptPlayerWaiter = useCallback((waiter: DismissSurfaceAndWait) => {
+    setDismissPlayerAndWait(() => waiter);
+  }, []);
+  const dismissPlayerRoute = useCallback(() => {
+    setIsPlayerMounted(false);
+  }, []);
+
+  useEffect(() => onPlayerUnmountReady(dismissPlayerRoute), [dismissPlayerRoute, onPlayerUnmountReady]);
+
+  return (
+    <>
+      <button type="button" onClick={() => openRemix(handoffClimb, handoffBoard)}>
+        Open create
+      </button>
+      {isPlayerMounted ? <PlayerDismissBridge onReady={acceptPlayerWaiter} /> : null}
+    </>
+  );
+}
+
+describe('player-to-create handoff', () => {
+  it('pushes create after the player unmounts before its native transition event', async () => {
+    vi.useFakeTimers();
+    let unmountPlayerRoute = () => {};
+    render(<PlayerCreateHandoffHarness onPlayerUnmountReady={(unmount) => (unmountPlayerRoute = unmount)} />);
+    router.dismiss.mockImplementationOnce(unmountPlayerRoute);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open create' }));
+
+    await act(async () => vi.advanceTimersByTimeAsync(550));
+
+    expect(router.dismiss).toHaveBeenCalledTimes(1);
+    expect(router.push).toHaveBeenCalledWith({
+      pathname: '/(tabs)/climbs/create',
+      params: {
+        forkFrames: 'p1129r15p1130r12',
+        forkName: 'Sloper Traverse',
+        forkDescription: 'Start matched on the jug',
+        boardName: 'kilter',
+        layoutId: '8',
+        sizeId: '17',
+        setIds: '26,27',
+        angle: '40',
+      },
+    });
   });
 });

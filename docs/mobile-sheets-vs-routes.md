@@ -234,10 +234,13 @@ modal, and only then pushes create:
 claim action → dismiss source sheet → settle → dismiss /play → closing transitionEnd → push create
 ```
 
-`dismissAndWait()` can return `aborted` when its owner unmounts; that aborts the rest of the
-handoff. This prevents a stale async action from opening create after its source disappeared.
-Repeated taps join neither a second dismiss nor a second push because the action guard is set
-before the first asynchronous boundary.
+`dismissAndWait()` can return `aborted` when its source-sheet owner unmounts; that aborts the
+rest of the handoff. The `/play` route has one deliberate exception: after its own callback has
+called `router.dismiss()`, route teardown is the expected close path, so its bounded native-stack
+ceiling remains alive when `transitionEnd` cannot arrive from the unmounted screen. A stale player
+callback invoked _after_ the player already disappeared still returns `aborted` without calling
+`router.dismiss()` again. Repeated taps join neither a second dismiss nor a second push because
+the action guard is set before the first asynchronous boundary.
 
 `handleSwitchBoardFromDrawer` in `drawer-host-provider.tsx` does the same
 `router.dismiss()` → `router.push('/boards')` when the play drawer's board-mismatch overlay
@@ -252,10 +255,11 @@ Two things that are easy to get wrong:
 
 - **Let the route own its close waiter.** The actual `/play` route subscribes to its native
   stack's `transitionEnd` before calling `router.dismiss()`, ignores events where `closing` is
-  false, and cleans up/returns `aborted` if the route unmounts first. On web there is no native
-  transition to await, so dismissal completes immediately. Thread this callback down through
-  the in-tree opener; a hook mounted in a sibling root provider cannot safely subscribe to the
-  `/play` navigator.
+  false, and uses its bounded ceiling if that dismissal unmounts the route before the native event
+  can reach JS. If the route was already gone before the callback starts, it returns `aborted`
+  instead of popping the now-visible route underneath. On web there is no native transition to
+  await, so dismissal completes immediately. Thread this callback down through the in-tree opener;
+  a hook mounted in a sibling root provider cannot safely subscribe to the `/play` navigator.
 - **Omit the player callback when there is no player route.** The same menu opens from the
   climbs list and BoardSheet, and on an **iPad regular-width layout the player is an inline
   detail pane**. Those entry points must not call `router.dismiss()` or they can pop an unrelated
