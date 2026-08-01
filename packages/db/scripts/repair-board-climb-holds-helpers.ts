@@ -266,9 +266,16 @@ export function buildRepairManifest(
         ((fingerprintClassification === 'row-derived' &&
           (changed || invalidOnlyCleanup || hasAuthoritativeProjection)) ||
           (fingerprintClassification === 'legacy-frame-derived' && hasAuthoritativeProjection));
-      const missingPlacementHoldIds = (projectedRows ?? [])
-        .filter((row) => !existingPlacementKeys.has(placementKey(climb.boardType, climb.layoutId, row.holdId)))
-        .map((row) => row.holdId);
+      const missingPlacementHoldIds = Array.from(
+        new Set(
+          (projectedRows ?? [])
+            .filter((row) => !existingPlacementKeys.has(placementKey(climb.boardType, climb.layoutId, row.holdId)))
+            .map((row) => row.holdId),
+        ),
+      ).sort((left, right) => left - right);
+      if (missingPlacementHoldIds.length > 0) {
+        blockers.push(`missing board placements: ${missingPlacementHoldIds.join(',')}`);
+      }
 
       return {
         boardType: climb.boardType,
