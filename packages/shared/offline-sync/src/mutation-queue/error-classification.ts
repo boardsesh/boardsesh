@@ -95,6 +95,32 @@ const MAX_CAUSE_DEPTH = 3;
 export const GRAPHQL_EMPTY_RESPONSE_ERROR_NAME = 'GraphQLEmptyResponseError';
 
 /**
+ * A successful GraphQL HTTP response whose body was empty or truncated before
+ * the client could read a server verdict. Match structurally so this package
+ * remains independent of the platform-specific error class, and follow bounded
+ * `.cause` chains because fetch wrappers may preserve the original error there.
+ */
+function isGraphQLEmptyResponseErrorAtDepth(error: unknown, depth: number): boolean {
+  if (error === null || typeof error !== 'object') return false;
+
+  const name = (error as { name?: unknown }).name;
+  if (name === GRAPHQL_EMPTY_RESPONSE_ERROR_NAME) return true;
+
+  if (depth < MAX_CAUSE_DEPTH) {
+    const cause = (error as { cause?: unknown }).cause;
+    if (cause !== undefined && cause !== error) {
+      return isGraphQLEmptyResponseErrorAtDepth(cause, depth + 1);
+    }
+  }
+
+  return false;
+}
+
+export function isGraphQLEmptyResponseError(error: unknown): boolean {
+  return isGraphQLEmptyResponseErrorAtDepth(error, 0);
+}
+
+/**
  * Locale-independent half of the transport check: errno-style codes and the
  * always-English fetch/polyfill wrapper strings / Java exception class names
  * (never localized prose — see TRANSPORT_NETWORK_MARKERS above). Recurses into
@@ -108,10 +134,9 @@ function isLocaleIndependentTransportSignal(error: unknown, depth = 0): boolean 
 
   // The mobile GraphQL guard throws this stable named error after receiving
   // response headers but no usable 2xx body. The server verdict never arrived,
-  // so queued writes must stop without advancing toward the dead-letter. Match
-  // structurally to keep this renderer-agnostic package independent of mobile.
-  const name = (error as { name?: unknown }).name;
-  if (name === GRAPHQL_EMPTY_RESPONSE_ERROR_NAME) return true;
+  // so queued writes must not advance toward the dead-letter. Match structurally
+  // to keep this renderer-agnostic package independent of mobile.
+  if (isGraphQLEmptyResponseErrorAtDepth(error, depth)) return true;
 
   const code = (error as { code?: unknown }).code;
   if (typeof code === 'string' && TRANSPORT_NETWORK_CODES.has(code)) return true;

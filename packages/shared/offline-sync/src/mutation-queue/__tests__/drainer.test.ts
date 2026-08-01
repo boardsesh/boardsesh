@@ -14,6 +14,7 @@ vi.mock('../handlers', () => ({
 }));
 
 vi.mock('../error-classification', () => ({
+  isGraphQLEmptyResponseError: vi.fn().mockReturnValue(false),
   isRetryable: vi.fn().mockReturnValue(false),
   isNetworkError: vi.fn().mockReturnValue(false),
 }));
@@ -21,13 +22,14 @@ vi.mock('../error-classification', () => ({
 import { drainMutationQueue, __resetDrainerStateForTests, setSigningOut, setBackgrounded } from '../drainer';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from '../queue';
 import { processMutation } from '../handlers';
-import { isRetryable, isNetworkError } from '../error-classification';
+import { isGraphQLEmptyResponseError, isRetryable, isNetworkError } from '../error-classification';
 
 const mockPeekPending = peekPending as ReturnType<typeof vi.fn>;
 const mockMarkCompleted = markCompleted as ReturnType<typeof vi.fn>;
 const mockRecordFailure = recordFailure as ReturnType<typeof vi.fn>;
 const mockMarkDeadLetter = markDeadLetter as ReturnType<typeof vi.fn>;
 const mockProcessMutation = processMutation as ReturnType<typeof vi.fn>;
+const mockIsGraphQLEmptyResponseError = isGraphQLEmptyResponseError as ReturnType<typeof vi.fn>;
 const mockIsRetryable = isRetryable as ReturnType<typeof vi.fn>;
 const mockIsNetworkError = isNetworkError as ReturnType<typeof vi.fn>;
 
@@ -68,6 +70,7 @@ describe('drainMutationQueue', () => {
     mockPeekPending.mockResolvedValue([]);
     // Re-assert the factory defaults each test (clearAllMocks keeps implementations,
     // so a prior test's mockReturnValue(true) would otherwise leak forward).
+    mockIsGraphQLEmptyResponseError.mockReturnValue(false);
     mockIsRetryable.mockReturnValue(false);
     mockIsNetworkError.mockReturnValue(false);
   });

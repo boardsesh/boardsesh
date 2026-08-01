@@ -2,11 +2,29 @@ import { describe, it, expect } from 'vitest';
 
 import {
   GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
+  isGraphQLEmptyResponseError,
   isRetryable,
   getErrorStatus,
   isNetworkError,
   isTransportNetworkError,
 } from '../error-classification';
+
+describe('isGraphQLEmptyResponseError', () => {
+  it('matches the platform error directly and through a cause wrapper', () => {
+    const emptyResponseError = Object.assign(new Error('empty GraphQL response'), {
+      name: GRAPHQL_EMPTY_RESPONSE_ERROR_NAME,
+      status: 200,
+    });
+    const wrappedError = Object.assign(new Error('request failed'), { cause: emptyResponseError });
+
+    expect(isGraphQLEmptyResponseError(emptyResponseError)).toBe(true);
+    expect(isGraphQLEmptyResponseError(wrappedError)).toBe(true);
+  });
+
+  it('does not match an ordinary transport failure', () => {
+    expect(isGraphQLEmptyResponseError(new TypeError('Network request failed'))).toBe(false);
+  });
+});
 
 describe('getErrorStatus', () => {
   it('extracts status from Response object', () => {

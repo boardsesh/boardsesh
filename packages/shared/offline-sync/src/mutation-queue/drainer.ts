@@ -2,7 +2,7 @@ import type { OfflineDatabase, QueryInvalidator } from '../database';
 import type { GraphQLFetch } from './handlers';
 import { processMutation } from './handlers';
 import { peekPending, markCompleted, recordFailure, markDeadLetter } from './queue';
-import { isRetryable, isNetworkError } from './error-classification';
+import { isGraphQLEmptyResponseError, isRetryable, isNetworkError } from './error-classification';
 
 // Module-level singletons (drain flag, sign-out guard, wipe epoch): correct as
 // long as exactly one app runtime consumes this package per JS context — the
@@ -222,6 +222,17 @@ export async function drainMutationQueue(
         } catch (error: unknown) {
           const errorMessage = formatError(error);
 
+          if (isGraphQLEmptyResponseError(error)) {
+            // A 2xx response with no usable GraphQL body is ambiguous: the
+            // idempotent write may have landed, but no server verdict reached
+            // the client. Retry it within this cycle's existing bounded budget
+            // without consuming the mutation's persistent retry/dead-letter
+            // budget. Unlike a reachability failure, this does not require an
+            // offline→online transition before another attempt can succeed.
+            retryableHit = true;
+            break;
+          }
+
           if (isNetworkError(error)) {
             // The connection dropped mid-drain. Leave this mutation PENDING without
             // advancing retry_count — an offline write must never dead-letter for
@@ -264,8 +275,14 @@ export async function drainMutationQueue(
         // Give up this cycle once the in-cycle attempt budget is spent; the next
         // external trigger (or the scheduler's own retrigger) starts fresh.
         if (retryAttempts >= maxCycleAttempts) break;
+        // Lifecycle/connectivity may change after the failed request but before
+        // backoff starts. Avoid sleeping when this cycle can no longer retry.
+        if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded || !options.isOnline()) break;
         await sleep(backoffDelay(retryAttempts, baseDelayMs, maxDelayMs));
         retryAttempts += 1;
+        // The app may sign out, background, or lose connectivity during the
+        // sleep. Re-check before touching SQLite or sending the mutation again.
+        if (_isSigningOut || _wipeEpoch !== startEpoch || _isBackgrounded || !options.isOnline()) break;
         continue;
       }
 
