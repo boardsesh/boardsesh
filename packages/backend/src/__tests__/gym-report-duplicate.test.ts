@@ -320,8 +320,8 @@ describe('reportGymDuplicate — de-duplication', () => {
         return 'OK';
       });
     mockRedisEval.mockImplementation(
-      async (script: string, _numberOfKeys: number, _key: string, ownerToken: string) => {
-        if (script.includes("redis.call('INCR'")) return 1;
+      async (_script: string, _numberOfKeys: number, claimKey: string, ownerToken: string) => {
+        if (!claimKey.startsWith('gymDuplicateReport:')) return 1;
         if (storedOwnerToken === ownerToken) {
           storedOwnerToken = null;
           return 1;
@@ -346,8 +346,8 @@ describe('reportGymDuplicate — de-duplication', () => {
 
   it('logs privacy-safe cleanup warnings and preserves the email failure', async () => {
     mockRedisIsConnected.mockReturnValue(true);
-    mockRedisEval.mockImplementation(async (script: string) => {
-      if (script.includes("redis.call('INCR'")) return 1;
+    mockRedisEval.mockImplementation(async (_script: string, _numberOfKeys: number, claimKey: string) => {
+      if (!claimKey.startsWith('gymDuplicateReport:')) return 1;
       throw new Error('release failed');
     });
     const gym = await insertGym({ name: 'Bahnhof Bloc' });
