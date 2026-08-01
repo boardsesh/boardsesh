@@ -16,6 +16,7 @@ function playbackStateWith(overrides: Record<string, unknown>): unknown {
 
 describe('PlaybackStateInputSchema', () => {
   it('accepts the shipped playback control and GraphQL Int boundaries', () => {
+    expect(PlaybackStateInputSchema.parse(playbackStateWith({ speed: 0.5 })).speed).toBe(0.5);
     expect(
       PlaybackStateInputSchema.parse(
         playbackStateWith({
@@ -74,6 +75,16 @@ describe('PlaybackStateInputSchema', () => {
   ])('does not coerce a %s', (_description, overrides) => {
     expect(PlaybackStateInputSchema.safeParse(playbackStateWith(overrides)).success).toBe(false);
   });
+
+  it.each(['climbUuid', 'frameIndex', 'isPlaying', 'speed', 'paceMs'] as const)(
+    'rejects a missing required %s field',
+    (missingField) => {
+      const incompleteState = Object.fromEntries(
+        Object.entries(validPlaybackState).filter(([fieldName]) => fieldName !== missingField),
+      );
+      expect(PlaybackStateInputSchema.safeParse(incompleteState).success).toBe(false);
+    },
+  );
 
   it('accepts an omitted or null client identifier for connection-id fallback', () => {
     expect(PlaybackStateInputSchema.safeParse(validPlaybackState).success).toBe(true);
