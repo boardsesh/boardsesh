@@ -181,7 +181,7 @@ describe('repairKilterCatalogStats', () => {
     });
     const { db, insertValues } = createDbShim({
       selectResults: [[{ uuid: 'canon' }], []],
-      executeResults: [[], [{ changed_rows: '0' }], [{ rows_to_recompute: '0' }], { count: 0 }, []],
+      executeResults: [[], [], [{ changed_rows: '0' }], [{ rows_to_recompute: '0' }], { count: 0 }, []],
     });
 
     const summary = await repairKilterCatalogStats({
@@ -198,6 +198,104 @@ describe('repairKilterCatalogStats', () => {
         climbUuid: 'canon',
         angle: 40,
         displayDifficulty: 20,
+        upstreamAscensionistCount: 0,
+      },
+    ]);
+  });
+
+  it('reconciles an empty Grips angle to zero when its stats row already exists', async () => {
+    mockFetchLayoutClimbStats.mockImplementation((_token: string, layoutUuid: string) => {
+      if (layoutUuid !== 'layout-a') return Promise.resolve([]);
+      return Promise.resolve([
+        stat({
+          climbUuid: 'canon',
+          angle: 50,
+          ascentCount: 0,
+          currentDifficultyId: 0,
+          difficultyAverage: 0,
+          qualityAverage: 0,
+        }),
+      ]);
+    });
+    const { db, insertValues } = createDbShim({
+      selectResults: [[{ uuid: 'canon' }], []],
+      executeResults: [
+        [],
+        [{ climb_uuid: 'canon', angle: 50 }],
+        [{ changed_rows: '1', max_drop: '7' }],
+        [{ rows_to_recompute: '0' }],
+        { count: 1 },
+        [],
+      ],
+    });
+
+    const summary = await repairKilterCatalogStats({
+      db: db as never,
+      tokenProvider: async () => 'token',
+      reference: reference(),
+      apply: true,
+    });
+
+    expect(summary.canonicalStatsComputed).toBe(1);
+    expect(summary.changedKilterRows).toBe(1);
+    expect(summary.maxKilterDrop).toBe(7);
+    expect(insertValues).toHaveLength(1);
+    expect(insertValues[0]).toMatchObject([
+      {
+        climbUuid: 'canon',
+        angle: 50,
+        displayDifficulty: null,
+        upstreamAscensionistCount: 0,
+      },
+    ]);
+  });
+
+  it('does not let an existing mixed-case key authorize an absent casing variant', async () => {
+    mockBuildLayoutResolver.mockResolvedValue({
+      resolve: vi.fn((layoutUuid: string) => (layoutUuid === 'layout-a' ? 1 : 2)),
+    });
+    mockFetchLayoutClimbStats.mockImplementation((_token: string, layoutUuid: string) =>
+      Promise.resolve([
+        stat({
+          climbUuid: layoutUuid === 'layout-a' ? 'source-a' : 'source-b',
+          angle: 50,
+          ascentCount: 0,
+          currentDifficultyId: 0,
+          difficultyAverage: 0,
+          qualityAverage: 0,
+        }),
+      ]),
+    );
+    const { db, insertValues } = createDbShim({
+      selectResults: [
+        [{ uuid: 'Canon' }],
+        [{ aliasUuid: 'source-a', canonicalUuid: 'Canon' }],
+        [{ uuid: 'canon' }],
+        [{ aliasUuid: 'source-b', canonicalUuid: 'canon' }],
+      ],
+      executeResults: [
+        [],
+        [{ climb_uuid: 'Canon', angle: 50 }],
+        [{ changed_rows: '1', max_drop: '7' }],
+        [{ rows_to_recompute: '0' }],
+        { count: 1 },
+        [],
+      ],
+    });
+
+    const summary = await repairKilterCatalogStats({
+      db: db as never,
+      tokenProvider: async () => 'token',
+      reference: reference(),
+      apply: true,
+    });
+
+    expect(summary.canonicalStatsComputed).toBe(1);
+    expect(insertValues).toHaveLength(1);
+    expect(insertValues[0]).toMatchObject([
+      {
+        climbUuid: 'Canon',
+        angle: 50,
         upstreamAscensionistCount: 0,
       },
     ]);

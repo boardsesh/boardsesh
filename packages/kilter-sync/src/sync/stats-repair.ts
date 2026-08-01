@@ -79,6 +79,11 @@ type FormulaCountRow = {
   rows_to_recompute: number | string | null;
 };
 
+type ExistingStatKeyRow = {
+  climb_uuid: string;
+  angle: number | string;
+};
+
 type TopRow = {
   name: string | null;
   climb_uuid: string;
@@ -200,6 +205,48 @@ function statValueFromAccum(accum: StatAccum): RepairStatValue {
     // Record that the Kilter Grips stats-repair last touched this row.
     upstreamSyncedAt: new Date().toISOString(),
   };
+}
+
+function repairStatKey(climbUuid: string, angle: number): string {
+  // board_climb_stats uses the exact text UUID in its composite primary key.
+  // Preserve casing here so an existing mixed-case key cannot authorize a
+  // distinct absent casing variant and accidentally create a phantom row.
+  return `${climbUuid}:${angle}`;
+}
+
+async function retainRepairableStats(db: DrizzleDb, stats: StatAccum[]): Promise<StatAccum[]> {
+  const emptyStats = stats.filter(shouldSkipEmptyCatalogStat);
+  if (emptyStats.length === 0) return stats;
+
+  const existingKeys = new Set<string>();
+  await processBatches(emptyStats, async (chunk) => {
+    const incoming = chunk.map((stat) => ({
+      climb_uuid: stat.canonicalUuid,
+      angle: stat.angle,
+    }));
+    const rows = rowsFromResult<ExistingStatKeyRow>(
+      await db.execute(sql`
+        WITH incoming AS (
+          SELECT *
+            FROM jsonb_to_recordset(${JSON.stringify(incoming)}::jsonb)
+              AS i(climb_uuid text, angle integer)
+        )
+        SELECT stats.climb_uuid, stats.angle
+          FROM incoming
+          JOIN board_climb_stats stats
+            ON stats.board_type = ${KILTER}
+           AND stats.climb_uuid = incoming.climb_uuid
+           AND stats.angle = incoming.angle
+      `),
+    );
+    for (const row of rows) {
+      existingKeys.add(repairStatKey(row.climb_uuid, Number(row.angle)));
+    }
+  });
+
+  return stats.filter(
+    (stat) => !shouldSkipEmptyCatalogStat(stat) || existingKeys.has(repairStatKey(stat.canonicalUuid, stat.angle)),
+  );
 }
 
 async function compareExistingStats(
@@ -374,12 +421,12 @@ export async function repairKilterCatalogStats(args: KilterStatsRepairArgs): Pro
     }
   }
 
-  // Keep repair behavior in parity with routine catalog ingest: Grips emits
-  // empty rows for unclimbed layout angles, which must not create phantom
-  // board_climb_stats rows during a repair run.
-  const statValues = [...statsByCanonicalAngle.values()]
-    .filter((accum) => !shouldSkipEmptyCatalogStat(accum))
-    .map(statValueFromAccum);
+  // Grips emits empty rows for unclimbed layout angles. Do not create new
+  // phantom board_climb_stats rows for them, but retain an empty row when its
+  // key already exists so this authoritative repair can lower a stale upstream
+  // count to zero.
+  const repairableStats = await retainRepairableStats(args.db, [...statsByCanonicalAngle.values()]);
+  const statValues = repairableStats.map(statValueFromAccum);
   const { changedRows, maxKilterDrop, maxKilterRise } = await compareExistingStats(args.db, statValues);
   const formulaRowsBeforeApply = await countFormulaMismatches(args.db);
 
