@@ -117,14 +117,6 @@ export function useBoardClimbRecentSenders({
             isLoading: false,
           });
         }
-      })
-      .finally(() => {
-        if (!active || generationRef.current !== requestGeneration) return;
-        setSnapshot((currentSnapshot) =>
-          currentSnapshot.cacheKey === currentCacheKey && currentSnapshot.client === client
-            ? { ...currentSnapshot, isLoading: false }
-            : currentSnapshot,
-        );
       });
 
     return () => {

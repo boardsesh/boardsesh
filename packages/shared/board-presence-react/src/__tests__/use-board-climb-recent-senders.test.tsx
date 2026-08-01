@@ -242,6 +242,38 @@ describe('useBoardClimbRecentSenders', () => {
     expect(resultBox.current?.senders).toEqual([sender('after')]);
   });
 
+  it('keeps cached senders visible when a stats-triggered refresh fails', async () => {
+    const { client, fetchClimbRecentSenders } = makeClient();
+    fetchClimbRecentSenders.mockResolvedValueOnce([sender('cached')]).mockRejectedValueOnce(new Error('offline'));
+    const resultBox: ResultBox = { current: null };
+    const options = { climbUuid: 'climb-1', angle: 40 };
+    const initialStats = stats('2026-07-31T12:00:00.000Z');
+
+    const { rerender } = render(
+      <TestHarness boardId={1} client={client} feedStats={initialStats} options={options} resultBox={resultBox} />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resultBox.current).toEqual({ senders: [sender('cached')], isLoading: false });
+
+    rerender(
+      <TestHarness
+        boardId={1}
+        client={client}
+        feedStats={{ ...initialStats }}
+        options={options}
+        resultBox={resultBox}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(fetchClimbRecentSenders).toHaveBeenCalledTimes(2);
+    expect(resultBox.current).toEqual({ senders: [sender('cached')], isLoading: false });
+  });
+
   it('degrades to no byline for disabled, incomplete, or unsupported clients', () => {
     const { client, fetchClimbRecentSenders } = makeClient();
     const resultBox: ResultBox = { current: null };
