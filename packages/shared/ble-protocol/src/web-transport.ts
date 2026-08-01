@@ -76,7 +76,6 @@ const delay = (milliseconds: number) => new Promise<void>((resolve) => setTimeou
 // NetworkError, then accept the same granted device handle moments later. Keep
 // this deliberately small: one retry is enough for that race, without turning a
 // genuinely unreachable board into a long-running retry loop.
-const GATT_CONNECT_MAX_ATTEMPTS = 2;
 const GATT_CONNECT_RETRY_DELAY_MS = 500;
 
 function isRetryableGattConnectError(error: unknown): boolean {
@@ -103,19 +102,14 @@ async function connectWebBluetoothGattServer(
   const gatt = device.gatt;
   if (!gatt || gatt.connected) return gatt;
 
-  for (let attempt = 1; attempt <= GATT_CONNECT_MAX_ATTEMPTS; attempt++) {
-    try {
-      return await gatt.connect();
-    } catch (error) {
-      if (attempt === GATT_CONNECT_MAX_ATTEMPTS || !isRetryableGattConnectError(error)) {
-        throw error;
-      }
-      await delay(GATT_CONNECT_RETRY_DELAY_MS);
-    }
+  try {
+    return await gatt.connect();
+  } catch (error) {
+    if (!isRetryableGattConnectError(error)) throw error;
   }
 
-  // The loop either returns from connect() or throws its final rejection.
-  throw new Error('Unreachable GATT connection state');
+  await delay(GATT_CONNECT_RETRY_DELAY_MS);
+  return gatt.connect();
 }
 
 // --- Availability + device request ------------------------------------------
