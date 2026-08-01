@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import type { Climb, BoardName } from '@boardsesh/shared-schema';
+import type { BoardName, Climb, PlaybackStateChangedEvent } from '@boardsesh/shared-schema';
 
 // The orchestrator composes three I/O seams — the shared playback engine, the
 // queue provider (party-sync), and the optional Bluetooth context (BLE writes).
@@ -39,13 +39,13 @@ const mocks = vi.hoisted(() => ({
     setSpeed: vi.fn(),
   },
   lastEngineInput: { current: null as EngineInput | null },
-  queueListeners: new Set<(event: unknown) => void>(),
+  playbackEventListeners: new Set<(event: PlaybackStateChangedEvent) => void>(),
   publishPlaybackState: vi.fn((_input: Record<string, unknown>) => Promise.resolve()),
   // Stable references — the real queue provider memoises these with useCallback.
   // An unstable identity would re-run the subscription effect every render and
   // clear the externally-synced state.
-  subscribeToQueueEvents: null as unknown as (listener: (event: unknown) => void) => () => void,
-  queueValue: null as unknown as { subscribeToQueueEvents: unknown; publishPlaybackState: unknown },
+  subscribeToPlaybackEvents: null as unknown as (listener: (event: PlaybackStateChangedEvent) => void) => () => void,
+  queueValue: null as unknown as { subscribeToPlaybackEvents: unknown; publishPlaybackState: unknown },
   bluetooth: {
     isConnected: true,
     sendFramesToBoard: vi.fn() as ReturnType<typeof vi.fn>,
@@ -61,14 +61,14 @@ vi.mock('@boardsesh/playback-react', () => ({
   },
 }));
 
-mocks.subscribeToQueueEvents = (listener: (event: unknown) => void) => {
-  mocks.queueListeners.add(listener);
+mocks.subscribeToPlaybackEvents = (listener: (event: PlaybackStateChangedEvent) => void) => {
+  mocks.playbackEventListeners.add(listener);
   return () => {
-    mocks.queueListeners.delete(listener);
+    mocks.playbackEventListeners.delete(listener);
   };
 };
 mocks.queueValue = {
-  subscribeToQueueEvents: mocks.subscribeToQueueEvents,
+  subscribeToPlaybackEvents: mocks.subscribeToPlaybackEvents,
   publishPlaybackState: mocks.publishPlaybackState,
 };
 
@@ -85,22 +85,23 @@ import { useMobilePlayback } from '../use-mobile-playback';
 const KILTER = 'kilter' as BoardName;
 const climbWith = (uuid: string) => ({ uuid }) as unknown as Climb;
 
-/** Deliver a fake wire event to every active queue-event listener. */
-function emit(event: Record<string, unknown>) {
+/** Deliver a playback event to every active playback-event listener. */
+function emitPlayback(event: PlaybackStateChangedEvent) {
   act(() => {
-    for (const listener of mocks.queueListeners) listener(event);
+    for (const listener of mocks.playbackEventListeners) listener(event);
   });
 }
 
-function playbackEvent(overrides: Record<string, unknown> = {}) {
+function playbackEvent(overrides: Partial<PlaybackStateChangedEvent> = {}): PlaybackStateChangedEvent {
   return {
     __typename: 'PlaybackStateChanged',
+    sequence: 1,
     climbUuid: 'c1',
     frameIndex: 2,
     isPlaying: true,
     speed: 1.5,
     paceMs: 400,
-    anchorTimestamp: 1700,
+    anchorTimestamp: '1700',
     clientId: 'peer-1',
     ...overrides,
   };
@@ -115,7 +116,7 @@ beforeEach(() => {
   mocks.playback.isPlaying = false;
   mocks.playback.speed = 1;
   mocks.lastEngineInput.current = null;
-  mocks.queueListeners.clear();
+  mocks.playbackEventListeners.clear();
   mocks.bluetooth.isConnected = true;
   mocks.sendCalls = [];
   // Each write returns a deferred promise so a test can hold a write "in flight".
@@ -241,22 +242,21 @@ describe('useMobilePlayback — party-sync', () => {
   it('applies a matching peer playback event as external engine state', () => {
     renderPlayback(climbWith('c1'));
 
-    emit(playbackEvent({ climbUuid: 'c1', clientId: 'peer-1' }));
+    emitPlayback(playbackEvent({ climbUuid: 'c1', clientId: 'peer-1' }));
     expect(mocks.lastEngineInput.current?.externalState?.clientId).toBe('peer-1');
   });
 
-  it('ignores events for other climbs and non-playback events', () => {
+  it('ignores playback events for other climbs', () => {
     renderPlayback(climbWith('c1'));
 
-    emit(playbackEvent({ climbUuid: 'other-climb' }));
-    emit({ __typename: 'QueueItemAdded' });
+    emitPlayback(playbackEvent({ climbUuid: 'other-climb' }));
     expect(mocks.lastEngineInput.current?.externalState).toBeNull();
   });
 
   it('clears peer state when the climb changes', () => {
     const { rerender } = renderPlayback(climbWith('c1'));
 
-    emit(playbackEvent({ climbUuid: 'c1' }));
+    emitPlayback(playbackEvent({ climbUuid: 'c1' }));
     expect(mocks.lastEngineInput.current?.externalState).not.toBeNull();
 
     act(() => {

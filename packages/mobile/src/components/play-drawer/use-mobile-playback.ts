@@ -52,7 +52,7 @@ export function useMobilePlayback({
   isOpen,
   onRoutePlayed,
 }: UseMobilePlaybackInput): UseMobilePlaybackOutput {
-  const { subscribeToQueueEvents, publishPlaybackState } = useQueueActions();
+  const { subscribeToPlaybackEvents, publishPlaybackState } = useQueueActions();
   const bluetooth = useOptionalBluetoothContext();
   // Stable per-hook id so the engine can suppress echoes of its own broadcasts.
   const playbackClientId = useId();
@@ -70,8 +70,7 @@ export function useMobilePlayback({
       return;
     }
     setExternalPlayback(null);
-    const unsubscribe = subscribeToQueueEvents((event) => {
-      if (event.__typename !== 'PlaybackStateChanged') return;
+    const unsubscribe = subscribeToPlaybackEvents((event) => {
       if (event.climbUuid !== climbUuid) return;
       setExternalPlayback({
         frameIndex: event.frameIndex,
@@ -83,7 +82,7 @@ export function useMobilePlayback({
       });
     });
     return unsubscribe;
-  }, [climbUuid, subscribeToQueueEvents]);
+  }, [climbUuid, subscribeToPlaybackEvents]);
 
   const handleLocalStateChange = useCallback(
     (next: ExternalPlaybackState) => {

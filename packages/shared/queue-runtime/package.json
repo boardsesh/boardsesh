@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@boardsesh/queue": "*"
+    "@boardsesh/queue": "*",
+    "@boardsesh/shared-schema": "*"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

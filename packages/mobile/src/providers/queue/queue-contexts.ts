@@ -7,10 +7,8 @@ import type {
   SetCurrentClimbOptions,
 } from '@boardsesh/queue';
 import type { PublishPlaybackStateInput } from '@boardsesh/queue-react';
-import type { SessionSummary, SubscriptionQueueEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
+import type { PlaybackStateChangedEvent, SessionSummary, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
-
-export type PlaybackStateChangedEvent = Extract<SubscriptionQueueEvent, { __typename: 'PlaybackStateChanged' }>;
 
 export type StartSessionConfig = {
   name?: string;
@@ -120,7 +118,7 @@ type QueueContextValue = {
   setSessionBoardSerial: (serial: string) => Promise<void>;
   /** Subscribe to transient PlaybackStateChanged events that never reach the
    * queue reducer. Returns an unsubscribe function. */
-  subscribeToQueueEvents: (listener: (event: PlaybackStateChangedEvent) => void) => () => void;
+  subscribeToPlaybackEvents: (listener: (event: PlaybackStateChangedEvent) => void) => () => void;
   /** Broadcast local route-playback state to party peers. Best-effort; no-op solo. */
   publishPlaybackState: (input: PublishPlaybackStateInput) => Promise<void>;
 };

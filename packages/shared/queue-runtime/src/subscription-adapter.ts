@@ -16,6 +16,7 @@ import {
   type MapEventContext,
   type SyncQueueEvent,
 } from '@boardsesh/queue';
+import type { PlaybackStateChangedEvent } from '@boardsesh/shared-schema';
 
 /**
  * The wire envelope shape we accept. Structurally compatible with both web's
@@ -90,19 +91,7 @@ export type SubscriptionWireEnvelope<TWireItem> =
       stateHash?: string | null;
       stateHashOrdered?: string | null;
     }
-  | {
-      /** Transient playback state is forwarded to route-playback listeners,
-       * never lifted into the queue reducer or sequence/hash tracking. */
-      __typename: 'PlaybackStateChanged';
-      sequence: number;
-      climbUuid: string;
-      frameIndex: number;
-      isPlaying: boolean;
-      speed: number;
-      paceMs: number;
-      anchorTimestamp: string;
-      clientId: string | null;
-    };
+  | PlaybackStateChangedEvent;
 
 export type MapEnvelopeOptions<TWireItem> = {
   /** Lift the wire item shape to the reducer's `ClimbQueueItem`. Defaults
@@ -126,6 +115,10 @@ export function mapSubscriptionEnvelopeToAction<TWireItem>(
   envelope: SubscriptionWireEnvelope<TWireItem>,
   options: MapEnvelopeOptions<TWireItem> = {},
 ): SubscriptionEventMappingResult {
+  // Current mobile and web callers split transient playback events before
+  // invoking this reducer adapter. Keep this guard as defense-in-depth for a
+  // future or direct caller so playback can never enter item lifting or the
+  // queue reducer even if that boundary narrowing is accidentally skipped.
   if (envelope.__typename === 'PlaybackStateChanged') {
     return { kind: 'ignore', eventType: 'PlaybackStateChanged', reason: 'transient event' };
   }

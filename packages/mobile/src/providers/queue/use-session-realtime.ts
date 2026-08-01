@@ -15,7 +15,7 @@ import {
 } from '@boardsesh/queue-runtime';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
-import type { SessionUser, UserBoard } from '@boardsesh/shared-schema';
+import type { PlaybackStateChangedEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
 import { GraphQLOperationError, isNotSessionMemberError } from '@boardsesh/graphql-client';
 import { getWsClient } from '../../lib/graphql/ws-client';
@@ -33,7 +33,6 @@ import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
-import type { PlaybackStateChangedEvent } from './queue-contexts';
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
 // ws-client remaps a rejected-auth 4401 to the retryable AUTH_REFRESH_RETRY_CLOSE_CODE
@@ -143,7 +142,7 @@ type UseSessionRealtimeParams = {
   showToastRef: React.RefObject<(message: string, variant?: ToastVariant, duration?: number) => void>;
   tRef: React.RefObject<(key: string) => string>;
   clearSessionRef: React.RefObject<(options?: { notifyServer?: boolean }) => Promise<void>>;
-  queueEventListenersRef: React.RefObject<Set<(event: PlaybackStateChangedEvent) => void>>;
+  playbackEventListenersRef: React.RefObject<Set<(event: PlaybackStateChangedEvent) => void>>;
   unsubscribeRef: React.RefObject<(() => void) | null>;
   queueSyncGateRef: React.RefObject<QueueSyncGate | null>;
   restartJoinedSubscriptionsRef: React.RefObject<(() => void) | null>;
@@ -185,7 +184,7 @@ export function useSessionRealtime({
   showToastRef,
   tRef,
   clearSessionRef,
-  queueEventListenersRef,
+  playbackEventListenersRef,
   unsubscribeRef,
   queueSyncGateRef,
   restartJoinedSubscriptionsRef,
@@ -464,11 +463,11 @@ export function useSessionRealtime({
             // queue state. Forward it to route-playback listeners, then stop
             // before item lifting, the reducer, and sequence/hash tracking.
             if (event.__typename === 'PlaybackStateChanged') {
-              for (const listener of queueEventListenersRef.current) {
+              for (const listener of playbackEventListenersRef.current) {
                 try {
                   listener(event);
                 } catch (listenerError) {
-                  if (__DEV__) console.warn('[queue] queue-event listener threw', listenerError);
+                  if (__DEV__) console.warn('[queue] playback-event listener threw', listenerError);
                 }
               }
               return;

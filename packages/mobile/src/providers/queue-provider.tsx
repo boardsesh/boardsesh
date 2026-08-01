@@ -17,7 +17,7 @@ import type {
 import { countDistinctSessionUsers, createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
-import type { SessionUser } from '@boardsesh/shared-schema';
+import type { PlaybackStateChangedEvent, SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
 import { buildBoardPath } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -59,7 +59,6 @@ import {
   type QueueDataContextValue,
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
-  type PlaybackStateChangedEvent,
 } from './queue/queue-contexts';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
@@ -446,15 +445,15 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // live queue and to trigger a re-seed instead (#3878).
   const seedFailedSessionIdRef = useRef<string | null>(null);
 
-  // Transient queue-event listeners. PlaybackStateChanged (route playback
+  // Transient playback-event listeners. PlaybackStateChanged (route playback
   // party-sync) doesn't mutate queue state, so the play-drawer orchestrator
   // subscribes here and the reducer path skips it. Listeners live in a ref so
   // adding/removing one never tears down the WS subscription effect below.
-  const queueEventListenersRef = useRef<Set<(event: PlaybackStateChangedEvent) => void>>(new Set());
-  const subscribeToQueueEvents = useCallback((listener: (event: PlaybackStateChangedEvent) => void) => {
-    queueEventListenersRef.current.add(listener);
+  const playbackEventListenersRef = useRef<Set<(event: PlaybackStateChangedEvent) => void>>(new Set());
+  const subscribeToPlaybackEvents = useCallback((listener: (event: PlaybackStateChangedEvent) => void) => {
+    playbackEventListenersRef.current.add(listener);
     return () => {
-      queueEventListenersRef.current.delete(listener);
+      playbackEventListenersRef.current.delete(listener);
     };
   }, []);
 
@@ -707,7 +706,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
     showToastRef,
     tRef,
     clearSessionRef,
-    queueEventListenersRef,
+    playbackEventListenersRef,
     unsubscribeRef,
     queueSyncGateRef,
     restartJoinedSubscriptionsRef,
@@ -1277,7 +1276,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       confirmClimbOnWall,
       reportWallDisconnect,
       setSessionBoardSerial,
-      subscribeToQueueEvents,
+      subscribeToPlaybackEvents,
       publishPlaybackState,
     }),
     [
@@ -1302,7 +1301,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       confirmClimbOnWall,
       reportWallDisconnect,
       setSessionBoardSerial,
-      subscribeToQueueEvents,
+      subscribeToPlaybackEvents,
       publishPlaybackState,
     ],
   );

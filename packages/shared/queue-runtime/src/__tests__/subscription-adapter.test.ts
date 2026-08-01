@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
+import type { PlaybackStateChangedEvent } from '@boardsesh/shared-schema';
 import { mapSubscriptionEnvelopeToAction, type SubscriptionWireEnvelope } from '../subscription-adapter';
 
 type WireClimb = {
@@ -186,8 +187,8 @@ describe('mapSubscriptionEnvelopeToAction', () => {
     }
   });
 
-  it('models PlaybackStateChanged but bypasses item lifting and the reducer', () => {
-    const envelope: SubscriptionWireEnvelope<WireItem> = {
+  it('defensively ignores PlaybackStateChanged when a caller skips boundary narrowing', () => {
+    const envelope = {
       __typename: 'PlaybackStateChanged',
       sequence: 7,
       climbUuid: 'climb-1',
@@ -197,7 +198,7 @@ describe('mapSubscriptionEnvelopeToAction', () => {
       paceMs: 250,
       anchorTimestamp: '1700000000000',
       clientId: 'peer-client',
-    };
+    } satisfies PlaybackStateChangedEvent;
     let liftCalls = 0;
 
     const result = mapSubscriptionEnvelopeToAction<WireItem>(envelope, {

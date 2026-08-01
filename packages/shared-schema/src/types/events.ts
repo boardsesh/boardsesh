@@ -16,6 +16,24 @@
 
 import type { ClimbQueueItem, QueueState } from './queue';
 
+/**
+ * Transient route-playback state carried by queue subscriptions. This shape is
+ * shared by the server-side and client-side event unions and by the
+ * renderer-agnostic subscription adapter; keep it canonical here so those
+ * consumers cannot drift independently.
+ */
+export type PlaybackStateChangedEvent = {
+  __typename: 'PlaybackStateChanged';
+  sequence: number;
+  climbUuid: string;
+  frameIndex: number;
+  isPlaying: boolean;
+  speed: number;
+  paceMs: number;
+  anchorTimestamp: string;
+  clientId: string | null;
+};
+
 // Re-export the canonical SessionEvent union from codegen so this file
 // never drifts from the GraphQL schema. The hand-written union previously
 // duplicated here was already going stale (it predated the addition of
@@ -81,17 +99,7 @@ export type QueueEvent =
       uuid?: string | null;
       mirrored: boolean;
     }
-  | {
-      __typename: 'PlaybackStateChanged';
-      sequence: number;
-      climbUuid: string;
-      frameIndex: number;
-      isPlaying: boolean;
-      speed: number;
-      paceMs: number;
-      anchorTimestamp: string;
-      clientId: string | null;
-    };
+  | PlaybackStateChangedEvent;
 
 // Client-side subscription event type - uses aliased field names to avoid GraphQL union conflicts.
 // `stateHashOrdered` mirrors the server type's optional order-sensitive (v2) hash.
@@ -141,17 +149,7 @@ export type SubscriptionQueueEvent =
       mirroredUuid?: string | null;
       mirrored: boolean;
     }
-  | {
-      __typename: 'PlaybackStateChanged';
-      sequence: number;
-      climbUuid: string;
-      frameIndex: number;
-      isPlaying: boolean;
-      speed: number;
-      paceMs: number;
-      anchorTimestamp: string;
-      clientId: string | null;
-    };
+  | PlaybackStateChangedEvent;
 
 export type ConnectionContext = {
   connectionId: string;

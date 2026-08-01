@@ -9,7 +9,7 @@ import { act, render, waitFor } from '@testing-library/react';
 import { createElement, useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClimbQueueItem } from '@boardsesh/queue';
-import type { SessionStatus, SessionUser, SubscriptionQueueEvent, UserBoard } from '@boardsesh/shared-schema';
+import type { PlaybackStateChangedEvent, SessionStatus, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 
 const ws = vi.hoisted(() => {
   type WsEventName = 'connected' | 'closed';
@@ -204,7 +204,7 @@ import { QueueProvider, useQueue } from '../queue-provider';
 type Snapshot = {
   state: ReturnType<typeof useQueue>['state'];
   sessionId: string | null;
-  subscribeToQueueEvents: ReturnType<typeof useQueue>['subscribeToQueueEvents'];
+  subscribeToPlaybackEvents: ReturnType<typeof useQueue>['subscribeToPlaybackEvents'];
   removeFromQueue: ReturnType<typeof useQueue>['removeFromQueue'];
 };
 
@@ -301,7 +301,7 @@ function wireQueueItemRemoved(sequence: number, stateHash: string, uuid: string,
 // Wire-shaped PlaybackStateChanged matching QUEUE_UPDATES_SUBSCRIPTION's `...
 // on PlaybackStateChanged` fragment (issue #3358) — no top-level `stateHash`,
 // since this event doesn't mutate queue state.
-function wirePlaybackStateChanged(overrides: Partial<Record<string, unknown>> = {}) {
+function wirePlaybackStateChanged(overrides: Partial<PlaybackStateChangedEvent> = {}): PlaybackStateChangedEvent {
   return {
     __typename: 'PlaybackStateChanged',
     sequence: 1,
@@ -360,10 +360,10 @@ function Probe({ onSnapshot }: { onSnapshot: (snapshot: Snapshot) => void }) {
     onSnapshot({
       state: queue.state,
       sessionId: queue.sessionId,
-      subscribeToQueueEvents: queue.subscribeToQueueEvents,
+      subscribeToPlaybackEvents: queue.subscribeToPlaybackEvents,
       removeFromQueue: queue.removeFromQueue,
     });
-  }, [queue.state, queue.sessionId, queue.subscribeToQueueEvents, queue.removeFromQueue, onSnapshot]);
+  }, [queue.state, queue.sessionId, queue.subscribeToPlaybackEvents, queue.removeFromQueue, onSnapshot]);
   return null;
 }
 
@@ -736,35 +736,27 @@ describe('QueueProvider queue sync gate', () => {
     });
   });
 
-  it('lets PlaybackStateChanged bypass the gate and still reach transient listeners', async () => {
+  it('lets PlaybackStateChanged bypass the gate and reach playback listeners only', async () => {
     const snapshots: Snapshot[] = [];
     renderProvider((snapshot) => snapshots.push(snapshot));
 
     await waitFor(() => {
       expect(ws.getQueueUpdatesSink()).not.toBeNull();
-      expect(snapshots.at(-1)?.subscribeToQueueEvents).toBeDefined();
+      expect(snapshots.at(-1)?.subscribeToPlaybackEvents).toBeDefined();
     });
     const queueUpdatesSink = ws.getQueueUpdatesSink();
     if (!queueUpdatesSink) throw new Error('queue updates sink was not captured');
 
-    const received: SubscriptionQueueEvent[] = [];
-    const unsubscribe = snapshots.at(-1)?.subscribeToQueueEvents((event) => received.push(event));
+    const received: PlaybackStateChangedEvent[] = [];
+    const unsubscribe = snapshots.at(-1)?.subscribeToPlaybackEvents((event) => received.push(event));
 
     act(() => {
       queueUpdatesSink.next({ data: { queueUpdates: wireFullSync(1, 'hash-1') } });
     });
 
-    // Defensive case: a `__typename`-only payload (e.g. a stale client bundle
-    // still missing the `... on PlaybackStateChanged` fragment, or a future
-    // union member this listener doesn't recognise) must still be forwarded
-    // and must not throw or otherwise disrupt the gate.
-    act(() => {
-      queueUpdatesSink.next({ data: { queueUpdates: { __typename: 'PlaybackStateChanged' } } });
-    });
-
-    // Realistic case (issue #3358): QUEUE_UPDATES_SUBSCRIPTION now selects the
-    // full `... on PlaybackStateChanged` fragment, so the real wire payload
-    // carries all 8 fields — assert they reach the listener unchanged, since
+    // QUEUE_UPDATES_SUBSCRIPTION selects the complete canonical event shape in
+    // its `... on PlaybackStateChanged` fragment, so the real wire payload
+    // carries all fields — assert they reach the listener unchanged, since
     // `use-mobile-playback.ts` reads `climbUuid`/`frameIndex`/etc directly off
     // the forwarded event.
     act(() => {
@@ -772,15 +764,13 @@ describe('QueueProvider queue sync gate', () => {
     });
 
     await waitFor(() => {
-      expect(received.filter((event) => event.__typename === 'PlaybackStateChanged')).toHaveLength(2);
+      expect(received).toHaveLength(1);
     });
-    const [minimalEvent, fullEvent] = received.filter((event) => event.__typename === 'PlaybackStateChanged');
-    expect(minimalEvent).toEqual({ __typename: 'PlaybackStateChanged' });
-    expect(fullEvent).toEqual(wirePlaybackStateChanged());
+    expect(received[0]).toEqual(wirePlaybackStateChanged());
 
     // It must not have touched the reducer or the gate's tracking: the very
     // next real delta at sequence 2 (contiguous with the FullSync's 1) still
-    // applies cleanly — proving neither PlaybackStateChanged event occupied a
+    // applies cleanly — proving the PlaybackStateChanged event occupied no
     // sequence slot or otherwise got gated.
     act(() => {
       queueUpdatesSink.next({ data: { queueUpdates: wireQueueItemAdded(2, 'hash-2', wireItem('q1', 'c1')) } });
