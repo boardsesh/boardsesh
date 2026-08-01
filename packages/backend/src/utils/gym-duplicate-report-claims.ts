@@ -15,11 +15,19 @@ return 0
 type LocalClaim = {
   ownerToken: string;
   expiresAt: number;
+  distributed: boolean;
+  publicClaim: GymDuplicateReportClaim;
 };
 
 /** The narrow Redis surface needed by this claim protocol. */
 export interface GymDuplicateReportRedisClient {
-  set(key: string, ownerToken: string, expiryMode: 'EX', ttlSeconds: number, condition: 'NX'): Promise<'OK' | null>;
+  set(
+    key: string,
+    ownerToken: string,
+    expiryMode: 'EX' | 'PXAT',
+    expiry: number,
+    condition: 'NX',
+  ): Promise<'OK' | null>;
   eval(script: string, numberOfKeys: number, key: string, ownerToken: string): Promise<unknown>;
 }
 
@@ -42,6 +50,7 @@ export type GymDuplicateReportClaimResult =
   | { status: 'already_claimed' };
 
 const localClaims = new Map<string, LocalClaim>();
+const promotionPromises = new WeakMap<GymDuplicateReportClaim, Promise<void>>();
 let nextLocalClaimPruneAt = 0;
 
 const defaultDependencies: GymDuplicateReportClaimDependencies = {
@@ -66,6 +75,83 @@ function pruneExpiredLocalClaims(now: number): void {
   }
 }
 
+async function promoteLocalClaim(
+  key: string,
+  localClaim: LocalClaim,
+  redisClient: GymDuplicateReportRedisClient,
+  now: () => number,
+): Promise<void> {
+  if (localClaim.distributed) return;
+  if (localClaims.get(key) !== localClaim) return;
+
+  const existingPromotion = promotionPromises.get(localClaim.publicClaim);
+  if (existingPromotion) {
+    await existingPromotion;
+    // A caller using a newly recovered client must retry after the older
+    // client's in-flight promotion failed. Per-claim promise registration below
+    // serializes concurrent followers, so only one follow-up SET runs.
+    if (localClaim.distributed || localClaims.get(key) !== localClaim) return;
+    await promoteLocalClaim(key, localClaim, redisClient, now);
+    return;
+  }
+
+  if (localClaim.expiresAt <= now()) {
+    releaseLocalClaimIfOwner(key, localClaim.ownerToken);
+    return;
+  }
+
+  // Conservatively remember the client before SET: a connection failure may
+  // happen after Redis applied the write. releaseGymDuplicateReportClaim then
+  // waits for this promotion and performs the same owner-checked cleanup used by
+  // the normal acquisition path.
+  localClaim.publicClaim.redisClient = redisClient;
+  localClaim.publicClaim.redisClaimMayExist = true;
+
+  const promotionPromise = (async () => {
+    try {
+      // PXAT pins Redis to the original absolute local expiry. A relative PX
+      // computed before ioredis queues/retries the command would extend the
+      // de-dup window by that delay.
+      const setResult = await redisClient.set(key, localClaim.ownerToken, 'PXAT', localClaim.expiresAt, 'NX');
+      if (setResult === 'OK' && localClaims.get(key) === localClaim) {
+        localClaim.distributed = true;
+      }
+      // null means another distributed owner already protects this pair. Never
+      // overwrite it. Keep the local claim pending so a later recovery/acquire
+      // can retry after that owner releases or expires.
+    } catch {
+      logger.warn('[GymDuplicateReport] Redis claim promotion failed; keeping the local de-dup window.');
+    }
+  })();
+  promotionPromises.set(localClaim.publicClaim, promotionPromise);
+  try {
+    await promotionPromise;
+  } finally {
+    if (promotionPromises.get(localClaim.publicClaim) === promotionPromise) {
+      promotionPromises.delete(localClaim.publicClaim);
+    }
+  }
+}
+
+/**
+ * Copy every process-local outage claim into Redis after recovery. Each write is
+ * SET NX PXAT with the claim's original absolute expiry, so reconciliation
+ * neither extends the 24-hour window nor overwrites another instance's owner
+ * token.
+ */
+export async function reconcileGymDuplicateReportClaims(
+  redisClient: GymDuplicateReportRedisClient,
+  now: () => number = Date.now,
+): Promise<void> {
+  for (const [key, localClaim] of localClaims) {
+    if (localClaim.expiresAt <= now()) {
+      releaseLocalClaimIfOwner(key, localClaim.ownerToken);
+      continue;
+    }
+    await promoteLocalClaim(key, localClaim, redisClient, now);
+  }
+}
+
 /** One stable key per unordered gym pair, so (A,B) and (B,A) de-dupe together. */
 export function gymDuplicateReportClaimKey(firstUuid: string, secondUuid: string): string {
   const [lowUuid, highUuid] = [firstUuid, secondUuid].sort();
@@ -82,38 +168,50 @@ export async function acquireGymDuplicateReportClaim(
   key: string,
   dependencies: GymDuplicateReportClaimDependencies = defaultDependencies,
 ): Promise<GymDuplicateReportClaimResult> {
-  const now = dependencies.now();
+  let now = dependencies.now();
   pruneExpiredLocalClaims(now);
+
+  let redisClient: GymDuplicateReportRedisClient | null = null;
+  if (dependencies.isRedisConnected()) {
+    try {
+      redisClient = dependencies.getRedisClient();
+      // This is normally completed by the Redis readiness hook below. It is
+      // repeated opportunistically so a transient promotion failure is retried
+      // on the next request while local suppression remains honest and intact.
+      await reconcileGymDuplicateReportClaims(redisClient, dependencies.now);
+      now = dependencies.now();
+      pruneExpiredLocalClaims(now);
+    } catch {
+      logger.warn('[GymDuplicateReport] Redis claim client unavailable; using the local de-dup window.');
+    }
+  }
+
   const existingClaim = localClaims.get(key);
   if (existingClaim && existingClaim.expiresAt > now) {
     return { status: 'already_claimed' };
   }
 
   const ownerToken = dependencies.createOwnerToken();
-  localClaims.set(key, {
-    ownerToken,
-    expiresAt: now + GYM_DUPLICATE_REPORT_CLAIM_TTL_MS,
-  });
-
   const localOnlyClaim: GymDuplicateReportClaim = {
     key,
     ownerToken,
     redisClient: null,
     redisClaimMayExist: false,
   };
+  const localClaim: LocalClaim = {
+    ownerToken,
+    expiresAt: now + GYM_DUPLICATE_REPORT_CLAIM_TTL_MS,
+    distributed: false,
+    publicClaim: localOnlyClaim,
+  };
+  localClaims.set(key, localClaim);
 
-  if (!dependencies.isRedisConnected()) {
+  if (!redisClient) {
     return { status: 'acquired', claim: localOnlyClaim };
   }
 
-  let redisClient: GymDuplicateReportRedisClient;
-  try {
-    redisClient = dependencies.getRedisClient();
-  } catch {
-    logger.warn('[GymDuplicateReport] Redis claim client unavailable; using the local de-dup window.');
-    return { status: 'acquired', claim: localOnlyClaim };
-  }
-
+  localOnlyClaim.redisClient = redisClient;
+  localOnlyClaim.redisClaimMayExist = true;
   try {
     const setResult = await redisClient.set(key, ownerToken, 'EX', GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS, 'NX');
 
@@ -122,9 +220,11 @@ export async function acquireGymDuplicateReportClaim(
       return { status: 'already_claimed' };
     }
 
+    localClaim.distributed = true;
+
     return {
       status: 'acquired',
-      claim: { key, ownerToken, redisClient, redisClaimMayExist: true },
+      claim: localOnlyClaim,
     };
   } catch {
     // SET may have reached Redis before the connection failed. Retain both the
@@ -132,7 +232,7 @@ export async function acquireGymDuplicateReportClaim(
     logger.warn('[GymDuplicateReport] Redis claim outcome unknown; using the local de-dup window.');
     return {
       status: 'acquired',
-      claim: { key, ownerToken, redisClient, redisClaimMayExist: true },
+      claim: localOnlyClaim,
     };
   }
 }
@@ -143,6 +243,12 @@ export async function acquireGymDuplicateReportClaim(
  */
 export async function releaseGymDuplicateReportClaim(claim: GymDuplicateReportClaim): Promise<void> {
   releaseLocalClaimIfOwner(claim.key, claim.ownerToken);
+
+  // A Redis-recovery callback can race an email failure. Wait until its SET NX
+  // has a definite/ambiguous outcome before owner-checked cleanup, otherwise a
+  // successful late promotion could recreate the claim after release returned.
+  const pendingPromotion = promotionPromises.get(claim);
+  if (pendingPromotion) await pendingPromotion;
 
   if (!claim.redisClient || !claim.redisClaimMayExist) return;
 
@@ -158,3 +264,9 @@ export function resetGymDuplicateReportClaimsForTests(): void {
   localClaims.clear();
   nextLocalClaimPruneAt = 0;
 }
+
+// Initial startup has no outage claims, but ioredis can reconnect later while
+// successful local-only notifications are still inside their 24-hour window.
+// RedisClientManager runs this hook before it advertises the recovered
+// connection to request handlers, closing the cross-instance duplicate gap.
+redisClientManager.onRedisReady?.((redisClient) => reconcileGymDuplicateReportClaims(redisClient));

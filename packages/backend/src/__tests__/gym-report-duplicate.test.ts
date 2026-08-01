@@ -6,9 +6,15 @@ import { db } from '../db/client';
 import { resetAllRateLimits } from '../utils/rate-limiter';
 import { logger } from '../utils/logger';
 
-const { mockRedisEval, mockRedisIsConnected, mockRedisSet } = vi.hoisted(() => ({
+const { mockRedisEval, mockRedisIsConnected, mockRedisReadyHandlers, mockRedisSet } = vi.hoisted(() => ({
   mockRedisEval: vi.fn(),
   mockRedisIsConnected: vi.fn(),
+  mockRedisReadyHandlers: [] as Array<
+    (redisClient: {
+      set: (...args: unknown[]) => Promise<unknown>;
+      eval: (...args: unknown[]) => Promise<unknown>;
+    }) => void | Promise<void>
+  >,
   mockRedisSet: vi.fn(),
 }));
 
@@ -21,6 +27,15 @@ vi.mock('../redis/client', () => ({
         set: mockRedisSet,
       },
     }),
+    onRedisReady: (
+      handler: (redisClient: {
+        set: (...args: unknown[]) => Promise<unknown>;
+        eval: (...args: unknown[]) => Promise<unknown>;
+      }) => void | Promise<void>,
+    ) => {
+      mockRedisReadyHandlers.push(handler);
+      return () => {};
+    },
   },
 }));
 
@@ -240,7 +255,7 @@ describe('reportGymDuplicate — de-duplication', () => {
     expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
   });
 
-  it('retains a successful local claim through an outage and later Redis recovery', async () => {
+  it('promotes a successful local claim when a later request observes Redis recovery', async () => {
     const gym = await insertGym({ name: 'Bahnhof Bloc' });
     const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
 
@@ -253,7 +268,48 @@ describe('reportGymDuplicate — de-duplication', () => {
       reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
     ).resolves.toEqual({ status: 'already_reported' });
 
+    expect(mockRedisSet).toHaveBeenCalledExactlyOnceWith(
+      expect.stringMatching(/^gymDuplicateReport:/),
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      'PXAT',
+      expect.any(Number),
+      'NX',
+    );
+    expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('promotes on the Redis readiness hook before another process checks the pair', async () => {
+    expect(mockRedisReadyHandlers).toHaveLength(1);
+    let distributedOwnerToken: string | null = null;
+    mockRedisSet.mockImplementation(async (_key: string, ownerToken: string) => {
+      if (distributedOwnerToken !== null) return null;
+      distributedOwnerToken = ownerToken;
+      return 'OK';
+    });
+    const gym = await insertGym({ name: 'Recovery Bloc' });
+    const dup = await insertGym({ name: 'Recovery Bloc (old)' });
+
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'reported' });
     expect(mockRedisSet).not.toHaveBeenCalled();
+
+    await mockRedisReadyHandlers[0]({ set: mockRedisSet, eval: mockRedisEval });
+    expect(mockRedisSet).toHaveBeenCalledWith(
+      expect.stringMatching(/^gymDuplicateReport:/),
+      distributedOwnerToken,
+      'PXAT',
+      expect.any(Number),
+      'NX',
+    );
+
+    // Drop this process's local memory. Redis alone now represents the other
+    // instance/restart and must prevent a second notification.
+    resetGymDuplicateReportClaimsForTests();
+    mockRedisIsConnected.mockReturnValue(true);
+    await expect(
+      reportGymDuplicate({ gymUuid: dup.uuid, duplicateGymUuid: gym.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'already_reported' });
     expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
   });
 

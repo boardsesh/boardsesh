@@ -46,12 +46,44 @@ export type RedisClients = {
   streamConsumer: Redis;
 };
 
-class RedisClientManager {
+type RedisReadyHandler = (publisher: Redis) => void | Promise<void>;
+
+export class RedisClientManager {
   private publisher: Redis | null = null;
   private subscriber: Redis | null = null;
   private streamConsumer: Redis | null = null;
   private isConnected = false;
   private connectionPromise: Promise<boolean> | null = null;
+  private finishingConnection = false;
+  private readonly readyHandlers = new Set<RedisReadyHandler>();
+
+  /**
+   * Run work that must be reconciled before the backend advertises a recovered
+   * Redis connection. Handlers also run immediately when registered after Redis
+   * is already ready. Failures are isolated so one best-effort reconciliation
+   * cannot keep the entire backend disconnected.
+   */
+  onRedisReady(handler: RedisReadyHandler): () => void {
+    this.readyHandlers.add(handler);
+    if (this.isConnected && this.publisher) {
+      void this.runReadyHandler(handler, this.publisher);
+    }
+    return () => {
+      this.readyHandlers.delete(handler);
+    };
+  }
+
+  private async runReadyHandler(handler: RedisReadyHandler, publisher: Redis): Promise<void> {
+    try {
+      await handler(publisher);
+    } catch {
+      logger.warn('[Redis] A recovery reconciliation handler failed; Redis remains available.');
+    }
+  }
+
+  private async runReadyHandlers(publisher: Redis): Promise<void> {
+    await Promise.all(Array.from(this.readyHandlers, (handler) => this.runReadyHandler(handler, publisher)));
+  }
 
   /**
    * Connect to Redis. Returns true if connected, false if Redis is not configured.
@@ -118,19 +150,34 @@ class RedisClientManager {
       let publisherReady = false;
       let subscriberReady = false;
       let streamConsumerReady = false;
+      let readinessEpoch = 0;
 
       const checkAllReady = () => {
         if (!(publisherReady && subscriberReady && streamConsumerReady)) return;
+        if (this.isConnected || this.finishingConnection) return;
+        this.finishingConnection = true;
+        const reconciliationEpoch = readinessEpoch;
         logger.info('[Redis] Connected successfully (3 connections: publisher, subscriber, streamConsumer)');
         // Verify server version before declaring ready. Fail-closed: an
         // older Redis silently breaks the board-serial event path, which we'd
         // rather catch at startup than in production.
         verifyRedisVersion(this.publisher!)
+          .then(() => this.runReadyHandlers(this.publisher!))
           .then(() => {
+            this.finishingConnection = false;
+            // A connection can close while an async recovery handler is
+            // running. Do not advertise a stale ready state; the next `ready`
+            // event will run version checks and reconciliation again.
+            if (!(publisherReady && subscriberReady && streamConsumerReady)) return;
+            if (readinessEpoch !== reconciliationEpoch) {
+              checkAllReady();
+              return;
+            }
             this.isConnected = true;
             resolve(true);
           })
           .catch((err: Error) => {
+            this.finishingConnection = false;
             logger.error(`[Redis] ${err.message}`);
             reject(err);
           });
@@ -138,16 +185,19 @@ class RedisClientManager {
 
       this.publisher.on('ready', () => {
         publisherReady = true;
+        readinessEpoch += 1;
         checkAllReady();
       });
 
       this.subscriber.on('ready', () => {
         subscriberReady = true;
+        readinessEpoch += 1;
         checkAllReady();
       });
 
       this.streamConsumer.on('ready', () => {
         streamConsumerReady = true;
+        readinessEpoch += 1;
         checkAllReady();
       });
 
@@ -174,6 +224,8 @@ class RedisClientManager {
 
       // Handle disconnection after initial connection
       this.publisher.on('close', () => {
+        publisherReady = false;
+        readinessEpoch += 1;
         if (this.isConnected) {
           logger.warn('[Redis] Publisher connection closed');
           this.isConnected = false;
@@ -181,6 +233,8 @@ class RedisClientManager {
       });
 
       this.subscriber.on('close', () => {
+        subscriberReady = false;
+        readinessEpoch += 1;
         if (this.isConnected) {
           logger.warn('[Redis] Subscriber connection closed');
           this.isConnected = false;
@@ -188,6 +242,8 @@ class RedisClientManager {
       });
 
       this.streamConsumer.on('close', () => {
+        streamConsumerReady = false;
+        readinessEpoch += 1;
         if (this.isConnected) {
           logger.warn('[Redis] Stream consumer connection closed');
           this.isConnected = false;
@@ -275,6 +331,7 @@ class RedisClientManager {
     this.subscriber = null;
     this.streamConsumer = null;
     this.isConnected = false;
+    this.finishingConnection = false;
     this.connectionPromise = null;
   }
 }
