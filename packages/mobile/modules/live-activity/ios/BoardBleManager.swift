@@ -1426,7 +1426,6 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// user connect owns the reconnect when present; otherwise write-stall
     /// recovery resumes automatically. Both paths share the same normal connect
     /// timeout and connection-ready success point.
-    @discardableResult
     private func consumeManagerCancellationBarrierOnBleQueue(peripheralId: UUID) -> Bool {
         guard let cancellationBarrier = managerCancellationBarriers.removeValue(forKey: peripheralId) else {
             return false
