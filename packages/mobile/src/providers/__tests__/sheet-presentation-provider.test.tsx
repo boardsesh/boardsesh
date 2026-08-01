@@ -133,6 +133,20 @@ describe('SheetPresentationProvider coordinator', () => {
     expect(settled).toHaveBeenCalledTimes(1);
   });
 
+  it('aborts a present-in-flight dismiss waiter when a fresh open supersedes it', async () => {
+    const a = makeSheet();
+    coordinator.register({ id: 'a', group: 'root', ...a });
+    coordinator.setDesiredOpen('a', true);
+
+    const resultPromise = coordinator.dismissAndWait('a');
+    coordinator.setDesiredOpen('a', true);
+
+    await expect(resultPromise).resolves.toEqual({ status: 'aborted' });
+    vi.advanceTimersByTime(SETTLE_MS);
+    expect(a.dismiss).not.toHaveBeenCalled();
+    expect(coordinator.isPresented('a')).toBe(true);
+  });
+
   it('dismissAndWait uses the existing platform ceiling and resolves duplicate waiters together', async () => {
     const a = makeSheet();
     coordinator.register({ id: 'a', group: 'root', ...a });

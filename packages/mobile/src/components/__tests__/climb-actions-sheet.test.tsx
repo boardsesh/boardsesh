@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import type { Climb } from '@boardsesh/shared-schema';
+import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
 
 // The sheet is mounted always-on inside the Play Drawer and toggled via the
 // controlled `visible` prop (the ModalSheet coordinator drives present/dismiss).
@@ -10,7 +11,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 const sheet = vi.hoisted(() => ({
   visible: undefined as boolean | undefined,
   exposeHandle: true,
-  dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
+  dismissAndWait: vi.fn<() => Promise<DismissAndWaitResult>>(async () => ({ status: 'dismissed' })),
 }));
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
 const ctrl = vi.hoisted(() => ({
@@ -354,5 +355,17 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
 
     expect(sheet.dismissAndWait).not.toHaveBeenCalled();
     await waitFor(() => expect(nav.push).toHaveBeenCalledTimes(1));
+  });
+
+  it('stops the handoff when the source sheet disappears during dismissal', async () => {
+    sheet.dismissAndWait.mockResolvedValueOnce({ status: 'aborted' });
+    const dismissPlayerAndWait = vi.fn(async () => ({ status: 'dismissed' as const }));
+    render(<ClimbActionsSheet visible={true} {...baseProps} dismissPlayerAndWait={dismissPlayerAndWait} />);
+
+    fireEvent.click(screen.getByText('mobile.climbActions.fork'));
+
+    await waitFor(() => expect(sheet.dismissAndWait).toHaveBeenCalledTimes(1));
+    expect(dismissPlayerAndWait).not.toHaveBeenCalled();
+    expect(nav.push).not.toHaveBeenCalled();
   });
 });

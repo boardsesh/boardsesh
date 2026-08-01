@@ -301,6 +301,10 @@ export function SheetPresentationProvider({ children }: { children: ReactNode })
         const prev = desired.current.get(id);
         const seq = open ? (seqCounter.current += 1) : (prev?.seq ?? 0);
         desired.current.set(id, { open, seq });
+        // A fresh open supersedes an in-flight caller-owned dismissal. Resolve
+        // those waiters as aborted so the caller does not navigate away while
+        // the source surface is being deliberately re-presented.
+        if (open) settleDismissWaiters(id, ABORTED_RESULT);
         const group = groupOf(id);
         if (group) pump(group);
       },
