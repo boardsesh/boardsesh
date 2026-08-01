@@ -59,6 +59,13 @@ function makeCtx(overrides: Partial<ConnectionContext> = {}): ConnectionContext 
 }
 
 const climbUuid = '11111111-1111-1111-1111-111111111111';
+const validPlaybackInput = {
+  climbUuid,
+  frameIndex: 3,
+  isPlaying: true,
+  speed: 1.5,
+  paceMs: 250,
+};
 
 describe('publishPlaybackState mutation', () => {
   beforeEach(() => {
@@ -70,13 +77,7 @@ describe('publishPlaybackState mutation', () => {
     const result = await queueMutations.publishPlaybackState(
       undefined,
       {
-        input: {
-          climbUuid,
-          frameIndex: 3,
-          isPlaying: true,
-          speed: 1.5,
-          paceMs: 250,
-        },
+        input: validPlaybackInput,
       },
       makeCtx({ connectionId: 'conn-abc' }),
     );
@@ -148,5 +149,24 @@ describe('publishPlaybackState mutation', () => {
     );
     const event = pubsubMock.publishQueueEvent.mock.calls[0]?.[1] as { clientId: string | null };
     expect(event.clientId).toBe('engine-:r3:');
+  });
+
+  it.each([
+    ['negative frame index', { frameIndex: -1 }],
+    ['fractional frame index', { frameIndex: 1.5 }],
+    ['NaN speed', { speed: Number.NaN }],
+    ['infinite speed', { speed: Infinity }],
+    ['speed outside the shipped range', { speed: 10.1 }],
+    ['pace below the engine floor', { paceMs: 199 }],
+    ['fractional pace', { paceMs: 200.5 }],
+    ['infinite pace', { paceMs: Infinity }],
+    ['coerced numeric value', { paceMs: '200' }],
+    ['wrong boolean type', { isPlaying: 'true' }],
+  ])('rejects %s before publishing', async (_description, overrides) => {
+    await expect(
+      queueMutations.publishPlaybackState(undefined, { input: { ...validPlaybackInput, ...overrides } }, makeCtx()),
+    ).rejects.toThrow('Invalid input');
+
+    expect(pubsubMock.publishQueueEvent).not.toHaveBeenCalled();
   });
 });

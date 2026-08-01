@@ -14,7 +14,12 @@ import {
   RATE_LIMIT_SET_QUEUE,
   RATE_LIMIT_SET_QUEUE_OP,
 } from '../shared/helpers';
-import { ClimbQueueItemSchema, QueueIndexSchema, QueueItemIdSchema } from '../../../validation/schemas';
+import {
+  ClimbQueueItemSchema,
+  PlaybackStateInputSchema,
+  QueueIndexSchema,
+  QueueItemIdSchema,
+} from '../../../validation/schemas';
 import { withQueueVersionRetry } from '../shared/queue-retry';
 import { logMutationMetrics } from './mutation-metrics';
 import { logger } from '../../../utils/logger';
@@ -512,35 +517,21 @@ export const queueMutations = {
    * incremented, so they are non-monotonic/duplicate across playback events —
    * another reason they must never enter the replay buffer.
    */
-  publishPlaybackState: async (
-    _: unknown,
-    {
-      input,
-    }: {
-      input: {
-        climbUuid: string;
-        frameIndex: number;
-        isPlaying: boolean;
-        speed: number;
-        paceMs: number;
-        clientId?: string | null;
-      };
-    },
-    ctx: ConnectionContext,
-  ) => {
+  publishPlaybackState: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext) => {
     await applyRateLimit(ctx, RATE_LIMIT_PLAYBACK, RATE_LIMIT_PLAYBACK_OP);
     const sessionId = await requireSessionWithReconnectGrace(ctx);
+    const validatedInput = validateInput(PlaybackStateInputSchema, input, 'input');
 
     const currentState = await roomManager.getQueueState(sessionId);
 
     pubsub.publishQueueEvent(sessionId, {
       __typename: 'PlaybackStateChanged',
       sequence: currentState.sequence,
-      climbUuid: input.climbUuid,
-      frameIndex: input.frameIndex,
-      isPlaying: input.isPlaying,
-      speed: input.speed,
-      paceMs: input.paceMs,
+      climbUuid: validatedInput.climbUuid,
+      frameIndex: validatedInput.frameIndex,
+      isPlaying: validatedInput.isPlaying,
+      speed: validatedInput.speed,
+      paceMs: validatedInput.paceMs,
       anchorTimestamp: String(Date.now()),
       // Prefer the publisher-supplied client identifier (the playback engine's
       // stable id) so echo suppression on the publisher's own clients works
@@ -549,7 +540,7 @@ export const queueMutations = {
       // empty strings (from contexts with no connectionId yet) to null —
       // peers compare to null defensively and would otherwise echo-suppress
       // each other's events.
-      clientId: input.clientId || ctx.connectionId || null,
+      clientId: validatedInput.clientId || ctx.connectionId || null,
     });
 
     return true;
