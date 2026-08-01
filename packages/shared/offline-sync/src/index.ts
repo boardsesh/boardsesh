@@ -58,6 +58,8 @@ export type {
   SyncProgress,
   SyncOptions,
   SchemaDriftReporter,
+  BootstrapMetadataChangedInfo,
+  BootstrapMetadataChangedReporter,
   ScopeDownloadCompleteInfo,
   ScopeDownloadCompleteReporter,
   CoverageResetInfo,
@@ -78,6 +80,7 @@ export {
 export {
   bootstrapScopeFromSnapshot,
   getBootstrapAttempts,
+  getBootstrapMetadataByScope,
   recordBootstrapAttempt,
   markBootstrapDone,
   isBootstrapDone,
@@ -90,6 +93,7 @@ export type {
   SnapshotSource,
   SnapshotBootstrapResult,
   SnapshotBootstrapErrorReporter,
+  BootstrapScopeMetadata,
 } from './sync/snapshot-bootstrap';
 export { startSyncScheduler, triggerSync } from './sync/sync-scheduler';
 export type { SyncProgressSink, SchedulerTriggers, SchedulerOptions, DrainQueue } from './sync/sync-scheduler';

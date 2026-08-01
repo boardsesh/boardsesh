@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { boardDownloadState, boardIsBootstrapping } from '../board-offline-state';
+import { boardDownloadNotice, boardDownloadState, boardIsBootstrapping } from '../board-offline-state';
 
 const base = {
   scopeKey: 'kilter:1:5',
@@ -34,6 +34,12 @@ describe('boardDownloadState', () => {
     );
   });
 
+  it('is downloading while its own board_climb_grades table is being pulled', () => {
+    expect(boardDownloadState({ ...base, isSyncing: true, currentTable: 'board_climb_grades:kilter:1:5' })).toBe(
+      'downloading',
+    );
+  });
+
   it('does not cross-trigger on a sibling scope with a shared prefix', () => {
     // kilter:1:50 must not read as downloading when kilter:1:5 is the one syncing.
     expect(
@@ -43,6 +49,18 @@ describe('boardDownloadState', () => {
         isSyncing: true,
         downloaded: false,
         currentTable: 'board_climbs:kilter:1:5',
+      }),
+    ).toBe('pending');
+  });
+
+  it('matches board_climb_grades by exact scope instead of a sibling prefix', () => {
+    expect(
+      boardDownloadState({
+        scopeKey: 'kilter:1:50',
+        enabled: true,
+        isSyncing: true,
+        downloaded: false,
+        currentTable: 'board_climb_grades:kilter:1:5',
       }),
     ).toBe('pending');
   });
@@ -132,5 +150,85 @@ describe('boardIsBootstrapping', () => {
         phase: 'bootstrap',
       }),
     ).toBe(false);
+  });
+});
+
+describe('boardDownloadNotice', () => {
+  const noticeBase = {
+    enabled: true,
+    downloaded: false,
+    snapshotSourceAvailable: true,
+    bootstrapAttempts: 0,
+    isBootstrapDone: false,
+    isPagedFallback: false,
+    hasBoardCheckpoint: false,
+    isScopeComplete: false,
+    isBootstrapping: false,
+    isPagedDownloadActive: false,
+  };
+
+  it('shows a retrying notice after a transient snapshot failure', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1 })).toBe('snapshot-retrying');
+  });
+
+  it('shows a paged-fallback notice after bootstrap retries are exhausted', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2 })).toBe('paged-fallback');
+  });
+
+  it('uses the explicit paged outcome after a transient failure followed by a permanent miss', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1, isPagedFallback: true })).toBe('paged-fallback');
+  });
+
+  it('treats a restored checkpoint as paged fallback after restart', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1, hasBoardCheckpoint: true })).toBe(
+      'paged-fallback',
+    );
+  });
+
+  it('does not turn a normal paged download into a failure notice', () => {
+    expect(boardDownloadNotice(noticeBase)).toBeNull();
+  });
+
+  it('clears an earlier retry marker after a snapshot import succeeds', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 1, isBootstrapDone: true })).toBeNull();
+  });
+
+  it('clears the notice once the scope has completed its download', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, downloaded: true })).toBeNull();
+  });
+
+  it('clears from the metadata batch as soon as the per-scope completion marker lands', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, isScopeComplete: true })).toBeNull();
+  });
+
+  it('ignores stale bootstrap markers when snapshot I/O is unavailable', () => {
+    expect(boardDownloadNotice({ ...noticeBase, bootstrapAttempts: 2, snapshotSourceAvailable: false })).toBeNull();
+  });
+
+  it('restores the correct retry outcome when snapshot I/O is toggled back on before paging starts', () => {
+    const persistedRetry = { ...noticeBase, bootstrapAttempts: 1 };
+    expect(boardDownloadNotice({ ...persistedRetry, snapshotSourceAvailable: false })).toBeNull();
+    expect(boardDownloadNotice({ ...persistedRetry, snapshotSourceAvailable: true })).toBe('snapshot-retrying');
+  });
+
+  it('uses live paged progress when the snapshot flag returns before a checkpoint lands', () => {
+    expect(
+      boardDownloadNotice({
+        ...noticeBase,
+        bootstrapAttempts: 1,
+        isPagedDownloadActive: true,
+      }),
+    ).toBe('paged-fallback');
+  });
+
+  it('lets an active bootstrap attempt outrank stale fallback history', () => {
+    expect(
+      boardDownloadNotice({
+        ...noticeBase,
+        bootstrapAttempts: 1,
+        isPagedFallback: true,
+        isBootstrapping: true,
+      }),
+    ).toBeNull();
   });
 });

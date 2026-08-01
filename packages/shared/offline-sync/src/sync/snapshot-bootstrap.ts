@@ -27,6 +27,7 @@ import {
   compareCheckpoints,
   getCheckpointKey,
   rewindDeletionsCheckpoint,
+  SCOPE_COMPLETE_PREFIX,
   setCheckpoint,
   type SyncCheckpoint,
 } from './checkpoints';
@@ -49,6 +50,7 @@ export const MAX_BOOTSTRAP_ATTEMPTS = 2;
 // alongside the rows they describe, so it needs the exact key spelling.
 export const BOOTSTRAP_ATTEMPTS_PREFIX = 'bootstrap-attempts:';
 export const BOOTSTRAP_DONE_PREFIX = 'bootstrap-done:';
+export const BOOTSTRAP_PAGED_FALLBACK_PREFIX = 'bootstrap-paged-fallback:';
 const EPOCH_WATERMARK: SyncCheckpoint = { updatedAt: '1970-01-01T00:00:00.000Z', syncSeq: '0' };
 
 // Only snake_case identifiers may be spliced into the INSERT/SELECT column list.
@@ -122,13 +124,119 @@ export class SnapshotPermanentMissError extends Error {
 // sign-out checkpoint wipe leaves them alone, matching the board rows they
 // describe, which survive as the shared cache) ---------------------------------
 
+export type BootstrapScopeMetadata = {
+  /** Counted transient bootstrap failures persisted for this scope. */
+  attempts: number;
+  /** The scope has imported a snapshot, even if its delta pull has not finished yet. */
+  isBootstrapDone: boolean;
+  /** The latest bootstrap decision for this scope selected the ordinary paged crawl. */
+  isPagedFallback: boolean;
+  /** Either board table has a checkpoint, so the scope is no longer bootstrap-eligible. */
+  hasBoardCheckpoint: boolean;
+  /** The whole scope has reached the tail and can serve complete offline results. */
+  isScopeComplete: boolean;
+};
+
+const BOARD_CLIMBS_CHECKPOINT_PREFIX = 'checkpoint:board_climbs:';
+const BOARD_STATS_CHECKPOINT_PREFIX = 'checkpoint:board_climb_stats:';
+
+// GLOB's literal-prefix optimization uses sync_meta's binary primary-key index.
+// SQLite's default case-insensitive LIKE cannot use that index and scans every
+// metadata row, which is especially expensive after years of sync checkpoints.
+export const BOOTSTRAP_METADATA_QUERY = `SELECT key, value
+  FROM sync_meta
+  WHERE key GLOB ?
+     OR key GLOB ?
+     OR key GLOB ?
+     OR key GLOB ?
+     OR key GLOB ?
+     OR key GLOB ?`;
+
+export const BOOTSTRAP_METADATA_PATTERNS = [
+  `${BOOTSTRAP_ATTEMPTS_PREFIX}*`,
+  `${BOOTSTRAP_DONE_PREFIX}*`,
+  `${BOOTSTRAP_PAGED_FALLBACK_PREFIX}*`,
+  `${BOARD_CLIMBS_CHECKPOINT_PREFIX}*`,
+  `${BOARD_STATS_CHECKPOINT_PREFIX}*`,
+  `${SCOPE_COMPLETE_PREFIX}*`,
+] as const;
+
+function parseBootstrapAttempts(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export async function getBootstrapAttempts(db: SqlExecutor, scopeKey: string): Promise<number> {
   const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM sync_meta WHERE key = ?', [
     `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
   ]);
-  if (!row) return 0;
-  const parsed = Number(row.value);
-  return Number.isFinite(parsed) ? parsed : 0;
+  return row ? parseBootstrapAttempts(row.value) : 0;
+}
+
+/**
+ * Read bootstrap state for many board scopes in one indexed `sync_meta` query.
+ *
+ * My Boards needs this after the bootstrap phase, but reading one marker per row
+ * would turn a virtualised list into N SQLite round trips. The returned map is
+ * keyed by exact scope key, so rows can look up their immutable metadata in O(1).
+ * Missing entries deliberately mean an untouched, still-eligible scope.
+ */
+export async function getBootstrapMetadataByScope(
+  db: SqlExecutor,
+  scopeKeys: readonly string[],
+): Promise<ReadonlyMap<string, BootstrapScopeMetadata>> {
+  const requestedScopes = new Set(scopeKeys);
+  if (requestedScopes.size === 0) return new Map();
+
+  // Scope keys are not interpolated into SQL. Prefix filtering avoids a
+  // variable-length IN clause (and SQLite's bind limit) for large board lists.
+  const rows = await db.getAllAsync<{ key: string; value: string }>(BOOTSTRAP_METADATA_QUERY, [
+    ...BOOTSTRAP_METADATA_PATTERNS,
+  ]);
+  const metadataByScope = new Map<string, BootstrapScopeMetadata>();
+
+  for (const row of rows) {
+    const attemptsScopeKey = row.key.startsWith(BOOTSTRAP_ATTEMPTS_PREFIX)
+      ? row.key.slice(BOOTSTRAP_ATTEMPTS_PREFIX.length)
+      : null;
+    const doneScopeKey = row.key.startsWith(BOOTSTRAP_DONE_PREFIX) ? row.key.slice(BOOTSTRAP_DONE_PREFIX.length) : null;
+    const fallbackScopeKey = row.key.startsWith(BOOTSTRAP_PAGED_FALLBACK_PREFIX)
+      ? row.key.slice(BOOTSTRAP_PAGED_FALLBACK_PREFIX.length)
+      : null;
+    const climbsCheckpointScopeKey = row.key.startsWith(BOARD_CLIMBS_CHECKPOINT_PREFIX)
+      ? row.key.slice(BOARD_CLIMBS_CHECKPOINT_PREFIX.length)
+      : null;
+    const statsCheckpointScopeKey = row.key.startsWith(BOARD_STATS_CHECKPOINT_PREFIX)
+      ? row.key.slice(BOARD_STATS_CHECKPOINT_PREFIX.length)
+      : null;
+    const completeScopeKey = row.key.startsWith(SCOPE_COMPLETE_PREFIX)
+      ? row.key.slice(SCOPE_COMPLETE_PREFIX.length)
+      : null;
+    const scopeKey =
+      attemptsScopeKey ??
+      doneScopeKey ??
+      fallbackScopeKey ??
+      climbsCheckpointScopeKey ??
+      statsCheckpointScopeKey ??
+      completeScopeKey;
+    if (!scopeKey || !requestedScopes.has(scopeKey)) continue;
+
+    const existing = metadataByScope.get(scopeKey) ?? {
+      attempts: 0,
+      isBootstrapDone: false,
+      isPagedFallback: false,
+      hasBoardCheckpoint: false,
+      isScopeComplete: false,
+    };
+    if (attemptsScopeKey) existing.attempts = parseBootstrapAttempts(row.value);
+    if (doneScopeKey) existing.isBootstrapDone = true;
+    if (fallbackScopeKey) existing.isPagedFallback = true;
+    if (climbsCheckpointScopeKey || statsCheckpointScopeKey) existing.hasBoardCheckpoint = true;
+    if (completeScopeKey) existing.isScopeComplete = true;
+    metadataByScope.set(scopeKey, existing);
+  }
+
+  return metadataByScope;
 }
 
 /** Increments the attempt counter for a scope and returns the new count. */
@@ -141,12 +249,29 @@ export async function recordBootstrapAttempt(db: SqlExecutor, scopeKey: string):
   return next;
 }
 
+/** Persist that the latest bootstrap decision selected the ordinary paged crawl. */
+export async function markBootstrapPagedFallback(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
+    `${BOOTSTRAP_PAGED_FALLBACK_PREFIX}${scopeKey}`,
+    '1',
+  ]);
+}
+
+/** A new eligible snapshot attempt supersedes a prior run's paged decision. */
+export async function clearBootstrapPagedFallback(db: SqlExecutor, scopeKey: string): Promise<void> {
+  await db.runAsync('DELETE FROM sync_meta WHERE key = ?', [`${BOOTSTRAP_PAGED_FALLBACK_PREFIX}${scopeKey}`]);
+}
+
 /** Permanent "this scope was warmed from a snapshot" marker (cheap, unambiguous). */
 export async function markBootstrapDone(db: SqlExecutor, scopeKey: string): Promise<void> {
   await db.runAsync('INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)', [
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
     '1',
   ]);
+  // Write done first: if clearing the stale outcome fails, done still outranks
+  // it in derivation. The reverse order has a crash window that mislabels a
+  // successfully imported snapshot as a paged fallback after restart.
+  await clearBootstrapPagedFallback(db, scopeKey);
 }
 
 export async function isBootstrapDone(db: SqlExecutor, scopeKey: string): Promise<boolean> {

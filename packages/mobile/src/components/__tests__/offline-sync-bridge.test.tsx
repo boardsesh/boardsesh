@@ -9,8 +9,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const startSyncSchedulerStop = vi.fn();
 const startSyncSchedulerMock = vi.fn(() => startSyncSchedulerStop);
+const notifyBootstrapMetadataChangedMock = vi.hoisted(() => vi.fn());
+const notifyScopeDownloadCompleteMock = vi.hoisted(() => vi.fn());
 vi.mock('../../sync', () => ({
   setSyncProgress: vi.fn(),
+  notifyBootstrapMetadataChanged: (info: unknown) => notifyBootstrapMetadataChangedMock(info),
+  notifyScopeDownloadComplete: (info: unknown) => notifyScopeDownloadCompleteMock(info),
 }));
 
 const drainMutationQueueMock = vi.fn(async (..._args: unknown[]) => {});
@@ -127,6 +131,20 @@ function getStartSyncSchedulerSnapshotSource(): unknown {
   return options?.snapshotSource;
 }
 
+function getStartSyncSchedulerOptions(): {
+  snapshotSource?: unknown;
+  onBootstrapMetadataChanged?: (info: unknown) => void;
+  onScopeDownloadComplete?: (info: unknown) => void;
+} {
+  const call = startSyncSchedulerMock.mock.calls[0] as unknown[] | undefined;
+  expect(call).toBeDefined();
+  return (call?.at(-1) ?? {}) as {
+    snapshotSource?: unknown;
+    onBootstrapMetadataChanged?: (info: unknown) => void;
+    onScopeDownloadComplete?: (info: unknown) => void;
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   startSyncSchedulerMock.mockReturnValue(startSyncSchedulerStop);
@@ -177,6 +195,26 @@ describe('OfflineSyncBridge — flag ON', () => {
     render(<Harness flags={FLAG_ON_WITH_SNAPSHOT} queryClient={makeQueryClient()} />);
     await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
     expect(getStartSyncSchedulerSnapshotSource()).toBe(mobileSnapshotSourceStub);
+  });
+
+  it('publishes each scope metadata settlement before the rest of a multi-scope bootstrap finishes', async () => {
+    render(<Harness flags={FLAG_ON_WITH_SNAPSHOT} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+
+    const info = { scopeKey: 'kilter:1:5' };
+    getStartSyncSchedulerOptions().onBootstrapMetadataChanged?.(info);
+
+    expect(notifyBootstrapMetadataChangedMock).toHaveBeenCalledWith(info);
+  });
+
+  it('publishes each scope completion before the rest of a multi-scope cycle finishes', async () => {
+    render(<Harness flags={FLAG_ON_WITH_SNAPSHOT} queryClient={makeQueryClient()} />);
+    await waitFor(() => expect(startSyncSchedulerMock).toHaveBeenCalledTimes(1));
+
+    const info = { scopeKey: 'kilter:1:5' };
+    getStartSyncSchedulerOptions().onScopeDownloadComplete?.(info);
+
+    expect(notifyScopeDownloadCompleteMock).toHaveBeenCalledWith(info);
   });
 
   it('passes no snapshotSource when the snapshot manifest URL is not configured', async () => {

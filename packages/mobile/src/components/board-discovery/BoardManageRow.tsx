@@ -1,5 +1,5 @@
-import { memo, useMemo } from 'react';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { memo, useEffect, useMemo, useRef } from 'react';
+import { AccessibilityInfo, Platform, Pressable, View, StyleSheet } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { UserBoard } from '@boardsesh/shared-schema';
 import { toBoardName } from '@boardsesh/board-config';
@@ -7,7 +7,7 @@ import { SwipeableRow } from '../SwipeableRow';
 import { BoardImageNative } from '../BoardImageNative';
 import { boardTypeLabel } from './board-builder-labels';
 import { BoardOfflineToggle } from './BoardOfflineToggle';
-import type { BoardDownloadState } from './board-offline-state';
+import type { BoardDownloadNotice, BoardDownloadState } from './board-offline-state';
 import { getBoardRenderData } from '../../lib/board-details';
 import { Text } from '../Text';
 import { Icon } from '../Icon';
@@ -52,6 +52,8 @@ type BoardManageRowProps = {
    * no per-row count to show).
    */
   isBootstrapping?: boolean;
+  /** Durable context for a retrying snapshot or a paged-crawl fallback. */
+  downloadNotice?: BoardDownloadNotice;
   onEdit: (board: UserBoard) => void;
   onDelete: (board: UserBoard) => void;
   onUnfollow: (board: UserBoard) => void;
@@ -75,6 +77,7 @@ function BoardManageRowComponent({
   downloadState,
   downloadCount,
   isBootstrapping,
+  downloadNotice = null,
   onEdit,
   onDelete,
   onUnfollow,
@@ -108,18 +111,58 @@ function BoardManageRowComponent({
     ? (board.sizeName ?? board.locationName ?? boardTypeText)
     : (board.ownerDisplayName ?? boardTypeText);
 
-  // A third caption line, shown only while a board is opted into offline, so
-  // downloaded rows stay two lines and the extra line appears transiently.
+  // Live bootstrap always wins over persisted history: the engine may retry a
+  // scope whose previous run selected a paged fallback, and showing both would
+  // contradict what is happening now.
+  const effectiveDownloadNotice = isBootstrapping ? null : downloadNotice;
+  const showsPagedFallbackCount = effectiveDownloadNotice === 'paged-fallback' && downloadState === 'downloading';
   const offlineStatus =
-    downloadState === 'downloading'
-      ? isBootstrapping
-        ? t('mobile.offline.bootstrapping')
-        : t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
-      : downloadState === 'downloaded'
-        ? t('mobile.offline.available')
-        : downloadState === 'pending'
-          ? t('mobile.offline.pending')
-          : null;
+    effectiveDownloadNotice === 'snapshot-retrying'
+      ? t('mobile.offline.snapshotRetrying')
+      : effectiveDownloadNotice === 'paged-fallback'
+        ? showsPagedFallbackCount
+          ? t('mobile.offline.pagedFallbackActive')
+          : t('mobile.offline.pagedFallbackPending')
+        : downloadState === 'downloading'
+          ? isBootstrapping
+            ? t('mobile.offline.bootstrapping')
+            : t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
+          : downloadState === 'downloaded'
+            ? t('mobile.offline.available')
+            : downloadState === 'pending'
+              ? t('mobile.offline.pending')
+              : null;
+
+  const offlineStatusAccessibilityLabel =
+    effectiveDownloadNotice === 'snapshot-retrying'
+      ? t('mobile.offline.snapshotRetryingAria', { name: board.name })
+      : effectiveDownloadNotice === 'paged-fallback'
+        ? showsPagedFallbackCount
+          ? t('mobile.offline.pagedFallbackActiveAria', { name: board.name })
+          : t('mobile.offline.pagedFallbackPendingAria', { name: board.name })
+        : undefined;
+  const pagedFallbackProgress = showsPagedFallbackCount
+    ? t('mobile.offline.downloadingCount', { count: downloadCount ?? 0 })
+    : null;
+
+  // Android's polite live region handles semantic notice transitions. React
+  // Native does not implement that prop for iOS, so announce the same localized
+  // label imperatively there. Seed the ref from the first render to avoid every
+  // persisted fallback row speaking when a virtualized list mounts; later
+  // appearance, kind/state change, or locale change announces once. The live
+  // count is deliberately absent from the label, so count-only frames stay quiet.
+  const previousNoticeLabelRef = useRef(offlineStatusAccessibilityLabel);
+  useEffect(() => {
+    const previousNoticeLabel = previousNoticeLabelRef.current;
+    previousNoticeLabelRef.current = offlineStatusAccessibilityLabel;
+    if (
+      Platform.OS === 'ios' &&
+      offlineStatusAccessibilityLabel !== undefined &&
+      offlineStatusAccessibilityLabel !== previousNoticeLabel
+    ) {
+      AccessibilityInfo.announceForAccessibility(offlineStatusAccessibilityLabel);
+    }
+  }, [offlineStatusAccessibilityLabel]);
 
   const offlineToggleAria =
     downloadState === 'downloaded'
@@ -184,9 +227,16 @@ function BoardManageRowComponent({
           <Text
             variant="caption1"
             color={downloadState === 'downloaded' ? brandColors.primary : systemColors.tertiaryLabel}
-            numberOfLines={1}
+            numberOfLines={effectiveDownloadNotice ? undefined : 1}
+            accessibilityLabel={offlineStatusAccessibilityLabel}
+            accessibilityLiveRegion={Platform.OS === 'android' && effectiveDownloadNotice ? 'polite' : undefined}
           >
             {offlineStatus}
+          </Text>
+        ) : null}
+        {pagedFallbackProgress ? (
+          <Text variant="caption1" color={systemColors.tertiaryLabel} numberOfLines={1} accessibilityLiveRegion="none">
+            {pagedFallbackProgress}
           </Text>
         ) : null}
       </View>

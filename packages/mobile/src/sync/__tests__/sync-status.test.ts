@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { setSyncProgress, getSyncStatusSnapshot, __resetSyncStatusForTests } from '../sync-status';
+import {
+  setSyncProgress,
+  notifyBootstrapMetadataChanged,
+  notifyScopeDownloadComplete,
+  getSyncStatusSnapshot,
+  __resetSyncStatusForTests,
+} from '../sync-status';
 import type { SyncProgress } from '@boardsesh/offline-sync';
 
 // Store is React-free apart from the hook, so it's exercised through
@@ -17,7 +23,13 @@ describe('sync-status store', () => {
 
   it('starts in the never-synced idle state', () => {
     const status = getSyncStatusSnapshot();
-    expect(status).toEqual({ progress: null, isSyncing: false, lastSyncedAt: null });
+    expect(status).toEqual({
+      progress: null,
+      isSyncing: false,
+      lastSyncedAt: null,
+      bootstrapMetadataRevision: 0,
+      scopeCompletionRevision: 0,
+    });
   });
 
   it('marks isSyncing true and records the frame for a non-idle progress update', () => {
@@ -60,6 +72,57 @@ describe('sync-status store', () => {
     expect(getSyncStatusSnapshot().progress).not.toBeNull();
 
     __resetSyncStatusForTests();
-    expect(getSyncStatusSnapshot()).toEqual({ progress: null, isSyncing: false, lastSyncedAt: null });
+    expect(getSyncStatusSnapshot()).toEqual({
+      progress: null,
+      isSyncing: false,
+      lastSyncedAt: null,
+      bootstrapMetadataRevision: 0,
+      scopeCompletionRevision: 0,
+    });
+  });
+
+  it('advances bootstrap metadata per scope while preserving the active multi-scope progress', () => {
+    setSyncProgress({ phase: 'bootstrap', currentTable: 'kilter:1:5', documentsProcessed: 0 });
+    notifyBootstrapMetadataChanged({ scopeKey: 'kilter:1:5' });
+    expect(getSyncStatusSnapshot()).toEqual(
+      expect.objectContaining({
+        bootstrapMetadataRevision: 1,
+        isSyncing: true,
+        progress: { phase: 'bootstrap', currentTable: 'kilter:1:5', documentsProcessed: 0 },
+      }),
+    );
+
+    setSyncProgress({ phase: 'bootstrap', currentTable: 'tension:1:10', documentsProcessed: 0 });
+    notifyBootstrapMetadataChanged({ scopeKey: 'tension:1:10' });
+    expect(getSyncStatusSnapshot().bootstrapMetadataRevision).toBe(2);
+    expect(getSyncStatusSnapshot().progress?.currentTable).toBe('tension:1:10');
+
+    setSyncProgress({ phase: 'deletions', currentTable: null, documentsProcessed: 0 });
+    expect(getSyncStatusSnapshot().bootstrapMetadataRevision).toBe(2);
+
+    setSyncProgress({ phase: 'board_data', currentTable: 'board_climbs:kilter:1:5', documentsProcessed: 1 });
+    expect(getSyncStatusSnapshot().bootstrapMetadataRevision).toBe(2);
+  });
+
+  it('advances per-scope completion without ending progress for a later scope', () => {
+    setSyncProgress({
+      phase: 'board_data',
+      currentTable: 'board_climbs:kilter:1:5',
+      documentsProcessed: 100,
+    });
+    notifyScopeDownloadComplete({ scopeKey: 'kilter:1:5', method: 'paged', durationMs: 100 });
+
+    const afterFirstScope = getSyncStatusSnapshot();
+    expect(afterFirstScope.scopeCompletionRevision).toBe(1);
+    expect(afterFirstScope.isSyncing).toBe(true);
+    expect(afterFirstScope.progress?.currentTable).toBe('board_climbs:kilter:1:5');
+
+    setSyncProgress({
+      phase: 'board_data',
+      currentTable: 'board_climbs:tension:2:10',
+      documentsProcessed: 200,
+    });
+    notifyScopeDownloadComplete({ scopeKey: 'tension:2:10', method: 'paged', durationMs: 200 });
+    expect(getSyncStatusSnapshot().scopeCompletionRevision).toBe(2);
   });
 });

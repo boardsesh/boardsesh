@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { setSyncProgress } from '../sync';
+import { notifyBootstrapMetadataChanged, notifyScopeDownloadComplete, setSyncProgress } from '../sync';
 import { getPendingCount, type GraphQLFetch } from '@boardsesh/offline-sync';
 import { startSyncScheduler, drainMutationQueue, startBackgroundTracking } from '../offline/offline-sync-adapter';
 import { getSetting } from '../settings';
@@ -96,6 +96,8 @@ export function OfflineSyncBridge() {
             // screen can render "last synced" + live progress without
             // prop-drilling. snapshotSource is gated by useSnapshotSource.
             onProgress: setSyncProgress,
+            onBootstrapMetadataChanged: notifyBootstrapMetadataChanged,
+            onScopeDownloadComplete: notifyScopeDownloadComplete,
             snapshotSource,
           },
         );

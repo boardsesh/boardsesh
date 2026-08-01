@@ -185,16 +185,18 @@ describe('snapshot-bootstrap bindings', () => {
   const fakeSnapshotSource = {} as SnapshotSource;
 
   it('startSyncScheduler passes snapshotSource through only when the caller supplies one', () => {
+    const onBootstrapMetadataChanged = vi.fn();
     startSyncScheduler(
       db,
       queryClient,
       graphqlFetch,
       () => [],
       async () => {},
-      { snapshotSource: fakeSnapshotSource },
+      { snapshotSource: fakeSnapshotSource, onBootstrapMetadataChanged },
     );
     const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
     expect(options.snapshotSource).toBe(fakeSnapshotSource);
+    expect(options.onBootstrapMetadataChanged).toBe(onBootstrapMetadataChanged);
 
     vi.clearAllMocks();
     startSyncScheduler(
@@ -223,16 +225,18 @@ describe('snapshot-bootstrap bindings', () => {
   });
 
   it('triggerSync passes snapshotSource through and wires the telemetry handlers', () => {
+    const onBootstrapMetadataChanged = vi.fn();
     triggerSync(
       db,
       queryClient,
       graphqlFetch,
       () => [],
       async () => {},
-      { snapshotSource: fakeSnapshotSource },
+      { snapshotSource: fakeSnapshotSource, onBootstrapMetadataChanged },
     );
     const options = triggerSyncCore.mock.calls[0][5] as SchedulerOptions;
     expect(options.snapshotSource).toBe(fakeSnapshotSource);
+    expect(options.onBootstrapMetadataChanged).toBe(onBootstrapMetadataChanged);
     expect(options.onSnapshotBootstrapError).toBeTypeOf('function');
     expect(options.onScopeDownloadComplete).toBeTypeOf('function');
     expect(options.onCoverageReset).toBeTypeOf('function');
@@ -274,6 +278,25 @@ describe('snapshot-bootstrap bindings', () => {
       method: 'snapshot',
       durationMs: 1234,
     });
+  });
+
+  it('composes per-scope UI invalidation with completion telemetry', () => {
+    const onScopeDownloadComplete = vi.fn();
+    startSyncScheduler(
+      db,
+      queryClient,
+      graphqlFetch,
+      () => [],
+      async () => {},
+      { onScopeDownloadComplete },
+    );
+    const options = startSyncSchedulerCore.mock.calls[0][6] as SchedulerOptions;
+    const info = { scopeKey: 'kilter:1:5', method: 'paged' as const, durationMs: 500 };
+
+    options.onScopeDownloadComplete?.(info);
+
+    expect(onScopeDownloadComplete).toHaveBeenCalledWith(info);
+    expect(trackMock).toHaveBeenCalledWith(SHARED_EVENTS.OfflineBoardDownloadCompleted, info);
   });
 
   it('captures a PostHog event — not a Sentry error — when the coverage guard forces a resync', () => {

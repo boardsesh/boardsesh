@@ -10,8 +10,12 @@ import type { UserBoard } from '@boardsesh/shared-schema';
 
 const offlineToggleProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
 const swipeableProps = vi.hoisted(() => ({ last: null as Record<string, unknown> | null }));
+const platformState = vi.hoisted(() => ({ OS: 'ios' }));
+const accessibilitySpies = vi.hoisted(() => ({ announce: vi.fn() }));
 
 vi.mock('react-native', () => ({
+  AccessibilityInfo: { announceForAccessibility: accessibilitySpies.announce },
+  Platform: platformState,
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
   Pressable: ({
     children,
@@ -71,7 +75,26 @@ vi.mock('../../../providers/theme-provider', () => ({
   }),
 }));
 vi.mock('../../Text', () => ({
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+  Text: ({
+    children,
+    accessibilityLabel,
+    accessibilityLiveRegion,
+    numberOfLines,
+  }: {
+    children?: ReactNode;
+    accessibilityLabel?: string;
+    accessibilityLiveRegion?: 'none' | 'polite' | 'assertive';
+    numberOfLines?: number;
+  }) =>
+    createElement(
+      'span',
+      {
+        'aria-label': accessibilityLabel,
+        'data-live-region': accessibilityLiveRegion,
+        'data-number-of-lines': numberOfLines,
+      },
+      children,
+    ),
 }));
 vi.mock('../../Icon', () => ({ Icon: ({ name }: { name: string }) => createElement('span', { 'data-icon': name }) }));
 vi.mock('../../ActivityIndicator', () => ({ ActivityIndicator: () => createElement('span') }));
@@ -103,6 +126,8 @@ afterEach(() => {
   cleanup();
   offlineToggleProps.last = null;
   swipeableProps.last = null;
+  platformState.OS = 'ios';
+  accessibilitySpies.announce.mockReset();
 });
 
 describe('BoardManageRow offline toggle gating', () => {
@@ -134,10 +159,95 @@ describe('BoardManageRow offline toggle gating', () => {
     expect(queryByText('mobile.offline.downloadingCount')).toBeNull();
   });
 
+  it('lets active bootstrap outrank a stale paged-fallback notice', () => {
+    const { queryByText } = render(
+      <BoardManageRow {...rowProps} downloadState="downloading" isBootstrapping downloadNotice="paged-fallback" />,
+    );
+    expect(queryByText('mobile.offline.bootstrapping')).not.toBeNull();
+    expect(queryByText('mobile.offline.pagedFallbackActive')).toBeNull();
+    expect(queryByText('mobile.offline.pagedFallbackPending')).toBeNull();
+  });
+
   it('shows the live climb count caption during the paged crawl (not bootstrapping)', () => {
     const { queryByText } = render(<BoardManageRow {...rowProps} downloadState="downloading" downloadCount={42} />);
     expect(queryByText('mobile.offline.downloadingCount')).not.toBeNull();
     expect(queryByText('mobile.offline.bootstrapping')).toBeNull();
+  });
+
+  it('shows the full retry notice as an accessible status without changing the toggle state', () => {
+    const { getByText } = render(
+      <BoardManageRow {...rowProps} downloadState="pending" downloadNotice="snapshot-retrying" />,
+    );
+    const notice = getByText('mobile.offline.snapshotRetrying');
+    expect(notice.getAttribute('aria-label')).toBe('mobile.offline.snapshotRetryingAria');
+    expect(notice.getAttribute('data-number-of-lines')).toBeNull();
+    expect(notice.getAttribute('data-live-region')).toBeNull();
+    expect(offlineToggleProps.last?.state).toBe('pending');
+  });
+
+  it('distinguishes pending fallback from an active paged crawl', () => {
+    const { queryByText, rerender } = render(
+      <BoardManageRow {...rowProps} downloadState="pending" downloadNotice="paged-fallback" />,
+    );
+    expect(queryByText('mobile.offline.pagedFallbackPending')).not.toBeNull();
+    expect(queryByText('mobile.offline.pagedFallbackActive')).toBeNull();
+
+    rerender(
+      <BoardManageRow {...rowProps} downloadState="downloading" downloadCount={42} downloadNotice="paged-fallback" />,
+    );
+    expect(queryByText('mobile.offline.pagedFallbackPending')).toBeNull();
+    expect(queryByText('mobile.offline.pagedFallbackActive')).not.toBeNull();
+    expect(queryByText('mobile.offline.downloadingCount')).not.toBeNull();
+  });
+
+  it('announces iOS notice transitions once and ignores count-only updates', () => {
+    const { getByText, rerender } = render(<BoardManageRow {...rowProps} downloadState="pending" />);
+
+    rerender(<BoardManageRow {...rowProps} downloadState="pending" downloadNotice="snapshot-retrying" />);
+    expect(accessibilitySpies.announce).toHaveBeenCalledTimes(1);
+    expect(accessibilitySpies.announce).toHaveBeenLastCalledWith('mobile.offline.snapshotRetryingAria');
+
+    rerender(<BoardManageRow {...rowProps} downloadState="pending" downloadNotice="paged-fallback" />);
+    expect(accessibilitySpies.announce).toHaveBeenCalledTimes(2);
+    expect(accessibilitySpies.announce).toHaveBeenLastCalledWith('mobile.offline.pagedFallbackPendingAria');
+
+    rerender(
+      <BoardManageRow {...rowProps} downloadState="downloading" downloadCount={1} downloadNotice="paged-fallback" />,
+    );
+    expect(accessibilitySpies.announce).toHaveBeenCalledTimes(3);
+    expect(accessibilitySpies.announce).toHaveBeenLastCalledWith('mobile.offline.pagedFallbackActiveAria');
+    expect(getByText('mobile.offline.downloadingCount').getAttribute('data-live-region')).toBe('none');
+
+    rerender(
+      <BoardManageRow {...rowProps} downloadState="downloading" downloadCount={42} downloadNotice="paged-fallback" />,
+    );
+    expect(accessibilitySpies.announce).toHaveBeenCalledTimes(3);
+    expect(getByText('mobile.offline.downloadingCount').getAttribute('data-live-region')).toBe('none');
+  });
+
+  it('clears iOS announcement memory when a notice disappears', () => {
+    const { rerender } = render(<BoardManageRow {...rowProps} downloadState="pending" />);
+    rerender(<BoardManageRow {...rowProps} downloadState="pending" downloadNotice="snapshot-retrying" />);
+    rerender(<BoardManageRow {...rowProps} downloadState="pending" />);
+    rerender(<BoardManageRow {...rowProps} downloadState="pending" downloadNotice="snapshot-retrying" />);
+
+    expect(accessibilitySpies.announce).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses one Android polite live region without an imperative announcement', () => {
+    platformState.OS = 'android';
+    const { container, getByText, rerender } = render(<BoardManageRow {...rowProps} downloadState="pending" />);
+
+    rerender(<BoardManageRow {...rowProps} downloadState="pending" downloadNotice="snapshot-retrying" />);
+
+    expect(getByText('mobile.offline.snapshotRetrying').getAttribute('data-live-region')).toBe('polite');
+    expect(container.querySelectorAll('[data-live-region="polite"]')).toHaveLength(1);
+    expect(accessibilitySpies.announce).not.toHaveBeenCalled();
+  });
+
+  it('keeps ordinary compact status text to one line', () => {
+    const { getByText } = render(<BoardManageRow {...rowProps} downloadState="pending" />);
+    expect(getByText('mobile.offline.pending').getAttribute('data-number-of-lines')).toBe('1');
   });
 });
 
@@ -166,7 +276,9 @@ describe('BoardManageRow read-only mode', () => {
       <BoardManageRow {...rowProps} readOnly downloadState="downloaded" onToggleOffline={onToggleOffline} />,
     );
     expect(getByTestId('offline-toggle')).not.toBeNull();
-    (offlineToggleProps.last?.onPress as () => void)();
+    const toggleOnPress = offlineToggleProps.last?.onPress;
+    expect(toggleOnPress).toBeTypeOf('function');
+    (toggleOnPress as () => void)();
     expect(onToggleOffline).toHaveBeenCalledWith(board);
   });
 });

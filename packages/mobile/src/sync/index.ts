@@ -5,6 +5,8 @@
 export {
   useSyncStatus,
   setSyncProgress,
+  notifyBootstrapMetadataChanged,
+  notifyScopeDownloadComplete,
   getSyncStatusSnapshot,
   __resetSyncStatusForTests,
   type SyncStatus,

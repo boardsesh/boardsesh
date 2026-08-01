@@ -27,6 +27,7 @@ import {
   type DrainQueue,
   type GraphQLFetch,
   type OfflineDatabase,
+  type BootstrapMetadataChangedReporter,
   type CoverageResetReporter,
   type ScopeDownloadCompleteReporter,
   type SchedulerTriggers,
@@ -68,6 +69,15 @@ const reportSnapshotBootstrapError: SnapshotBootstrapErrorReporter = ({ scopeKey
 const reportScopeDownloadComplete: ScopeDownloadCompleteReporter = ({ scopeKey, method, durationMs }) => {
   track(SHARED_EVENTS.OfflineBoardDownloadCompleted, { scopeKey, method, durationMs });
 };
+
+function combinedScopeDownloadCompleteReporter(
+  onScopeDownloadComplete: ScopeDownloadCompleteReporter | undefined,
+): ScopeDownloadCompleteReporter {
+  return (info) => {
+    reportScopeDownloadComplete(info);
+    onScopeDownloadComplete?.(info);
+  };
+}
 
 // The deletions-coverage guard rebuilt this device's local user data because it
 // had been away longer than the tombstone retention window (issue #3474).
@@ -127,6 +137,10 @@ export function drainMutationQueue(
 // never depend on argument order for the optional seams.
 export type SyncRunOptions = {
   onProgress?: SyncProgressSink;
+  /** UI invalidation after each bootstrap scope's metadata settles. */
+  onBootstrapMetadataChanged?: BootstrapMetadataChangedReporter;
+  /** UI invalidation after each scope completes, composed with telemetry. */
+  onScopeDownloadComplete?: ScopeDownloadCompleteReporter;
   // Injected only when the offline-snapshot-bootstrap flag is on (see
   // useSnapshotSource) — undefined here reproduces the pure paged-crawl
   // behaviour exactly, byte-identical to before this seam existed.
@@ -147,7 +161,8 @@ export function startSyncScheduler(
     onSchemaDrift: reportSchemaDrift,
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
-    onScopeDownloadComplete: reportScopeDownloadComplete,
+    onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
     onCoverageReset: reportCoverageReset,
   });
 }
@@ -166,7 +181,8 @@ export function triggerSync(
     onSchemaDrift: reportSchemaDrift,
     snapshotSource: options?.snapshotSource,
     onSnapshotBootstrapError: reportSnapshotBootstrapError,
-    onScopeDownloadComplete: reportScopeDownloadComplete,
+    onBootstrapMetadataChanged: options?.onBootstrapMetadataChanged,
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
     onCoverageReset: reportCoverageReset,
   });
 }
@@ -178,10 +194,13 @@ export function pullSync(
   options?: SyncOptions,
 ): Promise<void> {
   return pullSyncCore(db, queryClient, graphqlFetch, {
-    onSchemaDrift: reportSchemaDrift,
-    onSnapshotBootstrapError: reportSnapshotBootstrapError,
-    onScopeDownloadComplete: reportScopeDownloadComplete,
-    onCoverageReset: reportCoverageReset,
     ...options,
+    onSchemaDrift: options?.onSchemaDrift ?? reportSchemaDrift,
+    onSnapshotBootstrapError: options?.onSnapshotBootstrapError ?? reportSnapshotBootstrapError,
+    onScopeDownloadComplete: combinedScopeDownloadCompleteReporter(options?.onScopeDownloadComplete),
+    onCoverageReset: options?.onCoverageReset ?? reportCoverageReset,
+    // Caller-provided error/drift/coverage reporters keep their existing
+    // override semantics; scope completion is the one callback deliberately
+    // composed because both telemetry and per-scope UI invalidation are required.
   });
 }

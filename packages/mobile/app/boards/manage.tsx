@@ -20,11 +20,13 @@ import {
   getCheckpoint,
   getCheckpointKey,
   getBootstrapAttempts,
+  getBootstrapMetadataByScope,
   estimateScopeDownload,
 } from '@boardsesh/offline-sync';
 import { useBoardDownloads } from '../../src/offline/use-board-downloads';
 import { useRememberDownloadedBoards } from '../../src/offline/use-remember-downloaded-boards';
 import { useSnapshotManifest } from '../../src/offline/use-snapshot-manifest';
+import { useSnapshotSource } from '../../src/offline/use-snapshot-source';
 import { formatBytes } from '../../src/lib/format-bytes';
 import {
   getSetting,
@@ -42,7 +44,11 @@ import { Icon } from '../../src/components/Icon';
 import { Button } from '../../src/components/Button';
 import { ActivityIndicator } from '../../src/components/ActivityIndicator';
 import { BoardManageRow } from '../../src/components/board-discovery/BoardManageRow';
-import { boardDownloadState, boardIsBootstrapping } from '../../src/components/board-discovery/board-offline-state';
+import {
+  boardDownloadNotice,
+  boardDownloadState,
+  boardIsBootstrapping,
+} from '../../src/components/board-discovery/board-offline-state';
 import { buildManageItems, type ManageItem } from '../../src/components/board-discovery/manage-items';
 import { offlineBoardRows } from '../../src/components/board-discovery/offline-board-items';
 import { useIsOffline } from '../../src/hooks/use-is-offline';
@@ -118,6 +124,28 @@ export default function ManageBoards() {
   snapshotManifestRef.current = snapshotManifest;
   const db = useSQLiteContext();
   const syncStatus = useSyncStatus();
+  // This must be the same gate the sync bridge uses. A previous app version can
+  // leave bootstrap markers in SQLite, but they are meaningless while this build
+  // is intentionally running the ordinary paged downloader.
+  const snapshotSource = useSnapshotSource();
+  const snapshotSourceAvailable = snapshotSource !== undefined;
+  // A flag-off interval can run the ordinary paged downloader without advancing
+  // either snapshot revision (for example, when only the first page lands). Keep
+  // a local source generation so turning snapshot bootstrap back on cannot reuse
+  // the pre-toggle React Query entry. The transition render is deliberately
+  // unresolved; its effect advances the generation, then the new key reads SQLite.
+  const [snapshotSourceState, setSnapshotSourceState] = useState(() => ({
+    available: snapshotSourceAvailable,
+    generation: 0,
+  }));
+  const snapshotSourceTransitionPending = snapshotSourceState.available !== snapshotSourceAvailable;
+  useEffect(() => {
+    if (!snapshotSourceTransitionPending) return;
+    setSnapshotSourceState((previous) => ({
+      available: snapshotSourceAvailable,
+      generation: previous.generation + 1,
+    }));
+  }, [snapshotSourceAvailable, snapshotSourceTransitionPending]);
   const [enabledBoards] = useSetting('syncEnabledBoards');
   const enabledSet = useMemo(() => new Set(enabledBoards), [enabledBoards]);
   const isSyncing = syncStatus.isSyncing;
@@ -137,8 +165,48 @@ export default function ManageBoards() {
   });
   const downloadedSet = useMemo(() => new Set(downloadedScopeKeys ?? []), [downloadedScopeKeys]);
   useEffect(() => {
-    if (offlineDownloadsEnabled && !isSyncing) void refetchDownloaded();
-  }, [offlineDownloadsEnabled, isSyncing, refetchDownloaded]);
+    if (offlineDownloadsEnabled && (!isSyncing || syncStatus.scopeCompletionRevision > 0)) void refetchDownloaded();
+  }, [offlineDownloadsEnabled, isSyncing, refetchDownloaded, syncStatus.scopeCompletionRevision]);
+
+  // Snapshot attempt/done markers are persisted per scope. Read them in one
+  // query and keep the resulting map in O(1) row lookups; My Boards is a
+  // virtualised list and must never open a SQLite read for every rendered row.
+  // Each marker-changing revision gets a distinct cache entry. React Query may
+  // retain the previous key's successful value while a refetch is pending or
+  // after it fails; the payload revision is a second fail-closed guard so that
+  // stale outcome is never rendered or announced as current.
+  const bootstrapMetadataQueryRevision = useMemo(
+    () =>
+      JSON.stringify([
+        syncStatus.bootstrapMetadataRevision,
+        syncStatus.scopeCompletionRevision,
+        snapshotSourceState.generation,
+        enabledBoards,
+      ]),
+    [
+      enabledBoards,
+      snapshotSourceState.generation,
+      syncStatus.bootstrapMetadataRevision,
+      syncStatus.scopeCompletionRevision,
+    ],
+  );
+  const { data: bootstrapMetadataResult } = useQuery({
+    queryKey: ['bootstrapMetadataByScope', bootstrapMetadataQueryRevision],
+    queryFn: async () => ({
+      revision: bootstrapMetadataQueryRevision,
+      metadataByScope: await getBootstrapMetadataByScope(db, enabledBoards),
+    }),
+    enabled:
+      offlineDownloadsEnabled &&
+      snapshotSourceAvailable &&
+      !snapshotSourceTransitionPending &&
+      enabledBoards.length > 0,
+    gcTime: 0,
+  });
+  const bootstrapMetadataByScope =
+    !snapshotSourceTransitionPending && bootstrapMetadataResult?.revision === bootstrapMetadataQueryRevision
+      ? bootstrapMetadataResult.metadataByScope
+      : undefined;
 
   const handleToggleOffline = useCallback(
     async (board: UserBoard) => {
@@ -308,21 +376,41 @@ export default function ManageBoards() {
         (deleteBoard.isPending && deleteBoard.variables === item.board.uuid) ||
         (unfollowBoard.isPending && unfollowBoard.variables === item.board.uuid);
       const scopeKey = offlineBoardKeyForBoard(item.board);
+      const bootstrapMetadata = bootstrapMetadataByScope?.get(scopeKey);
+      // The metadata batch and downloaded-scope query refetch together on the
+      // per-scope callback. Let either committed marker win so a scheduling race
+      // between those two reads cannot briefly put a completed row back in pending.
+      const isDownloaded = downloadedSet.has(scopeKey) || (bootstrapMetadata?.isScopeComplete ?? false);
       // undefined (flag off) hides the row's toggle + caption entirely.
       const downloadStateInput = {
         scopeKey,
         enabled: enabledSet.has(scopeKey),
         isSyncing,
-        downloaded: downloadedSet.has(scopeKey),
+        downloaded: isDownloaded,
         currentTable,
         phase: currentPhase,
       };
       const downloadState = offlineDownloadsEnabled ? boardDownloadState(downloadStateInput) : undefined;
+      const isBootstrapping = downloadState === 'downloading' && boardIsBootstrapping(downloadStateInput);
+      const isPagedDownloadActive = downloadState === 'downloading' && !isBootstrapping;
+      const downloadNotice = offlineDownloadsEnabled
+        ? boardDownloadNotice({
+            enabled: enabledSet.has(scopeKey),
+            downloaded: isDownloaded,
+            snapshotSourceAvailable,
+            bootstrapAttempts: bootstrapMetadata?.attempts ?? 0,
+            isBootstrapDone: bootstrapMetadata?.isBootstrapDone ?? false,
+            isPagedFallback: bootstrapMetadata?.isPagedFallback ?? false,
+            hasBoardCheckpoint: bootstrapMetadata?.hasBoardCheckpoint ?? false,
+            isScopeComplete: bootstrapMetadata?.isScopeComplete ?? false,
+            isBootstrapping,
+            isPagedDownloadActive,
+          })
+        : null;
       // Only the board actually downloading gets the live count / bootstrap
       // flag; every other row gets undefined/false (stable props), so its
       // memo skips the per-frame churn.
       const downloadCount = downloadState === 'downloading' ? currentTableProcessed : undefined;
-      const isBootstrapping = downloadState === 'downloading' && boardIsBootstrapping(downloadStateInput);
       return (
         <BoardManageRow
           board={item.board}
@@ -336,6 +424,7 @@ export default function ManageBoards() {
           downloadState={downloadState}
           downloadCount={downloadCount}
           isBootstrapping={isBootstrapping}
+          downloadNotice={downloadNotice}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onUnfollow={handleUnfollow}
@@ -357,6 +446,8 @@ export default function ManageBoards() {
       currentTable,
       currentTableProcessed,
       currentPhase,
+      bootstrapMetadataByScope,
+      snapshotSourceAvailable,
       handleEdit,
       handleDelete,
       handleUnfollow,

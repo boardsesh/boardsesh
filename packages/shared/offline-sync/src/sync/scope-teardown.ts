@@ -4,7 +4,7 @@
 //
 // Two invariants carry this whole module, and both are data-loss bugs when broken:
 //
-// 1. ROWS AND THEIR MARKERS DIE TOGETHER. A scope's downloaded state lives in four
+// 1. ROWS AND THEIR MARKERS DIE TOGETHER. A scope's downloaded state lives in seven
 //    kinds of sync_meta rows (see scopeSyncMetaKeys). If rows are deleted but a
 //    checkpoint survives, the next pull resumes from that cursor and — because the
 //    delta pull is a strict `>` keyset — NEVER revisits the deleted rows. The board
@@ -32,7 +32,11 @@ import { applyBusyTimeout } from '../db/pragmas';
 import type { OfflineBoardScope } from '../offline-board-key';
 import { climbsScopeFilter, isSizeScopedBoard, sizeMembershipClause } from './board-scope-sql';
 import { getCheckpointKey, SCOPE_COMPLETE_PREFIX } from './checkpoints';
-import { BOOTSTRAP_ATTEMPTS_PREFIX, BOOTSTRAP_DONE_PREFIX } from './snapshot-bootstrap';
+import {
+  BOOTSTRAP_ATTEMPTS_PREFIX,
+  BOOTSTRAP_DONE_PREFIX,
+  BOOTSTRAP_PAGED_FALLBACK_PREFIX,
+} from './snapshot-bootstrap';
 import { BOARD_DATA_TABLES } from './table-config';
 
 /** One scope's measured footprint. `estimatedBytes` is an apportionment — see getScopeUsage. */
@@ -65,6 +69,7 @@ export function scopeSyncMetaKeys(scopeKey: string): string[] {
     `${SCOPE_COMPLETE_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_ATTEMPTS_PREFIX}${scopeKey}`,
     `${BOOTSTRAP_DONE_PREFIX}${scopeKey}`,
+    `${BOOTSTRAP_PAGED_FALLBACK_PREFIX}${scopeKey}`,
   ];
 }
 
