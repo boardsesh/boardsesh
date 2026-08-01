@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { sql, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { applyRepairManifest, parseRepairArgs, runRepair, verifyAppliedRepair } from './repair-board-climb-holds.js';
+import {
+  applyRepairManifest,
+  getRepairOperatorHint,
+  parseRepairArgs,
+  runRepair,
+  verifyAppliedRepair,
+} from './repair-board-climb-holds.js';
 import {
   buildRepairManifest,
   digestRepairManifest,
@@ -72,6 +78,20 @@ void test('apply requires digest, exact count guards, and a maximum affected cou
       reportLimit: 50,
     },
   );
+});
+
+void test('lock timeouts include actionable operator guidance without relabeling other failures', () => {
+  const lockTimeout = Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' });
+  assert.equal(
+    getRepairOperatorHint(lockTimeout),
+    'could not acquire repair locks within 5 seconds; retry after write traffic drops',
+  );
+  assert.equal(
+    getRepairOperatorHint(new Error('wrapped query failure', { cause: lockTimeout })),
+    'could not acquire repair locks within 5 seconds; retry after write traffic drops',
+  );
+  assert.equal(getRepairOperatorHint(Object.assign(new Error('statement timeout'), { code: '57014' })), null);
+  assert.equal(getRepairOperatorHint('not a PostgreSQL error'), null);
 });
 
 void test('locked malformed/frame-count drift throws before mutation and rolls back', async () => {
