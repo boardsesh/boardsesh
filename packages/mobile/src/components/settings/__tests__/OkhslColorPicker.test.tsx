@@ -192,7 +192,7 @@ const EXPECTED_INITIAL_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS.redu
   (total, stopCount) => total + stopCount,
   0,
 );
-const LIGHTNESS_DEPENDENT_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS[1] + EXPECTED_GRADIENT_STOP_COUNTS[2];
+const NON_LIGHTNESS_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS[1] + EXPECTED_GRADIENT_STOP_COUNTS[2];
 
 function responderEvent(pageX: number): ResponderEvent {
   return { nativeEvent: { pageX } };
@@ -293,7 +293,7 @@ describe('OkhslColorPicker gradient updates', () => {
       vi.advanceTimersByTime(2);
     });
     expect(okhslHarness.conversionCount).toBe(
-      EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21 + LIGHTNESS_DEPENDENT_GRADIENT_CONVERSIONS,
+      EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21 + NON_LIGHTNESS_GRADIENT_CONVERSIONS,
     );
     expect(responderHarness.sliderRenderCounts[SATURATION_LABEL]).toBe(2);
     expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(2);
@@ -366,6 +366,23 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(okhslHarness.conversionCount).toBeGreaterThan(conversionsAfterTerminate);
     expect(onChange).toHaveBeenCalled();
+  });
+
+  it('publishes the exact hue on a normal grant, move, and release', () => {
+    const onChange = vi.fn();
+    const { container } = render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
+
+    act(() => {
+      grant(HUE_LABEL, 30);
+      move(HUE_LABEL, 150);
+      release(HUE_LABEL, 225);
+    });
+
+    expect(slider(container, HUE_LABEL).dataset.accessibilityValue).toBe('270°');
+    const hexInput = container.querySelector<HTMLInputElement>(`[aria-label="${HEX_LABEL}"]`);
+    expect(hexInput?.value).toBe(onChange.mock.lastCall?.[0]);
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('cancels a pending gradient update when the picker unmounts', () => {

@@ -45,6 +45,7 @@ type ChannelSliderProps = {
   ratio: number;
   stops: { offset: number; color: string }[];
   onChangeRatio: (ratio: number) => void;
+  /** Mutable epoch shared by all three sliders to invalidate stale gestures. */
   gestureEpochRef: { current: number };
   onDragStart: () => number;
   onDragEnd: (gestureEpoch: number) => void;
@@ -179,6 +180,8 @@ const ChannelSlider = memo(function ChannelSlider({
       applyCoordinate(latestCoordinate, layout);
     });
   }, [applyCoordinate, finishGesture]);
+  // Keep the latest callback available to its own deferred measurement
+  // completions without rebuilding the gesture responder mid-drag.
   measurePendingCoordinateRef.current = measurePendingCoordinate;
 
   const requestCoordinate = useCallback(
@@ -253,6 +256,12 @@ const ChannelSlider = memo(function ChannelSlider({
     onChangeRatioRef.current(Math.max(0, Math.min(1, ratioRef.current + delta)));
   }, []);
 
+  const handleTrackLayout = useCallback(() => {
+    layoutGenerationRef.current += 1;
+    trackLayoutRef.current = null;
+    measurePendingCoordinateRef.current();
+  }, []);
+
   return (
     <View style={styles.sliderBlock}>
       <View style={styles.sliderLabelRow}>
@@ -273,15 +282,7 @@ const ChannelSlider = memo(function ChannelSlider({
         style={styles.sliderTouchArea}
         {...panResponder.panHandlers}
       >
-        <View
-          ref={trackRef}
-          onLayout={() => {
-            layoutGenerationRef.current += 1;
-            trackLayoutRef.current = null;
-            measurePendingCoordinateRef.current();
-          }}
-          style={styles.trackContainer}
-        >
+        <View ref={trackRef} onLayout={handleTrackLayout} style={styles.trackContainer}>
           <Svg width="100%" height={TRACK_HEIGHT} style={styles.trackSvg}>
             <Defs>
               <LinearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
