@@ -194,6 +194,17 @@ private final class BoardBleDisplayWriteOutcome: @unchecked Sendable {
 final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let shared = BoardBleManager()
 
+    private final class ManagerCancellationBarrier {
+        var watchdog: BleOneShotTimer?
+        var hasExpired = false
+    }
+
+    private struct DeferredConnectRequest {
+        let deviceId: String
+        let peripheralId: UUID
+        let completion: (Result<Void, Error>) -> Void
+    }
+
     private struct WriteRequest {
         let chunks: [Data]
         // Static preferred write type and chunk size are snapshotted at enqueue
@@ -258,7 +269,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         options: [CBCentralManagerOptionRestoreIdentifierKey: "com.boardsesh.app.board-ble"]
     )
 
-    private var discoveredPeripherals: [String: CBPeripheral] = [:]
+    private var discoveredPeripherals: [String: WritableBlePeripheral] = [:]
     private var discoveredNames: [String: String] = [:]
     // What was last emitted to JS for each device in the CURRENT scan
     // (name + advertised UUIDs). With allow-duplicates on and (on newer JS)
@@ -269,7 +280,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var connectedPeripheral: WritableBlePeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var pendingConnectCompletion: ((Result<Void, Error>) -> Void)?
-    private var connectTimeoutWorkItem: DispatchWorkItem?
+    private var connectTimeoutTimer: BleOneShotTimer?
     private var scanRequested = false
     private var scanServices: [CBUUID] = []
     // Set while the Live Activity lightbulb's reconnect-by-last-known-board is
@@ -278,6 +289,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private var reconnectScanCompletion: ((Result<Void, Error>) -> Void)?
     private var reconnectScanTimeoutWorkItem: DispatchWorkItem?
     private var intentionalDisconnectGenerations: [UUID: UInt64] = [:]
+    // CoreBluetooth's terminal callback for a manager-initiated cancellation can
+    // arrive after `cancelPeripheralConnection` returns. Because the callback has
+    // no connection-generation token, never start a new connection to the same
+    // UUID until didDisconnect/didFailToConnect consumes this barrier. Different
+    // UUIDs remain independent. One global deferred request is enough because
+    // connect is last-request-wins throughout the manager.
+    private var managerCancellationBarriers: [UUID: ManagerCancellationBarrier] = [:]
+    private var deferredConnectRequest: DeferredConnectRequest?
     private var peripheralGenerations: [UUID: UInt64] = [:]
     private var connectionGeneration: UInt64 = 0
     // Peripherals whose targeted service probe (discoverServices([uart,
@@ -396,6 +415,12 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// `CBCentralManager` is instantiated. nil in production/dev; set only through
     /// `TestHooks.setCancelPeripheralConnectionOverride` (same-file extension).
     private var cancelPeripheralConnectionOverrideForTesting: ((WritableBlePeripheral) -> Void)?
+    /// Test-only interception of `CBCentralManager.connect`, paired with the
+    /// cancellation seam above so native tests can drive the complete callback
+    /// state machine without instantiating CoreBluetooth.
+    private var connectPeripheralOverrideForTesting: ((WritableBlePeripheral) -> Void)?
+    /// Test-only central state. nil keeps production/dev on the real manager.
+    private var centralStateOverrideForTesting: CBManagerState?
     #endif
 
     private var onScanResult: ((BoardBleScanResult) -> Void)?
@@ -639,7 +664,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private var isAvailableOnBleQueue: Bool {
-        switch centralManager.state {
+        switch centralStateOnBleQueue {
         case .poweredOn, .unknown, .resetting:
             return true
         case .poweredOff, .unsupported, .unauthorized:
@@ -647,6 +672,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         @unknown default:
             return false
         }
+    }
+
+    private var centralStateOnBleQueue: CBManagerState {
+        #if DEBUG || BOARDSESH_TESTS
+        if let centralStateOverrideForTesting {
+            return centralStateOverrideForTesting
+        }
+        #endif
+        return centralManager.state
     }
 
     private func startScanOnBleQueue(serviceUuids: [String], completion: @escaping (Result<Void, Error>) -> Void) {
@@ -659,7 +693,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         scanRequested = true
         emittedScanResults = [:]
 
-        guard centralManager.state == .poweredOn else {
+        guard centralStateOnBleQueue == .poweredOn else {
             if isAvailableOnBleQueue {
                 completion(.success(()))
             } else {
@@ -695,10 +729,40 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // connect interleaves instead of letting it linger until its timeout.
         failReconnectScan(BoardBleError.notConnected)
 
-        guard centralManager.state == .poweredOn else {
+        guard centralStateOnBleQueue == .poweredOn else {
             completion(.failure(BoardBleError.bluetoothUnavailable))
             return
         }
+
+        let requestedPeripheralId = UUID(uuidString: deviceId)
+        if let recoveringPeripheralId = writeStallRecoveringPeripheralId,
+           requestedPeripheralId != recoveringPeripheralId {
+            writeStallRecoveringPeripheralId = nil
+            writeStallRecoveries = 0
+            writeStallRecoveryWatchdog?.cancel()
+            writeStallRecoveryWatchdog = nil
+        }
+
+        // A manager cancellation for this UUID is not settled until
+        // didDisconnect/didFailToConnect arrives. Starting another same-UUID
+        // generation sooner is unsafe because CoreBluetooth does not identify
+        // which generation owns the late callback. Retain only the newest
+        // request; an unrelated UUID is free to connect immediately.
+        if let peripheralId = requestedPeripheralId,
+           let cancellationBarrier = managerCancellationBarriers[peripheralId] {
+            deferConnectUntilCancellationSettles(
+                deviceId: deviceId,
+                peripheralId: peripheralId,
+                barrier: cancellationBarrier,
+                completion: completion
+            )
+            return
+        }
+
+        // A new request to an unblocked UUID wins over a request parked behind a
+        // different UUID's barrier. The old barrier itself remains until its
+        // terminal callback arrives.
+        failDeferredConnect(BoardBleError.superseded)
 
         if connectedPeripheral?.identifier.uuidString == deviceId, writeCharacteristic != nil {
             completion(.success(()))
@@ -729,11 +793,11 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // Settle any still-pending connect before starting this one. Silently
         // overwriting pendingConnectCompletion would orphan the prior attempt's
         // JS promise (it would never resolve), and its still-scheduled timeout
-        // work item could later misfire against THIS attempt: for a different
+        // timer could later misfire against THIS attempt: for a different
         // target device the old peripheral's generation entry survives the
         // bump below, so the stale timeout's guards both pass and it would
         // call completePendingConnect against the new completion.
-        // completePendingConnect also cancels that stale timeout work item.
+        // completePendingConnect also cancels that stale timeout timer.
         completePendingConnect(.failure(BoardBleError.superseded))
         connectionGeneration += 1
         let generation = connectionGeneration
@@ -742,9 +806,9 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         connectedPeripheral = peripheral
         writeCharacteristic = nil
         peripheralGenerations[peripheral.identifier] = generation
-        peripheral.delegate = self
+        preparePeripheralForConnection(peripheral)
 
-        let timeoutWorkItem = DispatchWorkItem { [weak self] in
+        connectTimeoutTimer = timerScheduler.scheduleOneShot(after: connectTimeout, label: "connectTimeout") { [weak self] in
             guard let self else { return }
             guard self.pendingConnectCompletion != nil else { return }
             guard self.peripheralGenerations[peripheral.identifier] == generation else { return }
@@ -753,15 +817,34 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 self.connectedPeripheral = nil
                 self.writeCharacteristic = nil
             }
-            self.centralManager.cancelPeripheralConnection(peripheral)
+            self.cancelPeripheralConnection(peripheral)
             self.completePendingConnect(.failure(BoardBleError.connectTimedOut))
         }
-        connectTimeoutWorkItem = timeoutWorkItem
-        bleQueue.asyncAfter(deadline: .now() + connectTimeout, execute: timeoutWorkItem)
+        connectPeripheral(peripheral)
+    }
 
-        centralManager.connect(peripheral, options: [
-            CBConnectPeripheralOptionNotifyOnDisconnectionKey: true,
-        ])
+    private func deferConnectUntilCancellationSettles(
+        deviceId: String,
+        peripheralId: UUID,
+        barrier: ManagerCancellationBarrier,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        failDeferredConnect(BoardBleError.superseded)
+        guard !barrier.hasExpired else {
+            completion(.failure(BoardBleError.connectTimedOut))
+            return
+        }
+        deferredConnectRequest = DeferredConnectRequest(
+            deviceId: deviceId,
+            peripheralId: peripheralId,
+            completion: completion
+        )
+    }
+
+    private func failDeferredConnect(_ error: Error) {
+        guard let deferredConnectRequest else { return }
+        self.deferredConnectRequest = nil
+        deferredConnectRequest.completion(.failure(error))
     }
 
     private func reconnectToLastKnownBoardOnBleQueue(completion: @escaping (Result<Void, Error>) -> Void) {
@@ -771,7 +854,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             displaySharedCurrentItemOnBleQueue()
             return
         }
-        guard centralManager.state == .poweredOn else {
+        guard centralStateOnBleQueue == .poweredOn else {
             completion(.failure(BoardBleError.bluetoothUnavailable))
             return
         }
@@ -835,7 +918,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         completion(.failure(error))
     }
 
-    private func persistLastConnectedPeripheral(_ peripheral: CBPeripheral) {
+    private func persistLastConnectedPeripheral(_ peripheral: WritableBlePeripheral) {
         SharedConstants.sharedDefaults?.set(
             peripheral.identifier.uuidString,
             forKey: SharedConstants.bleLastPeripheralUuidKey
@@ -860,6 +943,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         stopScanOnBleQueue()
         failQueuedWrites(BoardBleError.notConnected)
         completePendingConnect(.failure(BoardBleError.notConnected))
+        failDeferredConnect(BoardBleError.notConnected)
 
         guard let peripheral = connectedPeripheral else {
             writeCharacteristic = nil
@@ -1079,7 +1163,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // MARK: - CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state == .poweredOn {
+        handleCentralStateUpdateOnBleQueue(state: central.state) {
             // Defensive: during state restoration after an intent-driven
             // background launch, `didDiscoverCharacteristicsFor` (which
             // normally calls `readyWaiters.signalAll()`) can land before
@@ -1097,6 +1181,15 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                     CBCentralManagerScanOptionAllowDuplicatesKey: true,
                 ])
             }
+        }
+    }
+
+    /// Shared state-update body for the real delegate and the native XCTest
+    /// seam. The powered-on closure keeps the concrete central manager out of
+    /// tests while the unavailable transition exercises the production cleanup.
+    private func handleCentralStateUpdateOnBleQueue(state: CBManagerState, onPoweredOn: () -> Void = {}) {
+        if state == .poweredOn {
+            onPoweredOn()
         } else {
             // Bluetooth went away mid-recovery: the deferred reconnect's
             // didDisconnect may never arrive, so close the write-stall recovery
@@ -1106,21 +1199,36 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // with a depleted budget (#3181).
             writeStallRecoveringPeripheralId = nil
             writeStallRecoveries = 0
+            writeStallRecoveryWatchdog?.cancel()
+            writeStallRecoveryWatchdog = nil
+
+            // Below .poweredOn CoreBluetooth may discard manager-initiated
+            // cancellations without either terminal callback. This is the one
+            // boundary where dropping all UUID barriers is safe: every old link
+            // generation is invalid, and any waiter must fail explicitly rather
+            // than remain parked across the next powered-on session.
+            managerCancellationBarriers.values.forEach { $0.watchdog?.cancel() }
+            managerCancellationBarriers.removeAll()
+            intentionalDisconnectGenerations.removeAll()
+            failDeferredConnect(BoardBleError.bluetoothUnavailable)
+            failReconnectScan(BoardBleError.bluetoothUnavailable)
+            completePendingConnect(.failure(BoardBleError.bluetoothUnavailable))
 
             // Below .poweredOn iOS invalidates every peripheral WITHOUT
             // delivering didDisconnectPeripheral, so an active link vanishes
             // silently — JS would keep showing "connected" until the next write
             // failed. Surface it as an explicit disconnect with a context marker
             // so analytics can tell bluetooth-off apart from a link loss.
-            if let peripheral = connectedPeripheral {
+            let disconnectedPeripheral = connectedPeripheral
+            connectedPeripheral = nil
+            writeCharacteristic = nil
+            peripheralGenerations.removeAll()
+            failQueuedWrites(BoardBleError.bluetoothUnavailable)
+            if let peripheral = disconnectedPeripheral {
                 let deviceId = peripheral.identifier.uuidString
-                peripheralGenerations.removeValue(forKey: peripheral.identifier)
-                connectedPeripheral = nil
-                writeCharacteristic = nil
-                failQueuedWrites(BoardBleError.bluetoothUnavailable)
                 onDisconnect?(deviceId, [
                     "context": "bluetooth_unavailable",
-                    "errorDescription": "central state \(central.state.rawValue)",
+                    "errorDescription": "central state \(state.rawValue)",
                 ])
             }
         }
@@ -1139,7 +1247,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // are last-connection-wins, so a phantom link blocks the wall.
         for extra in peripherals.dropFirst() {
             logger.info("Cancelling extra restored BLE peripheral \(extra.identifier.uuidString, privacy: .public)")
-            central.cancelPeripheralConnection(extra)
+            cancelPeripheralConnection(extra)
         }
 
         let deviceId = peripheral.identifier.uuidString
@@ -1239,7 +1347,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         guard peripheralGenerations[peripheral.identifier] == connectionGeneration else {
-            central.cancelPeripheralConnection(peripheral)
+            cancelPeripheralConnection(peripheral)
             return
         }
         peripheral.delegate = self
@@ -1248,6 +1356,17 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        handleDidFailToConnectOnBleQueue(peripheral: peripheral, error: error)
+    }
+
+    /// Shared delegate body for real CoreBluetooth callbacks and the native
+    /// XCTest seam. A cancellation terminal callback is consumed before the
+    /// normal generation guard because the old generation was intentionally
+    /// removed before cancelling.
+    private func handleDidFailToConnectOnBleQueue(peripheral: WritableBlePeripheral, error: Error?) {
+        if consumeManagerCancellationBarrierOnBleQueue(peripheralId: peripheral.identifier) {
+            return
+        }
         guard peripheralGenerations[peripheral.identifier] == connectionGeneration else { return }
         // Every connect attempt (user-initiated picker connect, or the Live Activity
         // lightbulb's reconnectToLastKnownBoard) sets pendingConnectCompletion, so a
@@ -1272,41 +1391,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func handleDidDisconnectOnBleQueue(peripheral: WritableBlePeripheral, error: Error?) {
         let deviceId = peripheral.identifier.uuidString
         let wasCurrentPeripheral = connectedPeripheral?.identifier == peripheral.identifier
+
+        if consumeManagerCancellationBarrierOnBleQueue(peripheralId: peripheral.identifier) {
+            return
+        }
+
         let intentionalDisconnectGeneration = intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
 
         if let intentionalDisconnectGeneration {
             if peripheralGenerations[peripheral.identifier] == intentionalDisconnectGeneration {
                 peripheralGenerations.removeValue(forKey: peripheral.identifier)
-            }
-            // Write-stall recovery (#3181): the congested link we deliberately
-            // dropped is now fully torn down, so reconnect to the same board.
-            // Gated on the peripheral id so an unrelated intentional disconnect
-            // (user disconnect, a different board's connect supersede) can't be
-            // mistaken for a stall recovery. Deferring to here (rather than
-            // reconnecting inside handleWriteStall) serialises
-            // teardown-then-reconnect for the same peripheral id and avoids a late
-            // didDisconnect tearing the new link back down. didDisconnect already
-            // consumed the intentional flag above, so this fires at most once per
-            // cancel. On success, didDiscoverCharacteristicsFor clears the window
-            // and re-lights the wall (the counter resets when that write drains);
-            // on failure we surface the disconnect to JS and reset the budget.
-            if writeStallRecoveringPeripheralId == peripheral.identifier {
-                // The reconnect is starting; its own connect timeout now owns the
-                // deadline, so retire the cancel→didDisconnect safety net.
-                writeStallRecoveryWatchdog?.cancel()
-                writeStallRecoveryWatchdog = nil
-                reconnectToLastKnownBoardOnBleQueue { [weak self] result in
-                    guard let self else { return }
-                    if case .failure(let error) = result {
-                        self.logger.error("BLE write-stall reconnect failed: \(error.localizedDescription, privacy: .public)")
-                        self.writeStallRecoveringPeripheralId = nil
-                        self.writeStallRecoveries = 0
-                        self.onDisconnect?(deviceId, [
-                            "context": "write_stall_recovery_failed",
-                            "errorDescription": error.localizedDescription,
-                        ])
-                    }
-                }
             }
             return
         }
@@ -1326,6 +1420,73 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         // ping-pong that flickers the LEDs. Reconnection is user-initiated only:
         // the in-app device picker, or the Live Activity lightbulb
         // (reconnectToLastKnownBoard).
+    }
+
+    /// Consume exactly one UUID barrier and decide the sole follow-up. A queued
+    /// user connect owns the reconnect when present; otherwise write-stall
+    /// recovery resumes automatically. Both paths share the same normal connect
+    /// timeout and connection-ready success point.
+    @discardableResult
+    private func consumeManagerCancellationBarrierOnBleQueue(peripheralId: UUID) -> Bool {
+        guard let cancellationBarrier = managerCancellationBarriers.removeValue(forKey: peripheralId) else {
+            return false
+        }
+
+        cancellationBarrier.watchdog?.cancel()
+        intentionalDisconnectGenerations.removeValue(forKey: peripheralId)
+        peripheralGenerations.removeValue(forKey: peripheralId)
+
+        let deferredRequest: DeferredConnectRequest?
+        if deferredConnectRequest?.peripheralId == peripheralId {
+            deferredRequest = deferredConnectRequest
+            deferredConnectRequest = nil
+        } else {
+            deferredRequest = nil
+        }
+
+        if writeStallRecoveringPeripheralId == peripheralId {
+            // The normal connection timeout owns the deadline from here.
+            writeStallRecoveryWatchdog?.cancel()
+            writeStallRecoveryWatchdog = nil
+        }
+
+        if let deferredRequest {
+            let isJoiningWriteStallRecovery = writeStallRecoveringPeripheralId == peripheralId
+            connectOnBleQueue(deviceId: deferredRequest.deviceId) { [weak self] result in
+                deferredRequest.completion(result)
+                if isJoiningWriteStallRecovery {
+                    self?.finishWriteStallReconnectOnBleQueue(peripheralId: peripheralId, result: result)
+                }
+            }
+        } else if writeStallRecoveringPeripheralId == peripheralId {
+            beginWriteStallReconnectOnBleQueue(peripheralId: peripheralId)
+        }
+        return true
+    }
+
+    private func beginWriteStallReconnectOnBleQueue(peripheralId: UUID) {
+        let completion: (Result<Void, Error>) -> Void = { [weak self] result in
+            self?.finishWriteStallReconnectOnBleQueue(peripheralId: peripheralId, result: result)
+        }
+        let deviceId = peripheralId.uuidString
+        if discoveredPeripherals[deviceId] != nil {
+            connectOnBleQueue(deviceId: deviceId, completion: completion)
+        } else {
+            reconnectToLastKnownBoardOnBleQueue(completion: completion)
+        }
+    }
+
+    private func finishWriteStallReconnectOnBleQueue(peripheralId: UUID, result: Result<Void, Error>) {
+        guard case .failure(let error) = result,
+              writeStallRecoveringPeripheralId == peripheralId
+        else { return }
+        logger.error("BLE write-stall reconnect failed: \(error.localizedDescription, privacy: .public)")
+        writeStallRecoveringPeripheralId = nil
+        writeStallRecoveries = 0
+        onDisconnect?(peripheralId.uuidString, [
+            "context": "write_stall_recovery_failed",
+            "errorDescription": error.localizedDescription,
+        ])
     }
 
     // MARK: - CBPeripheralDelegate
@@ -1448,7 +1609,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             connectedPeripheral = nil
             writeCharacteristic = nil
         }
-        centralManager.cancelPeripheralConnection(peripheral)
+        cancelPeripheralConnection(peripheral)
         completePendingConnect(.failure(error))
     }
 
@@ -1473,6 +1634,16 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
 
+        finishConnectionSetupOnBleQueue(peripheral: peripheral, characteristic: characteristic)
+    }
+
+    /// Single write-ready success point shared by CoreBluetooth discovery and
+    /// deterministic native tests. All completion, relight, persistence, and
+    /// event behavior remains production behavior exercised through this helper.
+    private func finishConnectionSetupOnBleQueue(
+        peripheral: WritableBlePeripheral,
+        characteristic: CBCharacteristic
+    ) {
         connectedPeripheral = peripheral
         writeCharacteristic = characteristic
         // Any successful (re)connect closes a write-stall recovery window (#3181)
@@ -1653,7 +1824,7 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private var isReadyForWrite: Bool {
-        centralManager.state == .poweredOn
+        centralStateOnBleQueue == .poweredOn
             && connectedPeripheral != nil
             && writeCharacteristic != nil
     }
@@ -1732,8 +1903,8 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     private func completePendingConnect(_ result: Result<Void, Error>) {
-        connectTimeoutWorkItem?.cancel()
-        connectTimeoutWorkItem = nil
+        connectTimeoutTimer?.cancel()
+        connectTimeoutTimer = nil
         let completion = pendingConnectCompletion
         pendingConnectCompletion = nil
         completion?(result)
@@ -2317,6 +2488,13 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     /// the write flow-control suite observe intentional cancels without a real
     /// CoreBluetooth peripheral.
     private func cancelPeripheralConnection(_ peripheral: WritableBlePeripheral) {
+        // A barrier means this UUID already has a manager cancel awaiting its
+        // sole terminal callback. Reissuing cancel in a didConnect race could
+        // manufacture a second callback that no generation token can classify,
+        // so the first cancellation owns teardown until the barrier settles.
+        guard registerManagerCancellationBarrierOnBleQueue(peripheralId: peripheral.identifier) else {
+            return
+        }
         #if DEBUG || BOARDSESH_TESTS
         if let overrideForTesting = cancelPeripheralConnectionOverrideForTesting {
             overrideForTesting(peripheral)
@@ -2328,6 +2506,56 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             return
         }
         centralManager.cancelPeripheralConnection(concretePeripheral)
+    }
+
+    private func registerManagerCancellationBarrierOnBleQueue(peripheralId: UUID) -> Bool {
+        guard managerCancellationBarriers[peripheralId] == nil else { return false }
+        let cancellationBarrier = ManagerCancellationBarrier()
+        managerCancellationBarriers[peripheralId] = cancellationBarrier
+        cancellationBarrier.watchdog = timerScheduler.scheduleOneShot(
+            after: connectTimeout,
+            label: "managerCancellationBarrierWatchdog"
+        ) { [weak self, weak cancellationBarrier] in
+            guard let self, let cancellationBarrier,
+                  self.managerCancellationBarriers[peripheralId] === cancellationBarrier
+            else { return }
+            // Timeout protects promises, not ordering. A disconnected peripheral
+            // state is not evidence that CoreBluetooth delivered the terminal
+            // callback, so retain the barrier and never force a connect here.
+            cancellationBarrier.hasExpired = true
+            guard self.deferredConnectRequest?.peripheralId == peripheralId else { return }
+            self.failDeferredConnect(BoardBleError.connectTimedOut)
+        }
+        return true
+    }
+
+    private func preparePeripheralForConnection(_ peripheral: WritableBlePeripheral) {
+        #if DEBUG || BOARDSESH_TESTS
+        if !(peripheral is CBPeripheral) {
+            return
+        }
+        #endif
+        guard let concretePeripheral = peripheral as? CBPeripheral else {
+            assertionFailure("WritableBlePeripheral is always CBPeripheral outside tests")
+            return
+        }
+        concretePeripheral.delegate = self
+    }
+
+    private func connectPeripheral(_ peripheral: WritableBlePeripheral) {
+        #if DEBUG || BOARDSESH_TESTS
+        if let overrideForTesting = connectPeripheralOverrideForTesting {
+            overrideForTesting(peripheral)
+            return
+        }
+        #endif
+        guard let concretePeripheral = peripheral as? CBPeripheral else {
+            assertionFailure("WritableBlePeripheral is always CBPeripheral outside tests")
+            return
+        }
+        centralManager.connect(concretePeripheral, options: [
+            CBConnectPeripheralOptionNotifyOnDisconnectionKey: true,
+        ])
     }
 
     private func readConfiguration() -> BoardBleConfiguration? {
@@ -2413,6 +2641,9 @@ extension BoardBleManager {
         func setConnection(peripheral: WritableBlePeripheral?, characteristic: CBCharacteristic?) {
             manager.connectedPeripheral = peripheral
             manager.writeCharacteristic = characteristic
+            if let peripheral {
+                manager.discoveredPeripherals[peripheral.identifier.uuidString] = peripheral
+            }
             // Mirror the production reset in didDiscoverCharacteristicsFor so a
             // reconnect in a test starts with the gate re-armed and the
             // with-response latch re-seeded from what the session has learned.
@@ -2444,6 +2675,21 @@ extension BoardBleManager {
             manager.cancelPeripheralConnectionOverrideForTesting = handler
         }
 
+        /// Intercept the concrete CoreBluetooth connect call.
+        func setConnectPeripheralOverride(_ handler: ((WritableBlePeripheral) -> Void)?) {
+            manager.connectPeripheralOverrideForTesting = handler
+        }
+
+        /// Set the central state without instantiating `CBCentralManager`.
+        func setCentralState(_ state: CBManagerState?) {
+            manager.centralStateOverrideForTesting = state
+        }
+
+        /// Make a fake peripheral discoverable by the production connect path.
+        func setDiscoveredPeripheral(_ peripheral: WritableBlePeripheral) {
+            manager.discoveredPeripherals[peripheral.identifier.uuidString] = peripheral
+        }
+
         /// Intercept the concrete CoreBluetooth scan teardown while preserving
         /// the production `scanRequested = false` transition in
         /// `stopScanOnBleQueue`.
@@ -2466,6 +2712,31 @@ extension BoardBleManager {
         func fireDidDisconnect(peripheral: WritableBlePeripheral, error: Error?) {
             manager.runOnBleQueueSync {
                 manager.handleDidDisconnectOnBleQueue(peripheral: peripheral, error: error)
+            }
+        }
+
+        /// Fire the exact `didFailToConnect` state transition.
+        func fireDidFailToConnect(peripheral: WritableBlePeripheral, error: Error?) {
+            manager.runOnBleQueueSync {
+                manager.handleDidFailToConnectOnBleQueue(peripheral: peripheral, error: error)
+            }
+        }
+
+        /// Fire the unavailable half of `centralManagerDidUpdateState`.
+        func fireCentralStateUpdate(_ state: CBManagerState) {
+            manager.runOnBleQueueSync {
+                manager.centralStateOverrideForTesting = state
+                manager.handleCentralStateUpdateOnBleQueue(state: state)
+            }
+        }
+
+        /// Fire the production write-ready success point after a test connect.
+        func fireConnectionReady(peripheral: WritableBlePeripheral, characteristic: CBCharacteristic) {
+            manager.runOnBleQueueSync {
+                manager.finishConnectionSetupOnBleQueue(
+                    peripheral: peripheral,
+                    characteristic: characteristic
+                )
             }
         }
 
@@ -2504,6 +2775,9 @@ extension BoardBleManager {
         var forceWriteWithResponse: Bool { manager.forceWriteWithResponse }
         var forceWriteWithResponseSource: BoardBleWriteTypeSource? { manager.forceWriteWithResponseSource }
         var writeWithResponsePeripheralIds: Set<UUID> { manager.writeWithResponsePeripheralIds }
+        var hasPendingConnect: Bool { manager.pendingConnectCompletion != nil }
+        var deferredConnectPeripheralId: UUID? { manager.deferredConnectRequest?.peripheralId }
+        var managerCancellationBarrierIds: Set<UUID> { Set(manager.managerCancellationBarriers.keys) }
 
         func intentionalDisconnectGeneration(for peripheralId: UUID) -> UInt64? {
             manager.intentionalDisconnectGenerations[peripheralId]

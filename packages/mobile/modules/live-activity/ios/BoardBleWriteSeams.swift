@@ -34,8 +34,10 @@ protocol BleRepeatingTimer: AnyObject {
 /// Factory for the write flow-control timers. Production hands back GCD-backed
 /// timers scheduled on the BLE queue; tests hand back fakes they fire inline.
 protocol BleTimerScheduling: AnyObject {
-    /// `label` names the call site ("writeResumeWatchdog" | "chunkDelay" |
-    /// "writeAckWatchdog" | "writeStallRecoveryWatchdog"); tests key on it.
+    /// `label` names the call site (including "connectTimeout",
+    /// "managerCancellationBarrierWatchdog", "writeResumeWatchdog",
+    /// "chunkDelay", "writeAckWatchdog", and
+    /// "writeStallRecoveryWatchdog"); tests key on it.
     func scheduleOneShot(after delay: TimeInterval, label: String, _ handler: @escaping () -> Void) -> BleOneShotTimer
     func makeRepeatingTimer() -> BleRepeatingTimer
 }

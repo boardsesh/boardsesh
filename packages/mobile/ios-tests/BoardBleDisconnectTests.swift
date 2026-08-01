@@ -9,12 +9,14 @@ final class BoardBleDisconnectTests: XCTestCase {
     private var scheduler: FakeBleTimerScheduler!
     private var manager: BoardBleManager!
     private var cancelledPeripheralIds: [UUID] = []
+    private var connectedPeripheralIds: [UUID] = []
     private var stopScanCallCount = 0
     private let uartWriteCharacteristicUuid = CBUUID(string: "6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
 
     override func setUp() {
         super.setUp()
         cancelledPeripheralIds = []
+        connectedPeripheralIds = []
         stopScanCallCount = 0
         scheduler = FakeBleTimerScheduler()
         manager = BoardBleManager(timerScheduler: scheduler, createCentralManagerEagerly: false)
@@ -26,6 +28,10 @@ final class BoardBleDisconnectTests: XCTestCase {
             manager.testHooks.setCancelPeripheralConnectionOverride { [weak self] peripheral in
                 self?.cancelledPeripheralIds.append(peripheral.identifier)
             }
+            manager.testHooks.setConnectPeripheralOverride { [weak self] peripheral in
+                self?.connectedPeripheralIds.append(peripheral.identifier)
+            }
+            manager.testHooks.setCentralState(.poweredOn)
         }
     }
 
@@ -33,6 +39,8 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.sync {
             manager.testHooks.setStopScanOverride(nil)
             manager.testHooks.setCancelPeripheralConnectionOverride(nil)
+            manager.testHooks.setConnectPeripheralOverride(nil)
+            manager.testHooks.setCentralState(nil)
         }
         manager = nil
         scheduler = nil
@@ -82,6 +90,16 @@ final class BoardBleDisconnectTests: XCTestCase {
         manager.testHooks.sync {
             manager.write(data: Data([0x01])) { error, _ in onSettle(error) }
             manager.write(data: Data([0x02])) { error, _ in onSettle(error) }
+        }
+    }
+
+    private func fireLatestOneShot(label: String) {
+        manager.testHooks.sync {
+            guard let timer = scheduler.lastOneShot(label: label) else {
+                XCTFail("expected a scheduled \(label) timer")
+                return
+            }
+            timer.fire()
         }
     }
 
@@ -244,5 +262,326 @@ final class BoardBleDisconnectTests: XCTestCase {
         XCTAssertEqual(disconnectEvents.count, 1)
         XCTAssertTrue(cancelledPeripheralIds.isEmpty)
         XCTAssertEqual(stopScanCallCount, 0)
+    }
+
+    func testImmediateSamePeripheralReconnectWaitsForCancellationCallback() {
+        let peripheral = FakeWritablePeripheral()
+        var disconnectEventCount = 0
+        var disconnectCompletionCalled = false
+        var connectResults: [Result<Void, Error>] = []
+        installConnection(peripheral: peripheral) { _, _ in disconnectEventCount += 1 }
+
+        manager.testHooks.sync {
+            manager.disconnect { disconnectCompletionCalled = true }
+            manager.connect(deviceId: peripheral.identifier.uuidString) { connectResults.append($0) }
+        }
+
+        XCTAssertTrue(disconnectCompletionCalled)
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId }, peripheral.identifier)
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([peripheral.identifier])
+        )
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId })
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertNotNil(scheduler.lastOneShot(label: "connectTimeout"))
+        XCTAssertEqual(disconnectEventCount, 0)
+        XCTAssertTrue(connectResults.isEmpty)
+
+        manager.testHooks.fireConnectionReady(
+            peripheral: peripheral,
+            characteristic: makeWriteCharacteristic()
+        )
+        XCTAssertEqual(connectResults.count, 1)
+        if case .failure(let error) = connectResults[0] {
+            XCTFail("expected reconnect success, got \(error)")
+        }
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(disconnectEventCount, 0)
+    }
+
+    func testCancelledConnectingPeripheralSettlesBarrierThroughDidFailToConnect() {
+        let peripheral = FakeWritablePeripheral()
+        var firstConnectError: Error?
+        var reconnectResults: [Result<Void, Error>] = []
+        manager.testHooks.sync {
+            manager.testHooks.setDiscoveredPeripheral(peripheral)
+            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { firstConnectError = error }
+            }
+            manager.disconnect()
+            manager.connect(deviceId: peripheral.identifier.uuidString) { reconnectResults.append($0) }
+        }
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(
+            firstConnectError?.localizedDescription,
+            BoardBleError.notConnected.localizedDescription
+        )
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId }, peripheral.identifier)
+
+        manager.testHooks.fireDidFailToConnect(peripheral: peripheral, error: BoardBleError.notConnected)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier, peripheral.identifier])
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertTrue(reconnectResults.isEmpty)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+    }
+
+    func testDifferentPeripheralConnectsImmediatelyWhileOldBarrierRemains() {
+        let oldPeripheral = FakeWritablePeripheral()
+        let newPeripheral = FakeWritablePeripheral()
+        var disconnectEventCount = 0
+        installConnection(peripheral: oldPeripheral) { _, _ in disconnectEventCount += 1 }
+
+        manager.testHooks.sync {
+            manager.disconnect()
+            manager.testHooks.setDiscoveredPeripheral(newPeripheral)
+            manager.connect(deviceId: newPeripheral.identifier.uuidString) { _ in }
+        }
+
+        XCTAssertEqual(connectedPeripheralIds, [newPeripheral.identifier])
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([oldPeripheral.identifier])
+        )
+
+        manager.testHooks.fireDidDisconnect(peripheral: oldPeripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [newPeripheral.identifier])
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+        XCTAssertEqual(disconnectEventCount, 0)
+    }
+
+    func testNewestSamePeripheralDeferredRequestSupersedesOlderWaiter() {
+        let peripheral = FakeWritablePeripheral()
+        var firstError: Error?
+        var secondResults: [Result<Void, Error>] = []
+        installConnection(peripheral: peripheral) { _, _ in }
+
+        manager.testHooks.sync {
+            manager.disconnect()
+            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { firstError = error }
+            }
+            manager.connect(deviceId: peripheral.identifier.uuidString) { secondResults.append($0) }
+        }
+
+        XCTAssertEqual(firstError?.localizedDescription, BoardBleError.superseded.localizedDescription)
+        XCTAssertTrue(secondResults.isEmpty)
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertTrue(secondResults.isEmpty)
+    }
+
+    func testExplicitDisconnectRejectsDeferredConnectWithoutConsumingBarrier() {
+        let peripheral = FakeWritablePeripheral()
+        var deferredError: Error?
+        installConnection(peripheral: peripheral) { _, _ in }
+
+        manager.testHooks.sync {
+            manager.disconnect()
+            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { deferredError = error }
+            }
+            manager.disconnect()
+        }
+
+        XCTAssertEqual(deferredError?.localizedDescription, BoardBleError.notConnected.localizedDescription)
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId })
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([peripheral.identifier])
+        )
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+    }
+
+    func testBarrierWatchdogRejectsWaiterWithoutForcingConnectAndRetainsBarrier() {
+        let peripheral = FakeWritablePeripheral()
+        var deferredError: Error?
+        var retryAfterExpiryError: Error?
+        installConnection(peripheral: peripheral) { _, _ in }
+
+        manager.testHooks.sync {
+            manager.disconnect()
+            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { deferredError = error }
+            }
+        }
+        fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
+
+        XCTAssertEqual(deferredError?.localizedDescription, BoardBleError.connectTimedOut.localizedDescription)
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([peripheral.identifier])
+        )
+
+        manager.testHooks.sync {
+            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { retryAfterExpiryError = error }
+            }
+        }
+        XCTAssertEqual(
+            retryAfterExpiryError?.localizedDescription,
+            BoardBleError.connectTimedOut.localizedDescription
+        )
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+    }
+
+    func testBluetoothUnavailableRejectsDeferredConnectAndClearsCancellationState() {
+        let peripheral = FakeWritablePeripheral()
+        var deferredError: Error?
+        installConnection(peripheral: peripheral) { _, _ in }
+
+        manager.testHooks.sync {
+            manager.disconnect()
+            manager.connect(deviceId: peripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { deferredError = error }
+            }
+        }
+        let barrierWatchdog = scheduler.lastOneShot(label: "managerCancellationBarrierWatchdog")
+
+        manager.testHooks.fireCentralStateUpdate(.poweredOff)
+
+        XCTAssertEqual(
+            deferredError?.localizedDescription,
+            BoardBleError.bluetoothUnavailable.localizedDescription
+        )
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId })
+        XCTAssertNil(
+            manager.testHooks.sync {
+                manager.testHooks.intentionalDisconnectGeneration(for: peripheral.identifier)
+            }
+        )
+        XCTAssertTrue(barrierWatchdog?.cancelled ?? false)
+    }
+
+    func testWriteStallSamePeripheralWaiterJoinsExactlyOneRecoveryReconnect() {
+        let peripheral = FakeWritablePeripheral()
+        var writeError: Error?
+        var reconnectResults: [Result<Void, Error>] = []
+        var disconnectEventCount = 0
+        installConnection(peripheral: peripheral) { _, _ in disconnectEventCount += 1 }
+
+        manager.testHooks.sync {
+            manager.write(data: Data([0x01])) { error, _ in writeError = error }
+        }
+        fireLatestOneShot(label: "writeAckWatchdog")
+        manager.testHooks.sync {
+            manager.connect(deviceId: peripheral.identifier.uuidString) { reconnectResults.append($0) }
+        }
+
+        XCTAssertEqual(writeError?.localizedDescription, BoardBleError.writeTimedOut.localizedDescription)
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeStallRecoveries }, 1)
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId }, peripheral.identifier)
+        XCTAssertTrue(connectedPeripheralIds.isEmpty)
+
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertTrue(
+            scheduler.lastOneShot(label: "writeStallRecoveryWatchdog")?.cancelled ?? false
+        )
+        XCTAssertEqual(disconnectEventCount, 0)
+
+        manager.testHooks.fireConnectionReady(
+            peripheral: peripheral,
+            characteristic: makeWriteCharacteristic()
+        )
+        XCTAssertEqual(reconnectResults.count, 1)
+        if case .failure(let error) = reconnectResults[0] {
+            XCTFail("expected recovery success, got \(error)")
+        }
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.writeStallRecoveringPeripheralId })
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(disconnectEventCount, 0)
+    }
+
+    func testWriteStallAutomaticReconnectFailurePreservesFailureEvent() {
+        let peripheral = FakeWritablePeripheral()
+        let reconnectError = NSError(
+            domain: "BoardBleDisconnectTests",
+            code: 91,
+            userInfo: [NSLocalizedDescriptionKey: "Recovery connect failed"]
+        )
+        var disconnectBodies: [[String: Any]?] = []
+        installConnection(peripheral: peripheral) { _, body in disconnectBodies.append(body) }
+
+        manager.testHooks.sync {
+            manager.write(data: Data([0x01])) { _, _ in }
+        }
+        fireLatestOneShot(label: "writeAckWatchdog")
+        manager.testHooks.fireDidDisconnect(peripheral: peripheral, error: nil)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeStallRecoveries }, 1)
+        XCTAssertTrue(disconnectBodies.isEmpty)
+
+        manager.testHooks.fireDidFailToConnect(peripheral: peripheral, error: reconnectError)
+
+        XCTAssertEqual(connectedPeripheralIds, [peripheral.identifier])
+        XCTAssertFalse(manager.testHooks.sync { manager.testHooks.hasPendingConnect })
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.writeStallRecoveringPeripheralId })
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeStallRecoveries }, 0)
+        XCTAssertEqual(disconnectBodies.count, 1)
+        XCTAssertEqual(disconnectBodies[0]?["context"] as? String, "write_stall_recovery_failed")
+        XCTAssertEqual(
+            disconnectBodies[0]?["errorDescription"] as? String,
+            reconnectError.localizedDescription
+        )
+    }
+
+    func testDifferentPeripheralSupersedesDeferredWriteStallReconnect() {
+        let recoveringPeripheral = FakeWritablePeripheral()
+        let winningPeripheral = FakeWritablePeripheral()
+        var recoveringWaiterError: Error?
+        installConnection(peripheral: recoveringPeripheral) { _, _ in }
+
+        manager.testHooks.sync {
+            manager.write(data: Data([0x01])) { _, _ in }
+        }
+        fireLatestOneShot(label: "writeAckWatchdog")
+        manager.testHooks.sync {
+            manager.connect(deviceId: recoveringPeripheral.identifier.uuidString) { result in
+                if case .failure(let error) = result { recoveringWaiterError = error }
+            }
+            manager.testHooks.setDiscoveredPeripheral(winningPeripheral)
+            manager.connect(deviceId: winningPeripheral.identifier.uuidString) { _ in }
+        }
+
+        XCTAssertEqual(
+            recoveringWaiterError?.localizedDescription,
+            BoardBleError.superseded.localizedDescription
+        )
+        XCTAssertEqual(connectedPeripheralIds, [winningPeripheral.identifier])
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.writeStallRecoveringPeripheralId })
+        XCTAssertEqual(manager.testHooks.sync { manager.testHooks.writeStallRecoveries }, 0)
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([recoveringPeripheral.identifier])
+        )
+
+        manager.testHooks.fireDidDisconnect(peripheral: recoveringPeripheral, error: nil)
+        XCTAssertEqual(connectedPeripheralIds, [winningPeripheral.identifier])
     }
 }
