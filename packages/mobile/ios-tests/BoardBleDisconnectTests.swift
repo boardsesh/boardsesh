@@ -474,6 +474,42 @@ final class BoardBleDisconnectTests: XCTestCase {
         XCTAssertTrue(barrierWatchdog?.cancelled ?? false)
     }
 
+    func testBluetoothUnavailableClearsExpiredBarrierWithoutResettlingWaiter() {
+        let peripheral = FakeWritablePeripheral()
+        var deferredResults: [Result<Void, Error>] = []
+        installConnection(peripheral: peripheral) { _, _ in }
+
+        manager.testHooks.sync {
+            manager.disconnect()
+            manager.connect(deviceId: peripheral.identifier.uuidString) { deferredResults.append($0) }
+        }
+        let barrierWatchdog = scheduler.lastOneShot(label: "managerCancellationBarrierWatchdog")
+        fireLatestOneShot(label: "managerCancellationBarrierWatchdog")
+
+        XCTAssertEqual(deferredResults.count, 1)
+        if case .failure(let error) = deferredResults[0] {
+            XCTAssertEqual(error.localizedDescription, BoardBleError.connectTimedOut.localizedDescription)
+        } else {
+            XCTFail("expected the expired barrier to time out its waiter")
+        }
+        XCTAssertEqual(
+            manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds },
+            Set([peripheral.identifier])
+        )
+
+        manager.testHooks.fireCentralStateUpdate(.poweredOff)
+
+        XCTAssertEqual(deferredResults.count, 1)
+        XCTAssertTrue(manager.testHooks.sync { manager.testHooks.managerCancellationBarrierIds.isEmpty })
+        XCTAssertNil(manager.testHooks.sync { manager.testHooks.deferredConnectPeripheralId })
+        XCTAssertNil(
+            manager.testHooks.sync {
+                manager.testHooks.intentionalDisconnectGeneration(for: peripheral.identifier)
+            }
+        )
+        XCTAssertTrue(barrierWatchdog?.cancelled ?? false)
+    }
+
     func testWriteStallSamePeripheralWaiterJoinsExactlyOneRecoveryReconnect() {
         let peripheral = FakeWritablePeripheral()
         var writeError: Error?

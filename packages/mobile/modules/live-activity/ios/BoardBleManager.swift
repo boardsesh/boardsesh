@@ -2725,7 +2725,9 @@ extension BoardBleManager {
         /// Fire the unavailable half of `centralManagerDidUpdateState`.
         func fireCentralStateUpdate(_ state: CBManagerState) {
             manager.runOnBleQueueSync {
+                let previousStateOverride = manager.centralStateOverrideForTesting
                 manager.centralStateOverrideForTesting = state
+                defer { manager.centralStateOverrideForTesting = previousStateOverride }
                 manager.handleCentralStateUpdateOnBleQueue(state: state)
             }
         }
