@@ -48,10 +48,7 @@ vi.mock('../email/email-service', () => ({
 
 import { socialGymReportMutations } from '../graphql/resolvers/social/gym-reports';
 import { sendGymDuplicateReportAdminNotification } from '../email/email-service';
-import {
-  GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS,
-  resetGymDuplicateReportClaimsForTests,
-} from '../utils/gym-duplicate-report-claims';
+import { resetGymDuplicateReportClaimsForTests } from '../utils/gym-duplicate-report-claims';
 
 let connectionCounter = 0;
 const authCtx = (userId: string): ConnectionContext =>
@@ -198,7 +195,7 @@ describe('reportGymDuplicate — admin notification', () => {
 });
 
 describe('reportGymDuplicate — de-duplication', () => {
-  it('uses a distinct Redis SET NX EX claim after the per-user rate-limit eval', async () => {
+  it('uses a distinct Redis SET NX PXAT claim after the per-user rate-limit eval', async () => {
     mockRedisIsConnected.mockReturnValue(true);
     const gym = await insertGym({ name: 'Bahnhof Bloc' });
     const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
@@ -212,8 +209,8 @@ describe('reportGymDuplicate — de-duplication', () => {
     expect(mockRedisSet).toHaveBeenCalledExactlyOnceWith(
       `gymDuplicateReport:${lowUuid}:${highUuid}`,
       expect.stringMatching(/^[0-9a-f-]{36}$/),
-      'EX',
-      GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS,
+      'PXAT',
+      expect.any(Number),
       'NX',
     );
   });
@@ -227,6 +224,20 @@ describe('reportGymDuplicate — de-duplication', () => {
 
     expect(first).toEqual({ status: 'reported' });
     expect(second).toEqual({ status: 'already_reported' });
+    expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('de-dupes the same public pair across different reporters', async () => {
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
+
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'reported' });
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(STRANGER)),
+    ).resolves.toEqual({ status: 'already_reported' });
+
     expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
   });
 
@@ -400,7 +411,7 @@ describe('reportGymDuplicate — de-duplication', () => {
     expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(2);
   });
 
-  it('logs privacy-safe cleanup warnings and preserves the email failure', async () => {
+  it('sanitizes email-provider errors, logs privacy-safe cleanup warnings, and preserves the failure', async () => {
     mockRedisIsConnected.mockReturnValue(true);
     mockRedisEval.mockImplementation(async (_script: string, _numberOfKeys: number, claimKey: string) => {
       if (!claimKey.startsWith('gymDuplicateReport:')) return 1;
@@ -408,26 +419,41 @@ describe('reportGymDuplicate — de-duplication', () => {
     });
     const gym = await insertGym({ name: 'Bahnhof Bloc' });
     const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
-    const emailError = new Error('SMTP down');
+    const sensitiveNote = 'The owner told me this wall is private';
+    const emailError = new Error(
+      `Postmark rejected gym=${gym.uuid} duplicate=${dup.uuid} reporter=Reporter Rae note=${sensitiveNote}`,
+    );
     vi.mocked(sendGymDuplicateReportAdminNotification).mockRejectedValueOnce(emailError);
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
     const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
 
     await expect(
-      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid, note: sensitiveNote }, authCtx(REPORTER)),
     ).rejects.toMatchObject({
       message: "We couldn't send that report. Try again in a moment.",
       extensions: { code: 'INTERNAL_SERVER_ERROR' },
     });
 
-    expect(errorSpy).toHaveBeenCalledWith('[GymDuplicateReport] Failed to send admin notification:', emailError);
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[GymDuplicateReport] Failed to send admin notification:',
+      expect.objectContaining({ message: 'Gym duplicate report admin notification delivery failed' }),
+    );
     expect(warnSpy).toHaveBeenCalledWith(
       '[GymDuplicateReport] Redis claim cleanup failed; the claim will expire automatically.',
     );
     const warningOutput = JSON.stringify(warnSpy.mock.calls);
+    const errorCalls = errorSpy.mock.calls as unknown as ReadonlyArray<readonly unknown[]>;
+    const loggedError = errorCalls[0]?.[1];
+    expect(loggedError).toBeInstanceOf(Error);
+    if (!(loggedError instanceof Error)) throw new Error('Expected a sanitized Error log argument');
+    const errorOutput = `${loggedError.name}: ${loggedError.message}`;
     expect(warningOutput).not.toContain(gym.uuid);
     expect(warningOutput).not.toContain(dup.uuid);
     expect(warningOutput).not.toContain(mockRedisSet.mock.calls[0][1] as string);
+    expect(errorOutput).not.toContain(gym.uuid);
+    expect(errorOutput).not.toContain(dup.uuid);
+    expect(errorOutput).not.toContain('Reporter Rae');
+    expect(errorOutput).not.toContain(sensitiveNote);
 
     warnSpy.mockRestore();
     errorSpy.mockRestore();

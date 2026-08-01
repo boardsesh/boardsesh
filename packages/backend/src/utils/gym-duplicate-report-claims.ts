@@ -31,6 +31,7 @@ export interface GymDuplicateReportRedisClient {
     expiry: number,
     condition: 'NX',
   ): Promise<'OK' | null>;
+  /** ioredis exposes EVAL as unknown; cleanup deliberately ignores the Lua result. */
   eval(script: string, numberOfKeys: number, key: string, ownerToken: string): Promise<unknown>;
 }
 
@@ -248,7 +249,11 @@ export async function acquireGymDuplicateReportClaim(
   redisState.redisClient = redisClient;
   redisState.redisClaimMayExist = true;
   try {
-    const setResult = await redisClient.set(key, ownerToken, 'EX', GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS, 'NX');
+    // Pin Redis to the same absolute boundary as the local claim. A relative EX
+    // would start when Redis processes the command, leaving a small interval at
+    // the 24-hour boundary where local state has expired but Redis still rejects
+    // the next legitimate report.
+    const setResult = await redisClient.set(key, ownerToken, 'PXAT', localClaim.expiresAt, 'NX');
 
     if (setResult === null) {
       releaseLocalClaimIfOwner(key, ownerToken);
@@ -299,7 +304,13 @@ export async function releaseGymDuplicateReportClaim(claim: GymDuplicateReportCl
   }
 }
 
-/** @internal Clear process-local test state; Redis state is intentionally untouched. */
+/**
+ * @internal Clear the shared claim index between tests. The object-keyed WeakMap
+ * state intentionally survives while a test still holds an old public claim, so
+ * that owner can finish its in-flight promotion or owner-checked Redis cleanup.
+ * A new claim object cannot observe that state, and unreferenced entries remain
+ * weakly collectible.
+ */
 export function resetGymDuplicateReportClaimsForTests(): void {
   localClaims.clear();
   nextLocalClaimPruneAt = 0;

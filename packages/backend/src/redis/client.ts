@@ -59,9 +59,10 @@ export class RedisClientManager {
 
   /**
    * Run work that must be reconciled before the backend advertises a recovered
-   * Redis connection. Handlers also run immediately when registered after Redis
-   * is already ready. Failures are isolated so one best-effort reconciliation
-   * cannot keep the entire backend disconnected.
+   * Redis connection. A handler registered while readiness reconciliation is in
+   * flight joins that same barrier; handlers registered after Redis is already
+   * ready run immediately. Failures are isolated so one best-effort
+   * reconciliation cannot keep the entire backend disconnected.
    */
   onRedisReady(handler: RedisReadyHandler): () => void {
     this.readyHandlers.add(handler);
@@ -81,8 +82,25 @@ export class RedisClientManager {
     }
   }
 
-  private async runReadyHandlers(publisher: Redis): Promise<void> {
-    await Promise.all(Array.from(this.readyHandlers, (handler) => this.runReadyHandler(handler, publisher)));
+  private async runReadyHandlersBeforeConnected(
+    publisher: Redis,
+    markConnectedIfCurrent: () => boolean,
+  ): Promise<boolean> {
+    const completedHandlers = new Set<RedisReadyHandler>();
+    while (true) {
+      const pendingHandlers = Array.from(this.readyHandlers).filter((handler) => !completedHandlers.has(handler));
+      if (pendingHandlers.length > 0) {
+        for (const handler of pendingHandlers) completedHandlers.add(handler);
+        await Promise.all(pendingHandlers.map((handler) => this.runReadyHandler(handler, publisher)));
+        continue;
+      }
+
+      // There is no await between the final handler-set check and publishing
+      // isConnected=true. A concurrent registration therefore either joins the
+      // loop above or observes connected state and takes onRedisReady's immediate
+      // path; it cannot fall into the gap between the two contracts.
+      return markConnectedIfCurrent();
+    }
   }
 
   /**
@@ -161,20 +179,29 @@ export class RedisClientManager {
         // Verify server version before declaring ready. Fail-closed: an
         // older Redis silently breaks the board-serial event path, which we'd
         // rather catch at startup than in production.
-        verifyRedisVersion(this.publisher!)
-          .then(() => this.runReadyHandlers(this.publisher!))
-          .then(() => {
-            this.finishingConnection = false;
+        const publisher = this.publisher!;
+        verifyRedisVersion(publisher)
+          .then(() =>
+            this.runReadyHandlersBeforeConnected(publisher, () => {
+              if (!publisherReady || !subscriberReady || !streamConsumerReady || readinessEpoch !== reconciliationEpoch)
+                return false;
+              // Publish connected state and release the re-entrance guard in
+              // the same synchronous callback as the final handler-set check.
+              // A close/ready edge after this point can therefore start its
+              // own readiness pass instead of being hidden by a stale guard.
+              this.isConnected = true;
+              this.finishingConnection = false;
+              resolve(true);
+              return true;
+            }),
+          )
+          .then((connected) => {
+            if (connected) return;
             // A connection can close while an async recovery handler is
             // running. Do not advertise a stale ready state; the next `ready`
             // event will run version checks and reconciliation again.
-            if (!(publisherReady && subscriberReady && streamConsumerReady)) return;
-            if (readinessEpoch !== reconciliationEpoch) {
-              checkAllReady();
-              return;
-            }
-            this.isConnected = true;
-            resolve(true);
+            this.finishingConnection = false;
+            checkAllReady();
           })
           .catch((err: Error) => {
             this.finishingConnection = false;

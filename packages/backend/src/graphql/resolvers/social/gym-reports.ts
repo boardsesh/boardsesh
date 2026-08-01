@@ -16,7 +16,7 @@ import {
 // Owner-facing "report a duplicate" surfaces the pair to admins by email (the same
 // admin-notification path a queued gym claim uses). It is deliberately migration-free:
 // no dedicated table. A local owner-token claim collapses concurrent requests on
-// this instance, while Redis SET NX EX extends the same 24-hour window across
+// this instance, while Redis SET NX PXAT extends the same 24-hour window across
 // instances and deploys. The per-user `applyRateLimit` independently bounds volume.
 
 /** The reporter's display name for the admin email, falling back to a neutral label. */
@@ -65,8 +65,8 @@ export const socialGymReportMutations = {
   ): Promise<{ status: 'reported' | 'already_reported' }> => {
     // Intentionally NOT owner-gated: a duplicate report is a community data-quality
     // signal, so any signed-in climber who spots two listings of a gym can flag them
-    // (not just the owner). The 10/min per-user ceiling — shared with the gym-claim
-    // flow — bounds abuse. Do not tighten this to owners-only.
+    // (not just the owner). A dedicated 10/min per-user bucket bounds abuse
+    // independently from the gym-claim mutation. Do not tighten this to owners-only.
     requireAuthenticated(ctx);
     await applyRateLimit(ctx, 10, 'reportGymDuplicate');
 
@@ -117,12 +117,18 @@ export const socialGymReportMutations = {
         reporterName,
         note: validatedInput.note ?? null,
       });
-    } catch (error) {
+    } catch {
       // The email IS the record for this pair, so a failed send must not leave the
       // pair marked reported. Owner-checked local + Redis cleanup lets the climber
       // retry without allowing a stale request to delete a successor's claim.
       await releaseGymDuplicateReportClaim(claimResult.claim);
-      logger.error('[GymDuplicateReport] Failed to send admin notification:', error);
+      // Email-provider errors can echo the submitted payload. Keep Sentry/error
+      // visibility through a fresh Error while excluding gym names, UUIDs,
+      // reporter details, and notes from logs.
+      logger.error(
+        '[GymDuplicateReport] Failed to send admin notification:',
+        new Error('Gym duplicate report admin notification delivery failed'),
+      );
       throw new GraphQLError("We couldn't send that report. Try again in a moment.", {
         extensions: { code: 'INTERNAL_SERVER_ERROR' },
       });

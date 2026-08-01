@@ -41,6 +41,7 @@ vi.mock('ioredis', () => {
     }
 
     async quit(): Promise<'OK'> {
+      this.emit('close');
       return 'OK';
     }
   }
@@ -61,6 +62,43 @@ afterEach(() => {
 });
 
 describe('RedisClientManager recovery readiness', () => {
+  it('includes a handler registered while the current readiness barrier is in flight', async () => {
+    const { RedisClientManager } = await import('../redis/client');
+    const manager = new RedisClientManager();
+    let finishInitialHandler: (() => void) | undefined;
+    let finishLateHandler: (() => void) | undefined;
+    const initialHandler = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishInitialHandler = resolve;
+        }),
+    );
+    const lateHandler = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLateHandler = resolve;
+        }),
+    );
+    manager.onRedisReady(initialHandler);
+
+    const connection = manager.connect();
+    const [publisher, subscriber, streamConsumer] = redisMockState.instances;
+    publisher?.emit('ready');
+    subscriber?.emit('ready');
+    streamConsumer?.emit('ready');
+    await vi.waitFor(() => expect(initialHandler).toHaveBeenCalledTimes(1));
+
+    manager.onRedisReady(lateHandler);
+    finishInitialHandler?.();
+    await vi.waitFor(() => expect(lateHandler).toHaveBeenCalledTimes(1));
+    expect(manager.isRedisConnected()).toBe(false);
+
+    finishLateHandler?.();
+    await expect(connection).resolves.toBe(true);
+    expect(manager.isRedisConnected()).toBe(true);
+    await manager.disconnect();
+  });
+
   it('reruns recovery handlers when a connection closes and becomes ready during reconciliation', async () => {
     const { RedisClientManager } = await import('../redis/client');
     const manager = new RedisClientManager();
@@ -91,6 +129,34 @@ describe('RedisClientManager recovery readiness', () => {
 
     finishHandlers[1]?.();
     await expect(connection).resolves.toBe(true);
+    expect(manager.isRedisConnected()).toBe(true);
+    await manager.disconnect();
+  });
+
+  it('runs readiness handlers again after an explicit disconnect and fresh connect', async () => {
+    const { RedisClientManager } = await import('../redis/client');
+    const manager = new RedisClientManager();
+    const readyHandler = vi.fn().mockResolvedValue(undefined);
+    manager.onRedisReady(readyHandler);
+
+    const firstConnection = manager.connect();
+    const [firstPublisher, firstSubscriber, firstStreamConsumer] = redisMockState.instances;
+    firstPublisher?.emit('ready');
+    firstSubscriber?.emit('ready');
+    firstStreamConsumer?.emit('ready');
+    await expect(firstConnection).resolves.toBe(true);
+    expect(readyHandler).toHaveBeenCalledTimes(1);
+
+    await manager.disconnect();
+    expect(manager.isRedisConnected()).toBe(false);
+
+    const secondConnection = manager.connect();
+    const [secondPublisher, secondSubscriber, secondStreamConsumer] = redisMockState.instances.slice(3);
+    secondPublisher?.emit('ready');
+    secondSubscriber?.emit('ready');
+    secondStreamConsumer?.emit('ready');
+    await expect(secondConnection).resolves.toBe(true);
+    expect(readyHandler).toHaveBeenCalledTimes(2);
     expect(manager.isRedisConnected()).toBe(true);
     await manager.disconnect();
   });

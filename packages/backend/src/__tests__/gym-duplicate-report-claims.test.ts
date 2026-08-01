@@ -113,7 +113,7 @@ describe('gym duplicate report claim ownership', () => {
     await expect(acquireGymDuplicateReportClaim(key, dependencies)).resolves.toMatchObject({ status: 'acquired' });
   });
 
-  it('keeps the Redis claim authoritative after process-local state resets', async () => {
+  it('releases the fresh local owner when SET NX returns null after process-local state resets', async () => {
     const redisClient = new FakeRedisClaimClient();
     const key = 'gymDuplicateReport:test:redis-survives-reset';
     const firstDependencies = createDependencies({ connected: true, redisClient, tokens: ['first-owner'] });
@@ -128,6 +128,52 @@ describe('gym duplicate report claim ownership', () => {
       status: 'already_claimed',
     });
     expect(redisClient.claims.get(key)?.ownerToken).toBe('first-owner');
+
+    // The null SET result must also release the just-created local owner. Once
+    // the prior Redis owner disappears, a new request can acquire immediately.
+    redisClient.claims.delete(key);
+    const successorDependencies = createDependencies({ connected: true, redisClient, tokens: ['successor-owner'] });
+    await expect(acquireGymDuplicateReportClaim(key, successorDependencies)).resolves.toMatchObject({
+      status: 'acquired',
+      claim: { ownerToken: 'successor-owner' },
+    });
+  });
+
+  it('pins a directly-acquired Redis claim to the local absolute expiry', async () => {
+    const now = 5_000;
+    const redisClient = new FakeRedisClaimClient(() => now);
+    const key = 'gymDuplicateReport:test:direct-absolute-expiry';
+
+    await expect(
+      acquireGymDuplicateReportClaim(
+        key,
+        createDependencies({ connected: true, redisClient, now: () => now, tokens: ['direct-owner'] }),
+      ),
+    ).resolves.toMatchObject({ status: 'acquired' });
+
+    expect(redisClient.setCalls).toEqual([
+      {
+        key,
+        ownerToken: 'direct-owner',
+        expiryMode: 'PXAT',
+        expiry: now + GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS * 1000,
+      },
+    ]);
+  });
+
+  it('does not re-SET an already-distributed claim during forced readiness reconciliation', async () => {
+    const redisClient = new FakeRedisClaimClient();
+    const key = 'gymDuplicateReport:test:already-distributed';
+    await acquireGymDuplicateReportClaim(
+      key,
+      createDependencies({ connected: true, redisClient, tokens: ['distributed-owner'] }),
+    );
+    expect(redisClient.setCalls).toHaveLength(1);
+
+    await reconcileGymDuplicateReportClaims(redisClient, Date.now, true);
+
+    expect(redisClient.setCalls).toHaveLength(1);
+    expect(redisClient.claims.get(key)?.ownerToken).toBe('distributed-owner');
   });
 
   it('retains the local claim when Redis reports connected but its client is unavailable', async () => {
