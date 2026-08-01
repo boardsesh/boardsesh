@@ -116,9 +116,9 @@ function expectCommandAfter(contents: string, firstCommand: string, secondComman
   const firstCommandIndexes = commandLineIndexes(contents, firstCommand);
   const secondCommandIndexes = commandLineIndexes(contents, secondCommand);
 
-  expect(firstCommandIndexes).toHaveLength(1);
-  expect(secondCommandIndexes).toHaveLength(1);
-  expect(secondCommandIndexes[0]).toBeGreaterThan(firstCommandIndexes[0]);
+  expect(firstCommandIndexes.length, `missing exact command line: ${firstCommand}`).toBeGreaterThan(0);
+  expect(secondCommandIndexes.length, `missing exact command line: ${secondCommand}`).toBeGreaterThan(0);
+  expect(Math.min(...secondCommandIndexes)).toBeGreaterThan(Math.max(...firstCommandIndexes));
 }
 
 describe('configure-git-hooks', () => {

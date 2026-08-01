@@ -1,19 +1,11 @@
 #!/bin/sh
 
 # Keep the Conventional Commit check in the tracked Vite+ hooks directory.
-# Resolve the target from this tracked hook's own directory so each linked
-# worktree delegates to its own checked-out .githooks implementation.
+# Git runs hooks inside their worktree, so resolve that worktree directly rather
+# than relying on $0's invocation-dependent shape.
 set -eu
 
-case "$0" in
-  /*) hook_path=$0 ;;
-  *) hook_path=$PWD/$0 ;;
-esac
-hook_dir=$(CDPATH= cd "$(dirname "$hook_path")" 2>/dev/null && pwd -P) || {
-  echo "commit-msg hook: could not resolve the tracked hook directory." >&2
-  exit 1
-}
-repo_root=$(CDPATH= cd "$hook_dir/.." 2>/dev/null && pwd -P) || {
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
   echo "commit-msg hook: could not resolve the repository root." >&2
   exit 1
 }
