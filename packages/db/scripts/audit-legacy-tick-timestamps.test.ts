@@ -5,7 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
+  AUDIT_CONNECT_TIMEOUT_SECONDS,
+  AUDIT_DATABASE_RESPONSE_TIMEOUT_MS,
+  AUDIT_STATEMENT_TIMEOUT_MS,
   CliUsageError,
+  DatabaseResponseTimeoutError,
   EXPLICIT_OFFSET_SUFFIX_FIX_SOURCE_REVISION,
   JSON_BUG_INTRO_SOURCE_REVISION,
   JSON_IMPORT_MOVE_SOURCE_REVISION,
@@ -13,13 +17,47 @@ import {
   LEGACY_WEB_SAVE_ASCENT_NORMALIZER_FIX_SOURCE_REVISION,
   LIVE_PULL_SHARED_NORMALIZER_FIX_SOURCE_REVISION,
   AUDIT_SCAN_QUERY,
+  awaitDatabaseResponse,
   buildAuditSummary,
   parseArgs,
   parseDatabaseRow,
+  requireNoFollowFlag,
   runAuditCommand,
   validateOutputPath,
   writeAuditArtifact,
+  type DatabaseResponseTimeoutScheduler,
 } from './audit-legacy-tick-timestamps.js';
+
+function createControlledTimeoutScheduler(): {
+  cancelCount: () => number;
+  fire: () => void;
+  scheduledTimeoutMs: () => number | null;
+  scheduler: DatabaseResponseTimeoutScheduler;
+} {
+  let scheduledCallback: (() => void) | null = null;
+  let scheduledDelay: number | null = null;
+  let cancellations = 0;
+  const timeoutHandle = Symbol('controlled-database-response-timeout');
+  return {
+    cancelCount: () => cancellations,
+    fire: () => {
+      if (!scheduledCallback) throw new Error('No database response timeout is scheduled');
+      scheduledCallback();
+    },
+    scheduledTimeoutMs: () => scheduledDelay,
+    scheduler: {
+      schedule(callback, timeoutMs) {
+        scheduledCallback = callback;
+        scheduledDelay = timeoutMs;
+        return timeoutHandle;
+      },
+      cancel(handle) {
+        assert.equal(handle, timeoutHandle);
+        cancellations += 1;
+      },
+    },
+  };
+}
 
 function validArgs(outputPath: string): string[] {
   return [
@@ -160,7 +198,59 @@ void describe('legacy timestamp audit CLI', () => {
   });
 });
 
+void describe('database response bounds', () => {
+  void it('uses the reviewed production timeout values', () => {
+    assert.equal(AUDIT_CONNECT_TIMEOUT_SECONDS, 30);
+    assert.equal(AUDIT_STATEMENT_TIMEOUT_MS, 300_000);
+    assert.equal(AUDIT_DATABASE_RESPONSE_TIMEOUT_MS, 330_000);
+  });
+
+  void it('clears the response timer without force-closing when PostgreSQL settles', async () => {
+    const controlledTimeout = createControlledTimeoutScheduler();
+    let forceCloseCalls = 0;
+    const result = await awaitDatabaseResponse(
+      'complete a fixture query',
+      Promise.resolve(42),
+      () => {
+        forceCloseCalls += 1;
+      },
+      { scheduler: controlledTimeout.scheduler, timeoutMs: 123 },
+    );
+
+    assert.equal(result, 42);
+    assert.equal(controlledTimeout.scheduledTimeoutMs(), 123);
+    assert.equal(controlledTimeout.cancelCount(), 1);
+    assert.equal(forceCloseCalls, 0);
+  });
+
+  void it('rejects a stalled response and force-closes exactly once', async () => {
+    const controlledTimeout = createControlledTimeoutScheduler();
+    let forceCloseCalls = 0;
+    const stalledResponse = new Promise<never>(() => undefined);
+    const response = awaitDatabaseResponse(
+      'fetch a fixture cursor batch',
+      stalledResponse,
+      () => {
+        forceCloseCalls += 1;
+      },
+      { scheduler: controlledTimeout.scheduler, timeoutMs: 456 },
+    );
+    const rejection = assert.rejects(response, DatabaseResponseTimeoutError);
+
+    controlledTimeout.fire();
+    controlledTimeout.fire();
+    await rejection;
+    assert.equal(controlledTimeout.cancelCount(), 0);
+    assert.equal(forceCloseCalls, 1);
+  });
+});
+
 void describe('JSONL output safety', () => {
+  void it('fails closed when O_NOFOLLOW is unavailable', () => {
+    assert.equal(requireNoFollowFlag(0x20_000), 0x20_000);
+    assert.throws(() => requireNoFollowFlag(undefined), /requires O_NOFOLLOW support/);
+  });
+
   void it('rejects existing and symlink output targets', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'boardsesh-tick-audit-output-'));
     const existing = join(directory, 'existing.jsonl');
