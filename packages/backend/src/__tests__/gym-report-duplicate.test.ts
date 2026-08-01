@@ -4,6 +4,25 @@ import { sql } from 'drizzle-orm';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 import { db } from '../db/client';
 import { resetAllRateLimits } from '../utils/rate-limiter';
+import { logger } from '../utils/logger';
+
+const { mockRedisEval, mockRedisIsConnected, mockRedisSet } = vi.hoisted(() => ({
+  mockRedisEval: vi.fn(),
+  mockRedisIsConnected: vi.fn(),
+  mockRedisSet: vi.fn(),
+}));
+
+vi.mock('../redis/client', () => ({
+  redisClientManager: {
+    isRedisConnected: mockRedisIsConnected,
+    getClients: () => ({
+      publisher: {
+        eval: mockRedisEval,
+        set: mockRedisSet,
+      },
+    }),
+  },
+}));
 
 // The resolver imports the email module via '../../../email/email-service', which
 // resolves to the same absolute path as '../email/email-service' from here, so this
@@ -14,6 +33,10 @@ vi.mock('../email/email-service', () => ({
 
 import { socialGymReportMutations } from '../graphql/resolvers/social/gym-reports';
 import { sendGymDuplicateReportAdminNotification } from '../email/email-service';
+import {
+  GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS,
+  resetGymDuplicateReportClaimsForTests,
+} from '../utils/gym-duplicate-report-claims';
 
 let connectionCounter = 0;
 const authCtx = (userId: string): ConnectionContext =>
@@ -55,6 +78,13 @@ const reportGymDuplicate = (input: unknown, ctx: ConnectionContext) =>
 
 beforeEach(async () => {
   resetAllRateLimits();
+  resetGymDuplicateReportClaimsForTests();
+  mockRedisIsConnected.mockReset();
+  mockRedisIsConnected.mockReturnValue(false);
+  mockRedisEval.mockReset();
+  mockRedisEval.mockResolvedValue(1);
+  mockRedisSet.mockReset();
+  mockRedisSet.mockResolvedValue('OK');
   vi.mocked(sendGymDuplicateReportAdminNotification).mockClear();
   vi.mocked(sendGymDuplicateReportAdminNotification).mockImplementation(() => Promise.resolve());
   await db.execute(sql`TRUNCATE TABLE "gym_members", "gyms" RESTART IDENTITY CASCADE`);
@@ -153,6 +183,26 @@ describe('reportGymDuplicate — admin notification', () => {
 });
 
 describe('reportGymDuplicate — de-duplication', () => {
+  it('uses a distinct Redis SET NX EX claim after the per-user rate-limit eval', async () => {
+    mockRedisIsConnected.mockReturnValue(true);
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
+
+    const result = await reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER));
+
+    expect(result).toEqual({ status: 'reported' });
+    expect(mockRedisEval).toHaveBeenCalledTimes(1);
+    expect(mockRedisEval.mock.calls[0][0]).toContain("redis.call('INCR'");
+    const [lowUuid, highUuid] = [gym.uuid, dup.uuid].sort();
+    expect(mockRedisSet).toHaveBeenCalledExactlyOnceWith(
+      `gymDuplicateReport:${lowUuid}:${highUuid}`,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      'EX',
+      GYM_DUPLICATE_REPORT_CLAIM_TTL_SECONDS,
+      'NX',
+    );
+  });
+
   it('de-dupes a repeat report of the same pair without re-emailing', async () => {
     const gym = await insertGym({ name: 'Bahnhof Bloc' });
     const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
@@ -162,6 +212,71 @@ describe('reportGymDuplicate — de-duplication', () => {
 
     expect(first).toEqual({ status: 'reported' });
     expect(second).toEqual({ status: 'already_reported' });
+    expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses concurrent reversed-pair reports before the first email resolves', async () => {
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
+    let finishEmail: (() => void) | undefined;
+    vi.mocked(sendGymDuplicateReportAdminNotification).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishEmail = resolve;
+        }),
+    );
+
+    const firstReport = reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER));
+    await vi.waitFor(() => expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1));
+
+    const reversedReport = await reportGymDuplicate(
+      { gymUuid: dup.uuid, duplicateGymUuid: gym.uuid },
+      authCtx(REPORTER),
+    );
+    expect(reversedReport).toEqual({ status: 'already_reported' });
+
+    finishEmail?.();
+    await expect(firstReport).resolves.toEqual({ status: 'reported' });
+    expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a successful local claim through an outage and later Redis recovery', async () => {
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
+
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'reported' });
+
+    mockRedisIsConnected.mockReturnValue(true);
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'already_reported' });
+
+    expect(mockRedisSet).not.toHaveBeenCalled();
+    expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a Redis claim effective after process-local state is reset', async () => {
+    mockRedisIsConnected.mockReturnValue(true);
+    let storedOwnerToken: string | null = null;
+    mockRedisSet.mockImplementation(async (_key: string, ownerToken: string) => {
+      if (storedOwnerToken !== null) return null;
+      storedOwnerToken = ownerToken;
+      return 'OK';
+    });
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
+
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'reported' });
+    resetGymDuplicateReportClaimsForTests();
+
+    await expect(
+      reportGymDuplicate({ gymUuid: dup.uuid, duplicateGymUuid: gym.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'already_reported' });
+    expect(mockRedisSet).toHaveBeenCalledTimes(2);
     expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(1);
   });
 
@@ -189,6 +304,77 @@ describe('reportGymDuplicate — de-duplication', () => {
     const retry = await reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER));
     expect(retry).toEqual({ status: 'reported' });
     expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it('cleans an apply-then-throw Redis claim after email failure so retry succeeds', async () => {
+    mockRedisIsConnected.mockReturnValue(true);
+    let storedOwnerToken: string | null = null;
+    mockRedisSet
+      .mockImplementationOnce(async (_key: string, ownerToken: string) => {
+        storedOwnerToken = ownerToken;
+        throw new Error('connection closed after write');
+      })
+      .mockImplementationOnce(async (_key: string, ownerToken: string) => {
+        if (storedOwnerToken !== null) return null;
+        storedOwnerToken = ownerToken;
+        return 'OK';
+      });
+    mockRedisEval.mockImplementation(
+      async (script: string, _numberOfKeys: number, _key: string, ownerToken: string) => {
+        if (script.includes("redis.call('INCR'")) return 1;
+        if (storedOwnerToken === ownerToken) {
+          storedOwnerToken = null;
+          return 1;
+        }
+        return 0;
+      },
+    );
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
+    vi.mocked(sendGymDuplicateReportAdminNotification).mockRejectedValueOnce(new Error('SMTP down'));
+
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).rejects.toMatchObject({ extensions: { code: 'INTERNAL_SERVER_ERROR' } });
+
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).resolves.toEqual({ status: 'reported' });
+    expect(mockRedisSet).toHaveBeenCalledTimes(2);
+    expect(sendGymDuplicateReportAdminNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs privacy-safe cleanup warnings and preserves the email failure', async () => {
+    mockRedisIsConnected.mockReturnValue(true);
+    mockRedisEval.mockImplementation(async (script: string) => {
+      if (script.includes("redis.call('INCR'")) return 1;
+      throw new Error('release failed');
+    });
+    const gym = await insertGym({ name: 'Bahnhof Bloc' });
+    const dup = await insertGym({ name: 'Bahnhof Bloc (Kilter)' });
+    const emailError = new Error('SMTP down');
+    vi.mocked(sendGymDuplicateReportAdminNotification).mockRejectedValueOnce(emailError);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => logger);
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => logger);
+
+    await expect(
+      reportGymDuplicate({ gymUuid: gym.uuid, duplicateGymUuid: dup.uuid }, authCtx(REPORTER)),
+    ).rejects.toMatchObject({
+      message: "We couldn't send that report. Try again in a moment.",
+      extensions: { code: 'INTERNAL_SERVER_ERROR' },
+    });
+
+    expect(errorSpy).toHaveBeenCalledWith('[GymDuplicateReport] Failed to send admin notification:', emailError);
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[GymDuplicateReport] Redis claim cleanup failed; the claim will expire automatically.',
+    );
+    const warningOutput = JSON.stringify(warnSpy.mock.calls);
+    expect(warningOutput).not.toContain(gym.uuid);
+    expect(warningOutput).not.toContain(dup.uuid);
+    expect(warningOutput).not.toContain(mockRedisSet.mock.calls[0][1] as string);
+
+    warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });
 
