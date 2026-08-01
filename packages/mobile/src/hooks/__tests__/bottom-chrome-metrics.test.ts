@@ -15,7 +15,8 @@ const DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET = 139;
 // An intentionally non-device value used only to prove that the pure function
 // treats a native UIKit inset as opaque and does not add TAB_BAR_HEIGHT to it.
 // Keep it distinct from the 139pt device anchor so arithmetic fixtures cannot be
-// mistaken for a measured no-accessory or minimized-tab contract.
+// mistaken for a measured no-accessory or minimized-tab contract. The plausible
+// 83pt value (34pt home indicator + 49pt tab bar) is still inferred, not measured.
 const SYNTHETIC_NATIVE_SAFE_AREA_INSET = 100;
 
 describe('computeBottomChromeMetrics', () => {
@@ -274,6 +275,10 @@ describe('computeBottomChromeMetrics', () => {
         hasCurrentClimb: true,
         nativeAccessoryMounted: true,
       });
+      // Before #3973, preSessionFooterBottom was intentionally smaller than
+      // fixedFooterBottom because the latter double-counted native chrome. Once the
+      // UIKit inset is treated as opaque, equality is the invariant: both consumers
+      // clear the same already-composed native tab/accessory region.
       expect(metrics.preSessionFooterBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
       expect(metrics.fixedFooterBottom).toBe(DEVICE_VERIFIED_NATIVE_ACCESSORY_INSET);
       // Native accessory mounted → no JS queue reserve, so the list also rides the raw inset.
