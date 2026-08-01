@@ -95,7 +95,7 @@ Adds real-time collaborative climbing sessions.
 **Shipped (#2496):**
 
 - **Route/circuit playback** -- variable-speed, frame-stepped animation of multi-frame climbs (`framesCount > 1`) in the play drawer, via the shared `@boardsesh/playback-react` engine (`usePlaybackEngine` + `useClimbFrames`). Boulders are unaffected (`isAnimatable` is false).
-- **Playback party-sync** -- `PlaybackStateChanged` is forwarded through the queue provider's `subscribeToQueueEvents` seam (bypassing the reducer) and broadcast via `publishPlaybackState`, so party members see the same frame/speed/play state in real time.
+- **Playback party-sync** -- `PlaybackStateChanged` is forwarded through the queue provider's `subscribeToPlaybackEvents` seam (bypassing the reducer) and broadcast via `publishPlaybackState`, so party members see the same frame/speed/play state in real time.
 - **BLE frame mirroring** -- during route playback, the current frame is written to a connected board over BLE through a latest-wins, GATT-safe drain (mobile's `sendFramesToBoard` has no internal mutex).
 
 **Still planned:**
