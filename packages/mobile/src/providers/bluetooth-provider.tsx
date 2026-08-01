@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, AppState } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import type { ClimbQueueItem } from '@boardsesh/queue';
@@ -20,6 +20,7 @@ import {
   boardConfigKey,
   type BleConnectionHandle,
   type BleConnectionEnded,
+  type BluetoothDisconnectReason,
   type SendFramesToBoard,
 } from '../lib/ble/use-board-bluetooth';
 import { hasRenderableFrames } from '../lib/ble/renderable-frames';
@@ -49,6 +50,8 @@ import { DevicePickerSheet } from '../components/ble/DevicePickerSheet';
 import { BlePickerHostContext, type BlePickerHostValue } from './ble-picker-host';
 import { track } from '../lib/analytics';
 import { getBluetoothColorOverrides, useHoldColorOverrides } from '../lib/hold-color-overrides';
+import { useSetting } from '../settings';
+import { AutoDisconnectController } from '../lib/ble/auto-disconnect-controller';
 
 type BluetoothContextValue = {
   isConnected: boolean;
@@ -59,8 +62,10 @@ type BluetoothContextValue = {
     targetSerial?: string,
     targetDeviceId?: string,
   ) => Promise<boolean>;
-  disconnect: () => Promise<void>;
+  disconnect: (reason?: BluetoothDisconnectReason) => Promise<void>;
   sendFramesToBoard: SendFramesToBoard;
+  /** Record a confirmed direct climb re-light (for example, mirror). */
+  notifyClimbDisplaySucceeded: () => void;
   clearBoard: () => Promise<boolean | undefined>;
   /**
    * Force the auto-sender to re-push the current climb to the wall once, even
@@ -103,6 +108,9 @@ type BluetoothContextValue = {
    * board instead of opening the picker.
    */
   reconnectDeviceIdForCurrentBoard: string | null;
+  autoDisconnectEnabled: boolean;
+  autoDisconnectTimeoutSeconds: number;
+  autoDisconnectWarning: boolean;
 };
 
 const BluetoothContext = createContext<BluetoothContextValue | null>(null);
@@ -180,6 +188,7 @@ function presenceClimbToQueueInput(climb: BoardPresenceClimb): ClimbQueueItemInp
 function BluetoothAutoSender({
   sendFramesToBoard,
   onWallConfirmed,
+  onClimbDisplaySucceeded,
   reassertNonce,
   connectInitialSendRef,
   lastPhysicalFramesRef,
@@ -195,6 +204,8 @@ function BluetoothAutoSender({
    * confirm (uuid only) and report the climb to the board-presence channel.
    */
   onWallConfirmed: (item: ClimbQueueItem) => void;
+  /** Called only after an app-initiated climb packet is confirmed by BLE. */
+  onClimbDisplaySucceeded: () => void;
   reassertNonce: number;
   // One-shot seed: what connect() already wrote as initialFrames, so the
   // freshly mounted AutoSender doesn't repeat a byte-identical first send.
@@ -447,6 +458,7 @@ function BluetoothAutoSender({
               lastSentSignatureRef.current = sendSignature;
               lastPhysicalFramesRef.current = physicalFramesSignature(item.climb.frames, !!item.climb.mirrored);
               onWallConfirmedRef.current(item);
+              onClimbDisplaySucceeded();
               hapticSuccess();
             }
           } catch (error) {
@@ -466,7 +478,7 @@ function BluetoothAutoSender({
     };
 
     void drain();
-  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature]);
+  }, [currentClimbQueueItem, sendFramesToBoard, reassertNonce, colorSignature, onClimbDisplaySucceeded]);
 
   return null;
 }
@@ -510,6 +522,20 @@ export function BluetoothProvider({
   // queue changes) + toast, for advancing past a spill climb and telling the user.
   const { setCurrentClimb } = useQueueActions();
   const { showToast } = useToast();
+  const [autoDisconnectBle] = useSetting('autoDisconnectBle');
+  const [autoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
+  const [autoDisconnectWarning, setAutoDisconnectWarning] = useState(false);
+  const autoDisconnectExpireRef = useRef<() => void>(() => {});
+  const autoDisconnectControllerRef = useRef<AutoDisconnectController | null>(null);
+  if (!autoDisconnectControllerRef.current) {
+    autoDisconnectControllerRef.current = new AutoDisconnectController({
+      onExpire: () => autoDisconnectExpireRef.current(),
+    });
+  }
+  const resetAutoDisconnect = useCallback(() => {
+    autoDisconnectControllerRef.current?.reset();
+    setAutoDisconnectWarning(false);
+  }, []);
   const { overrides: holdColorOverrides, signature: holdColorSignature } = useHoldColorOverrides();
   const bluetoothColorOverrides = useMemo(
     () => getBluetoothColorOverrides(holdColorOverrides),
@@ -1209,6 +1235,7 @@ export function BluetoothProvider({
     if (writeSucceeded !== true) {
       return false;
     }
+    resetAutoDisconnect();
     lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
 
     const accepted = await reportClimbForBoardRef
@@ -1224,7 +1251,7 @@ export function BluetoothProvider({
     lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(undoTarget);
     undoWallChangeTargetRef.current = null;
     return true;
-  }, [sendFramesToBoard]);
+  }, [sendFramesToBoard, resetAutoDisconnect]);
 
   // Generalized `undoWallChange`: relight ANY presence climb (the wall kiosk's
   // "Light this" confirm), not just the captured undo target. Same BLE-first-
@@ -1255,6 +1282,7 @@ export function BluetoothProvider({
       if (writeSucceeded !== true) {
         return false;
       }
+      resetAutoDisconnect();
       lastPhysicalFramesRef.current = physicalFramesSignature(frames, false);
 
       const accepted = await reportClimbForBoardRef
@@ -1270,7 +1298,7 @@ export function BluetoothProvider({
       lastAcceptedReportSignatureRef.current = presenceClimbReportSignature(climb);
       return true;
     },
-    [sendFramesToBoard],
+    [sendFramesToBoard, resetAutoDisconnect],
   );
 
   const clearBoard = useCallback(
@@ -1361,31 +1389,75 @@ export function BluetoothProvider({
 
   // Coalesce adapter disconnect calls. The hook consumes and reports the active
   // generation synchronously before awaiting the native adapter teardown.
-  const wrappedDisconnect = useCallback(async () => {
-    const disconnectInFlight = disconnectInFlightRef.current;
-    if (disconnectInFlight) {
-      await disconnectInFlight;
-      return;
-    }
-
-    clearPendingWallReportAndUndoToastArm();
-    connectedViaMismatchOverrideRef.current = false;
-    const disconnectOperation = disconnect().catch(() => {
-      // The native iOS adapter's disconnect() can reject (e.g. peripheral
-      // already torn down). Callers `void` this promise, so an unhandled
-      // rejection would surface as error-reporting noise. Connection state is
-      // cleared before the await, so the disconnect is effectively done either way —
-      // safe to swallow, matching the keep-awake `.catch(() => {})` pattern.
-    });
-    disconnectInFlightRef.current = disconnectOperation;
-    try {
-      await disconnectOperation;
-    } finally {
-      if (disconnectInFlightRef.current === disconnectOperation) {
-        disconnectInFlightRef.current = null;
+  // Auto-disconnect reuses the same release path but keeps the remembered
+  // board handle (the hook only forgets the board on a 'user' reason).
+  const wrappedDisconnect = useCallback(
+    async (reason: BluetoothDisconnectReason = 'user') => {
+      const disconnectInFlight = disconnectInFlightRef.current;
+      if (disconnectInFlight) {
+        await disconnectInFlight;
+        return;
       }
-    }
-  }, [clearPendingWallReportAndUndoToastArm, disconnect]);
+
+      clearPendingWallReportAndUndoToastArm();
+      connectedViaMismatchOverrideRef.current = false;
+      const disconnectOperation = disconnect(reason).catch(() => {
+        // The native iOS adapter's disconnect() can reject (e.g. peripheral
+        // already torn down). Callers `void` this promise, so an unhandled
+        // rejection would surface as error-reporting noise. Connection state is
+        // cleared before the await, so the disconnect is effectively done either way —
+        // safe to swallow, matching the keep-awake `.catch(() => {})` pattern.
+      });
+      disconnectInFlightRef.current = disconnectOperation;
+      try {
+        await disconnectOperation;
+      } finally {
+        if (disconnectInFlightRef.current === disconnectOperation) {
+          disconnectInFlightRef.current = null;
+        }
+      }
+    },
+    [clearPendingWallReportAndUndoToastArm, disconnect],
+  );
+
+  const autoDisconnectOnExpire = useCallback(() => {
+    void wrappedDisconnect('auto_disconnect');
+  }, [wrappedDisconnect]);
+  autoDisconnectExpireRef.current = autoDisconnectOnExpire;
+
+  useEffect(() => {
+    autoDisconnectControllerRef.current?.update(autoDisconnectBle, autoDisconnectTimeoutSeconds);
+  }, [autoDisconnectBle, autoDisconnectTimeoutSeconds]);
+
+  useEffect(() => {
+    const controller = autoDisconnectControllerRef.current;
+    if (isConnected) controller?.connectedNow();
+    else controller?.disconnectedNow();
+    return () => controller?.disconnectedNow();
+  }, [isConnected]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') autoDisconnectControllerRef.current?.resume();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // The deadline controller owns expiry; this lightweight poll only drives the
+  // final-ten-second visual hint. It runs while connected and updates once per
+  // second, avoiding a per-frame animation/state subscription in the provider.
+  useEffect(() => {
+    setAutoDisconnectWarning(false);
+    if (!isConnected || !autoDisconnectBle) return;
+
+    const updateWarning = () => {
+      const deadlineMs = autoDisconnectControllerRef.current?.getDeadlineMs() ?? null;
+      setAutoDisconnectWarning(deadlineMs !== null && deadlineMs - Date.now() <= 10_000);
+    };
+    updateWarning();
+    const interval = setInterval(updateWarning, 1000);
+    return () => clearInterval(interval);
+  }, [isConnected, autoDisconnectBle, autoDisconnectTimeoutSeconds]);
 
   // Register with the module-level status store so consumers rendered outside
   // this provider (e.g. the root tab bar, the long-press BLE controls sheet) can
@@ -1407,6 +1479,7 @@ export function BluetoothProvider({
       connect,
       disconnect: wrappedDisconnect,
       sendFramesToBoard,
+      notifyClimbDisplaySucceeded: resetAutoDisconnect,
       clearBoard,
       reassertWall,
       undoWallChange,
@@ -1414,6 +1487,9 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
+      autoDisconnectEnabled: autoDisconnectBle,
+      autoDisconnectTimeoutSeconds,
+      autoDisconnectWarning,
     }),
     [
       isConnected,
@@ -1421,6 +1497,7 @@ export function BluetoothProvider({
       connect,
       wrappedDisconnect,
       sendFramesToBoard,
+      resetAutoDisconnect,
       clearBoard,
       reassertWall,
       undoWallChange,
@@ -1428,6 +1505,9 @@ export function BluetoothProvider({
       armUndoWallChangeToast,
       reconnectSerialForCurrentBoard,
       reconnectDeviceIdForCurrentBoard,
+      autoDisconnectBle,
+      autoDisconnectTimeoutSeconds,
+      autoDisconnectWarning,
     ],
   );
 
@@ -1453,6 +1533,7 @@ export function BluetoothProvider({
         <BluetoothAutoSender
           sendFramesToBoard={sendFramesToBoard}
           onWallConfirmed={handleWallConfirmed}
+          onClimbDisplaySucceeded={resetAutoDisconnect}
           reassertNonce={reassertNonce}
           connectInitialSendRef={connectInitialSendRef}
           lastPhysicalFramesRef={lastPhysicalFramesRef}

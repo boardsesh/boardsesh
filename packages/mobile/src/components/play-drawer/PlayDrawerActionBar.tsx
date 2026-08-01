@@ -32,6 +32,7 @@ type PlayDrawerActionBarProps = {
    *  can light. */
   lightbulbConnected: boolean;
   lightbulbPending?: boolean;
+  autoDisconnectWarning?: boolean;
   lightbulbAccessibilityLabel?: string;
   lightbulbLongPressAccessibilityHint?: string;
   lightbulbLongPressEnabled?: boolean;
@@ -67,6 +68,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
   lightbulbActive,
   lightbulbConnected,
   lightbulbPending = false,
+  autoDisconnectWarning = false,
   lightbulbAccessibilityLabel,
   lightbulbLongPressAccessibilityHint,
   lightbulbLongPressEnabled = lightbulbActive,
@@ -186,6 +188,7 @@ export const PlayDrawerActionBar = memo(function PlayDrawerActionBar({
                 isConnected={lightbulbActive}
                 accessibilitySelected={lightbulbConnected}
                 isScanning={lightbulbPending}
+                autoDisconnectWarning={autoDisconnectWarning}
                 onPress={onLightbulb}
                 onLongPress={lightbulbLongPressEnabled ? onLightbulbLongPress : undefined}
                 accessibilityLabel={

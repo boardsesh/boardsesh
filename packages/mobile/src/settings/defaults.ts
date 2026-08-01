@@ -6,6 +6,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   offlineBoardsV1: [],
   autoOfflineBoards: false,
   autoConnectBle: true,
+  autoDisconnectBle: false,
+  autoDisconnectTimeoutSeconds: 30,
   keepScreenAwake: true,
   theme: 'system',
   hapticFeedbackEnabled: true,

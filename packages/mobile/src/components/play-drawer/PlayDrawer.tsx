@@ -611,7 +611,14 @@ export function PlayDrawer({
     // orientation. isConnected means this device holds the BLE link (and
     // therefore drives the wall).
     if (bluetooth?.isConnected && displayedClimb?.frames) {
-      void bluetooth.sendFramesToBoard(displayedClimb.frames, nextMirrored);
+      void bluetooth
+        .sendFramesToBoard(displayedClimb.frames, nextMirrored)
+        .then((writeSucceeded) => {
+          if (writeSucceeded === true) bluetooth.notifyClimbDisplaySucceeded();
+        })
+        .catch(() => {
+          // A failed mirror write must not reset the inactivity deadline.
+        });
     }
   }, [isMirrored, bluetooth, displayedClimb]);
 
@@ -992,6 +999,7 @@ export function PlayDrawer({
                         lightbulbActive={lightbulbActive}
                         lightbulbConnected={bluetoothConnected}
                         lightbulbPending={lightbulbPending}
+                        autoDisconnectWarning={bluetooth?.autoDisconnectWarning ?? false}
                         lightbulbLongPressEnabled={bluetoothConnected}
                         showLightbulb={bluetooth !== null}
                         // The on-wall banner owns the driver's face in the header

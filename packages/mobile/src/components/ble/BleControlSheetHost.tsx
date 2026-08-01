@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react';
 import { useOptionalBluetoothContext } from '../../providers/bluetooth-provider';
 import { disconnectAllBluetooth } from '../../lib/ble/bluetooth-status-store';
 import { BleControlSheet } from './BleControlSheet';
+import { useSetting } from '../../settings';
 
 type BleControlSheetHostProps = {
   visible: boolean;
@@ -20,6 +21,9 @@ type BleControlSheetHostProps = {
 export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostProps) {
   const bluetooth = useOptionalBluetoothContext();
   const isConnected = bluetooth?.isConnected ?? false;
+  const [autoDisconnectEnabled, setAutoDisconnectEnabled] = useSetting('autoDisconnectBle');
+  const timeoutSeconds = bluetooth?.autoDisconnectTimeoutSeconds ?? 30;
+  const autoDisconnectTimeoutLabel = timeoutSeconds >= 60 ? `${timeoutSeconds / 60}m` : `${timeoutSeconds}s`;
 
   // Close if the link drops while the sheet is open — otherwise it lingers
   // showing Re-light / Disconnect actions that no-op on a dead link.
@@ -44,6 +48,9 @@ export function BleControlSheetHost({ visible, onClose }: BleControlSheetHostPro
       onReassert={handleReassert}
       onClearLights={handleClearLights}
       onDisconnect={disconnectAllBluetooth}
+      autoDisconnectEnabled={autoDisconnectEnabled}
+      autoDisconnectTimeoutLabel={autoDisconnectTimeoutLabel}
+      onToggleAutoDisconnect={setAutoDisconnectEnabled}
       onClose={onClose}
     />
   );

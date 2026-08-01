@@ -493,6 +493,26 @@
     "cancel": "Cancel",
     "connectBoard": "Connect Board",
     "relightBoard": "Re-light board",
+    "autoDisconnect": {
+      "title": "Auto-disconnect",
+      "description": "Disconnect from the board after no climb has been displayed for the selected time.",
+      "enabledLabel": "Auto-disconnect",
+      "enabledDescription": "Let other climbers connect after the timer expires.",
+      "timeoutLabel": "Disconnect after",
+      "toggleTitle": "Auto-disconnect",
+      "toggleSubtitle": "Disconnect after {{timeout}} of inactivity",
+      "toggleAccessibility": "Toggle auto-disconnect",
+      "timeoutOptions": {
+        "10": "10 seconds",
+        "15": "15 seconds",
+        "30": "30 seconds",
+        "45": "45 seconds",
+        "60": "1 minute",
+        "120": "2 minutes",
+        "300": "5 minutes",
+        "600": "10 minutes"
+      }
+    },
     "turnOff": "Turn off the board",
     "holdForControls": "Hold for board controls",
     "sendFailedTitle": "Couldn't light board",

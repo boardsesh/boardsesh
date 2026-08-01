@@ -14,6 +14,8 @@ export type AppSettings = {
   /** Keep every board the user follows/uses available offline by default. */
   autoOfflineBoards: boolean;
   autoConnectBle: boolean;
+  autoDisconnectBle: boolean;
+  autoDisconnectTimeoutSeconds: number;
   keepScreenAwake: boolean;
   theme: 'system' | 'light' | 'dark';
   hapticFeedbackEnabled: boolean;

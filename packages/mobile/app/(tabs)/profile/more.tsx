@@ -52,6 +52,7 @@ import {
 import { replayOnboarding } from '../../../src/lib/onboarding/onboarding-storage';
 import { reportError } from '../../../src/lib/error-reporting';
 import { showSignOutFailure } from '../../../src/lib/sign-out-failure-alert';
+import { AUTO_DISCONNECT_TIMEOUT_OPTIONS } from '../../../src/lib/ble/auto-disconnect-controller';
 
 // Translations live in the shared catalog at packages/shared/i18n/locales/<locale>/.
 // We deep-link to the active language's folder so a community member lands on the
@@ -93,6 +94,8 @@ export default function MoreScreen() {
   // already in My Boards now (user chose this over a future-only default), and the
   // adopt-on-select flow auto-downloads new boards from then on.
   const [autoOfflineBoards] = useSetting('autoOfflineBoards');
+  const [autoDisconnectBle, setAutoDisconnectBle] = useSetting('autoDisconnectBle');
+  const [autoDisconnectTimeoutSeconds, setAutoDisconnectTimeoutSeconds] = useSetting('autoDisconnectTimeoutSeconds');
   const { enableBoardsOffline } = useBoardDownloads();
   const { data: myBoardsConnection } = useMyBoards(undefined, { enabled: offlineEnabled && !!profile });
   // Memoized so the empty-while-loading fallback keeps a stable identity — the
@@ -475,6 +478,54 @@ export default function MoreScreen() {
             },
           ]
         : []),
+    ],
+  });
+
+  const autoDisconnectTimeoutLabels: Record<number, string> = {
+    10: tSettings('ble.autoDisconnect.timeoutOptions.10'),
+    15: tSettings('ble.autoDisconnect.timeoutOptions.15'),
+    30: tSettings('ble.autoDisconnect.timeoutOptions.30'),
+    45: tSettings('ble.autoDisconnect.timeoutOptions.45'),
+    60: tSettings('ble.autoDisconnect.timeoutOptions.60'),
+    120: tSettings('ble.autoDisconnect.timeoutOptions.120'),
+    300: tSettings('ble.autoDisconnect.timeoutOptions.300'),
+    600: tSettings('ble.autoDisconnect.timeoutOptions.600'),
+  };
+  const autoDisconnectTimeoutOptions = AUTO_DISCONNECT_TIMEOUT_OPTIONS.map((seconds) => ({
+    key: String(seconds),
+    label: autoDisconnectTimeoutLabels[seconds],
+  }));
+
+  sections.push({
+    key: 'bluetooth',
+    title: tSettings('ble.autoDisconnect.title'),
+    footer: tSettings('ble.autoDisconnect.description'),
+    rows: [
+      {
+        kind: 'toggle',
+        key: 'autoDisconnectBle',
+        label: tSettings('ble.autoDisconnect.enabledLabel'),
+        subtitle: tSettings('ble.autoDisconnect.enabledDescription'),
+        value: autoDisconnectBle,
+        onValueChange: (next) => {
+          hapticSelection();
+          setAutoDisconnectBle(next);
+        },
+      },
+      {
+        kind: 'select',
+        key: 'autoDisconnectTimeoutSeconds',
+        label: tSettings('ble.autoDisconnect.timeoutLabel'),
+        options: autoDisconnectTimeoutOptions,
+        selectedKey: String(autoDisconnectTimeoutSeconds),
+        onSelect: (key) => {
+          const seconds = Number(key);
+          if (AUTO_DISCONNECT_TIMEOUT_OPTIONS.includes(seconds as (typeof AUTO_DISCONNECT_TIMEOUT_OPTIONS)[number])) {
+            hapticSelection();
+            setAutoDisconnectTimeoutSeconds(seconds);
+          }
+        },
+      },
     ],
   });
 

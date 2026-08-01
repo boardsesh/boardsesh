@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Switch } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
 import { ListRow } from '../ListRow';
@@ -16,13 +16,25 @@ type BleControlSheetProps = {
   onClearLights: () => void;
   /** Drop the BLE connection. */
   onDisconnect: () => void;
+  autoDisconnectEnabled: boolean;
+  autoDisconnectTimeoutLabel: string;
+  onToggleAutoDisconnect: (enabled: boolean) => void;
   onClose: () => void;
 };
 
 // Secondary BLE controls (Re-light / Turn off all lights / Disconnect) revealed
 // by long-pressing the lightbulb — keeps the destructive Disconnect behind a
 // labelled menu.
-function BleControlSheet({ visible, onReassert, onClearLights, onDisconnect, onClose }: BleControlSheetProps) {
+function BleControlSheet({
+  visible,
+  onReassert,
+  onClearLights,
+  onDisconnect,
+  autoDisconnectEnabled,
+  autoDisconnectTimeoutLabel,
+  onToggleAutoDisconnect,
+  onClose,
+}: BleControlSheetProps) {
   const { t: tSettings } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
   const { brandColors, systemColors } = useTheme();
@@ -47,6 +59,21 @@ function BleControlSheet({ visible, onReassert, onClearLights, onDisconnect, onC
   return (
     <ModalSheet visible={visible} snapPoints={snapPoints} onClose={onClose} enablePanDownToClose>
       <View style={styles.content}>
+        <ListRow
+          title={tSettings('ble.autoDisconnect.toggleTitle')}
+          subtitle={tSettings('ble.autoDisconnect.toggleSubtitle', { timeout: autoDisconnectTimeoutLabel })}
+          leading={<Icon name="clock" size={22} color={systemColors.secondaryLabel} />}
+          trailing={
+            <Switch
+              value={autoDisconnectEnabled}
+              pointerEvents="none"
+              accessibilityLabel={tSettings('ble.autoDisconnect.toggleAccessibility')}
+            />
+          }
+          onPress={() => onToggleAutoDisconnect(!autoDisconnectEnabled)}
+          accessibilityLabel={tSettings('ble.autoDisconnect.toggleAccessibility')}
+          showSeparator
+        />
         <ListRow
           title={tSettings('ble.relightBoard')}
           leading={<Icon name="lightbulb.fill" size={22} color={brandColors.warning} />}
