@@ -18,6 +18,7 @@ const responderHarness = vi.hoisted(() => ({
   deferMeasurements: false,
   measurementCallbacks: [] as MeasureCallback[],
   measurementCallCount: 0,
+  trackLayoutCallbacks: new Set<() => void>(),
   sliderRenderCounts: {} as Record<string, number>,
 }));
 const okhslHarness = vi.hoisted(() => ({ conversionCount: 0 }));
@@ -31,6 +32,7 @@ type ViewMockProps = {
   accessibilityValue?: { text?: string };
   children?: ReactNode;
   onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void;
+  onLayout?: () => void;
   onPanResponderGrant?: ResponderConfig['onPanResponderGrant'];
   onPanResponderMove?: ResponderConfig['onPanResponderMove'];
   onPanResponderRelease?: ResponderConfig['onPanResponderRelease'];
@@ -45,6 +47,7 @@ vi.mock('react-native', () => {
       accessibilityValue,
       children,
       onAccessibilityAction,
+      onLayout,
       onPanResponderGrant,
       onPanResponderMove,
       onPanResponderRelease,
@@ -52,6 +55,7 @@ vi.mock('react-native', () => {
     },
     ref,
   ) {
+    if (onLayout) responderHarness.trackLayoutCallbacks.add(onLayout);
     useImperativeHandle(
       ref,
       () => ({
@@ -206,6 +210,10 @@ function resolveNextMeasurement(width = 300, pageLeft = 0) {
   callback(0, 0, width, 14, pageLeft, 0);
 }
 
+function fireTrackLayouts() {
+  for (const onLayout of responderHarness.trackLayoutCallbacks) onLayout();
+}
+
 function grant(label: string, pageX: number) {
   responder(label).onPanResponderGrant?.(responderEvent(pageX));
 }
@@ -243,6 +251,7 @@ describe('OkhslColorPicker gradient updates', () => {
     responderHarness.deferMeasurements = false;
     responderHarness.measurementCallbacks.length = 0;
     responderHarness.measurementCallCount = 0;
+    responderHarness.trackLayoutCallbacks.clear();
     responderHarness.sliderRenderCounts = {};
     okhslHarness.conversionCount = 0;
   });
@@ -253,7 +262,7 @@ describe('OkhslColorPicker gradient updates', () => {
     vi.useRealTimers();
   });
 
-  it('coalesces rapid drag moves into one gradient rebuild per ~33 ms interval', () => {
+  it('coalesces rapid drag moves into one gradient rebuild per 30 fps interval', () => {
     const onChange = vi.fn();
     render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
 
@@ -404,6 +413,41 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     const hexInput = container.querySelector<HTMLInputElement>(`[aria-label="${HEX_LABEL}"]`);
     expect(hexInput?.value).toBe(onChange.mock.lastCall?.[0]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('re-measures the latest coordinate when track layout changes during a drag', () => {
+    responderHarness.deferMeasurements = true;
+    const onChange = vi.fn();
+    const { container } = render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
+
+    act(() => {
+      grant(LIGHTNESS_LABEL, 30);
+      move(LIGHTNESS_LABEL, 180);
+      release(LIGHTNESS_LABEL, 270);
+      fireTrackLayouts();
+    });
+
+    expect(responderHarness.measurementCallCount).toBe(1);
+    expect(responderHarness.measurementCallbacks).toHaveLength(1);
+    expect(onChange).not.toHaveBeenCalled();
+
+    act(() => {
+      resolveNextMeasurement();
+    });
+
+    // The result measured against the stale layout is discarded and the
+    // coalesced final coordinate is measured once more against the new layout.
+    expect(onChange).not.toHaveBeenCalled();
+    expect(responderHarness.measurementCallCount).toBe(2);
+    expect(responderHarness.measurementCallbacks).toHaveLength(1);
+
+    act(() => {
+      resolveNextMeasurement(300, 0);
+    });
+
+    expect(slider(container, LIGHTNESS_LABEL).dataset.accessibilityValue).toBe('90%');
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
 

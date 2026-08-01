@@ -231,6 +231,7 @@ const ChannelSlider = memo(function ChannelSlider({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (event: GestureResponderEvent) => {
+          if (!mountedRef.current) return;
           gestureGenerationRef.current += 1;
           pendingCoordinateRef.current = null;
           activePickerGestureEpochRef.current = onDragStartRef.current();
