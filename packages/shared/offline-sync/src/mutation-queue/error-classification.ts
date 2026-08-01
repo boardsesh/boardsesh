@@ -103,6 +103,13 @@ const MAX_CAUSE_DEPTH = 3;
 function isLocaleIndependentTransportSignal(error: unknown, depth = 0): boolean {
   if (error === null || typeof error !== 'object') return false;
 
+  // The mobile GraphQL guard throws this stable named error after receiving
+  // response headers but no usable 2xx body. The server verdict never arrived,
+  // so queued writes must stop without advancing toward the dead-letter. Match
+  // structurally to keep this renderer-agnostic package independent of mobile.
+  const name = (error as { name?: unknown }).name;
+  if (name === 'GraphQLEmptyResponseError') return true;
+
   const code = (error as { code?: unknown }).code;
   if (typeof code === 'string' && TRANSPORT_NETWORK_CODES.has(code)) return true;
 

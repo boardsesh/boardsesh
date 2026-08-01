@@ -249,6 +249,17 @@ describe('isTransportNetworkError', () => {
 });
 
 describe('isNetworkError', () => {
+  it('treats a named GraphQL empty 2xx response as transport-shaped even with its status attached', () => {
+    const error = Object.assign(new Error('GraphQL response body was empty or not valid JSON (HTTP 200)'), {
+      name: 'GraphQLEmptyResponseError',
+      status: 200,
+    });
+
+    expect(getErrorStatus(error)).toBe(200);
+    expect(isNetworkError(error)).toBe(true);
+    expect(isRetryable(error)).toBe(true);
+  });
+
   it('still treats an AbortError (by name) as a network failure — replaying is safe', () => {
     const aborted = new Error('Aborted');
     aborted.name = 'AbortError';

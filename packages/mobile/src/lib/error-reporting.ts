@@ -40,7 +40,7 @@ function isCancellation(error: unknown): boolean {
  *     `response.status` (a `response` present but with a non-numeric status);
  *   - our GraphQL client throws a typed `GraphQLEmptyResponseError` (see
  *     `./graphql/client.ts`) when a nominally-2xx response body arrives empty or
- *     truncated — the same offline blip signature, just caught a layer up (#3190);
+ *     truncated; the shared classifier treats its stable name as transport-shaped;
  *   - every other transport rejection — RN's `TypeError: Network request failed`,
  *     the WinterCG `Error: "fetch failed: <cause>"` wrapper (graphql-ws HTTP),
  *     Android `UnknownHostException`, and bare iOS NSURLError descriptions — is
@@ -50,8 +50,6 @@ function isCancellation(error: unknown): boolean {
  */
 function isNetworkError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
-  const name = (error as { name?: unknown }).name;
-  if (name === 'GraphQLEmptyResponseError') return true;
   const response = (error as { response?: unknown }).response;
   // Preserve statusless ClientError as a transport signal while allowing a
   // status nested in response.errors[].extensions to win over message prose.
