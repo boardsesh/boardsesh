@@ -180,9 +180,14 @@ const ChannelSlider = memo(function ChannelSlider({
       applyCoordinate(latestCoordinate, layout);
     });
   }, [applyCoordinate, finishGesture]);
-  // Keep the latest callback available to its own deferred measurement
-  // completions without rebuilding the gesture responder mid-drag.
-  measurePendingCoordinateRef.current = measurePendingCoordinate;
+  useEffect(() => {
+    // Keep the latest callback available to its own deferred measurement
+    // completions without rebuilding the gesture responder mid-drag.
+    measurePendingCoordinateRef.current = measurePendingCoordinate;
+    return () => {
+      measurePendingCoordinateRef.current = () => undefined;
+    };
+  }, [measurePendingCoordinate]);
 
   const requestCoordinate = useCallback(
     (pageX: number, shouldEndGesture: boolean) => {

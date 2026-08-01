@@ -199,9 +199,6 @@ const EXPECTED_INITIAL_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS.redu
   0,
 );
 const NON_LIGHTNESS_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS[1] + EXPECTED_GRADIENT_STOP_COUNTS[2];
-// Mirrors the component's explicit visual contract: at most one expensive
-// gradient rebuild per 30 fps interval while thumb/value updates stay exact.
-const GRADIENT_UPDATE_INTERVAL_MS = 1000 / 30;
 
 function responderEvent(pageX: number): ResponderEvent {
   return { nativeEvent: { pageX } };
@@ -293,22 +290,37 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(1);
     expect(vi.getTimerCount()).toBe(1);
 
-    // Fake timers schedule the fractional delay on the preceding whole
-    // millisecond, so stay one millisecond below that boundary first.
-    const wholeMillisecondsBeforeGradientUpdate = Math.floor(GRADIENT_UPDATE_INTERVAL_MS) - 1;
     act(() => {
-      vi.advanceTimersByTime(wholeMillisecondsBeforeGradientUpdate);
-    });
-    expect(okhslHarness.conversionCount).toBe(EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21);
-
-    act(() => {
-      vi.advanceTimersByTime(Math.ceil(GRADIENT_UPDATE_INTERVAL_MS) - wholeMillisecondsBeforeGradientUpdate);
+      vi.advanceTimersToNextTimer();
     });
     expect(okhslHarness.conversionCount).toBe(
       EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21 + NON_LIGHTNESS_GRADIENT_CONVERSIONS,
     );
     expect(responderHarness.sliderRenderCounts[SATURATION_LABEL]).toBe(2);
     expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(2);
+
+    // Keep moving after the first interval to prove each later interval also
+    // coalesces its own burst instead of degrading into per-move rebuilds.
+    act(() => {
+      move(LIGHTNESS_LABEL, 210);
+      move(LIGHTNESS_LABEL, 240);
+    });
+    expect(onChange).toHaveBeenCalledTimes(23);
+    expect(okhslHarness.conversionCount).toBe(
+      EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 23 + NON_LIGHTNESS_GRADIENT_CONVERSIONS,
+    );
+    expect(responderHarness.sliderRenderCounts[SATURATION_LABEL]).toBe(2);
+    expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(2);
+    expect(vi.getTimerCount()).toBe(1);
+
+    act(() => {
+      vi.advanceTimersToNextTimer();
+    });
+    expect(okhslHarness.conversionCount).toBe(
+      EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 23 + NON_LIGHTNESS_GRADIENT_CONVERSIONS * 2,
+    );
+    expect(responderHarness.sliderRenderCounts[SATURATION_LABEL]).toBe(3);
+    expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(3);
     expect(Object.keys(responderHarness.configsByLabel)).toHaveLength(3);
   });
 
