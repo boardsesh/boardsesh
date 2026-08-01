@@ -130,16 +130,18 @@ type AuroraApiRow = Record<string, string>;
 type DrizzleDb = PostgresJsDatabase<Record<string, never>>;
 
 /**
- * Advisory-lock namespace for Aurora circuit playlist arbitration. `0x41555243`
- * is ASCII "AURC". The two-int lock form keeps this lock space separate from
- * the other transaction-scoped advisory locks used by Boardsesh.
- *
- * There is no playlist row to lock when two users concurrently claim a new
- * circuit. Serializing on (board, circuit uuid) before the fresh ownership read
- * closes that gap across daemon instances. PostgreSQL releases the lock when
- * the surrounding transaction commits or rolls back.
+ * Text namespace embedded in the server-side 64-bit advisory-lock hash. There
+ * is no playlist row to lock when two users concurrently claim a new circuit,
+ * so serializing on (board, circuit uuid) before the fresh ownership read closes
+ * that gap across daemon instances. PostgreSQL releases the lock when the
+ * surrounding transaction commits or rolls back.
  */
-const AURORA_CIRCUIT_LOCK_NAMESPACE = 0x41555243;
+const AURORA_CIRCUIT_LOCK_KEY_PREFIX = 'boardsesh:aurora-circuit';
+
+/** Pure/testable input to PostgreSQL's `hashtextextended(text, bigint)`. */
+export function getAuroraCircuitAdvisoryLockKey(boardName: AuroraBoardName, circuitUuid: string): string {
+  return `${AURORA_CIRCUIT_LOCK_KEY_PREFIX}|${boardName}|${circuitUuid}`;
+}
 
 type CircuitRefusalStage = 'ownership-check' | 'suppressed-upsert';
 type CircuitRefusalReason = 'foreign' | 'ambiguous' | 'no-owner' | 'own';
@@ -165,6 +167,7 @@ function normalizeCircuitItems(data: AuroraApiRow[]): AuroraApiRow[] {
 
 function logCircuitRefusal(
   log: (message: string) => void,
+  logError: (message: string) => void,
   input: {
     boardName: AuroraBoardName;
     circuitUuid: string;
@@ -181,6 +184,25 @@ function logCircuitRefusal(
     stage: input.stage,
     reason: input.reason,
   });
+
+  if (input.stage === 'suppressed-upsert' && input.reason === 'own') {
+    // `foreignPlaylistOwnerGuard` cannot suppress an update when the syncing
+    // user is the sole owner. Keep the item in the invariant refusal bucket,
+    // but emit a separate error-level event so an operator can distinguish this
+    // protocol contradiction from the recoverable no-owner race. Do not include
+    // the circuit payload, credentials, or other upstream response data.
+    logError(
+      JSON.stringify({
+        level: 'error',
+        event: 'aurora_circuit_playlist_suppressed_own_contradiction',
+        boardType: input.boardName,
+        circuitUuid: input.circuitUuid,
+        syncingUserId: input.syncingUserId,
+        stage: input.stage,
+        reason: input.reason,
+      }),
+    );
+  }
 
   if (input.reason === 'foreign' || input.reason === 'ambiguous') {
     log(
@@ -224,6 +246,7 @@ export async function upsertTableData(
   nextAuthUserId: string,
   data: AuroraApiRow[],
   log: (message: string) => void = console.info,
+  logError: (message: string) => void = console.error,
 ): Promise<UpsertResult> {
   if (data.length === 0) return { synced: 0, skipped: 0 };
 
@@ -415,7 +438,10 @@ export async function upsertTableData(
         // transaction until it commits or rolls back.
         for (const item of circuitItems) {
           await circuitsTransaction.execute(
-            sql`SELECT pg_advisory_xact_lock(${AURORA_CIRCUIT_LOCK_NAMESPACE}, hashtext(${`${boardName}|${item.uuid}`}))`,
+            // Keep the 64-bit hash inside PostgreSQL. Converting the result to a
+            // JavaScript Number would lose precision above 2^53 and could make
+            // contenders derive different advisory keys.
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${getAuroraCircuitAdvisoryLockKey(boardName, item.uuid)}, 0::bigint))`,
           );
         }
 
@@ -467,7 +493,7 @@ export async function upsertTableData(
                 // Refuse the whole item — upsert, ownership grant AND the
                 // playlist_climbs replace below. Skipping only the upsert would
                 // still wipe the other user's climbs further down.
-                logCircuitRefusal(log, {
+                logCircuitRefusal(log, logError, {
                   boardName,
                   circuitUuid: item.uuid,
                   syncingUserId: nextAuthUserId,
@@ -524,7 +550,7 @@ export async function upsertTableData(
                 );
                 const reason: CircuitRefusalReason =
                   suppressedOwnerDecision === 'adopt' ? 'no-owner' : suppressedOwnerDecision;
-                logCircuitRefusal(log, {
+                logCircuitRefusal(log, logError, {
                   boardName,
                   circuitUuid: item.uuid,
                   syncingUserId: nextAuthUserId,

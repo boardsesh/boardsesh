@@ -10,7 +10,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { boardCircuits, boardUsers, playlistClimbs, playlistOwnership, playlists, users } from '@boardsesh/db/schema';
-import { upsertTableData } from './user-sync';
+import { getAuroraCircuitAdvisoryLockKey, upsertTableData } from './user-sync';
 
 function localDatabaseUrl(): string | null {
   const databaseUrl = process.env.DATABASE_URL;
@@ -373,8 +373,7 @@ describeIntegration('Aurora circuit ownership arbitration concurrency (#3950)', 
         await waitForBlockedCircuitSourceUpsert(client, claimantApplicationNamePrefix);
         const [advisoryProbe] = await client<{ acquired: boolean }[]>`
           SELECT pg_try_advisory_xact_lock(
-            ${0x41555243},
-            hashtext(${`tension|${circuitUuid}`})
+            hashtextextended(${getAuroraCircuitAdvisoryLockKey('tension', circuitUuid)}, 0::bigint)
           ) AS acquired
         `;
         expect(advisoryProbe?.acquired).toBe(false);

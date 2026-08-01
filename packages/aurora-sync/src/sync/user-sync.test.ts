@@ -479,6 +479,7 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
 
   it('does not label a suppressed upsert with only this owner as a duplicate account', async () => {
     const logged: string[] = [];
+    const errorLogged: string[] = [];
     const { db } = createDbShim({
       selectResults: [[], [{ upstreamId: 'circuit-1', ownerUserId: 'user-1' }]],
       returningRows: [[]],
@@ -492,12 +493,47 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
       'user-1',
       [circuit('circuit-1', 'Invariant failure')],
       (message) => logged.push(message),
+      (message) => errorLogged.push(message),
     );
 
     expect(result.skippedReason).toBe(CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON);
     expect(result.skippedReason).not.toBe(DUPLICATE_CIRCUIT_OWNER_SKIP_REASON);
     expect(result.circuitPlaylistRefusals).toEqual({ foreign: 0, ambiguous: 0, invariant: 1 });
     expect(logged.some((line) => line.includes('"reason":"own"'))).toBe(true);
+    expect(errorLogged).toHaveLength(1);
+    expect(JSON.parse(errorLogged[0] ?? '{}')).toEqual({
+      level: 'error',
+      event: 'aurora_circuit_playlist_suppressed_own_contradiction',
+      boardType: 'tension',
+      circuitUuid: 'circuit-1',
+      syncingUserId: 'user-1',
+      stage: 'suppressed-upsert',
+      reason: 'own',
+    });
+    expect(errorLogged[0]).not.toContain('Invariant failure');
+  });
+
+  it('locks and upserts only the source circuit when no NextAuth user ID is available', async () => {
+    const { db, calls, insertsInto } = createDbShim();
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      '',
+      [circuit('source-only', 'Source only')],
+      () => {},
+    );
+
+    expect(result).toEqual({ synced: 1, skipped: 0 });
+    expect(calls.filter((call) => call.kind === 'execute')).toHaveLength(1);
+    expect(insertsInto(boardCircuits)).toHaveLength(1);
+    expect(insertsInto(playlists)).toHaveLength(0);
+    expect(insertsInto(playlistOwnership)).toHaveLength(0);
+    expect(insertsInto(playlistClimbs)).toHaveLength(0);
+    expect(calls.filter((call) => call.kind === 'select' || call.kind === 'delete')).toHaveLength(0);
+    expect(calls.filter((call) => call.kind === 'transaction')).toHaveLength(1);
   });
 
   it('takes every namespaced advisory lock before the source upsert and fresh owner read', async () => {
@@ -529,9 +565,9 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
     const lockStatement = calls[executeCallIndexes[0]]?.args[0];
     const rendered = new PgDialect().sqlToQuery(lockStatement as never);
     expect(rendered.sql).toContain('pg_advisory_xact_lock');
-    expect(rendered.sql).toContain('hashtext');
-    expect(rendered.params).toContain(0x41555243);
-    expect(rendered.params).toContain('tension|a-circuit');
+    expect(rendered.sql).toContain('hashtextextended');
+    expect(rendered.sql).toContain('0::bigint');
+    expect(rendered.params).toEqual(['boardsesh:aurora-circuit|tension|a-circuit']);
   });
 
   it('takes multi-circuit locks in stable UUID order to avoid cross-transaction deadlocks', async () => {
@@ -554,7 +590,10 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
       .filter((call) => call.kind === 'execute')
       .map((call) => new PgDialect().sqlToQuery(call.args[0] as never).params)
       .map((params) => params.find((parameter) => typeof parameter === 'string'));
-    expect(lockKeys).toEqual(['tension|a-circuit', 'tension|z-circuit']);
+    expect(lockKeys).toEqual([
+      'boardsesh:aurora-circuit|tension|a-circuit',
+      'boardsesh:aurora-circuit|tension|z-circuit',
+    ]);
   });
 
   it('locks each normalized set before its source upsert when calls share an outer transaction', async () => {
@@ -593,11 +632,11 @@ describe('upsertTableData circuits — race-guard suppression + owner lookup SQL
       });
 
     expect(arbitrationEvents).toEqual([
-      'tension|a-circuit',
-      'tension|z-circuit',
+      'boardsesh:aurora-circuit|tension|a-circuit',
+      'boardsesh:aurora-circuit|tension|z-circuit',
       'source-upsert',
-      'tension|c-circuit',
-      'tension|d-circuit',
+      'boardsesh:aurora-circuit|tension|c-circuit',
+      'boardsesh:aurora-circuit|tension|d-circuit',
       'source-upsert',
     ]);
   });
