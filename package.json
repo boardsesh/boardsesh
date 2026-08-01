@@ -60,6 +60,7 @@
   },
   "packageManager": "bun@1.3.14",
   "patchedDependencies": {
+    "@expo/fingerprint@0.20.6": "patches/@expo%2Ffingerprint@0.20.6.patch",
     "@expo/ui@57.0.8": "patches/@expo%2Fui@57.0.8.patch",
     "expo-dev-launcher@57.0.10": "patches/expo-dev-launcher@57.0.10.patch",
     "react-native-screens@4.26.2": "patches/react-native-screens@4.26.2.patch"

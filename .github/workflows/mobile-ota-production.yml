@@ -21,6 +21,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
+      - 'bun.lock'
       - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
       - 'scripts/mobile-publish.ts'
       - 'scripts/lib/mobile-publish-retry.ts'

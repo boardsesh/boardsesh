@@ -32,6 +32,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
+      - 'bun.lock'
       - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
       - '.github/workflows/android-pr-rn.yml'
       - '.github/actions/android-rn-setup/**'

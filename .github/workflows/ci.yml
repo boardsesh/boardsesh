@@ -81,6 +81,7 @@ jobs:
             mobile:
               - 'packages/mobile/**'
               - 'packages/board-renderer/wasm/pkg/**'
+              - 'patches/**'
               - 'scripts/mobile-platform-imports-check.sh'
               - 'scripts/mobile-web-bundle-check.sh'
               - 'scripts/sync-mobile-board-renderer-wasm.sh'
@@ -749,6 +750,11 @@ jobs:
       # patched source is actually present on this cheap Linux runner.
       - name: Check native patches are applied
         run: vp run check:mobile-patches
+      # The resolver can return a valid fingerprint even when a source is silently
+      # absent/null. Assert the four autolinking configs, every discovered native
+      # module dir, the fingerprint config, and root patch bodies all contribute.
+      - name: Check mobile fingerprint inputs are complete
+        run: vp run check:mobile-fingerprint-inputs
       # Cheap source guard: no raw theme-variant magic-string compares regrew in
       # mobile components (they must route through the variant primitives/tokens —
       # see packages/mobile/src/theme/variants/README.md).

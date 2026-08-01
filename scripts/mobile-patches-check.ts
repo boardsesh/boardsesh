@@ -25,6 +25,11 @@
  * unhandled rejection on older store binaries) and the iOS wiring is what
  * makes `onFullyDismissed` ever fire. Neither shows up in a bundle.
  *
+ * For @expo/fingerprint, the patch makes Bun's isolated-linker package roots
+ * hashable and gives their files stable logical ids. Without it, Expo mistakes
+ * every autolinked native module for a nested node_modules directory and hashes
+ * the source as null; peer-resolution store suffixes also leak into hash ids.
+ *
  * This check resolves the COPY packages/mobile actually uses (the same one
  * CocoaPods compiles) and asserts the patch's sentinel symbols are present in
  * the installed source. It fails the PR on a cheap Linux runner the instant a
@@ -62,6 +67,18 @@ export interface PatchRule {
  * patch stays unguarded. Guarding it needs resolution via its parent first.
  */
 export const RULES: readonly PatchRule[] = [
+  {
+    package: '@expo/fingerprint',
+    file: 'build/utils/Path.js',
+    sentinels: ['normalizeBunIsolatedModulePath', 'BUN_ISOLATED_MODULE_ROOT_REGEX'],
+    patchedKey: '@expo/fingerprint@0.20.6',
+  },
+  {
+    package: '@expo/fingerprint',
+    file: 'build/hash/Hash.js',
+    sentinels: ['normalizeBunIsolatedModulePath'],
+    patchedKey: '@expo/fingerprint@0.20.6',
+  },
   {
     package: 'react-native-screens',
     file: 'ios/helpers/scroll-view/RNSScrollViewFinder.mm',

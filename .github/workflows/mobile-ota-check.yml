@@ -25,6 +25,9 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
+      - 'bun.lock'
+      - 'patches/**'
       - '.github/workflows/mobile-ota-check.yml'
       # The check's own logic — so changes to it re-run and self-validate.
       - 'scripts/mobile-ota-compat-check.ts'

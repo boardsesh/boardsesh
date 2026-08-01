@@ -314,6 +314,7 @@
       },
       "devDependencies": {
         "@bacons/apple-targets": "^4.0.7",
+        "@expo/fingerprint": "0.20.6",
         "@testing-library/react": "^16.3.2",
         "@types/react": "^19.2.18",
         "babel-plugin-react-compiler": "1.0.0",
@@ -895,6 +896,7 @@
   "patchedDependencies": {
     "@expo/ui@57.0.8": "patches/@expo%2Fui@57.0.8.patch",
     "expo-dev-launcher@57.0.10": "patches/expo-dev-launcher@57.0.10.patch",
+    "@expo/fingerprint@0.20.6": "patches/@expo%2Ffingerprint@0.20.6.patch",
     "react-native-screens@4.26.2": "patches/react-native-screens@4.26.2.patch",
   },
   "overrides": {

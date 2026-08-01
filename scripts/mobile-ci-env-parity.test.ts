@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -46,6 +46,11 @@ const OTA_PREVIEW = 'mobile-ota-preview.yml';
 // native builds too, or the assertion diverges from the value the shipped binary
 // actually embeds.
 const OTA_BACKPORT = 'mobile-ota-backport.yml';
+const ANDROID_PR = 'android-pr-rn.yml';
+const IOS_PR = 'ios-rn-ci.yml';
+const CI = 'ci.yml';
+const NATIVE_GATE = resolve(REPO_ROOT, '.github/actions/mobile-native-gate/action.yml');
+const OTA_COMPAT_SCRIPT = resolve(REPO_ROOT, 'scripts/mobile-ota-compat-check.ts');
 
 // Workflow-level env keys that feed the resolved config (fingerprint) and/or the
 // inlined JS bundle (runtime correctness). Every one must be declared identically
@@ -190,6 +195,83 @@ describe('mobile CI env parity (OTA fingerprint invariant)', () => {
     expect(ios).toMatch(/fingerprint-ios-/);
     expect(android).toMatch(/runtimeversion:resolve --platform android/);
     expect(android).toMatch(/fingerprint-android-/);
+  });
+
+  it('resolves every explicit workflow fingerprint through expo-updates from packages/mobile', () => {
+    const expectedWorkflowResolvers = [
+      { name: NATIVE_IOS, platform: 'ios' },
+      { name: NATIVE_ANDROID, platform: 'android' },
+      { name: OTA_BACKPORT, platform: '"$PLATFORM"' },
+    ];
+    for (const { name, platform } of expectedWorkflowResolvers) {
+      const source = readWorkflow(name);
+      const resolverCalls = source.match(/bunx expo-updates runtimeversion:resolve/g) ?? [];
+      expect(resolverCalls, `${name} must have exactly one explicit runtimeVersion resolver`).toHaveLength(1);
+      expect(source).toContain(`cd packages/mobile && bunx expo-updates runtimeversion:resolve --platform ${platform}`);
+    }
+
+    const nativeGate = readFileSync(NATIVE_GATE, 'utf8');
+    expect(nativeGate.match(/bunx expo-updates runtimeversion:resolve/g) ?? []).toHaveLength(1);
+    expect(nativeGate).toMatch(
+      /cd "\$1\/packages\/mobile"[\s\\]+&& TAILSCALE_HOSTS='' bunx expo-updates runtimeversion:resolve/,
+    );
+
+    const otaCompat = readFileSync(OTA_COMPAT_SCRIPT, 'utf8');
+    expect(otaCompat).toMatch(
+      /execFileSync\('bunx', \['expo-updates', 'runtimeversion:resolve', '--platform', platform\], \{\s*cwd: mobileDir,/,
+    );
+
+    const workflowSources = readdirSync(WORKFLOW_DIR)
+      .filter((name) => name.endsWith('.yml'))
+      .map(readWorkflow)
+      .join('\n');
+    expect(workflowSources).not.toMatch(/(?:bunx|npx) (?:@expo\/fingerprint|fingerprint:generate)/);
+  });
+
+  it('runs every automatic fingerprint surface when root linker or patch inputs change', () => {
+    const automaticFingerprintWorkflows = [NATIVE_IOS, NATIVE_ANDROID, OTA, OTA_CHECK, OTA_PREVIEW, ANDROID_PR, IOS_PR];
+    for (const name of automaticFingerprintWorkflows) {
+      const source = readWorkflow(name);
+      expect(source, `${name} must react to root patchedDependencies edits`).toContain("- 'package.json'");
+      expect(source, `${name} must react to isolated-linker lock changes`).toContain("- 'bun.lock'");
+      expect(source, `${name} must react to native patch body changes`).toContain("- 'patches/**'");
+    }
+  });
+
+  it('screens root package and fingerprint-config edits inside the composite native gate', () => {
+    const nativeGate = readFileSync(NATIVE_GATE, 'utf8');
+    const pathScreen = nativeGate.match(/# Path screen:[\s\S]*?# A candidate changed/)?.[0];
+    expect(pathScreen, 'mobile-native-gate must retain a candidate-input path screen').toBeTruthy();
+
+    const changedArguments = pathScreen?.match(/\$\(changed \\\n([\s\S]*?)\)" \]; then/)?.[1];
+    expect(changedArguments, 'could not read the composite gate changed(...) arguments').toBeTruthy();
+    const candidateInputs = changedArguments?.replaceAll('\\', ' ').trim().split(/\s+/) ?? [];
+
+    expect(candidateInputs).toEqual(
+      expect.arrayContaining([
+        'package.json',
+        'packages/mobile/package.json',
+        'bun.lock',
+        'packages/mobile/app.config.ts',
+        'packages/mobile/fingerprint.config.js',
+        'packages/mobile/plugins',
+        'packages/mobile/modules',
+        'patches',
+      ]),
+    );
+  });
+
+  it('routes patch-only PRs through the mobile fingerprint and patch sentinels', () => {
+    const ci = readWorkflow(CI);
+    const mobileFilter = ci.match(/^ {12}mobile:\n(?:^ {14}.*\n)+/m)?.[0];
+    expect(mobileFilter, 'ci.yml must retain a mobile paths-filter mapping').toBeTruthy();
+    expect(mobileFilter).toContain("- 'patches/**'");
+
+    const mobileBundleJob = ci.match(/^  mobile-bundle:\n[\s\S]*?(?=^  [a-z][a-z0-9-]*:\n|(?![\s\S]))/m)?.[0];
+    expect(mobileBundleJob, 'ci.yml must retain the mobile-bundle job').toBeTruthy();
+    expect(mobileBundleJob).toMatch(/if:.*needs\.changes\.outputs\.mobile == 'true'/);
+    expect(mobileBundleJob).toContain('run: vp run check:mobile-patches');
+    expect(mobileBundleJob).toContain('run: vp run check:mobile-fingerprint-inputs');
   });
 
   it('forces the binary onto the gate fingerprint, and the OTA publish resolves fresh (never pinned)', () => {

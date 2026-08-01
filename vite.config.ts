@@ -665,6 +665,10 @@ export default defineConfig({
         command: 'tsx scripts/mobile-ota-compat-check.ts',
         cache: false,
       },
+      'check:mobile-fingerprint-inputs': {
+        command: 'tsx scripts/mobile-fingerprint-inputs-check.ts',
+        cache: false,
+      },
       'check:mobile-patches': {
         command: 'tsx scripts/mobile-patches-check.ts',
         cache: false,

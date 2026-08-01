@@ -8,6 +8,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
+      - 'bun.lock'
       - 'patches/**' # bun patches to mobile deps live in root patches/, not under packages/mobile/**
       - '.github/workflows/ios-testflight-rn.yml'
   workflow_dispatch:

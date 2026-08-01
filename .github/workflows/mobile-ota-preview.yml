@@ -61,6 +61,8 @@ on:
       - 'packages/shared/**'
       - 'packages/board-constants/**'
       - 'packages/shared-schema/**'
+      - 'package.json' # root patchedDependencies and linker inputs affect the mobile native graph
+      - 'bun.lock'
       - 'patches/**'
       - 'scripts/mobile-publish.ts'
       - 'scripts/lib/mobile-publish-retry.ts'

@@ -70,8 +70,9 @@ runs:
         # Path screen: nothing in the canonical native-input set (mirrors the
         # ios-rn-ci Pods cache key) changed → skip without paying for a resolve.
         if [ -z "$(changed \
-              packages/mobile/package.json bun.lock packages/mobile/app.config.ts \
-              packages/mobile/plugins packages/mobile/modules patches)" ]; then
+              package.json packages/mobile/package.json bun.lock packages/mobile/app.config.ts \
+              packages/mobile/fingerprint.config.js packages/mobile/plugins \
+              packages/mobile/modules patches)" ]; then
           skip "no native-input files changed vs main"
         fi
 
