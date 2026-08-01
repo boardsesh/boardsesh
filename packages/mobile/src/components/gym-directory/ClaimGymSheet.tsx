@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { BottomSheetModal, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import type { Gym } from '@boardsesh/shared-schema';
 import { extractDomain, isClaimableDomain, GYM_CLAIM_MESSAGE_MAX_LENGTH } from '@boardsesh/gym-claim';
@@ -13,11 +13,12 @@ import { useTheme } from '../../providers/theme-provider';
 import { spacing, borderRadius } from '../../theme/tokens';
 import { useRequestGymClaim } from '../../lib/graphql/hooks';
 import { extractGraphqlMessage } from '../../lib/graphql/extract-error-message';
+import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 
 type ClaimMode = 'domain' | 'admin';
 
 type ClaimGymSheetProps = {
-  sheetRef: RefObject<BottomSheetModal | null>;
+  sheetRef: RefObject<ManagedSheetHandle | null>;
   gym: Gym;
   /** Fired after the sheet fully dismisses. A host that mounts this per-target
    *  (the wall finder) clears its target here so the same gym can re-open later. */

@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { createElement, createRef, type ReactNode } from 'react';
-import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
+import type { ManagedSheetHandle } from '../../../providers/sheet-presentation-provider';
 
 type ViewMockProps = { children?: ReactNode };
 vi.mock('react-native', () => ({
@@ -124,20 +124,20 @@ describe('FeedbackSheet bug report contact consent', () => {
     root.querySelector('[data-switch="feedbackForm.contactConsentLabel"]') as HTMLButtonElement | null;
 
   it('defaults contact consent to on (opt-out) for an authenticated bug report', () => {
-    const sheetRef = createRef<BottomSheetModal>();
+    const sheetRef = createRef<ManagedSheetHandle>();
     const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('true');
   });
 
   it('does not render the consent switch when unauthenticated', () => {
     auth.isAuthenticated = false;
-    const sheetRef = createRef<BottomSheetModal>();
+    const sheetRef = createRef<ManagedSheetHandle>();
     const { container } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
     expect(switchRow(container)).toBeNull();
   });
 
   it('submits contactConsent true by default without the user touching the switch', async () => {
-    const sheetRef = createRef<BottomSheetModal>();
+    const sheetRef = createRef<ManagedSheetHandle>();
     const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
     fireEvent.change(getByPlaceholderText('feedbackForm.bugPlaceholder'), {
       target: { value: 'the board disconnects on start' },
@@ -148,7 +148,7 @@ describe('FeedbackSheet bug report contact consent', () => {
   });
 
   it('respects an explicit opt-out when the reporter flips the switch off', async () => {
-    const sheetRef = createRef<BottomSheetModal>();
+    const sheetRef = createRef<ManagedSheetHandle>();
     const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
     fireEvent.click(switchRow(container)!);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('false');
@@ -162,7 +162,7 @@ describe('FeedbackSheet bug report contact consent', () => {
   });
 
   it('resets the switch back to on after a successful submit, even from an opt-out', async () => {
-    const sheetRef = createRef<BottomSheetModal>();
+    const sheetRef = createRef<ManagedSheetHandle>();
     const { container, getByPlaceholderText } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
     fireEvent.click(switchRow(container)!);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('false');
@@ -176,7 +176,7 @@ describe('FeedbackSheet bug report contact consent', () => {
   });
 
   it('resets the switch back to on when the sheet mode changes away and back', () => {
-    const sheetRef = createRef<BottomSheetModal>();
+    const sheetRef = createRef<ManagedSheetHandle>();
     const { container, rerender } = render(<FeedbackSheet sheetRef={sheetRef} mode="bug" />);
     fireEvent.click(switchRow(container)!);
     expect(switchRow(container)?.getAttribute('data-value')).toBe('false');

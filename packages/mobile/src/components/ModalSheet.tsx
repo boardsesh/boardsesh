@@ -26,7 +26,11 @@ import { androidSafeSnapPoints } from './sheet-snap-points';
 import { useSheetBodyContentStyle } from './sheet-content-inset';
 import { useSheetColumnStyle } from './use-sheet-column-style';
 import { useSheetDetentProbe } from './sheet-detent-probe';
-import { useManagedSheet, type PresenterGroup } from '../providers/sheet-presentation-provider';
+import {
+  useManagedSheet,
+  type ManagedSheetHandle,
+  type PresenterGroup,
+} from '../providers/sheet-presentation-provider';
 
 type ModalSheetProps = {
   children: ReactNode;
@@ -52,7 +56,7 @@ type ModalSheetProps = {
   footer?: ReactNode;
 };
 
-export const ModalSheet = forwardRef<BottomSheetMethods, ModalSheetProps>(function ModalSheet(
+export const ModalSheet = forwardRef<ManagedSheetHandle, ModalSheetProps>(function ModalSheet(
   {
     children,
     visible,
@@ -85,7 +89,7 @@ export const ModalSheet = forwardRef<BottomSheetMethods, ModalSheetProps>(functi
     onClose,
     onFullyDismissed,
   });
-  useImperativeHandle(ref, () => managed.handle as BottomSheetMethods, [managed.handle]);
+  useImperativeHandle(ref, () => managed.handle, [managed.handle]);
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;

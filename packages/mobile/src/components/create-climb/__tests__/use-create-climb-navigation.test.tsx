@@ -5,8 +5,10 @@ import type { Climb } from '@boardsesh/shared-schema';
 import type { DismissAndWaitResult } from '../../../providers/sheet-presentation-provider';
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));
+const sentry = vi.hoisted(() => ({ capture: vi.fn() }));
 
 vi.mock('expo-router', () => ({ useRouter: () => router }));
+vi.mock('../../../lib/sentry', () => ({ captureToSentry: sentry.capture }));
 
 import { useCreateClimbNavigation, type DismissSurfaceAndWait } from '../use-create-climb-navigation';
 
@@ -28,7 +30,8 @@ function deferredDismiss() {
 }
 
 beforeEach(() => {
-  router.push.mockClear();
+  router.push.mockReset();
+  sentry.capture.mockClear();
 });
 
 describe('useCreateClimbNavigation serialized handoff', () => {
@@ -101,6 +104,29 @@ describe('useCreateClimbNavigation serialized handoff', () => {
     const reopenedMenu = renderHook(() => useCreateClimbNavigation());
     reopenedMenu.result.current.openRemix(climb, board);
 
+    expect(router.push).toHaveBeenCalledTimes(2);
+  });
+
+  it('captures a failed route push while preserving the one-action claim until re-open', async () => {
+    const navigationError = new Error('route transition failed');
+    router.push.mockImplementationOnce(() => {
+      throw navigationError;
+    });
+    const { result } = renderHook(() => useCreateClimbNavigation());
+
+    result.current.openRemix(climb, board);
+    await act(async () => {});
+
+    expect(sentry.capture).toHaveBeenCalledWith(navigationError, {
+      level: 'error',
+      tags: { source: 'create-climb-handoff' },
+    });
+
+    result.current.openRemix(climb, board);
+    expect(router.push).toHaveBeenCalledTimes(1);
+
+    result.current.resetActionGuard();
+    result.current.openRemix(climb, board);
     expect(router.push).toHaveBeenCalledTimes(2);
   });
 });

@@ -3,7 +3,6 @@ import { Linking, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import type { BoardName, Gym, UserBoard } from '@boardsesh/shared-schema';
 import { useNearbyBoards, useNearbyGyms } from '../../src/lib/graphql/hooks';
 import { useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
@@ -12,6 +11,7 @@ import { useDeviceLocation, type Coords } from '../../src/lib/use-device-locatio
 import { useGeocodePlace } from '../../src/lib/use-place-search';
 import { useToast } from '../../src/providers/toast-provider';
 import { useTheme } from '../../src/providers/theme-provider';
+import type { ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { resolveBoardReturnTo } from '../../src/lib/boards/board-return-to';
 import { Text } from '../../src/components/Text';
@@ -88,7 +88,7 @@ export default function GymDiscovery() {
   // "Claim this gym" action; the ClaimGymSheet is mounted per-target so its form
   // starts clean each open, and cleared when the sheet fully dismisses.
   const [claimTargetGym, setClaimTargetGym] = useState<Gym | null>(null);
-  const claimSheetRef = useRef<BottomSheetModal>(null);
+  const claimSheetRef = useRef<ManagedSheetHandle>(null);
 
   // `inputText` is the raw field; `appliedFilter` is the applied filter sent to the
   // backend (name + the board-type chips' selected `boardTypes`).

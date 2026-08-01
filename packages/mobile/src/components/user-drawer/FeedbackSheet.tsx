@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { BottomSheetModal, BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
+import { BottomSheetTextInput } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import { ModalSheet } from '../ModalSheet';
 import { Text } from '../Text';
@@ -16,6 +16,7 @@ import { spacing, borderRadius } from '../../theme/tokens';
 import { useSubmitMobileAppFeedback } from '../../lib/feedback/use-submit-app-feedback';
 import { runBleAdvertisementRecon } from '../../lib/ble/advertisement-recon';
 import { openDiscordInvite } from '../../lib/discord';
+import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 
 export type FeedbackSheetMode = 'rating' | 'bug';
 
@@ -24,7 +25,7 @@ const COMMENT_MAX_LENGTH = 2000;
 const STAR_RATING_VALUES = [1, 2, 3, 4, 5] as const;
 
 type FeedbackSheetProps = {
-  sheetRef: RefObject<BottomSheetModal | null>;
+  sheetRef: RefObject<ManagedSheetHandle | null>;
   mode: FeedbackSheetMode;
   /**
    * Show a "Join Discord" link below the submit button. Used on the login screen,

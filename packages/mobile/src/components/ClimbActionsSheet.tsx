@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
-import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { useTranslation } from 'react-i18next';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
@@ -71,10 +70,7 @@ function ClimbActionsSheet({
   onClose,
 }: ClimbActionsSheetProps) {
   const { t } = useTranslation('climbs');
-  // ModalSheet's public ref stays source-compatible with BottomSheetMethods, while
-  // the coordinator-backed runtime handle also carries dismissAndWait.
   const managedSheetRef = useRef<ManagedSheetHandle>(null);
-  const modalSheetRef = managedSheetRef as RefObject<BottomSheetMethods | null>;
   const dismissActionsSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
     const handle = managedSheetRef.current;
     return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
@@ -201,7 +197,7 @@ function ClimbActionsSheet({
 
   return (
     <ModalSheet
-      ref={modalSheetRef}
+      ref={managedSheetRef}
       visible={visible && !!climb}
       snapPoints={snapPoints}
       onClose={onClose}

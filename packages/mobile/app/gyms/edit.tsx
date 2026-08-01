@@ -2,11 +2,11 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import type { Gym, UpdateGymInput } from '@boardsesh/shared-schema';
 import { useGym, useUpdateGym } from '../../src/lib/graphql/hooks';
 import { useToast } from '../../src/providers/toast-provider';
 import { useTheme } from '../../src/providers/theme-provider';
+import type { ManagedSheetHandle } from '../../src/providers/sheet-presentation-provider';
 import { useStackScreenOptions } from '../../src/hooks/use-stack-screen-options';
 import { hapticSelection } from '../../src/lib/haptics';
 import { GymForm, type GymFormSeed, type GymFormSubmitValues } from '../../src/components/gym-directory/GymForm';
@@ -105,7 +105,7 @@ function EditGymForm({ gym }: { gym: Gym }) {
   const { systemColors } = useTheme();
   const { showToast } = useToast();
   const updateGym = useUpdateGym();
-  const claimSheetRef = useRef<BottomSheetModal>(null);
+  const claimSheetRef = useRef<ManagedSheetHandle>(null);
 
   const seed = useMemo<GymFormSeed>(
     () => ({

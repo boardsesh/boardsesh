@@ -1,11 +1,11 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { router, useSegments } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import type { BottomSheetModal } from '@expo/ui/community/bottom-sheet';
 import { openDiscordInvite } from '../../lib/discord';
 import { reportError } from '../../lib/error-reporting';
 import { showSignOutFailure } from '../../lib/sign-out-failure-alert';
 import { useAuth } from '../../providers/auth-provider';
+import type { ManagedSheetHandle } from '../../providers/sheet-presentation-provider';
 import { FeedbackSheet, type FeedbackSheetMode } from './FeedbackSheet';
 
 type BoardReturnTo = '/(tabs)/discover' | '/(tabs)/climbs';
@@ -50,7 +50,7 @@ export function UserDrawerProvider({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
   const { t } = useTranslation('common');
   const segments = useSegments();
-  const feedbackSheetRef = useRef<BottomSheetModal>(null);
+  const feedbackSheetRef = useRef<ManagedSheetHandle>(null);
   const [feedbackMode, setFeedbackMode] = useState<FeedbackSheetMode>('rating');
 
   // Mirror the latest focused-route segments into a ref so the callbacks below

@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import type { Climb } from '@boardsesh/shared-schema';
 import type { BoardConfig } from '../../providers/drawer-host-provider';
 import type { DismissAndWaitResult } from '../../providers/sheet-presentation-provider';
+import { captureToSentry } from '../../lib/sentry';
 
 export type DismissSurfaceAndWait = () => Promise<DismissAndWaitResult>;
 
@@ -70,7 +71,15 @@ export function useCreateClimbNavigation({
 
         router.push({ pathname: '/(tabs)/climbs/create', params });
       };
-      void completeHandoff();
+      void completeHandoff().catch((error: unknown) => {
+        // The owning overlay is already closing, so keep this presentation's
+        // one-action claim intact. A re-open resets the guard (or remounts this
+        // hook), while the failed route transition still reaches diagnostics.
+        captureToSentry(error, {
+          level: 'error',
+          tags: { source: 'create-climb-handoff' },
+        });
+      });
     },
     [router],
   );
