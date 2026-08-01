@@ -397,11 +397,11 @@ describe('projectAuroraFramesToStoredRows', () => {
   });
 
   it('skips an unknown first occurrence and accepts the later valid role', () => {
-    const projection = projectAuroraFramesToStoredRows('p1r999,"p1r2p0r2p-2r2', 'tension');
+    const projection = projectAuroraFramesToStoredRows('p1r999,"p1r2p0r2p-2r2x0x-3p-4r999', 'tension');
     expect(projection.rows).toEqual([{ holdId: 1, frameNumber: 1, holdState: 'HAND' }]);
     expect(projection.diagnostics).toEqual({
       skippedUnknownRoleTokens: 1,
-      skippedNonpositiveHoldIdTokens: 2,
+      skippedNonpositiveHoldIdTokens: 5,
     });
   });
 

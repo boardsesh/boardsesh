@@ -411,7 +411,11 @@ export function isAuroraBoardName(board: string): board is AuroraBoardName {
  * becoming the first stored row.
  */
 export function projectAuroraFramesToStoredRows(frames: string, board: AuroraBoardName): StoredClimbHoldProjection {
-  const maps = accumulateFramesToMaps(frames, board);
+  const diagnostics: StoredClimbHoldProjection['diagnostics'] = {
+    skippedUnknownRoleTokens: 0,
+    skippedNonpositiveHoldIdTokens: 0,
+  };
+  const maps = accumulateFramesToMapsInternal(frames, board, diagnostics);
   const rowsByHoldId = new Map<number, StoredClimbHoldRow>();
 
   for (const [frameNumber, map] of maps.entries()) {
@@ -424,22 +428,10 @@ export function projectAuroraFramesToStoredRows(frames: string, board: AuroraBoa
     }
   }
 
-  let skippedUnknownRoleTokens = 0;
-  let skippedNonpositiveHoldIdTokens = 0;
-  for (const segment of parseFramesSegments(frames)) {
-    for (const token of tokeniseFrameDelta(segment.body)) {
-      if (!Number.isSafeInteger(token.holdId) || token.holdId <= 0) {
-        skippedNonpositiveHoldIdTokens += 1;
-      } else if (token.kind === 'set' && !HOLD_STATE_MAP[board][token.roleCode]) {
-        skippedUnknownRoleTokens += 1;
-      }
-    }
-  }
-
   return {
     rows: Array.from(rowsByHoldId.values()).sort((left, right) => left.holdId - right.holdId),
     frameCount: maps.length,
-    diagnostics: { skippedUnknownRoleTokens, skippedNonpositiveHoldIdTokens },
+    diagnostics,
   };
 }
 
@@ -458,6 +450,14 @@ export function projectAuroraFramesToStoredRows(frames: string, board: AuroraBoa
  * equivalent to `convertLitUpHoldsStringToMap(frames, board)[0]`.
  */
 export function accumulateFramesToMaps(frames: string, board: BoardName): LitUpHoldsMap[] {
+  return accumulateFramesToMapsInternal(frames, board);
+}
+
+function accumulateFramesToMapsInternal(
+  frames: string,
+  board: BoardName,
+  diagnostics?: StoredClimbHoldProjection['diagnostics'],
+): LitUpHoldsMap[] {
   const segments = parseFramesSegments(frames);
   const result: LitUpHoldsMap[] = [];
   let accumulator: LitUpHoldsMap = {};
@@ -465,6 +465,13 @@ export function accumulateFramesToMaps(frames: string, board: BoardName): LitUpH
     // An absolute frame restates the whole lit set, so nothing carries over.
     if (segment.absolute && index > 0) accumulator = {};
     for (const token of tokeniseFrameDelta(segment.body)) {
+      if (diagnostics) {
+        if (!Number.isSafeInteger(token.holdId) || token.holdId <= 0) {
+          diagnostics.skippedNonpositiveHoldIdTokens += 1;
+        } else if (token.kind === 'set' && !HOLD_STATE_MAP[board][token.roleCode]) {
+          diagnostics.skippedUnknownRoleTokens += 1;
+        }
+      }
       if (token.kind === 'off') {
         delete accumulator[token.holdId];
         continue;
