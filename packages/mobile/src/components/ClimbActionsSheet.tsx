@@ -17,7 +17,7 @@ import { useTheme } from '../providers/theme-provider';
 import { spacing } from '../theme/tokens';
 import { WEB_BASE_URL } from '../lib/env';
 import { track } from '../lib/analytics';
-import type { DismissAndWaitResult, ManagedSheetHandle } from '../providers/sheet-presentation-provider';
+import { dismissManagedSheetAndWait, type ManagedSheetHandle } from '../providers/sheet-presentation-provider';
 
 type ClimbActionsSheetProps = {
   visible: boolean;
@@ -71,10 +71,7 @@ function ClimbActionsSheet({
 }: ClimbActionsSheetProps) {
   const { t } = useTranslation('climbs');
   const managedSheetRef = useRef<ManagedSheetHandle>(null);
-  const dismissActionsSheetAndWait = useCallback((): Promise<DismissAndWaitResult> => {
-    const handle = managedSheetRef.current;
-    return handle ? handle.dismissAndWait() : Promise.resolve({ status: 'aborted' });
-  }, []);
+  const dismissActionsSheetAndWait = useCallback(() => dismissManagedSheetAndWait(managedSheetRef.current), []);
   const { openRemix, openEdit, resetActionGuard } = useCreateClimbNavigation({
     dismissSourceSheet: dismissActionsSheetAndWait,
     dismissPlayerAndWait,

@@ -9,6 +9,7 @@ import type { Climb } from '@boardsesh/shared-schema';
 // The mock captures the latest `visible` it was handed.
 const sheet = vi.hoisted(() => ({
   visible: undefined as boolean | undefined,
+  exposeHandle: true,
   dismissAndWait: vi.fn(async () => ({ status: 'dismissed' as const })),
 }));
 const preview = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }));
@@ -22,6 +23,7 @@ const urlBuilder = vi.hoisted(() => ({ buildReadableClimbViewPath: vi.fn(() => '
 
 vi.mock('react-native', () => ({
   View: ({ children }: { children?: ReactNode }) => createElement('div', null, children),
+  Platform: { OS: 'ios' },
   StyleSheet: { create: (styles: unknown) => styles },
 }));
 
@@ -33,7 +35,7 @@ vi.mock('../ModalSheet', () => ({
     ref,
   ) {
     sheet.visible = visible;
-    useImperativeHandle(ref, () => ({ dismissAndWait: sheet.dismissAndWait }));
+    useImperativeHandle(ref, () => (sheet.exposeHandle ? { dismissAndWait: sheet.dismissAndWait } : (null as never)));
     return createElement('div', { 'data-modal-sheet': 'true', 'data-visible': String(visible) }, children);
   }),
 }));
@@ -113,6 +115,7 @@ const baseProps = {
 
 beforeEach(() => {
   sheet.visible = undefined;
+  sheet.exposeHandle = true;
   sheet.dismissAndWait.mockClear();
   clipboard.setStringAsync.mockClear();
   urlBuilder.buildReadableClimbViewPath.mockClear();
@@ -340,6 +343,16 @@ describe('ClimbActionsSheet create-climb navigation (Remix / Edit)', () => {
 
     fireEvent.click(screen.getByText('mobile.climbActions.fork'));
 
+    await waitFor(() => expect(nav.push).toHaveBeenCalledTimes(1));
+  });
+
+  it('continues when the source sheet handle is already absent', async () => {
+    sheet.exposeHandle = false;
+    render(<ClimbActionsSheet visible={true} {...baseProps} />);
+
+    fireEvent.click(screen.getByText('mobile.climbActions.fork'));
+
+    expect(sheet.dismissAndWait).not.toHaveBeenCalled();
     await waitFor(() => expect(nav.push).toHaveBeenCalledTimes(1));
   });
 });
