@@ -440,6 +440,11 @@ Connect your iPhone and open Xcode > Window > Devices and Simulators > your devi
 
 ### Interrupted intent diagnostics
 
+The first deployment of these diagnostics requires a new iOS binary: the
+durable store and App Intent recorder live in Swift and cannot be activated by
+an OTA bundle alone. Once that binary is installed, the React-side consumer and
+reporting changes can follow the normal fingerprint-compatible OTA path.
+
 The main app target keeps a best-effort marker for each `LiveActivityIntent`
 run (`NextClimbIntent`, `PreviousClimbIntent`, `TakeControlIntent`, and
 `ReconnectBoardIntent`). The widget-extension copies compile the recorder calls

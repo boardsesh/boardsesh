@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const nativeDiagnostics = vi.hoisted(() => ({
@@ -111,6 +111,26 @@ describe('LiveActivityIntentDiagnostics', () => {
 
     appState.emit('active');
     await waitFor(() => expect(nativeDiagnostics.consume).toHaveBeenCalledTimes(1));
+  });
+
+  it('coalesces repeated foreground signals while native consumption is in flight', async () => {
+    appState.setState('background');
+    let resolveConsumption = (_diagnostics: Array<typeof diagnostic>) => {};
+    nativeDiagnostics.consume.mockReturnValueOnce(
+      new Promise<Array<typeof diagnostic>>((resolve) => {
+        resolveConsumption = resolve;
+      }),
+    );
+    render(<LiveActivityIntentDiagnostics />);
+    await waitFor(() => expect(nativeDiagnostics.markRootMounted).toHaveBeenCalledTimes(1));
+
+    appState.emit('active');
+    appState.emit('active');
+    expect(nativeDiagnostics.consume).toHaveBeenCalledTimes(1);
+
+    await act(async () => resolveConsumption([]));
+    appState.emit('active');
+    await waitFor(() => expect(nativeDiagnostics.consume).toHaveBeenCalledTimes(2));
   });
 
   it('removes its foreground listener and ignores a late root marker after unmount', async () => {

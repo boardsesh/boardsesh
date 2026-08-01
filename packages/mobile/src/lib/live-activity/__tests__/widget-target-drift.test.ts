@@ -35,6 +35,46 @@ function sha(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+const RECORDER_SYMBOL_PATTERN = /LiveActivityIntentDiagnostic|diagnosticRun|completionClass/;
+
+function widgetVisibleRecorderLines(source: string): string[] {
+  // Each entry says whether that conditional branch is provably excluded when
+  // WIDGET_EXTENSION is defined. Looking for `some(true)` keeps an outer guard
+  // effective through nested #if/#else blocks; #elseif starts a distinct branch
+  // instead of corrupting the parent stack.
+  const widgetExcludedBranches: boolean[] = [];
+  const visibleRecorderLines: string[] = [];
+
+  for (const line of source.split('\n')) {
+    const directive = line.trim();
+    if (directive.startsWith('#if ')) {
+      widgetExcludedBranches.push(directive === '#if !WIDGET_EXTENSION');
+      continue;
+    }
+    if (directive.startsWith('#elseif ')) {
+      if (widgetExcludedBranches.length > 0) {
+        widgetExcludedBranches[widgetExcludedBranches.length - 1] = directive === '#elseif !WIDGET_EXTENSION';
+      }
+      continue;
+    }
+    if (directive === '#else') {
+      if (widgetExcludedBranches.length > 0) {
+        widgetExcludedBranches[widgetExcludedBranches.length - 1] = false;
+      }
+      continue;
+    }
+    if (directive === '#endif') {
+      widgetExcludedBranches.pop();
+      continue;
+    }
+    if (!widgetExcludedBranches.includes(true) && RECORDER_SYMBOL_PATTERN.test(line)) {
+      visibleRecorderLines.push(line.trim());
+    }
+  }
+
+  return visibleRecorderLines;
+}
+
 describe('Widget target Swift drift', () => {
   for (const file of DUPLICATED_FILES) {
     it(`${file} stays byte-identical between module and widget target`, () => {
@@ -63,31 +103,24 @@ describe('Widget target Swift drift', () => {
 
     for (const file of instrumentedFiles) {
       const source = readFileSync(join(WIDGET_TARGET, file), 'utf8');
-      const conditionStack: boolean[] = [true];
-      const unguardedRecorderLines: string[] = [];
-
-      for (const line of source.split('\n')) {
-        const directive = line.trim();
-        if (directive === '#if !WIDGET_EXTENSION') {
-          conditionStack.push(false);
-          continue;
-        }
-        if (directive === '#else') {
-          const previous = conditionStack.pop();
-          conditionStack.push(!(previous ?? true));
-          continue;
-        }
-        if (directive === '#endif') {
-          conditionStack.pop();
-          continue;
-        }
-        if (conditionStack.every(Boolean) && /LiveActivityIntentDiagnostic|diagnosticRun|completionClass/.test(line)) {
-          unguardedRecorderLines.push(line.trim());
-        }
-      }
-
-      expect(unguardedRecorderLines, `${file} leaks recorder symbols into WIDGET_EXTENSION`).toEqual([]);
+      expect(widgetVisibleRecorderLines(source), `${file} leaks recorder symbols into WIDGET_EXTENSION`).toEqual([]);
     }
+  });
+
+  it('keeps an outer widget guard through nested branches and handles #elseif separately', () => {
+    const syntheticSource = `
+#if !WIDGET_EXTENSION
+  #if DEBUG
+    diagnosticRun.mark(.networkStarted)
+  #else
+    completionClass = .serverRejected
+  #endif
+#elseif BOARDSESH_TESTS
+  let diagnosticRun = testRecorder
+#endif
+`;
+
+    expect(widgetVisibleRecorderLines(syntheticSource)).toEqual(['let diagnosticRun = testRecorder']);
   });
 
   it('keeps a fixed diagnostic kind for every shared LiveActivityIntent', () => {

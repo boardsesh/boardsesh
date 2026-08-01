@@ -22,6 +22,9 @@ export async function consumeAndReportInterruptedLiveActivityIntents(): Promise<
 export function LiveActivityIntentDiagnostics() {
   useEffect(() => {
     let disposed = false;
+    // AppState can emit repeated `active` notifications during one transition.
+    // Keep native consumption single-flight so the once-only store is not read
+    // concurrently and each returned diagnostic is reported at most once.
     let consumptionInFlight = false;
 
     const consumeIfForegrounded = async () => {
