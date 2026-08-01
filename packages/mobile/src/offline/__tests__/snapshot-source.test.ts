@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
     path: string;
     options?: { intermediates?: boolean; idempotent?: boolean; overwrite?: boolean };
   }>,
+  createDirectoryError: null as Error | null,
   downloadCalls: [] as Array<{ url: string; idempotent?: boolean }>,
   downloadError: null as Error | null,
   downloadBytes: new Uint8Array([9, 9, 9, 9]), // non-gzip payload by default
@@ -29,6 +30,7 @@ vi.mock('expo-file-system', () => {
       this.path = parts.map((part) => (part instanceof FakeDirectory ? part.path : String(part))).join('/');
     }
     create(options?: { intermediates?: boolean; idempotent?: boolean; overwrite?: boolean }) {
+      if (state.createDirectoryError) throw state.createDirectoryError;
       state.createdDirectories.push({ path: this.path, options });
     }
   }
@@ -137,6 +139,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.availableDiskSpace = 10_000_000_000;
   state.createdDirectories = [];
+  state.createDirectoryError = null;
   state.downloadCalls = [];
   state.downloadError = null;
   state.downloadBytes = PLAIN_SQLITE_BYTES;
@@ -203,12 +206,10 @@ describe('fetchManifest', () => {
 });
 
 describe('downloadArtifact', () => {
-  it('returns null without downloading when free disk space is below the gzip safety multiple of entry.bytes', async () => {
+  it('throws a descriptive error without downloading when free disk space is below the gzip safety multiple of entry.bytes (issue #4106: this used to swallow to null)', async () => {
     state.availableDiskSpace = ENTRY.bytes * 2; // well under the 6x safety multiplier
 
-    const result = await mobileSnapshotSource.downloadArtifact(ENTRY);
-
-    expect(result).toBeNull();
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/insufficient disk space/);
     expect(state.downloadCalls).toHaveLength(0);
   });
 
@@ -234,10 +235,17 @@ describe('downloadArtifact', () => {
     expect(result?.filePath).toContain('kilter-8-2026-06-01T00-00-00-000Z.db');
   });
 
-  it('returns null when the download itself fails', async () => {
+  it('throws a descriptive error wrapping the underlying cause when the download itself fails (issue #4106: this used to swallow to null)', async () => {
     state.downloadError = new Error('boom');
 
-    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).resolves.toBeNull();
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/downloadFileAsync failed.*boom/);
+  });
+
+  it('throws a descriptive error wrapping the underlying cause when the cache directory cannot be created', async () => {
+    state.createDirectoryError = new Error('disk is read-only');
+
+    await expect(mobileSnapshotSource.downloadArtifact(ENTRY)).rejects.toThrow(/cache directory.*disk is read-only/);
+    expect(state.downloadCalls).toHaveLength(0);
   });
 
   it('accepts a gzip-encoded entry whose downloaded bytes are already decompressed', async () => {
