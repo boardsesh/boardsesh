@@ -1,6 +1,9 @@
 import { Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
-import { FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
+import {
+  DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+  FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+} from '@boardsesh/shared-schema/sync-error-codes';
 
 const saveAuroraCredentialMock = vi.fn();
 const getAuroraCredentialStatusesMock = vi.fn();
@@ -80,7 +83,7 @@ describe('Aurora credentials REST handler', () => {
     handlers = await import('../handlers/aurora-credentials');
   });
 
-  it('GET preserves the ownership-state sync_error code for clients to localise', async () => {
+  it('GET sends the legacy warning code plus a precise reason for stale-client compatibility', async () => {
     validateTokenMock.mockResolvedValue({ userId: 'foreign-owner-user' });
     getAuroraCredentialStatusesMock.mockResolvedValue([
       {
@@ -100,7 +103,12 @@ describe('Aurora credentials REST handler', () => {
 
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toMatchObject({
-      credentials: [{ syncError: FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR }],
+      credentials: [
+        {
+          syncError: DUPLICATE_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+          syncErrorReason: 'foreign',
+        },
+      ],
     });
   });
 

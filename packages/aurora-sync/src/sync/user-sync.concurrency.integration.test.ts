@@ -10,7 +10,8 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { boardCircuits, boardUsers, playlistClimbs, playlistOwnership, playlists, users } from '@boardsesh/db/schema';
-import { getAuroraCircuitAdvisoryLockKey, upsertTableData } from './user-sync';
+import { getAuroraCircuitAdvisoryLockKey } from './circuit-arbitration';
+import { upsertTableData } from './user-sync';
 
 function localDatabaseUrl(): string | null {
   const databaseUrl = process.env.DATABASE_URL;
@@ -24,7 +25,8 @@ function localDatabaseUrl(): string | null {
   }
 }
 
-const describeIntegration = localDatabaseUrl() ? describe : describe.skip;
+const integrationRequired = process.env.REQUIRE_AURORA_CIRCUIT_INTEGRATION === '1';
+const describeIntegration = localDatabaseUrl() || integrationRequired ? describe : describe.skip;
 type UpsertDb = Parameters<typeof upsertTableData>[0];
 type CircuitRow = Parameters<typeof upsertTableData>[5][number];
 type IntegrationSqlClient = ReturnType<typeof postgres>;
@@ -237,6 +239,9 @@ describeIntegration('Aurora circuit ownership arbitration concurrency (#3950)', 
   it('holds the advisory lock before a blocked source upsert and gives one claimant sole ownership', async (testContext) => {
     const databaseUrl = localDatabaseUrl();
     if (!databaseUrl) {
+      if (integrationRequired) {
+        throw new Error('REQUIRE_AURORA_CIRCUIT_INTEGRATION=1 requires DATABASE_URL to point at local PostgreSQL');
+      }
       testContext.skip('set DATABASE_URL to a local, migrated PostgreSQL database to run issue #3950 coverage');
       return;
     }
@@ -246,6 +251,7 @@ describeIntegration('Aurora circuit ownership arbitration concurrency (#3950)', 
     const schemaSkipReason = await integrationSchemaSkipReason(client);
     if (schemaSkipReason) {
       await client.end();
+      if (integrationRequired) throw new Error(schemaSkipReason);
       testContext.skip(schemaSkipReason);
       return;
     }
@@ -427,6 +433,9 @@ describeIntegration('Aurora circuit ownership arbitration concurrency (#3950)', 
   it('promotes an existing viewer edge when the syncing user claims an orphaned playlist', async (testContext) => {
     const databaseUrl = localDatabaseUrl();
     if (!databaseUrl) {
+      if (integrationRequired) {
+        throw new Error('REQUIRE_AURORA_CIRCUIT_INTEGRATION=1 requires DATABASE_URL to point at local PostgreSQL');
+      }
       testContext.skip('set DATABASE_URL to a local, migrated PostgreSQL database to run issue #3950 coverage');
       return;
     }
@@ -436,6 +445,7 @@ describeIntegration('Aurora circuit ownership arbitration concurrency (#3950)', 
     const schemaSkipReason = await integrationSchemaSkipReason(client);
     if (schemaSkipReason) {
       await client.end();
+      if (integrationRequired) throw new Error(schemaSkipReason);
       testContext.skip(schemaSkipReason);
       return;
     }

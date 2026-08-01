@@ -21,6 +21,65 @@ import { auroraCredentials, playlists, playlistClimbs, playlistOwnership } from 
 // transitively pull the aurora daemon's postgres-js client — apply-user-logbook
 // is self-contained (drizzle-orm + @boardsesh/db + shared-schema only).
 import { applyAuroraAscents, applyAuroraBids } from '@boardsesh/aurora-sync/apply-user-logbook';
+import {
+  auroraCircuitAdvisoryLockStatement,
+  normalizeAuroraCircuitItems,
+} from '@boardsesh/aurora-sync/circuit-arbitration';
+
+export type AuroraProxySyncLogger = {
+  warn: (message: string) => void;
+  error: (message: string) => void;
+};
+
+const DEFAULT_AURORA_PROXY_SYNC_LOGGER: AuroraProxySyncLogger = {
+  warn: console.warn,
+  error: console.error,
+};
+
+function logCircuitPlaylistRefusal(
+  logger: AuroraProxySyncLogger,
+  input: {
+    boardName: AuroraBoardName;
+    circuitUuid: string;
+    syncingUserId: string;
+    stage: 'ownership-check' | 'suppressed-upsert';
+    reason: 'foreign' | 'ambiguous' | 'no-owner' | 'own';
+  },
+): void {
+  const structuredContext = JSON.stringify({
+    event: 'aurora_circuit_playlist_refused',
+    boardType: input.boardName,
+    circuitUuid: input.circuitUuid,
+    syncingUserId: input.syncingUserId,
+    stage: input.stage,
+    reason: input.reason,
+  });
+
+  if (input.reason === 'foreign' || input.reason === 'ambiguous') {
+    logger.warn(
+      `${upstreamPlaylistSkipLogLine({
+        syncTag: 'aurora-proxy',
+        upstreamIdColumn: 'aurora_id',
+        upstreamId: input.circuitUuid,
+        syncingUserId: input.syncingUserId,
+        decision: input.reason,
+      })} ${structuredContext}`,
+    );
+    return;
+  }
+
+  logger.error(
+    JSON.stringify({
+      level: 'error',
+      event: 'aurora_circuit_playlist_suppressed_without_foreign_owner',
+      boardType: input.boardName,
+      circuitUuid: input.circuitUuid,
+      syncingUserId: input.syncingUserId,
+      stage: input.stage,
+      reason: input.reason,
+    }),
+  );
+}
 
 /**
  * Get NextAuth user ID from Aurora user ID.
@@ -62,6 +121,7 @@ export async function upsertTableData(
   auroraUserId: number,
   nextAuthUserId: string,
   data: Record<string, string>[],
+  logger: AuroraProxySyncLogger = DEFAULT_AURORA_PROXY_SYNC_LOGGER,
 ) {
   if (data.length === 0) return;
 
@@ -220,24 +280,29 @@ export async function upsertTableData(
 
     case 'circuits': {
       const circuitsSchema = UNIFIED_TABLES.circuits;
-      // Who already owns the playlists behind these circuit uuids?
-      // `playlists_aurora_id_idx` is a GLOBAL unique index, so the
-      // `ON CONFLICT (aurora_id) DO UPDATE` below lands on whichever Boardsesh
-      // user's row got there first, and the ownership insert then hands this
-      // user an `owner` edge on it. That is how the 8 cross-linked tension
-      // playlists in prod were created (#3526 / #3541), and this legacy proxy
-      // route is the third writer of that shape — the other two live in
-      // `@boardsesh/aurora-sync`. Same guard, same helper.
-      const ownersByAuroraId = nextAuthUserId
-        ? await selectUpstreamPlaylistOwners(
-            db,
-            playlists.auroraId,
-            data.map((item) => item.uuid).filter((uuid): uuid is string => typeof uuid === 'string'),
-          )
-        : new Map<string, string[]>();
+      const { items: circuitItems, rejectedCount } = normalizeAuroraCircuitItems(data);
+      if (rejectedCount > 0) {
+        logger.error(
+          JSON.stringify({
+            level: 'error',
+            event: 'aurora_circuit_playlist_malformed_payload',
+            boardType: boardName,
+            rejectedCount,
+          }),
+        );
+      }
 
-      for (const item of data) {
-        // 1. Write to unified circuits table
+      // This function is called with the route's transaction handle. Take the
+      // exact same complete, sorted lock set as the daemon before ANY source or
+      // playlist write. That serializes daemon↔web as well as web↔web claims.
+      for (const item of circuitItems) {
+        await db.execute(auroraCircuitAdvisoryLockStatement(boardName, item.uuid));
+      }
+
+      // Write source rows only after every lock is held. Keeping source writes
+      // in the same normalized order avoids row/advisory lock inversions across
+      // multi-circuit payloads.
+      for (const item of circuitItems) {
         await db
           .insert(circuitsSchema)
           .values({
@@ -261,98 +326,112 @@ export async function upsertTableData(
               updatedAt: item.updated_at,
             },
           });
+      }
 
-        // 2. Dual write to playlists table (only if NextAuth user exists)
-        if (nextAuthUserId) {
-          const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
-          if (!canWriteUpstreamPlaylist(decision)) {
-            // Refuse the whole dual-write — upsert, ownership grant AND the
-            // playlist_climbs replace below. Skipping only the upsert would
-            // still wipe the other user's climbs further down.
-            console.warn(
-              upstreamPlaylistSkipLogLine({
-                syncTag: 'aurora-proxy',
-                upstreamIdColumn: 'aurora_id',
-                upstreamId: item.uuid,
-                syncingUserId: nextAuthUserId,
-                decision,
-              }),
-            );
-            continue;
-          }
+      if (!nextAuthUserId) break;
 
-          // Aurora may omit the hash and legacy payloads may use shorthand;
-          // persist one canonical representation for every downstream client.
-          const formattedColor = normalizePlaylistColor(item.color);
+      // The lock set makes this single fresh owner query stable for the rest of
+      // the transaction. A second query is reserved for the unexpected SQL
+      // guard suppression path, where it explains why `.returning()` was empty.
+      const ownersByAuroraId = await selectUpstreamPlaylistOwners(
+        db,
+        playlists.auroraId,
+        circuitItems.map((item) => item.uuid),
+      );
 
-          // Insert/update playlist
-          const [playlist] = await db
-            .insert(playlists)
-            .values({
-              uuid: item.uuid, // Use same UUID as Aurora circuit
-              boardType: boardName,
-              layoutId: null, // Nullable for Aurora-synced circuits
+      for (const item of circuitItems) {
+        const decision = resolveUpstreamPlaylistWrite(ownersByAuroraId.get(item.uuid) ?? [], nextAuthUserId);
+        if (!canWriteUpstreamPlaylist(decision)) {
+          // Refuse the whole dual-write — upsert, ownership grant AND the
+          // playlist_climbs replace below. Skipping only the upsert would still
+          // wipe the other user's climbs further down.
+          logCircuitPlaylistRefusal(logger, {
+            boardName,
+            circuitUuid: item.uuid,
+            syncingUserId: nextAuthUserId,
+            stage: 'ownership-check',
+            reason: decision,
+          });
+          continue;
+        }
+
+        // Aurora may omit the hash and legacy payloads may use shorthand;
+        // persist one canonical representation for every downstream client.
+        const formattedColor = normalizePlaylistColor(item.color);
+
+        const [playlist] = await db
+          .insert(playlists)
+          .values({
+            uuid: item.uuid,
+            boardType: boardName,
+            layoutId: null,
+            name: item.name || 'Untitled Circuit',
+            description: item.description || null,
+            isPublic: Boolean(item.is_public),
+            color: formattedColor,
+            auroraType: 'circuits',
+            auroraId: item.uuid,
+            auroraSyncedAt: new Date(),
+            createdAt: item.created_at ? new Date(item.created_at) : new Date(),
+            updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
+          })
+          .onConflictDoUpdate({
+            target: playlists.auroraId,
+            set: {
               name: item.name || 'Untitled Circuit',
               description: item.description || null,
               isPublic: Boolean(item.is_public),
               color: formattedColor,
-              auroraType: 'circuits',
-              auroraId: item.uuid,
-              auroraSyncedAt: new Date(),
-              createdAt: item.created_at ? new Date(item.created_at) : new Date(),
               updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
-            })
-            .onConflictDoUpdate({
-              target: playlists.auroraId,
-              set: {
-                name: item.name || 'Untitled Circuit',
-                description: item.description || null,
-                isPublic: Boolean(item.is_public),
-                color: formattedColor,
-                updatedAt: item.updated_at ? new Date(item.updated_at) : new Date(),
-                auroraSyncedAt: new Date(),
-              },
-              // SQL-level twin of the decision gate above, evaluated at
-              // statement time against the conflicting row.
-              setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
-            })
-            .returning({ id: playlists.id });
+              auroraSyncedAt: new Date(),
+            },
+            // Defence in depth: the advisory lock is primary; this correlated
+            // predicate still refuses a caller that bypasses the protocol.
+            setWhere: foreignPlaylistOwnerGuard(nextAuthUserId),
+          })
+          .returning({ id: playlists.id });
 
-          // Empty when the guard suppressed the DO UPDATE — abandon the item
-          // rather than dereferencing an undefined id.
-          if (!playlist) continue;
+        if (!playlist) {
+          const freshOwners = await selectUpstreamPlaylistOwners(db, playlists.auroraId, [item.uuid]);
+          const suppressedDecision = resolveUpstreamPlaylistWrite(freshOwners.get(item.uuid) ?? [], nextAuthUserId);
+          logCircuitPlaylistRefusal(logger, {
+            boardName,
+            circuitUuid: item.uuid,
+            syncingUserId: nextAuthUserId,
+            stage: 'suppressed-upsert',
+            reason: suppressedDecision === 'adopt' ? 'no-owner' : suppressedDecision,
+          });
+          continue;
+        }
 
-          // 3. Create ownership if not exists
-          await db
-            .insert(playlistOwnership)
-            .values({
-              playlistId: playlist.id,
-              userId: nextAuthUserId,
-              role: 'owner',
-            })
-            .onConflictDoNothing();
+        await db
+          .insert(playlistOwnership)
+          .values({
+            playlistId: playlist.id,
+            userId: nextAuthUserId,
+            role: 'owner',
+          })
+          .onConflictDoUpdate({
+            target: [playlistOwnership.playlistId, playlistOwnership.userId],
+            set: { role: 'owner' },
+          });
 
-          // 4. Sync playlist climbs (from nested climbs array)
-          if (item.climbs && Array.isArray(item.climbs)) {
-            // Delete existing climbs for this playlist to handle removals
-            await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
+        if (item.climbs && Array.isArray(item.climbs)) {
+          await db.delete(playlistClimbs).where(eq(playlistClimbs.playlistId, playlist.id));
 
-            // Insert new climbs
-            for (let i = 0; i < item.climbs.length; i++) {
-              const climb = item.climbs[i];
-              // Handle different possible structures of climb data
-              const climbUuid = climb.climb_uuid || climb.uuid || climb;
-              const climbAngle = climb.angle ?? null;
-              const climbPosition = climb.position ?? i;
+          for (let i = 0; i < item.climbs.length; i++) {
+            const climb = item.climbs[i];
+            const climbUuid = climb.climb_uuid || climb.uuid || climb;
+            const climbAngle = climb.angle ?? null;
+            const climbPosition = climb.position ?? i;
 
-              if (typeof climbUuid === 'string') {
-                await db.insert(playlistClimbs).values({
-                  playlistId: playlist.id,
-                  climbUuid: climbUuid,
-                  angle: climbAngle,
-                  position: climbPosition,
-                });
-              }
+            if (typeof climbUuid === 'string') {
+              await db.insert(playlistClimbs).values({
+                playlistId: playlist.id,
+                climbUuid,
+                angle: climbAngle,
+                position: climbPosition,
+              });
             }
           }
         }

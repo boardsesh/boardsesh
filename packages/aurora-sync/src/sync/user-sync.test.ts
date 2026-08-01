@@ -278,12 +278,12 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
     const logged: string[] = [];
     const { db, insertsInto } = createDbShim({
       selectResults: [
-        [{ upstreamId: 'mine', ownerUserId: 'user-1' }],
         [
+          { upstreamId: 'mine', ownerUserId: 'user-1' },
           { upstreamId: 'shared', ownerUserId: 'user-1' },
           { upstreamId: 'shared', ownerUserId: 'user-2' },
+          { upstreamId: 'theirs', ownerUserId: 'user-2' },
         ],
-        [{ upstreamId: 'theirs', ownerUserId: 'user-2' }],
       ],
       returningRows: [[{ id: BigInt(7) }]],
     });
@@ -329,7 +329,7 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
   });
 
   it('deduplicates and sorts before the board_circuits batch upsert, with the last duplicate winning', async () => {
-    const { db, insertsInto } = createDbShim({
+    const { db, calls, insertsInto } = createDbShim({
       selectResults: [[], []],
       returningRows: [[{ id: BigInt(7) }], [{ id: BigInt(8) }]],
     });
@@ -349,6 +349,42 @@ describe('upsertTableData circuits — foreign-owner guard (#3526)', () => {
       { uuid: 'a-circuit', name: 'First' },
       { uuid: 'z-circuit', name: 'Last value wins' },
     ]);
+    expect(calls.filter((call) => call.kind === 'select')).toHaveLength(1);
+  });
+
+  it('rejects malformed UUIDs before locks or writes and reports a safe invariant count', async () => {
+    const errorLogged: string[] = [];
+    const { db, calls } = createDbShim();
+
+    const result = await upsertTableData(
+      db as unknown as ShimDb,
+      'tension',
+      'circuits',
+      144574,
+      'user-1',
+      [
+        { name: 'missing', secret: 'do-not-log' },
+        { uuid: 42, name: 'numeric' },
+      ] as never,
+      () => {},
+      (message) => errorLogged.push(message),
+    );
+
+    expect(result).toEqual({
+      synced: 0,
+      skipped: 2,
+      skippedReason: CIRCUIT_PLAYLIST_INVARIANT_SKIP_REASON,
+      circuitPlaylistRefusals: { foreign: 0, ambiguous: 0, invariant: 2 },
+    });
+    expect(calls.filter((call) => call.kind === 'execute' || call.kind === 'insert')).toHaveLength(0);
+    expect(errorLogged).toHaveLength(1);
+    expect(JSON.parse(errorLogged[0] ?? '{}')).toEqual({
+      level: 'error',
+      event: 'aurora_circuit_playlist_malformed_payload',
+      boardType: 'tension',
+      rejectedCount: 2,
+    });
+    expect(errorLogged[0]).not.toContain('do-not-log');
   });
 
   it('attaches the NOT EXISTS ownership guard to the playlist upsert', async () => {

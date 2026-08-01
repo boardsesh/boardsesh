@@ -248,7 +248,10 @@ export function BoardCredentialCard({
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
   };
 
-  const circuitPlaylistWarning = circuitPlaylistSyncWarningKind(credential?.syncError ?? null);
+  const circuitPlaylistWarning = circuitPlaylistSyncWarningKind(
+    credential?.syncError ?? null,
+    credential?.syncErrorReason,
+  );
   const circuitPlaylistWarningCopy =
     circuitPlaylistWarning === 'foreign'
       ? t('aurora.status.foreignAccountCircuits')

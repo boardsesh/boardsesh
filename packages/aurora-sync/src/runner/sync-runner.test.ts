@@ -236,6 +236,47 @@ describe('SyncRunner login failure handling', () => {
     });
   });
 
+  it('routes non-fatal circuit write diagnostics through the configured onError callback', async () => {
+    const observedErrors: Array<{ error: Error; context: SyncErrorContext }> = [];
+    const runner = new SyncRunner({
+      onError: (error, context) => observedErrors.push({ error, context }),
+    });
+    const runnerPrivates = runner as unknown as SyncRunnerPrivates;
+
+    vi.spyOn(runnerPrivates, 'updateStoredToken').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'updateCredentialStatus').mockResolvedValue(undefined);
+    vi.spyOn(runnerPrivates, 'maybeRunSharedSync').mockResolvedValue(undefined);
+    mockSignIn.mockResolvedValue({ token: 'fresh-token', user_id: 42 });
+    mockSyncUserData.mockImplementation(
+      async (
+        _client: unknown,
+        _boardType: unknown,
+        _token: unknown,
+        _auroraUserId: unknown,
+        _userId: unknown,
+        _tables: unknown,
+        _log: unknown,
+        logError: (message: string) => void,
+      ) => {
+        logError('{"event":"aurora_circuit_playlist_malformed_payload","rejectedCount":1}');
+        return {};
+      },
+    );
+
+    await runnerPrivates.syncSingleCredential(createCredential({ syncStatus: 'active', consecutiveFailures: 3 }));
+
+    expect(observedErrors).toHaveLength(1);
+    expect(observedErrors[0]?.error.message).toContain('aurora_circuit_playlist_malformed_payload');
+    expect(observedErrors[0]?.context).toEqual({
+      userId: 'user-123',
+      board: 'decoy',
+      boardType: 'decoy',
+      syncStatus: 'active',
+      consecutiveFailures: 3,
+      quarantined: false,
+    });
+  });
+
   it('surfaces the foreign-owner sync_error code without failing the cycle (#3526)', async () => {
     // Only the circuits were refused — the Aurora account is linked to another
     // Boardsesh user who owns the playlists. Everything else synced, so the

@@ -1074,7 +1074,10 @@ function BoardAccountCard({
   // client is expected to explain in the viewer's language (#3526). Everything
   // else in `sync_error` is still free text from an older path — those keep the
   // generic error pill rather than being swallowed.
-  const circuitPlaylistWarning = circuitPlaylistSyncWarningKind(credential?.syncError ?? null);
+  const circuitPlaylistWarning = circuitPlaylistSyncWarningKind(
+    credential?.syncError ?? null,
+    credential?.syncErrorReason,
+  );
   const circuitPlaylistWarningCopy =
     circuitPlaylistWarning === 'foreign'
       ? t('aurora.status.foreignAccountCircuits')

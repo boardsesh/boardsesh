@@ -1,4 +1,4 @@
-export { syncUserData, getLastSyncTimes, getLastSharedSyncTimes } from './user-sync';
+export { syncUserData, getLastSyncTimes, getLastSharedSyncTimes, upsertTableData } from './user-sync';
 export type { SyncUserDataResult } from './user-sync';
 export { syncSharedData, createSetterSyncNotifications } from './shared-sync';
 export type { SharedSyncResult, NewClimbInfo } from './shared-sync';

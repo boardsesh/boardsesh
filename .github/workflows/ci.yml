@@ -52,6 +52,7 @@ jobs:
       # `listing-guards` job (see below).
       storeMetadata: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.storeMetadata }}
       mobileLocales: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.mobileLocales }}
+      auroraCircuitArbitration: ${{ github.event_name != 'pull_request' && 'true' || steps.filter.outputs.auroraCircuitArbitration }}
       # PR-only guard signal: did this PR edit the OTA-owned changelog data file?
       # Defaults false off PRs (the OTA bot legitimately rewrites it on push).
       changelogData: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changelogData || 'false' }}
@@ -63,7 +64,7 @@ jobs:
       # non-JS files (SQL migrations under packages/db, .graphql under
       # shared-schema) that wouldn't trigger anyJs but still need setup so
       # test-backend / mobile-bundle / codegen-drift can run.
-      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.rootCi == 'true' }}
+      runAny: ${{ github.event_name != 'pull_request' || steps.filter.outputs.anyJs == 'true' || steps.filter.outputs.web == 'true' || steps.filter.outputs.i18nCatalogs == 'true' || steps.filter.outputs.sharedSchema == 'true' || steps.filter.outputs.sharedDeps == 'true' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.mobile == 'true' || steps.filter.outputs.ocr == 'true' || steps.filter.outputs.locationSync == 'true' || steps.filter.outputs.auroraCircuitArbitration == 'true' || steps.filter.outputs.rootCi == 'true' }}
       # NOTE: deployConfig, storeMetadata, and mobileLocales are deliberately
       # NOT part of runAny — the deploy-config and listing-guards jobs below
       # need [changes] only (no bun-install/build:db setup pass), so a PR
@@ -150,6 +151,19 @@ jobs:
             mobileLocales:
               - 'packages/mobile/locales/**'
               - 'scripts/mobile-locales-parity.test.ts'
+            # The real-database circuit ownership assertions only need the
+            # Aurora sync paths and their direct shared database contracts.
+            # Root manifests/workflow config are already covered by rootCi.
+            auroraCircuitArbitration:
+              - 'packages/aurora-sync/**'
+              - 'packages/web/app/lib/data-sync/aurora/**'
+              - 'packages/db/src/client/**'
+              - 'packages/db/src/queries/**'
+              - 'packages/db/src/schema/**'
+              - 'packages/sync-runtime/**'
+              - 'packages/shared-schema/src/sync-error-codes.ts'
+              - 'packages/shared-schema/src/__tests__/sync-error-codes.test.ts'
+              - 'packages/{aurora-sync,db,sync-runtime,shared-schema,web}/package.json'
             rootCi:
               - '.github/workflows/ci.yml'
               - 'vite.config.ts'
@@ -643,6 +657,55 @@ jobs:
           path: packages/backend/test-results/junit-backend-${{ matrix.shard }}.xml
           retention-days: 7
 
+  aurora-circuit-arbitration:
+    needs: [changes, setup]
+    if: needs.changes.outputs.auroraCircuitArbitration == 'true' || needs.changes.outputs.rootCi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: ghcr.io/boardsesh/boardsesh-dev-db:latest
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: main
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d main"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: 'lts'
+          cache: true
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Download built packages
+        uses: actions/download-artifact@v4
+        with:
+          name: built-packages
+      - name: Run Aurora circuit arbitration database gate
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/main
+          REQUIRE_AURORA_CIRCUIT_INTEGRATION: '1'
+        run: >-
+          vp test run --project aurora-sync
+          packages/aurora-sync/src/sync/user-sync.concurrency.integration.test.ts
+          --reporter=verbose --reporter=github-actions
+      - name: Run Aurora daemon/web arbitration database gate
+        env:
+          DATABASE_URL: postgresql://postgres:password@localhost:5432/main
+          REQUIRE_AURORA_CIRCUIT_INTEGRATION: '1'
+        run: >-
+          vp test run --project web
+          packages/web/app/lib/data-sync/aurora/__tests__/user-sync.cross-writer.integration.test.ts
+          --reporter=verbose --reporter=github-actions
+
   test-ocr:
     needs: [changes, setup]
     # Include sharedDeps so OCR tests rerun when a shared package they
@@ -981,6 +1044,7 @@ jobs:
       - i18n
       - test-default
       - test-backend
+      - aurora-circuit-arbitration
       - test-ocr
       - test-location-sync-integration
       - mobile-bundle

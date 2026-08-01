@@ -550,7 +550,24 @@ export class SyncRunner {
 
     const { client, db } = this.getClient();
     this.log(`[SyncRunner] Syncing user ${cred.userId} for ${boardType}...`);
-    await syncUserData(client, boardType, token, cred.auroraUserId, cred.userId, undefined, this.log.bind(this));
+    await syncUserData(
+      client,
+      boardType,
+      token,
+      cred.auroraUserId,
+      cred.userId,
+      undefined,
+      this.log.bind(this),
+      (message) =>
+        this.handleError(new Error(message), {
+          userId: cred.userId,
+          board: boardType,
+          boardType,
+          syncStatus: cred.syncStatus ?? undefined,
+          consecutiveFailures: cred.consecutiveFailures ?? undefined,
+          quarantined: false,
+        }),
+    );
     const succeededAt = new Date();
 
     // Circuits whose playlist belongs to another Boardsesh user get refused by
