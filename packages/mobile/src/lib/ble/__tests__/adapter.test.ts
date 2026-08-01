@@ -31,29 +31,24 @@ vi.mock('../ble-manager', () => ({
   bleManager: mockBleManager,
 }));
 
-vi.mock('@boardsesh/ble-protocol', () => ({
-  AURORA_ADVERTISED_SERVICE_UUID: 'aurora-uuid',
-  UART_SERVICE_UUID: 'uart-uuid',
-  UART_WRITE_CHARACTERISTIC_UUID: 'uart-write-uuid',
-  REDBEARLAB_SERVICE_UUID: 'redbearlab-uuid',
-  REDBEARLAB_WRITE_CHARACTERISTIC_UUID: 'redbearlab-write-uuid',
-  splitMessages: vi.fn((passedData: Uint8Array) => [passedData]),
-  // Real chunk-sizing maths so the #3230 assertions (mtu 247 → 244, fallback
-  // 23 → 20) exercise the actual clamp the adapter passes to splitMessages.
-  MAX_BLUETOOTH_MESSAGE_SIZE: 20,
-  effectiveChunkSizeForMtu: (mtu: number) => Math.min(Math.max(mtu - 3, 20), 244),
-  INTER_CHUNK_DELAY_MS: 0,
-  parseSerialNumber: vi.fn(),
-  isRetryableAndroidConnectError: (error: unknown) => {
-    if (!(error instanceof Error) || error.name !== 'BleError') return false;
-    const bleError = error as Error & { errorCode?: unknown; androidErrorCode?: unknown; iosErrorCode?: unknown };
-    if (bleError.errorCode !== 200 && bleError.errorCode !== 201 && bleError.errorCode !== 205) return false;
-    if (/user cancell?ed|Device selection cancelled/i.test(bleError.message)) return false;
-    if (bleError.iosErrorCode !== undefined && bleError.iosErrorCode !== null) return false;
-    if (bleError.androidErrorCode === undefined || bleError.androidErrorCode === null) return true;
-    return bleError.androidErrorCode === 133 || bleError.androidErrorCode === 147;
-  },
-}));
+vi.mock('@boardsesh/ble-protocol', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@boardsesh/ble-protocol')>();
+  return {
+    AURORA_ADVERTISED_SERVICE_UUID: 'aurora-uuid',
+    UART_SERVICE_UUID: 'uart-uuid',
+    UART_WRITE_CHARACTERISTIC_UUID: 'uart-write-uuid',
+    REDBEARLAB_SERVICE_UUID: 'redbearlab-uuid',
+    REDBEARLAB_WRITE_CHARACTERISTIC_UUID: 'redbearlab-write-uuid',
+    splitMessages: vi.fn((passedData: Uint8Array) => [passedData]),
+    // Real chunk-sizing maths so the #3230 assertions (mtu 247 → 244, fallback
+    // 23 → 20) exercise the actual clamp the adapter passes to splitMessages.
+    MAX_BLUETOOTH_MESSAGE_SIZE: 20,
+    effectiveChunkSizeForMtu: (mtu: number) => Math.min(Math.max(mtu - 3, 20), 244),
+    INTER_CHUNK_DELAY_MS: 0,
+    parseSerialNumber: vi.fn(),
+    isRetryableAndroidConnectError: actual.isRetryableAndroidConnectError,
+  };
+});
 
 // ── Import after mocks ─────────────────────────────────────────────────
 
