@@ -605,11 +605,6 @@ final class LiveActivityWidgetTests: XCTestCase {
         XCTAssertEqual(BoardBleEncoding.parseApiLevel(deviceName: "Board@x@5"), 5)
     }
 
-    func testRedBearLabWriteCharacteristicUsesWriteWithResponse() {
-        // The original MoonBoard (RedBearLab) write characteristic (713d0003)
-        // advertises `.write` only, so iOS must pace it with write-with-response.
-        XCTAssertEqual(BoardBleEncoding.preferredWriteType(for: .write, boardName: "moonboard"), .withResponse)
-    }
 }
 
 @available(iOS 17.0, *)

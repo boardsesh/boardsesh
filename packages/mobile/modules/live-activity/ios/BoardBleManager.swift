@@ -1251,6 +1251,14 @@ final class BoardBleManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        handleDidDisconnectOnBleQueue(peripheral: peripheral, error: error)
+    }
+
+    /// Shared delegate body for real CoreBluetooth callbacks and the native
+    /// XCTest seam. Keeping the state transition here lets tests exercise the
+    /// exact callback path without manufacturing a `CBCentralManager` or
+    /// `CBPeripheral`.
+    private func handleDidDisconnectOnBleQueue(peripheral: WritableBlePeripheral, error: Error?) {
         let deviceId = peripheral.identifier.uuidString
         let wasCurrentPeripheral = connectedPeripheral?.identifier == peripheral.identifier
         let intentionalDisconnectGeneration = intentionalDisconnectGenerations.removeValue(forKey: peripheral.identifier)
@@ -2435,6 +2443,14 @@ extension BoardBleManager {
             manager.runOnBleQueueSync { manager.handleDidWriteValueOnBleQueue(error: error) }
         }
 
+        /// Fire the exact `didDisconnectPeripheral` state transition without a
+        /// concrete CoreBluetooth central or peripheral.
+        func fireDidDisconnect(peripheral: WritableBlePeripheral, error: Error?) {
+            manager.runOnBleQueueSync {
+                manager.handleDidDisconnectOnBleQueue(peripheral: peripheral, error: error)
+            }
+        }
+
         /// Exercise the pure service-discovery decision (retry-then-fail
         /// fallback) without a real `CBPeripheral` (#3480).
         func serviceDiscoveryDecision(
@@ -2451,7 +2467,14 @@ extension BoardBleManager {
         /// so tests can assert the decision without hardcoding them.
         var writeServiceUuidsForTesting: [CBUUID] { manager.writeServiceUuids() }
 
+        /// Exercise the production service→write-characteristic mapping used by
+        /// `didDiscoverCharacteristicsFor`.
+        func writeCharacteristicUuidForTesting(serviceUuid: CBUUID) -> CBUUID {
+            manager.writeCharacteristicUuid(for: serviceUuid)
+        }
+
         var hasPendingWriteResume: Bool { manager.pendingWriteResume != nil }
+        var hasPendingWriteAck: Bool { manager.pendingWriteAck != nil }
         var capturedPendingWriteResume: (() -> Void)? { manager.pendingWriteResume }
         var isWriting: Bool { manager.isWriting }
         var writeQueueDepth: Int { manager.writeQueue.count }
@@ -2463,6 +2486,14 @@ extension BoardBleManager {
         var forceWriteWithResponse: Bool { manager.forceWriteWithResponse }
         var forceWriteWithResponseSource: BoardBleWriteTypeSource? { manager.forceWriteWithResponseSource }
         var writeWithResponsePeripheralIds: Set<UUID> { manager.writeWithResponsePeripheralIds }
+
+        func intentionalDisconnectGeneration(for peripheralId: UUID) -> UInt64? {
+            manager.intentionalDisconnectGenerations[peripheralId]
+        }
+
+        func peripheralGeneration(for peripheralId: UUID) -> UInt64? {
+            manager.peripheralGenerations[peripheralId]
+        }
 
         func setLearnedWriteWithResponseEntry(
             identity: String,

@@ -14,7 +14,7 @@ final class FakeWritablePeripheral: WritableBlePeripheral {
     var canSendDefault: Bool
     var canSendScript: [Bool]
     var maxWriteValueLength: Int
-    private(set) var writtenChunks: [(data: Data, type: CBCharacteristicWriteType)] = []
+    private(set) var writtenChunks: [(data: Data, characteristicUuid: CBUUID, type: CBCharacteristicWriteType)] = []
 
     init(
         identifier: UUID = UUID(),
@@ -41,8 +41,8 @@ final class FakeWritablePeripheral: WritableBlePeripheral {
         maxWriteValueLength
     }
 
-    func writeValue(_ data: Data, for _: CBCharacteristic, type: CBCharacteristicWriteType) {
-        writtenChunks.append((data: data, type: type))
+    func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType) {
+        writtenChunks.append((data: data, characteristicUuid: characteristic.uuid, type: type))
     }
 }
 
@@ -168,9 +168,12 @@ final class BoardBleWriteFlowTests: XCTestCase {
         super.tearDown()
     }
 
-    private func makeCharacteristic(properties: CBCharacteristicProperties = .writeWithoutResponse) -> CBMutableCharacteristic {
+    private func makeCharacteristic(
+        uuid: CBUUID? = nil,
+        properties: CBCharacteristicProperties = .writeWithoutResponse
+    ) -> CBMutableCharacteristic {
         CBMutableCharacteristic(
-            type: uartWriteCharacteristicUuid,
+            type: uuid ?? uartWriteCharacteristicUuid,
             properties: properties,
             value: nil,
             permissions: [.writeable]
@@ -1142,8 +1145,14 @@ final class BoardBleWriteFlowTests: XCTestCase {
     func testWithResponseWritePacesOnAckAndArmsAckWatchdog() {
         let hooks = manager.testHooks
         let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 20)
-        // MoonBoard + `.write`-only characteristic -> the with-response path.
-        let characteristic = makeCharacteristic(properties: .write)
+        let redBearLabServiceUuid = CBUUID(string: "713D0000-503E-4C75-BA94-3148F18D941E")
+        let expectedWriteUuid = CBUUID(string: "713D0003-503E-4C75-BA94-3148F18D941E")
+        let selectedWriteUuid = hooks.writeCharacteristicUuidForTesting(serviceUuid: redBearLabServiceUuid)
+        XCTAssertEqual(selectedWriteUuid, expectedWriteUuid)
+
+        // The production RedBearLab service mapping selects 713D0003. Its
+        // `.write`-only property must use ACK-paced write-with-response.
+        let characteristic = makeCharacteristic(uuid: selectedWriteUuid, properties: .write)
         let payload = Data((0 ..< 40).map { UInt8($0) })
 
         var completionError: Error?
@@ -1162,6 +1171,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
 
         // First chunk out with-response; paced on the ack, not chunkDelay.
         XCTAssertEqual(peripheral.writtenChunks.count, 1)
+        XCTAssertEqual(peripheral.writtenChunks[0].characteristicUuid, expectedWriteUuid)
         XCTAssertEqual(peripheral.writtenChunks[0].type, .withResponse)
         XCTAssertEqual(peripheral.writtenChunks[0].data.count, 20)
         XCTAssertNotNil(scheduler.lastOneShot(label: "writeAckWatchdog"))
@@ -1173,6 +1183,7 @@ final class BoardBleWriteFlowTests: XCTestCase {
         hooks.fireWriteAck(error: nil) // -> completion
         XCTAssertEqual(peripheral.writtenChunks.count, 2)
         XCTAssertTrue(peripheral.writtenChunks.allSatisfy { $0.type == .withResponse })
+        XCTAssertTrue(peripheral.writtenChunks.allSatisfy { $0.characteristicUuid == expectedWriteUuid })
         XCTAssertEqual(completionCount, 1)
         XCTAssertNil(completionError)
         XCTAssertEqual(completionTelemetry?.writeType, "withResponse")
@@ -1398,5 +1409,45 @@ final class WaiterPoolOutcomeTests: XCTestCase {
 
         let signaledResult = await resultTask.value
         XCTAssertTrue(signaledResult)
+    }
+
+    // 13
+    func testMoonBoardAckWatchdogStartsBoundedConnectionRecovery() {
+        let hooks = manager.testHooks
+        let peripheral = FakeWritablePeripheral(canSendDefault: true, maxWriteValueLength: 20)
+        let characteristic = makeCharacteristic(properties: .write)
+        let payload = Data((0 ..< 10).map { UInt8($0) })
+
+        var completionError: Error?
+        var completionCount = 0
+        var disconnectEventCount = 0
+
+        hooks.sync {
+            manager.setEventHandlers(
+                onScanResult: nil,
+                onDisconnect: { _, _ in disconnectEventCount += 1 }
+            )
+            hooks.setConfiguration(moonboardConfiguration())
+            hooks.setConnection(peripheral: peripheral, characteristic: characteristic)
+            manager.write(data: payload) { error, _ in
+                completionError = error
+                completionCount += 1
+            }
+        }
+
+        XCTAssertEqual(peripheral.writtenChunks.map(\.type), [.withResponse])
+        XCTAssertFalse(hooks.sync { hooks.forceWriteWithResponse })
+        XCTAssertTrue(hooks.sync { hooks.hasPendingWriteAck })
+
+        fireLatestOneShot(label: "writeAckWatchdog")
+
+        XCTAssertEqual(completionCount, 1)
+        XCTAssertEqual(completionError?.localizedDescription, BoardBleError.writeTimedOut.localizedDescription)
+        XCTAssertEqual(cancelledPeripheralIds, [peripheral.identifier])
+        XCTAssertEqual(hooks.sync { hooks.writeStallRecoveries }, 1)
+        XCTAssertEqual(hooks.sync { hooks.writeStallRecoveringPeripheralId }, peripheral.identifier)
+        XCTAssertNotNil(scheduler.lastOneShot(label: "writeStallRecoveryWatchdog"))
+        XCTAssertFalse(hooks.sync { hooks.hasPendingWriteAck })
+        XCTAssertEqual(disconnectEventCount, 0)
     }
 }
