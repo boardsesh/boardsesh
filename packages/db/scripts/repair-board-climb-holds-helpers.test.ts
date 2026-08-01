@@ -106,6 +106,34 @@ void test('manifest repairs stale multi-frame rows even when no sentinel is pres
   ]);
 });
 
+void test('manifest sorts and deduplicates missing placement blockers without hiding the mutation plan', () => {
+  const projectedRows = [
+    { holdId: 1, frameNumber: 0, holdState: 'STARTING' },
+    { holdId: 2, frameNumber: 1, holdState: 'HAND' },
+    { holdId: 3, frameNumber: 0, holdState: 'HAND' },
+  ];
+  const manifest = buildRepairManifest(
+    [
+      climb({
+        frames: 'p3r2p1r1,"p2r2p3r3',
+        rows: [],
+      }),
+    ],
+    new Set([placementKey('tension', 1, 1)]),
+  );
+
+  assert.deepEqual(manifest.entries[0]?.diagnostics.missingPlacementHoldIds, [2, 3]);
+  assert.deepEqual(manifest.entries[0]?.blockers, ['missing board placements: 2,3']);
+  assert.equal(manifest.entries[0]?.changed, true);
+  assert.deepEqual(manifest.entries[0]?.projectedRows, projectedRows);
+  assert.equal(manifest.entries[0]?.rowHashes.projected, fingerprintFromRepairRows(projectedRows));
+  assert.equal(manifest.counts.missingPlacements, 2);
+  assert.equal(manifest.counts.blockers, 1);
+  assert.equal(manifest.counts.changedMultiFrameClimbs, 1);
+  assert.equal(manifest.counts.affectedClimbs, 1);
+  assert.equal(manifest.counts.insertRows, 3);
+});
+
 void test('manifest deletes only invalid rows from a non-target single-frame climb', () => {
   const manifest = buildRepairManifest(
     [
