@@ -1,7 +1,7 @@
 import { eq, and, desc, sql, count as drizzleCount, isNull, inArray, type SQL } from 'drizzle-orm';
 import { dbRead } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
-import { getGradeLabel, toConfidenceTier } from '@boardsesh/db/queries';
+import { getGradeLabel, toConfidenceTier, withSerialPlan } from '@boardsesh/db/queries';
 import { rowsFromResult } from '@boardsesh/db/client';
 import { requireAuthenticated, validateInput, isNoMatchClimb } from '../shared/helpers';
 import { boardseshDifficultyExpr, boardseshConfidenceExpr, boardseshGradeTickJoin } from '../shared/sql-expressions';
@@ -311,7 +311,13 @@ export const sessionFeedQueries = {
         )
         `;
 
-      sessionRows = await dbRead.execute(sql`
+      // session_base hash-aggregates the ENTIRE boardsesh_ticks table by
+      // session_id whenever no user/board filter is set — i.e. the public home
+      // feed — and with daily highlights adds a second pass plus a window
+      // function. That is exactly the parallel-hash shape that exhausts /dev/shm,
+      // on an unauthenticated endpoint with no rate limit (#4105).
+      sessionRows = await withSerialPlan(dbRead, (tx) =>
+        tx.execute(sql`
         WITH
         ${eligibleUsersCte}
         ${eligibleSessionsCte}
@@ -359,7 +365,8 @@ export const sessionFeedQueries = {
         ORDER BY session_last_tick DESC
         OFFSET ${offset}
         LIMIT ${limit + 1}
-      `);
+      `),
+      );
     } catch (err) {
       logger.error('[sessionGroupedFeed] SQL error:', err);
       throw err;

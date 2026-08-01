@@ -1,6 +1,7 @@
 import { and, eq, ilike, sql } from 'drizzle-orm';
 import type { DbInstance } from '../../client/postgres';
 import { boardClimbs, boardClimbStats } from '../../schema/index';
+import { withSerialPlan } from '../util/serial-plan';
 import type { BoardRouteParams } from './types';
 
 /**
@@ -23,6 +24,13 @@ export type SetterStat = {
  * setter usernames with a case-insensitive substring match for autocomplete.
  *
  * Capped at 50 rows ordered by descending climb count for UI performance.
+ *
+ * Runs under `withSerialPlan`: this hash-joins the two biggest catalog tables
+ * over a whole layout and aggregates them, which the planner is happy to run as
+ * a parallel hash join. It fires from the same search drawer as `searchClimbs`
+ * on the same table pair, so it kept exhausting `/dev/shm` after #3856 guarded
+ * the search paths themselves (#4105). The LIMIT 50 applies after the GROUP BY,
+ * so it does not bound the scan.
  */
 export const getSetterStats = async (
   db: DbInstance,
@@ -42,20 +50,22 @@ export const getSetterStats = async (
     whereConditions.push(ilike(boardClimbs.setterUsername, `%${searchQuery}%`));
   }
 
-  const result = await db
-    .select({
-      setter_username: boardClimbs.setterUsername,
-      climb_count: sql<number>`count(*)::int`,
-    })
-    .from(boardClimbs)
-    .innerJoin(
-      boardClimbStats,
-      and(eq(boardClimbStats.climbUuid, boardClimbs.uuid), eq(boardClimbStats.boardType, params.board_name)),
-    )
-    .where(and(...whereConditions))
-    .groupBy(boardClimbs.setterUsername)
-    .orderBy(sql`count(*) DESC`)
-    .limit(50);
+  const result = await withSerialPlan(db, (tx) =>
+    tx
+      .select({
+        setter_username: boardClimbs.setterUsername,
+        climb_count: sql<number>`count(*)::int`,
+      })
+      .from(boardClimbs)
+      .innerJoin(
+        boardClimbStats,
+        and(eq(boardClimbStats.climbUuid, boardClimbs.uuid), eq(boardClimbStats.boardType, params.board_name)),
+      )
+      .where(and(...whereConditions))
+      .groupBy(boardClimbs.setterUsername)
+      .orderBy(sql`count(*) DESC`)
+      .limit(50),
+  );
 
   // Strip any nulls — they're filtered out in the WHERE clause but the
   // column is nullable in the schema so TS doesn't know that.
