@@ -1,4 +1,5 @@
 import { act, render } from '@testing-library/react';
+import { useLayoutEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BoardClimbRecentSender, BoardPresenceStats } from '@boardsesh/shared-schema';
 import { BoardPresenceClientContext, BoardPresenceFeedContext } from '../board-presence-provider';
@@ -54,8 +55,18 @@ function makeClient() {
 
 type ResultBox = { current: BoardClimbRecentSendersState | null };
 
-function ResultReader({ options, resultBox }: { options: BoardClimbRecentSendersOptions; resultBox: ResultBox }) {
-  resultBox.current = useBoardClimbRecentSenders(options);
+function ResultReader({
+  options,
+  resultBox,
+  onCommit,
+}: {
+  options: BoardClimbRecentSendersOptions;
+  resultBox: ResultBox;
+  onCommit?: (options: BoardClimbRecentSendersOptions, state: BoardClimbRecentSendersState) => void;
+}) {
+  const state = useBoardClimbRecentSenders(options);
+  resultBox.current = state;
+  useLayoutEffect(() => onCommit?.(options, state), [onCommit, options, state]);
   return null;
 }
 
@@ -65,17 +76,19 @@ function TestHarness({
   feedStats,
   options,
   resultBox,
+  onCommit,
 }: {
   boardId: number | null;
   client: BoardPresenceClient | null;
   feedStats: BoardPresenceStats | null;
   options: BoardClimbRecentSendersOptions;
   resultBox: ResultBox;
+  onCommit?: (options: BoardClimbRecentSendersOptions, state: BoardClimbRecentSendersState) => void;
 }) {
   return (
     <BoardPresenceClientContext.Provider value={{ boardId, client }}>
       <BoardPresenceFeedContext.Provider value={{ history: [], stats: feedStats }}>
-        <ResultReader options={options} resultBox={resultBox} />
+        <ResultReader options={options} resultBox={resultBox} onCommit={onCommit} />
       </BoardPresenceFeedContext.Provider>
     </BoardPresenceClientContext.Provider>
   );
@@ -149,6 +162,52 @@ describe('useBoardClimbRecentSenders', () => {
       await secondRequest.promise;
     });
     expect(resultBox.current?.senders).toEqual([sender('current')]);
+  });
+
+  it('never commits the previous climb senders under a new climb identity', async () => {
+    const { client, fetchClimbRecentSenders } = makeClient();
+    const secondRequest = deferred<BoardClimbRecentSender[]>();
+    fetchClimbRecentSenders.mockResolvedValueOnce([sender('first')]).mockReturnValueOnce(secondRequest.promise);
+    const resultBox: ResultBox = { current: null };
+    const committedStates: Array<{ climbUuid: string | null | undefined; state: BoardClimbRecentSendersState }> = [];
+    const onCommit = (options: BoardClimbRecentSendersOptions, state: BoardClimbRecentSendersState) => {
+      committedStates.push({
+        climbUuid: options.climbUuid,
+        state: { senders: [...state.senders], isLoading: state.isLoading },
+      });
+    };
+
+    const { rerender } = render(
+      <TestHarness
+        boardId={1}
+        client={client}
+        feedStats={null}
+        options={{ climbUuid: 'first', angle: 40 }}
+        resultBox={resultBox}
+        onCommit={onCommit}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resultBox.current?.senders).toEqual([sender('first')]);
+    committedStates.length = 0;
+
+    rerender(
+      <TestHarness
+        boardId={1}
+        client={client}
+        feedStats={null}
+        options={{ climbUuid: 'second', angle: 40 }}
+        resultBox={resultBox}
+        onCommit={onCommit}
+      />,
+    );
+
+    expect(committedStates[0]).toEqual({
+      climbUuid: 'second',
+      state: { senders: [], isLoading: true },
+    });
   });
 
   it('refetches when BoardStatsUpdated replaces the stats snapshot', async () => {

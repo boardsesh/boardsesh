@@ -5,9 +5,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { BoardClimbRecentSender } from '@boardsesh/shared-schema';
 import { useBoardPresenceClient, useBoardPresenceFeed } from './board-presence-provider';
+import type { BoardPresenceClient } from './types';
 
 const RECENT_SENDER_CACHE_LIMIT = 50;
 const EMPTY_RECENT_SENDERS: BoardClimbRecentSender[] = [];
+const EMPTY_RECENT_SENDERS_STATE = { senders: EMPTY_RECENT_SENDERS, isLoading: false };
+const LOADING_RECENT_SENDERS_STATE = { senders: EMPTY_RECENT_SENDERS, isLoading: true };
 
 export type BoardClimbRecentSendersOptions = {
   climbUuid: string | null | undefined;
@@ -19,6 +22,17 @@ export type BoardClimbRecentSendersOptions = {
 export type BoardClimbRecentSendersState = {
   senders: BoardClimbRecentSender[];
   isLoading: boolean;
+};
+
+type RecentSendersSnapshot = BoardClimbRecentSendersState & {
+  cacheKey: string | null;
+  client: BoardPresenceClient | null;
+};
+
+const EMPTY_RECENT_SENDERS_SNAPSHOT: RecentSendersSnapshot = {
+  cacheKey: null,
+  client: null,
+  ...EMPTY_RECENT_SENDERS_STATE,
 };
 
 function senderCacheKey(boardId: number, climbUuid: string, angle: number): string {
@@ -38,35 +52,43 @@ export function useBoardClimbRecentSenders({
 }: BoardClimbRecentSendersOptions): BoardClimbRecentSendersState {
   const { boardId, client } = useBoardPresenceClient();
   const { stats } = useBoardPresenceFeed();
-  const [senders, setSenders] = useState<BoardClimbRecentSender[]>(EMPTY_RECENT_SENDERS);
-  const [isLoading, setIsLoading] = useState(false);
+  const normalizedClimbUuid = climbUuid?.trim() ?? '';
+  const canFetch =
+    enabled &&
+    boardId !== null &&
+    client?.fetchClimbRecentSenders !== undefined &&
+    normalizedClimbUuid.length > 0 &&
+    angle !== null &&
+    angle !== undefined &&
+    Number.isInteger(angle) &&
+    angle >= 0 &&
+    angle <= 90;
+  const currentCacheKey = canFetch ? senderCacheKey(boardId, normalizedClimbUuid, angle) : null;
+  const [snapshot, setSnapshot] = useState<RecentSendersSnapshot>(EMPTY_RECENT_SENDERS_SNAPSHOT);
   const cacheRef = useRef(new Map<string, BoardClimbRecentSender[]>());
   const generationRef = useRef(0);
 
   useEffect(() => {
     generationRef.current += 1;
     const requestGeneration = generationRef.current;
-    const normalizedClimbUuid = climbUuid?.trim() ?? '';
     if (
-      !enabled ||
+      currentCacheKey === null ||
       boardId === null ||
       client?.fetchClimbRecentSenders === undefined ||
-      normalizedClimbUuid.length === 0 ||
       angle === null ||
-      angle === undefined ||
-      !Number.isInteger(angle) ||
-      angle < 0 ||
-      angle > 90
+      angle === undefined
     ) {
-      setSenders(EMPTY_RECENT_SENDERS);
-      setIsLoading(false);
+      setSnapshot(EMPTY_RECENT_SENDERS_SNAPSHOT);
       return;
     }
 
-    const cacheKey = senderCacheKey(boardId, normalizedClimbUuid, angle);
-    const cachedSenders = cacheRef.current.get(cacheKey);
-    setSenders(cachedSenders ?? EMPTY_RECENT_SENDERS);
-    setIsLoading(cachedSenders === undefined);
+    const cachedSenders = cacheRef.current.get(currentCacheKey);
+    setSnapshot({
+      cacheKey: currentCacheKey,
+      client,
+      senders: cachedSenders ?? EMPTY_RECENT_SENDERS,
+      isLoading: cachedSenders === undefined,
+    });
     let active = true;
 
     void client
@@ -75,23 +97,34 @@ export function useBoardClimbRecentSenders({
         if (!active || generationRef.current !== requestGeneration) return;
         // Refresh insertion order so the fixed-size map behaves as an LRU for
         // history scrubbing instead of growing for the lifetime of the kiosk.
-        cacheRef.current.delete(cacheKey);
-        cacheRef.current.set(cacheKey, nextSenders);
+        cacheRef.current.delete(currentCacheKey);
+        cacheRef.current.set(currentCacheKey, nextSenders);
         if (cacheRef.current.size > RECENT_SENDER_CACHE_LIMIT) {
           const oldestKey = cacheRef.current.keys().next().value;
           if (oldestKey !== undefined) cacheRef.current.delete(oldestKey);
         }
-        setSenders(nextSenders);
+        setSnapshot({ cacheKey: currentCacheKey, client, senders: nextSenders, isLoading: false });
       })
       .catch(() => {
         if (!active || generationRef.current !== requestGeneration) return;
         // No dedicated error chrome: a cached row remains useful during a
         // transient failure, while a first-load failure degrades to no byline.
-        if (cachedSenders === undefined) setSenders(EMPTY_RECENT_SENDERS);
+        if (cachedSenders === undefined) {
+          setSnapshot({
+            cacheKey: currentCacheKey,
+            client,
+            senders: EMPTY_RECENT_SENDERS,
+            isLoading: false,
+          });
+        }
       })
       .finally(() => {
         if (!active || generationRef.current !== requestGeneration) return;
-        setIsLoading(false);
+        setSnapshot((currentSnapshot) =>
+          currentSnapshot.cacheKey === currentCacheKey && currentSnapshot.client === client
+            ? { ...currentSnapshot, isLoading: false }
+            : currentSnapshot,
+        );
       });
 
     return () => {
@@ -100,7 +133,11 @@ export function useBoardClimbRecentSenders({
     // The stats object is intentionally a dependency: the provider replaces it
     // for every BoardStatsUpdated event, including edits and deletes where a
     // scalar such as lastSentAt may stay unchanged.
-  }, [angle, boardId, client, climbUuid, enabled, stats]);
+  }, [angle, boardId, client, currentCacheKey, normalizedClimbUuid, stats]);
 
-  return useMemo(() => ({ senders, isLoading }), [senders, isLoading]);
+  return useMemo(() => {
+    if (currentCacheKey === null) return EMPTY_RECENT_SENDERS_STATE;
+    if (snapshot.cacheKey !== currentCacheKey || snapshot.client !== client) return LOADING_RECENT_SENDERS_STATE;
+    return { senders: snapshot.senders, isLoading: snapshot.isLoading };
+  }, [client, currentCacheKey, snapshot]);
 }
