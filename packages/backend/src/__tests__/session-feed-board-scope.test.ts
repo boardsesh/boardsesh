@@ -6,6 +6,27 @@ import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 
 const boardScopeTestState = vi.hoisted(() => {
   const executeMock = vi.fn();
+  const guardMock = vi.fn();
+
+  // sessionGroupedFeed's main query runs inside withSerialPlan, which issues
+  // SET LOCAL max_parallel_workers_per_gather = 0 first (#4105). Route that
+  // statement to its own spy so the executeMock sequence these tests index into
+  // stays the resolver's own queries — while still being assertable.
+  const guardText = (query: unknown): string => {
+    if (!query || typeof query !== 'object') return '';
+    const chunks = (query as { queryChunks?: unknown[] }).queryChunks;
+    if (!Array.isArray(chunks)) return '';
+    return chunks
+      .map((chunk) => {
+        if (!chunk || typeof chunk !== 'object') return '';
+        const typed = chunk as { value?: unknown; queryChunks?: unknown[] };
+        if (Array.isArray(typed.value)) return typed.value.join('');
+        if (Array.isArray(typed.queryChunks)) return guardText(chunk);
+        return '';
+      })
+      .join('');
+  };
+  const isSerialPlanGuard = (query: unknown) => guardText(query).includes('max_parallel_workers_per_gather');
   // dbRead.select() is used twice per board-scoped call:
   //   1. board lookup:  .select({id}).from(userBoards).where(...).limit(1).then()
   //   2. session meta:  .select({...}).from(boardSessions).where(inArray(...))  (awaited)
@@ -20,13 +41,26 @@ const boardScopeTestState = vi.hoisted(() => {
     return { from: () => ({ where: () => whereResult }) };
   });
 
-  return { executeMock, selectMock, selectQueue };
+  return { executeMock, selectMock, selectQueue, guardMock, isSerialPlanGuard };
 });
 
 vi.mock('../db/client', () => {
+  const transaction = (callback: (tx: unknown) => unknown) =>
+    callback({
+      execute: (statement: unknown) => {
+        if (boardScopeTestState.isSerialPlanGuard(statement)) {
+          boardScopeTestState.guardMock(statement);
+          return Promise.resolve([]);
+        }
+        return boardScopeTestState.executeMock(statement);
+      },
+      select: boardScopeTestState.selectMock,
+    });
+
   const fakeDb = {
     execute: boardScopeTestState.executeMock,
     select: boardScopeTestState.selectMock,
+    transaction,
   };
   return { db: fakeDb, dbRead: fakeDb };
 });
@@ -110,7 +144,19 @@ describe('sessionGroupedFeed board scoping (exact board_id)', () => {
     // queue from a prior test so each test owns the full execute() call sequence.
     boardScopeTestState.executeMock.mockReset();
     boardScopeTestState.selectMock.mockClear();
+    boardScopeTestState.guardMock.mockClear();
     boardScopeTestState.selectQueue.length = 0;
+  });
+
+  it('runs the main feed query behind the parallel-worker guard (#4105)', async () => {
+    // The only test that would catch someone unwrapping sessionGroupedFeed from
+    // withSerialPlan — the other assertions here deliberately look past the guard.
+    boardScopeTestState.selectQueue.push([], []);
+    primeFeedExecuteMocks();
+
+    await sessionGroupedFeed(null, { input: { limit: 5 } });
+
+    expect(boardScopeTestState.guardMock).toHaveBeenCalledTimes(1);
   });
 
   it('scopes to the resolved board id via t.board_id, not board_type/layout', async () => {

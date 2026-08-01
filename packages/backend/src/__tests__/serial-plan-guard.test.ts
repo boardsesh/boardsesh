@@ -45,6 +45,9 @@ function createFakeDb() {
       recorded.table = is(source, Table) ? getTableName(source) : null;
       return builder;
     };
+    // Deliberate: drizzle's query builder is awaitable, so the fake has to be a
+    // real thenable for `await tx.select()...` to resolve like a genuine query.
+    // oxlint-disable-next-line no-thenable
     builder.then = (
       onFulfilled?: ((value: unknown) => unknown) | null,
       onRejected?: ((reason: unknown) => unknown) | null,
