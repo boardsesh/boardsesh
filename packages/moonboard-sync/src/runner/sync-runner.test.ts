@@ -101,6 +101,25 @@ describe('MoonBoardSyncRunner', () => {
     await runner.stop();
   });
 
+  it('closes Postgres when lease cleanup rejects', async () => {
+    const leaseError = new Error('lease cleanup failed');
+    const leaseStop = vi.fn().mockRejectedValue(leaseError);
+    const runner = new MoonBoardSyncRunner({
+      username: 'sync@example.com',
+      password: 'secret',
+    });
+    const runnerInternals = runner as unknown as {
+      lease: { stop: () => Promise<void> } | null;
+    };
+
+    await runner.syncLocations();
+    runnerInternals.lease = { stop: leaseStop };
+
+    await expect(runner.stop()).rejects.toBe(leaseError);
+    expect(leaseStop).toHaveBeenCalledOnce();
+    expect(runnerHarness.closePool).toHaveBeenCalledOnce();
+  });
+
   it('takes the MoonBoard daemon lease, runs immediately, and waits six to eight hours', async () => {
     const logs: string[] = [];
     const runner = new MoonBoardSyncRunner({

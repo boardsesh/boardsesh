@@ -149,12 +149,15 @@ export class MoonBoardSyncRunner {
         } finally {
           // runDaemon normally released this lease already. The extra stop is
           // needed for one-shot use and is idempotent when a daemon just ended.
-          await this.lease?.stop();
-          if (this.database) {
-            try {
-              await closePool();
-            } finally {
-              this.database = null;
+          try {
+            await this.lease?.stop();
+          } finally {
+            if (this.database) {
+              try {
+                await closePool();
+              } finally {
+                this.database = null;
+              }
             }
           }
         }
