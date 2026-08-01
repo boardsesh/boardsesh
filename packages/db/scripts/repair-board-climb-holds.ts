@@ -298,6 +298,13 @@ function climbIdentityKey(boardType: string, climbUuid: string): string {
 }
 
 export async function applyRepairManifest(executor: RepairQueryExecutor, manifest: RepairManifest): Promise<void> {
+  const blockerCount = manifest.entries.reduce((total, entry) => total + entry.blockers.length, 0);
+  if (manifest.counts.blockers > 0 || blockerCount > 0) {
+    throw new Error(
+      `refusing to apply a repair manifest with ${Math.max(manifest.counts.blockers, blockerCount)} blocker(s)`,
+    );
+  }
+
   const changedEntries = manifest.entries.filter((entry) => entry.changed);
   const invalidOnlyEntries = manifest.entries.filter((entry) => !entry.multiFrame && entry.invalidRows.length > 0);
 
