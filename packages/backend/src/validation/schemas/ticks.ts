@@ -3,6 +3,12 @@ import { BETA_VIDEO_URL_REGEX, BETA_VIDEO_URL_VALIDATION_MESSAGE } from '@boards
 import { ExternalUUIDSchema, BoardNameSchema, UUIDSchema } from './primitives';
 
 const CLIMBED_AT_FUTURE_TOLERANCE_MS = 60_000;
+const POSTGRES_TIMESTAMP_FRACTION_PATTERN = /[Tt ]\d{2}:\d{2}:\d{2}\.(\d+)(?:[Zz]|[+-]\d{2}:?\d{2})?$/;
+
+function hasSupportedPostgresTimestampPrecision(value: string): boolean {
+  const fractionalSeconds = POSTGRES_TIMESTAMP_FRACTION_PATTERN.exec(value)?.[1];
+  return fractionalSeconds === undefined || fractionalSeconds.length <= 6;
+}
 
 /**
  * Tick status validation schema
@@ -27,7 +33,9 @@ export const SaveTickInputSchema = z
     difficulty: z.number().int().optional().nullable(),
     isBenchmark: z.boolean(),
     comment: z.string().max(2000),
-    climbedAt: z.string(),
+    climbedAt: z
+      .string()
+      .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits'),
     sessionId: z.string().optional(),
     layoutId: z.number().int().positive().optional(),
     sizeId: z.number().int().positive().optional(),
@@ -152,6 +160,7 @@ export const UpdateTickInputSchema = z
     climbedAt: z
       .string()
       .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Climbed at must be a valid date')
+      .refine(hasSupportedPostgresTimestampPrecision, 'Climbed at supports at most six fractional-second digits')
       .refine(
         (value) => new Date(value).getTime() <= Date.now() + CLIMBED_AT_FUTURE_TOLERANCE_MS,
         'Climbed at cannot be in the future',

@@ -422,12 +422,41 @@ const auroraMutationTwin = aliasedTable(dbSchema.boardseshTicks, 'aurora_mutatio
 type TickMutationTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
+ * Convert a client timestamp to the UTC wall-clock text PostgreSQL stores for
+ * `timestamp without time zone`, without serializing its fraction through a
+ * JavaScript Date.
+ *
+ * JavaScript Dates retain milliseconds only.  They are still useful for
+ * resolving a numeric UTC offset, but their formatted fraction must never be
+ * used here: a client is allowed to supply PostgreSQL's full six digits.
+ */
+function normalizeClimbedAt(value: string): string {
+  const parsed = new Date(value);
+  const utcDate = [
+    String(parsed.getUTCFullYear()).padStart(4, '0'),
+    String(parsed.getUTCMonth() + 1).padStart(2, '0'),
+    String(parsed.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+  const utcTime = [
+    String(parsed.getUTCHours()).padStart(2, '0'),
+    String(parsed.getUTCMinutes()).padStart(2, '0'),
+    String(parsed.getUTCSeconds()).padStart(2, '0'),
+  ].join(':');
+  const utcSecond = `${utcDate}T${utcTime}`;
+  const fractionalSeconds = /[Tt ]\d{2}:\d{2}:\d{2}\.(\d{1,6})(?:[Zz]|[+-]\d{2}:?\d{2})?$/.exec(value)?.[1];
+
+  return fractionalSeconds ? `${utcSecond}.${fractionalSeconds}Z` : `${utcSecond}.000Z`;
+}
+
+/**
  * Resolve the exact rows an authenticated tick mutation may affect.
  *
  * Lock order is global and shared by update/delete: per-user advisory lock,
  * addressed row, then direct twins ordered by UUID. The target expands only
  * when it is the currently visible, real Aurora-pull survivor. Hidden/stale
  * UUIDs and every non-Aurora origin deliberately retain single-row semantics.
+ * A group is also refused when its pairwise witnesses would join two different
+ * real Kilter ids through a NULL-link hub: those are distinct upstream facts.
  */
 async function selectTickMutationGroupForUpdate(
   tx: TickMutationTransaction,
@@ -465,7 +494,15 @@ async function selectTickMutationGroupForUpdate(
     .orderBy(auroraMutationTwin.uuid)
     .for('update');
 
-  return [targetResult.tick, ...directTwins.map((row) => row.tick)];
+  const mutationGroup = [targetResult.tick, ...directTwins.map((row) => row.tick)];
+  const kilterIds = new Set(mutationGroup.flatMap((tick) => (tick.kilterId ? [tick.kilterId] : [])));
+
+  // `isDirectAuroraTwin` intentionally permits one NULL Kilter link. That is
+  // safe pairwise, but a NULL target can individually witness two different
+  // real links. Do not turn that V shape into one mutable logical ascent.
+  if (kilterIds.size > 1) return [targetResult.tick];
+
+  return mutationGroup;
 }
 
 function distinctTickStatsKeys(ticks: dbSchema.BoardseshTick[]): Array<{
@@ -505,7 +542,7 @@ export const tickMutations = {
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
-    const deletedTicks = await db.transaction(async (tx) => {
+    const mutationResult = await db.transaction(async (tx) => {
       await acquireUserTickMutationLock(tx, userId);
       const affectedTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'delete');
       const affectedUuids = affectedTicks.map((tick) => tick.uuid);
@@ -541,8 +578,16 @@ export const tickMutations = {
         .where(
           and(eq(dbSchema.notifications.entityType, 'tick'), inArray(dbSchema.notifications.entityId, affectedUuids)),
         );
-      // board_beta_links.tick_uuid intentionally relies on its existing ON
-      // DELETE SET NULL FK. The trigger writes one offline tombstone per UUID.
+      // Detach explicitly instead of relying only on ON DELETE SET NULL, so a
+      // successful-ascent beta disappearing from its tick invalidates the
+      // 24-hour recent-beta cache after commit.
+      const detachedBetaLinks = await tx
+        .update(dbSchema.boardBetaLinks)
+        .set({ tickUuid: null })
+        .where(inArray(dbSchema.boardBetaLinks.tickUuid, affectedUuids))
+        .returning({ link: dbSchema.boardBetaLinks.link });
+
+      // The trigger writes one offline tombstone per UUID.
       await tx.delete(dbSchema.boardseshTicks).where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids));
 
       const sessionIds = distinctTickSessions(affectedTicks);
@@ -550,8 +595,10 @@ export const tickMutations = {
         await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
       }
 
-      return affectedTicks;
+      return { affectedTicks, detachedBetaLinks: detachedBetaLinks.length > 0 };
     });
+
+    const { affectedTicks: deletedTicks, detachedBetaLinks } = mutationResult;
 
     const targetTick = deletedTicks.find((tick) => tick.uuid === uuid)!;
     logger.info(
@@ -560,6 +607,11 @@ export const tickMutations = {
 
     for (const key of distinctTickStatsKeys(deletedTicks)) {
       queueClimbStatsRecompute(key.boardType, key.climbUuid, key.angle);
+    }
+    if (detachedBetaLinks) {
+      invalidateRecentBetaLinksCache().catch((err) => {
+        logger.error('[deleteTick] recent-beta-links cache invalidation failed:', err);
+      });
     }
 
     for (const { boardId, boardType } of distinctTickBoards(deletedTicks)) {
@@ -591,7 +643,7 @@ export const tickMutations = {
     );
     const uuid = validatedInput.uuid ?? uuidv4();
     const now = new Date().toISOString();
-    const climbedAt = new Date(validatedInput.climbedAt).toISOString();
+    const climbedAt = normalizeClimbedAt(validatedInput.climbedAt);
 
     if (validatedInput.uuid) {
       const [existingTick] = await db
@@ -1007,7 +1059,7 @@ export const tickMutations = {
 
     const validatedInput = validateInput(UpdateTickInputSchema, input, 'input');
     const canonicalClimbedAt =
-      validatedInput.climbedAt === undefined ? undefined : new Date(validatedInput.climbedAt).toISOString();
+      validatedInput.climbedAt === undefined ? undefined : normalizeClimbedAt(validatedInput.climbedAt);
 
     const changedFields = Object.keys(validatedInput);
     logger.info(`[updateTick] user=${userId} tick=${uuid} fields=[${changedFields.join(',')}]`);
