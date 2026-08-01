@@ -1454,6 +1454,13 @@ describe('board-presence resolvers', () => {
     it('validates climb UUID and angle before querying ticks', async () => {
       const boardId = await makeBoard();
       await expect(
+        boardPresenceQueries.boardClimbRecentSenders(
+          undefined,
+          { boardId, climbUuid: TEST_CLIMB_UUID, angle: 90 },
+          authCtx(),
+        ),
+      ).resolves.toEqual([]);
+      await expect(
         boardPresenceQueries.boardClimbRecentSenders(undefined, { boardId, climbUuid: '   ', angle: 40 }, authCtx()),
       ).rejects.toThrow('Climb UUID cannot be empty');
       await expect(

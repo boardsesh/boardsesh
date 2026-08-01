@@ -47,18 +47,17 @@ export function useBoardClimbRecentSenders({
     generationRef.current += 1;
     const requestGeneration = generationRef.current;
     const normalizedClimbUuid = climbUuid?.trim() ?? '';
-    const canFetch =
-      enabled &&
-      boardId !== null &&
-      client?.fetchClimbRecentSenders !== undefined &&
-      normalizedClimbUuid.length > 0 &&
-      angle !== null &&
-      angle !== undefined &&
-      Number.isInteger(angle) &&
-      angle >= 0 &&
-      angle <= 90;
-
-    if (!canFetch || boardId === null || client?.fetchClimbRecentSenders === undefined || angle == null) {
+    if (
+      !enabled ||
+      boardId === null ||
+      client?.fetchClimbRecentSenders === undefined ||
+      normalizedClimbUuid.length === 0 ||
+      angle === null ||
+      angle === undefined ||
+      !Number.isInteger(angle) ||
+      angle < 0 ||
+      angle > 90
+    ) {
       setSenders(EMPTY_RECENT_SENDERS);
       setIsLoading(false);
       return;
