@@ -327,6 +327,34 @@ void test('apply and verification batch changed identities while preserving empt
   await assert.rejects(verifyAppliedRepair(missingVerificationExecutor, manifest), /kilter\/batch-b/);
 });
 
+void test('direct apply rejects a blocked manifest before executing a mutation', async () => {
+  const manifest = buildRepairManifest(
+    [
+      {
+        boardType: 'tension',
+        uuid: 'blocked-missing-placement',
+        layoutId: 1,
+        frames: 'p1r1,"p2r2',
+        framesCount: 2,
+        holdFingerprint: null,
+        multiFrameTarget: true,
+        rows: [],
+      },
+    ],
+    new Set([placementKey('tension', 1, 1)]),
+  );
+  let executorCalls = 0;
+  const executor = {
+    execute() {
+      executorCalls += 1;
+      return Promise.resolve([]);
+    },
+  };
+
+  await assert.rejects(applyRepairManifest(executor, manifest), /refusing to apply.*1 blocker/);
+  assert.equal(executorCalls, 0);
+});
+
 void test('real Postgres apply deletes, inserts, updates fingerprints, verifies, and reruns idempotently', async (context) => {
   const databaseUrl = process.env.REPAIR_BOARD_CLIMB_HOLDS_TEST_DB_URL ?? process.env.DATABASE_URL;
   if (!databaseUrl || !isLocalDatabaseUrl(databaseUrl)) {

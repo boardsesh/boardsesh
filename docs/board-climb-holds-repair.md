@@ -28,6 +28,8 @@ vp run db:repair-board-climb-holds -- --report-limit 100
 
 Record the printed SHA-256 and the exact `scanned`, `changed`, `invalid_rows`, `fingerprint_updates`, and `affected` counts. `affected` includes fingerprint-only migrations, so use it for the apply ceiling even when the materialized rows are already canonical. Review every blocker and diagnostic, especially unknown roles, nonpositive IDs, missing placements, malformed frames, and `frames_count` mismatches. Do not apply while any blocker exists.
 
+Missing placements are automatic blockers, not overridable warnings. Repair or resync the affected board's placement catalog, then run a new dry-run and review its new digest and counts. The apply command has no override for missing placement IDs.
+
 ## Apply
 
 After approval, pass every reviewed guard back verbatim. `--max-affected` is a ceiling and should normally equal the reviewed affected count.
