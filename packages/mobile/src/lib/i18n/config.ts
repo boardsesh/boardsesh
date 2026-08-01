@@ -1,9 +1,10 @@
 // Polyfill Intl.PluralRules before i18next initialises. Hermes ships an
-// incomplete Intl implementation, and since i18next v24 the CLDR plural
-// resolver requires `Intl.PluralRules` outright — there is no v3-compatibility
-// fallback to degrade into any more, so without this plural lookups miss their
-// `_one`/`_other` suffix entirely and es/fr render the wrong form. Mirrors how
-// web wires the same polyfill in app/lib/i18n/{server.ts,client.tsx}.
+// incomplete Intl implementation, and when `Intl.PluralRules` is missing
+// i18next's plural resolver silently falls back to a hardcoded English rule
+// (`count === 1 ? 'one' : 'other'`), so locales with different plural
+// categories pick the wrong suffix — French `count=0` renders `_other`
+// instead of `_one`, and categories like `many` vanish. Mirrors how web
+// wires the same polyfill in app/lib/i18n/{server.ts,client.tsx}.
 import 'intl-pluralrules';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';

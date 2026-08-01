@@ -1,10 +1,11 @@
 'use client';
 
 // Polyfill `Intl.PluralRules` for older browsers / WebViews (e.g. iOS 12,
-// older Bluefy builds). i18next resolves plurals through `Intl.PluralRules`,
-// and since v24 that API is mandatory with no fallback — without this,
-// environments that lack it silently fall through to the base key
-// (issue #1852).
+// older Bluefy builds). When the API is missing, i18next's plural resolver
+// silently falls back to a hardcoded English rule
+// (`count === 1 ? 'one' : 'other'`), so fr picks the wrong suffix
+// (`count=0` renders `_other` instead of `_one`) and categories like `many`
+// vanish (issue #1852).
 import 'intl-pluralrules';
 import React, { useMemo } from 'react';
 import i18next, { type i18n } from 'i18next';

@@ -46,7 +46,7 @@ function flushVitalsBuffer(buffer: VitalsBuffer): void {
     props[`$web_vitals_${name}_rating`] = metric.rating;
     props[`$web_vitals_${name}_delta`] = metric.delta;
     props[`$web_vitals_${name}_id`] = metric.id;
-    props[`$web_vitals_${name}_navigation_type`] = metric.navigationType ?? null;
+    props[`$web_vitals_${name}_navigation_type`] = metric.navigationType;
   }
 
   capturePosthog('$web_vitals', props);
