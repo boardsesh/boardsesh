@@ -20,8 +20,9 @@ import { SYSTEM_BOARD_OWNER_ID } from '../graphql/resolvers/board-presence/share
  *    requireAnonReadableBoard and the board-presence family — a signed-in
  *    climber still resolves a gym's private board by uuid (BLE connect flow,
  *    boardsBySerialNumbers).
- *  - boardBySlug is NOT masked at all (the anonymous, shared-cached /b/{slug}
- *    web surface has no token path); pinned so the exclusion stays deliberate.
+ *  - boardBySlug uses the same anonymous-only mask. The server-rendered web
+ *    lookup forwards a signed-in user's token and keeps that response out of
+ *    the shared cache, so private direct links still work without leaking.
  *
  * Masking is expressed as `null` rather than a thrown NOT_FOUND because these
  * SDL fields are nullable — `null` already means "no such entity", so it is the
@@ -270,16 +271,38 @@ describe('board(boardUuid) anonymous masking', () => {
 });
 
 // ============================================================================
-// boardBySlug — deliberately NOT masked
+// boardBySlug — same anonymous-only mask as board(boardUuid)
 // ============================================================================
 
-describe('boardBySlug is deliberately not anon-masked', () => {
-  it('still enriches a PRIVATE board for an anonymous caller', async () => {
-    // Accepted residual exposure (#3648): /b/{slug} resolves through an
-    // anonymous, cross-user cached fetch with no token path, so masking here
-    // would 404 a private board's own owner on their own pages.
-    const board = await socialBoardQueries.boardBySlug(null, { slug: privateBoard.slug }, anonCtx());
+describe('boardBySlug anonymous masking', () => {
+  it('masks a PRIVATE board identically to a board that does not exist', async () => {
+    const missing = await socialBoardQueries.boardBySlug(null, { slug: uuidv4() }, anonCtx());
+    const privateResult = await socialBoardQueries.boardBySlug(null, { slug: privateBoard.slug }, anonCtx());
+
+    expect(privateResult).toEqual(missing);
+    expect(privateResult).toBeNull();
+  });
+
+  it.each([
+    ['PUBLIC', () => publicBoard, 'Public Wall'],
+    ['UNLISTED but public', () => unlistedBoard, 'Unlisted Wall'],
+    ['non-public SYSTEM-owned', () => systemPrivateBoard, 'Shared MoonBoard Config'],
+  ] as const)('keeps a %s board readable anonymously', async (_label, getBoard, expectedName) => {
+    const board = getBoard();
+    const result = await socialBoardQueries.boardBySlug(null, { slug: board.slug }, anonCtx());
+    expect(result?.name).toBe(expectedName);
+  });
+
+  it('returns a PRIVATE board to its owner', async () => {
+    const board = await socialBoardQueries.boardBySlug(null, { slug: privateBoard.slug }, authCtx(OWNER));
     expect(board?.name).toBe('Private Wall');
+    expect(board?.canEdit).toBe(true);
+  });
+
+  it('returns a PRIVATE board to an authenticated non-owner', async () => {
+    const board = await socialBoardQueries.boardBySlug(null, { slug: privateBoard.slug }, authCtx(STRANGER));
+    expect(board?.name).toBe('Private Wall');
+    expect(board?.boardId).toBeNull();
   });
 });
 

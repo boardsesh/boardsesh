@@ -1,5 +1,7 @@
+import 'server-only';
 import { cache } from 'react';
 import type { ParsedBoardRouteParameters, BoardName } from '@/app/lib/types';
+import { getServerAuthToken } from '@/app/lib/auth/server-auth';
 import { getGraphQLHttpUrl } from '@/app/lib/graphql/client';
 
 export type ResolvedBoard = {
@@ -47,11 +49,21 @@ export const resolveBoardBySlug = cache(async (slug: string): Promise<ResolvedBo
   `;
 
   try {
+    const authToken = await getServerAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) {
+      headers.Authorization = `Bearer ${authToken}`;
+    }
+
+    // Authenticated responses can contain private boards, so they must never
+    // enter the shared data cache. Anonymous responses remain safely reusable.
+    const cacheOptions = authToken ? { cache: 'no-store' as const } : { next: { revalidate: 300 } };
+
     const response = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ query, variables: { slug } }),
-      next: { revalidate: 300 }, // Cache for 5 minutes
+      ...cacheOptions,
     });
 
     if (!response.ok) {
