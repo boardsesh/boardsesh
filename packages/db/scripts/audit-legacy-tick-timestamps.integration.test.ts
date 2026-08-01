@@ -2,7 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import postgres from 'postgres';
-import { AUDIT_SCAN_QUERY, runDatabaseAudit, type ArtifactSink } from './audit-legacy-tick-timestamps.js';
+import {
+  AUDIT_SCAN_QUERY,
+  AUDIT_STATEMENT_TIMEOUT_MS,
+  runDatabaseAudit,
+  type ArtifactSink,
+} from './audit-legacy-tick-timestamps.js';
 import { assertPrivacySafeRecord, type AuditPolicy } from './legacy-timestamp-audit-core.js';
 
 const DATABASE_URL = process.env.LEGACY_TIMESTAMP_AUDIT_DB_URL;
@@ -37,14 +42,17 @@ if (!DATABASE_URL || !isExplicitLocalDatabase(DATABASE_URL)) {
   });
 } else {
   void describe('legacy timestamp audit PostgreSQL contract', () => {
-    void it('scans a real schema in a serializable, read-only, deferrable UTC snapshot', async () => {
-      let emittedRecords = 0;
+    void it('scans through an explicit cursor in a bounded serializable, read-only, deferrable UTC snapshot', async () => {
+      let recordWritesStarted = 0;
+      let recordWritesCompleted = 0;
       let metadataVerified = false;
       const sink: ArtifactSink = {
         async writeCanonicalRecord(record) {
           assert.equal(metadataVerified, true, 'metadata callback must run before evidence is emitted');
           assertPrivacySafeRecord(record);
-          emittedRecords += 1;
+          recordWritesStarted += 1;
+          await new Promise<void>((resolveWrite) => setImmediate(resolveWrite));
+          recordWritesCompleted += 1;
         },
       };
       const { counters, metadata } = await runDatabaseAudit(DATABASE_URL, policy, sink, randomBytes(32), async () => {
@@ -54,9 +62,15 @@ if (!DATABASE_URL || !isExplicitLocalDatabase(DATABASE_URL)) {
       assert.equal(metadata.transactionIsolation, 'serializable');
       assert.equal(metadata.transactionReadOnly, 'on');
       assert.equal(metadata.transactionDeferrable, 'on');
+      assert.equal(metadata.statementTimeoutMs, AUDIT_STATEMENT_TIMEOUT_MS);
       assert.equal(metadata.timeZone, 'UTC');
       assert.match(metadata.schemaSha256, /^[a-f0-9]{64}$/);
-      assert.ok(counters.scannedRows >= emittedRecords);
+      assert.equal(
+        recordWritesCompleted,
+        recordWritesStarted,
+        'every fetched batch must finish local writes before return',
+      );
+      assert.ok(counters.scannedRows >= recordWritesCompleted);
     });
 
     void it('has a read-only EXPLAIN shape with no modifying plan nodes', async () => {
