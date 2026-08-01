@@ -397,7 +397,8 @@ type OkhslColorPickerProps = {
   /**
    * Initial colour as #rrggbb. Read only on mount — OKHSL is the source of
    * truth thereafter, so the caller re-seeds by remounting via a React `key`
-   * (e.g. key per opened role) rather than pushing new values in.
+   * (e.g. key per opened role) rather than pushing new values in. This also
+   * makes a parent prop change during an active drag intentionally inert.
    */
   value: string;
   onChange: (hex: string) => void;

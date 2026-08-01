@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
-import { createElement, forwardRef, useImperativeHandle, type ReactNode } from 'react';
+import { createElement, forwardRef, useEffect, useImperativeHandle, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Okhsl } from '../../../lib/okhsl';
 
@@ -55,7 +55,13 @@ vi.mock('react-native', () => {
     },
     ref,
   ) {
-    if (onLayout) responderHarness.trackLayoutCallbacks.add(onLayout);
+    useEffect(() => {
+      if (!onLayout) return;
+      responderHarness.trackLayoutCallbacks.add(onLayout);
+      return () => {
+        responderHarness.trackLayoutCallbacks.delete(onLayout);
+      };
+    }, [onLayout]);
     useImperativeHandle(
       ref,
       () => ({
@@ -193,6 +199,9 @@ const EXPECTED_INITIAL_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS.redu
   0,
 );
 const NON_LIGHTNESS_GRADIENT_CONVERSIONS = EXPECTED_GRADIENT_STOP_COUNTS[1] + EXPECTED_GRADIENT_STOP_COUNTS[2];
+// Mirrors the component's explicit visual contract: at most one expensive
+// gradient rebuild per 30 fps interval while thumb/value updates stay exact.
+const GRADIENT_UPDATE_INTERVAL_MS = 1000 / 30;
 
 function responderEvent(pageX: number): ResponderEvent {
   return { nativeEvent: { pageX } };
@@ -284,13 +293,16 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(responderHarness.sliderRenderCounts[HUE_LABEL]).toBe(1);
     expect(vi.getTimerCount()).toBe(1);
 
+    // Fake timers schedule the fractional delay on the preceding whole
+    // millisecond, so stay one millisecond below that boundary first.
+    const wholeMillisecondsBeforeGradientUpdate = Math.floor(GRADIENT_UPDATE_INTERVAL_MS) - 1;
     act(() => {
-      vi.advanceTimersByTime(32);
+      vi.advanceTimersByTime(wholeMillisecondsBeforeGradientUpdate);
     });
     expect(okhslHarness.conversionCount).toBe(EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21);
 
     act(() => {
-      vi.advanceTimersByTime(2);
+      vi.advanceTimersByTime(Math.ceil(GRADIENT_UPDATE_INTERVAL_MS) - wholeMillisecondsBeforeGradientUpdate);
     });
     expect(okhslHarness.conversionCount).toBe(
       EXPECTED_INITIAL_GRADIENT_CONVERSIONS + 21 + NON_LIGHTNESS_GRADIENT_CONVERSIONS,
@@ -381,6 +393,30 @@ describe('OkhslColorPicker gradient updates', () => {
     expect(slider(container, HUE_LABEL).dataset.accessibilityValue).toBe('270°');
     const hexInput = container.querySelector<HTMLInputElement>(`[aria-label="${HEX_LABEL}"]`);
     expect(hexInput?.value).toBe(onChange.mock.lastCall?.[0]);
+    expect(onChange).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps the mount-time colour as the source of truth if value changes during a drag', () => {
+    const onChange = vi.fn();
+    const { container, rerender } = render(<OkhslColorPicker value="#00ff00" onChange={onChange} />);
+
+    act(() => {
+      grant(HUE_LABEL, 30);
+    });
+    const hexInput = container.querySelector<HTMLInputElement>(`[aria-label="${HEX_LABEL}"]`);
+    const hexAfterGrant = hexInput?.value;
+
+    rerender(<OkhslColorPicker value="#ff0000" onChange={onChange} />);
+    expect(hexInput?.value).toBe(hexAfterGrant);
+
+    act(() => {
+      move(HUE_LABEL, 150);
+      release(HUE_LABEL, 225);
+    });
+
+    expect(hexInput?.value).toBe(onChange.mock.lastCall?.[0]);
+    expect(hexInput?.value).not.toBe('#ff0000');
     expect(onChange).toHaveBeenCalledTimes(3);
     expect(vi.getTimerCount()).toBe(0);
   });
