@@ -6,6 +6,9 @@ import { generateOpenApiDocument } from '../api-docs/generate-openapi';
 
 const API_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../api/v1');
 
+// This explicit policy inventory is compared with a recursive census of every
+// route file that actually exports GET below. Adding or renaming a public GET
+// therefore fails until its guard and OpenAPI path are reviewed here together.
 const EXPECTED_PUBLIC_GET_ROUTES = [
   '[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/[climb_uuid]/route.ts',
   '[board_name]/[layout_id]/[size_id]/[set_ids]/[angle]/heatmap/route.ts',

@@ -29,7 +29,7 @@ describe('checkRedisRateLimit', () => {
   });
 
   it('allows the request at the limit and rejects the next one', async () => {
-    const atLimit = vi.fn().mockResolvedValue(120);
+    const atLimit = vi.fn().mockResolvedValue('120');
     const overLimit = vi.fn().mockResolvedValue(121);
     const options = {
       identity: 'ip:203.0.113.4',
