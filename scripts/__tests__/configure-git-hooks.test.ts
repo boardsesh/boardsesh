@@ -103,9 +103,10 @@ function repairHooks(fixture: Fixture) {
   });
 }
 
-function commandLineIndexes(contents: string, command: string): number[] {
+function executableCommandLineIndexes(contents: string, command: string): number[] {
   return contents.split('\n').reduce<number[]>((indexes, line, index) => {
-    if (line.trim() === command) {
+    const trimmedLine = line.trim();
+    if (!trimmedLine.startsWith('#') && trimmedLine === command) {
       indexes.push(index);
     }
     return indexes;
@@ -113,8 +114,8 @@ function commandLineIndexes(contents: string, command: string): number[] {
 }
 
 function expectCommandAfter(contents: string, firstCommand: string, secondCommand: string): void {
-  const firstCommandIndexes = commandLineIndexes(contents, firstCommand);
-  const secondCommandIndexes = commandLineIndexes(contents, secondCommand);
+  const firstCommandIndexes = executableCommandLineIndexes(contents, firstCommand);
+  const secondCommandIndexes = executableCommandLineIndexes(contents, secondCommand);
 
   expect(firstCommandIndexes.length, `missing exact command line: ${firstCommand}`).toBeGreaterThan(0);
   expect(secondCommandIndexes.length, `missing exact command line: ${secondCommand}`).toBeGreaterThan(0);
@@ -248,6 +249,30 @@ describe('configure-git-hooks', () => {
     expect(runGit(['config', '--local', '--get-all', 'core.hooksPath'], fixture.primaryWorktree)).toBe('.vite-hooks');
   });
 
+  it('normalizes an allowed worktree-level hook override', async () => {
+    const fixture = await createFixture();
+    runGit(['config', 'extensions.worktreeConfig', 'true'], fixture.primaryWorktree);
+    runGit(['config', '--worktree', '--replace-all', 'core.hooksPath', '.vite-hooks/_'], fixture.primaryWorktree);
+
+    const result = repairHooks(fixture);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(runGit(['config', '--worktree', '--get', 'core.hooksPath'], fixture.primaryWorktree)).toBe('.vite-hooks');
+    expect(runGit(['config', '--get', 'core.hooksPath'], fixture.primaryWorktree)).toBe('.vite-hooks');
+  });
+
+  it('refuses a foreign worktree-level hook override without replacing it', async () => {
+    const fixture = await createFixture();
+    runGit(['config', 'extensions.worktreeConfig', 'true'], fixture.primaryWorktree);
+    runGit(['config', '--worktree', '--replace-all', 'core.hooksPath', '.custom-hooks'], fixture.primaryWorktree);
+
+    const result = repairHooks(fixture);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("core.hooksPath is '.custom-hooks'");
+    expect(runGit(['config', '--worktree', '--get', 'core.hooksPath'], fixture.primaryWorktree)).toBe('.custom-hooks');
+  });
+
   it('fails when a required tracked Vite+ hook is missing', async () => {
     const fixture = await createFixture();
     const missingHookPath = join(fixture.primaryWorktree, '.vite-hooks/pre-commit');
@@ -304,7 +329,7 @@ describe('configure-git-hooks', () => {
 
     expectCommandAfter(claudeSetup, 'vp config', './scripts/configure-git-hooks.sh');
     expectCommandAfter(developerSetup, 'if ! vp install; then', 'vp config');
-    expectCommandAfter(developerSetup, 'vp config', '"$REPO_ROOT/scripts/configure-git-hooks.sh"');
+    expectCommandAfter(developerSetup, 'vp config', 'if ! "$REPO_ROOT/scripts/configure-git-hooks.sh"; then');
     expectCommandAfter(
       postCheckoutHook,
       'if ! vp install; then',

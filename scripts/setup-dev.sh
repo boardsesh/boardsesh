@@ -129,7 +129,9 @@ print_success "Dependencies installed successfully"
 
 echo "Setting up Git hooks..."
 vp config
-"$REPO_ROOT/scripts/configure-git-hooks.sh"
+if ! "$REPO_ROOT/scripts/configure-git-hooks.sh"; then
+    print_error "Failed to configure Git hooks"
+fi
 print_success "Git hooks installed (pre-commit and Conventional Commit checks are active)"
 
 print_step "Step 4: Setting Up Environment"

@@ -66,6 +66,34 @@ $local_configured_paths
 EOF
 fi
 
+# A repository can opt into per-worktree config. An allowed Vite+ value there
+# overrides the shared local value, so normalize it too; a foreign value remains
+# user-owned and is never replaced.
+if ! worktree_config_enabled=$(read_git_config --type=bool --get extensions.worktreeConfig); then
+  exit 1
+fi
+worktree_configured_paths=''
+if [ "$worktree_config_enabled" = 'true' ]; then
+  if ! worktree_configured_paths=$(read_git_config --worktree --get-all core.hooksPath); then
+    exit 1
+  fi
+  if [ -n "$worktree_configured_paths" ]; then
+    while IFS= read -r worktree_configured_path; do
+      case "$worktree_configured_path" in
+        '' | .vite-hooks/_ | .vite-hooks)
+          ;;
+        *)
+          echo "git hook repair: worktree core.hooksPath is '$worktree_configured_path', not a Boardsesh-managed path." >&2
+          echo "Refusing to replace a custom hook path. Move or remove that setting, then rerun setup." >&2
+          exit 1
+          ;;
+      esac
+    done <<EOF
+$worktree_configured_paths
+EOF
+  fi
+fi
+
 for required_hook in pre-commit post-checkout commit-msg; do
   hook_path="$repo_root/.vite-hooks/$required_hook"
   if [ ! -x "$hook_path" ]; then
@@ -81,6 +109,9 @@ if [ ! -x "$repo_root/.githooks/commit-msg" ]; then
 fi
 
 git config --local --replace-all core.hooksPath .vite-hooks
+if [ -n "$worktree_configured_paths" ]; then
+  git config --worktree --replace-all core.hooksPath .vite-hooks
+fi
 
 if ! local_hooks_path=$(read_git_config --local --get core.hooksPath); then
   exit 1
