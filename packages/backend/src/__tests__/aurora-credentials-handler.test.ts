@@ -1,7 +1,9 @@
 import { Readable } from 'node:stream';
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR } from '@boardsesh/shared-schema/sync-error-codes';
 
 const saveAuroraCredentialMock = vi.fn();
+const getAuroraCredentialStatusesMock = vi.fn();
 const validateTokenMock = vi.fn();
 
 // Mirror the real DuplicateBoardLinkError so the handler's `instanceof` → 409
@@ -17,13 +19,19 @@ const DuplicateBoardLinkErrorMock = class DuplicateBoardLinkError extends Error 
 vi.mock('../services/aurora-credentials', () => ({
   DuplicateBoardLinkError: DuplicateBoardLinkErrorMock,
   saveAuroraCredential: saveAuroraCredentialMock,
-  getAuroraCredentialStatuses: vi.fn(),
+  getAuroraCredentialStatuses: getAuroraCredentialStatusesMock,
   getAuroraUnsyncedCounts: vi.fn(),
   deleteAuroraCredential: vi.fn(),
 }));
 
 vi.mock('../middleware/auth', () => ({
   validateToken: validateTokenMock,
+}));
+
+vi.mock('../utils/logger', () => ({
+  logger: {
+    warn: vi.fn(),
+  },
 }));
 
 type TestResponse = {
@@ -67,8 +75,33 @@ describe('Aurora credentials REST handler', () => {
   beforeEach(async () => {
     vi.resetModules();
     saveAuroraCredentialMock.mockReset();
+    getAuroraCredentialStatusesMock.mockReset();
     validateTokenMock.mockReset();
     handlers = await import('../handlers/aurora-credentials');
+  });
+
+  it('GET preserves the ownership-state sync_error code for clients to localise', async () => {
+    validateTokenMock.mockResolvedValue({ userId: 'foreign-owner-user' });
+    getAuroraCredentialStatusesMock.mockResolvedValue([
+      {
+        boardType: 'tension',
+        auroraUsername: 'climber',
+        auroraUserId: 42,
+        lastSyncAt: '2026-07-31T00:00:00.000Z',
+        syncStatus: 'active',
+        syncError: FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR,
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    const request = makeRequest({ method: 'GET', headers: { authorization: 'Bearer token' } });
+    const response = makeResponse();
+
+    await handlers.handleAuroraCredentials(request as never, response as never);
+
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      credentials: [{ syncError: FOREIGN_BOARD_ACCOUNT_CIRCUITS_SYNC_ERROR }],
+    });
   });
 
   it('POST returns 409 + code when the account is already linked to another user', async () => {
