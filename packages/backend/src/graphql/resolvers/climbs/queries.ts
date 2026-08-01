@@ -85,29 +85,31 @@ export const climbQueries = {
     let excludeUuid = validated.excludeClimbUuid ?? undefined;
 
     if (validated.climbUuid) {
-      const [climbRow] = await db
-        .select({ frames: dbSchema.boardClimbs.frames, framesCount: dbSchema.boardClimbs.framesCount })
+      const targetRows = await db
+        .select({
+          frames: dbSchema.boardClimbs.frames,
+          framesCount: dbSchema.boardClimbs.framesCount,
+          holdId: dbSchema.boardClimbHolds.holdId,
+          holdState: dbSchema.boardClimbHolds.holdState,
+        })
         .from(dbSchema.boardClimbs)
-        .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)))
-        .limit(1);
+        .leftJoin(
+          dbSchema.boardClimbHolds,
+          and(
+            eq(dbSchema.boardClimbHolds.boardType, dbSchema.boardClimbs.boardType),
+            eq(dbSchema.boardClimbHolds.climbUuid, dbSchema.boardClimbs.uuid),
+          ),
+        )
+        .where(and(eq(dbSchema.boardClimbs.boardType, boardType), eq(dbSchema.boardClimbs.uuid, validated.climbUuid)));
 
+      const climbRow = targetRows[0];
       const useAuthoritativeFrames = (climbRow?.framesCount ?? 1) > 1 && Boolean(climbRow?.frames);
       holds = [];
       if (!useAuthoritativeFrames) {
-        const targetHoldRows = await db
-          .select({
-            holdId: dbSchema.boardClimbHolds.holdId,
-            holdState: dbSchema.boardClimbHolds.holdState,
-          })
-          .from(dbSchema.boardClimbHolds)
-          .where(
-            and(
-              eq(dbSchema.boardClimbHolds.boardType, boardType),
-              eq(dbSchema.boardClimbHolds.climbUuid, validated.climbUuid),
-            ),
-          );
-        holds = targetHoldRows
-          .map((row) => ({ holdId: row.holdId, holdState: row.holdState }))
+        holds = targetRows
+          .flatMap((row) =>
+            row.holdId === null || row.holdState === null ? [] : [{ holdId: row.holdId, holdState: row.holdState }],
+          )
           .filter(isSupportedSimilarityHold);
       }
 
