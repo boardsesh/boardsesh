@@ -177,9 +177,23 @@ same Boardsesh-owned rule. Aurora's upsert clobbers them on every sync from
 the much larger Aurora ascent population. `recomputeClimbStats` only writes
 these columns for Boardsesh-originated climbs (where Aurora never syncs);
 on Aurora climbs it leaves them untouched so Aurora's averages stay
-authoritative. `display_difficulty` mirrors `difficulty_average` in both
-writers (Aurora: `Number(item.display_difficulty || item.difficulty_average)`;
-Boardsesh: the same `AVG(bt.difficulty)` value used for `difficulty_average`).
+authoritative. Aurora accepts a valid `display_difficulty` independently and
+otherwise falls back to `difficulty_average`; the Boardsesh writer uses the
+same guarded tick average for both columns.
+
+Every Aurora difficulty field (average, display, and benchmark) is accepted
+only when it is finite and greater than 1; an invalid or missing display value
+falls back to a valid average. New zero-ascent stats payloads with no valid
+difficulty, quality, or first-ascent data are skipped. The same empty payload
+for an existing key is still applied authoritatively, clearing upstream-owned
+fields without deleting the row or changing Boardsesh counts and quality votes.
+
+Tick-driven recomputation seeds a new stats row only when the climb exists and
+the exact key has a non-detached flash/send tick. Tick existence gates INSERT
+only: existing rows are always recomputed, so deleting or detaching the last
+send clears Boardsesh-owned aggregates while retaining upstream data. Owned
+climb averages accept difficulty values greater than 1 and quality values from
+1 through 5; the latest-native quality-vote path uses the same 1–5 bounds.
 
 Aurora reports `quality_average` on a 1–3 scale, but Kilter Grips / MoonBoard
 use 1–5. Aurora's upsert normalises to 1–5 (`normalizeQualityTo5`, affine

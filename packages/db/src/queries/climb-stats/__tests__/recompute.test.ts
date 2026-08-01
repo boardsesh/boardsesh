@@ -35,18 +35,22 @@ void describe('recomputeClimbStatsBulk', () => {
     assert.equal(db.queries.length, 2);
     const seedSql = sqlText(db.queries[0]);
     assert.match(seedSql, /INSERT INTO board_climb_stats/);
-    // Smoke test only — the guard's BEHAVIOUR (phantom key seeds nothing; the
-    // real key beside it in the same chunk is untouched; a real climb ticked at
-    // a new angle still seeds) is asserted against real Postgres in
+    // Smoke test only — the guards' BEHAVIOUR (phantom/no-send keys seed
+    // nothing; a real climb ticked at a new angle still seeds) is asserted
+    // against real Postgres in
     // packages/backend/src/__tests__/recompute-climb-stats.test.ts, because
     // this package has no vitest project and CI never runs its tsx --test suite.
     assert.match(seedSql, /WHERE EXISTS \(\s*SELECT 1\s*FROM board_climbs bc/);
     assert.match(seedSql, /bc\.uuid = k\.climb_uuid/);
     assert.match(seedSql, /bc\.board_type = k\.board_type/);
+    assert.match(seedSql, /FROM boardsesh_ticks seed_tick/);
+    assert.match(seedSql, /seed_tick\.status IN \('flash','send'\)/);
+    assert.match(seedSql, /seed_tick\.kilter_detached_at IS NULL/);
     // Seeded rows are on the 1-5 scale from birth (#3529, seed half).
     assert.match(seedSql, /quality_normalized/);
     const updateSql = sqlText(db.queries[1]);
     assert.match(updateSql, /UPDATE board_climb_stats/);
+    assert.doesNotMatch(updateSql, /seed_tick/);
     // The counting rule + provenance guard must be present in the UPDATE. The
     // upstream-represented flag is scoped to imported FLASH/SEND ticks (an
     // imported bid must not disqualify a native send — upstream ascent counts
@@ -55,8 +59,9 @@ void describe('recomputeClimbStatsBulk', () => {
     // contributing).
     assert.match(updateSql, /bool_or\(bt\.origin <> 'native' AND bt\.status IN \('flash','send'\)\)/);
     assert.match(updateSql, /has_unabsorbed_native_send AND NOT has_upstream/);
-    // Owned-climb quality: quality = 0 sentinel excluded; ascensionist = upstream + boardsesh.
-    assert.match(updateSql, /AVG\(NULLIF\(bt\.quality, 0\)\)/);
+    // Owned-climb averages reject invalid difficulty/quality values.
+    assert.match(updateSql, /AVG\(bt\.quality\) FILTER \(WHERE bt\.quality BETWEEN 1 AND 5\)/);
+    assert.match(updateSql, /AVG\(bt\.difficulty\) FILTER \(WHERE bt\.difficulty > 1\)/);
     // Kilter-detached (upstream-deleted) rows must be excluded from the count.
     assert.match(updateSql, /kilter_detached_at IS NULL/);
     // Quality blend — the Boardsesh side (one vote per climber = LATEST rated
@@ -75,6 +80,8 @@ void describe('recomputeClimbStatsBulk', () => {
     assert.match(updateSql, /DISTINCT ON \(bt\.board_type, bt\.climb_uuid, bt\.angle, bt\.user_id\)/);
     assert.match(updateSql, /bt\.origin = 'native'/);
     assert.match(updateSql, /bt\.quality >= 1/);
+    assert.match(updateSql, /bt\.quality <= 5/);
+    assert.match(updateSql, /bs_quality AS \([\s\S]*?bt\.quality <= 5\s+AND bt\.kilter_detached_at IS NULL\s+ORDER BY/);
     assert.match(updateSql, /ORDER BY[\s\S]*bt\.climbed_at DESC, bt\.id DESC/);
     // Non-owned quality_average is the blend (division by the summed weights),
     // NOT the plain upstream value.

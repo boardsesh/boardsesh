@@ -133,13 +133,13 @@ export type ProductSize = {
 export type ClimbStats = {
   climb_uuid: string;
   angle: number;
-  display_difficulty: number;
-  benchmark_difficulty: number;
+  display_difficulty: number | null;
+  benchmark_difficulty: number | null;
   ascensionist_count: number;
-  difficulty_average: number;
-  quality_average: number;
-  fa_username: string;
-  fa_at: string;
+  difficulty_average: number | null;
+  quality_average: number | null;
+  fa_username: string | null;
+  fa_at: string | null;
 };
 
 export type Hole = {
