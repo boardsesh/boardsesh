@@ -101,6 +101,7 @@ const OPTION_NAMES = [
 ] as const;
 
 const GIT_ENVIRONMENT_PASSTHROUGH = ['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TMPDIR', 'TMP', 'TEMP'] as const;
+const GIT_PROBE_TIMEOUT_MS = 5_000;
 
 /**
  * Git's repository, index, config, and pathspec behavior is extensively
@@ -165,7 +166,12 @@ export function parseArgs(rawArgs: string[]): CliArgs {
   }
 
   const outputPath = requireOption(options, '--output');
-  if (outputPath === '-' || outputPath === '/dev/stdout' || outputPath === '/proc/self/fd/1') {
+  if (
+    outputPath === '-' ||
+    outputPath === '/dev/stdout' ||
+    outputPath === '/dev/fd/1' ||
+    outputPath === '/proc/self/fd/1'
+  ) {
     throw new CliUsageError('--output must be a new regular file, not stdout');
   }
   const policyId = requireOption(options, '--policy-id');
@@ -293,6 +299,7 @@ export async function validateOutputPath(rawOutputPath: string, cwd = process.cw
     env: gitEnvironment,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: GIT_PROBE_TIMEOUT_MS,
   });
   if (repositoryProbe.error || repositoryProbe.signal !== null || repositoryProbe.status === null) {
     throw new CliUsageError(`Could not determine Git tracking status for output path: ${outputPath}`);
@@ -323,6 +330,7 @@ export async function validateOutputPath(rawOutputPath: string, cwd = process.cw
       env: gitEnvironment,
       encoding: 'utf8',
       stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: GIT_PROBE_TIMEOUT_MS,
     },
   );
   if (trackedProbe.error || trackedProbe.signal !== null || trackedProbe.status === null) {
@@ -354,7 +362,6 @@ export async function writeAuditArtifact(
     0o600,
   );
   const recordsHash = createHash('sha256');
-  let published = false;
 
   try {
     const sink: ArtifactSink = {
@@ -383,13 +390,13 @@ export async function writeAuditArtifact(
     // created after validation. The partial inode is never visible at the
     // requested output name until every byte has been synced.
     await link(partialPath, outputPath);
-    published = true;
-    await unlink(partialPath);
+    // The requested output is now a complete, durable artifact. A failure to
+    // remove the private staging link must not delete or fail that publication.
+    await unlink(partialPath).catch(() => undefined);
     return { outputPath, digest };
   } catch (error: unknown) {
     await file.close().catch(() => undefined);
     await unlink(partialPath).catch(() => undefined);
-    if (published) await unlink(outputPath).catch(() => undefined);
     throw error;
   }
 }
