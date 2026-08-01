@@ -57,7 +57,9 @@ and git history carries 26 hand-written renumber commits.
 migration lands on main, `.github/workflows/db-migration-renumber-dispatch.yml` fans out
 a renumber run for every stranded PR. The bot rebases you onto main, moves your
 migration to the next free number, proves it still applies against Postgres, and
-force-pushes. Your SQL is never rewritten.
+force-pushes. Your SQL is never rewritten. Its PR comment says the renumber landed
+only after that force-push succeeds; a failed validation, proof, re-check, or push
+leaves a "Nothing was pushed" comment with the action run to inspect.
 
 To do it yourself, or when the bot stops:
 
