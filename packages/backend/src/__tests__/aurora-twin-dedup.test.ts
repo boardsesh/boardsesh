@@ -1,11 +1,35 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { beforeAll, afterEach, describe, expect, it } from 'vite-plus/test';
-import { sql, type SQL } from 'drizzle-orm';
+import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
+import { eq, sql, type SQL } from 'drizzle-orm';
 import { applyAuroraAscents } from '@boardsesh/aurora-sync/apply-user-logbook';
+import { applyLogs, type PowerSyncOp } from '@boardsesh/kilter-sync';
+import type { ConnectionContext } from '@boardsesh/shared-schema';
+
+const mutationSideEffects = vi.hoisted(() => ({
+  invalidateRecentBetaLinksCache: vi.fn(() => Promise.resolve()),
+  publishDebouncedSessionStats: vi.fn(),
+  queueBoardStatsPublish: vi.fn(),
+  queueClimbStatsRecompute: vi.fn(),
+}));
+
+vi.mock('../graphql/resolvers/ticks/debounced-climb-stats-publisher', () => ({
+  queueClimbStatsRecompute: mutationSideEffects.queueClimbStatsRecompute,
+}));
+vi.mock('../graphql/resolvers/board-presence/stats', () => ({
+  queueBoardStatsPublish: mutationSideEffects.queueBoardStatsPublish,
+}));
+vi.mock('../graphql/resolvers/sessions/debounced-stats-publisher', () => ({
+  publishDebouncedSessionStats: mutationSideEffects.publishDebouncedSessionStats,
+}));
+vi.mock('../graphql/resolvers/beta-videos/queries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../graphql/resolvers/beta-videos/queries')>()),
+  invalidateRecentBetaLinksCache: mutationSideEffects.invalidateRecentBetaLinksCache,
+}));
 import { db } from '../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { tickQueries } from '../graphql/resolvers/ticks/queries';
+import { tickMutations } from '../graphql/resolvers/ticks/mutations';
 import { setupWorkerDatabase } from './worker-db';
 
 /**
@@ -43,10 +67,11 @@ function byAuroraId(left: string | null, right: string | null): number {
 
 let tickSeq = 0;
 
-async function insertTick(overrides: TickOverrides = {}): Promise<void> {
+async function insertTick(overrides: TickOverrides = {}): Promise<string> {
   tickSeq += 1;
+  const uuid = overrides.uuid ?? `twin3535-tick-${tickSeq}`;
   await db.insert(dbSchema.boardseshTicks).values({
-    uuid: `twin3535-tick-${tickSeq}`,
+    uuid,
     userId: USER_ID,
     boardType: BOARD,
     climbUuid: CLIMB_UUID,
@@ -69,7 +94,15 @@ async function insertTick(overrides: TickOverrides = {}): Promise<void> {
     auroraSyncedAt: CLIMBED_AT,
     ...overrides,
   });
+  return uuid;
 }
+
+const authenticatedContext: ConnectionContext = {
+  connectionId: 'aurora-twin-mutation-test',
+  transport: 'ws',
+  isAuthenticated: true,
+  userId: USER_ID,
+};
 
 /** aurora_ids the public per-user tick list (the You page's source) shows. */
 async function visibleAuroraIds(): Promise<Array<string | null>> {
@@ -108,7 +141,25 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id = ${USER_ID}`);
+  await db.execute(sql`
+    DELETE FROM notifications
+    WHERE entity_id LIKE 'twin3535-tick-%'
+       OR comment_id IN (SELECT id FROM comments WHERE entity_id LIKE 'twin3535-tick-%')
+  `);
+  await db.execute(sql`DELETE FROM feed_items WHERE entity_id LIKE 'twin3535-tick-%'`);
+  await db.execute(sql`DELETE FROM votes WHERE entity_id LIKE 'twin3535-tick-%'`);
+  await db.execute(sql`DELETE FROM vote_counts WHERE entity_id LIKE 'twin3535-tick-%'`);
+  await db.execute(sql`DELETE FROM comments WHERE entity_id LIKE 'twin3535-tick-%'`);
+  await db.execute(sql`DELETE FROM board_beta_links WHERE climb_uuid = ${CLIMB_UUID}`);
+  await db.execute(sql`DELETE FROM boardsesh_ticks WHERE user_id IN (${USER_ID}, ${USER_ID + '-foreign'})`);
+  await db.execute(sql`DELETE FROM board_sessions WHERE id LIKE 'twin3535-session-%'`);
+  await db.execute(sql`DELETE FROM user_boards WHERE uuid LIKE 'twin3535-board-%'`);
+  await db.execute(sql`DELETE FROM sync_deletions WHERE user_id IN (${USER_ID}, ${USER_ID + '-foreign'})`);
+  await db.execute(sql`DELETE FROM users WHERE id = ${USER_ID + '-foreign'}`);
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
 });
 
 /**
@@ -141,13 +192,13 @@ describe('#3535 payload column list stays in step with the pull', () => {
     );
     const predicateBody = bodyBetween(
       sourceOf('packages/db/src/queries/ticks/aurora-twin-dedup.ts'),
-      'export function notAuroraTwinDuplicate',
+      'export function isDirectAuroraTwin',
       '\n}',
     );
 
     const pullColumns = new Set(Array.from(pullBody.matchAll(/\bstored\.(\w+)/g), (match) => match[1]));
     const predicateColumns = new Set(
-      Array.from(predicateBody.matchAll(/\b(?:ticks|twin)\.(\w+)/g), (match) => match[1]),
+      Array.from(predicateBody.matchAll(/\b(?:smaller|larger)\.(\w+)/g), (match) => match[1]),
     );
 
     // Sanity-check the extraction itself before trusting the comparison.
@@ -347,33 +398,459 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     expect(await visibleAuroraIds()).toEqual(['aur-1', 'aur-2']);
   });
 
-  it('resurfaces the twins when the survivor is moved off the natural key (recorded behaviour)', async () => {
-    await insertTick({ auroraId: 'aur-1' });
+  it('fans angle and date edits across direct twins so the logical ascent stays one visible row', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-1' });
     await insertTick({ auroraId: 'aur-2' });
     expect(await visibleAuroraIds()).toEqual(['aur-1']);
 
-    // `updateTick` also accepts `angle` and `climbedAt`. Either moves the
-    // survivor out of the group entirely, so the rows it was hiding come back —
-    // the relaxation only covers payload columns. Recorded, not fixed — #4060.
-    await db.execute(
-      sql`UPDATE boardsesh_ticks SET angle = ${ANGLE + 5}, updated_at = now() WHERE aurora_id = 'aur-1'`,
+    await tickMutations.updateTick(
+      null,
+      { uuid: survivorUuid, input: { angle: ANGLE + 5, climbedAt: '2026-05-02T01:02:03-07:00' } },
+      authenticatedContext,
     );
 
-    expect(await visibleAuroraIds()).toEqual(['aur-1', 'aur-2']);
+    const rows = await db.execute(sql`
+      SELECT angle, climbed_at::text AS climbed_at
+      FROM boardsesh_ticks WHERE user_id = ${USER_ID} ORDER BY aurora_id
+    `);
+    expect(rows).toEqual([
+      expect.objectContaining({ angle: ANGLE + 5, climbed_at: '2026-05-02 08:02:03' }),
+      expect.objectContaining({ angle: ANGLE + 5, climbed_at: '2026-05-02 08:02:03' }),
+    ]);
+    expect(await visibleAuroraIds()).toEqual(['aur-1']);
   });
 
-  it('reveals the next twin when the visible tick is deleted (recorded behaviour)', async () => {
-    await insertTick({ auroraId: 'aur-1' });
-    await insertTick({ auroraId: 'aur-2' });
+  it('moves beta links for every edited member, invalidates once, and recomputes distinct old/new keys', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-1' });
+    const twinUuid = await insertTick({ auroraId: 'aur-2' });
+    await db.insert(dbSchema.boardBetaLinks).values(
+      [survivorUuid, twinUuid].map((tickUuid) => ({
+        boardType: BOARD,
+        climbUuid: CLIMB_UUID,
+        link: `https://example.com/angle-${tickUuid}`,
+        tickUuid,
+        angle: ANGLE,
+      })),
+    );
+
+    await tickMutations.updateTick(null, { uuid: survivorUuid, input: { angle: 45 } }, authenticatedContext);
+
+    const betaRows = await db.execute(sql`
+      SELECT angle FROM board_beta_links WHERE climb_uuid = ${CLIMB_UUID} ORDER BY link
+    `);
+    expect(betaRows).toEqual([{ angle: 45 }, { angle: 45 }]);
+    expect(mutationSideEffects.invalidateRecentBetaLinksCache).toHaveBeenCalledTimes(1);
+    expect(mutationSideEffects.queueClimbStatsRecompute.mock.calls).toEqual([
+      [BOARD, CLIMB_UUID, ANGLE],
+      [BOARD, CLIMB_UUID, 45],
+    ]);
+  });
+
+  it('deletes every direct twin when the visible survivor is deleted', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-1' });
+    const twinUuid = await insertTick({ auroraId: 'aur-2' });
     expect(await visibleAuroraIds()).toEqual(['aur-1']);
 
-    // deleteTick removes one row. The group is unaware of it, so the next id is
-    // promoted and the entry stays on screen. Known limitation, recorded here
-    // so a future reader does not mistake it for a predicate bug; the honest
-    // fix is a group-aware delete, tracked in #4059.
-    await db.execute(sql`DELETE FROM boardsesh_ticks WHERE aurora_id = 'aur-1'`);
+    await tickMutations.deleteTick(null, { uuid: survivorUuid }, authenticatedContext);
 
-    expect(await visibleAuroraIds()).toEqual(['aur-2']);
+    expect(await storedAuroraIds()).toEqual([]);
+    const tombstones = await db.execute(sql`
+      SELECT record_id FROM sync_deletions
+      WHERE table_name = 'boardsesh_ticks' AND user_id = ${USER_ID}
+        AND record_id IN (${survivorUuid}, ${twinUuid})
+      ORDER BY record_id
+    `);
+    expect(tombstones).toEqual([{ record_id: survivorUuid }, { record_id: twinUuid }]);
+  });
+
+  it('cleans every twin dependent, preserves beta rows, and fans session/board side effects out once each', async () => {
+    const boardRows = await db
+      .insert(dbSchema.userBoards)
+      .values([
+        {
+          uuid: 'twin3535-board-a',
+          slug: 'twin3535-board-a',
+          ownerId: USER_ID,
+          boardType: BOARD,
+          layoutId: 1,
+          sizeId: 1,
+          setIds: '1',
+          name: 'Twin board A',
+          angle: ANGLE,
+        },
+        {
+          uuid: 'twin3535-board-b',
+          slug: 'twin3535-board-b',
+          ownerId: USER_ID,
+          boardType: BOARD,
+          layoutId: 2,
+          sizeId: 1,
+          setIds: '1',
+          name: 'Twin board B',
+          angle: ANGLE,
+        },
+      ])
+      .returning({ id: dbSchema.userBoards.id });
+    await db.insert(dbSchema.boardSessions).values([
+      { id: 'twin3535-session-a', boardPath: '/tension/1/1/1/40', lastActivity: new Date('2020-01-01') },
+      { id: 'twin3535-session-b', boardPath: '/tension/2/1/1/40', lastActivity: new Date('2020-01-01') },
+    ]);
+
+    const survivorUuid = await insertTick({
+      auroraId: 'aur-1',
+      boardId: boardRows[0].id,
+      sessionId: 'twin3535-session-a',
+    });
+    const twinUuid = await insertTick({
+      auroraId: 'aur-2',
+      boardId: boardRows[1].id,
+      sessionId: 'twin3535-session-b',
+    });
+    const tickUuids = [survivorUuid, twinUuid];
+
+    await db.insert(dbSchema.boardBetaLinks).values(
+      tickUuids.map((tickUuid) => ({
+        boardType: BOARD,
+        climbUuid: CLIMB_UUID,
+        link: `https://example.com/${tickUuid}`,
+        tickUuid,
+        angle: ANGLE,
+      })),
+    );
+    const commentRows = await db
+      .insert(dbSchema.comments)
+      .values(
+        tickUuids.map((tickUuid) => ({
+          uuid: `comment-${tickUuid}`,
+          userId: USER_ID,
+          entityType: 'tick' as const,
+          entityId: tickUuid,
+          body: 'beta',
+        })),
+      )
+      .returning({ id: dbSchema.comments.id });
+    await db
+      .insert(dbSchema.votes)
+      .values(
+        tickUuids.map((tickUuid) => ({ userId: USER_ID, entityType: 'tick' as const, entityId: tickUuid, value: 1 })),
+      );
+    await db.insert(dbSchema.voteCounts).values(
+      tickUuids.map((tickUuid) => ({
+        entityType: 'tick' as const,
+        entityId: tickUuid,
+        upvotes: 1,
+        downvotes: 0,
+        score: 1,
+        hotScore: 1,
+        createdAt: new Date(),
+      })),
+    );
+    await db.insert(dbSchema.feedItems).values(
+      tickUuids.map((tickUuid) => ({
+        recipientId: USER_ID,
+        actorId: USER_ID,
+        type: 'ascent' as const,
+        entityType: 'tick' as const,
+        entityId: tickUuid,
+      })),
+    );
+    await db.insert(dbSchema.notifications).values([
+      ...tickUuids.map((tickUuid) => ({
+        uuid: `notification-${tickUuid}`,
+        recipientId: USER_ID,
+        actorId: USER_ID,
+        type: 'vote_on_tick' as const,
+        entityType: 'tick' as const,
+        entityId: tickUuid,
+      })),
+      ...commentRows.map((comment, index) => ({
+        uuid: `notification-comment-${index}`,
+        recipientId: USER_ID,
+        actorId: USER_ID,
+        type: 'comment_on_tick' as const,
+        entityType: 'tick' as const,
+        entityId: tickUuids[index],
+        commentId: comment.id,
+      })),
+    ]);
+
+    await tickMutations.deleteTick(null, { uuid: survivorUuid }, authenticatedContext);
+
+    const tickUuidList = sql.join(
+      tickUuids.map((tickUuid) => sql`${tickUuid}`),
+      sql`, `,
+    );
+    const dependentCounts = await db.execute(sql`
+      SELECT
+        (SELECT count(*)::int FROM comments WHERE entity_id IN (${tickUuidList})) AS comments,
+        (SELECT count(*)::int FROM votes WHERE entity_id IN (${tickUuidList})) AS votes,
+        (SELECT count(*)::int FROM vote_counts WHERE entity_id IN (${tickUuidList})) AS vote_counts,
+        (SELECT count(*)::int FROM feed_items WHERE entity_id IN (${tickUuidList})) AS feed_items,
+        (SELECT count(*)::int FROM notifications WHERE entity_id IN (${tickUuidList})) AS notifications
+    `);
+    expect(dependentCounts).toEqual([{ comments: 0, votes: 0, vote_counts: 0, feed_items: 0, notifications: 0 }]);
+    const betaRows = await db.execute(sql`
+      SELECT tick_uuid, angle FROM board_beta_links WHERE climb_uuid = ${CLIMB_UUID} ORDER BY link
+    `);
+    expect(betaRows).toEqual([
+      { tick_uuid: null, angle: ANGLE },
+      { tick_uuid: null, angle: ANGLE },
+    ]);
+    const sessions = await db.execute(sql`
+      SELECT id, last_activity > '2020-01-01'::timestamp AS touched
+      FROM board_sessions WHERE id LIKE 'twin3535-session-%' ORDER BY id
+    `);
+    expect(sessions).toEqual([
+      { id: 'twin3535-session-a', touched: true },
+      { id: 'twin3535-session-b', touched: true },
+    ]);
+    expect(
+      mutationSideEffects.publishDebouncedSessionStats.mock.calls
+        .map(([sessionId]) => sessionId)
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual(['twin3535-session-a', 'twin3535-session-b']);
+    expect(
+      mutationSideEffects.queueBoardStatsPublish.mock.calls
+        .map(([boardId]) => boardId)
+        .sort((left, right) => left - right),
+    ).toEqual(boardRows.map((board) => board.id).sort((left, right) => left - right));
+    const tombstones = await db.execute(sql`
+      SELECT record_id FROM sync_deletions
+      WHERE table_name = 'boardsesh_ticks' AND record_id IN (${tickUuidList})
+      ORDER BY record_id
+    `);
+    expect(tombstones).toEqual(tickUuids.sort().map((recordId) => ({ record_id: recordId })));
+  });
+
+  it('fans only supplied fields across the group and enforces flash attempts', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-1', quality: 4, difficulty: 22 });
+    await insertTick({ auroraId: 'aur-2', quality: 4, difficulty: 22 });
+
+    await tickMutations.updateTick(
+      null,
+      { uuid: survivorUuid, input: { comment: 'one logical send' } },
+      authenticatedContext,
+    );
+    await tickMutations.updateTick(null, { uuid: survivorUuid, input: { status: 'flash' } }, authenticatedContext);
+
+    const rows = await db.execute(sql`
+      SELECT status, attempt_count, quality, difficulty, comment
+      FROM boardsesh_ticks WHERE user_id = ${USER_ID} ORDER BY aurora_id
+    `);
+    expect(rows).toEqual([
+      { status: 'flash', attempt_count: 1, quality: 4, difficulty: 22, comment: 'one logical send' },
+      { status: 'flash', attempt_count: 1, quality: 4, difficulty: 22, comment: 'one logical send' },
+    ]);
+    expect(await visibleAuroraIds()).toEqual(['aur-1']);
+  });
+
+  it('groups equal stored microseconds in SQL without absorbing the next microsecond', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-1', climbedAt: '2026-05-01T18:22:37.000001Z' });
+    await insertTick({ auroraId: 'aur-2', climbedAt: '2026-05-01T18:22:37.000001Z' });
+    await insertTick({ auroraId: 'aur-3', climbedAt: '2026-05-01T18:22:37.000002Z' });
+
+    await tickMutations.updateTick(null, { uuid: survivorUuid, input: { angle: 45 } }, authenticatedContext);
+
+    const rows = await db.execute(sql`
+      SELECT aurora_id, angle, climbed_at::text AS climbed_at
+      FROM boardsesh_ticks WHERE user_id = ${USER_ID} ORDER BY aurora_id
+    `);
+    expect(rows).toEqual([
+      { aurora_id: 'aur-1', angle: 45, climbed_at: '2026-05-01 18:22:37.000001' },
+      { aurora_id: 'aur-2', angle: 45, climbed_at: '2026-05-01 18:22:37.000001' },
+      { aurora_id: 'aur-3', angle: ANGLE, climbed_at: '2026-05-01 18:22:37.000002' },
+    ]);
+  });
+
+  it('keeps an Aurora local edit one microsecond newer than the sync watermark', async () => {
+    const tickUuid = await insertTick({
+      auroraId: 'aur-microsecond-stale',
+      comment: 'local microsecond edit',
+      climbedAt: '2026-05-05T18:22:37.000Z',
+    });
+    // Both timestamps collapse to the same millisecond in Date.parse, so the
+    // pre-write JS check intentionally admits the incoming update. The SQL
+    // predicate must make the final decision with Postgres precision.
+    await db.execute(sql`
+      UPDATE boardsesh_ticks
+      SET updated_at = '2026-05-05 19:00:00.000001'::timestamp,
+          aurora_synced_at = '2026-05-05 19:00:00.000000'::timestamp
+      WHERE uuid = ${tickUuid}
+    `);
+    const payload = [
+      {
+        uuid: 'aur-microsecond-stale',
+        climb_uuid: CLIMB_UUID,
+        angle: ANGLE,
+        is_mirror: false,
+        attempt_id: 2,
+        bid_count: 2,
+        quality: null,
+        difficulty: 21,
+        is_benchmark: false,
+        comment: 'stale upstream edit',
+        climbed_at: '2026-05-05 18:22:37',
+        created_at: '2026-05-05 18:25:00',
+        is_listed: true,
+      },
+    ];
+    const applyDb = db as unknown as Parameters<typeof applyAuroraAscents>[0];
+
+    await db.transaction((tx) => applyAuroraAscents(tx as unknown as typeof applyDb, BOARD, USER_ID, payload));
+
+    const rows = await db.execute(sql`
+      SELECT comment, updated_at::text AS updated_at, aurora_synced_at::text AS aurora_synced_at
+      FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+    `);
+    expect(rows).toEqual([
+      {
+        comment: 'local microsecond edit',
+        updated_at: '2026-05-05 19:00:00.000001',
+        aurora_synced_at: '2026-05-05 19:00:00',
+      },
+    ]);
+  });
+
+  it('keeps a Kilter local edit one microsecond newer than the sync watermark', async () => {
+    const kilterId = 'kilter-microsecond-stale';
+    const tickUuid = await insertTick({
+      auroraId: null,
+      auroraType: null,
+      auroraSyncedAt: null,
+      boardType: 'kilter',
+      origin: 'kilter_pull',
+      kilterId,
+      kilterType: 'logs',
+      kilterSyncedAt: '2026-05-06T19:00:00.000Z',
+      climbedAt: '2026-05-06T18:22:37.000Z',
+      attemptCount: 9,
+    });
+    await db.execute(sql`
+      UPDATE boardsesh_ticks
+      SET updated_at = '2026-05-06 19:00:00.000001'::timestamp,
+          kilter_synced_at = '2026-05-06 19:00:00.000000'::timestamp
+      WHERE uuid = ${tickUuid}
+    `);
+    const op: PowerSyncOp = {
+      op_id: '1',
+      op: 'PUT',
+      object_type: 'logs',
+      object_id: kilterId,
+      data: {
+        id: '1',
+        log_uuid: kilterId,
+        climb_uuid: CLIMB_UUID,
+        user_uuid: USER_ID,
+        gym_uuid: null,
+        wall_uuid: null,
+        product_layout_uuid: null,
+        angle: ANGLE,
+        flashed: 0,
+        topped: 1,
+        attempts: 2,
+        created_at: '2026-05-06T18:22:37.000Z',
+      },
+    };
+
+    await db.transaction((tx) =>
+      applyLogs(
+        tx as unknown as Parameters<typeof applyLogs>[0],
+        USER_ID,
+        [op],
+        new Map([[`kilter:${CLIMB_UUID}`, CLIMB_UUID]]),
+        () => {},
+      ),
+    );
+
+    const rows = await db.execute(sql`
+      SELECT attempt_count, updated_at::text AS updated_at, kilter_synced_at::text AS kilter_synced_at
+      FROM boardsesh_ticks WHERE uuid = ${tickUuid}
+    `);
+    expect(rows).toEqual([
+      {
+        attempt_count: 9,
+        updated_at: '2026-05-06 19:00:00.000001',
+        kilter_synced_at: '2026-05-06 19:00:00',
+      },
+    ]);
+  });
+
+  it('keeps native, JSON, bid/ascent, foreign-user and two-Kilter-link rows outside the group', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-1', kilterId: 'kil-1' });
+    await insertTick({ auroraId: 'aur-2' }); // one Kilter link: direct twin
+    await insertTick({ auroraId: null, origin: 'native', auroraType: null, auroraSyncedAt: null });
+    await insertTick({ auroraId: 'json-import-a', origin: 'json_import' });
+    await insertTick({ auroraId: 'aur-3', auroraType: 'bids' });
+    await insertTick({ auroraId: 'aur-4', kilterId: 'kil-4' });
+
+    const foreignUser = `${USER_ID}-foreign`;
+    await db.execute(sql`
+      INSERT INTO users (id, email, name, created_at, updated_at)
+      VALUES (${foreignUser}, ${foreignUser + '@test.com'}, 'Foreign Twin', now(), now())
+      ON CONFLICT (id) DO NOTHING
+    `);
+    await insertTick({ auroraId: 'aur-foreign', userId: foreignUser });
+
+    await tickMutations.updateTick(
+      null,
+      { uuid: survivorUuid, input: { comment: 'group edit' } },
+      authenticatedContext,
+    );
+
+    const rows = await db.execute(sql`
+      SELECT aurora_id, origin::text AS origin, comment
+      FROM boardsesh_ticks WHERE user_id = ${USER_ID}
+      ORDER BY aurora_id NULLS LAST
+    `);
+    expect(rows).toEqual([
+      { aurora_id: 'aur-1', origin: 'aurora_pull', comment: 'group edit' },
+      { aurora_id: 'aur-2', origin: 'aurora_pull', comment: 'group edit' },
+      { aurora_id: 'aur-3', origin: 'aurora_pull', comment: 'crimpy' },
+      { aurora_id: 'aur-4', origin: 'aurora_pull', comment: 'crimpy' },
+      { aurora_id: 'json-import-a', origin: 'json_import', comment: 'crimpy' },
+      { aurora_id: null, origin: 'native', comment: 'crimpy' },
+    ]);
+    const foreign = await db.execute(sql`
+      SELECT comment FROM boardsesh_ticks WHERE user_id = ${foreignUser}
+    `);
+    expect(foreign).toEqual([{ comment: 'crimpy' }]);
+    await db.execute(sql`DELETE FROM users WHERE id = ${foreignUser}`);
+  });
+
+  it('uses only direct pairs: A(kilter)/B(no kilter)/C(kilter) never closes transitively', async () => {
+    const survivorUuid = await insertTick({ auroraId: 'aur-a', kilterId: 'kil-a' });
+    await insertTick({ auroraId: 'aur-b' });
+    await insertTick({ auroraId: 'aur-c', kilterId: 'kil-c' });
+    expect(await visibleAuroraIds()).toEqual(['aur-a']);
+
+    await tickMutations.updateTick(null, { uuid: survivorUuid, input: { angle: 45 } }, authenticatedContext);
+
+    const rows = await db.execute(sql`
+      SELECT aurora_id, angle FROM boardsesh_ticks WHERE user_id = ${USER_ID} ORDER BY aurora_id
+    `);
+    expect(rows).toEqual([
+      { aurora_id: 'aur-a', angle: 45 },
+      { aurora_id: 'aur-b', angle: 45 },
+      { aurora_id: 'aur-c', angle: ANGLE },
+    ]);
+    expect(await visibleAuroraIds()).toEqual(['aur-a', 'aur-c']);
+  });
+
+  it('keeps single-row semantics when a hidden UUID is addressed directly', async () => {
+    await insertTick({ auroraId: 'aur-a' });
+    const hiddenUuid = await insertTick({ auroraId: 'aur-b' });
+    await insertTick({ auroraId: 'aur-c' });
+
+    await tickMutations.updateTick(null, { uuid: hiddenUuid, input: { angle: 45 } }, authenticatedContext);
+
+    const rows = await db.execute(sql`
+      SELECT aurora_id, angle FROM boardsesh_ticks WHERE user_id = ${USER_ID} ORDER BY aurora_id
+    `);
+    expect(rows).toEqual([
+      { aurora_id: 'aur-a', angle: ANGLE },
+      { aurora_id: 'aur-b', angle: 45 },
+      { aurora_id: 'aur-c', angle: ANGLE },
+    ]);
   });
 
   it('applies the same duplicate payload twice with no second-cycle churn', async () => {
@@ -396,7 +873,7 @@ describe('#3535 Aurora-side duplicate ascents', () => {
 
     const applyDb = db as unknown as Parameters<typeof applyAuroraAscents>[0];
 
-    await applyAuroraAscents(applyDb, BOARD, USER_ID, payload);
+    await db.transaction((tx) => applyAuroraAscents(tx as unknown as typeof applyDb, BOARD, USER_ID, payload));
     const afterFirst = await db
       .select({ uuid: dbSchema.boardseshTicks.uuid, auroraId: dbSchema.boardseshTicks.auroraId })
       .from(dbSchema.boardseshTicks)
@@ -407,7 +884,7 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     expect(await visibleAuroraIds()).toEqual(['aur-a']);
 
     // Second cycle: identical payload, as an incremental re-pull would deliver.
-    await applyAuroraAscents(applyDb, BOARD, USER_ID, payload);
+    await db.transaction((tx) => applyAuroraAscents(tx as unknown as typeof applyDb, BOARD, USER_ID, payload));
     const afterSecond = await db
       .select({ uuid: dbSchema.boardseshTicks.uuid, auroraId: dbSchema.boardseshTicks.auroraId })
       .from(dbSchema.boardseshTicks)
@@ -420,5 +897,163 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     expect(new Set(afterSecond.map((row) => row.uuid))).toEqual(new Set(afterFirst.map((row) => row.uuid)));
     expect(await visibleAuroraIds()).toEqual(['aur-a']);
     expect(await feedTotalCount()).toBe(1);
+  });
+
+  it('documents resurrection only when Aurora genuinely redelivers the deleted upstream payload', async () => {
+    const payload = ['aur-a', 'aur-b'].map((auroraId) => ({
+      uuid: auroraId,
+      climb_uuid: CLIMB_UUID,
+      angle: ANGLE,
+      is_mirror: false,
+      attempt_id: 2,
+      bid_count: 2,
+      quality: null,
+      difficulty: 21,
+      is_benchmark: false,
+      comment: 'redelivered',
+      climbed_at: '2026-05-01 18:22:37',
+      created_at: '2026-05-01 18:25:00',
+      is_listed: true,
+    }));
+    const applyDb = db as unknown as Parameters<typeof applyAuroraAscents>[0];
+    await db.transaction((tx) => applyAuroraAscents(tx as unknown as typeof applyDb, BOARD, USER_ID, payload));
+    const [survivor] = await db
+      .select({ uuid: dbSchema.boardseshTicks.uuid })
+      .from(dbSchema.boardseshTicks)
+      .where(sql`aurora_id = 'aur-a'`);
+
+    await tickMutations.deleteTick(null, { uuid: survivor.uuid }, authenticatedContext);
+    expect(await storedAuroraIds()).toEqual([]);
+
+    // No suppression ledger is intended: a later payload carrying the real,
+    // still-live Aurora ids is authoritative and resurrects the logical ascent.
+    await db.transaction((tx) => applyAuroraAscents(tx as unknown as typeof applyDb, BOARD, USER_ID, payload));
+    expect(await storedAuroraIds()).toEqual(['aur-a', 'aur-b']);
+    expect(await visibleAuroraIds()).toEqual(['aur-a']);
+  });
+
+  it('Aurora apply and updateTick serialize over two connections', async () => {
+    const payload = [
+      {
+        uuid: 'aur-concurrent',
+        climb_uuid: CLIMB_UUID,
+        angle: ANGLE,
+        is_mirror: false,
+        attempt_id: 2,
+        bid_count: 2,
+        quality: null,
+        difficulty: 21,
+        is_benchmark: false,
+        comment: 'upstream',
+        climbed_at: '2026-05-03 18:22:37',
+        created_at: '2026-05-03 18:25:00',
+        is_listed: true,
+      },
+    ];
+    let releaseImport!: () => void;
+    const importRelease = new Promise<void>((resolve) => {
+      releaseImport = resolve;
+    });
+    let importReady!: (uuid: string) => void;
+    const importedUuid = new Promise<string>((resolve) => {
+      importReady = resolve;
+    });
+    const applyDb = db as unknown as Parameters<typeof applyAuroraAscents>[0];
+    const importTransaction = db.transaction(async (tx) => {
+      await applyAuroraAscents(tx as unknown as typeof applyDb, BOARD, USER_ID, payload);
+      const [row] = await tx
+        .select({ uuid: dbSchema.boardseshTicks.uuid })
+        .from(dbSchema.boardseshTicks)
+        .where(sql`aurora_id = 'aur-concurrent'`);
+      importReady(row.uuid);
+      await importRelease;
+    });
+    const tickUuid = await importedUuid;
+
+    let mutationSettled = false;
+    const mutation = tickMutations
+      .updateTick(null, { uuid: tickUuid, input: { comment: 'local wins' } }, authenticatedContext)
+      .finally(() => {
+        mutationSettled = true;
+      });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(mutationSettled).toBe(false);
+    } finally {
+      releaseImport();
+    }
+    await Promise.all([importTransaction, mutation]);
+    const [stored] = await db
+      .select({ comment: dbSchema.boardseshTicks.comment })
+      .from(dbSchema.boardseshTicks)
+      .where(eq(dbSchema.boardseshTicks.uuid, tickUuid));
+    expect(stored.comment).toBe('local wins');
+  });
+
+  it('Kilter log apply and updateTick serialize over two connections', async () => {
+    const logUuid = 'kilter-concurrent';
+    const op: PowerSyncOp = {
+      op_id: '1',
+      op: 'PUT',
+      object_type: 'logs',
+      object_id: logUuid,
+      data: {
+        id: '1',
+        log_uuid: logUuid,
+        climb_uuid: CLIMB_UUID,
+        user_uuid: USER_ID,
+        gym_uuid: null,
+        wall_uuid: null,
+        product_layout_uuid: null,
+        angle: ANGLE,
+        flashed: 0,
+        topped: 1,
+        attempts: 2,
+        created_at: '2026-05-04T18:22:37.000Z',
+      },
+    };
+    let releaseImport!: () => void;
+    const importRelease = new Promise<void>((resolve) => {
+      releaseImport = resolve;
+    });
+    let importReady!: (uuid: string) => void;
+    const importedUuid = new Promise<string>((resolve) => {
+      importReady = resolve;
+    });
+    const importTransaction = db.transaction(async (tx) => {
+      await applyLogs(
+        tx as unknown as Parameters<typeof applyLogs>[0],
+        USER_ID,
+        [op],
+        new Map([[`kilter:${CLIMB_UUID}`, CLIMB_UUID]]),
+        () => {},
+      );
+      const [row] = await tx
+        .select({ uuid: dbSchema.boardseshTicks.uuid })
+        .from(dbSchema.boardseshTicks)
+        .where(eq(dbSchema.boardseshTicks.kilterId, logUuid));
+      importReady(row.uuid);
+      await importRelease;
+    });
+    const tickUuid = await importedUuid;
+
+    let mutationSettled = false;
+    const mutation = tickMutations
+      .updateTick(null, { uuid: tickUuid, input: { comment: 'local after Kilter' } }, authenticatedContext)
+      .finally(() => {
+        mutationSettled = true;
+      });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(mutationSettled).toBe(false);
+    } finally {
+      releaseImport();
+    }
+    await Promise.all([importTransaction, mutation]);
+    const [stored] = await db
+      .select({ comment: dbSchema.boardseshTicks.comment })
+      .from(dbSchema.boardseshTicks)
+      .where(eq(dbSchema.boardseshTicks.uuid, tickUuid));
+    expect(stored.comment).toBe('local after Kilter');
   });
 });

@@ -19,6 +19,7 @@ import {
   foreignPlaylistOwnerGuard,
   myPlaylistOwnerEdge,
   selectUpstreamPlaylistOwners,
+  acquireUserTickMutationLock,
   type ClimbStatsKey,
   type TickTimeSample,
 } from '@boardsesh/db/queries';
@@ -522,6 +523,11 @@ export async function applyLogs(
 ): Promise<void> {
   if (ops.length === 0) return;
 
+  // Global logbook lock order is user advisory lock before any tick row read
+  // or write. updateTick/deleteTick and Aurora's ascents/bids use this exact
+  // same transaction-scoped key.
+  await acquireUserTickMutationLock(tx, userId);
+
   // Distinct (climb, angle) keys touched this flush — inserts, updates,
   // adoptions, and soft-detached removes can all change what
   // board_climb_stats should show, so recompute every one at the end.
@@ -934,6 +940,10 @@ export async function applyLogs(
         updated_at text
       )
       WHERE t.uuid = u.uuid
+        -- Defence in depth for rolling deploys: a stale node without the
+        -- advisory-lock protocol may have made a local edit after our SELECT.
+        -- Keep this comparison inside Postgres so microseconds are not lost.
+        AND (t.kilter_synced_at IS NULL OR t.updated_at <= t.kilter_synced_at)
     `);
   }
 

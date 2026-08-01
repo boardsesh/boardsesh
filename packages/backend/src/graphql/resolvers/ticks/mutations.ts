@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { eq, and, inArray, isNull, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm/alias';
 import { GraphQLError } from 'graphql';
 import { betaLinkIdentity, type ConnectionContext, type TickStatus } from '@boardsesh/shared-schema';
@@ -26,6 +26,12 @@ import { invalidateRecentBetaLinksCache } from '../beta-videos/queries';
 import { resolveClimbCatalogPresence } from '../../../db/queries/climbs';
 import { captureBackendEvent } from '../../../services/analytics/posthog';
 import { logger } from '../../../utils/logger';
+import {
+  acquireUserTickMutationLock,
+  isDirectAuroraTwin,
+  isRealAuroraPullRow,
+  notAuroraTwinDuplicate,
+} from '@boardsesh/db/queries';
 
 // Beta links are only attached on successful ascents (flash / send), never
 // on `attempt`. Returns the URL to attach, or null if the tick shouldn't
@@ -411,6 +417,85 @@ function tickResult(tick: dbSchema.BoardseshTick): Record<string, unknown> {
   };
 }
 
+const auroraMutationTwin = aliasedTable(dbSchema.boardseshTicks, 'aurora_mutation_twin');
+
+type TickMutationTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Resolve the exact rows an authenticated tick mutation may affect.
+ *
+ * Lock order is global and shared by update/delete: per-user advisory lock,
+ * addressed row, then direct twins ordered by UUID. The target expands only
+ * when it is the currently visible, real Aurora-pull survivor. Hidden/stale
+ * UUIDs and every non-Aurora origin deliberately retain single-row semantics.
+ */
+async function selectTickMutationGroupForUpdate(
+  tx: TickMutationTransaction,
+  uuid: string,
+  userId: string,
+  action: 'update' | 'delete',
+): Promise<dbSchema.BoardseshTick[]> {
+  const [targetResult] = await tx
+    .select({
+      tick: dbSchema.boardseshTicks,
+      isVisible: sql<boolean>`${notAuroraTwinDuplicate(dbSchema.boardseshTicks)}`,
+      isRealAuroraPull: sql<boolean>`${isRealAuroraPullRow(dbSchema.boardseshTicks)}`,
+    })
+    .from(dbSchema.boardseshTicks)
+    .where(eq(dbSchema.boardseshTicks.uuid, uuid))
+    .for('update');
+
+  if (!targetResult) {
+    throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
+  }
+  if (targetResult.tick.userId !== userId) {
+    const message = action === 'delete' ? 'You can only delete your own ticks' : 'Not authorized to update this tick';
+    throw new GraphQLError(message, { extensions: { code: 'FORBIDDEN' } });
+  }
+
+  if (!targetResult.isVisible || !targetResult.isRealAuroraPull) return [targetResult.tick];
+
+  // Directional and pairwise on purpose: the addressed target must itself be
+  // the smaller witness for every member. Never walk through a middle row.
+  const directTwins = await tx
+    .select({ tick: auroraMutationTwin })
+    .from(auroraMutationTwin)
+    .innerJoin(dbSchema.boardseshTicks, eq(dbSchema.boardseshTicks.uuid, uuid))
+    .where(isDirectAuroraTwin(dbSchema.boardseshTicks, auroraMutationTwin))
+    .orderBy(auroraMutationTwin.uuid)
+    .for('update');
+
+  return [targetResult.tick, ...directTwins.map((row) => row.tick)];
+}
+
+function distinctTickStatsKeys(ticks: dbSchema.BoardseshTick[]): Array<{
+  boardType: string;
+  climbUuid: string;
+  angle: number;
+}> {
+  const keys = new Map<string, { boardType: string; climbUuid: string; angle: number }>();
+  for (const tick of ticks) {
+    keys.set(`${tick.boardType}\u0000${tick.climbUuid}\u0000${tick.angle}`, {
+      boardType: tick.boardType,
+      climbUuid: tick.climbUuid,
+      angle: tick.angle,
+    });
+  }
+  return [...keys.values()];
+}
+
+function distinctTickSessions(ticks: dbSchema.BoardseshTick[]): string[] {
+  return [...new Set(ticks.flatMap((tick) => (tick.sessionId ? [tick.sessionId] : [])))];
+}
+
+function distinctTickBoards(ticks: dbSchema.BoardseshTick[]): Array<{ boardId: number; boardType: string }> {
+  const boards = new Map<number, string>();
+  for (const tick of ticks) {
+    if (tick.boardId != null) boards.set(tick.boardId, tick.boardType);
+  }
+  return [...boards].map(([boardId, boardType]) => ({ boardId, boardType }));
+}
+
 export const tickMutations = {
   /**
    * Delete a tick (climb attempt/ascent) for the authenticated user.
@@ -420,37 +505,17 @@ export const tickMutations = {
     requireAuthenticated(ctx);
     const userId = ctx.userId!;
 
-    const [tick] = await db
-      .select({
-        uuid: dbSchema.boardseshTicks.uuid,
-        userId: dbSchema.boardseshTicks.userId,
-        sessionId: dbSchema.boardseshTicks.sessionId,
-        boardType: dbSchema.boardseshTicks.boardType,
-        climbUuid: dbSchema.boardseshTicks.climbUuid,
-        angle: dbSchema.boardseshTicks.angle,
-        boardId: dbSchema.boardseshTicks.boardId,
-      })
-      .from(dbSchema.boardseshTicks)
-      .where(eq(dbSchema.boardseshTicks.uuid, uuid))
-      .limit(1);
+    const deletedTicks = await db.transaction(async (tx) => {
+      await acquireUserTickMutationLock(tx, userId);
+      const affectedTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'delete');
+      const affectedUuids = affectedTicks.map((tick) => tick.uuid);
 
-    if (!tick) {
-      throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
-    }
-    if (tick.userId !== userId) {
-      throw new GraphQLError('You can only delete your own ticks', { extensions: { code: 'FORBIDDEN' } });
-    }
-
-    logger.info(
-      `[deleteTick] user=${userId} tick=${uuid} ${tick.boardType}/${tick.climbUuid.slice(0, 8)}/${tick.angle}`,
-    );
-
-    await db.transaction(async (tx) => {
-      // Collect comment IDs on this tick so we can clean up their notifications
+      // Collect comment IDs across the logical ascent so their notifications
+      // are removed before the comments themselves.
       const tickComments = await tx
         .select({ id: dbSchema.comments.id })
         .from(dbSchema.comments)
-        .where(and(eq(dbSchema.comments.entityType, 'tick'), eq(dbSchema.comments.entityId, uuid)));
+        .where(and(eq(dbSchema.comments.entityType, 'tick'), inArray(dbSchema.comments.entityId, affectedUuids)));
       const commentIds = tickComments.map((c) => c.id);
 
       // Delete notifications referencing these comments (commentId FK is SET NULL, so we must delete explicitly)
@@ -461,40 +526,50 @@ export const tickMutations = {
       // Delete related social data for the tick itself
       await tx
         .delete(dbSchema.feedItems)
-        .where(and(eq(dbSchema.feedItems.entityType, 'tick'), eq(dbSchema.feedItems.entityId, uuid)));
+        .where(and(eq(dbSchema.feedItems.entityType, 'tick'), inArray(dbSchema.feedItems.entityId, affectedUuids)));
       await tx
         .delete(dbSchema.votes)
-        .where(and(eq(dbSchema.votes.entityType, 'tick'), eq(dbSchema.votes.entityId, uuid)));
+        .where(and(eq(dbSchema.votes.entityType, 'tick'), inArray(dbSchema.votes.entityId, affectedUuids)));
       await tx
         .delete(dbSchema.voteCounts)
-        .where(and(eq(dbSchema.voteCounts.entityType, 'tick'), eq(dbSchema.voteCounts.entityId, uuid)));
+        .where(and(eq(dbSchema.voteCounts.entityType, 'tick'), inArray(dbSchema.voteCounts.entityId, affectedUuids)));
       await tx
         .delete(dbSchema.comments)
-        .where(and(eq(dbSchema.comments.entityType, 'tick'), eq(dbSchema.comments.entityId, uuid)));
+        .where(and(eq(dbSchema.comments.entityType, 'tick'), inArray(dbSchema.comments.entityId, affectedUuids)));
       await tx
         .delete(dbSchema.notifications)
-        .where(and(eq(dbSchema.notifications.entityType, 'tick'), eq(dbSchema.notifications.entityId, uuid)));
-      // Delete the tick itself
-      await tx.delete(dbSchema.boardseshTicks).where(eq(dbSchema.boardseshTicks.uuid, uuid));
+        .where(
+          and(eq(dbSchema.notifications.entityType, 'tick'), inArray(dbSchema.notifications.entityId, affectedUuids)),
+        );
+      // board_beta_links.tick_uuid intentionally relies on its existing ON
+      // DELETE SET NULL FK. The trigger writes one offline tombstone per UUID.
+      await tx.delete(dbSchema.boardseshTicks).where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids));
 
-      if (tick.sessionId) {
-        await tx.update(sessions).set({ lastActivity: new Date() }).where(eq(sessions.id, tick.sessionId));
+      const sessionIds = distinctTickSessions(affectedTicks);
+      if (sessionIds.length > 0) {
+        await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
       }
+
+      return affectedTicks;
     });
 
-    // Recompute the stats row so a deleted ascent doesn't leave the count
-    // inflated or the FA pinned to a now-vanished tick.
-    queueClimbStatsRecompute(tick.boardType, tick.climbUuid, tick.angle);
+    const targetTick = deletedTicks.find((tick) => tick.uuid === uuid)!;
+    logger.info(
+      `[deleteTick] user=${userId} tick=${uuid} ${targetTick.boardType}/${targetTick.climbUuid.slice(0, 8)}/${targetTick.angle} rows=${deletedTicks.length}`,
+    );
 
-    // Board presence: a deleted tick on a connected wall changes that wall's
-    // durable stats (sends / climbers / hardest / top grade) — refresh the
-    // live tiles + cache the same way saveTick does. See the longer comment
-    // on the saveTick call site below.
-    if (tick.boardId != null) {
-      queueBoardStatsPublish(tick.boardId, tick.boardType);
+    for (const key of distinctTickStatsKeys(deletedTicks)) {
+      queueClimbStatsRecompute(key.boardType, key.climbUuid, key.angle);
     }
 
-    logger.info(`[deleteTick] deleted tick=${uuid} user=${userId}`);
+    for (const { boardId, boardType } of distinctTickBoards(deletedTicks)) {
+      queueBoardStatsPublish(boardId, boardType);
+    }
+    for (const sessionId of distinctTickSessions(deletedTicks)) {
+      publishDebouncedSessionStats(sessionId);
+    }
+
+    logger.info(`[deleteTick] deleted tick=${uuid} user=${userId} rows=${deletedTicks.length}`);
 
     return true;
   },
@@ -968,97 +1043,86 @@ export const tickMutations = {
     const userId = ctx.userId!;
 
     const validatedInput = validateInput(UpdateTickInputSchema, input, 'input');
-
-    // Verify ownership and get current tick
-    const existing = await db
-      .select()
-      .from(dbSchema.boardseshTicks)
-      .where(eq(dbSchema.boardseshTicks.uuid, uuid))
-      .limit(1);
-
-    if (existing.length === 0) {
-      throw new GraphQLError('Tick not found', { extensions: { code: 'TICK_NOT_FOUND' } });
-    }
-    if (existing[0].userId !== userId) {
-      throw new GraphQLError('Not authorized to update this tick', { extensions: { code: 'FORBIDDEN' } });
-    }
+    const canonicalClimbedAt =
+      validatedInput.climbedAt === undefined ? undefined : new Date(validatedInput.climbedAt).toISOString();
 
     const changedFields = Object.keys(validatedInput);
     logger.info(`[updateTick] user=${userId} tick=${uuid} fields=[${changedFields.join(',')}]`);
 
-    const updates: Record<string, unknown> = {
-      updatedAt: new Date().toISOString(),
-    };
+    const mutationResult = await db.transaction(async (tx) => {
+      await acquireUserTickMutationLock(tx, userId);
+      const existingTicks = await selectTickMutationGroupForUpdate(tx, uuid, userId, 'update');
+      const targetTick = existingTicks.find((tick) => tick.uuid === uuid)!;
+      const affectedUuids = existingTicks.map((tick) => tick.uuid);
 
-    if (validatedInput.status !== undefined) updates.status = validatedInput.status;
-    if (validatedInput.attemptCount !== undefined) updates.attemptCount = validatedInput.attemptCount;
-    if (validatedInput.quality !== undefined) updates.quality = validatedInput.quality;
-    if (validatedInput.difficulty !== undefined) updates.difficulty = validatedInput.difficulty;
-    if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
-    if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
-    if (validatedInput.climbedAt !== undefined) updates.climbedAt = validatedInput.climbedAt;
-    if (validatedInput.angle !== undefined) updates.angle = validatedInput.angle;
+      const updates: Partial<typeof dbSchema.boardseshTicks.$inferInsert> = {
+        updatedAt: new Date().toISOString(),
+      };
+      if (validatedInput.status !== undefined) updates.status = validatedInput.status;
+      if (validatedInput.attemptCount !== undefined) updates.attemptCount = validatedInput.attemptCount;
+      if (validatedInput.quality !== undefined) updates.quality = validatedInput.quality;
+      if (validatedInput.difficulty !== undefined) updates.difficulty = validatedInput.difficulty;
+      if (validatedInput.isBenchmark !== undefined) updates.isBenchmark = validatedInput.isBenchmark;
+      if (validatedInput.comment !== undefined) updates.comment = validatedInput.comment;
+      if (canonicalClimbedAt !== undefined) updates.climbedAt = canonicalClimbedAt;
+      if (validatedInput.angle !== undefined) updates.angle = validatedInput.angle;
 
-    const finalStatus = validatedInput.status ?? existing[0].status;
-    const finalAttemptCount = validatedInput.attemptCount ?? existing[0].attemptCount;
-    if (finalStatus === 'flash' && finalAttemptCount !== 1) {
-      logger.warn('[updateTick] Coerced flash tick attemptCount to 1', {
-        tickUuid: uuid,
-        userId,
-        previousAttemptCount: finalAttemptCount,
-      });
-      updates.attemptCount = 1;
-    }
-
-    const [updated] = await db
-      .update(dbSchema.boardseshTicks)
-      .set(updates)
-      .where(eq(dbSchema.boardseshTicks.uuid, uuid))
-      .returning();
-
-    // Status edits (attempt → send and back) flip whether this tick counts
-    // toward ascensionist_count, and a quality/difficulty/comment edit can
-    // also change downstream derived stats once we aggregate those. Recompute.
-    queueClimbStatsRecompute(updated.boardType, updated.climbUuid, updated.angle);
-
-    // An angle edit moves this tick between two INDEPENDENT board_climb_stats
-    // buckets (keyed on board_type + climb_uuid + angle). The recompute above
-    // only re-derives the NEW angle's bucket from boardsesh_ticks — it can't
-    // see that a tick just left the OLD angle, because the row's angle column
-    // has already been updated by the time it runs. Without this second call,
-    // the old angle's ascensionist_count / quality_average stay permanently
-    // stale (over-counting the moved tick): there's no self-heal path for it,
-    // since the self-heal job keys off ticks at their CURRENT angle too.
-    if (updated.angle !== existing[0].angle) {
-      queueClimbStatsRecompute(updated.boardType, updated.climbUuid, existing[0].angle);
-    }
-
-    // A tick with a directly linked beta video stamps its angle onto that
-    // board_beta_links row — saveTick and attachBetaLink both persist the tick's
-    // angle there alongside tick_uuid. The mobile home feed opens the video at
-    // the beta row's angle, so correcting a tick from 40° to 25° must move its
-    // beta with it or the video keeps opening at the old angle. Only touch the
-    // row (and bust the recent-beta strip cache) when the angle actually moved
-    // and a linked beta exists.
-    if (updated.angle !== existing[0].angle) {
-      const [movedBetaLink] = await db
-        .update(dbSchema.boardBetaLinks)
-        .set({ angle: updated.angle })
-        .where(eq(dbSchema.boardBetaLinks.tickUuid, uuid))
-        .returning({ link: dbSchema.boardBetaLinks.link });
-      if (movedBetaLink) {
-        invalidateRecentBetaLinksCache().catch((err) => {
-          logger.error('[updateTick] recent-beta-links cache invalidation failed:', err);
+      const finalStatus = validatedInput.status ?? targetTick.status;
+      const finalAttemptCount = validatedInput.attemptCount ?? targetTick.attemptCount;
+      if (finalStatus === 'flash' && finalAttemptCount !== 1) {
+        logger.warn('[updateTick] Coerced flash tick attemptCount to 1', {
+          tickUuid: uuid,
+          userId,
+          previousAttemptCount: finalAttemptCount,
         });
+        updates.attemptCount = 1;
+      } else if (finalStatus === 'flash') {
+        // A locally edited survivor can directly hide rows whose editable
+        // payload differs. Reassert the flash invariant across every member.
+        updates.attemptCount = 1;
       }
+
+      const updatedTicks = await tx
+        .update(dbSchema.boardseshTicks)
+        .set(updates)
+        .where(inArray(dbSchema.boardseshTicks.uuid, affectedUuids))
+        .returning();
+      const updatedTarget = updatedTicks.find((tick) => tick.uuid === uuid)!;
+
+      let movedBetaLinks = false;
+      if (existingTicks.some((tick) => tick.angle !== updatedTarget.angle)) {
+        const moved = await tx
+          .update(dbSchema.boardBetaLinks)
+          .set({ angle: updatedTarget.angle })
+          .where(inArray(dbSchema.boardBetaLinks.tickUuid, affectedUuids))
+          .returning({ link: dbSchema.boardBetaLinks.link });
+        movedBetaLinks = moved.length > 0;
+      }
+
+      const sessionIds = distinctTickSessions(existingTicks);
+      if (sessionIds.length > 0) {
+        await tx.update(sessions).set({ lastActivity: new Date() }).where(inArray(sessions.id, sessionIds));
+      }
+
+      return { existingTicks, updatedTicks, updatedTarget, movedBetaLinks };
+    });
+
+    for (const key of distinctTickStatsKeys([...mutationResult.existingTicks, ...mutationResult.updatedTicks])) {
+      queueClimbStatsRecompute(key.boardType, key.climbUuid, key.angle);
+    }
+    if (mutationResult.movedBetaLinks) {
+      invalidateRecentBetaLinksCache().catch((err) => {
+        logger.error('[updateTick] recent-beta-links cache invalidation failed:', err);
+      });
+    }
+    for (const { boardId, boardType } of distinctTickBoards(mutationResult.updatedTicks)) {
+      queueBoardStatsPublish(boardId, boardType);
+    }
+    for (const sessionId of distinctTickSessions(mutationResult.existingTicks)) {
+      publishDebouncedSessionStats(sessionId);
     }
 
-    // Board presence: an edited tick on a connected wall can change that
-    // wall's durable stats (e.g. attempt -> send). See the longer comment on
-    // the saveTick call site above.
-    if (updated.boardId != null) {
-      queueBoardStatsPublish(updated.boardId, updated.boardType);
-    }
+    const updated = mutationResult.updatedTarget;
 
     logger.info(
       `[updateTick] updated tick=${updated.uuid} user=${userId} ` +

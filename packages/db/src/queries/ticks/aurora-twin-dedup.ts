@@ -87,11 +87,72 @@ function isLocallyEdited(ticks: { updatedAt: Column; auroraSyncedAt: Column }): 
  * columns structurally so it accepts both the base table and the self-join
  * alias (drizzle bakes the table name into a column's type).
  */
-function isRealAuroraPullRow(ticks: { origin: Column; auroraId: Column }): SQL {
+export function isRealAuroraPullRow(ticks: { origin: Column; auroraId: Column }): SQL {
   return and(
     eq(ticks.origin, 'aurora_pull'),
     isNotNull(ticks.auroraId),
     sql`${ticks.auroraId} NOT LIKE ${SYNTHETIC_AURORA_ID_PATTERN}`,
+  )!;
+}
+
+type AuroraTwinComparableRow = {
+  origin: Column;
+  auroraId: Column;
+  userId: Column;
+  boardType: Column;
+  climbUuid: Column;
+  angle: Column;
+  climbedAt: Column;
+  status: Column;
+  auroraType: Column;
+  updatedAt: Column;
+  auroraSyncedAt: Column;
+  isMirror: Column;
+  attemptCount: Column;
+  quality: Column;
+  difficulty: Column;
+  isBenchmark: Column;
+  comment: Column;
+  kilterId: Column;
+};
+
+/**
+ * Exact, directional pair predicate shared by read collapse and mutations.
+ *
+ * `smaller` is a direct witness that hides `larger`; the direction matters
+ * because only the smaller row's local-edit timestamp relaxes payload parity.
+ * Keep every rule here pairwise. In particular, callers must not build a
+ * transitive closure through an intermediate row: A hiding B and B hiding C
+ * does not imply that a mutation addressed to A may change C.
+ */
+export function isDirectAuroraTwin(smaller: AuroraTwinComparableRow, larger: AuroraTwinComparableRow): SQL {
+  return and(
+    isRealAuroraPullRow(smaller),
+    isRealAuroraPullRow(larger),
+    eq(smaller.userId, larger.userId),
+    eq(smaller.boardType, larger.boardType),
+    eq(smaller.climbUuid, larger.climbUuid),
+    eq(smaller.angle, larger.angle),
+    // Exact timestamp-without-time-zone comparison stays inside Postgres.
+    // Converting either side to a JS Date would truncate stored microseconds.
+    eq(smaller.climbedAt, larger.climbedAt),
+    // These identify different upstream facts and are never edit-relaxed.
+    eq(smaller.status, larger.status),
+    sql`${smaller.auroraType} IS NOT DISTINCT FROM ${larger.auroraType}`,
+    or(
+      isLocallyEdited(smaller),
+      and(
+        sql`COALESCE(${smaller.isMirror}, false) = COALESCE(${larger.isMirror}, false)`,
+        sql`${smaller.attemptCount} IS NOT DISTINCT FROM ${larger.attemptCount}`,
+        sql`${smaller.quality} IS NOT DISTINCT FROM ${larger.quality}`,
+        sql`${smaller.difficulty} IS NOT DISTINCT FROM ${larger.difficulty}`,
+        sql`COALESCE(${smaller.isBenchmark}, false) = COALESCE(${larger.isBenchmark}, false)`,
+        sql`COALESCE(${smaller.comment}, '') = COALESCE(${larger.comment}, '')`,
+      ),
+    ),
+    sql`${smaller.auroraId} < ${larger.auroraId}`,
+    // Never bridge two distinct real Kilter links.
+    sql`(${smaller.kilterId} IS NULL OR ${larger.kilterId} IS NULL)`,
   )!;
 }
 
@@ -113,59 +174,10 @@ export function notAuroraTwinDuplicate(ticks: TicksTable = boardseshTicks): SQL 
     .select({ one: sql`1` })
     .from(twin)
     .where(
-      and(
-        // The outer row must itself be a real Aurora-pull row. Testing it here
-        // rather than as an `or(not(...), notExists(...))` wrapper keeps the
-        // whole condition a plain NOT EXISTS, which Postgres plans as a hash
-        // anti-join; the wrapper form forces a per-row SubPlan and costs ~50×
-        // on the unbounded count/list reads (You page, logbook). Same truth
-        // table: for a non-Aurora-pull outer row the subquery is empty, so
-        // NOT EXISTS is true and the row is kept.
-        isRealAuroraPullRow(ticks),
-        isRealAuroraPullRow(twin),
-        eq(twin.userId, ticks.userId),
-        eq(twin.boardType, ticks.boardType),
-        eq(twin.climbUuid, ticks.climbUuid),
-        eq(twin.angle, ticks.angle),
-        // Exact instant. `climbed_at` is `timestamp without time zone` on both
-        // sides, written by the same normaliser — a plain `=` is the whole rule.
-        eq(twin.climbedAt, ticks.climbedAt),
-        // Invariants no local edit may bridge. An attempt and a send, or an
-        // `ascents` row and a `bids` row, are two different upstream facts even
-        // at one instant, so they sit OUTSIDE the relaxation below: an edited
-        // send must never be able to swallow a real logged attempt.
-        eq(twin.status, ticks.status),
-        sql`${twin.auroraType} IS NOT DISTINCT FROM ${ticks.auroraType}`,
-        // Verbatim payload — same column set as payloadDiffersFromStored —
-        // UNLESS the survivor has since been edited here. Rating or commenting
-        // on the one visible tick is the most ordinary thing a climber does with
-        // a logbook entry, and it drifts the survivor's payload away from its
-        // twins; `isLocallyEdited` then makes the pull skip that row forever, so
-        // a strict payload rule would resurrect the duplicates permanently and
-        // make it look like the edit created them. Relaxing it is safe because
-        // the natural key above is the load-bearing guard: two genuine sends of
-        // one climb at one angle at the same instant are physically impossible.
-        // Only the SURVIVOR's edits relax the rule. If the hidden row is the one
-        // that changed, that is a deliberate divergence and it should surface
-        // rather than be swallowed.
-        or(
-          isLocallyEdited(twin),
-          and(
-            sql`COALESCE(${twin.isMirror}, false) = COALESCE(${ticks.isMirror}, false)`,
-            sql`${twin.attemptCount} IS NOT DISTINCT FROM ${ticks.attemptCount}`,
-            sql`${twin.quality} IS NOT DISTINCT FROM ${ticks.quality}`,
-            sql`${twin.difficulty} IS NOT DISTINCT FROM ${ticks.difficulty}`,
-            sql`COALESCE(${twin.isBenchmark}, false) = COALESCE(${ticks.isBenchmark}, false)`,
-            sql`COALESCE(${twin.comment}, '') = COALESCE(${ticks.comment}, '')`,
-          ),
-        ),
-        // Survivor = smallest aurora_id. Strict `<` also makes the row-vs-itself
-        // comparison false, so a group of one always survives.
-        sql`${twin.auroraId} < ${ticks.auroraId}`,
-        // Two distinct real Kilter links are two real upstream ascents; hiding
-        // one would lose a link. Mirrors migration 0166's twin guard.
-        sql`(${twin.kilterId} IS NULL OR ${ticks.kilterId} IS NULL)`,
-      ),
+      // The outer row must itself be a real Aurora-pull row. Keeping that test
+      // inside the direct pair predicate preserves the plain NOT EXISTS shape,
+      // which Postgres plans as a hash anti-join instead of a per-row SubPlan.
+      isDirectAuroraTwin(twin, ticks),
     );
 
   return notExists(smallerTwinExists);
