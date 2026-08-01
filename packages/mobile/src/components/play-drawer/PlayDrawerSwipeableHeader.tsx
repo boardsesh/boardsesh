@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, type ReactNode } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import type { SharedValue } from 'react-native-reanimated';
 import type { BoardName, Climb } from '@boardsesh/shared-schema';
 import { useLogbook, useOptionalBoardActions, type LogbookEntry } from '@boardsesh/board-react';
@@ -88,21 +88,18 @@ function peekOnlyUuids(currentClimbUuid: string, peekClimbUuid: string | null): 
 
 /**
  * Normal path: the drawer board matches the app-root BoardProvider. Its indexed
- * logbook remains the glyph source. This hook requests only the incoming peek;
- * DeferredSections already owns the displayed/current climb request.
+ * logbook remains the glyph source. A separate read-only query requests only the
+ * incoming peek and merges it into the same accumulated cache; it must not call
+ * BoardProvider.getLogbook because that request slot is also used by the queue
+ * toolbar and visible-climbs list.
  */
-function RootBoardHeader({
-  getLogbook,
-  ...props
-}: PlayDrawerSwipeableHeaderProps & { getLogbook: (climbUuids: string[]) => Promise<void> }) {
+function RootBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
   const peekClimbUuid = props.peekClimb?.uuid ?? null;
   const requestedPeekUuids = useMemo(
     () => peekOnlyUuids(props.currentClimb.uuid, peekClimbUuid),
     [props.currentClimb.uuid, peekClimbUuid],
   );
-  useEffect(() => {
-    if (requestedPeekUuids.length > 0) void getLogbook(requestedPeekUuids);
-  }, [getLogbook, requestedPeekUuids]);
+  useLogbook(props.boardName, requestedPeekUuids);
   return <HeaderContents {...props} />;
 }
 
@@ -166,9 +163,5 @@ export const PlayDrawerSwipeableHeader = memo(function PlayDrawerSwipeableHeader
   props: PlayDrawerSwipeableHeaderProps,
 ) {
   const rootBoard = useOptionalBoardActions();
-  return rootBoard?.boardName === props.boardName ? (
-    <RootBoardHeader {...props} getLogbook={rootBoard.getLogbook} />
-  ) : (
-    <ForeignBoardHeader {...props} />
-  );
+  return rootBoard?.boardName === props.boardName ? <RootBoardHeader {...props} /> : <ForeignBoardHeader {...props} />;
 });

@@ -18,9 +18,7 @@ const logbookState = vi.hoisted(() => ({
   rootIndex: new Map<string, TestEntry[]>(),
   accumulatedByBoard: new Map<string, TestEntry[]>(),
   useLogbook: vi.fn(),
-  rootFetchedUuids: new Set<string>(),
   rootGetLogbook: vi.fn(),
-  rootNetworkFetch: vi.fn(),
 }));
 
 vi.mock('@boardsesh/board-react', () => ({
@@ -145,16 +143,10 @@ describe('PlayDrawerSwipeableHeader logbook I/O', () => {
     logbookState.rootIndex = new Map();
     logbookState.accumulatedByBoard.clear();
     logbookState.useLogbook.mockClear();
-    logbookState.rootFetchedUuids.clear();
     logbookState.rootGetLogbook.mockReset();
-    logbookState.rootNetworkFetch.mockClear();
-    logbookState.rootGetLogbook.mockImplementation(async (climbUuids: string[]) => {
-      const missingClimbUuids = climbUuids.filter((climbUuid) => !logbookState.rootFetchedUuids.has(climbUuid));
-      if (missingClimbUuids.length > 0) logbookState.rootNetworkFetch(missingClimbUuids);
-    });
   });
 
-  it('reuses the matching root index and its fetched tracking for each incoming peek', async () => {
+  it('uses the matching root index without replacing another provider request', () => {
     logbookState.rootIndex = indexEntries([
       entry('current', 'send'),
       // Browse semantics intentionally combine orientations: the mirror flash
@@ -165,15 +157,10 @@ describe('PlayDrawerSwipeableHeader logbook I/O', () => {
       entry('peek', 'send'),
       entry('third', 'flash'),
     ]);
-    // The root fetched this in an earlier visible-climbs batch. Calling its
-    // stable getLogbook seam must reuse that tracker instead of issuing a new
-    // independent query for the same peek.
-    logbookState.rootFetchedUuids.add('peek');
     const { container, rerender } = render(createElement(PlayDrawerSwipeableHeader, baseProps));
 
-    await vi.waitFor(() => expect(logbookState.rootGetLogbook).toHaveBeenCalledWith(['peek']));
-    expect(logbookState.rootNetworkFetch).not.toHaveBeenCalled();
-    expect(logbookState.useLogbook).not.toHaveBeenCalled();
+    expect(logbookState.useLogbook).toHaveBeenCalledWith('tension', ['peek']);
+    expect(logbookState.rootGetLogbook).not.toHaveBeenCalled();
     expect(iconWithin(container, 'current-header')).toBe('flash');
     expect(iconWithin(container, 'peek-header')).toBe('tick.outline');
 
@@ -187,8 +174,9 @@ describe('PlayDrawerSwipeableHeader logbook I/O', () => {
         peekClimb: thirdClimb,
       }),
     );
-    await vi.waitFor(() => expect(logbookState.rootGetLogbook).toHaveBeenLastCalledWith(['third']));
-    expect(logbookState.rootGetLogbook.mock.calls.some(([climbUuids]) => climbUuids.includes('current'))).toBe(false);
+    expect(logbookState.useLogbook).toHaveBeenLastCalledWith('tension', ['third']);
+    expect(logbookState.useLogbook.mock.calls.some(([, climbUuids]) => climbUuids.includes('current'))).toBe(false);
+    expect(logbookState.rootGetLogbook).not.toHaveBeenCalled();
     expect(iconWithin(container, 'peek-header')).toBe('flash');
   });
 
