@@ -10,6 +10,8 @@ import type { PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { SessionSummary, SubscriptionQueueEvent, SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import type { SessionLiveStatsEvent } from '../../lib/graphql/operations';
 
+export type PlaybackStateChangedEvent = Extract<SubscriptionQueueEvent, { __typename: 'PlaybackStateChanged' }>;
+
 export type StartSessionConfig = {
   name?: string;
   goal?: string;
@@ -116,12 +118,9 @@ type QueueContextValue = {
    * reconnect to the same physical wall without showing the picker.
    */
   setSessionBoardSerial: (serial: string) => Promise<void>;
-  /**
-   * Subscribe to raw queue subscription events, including transient ones that
-   * never reach the reducer (PlaybackStateChanged drives route playback
-   * party-sync). Returns an unsubscribe function.
-   */
-  subscribeToQueueEvents: (listener: (event: SubscriptionQueueEvent) => void) => () => void;
+  /** Subscribe to transient PlaybackStateChanged events that never reach the
+   * queue reducer. Returns an unsubscribe function. */
+  subscribeToQueueEvents: (listener: (event: PlaybackStateChangedEvent) => void) => () => void;
   /** Broadcast local route-playback state to party peers. Best-effort; no-op solo. */
   publishPlaybackState: (input: PublishPlaybackStateInput) => Promise<void>;
 };

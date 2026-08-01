@@ -15,7 +15,7 @@ import {
 } from '@boardsesh/queue-runtime';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
 import { parseBoardPath, parseNamedBoardPath } from '@boardsesh/board-config';
-import type { SessionUser, SubscriptionQueueEvent, UserBoard } from '@boardsesh/shared-schema';
+import type { SessionUser, UserBoard } from '@boardsesh/shared-schema';
 import { emitWallConfirm } from '@boardsesh/play-view';
 import { GraphQLOperationError, isNotSessionMemberError } from '@boardsesh/graphql-client';
 import { getWsClient } from '../../lib/graphql/ws-client';
@@ -33,6 +33,7 @@ import { toMobileSessionRuntimeEvent } from '../../lib/session-runtime-event';
 import { track } from '../../lib/analytics';
 import { reportHandledError } from '../../lib/error-reporting';
 import type { ToastVariant } from '../../components/Toast';
+import type { PlaybackStateChangedEvent } from './queue-contexts';
 
 const JOIN_SESSION_RETRY_BACKOFF_MS = [1_000, 2_500, 5_000] as const;
 // ws-client remaps a rejected-auth 4401 to the retryable AUTH_REFRESH_RETRY_CLOSE_CODE
@@ -142,7 +143,7 @@ type UseSessionRealtimeParams = {
   showToastRef: React.RefObject<(message: string, variant?: ToastVariant, duration?: number) => void>;
   tRef: React.RefObject<(key: string) => string>;
   clearSessionRef: React.RefObject<(options?: { notifyServer?: boolean }) => Promise<void>>;
-  queueEventListenersRef: React.RefObject<Set<(event: SubscriptionQueueEvent) => void>>;
+  queueEventListenersRef: React.RefObject<Set<(event: PlaybackStateChangedEvent) => void>>;
   unsubscribeRef: React.RefObject<(() => void) | null>;
   queueSyncGateRef: React.RefObject<QueueSyncGate | null>;
   restartJoinedSubscriptionsRef: React.RefObject<(() => void) | null>;
@@ -459,29 +460,19 @@ export function useSessionRealtime({
           next: ({ data }) => {
             if (!data?.queueUpdates) return;
             const event = data.queueUpdates;
-            // Forward every event to transient-event listeners (route playback
-            // party-sync) before the reducer path. The wire-envelope type doesn't
-            // model PlaybackStateChanged, but the subscription selects it and the
-            // server emits it — SubscriptionQueueEvent is the canonical client
-            // union that includes it.
-            // TODO(#2507): add PlaybackStateChanged to SubscriptionWireEnvelope so
-            // this `as unknown as` cast can be removed (don't strip it before then).
-            const queueEvent = event as unknown as SubscriptionQueueEvent;
-            if (queueEventListenersRef.current.size > 0) {
+            // PlaybackStateChanged is a first-class wire variant but carries no
+            // queue state. Forward it to route-playback listeners, then stop
+            // before item lifting, the reducer, and sequence/hash tracking.
+            if (event.__typename === 'PlaybackStateChanged') {
               for (const listener of queueEventListenersRef.current) {
                 try {
-                  listener(queueEvent);
+                  listener(event);
                 } catch (listenerError) {
                   if (__DEV__) console.warn('[queue] queue-event listener threw', listenerError);
                 }
               }
+              return;
             }
-            // PlaybackStateChanged is transient — it carries no queue state and
-            // reuses the room's current sequence, so it bypasses the reducer AND
-            // the sync gate below (the gate special-cases this typename too, but
-            // returning here keeps this path a true no-op, matching pre-gate
-            // behaviour exactly).
-            if (queueEvent.__typename === 'PlaybackStateChanged') return;
 
             // A brand-new session whose local-queue seed failed
             // (createSessionWithConfig — a network blip, a rate limit, a

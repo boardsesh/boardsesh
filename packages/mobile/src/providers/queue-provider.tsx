@@ -17,7 +17,7 @@ import type {
 import { countDistinctSessionUsers, createJoinSessionTracker, type QueueSyncGate } from '@boardsesh/queue-runtime';
 import { useQueueMutations, type PublishPlaybackStateInput } from '@boardsesh/queue-react';
 import type { QueueItemAttribution } from '@boardsesh/queue-react/queue-item-input';
-import type { SubscriptionQueueEvent, SessionUser } from '@boardsesh/shared-schema';
+import type { SessionUser } from '@boardsesh/shared-schema';
 import { execute, isRateLimitedError } from '@boardsesh/graphql-client';
 import { buildBoardPath } from '@boardsesh/board-config';
 import { SHARED_EVENTS } from '@boardsesh/analytics';
@@ -59,6 +59,7 @@ import {
   type QueueDataContextValue,
   type QueueActionsContextValue,
   type QueuePlaylistSuggestionContextValue,
+  type PlaybackStateChangedEvent,
 } from './queue/queue-contexts';
 import { useQueueRegrade } from './queue/use-queue-regrade';
 import { useQueueResolveClimbs } from './queue/use-queue-resolve-climbs';
@@ -449,8 +450,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   // party-sync) doesn't mutate queue state, so the play-drawer orchestrator
   // subscribes here and the reducer path skips it. Listeners live in a ref so
   // adding/removing one never tears down the WS subscription effect below.
-  const queueEventListenersRef = useRef<Set<(event: SubscriptionQueueEvent) => void>>(new Set());
-  const subscribeToQueueEvents = useCallback((listener: (event: SubscriptionQueueEvent) => void) => {
+  const queueEventListenersRef = useRef<Set<(event: PlaybackStateChangedEvent) => void>>(new Set());
+  const subscribeToQueueEvents = useCallback((listener: (event: PlaybackStateChangedEvent) => void) => {
     queueEventListenersRef.current.add(listener);
     return () => {
       queueEventListenersRef.current.delete(listener);

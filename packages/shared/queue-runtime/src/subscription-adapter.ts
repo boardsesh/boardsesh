@@ -89,6 +89,19 @@ export type SubscriptionWireEnvelope<TWireItem> =
       sequence?: number | null;
       stateHash?: string | null;
       stateHashOrdered?: string | null;
+    }
+  | {
+      /** Transient playback state is forwarded to route-playback listeners,
+       * never lifted into the queue reducer or sequence/hash tracking. */
+      __typename: 'PlaybackStateChanged';
+      sequence: number;
+      climbUuid: string;
+      frameIndex: number;
+      isPlaying: boolean;
+      speed: number;
+      paceMs: number;
+      anchorTimestamp: string;
+      clientId: string | null;
     };
 
 export type MapEnvelopeOptions<TWireItem> = {
@@ -100,6 +113,10 @@ export type MapEnvelopeOptions<TWireItem> = {
   context?: MapEventContext;
 };
 
+export type SubscriptionEventMappingResult =
+  | EventMappingResult
+  | { kind: 'ignore'; eventType: 'PlaybackStateChanged'; reason: 'transient event' };
+
 /**
  * Normalise a wire subscription envelope into a reducer dispatch decision.
  * Combines the per-platform item lift with the shared
@@ -108,14 +125,22 @@ export type MapEnvelopeOptions<TWireItem> = {
 export function mapSubscriptionEnvelopeToAction<TWireItem>(
   envelope: SubscriptionWireEnvelope<TWireItem>,
   options: MapEnvelopeOptions<TWireItem> = {},
-): EventMappingResult {
+): SubscriptionEventMappingResult {
+  if (envelope.__typename === 'PlaybackStateChanged') {
+    return { kind: 'ignore', eventType: 'PlaybackStateChanged', reason: 'transient event' };
+  }
   const lift = options.mapItem ?? ((item: TWireItem) => item as unknown as ClimbQueueItem);
   const syncEvent = liftEnvelopeToSyncEvent(envelope, lift);
   return mapQueueEventToAction(syncEvent, options.context);
 }
 
+type QueueStateWireEnvelope<TWireItem> = Exclude<
+  SubscriptionWireEnvelope<TWireItem>,
+  { __typename: 'PlaybackStateChanged' }
+>;
+
 function liftEnvelopeToSyncEvent<TWireItem>(
-  envelope: SubscriptionWireEnvelope<TWireItem>,
+  envelope: QueueStateWireEnvelope<TWireItem>,
   lift: (item: TWireItem) => ClimbQueueItem,
 ): SyncQueueEvent {
   switch (envelope.__typename) {

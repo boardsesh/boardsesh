@@ -4,7 +4,11 @@
 // orchestration patterns that web and mobile would otherwise duplicate.
 
 export { mapSubscriptionEnvelopeToAction } from './subscription-adapter';
-export type { SubscriptionWireEnvelope, MapEnvelopeOptions } from './subscription-adapter';
+export type {
+  SubscriptionWireEnvelope,
+  MapEnvelopeOptions,
+  SubscriptionEventMappingResult,
+} from './subscription-adapter';
 
 export { createSetCurrentClimbCoalescer } from './set-current-climb-coalescer';
 export type {

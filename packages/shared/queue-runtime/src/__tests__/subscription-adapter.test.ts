@@ -185,4 +185,29 @@ describe('mapSubscriptionEnvelopeToAction', () => {
       expect(result.action.payload).toEqual({ uuid: 'q-1', oldIndex: 2, newIndex: 0 });
     }
   });
+
+  it('models PlaybackStateChanged but bypasses item lifting and the reducer', () => {
+    const envelope: SubscriptionWireEnvelope<WireItem> = {
+      __typename: 'PlaybackStateChanged',
+      sequence: 7,
+      climbUuid: 'climb-1',
+      frameIndex: 3,
+      isPlaying: true,
+      speed: 1.5,
+      paceMs: 250,
+      anchorTimestamp: '1700000000000',
+      clientId: 'peer-client',
+    };
+    let liftCalls = 0;
+
+    const result = mapSubscriptionEnvelopeToAction<WireItem>(envelope, {
+      mapItem: (item) => {
+        liftCalls += 1;
+        return liftToClimbItem(item);
+      },
+    });
+
+    expect(result).toEqual({ kind: 'ignore', eventType: 'PlaybackStateChanged', reason: 'transient event' });
+    expect(liftCalls).toBe(0);
+  });
 });
