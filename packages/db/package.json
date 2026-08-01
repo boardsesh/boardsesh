@@ -99,6 +99,7 @@
     "db:dedupe-gyms": "tsx scripts/dedupe-gym-locations.ts",
     "db:dedupe-serial-boards": "tsx scripts/dedupe-serial-boards.ts",
     "db:dedupe-beta-links": "tsx scripts/dedupe-beta-links.ts",
+    "db:audit-legacy-timestamps": "tsx scripts/audit-legacy-tick-timestamps.ts",
     "db:refresh-climb-grades": "tsx scripts/refresh-climb-grades.ts",
     "db:seed-social": "tsx scripts/seed-social.ts",
     "db:create-test-user": "tsx scripts/create-test-user.ts",

@@ -247,6 +247,13 @@ export default defineConfig({
         // flags with `vp run db:dedupe-beta-links -- --apply`.
         cache: false,
       },
+      'db:audit-legacy-timestamps': {
+        command: 'bun run --filter=@boardsesh/db db:audit-legacy-timestamps',
+        // Audit-only and intentionally detached from db:up: operators may aim
+        // it at a read replica. The command itself verifies SERIALIZABLE READ
+        // ONLY DEFERRABLE + UTC before it reads a row and has no apply mode.
+        cache: false,
+      },
       'db:refresh-climb-grades': {
         command: 'pnpm --filter @boardsesh/db run db:refresh-climb-grades',
         // No db:up dependency: this often targets a remote DB_URL and supports
