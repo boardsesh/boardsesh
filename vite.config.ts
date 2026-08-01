@@ -157,6 +157,7 @@ export default defineConfig({
       './packages/shared/create-climb-react/vite.config.ts',
       './packages/shared/queue/vite.config.ts',
       './packages/shared/privacy/vite.config.ts',
+      './packages/shared/rate-limit/vite.config.ts',
       './packages/shared/offline-sync/vite.config.ts',
       './packages/shared/logbook/vite.config.ts',
       './packages/shared/queue-runtime/vite.config.ts',
@@ -821,6 +822,9 @@ export default defineConfig({
       'typecheck:privacy': {
         command: 'pnpm --filter @boardsesh/privacy run typecheck',
       },
+      'typecheck:rate-limit': {
+        command: 'pnpm --filter @boardsesh/rate-limit run typecheck',
+      },
       'typecheck:queue-runtime': {
         command: 'pnpm --filter @boardsesh/queue-runtime run typecheck',
       },
@@ -1003,6 +1007,7 @@ export default defineConfig({
           'typecheck:ble-protocol',
           'typecheck:queue',
           'typecheck:privacy',
+          'typecheck:rate-limit',
           'typecheck:queue-runtime',
           'typecheck:offline-sync',
           'typecheck:queue-react',

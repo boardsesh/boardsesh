@@ -51,6 +51,7 @@
     "@boardsesh/pr-body": "workspace:*",
     "@boardsesh/privacy": "workspace:*",
     "@boardsesh/queue": "workspace:*",
+    "@boardsesh/rate-limit": "workspace:*",
     "@boardsesh/session-inference": "workspace:*",
     "@boardsesh/shared-schema": "workspace:*",
     "@boardsesh/spray-wall-geometry": "workspace:*",

@@ -1,9 +1,13 @@
 import { getDb } from '@/app/lib/db/db';
+import { enforcePublicApiRateLimit } from '@/app/lib/public-api-rate-limit.server';
 import { boardDifficultyGrades } from '@/app/lib/db/schema';
 import { eq, and, asc } from 'drizzle-orm';
 import { type NextRequest, NextResponse } from 'next/server';
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ board_name: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ board_name: string }> }) {
+  const rateLimitedResponse = await enforcePublicApiRateLimit(request);
+  if (rateLimitedResponse) return rateLimitedResponse;
+
   try {
     const { board_name } = await params;
     const db = getDb();
