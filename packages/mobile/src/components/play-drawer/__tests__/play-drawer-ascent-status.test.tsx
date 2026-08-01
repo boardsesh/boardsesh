@@ -85,7 +85,7 @@ describe('PlayDrawerHeader ascent status', () => {
     expect(container.querySelector('[data-icon]')).toBeNull();
   });
 
-  it('updates for the current angle and displayed climb while the drawer swipes', () => {
+  it('updates when the current angle or displayed climb prop changes', () => {
     statusByClimbAngle.set(climbAngleKey('climb-1', 40), 'flash');
     statusByClimbAngle.set(climbAngleKey('climb-1', 30), 'attempt');
     statusByClimbAngle.set(climbAngleKey('climb-2', 30), 'send');

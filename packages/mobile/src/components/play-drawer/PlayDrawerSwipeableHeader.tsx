@@ -99,6 +99,9 @@ function RootBoardHeader(props: PlayDrawerSwipeableHeaderProps) {
     () => peekOnlyUuids(props.currentClimb.uuid, peekClimbUuid),
     [props.currentClimb.uuid, peekClimbUuid],
   );
+  // Both hooks subscribe to the same board-keyed accumulated React Query
+  // entry, so this merge refreshes BoardProvider's index without touching its
+  // replaceable getLogbook request slot.
   useLogbook(props.boardName, requestedPeekUuids);
   return <HeaderContents {...props} />;
 }
@@ -163,5 +166,8 @@ export const PlayDrawerSwipeableHeader = memo(function PlayDrawerSwipeableHeader
   props: PlayDrawerSwipeableHeaderProps,
 ) {
   const rootBoard = useOptionalBoardActions();
+  // With no root provider, the adapter-backed standalone query is still valid
+  // and supplies explicit statuses; PlayDrawerHeader does not read a missing
+  // BoardProvider logbook context on this branch.
   return rootBoard?.boardName === props.boardName ? <RootBoardHeader {...props} /> : <ForeignBoardHeader {...props} />;
 });
