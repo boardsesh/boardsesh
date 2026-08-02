@@ -25,6 +25,8 @@ type ResolvedBoard = {
   layoutId: number;
   sizeId: number;
   setIds: string;
+  isPublic: boolean;
+  isUnlisted: boolean;
 };
 
 const resolveBoardBySlug = vi.fn<(slug: string) => Promise<ResolvedBoard | null>>(async () => ({
@@ -33,6 +35,8 @@ const resolveBoardBySlug = vi.fn<(slug: string) => Promise<ResolvedBoard | null>
   layoutId: 1,
   sizeId: 7,
   setIds: '1,20',
+  isPublic: true,
+  isUnlisted: false,
 }));
 
 vi.mock('@/app/lib/board-slug-utils', () => ({
@@ -158,5 +162,55 @@ describe('board slug climb metadata', () => {
     });
 
     expect(metadata.robots).toEqual({ index: false, follow: true });
+  });
+
+  // An anonymous request never gets here: `boardBySlug` answers null for a
+  // private board, which the "board lookup fails" case above covers. A private
+  // board only resolves for its owner or the staff of its linked gym, and their
+  // render must still stay out of the index.
+  it('noindexes a private board that resolved for its owner, without hiding the climb from them', async () => {
+    resolveBoardBySlug.mockResolvedValueOnce({
+      slug: 'my-board',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      isPublic: false,
+      isUnlisted: false,
+    });
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({
+        board_slug: 'my-board',
+        angle: '40',
+        climb_uuid: 'test-climb',
+      }),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.description).toContain('Test Climb');
+  });
+
+  it('keeps an unlisted (but public) board readable, but noindexes the climb page', async () => {
+    resolveBoardBySlug.mockResolvedValueOnce({
+      slug: 'my-board',
+      boardType: 'kilter',
+      layoutId: 1,
+      sizeId: 7,
+      setIds: '1,20',
+      isPublic: true,
+      isUnlisted: true,
+    });
+
+    const metadata = await pageModule.generateMetadata({
+      params: Promise.resolve({
+        board_slug: 'my-board',
+        angle: '40',
+        climb_uuid: 'test-climb',
+      }),
+    });
+
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.description).toContain('Test Climb');
   });
 });

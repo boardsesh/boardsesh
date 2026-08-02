@@ -76,6 +76,8 @@ vi.mock('@/app/lib/board-slug-utils', () => ({
     layoutId: 1,
     sizeId: 10,
     setIds: '1,20',
+    isPublic: true,
+    isUnlisted: false,
   })),
   boardToRouteParams: vi.fn(() => ({
     board_name: 'kilter',

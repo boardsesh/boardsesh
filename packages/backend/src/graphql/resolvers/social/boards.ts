@@ -158,6 +158,34 @@ function boardIsRoleEditable(board: { isPublic: boolean; ownerId: string }): boo
 }
 
 /**
+ * Who may READ a board entity. Public boards and the seeded system catalog are
+ * readable by anyone including anonymous callers — the same set
+ * `isBoardAnonReadable` admits, so the shared per-config presence feeds
+ * (`resolveSharedBoardForConfig` mints them `isPublic: false` under the system
+ * owner) stay reachable. A private board is visible only to its owner and to
+ * the staff of the gym it is linked to; community admins/leaders are
+ * deliberately excluded, matching `boardIsRoleEditable`'s rule that a
+ * stranger's private board stays owner- and gym-admin-only.
+ *
+ * Callers resolve a non-readable board to `null` rather than throwing a
+ * distinct error, so a private board's existence isn't revealed by the
+ * difference between "not found" and "forbidden".
+ */
+async function viewerCanReadBoard(
+  board: { isPublic: boolean; ownerId: string; gymId: number | null },
+  viewerUserId: string | undefined,
+): Promise<boolean> {
+  if (board.isPublic || board.ownerId === SYSTEM_BOARD_OWNER_ID) return true;
+  // Anonymous callers get nothing beyond the two public cases above. This is the
+  // whole point of the helper — an anonymous `return true` here would hand every
+  // private board's name, description and location to exactly the caller the
+  // mask exists to stop.
+  if (!viewerUserId) return false;
+  if (board.ownerId === viewerUserId) return true;
+  return board.gymId != null && (await viewerCanAdminGym(board.gymId, viewerUserId));
+}
+
+/**
  * Authorize editing a board: the caller must be the board owner, a community
  * admin/leader for the board's type (public/catalog boards only), or the
  * owner/admin of the board's linked gym. Throws when none apply.
@@ -802,14 +830,19 @@ export const socialBoardQueries = {
   /**
    * Get a board by slug (for URL routing).
    *
-   * INTENTIONALLY NOT anon-masked, unlike `board(boardUuid)` above. This read
-   * backs the entire `/b/{slug}/**` web surface through
-   * `packages/web/app/lib/board-slug-utils.ts`, whose fetch is anonymous by
-   * construction — no token path at all, and a cross-user `revalidate: 300`
-   * shared cache that could never hold a per-viewer result. Masking here would
-   * 404 every private board's own OWNER on their own board pages. Accepted
-   * residual exposure (a private board's name is disclosable to a slug holder)
-   * until the end-of-life web climbing surface goes away. See #3648.
+   * Slugs are guessable and this query backs the public `/b/{slug}` routes, so
+   * a board the viewer may not read resolves to `null` — the same answer as a
+   * slug that doesn't exist. Without that mask an anonymous caller could read
+   * any private board's name, description and location straight off the slug.
+   *
+   * This read was previously left unmasked on purpose (#3648): the web caller,
+   * `packages/web/app/lib/board-slug-utils.ts`, had no token path, so masking
+   * here would have 404'd a private board for its own OWNER. That premise is
+   * gone — the caller now forwards the viewer's session token and sends
+   * `cache: 'no-store'` whenever it does, so a per-viewer answer can never land
+   * in the cross-user `revalidate: 300` data cache. Keep those two together: if
+   * the token forwarding is ever reverted, this mask starts hiding private
+   * boards from their owners.
    */
   boardBySlug: async (_: unknown, { slug }: { slug: string }, ctx: ConnectionContext) => {
     // Validate slug format: lowercase alphanumeric with hyphens, max 120 chars
@@ -824,7 +857,11 @@ export const socialBoardQueries = {
       .limit(1);
 
     if (!board) return null;
-    return enrichBoard(board, ctx.isAuthenticated ? ctx.userId : undefined);
+
+    const viewerUserId = ctx.isAuthenticated ? ctx.userId : undefined;
+    if (!(await viewerCanReadBoard(board, viewerUserId))) return null;
+
+    return enrichBoard(board, viewerUserId);
   },
 
   /**

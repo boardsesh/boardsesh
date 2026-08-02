@@ -28,6 +28,9 @@ export async function generateMetadata(props: { params: Promise<BoardSlugRoutePa
 
   try {
     const board = await resolveBoardBySlug(params.board_slug);
+    // `boardBySlug` already masks a board this viewer may not read as null, so
+    // a private board reaches an anonymous crawler as "not found" and never
+    // leaks its name through the title tag. Owners still get their board.
     if (!board) {
       return { title: 'Board Not Found | Boardsesh' };
     }
