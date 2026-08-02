@@ -139,7 +139,7 @@ async function insertBoard(opts: {
   `);
 }
 
-async function insertSerialPointer(userId: string, serial: string, boardUuid: string): Promise<void> {
+async function insertSerialPointer(userId: string, serial: string, boardUuid: string | null): Promise<void> {
   await db.execute(sql`
     INSERT INTO user_board_serials
       (user_id, serial_number, board_name, layout_id, size_id, set_ids, board_uuid, created_at, updated_at)
@@ -1334,6 +1334,91 @@ describe('serial pointer lock ordering', () => {
       await db.execute(
         sql`DELETE FROM users WHERE id IN (${userId}, ${loserOwner}, ${canonicalOwner}, ${alternateOwner})`,
       );
+    }
+  });
+
+  it('locks the linked board row before recordBoardSerial writes the pointer', async () => {
+    const tag = `${PREFIX}-record-serial-lock-order-${Date.now()}`;
+    const serial = `RECORD-LOCK-${SERIAL_SUFFIX}`;
+    const userId = `${tag}-user`;
+    const linkedUuid = uuidv4();
+    const rowHolderReady = createValueBarrier<number>();
+    const shouldTouchPointer = createValueBarrier<boolean>();
+    const releaseRowHolder = createBarrier();
+    let rowHolderPromise: Promise<void> | undefined;
+    let recordPromise: ReturnType<typeof socialBoardMutations.recordBoardSerial> | undefined;
+
+    try {
+      await insertUser(userId);
+      // The board the BLE connect links to. It carries no serial of its own, so
+      // recordBoardSerial finds no config-matching saved board to short-circuit
+      // on and really performs its upsert.
+      await insertBoard({ uuid: linkedUuid, slug: `${tag}-linked`, ownerId: userId, layoutId: 71 });
+      // An existing recording with no board link — the first-connect shape. The
+      // upsert therefore takes the ON CONFLICT DO UPDATE path AND changes
+      // board_uuid, so the FK check actually runs. PostgreSQL skips it when the
+      // key is unchanged, which is why steady-state reconnects never armed this.
+      await insertSerialPointer(userId, serial, null);
+
+      rowHolderPromise = db.transaction(async (transaction) => {
+        const [session] = rowsFromResult<{ pid: number }>(
+          await transaction.execute(sql`SELECT pg_backend_pid() AS pid`),
+        );
+        await transaction.execute(sql`SELECT id FROM user_boards WHERE uuid = ${linkedUuid} FOR UPDATE`);
+        rowHolderReady.release(Number(session.pid));
+        if (await shouldTouchPointer.promise) {
+          // What pointer healing, serial resolution and the dedupe merge all do
+          // next: write this user's pointer row while still holding the board
+          // row. Before the fix that blocked on the pointer row recordBoardSerial
+          // had already taken while waiting for this board row, and PostgreSQL
+          // broke the cycle by killing one of the two transactions.
+          await transaction.execute(sql`
+            UPDATE user_board_serials
+               SET updated_at = NOW()
+             WHERE user_id = ${userId}
+               AND serial_number = ${serial}
+          `);
+        }
+        await releaseRowHolder.promise;
+      });
+      const rowHolderPid = await rowHolderReady.promise;
+
+      recordPromise = socialBoardMutations.recordBoardSerial(
+        null,
+        {
+          input: {
+            serialNumber: serial,
+            boardName: 'kilter',
+            layoutId: 71,
+            sizeId: 10,
+            setIds: '1,2',
+            boardUuid: linkedUuid,
+          },
+        },
+        authCtx(userId),
+      );
+      const recordingPid = await waitForRowWaitBlockedBy(rowHolderPid);
+
+      // Waiting on the board row while holding nothing else. The serial advisory
+      // lock must stay untouched here too: taking it before this FK wait would
+      // just move the same inversion one hop out, against every row→serial writer.
+      expect(await grantedAdvisoryLockCount(recordingPid)).toBe(0);
+
+      shouldTouchPointer.release(true);
+      releaseRowHolder.release();
+      // Both must complete. Awaited together so whichever transaction PostgreSQL
+      // picks as a deadlock victim surfaces as a rejection here.
+      const [, recorded] = await Promise.all([rowHolderPromise, recordPromise]);
+
+      expect(recorded?.boardUuid).toBe(linkedUuid);
+      expect(await serialPointerUuid(userId, serial)).toBe(linkedUuid);
+    } finally {
+      shouldTouchPointer.release(false);
+      releaseRowHolder.release();
+      await Promise.allSettled([rowHolderPromise, recordPromise].filter((promise) => promise !== undefined));
+      await db.execute(sql`DELETE FROM user_board_serials WHERE serial_number = ${serial}`);
+      await db.execute(sql`DELETE FROM user_boards WHERE uuid = ${linkedUuid}`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${userId}`);
     }
   });
 });

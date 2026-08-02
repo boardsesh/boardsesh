@@ -1699,30 +1699,54 @@ export const socialBoardMutations = {
     // what *this* connect observed. The explicit null keeps the row honest.
     const apiLevelValue = apiLevel ?? null;
 
-    await db
-      .insert(dbSchema.userBoardSerials)
-      .values({
-        userId,
-        serialNumber,
-        boardName,
-        layoutId,
-        sizeId,
-        setIds,
-        apiLevel: apiLevelValue,
-        boardUuid: linkedBoardUuid,
-      })
-      .onConflictDoUpdate({
-        target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
-        set: {
+    // Board row first, pointer row second — the order every other serial-pointer
+    // writer follows (pointer healing, serial resolution, the explicit choice,
+    // the dedupe merge). Left bare, this upsert takes the (userId, serialNumber)
+    // row lock first and only then, in the end-of-statement referential-integrity
+    // check on `board_uuid`, asks for FOR KEY SHARE on the referenced user_boards
+    // row. Those writers hold that board row FOR UPDATE (which conflicts with KEY
+    // SHARE) before they touch the same pointer row, so the two orders close a
+    // deadlock cycle and PostgreSQL kills one of them — for the dedupe script,
+    // that aborts the whole cluster transaction.
+    //
+    // Taking the FK's KEY SHARE lock up front puts this path in the shared order.
+    // It must NOT instead take the per-serial advisory lock: acquiring the serial
+    // before waiting on the board row is the same inversion, just one hop further
+    // out. A null `board_uuid` runs no RI check, so it needs no board lock.
+    await db.transaction(async (tx) => {
+      if (linkedBoardUuid) {
+        await tx
+          .select({ uuid: dbSchema.userBoards.uuid })
+          .from(dbSchema.userBoards)
+          .where(eq(dbSchema.userBoards.uuid, linkedBoardUuid))
+          .for('key share');
+      }
+
+      await tx
+        .insert(dbSchema.userBoardSerials)
+        .values({
+          userId,
+          serialNumber,
           boardName,
           layoutId,
           sizeId,
           setIds,
           apiLevel: apiLevelValue,
           boardUuid: linkedBoardUuid,
-          updatedAt: new Date(),
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: [dbSchema.userBoardSerials.userId, dbSchema.userBoardSerials.serialNumber],
+          set: {
+            boardName,
+            layoutId,
+            sizeId,
+            setIds,
+            apiLevel: apiLevelValue,
+            boardUuid: linkedBoardUuid,
+            updatedAt: new Date(),
+          },
+        });
+    });
 
     const [row] = await db
       .select({
