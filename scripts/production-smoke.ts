@@ -74,6 +74,13 @@ function expectBodyContains(response: SmokeResponse, needle: string, label: stri
   return response.body.includes(needle) ? null : `response body has no ${label}`;
 }
 
+/**
+ * An open `<h1>` tag, with or without attributes. Neither plain substring is
+ * right on its own: `'<h1>'` misses the MUI output this page actually serves
+ * (`<h1 class="MuiTypography-root …">`), and `'<h1'` would also match `<h10`.
+ */
+const OPEN_H1_TAG = /<h1[\s>]/i;
+
 /** Parses the body as JSON, or explains why it isn't. */
 function expectJsonBody(response: SmokeResponse): { payload: Record<string, unknown> } | string {
   try {
@@ -123,7 +130,7 @@ export const WWW_CHECKS: SmokeCheck[] = [
       firstFailure(
         expectStatus(response, 200),
         expectContentType(response, 'text/html'),
-        expectBodyContains(response, '<h1', 'server-rendered <h1>'),
+        OPEN_H1_TAG.test(response.body) ? null : 'response body has no server-rendered <h1>',
       ),
   },
   {

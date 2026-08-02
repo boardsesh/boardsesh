@@ -41,6 +41,13 @@ describe('www production smoke checks', () => {
     // The exact regression this catches: real status, real content type, no SSR.
     expect(check.assert(response({ body: '<div id="root"></div>' }))).toMatch(/<h1>/);
     expect(check.assert(response({ status: 500 }))).toMatch(/500/);
+
+    // Attributes are the normal case, not the exception — MUI serves
+    // `<h1 class="MuiTypography-root …">`, so matching a bare `<h1>` would
+    // miss the very element this check exists to find.
+    expect(check.assert(response({ body: '<h1 class="MuiTypography-root">Boardsesh</h1>' }))).toBeNull();
+    // ...but the prefix must still not swallow a longer tag name.
+    expect(check.assert(response({ body: '<h10>not a heading</h10>' }))).toMatch(/<h1>/);
   });
 
   it('rejects a robots.txt with no sitemap directive', () => {
