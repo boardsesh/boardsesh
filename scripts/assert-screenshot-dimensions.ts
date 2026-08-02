@@ -38,7 +38,7 @@ export interface Dimensions {
   height: number;
 }
 
-export const EXPECTED_APP_STORE_LOCALES = ['en-US', 'es-ES', 'es-MX', 'fr-FR'] as const;
+export const EXPECTED_APP_STORE_LOCALES = ['en-US', 'es-ES', 'es-MX', 'fr-FR', 'de-DE'] as const;
 export const EXPECTED_APP_STORE_DEVICE_SLUGS = [
   'iphone-16-pro-max',
   'ipad-pro-13-inch-m5',

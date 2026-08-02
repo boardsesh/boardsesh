@@ -25,7 +25,7 @@ default_platform(:ios)
 REPO_ROOT = File.expand_path("..", __dir__)
 APPLE_SCREENSHOTS_ROOT = File.join(REPO_ROOT, "app-stores", "apple", "screenshots")
 GOOGLE_SCREENSHOTS_DIR = File.join(REPO_ROOT, "app-stores", "google", "screenshots", "pixel-2")
-EXPECTED_DELIVER_LOCALES = ["en-US", "es-ES", "es-MX", "fr-FR"].freeze
+EXPECTED_DELIVER_LOCALES = ["en-US", "es-ES", "es-MX", "fr-FR", "de-DE"].freeze
 SUPPLY_LOCALE = "en-US"
 
 APP_IDENTIFIER = "com.boardsesh.app"

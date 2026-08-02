@@ -26,7 +26,7 @@ import {
 const phoneDevices = ['iPhone 16 Pro Max'];
 const ipadDevices = ['iPad Pro 13-inch (M5)', 'iPad Pro 11-inch (M5)'];
 const commonDevices = [...phoneDevices, ...ipadDevices];
-const allAppLocales: ScreenshotOptions['appLocales'] = ['en-US', 'es', 'fr'];
+const allAppLocales: ScreenshotOptions['appLocales'] = ['en-US', 'es', 'fr', 'de'];
 
 function makeOptions(overrides: Partial<ScreenshotOptions> = {}): ScreenshotOptions {
   return {

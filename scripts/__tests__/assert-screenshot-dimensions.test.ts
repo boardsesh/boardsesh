@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   type Dimensions,
+  EXPECTED_APP_STORE_LOCALES,
   findGooglePlayOffenders,
   findOffenders,
   findScreenshotTreeOffenders,
@@ -119,7 +120,9 @@ describe('findOffenders', () => {
 describe('findScreenshotTreeOffenders', () => {
   function screenshotTree(overrides: Partial<ScreenshotTree> = {}): ScreenshotTree {
     const baseTree: ScreenshotTree = {};
-    for (const locale of ['en-US', 'es-ES', 'es-MX', 'fr-FR']) {
+    // Derived, not literal: a new store locale must widen the fixture too, or
+    // every case below would fail on a spurious "missing locale" offender.
+    for (const locale of EXPECTED_APP_STORE_LOCALES) {
       baseTree[locale] = {
         'iphone-16-pro-max': [
           {
@@ -176,22 +179,22 @@ describe('findScreenshotTreeOffenders', () => {
 
   it('flags an unknown App Store locale directory', () => {
     const tree = screenshotTree({
-      'de-DE': {
+      'ja-JP': {
         'iphone-16-pro-max': [
           {
-            name: 'de-DE/iphone-16-pro-max/00-home.png',
+            name: 'ja-JP/iphone-16-pro-max/00-home.png',
             buffer: pngHeader({ width: 1320, height: 2868 }),
           },
         ],
         'ipad-pro-13-inch-m5': [
           {
-            name: 'de-DE/ipad-pro-13-inch-m5/00-home.png',
+            name: 'ja-JP/ipad-pro-13-inch-m5/00-home.png',
             buffer: pngHeader({ width: 2752, height: 2064 }),
           },
         ],
         'ipad-pro-11-inch-m5': [
           {
-            name: 'de-DE/ipad-pro-11-inch-m5/00-home.png',
+            name: 'ja-JP/ipad-pro-11-inch-m5/00-home.png',
             buffer: pngHeader({ width: 2420, height: 1668 }),
           },
         ],
@@ -199,7 +202,7 @@ describe('findScreenshotTreeOffenders', () => {
     });
     const offenders = findScreenshotTreeOffenders(tree);
     expect(
-      offenders.some((offender) => offender.file === 'de-DE' && /unknown App Store locale/.test(offender.reason)),
+      offenders.some((offender) => offender.file === 'ja-JP' && /unknown App Store locale/.test(offender.reason)),
     ).toBe(true);
   });
 
