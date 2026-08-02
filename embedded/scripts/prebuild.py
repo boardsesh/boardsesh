@@ -14,7 +14,11 @@ import subprocess
 import hashlib
 from pathlib import Path
 
-Import("env")
+try:
+    Import("env")
+except NameError:
+    # Allow unit tests to import the pure hashing/cache helpers without SCons.
+    env = None
 
 # Paths
 # __file__ may not be defined in some Python/SCons versions
@@ -24,21 +28,32 @@ except NameError:
     # Fallback: derive from the env's project directory
     SCRIPT_DIR = Path(env.subst("$PROJECT_DIR")).parent.parent / "scripts"
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
-SCHEMA_PATH = PROJECT_ROOT / "packages" / "shared-schema" / "src" / "schema.ts"
-TYPES_PATH = PROJECT_ROOT / "packages" / "shared-schema" / "src" / "types.ts"
+CONTROLLER_SCHEMA_PATH = PROJECT_ROOT / "packages" / "shared-schema" / "src" / "schema" / "controller.ts"
 OUTPUT_PATH = SCRIPT_DIR.parent / "libs" / "graphql-types" / "src" / "graphql_types.h"
 HASH_FILE = SCRIPT_DIR.parent / "libs" / "graphql-types" / ".schema_hash"
 CODEGEN_SCRIPT = SCRIPT_DIR / "generate-graphql-types.mjs"
+GRAPHQL_CODEGEN_SOURCES = [CODEGEN_SCRIPT, CONTROLLER_SCHEMA_PATH]
 
 # Board data codegen paths
+BOARD_DATA_CODEGEN_SCRIPT = SCRIPT_DIR / "generate-board-data.mjs"
 BOARD_DATA_SOURCES = [
+    BOARD_DATA_CODEGEN_SCRIPT,
     PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "product-sizes-data.ts",
     PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "led-placements-data.ts",
+    PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "hole-placements" / "kilter.cjs",
+    PROJECT_ROOT / "packages" / "board-constants" / "src" / "generated" / "hole-placements" / "tension.cjs",
     PROJECT_ROOT / "packages" / "shared" / "board-config" / "src" / "board-data.ts",
 ]
-BOARD_DATA_OUTPUT = SCRIPT_DIR.parent / "libs" / "board-data" / "src" / "board_hold_data.h"
+BOARD_DATA_IMAGE_ROOTS = [
+    PROJECT_ROOT / "packages" / "web" / "public" / "images" / "kilter",
+    PROJECT_ROOT / "packages" / "web" / "public" / "images" / "tension",
+]
+BOARD_DATA_OUTPUTS = [
+    SCRIPT_DIR.parent / "libs" / "board-data" / "src" / "board_image_data.h",
+    SCRIPT_DIR.parent / "libs" / "board-data" / "src" / "board_hold_data.h",
+    SCRIPT_DIR.parent / "libs" / "board-data" / "src" / "board_data.cpp",
+]
 BOARD_DATA_HASH_FILE = SCRIPT_DIR.parent / "libs" / "board-data" / ".board_data_hash"
-BOARD_DATA_CODEGEN_SCRIPT = SCRIPT_DIR / "generate-board-data.mjs"
 
 # Use environment variable to track execution across potential script reloads.
 # This is more robust than a module-level variable if PlatformIO reloads scripts.
@@ -56,14 +71,26 @@ def _mark_codegen_run():
     os.environ[_CODEGEN_RAN_ENV_KEY] = "1"
 
 
-def get_combined_hash() -> str:
-    """Get combined hash of schema and types files by hashing contents directly."""
+def hash_input_files(filepaths: list[Path]) -> str:
+    """Hash stable path names and contents for a complete set of required inputs."""
     hasher = hashlib.sha256()
-    for filepath in [SCHEMA_PATH, TYPES_PATH]:
-        if filepath.exists():
-            with open(filepath, "rb") as f:
-                hasher.update(f.read())
+    for filepath in sorted(filepaths, key=lambda candidate: candidate.as_posix()):
+        if not filepath.is_file():
+            raise FileNotFoundError(f"Required codegen input is missing: {filepath}")
+        try:
+            stable_path = filepath.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            stable_path = filepath.resolve().as_posix()
+        hasher.update(stable_path.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(filepath.read_bytes())
+        hasher.update(b"\0")
     return hasher.hexdigest()
+
+
+def get_combined_hash() -> str:
+    """Hash the actual controller schema and its C++ generator."""
+    return hash_input_files(GRAPHQL_CODEGEN_SOURCES)
 
 
 def get_stored_hash() -> str:
@@ -96,34 +123,50 @@ def run_codegen():
         )
 
         if result.returncode != 0:
-            print(f"Error running codegen:\n{result.stderr}")
-            # Don't fail the build, just warn
-            print("Warning: GraphQL codegen failed, using existing types")
-            return False
+            raise RuntimeError(f"GraphQL codegen failed:\n{result.stderr}")
 
         print(result.stdout)
-        return True
+        return
 
-    except FileNotFoundError:
-        print("Warning: Node.js not found. Skipping GraphQL codegen.")
-        print("Install Node.js to enable automatic type generation.")
-        return False
-    except subprocess.TimeoutExpired:
-        print("Warning: GraphQL codegen timed out")
-        return False
-    except Exception as e:
-        print(f"Warning: GraphQL codegen error: {e}")
-        return False
+    except FileNotFoundError as error:
+        raise RuntimeError("Node.js is required for GraphQL codegen") from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("GraphQL codegen timed out") from error
 
 
-def get_board_data_hash() -> str:
-    """Get combined hash of board data source files."""
-    hasher = hashlib.sha256()
-    for filepath in BOARD_DATA_SOURCES:
-        if filepath.exists():
-            with open(filepath, "rb") as f:
-                hasher.update(f.read())
-    return hasher.hexdigest()
+def get_board_data_inputs(
+    source_files: list[Path] | None = None,
+    image_roots: list[Path] | None = None,
+) -> list[Path]:
+    """Return fixed sources plus every file under each board image tree."""
+    resolved_sources = list(BOARD_DATA_SOURCES if source_files is None else source_files)
+    resolved_image_roots = BOARD_DATA_IMAGE_ROOTS if image_roots is None else image_roots
+
+    for image_root in resolved_image_roots:
+        if not image_root.is_dir():
+            raise FileNotFoundError(f"Required board image directory is missing: {image_root}")
+        image_paths = sorted(
+            (candidate for candidate in image_root.rglob("*") if candidate.is_file()),
+            key=lambda candidate: candidate.relative_to(image_root).as_posix(),
+        )
+        if not image_paths:
+            raise FileNotFoundError(f"No board image files found in required directory: {image_root}")
+        resolved_sources.extend(image_paths)
+
+    return resolved_sources
+
+
+def get_board_data_hash(
+    source_files: list[Path] | None = None,
+    image_roots: list[Path] | None = None,
+) -> str:
+    """Hash all board data and image inputs consumed by the generator."""
+    return hash_input_files(get_board_data_inputs(source_files, image_roots))
+
+
+def outputs_are_complete(output_paths: list[Path]) -> bool:
+    """Return true only when every expected generated output is nonempty."""
+    return all(output_path.is_file() and output_path.stat().st_size > 0 for output_path in output_paths)
 
 
 def get_stored_board_data_hash() -> str:
@@ -155,22 +198,15 @@ def run_board_data_codegen():
         )
 
         if result.returncode != 0:
-            print(f"Error running board data codegen:\n{result.stderr}")
-            print("Warning: Board data codegen failed, using existing data")
-            return False
+            raise RuntimeError(f"Board data codegen failed:\n{result.stderr}")
 
         print(result.stdout)
-        return True
+        return
 
-    except FileNotFoundError:
-        print("Warning: Node.js not found. Skipping board data codegen.")
-        return False
-    except subprocess.TimeoutExpired:
-        print("Warning: Board data codegen timed out")
-        return False
-    except Exception as e:
-        print(f"Warning: Board data codegen error: {e}")
-        return False
+    except FileNotFoundError as error:
+        raise RuntimeError("Node.js is required for board data codegen") from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("Board data codegen timed out") from error
 
 
 def check_board_data_codegen():
@@ -181,27 +217,26 @@ def check_board_data_codegen():
 
     print("\n[Board Data Codegen] Checking if board data needs regeneration...")
 
-    # Check if source files exist
-    sources_exist = any(p.exists() for p in BOARD_DATA_SOURCES)
-    if not sources_exist:
-        print("[Board Data Codegen] Source files not found, skipping")
-        return
+    current_hash = get_board_data_hash()
 
-    # Check if output exists
-    if not BOARD_DATA_OUTPUT.exists():
+    # Check if every output exists and is nonempty.
+    if not outputs_are_complete(BOARD_DATA_OUTPUTS):
         print("[Board Data Codegen] Output files missing, generating...")
-        if run_board_data_codegen():
-            store_board_data_hash(get_board_data_hash())
+        run_board_data_codegen()
+        if not outputs_are_complete(BOARD_DATA_OUTPUTS):
+            raise RuntimeError("Board data codegen completed without every required output")
+        store_board_data_hash(current_hash)
         return
 
     # Check if sources have changed
-    current_hash = get_board_data_hash()
     stored_hash = get_stored_board_data_hash()
 
     if current_hash != stored_hash:
         print("[Board Data Codegen] Source data changed, regenerating...")
-        if run_board_data_codegen():
-            store_board_data_hash(current_hash)
+        run_board_data_codegen()
+        if not outputs_are_complete(BOARD_DATA_OUTPUTS):
+            raise RuntimeError("Board data codegen completed without every required output")
+        store_board_data_hash(current_hash)
     else:
         print("[Board Data Codegen] Board data is up-to-date")
 
@@ -242,26 +277,26 @@ def before_build(source, target, env):
     print("\n[GraphQL Codegen] Checking if types need regeneration...")
 
     # Check if schema exists
-    if not SCHEMA_PATH.exists():
-        print(f"[GraphQL Codegen] Schema not found at {SCHEMA_PATH}")
-        print("[GraphQL Codegen] Skipping codegen (schema not available)")
-        return
+    current_hash = get_combined_hash()
 
     # Check if output exists
-    if not OUTPUT_PATH.exists():
+    if not outputs_are_complete([OUTPUT_PATH]):
         print("[GraphQL Codegen] Output file missing, generating...")
-        if run_codegen():
-            store_hash(get_combined_hash())
+        run_codegen()
+        if not outputs_are_complete([OUTPUT_PATH]):
+            raise RuntimeError("GraphQL codegen completed without a nonempty header")
+        store_hash(current_hash)
         return
 
     # Check if schema has changed
-    current_hash = get_combined_hash()
     stored_hash = get_stored_hash()
 
     if current_hash != stored_hash:
         print("[GraphQL Codegen] Schema changed, regenerating types...")
-        if run_codegen():
-            store_hash(current_hash)
+        run_codegen()
+        if not outputs_are_complete([OUTPUT_PATH]):
+            raise RuntimeError("GraphQL codegen completed without a nonempty header")
+        store_hash(current_hash)
     else:
         print("[GraphQL Codegen] Types are up-to-date")
 
@@ -272,10 +307,11 @@ def before_build(source, target, env):
 #
 # Board data is needed while PlatformIO compiles dependent libraries, so it must
 # be generated when this pre-script is loaded rather than in the link-time hook.
-if env_has_define("ENABLE_BOARD_IMAGE"):
-    check_board_data_codegen()
-else:
-    print("[Board Data Codegen] Skipping (ENABLE_BOARD_IMAGE not set)")
+if env is not None:
+    if env_has_define("ENABLE_BOARD_IMAGE"):
+        check_board_data_codegen()
+    else:
+        print("[Board Data Codegen] Skipping (ENABLE_BOARD_IMAGE not set)")
 
-env.AddPreAction("buildprog", before_build)
-env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", before_build)
+    env.AddPreAction("buildprog", before_build)
+    env.AddPreAction("$BUILD_DIR/${PROGNAME}.elf", before_build)
