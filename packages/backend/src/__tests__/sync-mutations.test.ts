@@ -187,7 +187,7 @@ describe('deleteTick / updateTick typed errors', () => {
   });
 });
 
-describe('saveTick idempotent replay', () => {
+describe('saveTick persistence and idempotent replay', () => {
   const baseInput = {
     boardType: 'kilter',
     climbUuid: 'tick-climb-1',
@@ -231,6 +231,21 @@ describe('saveTick idempotent replay', () => {
 
     expect(a.uuid).not.toBe(b.uuid);
     expect(recomputeSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves six climbedAt fractional digits while normalizing its offset', async () => {
+    const saved = (await tickMutations.saveTick(
+      undefined,
+      { input: { ...baseInput, climbedAt: '2026-05-02T01:02:03.123456-07:00' } },
+      ctx(),
+    )) as TickRow;
+
+    const rows = await db.execute(sql`
+      SELECT climbed_at::text AS climbed_at
+      FROM boardsesh_ticks
+      WHERE uuid = ${saved.uuid}
+    `);
+    expect(rows).toEqual([{ climbed_at: '2026-05-02 08:02:03.123456' }]);
   });
 });
 

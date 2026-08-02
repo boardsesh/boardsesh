@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { eq, sql, type SQL } from 'drizzle-orm';
 import { applyAuroraAscents } from '@boardsesh/aurora-sync/apply-user-logbook';
+import { acquireUserTickMutationLock } from '@boardsesh/db/queries';
 import { applyLogs, type PowerSyncOp } from '@boardsesh/kilter-sync';
 import type { ConnectionContext } from '@boardsesh/shared-schema';
 
@@ -641,8 +642,16 @@ describe('#3535 Aurora-side duplicate ascents', () => {
   });
 
   it('fans only supplied fields across the group and enforces flash attempts', async () => {
-    const survivorUuid = await insertTick({ auroraId: 'aur-1', quality: 4, difficulty: 22 });
-    await insertTick({ auroraId: 'aur-2', quality: 4, difficulty: 22 });
+    const survivorUuid = await insertTick({
+      auroraId: 'aur-1',
+      attemptCount: 1,
+      quality: 4,
+      difficulty: 22,
+      // The survivor's local edit relaxes editable-payload parity, so it can
+      // directly hide the otherwise identical twin with a different count.
+      updatedAt: '2026-05-01T18:22:38.000Z',
+    });
+    await insertTick({ auroraId: 'aur-2', attemptCount: 2, quality: 4, difficulty: 22 });
 
     await tickMutations.updateTick(
       null,
@@ -976,6 +985,40 @@ describe('#3535 Aurora-side duplicate ascents', () => {
     await db.transaction((tx) => applyAuroraAscents(tx as unknown as typeof applyDb, BOARD, USER_ID, payload));
     expect(await storedAuroraIds()).toEqual(['aur-a', 'aur-b']);
     expect(await visibleAuroraIds()).toEqual(['aur-a']);
+  });
+
+  it('waits on the legacy advisory key before taking the extended rollout key', async () => {
+    let releaseLegacyLock!: () => void;
+    const legacyLockRelease = new Promise<void>((resolve) => {
+      releaseLegacyLock = resolve;
+    });
+    let signalLegacyLockHeld!: () => void;
+    const legacyLockHeld = new Promise<void>((resolve) => {
+      signalLegacyLockHeld = resolve;
+    });
+    const legacyLockTransaction = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${0x5449434b}, hashtext(${USER_ID}))`);
+      signalLegacyLockHeld();
+      await legacyLockRelease;
+    });
+    await legacyLockHeld;
+
+    let compatibleAcquisitionSettled = false;
+    const compatibleAcquisition = db
+      .transaction(async (tx) => {
+        await acquireUserTickMutationLock(tx as unknown as Parameters<typeof acquireUserTickMutationLock>[0], USER_ID);
+      })
+      .finally(() => {
+        compatibleAcquisitionSettled = true;
+      });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(compatibleAcquisitionSettled).toBe(false);
+    } finally {
+      releaseLegacyLock();
+    }
+
+    await Promise.all([legacyLockTransaction, compatibleAcquisition]);
   });
 
   it('Aurora apply and updateTick serialize over two connections', async () => {
