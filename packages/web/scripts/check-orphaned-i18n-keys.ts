@@ -2,7 +2,7 @@
 /**
  * Static check that fails when a key in `packages/shared/i18n/locales/en-US/<ns>.json`
  * has no live reference under `packages/web/app/`, `packages/web/scripts/`, or
- * `packages/mobile/{src,app}/`. en-US is the source of truth — `es` and `fr`
+ * `packages/mobile/{src,app}/`. en-US is the source of truth — `es`, `fr`, and `de`
  * fall back through i18next, so an orphan in en-US is an orphan in every locale.
  *
  * What gets resolved as a reference:
@@ -687,7 +687,7 @@ function formatReport(report: Report): { exitCode: 0 | 1; lines: string[] } {
       `Found ${report.orphans.length} orphaned key(s) across ${new Set(report.orphans.map((orphan) => orphan.namespace)).size} namespace(s).`,
     );
     lines.push(
-      'Delete each from every locale catalog (en-US, es, fr) or add `// i18n-keep namespace.key.path` if the key is referenced outside the scanned web + mobile source.',
+      'Delete each from every locale catalog (en-US, es, fr, de) or add `// i18n-keep namespace.key.path` if the key is referenced outside the scanned web + mobile source.',
     );
   }
 

@@ -154,7 +154,13 @@ const APP_STORE_LOCALES_BY_APP_LOCALE: Record<Locale, readonly string[]> = {
   'en-US': ['en-US'],
   es: ['es-ES', 'es-MX'],
   fr: ['fr-FR'],
+  // Mapped so `--locales de` works; omitted from STORE_READY_APP_LOCALES until
+  // de-DE screenshots are captured and EXPECTED_APP_STORE_LOCALES grows.
+  de: ['de-DE'],
 };
+
+/** Default / `--locales all` set. Excludes app locales without store screenshot folders yet. */
+const STORE_READY_APP_LOCALES: readonly Locale[] = ['en-US', 'es', 'fr'];
 
 export interface ScreenshotOptions {
   platform: ScreenshotPlatform;
@@ -186,7 +192,7 @@ export function parseArgs(argv: readonly string[]): ScreenshotOptions {
     backend: 'local',
     devices: [...COMMON_IOS_DEVICE_NAMES],
     androidDevice: DEFAULT_ANDROID_DEVICE,
-    appLocales: [...SUPPORTED_LOCALES],
+    appLocales: [...STORE_READY_APP_LOCALES],
     variant: null,
     // Dark is the canonical store appearance (the app defaults to dark).
     theme: 'dark',
@@ -287,7 +293,7 @@ function parseDevicesArgument(value: string): string[] {
 
 function parseLocalesArgument(value: string): Locale[] {
   if (value === DEFAULT_LOCALES_ARGUMENT) {
-    return [...SUPPORTED_LOCALES];
+    return [...STORE_READY_APP_LOCALES];
   }
   const locales = value
     .split(',')

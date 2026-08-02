@@ -27,6 +27,12 @@ const COPY = {
     subtitle: 'Recharge pour retourner au mur',
     reload: 'Recharger',
   },
+  de: {
+    htmlLang: 'de',
+    title: 'Da ist etwas schiefgelaufen',
+    subtitle: 'Lade neu und zurück an die Wand',
+    reload: 'App neu laden',
+  },
 } as const;
 
 type Locale = keyof typeof COPY;
@@ -36,6 +42,7 @@ function detectLocale(): Locale {
   const { pathname } = window.location;
   if (pathname === '/es' || pathname.startsWith('/es/')) return 'es';
   if (pathname === '/fr' || pathname.startsWith('/fr/')) return 'fr';
+  if (pathname === '/de' || pathname.startsWith('/de/')) return 'de';
   return 'en-US';
 }
 

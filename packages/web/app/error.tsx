@@ -29,6 +29,10 @@ const COPY = {
     title: 'Ça a cassé',
     retry: 'Réessayer',
   },
+  de: {
+    title: 'Da ist was kaputt',
+    retry: 'Nochmal versuchen',
+  },
 } as const;
 
 type LocaleKey = keyof typeof COPY;
@@ -38,6 +42,7 @@ function detectLocale(): LocaleKey {
   const { pathname } = window.location;
   if (pathname === '/es' || pathname.startsWith('/es/')) return 'es';
   if (pathname === '/fr' || pathname.startsWith('/fr/')) return 'fr';
+  if (pathname === '/de' || pathname.startsWith('/de/')) return 'de';
   return 'en-US';
 }
 

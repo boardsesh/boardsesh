@@ -1,4 +1,4 @@
-export const SUPPORTED_LOCALES = ['en-US', 'es', 'fr'] as const;
+export const SUPPORTED_LOCALES = ['en-US', 'es', 'fr', 'de'] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 export const DEFAULT_LOCALE: Locale = 'en-US';
@@ -8,18 +8,21 @@ export const LOCALE_HTML_LANG: Record<Locale, string> = {
   'en-US': 'en',
   es: 'es',
   fr: 'fr',
+  de: 'de',
 };
 
 export const LOCALE_OG: Record<Locale, string> = {
   'en-US': 'en_US',
   es: 'es_ES',
   fr: 'fr_FR',
+  de: 'de_DE',
 };
 
 export const LOCALE_LABELS: Record<Locale, string> = {
   'en-US': 'English',
   es: 'Español',
   fr: 'Français',
+  de: 'Deutsch',
 };
 
 /**

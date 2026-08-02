@@ -7,7 +7,7 @@ describe('syncDocumentLanguage on web', () => {
     document.documentElement.lang = 'en-US';
   });
 
-  it.each(['es', 'fr', 'en-US'] as const)('sets the document language to %s', (language) => {
+  it.each(['es', 'fr', 'de', 'en-US'] as const)('sets the document language to %s', (language) => {
     syncDocumentLanguage(language);
 
     expect(document.documentElement.lang).toBe(language);

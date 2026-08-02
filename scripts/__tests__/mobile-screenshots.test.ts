@@ -150,7 +150,7 @@ describe('parseArgs', () => {
   });
 
   it('rejects invalid locales and empty comma lists', () => {
-    expect(() => parseArgs(['--locales', 'de'])).toThrow(/supported app locales/);
+    expect(() => parseArgs(['--locales', 'ja'])).toThrow(/supported app locales/);
     expect(() => parseArgs(['--devices', ','])).toThrow(/at least one device/);
   });
 
@@ -467,10 +467,11 @@ describe('resolveIosScreenshotDevices', () => {
 
 describe('resolveAppStoreLocaleTargets', () => {
   it('maps app locales to App Store Connect locale directories', () => {
-    expect(resolveAppStoreLocaleTargets(['en-US', 'es', 'fr'])).toEqual([
+    expect(resolveAppStoreLocaleTargets(['en-US', 'es', 'fr', 'de'])).toEqual([
       { appLocale: 'en-US', appStoreLocales: ['en-US'] },
       { appLocale: 'es', appStoreLocales: ['es-ES', 'es-MX'] },
       { appLocale: 'fr', appStoreLocales: ['fr-FR'] },
+      { appLocale: 'de', appStoreLocales: ['de-DE'] },
     ]);
   });
 });

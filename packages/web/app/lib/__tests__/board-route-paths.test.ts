@@ -20,9 +20,10 @@ describe('board-route-paths', () => {
       expect(isBoardRoutePath('/playlists')).toBe(false);
     });
 
-    it('detects locale-prefixed board routes (es, fr)', () => {
+    it('detects locale-prefixed board routes (es, fr, de)', () => {
       expect(isBoardRoutePath('/es/kilter/1/1/default/40/list')).toBe(true);
       expect(isBoardRoutePath('/fr/b/test-board/40/list')).toBe(true);
+      expect(isBoardRoutePath('/de/kilter/1/1/default/40/list')).toBe(true);
     });
 
     it('does not treat the default (en-US) locale as a path prefix or a board', () => {

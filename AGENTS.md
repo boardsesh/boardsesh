@@ -233,7 +233,7 @@ Vitest via `vp test`. Backend tests auto-start postgres+redis via `packages/back
 
 ### Internationalisation
 
-Supported locales: `en-US` (root), `es` (`/es/*`), `fr`. Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
+Supported locales: `en-US` (root), `es` (`/es/*`), `fr` (`/fr/*`), `de` (`/de/*`). Path-based detection via middleware (`packages/web/middleware.ts`). Catalogs in `packages/shared/i18n/locales/<locale>/<namespace>.json` (`@boardsesh/i18n`, shared by web and mobile). Namespaces: `common`, `marketing`, `auth`, and friends — add new ones to `ALL_NAMESPACES` in `packages/shared/i18n/src/config.ts` (web re-exports it as `SEED_NAMESPACES`; mobile ships the `MOBILE_NAMESPACES` subset).
 
 - **Add every new key to every locale.** `catalog-completeness.test.ts` in `@boardsesh/i18n` enforces parity per namespace.
 - Server: `const { t } = await getServerTranslation('marketing')`.
@@ -250,6 +250,8 @@ Adding a new locale: update `SUPPORTED_LOCALES` and friends in `packages/shared/
 **Spanish terminology:** Spanish translations follow a fixed glossary. Most importantly, a climbing board is **"plafón"** (masculine — _el plafón_, plural _plafones_), never "tabla"/"tablero"/"tabla de escalada" or raw English "board"; fix article/adjective agreement when you swap the word. Brand product names ("Kilter Board", "Tension Board", "MoonBoard") stay as-is. Full terminology, grammar rules, and exceptions: **`docs/i18n-spanish-glossary.md`** — follow it for every Spanish string you add.
 
 **French terminology:** French translations follow a fixed glossary too. Most importantly, a climbing send is never **« envoyer »** — French climbers don't "send" a climb. The send status/verb is **« Enchaîné » / enchaîner**, the noun send is **« la croix »** (invariable: _dix croix_; « faire la croix » = tick it in the logbook), and lighting a climb on the wall is **« allumer »**, not « envoyer ». Attempts on a climb are « essais », never « tentatives ». Full terminology and exceptions: **`docs/i18n-french-glossary.md`** — follow it for every French string you add.
+
+**German terminology:** German translations follow a fixed glossary. Product UI uses informal **du** and gender-star role nouns (`Routenbauer*in`). A climbing send is never **senden** — status/button is **Getoppt**, counts use **Begehung/Begehungen**, and lighting holds on the wall is **Board beleuchten**. The device is **Board** (feminine). Full terminology and exceptions: **`docs/i18n-german-glossary.md`** — follow it for every German string you add.
 
 ### Copy & microcopy
 
@@ -359,7 +361,7 @@ Use `vp run mobile:ios` for local `packages/mobile` iOS builds instead of raw `e
 `vp run mobile:screenshots` (`scripts/mobile-screenshots.ts`) drives Maestro over iOS simulators. The app it installs is a Debug **dev-client** that loads its JS from **Metro** at runtime — the screenshot behaviour (`EXPO_PUBLIC_SCREENSHOT_MODE`, theme, locale, workout) is baked into the Metro JS bundle, **not** the native binary. So the native `.app` is reusable: only the JS regenerates per run.
 
 - Pass `--app-path <Boardsesh.app>` to install a prebuilt/cached app (CI's common path). Without it, the script builds one via `vp run mobile:build-sim-app` (`scripts/mobile-build-sim-app.ts` → `expo prebuild` + `pod install` + `xcodebuild build -sdk iphonesimulator -configuration Debug`; **not** `expo run:ios`, whose launch step hangs in CI). Use `--clean` for a deterministic from-scratch build.
-- The default Apple capture is `--devices common --locales all`: iPhone 16 Pro Max, iPhone 14 Plus, and iPhone 16 Pro for app locales `en-US`, `es`, and `fr`. The Spanish app locale is written to both App Store Connect folders, `es-ES` and `es-MX`.
+- The default Apple capture is `--devices common --locales all`: iPhone 16 Pro Max, iPhone 14 Plus, and iPhone 16 Pro for store-ready app locales (`en-US`, `es`, `fr`; German `de` is supported in-app but store screenshots are a follow-up). The Spanish app locale is written to both App Store Connect folders, `es-ES` and `es-MX`.
 - `.github/workflows/mobile-screenshots-ios.yml` caches the `.app` (`actions/cache`) keyed on **native inputs only**: `packages/mobile/app.config.ts`, `plugins/**`, `modules/**`, `package.json`, `patches/**`, and the root `package.json` (which pins `@expo/cli` / `react-native-screens`), plus `runner.os`/`runner.arch`. JS/TS-only and web-only changes (including `bun.lock` churn) are a cache hit and skip the ~30-min native build; any native-input change busts the key and rebuilds. Bump the `-v1-` salt to force a rebuild. A native-dep change must invalidate the key — when adding native config, confirm it's covered by one of those globs.
 
 ### Android emulator screenshots (local, dev-client + Metro)

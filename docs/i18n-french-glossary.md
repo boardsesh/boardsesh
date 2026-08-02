@@ -63,5 +63,5 @@ Every string names the board device **« board »**, feminine: _la board, une bo
 
 ## Process
 
-- Add every new key to **all** locales (`en-US`, `es`, `fr`) — the catalog completeness test fails on missing keys.
+- Add every new key to **all** locales (`en-US`, `es`, `fr`, `de`) — the catalog completeness test fails on missing keys.
 - See the root `CLAUDE.md` "Internationalisation" section for the rest of the i18n workflow, and `docs/i18n-spanish-glossary.md` for the Spanish counterpart.

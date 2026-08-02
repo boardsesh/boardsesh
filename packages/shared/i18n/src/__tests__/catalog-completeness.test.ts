@@ -10,7 +10,7 @@ const LOCALES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'l
 // with the English catalog. Missing keys silently fall back to English at
 // runtime, ship untranslated copy to users, and spam Sentry with missing-key
 // warnings — fail the build here instead.
-const STRICTLY_ENFORCED_LOCALES = ['es', 'fr'] as const;
+const STRICTLY_ENFORCED_LOCALES = ['es', 'fr', 'de'] as const;
 
 type Catalog = Record<string, unknown>;
 

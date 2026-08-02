@@ -20,7 +20,7 @@ describe('i18next plural resolution', () => {
     await i18next.init({
       lng: 'en-US',
       fallbackLng: 'en-US',
-      supportedLngs: ['en-US', 'es', 'fr'],
+      supportedLngs: ['en-US', 'es', 'fr', 'de'],
       resources: {
         'en-US': {
           translation: {
@@ -40,6 +40,12 @@ describe('i18next plural resolution', () => {
             climb_other: '{{count}} blocs',
           },
         },
+        de: {
+          translation: {
+            climb_one: '{{count}} Griff',
+            climb_other: '{{count}} Griffe',
+          },
+        },
       },
       interpolation: { escapeValue: false },
     });
@@ -57,6 +63,9 @@ describe('i18next plural resolution', () => {
     // catches anyone who hardcodes `count !== 1 → other` instead of using
     // `Intl.PluralRules`.
     ['fr', 0, '0 bloc'],
+    ['de', 1, '1 Griff'],
+    ['de', 2, '2 Griffe'],
+    ['de', 0, '0 Griffe'],
   ])('resolves %s count=%i to "%s"', async (locale, count, expected) => {
     const t = await i18next.changeLanguage(locale);
     expect(t('climb', { count })).toBe(expected);
