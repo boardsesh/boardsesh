@@ -439,8 +439,14 @@ async function requireGymOwnerOrAdmin(gymUuid: string, userId: string): Promise<
  */
 export const SELF_LINK_PROXIMITY_METERS = PROXIMITY_MATCH_RADIUS_METERS;
 
-/** Beyond this many links to gyms the caller neither owns nor admins, stop allowing more. */
-export const MAX_FOREIGN_GYM_LINKS = 5;
+/**
+ * Beyond this many DISTINCT gyms the caller neither owns nor admins, stop
+ * allowing more. Counted per gym, not per board, so someone with three boards at
+ * one gym spends one of their allowance rather than three. Set high enough to be
+ * invisible to a real climber (who travels to a handful of gyms) while still
+ * bounding a scripted spray across many listings.
+ */
+export const MAX_FOREIGN_GYM_LINKS = 20;
 
 /**
  * Gate for attaching a board the caller OWNS to a gym: owner/admin of the gym as
@@ -487,19 +493,24 @@ export async function requireBoardGymLinkAccess(opts: {
     throw new Error('Not authorized to link board to this gym');
   }
 
-  const [{ count: foreignLinks }] = await db
-    .select({ count: sql<number>`count(*)::int` })
+  // Distinct gyms, and live ones only: counting rows would spend three of the
+  // allowance on three boards at one gym, and counting soft-deleted gyms would
+  // permanently block someone whose past gyms were since removed.
+  const [{ count: foreignGyms }] = await db
+    .select({ count: sql<number>`count(DISTINCT ${dbSchema.gyms.id})::int` })
     .from(dbSchema.userBoards)
     .innerJoin(dbSchema.gyms, eq(dbSchema.userBoards.gymId, dbSchema.gyms.id))
     .where(
       and(
         eq(dbSchema.userBoards.ownerId, userId),
         isNull(dbSchema.userBoards.deletedAt),
+        isNull(dbSchema.gyms.deletedAt),
+        sql`${dbSchema.gyms.id} <> ${gym.id}`,
         sql`${dbSchema.gyms.ownerId} <> ${userId}`,
         sql`NOT EXISTS (SELECT 1 FROM gym_members gm WHERE gm.gym_id = ${dbSchema.gyms.id} AND gm.user_id = ${userId} AND gm.role = 'admin')`,
       ),
     );
-  if (foreignLinks >= MAX_FOREIGN_GYM_LINKS) {
+  if (foreignGyms >= MAX_FOREIGN_GYM_LINKS) {
     throw new Error('Not authorized to link board to this gym');
   }
 
@@ -508,7 +519,7 @@ export async function requireBoardGymLinkAccess(opts: {
     gymId: gym.id,
     gymUuid: gym.uuid,
     distanceMeters: Math.round(distance),
-    existingForeignLinks: foreignLinks,
+    existingForeignGyms: foreignGyms,
   });
 
   return gym;

@@ -1629,6 +1629,7 @@ export const socialBoardMutations = {
           slug: dbSchema.userBoards.slug,
           name: dbSchema.userBoards.name,
           setIds: dbSchema.userBoards.setIds,
+          angle: dbSchema.userBoards.angle,
           latitude: dbSchema.userBoards.latitude,
           longitude: dbSchema.userBoards.longitude,
           locationName: dbSchema.userBoards.locationName,
@@ -1642,7 +1643,11 @@ export const socialBoardMutations = {
             eq(dbSchema.userBoards.sizeId, validatedInput.sizeId),
             isNull(dbSchema.userBoards.deletedAt),
           ),
-        );
+        )
+        // Already narrowed to one owner's boards of one exact type/layout/size,
+        // so this is a handful of rows; the cap is just a safety net against a
+        // pathological account.
+        .limit(100);
 
       const existing = findBlockingDuplicate(ownedWithConfig, {
         setIds: validatedInput.setIds,
@@ -1660,6 +1665,9 @@ export const socialBoardMutations = {
             existingBoardSlug: existing.slug,
             existingBoardName: existing.name,
             existingBoardLocationName: existing.locationName,
+            // Web's "go to your board" links to /b/<slug>/<angle>; without the
+            // board's own angle it would land on the board type's default.
+            existingBoardAngle: existing.angle,
           },
         });
       }

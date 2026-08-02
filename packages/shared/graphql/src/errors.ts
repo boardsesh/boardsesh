@@ -29,6 +29,8 @@ export type DuplicateBoardError = {
   boardName: string;
   boardSlug: string | null;
   locationName: string | null;
+  /** The existing board's own angle, so a link to it doesn't land on the type default. */
+  angle: number | null;
 };
 
 /**
@@ -51,6 +53,10 @@ export function readDuplicateBoardError(error: unknown): DuplicateBoardError | n
       boardName: asString(graphqlError.extensions.existingBoardName) ?? '',
       boardSlug: asString(graphqlError.extensions.existingBoardSlug),
       locationName: asString(graphqlError.extensions.existingBoardLocationName),
+      angle:
+        typeof graphqlError.extensions.existingBoardAngle === 'number'
+          ? graphqlError.extensions.existingBoardAngle
+          : null,
     };
   }
   return null;

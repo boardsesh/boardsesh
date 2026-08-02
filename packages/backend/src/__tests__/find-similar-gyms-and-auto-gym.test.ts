@@ -7,6 +7,7 @@ import { socialGymMatchQueries } from '../graphql/resolvers/social/gym-matching'
 import {
   findExactNameMatchesWithin,
   decideAutoGymAttachment,
+  MAX_AUTO_MINTED_GYMS_PER_OWNER,
   type SimilarGymResult,
 } from '../graphql/resolvers/social/gym-matching';
 import { socialBoardMutations } from '../graphql/resolvers/social/boards';
@@ -523,6 +524,23 @@ describe('createBoard auto-gym — per-location minting', () => {
       authCtx(QUERIER),
     );
     expect(board.gymId).toBeNull();
+  });
+
+  it('stops minting once the caller is at the gym cap, still creating the board', async () => {
+    // The runaway backstop. Approximate by design (read outside the insert
+    // transaction), so this pins the threshold behaviour, not exactness.
+    for (let index = 0; index < MAX_AUTO_MINTED_GYMS_PER_OWNER; index++) {
+      await insertGym({ ownerId: QUERIER, name: `Capped Gym ${index}` });
+    }
+    const before = await countGyms();
+
+    const board = await createBoard(
+      { name: 'One board too many', locationName: 'A brand new place' },
+      authCtx(QUERIER),
+    );
+
+    expect(board.gymId).toBeNull();
+    expect(await countGyms()).toBe(before);
   });
 
   it('mints with null coordinates when only a location name is given', async () => {

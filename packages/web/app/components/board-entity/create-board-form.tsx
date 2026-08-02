@@ -170,7 +170,9 @@ export default function CreateBoardForm({
   const handleGoToExisting = useCallback(() => {
     if (!duplicate?.boardSlug) return;
     setDuplicate(null);
-    router.push(constructBoardSlugListUrl(duplicate.boardSlug, defaultAngle));
+    // The board's OWN angle, not this board type's default — the two rarely
+    // match, and landing on the wrong one shows an empty-looking wall.
+    router.push(constructBoardSlugListUrl(duplicate.boardSlug, duplicate.angle ?? defaultAngle));
   }, [duplicate, router, defaultAngle]);
 
   const handleAddAnyway = useCallback(async () => {

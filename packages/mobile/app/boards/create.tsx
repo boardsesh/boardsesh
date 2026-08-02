@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
@@ -99,6 +99,11 @@ export default function CreateBoard() {
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<DuplicateBoardError | null>(null);
+  // `submitting` is only accurate on the NEXT render, so it can't guard a call
+  // that fires in the same tick as the state update — which is exactly what
+  // "add a new board here" does (dismiss the sheet, then create). This ref is
+  // set synchronously and is the real in-flight lock.
+  const inFlightRef = useRef(false);
 
   const finish = useCallback(
     async (board: UserBoard) => {
@@ -118,9 +123,10 @@ export default function CreateBoard() {
    */
   const handleCreate = useCallback(
     async (options?: { allowDuplicateConfig?: boolean }) => {
-      if (submitting) return;
+      if (inFlightRef.current) return;
       const input = builder.buildCreateInput(defaultName);
       if (!input) return;
+      inFlightRef.current = true;
       setSubmitting(true);
       setCreateError(null);
       hapticSelection();
@@ -145,6 +151,7 @@ export default function CreateBoard() {
             hasLocation: !!input.locationName || (input.latitude != null && input.longitude != null),
           });
           setDuplicate(duplicateError);
+          inFlightRef.current = false;
           setSubmitting(false);
           return;
         }
@@ -156,14 +163,16 @@ export default function CreateBoard() {
         // Inline, never a toast: this screen is a `presentation: 'modal'` route
         // and the toast overlay renders behind it, so a toast here is invisible.
         setCreateError(extractGraphqlMessage(error) ?? t('mobile.create.createError'));
+        inFlightRef.current = false;
         setSubmitting(false);
       }
     },
-    [submitting, builder, defaultName, createBoard, finish, source, t],
+    [builder, defaultName, createBoard, finish, source, t],
   );
 
   const handleUseExisting = useCallback(async () => {
-    if (!duplicate) return;
+    if (!duplicate || inFlightRef.current) return;
+    inFlightRef.current = true;
     setSubmitting(true);
     try {
       const board = await fetchBoardByUuid(duplicate.boardUuid);
@@ -174,6 +183,7 @@ export default function CreateBoard() {
     } catch {
       setDuplicate(null);
       setCreateError(t('mobile.create.duplicate.switchError'));
+      inFlightRef.current = false;
       setSubmitting(false);
     }
   }, [duplicate, builder.boardName, source, finish, t]);
@@ -185,6 +195,7 @@ export default function CreateBoard() {
 
   const handleDismissDuplicate = useCallback(() => {
     setDuplicate(null);
+    inFlightRef.current = false;
     setSubmitting(false);
   }, []);
 
