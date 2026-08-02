@@ -57,9 +57,11 @@ const insertGym = async (opts: {
   return { id: Number(Array.from(result as Iterable<{ id: number }>)[0].id), uuid };
 };
 
-// Each board gets a distinct size_id so the (owner, type, layout, size, set_ids)
-// unique constraint (user_boards_unique_owner_config) never trips across the
-// several boards a single owner has in this suite.
+// Each board gets a distinct size_id so a single owner's several boards in this
+// suite stay distinguishable. These rows are inserted directly rather than via
+// createBoard, and the DB unique index was dropped in #4166, so nothing enforces
+// config uniqueness on them any more — the distinct size_id is now just a
+// readable-fixture convention.
 let boardConfigCounter = 0;
 const insertBoard = async (opts: {
   gymId: number;

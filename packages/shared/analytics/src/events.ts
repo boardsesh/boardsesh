@@ -250,6 +250,24 @@ export const SHARED_EVENTS = {
   // through the framing screen. Props: { boardType, source: 'onboarding' }.
   OnboardingBoardActivated: 'Onboarding Board Activated',
   BetaVideoAdded: 'Beta Video Added',
+  // Board ENTITY creation — adding a wall to your boards (distinct from the
+  // board-presence events below, which are about being on one). Added with
+  // #4166: this flow had zero telemetry, so a bug that created no rows at all
+  // for weeks was invisible in both PostHog and error tracking.
+  // Props: { boardType, layoutId, sizeId, setCount, angle, isOwned, isPublic,
+  //          hasLocationName, hasCoords, hasGym, source, allowedDuplicate }.
+  BoardCreated: 'Board Created',
+  // Props: { boardType, source, error_reason: 'duplicate_config' | 'rate_limited'
+  //          | 'auth' | 'exception' }.
+  BoardCreateFailed: 'Board Create Failed',
+  // The user already owned this board, so nothing was created and we activated
+  // the existing one instead. Props: { boardType, source }.
+  BoardCreateReusedExisting: 'Board Create Reused Existing',
+  // The duplicate choice sheet was shown. The watchdog for #4166 is that
+  // Prompted >= ReusedExisting + Created{allowedDuplicate}: if prompts stop
+  // converting, creation is silently dead-ending again.
+  // Props: { boardType, source, hasLocation }.
+  BoardDuplicatePrompted: 'Board Duplicate Prompted',
   // Board presence — "now on the wall" (board-level collaboration, keyed on the
   // shared board_id resolved from the BLE serial). `boardId` is attached as an
   // event PROPERTY at the call sites — never the raw serial. Keep these to user

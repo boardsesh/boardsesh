@@ -118,7 +118,6 @@
       "location": "Location",
       "locationPlaceholder": "Home, gym name, or city",
       "useMyLocation": "Use my location",
-      "locationSet": "Location set",
       "serial": "Controller serial",
       "serialPlaceholder": "e.g. ABC-12345",
       "serialHint": "Optional — your controller links itself the first time you connect.",
@@ -129,7 +128,20 @@
       "timerHint": "Pair a Rogue gym timer to this board. While you're driving the wall, every send starts its stopwatch.",
       "timerPairCta": "Pair a timer",
       "timerChangeCta": "Change timer",
-      "timerRemoveCta": "Remove"
+      "timerRemoveCta": "Remove",
+      "gym": "Gym",
+      "gymNone": "Not at a gym",
+      "clearLocation": "Clear location",
+      "duplicate": {
+        "title": "You already have this setup",
+        "body": "You already have \"{{name}}\" with the same layout, size and hold sets.",
+        "bodyWithLocation": "You already have \"{{name}}\" at {{location}}, with the same layout, size and hold sets.",
+        "useExisting": "Use that board",
+        "addAnother": "Add a new board here",
+        "addAnotherHint": "Pick this if it's a different wall — another gym, another room.",
+        "cancel": "Keep editing",
+        "switchError": "Couldn't switch to that board. Try again."
+      }
     },
     "custom": {
       "board": "Board",
@@ -276,6 +288,16 @@
       "pickerNoticeUnreachable": "Can't reach your boards right now — here are the ones you've downloaded.",
       "pickerEmptyTitle": "Nothing downloaded yet",
       "pickerEmptyBody": "Boards you make available offline show up here. Grab one while you have signal."
+    },
+    "gymPicker": {
+      "title": "Where is this board?",
+      "subtitle": "Pick the gym it's in so climbers find it on the map.",
+      "searchPlaceholder": "Search gyms",
+      "noGym": "Not at a gym",
+      "noGymHint": "It'll still show on the map as its own pin.",
+      "addNew": "My gym isn't listed",
+      "empty": "No gyms nearby",
+      "sharedEditHint": "This gym's staff will be able to edit this board's details."
     }
   },
   "boardEntity": {
@@ -324,12 +346,15 @@
       "submit": "Create Board",
       "authRequired": "You must be signed in to create a board",
       "errorMessage": "Failed to create board. It may already exist for this configuration.",
-      "duplicateNamed": "You already have a board called \"{{name}}\" with this setup.",
       "goToExisting": "Go to your board",
       "nameRequired": "Board name is required",
       "createdNamed": "Board \"{{name}}\" created!",
       "namePlaceholder": "e.g., Home Board, Gym Name",
-      "locationPlaceholder": "e.g., City, Gym Name"
+      "locationPlaceholder": "e.g., City, Gym Name",
+      "duplicateTitle": "You already have this setup",
+      "duplicateBody": "You already have \"{{name}}\" with the same layout, size and hold sets. Add another only if it’s a different wall.",
+      "addAnyway": "Add it anyway",
+      "keepEditing": "Cancel"
     },
     "fields": {
       "name": "Board Name",

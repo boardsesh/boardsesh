@@ -505,7 +505,10 @@ export const mutationsTypeDefs = /* GraphQL */ `
     unfollowGym(input: FollowGymInput!): Boolean!
 
     """
-    Link or unlink a board to/from a gym.
+    Link or unlink a board you own to/from a gym. Unlinking is always yours to
+    do. Linking needs either owner/admin rights on the gym, or — so a climber can
+    list their board at the gym they actually climb at — a public gym within
+    150 m of the board's coordinates, subject to a per-caller cap.
     """
     linkBoardToGym(input: LinkBoardToGymInput!): Boolean!
 
@@ -516,6 +519,13 @@ export const mutationsTypeDefs = /* GraphQL */ `
     stray candidate for it (a merged-twin board or a nearby unlinked/SYSTEM one).
     """
     attachBoardToGym(input: AttachBoardToGymInput!): Boolean!
+
+    """
+    Remove a board from this gym's listing. Gated on edit access to the gym, and
+    the board must currently be listed at it. Lets gym staff undo an unwanted
+    self-link; clears gym_id only, leaving the board with its owner.
+    """
+    detachBoardFromGym(input: DetachBoardFromGymInput!): Boolean!
 
     """
     Grant a user write (editor) access to a gym: edit details only, no

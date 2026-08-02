@@ -56,12 +56,15 @@ export const userBoards = pgTable(
   (table) => ({
     // Gym lookup
     gymIdx: index('user_boards_gym_idx').on(table.gymId),
-    // Unique partial: one active board per owner per config.
-    // Excludes the system user (seeded public boards) so multiple gyms
-    // can have the same board configuration.
-    uniqueOwnerConfigIdx: uniqueIndex('user_boards_unique_owner_config')
+    // Owner+config lookup for createBoard's duplicate check. Deliberately NOT
+    // unique: a config tuple does not identify a physical board. The same
+    // layout/size/set combination legitimately exists at two different gyms
+    // (see #4166), so uniqueness here made adding the second one impossible.
+    // createBoard enforces the real rule instead — same config AND same place,
+    // overridable by an explicit user confirmation (`allowDuplicateConfig`).
+    ownerConfigIdx: index('user_boards_owner_config_idx')
       .on(table.ownerId, table.boardType, table.layoutId, table.sizeId, table.setIds)
-      .where(sql`${table.deletedAt} IS NULL AND ${table.ownerId} != '00000000-0000-0000-0000-000000000000'`),
+      .where(sql`${table.deletedAt} IS NULL`),
     // Owner's owned boards
     ownerOwnedIdx: index('user_boards_owner_owned_idx')
       .on(table.ownerId, table.isOwned)

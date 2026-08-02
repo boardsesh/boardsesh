@@ -21,6 +21,9 @@ import {
   RevokeGymWriteAccessInputSchema,
   UUIDSchema,
 } from '../../../validation/schemas';
+import { distanceMeters } from '@boardsesh/db/queries';
+import { logger } from '../../../utils/logger';
+import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
 
 // ============================================
 // Helpers
@@ -426,6 +429,88 @@ async function requireGymOwnerOrAdmin(gymUuid: string, userId: string): Promise<
   if (!isOwner && memberRole !== 'admin') {
     throw new Error('Not authorized: must be gym owner or admin');
   }
+  return gym;
+}
+
+/**
+ * How close a board must be to a gym for its owner to self-link it, when they
+ * don't own or administer that gym. Shares the stray-board matching radius so
+ * "at this gym" means one thing across the codebase.
+ */
+export const SELF_LINK_PROXIMITY_METERS = PROXIMITY_MATCH_RADIUS_METERS;
+
+/** Beyond this many links to gyms the caller neither owns nor admins, stop allowing more. */
+export const MAX_FOREIGN_GYM_LINKS = 5;
+
+/**
+ * Gate for attaching a board the caller OWNS to a gym: owner/admin of the gym as
+ * before, plus a self-service path so a climber can put their board on the gym
+ * they actually climb at without being staff there. Before #4166 this was
+ * owner-or-admin only, which made the common case — "there's a MoonBoard at this
+ * gym someone else listed, let me add it" — impossible.
+ *
+ * The proximity check is NOT a security boundary: the board's coordinates come
+ * from the caller and a public gym's are readable by anyone, so it stops honest
+ * mistakes, not deliberate spam. What actually bounds abuse is the combination
+ * of public-gyms-only, own-boards-only, the per-caller cap, the dedicated rate
+ * limit at the call site, and `detachBoardFromGym` letting gym staff undo it.
+ *
+ * Note a real consequence to surface in the UI: linking hands the gym's admins
+ * edit rights over the board (see `viewerCanAdminGym` → `requireBoardEditAccess`).
+ */
+export async function requireBoardGymLinkAccess(opts: {
+  gymUuid: string;
+  userId: string;
+  boardLatitude: number | null;
+  boardLongitude: number | null;
+}): Promise<typeof dbSchema.gyms.$inferSelect> {
+  const { gymUuid, userId, boardLatitude, boardLongitude } = opts;
+  const { gym, isOwner, memberRole } = await loadGymWithMemberRole(gymUuid, userId);
+
+  // Staff keep the unconditional path — including for gyms or boards that have
+  // no coordinates at all, which would otherwise fail the proximity test.
+  if (isOwner || memberRole === 'admin') return gym;
+
+  // A private gym must be indistinguishable from a non-existent one, or this
+  // becomes a probe for private home-wall gyms.
+  if (!gym.isPublic) throw new Error('Gym not found');
+
+  if (boardLatitude == null || boardLongitude == null || gym.latitude == null || gym.longitude == null) {
+    throw new Error('Not authorized to link board to this gym');
+  }
+
+  const distance = distanceMeters(
+    { latitude: boardLatitude, longitude: boardLongitude },
+    { latitude: gym.latitude, longitude: gym.longitude },
+  );
+  if (distance > SELF_LINK_PROXIMITY_METERS) {
+    throw new Error('Not authorized to link board to this gym');
+  }
+
+  const [{ count: foreignLinks }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(dbSchema.userBoards)
+    .innerJoin(dbSchema.gyms, eq(dbSchema.userBoards.gymId, dbSchema.gyms.id))
+    .where(
+      and(
+        eq(dbSchema.userBoards.ownerId, userId),
+        isNull(dbSchema.userBoards.deletedAt),
+        sql`${dbSchema.gyms.ownerId} <> ${userId}`,
+        sql`NOT EXISTS (SELECT 1 FROM gym_members gm WHERE gm.gym_id = ${dbSchema.gyms.id} AND gm.user_id = ${userId} AND gm.role = 'admin')`,
+      ),
+    );
+  if (foreignLinks >= MAX_FOREIGN_GYM_LINKS) {
+    throw new Error('Not authorized to link board to this gym');
+  }
+
+  logger.warn('board linked to a gym the owner does not administer', {
+    userId,
+    gymId: gym.id,
+    gymUuid: gym.uuid,
+    distanceMeters: Math.round(distance),
+    existingForeignLinks: foreignLinks,
+  });
+
   return gym;
 }
 
@@ -1153,7 +1238,12 @@ export const socialGymMutations = {
 
     // Verify board ownership
     const [board] = await db
-      .select({ id: dbSchema.userBoards.id, ownerId: dbSchema.userBoards.ownerId })
+      .select({
+        id: dbSchema.userBoards.id,
+        ownerId: dbSchema.userBoards.ownerId,
+        latitude: dbSchema.userBoards.latitude,
+        longitude: dbSchema.userBoards.longitude,
+      })
       .from(dbSchema.userBoards)
       .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
       .limit(1);
@@ -1167,12 +1257,20 @@ export const socialGymMutations = {
     }
 
     if (validatedInput.gymUuid) {
-      // Link to gym — verify gym ownership/admin
-      const gym = await requireGymOwnerOrAdmin(validatedInput.gymUuid, userId);
+      // Linking to a gym the caller doesn't run is the common case (a climber
+      // putting their board on the gym they climb at), so it gets its own,
+      // tighter rate bucket than the 20/min this mutation otherwise allows.
+      await applyRateLimit(ctx, 5, 'linkBoardToForeignGym');
+      const gym = await requireBoardGymLinkAccess({
+        gymUuid: validatedInput.gymUuid,
+        userId,
+        boardLatitude: board.latitude,
+        boardLongitude: board.longitude,
+      });
 
       await db.update(dbSchema.userBoards).set({ gymId: gym.id }).where(eq(dbSchema.userBoards.id, board.id));
     } else {
-      // Unlink from gym
+      // Unlink from gym — always the board owner's own call.
       await db.update(dbSchema.userBoards).set({ gymId: null }).where(eq(dbSchema.userBoards.id, board.id));
     }
 

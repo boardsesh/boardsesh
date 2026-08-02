@@ -58,10 +58,12 @@ import {
   GRANT_GYM_WRITE_ACCESS,
   REVOKE_GYM_WRITE_ACCESS,
   REQUEST_GYM_CLAIM,
+  LINK_BOARD_TO_GYM,
   type SearchGymsQueryResponse,
   type GetGymQueryResponse,
   type GetMyGymsQueryResponse,
   type UpdateGymMutationResponse,
+  type LinkBoardToGymMutationResponse,
   type GetGymMembersQueryResponse,
   type GrantGymWriteAccessMutationResponse,
   type RevokeGymWriteAccessMutationResponse,
@@ -232,6 +234,17 @@ export function useBoard(boardUuid: string | null) {
 }
 
 /**
+ * One board by uuid, fetched imperatively. For the moments a board is identified
+ * mid-interaction rather than at render — the duplicate-board prompt names an
+ * existing board the user may not have in any loaded page (myBoards is
+ * paginated), and it has to be resolved inside the tap handler.
+ */
+export async function fetchBoardByUuid(boardUuid: string) {
+  const data = await getHttpClient().request<GetBoardQueryResponse>(GET_BOARD, { boardUuid });
+  return data.board;
+}
+
+/**
  * A single gym by uuid, including the viewer's `canEdit` flag. Backs the
  * gym-edit screen (moderators reach it from the wall finder's edit affordance).
  * Disabled until a uuid resolves so the edit screen can pass `null` while routing.
@@ -390,6 +403,7 @@ export function useNearbyGyms(
   sizeIds?: number[],
   // Restrict to gyms with two or more distinct board types.
   multiBoardTypeOnly?: boolean,
+  options?: { enabled?: boolean },
 ) {
   const nameFilter = query && query.trim().length > 0 ? query.trim() : undefined;
   const typeFilter = boardTypes && boardTypes.length > 0 ? boardTypes : undefined;
@@ -422,7 +436,10 @@ export function useNearbyGyms(
         },
       }),
     select: (data) => data.searchGyms,
-    enabled: coords !== null,
+    // A name search stands on its own: `searchGyms` falls back to a text-only
+    // lookup without coordinates, so the gym picker still works for someone who
+    // declined location permission.
+    enabled: (options?.enabled ?? true) && (coords !== null || nameFilter !== undefined),
     // See useNearbyBoards: keep prior gyms on screen while a panned center
     // refetches so markers/list don't flicker.
     placeholderData: keepPreviousData,
@@ -490,6 +507,29 @@ export function useUpdateGym() {
       void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
       void queryClient.invalidateQueries({ queryKey: ['myGyms'] });
+    },
+  });
+}
+
+/**
+ * Link a board you own to a gym, or unlink it by passing `gymUuid: null`.
+ * Linking to a gym you don't run is allowed when the board sits within 150 m of
+ * it — the server decides, and rejects with "not authorized" when it's too far,
+ * so the caller should surface that failure rather than assume success.
+ */
+export function useLinkBoardToGym() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { boardUuid: string; gymUuid: string | null }) => {
+      const response = await getHttpClient().request<LinkBoardToGymMutationResponse>(LINK_BOARD_TO_GYM, { input });
+      return response.linkBoardToGym;
+    },
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ['board', variables.boardUuid] });
+      void queryClient.invalidateQueries({ queryKey: ['myBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyBoards'] });
+      void queryClient.invalidateQueries({ queryKey: ['nearbyGyms'] });
+      void queryClient.invalidateQueries({ queryKey: ['gymBoards'] });
     },
   });
 }

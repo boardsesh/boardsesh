@@ -48,6 +48,10 @@ export const CreateBoardInputSchema = z.object({
   // is meaningless (the "no timer" sentinel is null/absent, and the mobile
   // builder already coerces blank → omitted).
   timerName: z.string().min(1).max(200, 'Timer name too long').optional(),
+  // Set only by a client that has shown the user the duplicate prompt and had
+  // them confirm this is a different physical wall. Skips the duplicate-config
+  // guard entirely — see board-duplicates.ts.
+  allowDuplicateConfig: z.boolean().optional(),
 });
 
 /**

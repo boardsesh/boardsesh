@@ -88,6 +88,11 @@ export type CreateBoardInput = {
   isAngleAdjustable?: boolean;
   serialNumber?: string;
   timerName?: string | null;
+  /**
+   * Create even though the caller already owns this configuration at this
+   * place. Set only after the user confirms it is a different physical wall.
+   */
+  allowDuplicateConfig?: boolean;
 };
 
 export type UpdateBoardInput = {

@@ -5,7 +5,7 @@ import { distanceMeters } from '@boardsesh/db/queries';
 import * as dbSchema from '@boardsesh/db/schema';
 import { db } from '../../../db/client';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
-import { AttachBoardToGymInputSchema, UUIDSchema } from '../../../validation/schemas';
+import { AttachBoardToGymInputSchema, DetachBoardFromGymInputSchema, UUIDSchema } from '../../../validation/schemas';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { requireGymEditAccess } from './gyms';
 import { PROXIMITY_MATCH_RADIUS_METERS } from './gym-matching';
@@ -285,6 +285,51 @@ export const socialGymStrayBoardMutations = {
 
     if (updated.length === 0) {
       throw new GraphQLError('This board changed before it could be attached. Refresh and try again.', {
+        extensions: { code: 'CONFLICT' },
+      });
+    }
+    return true;
+  },
+
+  /**
+   * Remove a board from this gym's listing. The counterbalance to a board owner
+   * self-linking to a gym they don't run (`requireBoardGymLinkAccess`): that gate
+   * rests on board coordinates the caller supplies, so it can't be the only
+   * control. Gym staff need a way to undo a wrong or unwanted link, and until
+   * #4166 none existed — `linkBoardToGym`'s unlink branch is board-owner-only and
+   * `deleteGym` was the only other thing that cleared `gym_id`.
+   *
+   * Only clears the link; the board itself is untouched and stays its owner's.
+   */
+  detachBoardFromGym: async (_: unknown, { input }: { input: unknown }, ctx: ConnectionContext): Promise<boolean> => {
+    requireAuthenticated(ctx);
+    await applyRateLimit(ctx, 20, 'detachBoardFromGym');
+    const validatedInput = validateInput(DetachBoardFromGymInputSchema, input, 'input');
+    const userId = ctx.userId!;
+
+    const gym = await requireGymEditAccess(validatedInput.gymUuid, userId);
+
+    const [board] = await db
+      .select({ id: dbSchema.userBoards.id, gymId: dbSchema.userBoards.gymId })
+      .from(dbSchema.userBoards)
+      .where(and(eq(dbSchema.userBoards.uuid, validatedInput.boardUuid), isNull(dbSchema.userBoards.deletedAt)))
+      .limit(1);
+
+    if (!board || board.gymId !== gym.id) {
+      throw new GraphQLError('This board is not listed at this gym.', {
+        extensions: { code: 'BAD_USER_INPUT' },
+      });
+    }
+
+    // Compare-and-swap so a concurrent re-link isn't silently clobbered.
+    const updated = await db
+      .update(dbSchema.userBoards)
+      .set({ gymId: null })
+      .where(and(eq(dbSchema.userBoards.id, board.id), eq(dbSchema.userBoards.gymId, gym.id)))
+      .returning({ id: dbSchema.userBoards.id });
+
+    if (updated.length === 0) {
+      throw new GraphQLError('This board changed before it could be detached. Refresh and try again.', {
         extensions: { code: 'CONFLICT' },
       });
     }

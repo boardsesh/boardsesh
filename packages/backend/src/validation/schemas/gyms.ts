@@ -237,6 +237,15 @@ export const AttachBoardToGymInputSchema = z.object({
 });
 
 /**
+ * Detach board from gym input validation schema. Same shape as attach; the
+ * resolver gates on gym edit access and on the board actually being listed there.
+ */
+export const DetachBoardFromGymInputSchema = z.object({
+  gymUuid: UUIDSchema,
+  boardUuid: UUIDSchema,
+});
+
+/**
  * Gym insights (owner activity dashboard) input validation schema. `period`
  * chooses the window length; the resolver derives the day count and the equally
  * long prior comparison window from it.

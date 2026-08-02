@@ -1324,6 +1324,13 @@
       "when": 1785459112299,
       "tag": "0188_puzzling_kabuki",
       "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1785641394370,
+      "tag": "0189_allow_duplicate_board_configs",
+      "breakpoints": true
     }
   ]
 }

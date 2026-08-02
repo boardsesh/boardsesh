@@ -5,6 +5,7 @@ import { db } from '../../../db/client';
 import * as dbSchema from '@boardsesh/db/schema';
 import { requireAuthenticated, applyRateLimit, validateInput } from '../shared/helpers';
 import { FindSimilarGymsInputSchema } from '../../../validation/schemas';
+import { logger } from '../../../utils/logger';
 import { SYSTEM_BOARD_OWNER_ID } from '../board-presence/shared';
 import { getUserCommunityRoles, rolesGrantAdminOrLeader } from './roles';
 
@@ -162,6 +163,175 @@ export function decideAutoGymAttachment(
     return { action: 'attach', gymId: nearestMatch.id };
   }
   return { action: 'mint' };
+}
+
+/** Beyond this many live gyms, stop minting new ones for a caller automatically. */
+export const MAX_AUTO_MINTED_GYMS_PER_OWNER = 25;
+
+export type AutoGymResolution =
+  | { action: 'attach'; gymId: number }
+  | { action: 'mint'; name: string }
+  | { action: 'none' };
+
+/** Live gyms owned by `userId` whose normalized name equals `name`, nearest-first when coordinates are given. */
+async function findOwnGymsByExactName(opts: {
+  userId: string;
+  name: string;
+  latitude: number | null;
+  longitude: number | null;
+  radiusMeters: number;
+}): Promise<GymNameMatch[]> {
+  const { userId, name, latitude, longitude, radiusMeters } = opts;
+  const normalized = normalizeGymName(name);
+  if (normalized.length === 0) return [];
+
+  const hasCoords = latitude != null && longitude != null;
+  const rows = await db
+    .select(gymColumns)
+    .from(dbSchema.gyms)
+    .where(
+      and(
+        isNull(dbSchema.gyms.deletedAt),
+        eq(dbSchema.gyms.ownerId, userId),
+        sql`${normalizedNameExpr} = ${normalized}`,
+        ...(hasCoords ? [withinBoundingBox(latitude, longitude, radiusMeters)] : []),
+      ),
+    );
+
+  if (!hasCoords) {
+    // Name-only match: no distance to compute, so any of the caller's same-named
+    // gyms will do. Deterministic order so repeat creates converge on one gym.
+    return rows.map((row) => ({ ...row, distanceMeters: null })).sort((first, second) => first.id - second.id);
+  }
+
+  return rows
+    .filter(
+      (row): row is typeof row & { latitude: number; longitude: number } =>
+        row.latitude != null && row.longitude != null,
+    )
+    .map((row) => ({ ...row, distanceMeters: haversineTo({ latitude, longitude }, row) }))
+    .filter((row) => row.distanceMeters <= radiusMeters)
+    .sort((first, second) => first.distanceMeters - second.distanceMeters);
+}
+
+/** Live gyms of any owner within `radiusMeters`, regardless of name. Nearest-first. */
+async function findGymsWithin(opts: {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+}): Promise<GymNameMatch[]> {
+  const { latitude, longitude, radiusMeters } = opts;
+  const rows = await db
+    .select(gymColumns)
+    .from(dbSchema.gyms)
+    .where(and(isNull(dbSchema.gyms.deletedAt), withinBoundingBox(latitude, longitude, radiusMeters)));
+
+  return rows
+    .filter(
+      (row): row is typeof row & { latitude: number; longitude: number } =>
+        row.latitude != null && row.longitude != null,
+    )
+    .map((row) => ({ ...row, distanceMeters: haversineTo({ latitude, longitude }, row) }))
+    .filter((row) => row.distanceMeters <= radiusMeters)
+    .sort((first, second) => first.distanceMeters - second.distanceMeters);
+}
+
+/**
+ * Which gym a newly created board belongs to, when the caller didn't name one.
+ *
+ * This resolves per LOCATION, not per user. It used to mint a gym only when the
+ * caller owned zero gyms, so every second-and-later board landed with
+ * `gym_id = NULL` — 29% of real user boards at the time of #4166 — and showed on
+ * the map as a bare board pin instead of under the gym the user had just typed.
+ *
+ * The dedup tiers below are what keep per-location minting from spraying
+ * duplicate gyms across the map.
+ */
+export async function resolveAutoGymForBoard(opts: {
+  userId: string;
+  locationName: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}): Promise<AutoGymResolution> {
+  const { userId, latitude, longitude } = opts;
+  const locationName = opts.locationName?.trim() || null;
+  const hasCoords = latitude != null && longitude != null;
+
+  // No location of any kind: nothing to identify a gym by. Previously this minted
+  // a gym named after the BOARD ("Marco's Kilter Original 12×12") with null
+  // coordinates — a row that can never surface in proximity search. The board
+  // still gets its own standalone map pin.
+  if (locationName == null && !hasCoords) return { action: 'none' };
+
+  // Coordinates but no name: we can't mint (no name to give it), but we can
+  // attach when the answer is unambiguous — exactly one nearby gym that is safe
+  // to reuse. Two or more candidates and we decline rather than guess.
+  if (locationName == null) {
+    const nearby = await findGymsWithin({
+      latitude: latitude!,
+      longitude: longitude!,
+      radiusMeters: AUTO_GYM_MATCH_RADIUS_METERS,
+    });
+    const reusable = nearby.filter(
+      (gym) => !isGenericGymName(gym.name) && (gym.ownerId === SYSTEM_BOARD_OWNER_ID || gym.ownerId === userId),
+    );
+    return reusable.length === 1 ? { action: 'attach', gymId: reusable[0].id } : { action: 'none' };
+  }
+
+  // Named. First converge on the caller's OWN gym of that name — this is what
+  // makes a second board at a gym they already added land on the same gym rather
+  // than minting a twin. Own-gym only, so the generic-name guard doesn't apply:
+  // there's no cross-user capture risk in reusing your own "home wall".
+  const ownMatches = await findOwnGymsByExactName({
+    userId,
+    name: locationName,
+    latitude,
+    longitude,
+    radiusMeters: EXACT_NAME_MATCH_RADIUS_METERS,
+  });
+  if (ownMatches.length > 0) return { action: 'attach', gymId: ownMatches[0].id };
+
+  // Then the existing cross-owner physical tier: a SYSTEM-synced gym (or one of
+  // the caller's, already handled above) at these exact coordinates and name.
+  if (hasCoords) {
+    const physicalMatches = await findExactNameMatchesWithin({
+      name: locationName,
+      latitude: latitude!,
+      longitude: longitude!,
+      radiusMeters: AUTO_GYM_MATCH_RADIUS_METERS,
+    });
+    const nearest = physicalMatches[0];
+    const decision = decideAutoGymAttachment(nearest, userId);
+    if (decision.action === 'attach') return { action: 'attach', gymId: decision.gymId };
+    if (nearest) {
+      logger.warn('createBoard auto-gym: nearby name match not auto-attached; minting a separate gym', {
+        userId,
+        gymName: locationName,
+        matchedGymId: nearest.id,
+        matchedGymUuid: nearest.uuid,
+        matchedOwnerId: nearest.ownerId,
+        matchedOwnerIsSystem: nearest.ownerId === SYSTEM_BOARD_OWNER_ID,
+        genericName: isGenericGymName(nearest.name),
+        distanceMeters: Math.round(nearest.distanceMeters ?? 0),
+      });
+    }
+  }
+
+  // Backstop against a scripted create loop minting a gym per call. Rate limiting
+  // caps the rate; this caps the total.
+  const [{ count: ownedGymCount }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(dbSchema.gyms)
+    .where(and(eq(dbSchema.gyms.ownerId, userId), isNull(dbSchema.gyms.deletedAt)));
+  if (ownedGymCount >= MAX_AUTO_MINTED_GYMS_PER_OWNER) {
+    logger.warn('createBoard auto-gym: owner at gym cap, creating board without a gym', {
+      userId,
+      ownedGymCount,
+    });
+    return { action: 'none' };
+  }
+
+  return { action: 'mint', name: locationName };
 }
 
 /**

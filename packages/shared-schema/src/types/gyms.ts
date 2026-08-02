@@ -113,6 +113,11 @@ export type AttachBoardToGymInput = {
   boardUuid: string;
 };
 
+export type DetachBoardFromGymInput = {
+  gymUuid: string;
+  boardUuid: string;
+};
+
 export type CreateGymInput = {
   name: string;
   description?: string;

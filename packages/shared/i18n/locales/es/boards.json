@@ -118,7 +118,6 @@
       "location": "Ubicación",
       "locationPlaceholder": "Casa, nombre del gimnasio o ciudad",
       "useMyLocation": "Usar mi ubicación",
-      "locationSet": "Ubicación guardada",
       "serial": "Número de serie del controlador",
       "serialPlaceholder": "p. ej. ABC-12345",
       "serialHint": "Opcional: tu controlador se vincula solo la primera vez que conectas.",
@@ -129,7 +128,20 @@
       "timerHint": "Vincula un temporizador Rogue a este plafón. Mientras controlas el muro, cada encadene arranca su cronómetro.",
       "timerPairCta": "Vincular temporizador",
       "timerChangeCta": "Cambiar temporizador",
-      "timerRemoveCta": "Quitar"
+      "timerRemoveCta": "Quitar",
+      "gym": "Gimnasio",
+      "gymNone": "No está en un gimnasio",
+      "clearLocation": "Borrar ubicación",
+      "duplicate": {
+        "title": "Ya tienes esta configuración",
+        "body": "Ya tienes «{{name}}» con el mismo layout, tamaño y sets de presas.",
+        "bodyWithLocation": "Ya tienes «{{name}}» en {{location}}, con el mismo layout, tamaño y sets de presas.",
+        "useExisting": "Usar ese plafón",
+        "addAnother": "Añadir un plafón nuevo aquí",
+        "addAnotherHint": "Elige esto si es otro muro: otro gimnasio, otra sala.",
+        "cancel": "Seguir editando",
+        "switchError": "No se pudo cambiar a ese plafón. Inténtalo de nuevo."
+      }
     },
     "custom": {
       "board": "Plafón",
@@ -276,6 +288,16 @@
       "pickerNoticeUnreachable": "Ahora mismo no podemos cargar tus plafones: estos son los que has descargado.",
       "pickerEmptyTitle": "Todavía no has descargado nada",
       "pickerEmptyBody": "Los plafones que dejes disponibles sin conexión aparecen aquí. Descarga uno cuando tengas conexión."
+    },
+    "gymPicker": {
+      "title": "¿Dónde está este plafón?",
+      "subtitle": "Elige el gimnasio donde está para que los escaladores lo encuentren en el mapa.",
+      "searchPlaceholder": "Buscar gimnasios",
+      "noGym": "No está en un gimnasio",
+      "noGymHint": "Seguirá apareciendo en el mapa con su propio marcador.",
+      "addNew": "Mi gimnasio no aparece",
+      "empty": "No hay gimnasios cerca",
+      "sharedEditHint": "El personal de este gimnasio podrá editar los datos de este plafón."
     }
   },
   "boardEntity": {
@@ -324,12 +346,15 @@
       "submit": "Crear plafón",
       "authRequired": "Debes iniciar sesión para crear un plafón",
       "errorMessage": "Error al crear el plafón. Puede que ya exista para esta configuración.",
-      "duplicateNamed": "Ya tienes un plafón llamado «{{name}}» con esta configuración.",
       "goToExisting": "Ir a tu plafón",
       "nameRequired": "Se requiere el nombre del plafón",
       "createdNamed": "¡Plafón \"{{name}}\" creado!",
       "namePlaceholder": "p. ej., Plafón de casa, Nombre del gimnasio",
-      "locationPlaceholder": "p. ej., Ciudad, Nombre del gimnasio"
+      "locationPlaceholder": "p. ej., Ciudad, Nombre del gimnasio",
+      "duplicateTitle": "Ya tienes esta configuración",
+      "duplicateBody": "Ya tienes «{{name}}» con el mismo layout, tamaño y sets de presas. Añade otro solo si es otro muro.",
+      "addAnyway": "Añadirlo igualmente",
+      "keepEditing": "Cancelar"
     },
     "fields": {
       "name": "Nombre del plafón",

@@ -4,10 +4,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { toBoardName } from '@boardsesh/board-config';
 import type { UserBoard } from '@boardsesh/shared-schema';
-import { useBoard, useProfile, useUpdateBoard } from '../../src/lib/graphql/hooks';
+import { useBoard, useProfile, useUpdateBoard, useLinkBoardToGym } from '../../src/lib/graphql/hooks';
 import { useActiveBoard, useSetActiveBoard } from '../../src/lib/graphql/use-active-board';
+import { extractGraphqlMessage } from '../../src/lib/graphql/extract-error-message';
 import { useAuth } from '../../src/providers/auth-provider';
-import { useToast } from '../../src/providers/toast-provider';
 import { hapticSelection } from '../../src/lib/haptics';
 import { useBoardBuilder, type BoardBuilderSeed } from '../../src/components/board-discovery/use-board-builder';
 import { BoardForm } from '../../src/components/board-discovery/BoardForm';
@@ -85,12 +85,12 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { t } = useTranslation('boards');
-  const { showToast } = useToast();
 
   const { data: profile } = useProfile({ enabled: isAuthenticated });
   const { data: activeBoard } = useActiveBoard();
   const setActiveBoard = useSetActiveBoard();
   const updateBoard = useUpdateBoard();
+  const linkBoardToGym = useLinkBoardToGym();
 
   // Authorized editors (owner, or a community admin/leader for this board type —
   // the server reports this as `canEdit`) may change the config even when the
@@ -118,6 +118,8 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       longitude: board.longitude ?? undefined,
       serialNumber: board.serialNumber ?? undefined,
       timerName: board.timerName ?? undefined,
+      gymUuid: board.gymUuid,
+      gymName: board.gymName,
     };
   }, [board]);
 
@@ -139,37 +141,56 @@ function EditBoardForm({ board }: { board: UserBoard }) {
   );
 
   const [submitting, setSubmitting] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const handleUpdate = useCallback(async () => {
     if (submitting) return;
     const input = builder.buildUpdateInput(board.uuid, { lockedConfig, fallbackName: defaultName });
     if (!input) return;
     setSubmitting(true);
+    setUpdateError(null);
     hapticSelection();
     try {
       const updated = await updateBoard.mutateAsync(input);
+
+      // `UpdateBoardInput` carries no gym, so a changed gym is its own mutation.
+      // It can be rejected on its own terms (too far from a gym the user doesn't
+      // run), so it's reported separately rather than failing the whole save.
+      const nextGymUuid = builder.selectedGym?.uuid ?? null;
+      if (nextGymUuid !== (board.gymUuid ?? null)) {
+        try {
+          await linkBoardToGym.mutateAsync({ boardUuid: board.uuid, gymUuid: nextGymUuid });
+        } catch (error) {
+          setUpdateError(extractGraphqlMessage(error) ?? t('mobile.gymPicker.linkError'));
+          setSubmitting(false);
+          return;
+        }
+      }
+
       // The active board is a denormalised AsyncStorage copy — re-persist it so
       // the rename / angle / visibility change reaches BLE + the play drawer.
       if (activeBoard?.uuid === updated.uuid) await setActiveBoard(updated);
       router.back();
       // Navigated away on success — leave `submitting` set (unmounting).
-    } catch {
+    } catch (error) {
       // Covers the config-locked race and the duplicate-config guard, both of
-      // which the server enforces authoritatively.
-      showToast(t('mobile.edit.updateError'), 'error');
+      // which the server enforces authoritatively. Inline, not a toast: this is
+      // a `presentation: 'modal'` route and the toast overlay draws behind it.
+      setUpdateError(extractGraphqlMessage(error) ?? t('mobile.edit.updateError'));
       setSubmitting(false);
     }
   }, [
     submitting,
     builder,
     board.uuid,
+    board.gymUuid,
     lockedConfig,
     defaultName,
     updateBoard,
+    linkBoardToGym,
     activeBoard?.uuid,
     setActiveBoard,
     router,
-    showToast,
     t,
   ]);
 
@@ -178,6 +199,7 @@ function EditBoardForm({ board }: { board: UserBoard }) {
       builder={builder}
       defaultName={defaultName}
       submitting={submitting}
+      errorMessage={updateError}
       onSubmit={() => void handleUpdate()}
       submitLabel={t('mobile.edit.save')}
       lockedConfig={lockedConfig}

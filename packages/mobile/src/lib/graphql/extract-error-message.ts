@@ -82,3 +82,8 @@ export function isExpectedBetaValidationError(error: unknown): boolean {
       EXPECTED_BETA_VALIDATION_CODES.has(graphqlError.extensions.code),
   );
 }
+
+// createBoard's duplicate rejection is parsed in @boardsesh/graphql so web and
+// mobile branch on the same shape. Re-exported here so board screens keep a
+// single import for GraphQL error handling.
+export { readDuplicateBoardError, type DuplicateBoardError } from '@boardsesh/graphql/errors';
