@@ -1,13 +1,13 @@
 {
   "metadata": {
     "home": {
-      "title": "Boardsesh - Trainiere schlauer an deiner Board",
+      "title": "Boardsesh - Trainiere schlauer an deinem Board",
       "description": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest. Eine App für alle deine Boards.",
       "ogDescription": "Funktioniert mit Kilter, Tension und MoonBoard. Sessions festhalten, LEDs steuern, zusammen klettern."
     },
     "about": {
       "title": "Über uns",
-      "description": "Eine App für jede Kletterboard. Open Source, von der Community getragen."
+      "description": "Eine App für jedes Kletterboard. Open Source, von der Community getragen."
     },
     "help": {
       "title": "Hilfe",
@@ -28,7 +28,7 @@
   },
   "home": {
     "hero": {
-      "title": "Ab an die Board!",
+      "title": "Ab ans Board!",
       "subtitle": "Halt deine Begehungen auf Kilter, Tension und MoonBoard fest.",
       "startClimbing": "Los klettern",
       "startClimbingAria": "In der App losklettern",
@@ -39,7 +39,7 @@
     "onboardingHeader": "Mach's zu deinem",
     "install": {
       "iosTitle": "Hol dir die Boardsesh-App",
-      "iosDescription": "Beleuchtet Griffe auf deiner Board direkt vom Handy aus",
+      "iosDescription": "Beleuchtet Griffe auf deinem Board direkt vom Handy aus",
       "androidLiveTitle": "Hol dir die Boardsesh-App",
       "androidLiveDescription": "Jetzt bei Google Play"
     },
@@ -52,7 +52,7 @@
       "crewDescription": "Folg deinen Leuten und sieh, was sie klettern",
       "playlistTitle": "Bau eine Playlist",
       "playlistDescription": "Stell deine Boulder zusammen, bevor du in die Halle kommst",
-      "bluetoothTitle": "Verbinde deine Board",
+      "bluetoothTitle": "Verbinde dein Board",
       "bluetoothDescription": "Per Bluetooth koppeln und den nächsten Boulder beleuchten",
       "discordTitle": "Komm auf Discord zur Crew",
       "discordDescription": "Beta teilen, Fehler melden und mitbestimmen, was als Nächstes kommt"
@@ -79,11 +79,11 @@
     "headerTitle": "Über uns",
     "hero": {
       "title": "Festhalten, trainieren, zusammen klettern",
-      "subtitle": "Eine App für jede Kletterboard"
+      "subtitle": "Eine App für jedes Kletterboard"
     },
     "vision": {
       "title": "Unsere Vision",
-      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Jede Board hat ihre eigene App und ihren eigenen abgeschotteten Garten. Dein Training sollte nicht in einem davon feststecken.",
+      "p1": "Kilter, Tension, MoonBoard, Decoy, Grasshopper. Jedes Board hat ihre eigene App und ihren eigenen abgeschotteten Garten. Dein Training sollte nicht in einem davon feststecken.",
       "p2": "Boardsesh läuft mit allen, damit du einfach klettern kannst."
     },
     "features": {
@@ -128,7 +128,7 @@
       "facts": {
         "title": "Boulder sind faktische Daten",
         "p1": "Ein Boulder auf einer standardisierten Board ist eine Liste von Griffpositionen auf einem festen, standardisierten Layout (z. B. „Start an A5, über B12, C3, D18, Top an K11“), zusammen mit einem Grad und einem Wandwinkel. Das sind faktische, funktionale Informationen — vergleichbar mit einer Schachstellung, GPS-Koordinaten oder einer Telefonnummer — und kein schöpferisches Werk.",
-        "p2": "Nach US-amerikanischem Urheberrecht sind Fakten nicht schutzfähig (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Eine standardisierte Board mit einer endlichen Zahl an Griffen (typischerweise 200–500) bringt Boulderdefinitionen hervor, die von Natur aus begrenzt, faktisch und funktional sind."
+        "p2": "Nach US-amerikanischem Urheberrecht sind Fakten nicht schutzfähig (<em>Feist Publications, Inc. v. Rural Telephone Service Co.</em>, 499 U.S. 340 (1991)). Eine standardisiertes Board mit einer endlichen Zahl an Griffen (typischerweise 200–500) bringt Boulderdefinitionen hervor, die von Natur aus begrenzt, faktisch und funktional sind."
       },
       "community": {
         "title": "Die Datenbank stammt aus der Community",
@@ -136,7 +136,7 @@
         "p2": "Die Lizenzlage unterscheidet sich je nach Hersteller, aber in keinem Fall gehören die Boulderdaten der Community einem Hersteller:",
         "aurora": "<strong>Aurora Climbing</strong> (Kilter Board, Tension Board und andere): Auroras Nutzungsbedingungen räumen dem Unternehmen eine „unbefristete, uneingeschränkte, unbegrenzte, nicht-exklusive, unwiderrufliche Lizenz“ an von Nutzer*innen eingereichten Inhalten ein. Entscheidend ist: Diese Lizenz ist <strong>nicht-exklusiv</strong> — sie überträgt Aurora kein Eigentum und hindert weder die ursprünglichen Urheber*innen noch Dritte daran, dieselben faktischen Daten unabhängig zu nutzen, zu sammeln oder darzustellen.",
         "moonLabel": "Moon Climbing (MoonBoard):",
-        "moonBody": "Beim letzten Blick auf die öffentlich zugänglichen Rechtsdokumente von Moon Climbing (Februar 2026) fanden wir weder app-spezifische Nutzungsbedingungen noch einen Endnutzer-Lizenzvertrag oder eine Lizenz für beigesteuerte Inhalte, die die MoonBoard-App oder ihre Boulderdatenbank regeln. Wie bei jeder Board hier stützt sich unsere Haltung auf den Grundsatz oben: Boulderdefinitionen sind faktische, funktionale Daten, und die Datenbanken stammen aus der Community."
+        "moonBody": "Beim letzten Blick auf die öffentlich zugänglichen Rechtsdokumente von Moon Climbing (Februar 2026) fanden wir weder app-spezifische Nutzungsbedingungen noch einen Endnutzer-Lizenzvertrag oder eine Lizenz für beigesteuerte Inhalte, die die MoonBoard-App oder ihre Boulderdatenbank regeln. Wie bei jedem Board hier stützt sich unsere Haltung auf den Grundsatz oben: Boulderdefinitionen sind faktische, funktionale Daten, und die Datenbanken stammen aus der Community."
       },
       "compilation": {
         "title": "Umfassende Datenbanken genießen nur schwachen Schutz als Sammelwerk",
@@ -154,7 +154,7 @@
     },
     "interop": {
       "title": "Interoperabilität & Hardware-Kompatibilität",
-      "intro": "Dieses Projekt stellt Software und Hardware-Designs bereit, die mit standardisierter Kletterboard-Hardware zusammenarbeiten. Wer sich so eine Board gekauft hat, darf Software und Controller von Dritten mit der eigenen Hardware nutzen.",
+      "intro": "Dieses Projekt stellt Software und Hardware-Designs bereit, die mit standardisierter Kletterboard-Hardware zusammenarbeiten. Wer sich so ein Board gekauft hat, darf Software und Controller von Dritten mit der eigenen Hardware nutzen.",
       "software": {
         "title": "Software-Interoperabilität",
         "body": "Unsere App spricht über Standard-Bluetooth-Protokolle mit Board-Controllern. Das Bluetooth-Protokoll dieser Boards ist unverschlüsselt und basiert auf Standardhardware (adressierbare WS2812B-LEDs an gängigen Bluetooth-Controllern). Eine kompatible Bluetooth-Schnittstelle zum Zweck der Interoperabilität umzusetzen, ist sowohl nach US- als auch nach EU-Recht seit Langem zulässig (<em>Sega Enterprises Ltd. v. Accolade, Inc.</em>, 977 F.2d 1510 (9th Cir. 1992); EU-Richtlinie 2009/24/EG, Artikel 6)."
@@ -228,7 +228,7 @@
       "accessLabel": "So kommst du zur Heatmap:",
       "access1": "Öffne die Suchleiste und klapp den Bereich „Griffe“ auf",
       "access2": "Klick auf „Heatmap anzeigen“",
-      "access3": "Die Board legt eine Farbschicht darüber, von Grün (wenig genutzt) bis Rot (viel genutzt)",
+      "access3": "Das Board legt eine Farbschicht darüber, von Grün (wenig genutzt) bis Rot (viel genutzt)",
       "modesLabel": "Verfügbare Farbmodi:",
       "modes": {
         "ascentsLabel": "Begehungen:",
@@ -243,9 +243,9 @@
       "outro": "Über die Schalter blendest du Griffnummern ein und aus und nimmst Fußgriffe rein oder raus."
     },
     "holdClassification": {
-      "q": "Wie klassifiziere ich Griffe auf meiner Board?",
+      "q": "Wie klassifiziere ich Griffe auf meinem Board?",
       "imgAlt": "Assistent zur Griffklassifizierung",
-      "intro": "Mit der Griffklassifizierung bewertest du jeden Griff auf deiner Board persönlich. So verstehst du deine Stärken und findest passende Boulder.",
+      "intro": "Mit der Griffklassifizierung bewertest du jeden Griff auf deinem Board persönlich. So verstehst du deine Stärken und findest passende Boulder.",
       "attrsLabel": "Merkmale der Klassifizierung:",
       "attrs": {
         "holdTypeLabel": "Grifftyp:",
@@ -257,12 +257,12 @@
         "pullDirectionLabel": "Zugrichtung:",
         "pullDirectionBody": "Optimaler Zugwinkel von 0 bis 360"
       },
-      "outro": "Klassifizierungen sind persönlich und liegen in deinem Konto. So baust du dir mit der Zeit ein eigenes Bild von deiner Board."
+      "outro": "Klassifizierungen sind persönlich und liegen in deinem Konto. So baust du dir mit der Zeit ein eigenes Bild von deinem Board."
     },
     "partyMode": {
       "q": "Wie starte ich eine gemeinsame Session?",
       "imgAlt": "Laufende Session im Party-Modus",
-      "intro": "Im Party-Modus teilen sich mehrere Kletterer*innen eine Warteschlange und wechseln sich in Echtzeit an der Board ab.",
+      "intro": "Im Party-Modus teilen sich mehrere Kletterer*innen eine Warteschlange und wechseln sich in Echtzeit am Board ab.",
       "startLabel": "So startest du eine Session:",
       "start1": "Tipp auf das Glühbirnen-Symbol in der Warteschlangen-Leiste unten",
       "start2": "Geh auf den Tab „Session starten“ und melde dich an, falls noch nicht geschehen",
@@ -280,7 +280,7 @@
       "featuresLabel": "Was eine Session kann:",
       "feature1": "Warteschlange synchronisiert in Echtzeit über alle Geräte",
       "feature2": "Mehrere Leute können Boulder hinzufügen und entfernen",
-      "feature3": "Wer die Session leitet, steuert die Anzeige an der Board",
+      "feature3": "Wer die Session leitet, steuert die Anzeige am Board",
       "feature4": "Die Leitung wandert automatisch weiter, wenn die aktuelle Person rausfliegt",
       "feature5": "Die Session übersteht neu geladene Seiten und neue Verbindungen"
     },
@@ -326,7 +326,7 @@
     },
     "mirroring": {
       "q": "Wie spiegle ich einen Boulder?",
-      "intro": "Beim Spiegeln klappen alle Griffe auf die andere Seite der Board — perfekt fürs beidseitige Krafttraining.",
+      "intro": "Beim Spiegeln klappen alle Griffe auf die andere Seite des Boards — perfekt fürs beidseitige Krafttraining.",
       "howLabel": "So spiegelst du einen Boulder:",
       "step1": "Such den Boulder, den du spiegeln willst",
       "step2": "Halt bei den Boulder-Aktionen nach dem Spiegel-Symbol Ausschau",
@@ -366,7 +366,7 @@
       "howLabel": "So suchst du nach Griffen:",
       "step1": "Öffne die Suchleiste und klapp den Bereich „Griffe“ auf",
       "step2": "Wähl im Aufklappmenü „Einschließen“ oder „Ausschließen“",
-      "step3": "Tipp die Griffe auf der Board an",
+      "step3": "Tipp die Griffe auf dem Board an",
       "step4": "Die Ergebnisse aktualisieren sich, während du Griffe wählst",
       "includeLabel": "Modus Einschließen:",
       "includeBody": "Boulder müssen die gewählten Griffe nutzen",
@@ -374,8 +374,8 @@
       "excludeBody": "Boulder dürfen die gewählten Griffe nicht nutzen"
     },
     "bluetooth": {
-      "q": "Wie verbinde ich die LEDs meiner Board?",
-      "intro": "Boardsesh steuert das LED-System deiner Board per Web Bluetooth direkt aus dem Browser.",
+      "q": "Wie verbinde ich die LEDs meinem Board?",
+      "intro": "Boardsesh steuert das LED-System deinem Board per Web Bluetooth direkt aus dem Browser.",
       "requirementsLabel": "Was du brauchst:",
       "req1": "Chrome (empfohlen) oder einen anderen Browser mit Web Bluetooth",
       "req2": "Auf iOS: die Boardsesh-App (Safari kann kein Web Bluetooth)",
@@ -383,7 +383,7 @@
       "req4": "Board an und in Reichweite",
       "connectLabel": "So verbindest du:",
       "connect1": "Tipp auf das Glühbirnen-Symbol in der Warteschlangen-Leiste",
-      "connect2": "Wähl deine Board aus der Geräteliste",
+      "connect2": "Wähl dein Board aus der Geräteliste",
       "connect3": "Sobald sie verbunden ist, zeigen die LEDs den aktuellen Boulder",
       "outro": "Die Verbindung kommt mit gespiegelten Mustern klar und wechselt automatisch mit, sobald du den Boulder wechselst."
     },
@@ -513,7 +513,7 @@
     },
     "bluetooth": {
       "title": "Bluetooth",
-      "body": "Boardsesh verbindet sich per Bluetooth Low Energy (BLE) mit dem LED-Controller deiner Kletterboard. Die Bluetooth-Verbindung dient ausschließlich dazu, Befehle zum Beleuchten von Griffen an die Board zu schicken. Über Bluetooth werden keine personenbezogenen Daten übertragen. Über die einfache Geräteerkennung beim Koppeln hinaus liest die App keine Daten von der Board."
+      "body": "Boardsesh verbindet sich per Bluetooth Low Energy (BLE) mit dem LED-Controller deinem Kletterboard. Die Bluetooth-Verbindung dient ausschließlich dazu, Befehle zum Beleuchten von Griffen ans Board zu schicken. Über Bluetooth werden keine personenbezogenen Daten übertragen. Über die einfache Geräteerkennung beim Koppeln hinaus liest die App keine Daten vom Board."
     },
     "location": {
       "title": "Standortdaten",

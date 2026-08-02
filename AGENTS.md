@@ -251,7 +251,7 @@ Adding a new locale: update `SUPPORTED_LOCALES` and friends in `packages/shared/
 
 **French terminology:** French translations follow a fixed glossary too. Most importantly, a climbing send is never **« envoyer »** — French climbers don't "send" a climb. The send status/verb is **« Enchaîné » / enchaîner**, the noun send is **« la croix »** (invariable: _dix croix_; « faire la croix » = tick it in the logbook), and lighting a climb on the wall is **« allumer »**, not « envoyer ». Attempts on a climb are « essais », never « tentatives ». Full terminology and exceptions: **`docs/i18n-french-glossary.md`** — follow it for every French string you add.
 
-**German terminology:** German translations follow a fixed glossary. Product UI uses informal **du** and gender-star role nouns (`Routenbauer*in`). A climbing send is never **senden** — status/button is **Getoppt**, counts use **Begehung/Begehungen**, and lighting holds on the wall is **Board beleuchten**. The device is **Board** (feminine). Full terminology and exceptions: **`docs/i18n-german-glossary.md`** — follow it for every German string you add.
+**German terminology:** German translations follow a fixed glossary. Product UI uses informal **du** and gender-star role nouns (`Routenbauer*in`). A climbing send is never **senden** — status/button is **Getoppt**, counts use **Begehung/Begehungen**, and lighting holds on the wall is **Board beleuchten**. The device is **Board** (neuter — _das Board_). Full terminology and exceptions: **`docs/i18n-german-glossary.md`** — follow it for every German string you add.
 
 ### Copy & microcopy
 

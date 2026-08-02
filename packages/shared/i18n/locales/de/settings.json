@@ -107,7 +107,7 @@
   },
   "controllers": {
     "title": "ESP32-Controller",
-    "subtitle": "Registriere ESP32-Geräte, um deine Board über eine Bluetooth-Bridge zu steuern. Damit kannst du Boardsesh zusammen mit den offiziellen Kilter-/Tension-Apps nutzen.",
+    "subtitle": "Registriere ESP32-Geräte, um dein Board über eine Bluetooth-Bridge zu steuern. Damit kannst du Boardsesh zusammen mit den offiziellen Kilter-/Tension-Apps nutzen.",
     "empty": "Keine Controller registriert. Füg einen ESP32 hinzu, um Boardsesh mit den offiziellen Apps zu nutzen.",
     "add": "Controller hinzufügen",
     "card": {
@@ -356,7 +356,7 @@
       "invalidCredentials": "Benutzername oder Passwort hat nicht gepasst.",
       "rateLimited": "Zu viele Versuche. Probier es später nochmal.",
       "requestFailed": "Die Verknüpfung ließ sich nicht speichern. Versuch es nochmal.",
-      "loadFailed": "Deine Board-Konten ließen sich nicht laden.",
+      "loadFailed": "Dein Board-Konten ließen sich nicht laden.",
       "importMissingUser": "Wähl eine Aurora-JSON-Exportdatei aus.",
       "importBoardWarning": "Das sieht nach {{layoutName}} aus. Importier nur nach {{boardName}}, wenn das so stimmt.",
       "importPreviewIntro": "Daten von {{username}} nach {{boardName}} importieren:",
@@ -398,7 +398,7 @@
     "sessionRecordingLabel": "Session-Aufzeichnung einschalten",
     "sessionRecordingDescription": "Hilf uns, den Fehler schneller zu beheben: Schalt die Session-Aufzeichnung ein und lös ihn nochmal aus. Danach kannst du sie wieder ausschalten.",
     "bluetoothBugLabel": "Ich habe Bluetooth-Probleme",
-    "bluetoothBugDescription": "Sucht nach Boards in der Nähe und schickt uns, was sie funken, damit wir rausfinden, warum deine nicht verbindet. Es wird keine Board gesteuert — wir hören nur zu.",
+    "bluetoothBugDescription": "Sucht nach Boards in der Nähe und schickt uns, was sie funken, damit wir rausfinden, warum deine nicht verbindet. Es wird kein Board gesteuert — wir hören nur zu.",
     "contactConsentLabel": "Dürfen wir dich dazu anschreiben?",
     "contactConsentDescription": "So können wir dir den Link zum Issue mailen und nachfragen, wenn uns Details fehlen.",
     "starRating_one": "{{count}} Stern",
@@ -443,7 +443,7 @@
   },
   "boardConfigMismatch": {
     "title": "Board-Konfiguration passt nicht",
-    "intro": "Bei uns steht für diese Board eine andere Konfiguration als die, die du eingestellt hast.",
+    "intro": "Bei uns steht für dieses Board eine andere Konfiguration als die, die du eingestellt hast.",
     "currentLabel": "<strong>Du bist eingestellt auf:</strong>",
     "recordedLabel": "<strong>Für diesen Controller hinterlegt:</strong>",
     "mobileCurrentLabel": "Du bist eingestellt auf: {{config}}",
@@ -452,7 +452,7 @@
     "mobileUnknownConfig": "Unbekannte Board-Konfiguration",
     "skippedSpillToast_one": "{{name}} übersprungen — gehört zu einer anderen Board",
     "skippedSpillToast_other": "{{count}} Boulder übersprungen, die zu einer anderen Board gehören",
-    "mobileSwitchFailed": "Konnte nicht auf die Konfiguration dieser Board wechseln. Probier „Trotzdem verbinden“.",
+    "mobileSwitchFailed": "Konnte nicht auf die Konfiguration dieses Board wechseln. Probier „Trotzdem verbinden“.",
     "cancel": "Abbrechen",
     "connectAnyway": "Trotzdem verbinden",
     "switchToCorrect": "Auf die richtige Konfiguration wechseln",
@@ -462,16 +462,16 @@
     "mobileUseRecordedSetup": "Hinterlegtes Setup verwenden"
   },
   "devicePicker": {
-    "title": "Wähl deine Board",
+    "title": "Wähl dein Board",
     "scanning": "Suche nach Boards in der Nähe…",
-    "lastConnected": "Zuletzt verbundene Board",
+    "lastConnected": "Zuletzt verbundenes Board",
     "unknownDevice": "Unbekanntes Gerät",
     "lastConnectedAt": "Zuletzt verbunden {{time}}",
     "cancel": "Abbrechen"
   },
   "bluetoothMismatch": {
     "switchNoAngleToast": "Wechsel geht nicht — öffne zuerst einen Boulder bei einem bestimmten Winkel.",
-    "switchUrlFailedToast": "Konnte nicht auf die Konfiguration dieser Board wechseln. Probier „Trotzdem verbinden“."
+    "switchUrlFailedToast": "Konnte nicht auf die Konfiguration dieses Board wechseln. Probier „Trotzdem verbinden“."
   },
   "auroraImport": {
     "unlinkSuccessToast": "Konto getrennt",
@@ -484,12 +484,12 @@
     "devicesFound_other": "{{count}} Boards gefunden",
     "noDevicesFound": "Keine Boards in der Nähe gefunden",
     "differentBoardType": "Die sehen nach anderen Boards aus als dein {{board}}-Setup.",
-    "troubleshootTitle": "Du siehst deine Board nicht?",
-    "troubleshootTips": "Prüf, ob sie an und wach ist. Es kann sich immer nur ein Handy mit einer Board verbinden — trenn also andere Geräte. Geh näher ran oder schalte Bluetooth einmal aus und wieder an.",
+    "troubleshootTitle": "Du siehst dein Board nicht?",
+    "troubleshootTips": "Prüf, ob es an und wach ist. Es kann sich immer nur ein Handy mit einem Board verbinden — trenn also andere Geräte. Geh näher ran oder schalte Bluetooth einmal aus und wieder an.",
     "locationHintTitle": "Android braucht den Standort, um Boards zu sehen",
     "locationHintBody": "Ab Android 12 bleiben Bluetooth-Suchergebnisse verborgen, solange der Standort nicht freigegeben ist. Boardsesh nutzt deinen Standort nicht, um Boards zu finden, und ein kommendes Update wird diese Hürde endgültig los.",
     "locationHintGrant": "Standort erlauben",
-    "locationHintGranted": "Standort erlaubt. Schließ das und verbinde nochmal, um deine Board zu sehen.",
+    "locationHintGranted": "Standort erlaubt. Schließ das und verbinde nochmal, um dein Board zu sehen.",
     "cancel": "Abbrechen",
     "connectBoard": "Board verbinden",
     "relightBoard": "Board neu beleuchten",
@@ -498,8 +498,8 @@
     "sendFailedTitle": "Board ließ sich nicht beleuchten",
     "connectionFailedTitle": "Verbindung fehlgeschlagen",
     "permissionRequired": "Bluetooth-Berechtigung nötig",
-    "errorPermissionDenied": "Erlaube Bluetooth, um eine Board zu verbinden.",
-    "errorLedMissing": "Konnte nichts an die Board schicken — für diese Board-Konfiguration fehlen die LED-Daten.",
+    "errorPermissionDenied": "Erlaube Bluetooth, um ein Board zu verbinden.",
+    "errorLedMissing": "Konnte nichts ans Board schicken — für diese Board-Konfiguration fehlen die LED-Daten.",
     "errorIncompatible": "Dieser Boulder gehört zu einer anderen Board-Konfiguration.",
     "barControl": {
       "connectedLabel": "Board verbunden, du hast die Steuerung",

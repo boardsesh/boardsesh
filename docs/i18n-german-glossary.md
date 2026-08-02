@@ -24,22 +24,22 @@ Use instead:
 - **Begehung / Begehungen** — the noun for counts and stats (`{{count}} Begehungen`, hardest send → schwerste Begehung).
 - Never calque **Send / Sends / gesendet** for ascents.
 
-| English                   | Wrong German              | Right German                          |
-| ------------------------- | ------------------------- | ------------------------------------- |
-| Send (log button, status) | Senden / Send / Gesendet  | Getoppt                               |
-| Sent (ascent status)      | Gesendet                  | Getoppt                               |
-| {{count}} sends           | {{count}} Sends / Sendungen | {{count}} Begehungen                |
-| Hardest send              | Schwerster Send           | Schwerste Begehung                    |
-| Log a send                | Send loggen               | Begehung eintragen / Als getoppt loggen |
-| Sent by {{name}}          | Gesendet von {{name}}     | Getoppt von {{name}}                  |
+| English                   | Wrong German                | Right German                            |
+| ------------------------- | --------------------------- | --------------------------------------- |
+| Send (log button, status) | Senden / Send / Gesendet    | Getoppt                                 |
+| Sent (ascent status)      | Gesendet                    | Getoppt                                 |
+| {{count}} sends           | {{count}} Sends / Sendungen | {{count}} Begehungen                    |
+| Hardest send              | Schwerster Send             | Schwerste Begehung                      |
+| Log a send                | Send loggen                 | Begehung eintragen / Als getoppt loggen |
+| Sent by {{name}}          | Gesendet von {{name}}       | Getoppt von {{name}}                    |
 
 ### Lighting a climb on the board is **beleuchten**
 
-"Send to the board" (pushing holds to the LEDs) must not collide with Getoppt/Begehung. Use **Board beleuchten**: « Board beleuchten », « Boulder auf die Board beleuchten ». Reserve **senden** for genuinely sending data with no climb as the object: emails, bug reports, exports, session data.
+"Send to the board" (pushing holds to the LEDs) must not collide with Getoppt/Begehung. Prefer **Boulder am Board beleuchten** in running copy and tooltips; short chrome can use **Board beleuchten**. Do **not** use « Boulder auf die Board beleuchten » or « auf das Board beleuchten ». Reserve **senden** for genuinely sending data with no climb as the object: emails, bug reports, exports, session data.
 
-## The board device is **Board** (feminine)
+## The board device is **Board** (neuter)
 
-Every string names the board device **Board**, feminine in grammar: _die Board, eine Board, deine Boards_, with feminine agreement (_die verbundene Board_, _eine gefundene Board_). That is what DACH board climbers say. Do **not** use Wand for the device (Wand is the gym wall). Brand product names stay in English (below).
+Every string names the board device **Board**, neuter in grammar: _das Board, ein Board, dein Board, deine Boards_, with neuter agreement (_das verbundene Board_, _ein gefundenes Board_, _an dem Board_ / _am Board_). Same for compounds (_das Kletterboard_, _jedes Trainingsboard_). Do **not** use Wand for the device (Wand is the gym wall). Brand product names stay in English (below).
 
 ## Other climbing terms
 

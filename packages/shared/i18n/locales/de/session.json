@@ -1,7 +1,7 @@
 {
   "boardMismatch": {
     "title": "Wechsle zu {{board}}, um das zu klettern",
-    "subtitle": "Das ist ein {{board}}-Boulder. Wechsle die Board, um ihn in die Warteschlange zu legen.",
+    "subtitle": "Das ist ein {{board}}-Boulder. Wechsle das Board, um ihn in die Warteschlange zu legen.",
     "cta": "Board wechseln"
   },
   "metadata": {
@@ -154,7 +154,7 @@
     "dialogTitle": "Session erstellen",
     "dialogSubmit": "Session erstellen",
     "started": "Session läuft!",
-    "selectBoardWarning": "Wähl zuerst eine Board aus",
+    "selectBoardWarning": "Wähl zuerst ein Board aus",
     "boardsNearYou": "Boards in deiner Nähe",
     "loggedInBlurb": "Trag deine Boulder ein und lade andere dazu ein.",
     "anonymousBlurb": "Leg ohne Account los. Melde dich später an, um deinen Fortschritt zu sichern.",
@@ -177,7 +177,7 @@
     },
     "generateQueue": {
       "button": "Workout-Warteschlange erstellen",
-      "buttonHint": "Wähl zuerst eine Board",
+      "buttonHint": "Wähl zuerst ein Board",
       "regenerate": "Neu erstellen",
       "clear": "Leeren",
       "summary_one": "{{count}} Boulder in der Warteschlange",
@@ -403,7 +403,7 @@
       "syncError": "Sync-Fehler in der Warteschlange",
       "outOfSyncRefreshed": "Die Warteschlange war nicht synchron. Von deiner Crew neu geladen.",
       "sessionCreateError": "Session konnte nicht erstellt werden",
-      "noBoardSelected": "Wähl zuerst eine Board",
+      "noBoardSelected": "Wähl zuerst ein Board",
       "actionFailed": "Hat nicht funktioniert. Versuch es nochmal.",
       "rateLimited": "Zu viele Änderungen auf einmal. Gib ihm eine Sekunde.",
       "endSession": "Session beenden",
@@ -473,7 +473,7 @@
       "loadingMore": "Weitere Historie wird geladen",
       "loadMore": "Mehr laden",
       "wallEmptyTitle": "Niemand an der Wand",
-      "wallEmptyBody": "Verbinde dich per Bluetooth mit deiner Board und sieh, was beleuchtet ist, wer abliefert und was die schwerste Begehung der Session ist.",
+      "wallEmptyBody": "Verbinde dich per Bluetooth mit deinem Board und sieh, was beleuchtet ist, wer abliefert und was die schwerste Begehung der Session ist.",
       "wallEmptyCta": "Board verbinden",
       "kiosk": {
         "liveBadge": "Jetzt an der Wand",
@@ -558,7 +558,7 @@
       "preGeneratorTuning": "Feinabstimmung",
       "preStart": "Starten",
       "preStarting": "Startet…",
-      "preNoBoard": "Wähl eine Board zum Starten",
+      "preNoBoard": "Wähl ein Board zum Starten",
       "preStartError": "Session konnte nicht gestartet werden. Versuch es nochmal.",
       "preWorkoutPreviewTitle": "Workout-Vorschau",
       "preWorkoutPreviewGenerating": "Dein Workout wird gebaut…",
@@ -577,7 +577,7 @@
       "inLeave": "Verlassen",
       "notification": {
         "channelName": "Aktive Kletter-Session",
-        "channelDescription": "Hält deine Board verbunden und zeigt die Session-Steuerung, während Boardsesh im Hintergrund läuft.",
+        "channelDescription": "Hält dein Board verbunden und zeigt die Session-Steuerung, während Boardsesh im Hintergrund läuft.",
         "contentTitleFallback": "Kletter-Session",
         "previous": "Zurück",
         "next": "Weiter",
@@ -634,9 +634,9 @@
       "queueCountAria": "Warteschlange, {{count}} Boulder",
       "lightbulb": {
         "turnOff": "Board ausschalten",
-        "sendNamed": "„{{name}}“ an der Wand beleuchten",
-        "send": "Boulder an der Wand beleuchten",
-        "coachmark": "An der Wand beleuchten"
+        "sendNamed": "„{{name}}“ am Board beleuchten",
+        "send": "Boulder am Board beleuchten",
+        "coachmark": "Board beleuchten"
       }
     },
     "tickFab": {

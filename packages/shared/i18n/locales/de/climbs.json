@@ -21,7 +21,7 @@
     },
     "create": {
       "title": "Boulder bauen",
-      "description": "Bau einen neuen Boulder an deiner Board"
+      "description": "Bau einen neuen Boulder an deinem Board"
     },
     "import": {
       "title": "Boulder importieren",
@@ -33,7 +33,7 @@
     },
     "logbook": {
       "title": "Routenbuch",
-      "description": "Deine Kletterhistorie für diese Board"
+      "description": "Deine Kletterhistorie für dieses Board"
     }
   },
   "list": {
@@ -43,7 +43,7 @@
       "grid": "Rasteransicht"
     },
     "biggerBoard": {
-      "title": "Passt nicht auf deine Board",
+      "title": "Passt nicht auf dein Board",
       "description": "Der geht über den Rand deiner Wand hinaus. Für den brauchst du eine größere Größe."
     },
     "sort": {
@@ -203,14 +203,14 @@
       "anyHold": "Mindestens 1 Griff"
     },
     "holdsAndZone": {
-      "description": "Tipp Griffe an, um zu filtern, oder zeichne eine Zone, um die Ergebnisse auf einen Teil der Board zu beschränken."
+      "description": "Tipp Griffe an, um zu filtern, oder zeichne eine Zone, um die Ergebnisse auf einen Teil des Boards zu beschränken."
     },
     "sortToggle": "Sortieren"
   },
   "create": {
     "auth": {
       "signInTitle": "Melde dich an, um deinen Boulder zu speichern",
-      "signInDescription": "Leg einen Account an oder melde dich an, um deinen Boulder auf der Board zu speichern.",
+      "signInDescription": "Leg einen Account an oder melde dich an, um deinen Boulder auf dem Board zu speichern.",
       "signInAria": "Zum Speichern anmelden",
       "logInTitle": "Melde dich an, um deinen Boulder zu speichern",
       "logInAria": "Zum Speichern anmelden",
@@ -271,7 +271,7 @@
     "sendToBoard": {
       "label": "Board beleuchten",
       "active": "An der Wand",
-      "tooltip": "Boulder auf der Board beleuchten",
+      "tooltip": "Boulder am Board beleuchten",
       "activeTooltip": "Gerade an der Wand"
     },
     "tick": {
@@ -356,8 +356,8 @@
     "title": "Boardsesh-Grad",
     "summary": "Wie schwer er wirklich ist",
     "universalLabel": "Boardsesh-Grad",
-    "localLabel": "Auf dieser Board",
-    "localScopeNote": "Auf der Skala dieser Board — noch nicht zwischen Boards vergleichbar",
+    "localLabel": "Auf dieses Board",
+    "localScopeNote": "Auf der Skala dieses Board — noch nicht zwischen Boards vergleichbar",
     "universalComparison": "Tension-Skala: {{grade}}",
     "geometryEstimate": "Aus den Griffen: {{grade}}",
     "confirmedSubline_one": "Bestätigt durch {{count}} Begehung",
@@ -618,8 +618,8 @@
     "emptyState": {
       "noBoard": {
         "title": "Folge deiner Wand",
-        "subtitle": "Wähl die Board, an der du kletterst, um ihre Boulder zu durchstöbern und zu sehen, was gerade beleuchtet ist.",
-        "cta": "Meine Board finden"
+        "subtitle": "Wähl das Board, an dem du kletterst, um seine Boulder zu durchstöbern und zu sehen, was gerade beleuchtet ist.",
+        "cta": "Mein Board finden"
       },
       "noClimbs": {
         "title": "Keine Boulder gefunden",
@@ -831,7 +831,7 @@
         "draftLabel": "Als Entwurf speichern",
         "draftDescription": "Entwürfe bleiben privat, bis du sie veröffentlichst.",
         "showAllHoldsLabel": "Alle Griffe zeigen",
-        "showAllHoldsDescription": "Hebt jeden antippbaren Griff auf der Board hervor.",
+        "showAllHoldsDescription": "Hebt jeden antippbaren Griff auf dem Board hervor.",
         "noMatchLabel": "Kein Matchen",
         "noMatchDescription": "Hände dürfen nicht am selben Griff matchen"
       },
@@ -866,7 +866,7 @@
       "applyModeLabel": "Einschließen oder ausschließen",
       "includedSuffix": "eingeschlossen",
       "excludedSuffix": "ausgeschlossen",
-      "hint": "Tipp Griffe auf der Board an, um nach ihrem Typ zu filtern.",
+      "hint": "Tipp Griffe auf dem Board an, um nach ihrem Typ zu filtern.",
       "summaryCount_one": "{{count}} Griff",
       "summaryCount_other": "{{count}} Griffe",
       "type": {
@@ -885,10 +885,10 @@
       "allHolds": "Alle Griffe",
       "anyHold": "Beliebiger Griff",
       "modeLabel": "Welche Griffe im Bereich liegen müssen",
-      "hint": "Füge einen Bereich hinzu, um Boulder zu finden, die in einem Teil der Board bleiben.",
+      "hint": "Füge einen Bereich hinzu, um Boulder zu finden, die in einem Teil des Boards bleiben.",
       "activeHint": "Zieh das Rechteck und seine Ecken, um den Bereich festzulegen. Alle Griffe müssen hineinpassen; wechsle auf „Beliebiger Griff“, um auch Boulder zu behalten, die nur hineinreichen.",
       "regionLabel": "Board-Bereich",
-      "regionHint": "Wisch nach oben oder unten, um den Bereich über die Board zu verschieben.",
+      "regionHint": "Wisch nach oben oder unten, um den Bereich über das Board zu verschieben.",
       "corner": {
         "topLeft": "Ecke oben links",
         "topRight": "Ecke oben rechts",

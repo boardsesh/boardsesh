@@ -65,19 +65,19 @@
       },
       "crowdFavorites": {
         "title": "Publikumslieblinge",
-        "description": "Die meistbegangenen Klassiker für deine Board, die dir noch fehlen."
+        "description": "Die meistbegangenen Klassiker für dein Board, die dir noch fehlen."
       },
       "hiddenGems": {
         "title": "Geheimtipps",
-        "description": "Top bewertete Boulder für deine Board, die noch kaum jemand kennt."
+        "description": "Top bewertete Boulder für dein Board, die noch kaum jemand kennt."
       },
       "atYourLevel": {
         "title": "Auf deinem Level",
-        "description": "Boulder rund um deinen Grad, passend zu deiner Board."
+        "description": "Boulder rund um deinen Grad, passend zu deinem Board."
       },
       "fresh": {
         "title": "Frisch",
-        "description": "Neue Boulder für deine Board von Routenbauer*innen, denen sich Folgen lohnt."
+        "description": "Neue Boulder für dein Board von Routenbauer*innen, denen sich Folgen lohnt."
       },
       "notFound": {
         "title": "Smart-Playlist nicht gefunden",
@@ -107,7 +107,7 @@
     "activateAll": "Alle Boulder in die Warteschlange",
     "boardMismatch": {
       "title": "Wechsel zu {{board}}, um diese Playlist zu klettern",
-      "subtitle": "Das sind {{board}}-Boulder. Wechsel die Board, um sie in die Warteschlange zu packen.",
+      "subtitle": "Das sind {{board}}-Boulder. Wechsel das Board, um sie in die Warteschlange zu packen.",
       "cta": "Board wechseln"
     },
     "unrenderableClimb": {
@@ -304,7 +304,7 @@
     "you": "Du",
     "youSignInTitle": "Melde dich an für deinen Fortschritt",
     "youSignInDescription": "Melde dich an für deine Statistiken, Sessions und dein Routenbuch.",
-    "selectBoardForPlaylist": "Wähl erst eine Board, dann leg die Playlist an",
+    "selectBoardForPlaylist": "Wähl erst ein Board, dann leg die Playlist an",
     "createdPlaylistToast": "Playlist „{{name}}“ erstellt",
     "createPlaylistFailed": "Die Playlist ließ sich nicht erstellen"
   }

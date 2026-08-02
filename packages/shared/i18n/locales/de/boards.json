@@ -11,7 +11,7 @@
       "idle": "In der Nähe suchen"
     },
     "search": {
-      "ariaLabel": "Nach einer Board suchen",
+      "ariaLabel": "Nach einem Board suchen",
       "label": "Suchen"
     },
     "custom": {
@@ -19,7 +19,7 @@
       "label": "Eigene Board"
     },
     "create": {
-      "defaultLabel": "Neue Board"
+      "defaultLabel": "Neues Board"
     },
     "bluetooth": {
       "scanning": "Wird gesucht…",
@@ -34,10 +34,10 @@
       "screenTitle": "Board bearbeiten",
       "save": "Änderungen speichern",
       "updateError": "Deine Änderungen ließen sich nicht speichern. Versuch es nochmal.",
-      "notFound": "Diese Board haben wir nicht gefunden",
-      "noAccess": "Du darfst diese Board nicht bearbeiten",
+      "notFound": "Dieses Board haben wir nicht gefunden",
+      "noAccess": "Du darfst dieses Board nicht bearbeiten",
       "back": "Zurück",
-      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieser Board nicht ändern."
+      "configLockedHint": "Du darfst Layout, Größe und Hold-Sets dieses Board nicht ändern."
     },
     "gymEdit": {
       "screenTitle": "Halle bearbeiten",
@@ -74,7 +74,7 @@
       "deleteMessage": "„{{name}}“ aus deinen Boards entfernen? Das lässt sich nicht rückgängig machen.",
       "deleteConfirm": "Löschen",
       "cancel": "Abbrechen",
-      "deleteError": "Diese Board ließ sich nicht löschen. Versuch es nochmal.",
+      "deleteError": "Dieses Board ließ sich nicht löschen. Versuch es nochmal.",
       "unfollowError": "Das Folgen ließ sich nicht beenden. Versuch es nochmal.",
       "editAria": "{{name}} bearbeiten",
       "deleteAria": "{{name}} löschen",
@@ -83,13 +83,13 @@
       "done": "Fertig"
     },
     "emptyTitle": "Noch keine Boards",
-    "emptySubtitle": "Such eine Board und leg los",
+    "emptySubtitle": "Such ein Board und leg los",
     "signInTitle": "Melde dich an, um deine Boards zu sehen",
     "signInSubtitle": "Deine Boards hängen an deinem Konto.",
     "signInCta": "Anmelden",
     "errorTitle": "Deine Boards ließen sich nicht laden",
     "errorRetry": "Nochmal versuchen",
-    "boardSwitchError": "Diese Board ließ sich nicht speichern. Versuch es nochmal.",
+    "boardSwitchError": "Dieses Board ließ sich nicht speichern. Versuch es nochmal.",
     "onboardingPrompt": "Folge der Wand, an der du kletterst — damit schaltest du ihre Historie frei.",
     "discovery": {
       "findNearby": "In der Nähe suchen",
@@ -105,12 +105,12 @@
       "followError": "{{name}} ließ sich nicht zu deinen Boards hinzufügen"
     },
     "create": {
-      "screenTitle": "Richte deine Board ein",
+      "screenTitle": "Richte dein Board ein",
       "previewHint": "Wähl dein Layout und wir zeigen dir deine Wand",
       "adjustable": "Verstellbarer Winkel",
       "anglePreview": "Wand auf {{angle}}° geneigt",
       "moreOptions": "Mehr Optionen",
-      "ownBoard": "Diese Board gehört mir",
+      "ownBoard": "Dieses Board gehört mir",
       "public": "Öffentliche Board",
       "publicHint": "Zeig sie auf der Karte, damit deine Crew sie findet",
       "unlisted": "Nicht gelistet",
@@ -122,11 +122,11 @@
       "serial": "Controller-Seriennummer",
       "serialPlaceholder": "z. B. ABC-12345",
       "serialHint": "Optional — dein Controller verknüpft sich beim ersten Verbinden selbst.",
-      "save": "Meine Board speichern",
-      "createError": "Diese Board ließ sich nicht anlegen. Versuch es nochmal.",
+      "save": "Mein Board speichern",
+      "createError": "Dieses Board ließ sich nicht anlegen. Versuch es nochmal.",
       "timer": "Workout-Timer",
       "timerNone": "Kein Timer gekoppelt",
-      "timerHint": "Koppel einen Rogue-Hallentimer mit dieser Board. Solange du die Wand steuerst, startet jeder beleuchtete Boulder die Stoppuhr.",
+      "timerHint": "Koppel einen Rogue-Hallentimer mit dieses Board. Solange du die Wand steuerst, startet jeder beleuchtete Boulder die Stoppuhr.",
       "timerPairCta": "Timer koppeln",
       "timerChangeCta": "Timer wechseln",
       "timerRemoveCta": "Entfernen"
@@ -165,12 +165,12 @@
     "disambiguation": {
       "title": "An welcher Board bist du?",
       "subtitle": "Diese Seriennummer gehört zu mehreren Boards. Wähl die Wand, an der du stehst.",
-      "yourBoard": "Deine Board",
+      "yourBoard": "Dein Board",
       "cancel": "Jetzt nicht"
     },
     "gyms": {
       "title": "Hallen in deiner Nähe",
-      "subtitle": "Tipp auf eine Halle, um ihre Board zu nutzen",
+      "subtitle": "Tipp auf eine Halle, um ihr Board zu nutzen",
       "locationNeeded": "Teil deinen Standort, um Hallen in der Nähe zu finden",
       "grantLocation": "Meinen Standort nutzen",
       "empty": "Noch keine Hallen in der Nähe",
@@ -206,7 +206,7 @@
     },
     "timerPair": {
       "title": "Workout-Timer koppeln",
-      "subtitle": "Wähl den Rogue- oder Echo-Timer neben dieser Board.",
+      "subtitle": "Wähl den Rogue- oder Echo-Timer neben dieses Board.",
       "scanning": "Suche nach Timern in der Nähe…",
       "empty": "Keine Timer gefunden. Prüf, ob der Timer an und in Reichweite ist.",
       "cancel": "Abbrechen"
@@ -269,8 +269,8 @@
       "makeAvailableAria": "{{name}} offline verfügbar machen",
       "removeAria": "{{name}} aus dem Offline-Speicher entfernen",
       "enableTitle": "{{name}} herunterladen?",
-      "enableMessage": "Lädt alle Boulder dieser Board, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
-      "enableMessageWithSize": "Etwa {{size}}. Lädt alle Boulder dieser Board, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
+      "enableMessage": "Lädt alle Boulder dieses Board, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
+      "enableMessageWithSize": "Etwa {{size}}. Lädt alle Boulder dieses Board, damit du ohne Empfang stöbern und Begehungen eintragen kannst.",
       "enableConfirm": "Herunterladen",
       "pickerNotice": "Kein Empfang — hier sind deine heruntergeladenen Boards.",
       "pickerNoticeUnreachable": "Deine Boards sind gerade nicht erreichbar — hier sind die heruntergeladenen.",
@@ -322,10 +322,10 @@
   "boardForm": {
     "create": {
       "submit": "Board anlegen",
-      "authRequired": "Du musst angemeldet sein, um eine Board anzulegen",
+      "authRequired": "Du musst angemeldet sein, um ein Board anzulegen",
       "errorMessage": "Board konnte nicht angelegt werden. Vielleicht gibt es sie für diese Konfiguration schon.",
-      "duplicateNamed": "Du hast mit diesem Setup schon eine Board namens „{{name}}“.",
-      "goToExisting": "Zu deiner Board",
+      "duplicateNamed": "Du hast mit diesem Setup schon ein Board namens „{{name}}“.",
+      "goToExisting": "Zu deinem Board",
       "nameRequired": "Board-Name ist Pflicht",
       "createdNamed": "Board „{{name}}“ angelegt!",
       "namePlaceholder": "z. B. Home Board, Hallenname",
@@ -342,7 +342,7 @@
       "isPublic": "Öffentliche Board",
       "unlisted": "Nicht gelistet",
       "hideLocation": "Aus Boards in der Nähe ausblenden",
-      "isOwned": "Diese Board gehört mir",
+      "isOwned": "Dieses Board gehört mir",
       "layout": "Layout",
       "size": "Größe",
       "holdSets": "Hold-Sets"
@@ -387,7 +387,7 @@
     "setOnMap": "Standort auf der Karte setzen",
     "searchPlaceholder": "Adresse oder Stadt suchen...",
     "myLocation": "Mein Standort",
-    "helpText": "Klick auf die Karte, um den Standort deiner Board zu setzen, oder zieh den Marker zurecht"
+    "helpText": "Klick auf die Karte, um den Standort deinem Board zu setzen, oder zieh den Marker zurecht"
   },
   "boardLeaderboard": {
     "empty": "Für diesen Zeitraum noch keine Aktivität.",
@@ -421,7 +421,7 @@
   "boardSwitchConfirm": {
     "session": {
       "title": "Session verlassen?",
-      "body": "Du bist in einer Session auf {{lockedLabel}}. Der Wechsel zu {{targetLabel}} trennt deine Board, die Session läuft aber weiter."
+      "body": "Du bist in einer Session auf {{lockedLabel}}. Der Wechsel zu {{targetLabel}} trennt dein Board, die Session läuft aber weiter."
     },
     "connection": {
       "title": "Board trennen?",
@@ -436,7 +436,7 @@
     "clear": "Leeren",
     "radiusInfo": "Zeigt Boards im Umkreis von {{radiusKm}} km um die Kartenmitte",
     "empty": "Keine Boards in diesem Bereich. Verschieb die Karte oder zoom raus.",
-    "emptyWithQuery": "Hier passt keine Board zu „{{query}}“. Zoom raus oder such woanders.",
+    "emptyWithQuery": "Hier passt kein Board zu „{{query}}“. Zoom raus oder such woanders.",
     "open": "Öffnen"
   },
   "boardSearchMap": {
