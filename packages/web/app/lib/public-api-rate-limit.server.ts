@@ -54,12 +54,18 @@ export function resolvePublicApiRateLimitNamespace(environment: PublicApiEnviron
   return environment.VERCEL_ENV === 'production' ? 'public-api:web:production' : 'public-api:web:preview';
 }
 
-export function createPublicApiRateLimitGuard({
-  environment = process.env,
-  getRedisEvaluator = getWebRedisRateLimitEvaluator,
-  memoryLimiter = new MemoryRateLimiter({ maxEntries: PUBLIC_API_LOCAL_MAX_IDENTITIES }),
-  now = Date.now,
-}: PublicApiRateLimitGuardOptions = {}): (request: Request) => Promise<NextResponse<ErrorResponse> | null> {
+export function createPublicApiRateLimitGuard(
+  options: PublicApiRateLimitGuardOptions = {},
+): (request: Request) => Promise<NextResponse<ErrorResponse> | null> {
+  const {
+    environment = process.env,
+    getRedisEvaluator = getWebRedisRateLimitEvaluator,
+    memoryLimiter: injectedMemoryLimiter,
+    now = Date.now,
+  } = options;
+  const memoryLimiter =
+    injectedMemoryLimiter ?? new MemoryRateLimiter({ maxEntries: PUBLIC_API_LOCAL_MAX_IDENTITIES, now });
+
   return async (request) => {
     const clientIdentity = resolvePublicApiClientIdentity(request, environment);
     const distributedIdentity = `ip:${clientIdentity}`;
