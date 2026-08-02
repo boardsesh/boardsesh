@@ -144,7 +144,11 @@ jobs:
             scripts/lib/mobile-publish-retry.ts \
             scripts/mobile-upload-sourcemaps.ts
           do
-            git show "$GITHUB_SHA:$source_path" > "$tooling_root/$source_path"
+            echo "Snapshotting trusted OTA tooling: $source_path"
+            if ! git show "$GITHUB_SHA:$source_path" > "$tooling_root/$source_path"; then
+              echo "::error::Could not snapshot trusted OTA tooling file '$source_path' from $GITHUB_SHA."
+              exit 1
+            fi
           done
 
       - name: Locate the release anchor and prepare the hotfix tree

@@ -557,8 +557,9 @@ describe('official Sentry uploader invocation', () => {
           stagedFiles: string[];
         }
       | undefined;
+    let invocationCount = 0;
 
-    uploadMobileSourceMaps(
+    const validatedArtifacts = uploadMobileSourceMaps(
       {
         platform: 'android',
         mobileDir: fixture.mobileDir,
@@ -572,6 +573,7 @@ describe('official Sentry uploader invocation', () => {
       {
         resolveUploader: () => fakeUploaderPath,
         spawnUploader: (executable, args, options) => {
+          invocationCount += 1;
           invocation = {
             executable,
             args,
@@ -586,6 +588,11 @@ describe('official Sentry uploader invocation', () => {
       },
     );
 
+    // The official uploader accepts one staging directory. One invocation must
+    // therefore contain every pair validation accepted, rather than silently
+    // dropping a pair or launching a partially independent upload.
+    expect(invocationCount).toBe(1);
+    expect(validatedArtifacts).toHaveLength(2);
     expect(invocation).toBeDefined();
     expect(invocation?.executable).toBe('node');
     expect(invocation?.args[0]).toBe(fakeUploaderPath);
@@ -669,6 +676,13 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     const failureNotification = workflowStep(workflow, 'Notify deployments channel of failure');
     expect(failureNotification).toContain('Production OTA workflow failed');
     expect(failureNotification).not.toContain('Production OTA publish failed');
+    expect(failureNotification).toContain('IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}');
+    expect(failureNotification).toContain('ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}');
+    expect(failureNotification).toContain('iOS publish: %s · source maps: %s');
+    expect(failureNotification).toContain('Android publish: %s · source maps: %s');
+    expect(workflowStep(workflow, 'Warn that published OTA source maps are missing')).not.toContain(
+      'DISCORD_DEPLOY_WEBHOOK',
+    );
   });
 
   it('overlays trusted tooling before authoritative backport verification and never uploads on dry-run', () => {
@@ -713,6 +727,9 @@ describe('self-hosted OTA publisher and workflow contracts', () => {
     expect(overlayNamePosition).toBeLessThan(overlayCommitPosition);
     expect(overlayEmailPosition).toBeLessThan(overlayCommitPosition);
     expect(overlayStep).toContain('git status --porcelain');
+    expect(workflowStep(workflow, 'Snapshot trusted OTA publish tooling')).toContain(
+      "Could not snapshot trusted OTA tooling file '$source_path'",
+    );
     expect(workflowStep(workflow, 'Validate anchored Sentry uploader support')).toContain('7.11.0');
 
     const uploadStep = workflowStep(workflow, 'Upload backport OTA source maps to Sentry');

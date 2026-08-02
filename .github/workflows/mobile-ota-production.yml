@@ -502,13 +502,12 @@ jobs:
 
       # Source-map upload is deliberately non-atomic with OTA publish: by the time
       # Sentry accepts the Debug ID, the update is already live. Surface that exact
-      # degraded state before the terminal gate turns the workflow red.
+      # degraded state in the Actions log before the terminal gate turns the run
+      # red. The one Discord failure notification below includes both publish and
+      # source-map outcomes, avoiding a second alert for this same failure.
       - name: Warn that published OTA source maps are missing
         if: always() && (steps.upload_sourcemaps_ios.outcome == 'failure' || steps.upload_sourcemaps_android.outcome == 'failure')
         env:
-          DISCORD_DEPLOY_WEBHOOK: ${{ secrets.DISCORD_DEPLOY_WEBHOOK }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
           IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
           ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
         run: |
@@ -516,15 +515,6 @@ jobs:
           [ "$IOS_MAP_OUTCOME" = "failure" ] && platforms="iOS"
           [ "$ANDROID_MAP_OUTCOME" = "failure" ] && platforms="${platforms:+$platforms, }Android"
           echo "::warning::The $platforms OTA is live, but its Sentry source-map upload failed. Recreate the exact platform export before another eoas publish replaces dist."
-          if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
-            echo "DISCORD_DEPLOY_WEBHOOK not set — skipping source-map warning notification"
-            exit 0
-          fi
-          CONTENT=$(printf '⚠️ **Production OTA source maps missing** on `%s`\n• platforms: %s\n• the OTA is live; affected JS crashes may remain minified\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$platforms" "$RUN_URL")
-          jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
-            | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
-              echo "::warning::Failed to post Discord source-map warning (see status above)"
 
       - name: Require every published OTA source-map upload
         if: always() && (steps.upload_sourcemaps_ios.outcome == 'failure' || steps.upload_sourcemaps_android.outcome == 'failure')
@@ -540,13 +530,15 @@ jobs:
           COMMIT_SHA: ${{ github.sha }}
           IOS_OUTCOME: ${{ steps.publish_ios.outcome }}
           ANDROID_OUTCOME: ${{ steps.publish_android.outcome }}
+          IOS_MAP_OUTCOME: ${{ steps.upload_sourcemaps_ios.outcome }}
+          ANDROID_MAP_OUTCOME: ${{ steps.upload_sourcemaps_android.outcome }}
         run: |
           if [ -z "$DISCORD_DEPLOY_WEBHOOK" ]; then
             echo "DISCORD_DEPLOY_WEBHOOK not set — skipping notification"
             exit 0
           fi
-          CONTENT=$(printf '🚨 **Production OTA workflow failed** on `%s`\n• iOS: %s\n• Android: %s\n• Any successful platform remains published; no automatic rollback was attempted.\n<%s>' \
-            "${COMMIT_SHA:0:7}" "$IOS_OUTCOME" "$ANDROID_OUTCOME" "$RUN_URL")
+          CONTENT=$(printf '🚨 **Production OTA workflow failed** on `%s`\n• iOS publish: %s · source maps: %s\n• Android publish: %s · source maps: %s\n• Any successful platform remains published; no automatic rollback was attempted.\n<%s>' \
+            "${COMMIT_SHA:0:7}" "$IOS_OUTCOME" "$IOS_MAP_OUTCOME" "$ANDROID_OUTCOME" "$ANDROID_MAP_OUTCOME" "$RUN_URL")
           jq -n --arg content "$CONTENT" '{content: $content, allowed_mentions: {parse: []}}' \
             | curl -sS --fail-with-body -X POST -H "Content-Type: application/json" -d @- "$DISCORD_DEPLOY_WEBHOOK" || \
               echo "::warning::Failed to post Discord notification (see status above)"
