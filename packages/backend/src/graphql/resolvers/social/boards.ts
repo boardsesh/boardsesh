@@ -1622,7 +1622,20 @@ export const socialBoardMutations = {
     // (#4166). Set-id equality is settled in JS, not SQL: the stored order is
     // whatever the board was created with, so '25,26,27,24' and '24,25,26,27'
     // are the same board but not the same string.
-    if (!validatedInput.allowDuplicateConfig) {
+    if (validatedInput.allowDuplicateConfig) {
+      // The guard is skipped only on the user's say-so, so leave a trail: this is
+      // the one path that can add an unlimited number of same-config boards, and
+      // without a log there'd be nothing separating a genuine two-gym create from
+      // a script setting the flag on every call.
+      logger.info('createBoard: duplicate-config guard bypassed by explicit confirmation', {
+        userId,
+        boardType: validatedInput.boardType,
+        layoutId: validatedInput.layoutId,
+        sizeId: validatedInput.sizeId,
+        hasLocation:
+          !!validatedInput.locationName || (validatedInput.latitude != null && validatedInput.longitude != null),
+      });
+    } else {
       const ownedWithConfig = await db
         .select({
           uuid: dbSchema.userBoards.uuid,

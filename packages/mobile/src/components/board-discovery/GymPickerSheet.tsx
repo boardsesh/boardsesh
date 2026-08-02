@@ -110,9 +110,12 @@ export function GymPickerSheet({
 
   // Prefer coordinates the board already carries; otherwise ask the device once.
   const coords = boardCoords ?? deviceLocation.coords;
+  // Depend on `request` (a stable useCallback), not the whole hook result — that
+  // object is a fresh reference every render, which re-fired this on each one.
+  const requestLocation = deviceLocation.request;
   useEffect(() => {
-    if (boardCoords == null) void deviceLocation.request();
-  }, [boardCoords, deviceLocation]);
+    if (boardCoords == null) void requestLocation();
+  }, [boardCoords, requestLocation]);
 
   // With no coordinates the query still runs as a text search, so someone who
   // declined location can find their gym by typing.
