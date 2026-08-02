@@ -45,7 +45,10 @@ export type SmokeResponse = {
 export type SmokeCheck = {
   /** Human-readable, appears in the pass/fail log. */
   name: string;
-  /** Path appended to the base URL. */
+  /**
+   * Path appended to the base URL. Empty for a fixture-backed check, which
+   * builds its path from `FIXTURE_PATHS` once the fixture value is known.
+   */
   path: string;
   /**
    * Returns null when the check passes, or a reason string when it fails.
