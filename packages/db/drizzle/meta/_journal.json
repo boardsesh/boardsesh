@@ -1352,6 +1352,13 @@
       "when": 1786139816081,
       "tag": "0192_backfill_gym_website_vouched",
       "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1785656542667,
+      "tag": "0192_backfill_moonboard_ascensionist_invariant",
+      "breakpoints": true
     }
   ]
 }
