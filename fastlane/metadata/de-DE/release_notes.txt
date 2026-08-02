@@ -1,0 +1,19 @@
+Drei große Sachen in diesem Update: klettern ohne Empfang, ein Grad, der sich auf jedem Board gleich liest, und deine Halle auf Boardsesh.
+
+Offline klettern:
+- Lade ein Board herunter und mach ohne Empfang weiter: Boulder suchen, Begehungen eintragen, Favoriten sichern. Alles reiht sich auf deinem Handy ein und synchronisiert, sobald du zurück bist. Downloads sind jetzt in Sekunden durch, und „Speicher verwalten“ zeigt dir, was jedes Board belegt, damit du die aufräumen kannst, an denen du gerade nicht kletterst.
+
+Der Boardsesh-Grad:
+- Ein Grad, der sich auf Kilter, Tension und MoonBoard gleich liest, gebaut aus jeder eingetragenen Begehung, mit Konfidenzniveau. Schalt „Boardsesh-Grade anzeigen“ in den Einstellungen ein. Boulder, die noch niemand eingetragen hat, bekommen eine Schätzung aus ihrer Griffanordnung, statt ohne Grad dazustehen.
+
+Deine Halle:
+- Jede Halle hat jetzt eine öffentliche Seite: folg ihr, oder übernimm sie, wenn sie dir gehört. Bring deine Wände auf einen Fernseher unter boardsesh.com/kiosk/deine-halle: was auf jedem Board leuchtet, in deinem Logo und deinen Farben, mit einem Code, den Kletterer*innen scannen, um Boardsesh zu holen.
+
+Außerdem:
+- Misch deine Ergebnisse mit der neuen Sortierung Zufall, filter auf die Projekte, die du versucht, aber noch nicht getoppt hast, und pinn dir die Filter, die du wirklich brauchst.
+- Der Kletter-Screen öffnet mit deiner eigenen Historie zum Boulder: deine Begehungen und Versuche, direkt im Blick.
+- Dein Routenbuch zählt sauber: doppelte Aurora-Begehungen landen einmal, importierte Tension-Versuche bleiben Versuche, und MoonBoard-2024-Begehungen werden richtig importiert.
+- Zeilen in Warteschlange und Boulderliste funktionieren jetzt mit VoiceOver.
+- Stabileres Bluetooth, stabilere Sessions mit deiner Crew, und weniger Speicher-Abstürze an langen iPad-Tagen.
+
+Kostenlos, ohne Werbung, Open Source.

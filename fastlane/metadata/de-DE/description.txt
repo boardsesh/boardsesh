@@ -1,0 +1,30 @@
+Such dir einen Boulder, und dein Board leuchtet auf. Weniger Zeit am Handy, mehr Zeit an der Wand.
+
+EINE APP FÜR JEDES BOARD, AN DEM DU KLETTERST
+Kilter, Tension und MoonBoard bringen jeweils ihre eigene App für ihr eigenes Board mit. Boardsesh arbeitet mit allen dreien, dazu Decoy, Touchstone, Grasshopper und So iLL, an einem Ort. Deine komplette Kletterhistorie über alle Boards hinweg liegt hier.
+
+BOARD-VERLAUF, IMMER AN
+Teilt ihr euch ein Board, verlierst du den letzten Boulder schnell aus den Augen, und irgendwer löscht ihn immer aus Versehen.
+In Boardsesh hat jedes Board, mit dem du dich verbindest, einen Live-Feed davon, was gerade an der Wand leuchtet: Name des Boulders, wer ihn beleuchtet hat, wer ihn geschraubt hat, Grad und Winkel, und die letzten Begehungen. Der Feed zieht mit, sobald sich an der Wand etwas ändert, damit du immer weißt, was oben hängt.
+
+SESSIONS MIT DEINER CREW
+Starte eine Session, und du und deine Crew teilt euch eine Warteschlange, die alle steuern können. Jede*r kann den nächsten Boulder am Board beleuchten. Am Ende bekommst du einen Rückblick mit Auswertung: Begehungen und Versuche, Gradverteilung, deine schwerste Begehung und deinen Fortschritt über die Zeit.
+
+STEUERUNG VOM SPERRBILDSCHIRM (iOS 17+)
+iOS Live Activities zeigen dir auf dem Sperrbildschirm, welcher Boulder gerade an ist, und du wechselst ihn, ohne den Sperrbildschirm zu verlassen.
+
+BAU DIR EIN TRAINING
+Wähl Volumen, Pyramide, Leiter oder Grad-Fokus, leg Zielgrad und Aufwärmen fest, sieh dir die Boulder vorab an, und beleuchte sie einzeln am Board.
+
+VERFOLG DEIN KLETTERN
+Trag Begehungen, Flashes und Versuche ein, hol dir den Rückblick mit Dauer, Gradverteilung und deiner schwersten Begehung, und sieh im Tab Fortschritt zu, wie Begehungen und Grade steigen.
+
+NIMM DEINE HISTORIE MIT
+Sichere deine Session in Apple Health, und importier dein bisheriges Kilter- und Tension-Routenbuch aus Aurora Climbing.
+
+FINDE MEHR ZUM KLETTERN
+Folge deiner Crew und Routenbauer*innen, such nach Kletterer*innen, und pinn dir Playlists aus Entdecken.
+
+Unterstützte Boards: Kilter, Tension, MoonBoard (2010, 2016, 2024, Masters 2017, Masters 2019), Decoy, Touchstone, Grasshopper und So iLL.
+
+Boardsesh ist ein Community-Projekt, das mit diesen Boards funktioniert. Es ist mit keinem Board-Hersteller verbunden und wird von keinem unterstützt.

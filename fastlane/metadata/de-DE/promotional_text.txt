@@ -1,0 +1,1 @@
+Lade ein Board herunter und klettere ohne Empfang. Dazu der Boardsesh-Grad: eine Zahl, die auf Kilter, Tension und MoonBoard gleich zu lesen ist, aus echten Begehungen.
