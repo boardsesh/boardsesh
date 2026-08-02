@@ -73,7 +73,17 @@ test.describe('app.boardsesh.com boots', () => {
     // the regression: 200, correct headers, nothing rendered.
     await page.goto('/climbs', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.locator('#root').locator('> *').first()).toBeAttached({ timeout: 60_000 });
+    const root = page.locator('#root');
+    await expect(root.locator('> *').first()).toBeAttached({ timeout: 60_000 });
+    // Same bar as the root test: an empty wrapper is a mount, not a render,
+    // and the SPA fallback makes an unresolved route look exactly like that.
+    await expect
+      .poll(async () => (await root.innerText()).trim().length, {
+        timeout: 60_000,
+        message: 'deep route mounted but rendered no visible text',
+      })
+      .toBeGreaterThan(0);
+
     expect(fatalErrors, `fatal errors on deep route:\n${fatalErrors.join('\n')}`).toEqual([]);
   });
 });
