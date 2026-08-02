@@ -17,9 +17,16 @@
 > The "Languages" list Apple shows on the product page comes from the binary, not
 > from these folders: `ios.infoPlist.CFBundleLocalizations` plus the `locales` map
 > in `packages/mobile/app.config.ts`. Adding a listing locale without adding it
-> there leaves the page claiming English only. This doc keeps the operational
-> material that `deliver` can't upload: review notes, privacy labels, and the
-> screenshot map.
+> there leaves the page claiming English only.
+>
+> **First run for a brand-new locale:** `deliver` writes onto the *editable* version's
+> localizations. If a newly added locale folder doesn't show up after a
+> `Mobile Store Metadata` run, add that language to the version once in App Store
+> Connect (version → **+** next to the language selector), then re-dispatch — every
+> later release picks it up from the folder on its own.
+>
+> This doc keeps the operational material that `deliver` can't upload: review
+> notes, privacy labels, and the screenshot map.
 
 ## Basic Info
 
