@@ -1,0 +1,9 @@
+{
+  "NSHealthUpdateUsageDescription": "Boardsesh guarda tus sesiones de escalada terminadas en Apple Health como entrenamientos.",
+  "NSHealthShareUsageDescription": "Boardsesh lee tu peso corporal para estimar calorías y tus entrenamientos de Boardsesh guardados para evitar duplicados.",
+  "NSBluetoothAlwaysUsageDescription": "Boardsesh usa Bluetooth para conectarse a tu Kilter Board, Tension Board o MoonBoard e iluminar las presas. No se envían datos personales por Bluetooth.",
+  "NSBluetoothPeripheralUsageDescription": "Boardsesh usa Bluetooth para conectarse a tu plafón y controlar las presas LED.",
+  "NSLocationWhenInUseUsageDescription": "Boardsesh usa tu ubicación para encontrar plafones cerca de ti y descubrir sesiones de escalada cercanas en Modo Fiesta.",
+  "NSLocationAlwaysAndWhenInUseUsageDescription": "Boardsesh usa tu ubicación para encontrar plafones cerca de ti y descubrir sesiones de escalada cercanas en Modo Fiesta.",
+  "NSPhotoLibraryUsageDescription": "Boardsesh usa tu fototeca para que puedas elegir una foto de perfil."
+}

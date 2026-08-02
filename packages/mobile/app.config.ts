@@ -293,6 +293,22 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
     // by Metro regardless of this pattern. Keep the default-ish glob for
     // anything we drop under assets/ later.
     assetBundlePatterns: ['assets/**/*'],
+    // Localized system dialogs. Expo's built-in `locales` support writes each
+    // file to <lang>.lproj/InfoPlist.strings during prebuild, so the permission
+    // prompts follow the device language instead of always being English. The
+    // `ios.infoPlist` values below stay as the base/en strings.
+    //
+    // This is also what makes the App Store product page list German, Spanish
+    // and French under "Languages" — Apple reads the localizations shipped in
+    // the binary, not the storefront listings, so a de-DE listing alone would
+    // still show "English" there. Keep the key set in sync across all four
+    // files and with CFBundleLocalizations.
+    locales: {
+      en: './locales/en.json',
+      de: './locales/de.json',
+      es: './locales/es.json',
+      fr: './locales/fr.json',
+    },
     ...(EAS_PROJECT_ID
       ? {
           // `fingerprint` (not `appVersion`): the runtimeVersion is a hash of the
@@ -357,6 +373,12 @@ export default ({ config, projectRoot }: ConfigContext): ExpoConfig & { newArchE
       },
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        // Declares the languages the app ships, which is what the App Store
+        // shows under "Languages" and what iOS matches the device locale
+        // against. Must stay in sync with the top-level `locales` map (which
+        // writes the matching <lang>.lproj bundles) and with SUPPORTED_LOCALES
+        // in @boardsesh/i18n, the list the JS UI actually translates into.
+        CFBundleLocalizations: ['en', 'de', 'es', 'fr'],
         // iPad rotates freely — landscape is the primary canvas for the sidebar +
         // panes — while iPhone stays portrait-locked via the top-level
         // `orientation: 'portrait'`. This `~ipad` key overrides the base

@@ -79,6 +79,11 @@ export function validateFingerprintSources(platform: Platform, sources: readonly
       filePath: 'fingerprint.config.js',
     },
     {
+      overrideHashKey: 'iosInfoPlistLocales',
+      type: 'dir',
+      filePath: 'locales',
+    },
+    {
       overrideHashKey: 'bunPatchedDependencies',
       type: 'dir',
       filePath: '../../patches',

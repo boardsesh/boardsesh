@@ -34,6 +34,12 @@ function completeSources(platform: 'ios' | 'android'): FingerprintSource[] {
     },
     {
       type: 'dir',
+      filePath: 'locales',
+      overrideHashKey: 'iosInfoPlistLocales',
+      hash: 'locales-hash',
+    },
+    {
+      type: 'dir',
       filePath: '../../patches',
       overrideHashKey: 'bunPatchedDependencies',
       hash: 'patch-hash',
@@ -48,7 +54,10 @@ describe('validateFingerprintSources', () => {
 
   it('reports null native directories and missing config/patch sources', () => {
     const sources = completeSources('ios').filter(
-      (source) => !['boardseshFingerprintConfig', 'bunPatchedDependencies'].includes(String(source.overrideHashKey)),
+      (source) =>
+        !['boardseshFingerprintConfig', 'iosInfoPlistLocales', 'bunPatchedDependencies'].includes(
+          String(source.overrideHashKey),
+        ),
     );
     const nativeDirectory = sources.find((source) => source.type === 'dir');
     if (nativeDirectory) nativeDirectory.hash = null;
@@ -56,6 +65,7 @@ describe('validateFingerprintSources', () => {
     expect(validateFingerprintSources('ios', sources)).toEqual([
       expect.stringContaining('1/1 autolinked native directories have null hashes'),
       'ios: expected exactly one boardseshFingerprintConfig source, found 0',
+      'ios: expected exactly one iosInfoPlistLocales source, found 0',
       'ios: expected exactly one bunPatchedDependencies source, found 0',
     ]);
   });

@@ -203,13 +203,19 @@ describe('mobile fingerprint config', () => {
     ).toThrow();
   });
 
-  it('hashes the config itself and the monorepo root patches with stable keys', () => {
+  it('hashes the config itself, the iOS locale strings and the monorepo root patches with stable keys', () => {
     expect(fingerprintConfig.extraSources).toEqual([
       {
         type: 'file',
         filePath: 'fingerprint.config.js',
         reasons: ['boardseshFingerprintConfig'],
         overrideHashKey: 'boardseshFingerprintConfig',
+      },
+      {
+        type: 'dir',
+        filePath: 'locales',
+        reasons: ['iosInfoPlistLocales'],
+        overrideHashKey: 'iosInfoPlistLocales',
       },
       {
         type: 'dir',

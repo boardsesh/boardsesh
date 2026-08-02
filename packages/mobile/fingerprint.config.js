@@ -81,6 +81,18 @@ module.exports = {
     },
     {
       type: 'dir',
+      filePath: 'locales',
+      reasons: ['iosInfoPlistLocales'],
+      overrideHashKey: 'iosInfoPlistLocales',
+      // app.config.ts points `locales` at these files by PATH, and the fingerprint
+      // hashes the config's resolved value (the paths), not the files behind it.
+      // Expo's iOS Locales plugin writes each one into <lang>.lproj/InfoPlist.strings
+      // at prebuild, so a permission-string edit is a native change no OTA can
+      // deliver — without this it would leave runtimeVersion untouched and ship to
+      // binaries whose prompts still read the old text.
+    },
+    {
+      type: 'dir',
       filePath: '../../patches',
       reasons: ['bunPatchedDependencies'],
       overrideHashKey: 'bunPatchedDependencies',
