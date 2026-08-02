@@ -105,7 +105,12 @@ export class MoonBoardSyncRunner {
               onCycleError: (error) => {
                 const normalizedError = error instanceof Error ? error : new Error(String(error));
                 this.handleError(normalizedError);
-                this.log(`[MoonBoardSyncRunner] Daemon cycle error: ${normalizedError.message}`);
+                // Without an injected error sink, handleError already writes the
+                // full error to stderr. Fan out a concise operational log only
+                // when the structured error was handed to an external consumer.
+                if (this.config.onError) {
+                  this.log(`[MoonBoardSyncRunner] Daemon cycle error: ${normalizedError.message}`);
+                }
               },
             },
           );

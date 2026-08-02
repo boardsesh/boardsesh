@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runnerHarness = vi.hoisted(() => ({
   database: { kind: 'test-database' },
@@ -62,6 +62,10 @@ describe('MoonBoardSyncRunner', () => {
     runnerHarness.syncMoonBoardLocations.mockResolvedValue(EMPTY_SUMMARY);
   });
 
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('stops a fresh runner without initializing sync resources', async () => {
     const runner = new MoonBoardSyncRunner({
       username: 'sync@example.com',
@@ -123,6 +127,9 @@ describe('MoonBoardSyncRunner', () => {
       username: 'sync@example.com',
       password: 'secret',
     });
+    // DaemonLease.stop intentionally absorbs its own I/O failures, so no
+    // public runner path can induce this defensive rejection branch. The
+    // rejection and call-count assertions below make field drift fail loudly.
     const runnerInternals = runner as unknown as {
       lease: { stop: () => Promise<void> } | null;
     };
@@ -168,16 +175,14 @@ describe('MoonBoardSyncRunner', () => {
     await runner.stop();
   });
 
-  it('logs a failed cycle and stays alive for a later retry', async () => {
+  it('reports a failed cycle once without callbacks and stays alive for a later retry', async () => {
     const cycleError = new Error('MoonBoard is temporarily unavailable');
-    const errors: Error[] = [];
-    const logs: string[] = [];
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
     runnerHarness.syncMoonBoardLocations.mockRejectedValueOnce(cycleError);
     const runner = new MoonBoardSyncRunner({
       username: 'sync@example.com',
       password: 'secret',
-      onError: (error) => errors.push(error),
-      onLog: (message) => logs.push(message),
     });
     const sleep = vi.fn(async () => {
       runner.requestStop();
@@ -193,8 +198,85 @@ describe('MoonBoardSyncRunner', () => {
       },
     );
 
-    expect(errors).toEqual([cycleError]);
-    expect(logs).toContain('[MoonBoardSyncRunner] Daemon cycle error: MoonBoard is temporarily unavailable');
+    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalledWith('[MoonBoardSyncRunner] Error:', cycleError);
+    expect(consoleInfo.mock.calls.filter(([message]) => String(message).includes('Daemon cycle error'))).toHaveLength(
+      0,
+    );
+    expect(sleep).toHaveBeenCalledOnce();
+    await runner.stop();
+  });
+
+  it('does not duplicate a verbose CLI cycle failure through onLog', async () => {
+    const cycleError = new Error('MoonBoard is temporarily unavailable');
+    const onLog = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
+    runnerHarness.syncMoonBoardLocations.mockRejectedValueOnce(cycleError);
+    const runner = new MoonBoardSyncRunner({
+      username: 'sync@example.com',
+      password: 'secret',
+      onLog,
+    });
+    const sleep = vi.fn(async () => {
+      runner.requestStop();
+      throw abortError();
+    });
+
+    await runner.runDaemon(
+      {},
+      {
+        now: () => new Date('2026-06-01T09:00:00.000Z'),
+        random: () => 0,
+        sleep,
+      },
+    );
+
+    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalledWith('[MoonBoardSyncRunner] Error:', cycleError);
+    expect(onLog.mock.calls.filter(([message]) => String(message).includes('Daemon cycle error'))).toHaveLength(0);
+    expect(onLog).toHaveBeenCalledWith('[SyncRunner] Waiting 360 minute(s) before the next daemon sync cycle');
+    expect(consoleInfo).not.toHaveBeenCalled();
+    expect(sleep).toHaveBeenCalledOnce();
+    await runner.stop();
+  });
+
+  it('fans a failed cycle out once to injected error and log consumers', async () => {
+    const cycleError = new Error('MoonBoard is temporarily unavailable');
+    const onError = vi.fn();
+    const onLog = vi.fn();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
+    runnerHarness.syncMoonBoardLocations.mockRejectedValueOnce(cycleError);
+    const runner = new MoonBoardSyncRunner({
+      username: 'sync@example.com',
+      password: 'secret',
+      onError,
+      onLog,
+    });
+    const sleep = vi.fn(async () => {
+      runner.requestStop();
+      throw abortError();
+    });
+
+    await runner.runDaemon(
+      {},
+      {
+        now: () => new Date('2026-06-01T09:00:00.000Z'),
+        random: () => 0,
+        sleep,
+      },
+    );
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError).toHaveBeenCalledWith(cycleError);
+    expect(
+      onLog.mock.calls.filter(
+        ([message]) => message === '[MoonBoardSyncRunner] Daemon cycle error: MoonBoard is temporarily unavailable',
+      ),
+    ).toHaveLength(1);
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleInfo).not.toHaveBeenCalled();
     expect(sleep).toHaveBeenCalledOnce();
     await runner.stop();
   });
