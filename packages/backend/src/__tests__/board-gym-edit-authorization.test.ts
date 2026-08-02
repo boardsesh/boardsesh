@@ -743,6 +743,11 @@ describe('community moderators cannot delete boards/gyms or link boards', () => 
   });
 
   it('rejects a moderator linking their own board into a gym they do not own/admin', async () => {
+    // Neither this board nor kilterGym carries coordinates, so the self-service
+    // proximity path added in #4166 cannot apply and the owner/admin gate is the
+    // only way in. A community role still grants no gym-management power: what
+    // that change opened up is available to every board owner equally (their own
+    // board, within 150 m of a PUBLIC gym), never to moderators as moderators.
     const adminBoardUuid = uuidv4();
     await db.execute(sql`
       INSERT INTO user_boards
@@ -755,6 +760,10 @@ describe('community moderators cannot delete boards/gyms or link boards', () => 
         { input: { boardUuid: adminBoardUuid, gymUuid: kilterGymUuid } },
         authCtx(GLOBAL_ADMIN),
       ),
-    ).rejects.toThrow(/Not authorized: must be gym owner or admin/);
+    ).rejects.toThrow(/Not authorized to link board to this gym/);
+
+    // Assert the outcome, not just the message — the board must stay unlinked.
+    const linked = await db.execute(sql`SELECT gym_id FROM user_boards WHERE uuid = ${adminBoardUuid}`);
+    expect(Array.from(linked as Iterable<{ gym_id: number | null }>)[0]?.gym_id).toBeNull();
   });
 });
